@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
 /**
- * Chrome and Edge intentionally do not allow scripts to silently install unpacked extensions.
- * This helper copies the vendored MV3 extension to a stable local path and prints guided
- * Load-unpacked steps so setup is repeatable without pretending browser policy can be bypassed.
+ * Ensure the dg-ai-browser-batch extension is available to load, idempotently.
+ *
+ * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
+ * this stages the built extension to a stable per-OS path and prints guided
+ * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
+ * checkout (dev) it falls back to a local `wxt build`.
  */
 
-import { spawnSync } from "node:child_process";
 import {
 	copyFileSync,
 	existsSync,
@@ -14,51 +16,19 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
-	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-
-type Marker = { version?: string };
-
-function versionParts(version: string): number[] {
-	return version.split(".").map((part) => Number.parseInt(part, 10) || 0);
-}
-
-function versionGte(a: string, b: string): boolean {
-	const left = versionParts(a);
-	const right = versionParts(b);
-	const length = Math.max(left.length, right.length);
-	for (let i = 0; i < length; i++) {
-		const delta = (left[i] ?? 0) - (right[i] ?? 0);
-		if (delta !== 0) return delta > 0;
-	}
-	return true;
-}
-
-function readJson<T>(path: string): T {
-	return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
-function run(command: string, args: string[]): string {
-	const result = spawnSync(command, args, { encoding: "utf8" });
-	if (result.error) {
-		throw new Error(`${command} not found or failed to start: ${result.error.message}`);
-	}
-	if (result.status !== 0) {
-		throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
-	}
-	return result.stdout.trim();
-}
-
-function isWSL(): boolean {
-	if (process.platform !== "linux") return false;
-	try {
-		return readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft");
-	} catch {
-		return false;
-	}
-}
+import { join } from "node:path";
+import {
+	downloadReleaseAsset,
+	extensionDest,
+	extractZip,
+	readMarker,
+	repoRoot,
+	run,
+	type Target,
+	versionGte,
+	writeMarkerEntry,
+} from "./lib";
 
 function copyDir(src: string, dest: string): void {
 	rmSync(dest, { recursive: true, force: true });
@@ -71,79 +41,108 @@ function copyDir(src: string, dest: string): void {
 	}
 }
 
-function extensionDir(): string {
-	if (process.env.CLAUDE_PLUGIN_ROOT) {
-		return join(process.env.CLAUDE_PLUGIN_ROOT, "skills", "browser-batch", "extension");
-	}
-	return resolve(import.meta.dir, "../extension");
+function localOutputDir(target: Target): string | undefined {
+	const outRoot = join(repoRoot(), "extension-src", ".output");
+	if (!existsSync(outRoot)) return undefined;
+	const dir = readdirSync(outRoot).find((d) => d.startsWith(`${target}-`));
+	return dir ? join(outRoot, dir) : undefined;
 }
 
-function windowsUserProfile(): string {
-	if (process.platform === "win32" && process.env.USERPROFILE) return process.env.USERPROFILE;
-	return run("cmd.exe", ["/c", "echo", "%USERPROFILE%"]).replace(/\r/g, "");
+function buildLocally(target: Target): string {
+	const src = join(repoRoot(), "extension-src");
+	if (!existsSync(src)) throw new Error("no extension-src to build from");
+	if (!existsSync(join(src, "node_modules")))
+		run("bun", ["--cwd", src, "install"]);
+	run("bun", [
+		"--cwd",
+		src,
+		"run",
+		target === "firefox" ? "build:firefox" : "build",
+	]);
+	const out = localOutputDir(target);
+	if (!out) throw new Error("local build produced no output directory");
+	return out;
 }
 
-function destination(): { copyPath: string; printPath: string } {
-	if (isWSL()) {
-		const winProfile = windowsUserProfile();
-		const winDest = `${winProfile}\\.dg\\browser-batch-extension`;
-		const copyPath = run("wslpath", ["-u", winDest]);
-		const printPath = run("wslpath", ["-w", copyPath]);
-		return { copyPath, printPath };
-	}
-
-	if (process.platform === "win32") {
-		const winDest = `${windowsUserProfile()}\\.dg\\browser-batch-extension`;
-		return { copyPath: winDest, printPath: winDest };
-	}
-
-	const localDest = join(homedir(), ".dg", "browser-batch-extension");
-	return { copyPath: localDest, printPath: localDest };
+function manifestVersion(dir: string): string {
+	return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).version;
 }
 
-function printSteps(path: string): void {
-	console.log("1. Open chrome://extensions (or edge://extensions).");
+function printSteps(target: Target, path: string): void {
+	if (target === "firefox") {
+		console.log(
+			"Firefox (temporary add-on — reloads each session; use `launch` to automate):",
+		);
+		console.log("  1. Open about:debugging#/runtime/this-firefox");
+		console.log('  2. Click "Load Temporary Add-on…"');
+		console.log(`  3. Select ${join(path, "manifest.json")}`);
+		return;
+	}
+	console.log(
+		"1. Open chrome://extensions (or your Chromium browser's extensions page).",
+	);
 	console.log('2. Enable "Developer mode".');
 	console.log('3. Click "Load unpacked".');
-	console.log(`4. Select ${path}.`);
+	console.log(`4. Select ${path}`);
 	console.log("5. Done.");
 }
 
-function main(): void {
-	const source = extensionDir();
-	const manifest = readJson<{ version: string }>(join(source, "manifest.json"));
-	const markerPath = join(homedir(), ".config", "dg", "browser-batch-installed");
-	const marker = existsSync(markerPath) ? readJson<Marker>(markerPath) : undefined;
+export async function runInstall(argv: string[]): Promise<void> {
+	const target: Target = argv.includes("firefox") ? "firefox" : "chrome";
+	const forceLocal = argv.includes("--local");
+	const dest = extensionDest(target);
 
-	if (marker?.version && versionGte(marker.version, manifest.version)) {
-		console.log(`dg-ai-browser-batch extension already set up (v${marker.version}).`);
+	// Resolve a source + version: CI release first, local build as dev fallback.
+	let version: string;
+	let stage: () => void;
+	const release = forceLocal
+		? undefined
+		: await downloadReleaseAsset(target).catch((err) => {
+				console.warn(
+					`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
+				);
+				return undefined;
+			});
+
+	if (release) {
+		version = release.version;
+		stage = () => extractZip(release.zip, dest.copyPath);
+	} else {
+		const out = localOutputDir(target) ?? buildLocally(target);
+		version = manifestVersion(out);
+		stage = () => copyDir(out, dest.copyPath);
+	}
+
+	const markerVersion = readMarker()[target];
+	if (
+		markerVersion &&
+		versionGte(markerVersion, version) &&
+		existsSync(dest.copyPath)
+	) {
+		console.log(
+			`dg-ai-browser-batch (${target}) already set up (v${markerVersion}).`,
+		);
 		return;
 	}
+	const isUpgrade = Boolean(markerVersion);
 
-	const hadMarker = Boolean(marker?.version);
-	const { copyPath, printPath } = destination();
-	mkdirSync(dirname(copyPath), { recursive: true });
-	copyDir(source, copyPath);
-
-	console.log(`dg-ai-browser-batch extension copied to ${printPath}`);
-	if (hadMarker) {
-		console.log("extension updated — click the reload icon on chrome://extensions.");
+	stage();
+	console.log(`dg-ai-browser-batch (${target}) staged at ${dest.printPath}`);
+	if (isUpgrade) {
+		console.log(
+			"extension updated — click the reload icon on the extensions page.",
+		);
 	} else {
-		printSteps(printPath);
+		printSteps(target, dest.printPath);
 	}
-
-	mkdirSync(dirname(markerPath), { recursive: true });
-	writeFileSync(markerPath, `${JSON.stringify({ version: manifest.version })}\n`);
-	console.log(`dg-ai-browser-batch extension set up (v${manifest.version}).`);
+	writeMarkerEntry(target, version);
+	console.log(`dg-ai-browser-batch (${target}) set up (v${version}).`);
 }
 
-try {
-	main();
-} catch (err) {
-	const msg = err instanceof Error ? err.message : String(err);
-	console.error(`dg-ai-browser-batch install failed: ${msg}`);
-	if (isWSL()) {
-		console.error("WSL detected — ensure Windows interop is enabled (cmd.exe and wslpath must be reachable on PATH).");
-	}
-	process.exit(1);
+if (import.meta.main) {
+	runInstall(process.argv.slice(2)).catch((err) => {
+		const msg = err instanceof Error ? err.message : String(err);
+		console.error(`dg-ai-browser-batch install failed: ${msg}`);
+		process.exit(1);
+	});
 }

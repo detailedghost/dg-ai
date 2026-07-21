@@ -1,9 +1,0 @@
-{
-	"manifest_version": 3,
-	"name": "dg-ai-browser-batch",
-	"version": "1.0.0",
-	"description": "Auto-groups GitHub PR tabs into a named, colored tab group as they open.",
-	"permissions": ["tabs", "tabGroups", "storage"],
-	"background": { "service_worker": "background.js" },
-	"options_page": "options.html"
-}
