@@ -1,0 +1,60 @@
+---
+name: build-extension
+
+# Builds the dg-ai-browser-batch extension and publishes a vX.X.X release,
+# but only when the skill or extension source actually changes.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/wxt-extension  # TEMP: exercise CI + release on this branch; revert before merge
+    paths:
+      - extension-src/**
+      - skills/browser-batch/**
+      - .github/workflows/build-extension.yml
+
+permissions:
+  contents: write  # create the release + tag
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        working-directory: extension-src
+        run: bun install --frozen-lockfile
+
+      - name: Build + zip (chrome + firefox)
+        working-directory: extension-src
+        run: |
+          bun run zip
+          bun run zip:firefox
+
+      - name: Read extension version
+        id: ver
+        run: echo "version=$(node -p "require('./extension-src/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release (only if this version is new)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          version="${{ steps.ver.outputs.version }}"
+          tag="v${version}"
+          out="extension-src/.output"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists — build validated, nothing to publish."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$tag" \
+            --notes "Automated build of the dg-ai-browser-batch extension ($tag)." \
+            "$out/dg-ai-browser-batch-extension-${version}-chrome.zip" \
+            "$out/dg-ai-browser-batch-extension-${version}-firefox.zip"
