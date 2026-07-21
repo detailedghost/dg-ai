@@ -1,0 +1,7 @@
+{
+	"name": "dg",
+	"private": true,
+	"scripts": {
+		"test": "bun test"
+	}
+}
