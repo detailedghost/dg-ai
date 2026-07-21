@@ -1,0 +1,37 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1b4b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="ghost" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="0.55" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.38" cy="0.30" r="0.75">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="url(#bg)"/>
+
+  <!-- soft shadow under the ghost -->
+  <ellipse cx="64" cy="104" rx="30" ry="6" fill="#000000" opacity="0.28"/>
+
+  <!-- pac-man ghost: domed top, scalloped feet -->
+  <g>
+    <path d="M30 98 V64 A34 34 0 0 1 98 64 V98 L89.5 88 L81 98 L72.5 88 L64 98 L55.5 88 L47 98 L38.5 88 Z"
+          fill="url(#ghost)" stroke="#0e7490" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M30 98 V64 A34 34 0 0 1 98 64 V98 L89.5 88 L81 98 L72.5 88 L64 98 L55.5 88 L47 98 L38.5 88 Z"
+          fill="url(#sheen)"/>
+    <!-- eyes -->
+    <ellipse cx="54" cy="60" rx="9" ry="11" fill="#ffffff"/>
+    <ellipse cx="78" cy="60" rx="9" ry="11" fill="#ffffff"/>
+    <circle cx="58" cy="62" r="4.6" fill="#1e1b4b"/>
+    <circle cx="82" cy="62" r="4.6" fill="#1e1b4b"/>
+    <circle cx="56.4" cy="59.6" r="1.5" fill="#ffffff"/>
+    <circle cx="80.4" cy="59.6" r="1.5" fill="#ffffff"/>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * launch — start a selectable Chromium browser with the dg-ai-browser-batch
+ * launch — start a selectable Chromium browser with the dg-ai-extension
  * extension side-loaded (`--load-extension`) plus a batch of tabs, so PRs open
  * grouped without a manual chrome://extensions step.
  *
@@ -10,13 +10,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { basename } from "node:path";
 import { type DetectedBrowser, detectBrowsers } from "./detect";
 import { extensionDest, isWSL, readMarker, run } from "./lib";
 import { resolveRefs } from "./refs";
 
-const USAGE =
-	"usage: browser-batch launch [--browser <key>] [--list] [--dry-run] [--repo owner/repo] <ref> ...";
+const USAGE = "usage: browser-batch launch [--browser <key>] [--list] [--dry-run] [--repo owner/repo] <ref> ...";
 
 function table(browsers: DetectedBrowser[]): string {
 	return browsers
@@ -34,10 +32,15 @@ function table(browsers: DetectedBrowser[]): string {
 }
 
 function isRunning(exe: string): boolean {
-	const image = basename(exe);
+	// Match the exact exe path so Brave Beta vs Origin (same brave.exe) are distinct.
+	const escaped = exe.replace(/'/g, "''");
 	try {
-		const out = run("tasklist.exe", ["/FI", `IMAGENAME eq ${image}`, "/NH"]);
-		return out.toLowerCase().includes(image.toLowerCase());
+		const out = run("powershell.exe", [
+			"-NoProfile",
+			"-Command",
+			`if (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${escaped}' }) { 'RUNNING' }`,
+		]);
+		return out.includes("RUNNING");
 	} catch {
 		return false; // can't tell — let the launch proceed
 	}
@@ -63,9 +66,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 
 	const browsers = detectBrowsers();
 	if (!browsers.length) {
-		console.error(
-			"browser-batch launch: no browsers detected (launch supports Windows/WSL for now).",
-		);
+		console.error("browser-batch launch: no browsers detected (launch supports Windows/WSL for now).");
 		process.exit(1);
 	}
 	if (listOnly) {
@@ -75,14 +76,10 @@ export async function runLaunch(argv: string[]): Promise<void> {
 
 	const wantKey = browserKey?.toLowerCase();
 	const chosen = wantKey
-		? browsers.find(
-				(b) => b.key === wantKey || b.name.toLowerCase().includes(wantKey),
-			)
+		? browsers.find((b) => b.key === wantKey || b.name.toLowerCase().includes(wantKey))
 		: browsers.find((b) => b.launchable);
 	if (!chosen) {
-		console.error(
-			`browser-batch launch: no match for --browser "${browserKey}". Available:\n${table(browsers)}`,
-		);
+		console.error(`browser-batch launch: no match for --browser "${browserKey}". Available:\n${table(browsers)}`);
 		process.exit(1);
 	}
 	if (chosen.kind === "chrome-stable") {
@@ -102,9 +99,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 	}
 
 	if (!readMarker().chrome) {
-		console.error(
-			"Extension not staged yet — run `browser-batch install` first, then `launch`.",
-		);
+		console.error("Extension not staged yet — run `browser-batch install` first, then `launch`.");
 		process.exit(1);
 	}
 	if (!refs.length) {
@@ -116,9 +111,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 	try {
 		urls = resolveRefs(refs, repo);
 	} catch (err) {
-		console.error(
-			`browser-batch launch: ${err instanceof Error ? err.message : err}`,
-		);
+		console.error(`browser-batch launch: ${err instanceof Error ? err.message : err}`);
 		process.exit(1);
 	}
 
@@ -145,16 +138,12 @@ export async function runLaunch(argv: string[]): Promise<void> {
 		process.exit(1);
 	});
 	child.unref();
-	console.log(
-		`Launched ${chosen.name} with dg-ai-browser-batch + ${urls.length} tab(s) — they'll group as they load.`,
-	);
+	console.log(`Launched ${chosen.name} with dg-ai-extension + ${urls.length} tab(s) — they'll group as they load.`);
 }
 
 if (import.meta.main) {
 	runLaunch(process.argv.slice(2)).catch((err) => {
-		console.error(
-			`browser-batch launch failed: ${err instanceof Error ? err.message : err}`,
-		);
+		console.error(`browser-batch launch failed: ${err instanceof Error ? err.message : err}`);
 		process.exit(1);
 	});
 }

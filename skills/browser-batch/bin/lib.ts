@@ -56,15 +56,15 @@ export function extensionDest(target: Target): {
 	printPath: string;
 } {
 	if (isWSL()) {
-		const winDest = `${windowsUserProfile()}\\.dg\\dg-ai-browser-batch-${target}`;
+		const winDest = `${windowsUserProfile()}\\.dg\\dg-ai-extension-${target}`;
 		const copyPath = run("wslpath", ["-u", winDest]);
 		return { copyPath, printPath: run("wslpath", ["-w", copyPath]) };
 	}
 	if (process.platform === "win32") {
-		const p = `${windowsUserProfile()}\\.dg\\dg-ai-browser-batch-${target}`;
+		const p = `${windowsUserProfile()}\\.dg\\dg-ai-extension-${target}`;
 		return { copyPath: p, printPath: p };
 	}
-	const p = join(homedir(), ".dg", `dg-ai-browser-batch-${target}`);
+	const p = join(homedir(), ".dg", `dg-ai-extension-${target}`);
 	return { copyPath: p, printPath: p };
 }
 
@@ -120,7 +120,7 @@ type Release = {
 export async function downloadReleaseAsset(
 	target: Target,
 ): Promise<{ zip: string; version: string }> {
-	const headers = { "User-Agent": "dg-ai-browser-batch" };
+	const headers = { "User-Agent": "dg-ai-extension" };
 	const res = await fetch(
 		`https://api.github.com/repos/${REPO}/releases/latest`,
 		{ headers },

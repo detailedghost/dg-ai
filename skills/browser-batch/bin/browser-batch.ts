@@ -2,7 +2,7 @@
 /**
  * browser-batch — dispatch to a subcommand:
  *   open    resolve refs → open + group a batch of PRs/URLs (any default browser)
- *   install stage the dg-ai-browser-batch extension + print guided load steps
+ *   install stage the dg-ai-extension extension + print guided load steps
  *   launch  cold-start a selectable Chromium browser with the extension side-loaded
  */
 
@@ -90,7 +90,7 @@ async function runOpen(argv: string[]): Promise<void> {
 		console.log(`${ok ? "opened" : "FAILED"}: ${url}`);
 	}
 	console.log(
-		`\n${urls.length} tab(s) requested — the dg-ai-browser-batch extension will group them.`,
+		`\n${urls.length} tab(s) requested — the dg-ai-extension extension will group them.`,
 	);
 }
 

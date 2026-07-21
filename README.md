@@ -49,7 +49,7 @@ pre-loaded — no manual load step (`--list` shows what's installed):
 
 ## 🧩 Extension
 
-The companion `dg-ai-browser-batch` extension does the grouping browser-side.
+The companion `dg-ai-extension` extension does the grouping browser-side.
 It's built with [WXT](https://wxt.dev) from `extension-src/` and targets Chrome,
 Edge, Brave, Vivaldi, and Firefox 139+ (grouping is feature-detected and skipped
 where unsupported). Grouping only happens in the profile where it's loaded.
