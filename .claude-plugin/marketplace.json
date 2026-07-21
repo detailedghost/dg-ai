@@ -1,6 +1,7 @@
 {
 	"name": "detailedghost",
 	"owner": { "name": "Dante Burgos" },
+	"description": "detailedghost's personal Claude Code plugins.",
 	"plugins": [
 		{
 			"name": "dg",
