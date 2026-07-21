@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Ensure the dg-ai-browser-batch extension is available to load, idempotently.
+ * Ensure the dg-ai-extension extension is available to load, idempotently.
  *
  * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
  * this stages the built extension to a stable per-OS path and prints guided
@@ -120,14 +120,14 @@ export async function runInstall(argv: string[]): Promise<void> {
 		existsSync(dest.copyPath)
 	) {
 		console.log(
-			`dg-ai-browser-batch (${target}) already set up (v${markerVersion}).`,
+			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
 		return;
 	}
 	const isUpgrade = Boolean(markerVersion);
 
 	stage();
-	console.log(`dg-ai-browser-batch (${target}) staged at ${dest.printPath}`);
+	console.log(`dg-ai-extension (${target}) staged at ${dest.printPath}`);
 	if (isUpgrade) {
 		console.log(
 			"extension updated — click the reload icon on the extensions page.",
@@ -136,13 +136,13 @@ export async function runInstall(argv: string[]): Promise<void> {
 		printSteps(target, dest.printPath);
 	}
 	writeMarkerEntry(target, version);
-	console.log(`dg-ai-browser-batch (${target}) set up (v${version}).`);
+	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
 
 if (import.meta.main) {
 	runInstall(process.argv.slice(2)).catch((err) => {
 		const msg = err instanceof Error ? err.message : String(err);
-		console.error(`dg-ai-browser-batch install failed: ${msg}`);
+		console.error(`dg-ai-extension install failed: ${msg}`);
 		process.exit(1);
 	});
 }

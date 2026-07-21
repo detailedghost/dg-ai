@@ -1,9 +1,9 @@
 {
-	"name": "dg-ai-browser-batch-extension",
-	"description": "Source for the dg-ai-browser-batch web extension (built with WXT).",
+	"name": "dg-ai-extension",
+	"description": "Source for the dg-ai-extension web extension (built with WXT).",
 	"private": true,
 	"type": "module",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"scripts": {
 		"postinstall": "wxt prepare",
 		"dev": "wxt",

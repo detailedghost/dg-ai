@@ -8,7 +8,7 @@ user-invocable: true
 # Browser Batch
 
 Open a batch of GitHub PRs/URLs and auto-group the tabs, via a companion
-`dg-ai-browser-batch` web extension.
+`dg-ai-extension` web extension.
 
 All commands run `bun`. If it's missing, `bun --version` fails — tell the user to
 install Bun from https://bun.sh instead of surfacing a raw error.

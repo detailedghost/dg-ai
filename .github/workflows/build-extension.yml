@@ -1,7 +1,7 @@
 ---
 name: build-extension
 
-# Builds the dg-ai-browser-batch extension and publishes a vX.X.X release,
+# Builds the dg-ai-extension extension and publishes a vX.X.X release,
 # but only when the skill or extension source actually changes.
 on:
   workflow_dispatch:
@@ -54,6 +54,6 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$tag" \
-            --notes "Automated build of the dg-ai-browser-batch extension ($tag)." \
-            "$out/dg-ai-browser-batch-extension-${version}-chrome.zip" \
-            "$out/dg-ai-browser-batch-extension-${version}-firefox.zip"
+            --notes "Automated build of the dg-ai-extension extension ($tag)." \
+            "$out/dg-ai-extension-${version}-chrome.zip" \
+            "$out/dg-ai-extension-${version}-firefox.zip"

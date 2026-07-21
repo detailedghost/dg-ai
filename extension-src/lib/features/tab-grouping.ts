@@ -18,7 +18,7 @@ const TAB_GROUP_ID_NONE = browser.tabGroups?.TAB_GROUP_ID_NONE ?? -1;
 // Serialize group ops so a batch opened together lands in ONE group, no race.
 let queue: Promise<void> = Promise.resolve();
 function enqueue(task: () => Promise<void>): Promise<void> {
-	queue = queue.then(task).catch((err) => console.error("[dg-ai-browser-batch]", err));
+	queue = queue.then(task).catch((err) => console.error("[dg-ai-extension]", err));
 	return queue;
 }
 
