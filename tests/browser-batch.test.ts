@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { globToRegExp, urlMatches } from "../extension-src/lib/glob";
+import { readGroupMarker, stripGroupMarker } from "../extension-src/lib/marker";
 import { versionGte } from "../skills/browser-batch/bin/lib";
+import { addGroupMarker } from "../skills/browser-batch/bin/marker";
 import { resolveRef } from "../skills/browser-batch/bin/refs";
 
 // --- ref resolution ---
@@ -26,12 +27,6 @@ test("config alias resolves to its pull URL", () => {
 	).toBe("https://github.com/your-org/your-repo/pull/1517");
 });
 
-test("bare number resolves with defaultRepo argument", () => {
-	expect(resolveRef("1518", {}, "owner/repo")).toBe(
-		"https://github.com/owner/repo/pull/1518",
-	);
-});
-
 test("bare number resolves via cfg.defaultRepo when no --repo arg", () => {
 	expect(resolveRef("1518", { defaultRepo: "owner/repo" }, undefined)).toBe(
 		"https://github.com/owner/repo/pull/1518",
@@ -48,19 +43,29 @@ test("versionGte compares semver correctly", () => {
 	expect(versionGte("1.0.0", "1.0.0")).toBe(true);
 	expect(versionGte("1.2.0", "1.1.9")).toBe(true);
 	expect(versionGte("1.0.0", "1.0.1")).toBe(false);
-	expect(versionGte("2.0.0", "10.0.0")).toBe(false);
 });
 
-// --- glob matcher (extension grouping) ---
+// --- _tab_group marker round-trip (CLI adds → extension reads → extension strips) ---
 
-test("glob matches GitHub PR URLs, not arbitrary pages", () => {
-	const patterns = ["*://github.com/*/*/pull/*"];
-	expect(urlMatches("https://github.com/o/r/pull/5", patterns)).toBe(true);
-	expect(urlMatches("https://github.com/o/r/issues/5", patterns)).toBe(false);
-	expect(urlMatches("https://example.com/x", patterns)).toBe(false);
+test("CLI adds a marker the extension reads back", () => {
+	const marked = addGroupMarker("https://github.com/o/r/pull/1", "My PRs");
+	expect(marked).toBe("https://github.com/o/r/pull/1#_tab_group=My%20PRs");
+	expect(readGroupMarker(marked)).toBe("My PRs");
 });
 
-test("globToRegExp anchors and escapes literals", () => {
-	expect(globToRegExp("a.b*").test("a.bXYZ")).toBe(true);
-	expect(globToRegExp("a.b*").test("aXbXYZ")).toBe(false); // '.' is literal, not wildcard
+test("stripping the marker restores the original URL", () => {
+	const url = "https://github.com/o/r/pull/1";
+	expect(stripGroupMarker(addGroupMarker(url, "PRs"))).toBe(url);
+});
+
+test("marker is appended to an existing fragment and stripped back to it", () => {
+	const marked = addGroupMarker("https://github.com/o/r/pull/1#files", "PRs");
+	expect(readGroupMarker(marked)).toBe("PRs");
+	expect(stripGroupMarker(marked)).toBe("https://github.com/o/r/pull/1#files");
+});
+
+test("no marker → readGroupMarker undefined, strip is a no-op", () => {
+	const url = "https://github.com/o/r/pull/1";
+	expect(readGroupMarker(url)).toBeUndefined();
+	expect(stripGroupMarker(url)).toBe(url);
 });

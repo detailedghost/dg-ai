@@ -12,9 +12,11 @@
 import { spawn } from "node:child_process";
 import { type DetectedBrowser, detectBrowsers } from "./detect";
 import { extensionDest, isWSL, readMarker, run } from "./lib";
+import { addGroupMarker } from "./marker";
 import { resolveRefs } from "./refs";
 
-const USAGE = "usage: browser-batch launch [--browser <key>] [--list] [--dry-run] [--repo owner/repo] <ref> ...";
+const USAGE =
+	"usage: browser-batch launch [--browser <key>] [--group <name>] [--list] [--dry-run] [--repo owner/repo] <ref> ...";
 
 function table(browsers: DetectedBrowser[]): string {
 	return browsers
@@ -49,6 +51,7 @@ function isRunning(exe: string): boolean {
 export async function runLaunch(argv: string[]): Promise<void> {
 	let browserKey: string | undefined;
 	let repo: string | undefined;
+	let group = "PRs";
 	let listOnly = false;
 	let dryRun = false;
 	const refs: string[] = [];
@@ -56,6 +59,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 		const a = argv[i];
 		if (a === "--browser" || a === "-b") browserKey = argv[++i];
 		else if (a === "--repo" || a === "-R") repo = argv[++i];
+		else if (a === "--group" || a === "-g") group = argv[++i];
 		else if (a === "--list") listOnly = true;
 		else if (a === "--dry-run") dryRun = true;
 		else if (a === "-h" || a === "--help") {
@@ -66,7 +70,9 @@ export async function runLaunch(argv: string[]): Promise<void> {
 
 	const browsers = detectBrowsers();
 	if (!browsers.length) {
-		console.error("browser-batch launch: no browsers detected (launch supports Windows/WSL for now).");
+		console.error(
+			"browser-batch launch: no browsers detected (launch supports Windows/WSL for now).",
+		);
 		process.exit(1);
 	}
 	if (listOnly) {
@@ -76,10 +82,14 @@ export async function runLaunch(argv: string[]): Promise<void> {
 
 	const wantKey = browserKey?.toLowerCase();
 	const chosen = wantKey
-		? browsers.find((b) => b.key === wantKey || b.name.toLowerCase().includes(wantKey))
+		? browsers.find(
+				(b) => b.key === wantKey || b.name.toLowerCase().includes(wantKey),
+			)
 		: browsers.find((b) => b.launchable);
 	if (!chosen) {
-		console.error(`browser-batch launch: no match for --browser "${browserKey}". Available:\n${table(browsers)}`);
+		console.error(
+			`browser-batch launch: no match for --browser "${browserKey}". Available:\n${table(browsers)}`,
+		);
 		process.exit(1);
 	}
 	if (chosen.kind === "chrome-stable") {
@@ -99,7 +109,9 @@ export async function runLaunch(argv: string[]): Promise<void> {
 	}
 
 	if (!readMarker().chrome) {
-		console.error("Extension not staged yet — run `browser-batch install` first, then `launch`.");
+		console.error(
+			"Extension not staged yet — run `browser-batch install` first, then `launch`.",
+		);
 		process.exit(1);
 	}
 	if (!refs.length) {
@@ -109,9 +121,11 @@ export async function runLaunch(argv: string[]): Promise<void> {
 
 	let urls: string[];
 	try {
-		urls = resolveRefs(refs, repo);
+		urls = resolveRefs(refs, repo).map((u) => addGroupMarker(u, group));
 	} catch (err) {
-		console.error(`browser-batch launch: ${err instanceof Error ? err.message : err}`);
+		console.error(
+			`browser-batch launch: ${err instanceof Error ? err.message : err}`,
+		);
 		process.exit(1);
 	}
 
@@ -138,12 +152,16 @@ export async function runLaunch(argv: string[]): Promise<void> {
 		process.exit(1);
 	});
 	child.unref();
-	console.log(`Launched ${chosen.name} with dg-ai-extension + ${urls.length} tab(s) — they'll group as they load.`);
+	console.log(
+		`Launched ${chosen.name} with dg-ai-extension + ${urls.length} tab(s) — grouping into "${group}" as they load.`,
+	);
 }
 
 if (import.meta.main) {
 	runLaunch(process.argv.slice(2)).catch((err) => {
-		console.error(`browser-batch launch failed: ${err instanceof Error ? err.message : err}`);
+		console.error(
+			`browser-batch launch failed: ${err instanceof Error ? err.message : err}`,
+		);
 		process.exit(1);
 	});
 }
