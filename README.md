@@ -27,17 +27,17 @@ One-time guided setup of the companion browser extension:
 /dg:browser-batch install
 ```
 
-Open a batch of PRs/URLs in your **default** browser, grouped as tabs:
+Open a batch of PRs/URLs in your **default** browser, grouped into a named group:
 
 ```text
-/dg:browser-batch open work#1517 work#1518
+/dg:browser-batch open --group "Reviews" work#1517 work#1518
 ```
 
 Or cold-start a **Chromium** browser (Brave/Edge/Vivaldi) with the extension
 pre-loaded — no manual load step (`--list` shows what's installed):
 
 ```text
-/dg:browser-batch launch --browser brave-beta work#1517 work#1518
+/dg:browser-batch launch --browser brave-beta --group "PRs" work#1517 work#1518
 ```
 
 ### 🔗 Ref formats
@@ -49,10 +49,14 @@ pre-loaded — no manual load step (`--list` shows what's installed):
 
 ## 🧩 Extension
 
-The companion `dg-ai-extension` extension does the grouping browser-side.
-It's built with [WXT](https://wxt.dev) from `extension-src/` and targets Chrome,
-Edge, Brave, Vivaldi, and Firefox 139+ (grouping is feature-detected and skipped
-where unsupported). Grouping only happens in the profile where it's loaded.
+The companion `dg-ai-extension` does the grouping browser-side, built with
+[WXT](https://wxt.dev) from `extension-src/` and targeting Chrome, Edge, Brave,
+Vivaldi, and Firefox 139+ (grouping is feature-detected, skipped where absent).
+
+Grouping is **opt-in per batch**: `open`/`launch` append a `#_tab_group=<name>`
+marker to each URL, the extension groups those tabs into `<name>` and strips the
+marker. Tabs you open by hand are never grouped. Group color is set in the
+extension's Options (default blue); the name comes from `--group` (default `PRs`).
 
 ## 🛠 Development
 

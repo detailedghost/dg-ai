@@ -10,14 +10,15 @@ import { spawn } from "node:child_process";
 import { runInstall } from "./install";
 import { runLaunch } from "./launch";
 import { isWSL } from "./lib";
+import { addGroupMarker } from "./marker";
 import { loadConfig, resolveRef } from "./refs";
 
 const USAGE = `usage: browser-batch <command> [args]
-  open    [--repo owner/repo] [--print] <ref> ...   open + group a batch of PRs/URLs
-  install [chrome|firefox] [--local]                stage the extension + guided load
-  launch  [--browser <key>] [--list] <ref> ...      launch a Chromium browser w/ the extension
+  open    [--repo owner/repo] [--group <name>] [--print] <ref> ...  open + group a batch
+  install [chrome|firefox] [--local]                               stage the extension + guided load
+  launch  [--browser <key>] [--group <name>] [--list] <ref> ...    launch a Chromium browser w/ the extension
 
-refs: full URL | owner/repo#num | alias#num | bare num (with --repo)`;
+refs: full URL | owner/repo#num | alias#num | bare num (with --repo). Default group name: PRs`;
 
 /** Ordered [command, argsBuilder] openers to try for this platform. */
 function openers(): Array<[string, (url: string) => string[]]> {
@@ -54,13 +55,15 @@ function tryOpen(url: string): Promise<boolean> {
 
 async function runOpen(argv: string[]): Promise<void> {
 	const usage =
-		"usage: browser-batch open [--repo owner/repo] [--print] <url | owner/repo#num | alias#num | num> ...";
+		"usage: browser-batch open [--repo owner/repo] [--group <name>] [--print] <url | owner/repo#num | alias#num | num> ...";
 	const refs: string[] = [];
 	let repo: string | undefined;
+	let group = "PRs";
 	let printOnly = false;
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === "--repo" || a === "-R") repo = argv[++i];
+		else if (a === "--group" || a === "-g") group = argv[++i];
 		else if (a === "--print") printOnly = true;
 		else if (a === "-h" || a === "--help") {
 			console.log(usage);
@@ -75,7 +78,8 @@ async function runOpen(argv: string[]): Promise<void> {
 	const cfg = loadConfig();
 	let urls: string[];
 	try {
-		urls = refs.map((r) => resolveRef(r, cfg, repo));
+		// Marker tells the extension to group these tabs into `group`, then strip it.
+		urls = refs.map((r) => addGroupMarker(resolveRef(r, cfg, repo), group));
 	} catch (err) {
 		console.error(`browser-batch: ${err instanceof Error ? err.message : err}`);
 		process.exit(1);
@@ -90,7 +94,7 @@ async function runOpen(argv: string[]): Promise<void> {
 		console.log(`${ok ? "opened" : "FAILED"}: ${url}`);
 	}
 	console.log(
-		`\n${urls.length} tab(s) requested — the dg-ai-extension extension will group them.`,
+		`\n${urls.length} tab(s) requested — dg-ai-extension will group them into "${group}".`,
 	);
 }
 
