@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>dg-ai-browser-batch — Options</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+      label { display: block; margin: 1rem 0 0.25rem; font-weight: 600; }
+      textarea, input, select { width: 100%; padding: 0.4rem; font: inherit; box-sizing: border-box; }
+      textarea { height: 6rem; font-family: monospace; }
+      .row { display: flex; gap: 1rem; }
+      .row > div { flex: 1; }
+      button { margin-top: 1.25rem; padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
+      #status { margin-left: 0.75rem; color: green; }
+      small { color: #666; font-weight: 400; }
+    </style>
+  </head>
+  <body>
+    <h1>dg-ai-browser-batch</h1>
+    <label for="patterns">URL patterns <small>(one glob per line — <code>*</code> and <code>?</code> wildcards)</small></label>
+    <textarea id="patterns"></textarea>
+    <div class="row">
+      <div>
+        <label for="title">Group title</label>
+        <input id="title" type="text" />
+      </div>
+      <div>
+        <label for="color">Group color</label>
+        <select id="color">
+          <option>grey</option><option>blue</option><option>red</option>
+          <option>yellow</option><option>green</option><option>pink</option>
+          <option>purple</option><option>cyan</option><option>orange</option>
+        </select>
+      </div>
+    </div>
+    <button id="save" type="button">Save</button><span id="status"></span>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+	"name": "dg",
+	"version": "0.1.0",
+	"description": "detailedghost's personal Claude Code utilities.",
+	"author": { "name": "Dante Burgos" },
+	"repository": "https://github.com/detailedghost/dg",
+	"license": "MIT",
+	"keywords": ["utilities", "browser", "tabs"]
+}

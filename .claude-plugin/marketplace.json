@@ -1,0 +1,11 @@
+{
+	"name": "detailedghost",
+	"owner": { "name": "Dante Burgos" },
+	"plugins": [
+		{
+			"name": "dg",
+			"source": ".",
+			"description": "detailedghost's personal Claude Code utilities."
+		}
+	]
+}
