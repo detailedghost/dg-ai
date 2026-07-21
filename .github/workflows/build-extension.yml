@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - feat/wxt-extension  # TEMP: exercise CI + release on this branch; revert before merge
     paths:
       - extension-src/**
       - skills/browser-batch/**
