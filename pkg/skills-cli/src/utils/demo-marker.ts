@@ -2,7 +2,7 @@
  * Append the `_demo` marker the dg-ai-extension consumes to play a guided tour.
  * The full tour script rides in the URL fragment as base64url(JSON) so the server
  * never sees it, it's parser-safe (no `=`/`&`), and the extension strips it after
- * loading. Mirrors extension-src/lib/demo-marker.ts (separate build roots).
+ * loading. Mirrors pkg/extension/utils/demo-marker.ts (separate build roots).
  */
 
 export const DEMO_MARKER_KEY = "_demo";

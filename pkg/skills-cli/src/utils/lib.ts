@@ -155,26 +155,34 @@ export function versionGte(a: string, b: string): boolean {
 
 type Release = {
 	tag_name: string;
+	draft: boolean;
 	assets: { name: string; browser_download_url: string }[];
 };
 
-/** Download the newest release's asset for `target` to a temp .zip. */
+/**
+ * Download the newest extension release's asset for `target` to a temp .zip.
+ * The repo also publishes skills-v* releases (CLI binaries), so we can't use
+ * /releases/latest — it resolves across all tags. Filter to ext-v* tags, which
+ * are the only ones carrying the -chrome/-firefox zips.
+ */
 export async function downloadReleaseAsset(
 	target: Target,
 ): Promise<{ zip: string; version: string }> {
 	const headers = { "User-Agent": "dg-ai-extension" };
 	const res = await fetch(
-		`https://api.github.com/repos/${REPO}/releases/latest`,
+		`https://api.github.com/repos/${REPO}/releases?per_page=30`,
 		{ headers },
 	);
-	if (!res.ok)
-		throw new Error(`GitHub API ${res.status} fetching latest release`);
-	const rel = (await res.json()) as Release;
+	if (!res.ok) throw new Error(`GitHub API ${res.status} listing releases`);
+	const releases = (await res.json()) as Release[];
+	// /releases is newest-first, so the first ext-v* tag is the latest extension release.
+	const rel = releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
+	if (!rel) throw new Error("no ext-v* release found");
 	const asset = rel.assets.find((a) => a.name.endsWith(`-${target}.zip`));
 	if (!asset) throw new Error(`no ${target} asset in release ${rel.tag_name}`);
 	const dl = await fetch(asset.browser_download_url, { headers });
 	if (!dl.ok) throw new Error(`asset download failed: HTTP ${dl.status}`);
 	const zip = join(tmpdir(), asset.name);
 	writeFileSync(zip, Buffer.from(await dl.arrayBuffer()));
-	return { zip, version: rel.tag_name.replace(/^v/, "") };
+	return { zip, version: rel.tag_name.replace(/^ext-v/, "") };
 }
