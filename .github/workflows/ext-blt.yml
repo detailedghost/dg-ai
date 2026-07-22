@@ -1,13 +1,14 @@
-name: extension-ci
+name: Ext - Build, Lint, and Test
 
 on:
   pull_request:
     paths:
       - extension-src/**
-      - .github/workflows/extension-ci.yml
+      - .github/workflows/ext-blt.yml
+  workflow_call:
 
 jobs:
-  ci:
+  blt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,13 +17,13 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install deps
+      - name: Install
         working-directory: extension-src
         run: bun install --frozen-lockfile
 
-      - name: Type-check
+      - name: Lint
         working-directory: extension-src
-        run: bun run compile
+        run: bun run lint
 
       - name: Test
         working-directory: extension-src
