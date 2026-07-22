@@ -2,3 +2,4 @@ node_modules/
 .wxt/
 .output/
 stats.html
+public/ort/

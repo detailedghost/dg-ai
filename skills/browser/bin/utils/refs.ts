@@ -1,4 +1,4 @@
-/** Resolve PR/URL refs to GitHub URLs. Shared by the `open` and `launch` subcommands. */
+/** Resolve PR/URL refs to GitHub URLs. Shared by `batch-open` and `launch`. */
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";

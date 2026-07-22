@@ -1,0 +1,33 @@
+name: extension-ci
+
+on:
+  pull_request:
+    paths:
+      - extension-src/**
+      - .github/workflows/extension-ci.yml
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        working-directory: extension-src
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        working-directory: extension-src
+        run: bun run compile
+
+      - name: Test
+        working-directory: extension-src
+        run: bun test
+
+      - name: Build
+        working-directory: extension-src
+        run: bun run build

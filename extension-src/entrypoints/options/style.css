@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+/*
+ * Theme tokens. Light is the base; dark overrides via prefers-color-scheme.
+ * Component classes below reference these, so the brutalist-neon look stays
+ * consistent in both modes from one source.
+ */
+:root {
+	--bg: #f4f4f5;
+	--panel: #ffffff;
+	--ink: #0a0a0a;
+	--muted: #52525b;
+	--line: #0a0a0a;
+	--accent: #0891b2;
+	--accent2: #c026d3;
+	--code-bg: #f4f4f5;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0a0a0a;
+		--panel: #111111;
+		--ink: #e8e8e8;
+		--muted: #8a8a8a;
+		--line: #e8e8e8;
+		--accent: #00f0ff;
+		--accent2: #ff2bd6;
+		--code-bg: #000000;
+	}
+}
+
+@layer base {
+	body {
+		@apply mx-auto max-w-2xl px-5 pt-10 pb-16 font-mono;
+		background: var(--bg);
+		color: var(--ink);
+		min-height: 100vh;
+	}
+	code {
+		@apply px-1;
+		background: var(--code-bg);
+		color: var(--accent);
+		border: 0.0625rem solid var(--line);
+	}
+}
+
+@layer components {
+	.neon-title {
+		@apply text-4xl font-bold uppercase tracking-wide leading-none;
+		color: var(--ink);
+		text-shadow:
+			0 0 0.625rem var(--accent),
+			0 0 0.125rem var(--accent);
+	}
+	.sub {
+		@apply text-sm;
+		color: var(--muted);
+	}
+	.navlink {
+		@apply text-xs uppercase tracking-wider underline underline-offset-4;
+		color: var(--accent);
+	}
+	.navlink:hover {
+		color: var(--accent2);
+	}
+	.panel {
+		@apply border-2 p-5 mb-7;
+		border-color: var(--line);
+		background: var(--panel);
+		box-shadow: 0.375rem 0.375rem 0 var(--accent);
+	}
+	.panel-alt {
+		box-shadow: 0.375rem 0.375rem 0 var(--accent2);
+	}
+	.sec-h {
+		@apply text-xs uppercase mb-2 font-semibold;
+		letter-spacing: 0.18em;
+		color: var(--accent);
+	}
+	.panel-alt .sec-h {
+		color: var(--accent2);
+	}
+	.note {
+		@apply text-sm mb-4;
+		color: var(--muted);
+	}
+	.lbl {
+		@apply block text-xs uppercase mt-3 mb-1.5;
+		letter-spacing: 0.12em;
+	}
+	.field {
+		@apply w-full border-2 p-2 text-sm;
+		background: var(--bg);
+		color: var(--ink);
+		border-color: var(--line);
+	}
+	.field:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 0.125rem var(--accent);
+	}
+	.btn {
+		@apply mt-4 cursor-pointer border-2 px-5 py-2 text-sm uppercase tracking-wide;
+		border-color: var(--line);
+		background: transparent;
+		color: var(--ink);
+	}
+	.btn:hover:not(:disabled) {
+		background: var(--accent);
+		color: #000;
+		border-color: var(--accent);
+	}
+	.btn:disabled {
+		opacity: 0.5;
+		cursor: progress;
+	}
+	.status {
+		@apply mt-3 block text-sm;
+		min-height: 1em;
+		color: var(--accent);
+	}
+	.status.err {
+		color: var(--accent2);
+	}
+	.klist {
+		@apply mt-1 space-y-2 text-sm;
+	}
+	.klist a {
+		@apply underline underline-offset-2;
+		color: var(--accent);
+	}
+	.klist a:hover {
+		color: var(--accent2);
+	}
+}

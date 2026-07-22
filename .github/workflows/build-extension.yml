@@ -10,7 +10,7 @@ on:
       - main
     paths:
       - extension-src/**
-      - skills/browser-batch/**
+      - skills/browser/**
       - .github/workflows/build-extension.yml
 
 permissions:

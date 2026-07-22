@@ -3,27 +3,166 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>dg-ai-extension — Options</title>
-    <style>
-      body { font: 14px system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
-      label { display: block; margin: 1rem 0 0.25rem; font-weight: 600; }
-      select { width: 100%; padding: 0.4rem; font: inherit; box-sizing: border-box; }
-      button { margin-top: 1.25rem; padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
-      #status { margin-left: 0.75rem; color: green; }
-      p { color: #666; }
-    </style>
+    <title>DeeGee — Settings</title>
   </head>
   <body>
-    <h1>dg-ai-extension</h1>
-    <p>Tabs are grouped only when opened with a <code>_tab_group</code> marker
-       (the CLI adds it). The group name comes from that marker; here you pick the color.</p>
-    <label for="color">Group color</label>
-    <select id="color">
-      <option>grey</option><option>blue</option><option>red</option>
-      <option>yellow</option><option>green</option><option>pink</option>
-      <option>purple</option><option>cyan</option><option>orange</option>
-    </select>
-    <button id="save" type="button">Save</button><span id="status"></span>
+    <header class="mb-8">
+      <div class="flex items-center gap-3">
+        <img src="/icon/48.png" alt="DeeGee ghost logo" class="h-11 w-11" />
+        <h1 class="neon-title">DeeGee</h1>
+      </div>
+      <p class="sub mt-2">
+        // local-first browser tooling &mdash; no cloud, no tracking
+      </p>
+      <nav class="mt-3 flex gap-4">
+        <a href="#privacy" class="navlink">Privacy</a>
+        <a href="#kudos" class="navlink">Kudos</a>
+      </nav>
+    </header>
+
+    <section class="panel">
+      <h2 class="sec-h">Tab grouping</h2>
+      <p class="note">
+        Tabs group only when opened with a <code>_tab_group</code> marker (the
+        CLI adds it). The name comes from that marker; pick the color here.
+      </p>
+      <label class="lbl" for="color">Group color</label>
+      <select class="field" id="color">
+        <option value="random">random (per group)</option>
+        <option>grey</option>
+        <option>blue</option>
+        <option>red</option>
+        <option>yellow</option>
+        <option>green</option>
+        <option>pink</option>
+        <option>purple</option>
+        <option>cyan</option>
+        <option>orange</option>
+      </select>
+    </section>
+
+    <section class="panel">
+      <h2 class="sec-h">Demo narration &mdash; video mode</h2>
+      <p class="note">
+        Voice for <code>/dg:demo video</code> recordings, spoken locally by
+        Kokoro TTS. The model downloads once (~86&nbsp;MB) and is cached.
+      </p>
+      <label class="lbl" for="narration">Recording mode</label>
+      <select class="field" id="narration"></select>
+      <label class="lbl" for="voice">Narration voice</label>
+      <select class="field" id="voice"></select>
+      <button class="btn" id="save" type="button">Save</button>
+      <div class="status" id="status"></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="sec-h">Test narration</h2>
+      <p class="note">
+        Loads Kokoro and generates a sample with the selected voice &mdash; a
+        quick check that local TTS works here. Preview it, then download the
+        <code>.webm</code>.
+      </p>
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="btn" id="testTts" type="button">Test narration</button>
+        <button class="btn" id="ttsDownload" type="button" hidden>
+          Download .webm
+        </button>
+      </div>
+      <div class="status" id="ttsStatus"></div>
+      <audio class="mt-4 w-full" id="ttsAudio" controls>
+        <track kind="captions" />
+      </audio>
+    </section>
+
+    <section class="panel panel-alt" id="privacy">
+      <h2 class="sec-h">Privacy</h2>
+      <p class="note">
+        Everything runs on your machine. No accounts, no keys, no tracking.
+      </p>
+      <ul class="klist list-disc pl-5">
+        <li>
+          <b>No telemetry.</b> The extension sends no analytics, tracking, or
+          usage data &mdash; ever.
+        </li>
+        <li>
+          <b>Narration is local.</b> Kokoro TTS runs in your browser; your text
+          and audio never leave your machine.
+        </li>
+        <li>
+          <b>Recordings stay local.</b> Demo videos save straight to your
+          Downloads; nothing is uploaded.
+        </li>
+        <li>
+          <b>Only network use:</b> a one-time download of the open-source voice
+          model from Hugging Face, then cached offline.
+        </li>
+        <li>
+          <b>Settings stay on-device</b> in your browser's extension storage. No
+          cloud sync of your data by us.
+        </li>
+      </ul>
+    </section>
+
+    <section class="panel panel-alt" id="kudos">
+      <h2 class="sec-h">Kudos</h2>
+      <p class="note">
+        DeeGee stands on excellent open-source work. Thank you to:
+      </p>
+      <ul class="klist list-disc pl-5">
+        <li>
+          <a href="https://wxt.dev" target="_blank" rel="noopener">WXT</a>
+          &mdash; the web-extension framework.
+        </li>
+        <li>
+          <a
+            href="https://github.com/hexgrad/kokoro"
+            target="_blank"
+            rel="noopener"
+            >Kokoro</a
+          >
+          &amp;
+          <a
+            href="https://www.npmjs.com/package/kokoro-js"
+            target="_blank"
+            rel="noopener"
+            >kokoro-js</a
+          >
+          &mdash; local neural text-to-speech.
+        </li>
+        <li>
+          <a
+            href="https://github.com/huggingface/transformers.js"
+            target="_blank"
+            rel="noopener"
+            >Transformers.js</a
+          >
+          &mdash; in-browser model runtime.
+        </li>
+        <li>
+          <a
+            href="https://github.com/microsoft/onnxruntime"
+            target="_blank"
+            rel="noopener"
+            >ONNX Runtime Web</a
+          >
+          &mdash; the wasm inference backend.
+        </li>
+        <li>
+          <a
+            href="https://github.com/tj/commander.js"
+            target="_blank"
+            rel="noopener"
+            >Commander.js</a
+          >
+          &mdash; the CLI framework.
+        </li>
+        <li>
+          <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a>
+          &mdash; the runtime the CLI runs on.
+        </li>
+      </ul>
+    </section>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

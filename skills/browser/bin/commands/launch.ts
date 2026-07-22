@@ -1,8 +1,7 @@
-#!/usr/bin/env bun
 /**
- * launch — start a selectable Chromium browser with the dg-ai-extension
- * extension side-loaded (`--load-extension`) plus a batch of tabs, so PRs open
- * grouped without a manual chrome://extensions step.
+ * `launch` — start a selectable Chromium browser with the dg-ai-extension
+ * side-loaded (`--load-extension`) plus a batch of tabs, so PRs open grouped
+ * without a manual chrome://extensions step.
  *
  * The flag only applies on a cold start of the profile, so the target browser
  * must be fully closed first. Chrome stable disabled the flag — use Brave/Edge.
@@ -10,13 +9,19 @@
  */
 
 import { spawn } from "node:child_process";
-import { type DetectedBrowser, detectBrowsers } from "./detect";
-import { extensionDest, isWSL, readMarker, run } from "./lib";
-import { addGroupMarker } from "./marker";
-import { resolveRefs } from "./refs";
+import type { Command } from "commander";
+import { type DetectedBrowser, detectBrowsers } from "../utils/detect";
+import { extensionDest, isWSL, readMarker, run } from "../utils/lib";
+import { addGroupMarker } from "../utils/marker";
+import { resolveRefs } from "../utils/refs";
 
-const USAGE =
-	"usage: browser-batch launch [--browser <key>] [--group <name>] [--list] [--dry-run] [--repo owner/repo] <ref> ...";
+type Opts = {
+	browser?: string;
+	repo?: string;
+	group: string;
+	list?: boolean;
+	dryRun?: boolean;
+};
 
 function table(browsers: DetectedBrowser[]): string {
 	return browsers
@@ -48,39 +53,20 @@ function isRunning(exe: string): boolean {
 	}
 }
 
-export async function runLaunch(argv: string[]): Promise<void> {
-	let browserKey: string | undefined;
-	let repo: string | undefined;
-	let group = "PRs";
-	let listOnly = false;
-	let dryRun = false;
-	const refs: string[] = [];
-	for (let i = 0; i < argv.length; i++) {
-		const a = argv[i];
-		if (a === "--browser" || a === "-b") browserKey = argv[++i];
-		else if (a === "--repo" || a === "-R") repo = argv[++i];
-		else if (a === "--group" || a === "-g") group = argv[++i];
-		else if (a === "--list") listOnly = true;
-		else if (a === "--dry-run") dryRun = true;
-		else if (a === "-h" || a === "--help") {
-			console.log(USAGE);
-			return;
-		} else refs.push(a);
-	}
-
+async function launch(refs: string[], opts: Opts): Promise<void> {
 	const browsers = detectBrowsers();
 	if (!browsers.length) {
 		console.error(
-			"browser-batch launch: no browsers detected (launch supports Windows/WSL for now).",
+			"launch: no browsers detected (launch supports Windows/WSL for now).",
 		);
 		process.exit(1);
 	}
-	if (listOnly) {
+	if (opts.list) {
 		console.log(`Detected browsers:\n${table(browsers)}`);
 		return;
 	}
 
-	const wantKey = browserKey?.toLowerCase();
+	const wantKey = opts.browser?.toLowerCase();
 	const chosen = wantKey
 		? browsers.find(
 				(b) => b.key === wantKey || b.name.toLowerCase().includes(wantKey),
@@ -88,7 +74,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 		: browsers.find((b) => b.launchable);
 	if (!chosen) {
 		console.error(
-			`browser-batch launch: no match for --browser "${browserKey}". Available:\n${table(browsers)}`,
+			`launch: no match for --browser "${opts.browser}". Available:\n${table(browsers)}`,
 		);
 		process.exit(1);
 	}
@@ -96,38 +82,32 @@ export async function runLaunch(argv: string[]): Promise<void> {
 		console.error(
 			`${chosen.name} disabled --load-extension on the stable channel, so it can't be scripted.\n` +
 				"Pick a Chromium browser like Brave or Edge (see `launch --list`), or run\n" +
-				"`browser-batch install` and load unpacked into Chrome manually once.",
+				"`install` and load unpacked into Chrome manually once.",
 		);
 		process.exit(1);
 	}
 	if (chosen.kind !== "chromium") {
 		console.error(
 			`${chosen.name} isn't supported by launch (Chromium only). For Firefox, run\n` +
-				"`browser-batch install firefox` and load it as a temporary add-on.",
+				"`install firefox` and load it as a temporary add-on.",
 		);
 		process.exit(1);
 	}
 
 	if (!readMarker().chrome) {
 		console.error(
-			"Extension not staged yet — run `browser-batch install` first, then `launch`.",
+			"Extension not staged yet — run `install` first, then `launch`.",
 		);
 		process.exit(1);
 	}
 	if (!refs.length) {
-		console.error(USAGE);
+		console.error("launch: at least one ref is required (or use --list).");
 		process.exit(1);
 	}
 
-	let urls: string[];
-	try {
-		urls = resolveRefs(refs, repo).map((u) => addGroupMarker(u, group));
-	} catch (err) {
-		console.error(
-			`browser-batch launch: ${err instanceof Error ? err.message : err}`,
-		);
-		process.exit(1);
-	}
+	const urls = resolveRefs(refs, opts.repo).map((u) =>
+		addGroupMarker(u, opts.group),
+	);
 
 	if (isRunning(chosen.exe)) {
 		console.error(
@@ -141,7 +121,7 @@ export async function runLaunch(argv: string[]): Promise<void> {
 	const exeToSpawn = isWSL() ? run("wslpath", ["-u", chosen.exe]) : chosen.exe;
 	const args = [`--load-extension=${dest.printPath}`, ...urls];
 
-	if (dryRun) {
+	if (opts.dryRun) {
 		console.log(`[dry-run] ${exeToSpawn} ${args.join(" ")}`);
 		return;
 	}
@@ -153,15 +133,21 @@ export async function runLaunch(argv: string[]): Promise<void> {
 	});
 	child.unref();
 	console.log(
-		`Launched ${chosen.name} with dg-ai-extension + ${urls.length} tab(s) — grouping into "${group}" as they load.`,
+		`Launched ${chosen.name} with dg-ai-extension + ${urls.length} tab(s) — grouping into "${opts.group}" as they load.`,
 	);
 }
 
-if (import.meta.main) {
-	runLaunch(process.argv.slice(2)).catch((err) => {
-		console.error(
-			`browser-batch launch failed: ${err instanceof Error ? err.message : err}`,
-		);
-		process.exit(1);
-	});
+export function registerLaunch(program: Command): void {
+	program
+		.command("launch")
+		.description(
+			"cold-start a Chromium browser with the extension side-loaded + open a batch",
+		)
+		.argument("[refs...]", "URL | owner/repo#num | alias#num | bare num")
+		.option("-b, --browser <key>", "browser key (see --list)")
+		.option("-R, --repo <owner/repo>", "default repo for bare PR numbers")
+		.option("-g, --group <name>", "tab group name", "PRs")
+		.option("--list", "list detected browsers and exit")
+		.option("--dry-run", "print the launch command without running it")
+		.action((refs: string[], opts: Opts) => launch(refs, opts));
 }
