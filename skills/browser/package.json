@@ -1,9 +1,0 @@
-{
-	"name": "dg-browser-cli",
-	"private": true,
-	"type": "module",
-	"description": "CLI for the DeeGee /dg:browser skill (tab batching + guided demo tours).",
-	"dependencies": {
-		"commander": "^14.0.0"
-	}
-}

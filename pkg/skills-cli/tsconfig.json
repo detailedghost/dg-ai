@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"types": ["bun-types"],
+		"paths": {
+			"@dg/common": ["../common/src/index.ts"],
+			"@dg/common/*": ["../common/src/*"]
+		}
+	},
+	"include": ["src/**/*", "__tests__/**/*"]
+}
