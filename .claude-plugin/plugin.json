@@ -6,5 +6,5 @@
 	"repository": "https://github.com/detailedghost/dg-ai",
 	"license": "MIT",
 	"keywords": ["utilities", "browser", "tabs", "demo"],
-	"skills": "pkg/skills"
+	"skills": ["./pkg/skills"]
 }

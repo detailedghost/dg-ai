@@ -34,7 +34,7 @@ the `/dg:*` skills are available.
 The `dg-browser` CLI depends on `commander`. Install once:
 
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}/skills/browser" && bun install
+cd "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli" && bun install
 ```
 
 (In a source checkout, use the repo path instead of `${CLAUDE_PLUGIN_ROOT}`.)
@@ -45,13 +45,13 @@ Run the installer — it stages the extension and prints the exact **Load
 unpacked** path:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
 ```
 
 - Default target is **chrome** (also serves Brave/Edge/Vivaldi). For Firefox:
   `install firefox`.
 - Add `--local` to **build from source** (requires a repo checkout with
-  `extension-src/`); without it, the installer downloads the CI-built asset from
+  `pkg/extension/`); without it, the installer downloads the CI-built asset from
   the latest GitHub release.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
   relay the printed steps to the user:
@@ -60,7 +60,7 @@ bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
   1. Click **Load unpacked** and select the printed path.
 
 Full per-OS detail (WSL → Windows profile paths, native Windows, macOS/Linux):
-`skills/browser/references/install.md`.
+`pkg/skills/browser/references/install.md`.
 
 ### Alternative: cold-start with the extension pre-loaded
 
@@ -69,14 +69,14 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-DG="${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts"
+DG="${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts"
 bun "$DG" launch --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 4 — Verify
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" --help
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" --help
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm

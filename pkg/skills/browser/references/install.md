@@ -9,7 +9,7 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
 ```
 
 The installer copies the extension to a Windows-native directory:
@@ -52,7 +52,7 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
 ```
 
 The installer copies the extension to:
@@ -69,7 +69,7 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
 ```
 
 The installer copies the extension to:
