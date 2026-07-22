@@ -42,15 +42,15 @@ function copyDir(src: string, dest: string): void {
 }
 
 function localOutputDir(target: Target): string | undefined {
-	const outRoot = join(repoRoot(), "extension-src", ".output");
+	const outRoot = join(repoRoot(), "pkg", "extension", ".output");
 	if (!existsSync(outRoot)) return undefined;
 	const dir = readdirSync(outRoot).find((d) => d.startsWith(`${target}-`));
 	return dir ? join(outRoot, dir) : undefined;
 }
 
 function buildLocally(target: Target): string {
-	const src = join(repoRoot(), "extension-src");
-	if (!existsSync(src)) throw new Error("no extension-src to build from");
+	const src = join(repoRoot(), "pkg", "extension");
+	if (!existsSync(src)) throw new Error("no pkg/extension to build from");
 	if (!existsSync(join(src, "node_modules")))
 		run("bun", ["--cwd", src, "install"]);
 	run("bun", [
@@ -145,7 +145,7 @@ export function registerInstall(program: Command): void {
 			"[target]",
 			"chrome (default; serves Brave/Edge/Vivaldi) | firefox",
 		)
-		.option("--local", "build from extension-src instead of the GitHub release")
+		.option("--local", "build from pkg/extension instead of the GitHub release")
 		.action(async (target: string | undefined, opts: { local?: boolean }) => {
 			await install(target === "firefox" ? "firefox" : "chrome", !!opts.local);
 		});
