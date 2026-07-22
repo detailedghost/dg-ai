@@ -1,0 +1,74 @@
+name: Skills - Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - pkg/skills-cli/**
+      - pkg/common/**
+      - .github/workflows/skills-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  blt:
+    uses: ./.github/workflows/skills-blt.yml
+
+  release:
+    needs: blt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Read version
+        id: ver
+        working-directory: pkg/skills-cli
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build binaries (3 platforms)
+        working-directory: pkg/skills-cli
+        run: |
+          bun build src/index.ts --compile --target=bun-linux-x64   --outfile dist/dg-skills-linux-x64
+          bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/dg-skills-macos-arm64
+          bun build src/index.ts --compile --target=bun-windows-x64  --outfile dist/dg-skills-windows-x64.exe
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          tag="skills-v${version}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists — nothing to publish."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Skills CLI $tag" \
+            --notes "Standalone dg-skills-cli binaries ($tag)." \
+            pkg/skills-cli/dist/dg-skills-linux-x64 \
+            pkg/skills-cli/dist/dg-skills-macos-arm64 \
+            pkg/skills-cli/dist/dg-skills-windows-x64.exe
+
+      - name: Clean up on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf pkg/skills-cli/dist
+          version=$(node -p "require('./pkg/skills-cli/package.json').version" 2>/dev/null || echo "")
+          if [ -n "$version" ]; then
+            tag="skills-v${version}"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
+          fi

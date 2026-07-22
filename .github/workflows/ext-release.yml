@@ -1,6 +1,6 @@
 name: Ext - Release
 
-# Builds and publishes a vX.X.X release whenever extension or browser-skill
+# Builds and publishes an ext-vX.X.X release whenever extension or browser-skill
 # source changes land on master. Runs BLT first so a broken build never ships.
 on:
   workflow_dispatch:
@@ -8,8 +8,8 @@ on:
     branches:
       - master
     paths:
-      - extension-src/**
-      - skills/browser/**
+      - pkg/extension/**
+      - pkg/skills-cli/**
       - .github/workflows/ext-release.yml
 
 permissions:
@@ -30,26 +30,25 @@ jobs:
           bun-version: latest
 
       - name: Install
-        working-directory: extension-src
+        working-directory: pkg/extension
         run: bun install --frozen-lockfile
 
       - name: Build + zip (chrome + firefox)
-        working-directory: extension-src
+        working-directory: pkg/extension
         run: |
           bun run zip
           bun run zip:firefox
 
       - name: Read extension version
         id: ver
-        run: echo "version=$(node -p "require('./extension-src/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p "require('./pkg/extension/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Publish release (skip if version already exists)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${{ steps.ver.outputs.version }}"
-          tag="v${version}"
-          out="extension-src/.output"
+          tag="ext-v${version}"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $tag already exists — build validated, nothing to publish."
             exit 0
@@ -58,18 +57,18 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "$tag" \
             --notes "Automated build of the dg-ai-extension ($tag)." \
-            "$out/dg-ai-extension-${version}-chrome.zip" \
-            "$out/dg-ai-extension-${version}-firefox.zip"
+            "pkg/extension/.output/dg-ai-extension-${version}-chrome.zip" \
+            "pkg/extension/.output/dg-ai-extension-${version}-firefox.zip"
 
       - name: Clean up on failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          rm -rf extension-src/.output
-          version=$(node -p "require('./extension-src/package.json').version" 2>/dev/null || echo "")
+          rm -rf pkg/extension/.output
+          version=$(node -p "require('./pkg/extension/package.json').version" 2>/dev/null || echo "")
           if [ -n "$version" ]; then
-            tag="v${version}"
+            tag="ext-v${version}"
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
             gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
           fi
