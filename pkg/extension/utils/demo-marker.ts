@@ -5,7 +5,7 @@
  * Mirrors skills/browser-batch/bin/demo-marker.ts (separate build roots can't share).
  */
 
-import type { TourScript } from "@/lib/demo-types";
+import type { TourScript } from "@dg/common";
 
 export const DEMO_MARKER_KEY = "_demo";
 

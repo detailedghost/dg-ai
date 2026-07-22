@@ -6,6 +6,10 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
+	"scripts": {
+		"lint": "tsc --noEmit",
+		"test": "bun test"
+	},
 	"devDependencies": {
 		"bun-types": "latest",
 		"typescript": "^5"
