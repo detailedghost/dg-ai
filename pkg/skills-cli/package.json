@@ -1,0 +1,20 @@
+{
+	"name": "@dg/skills-cli",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "CLI framework for dg AI skills (browser, demo, and future skills).",
+	"scripts": {
+		"build": "bun build src/index.ts --compile --outfile dist/dg-skills",
+		"lint": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@dg/common": "workspace:*",
+		"commander": "^14.0.0"
+	},
+	"devDependencies": {
+		"bun-types": "latest",
+		"typescript": "^5"
+	}
+}

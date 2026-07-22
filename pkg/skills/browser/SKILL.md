@@ -13,12 +13,12 @@ companion `dg-ai-extension` web extension.
 All commands run `bun`. If it's missing, `bun --version` fails — tell the user to
 install Bun from https://bun.sh instead of surfacing a raw error. The CLI depends
 on `commander`; if a run reports it missing, run `bun install` once in
-`${CLAUDE_PLUGIN_ROOT}/skills/browser`.
+`${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli`.
 
 Run everything through the dispatcher:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" <command> <args>
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" <command> <args>
 ```
 
 ## Commands
