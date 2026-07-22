@@ -1,6 +1,19 @@
 {
 	"extends": "./.wxt/tsconfig.json",
 	"compilerOptions": {
-		"types": ["bun-types", "chrome"]
+		"baseUrl": ".",
+		"types": ["bun-types", "chrome"],
+		"paths": {
+			"@": ["."],
+			"@/*": ["./*"],
+			"~": ["."],
+			"~/*": ["./*"],
+			"@@": ["."],
+			"@@/*": ["./*"],
+			"~~": ["."],
+			"~~/*": ["./*"],
+			"@dg/common": ["../common/src/index.ts"],
+			"@dg/common/*": ["../common/src/*"]
+		}
 	}
 }
