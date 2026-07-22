@@ -4,7 +4,8 @@
  * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
- * checkout (dev) it falls back to a local `wxt build`.
+ * checkout (dev) it falls back to a local `wxt build`. It also refreshes the
+ * compiled dg-skills CLI binary (the release artifact the skills invoke).
  */
 
 import {
@@ -19,11 +20,15 @@ import {
 import { join } from "node:path";
 import type { Command } from "commander";
 import {
+	cliDest,
+	cliVersionFile,
 	downloadReleaseAsset,
 	extensionDest,
 	extractZip,
+	fetchCliBinary,
 	readMarker,
 	repoRoot,
+	resolveCliAsset,
 	run,
 	type Target,
 	versionGte,
@@ -87,6 +92,38 @@ function printSteps(target: Target, path: string): void {
 	console.log("5. Done.");
 }
 
+/** Download/refresh the compiled dg-skills binary; best-effort (warn, never throw). */
+async function installCli(): Promise<void> {
+	try {
+		const asset = await resolveCliAsset();
+		if (!asset) {
+			console.warn(
+				`⚠ no dg-skills binary for ${process.platform}-${process.arch}; skipping CLI refresh.`,
+			);
+			return;
+		}
+		const vf = cliVersionFile();
+		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
+		// The binary is large; skip the download when we're already current.
+		if (
+			installed &&
+			existsSync(cliDest()) &&
+			versionGte(installed, asset.version)
+		) {
+			console.log(`dg-skills CLI already current (v${installed}).`);
+			return;
+		}
+		const path = await fetchCliBinary(asset);
+		console.log(
+			`dg-skills CLI ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`,
+		);
+	} catch (err) {
+		console.warn(
+			`⚠ dg-skills CLI install skipped: ${err instanceof Error ? err.message : err}`,
+		);
+	}
+}
+
 async function install(target: Target, forceLocal: boolean): Promise<void> {
 	const dest = extensionDest(target);
 
@@ -120,6 +157,7 @@ async function install(target: Target, forceLocal: boolean): Promise<void> {
 		console.log(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
+		if (!forceLocal) await installCli();
 		return;
 	}
 	const isUpgrade = Boolean(markerVersion);
@@ -135,12 +173,17 @@ async function install(target: Target, forceLocal: boolean): Promise<void> {
 	}
 	writeMarkerEntry(target, version);
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
+
+	// Also keep the compiled CLI current (skip in --local dev, where we run source).
+	if (!forceLocal) await installCli();
 }
 
 export function registerInstall(program: Command): void {
 	program
 		.command("install")
-		.description("stage the dg-ai-extension for loading + print the load steps")
+		.description(
+			"stage the dg-ai-extension for loading + refresh the compiled dg-skills CLI",
+		)
 		.argument(
 			"[target]",
 			"chrome (default; serves Brave/Edge/Vivaldi) | firefox",

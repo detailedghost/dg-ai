@@ -6,7 +6,13 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -153,36 +159,118 @@ export function versionGte(a: string, b: string): boolean {
 	return true;
 }
 
-type Release = {
+export type Release = {
 	tag_name: string;
 	draft: boolean;
 	assets: { name: string; browser_download_url: string }[];
 };
 
+export type PickedAsset = { name: string; url: string; version: string };
+
+const UA = { "User-Agent": "dg-ai-extension" };
+
 /**
- * Download the newest extension release's asset for `target` to a temp .zip.
- * The repo also publishes skills-v* releases (CLI binaries), so we can't use
- * /releases/latest — it resolves across all tags. Filter to ext-v* tags, which
- * are the only ones carrying the -chrome/-firefox zips.
+ * The skills-v* release asset name for a platform+arch, or undefined if the
+ * combination isn't built. Kept in lockstep with skills-release.yml's matrix
+ * and bootstrap.sh/bootstrap.ps1's os/arch mapping.
  */
+export function cliAssetName(
+	platform: string,
+	arch: string,
+): string | undefined {
+	const os = { linux: "linux", darwin: "macos", win32: "windows" }[platform];
+	const cpu = { x64: "x64", arm64: "arm64" }[arch];
+	if (!os || !cpu) return undefined;
+	return `dg-skills-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
+}
+
+/**
+ * Newest ext-v* release's -TARGET.zip. /releases is newest-first; we filter to
+ * ext-v* because the repo also publishes skills-v* (CLI binaries) — a plain
+ * /releases/latest would resolve across all tags and miss the zips.
+ */
+export function pickExtAsset(
+	releases: Release[],
+	target: Target,
+): PickedAsset | undefined {
+	const rel = releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
+	const asset = rel?.assets.find((a) => a.name.endsWith(`-${target}.zip`));
+	if (!rel || !asset) return undefined;
+	return {
+		name: asset.name,
+		url: asset.browser_download_url,
+		version: rel.tag_name.replace(/^ext-v/, ""),
+	};
+}
+
+/** Newest skills-v* release's binary for platform+arch. */
+export function pickCliAsset(
+	releases: Release[],
+	platform: string,
+	arch: string,
+): PickedAsset | undefined {
+	const name = cliAssetName(platform, arch);
+	if (!name) return undefined;
+	const rel = releases.find(
+		(r) => r.tag_name.startsWith("skills-v") && !r.draft,
+	);
+	const asset = rel?.assets.find((a) => a.name === name);
+	if (!rel || !asset) return undefined;
+	return {
+		name: asset.name,
+		url: asset.browser_download_url,
+		version: rel.tag_name.replace(/^skills-v/, ""),
+	};
+}
+
+async function listReleases(): Promise<Release[]> {
+	const res = await fetch(
+		`https://api.github.com/repos/${REPO}/releases?per_page=30`,
+		{ headers: UA },
+	);
+	if (!res.ok) throw new Error(`GitHub API ${res.status} listing releases`);
+	return (await res.json()) as Release[];
+}
+
+/** Download the newest extension release's zip for `target` to a temp file. */
 export async function downloadReleaseAsset(
 	target: Target,
 ): Promise<{ zip: string; version: string }> {
-	const headers = { "User-Agent": "dg-ai-extension" };
-	const res = await fetch(
-		`https://api.github.com/repos/${REPO}/releases?per_page=30`,
-		{ headers },
-	);
-	if (!res.ok) throw new Error(`GitHub API ${res.status} listing releases`);
-	const releases = (await res.json()) as Release[];
-	// /releases is newest-first, so the first ext-v* tag is the latest extension release.
-	const rel = releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
-	if (!rel) throw new Error("no ext-v* release found");
-	const asset = rel.assets.find((a) => a.name.endsWith(`-${target}.zip`));
-	if (!asset) throw new Error(`no ${target} asset in release ${rel.tag_name}`);
-	const dl = await fetch(asset.browser_download_url, { headers });
+	const asset = pickExtAsset(await listReleases(), target);
+	if (!asset) throw new Error(`no ext-v* ${target} asset found`);
+	const dl = await fetch(asset.url, { headers: UA });
 	if (!dl.ok) throw new Error(`asset download failed: HTTP ${dl.status}`);
 	const zip = join(tmpdir(), asset.name);
 	writeFileSync(zip, Buffer.from(await dl.arrayBuffer()));
-	return { zip, version: rel.tag_name.replace(/^ext-v/, "") };
+	return { zip, version: asset.version };
+}
+
+/** Stable path for the compiled CLI binary (runs in the shell, so always local home). */
+export function cliDest(): string {
+	const name = process.platform === "win32" ? "dg-skills.exe" : "dg-skills";
+	return join(homedir(), ".dg", "bin", name);
+}
+
+/** Records the installed CLI version so `install` can skip a needless ~big re-download. */
+export function cliVersionFile(): string {
+	return join(homedir(), ".dg", "bin", ".dg-skills.version");
+}
+
+/** The newest skills-v* binary for this platform, or undefined if unbuilt/unavailable. */
+export function resolveCliAsset(): Promise<PickedAsset | undefined> {
+	return listReleases().then((r) =>
+		pickCliAsset(r, process.platform, process.arch),
+	);
+}
+
+/** Download a resolved CLI asset to cliDest() and stamp its version. */
+export async function fetchCliBinary(asset: PickedAsset): Promise<string> {
+	const dl = await fetch(asset.url, { headers: UA });
+	if (!dl.ok) throw new Error(`CLI binary download failed: HTTP ${dl.status}`);
+	const dest = cliDest();
+	mkdirSync(join(homedir(), ".dg", "bin"), { recursive: true });
+	writeFileSync(dest, Buffer.from(await dl.arrayBuffer()));
+	chmodSync(dest, 0o755);
+	writeFileSync(cliVersionFile(), `${asset.version}\n`);
+	return dest;
 }
