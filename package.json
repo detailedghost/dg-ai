@@ -1,7 +1,12 @@
 {
 	"name": "dg",
 	"private": true,
+	"workspaces": ["pkg/*"],
 	"scripts": {
+		"build:all": "bun run --filter='./pkg/*' build",
+		"test:all": "bun run --filter='./pkg/*' test",
+		"lint:all": "bun run --filter='./pkg/*' lint",
+		"install:extension": "bun run --filter='./pkg/extension' install",
 		"test": "bun test"
 	}
 }
