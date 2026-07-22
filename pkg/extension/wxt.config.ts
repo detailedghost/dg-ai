@@ -4,6 +4,9 @@ import { defineConfig } from "wxt";
 
 // Manifest name is prefixed dg-ai- so the loaded extension is identifiable as ours.
 export default defineConfig({
+	// Pin the zip base name; package name (@dg/extension) sanitizes unpredictably,
+	// and ext-release.yml expects dg-ai-extension-<version>-<browser>.zip.
+	zip: { name: "dg-ai-extension" },
 	/**
 	 * onnxruntime-web's default export condition resolves to its "bundle" build,
 	 * which statically re-imports the wasm via `new URL(..., import.meta.url)` so
