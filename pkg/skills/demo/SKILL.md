@@ -57,13 +57,13 @@ Write the approved script to `/tmp/ai/demo/tour.json`, then run the matching com
 **Walkthrough:**
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" demo /tmp/ai/demo/tour.json
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" demo /tmp/ai/demo/tour.json
 ```
 
 **Video:**
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" demo --video /tmp/ai/demo/tour.json
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" demo --video /tmp/ai/demo/tour.json
 ```
 
 Both open `startUrl` in the user's default browser with the tour encoded in a `_demo` marker;
@@ -90,7 +90,7 @@ Every `demo` run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every video bund
 `.zip`. Replay either without recompiling:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" rerun <path-to>.demo.md
+bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" rerun <path-to>.demo.md
 # add --video to record the replay
 ```
 

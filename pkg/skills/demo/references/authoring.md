@@ -28,8 +28,8 @@
 }
 ```
 
-Types mirror `extension-src/lib/demo-types.ts` and are validated CLI-side in
-`skills/browser/bin/commands/demo.ts`.
+Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
+`pkg/skills-cli/src/commands/demo.ts`.
 
 ## Advance modes
 
