@@ -1,6 +1,6 @@
 # Agent install guide — DeeGee (`dg`)
 
-How an AI agent (Claude Code) sets up this repo end-to-end. There are **two
+How an AI agent (Claude Code) sets up this repository end-to-end, across **two
 components**:
 
 1. **The Claude Code plugin** (`dg`) — provides the `/dg:*` skills.
@@ -29,30 +29,26 @@ cannot invoke them. Relay these two lines and ask the user to run them:
 After this, `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin directory and
 the `/dg:*` skills are available.
 
-## Step 2 — Install the CLI dependencies (agent-runnable)
+## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The `dg-browser` CLI depends on `commander`. Install once:
-
-```bash
-cd "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli" && bun install
-```
-
-(In a source checkout, use the repo path instead of `${CLAUDE_PLUGIN_ROOT}`.)
-
-## Step 3 — Install the browser extension (agent-runnable + one manual step)
-
-Run the installer — it stages the extension and prints the exact **Load
+The skills run a compiled `dg-skills` binary. Bootstrap it once — this downloads
+the binary for the current platform into `~/.dg/bin`, **then runs
+`dg-skills install`**, which stages the extension and prints the exact **Load
 unpacked** path:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
 ```
 
-- Default target is **chrome** (also serves Brave/Edge/Vivaldi). For Firefox:
-  `install firefox`.
-- Add `--local` to **build from source** (requires a repo checkout with
-  `pkg/extension/`); without it, the installer downloads the CI-built asset from
-  the latest GitHub release.
+- No Bun needed at runtime — the binary is self-contained. Bun is only required
+  for the `--local` source build.
+- Re-run `"$DG" install` anytime to update both the extension and the CLI. For
+  Firefox: `"$DG" install firefox`. Default target is **chrome** (also serves
+  Brave/Edge/Vivaldi).
+- Add `--local` to **build the extension from source** (requires a repository checkout
+  with `pkg/extension/`); otherwise it downloads the CI-built `ext-v*` asset.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
   relay the printed steps to the user:
   1. Open `chrome://extensions` (or `edge://extensions`).
@@ -69,14 +65,13 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-DG="${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts"
-bun "$DG" launch --browser brave --group "PRs" <refs...>
+"$DG" launch --browser brave --group "PRs" <refs...>
 ```
 
-## Step 4 — Verify
+## Step 3 — Verify
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" --help
+"$DG" --help
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm
@@ -91,8 +86,8 @@ ______________________________________________________________________
 | Task | Agent-runnable? |
 | --- | --- |
 | `/plugin` marketplace add / install | No — user types these |
-| `bun install` (CLI deps) | Yes |
-| `browser.ts install` (stage extension) | Yes |
+| `bootstrap.sh` (install CLI + extension) | Yes |
+| `dg-skills install` (stage extension) | Yes |
 | Load unpacked in the browser | No — manual browser UI |
 | `launch` cold-start with extension | Yes (browser fully closed) |
 | `batch-open` / `demo` / `rerun` | Yes (extension loaded) |

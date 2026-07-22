@@ -52,18 +52,27 @@ Adjust selectors/text on request and re-present.
 
 ## Phase 4 — Hand off to the extension
 
+Commands run the compiled `dg-skills` CLI at `~/.dg/bin/dg-skills`; bootstrap it
+once if missing:
+
+```bash
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
+```
+
 Write the approved script to `/tmp/ai/demo/tour.json`, then run the matching command:
 
 **Walkthrough:**
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" demo /tmp/ai/demo/tour.json
+"$DG" demo /tmp/ai/demo/tour.json
 ```
 
 **Video:**
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" demo --video /tmp/ai/demo/tour.json
+"$DG" demo --video /tmp/ai/demo/tour.json
 ```
 
 Both open `startUrl` in the user's default browser with the tour encoded in a `_demo` marker;
@@ -90,7 +99,7 @@ Every `demo` run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every video bund
 `.zip`. Replay either without recompiling:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" rerun <path-to>.demo.md
+"$DG" rerun <path-to>.demo.md
 # add --video to record the replay
 ```
 

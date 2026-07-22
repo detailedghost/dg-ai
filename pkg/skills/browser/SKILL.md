@@ -10,24 +10,35 @@ user-invocable: true
 Open/group GitHub PR & URL tabs and play guided in-browser demo tours, via a
 companion `dg-ai-extension` web extension.
 
-All commands run `bun`. If it's missing, `bun --version` fails — tell the user to
-install Bun from https://bun.sh instead of surfacing a raw error. The CLI depends
-on `commander`; if a run reports it missing, run `bun install` once in
-`${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli`.
-
-Run everything through the dispatcher:
+Commands run the **compiled `dg-skills` CLI** at `~/.dg/bin/dg-skills` — a
+self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
+(downloads the binary for your platform from the latest `skills-v*` release):
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" <command> <args>
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
 ```
+
+Then run every command through it:
+
+```bash
+"$DG" <command> <args>
+```
+
+`install` refreshes both the extension and the `dg-skills` binary, so re-running
+it keeps the CLI current. (The `--local` dev path builds the extension from
+source and needs Bun from https://bun.sh.)
 
 ## Commands
 
-- `install [chrome|firefox] [--local]` — stage the extension for a one-time load.
-  Downloads the CI-built asset from the latest GitHub release (or builds locally
-  with `--local` / in a source checkout), then prints the browser-specific
-  Load-unpacked steps. Relay them. Default target is `chrome` (also serves
-  Brave/Edge/Vivaldi). See `references/install.md` for full per-OS detail.
+- `install [chrome|firefox] [--local]` — stage the extension for a one-time load
+  **and** refresh the compiled `dg-skills` binary. Downloads the CI-built
+  extension zip from the latest `ext-v*` release (or builds locally with
+  `--local` / in a source checkout) and the platform `dg-skills` binary from the
+  latest `skills-v*` release, then prints the browser-specific Load-unpacked
+  steps. Relay them. Default target is `chrome` (also serves Brave/Edge/Vivaldi).
+  See `references/install.md` for full per-OS detail.
 
 - `batch-open [--group <name>] [--repo owner/repo] [--print] <refs…>` — resolve
   refs and open them in the **default** browser, grouped into `<name>` (default

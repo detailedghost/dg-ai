@@ -4,16 +4,43 @@ Personal Claude Code plugin for detailedghost. Skills: **browser**, **demo**.
 Commands live under the `/dg:` namespace; the companion extension is
 `dg-ai-extension`.
 
-## ✅ Prerequisites
-
-- [Bun](https://bun.sh) on your `PATH` (the skills shell out to `bun`).
-
 ## 📦 Install
+
+**As a Claude Code plugin** (the skills self-bootstrap the CLI on first use):
 
 ```text
 /plugin marketplace add ~/code/dg
 /plugin install dg@detailedghost
 ```
+
+**Standalone — one command installs the `dg-skills` CLI *and* the browser
+extension** (compiled binary, no Bun needed):
+
+macOS / Linux (x64 or arm64):
+
+<!-- markdownlint-disable MD013 -->
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+```
+
+Windows (x64 or arm64), in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+<!-- markdownlint-enable MD013 -->
+
+Both install `~/.dg/bin/dg-skills`, then run `dg-skills install` to stage the
+extension and print the **Load unpacked** steps. Re-run `dg-skills install`
+anytime to update. (Building the extension from source with `--local` needs
+[Bun](https://bun.sh).)
+
+### 🌐 Supported browsers
+
+- **Chromium** — Chrome, Edge, Brave, Vivaldi, Opera (single build)
+- **Firefox** 139+
 
 ## 🚀 Usage
 
@@ -70,4 +97,3 @@ color is set in the extension's Options (default blue); the name comes from
 - [Developer Guide](docs/DEVELOPER.md)
 - [Agent Install Guide](docs/AGENT-INSTALL.md)
 - [Contributing](docs/contributing.md)
-

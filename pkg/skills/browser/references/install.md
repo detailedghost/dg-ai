@@ -9,7 +9,9 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+"$DG" install
 ```
 
 The installer copies the extension to a Windows-native directory:
@@ -35,7 +37,8 @@ Then:
 Run:
 
 ```powershell
-bun "%CLAUDE_PLUGIN_ROOT%\skills\browser\bin\browser.ts" install
+& "$env:CLAUDE_PLUGIN_ROOT\pkg\skills-cli\bootstrap.ps1"
+& "$env:USERPROFILE\.dg\bin\dg-skills.exe" install
 ```
 
 The installer copies the extension to:
@@ -52,7 +55,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+"$DG" install
 ```
 
 The installer copies the extension to:
@@ -69,7 +74,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/src/index.ts" install
+DG="$HOME/.dg/bin/dg-skills"
+[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+"$DG" install
 ```
 
 The installer copies the extension to:
