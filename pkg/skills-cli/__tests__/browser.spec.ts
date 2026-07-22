@@ -2,21 +2,21 @@ import { expect, test } from "bun:test";
 import {
 	readDemoScript,
 	stripDemoMarker,
-} from "../extension-src/utils/demo-marker";
+} from "../../extension/utils/demo-marker";
 import {
 	readGroupMarker,
 	readGroupPos,
 	stripGroupMarker,
-} from "../extension-src/utils/marker";
-import { addDemoMarker } from "../skills/browser/bin/utils/demo-marker";
-import { versionGte } from "../skills/browser/bin/utils/lib";
-import { addGroupMarker } from "../skills/browser/bin/utils/marker";
+} from "../../extension/utils/marker";
+import { addDemoMarker } from "../src/utils/demo-marker";
+import { versionGte } from "../src/utils/lib";
+import { addGroupMarker } from "../src/utils/marker";
 import {
 	extractScriptFromMarkdown,
 	toPlanMarkdown,
 	validate,
-} from "../skills/browser/bin/utils/plan-format";
-import { resolveRef } from "../skills/browser/bin/utils/refs";
+} from "../src/utils/plan-format";
+import { resolveRef } from "../src/utils/refs";
 
 // --- ref resolution ---
 
