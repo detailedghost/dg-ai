@@ -1,10 +1,11 @@
 /**
- * Shared helpers for the browser-batch CLI (install/launch/detect):
- * platform detection, subprocess running, per-OS extension paths, zip
- * extraction, and fetching the CI-built extension from GitHub Releases.
+ * Shared helpers for the dg-browser CLI (batch-open/demo/install/launch/detect):
+ * platform detection, the default-browser opener, subprocess running, per-OS
+ * extension paths, zip extraction, and fetching the CI-built extension from
+ * GitHub Releases.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -24,6 +25,45 @@ export function isWSL(): boolean {
 	}
 }
 
+/** Ordered [command, argsBuilder] openers to try for this platform. */
+export function openers(): Array<[string, (url: string) => string[]]> {
+	if (process.platform === "darwin") return [["open", (u) => [u]]];
+	if (isWSL()) {
+		return [
+			["wslview", (u) => [u]],
+			[
+				"powershell.exe",
+				// Single-quote-escape the URL so it's passed as data, never as code.
+				(u) => [
+					"-NoProfile",
+					"-Command",
+					`Start-Process '${u.replace(/'/g, "''")}'`,
+				],
+			],
+			["cmd.exe", (u) => ["/c", "start", "", u]],
+		];
+	}
+	return [["xdg-open", (u) => [u]]];
+}
+
+/** Open a URL in the OS default browser; resolves false if every opener failed. */
+export function tryOpen(url: string): Promise<boolean> {
+	const candidates = openers();
+	return new Promise((resolve) => {
+		const attempt = (i: number) => {
+			if (i >= candidates.length) return resolve(false);
+			const [cmd, build] = candidates[i];
+			const child = spawn(cmd, build(url), { stdio: "ignore", detached: true });
+			child.on("error", () => attempt(i + 1)); // opener missing — try next
+			child.on("spawn", () => {
+				child.unref();
+				resolve(true);
+			});
+		};
+		attempt(0);
+	});
+}
+
 export function run(command: string, args: string[]): string {
 	const r = spawnSync(command, args, { encoding: "utf8" });
 	if (r.error) {
@@ -39,9 +79,11 @@ export function run(command: string, args: string[]): string {
 	return r.stdout.trim();
 }
 
-/** Repo root: the plugin dir when installed, else three levels up from bin/. */
+/** Repo root: the plugin dir when installed, else four levels up from bin/utils/. */
 export function repoRoot(): string {
-	return process.env.CLAUDE_PLUGIN_ROOT ?? resolve(import.meta.dir, "../../..");
+	return (
+		process.env.CLAUDE_PLUGIN_ROOT ?? resolve(import.meta.dir, "../../../..")
+	);
 }
 
 /** Windows %USERPROFILE%, as a native path on win32 or resolved for WSL. */

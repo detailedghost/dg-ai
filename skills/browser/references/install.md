@@ -1,4 +1,4 @@
-# Browser Batch Extension Install
+# Browser Extension Install
 
 Chrome and Edge do not allow a CLI to silently install an unpacked
 extension. The `install` command copies the extension to a stable directory,
@@ -9,13 +9,13 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser-batch/bin/install.ts"
+bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
 ```
 
 The installer copies the extension to a Windows-native directory:
 
 ```text
-%USERPROFILE%\.dg\browser-batch-extension
+%USERPROFILE%\.dg\dg-ai-extension-chrome
 ```
 
 Use the printed Windows path in Chrome/Edge. This avoids loading from a
@@ -35,13 +35,13 @@ Then:
 Run:
 
 ```powershell
-bun "%CLAUDE_PLUGIN_ROOT%\skills\browser-batch\bin\install.ts"
+bun "%CLAUDE_PLUGIN_ROOT%\skills\browser\bin\browser.ts" install
 ```
 
 The installer copies the extension to:
 
 ```text
-%USERPROFILE%\.dg\browser-batch-extension
+%USERPROFILE%\.dg\dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
@@ -52,13 +52,13 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser-batch/bin/install.ts"
+bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
 ```
 
 The installer copies the extension to:
 
 ```text
-~/.dg/browser-batch-extension
+~/.dg/dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
@@ -69,13 +69,13 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}/skills/browser-batch/bin/install.ts"
+bun "${CLAUDE_PLUGIN_ROOT}/skills/browser/bin/browser.ts" install
 ```
 
 The installer copies the extension to:
 
 ```text
-~/.dg/browser-batch-extension
+~/.dg/dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,

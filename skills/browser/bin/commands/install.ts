@@ -1,6 +1,5 @@
-#!/usr/bin/env bun
 /**
- * Ensure the dg-ai-extension extension is available to load, idempotently.
+ * `install` — ensure the dg-ai-extension is available to load, idempotently.
  *
  * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
  * this stages the built extension to a stable per-OS path and prints guided
@@ -18,6 +17,7 @@ import {
 	statSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { Command } from "commander";
 import {
 	downloadReleaseAsset,
 	extensionDest,
@@ -28,7 +28,7 @@ import {
 	type Target,
 	versionGte,
 	writeMarkerEntry,
-} from "./lib";
+} from "../utils/lib";
 
 function copyDir(src: string, dest: string): void {
 	rmSync(dest, { recursive: true, force: true });
@@ -87,9 +87,7 @@ function printSteps(target: Target, path: string): void {
 	console.log("5. Done.");
 }
 
-export async function runInstall(argv: string[]): Promise<void> {
-	const target: Target = argv.includes("firefox") ? "firefox" : "chrome";
-	const forceLocal = argv.includes("--local");
+async function install(target: Target, forceLocal: boolean): Promise<void> {
 	const dest = extensionDest(target);
 
 	// Resolve a source + version: CI release first, local build as dev fallback.
@@ -139,10 +137,16 @@ export async function runInstall(argv: string[]): Promise<void> {
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
 
-if (import.meta.main) {
-	runInstall(process.argv.slice(2)).catch((err) => {
-		const msg = err instanceof Error ? err.message : String(err);
-		console.error(`dg-ai-extension install failed: ${msg}`);
-		process.exit(1);
-	});
+export function registerInstall(program: Command): void {
+	program
+		.command("install")
+		.description("stage the dg-ai-extension for loading + print the load steps")
+		.argument(
+			"[target]",
+			"chrome (default; serves Brave/Edge/Vivaldi) | firefox",
+		)
+		.option("--local", "build from extension-src instead of the GitHub release")
+		.action(async (target: string | undefined, opts: { local?: boolean }) => {
+			await install(target === "firefox" ? "firefox" : "chrome", !!opts.local);
+		});
 }

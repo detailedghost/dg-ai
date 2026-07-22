@@ -3,19 +3,28 @@
 	"description": "Source for the dg-ai-extension web extension (built with WXT).",
 	"private": true,
 	"type": "module",
-	"version": "1.2.0",
+	"version": "1.7.6",
 	"scripts": {
-		"postinstall": "wxt prepare",
-		"dev": "wxt",
+		"postinstall": "wxt prepare && bun run copy:ort",
+		"copy:ort": "bun scripts/copy-ort.ts",
+		"dev": "bun run copy:ort && wxt",
 		"dev:firefox": "wxt -b firefox",
-		"build": "wxt build",
+		"build": "bun run copy:ort && wxt build",
 		"build:firefox": "wxt build -b firefox",
-		"zip": "wxt zip",
+		"zip": "bun run copy:ort && wxt zip",
 		"zip:firefox": "wxt zip -b firefox",
-		"compile": "tsc --noEmit"
+		"compile": "tsc --noEmit",
+		"test": "bun test"
 	},
 	"devDependencies": {
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/chrome": "^0.2.2",
+		"fake-indexeddb": "^6.2.5",
+		"tailwindcss": "^4.3.3",
 		"typescript": "^5",
 		"wxt": "^0.20.0"
+	},
+	"dependencies": {
+		"kokoro-js": "^1.2.1"
 	}
 }
