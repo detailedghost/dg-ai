@@ -18,8 +18,8 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install (root — wires workspaces)
-        run: bun install --frozen-lockfile
+      - name: Install (root — wires workspace symlinks, skip extension postinstall)
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Lint (common)
         working-directory: pkg/common
