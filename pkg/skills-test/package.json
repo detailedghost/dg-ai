@@ -1,0 +1,18 @@
+{
+	"name": "@dg/skills-test",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Smoke tests: the skills reference the right packages and the install logic resolves the right release assets.",
+	"scripts": {
+		"lint": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@dg/skills-cli": "workspace:*"
+	},
+	"devDependencies": {
+		"bun-types": "latest",
+		"typescript": "^5"
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"types": ["bun-types"],
+		"paths": {
+			"@dg/skills-cli/lib": ["../skills-cli/src/utils/lib.ts"]
+		}
+	},
+	"include": ["__tests__/**/*"]
+}

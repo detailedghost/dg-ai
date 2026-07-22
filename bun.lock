@@ -41,6 +41,17 @@
         "typescript": "^5",
       },
     },
+    "pkg/skills-test": {
+      "name": "@dg/skills-test",
+      "version": "1.0.0",
+      "dependencies": {
+        "@dg/skills-cli": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5",
+      },
+    },
   },
   "packages": {
     "@1natsu/wait-element": ["@1natsu/wait-element@4.2.0", "", { "dependencies": { "defu": "^6.1.4", "many-keys-map": "^3.0.0" } }, "sha512-Om0Q+WE9mNrpY4AwMTvkFiYHv8VM7TML3PvOqXy+w6kAjLjKhGYHYX+305+a6J8RVpds9s7IF2Z5aOPYwULFNw=="],
@@ -70,6 +81,8 @@
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
     "@dg/skills-cli": ["@dg/skills-cli@workspace:pkg/skills-cli"],
+
+    "@dg/skills-test": ["@dg/skills-test@workspace:pkg/skills-test"],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 

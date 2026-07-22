@@ -1,3 +1,4 @@
+---
 name: Skills - Build, Lint, and Test
 
 on:
@@ -5,6 +6,8 @@ on:
     paths:
       - pkg/skills-cli/**
       - pkg/common/**
+      - pkg/skills/**
+      - pkg/skills-test/**
       - .github/workflows/skills-blt.yml
   workflow_call:
 
@@ -40,3 +43,11 @@ jobs:
       - name: Build (skills-cli)
         working-directory: pkg/skills-cli
         run: bun run build
+
+      - name: Lint (skills-test)
+        working-directory: pkg/skills-test
+        run: bun run lint
+
+      - name: Test (skills-test — install logic + skill manifests + CLI smoke)
+        working-directory: pkg/skills-test
+        run: bun test
