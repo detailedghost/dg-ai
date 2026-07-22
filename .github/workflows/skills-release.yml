@@ -1,3 +1,4 @@
+---
 name: Skills - Release
 
 on:
@@ -17,9 +18,26 @@ jobs:
   blt:
     uses: ./.github/workflows/skills-blt.yml
 
-  release:
+  # Cross-compile the six platform binaries in parallel.
+  build:
     needs: blt
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: dg-skills-linux-x64
+          - target: bun-linux-arm64
+            asset: dg-skills-linux-arm64
+          - target: bun-darwin-x64
+            asset: dg-skills-macos-x64
+          - target: bun-darwin-arm64
+            asset: dg-skills-macos-arm64
+          - target: bun-windows-x64
+            asset: dg-skills-windows-x64.exe
+          - target: bun-windows-arm64
+            asset: dg-skills-windows-arm64.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -30,17 +48,35 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Build ${{ matrix.asset }}
+        working-directory: pkg/skills-cli
+        run: >-
+          bun build src/index.ts --compile
+          --target=${{ matrix.target }}
+          --outfile dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/skills-cli/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Read version
         id: ver
         working-directory: pkg/skills-cli
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Build binaries (3 platforms)
-        working-directory: pkg/skills-cli
-        run: |
-          bun build src/index.ts --compile --target=bun-linux-x64   --outfile dist/dg-skills-linux-x64
-          bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/dg-skills-macos-arm64
-          bun build src/index.ts --compile --target=bun-windows-x64  --outfile dist/dg-skills-windows-x64.exe
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Publish release
         env:
@@ -55,17 +91,14 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Skills CLI $tag" \
-            --notes "Standalone dg-skills-cli binaries ($tag)." \
-            pkg/skills-cli/dist/dg-skills-linux-x64 \
-            pkg/skills-cli/dist/dg-skills-macos-arm64 \
-            pkg/skills-cli/dist/dg-skills-windows-x64.exe
+            --notes "Standalone dg-skills CLI binaries ($tag)." \
+            dist/*
 
       - name: Clean up on failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          rm -rf pkg/skills-cli/dist
+        run: |-
           version=$(node -p "require('./pkg/skills-cli/package.json').version" 2>/dev/null || echo "")
           if [ -n "$version" ]; then
             tag="skills-v${version}"
