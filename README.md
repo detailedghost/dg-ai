@@ -15,12 +15,6 @@ Commands live under the `/dg:` namespace; the companion extension is
 /plugin install dg@detailedghost
 ```
 
-For local development:
-
-```bash
-claude --plugin-dir ~/code/dg
-```
-
 ## 🚀 Usage
 
 One-time guided setup of the companion browser extension:
@@ -62,7 +56,7 @@ land in your Downloads folder.
 ## 🧩 Extension
 
 The companion `dg-ai-extension` does the grouping browser-side, built with
-[WXT](https://wxt.dev) from `extension-src/` and targeting Chrome, Edge, Brave,
+[WXT](https://wxt.dev) from `pkg/extension/` and targeting Chrome, Edge, Brave,
 Vivaldi, and Firefox 139+ (grouping is feature-detected, skipped where absent).
 
 Grouping is **opt-in per batch**: `batch-open`/`launch` append a
@@ -71,24 +65,9 @@ Grouping is **opt-in per batch**: `batch-open`/`launch` append a
 color is set in the extension's Options (default blue); the name comes from
 `--group` (default `PRs`). `demo` works the same way with a `#_demo=` marker.
 
-## 🛠 Development
+## 📚 References
 
-The `/dg:browser` CLI depends on `commander`, so install its packages once:
+- [Developer Guide](docs/DEVELOPER.md)
+- [Agent Install Guide](docs/AGENT-INSTALL.md)
+- [Contributing](docs/contributing.md)
 
-```bash
-cd skills/browser && bun install
-```
-
-Then the extension:
-
-```bash
-cd extension-src
-bun install
-bun run dev            # HMR dev browser
-bun run build          # → .output/chrome-mv3
-bun run build:firefox  # → .output/firefox-mv2
-```
-
-CI (`.github/workflows/build-extension.yml`) rebuilds on changes to the skill or
-`extension-src/`, and publishes a **`vX.X.X`** GitHub Release (on a version bump)
-whose zipped assets `install` downloads. Build output is never committed.

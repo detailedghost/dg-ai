@@ -1,0 +1,42 @@
+name: Skills - Build, Lint, and Test
+
+on:
+  pull_request:
+    paths:
+      - pkg/skills-cli/**
+      - pkg/common/**
+      - .github/workflows/skills-blt.yml
+  workflow_call:
+
+jobs:
+  skills-blt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (root — wires workspaces)
+        run: bun install --frozen-lockfile
+
+      - name: Lint (common)
+        working-directory: pkg/common
+        run: bun run lint
+
+      - name: Test (common)
+        working-directory: pkg/common
+        run: bun test
+
+      - name: Lint (skills-cli)
+        working-directory: pkg/skills-cli
+        run: bun run lint
+
+      - name: Test (skills-cli)
+        working-directory: pkg/skills-cli
+        run: bun test
+
+      - name: Build (skills-cli)
+        working-directory: pkg/skills-cli
+        run: bun run build
