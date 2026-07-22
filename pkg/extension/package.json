@@ -1,5 +1,5 @@
 {
-	"name": "dg-ai-extension",
+	"name": "@dg/extension",
 	"description": "Source for the dg-ai-extension web extension (built with WXT).",
 	"private": true,
 	"type": "module",
@@ -27,6 +27,7 @@
 		"wxt": "^0.20.0"
 	},
 	"dependencies": {
+		"@dg/common": "workspace:*",
 		"kokoro-js": "^1.2.1"
 	}
 }

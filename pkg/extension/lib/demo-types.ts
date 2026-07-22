@@ -1,25 +1,3 @@
-/** Demo-tour script types. Loosely mirrored CLI-side in browser-batch/bin/demo.ts. */
-
-/** "next" = Next button (default); "click" = wait for the target; number = auto-advance after N ms. */
-export type StepAdvance = "next" | "click" | number;
-
-export type TourStep = {
-	/** CSS selector to spotlight; omit for a centered modal. */
-	selector?: string;
-	title?: string;
-	/** Explanatory text shown in the callout. */
-	body: string;
-	advance?: StepAdvance;
-	/** Navigate here when the step begins (multi-page tours). */
-	navigate?: string;
-};
-
-/** "walkthrough" = user-paced live tour; "video" = auto-play + record to webm. */
-export type TourMode = "walkthrough" | "video";
-
-export type TourScript = {
-	title?: string;
-	startUrl: string;
-	steps: TourStep[];
-	mode?: TourMode;
-};
+// Types now live in @dg/common — re-exported here for backwards compatibility
+// with existing internal imports (e.g. `import type { TourScript } from "@/lib/demo-types"`).
+export type { StepAdvance, TourStep, TourMode, TourScript } from "@dg/common";

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
@@ -15,6 +16,9 @@ export default defineConfig({
 		plugins: [tailwindcss()],
 		resolve: {
 			conditions: ["onnxruntime-web-use-extern-wasm"],
+			alias: {
+				"@dg/common": resolve(__dirname, "../common/src/index.ts"),
+			},
 		},
 	}),
 	manifest: ({ browser }) => {
