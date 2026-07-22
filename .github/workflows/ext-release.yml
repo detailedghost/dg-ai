@@ -1,23 +1,26 @@
----
-name: build-extension
+name: Ext - Release
 
-# Builds the dg-ai-extension extension and publishes a vX.X.X release,
-# but only when the skill or extension source actually changes.
+# Builds and publishes a vX.X.X release whenever extension or browser-skill
+# source changes land on master. Runs BLT first so a broken build never ships.
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - master
     paths:
       - extension-src/**
       - skills/browser/**
-      - .github/workflows/build-extension.yml
+      - .github/workflows/ext-release.yml
 
 permissions:
-  contents: write  # create the release + tag
+  contents: write  # create release + tag
 
 jobs:
-  build:
+  blt:
+    uses: ./.github/workflows/ext-blt.yml
+
+  release:
+    needs: blt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +29,7 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install deps
+      - name: Install
         working-directory: extension-src
         run: bun install --frozen-lockfile
 
@@ -40,10 +43,10 @@ jobs:
         id: ver
         run: echo "version=$(node -p "require('./extension-src/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Publish release (only if this version is new)
+      - name: Publish release (skip if version already exists)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |-
+        run: |
           version="${{ steps.ver.outputs.version }}"
           tag="v${version}"
           out="extension-src/.output"
@@ -54,6 +57,19 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$tag" \
-            --notes "Automated build of the dg-ai-extension extension ($tag)." \
+            --notes "Automated build of the dg-ai-extension ($tag)." \
             "$out/dg-ai-extension-${version}-chrome.zip" \
             "$out/dg-ai-extension-${version}-firefox.zip"
+
+      - name: Clean up on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf extension-src/.output
+          version=$(node -p "require('./extension-src/package.json').version" 2>/dev/null || echo "")
+          if [ -n "$version" ]; then
+            tag="v${version}"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
+          fi

@@ -69,7 +69,7 @@ export function buildVideoReviewHtml(slug: string, hasVideo: boolean): string {
 
 // --- end pure helpers ---
 
-
+const isVideo = (s: TourScript): boolean => s.mode === "video";
 
 /**
  * Persisted tour state (survives navigations within a tour). Keyed per-tab so an
