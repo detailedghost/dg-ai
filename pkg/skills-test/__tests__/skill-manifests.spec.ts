@@ -73,8 +73,9 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 		test(`${name}: invokes ~/.dg/bin/dg-skills`, () => {
 			expect(md).toContain(".dg/bin/dg-skills");
 		});
-		test(`${name}: bootstraps via bootstrap.sh`, () => {
-			expect(md).toContain("skills-cli/bootstrap.sh");
+		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
+			expect(md).toContain("skills-cli");
+			expect(md).toContain("bootstrap.sh");
 		});
 		test(`${name}: does not run the TS source entrypoint`, () => {
 			expect(md).not.toContain("src/index.ts");

@@ -1,6 +1,41 @@
 # Tour authoring reference
 
-## Script schema
+## Plan file (the authoring format)
+
+You author a tour as a Markdown **plan**: YAML frontmatter + a `## Steps`
+list. Feed it to `dg-skills demo <plan>.md`; the CLI parses it, generates
+the runnable script into a `## Script` fenced block, and hands it to the
+extension. Never hand-write the JSON.
+
+```markdown
+---
+title: Saved filters      # optional — shown in each callout's progress line
+startUrl: http://localhost:4200/dashboard   # required — http(s) entry page
+mode: walkthrough         # optional — walkthrough (default) | video
+---
+
+## Steps
+
+1. **Save a filter** `#save-filter-btn` — Persist the current filters. `click`
+2. **Filters page** → http://localhost:4200/filters — It shows here. `4s`
+3. **All done** — Centered step (no selector); dims the page. `next`
+```
+
+Step line grammar (everything but the number and body is optional):
+
+```text
+N. **<title>** [`<css-selector>`] [→ <navigate-url>] — <body> [`<timing>`]
+```
+
+- `` `<css-selector>` `` — element to spotlight; omit for a centered modal.
+- `→ <navigate-url>` — navigate here before showing this step (multi-page).
+- `` `<timing>` `` — the `advance` mode: `4s` / `500ms` / a bare ms count
+  (auto-advance), or `click` / `next`. Omit for the default. A trailing
+  inline `` `code` `` span that isn't a valid timing stays part of the body.
+
+## Underlying script schema
+
+The plan generates this shape (also accepted directly as a `.json` file):
 
 ```jsonc
 {
@@ -72,8 +107,8 @@ won't loop.
 Run `demo --video` (or set `"mode": "video"`) to record instead of a live tour.
 The tour auto-plays hands-free: each step is held for ~3.5s, or for a step's
 numeric `advance` value if set. The extension records the tab (tabCapture → an
-offscreen MediaRecorder → webm) and saves `dg-demo/<tour>/<tour>.webm` to the
-user's **Downloads** folder.
+offscreen MediaRecorder → webm) and saves `dg-demo/<tour>/<tour>.zip` (the video
+plus a re-runnable `plan.md`) to the user's **Downloads** folder.
 
 Because Chrome requires a user gesture to start tab capture, the page shows a
 "press to start" modal; the user presses `Alt+Shift+D` (or clicks the DeeGee
