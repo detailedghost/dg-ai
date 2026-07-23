@@ -12,6 +12,12 @@ export const MSG = {
 	recordingReady: "dg-demo:recording-ready",
 	// background → content script
 	videoPreparing: "dg-demo:video-preparing",
+	// offscreen → background → content: clear overlay UI just before capture starts
+	clearForCapture: "dg-demo:clear-for-capture",
+	// background → content script: drop any overlay (so it isn't in the recording)
+	videoClearUi: "dg-demo:video-clear-ui",
+	// content → background → offscreen: overlay cleared + painted, safe to capture now
+	captureCleared: "dg-demo:capture-cleared",
 	// background → content script: prompt the user to review the recording
 	videoReview: "dg-demo:video-review",
 	// content script → background: request the recorded data URL

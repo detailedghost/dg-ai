@@ -3,7 +3,7 @@
 	"description": "Source for the dg-ai-extension web extension (built with WXT).",
 	"private": true,
 	"type": "module",
-	"version": "1.7.6",
+	"version": "1.7.15",
 	"scripts": {
 		"postinstall": "wxt prepare && bun run copy:ort",
 		"copy:ort": "bun scripts/copy-ort.ts",

@@ -99,6 +99,16 @@ async function start(
 			return;
 		}
 
+		// TTS is done — clear the tab's overlay and wait for a clean painted frame
+		// before capturing, so the "preparing narration" modal never lands in the video.
+		await waitForClearFrame();
+		if (stopRequested) {
+			teardown(videoStream);
+			starting = false;
+			abort();
+			return;
+		}
+
 		const mixed = new MediaStream([
 			...videoStream.getVideoTracks(),
 			...(narrationDest ? narrationDest.stream.getAudioTracks() : []),
@@ -148,6 +158,30 @@ function stop(): void {
 		// start() hasn't finished creating the recorder yet — flag for it to honor.
 		stopRequested = true;
 	}
+}
+
+/**
+ * Ask the tour tab to remove its overlay and resolve once it confirms a clean frame
+ * was painted (MSG.captureCleared), or after a fallback timeout. Gates recorder.start()
+ * so the "preparing narration" modal is never captured.
+ */
+function waitForClearFrame(): Promise<void> {
+	return new Promise((resolve) => {
+		const done = (): void => {
+			clearTimeout(timer);
+			chrome.runtime.onMessage.removeListener(onMsg);
+			resolve();
+		};
+		const onMsg = (m: { type?: string; target?: string }): void => {
+			if (m?.target === "offscreen" && m.type === MSG.captureCleared) done();
+		};
+		const timer = setTimeout(done, 1500);
+		chrome.runtime.onMessage.addListener(onMsg);
+		chrome.runtime.sendMessage({
+			type: MSG.clearForCapture,
+			target: "background",
+		});
+	});
 }
 
 /** Play step `index`'s narration clip into the recorded audio track (if any). */
