@@ -8,6 +8,7 @@
 import type { TourScript } from "@dg/common";
 
 export const DEMO_MARKER_KEY = "_demo";
+export const EDIT_MARKER_KEY = "_edit";
 
 /** Tour script from a URL's fragment marker, or undefined if absent/undecodable. */
 export function readDemoScript(url: string): TourScript | undefined {
@@ -20,13 +21,33 @@ export function readDemoScript(url: string): TourScript | undefined {
 	return undefined;
 }
 
-/** URL with the marker removed from its fragment (any other fragment preserved). */
+/** Build the fragment (`_demo=…[&_edit=1]`) — inverse of readDemoScript, UTF-8 safe. */
+export function demoMarkerFragment(script: unknown, edit: boolean): string {
+	const bytes = new TextEncoder().encode(JSON.stringify(script));
+	let bin = "";
+	for (const b of bytes) bin += String.fromCharCode(b);
+	const b64 = btoa(bin)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+	const parts = [`${DEMO_MARKER_KEY}=${b64}`];
+	if (edit) parts.push(`${EDIT_MARKER_KEY}=1`);
+	return parts.join("&");
+}
+
+/** Whether the marker requests the review/edit panel (`_edit=1`). */
+export function readEditFlag(url: string): boolean {
+	const hash = url.split("#")[1];
+	if (!hash) return false;
+	return hash.split("&").some((p) => p.split("=")[0] === EDIT_MARKER_KEY);
+}
+
+/** URL with our markers removed from its fragment (any other fragment preserved). */
 export function stripDemoMarker(url: string): string {
 	const [base, hash] = url.split("#");
 	if (!hash) return url;
-	const kept = hash
-		.split("&")
-		.filter((p) => p.split("=")[0] !== DEMO_MARKER_KEY);
+	const ours = new Set([DEMO_MARKER_KEY, EDIT_MARKER_KEY]);
+	const kept = hash.split("&").filter((p) => !ours.has(p.split("=")[0]));
 	return kept.length ? `${base}#${kept.join("&")}` : base;
 }
 
