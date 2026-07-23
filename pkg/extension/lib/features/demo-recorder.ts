@@ -93,6 +93,13 @@ export async function handleRecordingReady(durations: number[]): Promise<void> {
 		});
 }
 
+/** Offscreen is about to start capture: tell the tour tab to clear any overlay first. */
+export async function handleClearForCapture(): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId != null)
+		void chrome.tabs.sendMessage(active.tabId, { type: MSG.videoClearUi });
+}
+
 /** Relay a play-step cue from the content script to the offscreen recorder. */
 export function relayPlayStep(index: number): void {
 	chrome.runtime.sendMessage({

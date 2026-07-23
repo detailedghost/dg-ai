@@ -4,6 +4,7 @@ import type { TourScript } from "@/lib/demo-types";
 import {
 	confirmDownload,
 	discardRecording,
+	handleClearForCapture,
 	handleRecordingData,
 	handleRecordingReady,
 	handleRequestVideoData,
@@ -16,10 +17,7 @@ import {
 	onTabComplete,
 	tabGroupingSupported,
 } from "@/lib/features/tab-grouping";
-import {
-	pruneStaleRecordings,
-	removeRecording,
-} from "@/utils/recording-db";
+import { pruneStaleRecordings, removeRecording } from "@/utils/recording-db";
 
 export default defineBackground(() => {
 	void pruneStaleRecordings();
@@ -71,6 +69,13 @@ export default defineBackground(() => {
 			if (msg?.type === MSG.videoStop) stopVideoRecording();
 			else if (msg?.type === MSG.playStep && typeof msg.index === "number")
 				relayPlayStep(msg.index);
+			else if (msg?.type === MSG.clearForCapture && msg.target === "background")
+				void handleClearForCapture();
+			else if (msg?.type === MSG.captureCleared && msg.target === "background")
+				chrome.runtime.sendMessage({
+					type: MSG.captureCleared,
+					target: "offscreen",
+				});
 			else if (msg?.type === MSG.recordingReady && msg.target === "background")
 				void handleRecordingReady(msg.durations ?? []);
 			else if (
@@ -91,6 +96,7 @@ export default defineBackground(() => {
 		void chrome.storage.local.remove([
 			`demo_tour:${tabId}`,
 			`demo_recording:${tabId}`,
+			`demo_edit:${tabId}`,
 		]);
 		void removeRecording(tabId).catch(() => {});
 	});
