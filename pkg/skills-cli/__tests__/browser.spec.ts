@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
 	readDemoScript,
+	readEditFlag,
 	stripDemoMarker,
 } from "../../extension/utils/demo-marker";
 import {
@@ -13,6 +14,7 @@ import { versionGte } from "../src/utils/lib";
 import { addGroupMarker } from "../src/utils/marker";
 import {
 	extractScriptFromMarkdown,
+	parsePlanMarkdown,
 	toPlanMarkdown,
 	validate,
 } from "../src/utils/plan-format";
@@ -102,9 +104,11 @@ test("no position → readGroupPos undefined", () => {
 
 // --- _demo marker round-trip (CLI encodes → extension decodes → strips) ---
 
+// Reserved `.example` host (RFC 6761, never resolves) + a distinctive real query
+// param — can't hit a live site, and proves markers leave a legit `?…` untouched.
 const SCRIPT = {
 	title: "Saved filters",
-	startUrl: "http://localhost:4200/dashboard",
+	startUrl: "https://app.example/dashboard?dg_fixture=saved-filters",
 	steps: [
 		{ selector: "#save", title: "Save", body: "Persist the filter — café ☕." },
 		{ body: "All done.", advance: 1200 },
@@ -122,6 +126,17 @@ test("stripping the demo marker restores the original URL", () => {
 	expect(stripDemoMarker(marked)).toBe(SCRIPT.startUrl);
 });
 
+test("--edit adds _edit=1 which the extension reads and strips", () => {
+	const marked = addDemoMarker(SCRIPT.startUrl, SCRIPT, true);
+	expect(readEditFlag(marked)).toBe(true);
+	expect(readDemoScript(marked)).toEqual(SCRIPT); // script still decodes
+	expect(stripDemoMarker(marked)).toBe(SCRIPT.startUrl); // both markers gone
+});
+
+test("no --edit → no edit flag", () => {
+	expect(readEditFlag(addDemoMarker(SCRIPT.startUrl, SCRIPT))).toBe(false);
+});
+
 test("demo marker appended to an existing fragment is stripped back to it", () => {
 	const marked = addDemoMarker(`${SCRIPT.startUrl}#section`, SCRIPT);
 	expect(readDemoScript(marked)).toEqual(SCRIPT);
@@ -129,19 +144,34 @@ test("demo marker appended to an existing fragment is stripped back to it", () =
 });
 
 test("no demo marker → readDemoScript undefined, strip is a no-op", () => {
-	const url = "http://localhost:4200/dashboard";
+	const url = "https://app.example/dashboard?dg_fixture=1";
 	expect(readDemoScript(url)).toBeUndefined();
 	expect(stripDemoMarker(url)).toBe(url);
 });
 
-// --- plan.md round-trip (demo writes a plan → rerun extracts + validates it) ---
-
-test("plan markdown embeds a script rerun can extract and validate", () => {
-	const md = toPlanMarkdown(validate(SCRIPT));
-	expect(md).toContain("# Demo plan: Saved filters");
-	expect(validate(extractScriptFromMarkdown(md))).toEqual(SCRIPT);
+test("markers never touch the query string (no legit param collision)", () => {
+	const marked = addDemoMarker(SCRIPT.startUrl, SCRIPT, true);
+	expect(marked).toContain("?dg_fixture=saved-filters#_demo=");
+	expect(new URL(marked).searchParams.get("dg_fixture")).toBe("saved-filters");
 });
 
-test("a plan file with no json block is rejected", () => {
-	expect(() => extractScriptFromMarkdown("# just prose, no code")).toThrow();
+// --- plan.md round-trip (demo writes a plan → rerun extracts + validates it) ---
+
+test("plan markdown round-trips via the native human-form reader (no json block)", () => {
+	const md = toPlanMarkdown(validate(SCRIPT));
+	expect(md).toContain("title: Saved filters");
+	expect(md).not.toContain("```json");
+	const parsed = validate(parsePlanMarkdown(md));
+	expect(parsed.startUrl).toBe(SCRIPT.startUrl);
+	expect(parsed.steps).toHaveLength(SCRIPT.steps.length);
+	expect(parsed.steps[0]).toMatchObject({
+		selector: "#save",
+		title: "Save",
+		body: SCRIPT.steps[0].body,
+	});
+});
+
+test("legacy json-block plans still extract via extractScriptFromMarkdown", () => {
+	const md = `\`\`\`json\n${JSON.stringify(SCRIPT)}\n\`\`\``;
+	expect(validate(extractScriptFromMarkdown(md))).toEqual(SCRIPT);
 });

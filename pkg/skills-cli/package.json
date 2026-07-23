@@ -14,7 +14,8 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
-		"commander": "^14.0.0"
+		"commander": "^14.0.0",
+		"marked": "^16.0.0"
 	},
 	"devDependencies": {
 		"bun-types": "latest",

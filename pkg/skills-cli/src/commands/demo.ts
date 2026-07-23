@@ -13,6 +13,7 @@ import type { Command } from "commander";
 import { addDemoMarker } from "../utils/demo-marker";
 import { tryOpen } from "../utils/lib";
 import {
+	parsePlanMarkdown,
 	type TourScript,
 	toPlanMarkdown,
 	validate,
@@ -32,7 +33,19 @@ export function savePlan(script: TourScript): string {
 	return path;
 }
 
-type PlayOpts = { video?: boolean; print?: boolean };
+/**
+ * Load a tour from a plan file. `.md` is the human-authored form (frontmatter +
+ * "## Steps" list) parsed into a script; anything else is treated as raw JSON.
+ */
+export function loadScript(path: string): TourScript {
+	const raw = readFileSync(path, "utf8");
+	const parsed = path.endsWith(".md")
+		? parsePlanMarkdown(raw)
+		: JSON.parse(raw);
+	return validate(parsed);
+}
+
+type PlayOpts = { video?: boolean; print?: boolean; edit?: boolean };
 
 /** Encode the tour into a `_demo` URL, save its plan, and open it (or just print). */
 export async function playScript(
@@ -40,7 +53,7 @@ export async function playScript(
 	opts: PlayOpts,
 ): Promise<void> {
 	if (opts.video) script.mode = "video";
-	const url = addDemoMarker(script.startUrl, script);
+	const url = addDemoMarker(script.startUrl, script, opts.edit);
 	if (opts.print) {
 		console.log(url);
 		return;
@@ -55,7 +68,11 @@ export async function playScript(
 	console.log(
 		`plan saved: ${planPath}\nre-run with: dg-browser rerun "${planPath}"`,
 	);
-	if (script.mode === "video")
+	if (opts.edit)
+		console.log(
+			"In the browser: review/edit the steps in the on-page panel, then Download the plan or hit Play / Record.",
+		);
+	else if (script.mode === "video")
 		console.log(
 			"In the browser: press Alt+Shift+D to start recording. A .zip (video + plan) saves to your Downloads/dg-demo/ folder.",
 		);
@@ -67,14 +84,17 @@ export function registerDemo(program: Command): void {
 		.description(
 			"play a guided tour from a script.json via the dg-ai-extension",
 		)
-		.argument("<script>", "path to a tour script JSON file")
+		.argument("<script>", "path to a tour plan (.md) or script JSON file")
 		.option(
 			"--video",
 			"record the tour to a video (auto-play) instead of a live walkthrough",
 		)
 		.option("--print", "print the marked URL instead of opening it")
+		.option(
+			"--edit",
+			"open a review/edit panel in the browser before playing or recording",
+		)
 		.action((scriptPath: string, opts: PlayOpts) => {
-			const script = validate(JSON.parse(readFileSync(scriptPath, "utf8")));
-			return playScript(script, opts);
+			return playScript(loadScript(scriptPath), opts);
 		});
 }
