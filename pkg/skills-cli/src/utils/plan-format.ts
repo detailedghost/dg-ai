@@ -1,10 +1,12 @@
-// Re-exported from @dg/common — the canonical implementation lives there.
+// Serialization + validation are re-exported from @dg/common (pure, dependency-free).
+// The markdown reader lives CLI-side in ./plan-parse (it pulls in `marked`).
 export {
+	extractScriptFromMarkdown,
+	type StepAdvance,
+	type TourMode,
 	type TourScript,
 	type TourStep,
-	type TourMode,
-	type StepAdvance,
 	toPlanMarkdown,
 	validate,
-	extractScriptFromMarkdown,
 } from "@dg/common";
+export { parsePlanMarkdown } from "./plan-parse";
