@@ -45,6 +45,7 @@ import {
 	editorSpotlightTarget,
 	getNarrationMode,
 	handleTourMessage,
+	handoffCompletedSetup,
 	initializeMarkerPlayback,
 	initializeReviewedEditorPlayback,
 	initialPlayPhase,
@@ -371,6 +372,59 @@ describe("setup playback initialization", () => {
 			setupActionsApproved: true,
 			fromEdit: true,
 		});
+	});
+
+	it("returns from a navigated excluded setup to startUrl before video continuation", async () => {
+		const navigatedSetupVideo: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			setup: {
+				includeInTour: false,
+				steps: [
+					{
+						body: "Prepare on another page",
+						navigate: "https://app.example/setup",
+					},
+				],
+			},
+			steps: [{ body: "Begin the tutorial" }],
+		};
+		const events: string[] = [];
+		const writeState = mock(
+			async (_state: Parameters<typeof completeSetupPhase>[0]) => {
+				events.push("state:tutorial");
+			},
+		);
+		const navigate = mock((url: string) => {
+			events.push(`navigate:${url}`);
+		});
+		const continuePlayback = mock(async () => {
+			events.push("continue");
+		});
+		const abortPlayback = mock(async () => {
+			events.push("abort");
+		});
+
+		const result = await handoffCompletedSetup(
+			{
+				script: navigatedSetupVideo,
+				phase: "setup",
+				index: 1,
+			},
+			"https://app.example/setup",
+			{ writeState, navigate, continuePlayback, abortPlayback },
+		);
+
+		expect(result).toBe("navigate");
+		expect(events).toEqual([
+			"state:tutorial",
+			"navigate:https://app.example/start",
+		]);
+		expect(writeState).toHaveBeenCalledWith(
+			expect.objectContaining({ phase: "tutorial", index: 0 }),
+		);
+		expect(continuePlayback).not.toHaveBeenCalled();
+		expect(abortPlayback).not.toHaveBeenCalled();
 	});
 });
 
