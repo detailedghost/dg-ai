@@ -15,6 +15,7 @@ import type { TourScript } from "@/lib/demo-types";
 import {
 	confirmDownload,
 	discardRecording,
+	handleNarrationProgress,
 	handleRecordingData,
 	handleRequestVideoData,
 	startVideoRecording,
@@ -42,6 +43,11 @@ const ACTIVE_RECORDING = {
 	hideBody: false,
 	planMarkdown: "# Plan",
 };
+const readConfig = async () => ({
+	color: "random" as const,
+	voice: "af_heart",
+	narration: "both" as const,
+});
 
 function buildChromeStub() {
 	sendMessage = mock((..._args: unknown[]) => undefined);
@@ -251,7 +257,7 @@ describe("demo-recorder", () => {
 				},
 				steps: [{ body: "Show dashboard" }, { body: "Open details" }],
 			};
-			await startVideoRecording(TAB_ID, script);
+			await startVideoRecording(TAB_ID, script, readConfig);
 
 			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -273,7 +279,7 @@ describe("demo-recorder", () => {
 				setup: { steps: [{ body: "Sign in" }], includeInTour: false },
 				steps: [{ body: "Show dashboard" }],
 			};
-			await startVideoRecording(TAB_ID, script);
+			await startVideoRecording(TAB_ID, script, readConfig);
 
 			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -281,6 +287,32 @@ describe("demo-recorder", () => {
 					steps: [{ body: "Show dashboard" }],
 				}),
 			);
+		});
+
+		it("shows determinate narration preparation before starting offscreen work", async () => {
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				steps: [{ body: "Show dashboard" }],
+			};
+			await startVideoRecording(TAB_ID, script, readConfig);
+
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoPreparing,
+				narrate: true,
+			});
+		});
+	});
+
+	describe("handleNarrationProgress", () => {
+		it("clamps and forwards progress to the active tour tab", async () => {
+			await handleNarrationProgress(104.6, "Narration ready");
+
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.narrationProgress,
+				progress: 100,
+				label: "Narration ready",
+			});
 		});
 	});
 

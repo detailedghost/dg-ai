@@ -48,6 +48,7 @@ export function videoRecordingSupported(): boolean {
 export async function startVideoRecording(
 	tabId: number,
 	script: TourScript,
+	readConfig: typeof getConfig = getConfig,
 ): Promise<void> {
 	// Close any stale offscreen doc before acquiring the stream. A previous
 	// failed recording may have left one open with an active getUserMedia stream,
@@ -61,7 +62,7 @@ export async function startVideoRecording(
 	});
 	await ensureOffscreen();
 	const tour = script.title || "demo";
-	const { voice, narration } = await getConfig();
+	const { voice, narration } = await readConfig();
 	await chrome.storage.local.set({
 		[ACTIVE_KEY]: {
 			tabId,
@@ -70,17 +71,21 @@ export async function startVideoRecording(
 			planMarkdown: toPlanMarkdown(script),
 		} satisfies ActiveRecording,
 	});
+	const narrate = narration !== "captions";
+	// Paint the loading state before offscreen work begins so early progress
+	// updates cannot arrive before the tab has mounted its progress bar.
+	void chrome.tabs.sendMessage(tabId, {
+		type: MSG.videoPreparing,
+		narrate,
+	});
 	chrome.runtime.sendMessage({
 		type: MSG.startRecording,
 		target: "offscreen",
 		streamId,
 		steps: partitionTourSteps(script).tutorial,
 		voice,
-		narrate: narration !== "captions",
+		narrate,
 	});
-	// Notify the tab immediately so it can show a loading state while Kokoro
-	// synthesizes narration (which can take up to a minute on first use).
-	void chrome.tabs.sendMessage(tabId, { type: MSG.videoPreparing });
 }
 
 /** Offscreen reports capture is live: cue the tour tab to auto-play with these holds. */
@@ -91,6 +96,20 @@ export async function handleRecordingReady(durations: number[]): Promise<void> {
 			type: MSG.videoStart,
 			durations,
 			hideBody: active.hideBody,
+		});
+}
+
+/** Relay local model/synthesis progress to the tab showing the preparation modal. */
+export async function handleNarrationProgress(
+	progress: number,
+	label?: string,
+): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId != null)
+		void chrome.tabs.sendMessage(active.tabId, {
+			type: MSG.narrationProgress,
+			progress: Math.min(Math.max(Math.round(progress), 0), 100),
+			label,
 		});
 }
 

@@ -20,6 +20,9 @@ const stopVideoRecording = mock(() => undefined);
 const relayPlayStep = mock((_index: number) => undefined);
 const handleClearForCapture = mock(async () => undefined);
 const handleRecordingReady = mock(async (_durations: number[]) => undefined);
+const handleNarrationProgress = mock(
+	async (_progress: number, _label?: string) => undefined,
+);
 const handleRecordingData = mock(async (_dataUrl: string) => undefined);
 const confirmDownload = mock(async (_tabId: number) => undefined);
 const discardRecording = mock(async (_tabId: number) => undefined);
@@ -37,6 +40,7 @@ const handleRecordingMessage = createRecordingRouter({
 	relayPlayStep,
 	handleClearForCapture,
 	handleRecordingReady,
+	handleNarrationProgress,
 	handleRecordingData,
 	confirmDownload,
 	discardRecording,
@@ -52,6 +56,7 @@ beforeEach(() => {
 	relayPlayStep.mockClear();
 	handleClearForCapture.mockClear();
 	handleRecordingReady.mockClear();
+	handleNarrationProgress.mockClear();
 	handleRecordingData.mockClear();
 	confirmDownload.mockClear();
 	discardRecording.mockClear();
@@ -128,6 +133,23 @@ describe("handleRecordingMessage", () => {
 			noopSendResponse,
 		);
 		expect(handleRecordingReady).toHaveBeenCalledWith([]);
+	});
+
+	it("routes narration progress targeting background", () => {
+		handleRecordingMessage(
+			{
+				type: MSG.narrationProgress,
+				target: "background",
+				progress: 64,
+				label: "Synthesizing step 1 of 2",
+			},
+			sender,
+			noopSendResponse,
+		);
+		expect(handleNarrationProgress).toHaveBeenCalledWith(
+			64,
+			"Synthesizing step 1 of 2",
+		);
 	});
 
 	it("routes recordingData with a string dataUrl targeting background to handleRecordingData", () => {

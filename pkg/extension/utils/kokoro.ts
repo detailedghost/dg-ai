@@ -17,7 +17,15 @@ export type KokoroInstance = {
 let ttsPromise: Promise<KokoroInstance> | null = null;
 
 /** Load (and cache) the Kokoro model, pointing ORT at the extension's local wasm. */
-export function loadKokoro(): Promise<KokoroInstance> {
+export function loadKokoro(
+	onProgress?: (progress: {
+		status: string;
+		name?: string;
+		file?: string;
+		loaded?: number;
+		total?: number;
+	}) => void,
+): Promise<KokoroInstance> {
 	if (ttsPromise) return ttsPromise;
 	ttsPromise = (async () => {
 		/**
@@ -31,7 +39,11 @@ export function loadKokoro(): Promise<KokoroInstance> {
 		env.wasmPaths = chrome.runtime.getURL("ort/");
 		return (await KokoroTTS.from_pretrained(
 			"onnx-community/Kokoro-82M-v1.0-ONNX",
-			{ dtype: "q8", device: "wasm" },
+			{
+				dtype: "q8",
+				device: "wasm",
+				progress_callback: onProgress,
+			},
 		)) as unknown as KokoroInstance;
 	})();
 	return ttsPromise;

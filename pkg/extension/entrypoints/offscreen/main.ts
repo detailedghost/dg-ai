@@ -8,6 +8,7 @@
  */
 
 import { MSG } from "@/lib/demo-messages";
+import { NarrationProgressTracker } from "@/lib/narration-progress";
 import { loadKokoro } from "@/utils/kokoro";
 
 type Step = { body?: string; advance?: unknown };
@@ -90,6 +91,7 @@ async function start(
 			durations = await synthAll(steps, voice, audioCtx);
 		} else {
 			durations = steps.map((s) => holdFor(s, null));
+			reportNarrationProgress(100, "Recording ready");
 		}
 		// Stop might arrive while Kokoro is loading / synthesizing.
 		if (stopRequested) {
@@ -206,8 +208,21 @@ async function synthAll(
 ): Promise<number[]> {
 	const durations = steps.map((s) => holdFor(s, null));
 	stepBuffers = steps.map(() => null);
+	const narrated = steps.filter((step) => (step.body ?? "").trim()).length;
+	const tracker = new NarrationProgressTracker();
+	let lastReported = -1;
+	const report = (progress: number, label: string): void => {
+		if (progress === lastReported) return;
+		lastReported = progress;
+		reportNarrationProgress(progress, label);
+	};
 	try {
-		const tts = await loadKokoro();
+		report(0, "Loading local voice model");
+		const tts = await loadKokoro((info) => {
+			report(tracker.model(info), "Loading local voice model");
+		});
+		report(tracker.modelReady(), "Voice model ready");
+		let completed = 0;
 		for (let i = 0; i < steps.length; i++) {
 			const text = (steps[i]?.body ?? "").trim();
 			if (!text) continue;
@@ -216,14 +231,30 @@ async function synthAll(
 			buf.getChannelData(0).set(clip.audio);
 			stepBuffers[i] = buf;
 			durations[i] = holdFor(steps[i], buf.duration * 1000);
+			completed++;
+			report(
+				tracker.synthesis(completed, narrated),
+				`Synthesizing step ${completed} of ${narrated}`,
+			);
 		}
+		report(tracker.ready(), "Narration ready");
 	} catch (e) {
 		console.warn(
 			"[dg-ai-extension] narration synthesis failed; recording silent video",
 			e,
 		);
+		report(tracker.ready(), "Starting without narration");
 	}
 	return durations;
+}
+
+function reportNarrationProgress(progress: number, label: string): void {
+	chrome.runtime.sendMessage({
+		type: MSG.narrationProgress,
+		target: "background",
+		progress,
+		label,
+	});
 }
 
 /** How long to hold a step: max(narration + tail, numeric advance / default). */

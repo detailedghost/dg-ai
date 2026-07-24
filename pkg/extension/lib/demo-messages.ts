@@ -10,6 +10,8 @@ export const MSG = {
 	recordingData: "dg-demo:recording-data",
 	// offscreen → background: capture is live; carries per-step hold durations (ms)
 	recordingReady: "dg-demo:recording-ready",
+	// offscreen → background → content: local model/synthesis completion percentage
+	narrationProgress: "dg-demo:narration-progress",
 	// background → content script
 	videoPreparing: "dg-demo:video-preparing",
 	// offscreen → background → content: clear overlay UI just before capture starts

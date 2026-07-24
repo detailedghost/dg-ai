@@ -5,6 +5,7 @@ import {
 	confirmDownload,
 	discardRecording,
 	handleClearForCapture,
+	handleNarrationProgress,
 	handleRecordingData,
 	handleRecordingReady,
 	handleRequestVideoData,
@@ -20,6 +21,8 @@ type RecordingMessage = {
 	dataUrl?: string;
 	durations?: number[];
 	index?: number;
+	progress?: number;
+	label?: string;
 };
 
 type RecordingSender = chrome.runtime.MessageSender;
@@ -54,6 +57,7 @@ export type RecordingDeps = {
 	relayPlayStep: typeof relayPlayStep;
 	handleClearForCapture: typeof handleClearForCapture;
 	handleRecordingReady: typeof handleRecordingReady;
+	handleNarrationProgress: typeof handleNarrationProgress;
 	handleRecordingData: typeof handleRecordingData;
 	confirmDownload: typeof confirmDownload;
 	discardRecording: typeof discardRecording;
@@ -65,6 +69,7 @@ const defaultDeps: RecordingDeps = {
 	relayPlayStep,
 	handleClearForCapture,
 	handleRecordingReady,
+	handleNarrationProgress,
 	handleRecordingData,
 	confirmDownload,
 	discardRecording,
@@ -90,6 +95,14 @@ function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 		[MSG.recordingReady]: (msg) => {
 			if (msg.target === "background")
 				void deps.handleRecordingReady(msg.durations ?? []);
+		},
+		[MSG.narrationProgress]: (msg) => {
+			if (
+				msg.target === "background" &&
+				typeof msg.progress === "number" &&
+				Number.isFinite(msg.progress)
+			)
+				void deps.handleNarrationProgress(msg.progress, msg.label);
 		},
 		[MSG.recordingData]: (msg) => {
 			if (msg.target === "background" && typeof msg.dataUrl === "string")
