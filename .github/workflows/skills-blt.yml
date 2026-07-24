@@ -6,7 +6,7 @@ on:
     paths:
       - pkg/skills-cli/**
       - pkg/common/**
-      - pkg/skills/**
+      - plugins/dg/skills/**
       - pkg/skills-test/**
       - .github/workflows/skills-blt.yml
   workflow_call:

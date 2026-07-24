@@ -1,16 +1,30 @@
 # Agent install guide — DeeGee (`dg`)
 
-How an AI agent (Claude Code) sets up this repository end-to-end, across **two
-components**:
+How an AI agent (Codex or Claude Code) sets up this repository end-to-end,
+across **two components**:
 
-1. **The Claude Code plugin** (`dg`) — provides the `/dg:*` skills.
+1. **The DeeGee plugin** (`dg`) — provides browser, demo, and prototype skills.
 1. **The `dg-ai-extension` browser extension** — the companion that groups tabs
    and drives in-browser demo tours.
 
 Both are needed for the full feature set. Steps below note what an agent can run
 directly vs. what needs a human (browser slash-commands and "Load unpacked").
 
-## Codex installation
+## Codex plugin installation
+
+Register this repository's Codex marketplace and install DeeGee:
+
+```bash
+codex plugin marketplace add detailedghost/dg-ai
+codex plugin add dg@detailedghost
+```
+
+Start a new Codex thread so it discovers the plugin's skills. On first use, a
+skill downloads the `dg-skills` CLI if needed. Run the browser skill's `install`
+command to stage the companion extension and print the browser's manual
+**Load unpacked** steps.
+
+### Standalone Codex skill installation
 
 Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
@@ -27,11 +41,9 @@ $env:DG_INSTALL_CODEX = "1"
 irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
-These commands install the CLI, stage the browser extension, and copy the
+These alternative commands install the CLI, stage the browser extension, and copy the
 `browser`, `demo`, and `proto` skills into `$CODEX_HOME/skills` (default
-`~/.codex/skills`). Start a new Codex thread after installation so it discovers
-the skills. The `.codex-plugin/plugin.json` manifest also makes a checkout
-recognizable as a Codex plugin for local marketplace workflows.
+`~/.codex/skills`). Start a new Codex thread after installation.
 
 ______________________________________________________________________
 
@@ -61,8 +73,16 @@ unpacked** path:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
+# Windows PowerShell:
+# irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 - No Bun needed at runtime — the binary is self-contained. Bun is only required
@@ -79,7 +99,7 @@ DG="$HOME/.dg/bin/dg-skills"
   1. Click **Load unpacked** and select the printed path.
 
 Full per-OS detail (WSL → Windows profile paths, native Windows, macOS/Linux):
-`pkg/skills/browser/references/install.md`.
+`plugins/dg/skills/browser/references/install.md`.
 
 ### Alternative: cold-start with the extension pre-loaded
 
@@ -98,9 +118,9 @@ first:
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm
-grouping/tours work by opening a batch (`/dg:browser batch-open …`) or a demo
-(`/dg:demo …`) — the extension acts only on URLs it marked, so nothing happens
-until it's loaded in that browser profile.
+grouping/tours work with the browser or demo skill. Claude Code uses the
+`/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
+so nothing happens until it is loaded in that browser profile.
 
 ______________________________________________________________________
 

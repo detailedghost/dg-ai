@@ -2,7 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PROTO_SKILL = join(import.meta.dir, "..", "..", "skills", "proto");
+const PROTO_SKILL = join(
+	import.meta.dir,
+	"..",
+	"..",
+	"..",
+	"plugins",
+	"dg",
+	"skills",
+	"proto",
+);
 
 function skillFile(path: string): string {
 	const absolute = join(PROTO_SKILL, path);
@@ -73,7 +82,7 @@ describe("proto skill", () => {
 		expect(commands).toContain("pkg/skills-cli");
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("browser-batch-installed");
-		expect(commands).toContain("/dg:browser install");
+		expect(commands).toMatch(/browser skill.+install/i);
 		expect(commands).toMatch(/timed out|times out/i);
 		for (const command of ["proto scrape", "proto plant", "proto cleanup"]) {
 			expect(commands).toContain(command);

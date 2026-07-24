@@ -1,10 +1,10 @@
 {
 	"name": "dg",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "DeeGee — detailedghost's personal Claude Code utilities.",
 	"author": { "name": "Dante Burgos" },
 	"repository": "https://github.com/detailedghost/dg-ai",
 	"license": "MIT",
 	"keywords": ["utilities", "browser", "tabs", "demo"],
-	"skills": ["./pkg/skills"]
+	"skills": ["./plugins/dg/skills"]
 }

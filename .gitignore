@@ -1,5 +1,7 @@
 node_modules/
 .DS_Store
-.agents
+.agents/*
+!.agents/plugins/
+!.agents/plugins/marketplace.json
 dist/
 .output/
