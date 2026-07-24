@@ -35,53 +35,89 @@ Read the relevant code (diff, PR, or files) and write a plain-English summary:
 
 This numbered list becomes the tour.
 
-## Phase 2 — Compile the tour script
+## Phase 2 — Author the tour plan (Markdown)
 
-Turn the moments into a `TourScript` (schema + selector guidance in
-[references/authoring.md](references/authoring.md)). Each step needs a stable CSS `selector`,
-a short `title`, terse `body` text, and an `advance` mode. Use `navigate` for multi-page tours.
+Write the tour as a Markdown **plan file** — YAML frontmatter plus a `## Steps` list, one
+line per step (format + selector guidance in [references/authoring.md](references/authoring.md)).
+You never hand-write JSON; the CLI reads this Markdown and generates the runnable script.
 
-Keep text boxes to a sentence or two; keep steps atomic (one idea each). For **video**, set
-`advance` to a number (ms) on any step that should linger longer than the default (~3.5s).
+```markdown
+---
+title: How to use Google
+startUrl: https://www.google.com
+mode: video
+---
+
+## Steps
+
+1. **Welcome to Google** — This quick tour shows the basics. `4s`
+2. **The search box** `textarea[name="q"]` — Click here and type. `4.5s`
+3. **Open results** `a#more` → https://www.google.com/search — Navigates, then highlights. `3s`
+```
+
+Each step line is `N. **title** [`selector`] [→ navigate-url] — body [`timing`]`. The trailing
+`` `timing` `` is `4s` / `500ms` / a bare ms count for auto-advance, or `click` / `next`.
+Keep text to a sentence or two; one idea per step. For **video**, add a `` `Ns` `` timing to
+any step that should linger longer than the default (~3.5s).
 
 ## Phase 3 — Approval gate (required)
 
-Present the compiled script as a readable step table — order, target selector, text-box copy,
-advance mode — and **wait for the user's explicit approval**. Do not hand off before they OK it.
+Present the plan as a readable step table — order, target selector, text-box copy, timing —
+and **wait for the user's explicit approval**. Do not hand off before they OK it.
 Adjust selectors/text on request and re-present.
 
 ## Phase 4 — Hand off to the extension
 
-Commands run the compiled `dg-skills` CLI at `~/.dg/bin/dg-skills`; bootstrap it
-once if missing:
+Commands run the compiled `dg-skills` CLI. In a dev checkout, compile the local
+source so the demo exercises the latest code — never a stale released binary.
+Otherwise fall back to the installed binary at `~/.dg/bin/dg-skills`, bootstrapping
+it once if missing:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
+SRC="${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli"
+if [ -f "$SRC/package.json" ]; then
+  ( cd "$SRC" && bun run build ) && DG="$SRC/dist/dg-skills"   # dev: use freshly-compiled binary
+fi
+[ -x "$DG" ] || sh "$SRC/bootstrap.sh"                          # else download the release
+# Windows PowerShell: & "$SRC/bootstrap.ps1"
 ```
 
-Write the approved script to `/tmp/ai/demo/tour.json`, then run the matching command:
+Write the approved plan to `/tmp/ai/demo/tour.md`, then run the matching command:
 
 **Walkthrough:**
 
 ```bash
-"$DG" demo /tmp/ai/demo/tour.json
+"$DG" demo /tmp/ai/demo/tour.md
 ```
 
 **Video:**
 
 ```bash
-"$DG" demo --video /tmp/ai/demo/tour.json
+"$DG" demo --video /tmp/ai/demo/tour.md
 ```
 
 Both open `startUrl` in the user's default browser with the tour encoded in a `_demo` marker;
-the extension plays it and strips the marker.
+the extension plays it and strips the marker. (A raw `.json` script is still accepted.)
+
+**Review/edit in the browser (`--edit`):** add `--edit` to open a **stepper** panel instead
+of playing. It walks the steps one at a time — spotlighting each target on the live page so
+selectors can be verified — and lets the user improve any field (title, selector, body, timing,
+navigate). On the final screen they **Download the plan (.md)**, **Play walkthrough**, or
+**Record video**. Use this when the user wants to eyeball/tweak the tour before committing.
+
+```bash
+"$DG" demo --edit /tmp/ai/demo/tour.md
+```
+
+> **Dev checkout:** the browser runs the **extension**, not the CLI. If you changed extension
+> code, rebuild + reload it (`bun run --filter='@dg/extension' build`, then reload the unpacked
+> extension in `chrome://extensions`) — otherwise you're testing a stale UI.
 
 - For **walkthrough**: confirm the browser opened and the tour is playing.
-- For **video**: tell the user to **press `Alt+Shift+D` to start recording** — a modal in the
-  page explains this. (The toolbar icon opens Settings, not recording — only the shortcut starts
-  capture.) The tour then auto-plays and records; when it finishes, the extension saves
+- For **video**: tell the user to **press `Alt+Shift+D`** (or click the DeeGee toolbar icon)
+  **to start recording** — a modal in the page explains this. The tour then auto-plays and
+  records; when it finishes, the extension saves
   `dg-demo/<tour>/<tour>.zip` — the video **and** its `plan.md` — to their **Downloads** folder
   and shows a confirmation. Chrome/Edge only (recording uses tabCapture + an offscreen document).
   The **recording mode** is set in the extension Settings page:

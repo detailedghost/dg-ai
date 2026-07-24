@@ -1,6 +1,10 @@
-import { describe, it, expect } from "bun:test";
-import { validate, toPlanMarkdown, extractScriptFromMarkdown } from "../src/index";
+import { describe, expect, it } from "bun:test";
 import type { TourScript } from "../src/index";
+import {
+	extractScriptFromMarkdown,
+	toPlanMarkdown,
+	validate,
+} from "../src/index";
 
 const validScript: TourScript = {
 	title: "My Tour",
@@ -28,7 +32,11 @@ describe("validate()", () => {
 	});
 
 	it("throws on invalid mode", () => {
-		const bad = { startUrl: "https://example.com", steps: [{ body: "hi" }], mode: "live" };
+		const bad = {
+			startUrl: "https://example.com",
+			steps: [{ body: "hi" }],
+			mode: "live",
+		};
 		expect(() => validate(bad)).toThrow("mode");
 	});
 });
@@ -40,16 +48,16 @@ describe("toPlanMarkdown()", () => {
 		expect(md).toContain("https://example.com");
 	});
 
-	it("includes a fenced json script block", () => {
+	it("emits the human step list, not an embedded json block", () => {
 		const md = toPlanMarkdown(validScript);
-		expect(md).toContain("```json");
-		expect(md).toContain("```");
+		expect(md).toContain("## Steps");
+		expect(md).not.toContain("```json");
 	});
 });
 
 describe("extractScriptFromMarkdown()", () => {
-	it("extracts the JSON block from a plan markdown string", () => {
-		const md = toPlanMarkdown(validScript);
+	it("extracts a json block from a legacy plan markdown string", () => {
+		const md = `\`\`\`json\n${JSON.stringify(validScript)}\n\`\`\``;
 		const extracted = extractScriptFromMarkdown(md);
 		expect(extracted).toMatchObject({ startUrl: "https://example.com" });
 	});
