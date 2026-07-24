@@ -10,7 +10,14 @@ Run:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
 "$DG" install
 ```
 
@@ -37,8 +44,20 @@ Then:
 Run:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\pkg\skills-cli\bootstrap.ps1"
-& "$env:USERPROFILE\.dg\bin\dg-skills.exe" install
+$dg = Join-Path $env:USERPROFILE ".dg\bin\dg-skills.exe"
+if (-not (Test-Path $dg)) {
+ $localBootstrap = if ($env:CLAUDE_PLUGIN_ROOT) {
+  Join-Path $env:CLAUDE_PLUGIN_ROOT "pkg\skills-cli\bootstrap.ps1"
+ } else {
+  $null
+ }
+ if ($localBootstrap -and (Test-Path $localBootstrap)) {
+  & $localBootstrap
+ } else {
+  irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+ }
+}
+& $dg install
 ```
 
 The installer copies the extension to:
@@ -56,7 +75,14 @@ Run:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
 "$DG" install
 ```
 
@@ -75,7 +101,14 @@ Run:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
 "$DG" install
 ```
 

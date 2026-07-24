@@ -73,6 +73,6 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
     "https://github.com/${REPO}/archive/refs/heads/master.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   tar -xzf "${archive}" -C "${tmpdir}"
-  cp -R "${tmpdir}/dg-ai-master/pkg/skills/." "${CODEX_ROOT}/skills/"
+  cp -R "${tmpdir}/dg-ai-master/plugins/dg/skills/." "${CODEX_ROOT}/skills/"
   echo "Codex skills installed in ${CODEX_ROOT}/skills"
 fi

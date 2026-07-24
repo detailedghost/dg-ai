@@ -1,8 +1,6 @@
 ---
 name: browser
-description: Open/group GitHub PR & URL tabs and play guided in-browser demo tours, via the companion dg-ai-extension. `install` sets up the extension; `batch-open <url…>` opens a grouped batch in your default browser; `launch` cold-starts a Chromium browser with the extension pre-loaded; `demo <script.json>` plays a guided tour. Grouping/tours are opt-in per invocation via URL markers, so hand-opened tabs are never touched.
-argument-hint: "install [chrome|firefox] | batch-open [--group <name>] <url…> | launch [--browser <key>] <url…> | demo <script.json> | rerun <plan.md>"
-user-invocable: true
+description: Open and group GitHub PR or URL tabs and play guided in-browser demo tours with the companion dg-ai-extension. Use install to set up the extension, batch-open to open grouped tabs in the default browser, launch to cold-start Chromium with the extension, and demo to play a tour. Grouping and tours are opt-in through URL markers, so hand-opened tabs are never touched.
 ---
 
 # Browser
@@ -16,9 +14,19 @@ self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-[ -x "$DG" ] || sh "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-# Windows PowerShell: & "${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli/bootstrap.ps1"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
 ```
+
+On Windows PowerShell, run the local `bootstrap.ps1` through
+`$env:CLAUDE_PLUGIN_ROOT` when available; otherwise pipe the repository's raw
+`bootstrap.ps1` to `Invoke-Expression`.
 
 Then run every command through it:
 
@@ -56,7 +64,7 @@ source and needs Bun from https://bun.sh.)
 - `demo [--print] <script.json>` — play a guided tour. Encodes the tour script
   into a `#_demo=<base64url>` marker on its `startUrl` and opens it in the default
   browser; the extension spotlights each step and injects text boxes, then strips
-  the marker. Authored/driven by the `/dg:demo` skill — see that skill for the
+  the marker. Authored/driven by the demo skill — see that skill for the
   script schema. `--print` emits the marked URL instead of opening it. Each run
   also saves a re-runnable `~/.dg/demos/<slug>/<slug>.demo.md`.
 

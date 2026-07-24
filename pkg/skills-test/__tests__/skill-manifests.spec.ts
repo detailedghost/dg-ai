@@ -1,14 +1,14 @@
 /**
- * Static smoke tests: the plugin manifest and every SKILL.md point at the
- * packages/paths that actually exist after the monorepo restructure, and the
- * CLI-invoking skills run the compiled dg-skills binary (not the TS source).
+ * Static smoke tests: both plugin hosts point at one canonical skill tree, and
+ * the CLI-invoking skills can bootstrap without a host-specific environment.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
-const SKILLS_DIR = join(REPO_ROOT, "pkg", "skills");
+const CODEX_PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
+const SKILLS_DIR = join(CODEX_PLUGIN_DIR, "skills");
 
 const skillDirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
 	.filter((d) => d.isDirectory())
@@ -25,23 +25,53 @@ function markdownFiles(dir: string): string[] {
 	return out;
 }
 
-describe("plugin.json", () => {
-	const plugin = JSON.parse(
+describe("plugin manifests", () => {
+	const claudePlugin = JSON.parse(
 		readFileSync(join(REPO_ROOT, ".claude-plugin", "plugin.json"), "utf8"),
 	);
+	const codexPlugin = JSON.parse(
+		readFileSync(
+			join(CODEX_PLUGIN_DIR, ".codex-plugin", "plugin.json"),
+			"utf8",
+		),
+	);
 
-	test("skills is an array of ./-prefixed paths", () => {
-		expect(Array.isArray(plugin.skills)).toBe(true);
-		for (const p of plugin.skills) expect(p.startsWith("./")).toBe(true);
+	test("Claude Code points at the canonical skill tree", () => {
+		expect(claudePlugin.skills).toEqual(["./plugins/dg/skills"]);
 	});
 
-	test("skills points at the real, existing pkg/skills dir", () => {
-		expect(plugin.skills).toContain("./pkg/skills");
+	test("Codex points at the same skill tree from its plugin root", () => {
+		expect(codexPlugin.skills).toBe("./skills/");
 		expect(existsSync(SKILLS_DIR)).toBe(true);
 	});
 });
 
-describe("each skill directory", () => {
+describe("Codex marketplace", () => {
+	const marketplace = JSON.parse(
+		readFileSync(
+			join(REPO_ROOT, ".agents", "plugins", "marketplace.json"),
+			"utf8",
+		),
+	);
+
+	test("publishes the dg plugin from the standard repo-local path", () => {
+		const dg = marketplace.plugins.find(
+			(plugin: { name: string }) => plugin.name === "dg",
+		);
+		expect(dg?.source).toEqual({
+			source: "local",
+			path: "./plugins/dg",
+		});
+		expect(dg?.policy).toEqual({
+			installation: "AVAILABLE",
+			authentication: "ON_INSTALL",
+		});
+		expect(dg?.category).toBe("Productivity");
+		expect(existsSync(join(REPO_ROOT, dg.source.path))).toBe(true);
+	});
+});
+
+describe("each shared skill directory", () => {
 	test("there is at least one skill", () => {
 		expect(skillDirs.length).toBeGreaterThan(0);
 	});
@@ -50,10 +80,16 @@ describe("each skill directory", () => {
 		test(`${name}/ has a SKILL.md`, () => {
 			expect(existsSync(join(SKILLS_DIR, name, "SKILL.md"))).toBe(true);
 		});
+
+		test(`${name}/ uses cross-host frontmatter`, () => {
+			const skill = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
+			expect(skill).not.toContain("argument-hint:");
+			expect(skill).not.toContain("user-invocable:");
+		});
 	}
 });
 
-describe("no stale post-restructure paths in pkg/skills", () => {
+describe("no stale paths in the shared skill tree", () => {
 	for (const file of markdownFiles(SKILLS_DIR)) {
 		const rel = relative(REPO_ROOT, file);
 		test(rel, () => {
@@ -77,8 +113,59 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 			expect(md).toContain("skills-cli");
 			expect(md).toContain("bootstrap.sh");
 		});
+		test(`${name}: can bootstrap without CLAUDE_PLUGIN_ROOT`, () => {
+			expect(md).toContain(
+				"https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh",
+			);
+			expect(md).not.toContain('SRC="${CLAUDE_PLUGIN_ROOT}/');
+		});
 		test(`${name}: does not run the TS source entrypoint`, () => {
 			expect(md).not.toContain("src/index.ts");
 		});
 	}
+});
+
+describe("demo workflow parity", () => {
+	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
+
+	test("new walkthroughs open in the extension editor", () => {
+		expect(demo).toContain('"$DG" demo --edit /tmp/ai/demo/tour.md');
+	});
+
+	test("new videos open in the extension editor", () => {
+		expect(demo).toContain('"$DG" demo --video --edit /tmp/ai/demo/tour.md');
+	});
+
+	test("the editor is required rather than host-discretionary", () => {
+		expect(demo).toContain(
+			"always open a newly authored tour in the extension's",
+		);
+		expect(demo).toContain("Do not launch a new tour directly");
+		expect(demo).toContain("review it in the extension, then play it");
+	});
+});
+
+describe("demo setup phase", () => {
+	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
+
+	test("setup is optional and excluded from the demo by default", () => {
+		expect(demo).toContain("## Phase 2 — Optional setup (off-demo by default)");
+		expect(demo).toContain(
+			"Exclude setup from the TourScript, plan steps, narration, timing, and recording",
+		);
+		expect(demo).toContain("Setup (excluded from tour)");
+	});
+
+	test("explicitly included setup becomes leading TourSteps", () => {
+		expect(demo).toContain("author those actions as the leading\nTourSteps");
+		expect(demo).toContain("Setup (included)");
+		expect(demo).toContain("normal `## Steps` grammar");
+	});
+
+	test("setup protects authentication secrets", () => {
+		expect(demo).toContain("credential, MFA, CAPTCHA, or permission gates");
+		expect(demo).toContain(
+			"Never\n   put secrets or authentication values in the plan",
+		);
+	});
 });

@@ -1,0 +1,20 @@
+{
+	"name": "detailedghost",
+	"interface": {
+		"displayName": "detailedghost"
+	},
+	"plugins": [
+		{
+			"name": "dg",
+			"source": {
+				"source": "local",
+				"path": "./plugins/dg"
+			},
+			"policy": {
+				"installation": "AVAILABLE",
+				"authentication": "ON_INSTALL"
+			},
+			"category": "Productivity"
+		}
+	]
+}

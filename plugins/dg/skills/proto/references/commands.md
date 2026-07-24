@@ -8,20 +8,21 @@ Gate this skill before scrape on the installer marker used by
 ```bash
 INSTALL_MARKER="$HOME/.config/dg/browser-batch-installed"
 if [ ! -f "$INSTALL_MARKER" ]; then
-  echo "dg-ai-extension is not installed; run /dg:browser install first."
+  echo "dg-ai-extension is not installed; run the browser skill's install command first."
   exit 1
 fi
 ```
 
-This is `/dg:proto`'s own precondition. Do not delegate to another prototype
+This is the proto skill's own precondition. Do not delegate to another prototype
 skill and do not attempt scrape when the marker is absent.
 
 The marker proves the installer completed, not that the extension is enabled in
 the current browser profile. If scrape times out, report:
 
-> Prototype scrape timed out. Run `/dg:browser install`, confirm the extension
-> is enabled in the browser that opened, and retry. Also disable “ask where to
-> save each file” and check whether Downloads was relocated.
+> Prototype scrape timed out. Run the browser skill's `install` command,
+> confirm the extension is enabled in the browser that opened, and retry. Also
+> disable “ask where to save each file” and check whether Downloads was
+> relocated.
 
 ## CLI bootstrap
 
@@ -30,14 +31,28 @@ installed binary and bootstrap it once if missing:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
-SRC="${CLAUDE_PLUGIN_ROOT}/pkg/skills-cli"
-if [ -f "$SRC/package.json" ]; then
+SRC=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&
+  [ -f "$CLAUDE_PLUGIN_ROOT/pkg/skills-cli/package.json" ]; then
+  SRC="$CLAUDE_PLUGIN_ROOT/pkg/skills-cli"
+elif [ -f "$PWD/pkg/skills-cli/package.json" ]; then
+  SRC="$PWD/pkg/skills-cli"
+fi
+if [ -n "$SRC" ]; then
   ( cd "$SRC" && bun run build ) && DG="$SRC/dist/dg-skills"
 fi
-[ -x "$DG" ] || sh "$SRC/bootstrap.sh"
+if [ ! -x "$DG" ]; then
+  if [ -n "$SRC" ]; then
+    sh "$SRC/bootstrap.sh"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
 ```
 
-On Windows PowerShell, bootstrap with `& "$SRC/bootstrap.ps1"`.
+On Windows PowerShell, use the checkout's `bootstrap.ps1` when a local source
+tree was found; otherwise pipe the repository's raw `bootstrap.ps1` to
+`Invoke-Expression`.
 
 If extension source changed in a dev checkout, also rebuild the extension and
 reload the unpacked extension in the browser; the browser does not execute CLI

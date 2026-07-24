@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: Live Page Prototype
+  short_description: Prototype and compare live page variations
+  default_prompt: Use $proto to prototype variations on a live application page.

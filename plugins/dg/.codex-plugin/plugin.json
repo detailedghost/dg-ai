@@ -8,7 +8,7 @@
 	},
 	"repository": "https://github.com/detailedghost/dg-ai",
 	"license": "MIT",
-	"skills": "./skills",
+	"skills": "./skills/",
 	"interface": {
 		"displayName": "DeeGee",
 		"shortDescription": "Browser workflows and live-page prototypes",

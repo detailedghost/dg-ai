@@ -44,7 +44,7 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 	Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
 	$skillsDir = Join-Path $codexRoot "skills"
 	New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-	Copy-Item -Recurse -Force (Join-Path $tmpDir "dg-ai-master\pkg\skills\*") $skillsDir
+	Copy-Item -Recurse -Force (Join-Path $tmpDir "dg-ai-master\plugins\dg\skills\*") $skillsDir
 	Remove-Item -Recurse -Force $tmpDir
 	Write-Host "Codex skills installed in $skillsDir"
 }
