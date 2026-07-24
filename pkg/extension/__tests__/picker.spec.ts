@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { Window } from "happy-dom";
 import { cssSelectorFor, waitForEl } from "@/lib/picker";
 
@@ -74,5 +74,24 @@ describe("cssSelectorFor", () => {
 describe("waitForEl", () => {
 	it("does not throw when playback receives malformed CSS", async () => {
 		await expect(waitForEl("[", 0)).resolves.toBeNull();
+	});
+
+	it("queries once initially, then safely polls for a valid selector", async () => {
+		const querySelector = spyOn(document, "querySelector");
+		try {
+			const pending = waitForEl("#later", 250);
+			expect(querySelector).toHaveBeenCalledTimes(1);
+
+			setTimeout(() => {
+				const later = document.createElement("div");
+				later.id = "later";
+				document.body.appendChild(later);
+			}, 10);
+
+			await expect(pending).resolves.toHaveProperty("id", "later");
+			expect(querySelector).toHaveBeenCalledTimes(2);
+		} finally {
+			querySelector.mockRestore();
+		}
 	});
 });

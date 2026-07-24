@@ -79,8 +79,12 @@ export function waitForEl(
 	selector: string,
 	timeoutMs = 1500,
 ): Promise<HTMLElement | null> {
-	if (!isValidSelector(document, selector)) return Promise.resolve(null);
-	const now = safeQuerySelector<HTMLElement>(document, selector);
+	let now: HTMLElement | null;
+	try {
+		now = document.querySelector<HTMLElement>(selector);
+	} catch {
+		return Promise.resolve(null);
+	}
 	if (now) return Promise.resolve(now);
 	return new Promise((resolve) => {
 		const start = Date.now();

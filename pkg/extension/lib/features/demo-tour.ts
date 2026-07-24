@@ -263,11 +263,13 @@ const setRecording = (on: boolean): Promise<void> =>
 		: browser.storage.local.remove(recKey());
 
 /** Whether two URLs share an origin (scheme+host+port). */
-function sameOrigin(a: string, b: string): boolean {
+function sameOrigin(
+	a: string,
+	b: string,
+	baseUrl: string = location.href,
+): boolean {
 	try {
-		return (
-			new URL(a, location.href).origin === new URL(b, location.href).origin
-		);
+		return new URL(a, baseUrl).origin === new URL(b, baseUrl).origin;
 	} catch {
 		return false;
 	}
@@ -417,6 +419,45 @@ function expectedUrl(
 	return startUrl;
 }
 
+export type SetupHandoffDeps = {
+	writeState: (state: PlayState) => Promise<void>;
+	navigate: (url: string) => void;
+	continuePlayback: () => Promise<void>;
+	abortPlayback: () => Promise<void>;
+};
+
+/**
+ * Persist setup completion, then put excluded video tours on the first tutorial
+ * page before allowing the recording prompt to appear.
+ */
+export async function handoffCompletedSetup(
+	state: PlayState,
+	currentUrl: string,
+	deps: SetupHandoffDeps,
+): Promise<"navigate" | "continue" | "abort"> {
+	const completed = completeSetupPhase(state);
+	await deps.writeState(completed);
+	if (!isVideo(state.script)) {
+		await deps.continuePlayback();
+		return "continue";
+	}
+	const want = expectedUrl(
+		stateSteps(completed),
+		state.script.startUrl,
+		completed.index,
+	);
+	if (sameUrl(currentUrl, want)) {
+		await deps.continuePlayback();
+		return "continue";
+	}
+	if (!sameOrigin(want, state.script.startUrl, currentUrl)) {
+		await deps.abortPlayback();
+		return "abort";
+	}
+	deps.navigate(new URL(want, currentUrl).href);
+	return "navigate";
+}
+
 async function playCurrent(ctx: Ctx): Promise<void> {
 	const state = await loadState();
 	if (!state) return removeUi();
@@ -424,8 +465,14 @@ async function playCurrent(ctx: Ctx): Promise<void> {
 	const step = steps[state.index];
 	if (!step) {
 		if (isSetup(state)) {
-			await saveState(completeSetupPhase(state));
-			await begin(ctx, state.script);
+			await handoffCompletedSetup(state, location.href, {
+				writeState: saveState,
+				navigate: (url) => {
+					location.href = url;
+				},
+				continuePlayback: () => begin(ctx, state.script),
+				abortPlayback: () => finish(ctx),
+			});
 			return;
 		}
 		return isVideo(state.script) ? finishVideo(ctx) : finish(ctx);
