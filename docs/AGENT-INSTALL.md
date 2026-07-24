@@ -10,6 +10,29 @@ components**:
 Both are needed for the full feature set. Steps below note what an agent can run
 directly vs. what needs a human (browser slash-commands and "Load unpacked").
 
+## Codex installation
+
+Codex can load the same skills without the Claude plugin. The bootstrap scripts
+keep this opt-in because they write to Codex's local skill directory:
+
+```bash
+DG_INSTALL_CODEX=1 \
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DG_INSTALL_CODEX = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+These commands install the CLI, stage the browser extension, and copy the
+`browser`, `demo`, and `proto` skills into `$CODEX_HOME/skills` (default
+`~/.codex/skills`). Start a new Codex thread after installation so it discovers
+the skills. The `.codex-plugin/plugin.json` manifest also makes a checkout
+recognizable as a Codex plugin for local marketplace workflows.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

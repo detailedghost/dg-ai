@@ -1,0 +1,21 @@
+{
+	"name": "dg",
+	"description": "Browser workflows and live-page prototyping skills for Codex.",
+	"version": "1.0.0",
+	"author": {
+		"name": "detailedghost",
+		"url": "https://github.com/detailedghost"
+	},
+	"repository": "https://github.com/detailedghost/dg-ai",
+	"license": "MIT",
+	"skills": "./skills",
+	"interface": {
+		"displayName": "DeeGee",
+		"shortDescription": "Browser workflows and live-page prototypes",
+		"longDescription": "Browser automation and live-page prototyping skills for Codex.",
+		"developerName": "detailedghost",
+		"category": "Productivity",
+		"capabilities": ["Read", "Write"],
+		"defaultPrompt": ["Open a browser batch", "Run a live page prototype"]
+	}
+}

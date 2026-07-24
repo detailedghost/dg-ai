@@ -61,3 +61,18 @@ esac
 # Set up the browser extension too, so one command installs everything.
 echo "Setting up the dg-ai-extension…"
 "${DEST}" install
+
+# Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
+# repository's skills into CODEX_HOME (default: ~/.codex/skills).
+if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
+  CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "${tmpdir}"' EXIT
+  archive="${tmpdir}/dg-ai.tar.gz"
+  curl -fsSL -H "User-Agent: dg-ai" \
+    "https://github.com/${REPO}/archive/refs/heads/master.tar.gz" -o "${archive}"
+  mkdir -p "${CODEX_ROOT}/skills"
+  tar -xzf "${archive}" -C "${tmpdir}"
+  cp -R "${tmpdir}/dg-ai-master/pkg/skills/." "${CODEX_ROOT}/skills/"
+  echo "Codex skills installed in ${CODEX_ROOT}/skills"
+fi

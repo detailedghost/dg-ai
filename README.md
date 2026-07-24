@@ -38,6 +38,26 @@ extension and print the **Load unpacked** steps. Re-run `dg-skills install`
 anytime to update. (Building the extension from source with `--local` needs
 [Bun](https://bun.sh).)
 
+### Codex
+
+To install the same skills for Codex, opt in while bootstrapping:
+
+```bash
+DG_INSTALL_CODEX=1 curl -fsSL \
+  https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+```
+
+PowerShell:
+
+```powershell
+$env:DG_INSTALL_CODEX = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+The skills are copied to `$CODEX_HOME/skills` (or `~/.codex/skills`) and are
+available in a new Codex thread. The repository also ships a
+`.codex-plugin/plugin.json` manifest for Codex plugin marketplace workflows.
+
 ### 🌐 Supported browsers
 
 - **Chromium** — Chrome, Edge, Brave, Vivaldi, Opera (single build)
