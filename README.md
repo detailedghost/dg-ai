@@ -108,6 +108,10 @@ Codex:      $dg:demo 1517
 You review the compiled tour script before it plays. Optional screenshots/video
 land in your Downloads folder.
 
+Tours can include a setup phase for login, configuration, or seeded data. Setup
+is excluded from the tutorial and recording by default, but can be explicitly
+included as the opening steps.
+
 Explore app-native UI approaches directly inside a live page, then export the
 one you approve:
 

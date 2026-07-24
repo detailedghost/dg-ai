@@ -32,8 +32,7 @@ Read the relevant code (diff, PR, or files) and write a plain-English summary:
 3. **Key moments to show** — a numbered list of the interactions worth spotlighting.
 
 Identify any prerequisite state separately from the key moments. The numbered
-key-moment list becomes the tutorial; prerequisites do not become TourSteps by
-default.
+key-moment list becomes the tutorial.
 
 ## Phase 2 — Optional setup (off-demo by default)
 
@@ -42,27 +41,28 @@ authenticated session, sample records, configuration, feature flags, or a
 specific page state.
 
 1. List the minimum prerequisites separately from the tutorial.
-2. Prepare them with the available browser tools, an existing authenticated
-   session, or user assistance.
-3. Ask the user to complete credential, MFA, CAPTCHA, or permission gates. Never
-   put secrets or authentication values in the plan.
-4. Verify the ready state and choose the tutorial's actual `startUrl`.
+2. Author reproducible preparation in `## Setup`, using the same grammar as
+   tutorial steps.
+3. Keep `includeSetup: false` unless the user explicitly asks to show the setup
+   as part of the tutorial.
+4. Ask the user to enter credentials, MFA codes, CAPTCHA answers, or other
+   secrets manually. Never put those values in a fill action.
 
-Exclude setup from the TourScript, plan steps, narration, timing, and recording
-unless the user explicitly asks to include it. Finish excluded setup before
-opening the extension editor. If setup occurred, summarize it during approval
-as **Setup (excluded from tour)**.
+With `includeSetup: false`, the extension runs setup first as a durable,
+user-paced phase, then hands off to the tutorial. Video narration and capture
+start only after that handoff. With `includeSetup: true`, setup steps become the
+leading tutorial steps and are included in narration, timing, progress, and
+recording.
 
-If the user explicitly asks to show setup, author those actions as the leading
-TourSteps, label them **Setup (included)** in the approval table, and include
-them in the step count and recording. Do not create a separate unsupported plan
-section; included setup uses the normal `## Steps` grammar.
+If no preparation is needed, omit both `includeSetup` and `## Setup`.
 
 ## Phase 3 — Author the tour plan (Markdown)
 
-Write the tour as a Markdown **plan file** — YAML frontmatter plus a `## Steps` list, one
-line per step (format + selector guidance in [references/authoring.md](references/authoring.md)).
-You never hand-write JSON; the CLI reads this Markdown and generates the runnable script.
+Write the tour as a Markdown **plan file** — YAML frontmatter, an optional
+`## Setup` list, and a required `## Steps` list, one line per step (format +
+selector guidance in [references/authoring.md](references/authoring.md)). You
+never hand-write JSON; the CLI reads this Markdown and generates the runnable
+script.
 
 ```markdown
 ---
@@ -87,8 +87,9 @@ any step that should linger longer than the default (~3.5s).
 
 Present the plan as a readable step table — order, target selector, text-box copy, timing —
 and **wait for the user's explicit approval**. Do not hand off before they OK it.
-Adjust selectors/text on request and re-present. Keep excluded setup outside the
-step table; show only its one-line **Setup (excluded from tour)** summary.
+Adjust selectors/text on request and re-present. List setup rows separately and
+label them **Setup (excluded preparation)** or **Setup (included in
+tutorial/video)**.
 
 ## Phase 5 — Review in the extension (required)
 
@@ -143,10 +144,10 @@ Write the approved plan to `/tmp/ai/demo/tour.md`, then run the matching command
 ```
 
 Both open `startUrl` in the user's default browser with the tour encoded in a
-`_demo` marker and show the stepper editor. It walks the steps one at a time,
-spotlighting each target on the live page so selectors can be verified, and
-lets the user improve any field (title, selector, body, timing, navigate). On
-the final screen they **Download the plan (.md)**, **Play walkthrough**, or
+`_demo` marker and show the stepper editor. It reviews setup before tutorial
+steps, displays whether setup will be included, spotlights targets on the live
+page, and lets the user improve every field. On the final screen the user may
+toggle setup inclusion, **Download the plan (.md)**, **Play walkthrough**, or
 **Record video**. (A raw `.json` script is still accepted.)
 
 > **Dev checkout:** the browser runs the **extension**, not the CLI. If you changed extension
@@ -155,10 +156,10 @@ the final screen they **Download the plan (.md)**, **Play walkthrough**, or
 
 - Confirm that the browser opened to the stepper editor. The user completes the
   review there and chooses **Play walkthrough** or **Record video**.
-- For **video**, after the user chooses **Record video**, tell them to press
-  **`Alt+Shift+D`** (or click the DeeGee toolbar icon) **to start recording** —
-  a modal in the page explains this. The tour then auto-plays and records; when
-  it finishes, the extension saves
+- For **video**, excluded setup runs before the recording prompt. After setup
+  hands off to the tutorial, tell the user to press **`Alt+Shift+D`** (or click
+  the DeeGee toolbar icon) **to start recording**. The tour then auto-plays and
+  records; when it finishes, the extension saves
   `dg-demo/<tour>/<tour>.zip` — the video **and** its `plan.md` — to their **Downloads** folder
   and shows a confirmation. Chrome/Edge only (recording uses tabCapture + an offscreen document).
   The **recording mode** is set in the extension Settings page:

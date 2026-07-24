@@ -119,6 +119,8 @@ export function buildVideoReviewHtml(slug: string, hasVideo: boolean): string {
 // --- end pure helpers ---
 
 const isVideo = (s: TourScript): boolean => s.mode === "video";
+
+/** Durable playback phase: excluded preparation or the recordable tutorial. */
 export type PlayPhase = "setup" | "tutorial";
 
 /** The durable phase a fresh playback must enter. */
@@ -126,7 +128,7 @@ export function initialPlayPhase(script: TourScript): PlayPhase {
 	return partitionTourSteps(script).setup.length ? "setup" : "tutorial";
 }
 
-/** Build trusted lifecycle state for a raw marker or fully reviewed editor run. */
+/** Build initial lifecycle state without granting marker-authored action consent. */
 export function initialPlayState(
 	script: TourScript,
 	source: "marker" | "reviewed-editor",
@@ -419,6 +421,7 @@ function expectedUrl(
 	return startUrl;
 }
 
+/** Side-effect boundary used while handing excluded setup to the tutorial. */
 export type SetupHandoffDeps = {
 	writeState: (state: PlayState) => Promise<void>;
 	navigate: (url: string) => void;
@@ -1172,6 +1175,8 @@ export type DraftStep = {
 	actKind: "" | "click" | "fill";
 	actText: string;
 };
+
+/** Editable tour fields, including optional setup rows and their inclusion choice. */
 export type Draft = {
 	title: string;
 	mode: TourMode;
@@ -1179,6 +1184,7 @@ export type Draft = {
 	setup?: { rows: DraftStep[]; includeInTour: boolean };
 };
 
+/** A setup or tutorial row in the extension's ordered review sequence. */
 export type EditorReviewRow = {
 	kind: "setup" | "tutorial";
 	row: DraftStep;

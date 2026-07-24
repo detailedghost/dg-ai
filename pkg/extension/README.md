@@ -23,6 +23,18 @@ bun run zip:firefox  # build + package for Firefox
 
 See [docs/AGENT-INSTALL.md](../../docs/AGENT-INSTALL.md) for full setup.
 
+## Guided demos
+
+Tour scripts may include an optional setup phase for login, configuration,
+seeded data, or other preparation. Setup is reviewed in the extension editor.
+When excluded (the default), it runs user-paced before the tutorial and before
+video capture starts. When explicitly included, its steps lead the tutorial,
+narration, and recording.
+
+Auth secrets must never be stored in setup fill actions. Marker-provided
+automatic actions require explicit approval before playback, and recording
+remains blocked until setup has handed off to the tutorial.
+
 ## Live-page prototypes
 
 The `/dg:proto` skill and `dg-skills proto` commands use the extension to sample

@@ -4,6 +4,7 @@ export type StepAdvance = "next" | "click" | number;
 /** An action the tour performs on the step's target: click it, or type text into it. */
 export type StepAction = { do: "click" } | { do: "fill"; value: string };
 
+/** One authored spotlight, navigation, or action in setup or tutorial playback. */
 export type TourStep = {
 	/** CSS selector to spotlight; omit for a centered modal. */
 	selector?: string;
@@ -20,12 +21,13 @@ export type TourStep = {
 /** "walkthrough" = user-paced live tour; "video" = auto-play + record to webm. */
 export type TourMode = "walkthrough" | "video";
 
-/** Optional preparation that runs before the tutorial. It may be included in it. */
+/** Optional preparation, excluded by default or included as leading tutorial steps. */
 export type TourSetup = {
 	steps: TourStep[];
 	includeInTour: boolean;
 };
 
+/** Durable guided-tour contract shared by the CLI and browser extension. */
 export type TourScript = {
 	title?: string;
 	startUrl: string;
