@@ -1,13 +1,14 @@
 ---
 name: demo
-description: Produce a guided in-browser demo of a feature or PR — optionally preparing authenticated, configured, or seeded setup state first — then use the dg-ai-extension to spotlight each element and inject explanatory text boxes in the user's real browser. Supports `walkthrough` (live, user-paced) and `video` (auto-play and recording). Compile a tour script, get chat approval, review it in the extension, then play it. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
+description: Produce a guided in-browser demo of a feature or PR — optionally preparing authenticated, configured, or seeded setup state first — then use the dg-ai-extension to spotlight each element and inject explanatory text boxes in the user's real browser. Supports `walkthrough` (live, user-paced) and `video` (auto-play and recording). Compile a tour script, review and approve it in the extension, then play it. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
 ---
 
 # Guided-tour demo
 
 Turn a feature or PR into a guided tour that plays in the user's real browser: the
 companion `dg-ai-extension` spotlights each element and shows an explanatory text box,
-step by step. You compile the tour, the user approves it, then hand it off.
+step by step. You compile the tour, then the user reviews and approves it in the
+extension before playback.
 
 Two modes (first arg; default `walkthrough`):
 
@@ -83,21 +84,17 @@ Each step line is `N. **title** [`selector`] [→ navigate-url] — body [`timin
 Keep text to a sentence or two; one idea per step. For **video**, add a `` `Ns` `` timing to
 any step that should linger longer than the default (~3.5s).
 
-## Phase 4 — Chat approval gate (required)
+## Phase 4 — Review and approval in the extension (required)
 
-Present the plan as a readable step table — order, target selector, text-box copy, timing —
-and **wait for the user's explicit approval**. Do not hand off before they OK it.
-Adjust selectors/text on request and re-present. List setup rows separately and
-label them **Setup (excluded preparation)** or **Setup (included in
-tutorial/video)**.
+**Always open a newly authored tour in the extension's stepper editor
+immediately after compiling it.** Do not present a chat approval table or wait
+for chat approval first. The extension editor is the approval gate for both
+Claude Code and Codex: it lets the user verify selectors against the live page,
+edit every field, and explicitly choose playback or recording only when the
+plan is ready.
 
-## Phase 5 — Review in the extension (required)
-
-After chat approval, **always open a newly authored tour in the extension's
-stepper editor**. This keeps Claude Code and Codex on the same workflow and lets
-the user verify selectors against the live page before playback or recording.
-Do not launch a new tour directly with `demo` or `demo --video`; those paths skip
-the extension review stage.
+Do not launch a new tour directly with `demo` or `demo --video`; those paths
+skip the required extension review stage.
 
 Commands run the compiled `dg-skills` CLI. In a dev checkout, compile the local
 source so the demo exercises the latest code — never a stale released binary.
@@ -129,7 +126,7 @@ On Windows PowerShell, use the checkout's `bootstrap.ps1` when a local source
 tree was found; otherwise pipe the repository's raw `bootstrap.ps1` to
 `Invoke-Expression`.
 
-Write the approved plan to `/tmp/ai/demo/tour.md`, then run the matching command:
+Write the compiled plan to `/tmp/ai/demo/tour.md`, then run the matching command:
 
 **Walkthrough:**
 

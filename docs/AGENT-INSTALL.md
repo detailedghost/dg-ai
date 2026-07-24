@@ -49,17 +49,21 @@ ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin
 
-`/plugin` commands are **Claude Code slash commands the user types** — an agent
-cannot invoke them. Relay these two lines and ask the user to run them:
+Current Claude Code releases expose plugin management through the CLI, so an
+authorized agent can install or refresh DeeGee directly:
 
-```text
-/plugin marketplace add detailedghost/dg-ai
-/plugin install dg@detailedghost
+```bash
+claude plugin marketplace add detailedghost/dg-ai
+claude plugin install dg@detailedghost
+# Refresh an existing install:
+claude plugin update dg@detailedghost
 ```
 
-- First line registers the marketplace (use the GitHub slug `detailedghost/dg-ai`,
-  or a local path like `~/code/dg` for a checkout).
-- Second line installs the `dg` plugin from it.
+- The first line registers the marketplace. Use the GitHub slug
+  `detailedghost/dg-ai`, or a local checkout path such as `~/code/dg`.
+- The second line installs the `dg` plugin; `update` refreshes an existing copy.
+- Restart an existing Claude Code session after installing or updating so it
+  discovers the refreshed skills.
 
 After this, `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin directory and
 the `/dg:*` skills are available.
@@ -128,7 +132,7 @@ ______________________________________________________________________
 
 | Task | Agent-runnable? |
 | --- | --- |
-| `/plugin` marketplace add / install | No — user types these |
+| `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
 | `dg-skills install` (stage extension) | Yes |
 | Load unpacked in the browser | No — manual browser UI |

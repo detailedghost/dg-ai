@@ -44,6 +44,10 @@ describe("plugin manifests", () => {
 		expect(codexPlugin.skills).toBe("./skills/");
 		expect(existsSync(SKILLS_DIR)).toBe(true);
 	});
+
+	test("Claude Code and Codex publish the same plugin version", () => {
+		expect(claudePlugin.version).toBe(codexPlugin.version);
+	});
 });
 
 describe("Codex marketplace", () => {
@@ -138,10 +142,21 @@ describe("demo workflow parity", () => {
 
 	test("the editor is required rather than host-discretionary", () => {
 		expect(demo).toContain(
-			"always open a newly authored tour in the extension's",
+			"Always open a newly authored tour in the extension's",
 		);
 		expect(demo).toContain("Do not launch a new tour directly");
-		expect(demo).toContain("review it in the extension, then play it");
+		expect(demo).toContain(
+			"review and approve it in the extension, then play it",
+		);
+	});
+
+	test("the extension editor is the only approval gate", () => {
+		expect(demo).toContain(
+			"The extension editor is the approval gate for both",
+		);
+		expect(demo).toContain("Do not present a chat approval table");
+		expect(demo).not.toContain("Chat approval gate");
+		expect(demo).not.toContain("After chat approval");
 	});
 });
 
@@ -152,13 +167,13 @@ describe("demo setup phase", () => {
 		expect(demo).toContain("## Phase 2 — Optional setup (off-demo by default)");
 		expect(demo).toContain("Author reproducible preparation in `## Setup`");
 		expect(demo).toContain("Keep `includeSetup: false` unless");
-		expect(demo).toContain("Setup (excluded preparation)");
+		expect(demo).toContain("the extension runs setup first as a durable");
 	});
 
 	test("explicitly included setup becomes leading tutorial steps", () => {
 		expect(demo).toContain("With `includeSetup: true`");
 		expect(demo).toContain("leading tutorial steps");
-		expect(demo).toContain("Setup (included in");
+		expect(demo).toContain("included in narration, timing, progress, and");
 	});
 
 	test("setup protects authentication secrets", () => {
