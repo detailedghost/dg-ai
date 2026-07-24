@@ -5,5 +5,6 @@ export type {
 	StepAdvance,
 	TourMode,
 	TourScript,
+	TourSetup,
 	TourStep,
 } from "@dg/common";

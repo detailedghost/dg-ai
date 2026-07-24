@@ -45,17 +45,47 @@ export function injectTheme(root: ParentNode): void {
 	root.appendChild(style);
 }
 
+export type SelectorQueryRoot = {
+	querySelector(selectors: string): unknown;
+};
+
+/** Query an authored selector without allowing invalid CSS to escape. */
+export function safeQuerySelector<T extends Element>(
+	root: SelectorQueryRoot,
+	selector: string,
+): T | null {
+	try {
+		return root.querySelector(selector) as T | null;
+	} catch {
+		return null;
+	}
+}
+
+/** Whether an authored selector is syntactically valid for this document. */
+export function isValidSelector(
+	root: SelectorQueryRoot,
+	selector: string,
+): boolean {
+	try {
+		root.querySelector(selector);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** Poll for a selector for up to timeoutMs (elements may render after load). */
 export function waitForEl(
 	selector: string,
 	timeoutMs = 1500,
 ): Promise<HTMLElement | null> {
-	const now = document.querySelector<HTMLElement>(selector);
+	if (!isValidSelector(document, selector)) return Promise.resolve(null);
+	const now = safeQuerySelector<HTMLElement>(document, selector);
 	if (now) return Promise.resolve(now);
 	return new Promise((resolve) => {
 		const start = Date.now();
 		const iv = setInterval(() => {
-			const found = document.querySelector<HTMLElement>(selector);
+			const found = safeQuerySelector<HTMLElement>(document, selector);
 			if (found || Date.now() - start > timeoutMs) {
 				clearInterval(iv);
 				resolve(found ?? null);

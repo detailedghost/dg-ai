@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { TourScript } from "../src/index";
 import {
 	extractScriptFromMarkdown,
+	partitionTourSteps,
 	toPlanMarkdown,
 	validate,
 } from "../src/index";
@@ -38,6 +39,70 @@ describe("validate()", () => {
 			mode: "live",
 		};
 		expect(() => validate(bad)).toThrow("mode");
+	});
+
+	it("accepts optional setup while preserving a legacy script", () => {
+		const withSetup = {
+			...validScript,
+			setup: {
+				steps: [{ title: "Sign in", body: "Use the demo account." }],
+				includeInTour: false,
+			},
+		};
+
+		expect(validate(validScript)).toEqual(validScript);
+		expect(validate(withSetup)).toEqual(withSetup);
+	});
+
+	it("reports setup paths when setup is malformed", () => {
+		expect(() => validate({ ...validScript, setup: "not setup" })).toThrow(
+			"script.setup",
+		);
+		expect(() =>
+			validate({
+				...validScript,
+				setup: { steps: [], includeInTour: false },
+			}),
+		).toThrow("script.setup.steps");
+		expect(() =>
+			validate({
+				...validScript,
+				setup: {
+					steps: [{ body: 42 }],
+					includeInTour: true,
+				},
+			}),
+		).toThrow("setup step 0");
+		expect(() =>
+			validate({
+				...validScript,
+				setup: { steps: [{ body: "Prepare" }], includeInTour: "yes" },
+			}),
+		).toThrow("script.setup.includeInTour");
+	});
+});
+
+describe("partitionTourSteps()", () => {
+	it("keeps excluded setup separate and prepends included setup in source order", () => {
+		const steps = [
+			{ body: "First tutorial step" },
+			{ body: "Second tutorial step" },
+		];
+		const setup = [{ body: "Prepare account" }, { body: "Seed item" }];
+		expect(
+			partitionTourSteps({
+				...validScript,
+				steps,
+				setup: { steps: setup, includeInTour: false },
+			}),
+		).toEqual({ setup, tutorial: steps });
+		expect(
+			partitionTourSteps({
+				...validScript,
+				steps,
+				setup: { steps: setup, includeInTour: true },
+			}),
+		).toEqual({ setup: [], tutorial: [...setup, ...steps] });
 	});
 });
 

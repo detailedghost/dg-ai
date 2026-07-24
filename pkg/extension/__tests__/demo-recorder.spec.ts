@@ -8,16 +8,18 @@
  * fake-indexeddb, reset per test so no state leaks between cases.
  */
 
-import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from "fake-indexeddb";
-import { saveRecording, getRecording } from "@/utils/recording-db";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from "fake-indexeddb";
+import { MSG } from "@/lib/demo-messages";
+import type { TourScript } from "@/lib/demo-types";
 import {
-	handleRecordingData,
 	confirmDownload,
 	discardRecording,
+	handleRecordingData,
 	handleRequestVideoData,
+	startVideoRecording,
 } from "@/lib/features/demo-recorder";
-import { MSG } from "@/lib/demo-messages";
+import { getRecording, saveRecording } from "@/utils/recording-db";
 
 // ---------------------------------------------------------------------------
 // Chrome stub helpers
@@ -56,6 +58,11 @@ function buildChromeStub() {
 
 	(globalThis as any).chrome = {
 		tabs: { sendMessage },
+		tabCapture: { getMediaStreamId: mock(async () => "stream-id") },
+		offscreen: {
+			closeDocument: mock(async () => undefined),
+			createDocument: mock(async () => undefined),
+		},
 		downloads: { download: downloadMock },
 		storage: {
 			local: {
@@ -212,7 +219,9 @@ describe("demo-recorder", () => {
 				createdAt: Date.now(),
 			});
 
-			const sendResponse = mock((_data: { dataUrl: string | null }) => undefined);
+			const sendResponse = mock(
+				(_data: { dataUrl: string | null }) => undefined,
+			);
 			await handleRequestVideoData(TAB_ID, sendResponse);
 
 			expect(sendResponse).toHaveBeenCalledWith({
@@ -221,14 +230,61 @@ describe("demo-recorder", () => {
 		});
 
 		it("sendResponse called with { dataUrl: null } when entry is absent", async () => {
-			const sendResponse = mock((_data: { dataUrl: string | null }) => undefined);
+			const sendResponse = mock(
+				(_data: { dataUrl: string | null }) => undefined,
+			);
 			await handleRequestVideoData(TAB_ID, sendResponse);
 
 			expect(sendResponse).toHaveBeenCalledWith({ dataUrl: null });
 		});
 	});
 
-	// ── GREEN: coverage gap tests ────────────────────────────────────────────
+	describe("startVideoRecording", () => {
+		it("sends included setup before tutorial steps so narration indexes match recorded playback", async () => {
+			const script: TourScript = {
+				title: "Setup demo",
+				startUrl: "https://app.example",
+				mode: "video",
+				setup: {
+					steps: [{ body: "Sign in" }, { body: "Seed a record" }],
+					includeInTour: true,
+				},
+				steps: [{ body: "Show dashboard" }, { body: "Open details" }],
+			};
+			await startVideoRecording(TAB_ID, script);
+
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.startRecording,
+					steps: [
+						{ body: "Sign in" },
+						{ body: "Seed a record" },
+						{ body: "Show dashboard" },
+						{ body: "Open details" },
+					],
+				}),
+			);
+		});
+
+		it("does not send excluded setup to the recorder", async () => {
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				setup: { steps: [{ body: "Sign in" }], includeInTour: false },
+				steps: [{ body: "Show dashboard" }],
+			};
+			await startVideoRecording(TAB_ID, script);
+
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.startRecording,
+					steps: [{ body: "Show dashboard" }],
+				}),
+			);
+		});
+	});
+
+	// ── Additional behavior ─────────────────────────────────────────────────
 
 	describe("confirmDownload — download failure", () => {
 		it("chrome.runtime.lastError set → sends MSG.videoError; IDB entry is still removed", async () => {

@@ -74,10 +74,19 @@ function parseStepItem(text: string): TourStep {
  */
 export function parsePlanMarkdown(md: string): unknown {
 	const { data, body } = splitFrontmatter(md);
-	const list = marked
-		.lexer(body)
-		.find((t): t is Tokens.List => t.type === "list");
-	const steps = (list?.items ?? []).map((it) => parseStepItem(it.text));
+	let section = "";
+	let steps: TourStep[] = [];
+	let setup: TourStep[] | undefined;
+	for (const token of marked.lexer(body)) {
+		if (token.type === "heading") section = token.text.trim().toLowerCase();
+		else if (token.type === "list") {
+			const parsed = token.items.map((it: Tokens.ListItem) =>
+				parseStepItem(it.text),
+			);
+			if (section === "setup") setup = parsed;
+			else if (section === "steps") steps = parsed;
+		}
+	}
 
 	if (!data.startUrl || steps.length === 0)
 		return extractScriptFromMarkdown(md);
@@ -85,5 +94,10 @@ export function parsePlanMarkdown(md: string): unknown {
 	if (data.title) script.title = data.title;
 	if (data.mode === "walkthrough" || data.mode === "video")
 		script.mode = data.mode;
+	if (setup)
+		script.setup = {
+			steps: setup,
+			includeInTour: data.includeSetup === "true",
+		};
 	return script;
 }

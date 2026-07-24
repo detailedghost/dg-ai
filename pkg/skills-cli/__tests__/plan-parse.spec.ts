@@ -35,6 +35,58 @@ const script: TourScript = {
 };
 
 describe("parsePlanMarkdown()", () => {
+	it("round-trips setup inclusion and every setup step field", () => {
+		const withSetup: TourScript = {
+			...script,
+			setup: {
+				includeInTour: true,
+				steps: [
+					{
+						title: "Prepare",
+						selector: "#seed",
+						body: "Seed a record.",
+						navigate: "https://app.example/setup",
+						action: { do: "click" },
+						advance: 2500,
+					},
+				],
+			},
+		};
+
+		const markdown = toPlanMarkdown(withSetup);
+		expect(markdown).toContain("includeSetup: true");
+		expect(markdown).toContain("## Setup");
+		expect(markdown).toContain("## Steps");
+		expect(validate(parsePlanMarkdown(markdown))).toEqual(withSetup);
+	});
+
+	it("omits setup fields and section for scripts without setup", () => {
+		const markdown = toPlanMarkdown(script);
+		expect(markdown).not.toContain("includeSetup:");
+		expect(markdown).not.toContain("## Setup");
+		expect(validate(parsePlanMarkdown(markdown))).toEqual(script);
+	});
+
+	it("treats false or absent includeSetup as excluded setup", () => {
+		const base = `---\ntitle: T\nstartUrl: https://app.example\nmode: walkthrough\n---\n\n## Setup\n\n1. **Sign in** — Use the demo account.\n\n## Steps\n\n1. **Tour** — Show the dashboard.\n`;
+
+		expect(validate(parsePlanMarkdown(base))).toMatchObject({
+			setup: { includeInTour: false },
+		});
+		expect(
+			validate(
+				parsePlanMarkdown(
+					base.replace(
+						"mode: walkthrough",
+						"mode: walkthrough\nincludeSetup: false",
+					),
+				),
+			),
+		).toMatchObject({
+			setup: { includeInTour: false },
+		});
+	});
+
 	it("round-trips a script through the markdown plan form", () => {
 		const back = validate(parsePlanMarkdown(toPlanMarkdown(script)));
 		expect(back).toEqual(script);

@@ -79,6 +79,40 @@ Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
 - **`<number>`** — auto-advance after that many milliseconds (hands-off
   playback).
 
+## Optional setup stage
+
+Use `## Setup` for durable preparation such as signing in, seeding data, or
+choosing configuration. It has the same step-line grammar as `## Steps` and is
+controlled by `includeSetup` in frontmatter:
+
+```markdown
+---
+title: Prepared demo
+startUrl: http://localhost:4200
+includeSetup: false
+---
+
+## Setup
+
+1. **Sign in** — Use the demo account. `next`
+
+## Steps
+
+1. **Dashboard** — Now begin the tutorial. `next`
+```
+
+With `includeSetup: false`, setup always runs first as a user-paced preparation
+phase. It finishes before the walkthrough begins or the video recording prompt
+appears, so it is never narrated or captured. Set `includeSetup: true` when the
+preparation itself belongs in the demo: setup steps then lead the tutorial and
+video in source order.
+
+Setup actions are stored in the Markdown plan and URL marker. Never put
+credentials, passwords, API/session tokens, recovery codes, or MFA/one-time
+codes in an `@type="..."` action. Leave sensitive fields as manual, user-paced
+setup steps so the user enters those values directly. Playback always asks for
+explicit approval before any authored setup click/fill action can run.
+
 ## Multi-page tours
 
 Tour state lives in `storage.local`, so it survives navigations. To move to

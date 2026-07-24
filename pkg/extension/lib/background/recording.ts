@@ -1,3 +1,4 @@
+import { tourHasAutomaticActions } from "@dg/common";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import {
@@ -24,6 +25,27 @@ type RecordingMessage = {
 type RecordingSender = chrome.runtime.MessageSender;
 
 type RouteHandler = (msg: RecordingMessage, sender: RecordingSender) => void;
+
+export type RecordingTourState = {
+	script?: TourScript;
+	phase?: "setup" | "tutorial";
+	setupActionsApproved?: boolean;
+	automaticActionsApproved?: boolean;
+};
+
+/** Whether capture may start from the persisted tour state. */
+export function recordingStartAllowed(
+	state: RecordingTourState | undefined,
+): boolean {
+	const script = state?.script;
+	if (script?.mode !== "video" || state?.phase !== "tutorial") return false;
+	if (!tourHasAutomaticActions(script)) return true;
+	if (state?.automaticActionsApproved === true) return true;
+	return (
+		!script.steps.some((step) => step.action != null) &&
+		state?.setupActionsApproved === true
+	);
+}
 
 /** The demo-recorder functions the router dispatches to — injectable for tests. */
 export type RecordingDeps = {
@@ -107,17 +129,23 @@ export function createRecordingRouter(
 export const handleRecordingMessage = createRecordingRouter(defaultDeps);
 
 /** Start recording iff the active tab runs a video tour; returns whether it did. */
-async function maybeStartRecording(tab?: chrome.tabs.Tab): Promise<boolean> {
+export async function maybeStartRecording(
+	tab?: chrome.tabs.Tab,
+	startRecording: typeof startVideoRecording = startVideoRecording,
+): Promise<boolean> {
 	if (!tab?.id) return false;
 	const key = `demo_tour:${tab.id}`;
 	const stored = (await chrome.storage.local.get(key)) as Record<
 		string,
-		{ script?: TourScript } | undefined
+		RecordingTourState | undefined
 	>;
-	const script = stored[key]?.script;
+	const state = stored[key];
+	const script = state?.script;
 	if (script?.mode !== "video") return false;
+	/** Keep the toolbar inert until setup handoff and visible action approval. */
+	if (!recordingStartAllowed(state)) return true;
 	try {
-		await startVideoRecording(tab.id, script);
+		await startRecording(tab.id, script);
 	} catch (err) {
 		// Surface the failure in the page instead of failing silently.
 		const error = err instanceof Error ? err.message : String(err);

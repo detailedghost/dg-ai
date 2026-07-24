@@ -20,11 +20,18 @@ export type TourStep = {
 /** "walkthrough" = user-paced live tour; "video" = auto-play + record to webm. */
 export type TourMode = "walkthrough" | "video";
 
+/** Optional preparation that runs before the tutorial. It may be included in it. */
+export type TourSetup = {
+	steps: TourStep[];
+	includeInTour: boolean;
+};
+
 export type TourScript = {
 	title?: string;
 	startUrl: string;
 	steps: TourStep[];
 	mode?: TourMode;
+	setup?: TourSetup;
 };
 
 /** Bounded snapshot of a live page's visual tokens and representative controls. */
