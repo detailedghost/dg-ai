@@ -7,7 +7,13 @@
  * of tab-grouping.ts; all UI is rendered into a WXT shadow root (no CSS bleed).
  */
 
-import { formatAdvance, parseAdvance, toPlanMarkdown } from "@dg/common";
+import {
+	formatAdvance,
+	parseAdvance,
+	partitionTourSteps,
+	toPlanMarkdown,
+	tourHasAutomaticActions,
+} from "@dg/common";
 import { browser } from "wxt/browser";
 import { getConfig, NARRATION_MODES, setConfig } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
@@ -17,7 +23,13 @@ import type {
 	TourScript,
 	TourStep,
 } from "@/lib/demo-types";
-import { injectTheme, startPicking, waitForEl } from "@/lib/picker";
+import {
+	injectTheme,
+	type SelectorQueryRoot,
+	safeQuerySelector,
+	startPicking,
+	waitForEl,
+} from "@/lib/picker";
 import { ACCENT, createEl as el } from "@/lib/ui-helpers";
 import {
 	demoMarkerFragment,
@@ -37,9 +49,15 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 type Ctx = InstanceType<typeof ContentScriptContext>;
 
 /** Internal tour playback state stored in storage.local (script + step index). */
-type PlayState = {
+export type PlayState = {
 	script: TourScript;
 	index: number;
+	/** Excluded setup is a durable, user-paced phase before the tutorial. */
+	phase?: "setup" | "tutorial";
+	/** Explicit approval for automatic actions authored in setup steps. */
+	setupActionsApproved?: boolean;
+	/** Explicit approval covering every automatic action in the full script. */
+	automaticActionsApproved?: boolean;
 	/** Highest index whose action already ran, so a nav-triggered reload won't repeat it. */
 	acted?: number;
 	/** Launched from the review editor — a walkthrough end bounces back into it. */
@@ -101,6 +119,91 @@ export function buildVideoReviewHtml(slug: string, hasVideo: boolean): string {
 // --- end pure helpers ---
 
 const isVideo = (s: TourScript): boolean => s.mode === "video";
+export type PlayPhase = "setup" | "tutorial";
+
+/** The durable phase a fresh playback must enter. */
+export function initialPlayPhase(script: TourScript): PlayPhase {
+	return partitionTourSteps(script).setup.length ? "setup" : "tutorial";
+}
+
+/** Build trusted lifecycle state for a raw marker or fully reviewed editor run. */
+export function initialPlayState(
+	script: TourScript,
+	source: "marker" | "reviewed-editor",
+): PlayState {
+	return {
+		script,
+		index: 0,
+		phase: initialPlayPhase(script),
+		...(source === "reviewed-editor"
+			? { automaticActionsApproved: true, fromEdit: true }
+			: {}),
+	};
+}
+
+type PlayStateWriter = (state: PlayState) => Promise<void>;
+
+/** Persist the untrusted-marker lifecycle state used by runDemoTour. */
+export async function initializeMarkerPlayback(
+	script: TourScript,
+	writeState: PlayStateWriter,
+): Promise<PlayState> {
+	const state = initialPlayState(script, "marker");
+	await writeState(state);
+	return state;
+}
+
+/** Persist the explicitly reviewed lifecycle state used by editor playback. */
+export async function initializeReviewedEditorPlayback(
+	script: TourScript,
+	writeState: PlayStateWriter,
+): Promise<PlayState> {
+	const state = initialPlayState(script, "reviewed-editor");
+	await writeState(state);
+	return state;
+}
+
+/** Setup actions are inert until the user explicitly approves them on-page. */
+export function setupActionConsentRequired(script: TourScript): boolean {
+	return script.setup?.steps.some((step) => step.action != null) === true;
+}
+
+/** Marker-authored click/fill actions require one explicit playback approval. */
+export function automaticActionConsentRequired(script: TourScript): boolean {
+	return tourHasAutomaticActions(script);
+}
+
+/** Whether persisted approval covers every automatic action in this script. */
+export function automaticActionConsentGranted(state: PlayState): boolean {
+	if (!automaticActionConsentRequired(state.script)) return true;
+	if (state.automaticActionsApproved === true) return true;
+	// Setup-only approval cannot authorize an ordinary tutorial action.
+	return (
+		!state.script.steps.some((step) => step.action != null) &&
+		state.setupActionsApproved === true
+	);
+}
+
+/** Reset setup-only cursor/action state when handing off to the tutorial. */
+export function completeSetupPhase(state: PlayState): PlayState {
+	return {
+		...state,
+		phase: "tutorial",
+		index: 0,
+		acted: undefined,
+	};
+}
+
+/** Excluded setup is always user-paced; only tutorial video steps auto-play. */
+export function automaticPlayback(state: PlayState): boolean {
+	return isVideo(state.script) && !isSetup(state);
+}
+
+const stateSteps = (state: PlayState): TourStep[] =>
+	state.phase === "setup"
+		? partitionTourSteps(state.script).setup
+		: partitionTourSteps(state.script).tutorial;
+const isSetup = (state: PlayState): boolean => state.phase === "setup";
 
 /**
  * Persisted tour state (survives navigations within a tour). Keyed per-tab so an
@@ -191,7 +294,7 @@ export async function runDemoTour(ctx: Ctx): Promise<void> {
 	const fromMarker = readDemoScript(location.href);
 	if (fromMarker?.steps?.length) {
 		const edit = readEditFlag(location.href);
-		await saveState({ script: fromMarker, index: 0 });
+		await initializeMarkerPlayback(fromMarker, saveState);
 		await setRecording(false);
 		if (edit) {
 			// Keep the marker in the URL so a reload re-opens the editor (durable).
@@ -209,6 +312,20 @@ export async function runDemoTour(ctx: Ctx): Promise<void> {
 
 /** Route to the right start: walkthrough plays immediately; video waits for the gesture. */
 async function begin(ctx: Ctx, script: TourScript): Promise<void> {
+	const state = await loadState();
+	if (
+		state &&
+		automaticActionConsentRequired(script) &&
+		!automaticActionConsentGranted(state)
+	) {
+		await showSetupActionConsent(ctx, state);
+		return;
+	}
+	// Setup is always a live, user-paced preparation phase, even for a video tour.
+	if (isSetup(state ?? { script, index: 0 })) {
+		await playCurrent(ctx);
+		return;
+	}
 	if (!isVideo(script)) {
 		await playCurrent(ctx);
 		return;
@@ -288,22 +405,34 @@ function listenForRecorder(ctx: Ctx): void {
 }
 
 /** The URL a step belongs on: the most recent `navigate` at/before it, else startUrl. */
-function expectedUrl(script: TourScript, index: number): string {
+function expectedUrl(
+	steps: TourStep[],
+	startUrl: string,
+	index: number,
+): string {
 	for (let i = index; i >= 0; i--) {
-		const nav = script.steps[i]?.navigate;
+		const nav = steps[i]?.navigate;
 		if (nav) return nav;
 	}
-	return script.startUrl;
+	return startUrl;
 }
 
 async function playCurrent(ctx: Ctx): Promise<void> {
 	const state = await loadState();
 	if (!state) return removeUi();
-	const step = state.script.steps[state.index];
-	if (!step) return isVideo(state.script) ? finishVideo(ctx) : finish(ctx);
+	const steps = stateSteps(state);
+	const step = steps[state.index];
+	if (!step) {
+		if (isSetup(state)) {
+			await saveState(completeSetupPhase(state));
+			await begin(ctx, state.script);
+			return;
+		}
+		return isVideo(state.script) ? finishVideo(ctx) : finish(ctx);
+	}
 	// Ensure we're on the step's page — works forward AND back across page
 	// boundaries (Back to a step on an earlier page navigates there too).
-	const want = expectedUrl(state.script, state.index);
+	const want = expectedUrl(steps, state.script.startUrl, state.index);
 	if (!sameUrl(location.href, want)) {
 		// A `_demo` marker is untrusted, so a tour may only drive within its own
 		// startUrl origin — never redirect the tab to another site.
@@ -386,7 +515,7 @@ async function renderStep(
 	state: PlayState,
 	step: TourStep,
 ): Promise<void> {
-	const video = isVideo(state.script);
+	const video = automaticPlayback(state);
 	const target = step.selector ? await waitForEl(step.selector) : null;
 	target?.scrollIntoView({ block: "center", inline: "center" });
 
@@ -444,7 +573,7 @@ function buildOverlay(
 	cleanups: Array<() => void>,
 	video: boolean,
 ): void {
-	const total = state.script.steps.length;
+	const total = stateSteps(state).length;
 	const last = state.index === total - 1;
 
 	// Full-viewport layer; transparent to clicks so the page stays interactive.
@@ -703,6 +832,91 @@ async function renderModal(
 	cleanups.push(() => ui.remove());
 }
 
+/**
+ * Visible approval gate for authored setup click/fill actions. Approval is
+ * persisted with PlayState so a same-origin setup navigation cannot bypass it.
+ */
+async function showSetupActionConsent(
+	ctx: Ctx,
+	state: PlayState,
+): Promise<void> {
+	removeUi();
+	const actions = [
+		...(state.script.setup?.steps ?? []),
+		...state.script.steps,
+	].filter((step) => step.action != null);
+	const included = state.script.setup?.includeInTour === true;
+	const cleanups: Array<() => void> = [];
+	teardown = () => {
+		for (const cleanup of cleanups) cleanup();
+	};
+	const ui = await createShadowRootUi(ctx, {
+		name: "dg-demo-setup-consent",
+		position: "overlay",
+		anchor: "html",
+		zIndex: 2147483647,
+		onMount: (root) => {
+			injectTheme(root);
+			const layer = el("div", {
+				position: "fixed",
+				inset: "0",
+				background: "rgba(0,0,0,0.65)",
+				display: "flex",
+				alignItems: "center",
+				justifyContent: "center",
+				pointerEvents: "auto",
+				zIndex: "2147483647",
+			});
+			const card = el("div", {
+				maxWidth: "30rem",
+				margin: "0 1.25rem",
+				background: "var(--panel)",
+				color: "var(--ink)",
+				border: "0.125rem solid var(--line)",
+				padding: "1.25rem",
+				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
+				font: `0.8125rem/1.6 ${MONO}`,
+			});
+			const heading = el("div", {
+				fontWeight: "700",
+				textTransform: "uppercase",
+				marginBottom: "0.5rem",
+			});
+			heading.textContent = "Approve automatic tour actions";
+			const summary = el("p");
+			summary.textContent = `${actions.length} authored action(s) will click or fill page controls. Setup is ${included ? "included in the tour/video" : "excluded preparation before the tour/video"}.`;
+			const warning = el("p", {
+				color: "var(--accent)",
+				fontWeight: "600",
+			});
+			warning.textContent =
+				"Stored fill text is visible in the saved plan. Never store credentials, passwords, tokens, or MFA codes; enter those manually.";
+			const controls = el("div", {
+				display: "flex",
+				gap: "0.5rem",
+				justifyContent: "flex-end",
+				marginTop: "1rem",
+			});
+			const cancel = pillButton("Cancel", false);
+			cancel.addEventListener("click", () => void finish(ctx));
+			const approve = pillButton("Approve automatic actions", true);
+			approve.addEventListener("click", () => {
+				void (async () => {
+					await saveState({ ...state, automaticActionsApproved: true });
+					removeUi();
+					await begin(ctx, state.script);
+				})();
+			});
+			controls.append(cancel, approve);
+			card.append(heading, summary, warning, controls);
+			layer.appendChild(card);
+			root.appendChild(layer);
+		},
+	});
+	ui.mount();
+	cleanups.push(() => ui.remove());
+}
+
 /** The "press to start" dialog shown before a video recording begins. */
 async function showStartPrompt(ctx: Ctx): Promise<void> {
 	removeUi();
@@ -893,6 +1107,14 @@ async function showVideoReview(ctx: Ctx): Promise<void> {
 
 const EDIT_SPOT_ID = "dg-edit-spotlight";
 
+/** Resolve an editor spotlight selector without letting invalid CSS escape. */
+export function editorSpotlightTarget(
+	root: SelectorQueryRoot,
+	selector: string,
+): HTMLElement | null {
+	return selector ? safeQuerySelector<HTMLElement>(root, selector) : null;
+}
+
 /** One editable step row in the panel (strings; timing parses to `advance`). */
 export type DraftStep = {
 	title: string;
@@ -903,7 +1125,67 @@ export type DraftStep = {
 	actKind: "" | "click" | "fill";
 	actText: string;
 };
-type Draft = { title: string; mode: TourMode; rows: DraftStep[] };
+export type Draft = {
+	title: string;
+	mode: TourMode;
+	rows: DraftStep[];
+	setup?: { rows: DraftStep[]; includeInTour: boolean };
+};
+
+export type EditorReviewRow = {
+	kind: "setup" | "tutorial";
+	row: DraftStep;
+	status: string;
+};
+
+/** Every setup row is reviewed before the tutorial rows, with its fate visible. */
+export function editorReviewRows(draft: Draft): EditorReviewRow[] {
+	const setupStatus = draft.setup?.includeInTour
+		? "Setup · included in tour/video"
+		: "Setup · excluded preparation";
+	return [
+		...(draft.setup?.rows ?? []).map((row) => ({
+			kind: "setup" as const,
+			row,
+			status: setupStatus,
+		})),
+		...draft.rows.map((row) => ({
+			kind: "tutorial" as const,
+			row,
+			status: "Tutorial",
+		})),
+	];
+}
+
+/** Effective page inherited before an editor row begins. */
+export function editorInheritedPageUrl(
+	draft: Draft,
+	startUrl: string,
+	index: number,
+): string {
+	const rows = editorReviewRows(draft);
+	const current = rows[index];
+	const firstTutorial = draft.setup?.rows.length ?? 0;
+	const lowerBound =
+		current?.kind === "tutorial" && draft.setup?.includeInTour === false
+			? firstTutorial
+			: 0;
+	for (let i = index - 1; i >= lowerBound; i--) {
+		const navigate = rows[i]?.row.navigate.trim();
+		if (navigate) return navigate;
+	}
+	return startUrl;
+}
+
+/** Effective page on which an editor row will execute. */
+export function editorPageUrl(
+	draft: Draft,
+	startUrl: string,
+	index: number,
+): string {
+	const row = editorReviewRows(draft)[index]?.row;
+	return row?.navigate.trim() || editorInheritedPageUrl(draft, startUrl, index);
+}
 
 /** Serialize the panel's draft back into a clean, runnable TourScript. */
 export function draftToScript(startUrl: string, draft: Draft): TourScript {
@@ -920,6 +1202,23 @@ export function draftToScript(startUrl: string, draft: Draft): TourScript {
 		return step;
 	});
 	const out: TourScript = { startUrl, steps, mode: draft.mode };
+	if (draft.setup?.rows.length) {
+		out.setup = {
+			includeInTour: draft.setup.includeInTour,
+			steps: draft.setup.rows.map((r) => {
+				const step: TourStep = { body: r.body.trim() };
+				if (r.title.trim()) step.title = r.title.trim();
+				if (r.selector.trim()) step.selector = r.selector.trim();
+				if (r.navigate.trim()) step.navigate = r.navigate.trim();
+				if (r.actKind === "click") step.action = { do: "click" };
+				else if (r.actKind === "fill")
+					step.action = { do: "fill", value: r.actText };
+				const adv = parseAdvance(r.timing);
+				if (adv !== undefined) step.advance = adv;
+				return step;
+			}),
+		};
+	}
 	if (draft.title.trim()) out.title = draft.title.trim();
 	return out;
 }
@@ -957,7 +1256,7 @@ export function* editMachine(
 /** Outline the current step's target on the live page (or clear it). */
 function updateSpotlight(selector: string): void {
 	document.getElementById(EDIT_SPOT_ID)?.remove();
-	const t = selector ? document.querySelector<HTMLElement>(selector) : null;
+	const t = editorSpotlightTarget(document, selector);
 	if (!t) return;
 	t.scrollIntoView({ block: "center", inline: "center" });
 	const r = t.getBoundingClientRect();
@@ -1199,8 +1498,25 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			actKind: s.action?.do ?? "",
 			actText: s.action?.do === "fill" ? s.action.value : "",
 		})),
+		...(script.setup
+			? {
+					setup: {
+						includeInTour: script.setup.includeInTour,
+						rows: script.setup.steps.map((s) => ({
+							title: s.title ?? "",
+							selector: s.selector ?? "",
+							body: s.body ?? "",
+							timing: formatAdvance(s.advance),
+							navigate: s.navigate ?? "",
+							actKind: s.action?.do ?? "",
+							actText: s.action?.do === "fill" ? s.action.value : "",
+						})),
+					},
+				}
+			: {}),
 	};
-	const machine = editMachine(draft.rows.length);
+	const reviewRows = editorReviewRows(draft);
+	const machine = editMachine(reviewRows.length);
 	let phase = machine.next().value; // prime → first phase (step 0)
 	// Resume at the step we navigated for (a step-driven page change reloads us here).
 	const resume = await takeEditCursor();
@@ -1211,13 +1527,8 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	};
 
 	// The page a step runs on: the most recent `navigate` at/before it, else startUrl.
-	const pageUrl = (idx: number): string => {
-		for (let i = idx; i >= 0; i--) {
-			const nav = draft.rows[i]?.navigate.trim();
-			if (nav) return nav;
-		}
-		return script.startUrl;
-	};
+	const pageUrl = (idx: number): string =>
+		editorPageUrl(draft, script.startUrl, idx);
 
 	// Mirror the live draft into the URL fragment so a reload re-opens the editor
 	// with edits intact (durable-via-URL). Cheap; called on edits + navigation.
@@ -1234,7 +1545,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		draft.mode = mode;
 		const s = draftToScript(script.startUrl, draft);
 		// fromEdit so ending a walkthrough (or discarding a recording) returns here.
-		await saveState({ script: s, index: 0, fromEdit: true });
+		await initializeReviewedEditorPlayback(s, saveState);
 		await setRecording(false);
 		clearSpotlight();
 		// Drop the edit marker so playback isn't re-intercepted as editing on reload.
@@ -1337,9 +1648,16 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	};
 
 	const buildStepCard = (root: HTMLElement, cursor: number): void => {
-		const row = draft.rows[cursor];
-		const card = panel("Review & edit");
-		const total = draft.rows.length;
+		const review = reviewRows[cursor];
+		const row = review.row;
+		const status =
+			review.kind === "setup"
+				? draft.setup?.includeInTour
+					? "Setup · included in tour/video"
+					: "Setup · excluded preparation"
+				: "Tutorial";
+		const card = panel(`Review & edit · ${status}`);
+		const total = reviewRows.length;
 		const last = cursor === total - 1;
 
 		if (cursor === 0)
@@ -1372,7 +1690,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		);
 		// Page URL: pre-filled with the step's effective page. Editing it to a new URL
 		// records a `navigate`; matching the inherited page clears it (no redundant nav).
-		const inherited = cursor > 0 ? pageUrl(cursor - 1) : script.startUrl;
+		const inherited = editorInheritedPageUrl(draft, script.startUrl, cursor);
 		card.appendChild(
 			labeled(
 				"Page URL",
@@ -1384,6 +1702,18 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			),
 		);
 		card.appendChild(actionField(row));
+		if (review.kind === "setup") {
+			const warning = el("div", {
+				marginTop: "0.625rem",
+				padding: "0.5rem",
+				border: "0.125rem solid var(--line)",
+				color: "var(--accent)",
+				fontWeight: "600",
+			});
+			warning.textContent =
+				"Setup actions are saved as plain text and require playback approval. Never put credentials, passwords, tokens, or MFA codes in Fill text; enter them manually.";
+			card.appendChild(warning);
+		}
 
 		// No cancel button here on purpose — an accidental click shouldn't drop the
 		// editor. The URL keeps the draft (durable), so a stray reload restores it.
@@ -1428,8 +1758,27 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		});
 		h.textContent = "✅ All steps reviewed";
 		const sub = el("div", { color: "var(--muted)", marginBottom: "0.75rem" });
-		sub.textContent = `${draft.rows.length} step(s). Download the plan, or play/record now.`;
+		sub.textContent = `${reviewRows.length} reviewed step(s), including ${draft.setup?.rows.length ?? 0} setup step(s). Download the plan, or play/record now.`;
 		card.append(h, sub);
+		if (draft.setup) {
+			const setupLabel = el("label", {
+				display: "block",
+				marginBottom: "0.75rem",
+				color: "var(--muted)",
+			});
+			const include = document.createElement("input");
+			include.type = "checkbox";
+			include.checked = draft.setup.includeInTour;
+			include.addEventListener("change", () => {
+				if (draft.setup) draft.setup.includeInTour = include.checked;
+				persist();
+			});
+			setupLabel.append(
+				include,
+				` Include ${draft.setup.rows.length} setup step(s) in this tour/video`,
+			);
+			card.appendChild(setupLabel);
+		}
 
 		const mk = (lbl: string, primary: boolean, onClick: () => void): void => {
 			const b = pillButton(lbl, primary);
@@ -1469,7 +1818,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			for (const c of cleanups) c();
 		};
 		if (phase.kind === "step")
-			updateSpotlight(draft.rows[phase.cursor].selector);
+			updateSpotlight(reviewRows[phase.cursor].row.selector);
 		else clearSpotlight();
 
 		const ui = await createShadowRootUi(ctx, {

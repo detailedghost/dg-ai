@@ -8,8 +8,13 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { createRecordingRouter } from "@/lib/background/recording";
+import {
+	createRecordingRouter,
+	maybeStartRecording,
+	recordingStartAllowed,
+} from "@/lib/background/recording";
 import { MSG } from "@/lib/demo-messages";
+import type { TourScript } from "@/lib/demo-types";
 
 const stopVideoRecording = mock(() => undefined);
 const relayPlayStep = mock((_index: number) => undefined);
@@ -199,5 +204,126 @@ describe("handleRecordingMessage", () => {
 		);
 		expect(result).toBeUndefined();
 		expect(handleRequestVideoData).not.toHaveBeenCalled();
+	});
+});
+
+describe("recordingStartAllowed", () => {
+	const excludedSetupVideo: TourScript = {
+		startUrl: "https://app.example",
+		mode: "video",
+		setup: {
+			includeInTour: false,
+			steps: [{ body: "Prepare", action: { do: "click" } }],
+		},
+		steps: [{ body: "Tour" }],
+	};
+
+	it("keeps excluded setup outside capture until tutorial handoff", () => {
+		expect(
+			recordingStartAllowed({
+				script: excludedSetupVideo,
+				phase: "setup",
+				setupActionsApproved: true,
+			}),
+		).toBe(false);
+		expect(
+			recordingStartAllowed({
+				script: excludedSetupVideo,
+				phase: "tutorial",
+				setupActionsApproved: true,
+			}),
+		).toBe(true);
+	});
+
+	it("blocks recording setup actions until explicit approval", () => {
+		expect(
+			recordingStartAllowed({
+				script: excludedSetupVideo,
+				phase: "tutorial",
+			}),
+		).toBe(false);
+		expect(
+			recordingStartAllowed({
+				script: excludedSetupVideo,
+				phase: "tutorial",
+				setupActionsApproved: true,
+			}),
+		).toBe(true);
+	});
+});
+
+describe("maybeStartRecording", () => {
+	const tab: chrome.tabs.Tab = {
+		id: TAB_ID,
+		index: 0,
+		pinned: false,
+		highlighted: true,
+		groupId: -1,
+		windowId: 1,
+		active: true,
+		frozen: false,
+		incognito: false,
+		selected: true,
+		discarded: false,
+		autoDiscardable: true,
+	};
+	const tutorialActionVideo: TourScript = {
+		startUrl: "https://app.example",
+		mode: "video",
+		steps: [{ body: "Tour", action: { do: "click" } }],
+	};
+
+	it("fails closed at the actual start call site for missing/invalid phase or consent", async () => {
+		const startRecording = mock(
+			async (_tabId: number, _script: TourScript) => undefined,
+		);
+		const blockedStates = [
+			{ script: tutorialActionVideo, automaticActionsApproved: true },
+			{
+				script: tutorialActionVideo,
+				phase: "invalid",
+				automaticActionsApproved: true,
+			},
+			{
+				script: tutorialActionVideo,
+				phase: "tutorial",
+				setupActionsApproved: true,
+			},
+		];
+
+		for (const state of blockedStates) {
+			Object.assign(chrome, {
+				storage: {
+					local: {
+						get: mock(async () => ({ [`demo_tour:${TAB_ID}`]: state })),
+					},
+				},
+			});
+			expect(await maybeStartRecording(tab, startRecording)).toBe(true);
+		}
+
+		expect(startRecording).not.toHaveBeenCalled();
+	});
+
+	it("starts only after tutorial phase and all-action consent are persisted", async () => {
+		const startRecording = mock(
+			async (_tabId: number, _script: TourScript) => undefined,
+		);
+		Object.assign(chrome, {
+			storage: {
+				local: {
+					get: mock(async () => ({
+						[`demo_tour:${TAB_ID}`]: {
+							script: tutorialActionVideo,
+							phase: "tutorial",
+							automaticActionsApproved: true,
+						},
+					})),
+				},
+			},
+		});
+
+		expect(await maybeStartRecording(tab, startRecording)).toBe(true);
+		expect(startRecording).toHaveBeenCalledWith(TAB_ID, tutorialActionVideo);
 	});
 });

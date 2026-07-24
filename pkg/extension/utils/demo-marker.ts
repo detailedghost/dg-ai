@@ -5,7 +5,7 @@
  * Mirrors skills/browser-batch/bin/demo-marker.ts (separate build roots can't share).
  */
 
-import type { TourScript } from "@dg/common";
+import { type TourScript, validate } from "@dg/common";
 
 export const DEMO_MARKER_KEY = "_demo";
 export const EDIT_MARKER_KEY = "_edit";
@@ -16,9 +16,29 @@ export function readDemoScript(url: string): TourScript | undefined {
 	if (!hash) return undefined;
 	for (const part of hash.split("&")) {
 		const [k, v] = part.split("=");
-		if (k === DEMO_MARKER_KEY && v) return decodeScript(v);
+		if (k === DEMO_MARKER_KEY && v)
+			return validateDemoMarkerScript(url, decodeScript(v));
 	}
 	return undefined;
+}
+
+/**
+ * Accept a decoded marker only when it is a valid TourScript bound to the page
+ * that carries it. This is deliberately pure so marker trust can be tested
+ * without extension storage or DOM setup.
+ */
+export function validateDemoMarkerScript(
+	markerUrl: string,
+	candidate: unknown,
+): TourScript | undefined {
+	try {
+		const script = validate(candidate);
+		if (new URL(markerUrl).origin !== new URL(script.startUrl).origin)
+			return undefined;
+		return script;
+	} catch {
+		return undefined;
+	}
 }
 
 /** Build the fragment (`_demo=…[&_edit=1]`) — inverse of readDemoScript, UTF-8 safe. */
@@ -52,12 +72,12 @@ export function stripDemoMarker(url: string): string {
 }
 
 /** Decode base64url(JSON) → TourScript, UTF-8 safe. Returns undefined on any error. */
-function decodeScript(payload: string): TourScript | undefined {
+function decodeScript(payload: string): unknown {
 	try {
 		const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
 		const bin = atob(b64);
 		const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-		return JSON.parse(new TextDecoder().decode(bytes)) as TourScript;
+		return JSON.parse(new TextDecoder().decode(bytes));
 	} catch {
 		return undefined;
 	}

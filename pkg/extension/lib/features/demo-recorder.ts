@@ -12,7 +12,7 @@
  * finally arrives on a freshly-woken worker.
  */
 
-import { slugify } from "@dg/common";
+import { partitionTourSteps, slugify } from "@dg/common";
 import { getConfig } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
@@ -74,7 +74,7 @@ export async function startVideoRecording(
 		type: MSG.startRecording,
 		target: "offscreen",
 		streamId,
-		steps: script.steps ?? [],
+		steps: partitionTourSteps(script).tutorial,
 		voice,
 		narrate: narration !== "captions",
 	});

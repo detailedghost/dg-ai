@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
-import { cssSelectorFor } from "@/lib/picker";
+import { cssSelectorFor, waitForEl } from "@/lib/picker";
 
 const window = new Window();
 const document = window.document as unknown as Document;
@@ -68,5 +68,11 @@ describe("cssSelectorFor", () => {
 
 		expect(target).not.toBeNull();
 		expectUniqueSelectorFor(target as Element);
+	});
+});
+
+describe("waitForEl", () => {
+	it("does not throw when playback receives malformed CSS", async () => {
+		await expect(waitForEl("[", 0)).resolves.toBeNull();
 	});
 });
