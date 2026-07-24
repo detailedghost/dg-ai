@@ -29,20 +29,23 @@ export default defineConfig({
 		return {
 			name: "dg-ai-extension",
 			description:
-				"Auto-groups PR/URL tabs into named tab groups, and plays guided in-browser demo tours.",
-			// Video recording (tabCapture + offscreen + downloads) is Chrome/Edge only.
+				"Groups marked tabs, plays guided browser tours, and runs local live-page prototype comparisons.",
+			// Prototype artifacts use downloads everywhere; video capture's
+			// tabCapture + offscreen permissions remain Chrome/Edge-only.
 			permissions: [
 				"tabs",
 				"tabGroups",
 				"storage",
-				...(firefox ? [] : ["tabCapture", "offscreen", "downloads"]),
+				"downloads",
+				...(firefox ? [] : ["tabCapture", "offscreen"]),
 			],
-			// Kokoro TTS (transformers.js) downloads the model from Hugging Face and its
-			// ONNX-runtime wasm from jsDelivr; allow those and permit wasm compilation.
+			// Kokoro fetches its model from Hugging Face; ONNX wasm ships locally.
+			// Keep jsDelivr fallback access and permit local wasm compilation.
 			...(firefox
 				? {}
 				: {
 						host_permissions: [
+							"<all_urls>",
 							"https://huggingface.co/*",
 							"https://*.huggingface.co/*",
 							"https://cdn.jsdelivr.net/*",
