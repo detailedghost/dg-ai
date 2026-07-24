@@ -150,22 +150,19 @@ describe("demo setup phase", () => {
 
 	test("setup is optional and excluded from the demo by default", () => {
 		expect(demo).toContain("## Phase 2 — Optional setup (off-demo by default)");
-		expect(demo).toContain(
-			"Exclude setup from the TourScript, plan steps, narration, timing, and recording",
-		);
-		expect(demo).toContain("Setup (excluded from tour)");
+		expect(demo).toContain("Author reproducible preparation in `## Setup`");
+		expect(demo).toContain("Keep `includeSetup: false` unless");
+		expect(demo).toContain("Setup (excluded preparation)");
 	});
 
-	test("explicitly included setup becomes leading TourSteps", () => {
-		expect(demo).toContain("author those actions as the leading\nTourSteps");
-		expect(demo).toContain("Setup (included)");
-		expect(demo).toContain("normal `## Steps` grammar");
+	test("explicitly included setup becomes leading tutorial steps", () => {
+		expect(demo).toContain("With `includeSetup: true`");
+		expect(demo).toContain("leading tutorial steps");
+		expect(demo).toContain("Setup (included in");
 	});
 
 	test("setup protects authentication secrets", () => {
-		expect(demo).toContain("credential, MFA, CAPTCHA, or permission gates");
-		expect(demo).toContain(
-			"Never\n   put secrets or authentication values in the plan",
-		);
+		expect(demo).toContain("credentials, MFA codes, CAPTCHA answers");
+		expect(demo).toContain("Never put those values in a fill action");
 	});
 });
