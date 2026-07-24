@@ -10,7 +10,7 @@ import { type TourScript, validate } from "@dg/common";
 export const DEMO_MARKER_KEY = "_demo";
 export const EDIT_MARKER_KEY = "_edit";
 
-/** Tour script from a URL's fragment marker, or undefined if absent/undecodable. */
+/** Valid same-origin TourScript from a URL marker, or undefined when untrusted. */
 export function readDemoScript(url: string): TourScript | undefined {
 	const hash = url.split("#")[1];
 	if (!hash) return undefined;
@@ -71,7 +71,7 @@ export function stripDemoMarker(url: string): string {
 	return kept.length ? `${base}#${kept.join("&")}` : base;
 }
 
-/** Decode base64url(JSON) → TourScript, UTF-8 safe. Returns undefined on any error. */
+/** Decode UTF-8 base64url JSON without assigning trust or a schema. */
 function decodeScript(payload: string): unknown {
 	try {
 		const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");

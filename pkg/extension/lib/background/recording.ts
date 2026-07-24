@@ -26,6 +26,7 @@ type RecordingSender = chrome.runtime.MessageSender;
 
 type RouteHandler = (msg: RecordingMessage, sender: RecordingSender) => void;
 
+/** Persisted lifecycle fields used to decide whether video capture may start. */
 export type RecordingTourState = {
 	script?: TourScript;
 	phase?: "setup" | "tutorial";

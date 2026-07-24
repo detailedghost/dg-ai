@@ -1,8 +1,9 @@
 /**
  * Tour-plan format + validation. A plan is a human-authored Markdown file: YAML
- * frontmatter (title / startUrl / mode) plus a "## Steps" list — one line per step,
- * with each step's timing shown inline. The CLI reads that human form and (re)generates
- * the machine-runnable TourScript into the "## Script" fenced json block.
+ * frontmatter (title / startUrl / mode / includeSetup), an optional "## Setup"
+ * list, and a required "## Steps" list — one line per step, with each step's
+ * timing shown inline. The CLI reads that human form and (re)generates the
+ * machine-runnable TourScript into the "## Script" fenced json block.
  *
  * This module is pure and dependency-free — it is bundled into the browser extension
  * too. The markdown *reader* (which pulls in `marked`) lives CLI-side in

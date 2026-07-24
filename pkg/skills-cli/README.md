@@ -18,6 +18,33 @@ exchange local files through the browser's Downloads directory and block until
 the extension responds. Run `plant` and `cleanup` from the target project root;
 an approved answer is preserved under `.agents/prototype/<slug>/`.
 
+## Demo plans
+
+Demo plans use YAML frontmatter and a required `## Steps` list. They may also
+declare `includeSetup: false` and an earlier `## Setup` list for login,
+configuration, seeded data, or other preparation:
+
+```markdown
+---
+title: Prepared demo
+startUrl: https://app.example.test
+includeSetup: false
+---
+
+## Setup
+
+1. **Sign in** — Sign in manually with the demo account. `next`
+
+## Steps
+
+1. **Dashboard** — The tutorial starts here. `next`
+```
+
+Excluded setup runs first and user-paced, but is not narrated or recorded.
+Change `includeSetup` to `true` to make setup lead the tutorial and video.
+Plans persist fill text, so credentials, tokens, and MFA codes must be entered
+manually rather than authored as actions.
+
 ## Build standalone binary
 
 ```bash

@@ -45,6 +45,7 @@ export function injectTheme(root: ParentNode): void {
 	root.appendChild(style);
 }
 
+/** Minimal selector-query surface accepted by selector safety helpers. */
 export type SelectorQueryRoot = {
 	querySelector(selectors: string): unknown;
 };

@@ -1,7 +1,8 @@
 /**
- * Reader for the human-authored plan format (frontmatter + "## Steps" list). Uses
- * `marked` to tokenize the document so the ordered list is located structurally
- * rather than by hand-rolled line slicing; each item's inline shape
+ * Reader for the human-authored plan format (frontmatter, optional "## Setup",
+ * and required "## Steps"). Uses `marked` to tokenize the document so each
+ * ordered list is located structurally rather than by hand-rolled line slicing;
+ * each item's inline shape
  * (`**title**` `` `selector` `` → nav — body `timing`) is then pulled apart.
  * CLI-only — kept out of @dg/common so the extension bundle stays lib-free.
  */
