@@ -350,6 +350,9 @@ function listenForRecorder(ctx: Ctx): void {
 			durations?: number[];
 			hideBody?: boolean;
 			dataUrl?: string;
+			progress?: number;
+			label?: string;
+			narrate?: boolean;
 		}) => {
 			if (msg?.type === MSG.videoClearUi) {
 				// Offscreen is about to capture — clear the "preparing" overlay, then
@@ -370,9 +373,25 @@ function listenForRecorder(ctx: Ctx): void {
 			} else if (msg?.type === MSG.videoPreparing) {
 				removeUi();
 				void renderModal(ctx, {
-					title: "⏳ Preparing narration…",
-					body: "Synthesizing voiceover for each step — this takes about a minute on first use. The tour will start automatically.",
+					title:
+						msg.narrate === false
+							? "⏳ Preparing recording…"
+							: "⏳ Preparing narration…",
+					body:
+						msg.narrate === false
+							? "Preparing the tab for capture. The tour will start automatically."
+							: "Loading the local voice model and synthesizing each step. The tour will start automatically.",
+					progress: 0,
+					progressLabel:
+						msg.narrate === false
+							? "Preparing recording"
+							: "Loading local voice model",
 				});
+			} else if (
+				msg?.type === MSG.narrationProgress &&
+				typeof msg.progress === "number"
+			) {
+				updateModalProgress?.(msg.progress, msg.label);
 			} else if (msg?.type === MSG.videoStart) {
 				void (async () => {
 					videoDurations = msg.durations ?? [];
@@ -522,9 +541,13 @@ function finishVideo(ctx: Ctx): void {
 // --- overlay rendering ---
 
 let teardown: (() => void) | null = null;
+let updateModalProgress:
+	| ((progress: number, label: string | undefined) => void)
+	| null = null;
 function removeUi(): void {
 	teardown?.();
 	teardown = null;
+	updateModalProgress = null;
 }
 
 /** Click the target, or type text into it char-by-char (visible in the recording). */
@@ -809,7 +832,13 @@ function recIndicator(): HTMLElement {
 /** Centered dialog on a dimmed backdrop — used for the start prompt and status messages. */
 async function renderModal(
 	ctx: Ctx,
-	opts: { title: string; body: string; kbd?: string },
+	opts: {
+		title: string;
+		body: string;
+		kbd?: string;
+		progress?: number;
+		progressLabel?: string;
+	},
 ): Promise<void> {
 	removeUi();
 	const cleanups: Array<() => void> = [];
@@ -856,6 +885,33 @@ async function renderModal(
 			const b = el("div");
 			b.textContent = opts.body;
 			card.append(h, b);
+			if (opts.progress !== undefined) {
+				const status = el("div", {
+					marginTop: "0.875rem",
+					color: "var(--muted)",
+					fontSize: "0.75rem",
+				});
+				const bar = el("progress", {
+					display: "block",
+					width: "100%",
+					height: "0.875rem",
+					marginTop: "0.375rem",
+					accentColor: "var(--accent)",
+				});
+				bar.max = 100;
+				const update = (progress: number, label: string | undefined): void => {
+					const value = Math.min(Math.max(Math.round(progress), 0), 100);
+					bar.value = value;
+					bar.setAttribute("aria-valuetext", `${value}%`);
+					status.textContent = `${label ?? opts.progressLabel ?? "Preparing"} · ${value}%`;
+				};
+				updateModalProgress = update;
+				update(opts.progress, opts.progressLabel);
+				card.append(status, bar);
+				cleanups.push(() => {
+					if (updateModalProgress === update) updateModalProgress = null;
+				});
+			}
 			if (opts.kbd) {
 				const line = el("div", {
 					marginTop: "0.875rem",
