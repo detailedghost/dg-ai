@@ -9,13 +9,14 @@ import { registerBatchOpen } from "./commands/batch-open";
 import { registerDemo } from "./commands/demo";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
+import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 
 const program = new Command();
 program
 	.name("dg-browser")
 	.description(
-		"Open/group PR & URL tabs and play guided demo tours via the dg-ai-extension.",
+		"Group marked tabs, play guided tours, and compare live-page prototypes via the dg-ai-extension.",
 	)
 	.showHelpAfterError();
 
@@ -24,6 +25,7 @@ registerBatchOpen(program);
 registerLaunch(program);
 registerDemo(program);
 registerRerun(program);
+registerProto(program);
 
 program.parseAsync(process.argv).catch((err) => {
 	console.error(`dg-browser: ${err instanceof Error ? err.message : err}`);

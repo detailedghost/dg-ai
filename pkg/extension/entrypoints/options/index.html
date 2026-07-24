@@ -77,28 +77,48 @@
     <section class="panel panel-alt" id="privacy">
       <h2 class="sec-h">Privacy</h2>
       <p class="note">
-        Everything runs on your machine. No accounts, no keys, no tracking.
+        DeeGee processes prototype, tour, and recording data on your machine.
+        It has no account system, telemetry, or upload service.
       </p>
       <ul class="klist list-disc pl-5">
         <li>
-          <b>No telemetry.</b> The extension sends no analytics, tracking, or
-          usage data &mdash; ever.
+          <b>Prototype sampling is limited.</b> When you start a prototype
+          scrape, DeeGee records the full page URL and inspects a bounded set
+          of rendered page elements, computed CSS, root custom properties, and
+          representative button/input/link styles. The style guide does not
+          include page text or typed form values.
         </li>
         <li>
-          <b>Narration is local.</b> Kokoro TTS runs in your browser; your text
-          and audio never leave your machine.
+          <b>Marked URLs are visible to the page.</b> Prototype plans travel in
+          the URL fragment so they are not sent to the website's server, but
+          scripts already running on that page can read the fragment before
+          DeeGee removes it. Do not put secrets in a prototype plan.
         </li>
         <li>
-          <b>Recordings stay local.</b> Demo videos save straight to your
-          Downloads; nothing is uploaded.
+          <b>Site access requires your approval.</b> DeeGee requests the
+          browser's <code>&lt;all_urls&gt;</code> access so marked prototype
+          and tour pages can work on the site you choose. Prototype behavior
+          starts only for a DeeGee-marked URL.
         </li>
         <li>
-          <b>Only network use:</b> a one-time download of the open-source voice
-          model from Hugging Face, then cached offline.
+          <b>Artifacts stay local.</b> Style guides and verdicts go through
+          your Downloads folder. If you approve a prototype and capture is
+          supported, DeeGee also saves a screenshot of the visible tab. The
+          CLI writes the approved answer into your local project. None of
+          these files are uploaded by DeeGee.
         </li>
         <li>
-          <b>Settings stay on-device</b> in your browser's extension storage. No
-          cloud sync of your data by us.
+          <b>No telemetry.</b> DeeGee sends no analytics, tracking, page
+          samples, prototype plans, verdicts, recordings, or usage data to us.
+          Settings remain in browser extension storage.
+        </li>
+        <li>
+          <b>Existing network features are separate.</b> Kokoro narration runs
+          locally after downloading its open-source model from Hugging Face.
+          Its ONNX runtime files ship with the extension; the extension also
+          retains jsDelivr access for compatibility with upstream runtime
+          fallbacks. Prototype work does not contact either service. The pages
+          you open may still make their own normal network requests.
         </li>
       </ul>
     </section>
@@ -109,6 +129,17 @@
         DeeGee stands on excellent open-source work. Thank you to:
       </p>
       <ul class="klist list-disc pl-5">
+        <li>
+          Browser implementers and the
+          <a
+            href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions"
+            target="_blank"
+            rel="noopener"
+            >WebExtensions community</a
+          >
+          &mdash; the content-script, Downloads, tab capture, Shadow DOM,
+          CSSOM, and Compression Streams foundations behind live prototypes.
+        </li>
         <li>
           <a href="https://wxt.dev" target="_blank" rel="noopener">WXT</a>
           &mdash; the web-extension framework.
