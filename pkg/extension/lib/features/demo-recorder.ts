@@ -12,6 +12,7 @@
  * finally arrives on a freshly-woken worker.
  */
 
+import { slugify } from "@dg/common";
 import { getConfig } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
@@ -93,6 +94,13 @@ export async function handleRecordingReady(durations: number[]): Promise<void> {
 		});
 }
 
+/** Offscreen is about to start capture: tell the tour tab to clear any overlay first. */
+export async function handleClearForCapture(): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId != null)
+		void chrome.tabs.sendMessage(active.tabId, { type: MSG.videoClearUi });
+}
+
 /** Relay a play-step cue from the content script to the offscreen recorder. */
 export function relayPlayStep(index: number): void {
 	chrome.runtime.sendMessage({
@@ -123,9 +131,7 @@ export async function handleRecordingData(dataUrl: string): Promise<void> {
 	}
 
 	if (tabId != null && active) {
-		const slug =
-			(active.tour ?? "demo").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() ||
-			"demo";
+		const slug = slugify(active.tour ?? "demo");
 		void pruneStaleRecordings();
 		await saveRecording({
 			tabId,
