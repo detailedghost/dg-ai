@@ -32,3 +32,19 @@ if ($env:PATH -notlike "*$binDir*") {
 # Set up the browser extension too, so one command installs everything.
 Write-Host "Setting up the dg-ai-extension…"
 & $dest install
+
+# Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
+# repository's skills into CODEX_HOME (default: $HOME\.codex\skills).
+if ($env:DG_INSTALL_CODEX -eq "1") {
+	$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
+	$archive = Join-Path $tmpDir "dg-ai.zip"
+	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+	Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/heads/master.zip" -OutFile $archive
+	Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
+	$skillsDir = Join-Path $codexRoot "skills"
+	New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+	Copy-Item -Recurse -Force (Join-Path $tmpDir "dg-ai-master\pkg\skills\*") $skillsDir
+	Remove-Item -Recurse -Force $tmpDir
+	Write-Host "Codex skills installed in $skillsDir"
+}
