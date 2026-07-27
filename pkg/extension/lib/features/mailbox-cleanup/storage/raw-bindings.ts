@@ -34,6 +34,23 @@ export type RawBindingInvalidationReason =
 	| "completion"
 	| "cancellation";
 
+export type RawBindingUnavailableReason =
+	| "missing"
+	| "expired"
+	| "invalidated"
+	| "corrupt"
+	| "storage_failure";
+
+export type RawBindingStatus =
+	| Readonly<{
+			available: true;
+			expiresAt: number;
+	  }>
+	| Readonly<{
+			available: false;
+			reason: RawBindingUnavailableReason;
+	  }>;
+
 export type SessionStorageSeam = Readonly<{
 	get(key: string): Promise<unknown>;
 	set(key: string, value: unknown): Promise<void>;
@@ -59,6 +76,7 @@ export type RawBindingStore = Readonly<{
 	get(
 		scope: RawBindingScope,
 	): Promise<Readonly<Record<string, string>> | undefined>;
+	status(scope: RawBindingScope): Promise<RawBindingStatus>;
 	touch(scope: RawBindingScope, event: RawBindingTouchEvent): Promise<boolean>;
 	invalidate(
 		scope: RawBindingScope,
@@ -349,6 +367,49 @@ export function createRawBindingStore(
 		return stored;
 	};
 
+	const unavailable = (
+		reason: RawBindingUnavailableReason,
+	): RawBindingStatus => Object.freeze({ available: false, reason });
+
+	const statusUnserialized = async (
+		scope: RawBindingScope,
+	): Promise<RawBindingStatus> => {
+		const key = scopeKey(scope);
+		try {
+			if (await isTombstoned(scope)) {
+				await deps.session.delete(key);
+				return unavailable("invalidated");
+			}
+			const value = await deps.session.get(key);
+			if (value === undefined) return unavailable("missing");
+			let stored: StoredRawBindings;
+			try {
+				stored = validateStored(value);
+			} catch {
+				await tombstone(scope, "restart_required");
+				return unavailable("corrupt");
+			}
+			if (!sameScope(stored.scope, scope)) {
+				await tombstone(scope, "restart_required");
+				return unavailable("corrupt");
+			}
+			if (deps.now() >= stored.expiresAt) {
+				await tombstone(scope, "inactivity_expiry");
+				return unavailable("expired");
+			}
+			if (await isTombstoned(scope)) {
+				await deps.session.delete(key);
+				return unavailable("invalidated");
+			}
+			return Object.freeze({
+				available: true,
+				expiresAt: stored.expiresAt,
+			});
+		} catch {
+			return unavailable("storage_failure");
+		}
+	};
+
 	return Object.freeze({
 			async put(scope, bindings) {
 			const safeScope = validateScope(scope);
@@ -418,15 +479,22 @@ export function createRawBindingStore(
 					},
 				);
 			},
-		async get(scope) {
-			const safeScope = validateScope(scope);
-			const key = scopeKey(safeScope);
+			async get(scope) {
+				const safeScope = validateScope(scope);
+				const key = scopeKey(safeScope);
+					return serialized(
+						revisionKey(safeScope.planAlias, safeScope.revisionAlias),
+					async () => (await readUnserialized(safeScope))?.bindings,
+				);
+			},
+			async status(scope) {
+				const safeScope = validateScope(scope);
 				return serialized(
 					revisionKey(safeScope.planAlias, safeScope.revisionAlias),
-				async () => (await readUnserialized(safeScope))?.bindings,
-			);
-		},
-		async touch(scope, event) {
+					async () => statusUnserialized(safeScope),
+				);
+			},
+			async touch(scope, event) {
 			const safeScope = validateScope(scope);
 			const key = scopeKey(safeScope);
 				return serialized(

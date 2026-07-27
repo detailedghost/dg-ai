@@ -425,6 +425,220 @@ describe("mailbox storage", () => {
 			expect(await renewed.get(scope)).toBeDefined();
 			renewedClock.advance(1);
 			expect(await renewed.get(scope)).toBeUndefined();
+			}
+		});
+
+	it("reports exact passive binding status without renewing and exposes allowed renewal expiry", async () => {
+		const hour = 60 * 60 * 1_000;
+		const rawSentinel = "provider-message-status-sensitive";
+		const passiveTime = clock();
+		const passive = createRawBindingStore({
+			session: new MemorySessionStorage(),
+			now: passiveTime.now,
+		});
+		await passive.put(scope, {
+			[opaqueAlias("msg", 5)]: rawSentinel,
+		});
+		const originalExpiry = passiveTime.now() + hour;
+
+		expect(await passive.status(scope)).toEqual({
+			available: true,
+			expiresAt: originalExpiry,
+		});
+		passiveTime.advance(hour / 2);
+		const passiveStatus = await passive.status(scope);
+		expect(passiveStatus).toEqual({
+			available: true,
+			expiresAt: originalExpiry,
+		});
+		expect(Object.isFrozen(passiveStatus)).toBe(true);
+		expect(Object.keys(passiveStatus).sort()).toEqual([
+			"available",
+			"expiresAt",
+		]);
+		expect(JSON.stringify(passiveStatus)).not.toContain(rawSentinel);
+		passiveTime.advance(hour / 2);
+		const expiredStatus = await passive.status(scope);
+		expect(expiredStatus).toEqual({
+			available: false,
+			reason: "expired",
+		});
+		expect(Object.isFrozen(expiredStatus)).toBe(true);
+		expect(Object.keys(expiredStatus).sort()).toEqual(["available", "reason"]);
+		await expect(
+			passive.status({ ...scope, unexpected: true } as never),
+		).rejects.toThrow();
+
+		const renewedTime = clock();
+		const renewed = createRawBindingStore({
+			session: new MemorySessionStorage(),
+			now: renewedTime.now,
+		});
+		await renewed.put(scope, {
+			[opaqueAlias("msg", 5)]: rawSentinel,
+		});
+		renewedTime.advance(hour / 2);
+		expect(await renewed.touch(scope, "user_decision")).toBe(true);
+		const renewedExpiry = renewedTime.now() + hour;
+		expect(await renewed.status(scope)).toEqual({
+			available: true,
+			expiresAt: renewedExpiry,
+		});
+		renewedTime.advance(hour);
+		expect(await renewed.status(scope)).toEqual({
+			available: false,
+			reason: "expired",
+		});
+	});
+
+	it("fails binding status closed for reset, tombstone, corruption, and storage failure", async () => {
+		const time = clock();
+		const resetSession = new MemorySessionStorage();
+		const resetStore = createRawBindingStore({
+			session: resetSession,
+			now: time.now,
+		});
+		await resetStore.put(scope, {
+			[opaqueAlias("msg", 5)]: "provider-message-reset",
+		});
+		resetSession.values.clear();
+		expect(await resetStore.status(scope)).toEqual({
+			available: false,
+			reason: "missing",
+		});
+
+		const invalidatedSession = new MemorySessionStorage();
+		const invalidated = createRawBindingStore({
+			session: invalidatedSession,
+			now: time.now,
+		});
+		await invalidated.put(scope, {
+			[opaqueAlias("msg", 5)]: "provider-message-invalidated",
+		});
+		await invalidated.invalidateRevision(
+			scope.planAlias,
+			scope.revisionAlias,
+			"restart_required",
+		);
+		expect(await invalidated.status(scope)).toEqual({
+			available: false,
+			reason: "invalidated",
+		});
+
+		const corruptSession = new MemorySessionStorage();
+		const corrupt = createRawBindingStore({
+			session: corruptSession,
+			now: time.now,
+		});
+		await corrupt.put(scope, {
+			[opaqueAlias("msg", 5)]: "provider-message-corrupt",
+		});
+		const activeEntry = [...corruptSession.values.entries()].find(
+			([key, value]) =>
+				!key.endsWith(":index") &&
+				!key.endsWith(":tombstone") &&
+				value !== null &&
+				typeof value === "object" &&
+				Object.hasOwn(value, "bindings"),
+		);
+		if (activeEntry === undefined) {
+			throw new TypeError("active raw-binding record was not persisted");
+		}
+		await corruptSession.set(activeEntry[0], {
+			...(activeEntry[1] as Record<string, unknown>),
+			unexpected: true,
+		});
+		expect(await corrupt.status(scope)).toEqual({
+			available: false,
+			reason: "corrupt",
+		});
+		expect(await corrupt.status(scope)).toEqual({
+			available: false,
+			reason: "invalidated",
+		});
+
+		const failed = createRawBindingStore({
+			session: {
+				async get() {
+					throw new Error("session unavailable");
+				},
+				async set() {
+					throw new Error("session unavailable");
+				},
+				async delete() {
+					throw new Error("session unavailable");
+				},
+			},
+			now: time.now,
+		});
+		expect(await failed.status(scope)).toEqual({
+			available: false,
+			reason: "storage_failure",
+		});
+	});
+
+	it("keeps passive status ordered behind concurrent writes across distinct session wrappers", async () => {
+		for (const operation of ["put", "touch", "invalidate"] as const) {
+			const time = clock();
+			const backing = new MemorySessionStorage();
+			let blockWrite = false;
+			let releaseWrite = () => {};
+			let reportBlocked = () => {};
+			const blocked = new Promise<void>((resolve) => {
+				reportBlocked = resolve;
+			});
+			const released = new Promise<void>((resolve) => {
+				releaseWrite = resolve;
+			});
+			const sessionWrapper = () => ({
+				get: (key: string) => backing.get(key),
+				delete: (key: string) => backing.delete(key),
+				async set(key: string, value: unknown) {
+					if (blockWrite) {
+						blockWrite = false;
+						reportBlocked();
+						await released;
+					}
+					await backing.set(key, value);
+				},
+			});
+			const writer = createRawBindingStore({
+				session: sessionWrapper(),
+				now: time.now,
+			});
+			const observer = createRawBindingStore({
+				session: sessionWrapper(),
+				now: time.now,
+			});
+			if (operation !== "put") {
+				await writer.put(scope, {
+					[opaqueAlias("msg", 5)]: "provider-message-existing",
+				});
+			}
+			if (operation === "touch") time.advance(15 * 60 * 1_000);
+			blockWrite = true;
+			const writing =
+				operation === "put"
+					? writer.put(scope, {
+							[opaqueAlias("msg", 5)]: "provider-message-new",
+						})
+					: operation === "touch"
+						? writer.touch(scope, "user_decision")
+						: writer.invalidate(scope, "restart_required");
+			await blocked;
+			const inspecting = observer.status(scope);
+			for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+			releaseWrite();
+			await writing;
+
+			expect(await inspecting).toEqual(
+				operation === "invalidate"
+					? { available: false, reason: "invalidated" }
+					: {
+							available: true,
+							expiresAt: time.now() + 60 * 60 * 1_000,
+						},
+			);
 		}
 	});
 
@@ -465,13 +679,18 @@ describe("mailbox storage", () => {
 
 		await expect(bindings.put(scope, values)).resolves.toBeUndefined();
 		expect(await bindings.get(scope)).toEqual(values);
+		expect(await bindings.status(scope)).toEqual({
+			available: true,
+			expiresAt: time.now() + 60 * 60 * 1_000,
+		});
 		await expect(
 			bindings.touch(scope, "user_decision"),
 		).resolves.toBe(true);
-		await expect(
-			bindings.invalidate(scope, "completion"),
-		).resolves.toBeUndefined();
-		expect(await bindings.get(scope)).toBeUndefined();
+		time.advance(60 * 60 * 1_000);
+		expect(await bindings.status(scope)).toEqual({
+			available: false,
+			reason: "expired",
+		});
 		expect(schedule).toHaveBeenCalledTimes(2);
 		expect(cancel).toHaveBeenCalledTimes(1);
 	});

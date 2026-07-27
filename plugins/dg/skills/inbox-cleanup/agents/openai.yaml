@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inbox Cleanup"
+  short_description: "Safely plan a mailbox cleanup in DeeGee"
+  default_prompt: "Use $inbox-cleanup to scan my mailbox and prepare a reviewable cleanup plan."
