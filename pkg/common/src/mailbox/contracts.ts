@@ -275,6 +275,28 @@ const ALIAS_PREFIXES = [
 ] as const;
 const ALIAS = /^(acct|run|rev|msg|fld|lbl|flt|act|coh|plan)_([a-f0-9]{32})$/;
 const SHA256_DIGEST = /^[a-f0-9]{64}$/;
+const MAX_INVENTORY_ITEMS = Object.freeze({
+	messages: 5_000,
+	folders: 500,
+	labels: 1_000,
+	filters: 500,
+});
+// Nodes: root + seven scalar values + four arrays, then each item and value.
+// Keys: eleven root keys + four array lengths, then each index and item key.
+const INVENTORY_PREFLIGHT_LIMITS = Object.freeze({
+	maxNodes:
+		12 +
+		MAX_INVENTORY_ITEMS.messages * 6 +
+		MAX_INVENTORY_ITEMS.folders * 3 +
+		MAX_INVENTORY_ITEMS.labels * 3 +
+		MAX_INVENTORY_ITEMS.filters * 3,
+	maxKeys:
+		15 +
+		MAX_INVENTORY_ITEMS.messages * 6 +
+		MAX_INVENTORY_ITEMS.folders * 3 +
+		MAX_INVENTORY_ITEMS.labels * 3 +
+		MAX_INVENTORY_ITEMS.filters * 3,
+});
 
 function record(value: unknown): PlainRecord {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -469,10 +491,26 @@ function parseInventory(value: unknown): MailboxInventory {
 		"labels",
 		"filters",
 	]);
-	const messages = array(input.messages, parseMessage);
-	const folders = array(input.folders, parseFolder);
-	const labels = array(input.labels, parseLabel);
-	const filters = array(input.filters, parseFilter);
+	const messages = array(
+		input.messages,
+		parseMessage,
+		MAX_INVENTORY_ITEMS.messages,
+	);
+	const folders = array(
+		input.folders,
+		parseFolder,
+		MAX_INVENTORY_ITEMS.folders,
+	);
+	const labels = array(
+		input.labels,
+		parseLabel,
+		MAX_INVENTORY_ITEMS.labels,
+	);
+	const filters = array(
+		input.filters,
+		parseFilter,
+		MAX_INVENTORY_ITEMS.filters,
+	);
 	const aliases = [
 		...messages.map((item) => item.alias),
 		...folders.map((item) => item.alias),
@@ -496,7 +534,7 @@ function parseInventory(value: unknown): MailboxInventory {
 }
 
 export function validateMailboxInventory(value: unknown): MailboxInventory {
-	preflightMailboxValue(value);
+	preflightMailboxValue(value, INVENTORY_PREFLIGHT_LIMITS);
 	return parseInventory(value);
 }
 
