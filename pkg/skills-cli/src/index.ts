@@ -9,6 +9,7 @@ import { registerBatchOpen } from "./commands/batch-open";
 import { registerDemo } from "./commands/demo";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
+import { registerMailboxCleanup } from "./commands/mailbox-cleanup";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 
@@ -23,6 +24,7 @@ program
 registerInstall(program);
 registerBatchOpen(program);
 registerLaunch(program);
+registerMailboxCleanup(program);
 registerDemo(program);
 registerRerun(program);
 registerProto(program);

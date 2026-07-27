@@ -28,7 +28,7 @@ jobs:
 
       - name: Test
         working-directory: pkg/extension
-        run: bun test
+        run: bun run test
 
       - name: Build
         working-directory: pkg/extension

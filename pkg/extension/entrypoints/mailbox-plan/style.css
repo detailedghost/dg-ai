@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+:root {
+	--mailbox-bg: #f4f4f5;
+	--mailbox-panel: #ffffff;
+	--mailbox-ink: #0a0a0a;
+	--mailbox-muted: #52525b;
+	--mailbox-accent: #0e7490;
+	--mailbox-warning: #a21caf;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--mailbox-bg: #0a0a0a;
+		--mailbox-panel: #111111;
+		--mailbox-ink: #e8e8e8;
+		--mailbox-muted: #a1a1aa;
+		--mailbox-accent: #00f0ff;
+		--mailbox-warning: #ff2bd6;
+	}
+}
+
+body {
+	margin: 0;
+	background: var(--mailbox-bg);
+	color: var(--mailbox-ink);
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.mailbox-plan-page,
+#mailbox-plan-root {
+	box-sizing: border-box;
+	width: min(70rem, 100%);
+	margin: 0 auto;
+	padding: 2rem 1rem 4rem;
+}
+
+.mailbox-plan-page > h1,
+#mailbox-plan-root > h1 {
+	margin: 0 0 1.5rem;
+	font-size: clamp(1.75rem, 5vw, 3rem);
+	text-transform: uppercase;
+	text-shadow: 0 0 0.75rem var(--mailbox-accent);
+}
+
+.mailbox-panel {
+	margin-block: 1rem;
+	padding: 1rem;
+	border: 0.125rem solid var(--mailbox-ink);
+	background: var(--mailbox-panel);
+	box-shadow: 0.375rem 0.375rem 0 var(--mailbox-accent);
+}
+
+.mailbox-panel h2 {
+	margin-block: 0 0.75rem;
+	color: var(--mailbox-accent);
+	font-size: 0.875rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+[role="alert"] {
+	margin-block: 1rem;
+	padding: 0.875rem;
+	border: 0.125rem solid var(--mailbox-warning);
+}
+
+[role="alert"]:focus {
+	outline: 0.1875rem solid var(--mailbox-warning);
+	outline-offset: 0.1875rem;
+}
+
+label {
+	display: grid;
+	gap: 0.5rem;
+	margin-block: 0.75rem;
+}
+
+input[type="range"],
+select {
+	width: 100%;
+	accent-color: var(--mailbox-accent);
+}
+
+button,
+select {
+	box-sizing: border-box;
+	padding: 0.625rem 0.875rem;
+	border: 0.125rem solid var(--mailbox-ink);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+button {
+	cursor: pointer;
+}
+
+button:hover:not(:disabled),
+button[aria-pressed="true"] {
+	background: var(--mailbox-accent);
+	color: #000000;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+	outline: 0.1875rem solid var(--mailbox-accent);
+	outline-offset: 0.1875rem;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+.mailbox-choice-buttons,
+.mailbox-workflow {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-block: 1rem;
+}
+
+[data-cohort-editor] {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.5fr);
+	gap: 1rem;
+	align-items: center;
+	padding-block: 0.75rem;
+	border-block-end: 0.0625rem solid var(--mailbox-muted);
+}
+
+[data-cohort-editor] h3 {
+	margin: 0;
+	font-size: 1rem;
+}
+
+@media (max-width: 40rem) {
+	[data-cohort-editor] {
+		grid-template-columns: 1fr;
+	}
+}
