@@ -53,6 +53,21 @@ function inventory(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function inventoryItemAlias(prefix: string, index: number): string {
+	const unique = index.toString(16).padStart(8, "0");
+	return `${prefix}_${unique}${PAYLOAD.slice(8)}`;
+}
+
+function inventoryMessage(index: number) {
+	return {
+		alias: inventoryItemAlias("msg", index),
+		read: false,
+		hasAttachments: false,
+		receivedAt: "2026-07-26T12:00:00.000Z",
+		category: "transactional",
+	};
+}
+
 function revision(overrides: Record<string, unknown> = {}) {
 	return {
 		schemaVersion: 1,
@@ -161,6 +176,125 @@ describe("mailbox boundary contracts", () => {
 		expect(() =>
 			serializeMailboxInventory({ arbitrary: "value" }),
 		).toThrow(/unknown|missing/i);
+	});
+
+	it("accepts exactly 5,000 messages and rejects one-over or structural abuse", () => {
+		const messages = Array.from(
+			{ length: 5_000 },
+			(_, index) => inventoryMessage(index),
+		);
+		const validated = validateMailboxInventory(inventory({ messages }));
+		expect(validated.messages).toHaveLength(5_000);
+		expect(validated.messages.at(-1)?.alias).toBe(
+			inventoryMessage(4_999).alias,
+		);
+
+		expect(() =>
+			validateMailboxInventory(
+				inventory({
+					messages: [...messages, inventoryMessage(5_000)],
+				}),
+			),
+		).toThrow(/size/i);
+		expect(() =>
+			validateMailboxInventory(
+				inventory({
+					messages: [
+						{
+							...messages[0],
+							["x".repeat(257)]: true,
+						},
+						...messages.slice(1),
+					],
+				}),
+			),
+		).toThrow(/size/i);
+
+		let accessorRead = false;
+		const accessorMessage = Object.defineProperty(
+			{ ...messages[0] },
+			"unexpected",
+			{
+				enumerable: true,
+				get() {
+					accessorRead = true;
+					return "must-not-be-read";
+				},
+			},
+		);
+		expect(() =>
+			validateMailboxInventory(
+				inventory({
+					messages: [accessorMessage, ...messages.slice(1)],
+				}),
+			),
+		).toThrow(/accessor/i);
+		expect(accessorRead).toBe(false);
+	});
+
+	it("accepts every combined inventory maximum and rejects each collection one-over", () => {
+		const messages = Array.from(
+			{ length: 5_000 },
+			(_, index) => inventoryMessage(index),
+		);
+		const folders = Array.from({ length: 500 }, (_, index) => ({
+			alias: inventoryItemAlias("fld", index),
+			messageCount: index,
+		}));
+		const labels = Array.from({ length: 1_000 }, (_, index) => ({
+			alias: inventoryItemAlias("lbl", index),
+			messageCount: index,
+		}));
+		const filters = Array.from({ length: 500 }, (_, index) => ({
+			alias: inventoryItemAlias("flt", index),
+			active: index % 2 === 0,
+		}));
+		const validated = validateMailboxInventory(
+			inventory({ messages, folders, labels, filters }),
+		);
+		expect(
+			validated.messages.length +
+				validated.folders.length +
+				validated.labels.length +
+				validated.filters.length,
+		).toBe(7_000);
+
+		for (const [collection, values] of [
+			[
+				"folders",
+				[
+					...folders,
+					{
+						alias: inventoryItemAlias("fld", 500),
+						messageCount: 0,
+					},
+				],
+			],
+			[
+				"labels",
+				[
+					...labels,
+					{
+						alias: inventoryItemAlias("lbl", 1_000),
+						messageCount: 0,
+					},
+				],
+			],
+			[
+				"filters",
+				[
+					...filters,
+					{
+						alias: inventoryItemAlias("flt", 500),
+						active: true,
+					},
+				],
+			],
+		] as const) {
+			expect(() =>
+				validateMailboxInventory(inventory({ [collection]: values })),
+			).toThrow(/size/i);
+		}
 	});
 
 	it("rejects accessors, symbols, excessive depth and size, and non-finite numbers", () => {
