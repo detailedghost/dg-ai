@@ -124,4 +124,40 @@ describe("parsePlanMarkdown()", () => {
 		const action = { do: "fill", value: 'say "hi"\\done' } as const;
 		expect(parseAction(formatAction(action))).toEqual(action);
 	});
+
+	it("accepts the action token before the selector/navigate in a hand-authored meta segment", () => {
+		const md = `---\ntitle: T\nstartUrl: https://x.test\nmode: walkthrough\n---\n\n## Steps\n\n1. **A** @click \`#a\` → https://x.test/next — do a\n`;
+		const s = validate(parsePlanMarkdown(md)) as TourScript;
+		expect(s.steps[0]).toMatchObject({
+			selector: "#a",
+			navigate: "https://x.test/next",
+			action: { do: "click" },
+		});
+	});
+});
+
+describe("parseAction()", () => {
+	it("parses a bare @click token", () => {
+		expect(parseAction("@click")).toEqual({ do: "click" });
+	});
+
+	it("parses an @type token into a fill action", () => {
+		expect(parseAction('@type="cute puppies"')).toEqual({
+			do: "fill",
+			value: "cute puppies",
+		});
+	});
+
+	it('unescapes \\" and \\\\ inside a hand-authored @type value', () => {
+		// Raw meta text as it would appear in an authored plan line, i.e. the
+		// literal characters: @type="say \\"hi\\""
+		expect(parseAction('@type="say \\"hi\\""')).toEqual({
+			do: "fill",
+			value: 'say "hi"',
+		});
+	});
+
+	it("returns undefined when the meta segment has no action", () => {
+		expect(parseAction("\`#sel\` → https://x.test")).toBeUndefined();
+	});
 });
