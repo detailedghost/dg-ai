@@ -57,6 +57,7 @@ import {
 	performAction,
 	resolvePendingMarker,
 	reviewAction,
+	scriptToDraft,
 	setupActionConsentRequired,
 	type TourState,
 } from "@/lib/features/demo-tour";
@@ -936,5 +937,61 @@ describe("captureMarkerEarly", () => {
 		expect(browser.storage.local.set).toHaveBeenCalledWith({
 			"demo_pending:-1": expect.objectContaining({ edit: true }),
 		});
+	});
+});
+
+// ── Defect 4: setup rows must be fully editable, same as tutorial rows ─────
+
+describe("scriptToDraft", () => {
+	it("surfaces every field for a setup row exactly like a tutorial row", () => {
+		const script: TourScript = {
+			title: "Full tour",
+			startUrl: "https://app.example",
+			mode: "video",
+			setup: {
+				includeInTour: false,
+				steps: [
+					{
+						title: "Sign in",
+						selector: "#login",
+						body: "Sign in first",
+						navigate: "https://app.example/login",
+						advance: 2000,
+						action: { do: "fill", value: "non-secret seed value" },
+					},
+				],
+			},
+			steps: [
+				{ title: "Dashboard", body: "See the dashboard", selector: "#dash" },
+			],
+		};
+
+		const draft = scriptToDraft(script);
+
+		expect(draft.setup).toMatchObject({
+			includeInTour: false,
+			rows: [
+				{
+					title: "Sign in",
+					selector: "#login",
+					body: "Sign in first",
+					navigate: "https://app.example/login",
+					timing: "2s",
+					actKind: "fill",
+					actText: "non-secret seed value",
+				},
+			],
+		});
+		// Round-trips back to an equivalent script — every setup field survives edit + save.
+		expect(draftToScript(script.startUrl, draft)).toEqual(script);
+	});
+
+	it("omits setup entirely when the script has none", () => {
+		const script: TourScript = {
+			startUrl: "https://app.example",
+			steps: [{ body: "Tour" }],
+		};
+
+		expect(scriptToDraft(script).setup).toBeUndefined();
 	});
 });
