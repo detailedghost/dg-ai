@@ -1,4 +1,6 @@
 import {
+	type MailboxAction,
+	type MailboxCanonicalAction,
 	validateMailboxPlanRevision,
 	type MailboxFingerprint,
 	type MailboxPlanRevision,
@@ -22,10 +24,12 @@ import {
 	buildMailboxExecutionAuthorityScope,
 	validateCanonicalMailboxExecutionRevision,
 } from "../features/mailbox-cleanup/execution/graph";
+import { mailboxExecutionRawTargets } from "../features/mailbox-cleanup/execution/coordinator";
 import type {
 	MailboxProvider,
 	MailboxProviderCaptureRequest,
 } from "../features/mailbox-cleanup/providers";
+import { createGuardedMailboxExecutionProvider } from "../features/mailbox-cleanup/providers";
 import {
 	type RawBindingScope,
 	type RawBindingStore,
@@ -35,6 +39,12 @@ import {
 	writeAndOpenMailboxPlan,
 	type MailboxPlanWorkspaceInput,
 } from "../features/mailbox-cleanup/plan-page";
+import type {
+	MailboxPlanBindingContext,
+	MailboxPlanRestartAuthority,
+	MailboxPlanRestartCapture,
+	MailboxPlanRestartCheckpoint,
+} from "../features/mailbox-cleanup/plan-workspace/list";
 
 const BINDING_TTL_MS = 60 * 60 * 1_000;
 const PLAN_TTL_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -48,6 +58,32 @@ type BrowserPlanHost = Readonly<{
 
 export type MailboxProductionOrchestrator = Readonly<{
 	launch(): Promise<MailboxChatSubmitResult>;
+	openRevision(
+		revision: MailboxPlanRevision,
+		context: MailboxPlanBindingContext,
+	): Promise<void>;
+	preflightRevision(
+		revision: MailboxPlanRevision,
+		context: MailboxPlanBindingContext,
+	): Promise<
+		| Readonly<{ status: "ready"; fingerprintMatches: true }>
+		| Readonly<{
+				status: "blocked";
+				reason:
+					| "fingerprint_mismatch"
+					| "account_mismatch"
+					| "layout_mismatch"
+					| "preflight_failed";
+		  }>
+	>;
+	restartCapture(input: Readonly<{
+		sourceRevision: MailboxPlanRevision;
+		sourceContext: MailboxPlanBindingContext;
+		previousBindings?: Readonly<Record<string, string>>;
+		checkpoints: readonly MailboxPlanRestartCheckpoint[];
+		comparisonAuthority?: MailboxPlanRestartAuthority;
+		signal: AbortSignal;
+	}>): Promise<MailboxPlanRestartCapture>;
 	computeFingerprint(
 		input: Readonly<Record<string, unknown>>,
 	): Promise<MailboxFingerprint>;
@@ -87,6 +123,10 @@ function selectedProvider(
 }
 
 function scopedAlias(prefix: "acct" | "run" | "rev" | "plan"): string {
+	return `${prefix}_${randomToken()}`;
+}
+
+function dataAlias(prefix: "msg" | "fld" | "lbl" | "flt"): string {
 	return `${prefix}_${randomToken()}`;
 }
 
@@ -150,10 +190,53 @@ function exactBindings(
 	return Object.freeze({ ...value });
 }
 
+function currentCaptureBindings(
+	capture: SuccessfulCapture,
+	value: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+	const aliases = [
+		...capture.inventory.messages.map((item) => item.alias),
+		...capture.inventory.folders.map((item) => item.alias),
+		...capture.inventory.labels.map((item) => item.alias),
+		...capture.inventory.filters.map((item) => item.alias),
+		...capture.metadata.tags.map((item) => item.alias),
+		...capture.metadata.categories.map((item) => item.alias),
+	];
+	const projected: Record<string, string> = {};
+	for (const alias of aliases) {
+		const raw = value[alias];
+		if (typeof raw !== "string") {
+			throw Object.freeze({ reasonCode: "stale_binding" as const });
+		}
+		projected[alias] = raw;
+	}
+	return Object.freeze(projected);
+}
+
 function capturedBindingsOnly(
 	capture: SuccessfulCapture,
 	bindings: Readonly<Record<string, string>>,
+	capturedBindings: Readonly<Record<string, string>>,
 ): SuccessfulCapture {
+	const aliasByRaw = new Map<string, string>();
+	for (const [alias, raw] of Object.entries(bindings)) {
+		if (aliasByRaw.has(raw)) {
+			throw Object.freeze({ reasonCode: "stale_binding" as const });
+		}
+		aliasByRaw.set(raw, alias);
+	}
+	const capturedToBound = new Map<string, string>();
+	for (const [alias, raw] of Object.entries(capturedBindings)) {
+		const boundAlias = aliasByRaw.get(raw);
+		if (
+			boundAlias !== undefined &&
+			alias.slice(0, alias.indexOf("_")) ===
+				boundAlias.slice(0, boundAlias.indexOf("_"))
+		) {
+			capturedToBound.set(alias, boundAlias);
+		}
+	}
+	const rebound = remapCapture(capture, capturedToBound);
 	const retained = <Item extends Readonly<{ alias: string }>>(
 		items: readonly Item[],
 	): readonly Item[] =>
@@ -161,17 +244,17 @@ function capturedBindingsOnly(
 			items.filter((item) => Object.hasOwn(bindings, item.alias)),
 		);
 	return Object.freeze({
-		...capture,
+		...rebound,
 		inventory: Object.freeze({
-			...capture.inventory,
-			messages: retained(capture.inventory.messages),
-			folders: retained(capture.inventory.folders),
-			labels: retained(capture.inventory.labels),
-			filters: retained(capture.inventory.filters),
+			...rebound.inventory,
+			messages: retained(rebound.inventory.messages),
+			folders: retained(rebound.inventory.folders),
+			labels: retained(rebound.inventory.labels),
+			filters: retained(rebound.inventory.filters),
 		}),
 		metadata: Object.freeze({
-			tags: retained(capture.metadata.tags),
-			categories: retained(capture.metadata.categories),
+			tags: retained(rebound.metadata.tags),
+			categories: retained(rebound.metadata.categories),
 		}),
 	});
 }
@@ -200,6 +283,301 @@ async function coordinatorBindings(
 
 function safeError(): MailboxChatSubmitResult {
 	return Object.freeze({ status: "error", code: "provider_refused" });
+}
+
+function actionAliases(
+	action: MailboxAction,
+	map: ReadonlyMap<string, string>,
+): MailboxAction;
+function actionAliases(
+	action: MailboxCanonicalAction,
+	map: ReadonlyMap<string, string>,
+): MailboxCanonicalAction;
+function actionAliases(
+	action: MailboxAction | MailboxCanonicalAction,
+	map: ReadonlyMap<string, string>,
+): MailboxAction | MailboxCanonicalAction {
+	const alias = (value: string): string => map.get(value) ?? value;
+	switch (action.type) {
+		case "archive":
+		case "mark_read":
+			return Object.freeze({
+				...action,
+				messageAlias: alias(action.messageAlias),
+			});
+		case "move_to_folder":
+			return Object.freeze({
+				...action,
+				messageAlias: alias(action.messageAlias),
+				folderAlias: alias(action.folderAlias),
+			});
+		case "apply_label":
+		case "remove_label":
+			return Object.freeze({
+				...action,
+				messageAlias: alias(action.messageAlias),
+				labelAlias: alias(action.labelAlias),
+			});
+		case "deactivate_filter":
+			return Object.freeze({
+				...action,
+				filterAlias: alias(action.filterAlias),
+			});
+		case "create_folder":
+			return Object.freeze({
+				...action,
+				folderAlias: alias(action.folderAlias),
+			});
+		case "rename_folder":
+			return Object.freeze({
+				...action,
+				folderAlias: alias(action.folderAlias),
+				replacementFolderAlias: alias(action.replacementFolderAlias),
+			});
+		case "create_label":
+		case "create_category":
+			return Object.freeze({
+				...action,
+				labelAlias: alias(action.labelAlias),
+			});
+		case "rename_label":
+		case "rename_category":
+			return Object.freeze({
+				...action,
+				labelAlias: alias(action.labelAlias),
+				replacementLabelAlias: alias(action.replacementLabelAlias),
+			});
+		case "apply_category":
+			return Object.freeze({
+				...action,
+				messageAlias: alias(action.messageAlias),
+				labelAlias: alias(action.labelAlias),
+			});
+		case "create_filter":
+			return Object.freeze({
+				...action,
+				filterAlias: alias(action.filterAlias),
+			});
+		case "change_filter":
+			return Object.freeze({
+				...action,
+				filterAlias: alias(action.filterAlias),
+				replacementFilterAlias: alias(action.replacementFilterAlias),
+			});
+	}
+}
+
+function revisionAliases(
+	source: MailboxPlanRevision,
+	map: ReadonlyMap<string, string>,
+	revisionAlias: string,
+	createdAt: string,
+	fingerprint: MailboxFingerprint,
+): MailboxPlanRevision {
+	const alias = (value: string): string => map.get(value) ?? value;
+	return validateMailboxPlanRevision({
+		...source,
+		revisionAlias,
+		revisionNumber: source.revisionNumber + 1,
+		state: "draft",
+		restartRequired: false,
+		createdAt,
+		inventoryFingerprint: fingerprint,
+		cohorts: source.cohorts.map((cohort) => ({
+			...cohort,
+			messageAliases: cohort.messageAliases.map(alias),
+			suggestedActions: cohort.suggestedActions.map((action) =>
+				actionAliases(action, map),
+			),
+		})),
+		targets: {
+			folderAliases: source.targets.folderAliases.map(alias).sort(),
+			labelAliases: source.targets.labelAliases.map(alias).sort(),
+			filterAliases: source.targets.filterAliases.map(alias).sort(),
+		},
+		actions: source.actions.map((action) => actionAliases(action, map)),
+	});
+}
+
+function referencedAliases(revision: MailboxPlanRevision): readonly string[] {
+	const values = new Set<string>([
+		...revision.cohorts.flatMap((cohort) => cohort.messageAliases),
+		...revision.targets.folderAliases,
+		...revision.targets.labelAliases,
+		...revision.targets.filterAliases,
+	]);
+	for (const action of [
+		...revision.actions,
+		...revision.cohorts.flatMap((cohort) => cohort.suggestedActions),
+	]) {
+		for (const [key, value] of Object.entries(action)) {
+			if (
+				key.endsWith("Alias") &&
+				key !== "actionAlias" &&
+				typeof value === "string"
+			) {
+				values.add(value);
+			}
+		}
+	}
+	return Object.freeze([...values]);
+}
+
+function comparisonCapture(
+	capture: SuccessfulCapture,
+	freshToPrior: ReadonlyMap<string, string>,
+): SuccessfulCapture {
+	const items = <Item extends Readonly<{ alias: string }>>(
+		values: readonly Item[],
+	): readonly Item[] =>
+		Object.freeze(
+			values.flatMap((item) => {
+				const alias = freshToPrior.get(item.alias);
+				return alias === undefined
+					? []
+					: [Object.freeze({ ...item, alias }) as Item];
+			}),
+		);
+	return Object.freeze({
+		...capture,
+		inventory: Object.freeze({
+			...capture.inventory,
+			messages: items(capture.inventory.messages),
+			folders: items(capture.inventory.folders),
+			labels: items(capture.inventory.labels),
+			filters: items(capture.inventory.filters),
+		}),
+		metadata: Object.freeze({
+			tags: items(capture.metadata.tags),
+			categories: items(capture.metadata.categories),
+		}),
+		cohorts: Object.freeze(
+			capture.cohorts.map((cohort) =>
+				Object.freeze({
+					...cohort,
+					messageAliases: Object.freeze(
+						cohort.messageAliases.map(
+							(alias) => freshToPrior.get(alias) ?? alias,
+						),
+					),
+					suggestedActions: Object.freeze(
+						cohort.suggestedActions.map((action) =>
+							actionAliases(action, freshToPrior),
+						),
+					),
+				}),
+			),
+		),
+		choices: Object.freeze(
+			capture.choices.map((choice) =>
+				Object.freeze({
+					...choice,
+					actions: Object.freeze(
+						choice.actions.map((action) =>
+							actionAliases(action, freshToPrior),
+						),
+					),
+					reviewMessageAliases: Object.freeze(
+						choice.reviewMessageAliases.map(
+							(alias) => freshToPrior.get(alias) ?? alias,
+						),
+					),
+					metadata: Object.freeze({
+						tagAliases: Object.freeze(
+							choice.metadata.tagAliases.map(
+								(alias) =>
+									freshToPrior.get(alias) ?? alias,
+							),
+						),
+						categoryAliases: Object.freeze(
+							choice.metadata.categoryAliases.map(
+								(alias) =>
+									freshToPrior.get(alias) ?? alias,
+							),
+						),
+					}),
+				}),
+			),
+		),
+	});
+}
+
+function remapCapture(
+	capture: SuccessfulCapture,
+	aliases: ReadonlyMap<string, string>,
+): SuccessfulCapture {
+	const items = <Item extends Readonly<{ alias: string }>>(
+		values: readonly Item[],
+	): readonly Item[] =>
+		Object.freeze(
+			values.map(
+				(item) =>
+					Object.freeze({
+						...item,
+						alias: aliases.get(item.alias) ?? item.alias,
+					}) as Item,
+			),
+		);
+	return Object.freeze({
+		...capture,
+		inventory: Object.freeze({
+			...capture.inventory,
+			messages: items(capture.inventory.messages),
+			folders: items(capture.inventory.folders),
+			labels: items(capture.inventory.labels),
+			filters: items(capture.inventory.filters),
+		}),
+		metadata: Object.freeze({
+			tags: items(capture.metadata.tags),
+			categories: items(capture.metadata.categories),
+		}),
+		cohorts: Object.freeze(
+			capture.cohorts.map((cohort) =>
+				Object.freeze({
+					...cohort,
+					messageAliases: Object.freeze(
+						cohort.messageAliases.map(
+							(alias) => aliases.get(alias) ?? alias,
+						),
+					),
+					suggestedActions: Object.freeze(
+						cohort.suggestedActions.map((action) =>
+							actionAliases(action, aliases),
+						),
+					),
+				}),
+			),
+		),
+		choices: Object.freeze(
+			capture.choices.map((choice) =>
+				Object.freeze({
+					...choice,
+					actions: Object.freeze(
+						choice.actions.map((action) =>
+							actionAliases(action, aliases),
+						),
+					),
+					reviewMessageAliases: Object.freeze(
+						choice.reviewMessageAliases.map(
+							(alias) => aliases.get(alias) ?? alias,
+						),
+					),
+					metadata: Object.freeze({
+						tagAliases: Object.freeze(
+							choice.metadata.tagAliases.map(
+								(alias) => aliases.get(alias) ?? alias,
+							),
+						),
+						categoryAliases: Object.freeze(
+							choice.metadata.categoryAliases.map(
+								(alias) => aliases.get(alias) ?? alias,
+							),
+						),
+					}),
+				}),
+			),
+		),
+	});
 }
 
 export function createMailboxProductionOrchestrator(options: Readonly<{
@@ -312,6 +690,487 @@ export function createMailboxProductionOrchestrator(options: Readonly<{
 		}
 	};
 
+	const openRevision = async (
+		revisionValue: MailboxPlanRevision,
+		context: MailboxPlanBindingContext,
+	): Promise<void> => {
+		const revision = validateMailboxPlanRevision(revisionValue);
+		const { provider } = selectedProvider(options.providers, context);
+		const providerScope: MailboxProviderCaptureRequest = Object.freeze({
+			providerId: context.providerId,
+			surface: context.surface,
+			accountAlias: context.accountAlias,
+			runAlias: context.runAlias,
+			revisionAlias: context.revisionAlias,
+		});
+		const freshCapture = await coordinatorCapture(
+			provider,
+			providerScope,
+			options.now,
+		);
+		const raw = await options.bindings.get({
+			planAlias: context.planAlias,
+			...providerScope,
+		});
+		if (raw === undefined) {
+			throw Object.freeze({ reasonCode: "stale_binding" as const });
+		}
+		const freshBindings = exactBindings(
+			freshCapture,
+			await coordinatorBindings(provider, providerScope),
+		);
+		const priorByRaw = new Map(
+			Object.entries(raw).map(([alias, value]) => [value, alias]),
+		);
+		const freshToPrior = new Map(
+			Object.entries(freshBindings).flatMap(([alias, value]) => {
+				const prior = priorByRaw.get(value);
+				return prior === undefined ? [] : [[alias, prior] as const];
+			}),
+		);
+		const capture = comparisonCapture(freshCapture, freshToPrior);
+		const currentFingerprint = await computeMailboxScopedFingerprint({
+			inventory: capture.inventory,
+			metadata: capture.metadata,
+			actions: revision.actions,
+			targets: revision.targets,
+		});
+		if (
+			currentFingerprint.digest !== revision.inventoryFingerprint.digest
+		) {
+			throw Object.freeze({ reasonCode: "stale_binding" as const });
+		}
+		const now = options.now();
+		await writeAndOpenMailboxPlan(
+			Object.freeze({
+				capture,
+				baseRevision: revision,
+				bindingScope: Object.freeze({
+					planAlias: context.planAlias,
+					...providerScope,
+				}),
+				bindingExpiresAt: now + BINDING_TTL_MS,
+				planExpiresAt: now + PLAN_TTL_MS,
+			}),
+			{
+				session: options.session,
+				runtime: options.browser.runtime,
+				tabs: options.browser.tabs,
+				computeFingerprint: computeMailboxScopedFingerprint,
+			},
+		);
+	};
+
+	const preflightRevision = async (
+		revisionValue: MailboxPlanRevision,
+		context: MailboxPlanBindingContext,
+	): ReturnType<MailboxProductionOrchestrator["preflightRevision"]> => {
+		const revision = validateMailboxPlanRevision(revisionValue);
+		const { provider } = selectedProvider(options.providers, context);
+		const raw = await options.bindings.get({
+			planAlias: context.planAlias,
+			providerId: context.providerId,
+			surface: context.surface,
+			accountAlias: context.accountAlias,
+			runAlias: context.runAlias,
+			revisionAlias: context.revisionAlias,
+		});
+		if (raw === undefined) {
+			return Object.freeze({
+				status: "blocked",
+				reason: "preflight_failed",
+			});
+		}
+		const providerScope: MailboxProviderCaptureRequest = Object.freeze({
+			providerId: context.providerId,
+			surface: context.surface,
+			accountAlias: context.accountAlias,
+			runAlias: context.runAlias,
+			revisionAlias: context.revisionAlias,
+		});
+		const freshCapture = await coordinatorCapture(
+			provider,
+			providerScope,
+			options.now,
+		);
+		const freshBindings = exactBindings(
+			freshCapture,
+			await coordinatorBindings(provider, providerScope),
+		);
+		const priorByRaw = new Map(
+			Object.entries(raw).map(([alias, value]) => [value, alias]),
+		);
+		const freshToPrior = new Map(
+			Object.entries(freshBindings).flatMap(([alias, value]) => {
+				const prior = priorByRaw.get(value);
+				return prior === undefined ? [] : [[alias, prior] as const];
+			}),
+		);
+		const capture = comparisonCapture(freshCapture, freshToPrior);
+		const fingerprint = await computeMailboxScopedFingerprint({
+			inventory: capture.inventory,
+			metadata: capture.metadata,
+			actions: revision.actions,
+			targets: revision.targets,
+		});
+		if (fingerprint.digest !== revision.inventoryFingerprint.digest) {
+			return Object.freeze({
+				status: "blocked",
+				reason: "fingerprint_mismatch",
+			});
+		}
+		const executionRevision =
+			validateCanonicalMailboxExecutionRevision(revision);
+		const result = await createGuardedMailboxExecutionProvider(
+			provider,
+		).preflight({
+			providerId: context.providerId,
+			surface: context.surface,
+			accountAlias: context.accountAlias,
+			runAlias: context.runAlias,
+			revisionAlias: context.revisionAlias,
+			actions: executionRevision.actions,
+			rawTargets: mailboxExecutionRawTargets(
+				executionRevision.actions,
+				raw,
+			),
+		});
+		if (result.status !== "ready") {
+			return Object.freeze({
+				status: "blocked",
+				reason: "preflight_failed",
+			});
+		}
+		if (result.accountAlias !== context.accountAlias) {
+			return Object.freeze({
+				status: "blocked",
+				reason: "account_mismatch",
+			});
+		}
+		if (result.locale !== "en-US" || result.layout !== "supported") {
+			return Object.freeze({
+				status: "blocked",
+				reason: "layout_mismatch",
+			});
+		}
+		return Object.freeze({
+			status: "ready",
+			fingerprintMatches: true,
+		});
+	};
+
+	const restartCapture = async (
+		input: Parameters<MailboxProductionOrchestrator["restartCapture"]>[0],
+	): Promise<MailboxPlanRestartCapture> => {
+		if (input.signal.aborted) {
+			throw new DOMException("Aborted", "AbortError");
+		}
+		const source = validateMailboxPlanRevision(input.sourceRevision);
+		const { provider } = selectedProvider(
+			options.providers,
+			input.sourceContext,
+		);
+		const providerScope: MailboxProviderCaptureRequest = Object.freeze({
+			providerId: input.sourceContext.providerId,
+			surface: input.sourceContext.surface,
+			accountAlias: input.sourceContext.accountAlias,
+			runAlias: scopedAlias("run"),
+			revisionAlias: scopedAlias("rev"),
+		});
+		const providerCapture = await coordinatorCapture(
+			provider,
+			providerScope,
+			options.now,
+		);
+		if (input.signal.aborted) {
+			throw new DOMException("Aborted", "AbortError");
+		}
+		const providerBindings = currentCaptureBindings(
+			providerCapture,
+			await coordinatorBindings(provider, providerScope),
+		);
+		const providerToFresh = new Map(
+			Object.keys(providerBindings).map((alias) => {
+				const prefix = alias.slice(0, alias.indexOf("_"));
+				if (
+					prefix !== "msg" &&
+					prefix !== "fld" &&
+					prefix !== "lbl" &&
+					prefix !== "flt"
+				) {
+					throw Object.freeze({
+						reasonCode: "stale_binding" as const,
+					});
+				}
+				return [alias, dataAlias(prefix)] as const;
+			}),
+		);
+		const capture = remapCapture(providerCapture, providerToFresh);
+		const bindings = Object.freeze(
+			Object.fromEntries(
+				Object.entries(providerBindings).map(([alias, raw]) => [
+					providerToFresh.get(alias)!,
+					raw,
+				]),
+			),
+		);
+		if (input.previousBindings === undefined) {
+			const selected =
+				capture.choices.find((choice) => choice.id === "balanced") ??
+				capture.choices[0];
+			if (selected === undefined) {
+				throw Object.freeze({
+					reasonCode: "provider_refused" as const,
+				});
+			}
+			const targets = Object.freeze({
+				folderAliases: Object.freeze(
+					capture.inventory.folders.map((item) => item.alias).sort(),
+				),
+				labelAliases: Object.freeze(
+					[
+						...capture.inventory.labels.map((item) => item.alias),
+						...capture.metadata.tags.map((item) => item.alias),
+						...capture.metadata.categories.map(
+							(item) => item.alias,
+						),
+					].sort(),
+				),
+				filterAliases: Object.freeze(
+					capture.inventory.filters.map((item) => item.alias).sort(),
+				),
+			});
+			const fingerprint = await computeMailboxScopedFingerprint(
+				{
+					inventory: capture.inventory,
+					metadata: capture.metadata,
+					actions: selected.actions,
+					targets,
+				},
+				input.signal,
+			);
+			const locale = await provider.readLocale();
+			const supportedLayout =
+				await provider.hasPositiveLayoutSignature(
+					providerScope.surface,
+				);
+			const sameAccount =
+				capture.inventory.accountAlias === providerScope.accountAlias;
+			const ready =
+				sameAccount &&
+				(Array.isArray(locale)
+					? locale.length === 1 && locale[0] === "en-US"
+					: locale === "en-US") &&
+				supportedLayout;
+			return Object.freeze({
+				schemaVersion: 1,
+				revision: validateMailboxPlanRevision({
+					...source,
+					revisionAlias: providerScope.revisionAlias,
+					revisionNumber: source.revisionNumber + 1,
+					state: "draft",
+					restartRequired: false,
+					createdAt: capture.inventory.capturedAt,
+					inventoryFingerprint: fingerprint,
+					cohorts: capture.cohorts,
+					targets,
+					actions: selected.actions,
+				}),
+				context: Object.freeze({
+					schemaVersion: 1,
+					planAlias: source.planAlias,
+					...providerScope,
+				}),
+				bindings,
+				priorToFreshAliases: Object.freeze({}),
+				proof: Object.freeze({
+					sameAccount,
+					locale: "en-US",
+					layout: supportedLayout
+						? "supported"
+						: "unsupported",
+					preflight: ready ? "ready" : "blocked",
+				}),
+			});
+		}
+		const freshByRaw = new Map<string, string>();
+		for (const [alias, raw] of Object.entries(bindings)) {
+			if (freshByRaw.has(raw)) {
+				throw Object.freeze({ reasonCode: "stale_binding" as const });
+			}
+			freshByRaw.set(raw, alias);
+		}
+		const priorToFresh = new Map<string, string>();
+		for (const [priorAlias, raw] of Object.entries(
+			input.previousBindings,
+		)) {
+			const freshAlias = freshByRaw.get(raw);
+			if (freshAlias !== undefined) {
+				priorToFresh.set(priorAlias, freshAlias);
+			}
+		}
+		for (const priorAlias of referencedAliases(source)) {
+			if (priorToFresh.has(priorAlias)) continue;
+			const prefix = priorAlias.slice(0, priorAlias.indexOf("_"));
+			if (
+				prefix !== "msg" &&
+				prefix !== "fld" &&
+				prefix !== "lbl" &&
+				prefix !== "flt"
+			) {
+				throw Object.freeze({ reasonCode: "stale_binding" as const });
+			}
+			priorToFresh.set(priorAlias, dataAlias(prefix));
+		}
+		const terminalActionAliases = new Set(
+			input.checkpoints
+				.filter(
+					(checkpoint) =>
+						checkpoint.state === "verified" ||
+						checkpoint.state === "skipped",
+				)
+				.map((checkpoint) => checkpoint.actionAlias),
+		);
+		const aliasedSource = revisionAliases(
+			source,
+			priorToFresh,
+			providerScope.revisionAlias,
+			capture.inventory.capturedAt,
+			source.inventoryFingerprint,
+		);
+		const candidateWithPriorFingerprint = validateMailboxPlanRevision({
+			...aliasedSource,
+			actions: aliasedSource.actions.filter(
+				(action) =>
+					!("actionAlias" in action) ||
+					typeof action.actionAlias !== "string" ||
+					!terminalActionAliases.has(action.actionAlias),
+			),
+		});
+		const candidateFingerprint = await computeMailboxScopedFingerprint(
+			{
+				inventory: capture.inventory,
+				metadata: capture.metadata,
+				actions: candidateWithPriorFingerprint.actions,
+				targets: candidateWithPriorFingerprint.targets,
+			},
+			input.signal,
+		);
+		const candidate = validateMailboxPlanRevision({
+			...candidateWithPriorFingerprint,
+			inventoryFingerprint: candidateFingerprint,
+		});
+		const freshToPrior = new Map(
+			[...priorToFresh].map(([prior, fresh]) => [fresh, prior]),
+		);
+		let comparisonFingerprint: MailboxFingerprint;
+		try {
+			const priorCapture = comparisonCapture(capture, freshToPrior);
+			const comparisonActions =
+				input.comparisonAuthority === undefined
+					? source.actions
+					: input.comparisonAuthority.scope.actionAliases.map(
+							(alias) => {
+								const action = source.actions.find(
+									(candidate) =>
+										"actionAlias" in candidate &&
+										candidate.actionAlias === alias,
+								);
+								if (action === undefined) {
+									throw Object.freeze({
+										reasonCode: "stale_binding" as const,
+									});
+								}
+								return action;
+							},
+						);
+			comparisonFingerprint = await computeMailboxScopedFingerprint(
+				{
+					inventory: priorCapture.inventory,
+					metadata: priorCapture.metadata,
+					actions: comparisonActions,
+					targets:
+						input.comparisonAuthority?.scope.targets ??
+						source.targets,
+				},
+				input.signal,
+			);
+		} catch {
+			if (input.signal.aborted) {
+				throw new DOMException("Aborted", "AbortError");
+			}
+			comparisonFingerprint = candidateFingerprint;
+		}
+		const locale = await provider.readLocale();
+		const supportedLayout = await provider.hasPositiveLayoutSignature(
+			providerScope.surface,
+		);
+		let sameAccount = false;
+		let ready = false;
+		if (
+			source.state !== "draft" &&
+			(Array.isArray(locale)
+				? locale.length === 1 && locale[0] === "en-US"
+				: locale === "en-US") &&
+			supportedLayout
+		) {
+			const executionRevision =
+				validateCanonicalMailboxExecutionRevision({
+					...candidate,
+					state: "approved",
+				});
+			const preflight = await createGuardedMailboxExecutionProvider(
+				provider,
+			).preflight(
+				{
+					...providerScope,
+					actions: executionRevision.actions,
+					rawTargets: mailboxExecutionRawTargets(
+						executionRevision.actions,
+						bindings,
+					),
+				},
+				{ signal: input.signal },
+			);
+			sameAccount =
+				preflight.status === "ready" &&
+				preflight.accountAlias === providerScope.accountAlias;
+			ready =
+				preflight.status === "ready" &&
+				preflight.locale === "en-US" &&
+				preflight.layout === "supported" &&
+				sameAccount;
+		} else if (source.state === "draft") {
+			sameAccount = capture.inventory.accountAlias === providerScope.accountAlias;
+			ready =
+				sameAccount &&
+				(Array.isArray(locale)
+					? locale.length === 1 && locale[0] === "en-US"
+					: locale === "en-US") &&
+				supportedLayout;
+		}
+		return Object.freeze({
+			schemaVersion: 1,
+			comparisonFingerprint,
+			revision: candidate,
+			context: Object.freeze({
+				schemaVersion: 1,
+				planAlias: source.planAlias,
+				...providerScope,
+			}),
+			bindings,
+			priorToFreshAliases: Object.freeze(
+				Object.fromEntries(priorToFresh),
+			),
+			proof: Object.freeze({
+				sameAccount,
+				locale: "en-US",
+				layout: supportedLayout ? "supported" : "unsupported",
+				preflight: ready ? "ready" : "blocked",
+			}),
+		});
+	};
+
 	const computeFingerprint = async (
 		value: Readonly<Record<string, unknown>>,
 	): Promise<MailboxFingerprint> => {
@@ -353,12 +1212,28 @@ export function createMailboxProductionOrchestrator(options: Readonly<{
 		) {
 			throw new Error("Mailbox execution authority scope is invalid");
 		}
-		const scope = value.scope as MailboxProviderCaptureRequest;
+		const inputScope = value.scope as MailboxProviderCaptureRequest;
 		const bindings = value.bindings as Readonly<Record<string, string>>;
-		const { provider } = selectedProvider(options.providers, scope);
+		const { provider } = selectedProvider(options.providers, inputScope);
+		const scope: MailboxProviderCaptureRequest = Object.freeze({
+			providerId: inputScope.providerId,
+			surface: inputScope.surface,
+			accountAlias: inputScope.accountAlias,
+			runAlias: inputScope.runAlias,
+			revisionAlias: inputScope.revisionAlias,
+		});
+		const providerCapture = await coordinatorCapture(
+			provider,
+			scope,
+			options.now,
+		);
 		const capture = capturedBindingsOnly(
-			await coordinatorCapture(provider, scope, options.now),
+			providerCapture,
 			bindings,
+			currentCaptureBindings(
+				providerCapture,
+				await coordinatorBindings(provider, scope),
+			),
 		);
 		return computeMailboxScopedFingerprint({
 			inventory: capture.inventory,
@@ -492,6 +1367,9 @@ export function createMailboxProductionOrchestrator(options: Readonly<{
 
 	return Object.freeze({
 		launch,
+		openRevision,
+		preflightRevision,
+		restartCapture,
 		computeFingerprint,
 		refingerprintProposal,
 		chatReceiver,

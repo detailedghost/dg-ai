@@ -56,6 +56,16 @@ function actionAlias(): string {
 	return scopedAlias("act");
 }
 
+function registerRevision(
+	planAlias: string,
+	revisionAlias: string,
+): Promise<unknown> {
+	return browser.runtime.sendMessage({
+		type: "dg-mailbox-plans:register",
+		command: { planAlias, revisionAlias },
+	});
+}
+
 function showUnavailable(root: HTMLElement, message: string): void {
 	root.removeAttribute("aria-busy");
 	root.replaceChildren();
@@ -122,6 +132,9 @@ async function start(root: HTMLElement): Promise<void> {
 	await bridge.open(input.baseRevision.planAlias).catch(() => undefined);
 	const initialized = await initializeMailboxPlanPage(input, {
 		lifecycle,
+		registerRevision: async (planAlias, revisionAlias) => {
+			await registerRevision(planAlias, revisionAlias);
+		},
 		createWorkspace: (workspaceInput) =>
 			createMailboxPlanWorkspace(workspaceInput, {
 				lifecycle,
@@ -136,6 +149,9 @@ async function start(root: HTMLElement): Promise<void> {
 						type: "dg-mailbox-cleanup:execution-start",
 						command,
 					}),
+				registerRevision: async (planAlias, revisionAlias) => {
+					await registerRevision(planAlias, revisionAlias);
+				},
 			}),
 		mount: (workspace) => mountMailboxPlanPage(root, workspace),
 	});

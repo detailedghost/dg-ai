@@ -2,16 +2,23 @@ import type { MailboxFingerprint } from "@dg/common";
 import type { MailboxRuntimeChatReceiver } from "../features/mailbox-cleanup/bridge";
 import {
 	postMailboxCliTerminal,
+	postMailboxPlansCliTerminal,
+	monitorMailboxPlansCliSession,
 	requestMailboxCliAuthor,
+	requestMailboxPlansCliCommand,
 	type MailboxCliConnection,
 	type MailboxCliRuntimeSender,
+	type MailboxPlansCliTerminal,
 } from "../features/mailbox-cleanup/cli-transport";
 import {
 	createMailboxDebriefService,
 } from "../features/mailbox-cleanup/debrief";
 import {
+	buildMailboxExecutionAuthorityScope,
+	buildMailboxExecutionGraph,
 	createMailboxExecutionCoordinator,
 	createMailboxExecutionJournal,
+	validateCanonicalMailboxExecutionRevision,
 	type MailboxExecutionCoordinator,
 } from "../features/mailbox-cleanup/execution";
 import type {
@@ -22,6 +29,11 @@ import {
 	createGuardedMailboxExecutionProvider,
 	type MailboxProvider,
 } from "../features/mailbox-cleanup/providers";
+import {
+	createMailboxPlanListService,
+	MailboxPlanListError,
+	type MailboxPlanListService,
+} from "../features/mailbox-cleanup/plan-workspace/list";
 import { isValidMailboxScopedAlias } from "../features/mailbox-cleanup/privacy";
 import {
 	createBrowserRawBindingAlarms,
@@ -126,6 +138,7 @@ export type MailboxCleanupBackgroundCompositionOptions = Readonly<{
 	): Promise<unknown>;
 	fetch?(input: string, init: RequestInit): Promise<Response>;
 	chatReceiver?: MailboxRuntimeChatReceiver;
+	planListService?: Pick<MailboxPlanListService, "list" | "perform">;
 }>;
 
 function sessionStorage(area: StorageArea): SessionStorageSeam {
@@ -200,10 +213,55 @@ function extensionOrigin(browser: MailboxCleanupBrowserSeam): string {
 	return `${value}/`;
 }
 
+function plansFailure(
+	error: unknown,
+): Readonly<{
+	code:
+		| "not_found"
+		| "worker_suspended"
+		| "provider_refused"
+		| "malformed_stream"
+		| "internal_failure";
+	retryable: boolean;
+}> {
+	if (!(error instanceof MailboxPlanListError)) {
+		return Object.freeze({
+			code: "internal_failure",
+			retryable: false,
+		});
+	}
+	switch (error.code) {
+		case "not_found":
+			return Object.freeze({ code: "not_found", retryable: false });
+		case "conflict":
+			return Object.freeze({
+				code: "worker_suspended",
+				retryable: true,
+			});
+		case "replay":
+		case "invalid_action":
+			return Object.freeze({
+				code: "provider_refused",
+				retryable: false,
+			});
+		case "invalid_input":
+			return Object.freeze({
+				code: "malformed_stream",
+				retryable: false,
+			});
+		case "storage_failure":
+			return Object.freeze({
+				code: "internal_failure",
+				retryable: true,
+			});
+	}
+}
+
 export function createMailboxCleanupBackgroundComposition(
 	options: MailboxCleanupBackgroundCompositionOptions,
 ): Readonly<{
 	execution: MailboxExecutionCoordinator;
+	planList: MailboxPlanListService;
 	register(): MailboxCleanupBackgroundRegistration;
 	dispose(): Promise<void>;
 }> {
@@ -383,11 +441,22 @@ export function createMailboxCleanupBackgroundComposition(
 			return match?.state ?? "missing";
 		},
 	});
+	let planListGuard: MailboxPlanListService | undefined;
+	const computeExecutionFingerprint =
+		options.computeFingerprint ?? orchestrator.computeFingerprint;
 	const execution = createMailboxExecutionCoordinator({
 		async loadRevision(planAlias, revisionAlias) {
 			return plans.getRevision(planAlias, revisionAlias);
 		},
 		async loadBinding(planAlias, revisionAlias) {
+			if (
+				await planListGuard?.hasActiveRestart(
+					planAlias,
+					revisionAlias,
+				)
+			) {
+				throw Object.freeze({ reasonCode: "stale_binding" as const });
+			}
 			const bindingScope = await loadScope(planAlias, revisionAlias);
 			const raw = await bindings.get(bindingScope);
 			if (raw === undefined) {
@@ -406,9 +475,7 @@ export function createMailboxCleanupBackgroundComposition(
 			}
 			return createGuardedMailboxExecutionProvider(provider);
 		},
-			computeFingerprint:
-				options.computeFingerprint ??
-				orchestrator.computeFingerprint,
+		computeFingerprint: computeExecutionFingerprint,
 		journal,
 		now: () => new Date(now()).toISOString(),
 		generateDebrief: (input) => debrief.generate(input),
@@ -420,7 +487,523 @@ export function createMailboxCleanupBackgroundComposition(
 				nextState: next,
 			});
 		},
+		async acquireAdmission(command, owner) {
+			if (planListGuard === undefined) {
+				throw new MailboxPlanListError("storage_failure");
+			}
+			try {
+				await planListGuard.acquireExecutionAdmission(
+					command.planAlias,
+					command.revisionAlias,
+					owner,
+				);
+			} catch {
+				throw Object.freeze({ reasonCode: "stale_binding" as const });
+			}
+		},
+		async assertAdmission(command, owner) {
+			if (planListGuard === undefined) {
+				throw new MailboxPlanListError("storage_failure");
+			}
+			try {
+				await planListGuard.assertExecutionAdmission(
+					command.planAlias,
+					command.revisionAlias,
+					owner,
+				);
+			} catch {
+				throw Object.freeze({ reasonCode: "stale_binding" as const });
+			}
+		},
+		async releaseAdmission(command, owner) {
+			await planListGuard?.releaseExecutionAdmission(
+				command.planAlias,
+				command.revisionAlias,
+				owner,
+			);
+		},
 	});
+	const planContext = async (
+		planAlias: string,
+		revisionAlias: string,
+	) => {
+		const bindingScope = await loadScope(planAlias, revisionAlias);
+		return Object.freeze({
+			schemaVersion: 1 as const,
+			...bindingScope,
+		});
+	};
+	const planList = createMailboxPlanListService({
+		store: plans,
+		lifecycle,
+		bindings,
+		storage: createMailboxExecutionIndexedDbStorage(
+			options.indexedDB,
+			"dg-mailbox-plan-list-v1",
+		),
+		now,
+		rescan: (input) => orchestrator.restartCapture(input),
+		navigation: {
+			async edit(planAlias, revisionAlias) {
+				const revision = await plans.getRevision(
+					planAlias,
+					revisionAlias,
+				);
+				if (revision === undefined) {
+					throw new MailboxPlanListError("not_found");
+				}
+				await orchestrator.openRevision(
+					revision,
+					await planContext(planAlias, revisionAlias),
+				);
+			},
+			async preflight(planAlias, revisionAlias) {
+				const revision = await plans.getRevision(
+					planAlias,
+					revisionAlias,
+				);
+				if (revision === undefined) {
+					throw new MailboxPlanListError("not_found");
+				}
+				return orchestrator.preflightRevision(
+					revision,
+					await planContext(planAlias, revisionAlias),
+				);
+			},
+		},
+		execution: {
+			async status(planAlias, revisionAlias) {
+				const snapshot = await journal.snapshot({
+					planAlias,
+					revisionAlias,
+				});
+				if (
+					snapshot === undefined ||
+					snapshot.terminalStatus !== undefined
+				) {
+					return "missing";
+				}
+				return snapshot.lease !== undefined &&
+					Date.parse(snapshot.lease.expiresAt) > now()
+					? "live"
+					: "resumable";
+			},
+			async fenceRestart(planAlias, revisionAlias, signal) {
+				const command = { planAlias, revisionAlias };
+				if (signal?.aborted) {
+					throw new DOMException("Aborted", "AbortError");
+				}
+				await execution.fence?.(command);
+				await planListGuard?.waitForExecutionDrain(
+					planAlias,
+					revisionAlias,
+					signal,
+				);
+			},
+			async focus(planAlias, revisionAlias) {
+				const revision = await plans.getRevision(
+					planAlias,
+					revisionAlias,
+				);
+				if (revision === undefined) {
+					throw new MailboxPlanListError("not_found");
+				}
+				await orchestrator.openRevision(
+					revision,
+					await planContext(planAlias, revisionAlias),
+				);
+			},
+			async resume(planAlias, revisionAlias, signal) {
+				const command = { planAlias, revisionAlias };
+				const revision = await plans.getRevision(
+					planAlias,
+					revisionAlias,
+				);
+				const snapshot = await journal.snapshot(command);
+				if (
+					revision?.state === "in_flight" &&
+					snapshot?.lifecycleState === "approved"
+				) {
+					const lease = await journal.acquireLease(
+						command,
+						snapshot.accountAlias,
+						"plans:resume-reconcile",
+					);
+					if (lease === undefined) {
+						throw new MailboxPlanListError("conflict");
+					}
+					try {
+						await journal.prepareLifecycle(
+							command,
+							lease,
+							"approved",
+							"in_flight",
+						);
+						await journal.commitLifecycle(
+							command,
+							lease,
+							"approved",
+							"in_flight",
+						);
+					} finally {
+						await journal
+							.releaseLease(command, lease)
+							.catch(() => undefined);
+					}
+				}
+				const onAbort = (): void => {
+					void execution.cancel(command);
+				};
+				signal?.addEventListener("abort", onAbort, { once: true });
+				if (signal?.aborted) onAbort();
+				const result = await execution.resume(command).finally(() => {
+					signal?.removeEventListener("abort", onAbort);
+				});
+				if (result.status === "completed") return "completed";
+				if (result.reasonCode === "stale_binding") {
+					return "restart_required";
+				}
+				if (result.reasonCode === "verification_mismatch") {
+					return "fingerprint_mismatch";
+				}
+				if (
+					result.reasonCode === "worker_suspended" ||
+					result.reasonCode === "canceled"
+				) {
+					return "interrupted_restart";
+				}
+				if (result.reasonCode === "provider_timeout") {
+					return "preflight_failed";
+				}
+				return result.reasonCode === "internal_failure"
+					? "storage_failure"
+					: "preflight_failed";
+			},
+			async checkpoints(planAlias, revisionAlias) {
+				const snapshot = await journal.snapshot({
+					planAlias,
+					revisionAlias,
+				});
+				if (snapshot === undefined) return Object.freeze([]);
+				return Object.freeze(
+					snapshot.actions.map((entry) =>
+						Object.freeze({
+							actionAlias: entry.action.actionAlias,
+							state:
+								entry.state === "verified"
+									? "verified" as const
+									: entry.state === "skipped"
+										? "skipped" as const
+										: entry.state === "pending"
+											? "pending" as const
+											: "needs_review" as const,
+						}),
+					),
+				);
+			},
+			async restartAuthority(planAlias, revisionAlias) {
+				const snapshot = await journal.snapshot({
+					planAlias,
+					revisionAlias,
+				});
+				if (
+					snapshot === undefined ||
+					snapshot.lifecycleState !== "in_flight" ||
+					snapshot.terminalStatus !== undefined
+				) {
+					throw new MailboxPlanListError("storage_failure");
+				}
+				return Object.freeze({
+					fingerprint: snapshot.authorityFingerprint,
+					scope: snapshot.authorityScope,
+				});
+			},
+			async prepareRestart(input) {
+				if (
+					input.revision.actions.some(
+						(action) => !("actionAlias" in action),
+					)
+				) {
+					if (input.checkpoints.length !== 0) {
+						throw new MailboxPlanListError(
+							"storage_failure",
+						);
+					}
+					return;
+				}
+				let revision =
+					validateCanonicalMailboxExecutionRevision({
+						...input.revision,
+						state: "approved",
+					});
+				const importsTerminal = input.checkpoints.some(
+					(checkpoint) => checkpoint.state !== "pending",
+				);
+				const source = importsTerminal
+					? await journal.snapshot({
+							planAlias: input.sourcePlanAlias,
+							revisionAlias: input.sourceRevisionAlias,
+						})
+					: undefined;
+				if (importsTerminal && source === undefined) {
+					throw new MailboxPlanListError("storage_failure");
+				}
+				if (source !== undefined) {
+					const aliasFields = new Set([
+						"messageAlias",
+						"folderAlias",
+						"replacementFolderAlias",
+						"labelAlias",
+						"replacementLabelAlias",
+						"filterAlias",
+						"replacementFilterAlias",
+					]);
+					revision = validateCanonicalMailboxExecutionRevision({
+						...revision,
+						actions: source.actions.map((entry) =>
+							Object.fromEntries(
+								Object.entries(entry.action).map(
+									([field, value]) => [
+										field,
+										aliasFields.has(field) &&
+												typeof value === "string"
+											? input.priorToFreshAliases?.[
+													value
+												] ?? value
+											: value,
+									],
+								),
+							),
+						),
+					});
+				}
+				const bindingScope = await loadScope(
+					revision.planAlias,
+					revision.revisionAlias,
+				);
+				const importedBindings = await bindings.get(bindingScope);
+				if (importedBindings === undefined) {
+					throw new MailboxPlanListError("storage_failure");
+				}
+				const command = {
+					planAlias: revision.planAlias,
+					revisionAlias: revision.revisionAlias,
+				};
+				const order = buildMailboxExecutionGraph(
+					revision.actions,
+				);
+				await journal.initialize(
+					command,
+					{
+						accountAlias: bindingScope.accountAlias,
+						revision,
+						order,
+					},
+				);
+				if (
+					input.checkpoints.every(
+						(checkpoint) => checkpoint.state === "pending",
+					)
+				) {
+					return;
+				}
+				if (source === undefined) {
+					throw new MailboxPlanListError("storage_failure");
+				}
+				let importedFingerprint =
+					revision.inventoryFingerprint;
+				let importedScope =
+					buildMailboxExecutionAuthorityScope(
+						order.map((index) => revision.actions[index]!),
+					);
+				const lease = await journal.acquireLease(
+					command,
+					bindingScope.accountAlias,
+					`restart:${input.sourceRevisionAlias}`,
+				);
+				if (lease === undefined) {
+					throw new MailboxPlanListError("conflict");
+				}
+				try {
+					for (const checkpoint of input.checkpoints) {
+						if (checkpoint.state === "pending") continue;
+						const candidateIndex = revision.actions.findIndex(
+							(action) =>
+								action.actionAlias === checkpoint.actionAlias,
+						);
+						const prior = source.actions.find(
+							(entry) =>
+								entry.action.actionAlias ===
+								checkpoint.actionAlias,
+						);
+						const action = revision.actions[candidateIndex];
+						if (
+							candidateIndex < 0 ||
+							prior === undefined ||
+							action === undefined
+						) {
+							throw new MailboxPlanListError(
+								"storage_failure",
+							);
+						}
+						if (checkpoint.state === "skipped") {
+							if (
+								prior.result?.status !== "skipped"
+							) {
+								throw new MailboxPlanListError(
+									"storage_failure",
+								);
+							}
+							await journal.transitionAction(
+								command,
+								lease,
+								candidateIndex,
+								"pending",
+								"skipped",
+								{
+									result: Object.freeze({
+										...prior.result,
+										index: candidateIndex,
+										action,
+									}),
+								},
+							);
+							continue;
+						}
+						await journal.transitionAction(
+							command,
+							lease,
+							candidateIndex,
+							"pending",
+							"dispatched",
+						);
+						if (checkpoint.state === "needs_review") {
+							const result = Object.freeze({
+								schemaVersion: 1 as const,
+								index: candidateIndex,
+								action,
+								status: "needs_review" as const,
+								reasonCode:
+									prior.result?.reasonCode ??
+									"provider_timeout" as const,
+								affectedCount:
+									prior.result?.affectedCount ?? 0,
+							});
+							if (prior.observation === undefined) {
+								await journal.transitionAction(
+									command,
+									lease,
+									candidateIndex,
+									"dispatched",
+									"needs_review",
+									{ result },
+								);
+							} else {
+								await journal.transitionAction(
+									command,
+									lease,
+									candidateIndex,
+									"dispatched",
+									"observed",
+									{
+										observation:
+											prior.observation,
+									},
+							);
+								await journal.transitionAction(
+									command,
+									lease,
+									candidateIndex,
+									"observed",
+									"needs_review",
+									{ result },
+								);
+							}
+							continue;
+						}
+						if (
+							prior.observation === undefined ||
+							prior.verification === undefined ||
+							prior.result?.status !== "completed"
+						) {
+							throw new MailboxPlanListError(
+								"storage_failure",
+							);
+						}
+							await journal.transitionAction(
+							command,
+							lease,
+							candidateIndex,
+							"dispatched",
+							"observed",
+								{ observation: prior.observation },
+							);
+							const position = order.indexOf(candidateIndex);
+							if (position < 0) {
+								throw new MailboxPlanListError(
+									"storage_failure",
+								);
+							}
+							const afterScope =
+								buildMailboxExecutionAuthorityScope(
+									order
+										.slice(position + 1)
+										.map(
+											(index) =>
+												revision.actions[index]!,
+										),
+								);
+							const afterFingerprint =
+								await computeExecutionFingerprint({
+									schemaVersion: 1,
+									revision,
+									scope: bindingScope,
+									bindings: importedBindings,
+									authorityScope: afterScope,
+								});
+							await journal.transitionAction(
+							command,
+							lease,
+							candidateIndex,
+							"observed",
+							"verified",
+							{
+									verification: Object.freeze({
+										...prior.verification,
+										delta: Object.freeze({
+											...prior.verification.delta,
+											changedAliases: Object.freeze([]),
+											beforeFingerprint:
+												importedFingerprint,
+											afterFingerprint:
+												afterFingerprint,
+											beforeScope: importedScope,
+											afterScope,
+										}),
+									}),
+								result: Object.freeze({
+									...prior.result,
+									index: candidateIndex,
+										action,
+									}),
+									authorityFingerprint:
+										afterFingerprint,
+									authorityScope: afterScope,
+								},
+							);
+							importedFingerprint = afterFingerprint;
+							importedScope = afterScope;
+					}
+				} finally {
+					await journal
+						.releaseLease(command, lease)
+						.catch(() => undefined);
+				}
+			},
+		},
+	});
+	planListGuard = planList;
+	const routedPlanList = options.planListService ?? planList;
 	const cliTerminal =
 		options.cliTerminal ??
 		orchestrator.launch;
@@ -429,8 +1012,9 @@ export function createMailboxCleanupBackgroundComposition(
 	let recoveryRegistered = false;
 	const recover = (): Promise<void> => {
 		if (recovery !== undefined) return recovery;
-		recovery = execution
-			.recoverActive()
+		recovery = planList
+			.recoverRestarts()
+			.then(() => execution.recoverActive())
 			.then(() => undefined)
 			.catch(() => undefined)
 			.finally(() => {
@@ -463,6 +1047,7 @@ export function createMailboxCleanupBackgroundComposition(
 	};
 	return Object.freeze({
 		execution,
+		planList,
 		register() {
 			if (registration !== undefined) return registration;
 				registration = registerMailboxCleanupBackground({
@@ -480,9 +1065,81 @@ export function createMailboxCleanupBackgroundComposition(
 							inventory,
 						}),
 				execution,
+				plans: {
+					async register(planAlias, revisionAlias) {
+						const revision = await plans.getRevision(
+							planAlias,
+							revisionAlias,
+						);
+						if (revision === undefined) {
+							throw new MailboxPlanListError("not_found");
+						}
+						await planList.register(
+							revision,
+							await planContext(planAlias, revisionAlias),
+						);
+					},
+				},
 				cli: {
 					async connect(connection, sender) {
 						await authority.authorize(connection, sender);
+						if (connection.purpose === "plans") {
+							const request =
+								await requestMailboxPlansCliCommand(
+									connection,
+									transport,
+								);
+							let terminal: MailboxPlansCliTerminal;
+							const monitor =
+								monitorMailboxPlansCliSession(
+									connection,
+									transport,
+								);
+							try {
+								if (request.operation === "list") {
+									terminal = Object.freeze({
+										schemaVersion: 1,
+										type: "dg_mailbox_plans_terminal",
+										requestAlias: request.requestAlias,
+										operation: "list",
+										status: "completed",
+										result: await routedPlanList.list(
+											request.query,
+										),
+									});
+								} else {
+									terminal = Object.freeze({
+										schemaVersion: 1,
+										type: "dg_mailbox_plans_terminal",
+										requestAlias: request.requestAlias,
+										operation: request.operation,
+										status: "completed",
+										result: await routedPlanList.perform(
+											request.command,
+											{ signal: monitor.signal },
+										),
+									});
+								}
+							} catch (error) {
+								const failure = plansFailure(error);
+								terminal = Object.freeze({
+									schemaVersion: 1,
+									type: "dg_mailbox_plans_terminal",
+									requestAlias: request.requestAlias,
+									operation: request.operation,
+									status: "error",
+									...failure,
+								});
+							} finally {
+								monitor.dispose();
+							}
+							await postMailboxPlansCliTerminal(
+								connection,
+								terminal,
+								transport,
+							);
+							return;
+						}
 						if (activeCli !== undefined) {
 							throw new Error(
 								"Mailbox CLI session is already active",

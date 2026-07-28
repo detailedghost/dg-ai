@@ -56,6 +56,10 @@ export type MailboxPlanWorkspaceDeps = Readonly<{
 		planAlias: string;
 		revisionAlias: string;
 	}>): Promise<unknown>;
+	registerRevision?(
+		planAlias: string,
+		revisionAlias: string,
+	): Promise<void>;
 }>;
 
 export type MailboxChoiceId =

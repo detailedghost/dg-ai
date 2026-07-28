@@ -42,6 +42,9 @@ export type MailboxCleanupBackgroundDeps = Readonly<{
 		"start" | "resume" | "cancel"
 	> &
 			Partial<Pick<MailboxExecutionCoordinator, "status">>;
+	plans?: Readonly<{
+		register(planAlias: string, revisionAlias: string): Promise<void>;
+	}>;
 	cli?: Readonly<{
 		connect(
 			value: MailboxCliConnection,
@@ -78,6 +81,7 @@ const EXECUTION_TYPES = Object.freeze({
 const PLAN_ALIAS = /^plan_[a-f0-9]{32}$/;
 const REVISION_ALIAS = /^rev_[a-f0-9]{32}$/;
 const MAX_DELIVERIES = 256;
+const PLAN_REGISTER_TYPE = "dg-mailbox-plans:register";
 
 function exactCommand(value: unknown): MailboxExecutionCommand {
 	if (
@@ -137,6 +141,28 @@ function executionEnvelope(
 		type: input.type as keyof typeof EXECUTION_TYPES,
 		command: exactCommand(input.command),
 	});
+}
+
+function planRegistrationEnvelope(
+	value: unknown,
+): MailboxExecutionCommand | undefined {
+	if (
+		value === null ||
+		typeof value !== "object" ||
+		Array.isArray(value) ||
+		Object.getPrototypeOf(value) !== Object.prototype
+	) {
+		return undefined;
+	}
+	const input = value as Record<string, unknown>;
+	if (input.type !== PLAN_REGISTER_TYPE) return undefined;
+	if (
+		Object.keys(input).length !== 2 ||
+		!Object.hasOwn(input, "command")
+	) {
+		throw new Error("Invalid mailbox plan registration envelope");
+	}
+	return exactCommand(input.command);
 }
 
 export function registerMailboxCleanupBackground(
@@ -204,6 +230,18 @@ export function registerMailboxCleanupBackground(
 					sender,
 				);
 			}
+		}
+		const planRegistration = planRegistrationEnvelope(value);
+		if (planRegistration !== undefined) {
+			if (deps.plans === undefined) {
+				return Promise.reject(
+					new Error("Mailbox plan registration is unavailable"),
+				);
+			}
+			return deps.plans.register(
+				planRegistration.planAlias,
+				planRegistration.revisionAlias,
+			);
 		}
 		const execution = executionEnvelope(value);
 		if (execution === undefined) {
