@@ -16,7 +16,10 @@
     "compile": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "bun run test:mailbox-plan-dom && bun test",
-    "test:mailbox-plan-dom": "vite-node __tests__/mailbox-plan-page-dom.smoke.ts"
+    "test:mailbox-plan-dom": "vite-node __tests__/mailbox-plan-page-dom.smoke.ts",
+    "test:mailbox-core": "bun run test:mailbox-plan-dom && bun scripts/mailbox-core-tests.ts",
+    "check:mailbox-boundaries": "bun scripts/check-mailbox-boundaries.ts --check",
+    "conformance:mailbox-core": "bun scripts/mailbox-core-gate.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

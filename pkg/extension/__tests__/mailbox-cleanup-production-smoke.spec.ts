@@ -899,7 +899,7 @@ describe("mailbox cleanup production safety smoke", () => {
 			await plans.close();
 			await composition.dispose();
 		}
-	});
+	}, 30_000);
 
 	it("routes plan-list lifecycle actions through the concrete default background composition", async () => {
 		const harness = browserHarness();

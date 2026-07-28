@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "contract": "mailbox-provider-v1",
+  "version": 1,
+  "protectedPaths": [
+    ".github/workflows/ext-blt.yml",
+    "docs/mailbox-cleanup/core.md",
+    "pkg/common/package.json",
+    "pkg/common/src/index.ts",
+    "pkg/common/src/mailbox/__tests__/contracts.spec.ts",
+    "pkg/common/src/mailbox/canonical.ts",
+    "pkg/common/src/mailbox/contracts.ts",
+    "pkg/common/src/mailbox/errors.ts",
+    "pkg/common/src/mailbox/index.ts",
+    "pkg/common/src/mailbox/preflight.ts",
+    "pkg/extension/README.md",
+    "pkg/extension/entrypoints/background.ts",
+    "pkg/extension/entrypoints/mailbox-cli.content.ts",
+    "pkg/extension/__tests__/mailbox-chat-bridge-contract.spec.ts",
+    "pkg/extension/__tests__/mailbox-cleanup-background.spec.ts",
+    "pkg/extension/__tests__/mailbox-cleanup-production-smoke.spec.ts",
+    "pkg/extension/__tests__/mailbox-cli-authority.spec.ts",
+    "pkg/extension/__tests__/mailbox-cli-transport.spec.ts",
+    "pkg/extension/__tests__/mailbox-core-boundaries.spec.ts",
+    "pkg/extension/__tests__/mailbox-core-conformance-harness.ts",
+    "pkg/extension/__tests__/mailbox-core-conformance.spec.ts",
+    "pkg/extension/__tests__/mailbox-core-gate.spec.ts",
+    "pkg/extension/__tests__/mailbox-plan-handoff.spec.ts",
+    "pkg/extension/__tests__/mailbox-plan-list.spec.ts",
+    "pkg/extension/__tests__/mailbox-plan-page-dom.smoke.ts",
+    "pkg/extension/__tests__/mailbox-plan-page-fixtures.ts",
+    "pkg/extension/__tests__/mailbox-plan-page-harness.ts",
+    "pkg/extension/__tests__/mailbox-plan-page-workspace.spec.ts",
+    "pkg/extension/__tests__/mailbox-plans-cli-monitor.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/coordinator/__tests__/coordinator.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/debrief/__tests__/debrief.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/execution/__tests__/execution.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/execution/__tests__/journal.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/inference/__tests__/contracts.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/inference/contracts.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/inference/index.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/lifecycle/__tests__/lifecycle.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/privacy/__tests__/scrubber.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/__tests__/providers.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/bundled.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/config.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/conformance.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/contracts.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/discovery.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/fake/__tests__/fake-provider.spec.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/fake/index.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/fake/provider.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/providers/index.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/storage/__tests__/storage.spec.ts",
+    "pkg/extension/lib/background/mailbox-cleanup-composition.ts",
+    "pkg/extension/lib/background/mailbox-cleanup-orchestrator.ts",
+    "pkg/extension/lib/background/mailbox-cleanup-storage.ts",
+    "pkg/extension/lib/background/mailbox-cleanup.ts",
+    "pkg/extension/lib/background/mailbox-cli-authority.ts",
+    "pkg/extension/lib/features/mailbox-cleanup/cli-transport.ts",
+    "pkg/extension/bun.lock",
+    "pkg/extension/package.json",
+    "pkg/extension/scripts/check-mailbox-boundaries.ts",
+    "pkg/extension/scripts/copy-ort.ts",
+    "pkg/extension/scripts/mailbox-core-tests.ts",
+    "pkg/extension/scripts/mailbox-core-gate.ts",
+    "pkg/extension/tsconfig.json",
+    "pkg/extension/wxt.config.ts",
+    "plugins/dg/README.md",
+    "plugins/dg/skills/README.md"
+  ],
+  "protectedDirectories": [
+    {
+      "path": "docs/mailbox-cleanup",
+      "recursive": true
+    },
+    {
+      "path": "pkg/common/src/mailbox",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/entrypoints",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/entrypoints/mailbox-cli-approval",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/entrypoints/mailbox-plan",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/background",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/bridge",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/coordinator",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/debrief",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/execution",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/inference",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/lifecycle",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/plan-page",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/plan-workspace",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/planning",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/privacy",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/providers",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/providers/fake",
+      "recursive": true
+    },
+    {
+      "path": "pkg/extension/lib/features/mailbox-cleanup/storage",
+      "recursive": true
+    }
+  ],
+  "adapterRoots": [
+    "pkg/extension/lib/features/mailbox-cleanup/providers/adapters"
+  ],
+  "excludedPathSegments": [
+    "__tests__",
+    "fixtures",
+    "generated"
+  ],
+  "forbiddenModulePrefixes": [
+    "@azure/msal",
+    "@microsoft/microsoft-graph",
+    "microsoft-graph",
+    "msal",
+    "outlook-api",
+    "protonmail-api"
+  ],
+  "forbiddenProviderUrlFragments": [
+    "api.proton.me",
+    "graph.microsoft.com",
+    "outlook.office.com/api",
+    "outlook.office365.com/api"
+  ],
+  "normalization": {
+    "encoding": "utf8",
+    "lineEndings": "lf",
+    "stripUtf8Bom": true,
+    "pathOrdering": "ascii-posix-bytewise",
+    "entryFraming": "domain-null-schema-null-version-null-count-null-path-length-null-path-null-content-length-null-content"
+  },
+  "hash": {
+    "algorithm": "sha256",
+    "digest": "a589ad2a716b5c4ec25a27a7ecd99d00fc9a5a209ba847507277ea07964ad7f5"
+  },
+  "successRecord": {
+    "format": "canonical-json",
+    "fields": [
+      "contract",
+      "hash",
+      "status",
+      "version"
+    ],
+    "status": "passed"
+  }
+}
