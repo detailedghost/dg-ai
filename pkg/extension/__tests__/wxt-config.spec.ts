@@ -28,3 +28,17 @@ it("grants capture host access without dropping browser-specific permissions", (
 	expect(firefoxManifest.permissions).not.toContain("offscreen");
 	expect(firefoxManifest.permissions).toContain("downloads");
 });
+
+/**
+ * tabCapture.getMediaStreamId() demands the extension be "invoked for the current
+ * page", which only activeTab provides. <all_urls> is not a substitute: without
+ * activeTab, every record gesture throws "Extension has not been invoked for the
+ * current page" and no video is ever captured.
+ */
+it("declares activeTab wherever tabCapture is available", () => {
+	const chromeManifest = manifestFor({ browser: "chrome" });
+	expect(chromeManifest.permissions).toContain("activeTab");
+
+	const firefoxManifest = manifestFor({ browser: "firefox" });
+	expect(firefoxManifest.permissions).not.toContain("activeTab");
+});

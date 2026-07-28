@@ -437,6 +437,9 @@ let recorderListening = false;
 /** How long the "not ready to record" notice holds the screen before the step returns. */
 const BLOCKED_NOTICE_MS = 4000;
 
+/** Longer than the blocked notice — a failure message needs to be readable. */
+const ERROR_NOTICE_MS = 7000;
+
 /** Handle background messages that drive video mode. */
 function listenForRecorder(ctx: Ctx): void {
 	if (recorderListening) return;
@@ -514,15 +517,22 @@ function listenForRecorder(ctx: Ctx): void {
 				})();
 			} else if (msg?.type === MSG.videoError) {
 				void (async () => {
-					await clearState();
+					// Keep the tour: a failed recording used to clear it, so every retry meant
+					// walking the whole setup phase again to get back to where it broke.
 					await setRecording(false);
-					removeUi();
-					void renderModal(ctx, {
+					await renderModal(ctx, {
 						title: "⚠️ Recording failed",
 						body: msg.error
-							? `The video could not be saved: ${msg.error}`
-							: "The video could not be saved. Please try again.",
+							? `${msg.error} — the tour is still here, so you can try again.`
+							: "The recording could not be saved. The tour is still here, so you can try again.",
 					});
+					setTimeout(() => {
+						void (async () => {
+							const s = await loadState();
+							if (s) promptToRecord(ctx);
+							else removeUi();
+						})();
+					}, ERROR_NOTICE_MS);
 				})();
 			} else if (msg?.type === MSG.videoBlocked) {
 				void (async () => {
@@ -2094,14 +2104,14 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			"var(--accent)",
 		);
 		card.addEventListener("input", persist); // persist edits into the URL
-		// Approve sits centered and always available — reviewing every step to reach it
-		// was busywork when the plan is already right.
+		// Always available — reviewing every step to reach it was busywork when the plan
+		// is already right — but it sits after the arrows so it can't split the pair.
 		const approve = pillButton("✓ Approve", true);
 		approve.style.background = "#00c853";
 		approve.style.borderColor = "#00c853";
 		approve.style.color = "#000";
 		approve.addEventListener("click", () => dispatch("approve"));
-		bar.append(back, trace, approve, fwd);
+		bar.append(back, trace, fwd, approve);
 		card.appendChild(bar);
 		root.appendChild(card);
 	};

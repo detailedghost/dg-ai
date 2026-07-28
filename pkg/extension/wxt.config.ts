@@ -37,7 +37,9 @@ export default defineConfig({
 				"tabGroups",
 				"storage",
 				"downloads",
-				...(firefox ? [] : ["tabCapture", "offscreen"]),
+				// activeTab is what getMediaStreamId means by "invoked for the current page";
+				// <all_urls> does not satisfy it, so without this every record gesture throws.
+				...(firefox ? [] : ["activeTab", "tabCapture", "offscreen"]),
 			],
 			// Kokoro fetches its model from Hugging Face; ONNX wasm ships locally.
 			// Keep jsDelivr fallback access and permit local wasm compilation.
