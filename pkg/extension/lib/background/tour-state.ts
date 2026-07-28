@@ -17,6 +17,7 @@ export function registerTourState(): void {
 			`demo_tour:${tabId}`,
 			`demo_recording:${tabId}`,
 			`demo_edit:${tabId}`,
+			`demo_pending:${tabId}`,
 		]);
 		void removeRecording(tabId).catch(() => {});
 	});
