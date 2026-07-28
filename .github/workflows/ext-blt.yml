@@ -5,6 +5,9 @@ on:
     paths:
       - pkg/extension/**
       - pkg/common/**
+      - docs/mailbox-cleanup/core.md
+      - plugins/dg/README.md
+      - plugins/dg/skills/README.md
       - .github/workflows/ext-blt.yml
   workflow_call:
 
@@ -22,14 +25,6 @@ jobs:
         working-directory: pkg/extension
         run: bun install --frozen-lockfile
 
-      - name: Lint
+      - name: Mailbox core conformance
         working-directory: pkg/extension
-        run: bun run lint
-
-      - name: Test
-        working-directory: pkg/extension
-        run: bun run test
-
-      - name: Build
-        working-directory: pkg/extension
-        run: bun run build
+        run: bun run conformance:mailbox-core

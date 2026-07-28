@@ -1,7 +1,8 @@
 # @dg/extension — dg-ai-extension
 
 WXT MV3 browser extension. Features: tab grouping, guided demo tours with video
-recording and TTS narration, and live-page prototype comparisons.
+recording and TTS narration, live-page prototype comparisons, and
+provider-neutral mailbox cleanup.
 
 ## Development commands
 
@@ -10,7 +11,8 @@ bun install          # from repo root (wires @dg/common)
 bun run dev          # WXT dev server with hot reload
 bun run build        # production build → .output/
 bun run lint         # tsc --noEmit
-bun test             # unit tests (45 specs)
+bun test             # unit and integration tests
+bun run conformance:mailbox-core  # mailbox core gate
 bun run zip          # build + package for Chrome
 bun run zip:firefox  # build + package for Firefox
 ```
@@ -46,3 +48,11 @@ Downloads directory; the extension does not upload prototype data.
 The `_proto` handoff travels in a compressed URL fragment. The browser does not
 send fragments to the page server, but page scripts can read them before the
 extension removes them. Prototype plans must not contain secrets.
+
+## Mailbox cleanup
+
+The extension includes the provider-neutral mailbox cleanup workflow, plan
+workspace, safe execution engine, plan-list/restart bridge, and fake-provider
+conformance suite. The canonical privacy, retention, restart, limits, provider
+handoff, and conformance-gate documentation is
+[Mailbox Cleanup Core](../../docs/mailbox-cleanup/core.md).

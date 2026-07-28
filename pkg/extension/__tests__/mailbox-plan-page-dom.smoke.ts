@@ -1404,13 +1404,22 @@ describe("mountMailboxPlanPage Node DOM smoke", () => {
 			/^bun run test:mailbox-plan-dom && bun test$/,
 		);
 		assert.match(
+			extensionPackage.scripts?.["test:mailbox-core"] ?? "",
+			/^bun run test:mailbox-plan-dom && bun scripts\/mailbox-core-tests\.ts$/,
+			"the mailbox core test gate must include the DOM smoke",
+		);
+		assert.equal(
+			extensionPackage.scripts?.["conformance:mailbox-core"],
+			"bun scripts/mailbox-core-gate.ts",
+		);
+		assert.match(
 			rootPackage.scripts?.["test:all"] ?? "",
 			/--filter=['"]\.\/pkg\/\*['"] test/,
 		);
 		assert.match(
 			extensionWorkflow,
-			/working-directory:\s*pkg\/extension[\s\S]*?name:\s*Test[\s\S]*?working-directory:\s*pkg\/extension[\s\S]*?run:\s*bun run test(?:\s|$)/,
-			"extension CI must invoke the package test script that includes the DOM smoke",
+			/name:\s*Mailbox core conformance[\s\S]*?working-directory:\s*pkg\/extension[\s\S]*?run:\s*bun run conformance:mailbox-core(?:\s|$)/,
+			"extension CI must invoke the unified gate that includes the DOM smoke",
 		);
 	});
 
