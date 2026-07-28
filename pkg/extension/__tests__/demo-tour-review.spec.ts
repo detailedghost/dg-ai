@@ -825,7 +825,7 @@ describe("buildOverlay — callout controls", () => {
 			false,
 		);
 
-		// Order is the rendered order: « ‹ [Next] › »
+		// Order is the rendered order: « ‹ › »
 		expect(ariaLabels(root)).toEqual([
 			"Go to first step",
 			"Previous step",
@@ -873,24 +873,50 @@ describe("buildOverlay — callout controls", () => {
 		expect(buttonByLabel(atEnd, "Go to last step").disabled).toBe(true);
 	});
 
-	it("disables « on the first step and » on the last step", () => {
-		const first = domRoot();
+	it("tints backward controls --accent2 and forward controls --accent", () => {
+		const root = domRoot();
 		buildOverlay(
-			first,
+			root,
 			fakeCtx,
-			{ script, index: 0 },
-			script.steps[0],
+			{ script, index: 1 },
+			script.steps[1],
 			null,
 			[],
 			false,
 		);
-		expect(buttonByLabel(first, "Go to first step").disabled).toBe(true);
-		expect(buttonByLabel(first, "Go to last step").disabled).toBe(false);
 
-		const lastIndex = script.steps.length - 1;
-		const last = domRoot();
+		for (const label of ["Go to first step", "Previous step"]) {
+			expect(buttonByLabel(root, label).getAttribute("style")).toContain(
+				"var(--accent2)",
+			);
+		}
+		for (const label of ["Next step", "Go to last step"]) {
+			const style = buttonByLabel(root, label).getAttribute("style") ?? "";
+			expect(style).toContain("var(--accent)");
+			expect(style).not.toContain("var(--accent2)");
+		}
+	});
+
+	it("carries navigation on the arrows alone — no Next button", () => {
+		const root = domRoot();
 		buildOverlay(
-			last,
+			root,
+			fakeCtx,
+			{ script, index: 1 },
+			script.steps[1],
+			null,
+			[],
+			false,
+		);
+		expect(root.textContent).not.toContain("Next");
+		expect(root.textContent).not.toContain("Back");
+	});
+
+	it("keeps Done on the last step as the only way to finish", () => {
+		const lastIndex = script.steps.length - 1;
+		const atEnd = domRoot();
+		buildOverlay(
+			atEnd,
 			fakeCtx,
 			{ script, index: lastIndex },
 			script.steps[lastIndex],
@@ -898,8 +924,19 @@ describe("buildOverlay — callout controls", () => {
 			[],
 			false,
 		);
-		expect(buttonByLabel(last, "Go to first step").disabled).toBe(false);
-		expect(buttonByLabel(last, "Go to last step").disabled).toBe(true);
+		expect(atEnd.textContent).toContain("Done");
+
+		const mid = domRoot();
+		buildOverlay(
+			mid,
+			fakeCtx,
+			{ script, index: 1 },
+			script.steps[1],
+			null,
+			[],
+			false,
+		);
+		expect(mid.textContent).not.toContain("Done");
 	});
 
 	it("hides every manual control, including the jump buttons, in video mode", () => {
