@@ -618,6 +618,9 @@ let teardown: (() => void) | null = null;
 let updateModalProgress:
 	| ((progress: number, label: string | undefined) => void)
 	| null = null;
+// Set while a control synthesizes the click an `advance: "click"` step waits for,
+// so the target's own advance listener doesn't treat it as the user's click.
+let synthesizingAdvanceClick = false;
 function removeUi(): void {
 	teardown?.();
 	teardown = null;
@@ -670,6 +673,22 @@ export async function maybePerformAction(
 }
 
 /**
+ * Whether advancing must synthesize the click an `advance: "click"` step waits for.
+ *
+ * True only when a callout control drove the advance: the step has no authored
+ * action of its own, it is waiting on a click, and its target resolved. When the
+ * user clicks the target directly that click already happened, so this is false
+ * and nothing is synthesized on top of it.
+ */
+export function advanceClickNeeded(
+	step: TourStep,
+	hasTarget: boolean,
+	fromControl: boolean,
+): boolean {
+	return fromControl && !step.action && step.advance === "click" && hasTarget;
+}
+
+/**
  * Advance from `step` to the next index, running its authored action first if it
  * hasn't already run. Walkthrough (and setup) playback is user-paced — see
  * `automaticPlayback` — so the action fires on this deliberate advance rather than
@@ -680,8 +699,19 @@ async function advanceWithAction(
 	state: PlayState,
 	step: TourStep,
 	target: HTMLElement | null,
+	/** True when a callout control drove this, false when the target's own click did. */
+	fromControl = false,
 ): Promise<void> {
-	if (step.action && target) await maybePerformAction(state, step, target);
+	if (step.action && target) {
+		await maybePerformAction(state, step, target);
+	} else if (target && advanceClickNeeded(step, true, fromControl)) {
+		synthesizingAdvanceClick = true;
+		try {
+			target.click();
+		} finally {
+			synthesizingAdvanceClick = false;
+		}
+	}
 	await goTo(ctx, state.index + 1);
 }
 
@@ -738,7 +768,11 @@ async function renderStep(
 	// Walkthrough/setup is user-paced (Next/Back): no auto-advance timing, and an
 	// authored action waits for that advance too — see automaticPlayback.
 	if (step.advance === "click" && target) {
-		const onClick = () => void advanceWithAction(ctx, state, step, target);
+		const onClick = () => {
+			// Ignore our own synthesized click — the control that fired it already advances.
+			if (synthesizingAdvanceClick) return;
+			void advanceWithAction(ctx, state, step, target);
+		};
 		target.addEventListener("click", onClick, { once: true });
 		cleanups.push(() => target.removeEventListener("click", onClick));
 	}
@@ -867,15 +901,14 @@ export function buildOverlay(
 		close.addEventListener("click", () => void finish(ctx));
 		controls.appendChild(close);
 
-		// Arrows carry navigation on their own — no Next button. Backward is tinted
-		// --accent2, forward --accent, so direction reads from color at a glance.
+		// Only the single-step pair is tinted — ‹ --accent2, › --accent. The jump
+		// controls stay untinted so color marks stepping, not direction alone.
 		controls.appendChild(
 			arrowButton(
 				"«",
 				state.index > 0,
 				() => void goTo(ctx, 0),
 				"Go to first step",
-				"var(--accent2)",
 			),
 		);
 		controls.appendChild(
@@ -887,12 +920,12 @@ export function buildOverlay(
 				"var(--accent2)",
 			),
 		);
-		// Forward runs the step's action, so arrow-stepping can't skip one.
+		// Forward runs the step's action (or the click it waits for), so arrow-stepping can't skip it.
 		controls.appendChild(
 			arrowButton(
 				"›",
 				!last,
-				() => void advanceWithAction(ctx, state, step, target),
+				() => void advanceWithAction(ctx, state, step, target, true),
 				"Next step",
 				"var(--accent)",
 			),
@@ -903,7 +936,6 @@ export function buildOverlay(
 				!last,
 				() => void goTo(ctx, total - 1),
 				"Go to last step",
-				"var(--accent)",
 			),
 		);
 		// Only affordance that ends the tour, so it stays a labelled button.
@@ -911,7 +943,7 @@ export function buildOverlay(
 			const done = btn("Done", true);
 			done.addEventListener(
 				"click",
-				() => void advanceWithAction(ctx, state, step, target),
+				() => void advanceWithAction(ctx, state, step, target, true),
 			);
 			controls.appendChild(done);
 		}
@@ -2024,7 +2056,13 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			justifyContent: "center",
 			marginTop: "0.875rem",
 		});
-		const back = arrowButton("‹", cursor > 0, () => dispatch("back"));
+		const back = arrowButton(
+			"‹",
+			cursor > 0,
+			() => dispatch("back"),
+			"Previous step",
+			"var(--accent2)",
+		);
 		const trace = el("div", {
 			minWidth: "3rem",
 			textAlign: "center",
@@ -2033,17 +2071,22 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			color: "var(--muted)",
 		});
 		trace.textContent = `${cursor + 1} / ${total}`;
-		const fwd = arrowButton("›", !last, () => void advanceReview(cursor));
+		const fwd = arrowButton(
+			"›",
+			!last,
+			() => void advanceReview(cursor),
+			"Next step",
+			"var(--accent)",
+		);
 		card.addEventListener("input", persist); // persist edits into the URL
-		bar.append(back, trace, fwd);
-		if (last) {
-			const approve = pillButton("✓ Approve", true);
-			approve.style.background = "#00c853";
-			approve.style.borderColor = "#00c853";
-			approve.style.color = "#000";
-			approve.addEventListener("click", () => dispatch("approve"));
-			bar.appendChild(approve);
-		}
+		// Approve sits centered and always available — reviewing every step to reach it
+		// was busywork when the plan is already right.
+		const approve = pillButton("✓ Approve", true);
+		approve.style.background = "#00c853";
+		approve.style.borderColor = "#00c853";
+		approve.style.color = "#000";
+		approve.addEventListener("click", () => dispatch("approve"));
+		bar.append(back, trace, approve, fwd);
 		card.appendChild(bar);
 		root.appendChild(card);
 	};
