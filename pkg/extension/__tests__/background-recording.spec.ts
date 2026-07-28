@@ -9,15 +9,18 @@
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import {
+	assignedRecordShortcut,
 	createRecordingRouter,
 	maybeStartRecording,
+	RECORD_COMMAND,
 	recordingRefusal,
 } from "@/lib/background/recording";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 
-const stopVideoRecording = mock(() => undefined);
-const relayPlayStep = mock((_index: number) => undefined);
+const stopVideoRecording = mock(async () => undefined);
+const relayPlayStep = mock(async (_index: number) => undefined);
+const relayCaptureCleared = mock(async () => undefined);
 const handleClearForCapture = mock(async () => undefined);
 const handleRecordingReady = mock(async (_durations: number[]) => undefined);
 const handleNarrationProgress = mock(
@@ -38,6 +41,7 @@ const handleRequestVideoData = mock(
 const handleRecordingMessage = createRecordingRouter({
 	stopVideoRecording,
 	relayPlayStep,
+	relayCaptureCleared,
 	handleClearForCapture,
 	handleRecordingReady,
 	handleNarrationProgress,
@@ -48,12 +52,19 @@ const handleRecordingMessage = createRecordingRouter({
 });
 
 const TAB_ID = 7;
+/** Let queued promise callbacks run — the async reply routes land on a later tick. */
+const settle = (): Promise<void> =>
+	new Promise((resolve) => setTimeout(resolve, 0));
 const sender = { tab: { id: TAB_ID } } as chrome.runtime.MessageSender;
-const noopSendResponse = mock((_data: { dataUrl: string | null }) => undefined);
+const noopSendResponse = mock(
+	(_data: { dataUrl: string | null } | { shortcut: string | null }) =>
+		undefined,
+);
 
 beforeEach(() => {
 	stopVideoRecording.mockClear();
 	relayPlayStep.mockClear();
+	relayCaptureCleared.mockClear();
 	handleClearForCapture.mockClear();
 	handleRecordingReady.mockClear();
 	handleNarrationProgress.mockClear();
@@ -111,10 +122,7 @@ describe("handleRecordingMessage", () => {
 			sender,
 			noopSendResponse,
 		);
-		expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
-			type: MSG.captureCleared,
-			target: "offscreen",
-		});
+		expect(relayCaptureCleared).toHaveBeenCalledTimes(1);
 	});
 
 	it("routes recordingReady targeting background to handleRecordingReady", () => {
@@ -226,6 +234,63 @@ describe("handleRecordingMessage", () => {
 		);
 		expect(result).toBeUndefined();
 		expect(handleRequestVideoData).not.toHaveBeenCalled();
+	});
+
+	it("answers requestRecordShortcut from what Chrome assigned, not from the manifest", async () => {
+		Object.assign(chrome, {
+			commands: {
+				getAll: mock(async () => [
+					{ name: RECORD_COMMAND, shortcut: "Alt+Shift+K" },
+				]),
+			},
+		});
+		const result = handleRecordingMessage(
+			{ type: MSG.requestRecordShortcut },
+			sender,
+			noopSendResponse,
+		);
+		// true keeps the channel open: the reply lands after the getAll promise settles.
+		expect(result).toBe(true);
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith({ shortcut: "Alt+Shift+K" });
+	});
+
+	it("reports no shortcut rather than nothing when the commands read fails", async () => {
+		Object.assign(chrome, {
+			commands: { getAll: mock(async () => Promise.reject(new Error("nope"))) },
+		});
+		handleRecordingMessage(
+			{ type: MSG.requestRecordShortcut },
+			sender,
+			noopSendResponse,
+		);
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith({ shortcut: null });
+	});
+});
+
+describe("assignedRecordShortcut", () => {
+	it("returns the shortcut Chrome bound to the record command", () => {
+		expect(
+			assignedRecordShortcut([
+				{ name: "_execute_action", shortcut: "" },
+				{ name: RECORD_COMMAND, shortcut: "Alt+Shift+D" },
+			]),
+		).toBe("Alt+Shift+D");
+	});
+
+	// The whole point of asking: a second unpacked copy of this extension holding the
+	// combo leaves ours assigned an empty string, so the keypress never arrives here.
+	it("treats an empty assignment as no shortcut at all", () => {
+		expect(
+			assignedRecordShortcut([{ name: RECORD_COMMAND, shortcut: "" }]),
+		).toBeNull();
+	});
+
+	it("returns null when the command is absent entirely", () => {
+		expect(
+			assignedRecordShortcut([{ name: "_execute_action", shortcut: "Alt+P" }]),
+		).toBeNull();
 	});
 });
 

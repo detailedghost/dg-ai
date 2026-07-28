@@ -59,6 +59,42 @@ async function acquireStreamId(tabId: number): Promise<string> {
 	}
 }
 
+/**
+ * Bounded retry for the offscreen handoff. Long enough to cover a document that
+ * exists but has not run its module script yet; short enough not to strand the user.
+ */
+const HANDOFF_ATTEMPTS = 6;
+const HANDOFF_BACKOFF_MS = 120;
+
+const wait = (ms: number): Promise<void> =>
+	new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Deliver a message to the offscreen recorder, retrying until it acknowledges.
+ *
+ * `chrome.offscreen.createDocument` can resolve before the document's module script
+ * has registered its onMessage listener, and Chrome rejects a send with no receiver
+ * ("Could not establish connection"). Unawaited, that rejection vanished and left the
+ * tour sitting on the preparation modal forever with nothing to show the user. The
+ * offscreen listener acks every message it handles, so a resolved send means the
+ * recorder genuinely has it — never a retry that double-starts or replays a clip.
+ */
+async function sendToOffscreen(msg: object): Promise<void> {
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= HANDOFF_ATTEMPTS; attempt++) {
+		try {
+			await chrome.runtime.sendMessage({ ...msg, target: "offscreen" });
+			return;
+		} catch (err) {
+			lastError = err;
+			if (attempt < HANDOFF_ATTEMPTS) await wait(HANDOFF_BACKOFF_MS * attempt);
+		}
+	}
+	throw new Error(
+		`the offscreen recorder never answered: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+	);
+}
+
 /** Whether video recording is supported here (offscreen + tabCapture are Chrome-only). */
 export function videoRecordingSupported(): boolean {
 	return (
@@ -93,14 +129,20 @@ export async function startVideoRecording(
 		type: MSG.videoPreparing,
 		narrate,
 	});
-	chrome.runtime.sendMessage({
-		type: MSG.startRecording,
-		target: "offscreen",
-		streamId,
-		steps: partitionTourSteps(script).tutorial,
-		voice,
-		narrate,
-	});
+	try {
+		await sendToOffscreen({
+			type: MSG.startRecording,
+			streamId,
+			steps: partitionTourSteps(script).tutorial,
+			voice,
+			narrate,
+		});
+	} catch (err) {
+		// The recorder never got the tour, so drop the half-built state and let the
+		// caller report it — a stale offscreen doc would block the next attempt.
+		await cleanup();
+		throw err;
+	}
 }
 
 /** Offscreen reports capture is live: cue the tour tab to auto-play with these holds. */
@@ -136,17 +178,40 @@ export async function handleClearForCapture(): Promise<void> {
 }
 
 /** Relay a play-step cue from the content script to the offscreen recorder. */
-export function relayPlayStep(index: number): void {
-	chrome.runtime.sendMessage({
-		type: MSG.playStep,
-		target: "offscreen",
-		index,
-	});
+export async function relayPlayStep(index: number): Promise<void> {
+	try {
+		await sendToOffscreen({ type: MSG.playStep, index });
+	} catch (err) {
+		// A lost cue costs one narration clip, so it must not tear down a live recording.
+		console.warn("[dg-ai-extension] play-step cue not delivered", err);
+	}
 }
 
 /** Tell the offscreen recorder to stop; it replies with the data via handleRecordingData. */
-export function stopVideoRecording(): void {
-	chrome.runtime.sendMessage({ type: MSG.stopRecording, target: "offscreen" });
+export async function stopVideoRecording(): Promise<void> {
+	try {
+		await sendToOffscreen({ type: MSG.stopRecording });
+	} catch (err) {
+		// Nothing will ever send recordingData now, so say so rather than hang the tour
+		// on a recording that has already stopped being watched.
+		const active = await getActive();
+		if (active?.tabId != null)
+			void chrome.tabs.sendMessage(active.tabId, {
+				type: MSG.videoError,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		await cleanup();
+	}
+}
+
+/** Relay the tab's "overlay is gone" confirmation on to the waiting recorder. */
+export async function relayCaptureCleared(): Promise<void> {
+	try {
+		await sendToOffscreen({ type: MSG.captureCleared });
+	} catch (err) {
+		// The recorder falls back to a timeout, so a lost confirmation only costs a delay.
+		console.warn("[dg-ai-extension] capture-cleared relay failed", err);
+	}
 }
 
 /** Save the finished recording to IDB and prompt the tab to show the review modal. */

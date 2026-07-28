@@ -24,6 +24,9 @@ export const MSG = {
 	videoReview: "dg-demo:video-review",
 	// content script → background: request the recorded data URL
 	requestVideoData: "dg-demo:request-video-data",
+	// content script → background: which shortcut did Chrome actually assign to the
+	// record command? The manifest's suggested_key is only a request, not a fact.
+	requestRecordShortcut: "dg-demo:request-record-shortcut",
 	// content script → background: user confirmed download
 	videoConfirmDownload: "dg-demo:video-confirm-download",
 	// content script → background: user discarded the recording
