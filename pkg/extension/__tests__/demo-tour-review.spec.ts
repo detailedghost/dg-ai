@@ -32,6 +32,7 @@ mock.module("wxt/browser", () => ({
 import { browser } from "wxt/browser";
 import { getNarrationMode } from "@/lib/config";
 import {
+	advanceClickNeeded,
 	automaticActionConsentGranted,
 	automaticActionConsentRequired,
 	automaticPlayback,
@@ -873,7 +874,7 @@ describe("buildOverlay — callout controls", () => {
 		expect(buttonByLabel(atEnd, "Go to last step").disabled).toBe(true);
 	});
 
-	it("tints backward controls --accent2 and forward controls --accent", () => {
+	it("tints only the single-step pair — ‹ --accent2, › --accent", () => {
 		const root = domRoot();
 		buildOverlay(
 			root,
@@ -885,14 +886,18 @@ describe("buildOverlay — callout controls", () => {
 			false,
 		);
 
-		for (const label of ["Go to first step", "Previous step"]) {
-			expect(buttonByLabel(root, label).getAttribute("style")).toContain(
-				"var(--accent2)",
-			);
-		}
-		for (const label of ["Next step", "Go to last step"]) {
+		expect(
+			buttonByLabel(root, "Previous step").getAttribute("style"),
+		).toContain("var(--accent2)");
+
+		const fwd = buttonByLabel(root, "Next step").getAttribute("style") ?? "";
+		expect(fwd).toContain("var(--accent)");
+		expect(fwd).not.toContain("var(--accent2)");
+
+		// Jump controls stay untinted, so color marks stepping rather than direction.
+		for (const label of ["Go to first step", "Go to last step"]) {
 			const style = buttonByLabel(root, label).getAttribute("style") ?? "";
-			expect(style).toContain("var(--accent)");
+			expect(style).not.toContain("var(--accent)");
 			expect(style).not.toContain("var(--accent2)");
 		}
 	});
@@ -986,6 +991,37 @@ describe("buildOverlay — callout controls", () => {
 		);
 
 		expect(root.textContent).not.toContain("Target not found");
+	});
+});
+
+describe("advanceClickNeeded", () => {
+	const clickStep: TourStep = { body: "Press it", advance: "click" };
+
+	it("synthesizes the click when a control advances a click-timed step", () => {
+		expect(advanceClickNeeded(clickStep, true, true)).toBe(true);
+	});
+
+	it("does not synthesize when the user clicked the target themselves", () => {
+		expect(advanceClickNeeded(clickStep, true, false)).toBe(false);
+	});
+
+	it("does not synthesize without a resolved target", () => {
+		expect(advanceClickNeeded(clickStep, false, true)).toBe(false);
+	});
+
+	it("leaves an authored action to maybePerformAction instead", () => {
+		const authored: TourStep = { ...clickStep, action: { do: "click" } };
+		expect(advanceClickNeeded(authored, true, true)).toBe(false);
+	});
+
+	it("ignores steps that are not waiting on a click", () => {
+		expect(advanceClickNeeded({ body: "x", advance: "next" }, true, true)).toBe(
+			false,
+		);
+		expect(advanceClickNeeded({ body: "x", advance: 3000 }, true, true)).toBe(
+			false,
+		);
+		expect(advanceClickNeeded({ body: "x" }, true, true)).toBe(false);
 	});
 });
 
