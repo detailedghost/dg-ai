@@ -15,7 +15,12 @@ import {
 	tourHasAutomaticActions,
 } from "@dg/common";
 import { browser } from "wxt/browser";
-import { getConfig, NARRATION_MODES, setConfig } from "@/lib/config";
+import {
+	getConfig,
+	getNarrationMode,
+	NARRATION_MODES,
+	patchConfig,
+} from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type {
 	StepAction,
@@ -65,11 +70,6 @@ export type PlayState = {
 };
 
 // --- exported pure helpers (testable without browser/DOM) ---
-
-export function getNarrationMode(val: string): "both" | "voice" | "captions" {
-	if (val === "voice" || val === "captions") return val;
-	return "both";
-}
 
 export function reviewAction(action: "confirm" | "discard"): { type: string } {
 	return {
@@ -1242,8 +1242,8 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 				select.appendChild(opt);
 			}
 			select.addEventListener("change", () => {
-				const narration = getNarrationMode(select.value);
-				void setConfig({ ...config, narration });
+				// Patch, don't spread `config` — it was read when this dialog opened.
+				void patchConfig({ narration: getNarrationMode(select.value) });
 			});
 			narrationRow.append(label, select);
 

@@ -30,6 +30,7 @@ mock.module("wxt/browser", () => ({
 }));
 
 import { browser } from "wxt/browser";
+import { getNarrationMode } from "@/lib/config";
 import {
 	automaticActionConsentGranted,
 	automaticActionConsentRequired,
@@ -46,7 +47,6 @@ import {
 	editorPageUrl,
 	editorReviewRows,
 	editorSpotlightTarget,
-	getNarrationMode,
 	handleTourMessage,
 	handoffCompletedSetup,
 	initializeMarkerPlayback,
