@@ -37,18 +37,26 @@ export type RecordingTourState = {
 	automaticActionsApproved?: boolean;
 };
 
-/** Whether capture may start from the persisted tour state. */
-export function recordingStartAllowed(
+/**
+ * Why capture may not start from the persisted tour state, or null when it may.
+ *
+ * A reason rather than a bare boolean because the record gesture is the one
+ * moment the user has been told to press a key: declining in silence reads as a
+ * broken extension.
+ */
+export function recordingRefusal(
 	state: RecordingTourState | undefined,
-): boolean {
+): string | null {
 	const script = state?.script;
-	if (script?.mode !== "video" || state?.phase !== "tutorial") return false;
-	if (!tourHasAutomaticActions(script)) return true;
-	if (state?.automaticActionsApproved === true) return true;
-	return (
-		!script.steps.some((step) => step.action != null) &&
+	if (script?.mode !== "video") return "This tab isn't running a video tour.";
+	if (state?.phase !== "tutorial")
+		return "Finish the setup steps first — recording starts once the tour reaches step 1.";
+	if (!tourHasAutomaticActions(script)) return null;
+	if (state?.automaticActionsApproved === true) return null;
+	return !script.steps.some((step) => step.action != null) &&
 		state?.setupActionsApproved === true
-	);
+		? null
+		: "Approve this tour's automatic actions before recording.";
 }
 
 /** The demo-recorder functions the router dispatches to — injectable for tests. */
@@ -156,8 +164,16 @@ export async function maybeStartRecording(
 	const state = stored[key];
 	const script = state?.script;
 	if (script?.mode !== "video") return false;
-	/** Keep the toolbar inert until setup handoff and visible action approval. */
-	if (!recordingStartAllowed(state)) return true;
+	// Declining is still "handled" — but say so on the page, or the keypress the user
+	// was told to press does nothing at all.
+	const refusal = recordingRefusal(state);
+	if (refusal) {
+		void chrome.tabs.sendMessage(tab.id, {
+			type: MSG.videoBlocked,
+			reason: refusal,
+		});
+		return true;
+	}
 	try {
 		await startRecording(tab.id, script);
 	} catch (err) {

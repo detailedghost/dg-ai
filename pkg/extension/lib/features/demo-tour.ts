@@ -15,12 +15,7 @@ import {
 	tourHasAutomaticActions,
 } from "@dg/common";
 import { browser } from "wxt/browser";
-import {
-	getConfig,
-	getNarrationMode,
-	NARRATION_MODES,
-	patchConfig,
-} from "@/lib/config";
+import { narrationModeLabel, readNarrationMode } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type {
 	StepAction,
@@ -412,6 +407,9 @@ async function begin(ctx: Ctx, script: TourScript): Promise<void> {
 	}
 	// Setup is always a live, user-paced preparation phase, even for a video tour.
 	if (isSetup(state ?? { script, index: 0 })) {
+		// Listen during setup too: the record gesture is refused until handoff, and the
+		// explanation has nowhere to land without this.
+		if (isVideo(script)) listenForRecorder(ctx);
 		await playCurrent(ctx);
 		return;
 	}
@@ -422,16 +420,33 @@ async function begin(ctx: Ctx, script: TourScript): Promise<void> {
 	listenForRecorder(ctx);
 	// Recording already running (mid-tour navigation) → keep playing; else prompt.
 	if (await isRecording()) await playCurrent(ctx);
-	else void showStartPrompt(ctx);
+	else promptToRecord(ctx);
 }
+
+/** Show the record prompt, reporting rather than swallowing a failure to render it. */
+function promptToRecord(ctx: Ctx): void {
+	void showStartPrompt(ctx).catch((e) => {
+		console.error("[dg-ai-extension] could not show the record prompt", e);
+	});
+}
+
+// Setup registers this, then the post-handoff begin() would register it again —
+// and two listeners means every videoStart advances the tour twice.
+let recorderListening = false;
+
+/** How long the "not ready to record" notice holds the screen before the step returns. */
+const BLOCKED_NOTICE_MS = 4000;
 
 /** Handle background messages that drive video mode. */
 function listenForRecorder(ctx: Ctx): void {
+	if (recorderListening) return;
+	recorderListening = true;
 	browser.runtime.onMessage.addListener(
 		(msg: {
 			type?: string;
 			filename?: string;
 			error?: string;
+			reason?: string;
 			durations?: number[];
 			hideBody?: boolean;
 			dataUrl?: string;
@@ -508,6 +523,15 @@ function listenForRecorder(ctx: Ctx): void {
 							? `The video could not be saved: ${msg.error}`
 							: "The video could not be saved. Please try again.",
 					});
+				})();
+			} else if (msg?.type === MSG.videoBlocked) {
+				void (async () => {
+					await renderModal(ctx, {
+						title: "⏺ Not ready to record yet",
+						body: msg.reason ?? "Recording can't start from here yet.",
+					});
+					// renderModal replaces the tour overlay, so put the user's step back.
+					setTimeout(() => void playCurrent(ctx), BLOCKED_NOTICE_MS);
 				})();
 			}
 		},
@@ -1228,7 +1252,7 @@ async function showSetupActionConsent(
 /** The "press to start" dialog shown before a video recording begins. */
 async function showStartPrompt(ctx: Ctx): Promise<void> {
 	removeUi();
-	const config = await getConfig();
+	const narration = await readNarrationMode();
 	const cleanups: Array<() => void> = [];
 	teardown = () => {
 		for (const c of cleanups) c();
@@ -1276,40 +1300,20 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 			b.textContent =
 				"This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon — or press the shortcut below — to start recording, then sit back and watch.";
 
-			const narrationRow = el("div", { marginTop: "0.875rem" });
-			const label = el("label", {
+			// Read-only: the settings page owns this choice, so there is one place to
+			// change it and no dialog-local copy to go stale against it.
+			const narrationRow = el("div", {
+				marginTop: "0.875rem",
 				fontSize: "0.8125rem",
-				textTransform: "uppercase",
-				letterSpacing: "0.12em",
 				color: "var(--muted)",
 			});
-			label.setAttribute("for", "dg-narration-mode");
-			label.textContent = "Narration";
-
-			const select = el("select", {
-				marginLeft: "0.375rem",
-				fontSize: "0.8125rem",
-				background: "var(--code-bg)",
-				color: "var(--ink)",
-				border: "0.125rem solid var(--line)",
-				borderRadius: "0",
-				padding: "0.1875rem 0.375rem",
-				font: `0.8125rem ${MONO}`,
-			});
-			select.className = "dg-field";
-			select.id = "dg-narration-mode";
-			for (const { value, label: optLabel } of NARRATION_MODES) {
-				const opt = document.createElement("option");
-				opt.value = value;
-				opt.textContent = optLabel;
-				if (value === config.narration) opt.selected = true;
-				select.appendChild(opt);
-			}
-			select.addEventListener("change", () => {
-				// Patch, don't spread `config` — it was read when this dialog opened.
-				void patchConfig({ narration: getNarrationMode(select.value) });
-			});
-			narrationRow.append(label, select);
+			const modeName = el("b", { color: "var(--ink)" });
+			modeName.textContent = narrationModeLabel(narration);
+			narrationRow.append(
+				"Narration: ",
+				modeName,
+				" — change it in DeeGee Settings.",
+			);
 
 			const line = el("div", {
 				marginTop: "0.875rem",
@@ -1401,7 +1405,7 @@ async function showVideoReview(ctx: Ctx): Promise<void> {
 							await showEditPanel(ctx, s.script);
 						} else {
 							if (s) await saveState({ ...s, index: 0 });
-							void showStartPrompt(ctx);
+							promptToRecord(ctx);
 						}
 					})();
 				});

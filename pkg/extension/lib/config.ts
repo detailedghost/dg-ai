@@ -83,6 +83,13 @@ export function getNarrationMode(val: string): NarrationMode {
 		: DEFAULTS.narration;
 }
 
+/** The settings-page label for a mode, for read-only display elsewhere. */
+export function narrationModeLabel(mode: NarrationMode): string {
+	return (
+		NARRATION_MODES.find((m) => m.value === mode)?.label ?? DEFAULTS.narration
+	);
+}
+
 export async function getConfig(): Promise<Config> {
 	return (await browser.storage.sync.get(DEFAULTS)) as Config;
 }
@@ -92,12 +99,18 @@ export async function setConfig(cfg: Config): Promise<void> {
 }
 
 /**
- * Change some fields, re-reading the stored config first so the rest survive.
+ * The configured recording mode, falling back to the default if sync storage
+ * can't be read.
  *
- * Use this instead of spreading a config a caller is already holding. A
- * long-lived dialog's snapshot goes stale the moment the settings page saves, so
- * writing it back wholesale silently reverts whatever else the user changed.
+ * The callers are display paths that have to render regardless: a rejected read
+ * used to abort the entire "press to record" prompt, leaving the user no visible
+ * way to start a recording at all.
  */
-export async function patchConfig(patch: Partial<Config>): Promise<void> {
-	await setConfig({ ...(await getConfig()), ...patch });
+export async function readNarrationMode(): Promise<NarrationMode> {
+	try {
+		return getNarrationMode((await getConfig()).narration);
+	} catch (e) {
+		console.warn("[dg-ai-extension] narration mode read failed", e);
+		return DEFAULTS.narration;
+	}
 }

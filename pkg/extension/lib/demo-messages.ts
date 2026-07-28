@@ -31,6 +31,9 @@ export const MSG = {
 	videoStart: "dg-demo:video-start",
 	videoSaved: "dg-demo:video-saved",
 	videoError: "dg-demo:video-error",
+	// background → content script: the record gesture was declined, and why. Distinct
+	// from videoError, which tears the tour down; this one leaves it running.
+	videoBlocked: "dg-demo:video-blocked",
 	// content script → background
 	videoStop: "dg-demo:video-stop",
 	// content script → background (which tab am I? → scope tour state per-tab)
