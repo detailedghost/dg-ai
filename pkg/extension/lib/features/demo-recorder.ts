@@ -35,6 +35,30 @@ type ActiveRecording = {
 	planMarkdown: string;
 };
 
+/**
+ * Grab the tab's capture stream id, retrying once past a leaked offscreen stream.
+ *
+ * getMediaStreamId has to be the first thing the record gesture reaches: awaiting
+ * anything before it risks the invocation no longer counting, which surfaces as
+ * "Extension has not been invoked for the current page" — indistinguishable from a
+ * missing permission. So the stale-offscreen cleanup that used to run first now runs
+ * only on the failure it exists for: a previous aborted recording can leave an
+ * offscreen document holding a getUserMedia stream, and Chrome refuses to capture a
+ * tab that already has one.
+ */
+async function acquireStreamId(tabId: number): Promise<string> {
+	try {
+		return await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+	} catch (err) {
+		console.warn(
+			"[dg-ai-extension] retrying capture without a stale offscreen doc",
+			err,
+		);
+		await closeOffscreen();
+		return await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+	}
+}
+
 /** Whether video recording is supported here (offscreen + tabCapture are Chrome-only). */
 export function videoRecordingSupported(): boolean {
 	return (
@@ -50,16 +74,7 @@ export async function startVideoRecording(
 	script: TourScript,
 	readConfig: typeof getConfig = getConfig,
 ): Promise<void> {
-	// Close any stale offscreen doc before acquiring the stream. A previous
-	// failed recording may have left one open with an active getUserMedia stream,
-	// causing getMediaStreamId to fail with "Cannot capture a tab with an active
-	// stream". closeOffscreen() is a no-op if nothing is open.
-	await closeOffscreen();
-	// getMediaStreamId consumes the user gesture — call it first, before the
-	// slower offscreen-document setup, or the gesture window can lapse.
-	const streamId = await chrome.tabCapture.getMediaStreamId({
-		targetTabId: tabId,
-	});
+	const streamId = await acquireStreamId(tabId);
 	await ensureOffscreen();
 	const tour = script.title || "demo";
 	const { voice, narration } = await readConfig();

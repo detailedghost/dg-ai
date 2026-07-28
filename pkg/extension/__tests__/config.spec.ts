@@ -25,6 +25,8 @@ const {
 	narrationModeLabel,
 	readNarrationMode,
 	setConfig,
+	voiceLabel,
+	VOICES,
 } = await import("@/lib/config");
 
 beforeEach(() => {
@@ -57,6 +59,30 @@ describe("getConfig", () => {
 		const cfg = await getConfig();
 		expect(cfg.color).toBe("cyan");
 		expect(cfg.voice).toBe("am_puck");
+	});
+});
+
+describe("voiceLabel", () => {
+	it("reads the accent and gender out of the id prefix", () => {
+		expect(voiceLabel("af_heart")).toBe("Heart — American female");
+		expect(voiceLabel("am_michael")).toBe("Michael — American male");
+		expect(voiceLabel("bf_emma")).toBe("Emma — British female");
+		expect(voiceLabel("bm_george")).toBe("George — British male");
+	});
+
+	it("labels every shipped voice without falling back to the raw id", () => {
+		for (const v of VOICES) {
+			expect(voiceLabel(v)).not.toBe(v);
+			expect(voiceLabel(v)).toMatch(
+				/^[A-Z].* — (American|British) (female|male)$/,
+			);
+		}
+	});
+
+	// A future id that breaks the convention should still be selectable, just unpretty.
+	it("passes through an id that doesn't match the convention", () => {
+		expect(voiceLabel("zz_weird")).toBe("zz_weird");
+		expect(voiceLabel("nonsense")).toBe("nonsense");
 	});
 });
 

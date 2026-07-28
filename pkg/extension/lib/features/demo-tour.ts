@@ -23,6 +23,7 @@ import {
 	getConfig as readConfig,
 	readNarrationMode,
 	VOICES,
+	voiceLabel,
 } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type {
@@ -83,6 +84,23 @@ export type PlayState = {
  */
 export function recordingStartState(state: PlayState): PlayState {
 	return { ...state, index: 0, acted: -1 };
+}
+
+/**
+ * Back to the very beginning: the first step of the tour's opening phase.
+ *
+ * Keeps the approval flags and `fromEdit` — the user already granted those, and a
+ * restart shouldn't re-ask — but clears `acted` so every action runs again. Callers
+ * pair this with a navigation to `startUrl`, since clicks a tour already performed
+ * cannot be undone by moving the cursor alone.
+ */
+export function restartState(state: PlayState): PlayState {
+	return {
+		...state,
+		index: 0,
+		phase: initialPlayPhase(state.script),
+		acted: undefined,
+	};
 }
 
 export function reviewAction(action: "confirm" | "discard"): { type: string } {
@@ -628,7 +646,7 @@ async function playCurrent(ctx: Ctx): Promise<void> {
 			});
 			return;
 		}
-		return isVideo(state.script) ? finishVideo(ctx) : finish(ctx);
+		return isVideo(state.script) ? finishVideo(ctx) : completeTour(ctx);
 	}
 	// Ensure we're on the step's page — works forward AND back across page
 	// boundaries (Back to a step on an earlier page navigates there too).
@@ -657,6 +675,114 @@ async function finish(ctx: Ctx): Promise<void> {
 	await clearState();
 	// A walkthrough launched from the editor bounces back to it at step 1.
 	if (state?.fromEdit) await showEditPanel(ctx, state.script);
+}
+
+/**
+ * Reached the last step, as opposed to abandoning the tour — the ✕, Cancel, and
+ * origin-mismatch paths all still go through `finish` and clear immediately.
+ */
+async function completeTour(ctx: Ctx): Promise<void> {
+	removeUi();
+	const state = await loadState();
+	if (!state) return;
+	await showTourEnd(ctx, state);
+}
+
+/** Reset to the first step and reload, so the page matches the step again. */
+async function restartTour(ctx: Ctx, state: PlayState): Promise<void> {
+	await saveState(restartState(state));
+	await setRecording(false);
+	removeUi();
+	// Navigate rather than just re-rendering: a walkthrough's clicks changed the page,
+	// and only a fresh load actually puts it back where step 1 expects it.
+	if (sameUrl(location.href, state.script.startUrl)) location.reload();
+	else location.href = state.script.startUrl;
+	void ctx;
+}
+
+/**
+ * The end of a walkthrough: offer a restart rather than just vanishing.
+ *
+ * Ending used to clear the tour and either bounce to the editor or leave a bare page,
+ * so watching it a second time meant re-running the whole /dg:demo command.
+ */
+async function showTourEnd(ctx: Ctx, state: PlayState): Promise<void> {
+	const total = stateSteps(state).length;
+	const cleanups: Array<() => void> = [];
+	teardown = () => {
+		for (const c of cleanups) c();
+	};
+	const ui = await createShadowRootUi(ctx, {
+		name: "dg-demo-modal",
+		position: "overlay",
+		anchor: "html",
+		zIndex: 2147483647,
+		onMount: (root) => {
+			injectTheme(root);
+			const layer = el("div", {
+				position: "fixed",
+				inset: "0",
+				background: "rgba(0,0,0,0.6)",
+				display: "flex",
+				alignItems: "center",
+				justifyContent: "center",
+				pointerEvents: "auto",
+				zIndex: "2147483647",
+			});
+			const card = el("div", {
+				maxWidth: "23.75rem",
+				margin: "0 1.25rem",
+				background: "var(--panel)",
+				color: "var(--ink)",
+				border: "0.125rem solid var(--line)",
+				borderRadius: "0",
+				padding: "1.25rem 1.375rem",
+				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
+				font: `0.8125rem/1.6 ${MONO}`,
+				textAlign: "center",
+			});
+			const h = el("div", {
+				fontSize: "1rem",
+				fontWeight: "700",
+				textTransform: "uppercase",
+				letterSpacing: "0.04em",
+				marginBottom: "0.5rem",
+			});
+			h.textContent = "✅ Walkthrough complete";
+			const b = el("div", { color: "var(--muted)" });
+			b.textContent = `All ${total} step(s) shown. Start over, or close the tour.`;
+			card.append(h, b);
+
+			const mk = (lbl: string, primary: boolean, onClick: () => void): void => {
+				const btn = pillButton(lbl, primary);
+				btn.style.width = "100%";
+				btn.style.marginTop = "0.5rem";
+				btn.addEventListener("click", onClick);
+				card.appendChild(btn);
+			};
+			mk("↻ Start over", true, () => void restartTour(ctx, state));
+			if (state.fromEdit) {
+				mk("← Back to the plan", false, () => {
+					void (async () => {
+						await clearState();
+						removeUi();
+						await showEditPanel(ctx, state.script);
+					})();
+				});
+			}
+			mk("✕ Close", false, () => {
+				void (async () => {
+					await clearState();
+					removeUi();
+				})();
+			});
+
+			layer.appendChild(card);
+			root.appendChild(layer);
+		},
+	});
+	ui.mount();
+	cleanups.push(() => ui.remove());
 }
 
 /** Video tour reached the end: stop the recorder and wait for the saved confirmation. */
@@ -770,6 +896,48 @@ async function advanceWithAction(
 		}
 	}
 	await goTo(ctx, state.index + 1);
+}
+
+/** Pause between replayed steps so the page can react to each one. */
+const JUMP_STEP_MS = 350;
+
+/**
+ * Jump to `target`, performing each step on the way rather than only moving the cursor.
+ *
+ * Skipping ahead used to leave the page behind: land on the last step of a wizard tour
+ * and the page is still on step 1, so every later selector resolves to nothing. Each
+ * step's action — or the click an `advance: "click"` step waits for — runs in order, and
+ * the cursor is saved as it goes so a step that navigates resumes in the right place
+ * instead of losing the jump entirely.
+ */
+async function runToStep(
+	ctx: Ctx,
+	state: PlayState,
+	target: number,
+): Promise<void> {
+	const steps = stateSteps(state);
+	for (let i = state.index; i < target; i++) {
+		const step = steps[i];
+		if (!step) break;
+		const at = { ...state, index: i };
+		const el = step.selector
+			? safeQuerySelector<HTMLElement>(document, step.selector)
+			: null;
+		if (el) {
+			if (step.action) await maybePerformAction(at, step, el);
+			else if (advanceClickNeeded(step, true, true)) {
+				synthesizingAdvanceClick = true;
+				try {
+					el.click();
+				} finally {
+					synthesizingAdvanceClick = false;
+				}
+			}
+		}
+		await saveState({ ...state, index: i + 1 });
+		await new Promise((resolve) => setTimeout(resolve, JUMP_STEP_MS));
+	}
+	await goTo(ctx, target);
 }
 
 async function renderStep(
@@ -962,8 +1130,8 @@ export function buildOverlay(
 			arrowButton(
 				"«",
 				state.index > 0,
-				() => void goTo(ctx, 0),
-				"Go to first step",
+				() => void restartTour(ctx, state),
+				"Restart at the first step",
 			),
 		);
 		controls.appendChild(
@@ -989,8 +1157,8 @@ export function buildOverlay(
 			arrowButton(
 				"»",
 				!last,
-				() => void goTo(ctx, total - 1),
-				"Go to last step",
+				() => void runToStep(ctx, state, total - 1),
+				"Run to the last step",
 			),
 		);
 		// Only affordance that ends the tour, so it stays a labelled button.
@@ -2228,7 +2396,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		card.appendChild(
 			settingRow(
 				"Voice",
-				VOICES.map((v) => ({ value: v, label: v })),
+				VOICES.map((v) => ({ value: v, label: voiceLabel(v) })),
 				editorConfig.voice,
 				(value) => {
 					editorConfig.voice = value;
