@@ -6,9 +6,12 @@
 pkg/
   common/      @dg/common — shared types + pure functions
   extension/   WXT MV3 browser extension (was extension-src/)
-  skills/      AI instruction layer — SKILL.md + references for each skill
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
+plugins/dg/
+  skills/      AI instruction layer — SKILL.md + references for each skill
+               (the canonical tree; both .claude-plugin/plugin.json and
+               plugins/dg/.codex-plugin/plugin.json point here)
 docs/          Documentation
 .github/       CI workflows
 ```
