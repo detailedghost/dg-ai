@@ -55,7 +55,9 @@ import {
 	initialPlayPhase,
 	maybePerformAction,
 	missingActionTargetWarning,
+	type PlayState,
 	performAction,
+	recordingStartState,
 	resolvePendingMarker,
 	reviewAction,
 	scriptToDraft,
@@ -991,6 +993,47 @@ describe("buildOverlay — callout controls", () => {
 		);
 
 		expect(root.textContent).not.toContain("Target not found");
+	});
+});
+
+describe("recordingStartState", () => {
+	const script: TourScript = {
+		startUrl: "https://app.example/start",
+		mode: "video",
+		steps: [{ body: "One" }, { body: "Two" }, { body: "Three" }],
+	};
+
+	it("rewinds a mid-tour cursor to the first step", () => {
+		expect(recordingStartState({ script, index: 2 }).index).toBe(0);
+	});
+
+	it("clears the acted high-water mark so replayed actions can run again", () => {
+		expect(recordingStartState({ script, index: 2, acted: 2 }).acted).toBe(-1);
+	});
+
+	it("is a no-op on a cursor already at the first step", () => {
+		expect(recordingStartState({ script, index: 0 })).toMatchObject({
+			index: 0,
+			acted: -1,
+		});
+	});
+
+	it("preserves everything else about the state", () => {
+		const state: PlayState = {
+			script,
+			index: 2,
+			phase: "tutorial",
+			setupActionsApproved: true,
+			automaticActionsApproved: true,
+			fromEdit: true,
+		};
+		expect(recordingStartState(state)).toMatchObject({
+			script,
+			phase: "tutorial",
+			setupActionsApproved: true,
+			automaticActionsApproved: true,
+			fromEdit: true,
+		});
 	});
 });
 

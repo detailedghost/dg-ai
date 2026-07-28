@@ -70,6 +70,18 @@ export type PlayState = {
 
 // --- exported pure helpers (testable without browser/DOM) ---
 
+/**
+ * Rewind to the first step so a recording always opens the tour.
+ *
+ * The start prompt is reached with the cursor wherever setup — or an earlier pass through the
+ * steps — left it, and the recorder cues narration clip N for step N. Recording from a non-zero
+ * cursor therefore both skips the opening steps and desyncs the voiceover from the visuals.
+ * `acted` resets to -1 (its unset sentinel) so replayed steps can run their actions again.
+ */
+export function recordingStartState(state: PlayState): PlayState {
+	return { ...state, index: 0, acted: -1 };
+}
+
 export function reviewAction(action: "confirm" | "discard"): { type: string } {
 	return {
 		type: action === "confirm" ? MSG.videoConfirmDownload : MSG.videoDiscard,
@@ -470,6 +482,8 @@ function listenForRecorder(ctx: Ctx): void {
 					videoDurations = msg.durations ?? [];
 					videoHideBody = msg.hideBody === true;
 					await setRecording(true);
+					const state = await loadState();
+					if (state) await saveState(recordingStartState(state));
 					removeUi();
 					await playCurrent(ctx);
 				})();
