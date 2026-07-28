@@ -58,14 +58,6 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
  * the keypress goes to that other extension, and printing the suggested key here tells
  * the user to press something this extension will never receive.
  */
-/** Where this browser lets the user rebind extension shortcuts. */
-function shortcutsPageUrl(): string {
-	// Edge only serves this page under its own scheme; chrome:// dead-ends there.
-	return navigator.userAgent.includes("Edg/")
-		? "edge://extensions/shortcuts"
-		: "chrome://extensions/shortcuts";
-}
-
 async function readRecordShortcut(): Promise<string | null> {
 	try {
 		const res = (await browser.runtime.sendMessage({
@@ -1547,7 +1539,9 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 				line.append("Shortcut: ", key);
 			} else {
 				line.style.color = "var(--accent2)";
-				line.textContent = `No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Use the toolbar icon, or assign one at ${shortcutsPageUrl()}.`;
+				// chrome:// is right for Edge and Brave too — both redirect it to their own scheme.
+				line.textContent =
+					"No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Use the toolbar icon, or assign one at chrome://extensions/shortcuts.";
 			}
 
 			card.append(h, b, narrationRow, line);
