@@ -24,14 +24,40 @@ mode: walkthrough         # optional — walkthrough (default) | video
 Step line grammar (everything but the number and body is optional):
 
 ```text
-N. **<title>** [`<css-selector>`] [→ <navigate-url>] — <body> [`<timing>`]
+N. **<title>** [`<css-selector>`] [→ <navigate-url>] [<action>] — <body> [`<timing>`]
 ```
 
 - `` `<css-selector>` `` — element to spotlight; omit for a centered modal.
 - `→ <navigate-url>` — navigate here before showing this step (multi-page).
+- `<action>` — an action the **tour itself** performs on the spotlighted
+  element before the callout shows: `@click` (clicks it) or `@type="<text>"`
+  (types `<text>` into it — a literal `"` or `\` inside `<text>` must be
+  escaped as `\"` / `\\`). Omit for no automatic action — the step just
+  spotlights. It's parsed out of whatever comes before the em dash
+  regardless of position, but the generator always writes it after the
+  selector/navigate, e.g. `` `#save-filter-btn` @click `` or
+  `` `input[name=q]` @type="cute puppies" ``.
 - `` `<timing>` `` — the `advance` mode: `4s` / `500ms` / a bare ms count
   (auto-advance), or `click` / `next`. Omit for the default. A trailing
   inline `` `code` `` span that isn't a valid timing stays part of the body.
+
+> **Don't confuse the `click` *timing* with the `@click` *action* — this is
+> the single most common authoring mistake in this format.** The trailing
+> `` `click` `` **timing** means "wait for a **human** to click the target"
+> (a user-paced step). The `@click` **action** before the em dash means "the
+> **tour** clicks the target." Authoring `` `click` `` when you meant an
+> automatic click produces a tour that sits waiting for a user, while the
+> user sits waiting for the tour — nothing advances, and it just looks
+> broken. For a fully automated step, pair `@click` with a **numeric**
+> timing (e.g. `@click` … `` `2s` ``) so the tour clicks, then advances
+> itself; the bare `` `click` `` timing is for user-driven walkthrough steps
+> where a real person is expected to act, with no `@click`/`@type` involved.
+>
+> **Vocabulary limit:** `@click` and `@type="..."` are the only two actions
+> that exist — there is no hover, drag, select, or keypress action. A step
+> that needs one of those can't be automated this way; author it as a
+> user-paced step (`click` or `next` timing, no action) and let the person
+> perform that interaction themselves.
 
 ## Underlying script schema
 
@@ -107,11 +133,13 @@ appears, so it is never narrated or captured. Set `includeSetup: true` when the
 preparation itself belongs in the demo: setup steps then lead the tutorial and
 video in source order.
 
-Setup actions are stored in the Markdown plan and URL marker. Never put
-credentials, passwords, API/session tokens, recovery codes, or MFA/one-time
-codes in an `@type="..."` action. Leave sensitive fields as manual, user-paced
-setup steps so the user enters those values directly. Playback always asks for
-explicit approval before any authored setup click/fill action can run.
+Setup actions (`@click` / `@type="..."`, see the step-line grammar above) are
+stored in the Markdown plan and URL marker. Never put credentials, passwords,
+API/session tokens, recovery codes, or MFA/one-time codes in an `@type="..."`
+action's value. Leave sensitive fields as manual, user-paced setup steps (no
+action, `click` or `next` timing) so the user enters those values directly.
+Playback always asks for explicit approval before any authored setup
+click/fill action can run.
 
 ## Multi-page tours
 

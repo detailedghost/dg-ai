@@ -79,10 +79,13 @@ mode: video
 3. **Open results** `a#more` → https://www.google.com/search — Navigates, then highlights. `3s`
 ```
 
-Each step line is `N. **title** [`selector`] [→ navigate-url] — body [`timing`]`. The trailing
-`` `timing` `` is `4s` / `500ms` / a bare ms count for auto-advance, or `click` / `next`.
-Keep text to a sentence or two; one idea per step. For **video**, add a `` `Ns` `` timing to
-any step that should linger longer than the default (~3.5s).
+Each step line is `N. **title** [`selector`] [→ navigate-url] [action] — body [`timing`]`.
+`action` is `@click` or `@type="text"` — an action the *tour* performs on the target before the
+callout shows (see [references/authoring.md](references/authoring.md) for the full grammar and
+the `click`-timing-vs-`@click`-action distinction). The trailing `` `timing` `` is `4s` / `500ms` /
+a bare ms count for auto-advance, or `click` / `next`. Keep text to a sentence or two; one idea per
+step. For **video**, add a `` `Ns` `` timing to any step that should linger longer than the default
+(~3.5s).
 
 ## Phase 4 — Review and approval in the extension (required)
 
