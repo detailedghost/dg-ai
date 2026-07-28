@@ -99,21 +99,28 @@ Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
 
 - **`"next"`** (default) — the callout shows a **Next** button; the user drives
   the pace.
-- **`"click"`** — advances when the user clicks the spotlighted target. A Next
-  button is still shown as a fallback. **Use this only for in-page interactions**
-  (toggles, menus, SPA actions). If clicking the element navigates to another
-  page, don't rely on `"click"` — instead keep `"next"` here and put the
+- **`"click"`** — advances when the user clicks the spotlighted target. Pressing
+  the callout's **›** instead clicks the target for them, so a step timed this way
+  still moves the page when driven from the controls. **Use this only for in-page
+  interactions** (toggles, menus, SPA actions). If clicking the element navigates
+  to another page, don't rely on `"click"` — keep `"next"` here and put the
   destination in the **next step's `navigate`**. This avoids a race between
   saving progress and the page unloading.
 - **`<number>`** — auto-advance after that many milliseconds (hands-off
-  playback).
+  playback). In video mode this is dwell time *after* narration — see
+  [Video mode](#video-mode).
 
 ## Walkthrough controls
 
-Each step's callout shows **Back** / **Next** (**Done** on the last step), plus
-**«** / **»** to jump straight to the first or last step of the current phase
-(setup or tutorial) — each disabled at the end it already points to, so the
-affordance never lies about where a jump would land.
+Each step's callout shows **« ‹ › »** — jump to first, back one, forward one,
+jump to last — each disabled at the end it already points to, so the affordance
+never lies about where a jump would land. The single-step pair is tinted
+(`‹` accent2, `›` accent) to mark it apart from the jumps. **Done** replaces the
+forward controls on the last step, since ending the tour isn't navigation.
+
+**›** is the step's action: it runs an authored `@click`/`@type`, or supplies the
+click a `"click"`-timed step is waiting for, before advancing. **‹** and the jump
+controls are pure navigation — replaying an action backwards has no meaning.
 
 ## Optional setup stage
 
@@ -182,10 +189,22 @@ won't loop.
 ## Video mode
 
 Run `demo --video` (or set `"mode": "video"`) to record instead of a live tour.
-The tour auto-plays hands-free: each step is held for ~3.5s, or for a step's
-numeric `advance` value if set. The extension records the tab (tabCapture → an
+The tour auto-plays hands-free. The extension records the tab (tabCapture → an
 offscreen MediaRecorder → webm) and saves `dg-demo/<tour>/<tour>.zip` (the video
 plus a re-runnable `plan.md`) to the user's **Downloads** folder.
+
+How long each step holds depends on whether it is narrated:
+
+| Step | Hold |
+| --- | --- |
+| Narrated, no `advance` | clip length + tail |
+| Narrated, `advance: 4000` | clip length + tail **+ 4s** |
+| Silent (captions-only), `advance: 4000` | 4s |
+| Silent, no `advance` | ~3.5s |
+
+On a narrated step a numeric `advance` is **dwell time after the voice finishes**,
+not a floor on the whole step. So it always lengthens that step, and you can hold
+a beat on an important frame without guessing how long its narration will run.
 
 Because Chrome requires a user gesture to start tab capture, the page shows a
 "press to start" modal; the user presses `Alt+Shift+D` (or clicks the DeeGee
