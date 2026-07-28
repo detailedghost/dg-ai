@@ -11,12 +11,17 @@ import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerMailboxCleanup } from "./commands/mailbox-cleanup";
 import type { MailboxCleanupCommandRunner } from "./commands/mailbox-cleanup";
+import {
+	registerMailboxPlans,
+	type MailboxPlansRunner,
+} from "./commands/mailbox-plans";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 
 export function createProgram(
 	deps: Readonly<{
 		mailboxCleanup?: MailboxCleanupCommandRunner;
+		mailboxPlans?: MailboxPlansRunner;
 	}> = {},
 ): Command {
 	const program = new Command();
@@ -31,6 +36,7 @@ export function createProgram(
 	registerBatchOpen(program);
 	registerLaunch(program);
 	registerMailboxCleanup(program, undefined, deps.mailboxCleanup);
+	registerMailboxPlans(program, deps.mailboxPlans);
 	registerDemo(program);
 	registerRerun(program);
 	registerProto(program);

@@ -116,18 +116,19 @@ function browserHarness() {
 
 async function approvedConnect(
 	harness: ReturnType<typeof browserHarness>,
+	target = connection,
 ): Promise<unknown[]> {
 	const pending = harness.dispatch(
 		{
 			type: MAILBOX_CLI_CONNECT_TYPE,
-			connection,
+			connection: target,
 		},
 		{
 			id: "dgtest",
 			frameId: 0,
 			url:
-				`${connection.origin}/mailbox-cleanup/v1/connect/` +
-				connection.runAlias,
+				`${target.origin}/mailbox-cleanup/v1/connect/` +
+				target.runAlias,
 			tab: { id: 40 },
 		},
 	);
@@ -250,6 +251,19 @@ describe("mailbox CLI browser transport", () => {
 
 	it("accepts one exact loopback fragment and strips the capability", () => {
 		expect(parseMailboxCliMarker(markerUrl())).toEqual(connection);
+		const plansConnection = {
+			...connection,
+			purpose: "plans" as const,
+		};
+		const plansMarker = Buffer.from(
+			JSON.stringify(plansConnection),
+		).toString("base64url");
+		expect(
+			parseMailboxCliMarker(
+				`${connection.origin}/mailbox-cleanup/v1/connect/` +
+					`${connection.runAlias}#${MAILBOX_CLI_MARKER_KEY}=${plansMarker}`,
+			),
+		).toEqual(plansConnection);
 		const stripped = stripMailboxCliMarker(markerUrl());
 		expect(new URL(stripped).hash).toBe("");
 		expect(stripped).not.toContain(connection.token);
@@ -291,6 +305,176 @@ describe("mailbox CLI browser transport", () => {
 		);
 		await composition.dispose();
 		expect(harness.activeListeners()).toBe(0);
+	});
+
+	it("routes one approved plans request to the service and posts one correlated terminal", async () => {
+		const harness = browserHarness();
+		const plansConnection = Object.freeze({
+			...connection,
+			purpose: "plans" as const,
+		});
+		const request = Object.freeze({
+			schemaVersion: 1 as const,
+			type: "dg_mailbox_plans_request" as const,
+			requestAlias: "req_0123456789abcdef0123456789abcdef",
+			operation: "list" as const,
+			query: Object.freeze({
+				states: Object.freeze(["draft" as const]),
+				stale: "only" as const,
+			}),
+		});
+		const rows = Object.freeze([
+			Object.freeze({
+				schemaVersion: 1 as const,
+				planAlias: revision().planAlias,
+				revisionAlias: revision().revisionAlias,
+				providerId: "fake-mail",
+				surface: "inbox",
+				accountAlias: bindingScope().accountAlias,
+				lifecycleState: "draft" as const,
+				stale: true,
+				staleReason: "restart_required" as const,
+				updatedAt: "2026-07-28T11:00:00.000Z",
+				expiresAt: "2026-07-29T11:00:00.000Z",
+				nextAction: Object.freeze({ type: "restart" as const }),
+			}),
+		]);
+		const requests: string[] = [];
+		const terminalBodies: string[] = [];
+		const queries: unknown[] = [];
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: new IDBFactory(),
+			providers: [],
+			planListService: {
+				async list(query) {
+					queries.push(structuredClone(query));
+					return Object.freeze({ schemaVersion: 1, rows });
+				},
+				async perform() {
+					throw new Error("List must not perform an action");
+				},
+			},
+			async fetch(url, init) {
+				requests.push(url);
+					if (url.includes("/request/")) {
+						return new Response(JSON.stringify(request), {
+							status: 200,
+							headers: { "content-type": "application/json" },
+						});
+					}
+					if (url.includes("/status/")) {
+						return new Response(null, { status: 204 });
+					}
+					terminalBodies.push(String(init.body));
+					return new Response(null, { status: 204 });
+				},
+		});
+		composition.register();
+
+		await approvedConnect(harness, plansConnection);
+
+		expect(queries).toEqual([{ states: ["draft"], stale: "only" }]);
+			expect(requests[0]).toBe(
+				`${plansConnection.origin}/mailbox-cleanup/v1/request/${plansConnection.runAlias}`,
+			);
+			expect(requests).toContain(
+				`${plansConnection.origin}/mailbox-cleanup/v1/status/${plansConnection.runAlias}`,
+			);
+			expect(requests.at(-1)).toBe(
+				`${plansConnection.origin}/mailbox-cleanup/v1/result/${plansConnection.runAlias}`,
+			);
+		expect(JSON.parse(terminalBodies[0]!)).toEqual({
+			schemaVersion: 1,
+			type: "dg_mailbox_plans_terminal",
+			requestAlias: request.requestAlias,
+			operation: "list",
+			status: "completed",
+			result: { schemaVersion: 1, rows },
+		});
+		await composition.dispose();
+	});
+
+	it("serves retained plans through the concrete production list service", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const value = revision();
+		const store = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		await store.putRevision(value);
+		expect((await store.listPlans())[0]?.revisions[0]?.expiresAt).toBeNumber();
+		await store.close();
+		const plansConnection = Object.freeze({
+			...connection,
+			purpose: "plans" as const,
+		});
+		const request = Object.freeze({
+			schemaVersion: 1 as const,
+			type: "dg_mailbox_plans_request" as const,
+			requestAlias: "req_0123456789abcdef0123456789abcdef",
+			operation: "list" as const,
+			query: Object.freeze({
+				states: Object.freeze([
+					"draft" as const,
+					"approved" as const,
+					"in_flight" as const,
+					"completed" as const,
+				]),
+				stale: "all" as const,
+			}),
+		});
+		const terminalBodies: string[] = [];
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [],
+			now: () => NOW_MS,
+			async fetch(url, init) {
+					if (url.includes("/request/")) {
+						return new Response(JSON.stringify(request), {
+							status: 200,
+							headers: { "content-type": "application/json" },
+						});
+					}
+					if (url.includes("/status/")) {
+						return new Response(null, { status: 204 });
+					}
+					terminalBodies.push(String(init.body));
+					return new Response(null, { status: 204 });
+				},
+		});
+		await composition.planList.register(value, {
+			schemaVersion: 1,
+			...bindingScope(),
+		});
+		await expect(composition.planList.list(request.query)).resolves.toMatchObject({
+			rows: [expect.objectContaining({ planAlias: value.planAlias })],
+		});
+		composition.register();
+
+		await approvedConnect(harness, plansConnection);
+
+		expect(terminalBodies).toHaveLength(1);
+		const terminal = JSON.parse(terminalBodies[0]!) as {
+			status: string;
+			result: { rows: unknown[] };
+		};
+		expect(terminal.status).toBe("completed");
+		expect(terminal.result.rows).toEqual([
+			expect.objectContaining({
+				planAlias: value.planAlias,
+				revisionAlias: value.revisionAlias,
+				providerId: bindingScope().providerId,
+				surface: bindingScope().surface,
+				accountAlias: bindingScope().accountAlias,
+				lifecycleState: "draft",
+				stale: true,
+				nextAction: { type: "restart" },
+			}),
+		]);
+		await composition.dispose();
 	});
 
 	it("uses the default production provider path to capture, bind, and open a real plan", async () => {

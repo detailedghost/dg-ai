@@ -4,6 +4,7 @@ import {
 	createMailboxCleanupBackgroundComposition,
 	type MailboxCleanupBrowserSeam,
 } from "@/lib/background/mailbox-cleanup-composition";
+import { createMailboxExecutionIndexedDbStorage } from "@/lib/background/mailbox-cleanup-storage";
 import {
 	MAILBOX_CLI_APPROVAL_DECISION_TYPE,
 	MAILBOX_CLI_CONNECT_TYPE,
@@ -38,7 +39,10 @@ import {
 	computeMailboxCaptureChunkDigest,
 	type MailboxCaptureChunk,
 } from "@/lib/features/mailbox-cleanup/coordinator";
-import { computeMailboxScopedFingerprint } from "@/lib/features/mailbox-cleanup/planning";
+import {
+	computeMailboxScopedFingerprint,
+	deriveMailboxCohorts,
+} from "@/lib/features/mailbox-cleanup/planning";
 import {
 	consumeMailboxPlanBootstrap,
 	createMailboxPlanWorkspace,
@@ -88,6 +92,12 @@ function providerScope() {
 
 function actionAlias(index: number): string {
 	return `act_89abcdef01234567fedcba98${index
+		.toString(16)
+		.padStart(8, "0")}`;
+}
+
+function workflowAlias(prefix: "req" | "rev", index: number): string {
+	return `${prefix}_89abcdef01234567fedcba98${index
 		.toString(16)
 		.padStart(8, "0")}`;
 }
@@ -198,6 +208,30 @@ class AtomicMemoryStorage implements MailboxExecutionAtomicStorage {
 			value: structuredClone(value),
 		});
 		return true;
+	}
+}
+
+class FirstCompareAndSetGate extends AtomicMemoryStorage {
+	private waiting = true;
+
+	constructor(
+		private readonly entered: ReturnType<typeof deferred<void>>,
+		private readonly release: ReturnType<typeof deferred<void>>,
+	) {
+		super();
+	}
+
+	override async compareAndSet(
+		key: string,
+		expectedVersion: number | undefined,
+		value: unknown,
+	): Promise<boolean> {
+		if (this.waiting) {
+			this.waiting = false;
+			this.entered.resolve(undefined);
+			await this.release.promise;
+		}
+		return super.compareAndSet(key, expectedVersion, value);
 	}
 }
 
@@ -510,6 +544,12 @@ function executionHarness(options: Readonly<{
 	generateDebrief?: (
 		input: Readonly<Record<string, unknown>>,
 	) => Promise<unknown>;
+	randomBytes?: (size: number) => Uint8Array;
+	admission?: Readonly<{
+		acquire(owner: string): Promise<void>;
+		assert(owner: string): Promise<void>;
+		release(owner: string): Promise<void>;
+	}>;
 	transitionRevision?: (
 		expected: "approved" | "in_flight",
 		next: "in_flight" | "completed" | "canceled",
@@ -570,6 +610,25 @@ function executionHarness(options: Readonly<{
 			external.state = next;
 			transitions.push(`${expected}->${next}`);
 		},
+		...(options.randomBytes === undefined
+			? {}
+			: { randomBytes: options.randomBytes }),
+		...(options.admission === undefined
+			? {}
+			: {
+					acquireAdmission: (
+						_command: typeof command,
+						owner: string,
+					) => options.admission!.acquire(owner),
+					assertAdmission: (
+						_command: typeof command,
+						owner: string,
+					) => options.admission!.assert(owner),
+					releaseAdmission: (
+						_command: typeof command,
+						owner: string,
+					) => options.admission!.release(owner),
+				}),
 	});
 	return {
 		accepted,
@@ -727,6 +786,12 @@ describe("mailbox cleanup production safety smoke", () => {
 			let nextActionAlias = 100;
 			const initialized = await initializeMailboxPlanPage(input!, {
 				lifecycle,
+				registerRevision: async (planAlias, revisionAlias) => {
+					await harness.browser.runtime.sendMessage({
+						type: "dg-mailbox-plans:register",
+						command: { planAlias, revisionAlias },
+					});
+				},
 				createWorkspace: (workspaceInput) =>
 					createMailboxPlanWorkspace(workspaceInput, {
 						lifecycle,
@@ -752,9 +817,64 @@ describe("mailbox cleanup production safety smoke", () => {
 								});
 							return executionResult;
 						},
+						registerRevision: async (
+							planAlias,
+							revisionAlias,
+						) => {
+							await harness.browser.runtime.sendMessage({
+								type: "dg-mailbox-plans:register",
+								command: { planAlias, revisionAlias },
+							});
+						},
 					}),
 				mount: () => () => undefined,
 			});
+			const listed = await composition.planList.list({
+				states: ["draft"],
+			});
+			expect(listed.rows).toEqual([
+				expect.objectContaining({
+					planAlias: input!.baseRevision.planAlias,
+					revisionAlias: input!.baseRevision.revisionAlias,
+					providerId: input!.bindingScope.providerId,
+					surface: input!.bindingScope.surface,
+					accountAlias: input!.bindingScope.accountAlias,
+					lifecycleState: "draft",
+					nextAction: { type: "edit" },
+				}),
+			]);
+			const editResult = await composition.planList.perform({
+				schemaVersion: 1,
+				type: "edit",
+				planAlias: input!.baseRevision.planAlias,
+				revisionAlias: input!.baseRevision.revisionAlias,
+				requestAlias: "req_89abcdef01234567fedcba9800000500",
+			});
+			expect(editResult).toMatchObject({
+				status: "completed",
+				action: "edit",
+				lifecycleState: "draft",
+			});
+			expect(harness.tabs.at(-1)).toBe(
+				"chrome-extension://dgtest/mailbox-plan.html",
+			);
+			await expect(
+				consumeMailboxPlanBootstrap({
+					session: harness.sessionSeam,
+					computeFingerprint: computeMailboxScopedFingerprint,
+				}),
+			).resolves.toMatchObject({
+				baseRevision: {
+					planAlias: input!.baseRevision.planAlias,
+					revisionAlias: input!.baseRevision.revisionAlias,
+				},
+			});
+			await expect(
+				consumeMailboxPlanBootstrap({
+					session: harness.sessionSeam,
+					computeFingerprint: computeMailboxScopedFingerprint,
+				}),
+			).resolves.toBeUndefined();
 			const accepted = await initialized.workspace.acceptRevision();
 
 			expect(executionResult).toMatchObject({
@@ -774,6 +894,1250 @@ describe("mailbox cleanup production safety smoke", () => {
 			).resolves.toEqual({
 				available: false,
 				reason: "invalidated",
+			});
+		} finally {
+			await plans.close();
+			await composition.dispose();
+		}
+	});
+
+	it("routes plan-list lifecycle actions through the concrete default background composition", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const fake = await rawProviderFixture();
+		const executionStorage = new AtomicMemoryStorage();
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [fake.provider],
+			executionStorage,
+			now: () => NOW_MS,
+			async fetch() {
+				return new Response(null, { status: 204 });
+			},
+		});
+		composition.register();
+		const plans = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		const bindings = createRawBindingStore({
+			session: harness.sessionSeam,
+			now: () => NOW_MS,
+		});
+		const journal = createMailboxExecutionJournal({
+			storage: executionStorage,
+			now: () => NOW,
+		});
+		const raw = {
+			[MESSAGE_ALIAS]: RAW_MESSAGE,
+			[TAG_ALIAS]: RAW_TAG,
+			[CATEGORY_ALIAS]: RAW_CATEGORY,
+		};
+		const scopedTargets = {
+			folderAliases: [],
+			labelAliases: [TAG_ALIAS, CATEGORY_ALIAS],
+			filterAliases: [],
+		};
+		const scopedInventory = {
+			schemaVersion: 1 as const,
+			providerId: "fake-mail",
+			surface: "inbox",
+			accountAlias: ACCOUNT_ALIAS,
+			runAlias: RUN_ALIAS,
+			capturedAt: NOW,
+			partial: false,
+			messages: [
+				{
+					alias: MESSAGE_ALIAS,
+					read: false,
+					hasAttachments: false,
+					receivedAt: "2026-06-01T12:00:00.000Z",
+					category: "newsletter" as const,
+				},
+			],
+			folders: [],
+			labels: [],
+			filters: [],
+		};
+		const scopedCohorts = deriveMailboxCohorts(scopedInventory);
+		const scopedFingerprint = await computeMailboxScopedFingerprint({
+			inventory: scopedInventory,
+			metadata: {
+				tags: [{ alias: TAG_ALIAS, messageCount: 1 }],
+				categories: [
+					{ alias: CATEGORY_ALIAS, messageCount: 1 },
+				],
+			},
+			actions: [{ type: "archive", messageAlias: MESSAGE_ALIAS }],
+			targets: scopedTargets,
+		});
+		const scopedCanonicalFingerprint =
+			await computeMailboxScopedFingerprint({
+				inventory: scopedInventory,
+				metadata: {
+					tags: [{ alias: TAG_ALIAS, messageCount: 1 }],
+					categories: [
+						{ alias: CATEGORY_ALIAS, messageCount: 1 },
+					],
+				},
+				actions: [canonicalAction("archive", 1)],
+				targets: scopedTargets,
+			});
+		const actionOnlyTargets = {
+			folderAliases: [],
+			labelAliases: [],
+			filterAliases: [],
+		};
+		const actionOnlyFingerprint = await computeMailboxScopedFingerprint({
+			inventory: scopedInventory,
+			metadata: {
+				tags: [{ alias: TAG_ALIAS, messageCount: 1 }],
+				categories: [
+					{ alias: CATEGORY_ALIAS, messageCount: 1 },
+				],
+			},
+			actions: [canonicalAction("archive", 1)],
+			targets: actionOnlyTargets,
+		});
+		const revisionAlias = (seed: number) =>
+			`rev_89abcdef01234567fedcba98${seed
+				.toString(16)
+				.padStart(8, "0")}`;
+		const canonical = (
+			seed: number,
+			state: "approved" | "in_flight",
+			aliasValue = revisionAlias(seed),
+		): CanonicalMailboxExecutionRevision =>
+			validateCanonicalMailboxExecutionRevision({
+				...acceptedRevision(),
+				revisionAlias: aliasValue,
+				revisionNumber: seed,
+				state,
+				inventoryFingerprint: scopedCanonicalFingerprint,
+				cohorts: scopedCohorts,
+				targets: scopedTargets,
+			});
+		const draft = revision({
+			revisionAlias: revisionAlias(10),
+			revisionNumber: 10,
+			createdAt: "2026-07-27T12:00:10.000Z",
+			inventoryFingerprint: scopedFingerprint,
+			cohorts: scopedCohorts,
+			targets: scopedTargets,
+			actions: [{ type: "archive", messageAlias: MESSAGE_ALIAS }],
+		});
+		const approved = canonical(11, "approved", REVISION_ALIAS);
+		const live = validateCanonicalMailboxExecutionRevision({
+			...canonical(12, "in_flight", REVISION_ALIAS),
+			inventoryFingerprint: actionOnlyFingerprint,
+			targets: actionOnlyTargets,
+		});
+		const stale = revision({
+			revisionAlias: revisionAlias(14),
+			revisionNumber: 14,
+			createdAt: "2026-07-27T12:00:14.000Z",
+			restartRequired: true,
+			inventoryFingerprint: scopedFingerprint,
+			cohorts: scopedCohorts,
+			targets: scopedTargets,
+			actions: [{ type: "archive", messageAlias: MESSAGE_ALIAS }],
+		});
+		const values = [draft, approved, stale];
+
+		try {
+			for (const value of values) {
+				await plans.putRevision(value, {
+					expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+				});
+				const binding = {
+					...bindingScope(),
+					revisionAlias: value.revisionAlias,
+				};
+				await bindings.put(binding, raw);
+				await expect(bindings.get(binding)).resolves.toEqual(raw);
+				await harness.browser.runtime.sendMessage({
+					type: "dg-mailbox-plans:register",
+					command: {
+						planAlias: value.planAlias,
+						revisionAlias: value.revisionAlias,
+					},
+				});
+			}
+			expect(composition.planList).toBeDefined();
+			const listed = await composition.planList.list();
+			expect(
+				listed.rows.map((row) => [
+					row.revisionAlias,
+					row.nextAction.type,
+				]),
+			).toEqual(
+				expect.arrayContaining([
+					[draft.revisionAlias, "edit"],
+					[approved.revisionAlias, "preflight"],
+					[stale.revisionAlias, "restart"],
+				]),
+			);
+
+			const perform = (
+				type: "edit" | "preflight" | "focus" | "resume" | "restart",
+				value: Readonly<{
+					planAlias: string;
+					revisionAlias: string;
+				}>,
+				seed: number,
+			) =>
+				composition.planList.perform({
+					schemaVersion: 1,
+					type,
+					planAlias: value.planAlias,
+					revisionAlias: value.revisionAlias,
+					requestAlias: `req_89abcdef01234567fedcba98${seed
+						.toString(16)
+						.padStart(8, "0")}`,
+				});
+			const edit = await perform("edit", draft, 10);
+			expect(edit).toMatchObject({
+				status: "completed",
+				action: "edit",
+			});
+			const providerPreflights = fake.calls.preflight.length;
+			await expect(
+				perform("preflight", draft, 99),
+			).rejects.toMatchObject({ code: "invalid_action" });
+			expect(fake.calls.preflight).toHaveLength(providerPreflights);
+			const preflight = await perform("preflight", approved, 11);
+			expect(preflight).toMatchObject({
+				status: "completed",
+				action: "preflight",
+				preservedApproval: true,
+			});
+			await expect(
+				bindings.get({
+					...bindingScope(),
+					revisionAlias: stale.revisionAlias,
+				}),
+			).resolves.toBeUndefined();
+			const captureCount = fake.calls.capture.length;
+			await expect(perform("restart", stale, 14)).resolves.toMatchObject({
+				status: "completed",
+				action: "restart",
+			});
+			expect(fake.calls.capture.length).toBeGreaterThan(captureCount);
+
+			await plans.deleteRevision(
+				approved.planAlias,
+				approved.revisionAlias,
+			);
+			await plans.putRevision(live, {
+				expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+			});
+			await harness.browser.runtime.sendMessage({
+				type: "dg-mailbox-plans:register",
+				command: {
+					planAlias: live.planAlias,
+					revisionAlias: live.revisionAlias,
+				},
+			});
+			await journal.initialize(
+				{
+					planAlias: live.planAlias,
+					revisionAlias: live.revisionAlias,
+				},
+				{
+					accountAlias: ACCOUNT_ALIAS,
+					revision: live,
+					order: buildMailboxExecutionGraph(live.actions),
+				},
+			);
+			const liveLease = await journal.acquireLease(
+				{
+					planAlias: live.planAlias,
+					revisionAlias: live.revisionAlias,
+				},
+				ACCOUNT_ALIAS,
+				"worker:plan-list-focus",
+			);
+			expect(liveLease).toBeDefined();
+			await expect(
+				composition.planList.list({ states: ["in_flight"] }),
+			).resolves.toMatchObject({
+				rows: [
+					expect.objectContaining({
+						revisionAlias: live.revisionAlias,
+						nextAction: { type: "focus" },
+					}),
+				],
+			});
+			await expect(perform("focus", live, 12)).resolves.toMatchObject({
+				status: "completed",
+				action: "focus",
+			});
+			await journal.releaseLease(
+				{
+					planAlias: live.planAlias,
+					revisionAlias: live.revisionAlias,
+				},
+				liveLease!,
+			);
+			await expect(
+				composition.planList.list({ states: ["in_flight"] }),
+			).resolves.toMatchObject({
+				rows: [
+					expect.objectContaining({
+						revisionAlias: live.revisionAlias,
+						nextAction: { type: "resume" },
+					}),
+				],
+			});
+			const resume = await perform("resume", live, 13);
+			expect(resume).toMatchObject({
+				status: "completed",
+				action: "resume",
+			});
+			expect(harness.tabs.filter((url) =>
+				url.endsWith("/mailbox-plan.html"),
+			).length).toBeGreaterThanOrEqual(2);
+		} finally {
+			await plans.close();
+			await composition.dispose();
+		}
+	});
+
+	it("aborts an in-flight plans mutation when the authenticated CLI loopback disappears", async () => {
+		const harness = browserHarness();
+		const started = deferred();
+		const releaseMutation = deferred();
+		let mutations = 0;
+		let observedAbort = false;
+		let posted: unknown;
+		const requestAlias = workflowAlias("req", 21);
+		const request = {
+			schemaVersion: 1 as const,
+			type: "dg_mailbox_plans_request" as const,
+			requestAlias,
+			operation: "restart" as const,
+			command: {
+				schemaVersion: 1 as const,
+				type: "restart" as const,
+				planAlias: PLAN_ALIAS,
+				revisionAlias: REVISION_ALIAS,
+				requestAlias,
+			},
+		};
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: new IDBFactory(),
+			providers: [(await rawProviderFixture()).provider],
+			planListService: {
+				async list() {
+					return { schemaVersion: 1, rows: [] };
+				},
+				async perform(command, options) {
+					started.resolve();
+					await Promise.race([
+						releaseMutation.promise,
+						new Promise<void>((resolve) => {
+							if (options?.signal?.aborted) {
+								resolve();
+								return;
+							}
+							options?.signal?.addEventListener(
+								"abort",
+								() => resolve(),
+								{ once: true },
+							);
+						}),
+					]);
+					if (options?.signal?.aborted) {
+						observedAbort = true;
+						return {
+							schemaVersion: 1,
+							status: "canceled",
+							requestAlias: command.requestAlias,
+							action: command.type,
+						};
+					}
+					mutations += 1;
+					return {
+						schemaVersion: 1,
+						status: "completed",
+						requestAlias: command.requestAlias,
+						action: command.type,
+						planAlias: command.planAlias,
+						revisionAlias: command.revisionAlias,
+						lifecycleState: "draft",
+						preservedApproval: false,
+					};
+				},
+			},
+			async fetch(url, init) {
+				if (url.includes("/request/")) {
+					return Response.json(request, { status: 200 });
+				}
+				if (url.includes("/status/")) {
+					return new Response(null, { status: 410 });
+				}
+				if (url.includes("/result/")) {
+					posted = JSON.parse(String(init.body)) as unknown;
+					return new Response(null, { status: 204 });
+				}
+				throw new Error("Unexpected plans transport request");
+			},
+		});
+		composition.register();
+
+		try {
+			const connection = {
+				...cliConnection(21),
+				purpose: "plans" as const,
+			};
+			const approved = await startApprovedCli(harness, connection, 221);
+			await started.promise;
+			await approved.connectionResult;
+			releaseMutation.resolve();
+
+			expect(observedAbort).toBe(true);
+			expect(mutations).toBe(0);
+			expect(posted).toMatchObject({
+				requestAlias,
+				operation: "restart",
+				status: "completed",
+				result: {
+					status: "canceled",
+					action: "restart",
+				},
+			});
+		} finally {
+			await composition.dispose();
+		}
+	});
+
+	it("lets a live cached-raw admission finish without a peer restart side effect", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const fake = await rawProviderFixture();
+		const initializeEntered = deferred();
+		const releaseInitialize = deferred();
+		const executionStorage = new FirstCompareAndSetGate(
+			initializeEntered,
+			releaseInitialize,
+		);
+		const source = acceptedRevision();
+		const sourceScope = bindingScope();
+		const compositionOptions = {
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [fake.provider],
+			executionStorage,
+			now: () => NOW_MS,
+			async computeFingerprint() {
+				return source.inventoryFingerprint;
+			},
+			async fetch() {
+				return new Response(null, { status: 204 });
+			},
+		};
+		const worker = createMailboxCleanupBackgroundComposition(
+			compositionOptions,
+		);
+		const peer = createMailboxCleanupBackgroundComposition(
+			compositionOptions,
+		);
+		const plans = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		const bindings = createRawBindingStore({
+			session: harness.sessionSeam,
+			now: () => NOW_MS,
+		});
+		const journal = createMailboxExecutionJournal({
+			storage: executionStorage,
+			now: () => NOW,
+		});
+		const listStorage = createMailboxExecutionIndexedDbStorage(
+			factory,
+			"dg-mailbox-plan-list-v1",
+		);
+		const restartCommand = {
+			schemaVersion: 1 as const,
+			type: "restart" as const,
+			...command,
+			requestAlias: workflowAlias("req", 24),
+		};
+
+		try {
+			worker.register();
+			await plans.putRevision(source, {
+				expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+			});
+			await bindings.put(sourceScope, {
+				[MESSAGE_ALIAS]: RAW_MESSAGE,
+				[TAG_ALIAS]: RAW_TAG,
+				[CATEGORY_ALIAS]: RAW_CATEGORY,
+			});
+			await harness.browser.runtime.sendMessage({
+				type: "dg-mailbox-plans:register",
+				command,
+			});
+			const registered = await listStorage.read(
+				"dg:mailbox-plan-list:v1",
+			);
+			expect(registered).toBeDefined();
+			expect(
+				await listStorage.compareAndSet(
+					"dg:mailbox-plan-list:v1",
+					registered!.version,
+					{
+						...(registered!.value as Record<string, unknown>),
+						checks: [
+							{
+								...command,
+								status: "failed",
+								reason: "preflight_failed",
+							},
+						],
+					},
+				),
+			).toBe(true);
+
+			const executing = worker.execution.start(command);
+			await initializeEntered.promise;
+			await expect(journal.snapshot(command)).resolves.toBeUndefined();
+			expect(fake.calls.dispatch).toHaveLength(0);
+
+			const restarting = peer.planList.perform(restartCommand);
+			await expect(restarting).resolves.toMatchObject({
+				status: "blocked",
+				action: "restart",
+				reason: "interrupted_restart",
+			});
+			await expect(bindings.status(sourceScope)).resolves.toMatchObject({
+				available: true,
+			});
+			const blockedRegistry = await listStorage.read(
+				"dg:mailbox-plan-list:v1",
+			);
+			expect(blockedRegistry).toBeDefined();
+			expect(
+				(blockedRegistry!.value as { restarts?: readonly unknown[] })
+					.restarts,
+			).toEqual([]);
+			expect(fake.calls.capture).toHaveLength(0);
+			expect(fake.calls.dispatch).toHaveLength(0);
+
+			releaseInitialize.resolve(undefined);
+			await expect(executing).resolves.toMatchObject({
+				status: "failed",
+				reasonCode: "verification_mismatch",
+			});
+			expect(fake.calls.dispatch).toHaveLength(1);
+			const drained = await journal.snapshot(command);
+			expect(drained).toMatchObject({
+				terminalStatus: "failed",
+				terminalReasonCode: "verification_mismatch",
+			});
+			expect(drained?.lease).toBeUndefined();
+		} finally {
+			releaseInitialize.resolve(undefined);
+			await plans.close();
+			await worker.dispose();
+			await peer.dispose();
+		}
+	});
+
+	it("rejects source and candidate execution admission after an active restart claim", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const fake = await rawProviderFixture();
+		const executionStorage = new AtomicMemoryStorage();
+		const source = acceptedRevision();
+		const candidate = validateCanonicalMailboxExecutionRevision({
+			...acceptedRevision(),
+			revisionAlias: workflowAlias("rev", 25),
+			revisionNumber: source.revisionNumber + 1,
+		});
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [fake.provider],
+			executionStorage,
+			now: () => NOW_MS,
+			async computeFingerprint() {
+				return candidate.inventoryFingerprint;
+			},
+			async fetch() {
+				return new Response(null, { status: 204 });
+			},
+		});
+		const plans = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		const bindings = createRawBindingStore({
+			session: harness.sessionSeam,
+			now: () => NOW_MS,
+		});
+		const sourceScope = bindingScope();
+		const candidateScope = {
+			...bindingScope(),
+			revisionAlias: candidate.revisionAlias,
+		};
+		const candidateCommand = {
+			planAlias: candidate.planAlias,
+			revisionAlias: candidate.revisionAlias,
+		};
+
+		try {
+			composition.register();
+			for (const [value, scope] of [
+				[source, sourceScope],
+				[candidate, candidateScope],
+			] as const) {
+				await plans.putRevision(value, {
+					expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+				});
+				await bindings.put(scope, {
+					[MESSAGE_ALIAS]: RAW_MESSAGE,
+					[TAG_ALIAS]: RAW_TAG,
+					[CATEGORY_ALIAS]: RAW_CATEGORY,
+				});
+				await harness.browser.runtime.sendMessage({
+					type: "dg-mailbox-plans:register",
+					command: {
+						planAlias: value.planAlias,
+						revisionAlias: value.revisionAlias,
+					},
+				});
+			}
+			const listStorage = createMailboxExecutionIndexedDbStorage(
+				factory,
+				"dg-mailbox-plan-list-v1",
+			);
+			const registry = await listStorage.read(
+				"dg:mailbox-plan-list:v1",
+			);
+			expect(registry).toBeDefined();
+			expect(
+				await listStorage.compareAndSet(
+					"dg:mailbox-plan-list:v1",
+					registry!.version,
+					{
+						...(registry!.value as Record<string, unknown>),
+						restarts: [
+							{
+								planAlias: source.planAlias,
+								revisionAlias: source.revisionAlias,
+								requestAlias: workflowAlias("req", 25),
+								status: "active",
+								candidateRevisionAlias:
+									candidate.revisionAlias,
+								desiredState: "approved",
+							},
+						],
+					},
+				),
+			).toBe(true);
+
+			for (const blockedCommand of [command, candidateCommand]) {
+				await expect(
+					composition.execution.start(blockedCommand),
+				).resolves.toMatchObject({
+					reasonCode: "stale_binding",
+				});
+			}
+			expect(fake.calls.preflight).toHaveLength(0);
+			expect(fake.calls.dispatch).toHaveLength(0);
+			const journal = createMailboxExecutionJournal({
+				storage: executionStorage,
+				now: () => NOW,
+			});
+			for (const blockedCommand of [command, candidateCommand]) {
+				await expect(
+					journal.snapshot(blockedCommand),
+				).resolves.toBeUndefined();
+			}
+		} finally {
+			await plans.close();
+			await composition.dispose();
+		}
+	});
+
+	it("recovers a crashed restart before old in-flight execution can dispatch", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const fake = await rawProviderFixture();
+		const executionStorage = new AtomicMemoryStorage();
+		const initial = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [fake.provider],
+			executionStorage,
+			now: () => NOW_MS,
+			async fetch() {
+				return new Response(null, { status: 204 });
+			},
+		});
+		initial.register();
+		const plans = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		const bindings = createRawBindingStore({
+			session: harness.sessionSeam,
+			now: () => NOW_MS,
+		});
+		const journal = createMailboxExecutionJournal({
+			storage: executionStorage,
+			now: () => NOW,
+		});
+		const targets = {
+			folderAliases: [],
+			labelAliases: [],
+			filterAliases: [],
+		};
+		const inventory = {
+			schemaVersion: 1 as const,
+			providerId: "fake-mail",
+			surface: "inbox",
+			accountAlias: ACCOUNT_ALIAS,
+			runAlias: RUN_ALIAS,
+			capturedAt: NOW,
+			partial: false,
+			messages: [
+				{
+					alias: MESSAGE_ALIAS,
+					read: false,
+					hasAttachments: false,
+					receivedAt: "2026-06-01T12:00:00.000Z",
+					category: "newsletter" as const,
+				},
+			],
+			folders: [],
+			labels: [],
+			filters: [],
+		};
+		const source = validateCanonicalMailboxExecutionRevision({
+			...acceptedRevision(),
+			revisionAlias: workflowAlias("rev", 22),
+			revisionNumber: 22,
+			state: "in_flight",
+			inventoryFingerprint: await computeMailboxScopedFingerprint({
+				inventory,
+				metadata: {
+					tags: [{ alias: TAG_ALIAS, messageCount: 1 }],
+					categories: [
+						{ alias: CATEGORY_ALIAS, messageCount: 1 },
+					],
+				},
+				actions: [canonicalAction("archive", 1)],
+				targets,
+			}),
+			cohorts: deriveMailboxCohorts(inventory),
+			targets,
+		});
+		const sourceCommand = {
+			planAlias: source.planAlias,
+			revisionAlias: source.revisionAlias,
+		};
+		const sourceScope = {
+			...bindingScope(),
+			revisionAlias: source.revisionAlias,
+		};
+		let recovered:
+			| ReturnType<typeof createMailboxCleanupBackgroundComposition>
+			| undefined;
+		let initialDisposed = false;
+
+		try {
+			await plans.putRevision(source, {
+				expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+			});
+			await bindings.put(sourceScope, {
+				[MESSAGE_ALIAS]: RAW_MESSAGE,
+				[TAG_ALIAS]: RAW_TAG,
+				[CATEGORY_ALIAS]: RAW_CATEGORY,
+			});
+			await harness.browser.runtime.sendMessage({
+				type: "dg-mailbox-plans:register",
+				command: sourceCommand,
+			});
+			await journal.initialize(sourceCommand, {
+				accountAlias: ACCOUNT_ALIAS,
+				revision: source,
+				order: buildMailboxExecutionGraph(source.actions),
+			});
+			const lease = await journal.acquireLease(
+				sourceCommand,
+				ACCOUNT_ALIAS,
+				"worker:crashed-restart",
+			);
+			expect(lease).toBeDefined();
+			await journal.prepareLifecycle(
+				sourceCommand,
+				lease!,
+				"approved",
+				"in_flight",
+			);
+			await journal.commitLifecycle(
+				sourceCommand,
+				lease!,
+				"approved",
+				"in_flight",
+			);
+			await journal.releaseLease(sourceCommand, lease!);
+			const listStorage = createMailboxExecutionIndexedDbStorage(
+				factory,
+				"dg-mailbox-plan-list-v1",
+			);
+			const registry = await listStorage.read(
+				"dg:mailbox-plan-list:v1",
+			);
+			expect(registry).toBeDefined();
+			expect(
+				await listStorage.compareAndSet(
+					"dg:mailbox-plan-list:v1",
+					registry!.version,
+					{
+						...(registry!.value as Record<string, unknown>),
+						restarts: [
+							{
+								planAlias: source.planAlias,
+								revisionAlias: source.revisionAlias,
+								requestAlias: workflowAlias("req", 22),
+								status: "active",
+							},
+						],
+					},
+				),
+			).toBe(true);
+			await initial.dispose();
+			initialDisposed = true;
+			recovered = createMailboxCleanupBackgroundComposition({
+				browser: harness.browser,
+				indexedDB: factory,
+				providers: [fake.provider],
+				executionStorage,
+				now: () => NOW_MS,
+				async fetch() {
+					return new Response(null, { status: 204 });
+				},
+			});
+			recovered.register();
+			await waitFor(
+				() => recovered!.planList.list(),
+				(result) =>
+					result.rows[0]?.staleReason ===
+					"interrupted_restart",
+			);
+
+			expect(fake.calls.dispatch).toHaveLength(0);
+			await expect(bindings.status(sourceScope)).resolves.toMatchObject({
+				available: false,
+				reason: "invalidated",
+			});
+			await expect(
+				recovered.planList.perform({
+					schemaVersion: 1,
+					type: "focus",
+					...sourceCommand,
+					requestAlias: workflowAlias("req", 23),
+				}),
+			).rejects.toMatchObject({ code: "invalid_action" });
+			expect(fake.calls.dispatch).toHaveLength(0);
+		} finally {
+			await plans.close();
+			if (!initialDisposed) await initial.dispose();
+			await recovered?.dispose();
+		}
+	});
+
+	it("preserves latest in-flight authority after a real mutation and blocks later work behind ambiguity", async () => {
+		const harness = browserHarness();
+		const factory = new IDBFactory();
+		const checkpointMessages = [
+			MESSAGE_ALIAS,
+			alias("msg", 2),
+			alias("msg", 3),
+			alias("msg", 4),
+		] as const;
+		const checkpointRaw = checkpointMessages.map(
+			(_messageAlias, index) => `raw-message-${index + 1}`,
+		);
+		const fake = createFakeMailboxProviderHarness({
+			now: () => NOW,
+			rawInventory: {
+				messages: checkpointRaw.map((id) => ({
+					id,
+					read: false,
+					archived: false,
+				})),
+				labels: [
+					{ id: RAW_TAG, messageCount: 4, kind: "tag" },
+					{
+						id: RAW_CATEGORY,
+						messageCount: 4,
+						kind: "category",
+					},
+				],
+			},
+			chunks: [
+				await captureChunk(
+					0,
+					3,
+					"messages",
+					checkpointMessages.map((messageAlias, index) => ({
+						alias: messageAlias,
+						read: false,
+						hasAttachments: false,
+						receivedAt: `2026-06-0${index + 1}T12:00:00.000Z`,
+						category: "newsletter",
+					})),
+				),
+				await captureChunk(1, 3, "tags", [
+					{ alias: TAG_ALIAS, messageCount: 4 },
+				]),
+				await captureChunk(2, 3, "categories", [
+					{ alias: CATEGORY_ALIAS, messageCount: 4 },
+				]),
+			],
+			bindings: {
+				...Object.fromEntries(
+					checkpointMessages.map((messageAlias, index) => [
+						messageAlias,
+						checkpointRaw[index]!,
+					]),
+				),
+				[TAG_ALIAS]: RAW_TAG,
+				[CATEGORY_ALIAS]: RAW_CATEGORY,
+			},
+		});
+		const executionStorage = new AtomicMemoryStorage();
+		const composition = createMailboxCleanupBackgroundComposition({
+			browser: harness.browser,
+			indexedDB: factory,
+			providers: [fake.provider],
+			executionStorage,
+			now: () => NOW_MS,
+			async fetch() {
+				return new Response(null, { status: 204 });
+			},
+		});
+		composition.register();
+		const plans = createMailboxPlanStore({
+			indexedDB: factory,
+			now: () => NOW_MS,
+		});
+		const bindings = createRawBindingStore({
+			session: harness.sessionSeam,
+			now: () => NOW_MS,
+		});
+		const journal = createMailboxExecutionJournal({
+			storage: executionStorage,
+			now: () => NOW,
+		});
+		const actions = [
+			canonicalAction("archive", 31, checkpointMessages[0]),
+			canonicalAction("mark_read", 32, checkpointMessages[1]),
+			canonicalAction("archive", 33, checkpointMessages[2]),
+			canonicalAction("mark_read", 34, checkpointMessages[3]),
+		] as const;
+		const targets = {
+			folderAliases: [],
+			labelAliases: [],
+			filterAliases: [],
+		};
+		const inventory = {
+			schemaVersion: 1 as const,
+			providerId: "fake-mail",
+			surface: "inbox",
+			accountAlias: ACCOUNT_ALIAS,
+			runAlias: RUN_ALIAS,
+			capturedAt: NOW,
+			partial: false,
+			messages: checkpointMessages.map((messageAlias, index) => ({
+					alias: messageAlias,
+					read: false,
+					hasAttachments: false,
+					receivedAt: `2026-06-0${index + 1}T12:00:00.000Z`,
+					category: "newsletter" as const,
+				})),
+			folders: [],
+			labels: [],
+			filters: [],
+		};
+		const source = validateCanonicalMailboxExecutionRevision({
+			...acceptedRevision(actions),
+			revisionAlias: workflowAlias("rev", 31),
+			revisionNumber: 31,
+			state: "in_flight",
+			inventoryFingerprint: await computeMailboxScopedFingerprint({
+				inventory,
+				metadata: {
+					tags: [{ alias: TAG_ALIAS, messageCount: 4 }],
+					categories: [
+						{ alias: CATEGORY_ALIAS, messageCount: 4 },
+					],
+				},
+				actions,
+				targets,
+			}),
+			cohorts: deriveMailboxCohorts(inventory),
+			targets,
+		});
+		const sourceCommand = {
+			planAlias: source.planAlias,
+			revisionAlias: source.revisionAlias,
+		};
+		const remainingFingerprint = await computeMailboxScopedFingerprint({
+			inventory,
+			metadata: {
+				tags: [{ alias: TAG_ALIAS, messageCount: 4 }],
+				categories: [
+					{ alias: CATEGORY_ALIAS, messageCount: 4 },
+				],
+			},
+			actions: source.actions.slice(1),
+			targets,
+		});
+		const sourceScope = {
+			...bindingScope(),
+			revisionAlias: source.revisionAlias,
+		};
+
+		try {
+			await plans.putRevision(source, {
+				expiresAt: NOW_MS + 7 * 24 * 60 * 60 * 1_000,
+			});
+			await bindings.put(sourceScope, {
+				...Object.fromEntries(
+					checkpointMessages.map((messageAlias, index) => [
+						messageAlias,
+						checkpointRaw[index]!,
+					]),
+				),
+				[TAG_ALIAS]: RAW_TAG,
+				[CATEGORY_ALIAS]: RAW_CATEGORY,
+			});
+			await harness.browser.runtime.sendMessage({
+				type: "dg-mailbox-plans:register",
+				command: sourceCommand,
+			});
+			await journal.initialize(sourceCommand, {
+				accountAlias: ACCOUNT_ALIAS,
+				revision: source,
+				order: buildMailboxExecutionGraph(source.actions),
+			});
+			const lease = await journal.acquireLease(
+				sourceCommand,
+				ACCOUNT_ALIAS,
+				"worker:checkpoint-source",
+			);
+			expect(lease).toBeDefined();
+			await journal.prepareLifecycle(
+				sourceCommand,
+				lease!,
+				"approved",
+				"in_flight",
+			);
+			await journal.commitLifecycle(
+				sourceCommand,
+				lease!,
+				"approved",
+				"in_flight",
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				0,
+				"pending",
+				"dispatched",
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				0,
+				"dispatched",
+				"observed",
+				{ observation: { status: "observed", observedAt: NOW } },
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				0,
+				"observed",
+				"verified",
+				{
+					verification: {
+						status: "verified",
+						verifiedAt: NOW,
+						delta: {
+							...providerDelta(source.actions[0]!, [
+								checkpointMessages[0],
+							]),
+							beforeFingerprint: source.inventoryFingerprint,
+							afterFingerprint: remainingFingerprint,
+							beforeScope:
+								buildMailboxExecutionAuthorityScope(
+									source.actions,
+								),
+							afterScope:
+								buildMailboxExecutionAuthorityScope(
+									source.actions.slice(1),
+								),
+						},
+					},
+					authorityFingerprint: remainingFingerprint,
+					authorityScope: buildMailboxExecutionAuthorityScope(
+						source.actions.slice(1),
+					),
+					result: {
+						schemaVersion: 1,
+						index: 0,
+						action: source.actions[0]!,
+						status: "completed",
+						affectedCount: 1,
+					},
+				},
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				1,
+				"pending",
+				"dispatched",
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				1,
+				"dispatched",
+				"needs_review",
+				{
+					result: {
+						schemaVersion: 1,
+						index: 1,
+						action: source.actions[1]!,
+						status: "needs_review",
+						affectedCount: 0,
+						reasonCode: "verification_mismatch",
+					},
+				},
+			);
+			await journal.transitionAction(
+				sourceCommand,
+				lease!,
+				2,
+				"pending",
+				"skipped",
+				{
+					result: {
+						schemaVersion: 1,
+						index: 2,
+						action: source.actions[2]!,
+						status: "skipped",
+						affectedCount: 0,
+						reasonCode: "canceled",
+					},
+				},
+			);
+			await journal.releaseLease(sourceCommand, lease!);
+			const dispatch = fake.provider.dispatch;
+			if (dispatch === undefined) {
+				throw new Error("Fake provider execution seam is unavailable");
+			}
+			await dispatch({
+				providerId: sourceScope.providerId,
+				surface: sourceScope.surface,
+				accountAlias: sourceScope.accountAlias,
+				runAlias: sourceScope.runAlias,
+				revisionAlias: sourceScope.revisionAlias,
+				action: source.actions[0]!,
+				rawTargets: {
+					[checkpointMessages[0]]: checkpointRaw[0]!,
+				},
+			});
+
+			const listStorage = createMailboxExecutionIndexedDbStorage(
+				factory,
+				"dg-mailbox-plan-list-v1",
+			);
+			const registry = await listStorage.read(
+				"dg:mailbox-plan-list:v1",
+			);
+			expect(registry).toBeDefined();
+			expect(
+				await listStorage.compareAndSet(
+					"dg:mailbox-plan-list:v1",
+					registry!.version,
+					{
+						...(registry!.value as Record<string, unknown>),
+						restarts: [
+							{
+								planAlias: source.planAlias,
+								revisionAlias: source.revisionAlias,
+								requestAlias: workflowAlias("req", 35),
+								status: "failed",
+								reason: "interrupted_restart",
+							},
+						],
+					},
+				),
+			).toBe(true);
+
+			const dispatchCount = fake.calls.dispatch.length;
+			const restarted = await composition.planList.perform({
+				schemaVersion: 1,
+				type: "restart",
+				...sourceCommand,
+				requestAlias: workflowAlias("req", 36),
+			});
+			expect(restarted).toMatchObject({
+				status: "completed",
+				action: "restart",
+				lifecycleState: "in_flight",
+				preservedApproval: true,
+			});
+			if (restarted.status !== "completed") {
+				throw new Error("Restart did not produce a fresh revision");
+			}
+			expect(restarted.revisionAlias).not.toBe(source.revisionAlias);
+			const freshCommand = {
+				planAlias: source.planAlias,
+				revisionAlias: restarted.revisionAlias!,
+			};
+			await expect(journal.snapshot(freshCommand)).resolves.toMatchObject({
+				actions: [
+					{ state: "verified" },
+					{
+						state: "needs_review",
+						result: { status: "needs_review" },
+					},
+					{ state: "skipped", result: { status: "skipped" } },
+					{ state: "pending" },
+				],
+			});
+			await expect(
+				composition.planList.perform({
+					schemaVersion: 1,
+					type: "resume",
+					...freshCommand,
+					requestAlias: workflowAlias("req", 37),
+				}),
+			).resolves.toMatchObject({
+				status: "blocked",
+				action: "resume",
+				reason: "fingerprint_mismatch",
+			});
+			expect(fake.calls.dispatch).toHaveLength(dispatchCount);
+			await expect(journal.snapshot(freshCommand)).resolves.toMatchObject({
+				actions: [
+					{ state: "verified" },
+					{ state: "needs_review" },
+					{ state: "skipped" },
+					{ state: "pending" },
+				],
 			});
 		} finally {
 			await plans.close();
@@ -931,6 +2295,47 @@ describe("mailbox cleanup production safety smoke", () => {
 		expect(
 			archived.every((chunk) => chunk.declaredTotal === 3),
 		).toBe(true);
+	});
+
+	it("creates collision-isolated admission owners for same-clock coordinator instances", async () => {
+		const owners: string[] = [];
+		for (const entropy of [31, 47]) {
+			let activeOwner: string | undefined;
+			const run = executionHarness({
+				now: () => NOW,
+				randomBytes: (size) => new Uint8Array(size).fill(entropy),
+				admission: {
+					async acquire(owner) {
+						if (activeOwner !== undefined) {
+							throw new Error("Admission already acquired");
+						}
+						activeOwner = owner;
+						owners.push(owner);
+					},
+					async assert(owner) {
+						if (owner !== activeOwner) {
+							throw new Error("Admission owner changed");
+						}
+					},
+					async release(owner) {
+						if (owner !== activeOwner) {
+							throw new Error("Wrong admission owner released");
+						}
+						activeOwner = undefined;
+					},
+				},
+			});
+
+			await expect(run.coordinator.start(command)).resolves.toMatchObject({
+				status: "completed",
+			});
+			expect(activeOwner).toBeUndefined();
+		}
+
+		expect(owners).toHaveLength(2);
+		expect(owners[0]).toMatch(/^exec_[a-f0-9]{32}$/);
+		expect(owners[1]).toMatch(/^exec_[a-f0-9]{32}$/);
+		expect(owners[0]).not.toBe(owners[1]);
 	});
 
 	it("prevents a raw provider mutation from landing after abort", async () => {

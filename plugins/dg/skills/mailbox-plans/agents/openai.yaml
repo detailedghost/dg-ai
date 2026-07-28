@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mailbox Plans"
+  short_description: "Safely inspect and recover mailbox plans"
+  default_prompt: "Use $mailbox-plans to list my saved mailbox cleanup plans and safely open or recover the right one."

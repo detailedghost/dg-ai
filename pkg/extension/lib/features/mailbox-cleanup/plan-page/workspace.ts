@@ -815,6 +815,11 @@ export function createMailboxPlanWorkspace(
 		if (nextBindingScope !== undefined) {
 			activeBindingScope = nextBindingScope;
 		}
+		await deps.registerRevision?.(
+			revision.planAlias,
+			revision.revisionAlias,
+		);
+		requirePlan();
 		dirty = false;
 		return revision;
 	};

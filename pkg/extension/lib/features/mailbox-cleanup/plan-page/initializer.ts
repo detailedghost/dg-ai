@@ -35,6 +35,10 @@ export async function initializeMailboxPlanPage<
 	input: MailboxPlanWorkspaceInput,
 	deps: Readonly<{
 		lifecycle: Pick<MailboxLifecycle, "create" | "get">;
+		registerRevision?(
+			planAlias: string,
+			revisionAlias: string,
+		): Promise<void>;
 		createWorkspace(input: MailboxPlanWorkspaceInput): TWorkspace;
 		mount(workspace: TWorkspace): TDispose;
 	}>,
@@ -42,6 +46,10 @@ export async function initializeMailboxPlanPage<
 	const baseRevision = await ensureMailboxPlanBaseRevision(
 		input.baseRevision,
 		deps.lifecycle,
+	);
+	await deps.registerRevision?.(
+		baseRevision.planAlias,
+		baseRevision.revisionAlias,
 	);
 	const workspace = deps.createWorkspace({
 		...input,

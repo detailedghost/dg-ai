@@ -324,6 +324,7 @@ export type MailboxExecutionCoordinator = Readonly<{
 	start(command: MailboxExecutionCommand): Promise<MailboxExecutionResult>;
 	resume(command: MailboxExecutionCommand): Promise<MailboxExecutionResult>;
 	cancel(command: MailboxExecutionCommand): Promise<MailboxExecutionResult>;
+	fence?(command: MailboxExecutionCommand): Promise<boolean>;
 	status(command: MailboxExecutionCommand): Promise<MailboxExecutionResult>;
 	recoverActive(): Promise<readonly Readonly<{
 		command: MailboxExecutionCommand;

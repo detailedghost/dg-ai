@@ -1,6 +1,7 @@
 export {
 	createMailboxExecutionCoordinator,
 	mailboxExecutionChangedAliases,
+	mailboxExecutionRawTargets,
 } from "./coordinator";
 export {
 	MAILBOX_EXECUTION_ACTION_TYPES,

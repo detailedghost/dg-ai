@@ -67,6 +67,19 @@ type MailboxExecutionCoordinatorDeps = Readonly<{
 		expected: "approved" | "in_flight",
 		next: "in_flight" | "completed" | "canceled",
 	): Promise<void>;
+	acquireAdmission?(
+		command: MailboxExecutionCommand,
+		owner: string,
+	): Promise<void>;
+	assertAdmission?(
+		command: MailboxExecutionCommand,
+		owner: string,
+	): Promise<void>;
+	releaseAdmission?(
+		command: MailboxExecutionCommand,
+		owner: string,
+	): Promise<void>;
+	randomBytes?(size: number): Uint8Array;
 	phaseTimeoutMs?: number;
 }>;
 
@@ -234,7 +247,7 @@ function actionAliases(
 	);
 }
 
-function rawTargets(
+export function mailboxExecutionRawTargets(
 	actions: readonly CanonicalMailboxExecutionRevision["actions"][number][],
 	bindings: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, string>> {
@@ -254,7 +267,10 @@ function preflightRequest(
 	return Object.freeze({
 		...providerScope,
 		actions: snapshot.revision.actions,
-		rawTargets: rawTargets(snapshot.revision.actions, bindings),
+		rawTargets: mailboxExecutionRawTargets(
+			snapshot.revision.actions,
+			bindings,
+		),
 	});
 }
 
@@ -269,7 +285,7 @@ function actionRequest(
 	return Object.freeze({
 		...providerScope,
 		action,
-		rawTargets: rawTargets([action], bindings),
+		rawTargets: mailboxExecutionRawTargets([action], bindings),
 	});
 }
 
@@ -635,7 +651,17 @@ export function createMailboxExecutionCoordinator(
 		throw new Error("Invalid mailbox execution phase timeout");
 	}
 	const active = new Map<string, ActiveRun>();
-	let ownerCounter = 0;
+	const executionOwner = (): string => {
+		const bytes =
+			deps.randomBytes?.(16) ??
+			crypto.getRandomValues(new Uint8Array(16));
+		if (!(bytes instanceof Uint8Array) || bytes.byteLength !== 16) {
+			throw new Error("Mailbox execution admission entropy unavailable");
+		}
+		return `exec_${[...bytes]
+			.map((byte) => byte.toString(16).padStart(2, "0"))
+			.join("")}`;
+	};
 
 	const transition = async (
 		command: MailboxExecutionCommand,
@@ -1041,10 +1067,11 @@ export function createMailboxExecutionCoordinator(
 		}
 	};
 
-	const runCore = async (
+	const executeCore = async (
 		command: MailboxExecutionCommand,
 		mode: "start" | "resume",
 		runController: AbortController,
+		runOwner: string,
 	): Promise<MailboxExecutionResult> => {
 		const loaded = validateCanonicalMailboxExecutionRevision(
 			await deps.loadRevision(command.planAlias, command.revisionAlias),
@@ -1084,7 +1111,7 @@ export function createMailboxExecutionCoordinator(
 		let lease = await deps.journal.acquireLease(
 			command,
 			snapshot.accountAlias,
-			`worker:${++ownerCounter}:${Date.parse(deps.now())}`,
+			runOwner,
 		);
 		if (lease === undefined) return paused("worker_suspended");
 		let heartbeatFailure: unknown;
@@ -1118,6 +1145,7 @@ export function createMailboxExecutionCoordinator(
 				command.planAlias,
 				command.revisionAlias,
 			);
+			await deps.assertAdmission?.(command, runOwner);
 			providerScope = scope(binding.scope, snapshot.revisionAlias);
 			if (
 				providerScope === undefined ||
@@ -1169,11 +1197,17 @@ export function createMailboxExecutionCoordinator(
 				if (
 					entry === undefined ||
 					entry.state === "verified" ||
-					entry.state === "needs_review" ||
 					entry.state === "skipped"
 				) {
 					continue;
 				}
+				if (entry.state === "needs_review") {
+					return paused(
+						entry.result?.reasonCode ?? "verification_mismatch",
+						false,
+					);
+				}
+				await deps.assertAdmission?.(command, runOwner);
 				const actionAuthority =
 					entry.state === "pending"
 						? await checkAuthority(
@@ -1242,6 +1276,7 @@ export function createMailboxExecutionCoordinator(
 						"pending",
 						"dispatched",
 					);
+					await deps.assertAdmission?.(command, runOwner);
 					const request = actionRequest(
 						snapshot,
 						providerScope,
@@ -1564,6 +1599,33 @@ export function createMailboxExecutionCoordinator(
 		}
 	};
 
+	const runCore = async (
+		command: MailboxExecutionCommand,
+		mode: "start" | "resume",
+		runController: AbortController,
+	): Promise<MailboxExecutionResult> => {
+		const owner = executionOwner();
+		await deps.acquireAdmission?.(command, owner);
+		const admissionHeartbeat =
+			deps.assertAdmission === undefined
+				? undefined
+				: setInterval(() => {
+						void deps
+							.assertAdmission!(command, owner)
+							.catch(() => runController.abort());
+					}, 5_000);
+		try {
+			return await executeCore(command, mode, runController, owner);
+		} finally {
+			if (admissionHeartbeat !== undefined) {
+				clearInterval(admissionHeartbeat);
+			}
+			await deps
+				.releaseAdmission?.(command, owner)
+				.catch(() => undefined);
+		}
+	};
+
 	const run = (
 		command: MailboxExecutionCommand,
 		mode: "start" | "resume",
@@ -1582,7 +1644,7 @@ export function createMailboxExecutionCoordinator(
 					? error.code === "provider_canceled"
 						? "canceled"
 						: "provider_timeout"
-					: "internal_failure",
+					: reason(error, "internal_failure"),
 			);
 		});
 
@@ -1606,6 +1668,14 @@ export function createMailboxExecutionCoordinator(
 	return Object.freeze({
 		start: (command) => runOrJoin(command, "start"),
 		resume: (command) => runOrJoin(command, "resume"),
+		async fence(command) {
+			if (!validCommand(command)) return false;
+			const current = active.get(key(command));
+			if (current === undefined) return false;
+			current.controller.abort();
+			await current.promise;
+			return true;
+		},
 		async cancel(command) {
 			if (!validCommand(command)) return failed();
 			const current = active.get(key(command));
