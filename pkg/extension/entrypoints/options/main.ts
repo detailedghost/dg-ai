@@ -2,11 +2,13 @@ import {
 	type ColorSetting,
 	DEFAULTS,
 	getConfig,
+	getNarrationMode,
 	NARRATION_MODES,
 	type NarrationMode,
 	setConfig,
 	VOICES,
 } from "@/lib/config";
+import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
 import { loadKokoro } from "@/utils/kokoro";
 import "./style.css";
 
@@ -38,27 +40,64 @@ function populateNarration(selected: NarrationMode): void {
 	sel.value = selected;
 }
 
-async function load(): Promise<void> {
-	const cfg = await getConfig();
-	$<HTMLSelectElement>("color").value = cfg.color;
-	populateNarration(cfg.narration || DEFAULTS.narration);
-	populateVoices(cfg.voice || DEFAULTS.voice);
-}
-
-async function save(): Promise<void> {
-	await setConfig({
-		color:
-			($<HTMLSelectElement>("color").value as ColorSetting) || DEFAULTS.color,
-		voice: $<HTMLSelectElement>("voice").value || DEFAULTS.voice,
-		narration:
-			($<HTMLSelectElement>("narration").value as NarrationMode) ||
-			DEFAULTS.narration,
-	});
-	const status = $<HTMLSpanElement>("status");
-	status.textContent = "Saved ✓";
-	setTimeout(() => {
+function flash(status: HTMLElement, msg: string): void {
+	status.classList.remove("err");
+	status.textContent = msg;
+	window.setTimeout(() => {
 		status.textContent = "";
 	}, 1500);
+}
+
+function fail(status: HTMLElement, prefix: string, e: unknown): void {
+	status.classList.add("err");
+	status.textContent = `${prefix}: ${e instanceof Error ? e.message : String(e)}`;
+	console.error(`[dg-ai-extension] ${prefix}`, e);
+}
+
+async function load(): Promise<void> {
+	try {
+		const cfg = await getConfig();
+		$<HTMLSelectElement>("color").value = cfg.color;
+		populateNarration(getNarrationMode(cfg.narration));
+		populateVoices(cfg.voice || DEFAULTS.voice);
+	} catch (e) {
+		// Surfaced rather than swallowed: empty dropdowns are the visible symptom.
+		fail($<HTMLElement>("status"), "Could not read saved settings", e);
+	}
+}
+
+/**
+ * Persist every control, reporting into the status line next to the one that
+ * changed.
+ *
+ * Autosave rather than a Save button: the single button used to live inside the
+ * narration panel, so the Tab grouping panel above it had no save path at all —
+ * group color silently never persisted, and the unsaved "random" default made it
+ * look like the setting was being ignored.
+ */
+async function persist(statusId: string): Promise<void> {
+	const status = $<HTMLElement>(statusId);
+	try {
+		await setConfig({
+			color:
+				($<HTMLSelectElement>("color").value as ColorSetting) || DEFAULTS.color,
+			voice: $<HTMLSelectElement>("voice").value || DEFAULTS.voice,
+			narration: getNarrationMode($<HTMLSelectElement>("narration").value),
+		});
+		flash(status, "Saved ✓");
+	} catch (e) {
+		fail(status, "Save failed", e);
+	}
+}
+
+function showPage(id: PageId): void {
+	for (const p of PAGES) {
+		$<HTMLElement>(`page-${p}`).hidden = p !== id;
+		const link = document.querySelector(`[data-nav="${p}"]`);
+		if (!link) continue;
+		if (p === id) link.setAttribute("aria-current", "page");
+		else link.removeAttribute("aria-current");
+	}
 }
 
 /** Spike: prove Kokoro loads, generates, and can be mixed→recorded→downloaded here. */
@@ -83,9 +122,7 @@ async function testNarration(): Promise<void> {
 		$<HTMLButtonElement>("ttsDownload").hidden = false;
 		status.textContent = "Done ✓ — preview above, or download the .webm";
 	} catch (e) {
-		status.classList.add("err");
-		status.textContent = `Failed: ${e instanceof Error ? e.message : String(e)}`;
-		console.error("[dg-ai-extension] TTS test failed", e);
+		fail(status, "Failed", e);
 	} finally {
 		btn.disabled = false;
 	}
@@ -125,10 +162,24 @@ function downloadTest(): void {
 	a.click();
 }
 
-$<HTMLButtonElement>("save").addEventListener("click", () => void save());
+$<HTMLSelectElement>("color").addEventListener(
+	"change",
+	() => void persist("colorStatus"),
+);
+for (const id of ["narration", "voice"]) {
+	$<HTMLSelectElement>(id).addEventListener(
+		"change",
+		() => void persist("status"),
+	);
+}
 $<HTMLButtonElement>("testTts").addEventListener(
 	"click",
 	() => void testNarration(),
 );
 $<HTMLButtonElement>("ttsDownload").addEventListener("click", downloadTest);
+window.addEventListener("hashchange", () =>
+	showPage(resolvePage(window.location.hash)),
+);
+
+showPage(resolvePage(window.location.hash));
 void load();

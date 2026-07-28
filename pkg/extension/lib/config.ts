@@ -76,6 +76,13 @@ export const DEFAULTS: Config = {
 	narration: "both",
 };
 
+/** Coerce an untrusted string (a stored value or a form input) to a NarrationMode. */
+export function getNarrationMode(val: string): NarrationMode {
+	return NARRATION_MODES.some((m) => m.value === val)
+		? (val as NarrationMode)
+		: DEFAULTS.narration;
+}
+
 export async function getConfig(): Promise<Config> {
 	return (await browser.storage.sync.get(DEFAULTS)) as Config;
 }
