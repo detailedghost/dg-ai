@@ -59,6 +59,7 @@ import {
 	performAction,
 	recordingStartState,
 	resolvePendingMarker,
+	restartState,
 	reviewAction,
 	scriptToDraft,
 	setupActionConsentRequired,
@@ -838,16 +839,16 @@ describe("buildOverlay — callout controls", () => {
 
 		// Order is the rendered order: « ‹ › »
 		expect(ariaLabels(root)).toEqual([
-			"Go to first step",
+			"Restart at the first step",
 			"Previous step",
 			"Next step",
-			"Go to last step",
+			"Run to the last step",
 		]);
 		for (const label of [
-			"Go to first step",
+			"Restart at the first step",
 			"Previous step",
 			"Next step",
-			"Go to last step",
+			"Run to the last step",
 		]) {
 			expect(buttonByLabel(root, label).disabled).toBe(false);
 		}
@@ -864,7 +865,9 @@ describe("buildOverlay — callout controls", () => {
 			[],
 			false,
 		);
-		expect(buttonByLabel(first, "Go to first step").disabled).toBe(true);
+		expect(buttonByLabel(first, "Restart at the first step").disabled).toBe(
+			true,
+		);
 		expect(buttonByLabel(first, "Previous step").disabled).toBe(true);
 		expect(buttonByLabel(first, "Next step").disabled).toBe(false);
 
@@ -881,7 +884,7 @@ describe("buildOverlay — callout controls", () => {
 		);
 		expect(buttonByLabel(atEnd, "Previous step").disabled).toBe(false);
 		expect(buttonByLabel(atEnd, "Next step").disabled).toBe(true);
-		expect(buttonByLabel(atEnd, "Go to last step").disabled).toBe(true);
+		expect(buttonByLabel(atEnd, "Run to the last step").disabled).toBe(true);
 	});
 
 	it("tints only the single-step pair — ‹ --accent2, › --accent", () => {
@@ -905,7 +908,7 @@ describe("buildOverlay — callout controls", () => {
 		expect(fwd).not.toContain("var(--accent2)");
 
 		// Jump controls stay untinted, so color marks stepping rather than direction.
-		for (const label of ["Go to first step", "Go to last step"]) {
+		for (const label of ["Restart at the first step", "Run to the last step"]) {
 			const style = buttonByLabel(root, label).getAttribute("style") ?? "";
 			expect(style).not.toContain("var(--accent)");
 			expect(style).not.toContain("var(--accent2)");
@@ -1001,6 +1004,60 @@ describe("buildOverlay — callout controls", () => {
 		);
 
 		expect(root.textContent).not.toContain("Target not found");
+	});
+});
+
+describe("restartState", () => {
+	const withSetup: TourScript = {
+		startUrl: "https://app.example/start",
+		mode: "walkthrough",
+		setup: { includeInTour: false, steps: [{ body: "Prepare" }] },
+		steps: [{ body: "One" }, { body: "Two" }],
+	};
+	const noSetup: TourScript = {
+		startUrl: "https://app.example/start",
+		mode: "walkthrough",
+		steps: [{ body: "One" }, { body: "Two" }],
+	};
+
+	it("returns to the first step of the tour's opening phase", () => {
+		expect(
+			restartState({ script: withSetup, index: 1, phase: "tutorial" }),
+		).toMatchObject({
+			index: 0,
+			phase: "setup",
+		});
+		expect(
+			restartState({ script: noSetup, index: 1, phase: "tutorial" }),
+		).toMatchObject({
+			index: 0,
+			phase: "tutorial",
+		});
+	});
+
+	it("clears acted so every action runs again on the second pass", () => {
+		expect(
+			restartState({ script: noSetup, index: 1, acted: 1 }).acted,
+		).toBeUndefined();
+	});
+
+	// Re-asking for consent the user already gave would make restarting worse than
+	// just re-running the whole command.
+	it("keeps the approvals and the editor origin", () => {
+		expect(
+			restartState({
+				script: withSetup,
+				index: 2,
+				phase: "tutorial",
+				automaticActionsApproved: true,
+				setupActionsApproved: true,
+				fromEdit: true,
+			}),
+		).toMatchObject({
+			automaticActionsApproved: true,
+			setupActionsApproved: true,
+			fromEdit: true,
+		});
 	});
 });
 

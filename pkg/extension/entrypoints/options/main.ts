@@ -7,6 +7,7 @@ import {
 	type NarrationMode,
 	setConfig,
 	VOICES,
+	voiceLabel,
 } from "@/lib/config";
 import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
 import { loadKokoro } from "@/utils/kokoro";
@@ -23,7 +24,7 @@ function populateVoices(selected: string): void {
 	for (const v of VOICES) {
 		const o = document.createElement("option");
 		o.value = v;
-		o.textContent = v;
+		o.textContent = voiceLabel(v);
 		sel.appendChild(o);
 	}
 	sel.value = selected;

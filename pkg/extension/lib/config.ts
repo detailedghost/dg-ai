@@ -1,27 +1,18 @@
 import { browser } from "wxt/browser";
 
 /** The nine tab-group colors Chrome/Firefox accept. */
-export type GroupColor =
-	| "grey"
-	| "blue"
-	| "red"
-	| "yellow"
-	| "green"
-	| "pink"
-	| "purple"
-	| "cyan"
-	| "orange";
+export type GroupColor = "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange";
 
 export const GROUP_COLORS: GroupColor[] = [
-	"grey",
-	"blue",
-	"red",
-	"yellow",
-	"green",
-	"pink",
-	"purple",
-	"cyan",
-	"orange",
+  "grey",
+  "blue",
+  "red",
+  "yellow",
+  "green",
+  "pink",
+  "purple",
+  "cyan",
+  "orange",
 ];
 
 /** Configured color, or "random" to pick a fresh color per new group. */
@@ -29,25 +20,25 @@ export type ColorSetting = GroupColor | "random";
 
 /** Resolve the color setting to a concrete color ("random" → a random one). */
 export function resolveColor(c: ColorSetting): GroupColor {
-	if (c !== "random") return c;
-	return GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
+  if (c !== "random") return c;
+  return GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
 }
 
 // A curated subset of Kokoro voices for the settings dropdown (grade A/B first).
 export const VOICES = [
-	"af_heart",
-	"af_bella",
-	"af_nicole",
-	"af_sarah",
-	"af_sky",
-	"am_michael",
-	"am_fenrir",
-	"am_puck",
-	"am_adam",
-	"bf_emma",
-	"bf_isabella",
-	"bm_george",
-	"bm_fable",
+  "af_heart",
+  "af_bella",
+  "af_nicole",
+  "af_sarah",
+  "af_sky",
+  "am_michael",
+  "am_fenrir",
+  "am_puck",
+  "am_adam",
+  "bf_emma",
+  "bf_isabella",
+  "bm_george",
+  "bm_fable",
 ] as const;
 
 /**
@@ -58,44 +49,69 @@ export const VOICES = [
  */
 export type NarrationMode = "both" | "voice" | "captions";
 export const NARRATION_MODES: { value: NarrationMode; label: string }[] = [
-	{ value: "both", label: "Voiceover + captions" },
-	{ value: "voice", label: "Voiceover only" },
-	{ value: "captions", label: "Captions only (silent)" },
+  { value: "both", label: "Voiceover + captions" },
+  { value: "voice", label: "Voiceover only" },
+  { value: "captions", label: "Captions only (silent)" },
 ];
 
 // Group name is per-invocation (from the URL marker); color + demo-narration are configured.
 export type Config = {
-	color: ColorSetting;
-	voice: string;
-	narration: NarrationMode;
+  color: ColorSetting;
+  voice: string;
+  narration: NarrationMode;
 };
 
 export const DEFAULTS: Config = {
-	color: "random",
-	voice: "af_heart",
-	narration: "both",
+  color: "random",
+  voice: "af_heart",
+  narration: "both",
 };
+
+// Kokoro ids encode origin and gender as a prefix: <a|b><f|m>_<name>.
+const VOICE_ACCENTS: Record<string, string> = { a: "American", b: "British" };
+const VOICE_GENDERS: Record<string, string> = { f: "female", m: "male" };
+
+/**
+ * Turn a Kokoro voice id into something readable: `af_heart` → `Heart — American female`.
+ *
+ * Derived from the id's prefix rather than a hand-kept map, so a voice added to VOICES
+ * gets a proper label for free; an id that doesn't match the convention shows as-is.
+ */
+export function voiceLabel(voice: string): string {
+  const parts = /^([ab])([fm])_(.+)$/.exec(voice);
+  if (!parts) return voice;
+  const [, accent, gender, name] = parts;
+  const proper = name.charAt(0).toUpperCase() + name.slice(1);
+  return `${proper} — ${VOICE_ACCENTS[accent]} ${VOICE_GENDERS[gender]}`;
+}
 
 /** Coerce an untrusted string (a stored value or a form input) to a NarrationMode. */
 export function getNarrationMode(val: string): NarrationMode {
-	return NARRATION_MODES.some((m) => m.value === val)
-		? (val as NarrationMode)
-		: DEFAULTS.narration;
+  return NARRATION_MODES.some(m => m.value === val) ? (val as NarrationMode) : DEFAULTS.narration;
 }
 
 /** The settings-page label for a mode, for read-only display elsewhere. */
 export function narrationModeLabel(mode: NarrationMode): string {
-	return (
-		NARRATION_MODES.find((m) => m.value === mode)?.label ?? DEFAULTS.narration
-	);
+  return NARRATION_MODES.find(m => m.value === mode)?.label ?? DEFAULTS.narration;
 }
 
 export async function getConfig(): Promise<Config> {
-	return (await browser.storage.sync.get(DEFAULTS)) as Config;
+  return (await browser.storage.sync.get(DEFAULTS)) as Config;
 }
 
 export async function setConfig(cfg: Config): Promise<void> {
-	await browser.storage.sync.set(cfg);
+  await browser.storage.sync.set(cfg);
+}
+
+/**
+ * Change some fields, re-reading the stored config first so the rest survive.
+ *
+ * Use this instead of spreading a config a caller is already holding: a long-lived
+ * panel's snapshot goes stale the moment the settings page saves, so writing it back
+ * wholesale silently reverts whatever else the user changed.
+ */
+export async function patchConfig(patch: Partial<Config>): Promise<void> {
+  await setConfig({ ...(await getConfig()), ...patch });
 }
 
 /**
@@ -106,22 +122,11 @@ export async function setConfig(cfg: Config): Promise<void> {
  * used to abort the entire "press to record" prompt, leaving the user no visible
  * way to start a recording at all.
  */
-/**
- * Change some fields, re-reading the stored config first so the rest survive.
- *
- * Use this instead of spreading a config a caller is already holding: a long-lived
- * panel's snapshot goes stale the moment the settings page saves, so writing it back
- * wholesale silently reverts whatever else the user changed.
- */
-export async function patchConfig(patch: Partial<Config>): Promise<void> {
-	await setConfig({ ...(await getConfig()), ...patch });
-}
-
 export async function readNarrationMode(): Promise<NarrationMode> {
-	try {
-		return getNarrationMode((await getConfig()).narration);
-	} catch (e) {
-		console.warn("[dg-ai-extension] narration mode read failed", e);
-		return DEFAULTS.narration;
-	}
+  try {
+    return getNarrationMode((await getConfig()).narration);
+  } catch (e) {
+    console.warn("[dg-ai-extension] narration mode read failed", e);
+    return DEFAULTS.narration;
+  }
 }
