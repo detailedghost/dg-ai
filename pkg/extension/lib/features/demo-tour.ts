@@ -36,6 +36,7 @@ import {
 	waitForEl,
 } from "@/lib/picker";
 import { ACCENT, createEl as el } from "@/lib/ui-helpers";
+import { holdFor } from "@/lib/video-timing";
 import {
 	demoMarkerFragment,
 	readDemoScript,
@@ -43,8 +44,6 @@ import {
 	stripDemoMarker,
 } from "@/utils/demo-marker";
 
-// Default per-step hold in video mode; a step's numeric `advance` overrides it.
-const DEFAULT_VIDEO_MS = 3500;
 // Keyboard shortcut the user presses to start recording (see wxt.config commands).
 const START_SHORTCUT = "Alt+Shift+D";
 
@@ -751,15 +750,13 @@ async function renderStep(
 		// Video auto-plays: fire the action on a short timer, same as always.
 		if (target)
 			setTimeout(() => void maybePerformAction(state, step, target), 600);
-		// Cue this step's narration clip, then hold for its recorder-supplied duration
-		// (narration length, floored by any numeric `advance`) before advancing.
+		// Cue this step's narration clip, then hold for the recorder-supplied duration
+		// (narration + tail + any authored `advance`); holdFor covers the unnarrated case.
 		void browser.runtime.sendMessage({
 			type: MSG.playStep,
 			index: state.index,
 		});
-		const hold =
-			videoDurations[state.index] ??
-			(typeof step.advance === "number" ? step.advance : DEFAULT_VIDEO_MS);
+		const hold = videoDurations[state.index] ?? holdFor(step, null);
 		const t = setTimeout(() => void goTo(ctx, state.index + 1), hold);
 		cleanups.push(() => clearTimeout(t));
 		return;

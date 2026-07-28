@@ -9,13 +9,10 @@
 
 import { MSG } from "@/lib/demo-messages";
 import { NarrationProgressTracker } from "@/lib/narration-progress";
+import { holdFor } from "@/lib/video-timing";
 import { loadKokoro } from "@/utils/kokoro";
 
 type Step = { body?: string; advance?: unknown };
-
-const DEFAULT_VIDEO_MS = 3500;
-// Silence appended after a clip's audio so narration isn't clipped by the advance.
-const TAIL_GAP_MS = 700;
 
 let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
@@ -198,8 +195,8 @@ function playStep(index: number): void {
 
 /**
  * Synthesize narration for every step and return each step's hold duration (ms).
- * A step's duration is its clip length + tail, floored by any numeric `advance`.
- * If Kokoro fails, we return default holds and record a silent video.
+ * A step's duration is its clip length + tail, plus any numeric `advance` as dwell
+ * time after the voice. If Kokoro fails, we return default holds and record silent.
  */
 async function synthAll(
 	steps: Step[],
@@ -255,14 +252,6 @@ function reportNarrationProgress(progress: number, label: string): void {
 		progress,
 		label,
 	});
-}
-
-/** How long to hold a step: max(narration + tail, numeric advance / default). */
-function holdFor(step: Step, audioMs: number | null): number {
-	const base =
-		typeof step?.advance === "number" ? step.advance : DEFAULT_VIDEO_MS;
-	if (audioMs == null) return base;
-	return Math.max(base, Math.round(audioMs + TAIL_GAP_MS));
 }
 
 /** Tell background the recording aborted (no data) so it can clean up + notify. */
