@@ -9,6 +9,7 @@ import {
 	handleRecordingData,
 	handleRecordingReady,
 	handleRequestVideoData,
+	relayCaptureCleared,
 	relayPlayStep,
 	startVideoRecording,
 	stopVideoRecording,
@@ -28,6 +29,29 @@ type RecordingMessage = {
 type RecordingSender = chrome.runtime.MessageSender;
 
 type RouteHandler = (msg: RecordingMessage, sender: RecordingSender) => void;
+
+/** Replies the router can send back over an open message channel. */
+type RecordingResponse =
+	| { dataUrl: string | null }
+	| { shortcut: string | null };
+
+/** The manifest command whose keypress starts a recording. */
+export const RECORD_COMMAND = "start-demo-recording";
+
+/**
+ * The shortcut Chrome actually bound to the record command, or null if it bound none.
+ *
+ * `suggested_key` is only a request: when another extension already holds the combo —
+ * a stale unpacked copy of this same extension is the easy way to cause that — Chrome
+ * silently leaves ours unassigned. The page must be told that, because the keypress
+ * then reaches a different extension entirely and nothing here ever runs.
+ */
+export function assignedRecordShortcut(
+	commands: chrome.commands.Command[],
+): string | null {
+	const found = commands.find((c) => c.name === RECORD_COMMAND)?.shortcut;
+	return found ? found : null;
+}
 
 /** Persisted lifecycle fields used to decide whether video capture may start. */
 export type RecordingTourState = {
@@ -70,11 +94,13 @@ export type RecordingDeps = {
 	confirmDownload: typeof confirmDownload;
 	discardRecording: typeof discardRecording;
 	handleRequestVideoData: typeof handleRequestVideoData;
+	relayCaptureCleared: typeof relayCaptureCleared;
 };
 
 const defaultDeps: RecordingDeps = {
 	stopVideoRecording,
 	relayPlayStep,
+	relayCaptureCleared,
 	handleClearForCapture,
 	handleRecordingReady,
 	handleNarrationProgress,
@@ -86,19 +112,15 @@ const defaultDeps: RecordingDeps = {
 
 function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 	return {
-		[MSG.videoStop]: () => deps.stopVideoRecording(),
+		[MSG.videoStop]: () => void deps.stopVideoRecording(),
 		[MSG.playStep]: (msg) => {
-			if (typeof msg.index === "number") deps.relayPlayStep(msg.index);
+			if (typeof msg.index === "number") void deps.relayPlayStep(msg.index);
 		},
 		[MSG.clearForCapture]: (msg) => {
 			if (msg.target === "background") void deps.handleClearForCapture();
 		},
 		[MSG.captureCleared]: (msg) => {
-			if (msg.target === "background")
-				chrome.runtime.sendMessage({
-					type: MSG.captureCleared,
-					target: "offscreen",
-				});
+			if (msg.target === "background") void deps.relayCaptureCleared();
 		},
 		[MSG.recordingReady]: (msg) => {
 			if (msg.target === "background")
@@ -127,21 +149,30 @@ function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 
 /**
  * Build a recording-message router bound to `deps` (real demo-recorder functions
- * in production, injected mocks in tests). requestVideoData is special-cased — it
- * replies asynchronously, so the caller must keep the message channel open (return
- * true from the onMessage listener) when the returned handler returns true.
+ * in production, injected mocks in tests). requestVideoData and requestRecordShortcut
+ * are special-cased — they reply asynchronously, so the caller must keep the message
+ * channel open (return true from the onMessage listener) when the handler returns true.
  */
 export function createRecordingRouter(
 	deps: RecordingDeps,
 ): (
 	msg: RecordingMessage,
 	sender: RecordingSender,
-	sendResponse: (data: { dataUrl: string | null }) => void,
+	sendResponse: (data: RecordingResponse) => void,
 ) => boolean | void {
 	const routes = buildRoutes(deps);
 	return (msg, sender, sendResponse) => {
 		if (msg?.type === MSG.requestVideoData && sender.tab?.id != null) {
 			void deps.handleRequestVideoData(sender.tab.id, sendResponse);
+			return true;
+		}
+		if (msg?.type === MSG.requestRecordShortcut) {
+			void chrome.commands
+				.getAll()
+				.then((cmds) =>
+					sendResponse({ shortcut: assignedRecordShortcut(cmds) }),
+				)
+				.catch(() => sendResponse({ shortcut: null }));
 			return true;
 		}
 		routes[msg?.type ?? ""]?.(msg, sender);
@@ -206,6 +237,6 @@ export function registerRecording(): void {
 	// Keyboard command is the user gesture that starts recording a video tour —
 	// required by Chrome before tabCapture will hand out a stream.
 	chrome.commands.onCommand.addListener((command, tab) => {
-		if (command === "start-demo-recording") void maybeStartRecording(tab);
+		if (command === RECORD_COMMAND) void maybeStartRecording(tab);
 	});
 }

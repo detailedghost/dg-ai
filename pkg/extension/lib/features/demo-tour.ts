@@ -48,10 +48,34 @@ import {
 	stripDemoMarker,
 } from "@/utils/demo-marker";
 
-// Keyboard shortcut the user presses to start recording (see wxt.config commands).
-const START_SHORTCUT = "Alt+Shift+D";
-
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+/**
+ * Ask the background which shortcut Chrome bound to the record command, or null.
+ *
+ * Never assume the manifest's suggested key: if anything else already holds the combo
+ * — most easily a stale unpacked copy of this extension — Chrome assigns ours nothing,
+ * the keypress goes to that other extension, and printing the suggested key here tells
+ * the user to press something this extension will never receive.
+ */
+/** Where this browser lets the user rebind extension shortcuts. */
+function shortcutsPageUrl(): string {
+	// Edge only serves this page under its own scheme; chrome:// dead-ends there.
+	return navigator.userAgent.includes("Edg/")
+		? "edge://extensions/shortcuts"
+		: "chrome://extensions/shortcuts";
+}
+
+async function readRecordShortcut(): Promise<string | null> {
+	try {
+		const res = (await browser.runtime.sendMessage({
+			type: MSG.requestRecordShortcut,
+		})) as { shortcut?: string | null } | undefined;
+		return res?.shortcut ?? null;
+	} catch {
+		return null;
+	}
+}
 
 // ContentScriptContext is a WXT auto-import (a class value), so alias its instance type.
 type Ctx = InstanceType<typeof ContentScriptContext>;
@@ -1441,6 +1465,7 @@ async function showSetupActionConsent(
 async function showStartPrompt(ctx: Ctx): Promise<void> {
 	removeUi();
 	const narration = await readNarrationMode();
+	const shortcut = await readRecordShortcut();
 	const cleanups: Array<() => void> = [];
 	teardown = () => {
 		for (const c of cleanups) c();
@@ -1485,8 +1510,9 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 			h.textContent = "🎬 Video demo ready";
 
 			const b = el("div");
-			b.textContent =
-				"This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon — or press the shortcut below — to start recording, then sit back and watch.";
+			b.textContent = shortcut
+				? "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon — or press the shortcut below — to start recording, then sit back and watch."
+				: "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon to start recording, then sit back and watch.";
 
 			// Read-only: the settings page owns this choice, so there is one place to
 			// change it and no dialog-local copy to go stale against it.
@@ -1508,16 +1534,21 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 				fontSize: "0.8125rem",
 				color: "var(--muted)",
 			});
-			const key = el("kbd", {
-				background: "var(--code-bg)",
-				border: "0.125rem solid var(--line)",
-				borderRadius: "0",
-				padding: "0.1875rem 0.5rem",
-				color: "var(--accent)",
-				font: "inherit",
-			});
-			key.textContent = START_SHORTCUT;
-			line.append("Shortcut: ", key);
+			if (shortcut) {
+				const key = el("kbd", {
+					background: "var(--code-bg)",
+					border: "0.125rem solid var(--line)",
+					borderRadius: "0",
+					padding: "0.1875rem 0.5rem",
+					color: "var(--accent)",
+					font: "inherit",
+				});
+				key.textContent = shortcut;
+				line.append("Shortcut: ", key);
+			} else {
+				line.style.color = "var(--accent2)";
+				line.textContent = `No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Use the toolbar icon, or assign one at ${shortcutsPageUrl()}.`;
+			}
 
 			card.append(h, b, narrationRow, line);
 			layer.appendChild(card);

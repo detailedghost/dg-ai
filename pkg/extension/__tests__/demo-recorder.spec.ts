@@ -289,6 +289,52 @@ describe("demo-recorder", () => {
 			);
 		});
 
+		/**
+		 * The offscreen document can exist before its module script is listening. An
+		 * unawaited send swallowed that rejection, and the tour then sat on the
+		 * preparation modal forever with no video and no error to explain it.
+		 */
+		it("retries the offscreen handoff until the recorder is listening", async () => {
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				steps: [{ body: "Show dashboard" }],
+			};
+			let attempts = 0;
+			(globalThis as any).chrome.runtime.sendMessage = mock(async () => {
+				attempts++;
+				if (attempts < 3)
+					throw new Error(
+						"Could not establish connection. Receiving end does not exist.",
+					);
+				return { ok: true };
+			});
+
+			await startVideoRecording(TAB_ID, script, readConfig);
+
+			expect(attempts).toBe(3);
+			// State survives a retried handoff: cleanup here would kill the whole tour.
+			expect(storageData["demo_active_recording"]).toBeDefined();
+		});
+
+		it("rejects (so the gesture reports it) when the recorder never answers", async () => {
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				steps: [{ body: "Show dashboard" }],
+			};
+			(globalThis as any).chrome.runtime.sendMessage = mock(async () => {
+				throw new Error("Receiving end does not exist.");
+			});
+
+			await expect(
+				startVideoRecording(TAB_ID, script, readConfig),
+			).rejects.toThrow(/offscreen recorder never answered/);
+			// A dead handoff must not leave the active-recording marker behind, or the
+			// next attempt inherits a recording that was never running.
+			expect(storageData["demo_active_recording"]).toBeUndefined();
+		});
+
 		it("shows determinate narration preparation before starting offscreen work", async () => {
 			const script: TourScript = {
 				startUrl: "https://app.example",

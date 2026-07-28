@@ -24,27 +24,45 @@ let audioCtx: AudioContext | null = null;
 let narrationDest: MediaStreamAudioDestinationNode | null = null;
 let stepBuffers: (AudioBuffer | null)[] = [];
 
+/**
+ * Acknowledge every message this document acts on.
+ *
+ * The sender retries an undelivered handoff, and "delivered" has to be unambiguous:
+ * without an ack it can only infer delivery from a resolved send, which some Chrome
+ * versions turn into a rejection when no listener replies — a false negative that
+ * would re-send a start or replay a narration clip. Ack first, then do the work; the
+ * sender only needs to know the recorder heard it.
+ */
 chrome.runtime.onMessage.addListener(
-	(msg: {
-		type?: string;
-		target?: string;
-		streamId?: string;
-		steps?: Step[];
-		voice?: string;
-		narrate?: boolean;
-		index?: number;
-	}) => {
+	(
+		msg: {
+			type?: string;
+			target?: string;
+			streamId?: string;
+			steps?: Step[];
+			voice?: string;
+			narrate?: boolean;
+			index?: number;
+		},
+		_sender,
+		sendResponse,
+	) => {
 		if (msg?.target !== "offscreen") return;
-		if (msg.type === MSG.startRecording && msg.streamId)
+		if (msg.type === MSG.startRecording && msg.streamId) {
+			sendResponse({ ok: true });
 			void start(
 				msg.streamId,
 				msg.steps ?? [],
 				msg.voice,
 				msg.narrate !== false,
 			);
-		else if (msg.type === MSG.stopRecording) stop();
-		else if (msg.type === MSG.playStep && typeof msg.index === "number")
+		} else if (msg.type === MSG.stopRecording) {
+			sendResponse({ ok: true });
+			stop();
+		} else if (msg.type === MSG.playStep && typeof msg.index === "number") {
+			sendResponse({ ok: true });
 			playStep(msg.index);
+		}
 	},
 );
 
