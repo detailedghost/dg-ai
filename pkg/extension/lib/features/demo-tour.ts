@@ -1418,40 +1418,64 @@ export function editorPageUrl(
 	return row?.navigate.trim() || editorInheritedPageUrl(draft, startUrl, index);
 }
 
+/** One draft row's fields mapped onto a runnable step — shared by tutorial and setup rows. */
+function draftRowToStep(r: DraftStep): TourStep {
+	const step: TourStep = { body: r.body.trim() };
+	if (r.title.trim()) step.title = r.title.trim();
+	if (r.selector.trim()) step.selector = r.selector.trim();
+	if (r.navigate.trim()) step.navigate = r.navigate.trim();
+	if (r.actKind === "click") step.action = { do: "click" };
+	else if (r.actKind === "fill") step.action = { do: "fill", value: r.actText };
+	const adv = parseAdvance(r.timing);
+	if (adv !== undefined) step.advance = adv;
+	return step;
+}
+
 /** Serialize the panel's draft back into a clean, runnable TourScript. */
 export function draftToScript(startUrl: string, draft: Draft): TourScript {
-	const steps: TourStep[] = draft.rows.map((r) => {
-		const step: TourStep = { body: r.body.trim() };
-		if (r.title.trim()) step.title = r.title.trim();
-		if (r.selector.trim()) step.selector = r.selector.trim();
-		if (r.navigate.trim()) step.navigate = r.navigate.trim();
-		if (r.actKind === "click") step.action = { do: "click" };
-		else if (r.actKind === "fill")
-			step.action = { do: "fill", value: r.actText };
-		const adv = parseAdvance(r.timing);
-		if (adv !== undefined) step.advance = adv;
-		return step;
-	});
-	const out: TourScript = { startUrl, steps, mode: draft.mode };
+	const out: TourScript = {
+		startUrl,
+		steps: draft.rows.map(draftRowToStep),
+		mode: draft.mode,
+	};
 	if (draft.setup?.rows.length) {
 		out.setup = {
 			includeInTour: draft.setup.includeInTour,
-			steps: draft.setup.rows.map((r) => {
-				const step: TourStep = { body: r.body.trim() };
-				if (r.title.trim()) step.title = r.title.trim();
-				if (r.selector.trim()) step.selector = r.selector.trim();
-				if (r.navigate.trim()) step.navigate = r.navigate.trim();
-				if (r.actKind === "click") step.action = { do: "click" };
-				else if (r.actKind === "fill")
-					step.action = { do: "fill", value: r.actText };
-				const adv = parseAdvance(r.timing);
-				if (adv !== undefined) step.advance = adv;
-				return step;
-			}),
+			steps: draft.setup.rows.map(draftRowToStep),
 		};
 	}
 	if (draft.title.trim()) out.title = draft.title.trim();
 	return out;
+}
+
+/** One runnable step mapped onto the panel's editable draft-row fields (inverse of draftRowToStep). */
+function stepToDraftRow(s: TourStep): DraftStep {
+	return {
+		title: s.title ?? "",
+		selector: s.selector ?? "",
+		body: s.body ?? "",
+		timing: formatAdvance(s.advance),
+		navigate: s.navigate ?? "",
+		actKind: s.action?.do ?? "",
+		actText: s.action?.do === "fill" ? s.action.value : "",
+	};
+}
+
+/** Deserialize a runnable TourScript into the panel's editable draft (inverse of draftToScript). */
+export function scriptToDraft(script: TourScript): Draft {
+	return {
+		title: script.title ?? "",
+		mode: script.mode ?? "walkthrough",
+		rows: (script.steps ?? []).map(stepToDraftRow),
+		...(script.setup
+			? {
+					setup: {
+						includeInTour: script.setup.includeInTour,
+						rows: script.setup.steps.map(stepToDraftRow),
+					},
+				}
+			: {}),
+	};
 }
 
 function editSlug(s: string): string {
@@ -1717,35 +1741,7 @@ function actionField(row: DraftStep): HTMLElement {
  */
 async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	removeUi();
-	const draft: Draft = {
-		title: script.title ?? "",
-		mode: script.mode ?? "walkthrough",
-		rows: (script.steps ?? []).map((s) => ({
-			title: s.title ?? "",
-			selector: s.selector ?? "",
-			body: s.body ?? "",
-			timing: formatAdvance(s.advance),
-			navigate: s.navigate ?? "",
-			actKind: s.action?.do ?? "",
-			actText: s.action?.do === "fill" ? s.action.value : "",
-		})),
-		...(script.setup
-			? {
-					setup: {
-						includeInTour: script.setup.includeInTour,
-						rows: script.setup.steps.map((s) => ({
-							title: s.title ?? "",
-							selector: s.selector ?? "",
-							body: s.body ?? "",
-							timing: formatAdvance(s.advance),
-							navigate: s.navigate ?? "",
-							actKind: s.action?.do ?? "",
-							actText: s.action?.do === "fill" ? s.action.value : "",
-						})),
-					},
-				}
-			: {}),
-	};
+	const draft: Draft = scriptToDraft(script);
 	const reviewRows = editorReviewRows(draft);
 	const machine = editMachine(reviewRows.length);
 	let phase = machine.next().value; // prime → first phase (step 0)
