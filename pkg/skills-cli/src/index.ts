@@ -10,26 +10,36 @@ import { registerDemo } from "./commands/demo";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerMailboxCleanup } from "./commands/mailbox-cleanup";
+import type { MailboxCleanupCommandRunner } from "./commands/mailbox-cleanup";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 
-const program = new Command();
-program
-	.name("dg-browser")
-	.description(
-		"Group marked tabs, play guided tours, and compare live-page prototypes via the dg-ai-extension.",
-	)
-	.showHelpAfterError();
+export function createProgram(
+	deps: Readonly<{
+		mailboxCleanup?: MailboxCleanupCommandRunner;
+	}> = {},
+): Command {
+	const program = new Command();
+	program
+		.name("dg-browser")
+		.description(
+			"Group marked tabs, play guided tours, and compare live-page prototypes via the dg-ai-extension.",
+		)
+		.showHelpAfterError();
 
-registerInstall(program);
-registerBatchOpen(program);
-registerLaunch(program);
-registerMailboxCleanup(program);
-registerDemo(program);
-registerRerun(program);
-registerProto(program);
+	registerInstall(program);
+	registerBatchOpen(program);
+	registerLaunch(program);
+	registerMailboxCleanup(program, undefined, deps.mailboxCleanup);
+	registerDemo(program);
+	registerRerun(program);
+	registerProto(program);
+	return program;
+}
 
-program.parseAsync(process.argv).catch((err) => {
-	console.error(`dg-browser: ${err instanceof Error ? err.message : err}`);
-	process.exit(1);
-});
+if (import.meta.main) {
+	createProgram().parseAsync(process.argv).catch((err) => {
+		console.error(`dg-browser: ${err instanceof Error ? err.message : err}`);
+		process.exit(1);
+	});
+}

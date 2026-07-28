@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	createSessionAliasRegistry,
+	scrubFreshMailboxInventoryFromBindings,
 	scrubMailboxInventory,
 	validateMailboxAliasScope,
 } from "../index";
@@ -68,6 +69,67 @@ describe("scrubMailboxInventory", () => {
 		expect(outbound).not.toContain("4111");
 		expect(outbound).not.toContain("provider-message-42");
 		expect(scrubbed.messages[0]?.alias).toMatch(/^msg_/);
+	});
+
+	it("reconstructs only accepted aliases from fresh raw state after restart", () => {
+		let sequence = 0;
+		const aliases = createSessionAliasRegistry({
+			randomBytes: () => entropy(++sequence),
+		});
+		const scope = bindHierarchy(aliases);
+		const context = {
+			...scope,
+			capturedAt: "2026-07-27T12:00:00.000Z",
+		};
+		const accepted = scrubMailboxInventory(
+			{
+				messages: [
+					{
+						id: "provider-message-1",
+						receivedAt: "2026-07-26T12:00:00.000Z",
+						read: false,
+					},
+				],
+				folders: [{ id: "provider-folder-1", messageCount: 1 }],
+			},
+			context,
+			{ aliases },
+		);
+		const messageAlias = accepted.messages[0]?.alias;
+		const folderAlias = accepted.folders[0]?.alias;
+		if (messageAlias === undefined || folderAlias === undefined) {
+			throw new Error("expected accepted aliases");
+		}
+
+		const reconstructed = scrubFreshMailboxInventoryFromBindings(
+			{
+				messages: [
+					{
+						id: "provider-message-1",
+						receivedAt: "2026-07-26T12:00:00.000Z",
+						read: false,
+					},
+					{
+						id: "provider-message-unrelated",
+						subject: "SENTINEL should never cross",
+						receivedAt: "2026-07-27T12:00:00.000Z",
+					},
+				],
+				folders: [{ id: "provider-folder-1", messageCount: 1 }],
+			},
+			context,
+			{
+				[messageAlias]: "provider-message-1",
+				[folderAlias]: "provider-folder-1",
+			},
+		);
+
+		expect(reconstructed.messages).toEqual(accepted.messages);
+		expect(reconstructed.folders).toEqual(accepted.folders);
+		expect(JSON.stringify(reconstructed)).not.toContain("SENTINEL");
+		expect(JSON.stringify(reconstructed)).not.toContain(
+			"provider-message-unrelated",
+		);
 	});
 });
 

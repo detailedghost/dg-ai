@@ -24,7 +24,7 @@ const OTHER_RUN_ALIAS = "run_30415263748596a7b8c9daebfc0d1e2f";
 const REVISION_ALIAS = "rev_405162738495a6b7c8d9eafb0c1d2e3f";
 
 function alias(
-	prefix: "msg" | "fld" | "lbl" | "flt",
+	prefix: "msg" | "fld" | "lbl" | "flt" | "act",
 	seed: number,
 ): string {
 	const uniqueSuffix = seed.toString(16).padStart(8, "0");
@@ -1298,7 +1298,7 @@ describe("mailbox coordinator stream bounds, limits, and body consent", () => {
 		expect(Object.isFrozen(assembled.messages)).toBe(true);
 	});
 
-	it("rejects non-final empty chunks and impossible declared totals before pulling again", async () => {
+	it("accepts one bounded empty message summary and rejects other non-final empty chunks", async () => {
 		const empty = await captureChunk({
 			sequence: 0,
 			declaredTotal: 2,
@@ -1307,13 +1307,34 @@ describe("mailbox coordinator stream bounds, limits, and body consent", () => {
 		const following = await captureChunk({
 			sequence: 1,
 			declaredTotal: 2,
+			kind: "tags",
+			items: [{ alias: alias("lbl", 1), messageCount: 0 }],
 		});
 		await expect(
 			consumeMailboxCaptureChunks([empty, following], {
 				runAlias: RUN_ALIAS,
 				limits: MAILBOX_CAPTURE_LIMITS,
 			}),
+		).resolves.toMatchObject({
+			counts: { messages: 0, tags: 1 },
+			messages: [],
+		});
+
+		const invalidEmpty = await captureChunk({
+			sequence: 1,
+			declaredTotal: 2,
+			kind: "tags",
+			items: [],
+		});
+		await expect(
+			consumeMailboxCaptureChunks([empty, invalidEmpty], {
+				runAlias: RUN_ALIAS,
+				limits: MAILBOX_CAPTURE_LIMITS,
+			}),
 		).rejects.toMatchObject({ code: "malformed_stream" });
+	});
+
+	it("rejects impossible declared totals before pulling again", async () => {
 
 		const iteratorReturned = mock(async () => ({
 			done: true as const,
@@ -2023,6 +2044,59 @@ describe("scoped mailbox fingerprint", () => {
 			algorithm: "sha256",
 			digest: expect.stringMatching(/^[a-f0-9]{64}$/),
 		});
+	});
+
+	it("fingerprints fresh existing state without requiring desired create or replacement bindings in inventory", async () => {
+		const base = inventory();
+		const desiredFolder = alias("fld", 90);
+		const replacementFolder = alias("fld", 91);
+		const request = {
+			inventory: base,
+			metadata: { tags: [], categories: [] },
+			actions: [
+				{
+					schemaVersion: 1 as const,
+					actionAlias: alias("act", 90),
+					type: "create_folder" as const,
+					folderAlias: desiredFolder,
+				},
+				{
+					schemaVersion: 1 as const,
+					actionAlias: alias("act", 91),
+					type: "rename_folder" as const,
+					folderAlias: alias("fld", 1),
+					replacementFolderAlias: replacementFolder,
+				},
+			],
+			targets: {
+				folderAliases: [
+					alias("fld", 1),
+					desiredFolder,
+					replacementFolder,
+				],
+				labelAliases: [],
+				filterAliases: [],
+			},
+		};
+		const accepted = await computeMailboxScopedFingerprint(request);
+		const freshReconstruction = await computeMailboxScopedFingerprint({
+			...request,
+			inventory: structuredClone(base),
+		});
+		const sourceDrift = await computeMailboxScopedFingerprint({
+			...request,
+			inventory: {
+				...base,
+				folders: base.folders.map((folder) =>
+					folder.alias === alias("fld", 1)
+						? { ...folder, messageCount: 999 }
+						: folder,
+				),
+			},
+		});
+
+		expect(mailboxFingerprintsMatch(accepted, freshReconstruction)).toBe(true);
+		expect(mailboxFingerprintsMatch(accepted, sourceDrift)).toBe(false);
 	});
 
 	it("invalidates referenced drift but ignores unrelated new mail and global counts", async () => {

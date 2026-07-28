@@ -6,6 +6,7 @@ import {
 import {
 	type MailboxAliasScope,
 	type SessionAliasRegistry,
+	isValidMailboxScopedAlias,
 	validateMailboxAliasScope,
 } from "./aliases";
 
@@ -26,6 +27,8 @@ export type MailboxScrubContext = MailboxAliasScope &
 export type MailboxScrubberDeps = Readonly<{
 	aliases: SessionAliasRegistry;
 }>;
+
+export type MailboxLiveRawBindings = Readonly<Record<string, string>>;
 
 const MESSAGE_CATEGORIES = new Set([
 	"transactional",
@@ -105,9 +108,11 @@ function timestamp(value: unknown): string {
 	return value;
 }
 
-function category(value: unknown): string {
+function category(
+	value: unknown,
+): MailboxInventory["messages"][number]["category"] {
 	return typeof value === "string" && MESSAGE_CATEGORIES.has(value)
-		? value
+		? (value as MailboxInventory["messages"][number]["category"])
 		: "other";
 }
 
@@ -170,6 +175,117 @@ export function scrubMailboxInventory(
 		};
 	});
 
+	return validateMailboxInventory({
+		schemaVersion: 1,
+		providerId: context.providerId,
+		surface: context.surface,
+		accountAlias: context.accountAlias,
+		runAlias: context.runAlias,
+		capturedAt: timestamp(context.capturedAt),
+		partial: bool(context.partial),
+		messages,
+		folders,
+		labels,
+		filters,
+	});
+}
+
+/**
+ * Reconstructs a fresh, sanitized fingerprint inventory after a worker
+ * restart. Only raw IDs already present in the scoped session bindings are
+ * admitted; unrelated fresh mail is ignored and no raw snapshot is retained.
+ */
+export function scrubFreshMailboxInventoryFromBindings(
+	raw: RawMailboxInventory,
+	context: MailboxScrubContext,
+	bindings: MailboxLiveRawBindings,
+): MailboxInventory {
+	preflightMailboxValue(raw);
+	preflightMailboxValue(context);
+	preflightMailboxValue(bindings);
+	const source = record(raw);
+	const scope: MailboxAliasScope = {
+		providerId: context.providerId,
+		surface: context.surface,
+		accountAlias: context.accountAlias,
+		runAlias: context.runAlias,
+		revisionAlias: context.revisionAlias,
+	};
+	validateMailboxAliasScope(scope);
+	if (
+		bindings === null ||
+		typeof bindings !== "object" ||
+		Array.isArray(bindings) ||
+		Object.keys(bindings).length > 10_000
+	) {
+		fail("shape");
+	}
+	const byRaw = {
+		msg: new Map<string, string>(),
+		fld: new Map<string, string>(),
+		lbl: new Map<string, string>(),
+		flt: new Map<string, string>(),
+	};
+	for (const [alias, rawValue] of Object.entries(bindings)) {
+		const prefix = alias.slice(0, alias.indexOf("_"));
+		if (
+			(prefix !== "msg" &&
+				prefix !== "fld" &&
+				prefix !== "lbl" &&
+				prefix !== "flt") ||
+			!isValidMailboxScopedAlias(alias, prefix) ||
+			typeof rawValue !== "string" ||
+			rawValue.length === 0 ||
+			rawValue.length > 4096 ||
+			byRaw[prefix].has(rawValue)
+		) {
+			fail("field");
+		}
+		byRaw[prefix].set(rawValue, alias);
+	}
+	const messages: MailboxInventory["messages"][number][] = [];
+	for (const candidate of list(source.messages)) {
+		const item = record(candidate);
+		const alias = byRaw.msg.get(rawId(item));
+		if (alias === undefined) continue;
+		messages.push({
+			alias,
+			read: bool(item.read),
+			hasAttachments: bool(item.hasAttachments),
+			receivedAt: timestamp(item.receivedAt),
+			category: category(item.category),
+		});
+	}
+	const folders: MailboxInventory["folders"][number][] = [];
+	for (const candidate of list(source.folders)) {
+		const item = record(candidate);
+		const alias = byRaw.fld.get(rawId(item));
+		if (alias === undefined) continue;
+		folders.push({
+			alias,
+			...safeOptionalCount("messageCount", item.messageCount),
+		});
+	}
+	const labels: MailboxInventory["labels"][number][] = [];
+	for (const candidate of list(source.labels)) {
+		const item = record(candidate);
+		const alias = byRaw.lbl.get(rawId(item));
+		if (alias === undefined) continue;
+		labels.push({
+			alias,
+			...safeOptionalCount("messageCount", item.messageCount),
+		});
+	}
+	const filters: MailboxInventory["filters"][number][] = [];
+	for (const candidate of list(source.filters)) {
+		const item = record(candidate);
+		const alias = byRaw.flt.get(rawId(item));
+		if (alias === undefined) continue;
+		filters.push({
+			alias,
+			active: bool(item.active, true),
+		});
+	}
 	return validateMailboxInventory({
 		schemaVersion: 1,
 		providerId: context.providerId,

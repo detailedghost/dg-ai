@@ -59,6 +59,7 @@ export type WorkspaceHarnessOptions = Readonly<{
 	bridgeInitiallyOpen?: boolean;
 	bridgeHasIsOpen?: boolean;
 	statusGate?: Promise<void>;
+	createActionAlias?: () => string;
 }>;
 
 export function workspaceHarness(options: WorkspaceHarnessOptions = {}) {
@@ -74,6 +75,7 @@ export function workspaceHarness(options: WorkspaceHarnessOptions = {}) {
 	const bindingPuts: Array<readonly unknown[]> = [];
 	const bindingStatusCalls: unknown[] = [];
 	const fingerprintInputs: MailboxScopedFingerprintInput[] = [];
+	const executionStarts: unknown[] = [];
 	let lifecycleEditError: Error | undefined;
 	let rawBindingGetError: Error | undefined;
 	let bindingStatusError:
@@ -92,6 +94,7 @@ export function workspaceHarness(options: WorkspaceHarnessOptions = {}) {
 			restartRequired: options.restartRequired ?? false,
 		});
 	let bridgeResultIndex = 0;
+	let actionAliasSeed = 0;
 	const lifecycle = {
 		async create(value: MailboxPlanRevision) {
 			lifecycleCalls.push(["create", value]);
@@ -191,8 +194,22 @@ export function workspaceHarness(options: WorkspaceHarnessOptions = {}) {
 				return fingerprint("b");
 			},
 			createRevisionAlias: () => NEXT_REVISION_ALIAS,
+			createActionAlias:
+				options.createActionAlias ??
+				(() => {
+					actionAliasSeed += 1;
+					return `act_89abcdef0123456789abcdef${actionAliasSeed
+						.toString(16)
+						.padStart(8, "0")}`;
+				}),
 			now: () => nowMs,
 			bridge,
+			async startExecution(command: Readonly<{
+				planAlias: string;
+				revisionAlias: string;
+			}>) {
+				executionStarts.push(structuredClone(command));
+			},
 		} as never,
 	);
 	return {
@@ -203,6 +220,7 @@ export function workspaceHarness(options: WorkspaceHarnessOptions = {}) {
 		bridgeSubmissions,
 		bridgeReconnects,
 		fingerprintInputs,
+		executionStarts,
 		lifecycleCalls,
 		setBindingAvailable(value: boolean) {
 			bindingAvailable = value;

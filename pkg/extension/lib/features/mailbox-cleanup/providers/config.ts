@@ -1,18 +1,34 @@
 import {
+	MAILBOX_EXECUTION_ACTION_TYPES,
+	MAILBOX_REASON_CODES,
 	type MailboxAction,
 	type MailboxActionResult,
+	type MailboxCanonicalAction,
 	type MailboxProviderObservation,
 	preflightMailboxValue,
 	serializeMailboxAction,
 	validateMailboxAction,
 	validateMailboxActionResult,
+	validateCanonicalMailboxAction,
 	validateMailboxProviderObservation,
 } from "@dg/common";
 import { isValidMailboxScopedAlias } from "../privacy/aliases";
 import type {
+	GuardedMailboxExecutionProvider,
+	MailboxExecutionProvider,
 	MailboxProvider,
 	MailboxProviderCaptureRequest,
+	MailboxProviderDispatchRequest,
+	MailboxProviderDispatchResult,
+	MailboxProviderFreshVerificationResult,
+	MailboxProviderInboxObservation,
 	MailboxProviderMutationRequest,
+	MailboxProviderObserveRequest,
+	MailboxProviderObserveResult,
+	MailboxProviderOperationOptions,
+	MailboxProviderPreflightRequest,
+	MailboxProviderPreflightResult,
+	MailboxProviderRawTargets,
 	MailboxProviderVerificationRequest,
 } from "./contracts";
 
@@ -31,14 +47,39 @@ const MUTATION_REQUEST_KEYS = [
 	"action",
 	"rawTarget",
 ] as const;
+const EXECUTION_REQUEST_KEYS = [
+	...PROVIDER_SCOPE_KEYS,
+	"action",
+	"rawTargets",
+] as const;
+const PREFLIGHT_REQUEST_KEYS = [
+	...PROVIDER_SCOPE_KEYS,
+	"actions",
+	"rawTargets",
+] as const;
 const PROVIDER_KEYS = [
 	"id",
 	"surfaces",
+	"coordinator",
 	"readLocale",
 	"hasPositiveLayoutSignature",
 	"capture",
 	"apply",
 	"verify",
+] as const;
+const COORDINATOR_KEYS = [
+	"probe",
+	"capture",
+	"readBodies",
+	"captureResult",
+	"bindings",
+] as const;
+const EXECUTION_PROVIDER_KEYS = [
+	"preflight",
+	"dispatch",
+	"observe",
+	"verifyFresh",
+	"observeInbox",
 ] as const;
 
 export class MailboxProviderConfigurationError extends Error {
@@ -52,6 +93,8 @@ export class MailboxProviderConfigurationError extends Error {
 				| "provider_locale"
 				| "layout_signature"
 				| "action_mismatch"
+				| "provider_canceled"
+				| "provider_timeout"
 				| "provider_failure",
 	) {
 		super(`Mailbox provider rejected: ${code}`);
@@ -178,6 +221,104 @@ function validateVerificationRequest(
 	return validateMutationRequest(value);
 }
 
+function actionTargetAliases(
+	action: MailboxAction | MailboxCanonicalAction,
+): readonly string[] {
+	const aliases: string[] = [];
+	const fields = action as unknown as Readonly<Record<string, unknown>>;
+	for (const key of [
+		"messageAlias",
+		"folderAlias",
+		"replacementFolderAlias",
+		"labelAlias",
+		"replacementLabelAlias",
+		"filterAlias",
+		"replacementFilterAlias",
+	] as const) {
+		if (key in fields && typeof fields[key] === "string") {
+			aliases.push(fields[key]);
+		}
+	}
+	return aliases;
+}
+
+function validateRawTargets(
+	value: unknown,
+	actions: readonly (MailboxAction | MailboxCanonicalAction)[],
+): MailboxProviderRawTargets {
+	const input = requestObject(value);
+	const expected = new Set(actions.flatMap(actionTargetAliases));
+	const entries = Object.entries(input);
+	if (
+		entries.length !== expected.size ||
+		entries.length > 10_000
+	) {
+		fail("provider_shape");
+	}
+	const targets: Record<string, string> = {};
+	for (const [targetAlias, rawValue] of entries) {
+		const prefix = targetAlias.slice(0, targetAlias.indexOf("_"));
+		if (
+			!expected.has(targetAlias) ||
+			!["msg", "fld", "lbl", "flt"].includes(prefix) ||
+			!isValidMailboxScopedAlias(targetAlias, prefix) ||
+			typeof rawValue !== "string" ||
+			rawValue.length === 0 ||
+			rawValue.length > 4096
+		) {
+			fail("provider_shape");
+		}
+		targets[targetAlias] = rawValue;
+	}
+	return Object.freeze(targets);
+}
+
+function validateDispatchRequest(
+	value: unknown,
+): MailboxProviderDispatchRequest {
+	const request = requestObject(value);
+	exactRequestKeys(request, EXECUTION_REQUEST_KEYS);
+	const action = validateCanonicalMailboxAction(request.action);
+	if (
+		!MAILBOX_EXECUTION_ACTION_TYPES.includes(
+			action.type as (typeof MAILBOX_EXECUTION_ACTION_TYPES)[number],
+		)
+	) {
+		fail("provider_shape");
+	}
+	return {
+		...providerScope(request),
+		action,
+		rawTargets: validateRawTargets(request.rawTargets, [action]),
+	};
+}
+
+function validatePreflightRequest(
+	value: unknown,
+): MailboxProviderPreflightRequest {
+	const request = requestObject(value);
+	exactRequestKeys(request, PREFLIGHT_REQUEST_KEYS);
+	if (!Array.isArray(request.actions) || request.actions.length > 10_000) {
+		fail("provider_shape");
+	}
+	const actions = request.actions.map(validateCanonicalMailboxAction);
+	if (
+		actions.some(
+			(action) =>
+				!MAILBOX_EXECUTION_ACTION_TYPES.includes(
+					action.type as (typeof MAILBOX_EXECUTION_ACTION_TYPES)[number],
+				),
+		)
+	) {
+		fail("provider_shape");
+	}
+	return {
+		...providerScope(request),
+		actions,
+		rawTargets: validateRawTargets(request.rawTargets, actions),
+	};
+}
+
 function actionsMatch(left: MailboxAction, right: MailboxAction): boolean {
 	return (
 		serializeMailboxAction(left) === serializeMailboxAction(right)
@@ -222,9 +363,15 @@ export function normalizeProviderEnglishLocale(
 export function defineMailboxProvider(provider: MailboxProvider): MailboxProvider {
 	const candidate = dataObject(provider);
 	const keys = Object.keys(candidate);
+	const hasExecutionMethods = EXECUTION_PROVIDER_KEYS.some((key) =>
+		keys.includes(key),
+	);
+	const expectedKeys = hasExecutionMethods
+		? [...PROVIDER_KEYS, ...EXECUTION_PROVIDER_KEYS]
+		: PROVIDER_KEYS;
 	if (
-		keys.length !== PROVIDER_KEYS.length ||
-		!PROVIDER_KEYS.every((key) => keys.includes(key))
+		keys.length !== expectedKeys.length ||
+		!expectedKeys.every((key) => keys.includes(key))
 	) {
 		fail("provider_shape");
 	}
@@ -251,15 +398,40 @@ export function defineMailboxProvider(provider: MailboxProvider): MailboxProvide
 	) {
 		fail("provider_surface");
 	}
-	for (const method of PROVIDER_KEYS.slice(2)) {
+	for (const method of expectedKeys.slice(3)) {
 		if (typeof candidate[method] !== "function") fail("provider_shape");
+	}
+	const coordinator = dataObject(candidate.coordinator);
+	const coordinatorKeys = Object.keys(coordinator);
+	if (
+		coordinatorKeys.some(
+			(key) => !COORDINATOR_KEYS.includes(key as never) && key !== "observe",
+		) ||
+		COORDINATOR_KEYS.some(
+			(key) => typeof coordinator[key] !== "function",
+		) ||
+		(coordinator.observe !== undefined &&
+			typeof coordinator.observe !== "function")
+	) {
+		fail("provider_shape");
 	}
 
 	const frozen = {
 		...provider,
 		surfaces: Object.freeze([...provider.surfaces]),
+		coordinator: Object.freeze({ ...provider.coordinator }),
 	};
 	return Object.freeze(frozen);
+}
+
+export function defineMailboxExecutionProvider(
+	provider: MailboxProvider,
+): MailboxExecutionProvider {
+	const safeProvider = defineMailboxProvider(provider);
+	for (const method of EXECUTION_PROVIDER_KEYS) {
+		if (typeof safeProvider[method] !== "function") fail("provider_shape");
+	}
+	return safeProvider as MailboxExecutionProvider;
 }
 
 async function assertDefinedMailboxProviderPageReady(
@@ -364,4 +536,431 @@ export async function guardedProviderVerify(
 		if (error instanceof MailboxProviderConfigurationError) throw error;
 		fail("provider_failure");
 	}
+}
+
+function exactResult(
+	value: unknown,
+	required: readonly string[],
+	optional: readonly string[] = [],
+): Record<string, unknown> {
+	const result = requestObject(value);
+	const keys = Object.keys(result);
+	if (
+		required.some((key) => !Object.hasOwn(result, key)) ||
+		keys.some(
+			(key) => !required.includes(key) && !optional.includes(key),
+		)
+	) {
+		fail("provider_shape");
+	}
+	return result;
+}
+
+function reasonCode(value: unknown): (typeof MAILBOX_REASON_CODES)[number] {
+	if (
+		typeof value !== "string" ||
+		!(MAILBOX_REASON_CODES as readonly string[]).includes(value)
+	) {
+		fail("provider_shape");
+	}
+	return value as (typeof MAILBOX_REASON_CODES)[number];
+}
+
+function observedAt(value: unknown): string {
+	if (
+		typeof value !== "string" ||
+		!Number.isFinite(Date.parse(value)) ||
+		new Date(value).toISOString() !== value
+	) {
+		fail("provider_shape");
+	}
+	return value;
+}
+
+function validatePreflightResult(
+	value: unknown,
+	request: MailboxProviderPreflightRequest,
+): MailboxProviderPreflightResult {
+	const result = requestObject(value);
+	if (result.status === "blocked") {
+		const blocked = exactResult(
+			result,
+			["status", "reasonCode"],
+			["prompt"],
+		);
+		if (
+			blocked.prompt !== undefined &&
+			![
+				"login",
+				"mfa",
+				"captcha",
+				"consent",
+				"conditional_access",
+			].includes(blocked.prompt as string)
+		) {
+			fail("provider_shape");
+		}
+		return {
+			status: "blocked",
+			reasonCode: reasonCode(blocked.reasonCode),
+			...(blocked.prompt === undefined
+				? {}
+				: {
+						prompt:
+							blocked.prompt as NonNullable<
+								Extract<
+									MailboxProviderPreflightResult,
+									{ status: "blocked" }
+								>["prompt"]
+							>,
+					}),
+		};
+	}
+	const ready = exactResult(result, [
+		"status",
+		"providerId",
+		"surface",
+		"accountAlias",
+		"locale",
+		"layout",
+		"capabilities",
+		"targets",
+	]);
+	if (
+		ready.status !== "ready" ||
+		ready.providerId !== request.providerId ||
+		ready.surface !== request.surface ||
+		ready.accountAlias !== request.accountAlias ||
+		ready.layout !== "supported" ||
+		ready.targets !== "available" ||
+		!Array.isArray(ready.capabilities) ||
+		new Set(ready.capabilities).size !== ready.capabilities.length ||
+		ready.capabilities.some(
+			(capability) =>
+				typeof capability !== "string" ||
+				!MAILBOX_EXECUTION_ACTION_TYPES.includes(
+					capability as (typeof MAILBOX_EXECUTION_ACTION_TYPES)[number],
+				),
+		)
+	) {
+		fail("provider_shape");
+	}
+	const locale = normalizeProviderEnglishLocale(ready.locale as string);
+	return {
+		status: "ready",
+		providerId: request.providerId,
+		surface: request.surface,
+		accountAlias: request.accountAlias,
+		locale,
+		layout: "supported",
+		capabilities:
+			ready.capabilities as (typeof MAILBOX_EXECUTION_ACTION_TYPES)[number][],
+		targets: "available",
+	};
+}
+
+function validateDispatchResult(value: unknown): MailboxProviderDispatchResult {
+	const result = exactResult(value, ["status"]);
+	if (result.status !== "dispatched") fail("provider_shape");
+	return { status: "dispatched" };
+}
+
+function validateObserveResult(value: unknown): MailboxProviderObserveResult {
+	const result = requestObject(value);
+	if (result.status === "observed") {
+		const observed = exactResult(result, ["status", "observedAt"]);
+		return {
+			status: "observed",
+			observedAt: observedAt(observed.observedAt),
+		};
+	}
+	const ambiguous = exactResult(result, ["status", "reasonCode"]);
+	if (ambiguous.status !== "ambiguous") fail("provider_shape");
+	return {
+		status: "ambiguous",
+		reasonCode: reasonCode(ambiguous.reasonCode),
+	};
+}
+
+function validateFreshVerificationResult(
+	value: unknown,
+): MailboxProviderFreshVerificationResult {
+	const result = requestObject(value);
+	if (result.status === "verified") {
+		const verified = exactResult(result, ["status", "verifiedAt", "delta"]);
+		const delta = exactResult(verified.delta, [
+			"schemaVersion",
+			"scope",
+			"actionAlias",
+			"changedAliases",
+		]);
+		if (
+			delta.schemaVersion !== 1 ||
+			delta.scope !== "entire_fingerprint" ||
+			typeof delta.actionAlias !== "string" ||
+			!/^act_[a-f0-9]{32}$/.test(delta.actionAlias) ||
+			!Array.isArray(delta.changedAliases) ||
+			new Set(delta.changedAliases).size !== delta.changedAliases.length ||
+			delta.changedAliases.some(
+				(alias) =>
+					typeof alias !== "string" ||
+					!/^(?:msg|fld|lbl|flt)_[a-f0-9]{32}$/.test(alias),
+			)
+		) {
+			fail("provider_shape");
+		}
+		return {
+			status: "verified",
+			verifiedAt: observedAt(verified.verifiedAt),
+			delta: {
+				schemaVersion: 1,
+				scope: "entire_fingerprint",
+				actionAlias: delta.actionAlias,
+				changedAliases: Object.freeze([...delta.changedAliases]),
+			},
+		};
+	}
+	const failed = exactResult(result, ["status", "reasonCode"]);
+	if (
+		failed.status !== "mismatch" &&
+		failed.status !== "ambiguous" &&
+		failed.status !== "timeout"
+	) {
+		fail("provider_shape");
+	}
+	return {
+		status: failed.status,
+		reasonCode: reasonCode(failed.reasonCode),
+	};
+}
+
+function validateInboxObservation(
+	value: unknown,
+): MailboxProviderInboxObservation {
+	const result = requestObject(value);
+	if (result.status === "observed") {
+		const observed = exactResult(result, [
+			"status",
+			"count",
+			"observedAt",
+		]);
+		if (
+			typeof observed.count !== "number" ||
+			!Number.isSafeInteger(observed.count) ||
+			observed.count < 0 ||
+			observed.count > 1_000_000
+		) {
+			fail("provider_shape");
+		}
+		return {
+			status: "observed",
+			count: observed.count,
+			observedAt: observedAt(observed.observedAt),
+		};
+	}
+	const failed = exactResult(result, ["status", "reasonCode"]);
+	if (failed.status !== "ambiguous" && failed.status !== "timeout") {
+		fail("provider_shape");
+	}
+	return {
+		status: failed.status,
+		reasonCode: reasonCode(failed.reasonCode),
+	};
+}
+
+async function boundedProviderOperation<T>(
+	operation: (
+		options: Required<MailboxProviderOperationOptions>,
+	) => T | Promise<T>,
+	options: MailboxProviderOperationOptions = {},
+): Promise<T> {
+	const timeoutMs = options.timeoutMs ?? 30_000;
+	if (
+		!Number.isSafeInteger(timeoutMs) ||
+		timeoutMs < 1 ||
+		timeoutMs > 60_000
+	) {
+		fail("provider_shape");
+	}
+	if (options.signal?.aborted) fail("provider_canceled");
+	const controller = new AbortController();
+	const abortOperation = (): void => controller.abort();
+	options.signal?.addEventListener("abort", abortOperation, { once: true });
+	const operationOptions = Object.freeze({
+		signal: controller.signal,
+		timeoutMs,
+	});
+	return await new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const finish = (callback: () => void): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			options.signal?.removeEventListener("abort", abort);
+			options.signal?.removeEventListener("abort", abortOperation);
+			callback();
+		};
+		const abort = (): void => {
+			controller.abort();
+			finish(() =>
+				reject(
+					new MailboxProviderConfigurationError("provider_canceled"),
+				),
+			);
+		};
+		const timer = setTimeout(
+			() => {
+				controller.abort();
+				finish(() =>
+					reject(
+						new MailboxProviderConfigurationError(
+							"provider_timeout",
+						),
+					),
+				);
+			},
+			timeoutMs,
+		);
+		options.signal?.addEventListener("abort", abort, { once: true });
+		Promise.resolve()
+			.then(() => operation(operationOptions))
+			.then(
+				(value) => finish(() => resolve(value)),
+				() =>
+					finish(() =>
+						reject(
+							new MailboxProviderConfigurationError(
+								"provider_failure",
+							),
+						),
+					),
+			);
+	});
+}
+
+export async function guardedProviderPreflight(
+	provider: MailboxProvider,
+	request: MailboxProviderPreflightRequest,
+	options?: MailboxProviderOperationOptions,
+): Promise<MailboxProviderPreflightResult> {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	const safeRequest = validatePreflightRequest(request);
+	if (safeRequest.providerId !== safeProvider.id) fail("provider_id");
+	const result = validatePreflightResult(
+		await boundedProviderOperation(
+			(operationOptions) =>
+				safeProvider.preflight(safeRequest, operationOptions),
+			options,
+		),
+		safeRequest,
+	);
+	if (result.status === "blocked") return result;
+	const locale = await boundedProviderOperation(
+		() =>
+			assertDefinedMailboxProviderPageReady(
+				safeProvider,
+				safeRequest.surface,
+			),
+		options,
+	);
+	if (locale !== result.locale) fail("provider_locale");
+	return result;
+}
+
+export async function guardedProviderDispatch(
+	provider: MailboxProvider,
+	request: MailboxProviderDispatchRequest,
+	options?: MailboxProviderOperationOptions,
+): Promise<MailboxProviderDispatchResult> {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	const safeRequest = validateDispatchRequest(request);
+	if (safeRequest.providerId !== safeProvider.id) fail("provider_id");
+	await boundedProviderOperation(
+		() =>
+			assertDefinedMailboxProviderPageReady(
+				safeProvider,
+				safeRequest.surface,
+			),
+		options,
+	);
+	return validateDispatchResult(
+		await boundedProviderOperation(
+			(operationOptions) =>
+				safeProvider.dispatch(safeRequest, operationOptions),
+			options,
+		),
+	);
+}
+
+export async function guardedProviderObserve(
+	provider: MailboxProvider,
+	request: MailboxProviderObserveRequest,
+	options?: MailboxProviderOperationOptions,
+): Promise<MailboxProviderObserveResult> {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	const safeRequest = validateDispatchRequest(request);
+	if (safeRequest.providerId !== safeProvider.id) fail("provider_id");
+	return validateObserveResult(
+		await boundedProviderOperation(
+			(operationOptions) =>
+				safeProvider.observe(safeRequest, operationOptions),
+			options,
+		),
+	);
+}
+
+export async function guardedProviderVerifyFresh(
+	provider: MailboxProvider,
+	request: MailboxProviderObserveRequest,
+	options?: MailboxProviderOperationOptions,
+): Promise<MailboxProviderFreshVerificationResult> {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	const safeRequest = validateDispatchRequest(request);
+	if (safeRequest.providerId !== safeProvider.id) fail("provider_id");
+	return validateFreshVerificationResult(
+		await boundedProviderOperation(
+			(operationOptions) =>
+				safeProvider.verifyFresh(safeRequest, operationOptions),
+			options,
+		),
+	);
+}
+
+export async function guardedProviderObserveInbox(
+	provider: MailboxProvider,
+	request: MailboxProviderCaptureRequest,
+	options?: MailboxProviderOperationOptions,
+): Promise<MailboxProviderInboxObservation> {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	const safeRequest = validateCaptureRequest(request);
+	if (safeRequest.providerId !== safeProvider.id) fail("provider_id");
+	return validateInboxObservation(
+		await boundedProviderOperation(
+			(operationOptions) =>
+				safeProvider.observeInbox(safeRequest, operationOptions),
+			options,
+		),
+	);
+}
+
+/**
+ * Bind a raw bundled provider to the exact execution guard surface. Callers
+ * never receive the raw implementation, preventing accidental guard bypass.
+ */
+export function createGuardedMailboxExecutionProvider(
+	provider: MailboxProvider,
+): GuardedMailboxExecutionProvider {
+	const safeProvider = defineMailboxExecutionProvider(provider);
+	return Object.freeze({
+		preflight: (request, options) =>
+			guardedProviderPreflight(safeProvider, request, options),
+		dispatch: (request, options) =>
+			guardedProviderDispatch(safeProvider, request, options),
+		observe: (request, options) =>
+			guardedProviderObserve(safeProvider, request, options),
+		verifyFresh: (request, options) =>
+			guardedProviderVerifyFresh(safeProvider, request, options),
+		observeInbox: (request, options) =>
+			guardedProviderObserveInbox(safeProvider, request, options),
+	});
 }

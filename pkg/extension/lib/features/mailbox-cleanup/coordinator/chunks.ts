@@ -225,7 +225,13 @@ async function validateChunk(
 		typeof input.digest !== "string" ||
 		!DIGEST.test(input.digest) ||
 		input.digest !== await sha256Hex(canonical) ||
-		(envelope.itemCount === 0 && envelope.final !== true)
+		(envelope.itemCount === 0 &&
+			envelope.final !== true &&
+			!(
+				envelope.sequence === 0 &&
+				envelope.payload.kind === "messages" &&
+				envelope.declaredTotal !== undefined
+			))
 	) {
 		fail();
 	}

@@ -96,6 +96,18 @@ fi
   Brave/Edge/Vivaldi).
 - Add `--local` to **build the extension from source** (requires a repository checkout
   with `pkg/extension/`); otherwise it downloads the CI-built `ext-v*` asset.
+- `mailbox-cleanup` uses a one-shot authenticated `127.0.0.1` rendezvous between
+  the CLI and the loaded extension. No native host or additional daemon is
+  installed; local firewall software must allow the CLI to bind loopback.
+- On first use, the extension opens a trusted **Local CLI connection** approval
+  page. Approval is bound to the exact loopback tab, extension origin, run
+  alias, nonce, and a short expiry, and is consumed once. It only permits the
+  local CLI session; mailbox changes still require **Accept Revision**.
+- Standalone chat authoring uses stdout/stdin JSONL. After **Submit to Chat**,
+  stdout emits one sanitized `dg_mailbox_author_request`; the host must write
+  one correlated `dg_mailbox_author_proposal` Draft line to stdin. Human status
+  goes to stderr. Closed, absent, oversized, malformed, replayed, or timed-out
+  input fails closed.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
   relay the printed steps to the user:
   1. Open `chrome://extensions` (or `edge://extensions`).

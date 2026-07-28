@@ -62,6 +62,28 @@ export const MAILBOX_ACTION_TYPES = [
 	"deactivate_filter",
 ] as const;
 
+export type MailboxActionType = (typeof MAILBOX_ACTION_TYPES)[number];
+
+export const MAILBOX_EXECUTION_ACTION_TYPES = [
+	"archive",
+	"move_to_folder",
+	"mark_read",
+	"create_folder",
+	"rename_folder",
+	"create_label",
+	"rename_label",
+	"apply_label",
+	"create_category",
+	"rename_category",
+	"apply_category",
+	"create_filter",
+	"change_filter",
+	"deactivate_filter",
+] as const;
+
+export type MailboxExecutionActionType =
+	(typeof MAILBOX_EXECUTION_ACTION_TYPES)[number];
+
 export type MailboxAction =
 	| Readonly<{ type: "archive"; messageAlias: string }>
 	| Readonly<{ type: "mark_read"; messageAlias: string }>
@@ -81,6 +103,57 @@ export type MailboxAction =
 			labelAlias: string;
 	  }>
 	| Readonly<{ type: "deactivate_filter"; filterAlias: string }>;
+
+export type MailboxExecutionActionPayload =
+	| Exclude<MailboxAction, Readonly<{
+			type: "remove_label";
+			messageAlias: string;
+			labelAlias: string;
+	  }>>
+	| Readonly<{ type: "create_folder"; folderAlias: string }>
+	| Readonly<{
+			type: "rename_folder";
+			folderAlias: string;
+			replacementFolderAlias: string;
+	  }>
+	| Readonly<{ type: "create_label"; labelAlias: string }>
+	| Readonly<{
+			type: "rename_label";
+			labelAlias: string;
+			replacementLabelAlias: string;
+	  }>
+	| Readonly<{
+			type: "apply_label";
+			messageAlias: string;
+			labelAlias: string;
+	  }>
+	| Readonly<{ type: "create_category"; labelAlias: string }>
+	| Readonly<{
+			type: "rename_category";
+			labelAlias: string;
+			replacementLabelAlias: string;
+	  }>
+	| Readonly<{
+			type: "apply_category";
+			messageAlias: string;
+			labelAlias: string;
+	  }>
+	| Readonly<{ type: "create_filter"; filterAlias: string }>
+	| Readonly<{
+			type: "change_filter";
+			filterAlias: string;
+			replacementFilterAlias: string;
+	  }>
+	| Readonly<{ type: "deactivate_filter"; filterAlias: string }>;
+
+export type MailboxCanonicalActionMetadata = Readonly<{
+	schemaVersion: typeof MAILBOX_SCHEMA_VERSION;
+	actionAlias: string;
+	dependsOn?: readonly string[];
+}>;
+
+export type MailboxCanonicalAction =
+	MailboxExecutionActionPayload & MailboxCanonicalActionMetadata;
 
 export const MAILBOX_AGE_BUCKETS = [
 	"recent",
@@ -116,19 +189,33 @@ export const MAILBOX_REVISION_STATES = [
 export type MailboxRevisionState =
 	(typeof MAILBOX_REVISION_STATES)[number];
 
-export type MailboxPlanRevision = Readonly<{
+type MailboxPlanRevisionBase = Readonly<{
 	schemaVersion: typeof MAILBOX_SCHEMA_VERSION;
 	planAlias: string;
 	revisionAlias: string;
 	revisionNumber: number;
-	state: MailboxRevisionState;
 	restartRequired: boolean;
 	createdAt: string;
 	inventoryFingerprint: MailboxFingerprint;
 	cohorts: readonly MailboxCohort[];
 	targets: MailboxRevisionTargets;
-	actions: readonly MailboxAction[];
 }>;
+
+export type MailboxPlanRevision = MailboxPlanRevisionBase &
+	Readonly<{
+		state: MailboxRevisionState;
+		actions: readonly MailboxAction[];
+	}>;
+
+export type MailboxCanonicalPlanRevision = MailboxPlanRevisionBase &
+	Readonly<{
+		state: Exclude<MailboxRevisionState, "draft">;
+		actions: readonly MailboxCanonicalAction[];
+	}>;
+
+export type MailboxPersistedPlanRevision =
+	| MailboxPlanRevision
+	| MailboxCanonicalPlanRevision;
 
 export type MailboxRevision = MailboxPlanRevision;
 
@@ -182,6 +269,7 @@ export const MAILBOX_REASON_CODES = [
 	"verification_mismatch",
 	"canceled",
 	"worker_suspended",
+	"provider_timeout",
 	"provider_refused",
 	"malformed_stream",
 	"internal_failure",
@@ -538,39 +626,244 @@ export function validateMailboxInventory(value: unknown): MailboxInventory {
 	return parseInventory(value);
 }
 
-function parseAction(value: unknown): MailboxAction {
+function parseActionMetadata(
+	input: Record<string, unknown>,
+	requiredKeys: readonly string[],
+	requireCanonical: boolean,
+): MailboxCanonicalActionMetadata | undefined {
+	if (!requireCanonical) {
+		exactKeys(input, requiredKeys);
+		return undefined;
+	}
+	const hasCanonicalKey =
+		Object.hasOwn(input, "schemaVersion") ||
+		Object.hasOwn(input, "actionAlias") ||
+		Object.hasOwn(input, "dependsOn");
+	if (hasCanonicalKey) {
+		exactKeys(
+			input,
+			[...requiredKeys, "schemaVersion", "actionAlias"],
+			["dependsOn"],
+		);
+		const actionAlias = alias(input.actionAlias, "act");
+		const dependsOn =
+			input.dependsOn === undefined
+				? undefined
+				: array(
+						input.dependsOn,
+						(item) => alias(item, "act"),
+						10_000,
+					);
+		if (dependsOn !== undefined) {
+			unique(dependsOn);
+			if (dependsOn.includes(actionAlias)) {
+				failMailboxBoundary("broken_reference");
+			}
+		}
+		return {
+			schemaVersion: schemaVersion(input.schemaVersion),
+			actionAlias,
+			...(dependsOn === undefined ? {} : { dependsOn }),
+		};
+	}
+	failMailboxBoundary("missing_key");
+}
+
+function actionWithMetadata(
+	action: Readonly<{ type: string }> & Readonly<Record<string, unknown>>,
+	metadata: MailboxCanonicalActionMetadata | undefined,
+): MailboxAction | MailboxCanonicalAction {
+	return (metadata === undefined
+		? action
+		: { ...metadata, ...action }) as MailboxAction | MailboxCanonicalAction;
+}
+
+function parseAction(value: unknown, requireCanonical: true): MailboxCanonicalAction;
+function parseAction(value: unknown, requireCanonical?: false): MailboxAction;
+function parseAction(
+	value: unknown,
+	requireCanonical = false,
+): MailboxAction | MailboxCanonicalAction {
 	const input = record(value);
 	if (!Object.hasOwn(input, "type")) failMailboxBoundary("missing_key");
 	if (typeof input.type !== "string") failMailboxBoundary("invalid_type");
 	switch (input.type) {
 		case "archive":
-		case "mark_read":
-			exactKeys(input, ["type", "messageAlias"]);
-			return {
+		case "mark_read": {
+			const metadata = parseActionMetadata(
+				input,
+				["type", "messageAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
 				type: input.type,
 				messageAlias: alias(input.messageAlias, "msg"),
-			};
-		case "move_to_folder":
-			exactKeys(input, ["type", "messageAlias", "folderAlias"]);
-			return {
+			}, metadata);
+		}
+		case "move_to_folder": {
+			const metadata = parseActionMetadata(
+				input,
+				["type", "messageAlias", "folderAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
 				type: input.type,
 				messageAlias: alias(input.messageAlias, "msg"),
 				folderAlias: alias(input.folderAlias, "fld"),
-			};
-		case "apply_label":
-		case "remove_label":
-			exactKeys(input, ["type", "messageAlias", "labelAlias"]);
-			return {
+			}, metadata);
+		}
+		case "create_folder": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "folderAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
+				type: input.type,
+				folderAlias: alias(input.folderAlias, "fld"),
+			}, metadata);
+		}
+		case "rename_folder": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "folderAlias", "replacementFolderAlias"],
+				requireCanonical,
+			);
+			const folderAlias = alias(input.folderAlias, "fld");
+			const replacementFolderAlias = alias(
+				input.replacementFolderAlias,
+				"fld",
+			);
+			if (folderAlias === replacementFolderAlias) {
+				failMailboxBoundary("invalid_value");
+			}
+			return actionWithMetadata({
+				type: input.type,
+				folderAlias,
+				replacementFolderAlias,
+			}, metadata);
+		}
+		case "create_label":
+		case "create_category": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "labelAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
+				type: input.type,
+				labelAlias: alias(input.labelAlias, "lbl"),
+			}, metadata);
+		}
+		case "rename_label":
+		case "rename_category": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "labelAlias", "replacementLabelAlias"],
+				requireCanonical,
+			);
+			const labelAlias = alias(input.labelAlias, "lbl");
+			const replacementLabelAlias = alias(
+				input.replacementLabelAlias,
+				"lbl",
+			);
+			if (labelAlias === replacementLabelAlias) {
+				failMailboxBoundary("invalid_value");
+			}
+			return actionWithMetadata({
+				type: input.type,
+				labelAlias,
+				replacementLabelAlias,
+			}, metadata);
+		}
+		case "apply_label": {
+			const metadata = parseActionMetadata(
+				input,
+				["type", "messageAlias", "labelAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
 				type: input.type,
 				messageAlias: alias(input.messageAlias, "msg"),
 				labelAlias: alias(input.labelAlias, "lbl"),
-			};
-		case "deactivate_filter":
-			exactKeys(input, ["type", "filterAlias"]);
-			return {
+			}, metadata);
+		}
+		case "remove_label": {
+			if (requireCanonical) {
+				failMailboxBoundary("unsupported_action");
+			}
+			const metadata = parseActionMetadata(
+				input,
+				["type", "messageAlias", "labelAlias"],
+				false,
+			);
+			return actionWithMetadata({
+				type: input.type,
+				messageAlias: alias(input.messageAlias, "msg"),
+				labelAlias: alias(input.labelAlias, "lbl"),
+			}, metadata);
+		}
+		case "apply_category": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "messageAlias", "labelAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
+				type: input.type,
+				messageAlias: alias(input.messageAlias, "msg"),
+				labelAlias: alias(input.labelAlias, "lbl"),
+			}, metadata);
+		}
+		case "create_filter": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "filterAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
 				type: input.type,
 				filterAlias: alias(input.filterAlias, "flt"),
-			};
+			}, metadata);
+		}
+		case "deactivate_filter": {
+			const metadata = parseActionMetadata(
+				input,
+				["type", "filterAlias"],
+				requireCanonical,
+			);
+			return actionWithMetadata({
+				type: input.type,
+				filterAlias: alias(input.filterAlias, "flt"),
+			}, metadata);
+		}
+		case "change_filter": {
+			if (!requireCanonical) failMailboxBoundary("unsupported_action");
+			const metadata = parseActionMetadata(
+				input,
+				["type", "filterAlias", "replacementFilterAlias"],
+				requireCanonical,
+			);
+			const filterAlias = alias(input.filterAlias, "flt");
+			const replacementFilterAlias = alias(
+				input.replacementFilterAlias,
+				"flt",
+			);
+			if (filterAlias === replacementFilterAlias) {
+				failMailboxBoundary("invalid_value");
+			}
+			return actionWithMetadata({
+				type: input.type,
+				filterAlias,
+				replacementFilterAlias,
+			}, metadata);
+		}
 		default:
 			failMailboxBoundary("unsupported_action");
 	}
@@ -579,6 +872,88 @@ function parseAction(value: unknown): MailboxAction {
 export function validateMailboxAction(value: unknown): MailboxAction {
 	preflightMailboxValue(value);
 	return parseAction(value);
+}
+
+export function validateCanonicalMailboxAction(
+	value: unknown,
+): MailboxCanonicalAction {
+	preflightMailboxValue(value);
+	return parseAction(value, true);
+}
+
+function canonicalActionKey(action: MailboxCanonicalAction): string {
+	switch (action.type) {
+		case "archive":
+		case "mark_read":
+			return `${action.type}:${action.messageAlias}`;
+		case "move_to_folder":
+			return `${action.type}:${action.messageAlias}:${action.folderAlias}`;
+		case "create_folder":
+			return `${action.type}:${action.folderAlias}`;
+		case "rename_folder":
+			return `${action.type}:${action.folderAlias}:${action.replacementFolderAlias}`;
+		case "create_label":
+		case "create_category":
+			return `${action.type}:${action.labelAlias}`;
+		case "rename_label":
+		case "rename_category":
+			return `${action.type}:${action.labelAlias}:${action.replacementLabelAlias}`;
+		case "apply_label":
+		case "apply_category":
+			return `${action.type}:${action.messageAlias}:${action.labelAlias}`;
+		case "create_filter":
+		case "deactivate_filter":
+			return `${action.type}:${action.filterAlias}`;
+		case "change_filter":
+			return `${action.type}:${action.filterAlias}:${action.replacementFilterAlias}`;
+	}
+}
+
+export function validateCanonicalMailboxActions(
+	value: unknown,
+): readonly MailboxCanonicalAction[] {
+	preflightMailboxValue(value);
+	const actions = array(
+		value,
+		(item) => parseAction(item, true),
+		20_000,
+	);
+	const aliases = actions.map((action) => action.actionAlias);
+	unique(aliases);
+	const keys = actions.map(canonicalActionKey);
+	if (new Set(keys).size !== keys.length) {
+		failMailboxBoundary("duplicate_alias");
+	}
+	const available = new Set(aliases);
+	const dependencies = new Map(
+		actions.map((action) => [
+			action.actionAlias,
+			action.dependsOn ?? [],
+		]),
+	);
+	for (const action of actions) {
+		for (const dependency of action.dependsOn ?? []) {
+			if (!available.has(dependency)) {
+				failMailboxBoundary("broken_reference");
+			}
+		}
+	}
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const visit = (actionAlias: string): void => {
+		if (visiting.has(actionAlias)) {
+			failMailboxBoundary("broken_reference");
+		}
+		if (visited.has(actionAlias)) return;
+		visiting.add(actionAlias);
+		for (const dependency of dependencies.get(actionAlias) ?? []) {
+			visit(dependency);
+		}
+		visiting.delete(actionAlias);
+		visited.add(actionAlias);
+	};
+	for (const actionAlias of aliases) visit(actionAlias);
+	return actions;
 }
 
 function parseCohort(value: unknown): MailboxCohort {
@@ -599,7 +974,7 @@ function parseCohort(value: unknown): MailboxCohort {
 	unique(messageAliases);
 	const suggestedActions = array(
 		input.suggestedActions,
-		parseAction,
+		(item) => parseAction(item),
 		20_000,
 	);
 	const suggestedActionKeys = suggestedActions.map(actionKey);
@@ -655,7 +1030,10 @@ export function validateMailboxFingerprint(
 	return parseFingerprint(value);
 }
 
-function parseRevision(value: unknown): MailboxPlanRevision {
+function parseRevision(
+	value: unknown,
+	allowFullCanonicalActions = false,
+): MailboxPersistedPlanRevision {
 	const input = record(value);
 	exactKeys(input, [
 		"schemaVersion",
@@ -678,10 +1056,52 @@ function parseRevision(value: unknown): MailboxPlanRevision {
 	const messageAliases = cohorts.flatMap((cohort) => cohort.messageAliases);
 	unique(messageAliases);
 	const targets = parseRevisionTargets(input.targets);
-	const actions = array(input.actions, parseAction, 20_000);
-	const actionKeys = actions.map(actionKey);
-	if (new Set(actionKeys).size !== actionKeys.length) {
-		failMailboxBoundary("duplicate_alias");
+	const state = literal(input.state, MAILBOX_REVISION_STATES);
+	if (!Array.isArray(input.actions)) {
+		failMailboxBoundary("invalid_type");
+	}
+	const canonicalFlags = input.actions.map(
+		(action) =>
+			action !== null &&
+			typeof action === "object" &&
+			(Object.hasOwn(action, "schemaVersion") ||
+				Object.hasOwn(action, "actionAlias") ||
+				Object.hasOwn(action, "dependsOn")),
+	);
+	const hasCanonical = canonicalFlags.some(Boolean);
+	if (
+		hasCanonical &&
+		canonicalFlags.some((canonical) => !canonical)
+	) {
+		failMailboxBoundary("invalid_value");
+	}
+	const actions: readonly (MailboxAction | MailboxCanonicalAction)[] =
+		hasCanonical
+			? validateCanonicalMailboxActions(input.actions)
+			: array(
+					input.actions,
+					(item) => parseAction(item),
+					20_000,
+				);
+	if (
+		hasCanonical &&
+		!allowFullCanonicalActions &&
+		(actions as readonly MailboxCanonicalAction[]).some(
+			(action) =>
+				action.type !== "archive" &&
+				action.type !== "mark_read" &&
+				action.type !== "move_to_folder" &&
+				action.type !== "apply_label" &&
+				action.type !== "deactivate_filter",
+		)
+	) {
+		failMailboxBoundary("unsupported_action");
+	}
+	if (!hasCanonical) {
+		const actionKeys = (actions as readonly MailboxAction[]).map(actionKey);
+		if (new Set(actionKeys).size !== actionKeys.length) {
+			failMailboxBoundary("duplicate_alias");
+		}
 	}
 	const messages = new Set(messageAliases);
 	const folders = new Set(targets.folderAliases);
@@ -700,18 +1120,18 @@ function parseRevision(value: unknown): MailboxPlanRevision {
 		planAlias: alias(input.planAlias, "plan"),
 		revisionAlias: alias(input.revisionAlias, "rev"),
 		revisionNumber: positiveInteger(input.revisionNumber),
-		state: literal(input.state, MAILBOX_REVISION_STATES),
+		state,
 		restartRequired: boolean(input.restartRequired),
 		createdAt: timestamp(input.createdAt),
 		inventoryFingerprint: parseFingerprint(input.inventoryFingerprint),
 		cohorts,
 		targets,
 		actions,
-	};
+	} as MailboxPersistedPlanRevision;
 }
 
 function assertActionReferences(
-	action: MailboxAction,
+	action: MailboxAction | MailboxCanonicalAction,
 	messages: ReadonlySet<string>,
 	folders: ReadonlySet<string>,
 	labels: ReadonlySet<string>,
@@ -723,10 +1143,28 @@ function assertActionReferences(
 	if ("folderAlias" in action && !folders.has(action.folderAlias)) {
 		failMailboxBoundary("broken_reference");
 	}
+	if (
+		"replacementFolderAlias" in action &&
+		!folders.has(action.replacementFolderAlias)
+	) {
+		failMailboxBoundary("broken_reference");
+	}
 	if ("labelAlias" in action && !labels.has(action.labelAlias)) {
 		failMailboxBoundary("broken_reference");
 	}
+	if (
+		"replacementLabelAlias" in action &&
+		!labels.has(action.replacementLabelAlias)
+	) {
+		failMailboxBoundary("broken_reference");
+	}
 	if ("filterAlias" in action && !filters.has(action.filterAlias)) {
+		failMailboxBoundary("broken_reference");
+	}
+	if (
+		"replacementFilterAlias" in action &&
+		!filters.has(action.replacementFilterAlias)
+	) {
 		failMailboxBoundary("broken_reference");
 	}
 }
@@ -785,10 +1223,33 @@ export function validateMailboxPlanRevision(
 	value: unknown,
 ): MailboxPlanRevision {
 	preflightMailboxValue(value);
-	return parseRevision(value);
+	return parseRevision(value) as MailboxPlanRevision;
 }
 
 export const validateMailboxRevision = validateMailboxPlanRevision;
+
+export function validatePersistedMailboxPlanRevision(
+	value: unknown,
+): MailboxPersistedPlanRevision {
+	preflightMailboxValue(value);
+	return parseRevision(value);
+}
+
+export function validateCanonicalMailboxPlanRevision(
+	value: unknown,
+): MailboxCanonicalPlanRevision {
+	preflightMailboxValue(value);
+	const revision = parseRevision(value, true);
+	if (
+		revision.state === "draft" ||
+		revision.actions.some(
+			(action) => !Object.hasOwn(action, "actionAlias"),
+		)
+	) {
+		failMailboxBoundary("invalid_value");
+	}
+	return revision as MailboxCanonicalPlanRevision;
+}
 
 function parseObservation(value: unknown): MailboxObservation {
 	const input = record(value);

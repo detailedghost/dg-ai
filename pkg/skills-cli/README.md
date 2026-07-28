@@ -45,6 +45,13 @@ Change `includeSetup` to `true` to make setup lead the tutorial and video.
 Plans persist fill text, so credentials, tokens, and MFA codes must be entered
 manually rather than authored as actions.
 
+`mailbox-cleanup` also requires the companion extension. The browser first asks
+the user to approve one local CLI connection; this is not approval to change
+mail. After the plan page's explicit **Submit to Chat**, stdout emits one
+sanitized `dg_mailbox_author_request` JSONL record. Return one exact correlated
+`dg_mailbox_author_proposal` Draft record on stdin. Status text is emitted on
+stderr so stdout remains machine-readable.
+
 ## Build standalone binary
 
 ```bash
