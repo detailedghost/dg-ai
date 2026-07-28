@@ -56,12 +56,21 @@
 		@apply text-sm;
 		color: var(--muted);
 	}
-	.navlink {
-		@apply text-xs uppercase tracking-wider underline underline-offset-4;
-		color: var(--accent);
+	.navbtn {
+		@apply border-2 px-3 py-1.5 text-xs uppercase tracking-wider no-underline;
+		border-color: var(--line);
+		background: transparent;
+		color: var(--ink);
 	}
-	.navlink:hover {
-		color: var(--accent2);
+	.navbtn:hover {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #000;
+	}
+	.navbtn[aria-current="page"] {
+		background: var(--ink);
+		border-color: var(--ink);
+		color: var(--bg);
 	}
 	.panel {
 		@apply border-2 p-5 mb-7;
