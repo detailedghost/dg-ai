@@ -196,35 +196,43 @@ describe("editMachine", () => {
 		return phase;
 	};
 
-	it("primes at step 0", () => {
-		expect(editMachine(3).next().value).toEqual({ kind: "step", cursor: 0 });
+	// The actions screen is the entry point: running a good plan shouldn't require
+	// paging through every step first.
+	it("primes on the actions screen, not step 0", () => {
+		expect(editMachine(3).next().value).toEqual({ kind: "done" });
+	});
+
+	it("editAgain opens the stepper at the first step", () => {
+		expect(run(3, ["editAgain"])).toEqual({ kind: "step", cursor: 0 });
 	});
 
 	it("advances and clamps at the last step", () => {
-		expect(run(3, ["next", "next"])).toEqual({ kind: "step", cursor: 2 });
-		expect(run(3, ["next", "next", "next"])).toEqual({
+		expect(run(3, ["editAgain", "next", "next"])).toEqual({
+			kind: "step",
+			cursor: 2,
+		});
+		expect(run(3, ["editAgain", "next", "next", "next"])).toEqual({
 			kind: "step",
 			cursor: 2,
 		});
 	});
 
 	it("goes back and clamps at 0", () => {
-		expect(run(3, ["next", "back", "back"])).toEqual({
+		expect(run(3, ["editAgain", "next", "back", "back"])).toEqual({
 			kind: "step",
 			cursor: 0,
 		});
 	});
 
-	it("approve → done; editAgain returns to the last step", () => {
-		expect(run(3, ["approve"])).toEqual({ kind: "done" });
-		expect(run(3, ["approve", "editAgain"])).toEqual({
-			kind: "step",
-			cursor: 2,
-		});
+	it("approve returns to the actions screen from any step", () => {
+		expect(run(3, ["editAgain", "next", "approve"])).toEqual({ kind: "done" });
 	});
 
-	it("ignores next/back while done", () => {
-		expect(run(3, ["approve", "next", "back"])).toEqual({ kind: "done" });
+	it("ignores next/back on the actions screen", () => {
+		expect(run(3, ["next", "back"])).toEqual({ kind: "done" });
+		expect(run(3, ["editAgain", "approve", "next", "back"])).toEqual({
+			kind: "done",
+		});
 	});
 });
 

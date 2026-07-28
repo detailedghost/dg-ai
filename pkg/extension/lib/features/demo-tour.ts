@@ -15,7 +15,15 @@ import {
 	tourHasAutomaticActions,
 } from "@dg/common";
 import { browser } from "wxt/browser";
-import { narrationModeLabel, readNarrationMode } from "@/lib/config";
+import {
+	getNarrationMode,
+	NARRATION_MODES,
+	narrationModeLabel,
+	patchConfig,
+	getConfig as readConfig,
+	readNarrationMode,
+	VOICES,
+} from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type {
 	StepAction,
@@ -226,11 +234,13 @@ const editKey = () => `demo_edit:${myTabId}`;
 const pendingMarkerKey = () => `demo_pending:${myTabId}`;
 
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
-async function takeEditCursor(): Promise<number> {
+async function takeEditCursor(): Promise<number | null> {
 	const got = await browser.storage.local.get(editKey());
 	await browser.storage.local.remove(editKey());
 	const v = got[editKey()];
-	return typeof v === "number" ? v : 0;
+	// null, not 0: the editor now opens on the actions screen, so "resume at step 0"
+	// and "nothing stored" are different destinations.
+	return typeof v === "number" ? v : null;
 }
 const setEditCursor = (n: number): Promise<void> =>
 	browser.storage.local.set({ [editKey()]: n });
@@ -1585,18 +1595,22 @@ export type EditEvent = "next" | "back" | "approve" | "editAgain";
  * resumes on each `.next(event)`, applying the transition. All navigation lives here
  * so the flow reads top-to-bottom and is unit-testable without any DOM. Prime with a
  * bare `.next()`, then drive it with events.
+ *
+ * It primes on the actions screen, not step 0: the plan is usually right, and walking
+ * every step to reach play/record made the common case the slowest path. `editAgain`
+ * opens the stepper at the first step for anyone who does want to read it through.
  */
 export function* editMachine(
 	total: number,
 ): Generator<EditPhase, never, EditEvent> {
 	let cursor = 0;
-	let done = false;
+	let done = true;
 	while (true) {
 		const event = yield done ? { kind: "done" } : { kind: "step", cursor };
 		if (event === "approve") done = true;
 		else if (event === "editAgain") {
 			done = false;
-			cursor = Math.max(0, total - 1);
+			cursor = 0;
 		} else if (!done && event === "next" && cursor < total - 1) cursor++;
 		else if (!done && event === "back" && cursor > 0) cursor--;
 	}
@@ -1842,10 +1856,17 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	const draft: Draft = scriptToDraft(script);
 	const reviewRows = editorReviewRows(draft);
 	const machine = editMachine(reviewRows.length);
-	let phase = machine.next().value; // prime → first phase (step 0)
-	// Resume at the step we navigated for (a step-driven page change reloads us here).
+	// Narration is chosen here rather than at the record prompt, so it is set before
+	// anything starts. Local copy keeps the selects showing the user's own picks.
+	const editorConfig = await readConfig();
+	let phase = machine.next().value; // prime → the actions screen
+	// Resume at the step we navigated for (a step-driven page change reloads us here),
+	// re-entering the stepper first since the machine now starts on the actions screen.
 	const resume = await takeEditCursor();
-	for (let i = 0; i < resume; i++) phase = machine.next("next").value;
+	if (resume !== null) {
+		phase = machine.next("editAgain").value;
+		for (let i = 0; i < resume; i++) phase = machine.next("next").value;
+	}
 	const dispatch = (event: EditEvent): void => {
 		phase = machine.next(event).value;
 		void render();
@@ -2116,17 +2137,62 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		root.appendChild(card);
 	};
 
+	/** A labelled select row for the start screen, wired to persist on change. */
+	const settingRow = (
+		labelText: string,
+		options: { value: string; label: string }[],
+		selected: string,
+		onPick: (value: string) => void,
+	): HTMLElement => {
+		const row = el("label", {
+			display: "flex",
+			alignItems: "center",
+			gap: "0.5rem",
+			marginBottom: "0.5rem",
+			color: "var(--muted)",
+		});
+		const text = el("span", { flex: "0 0 5rem", fontSize: "0.8125rem" });
+		text.textContent = labelText;
+		const sel = el("select", {
+			flex: "1",
+			background: "var(--code-bg)",
+			color: "var(--ink)",
+			border: "0.125rem solid var(--line)",
+			borderRadius: "0",
+			padding: "0.1875rem 0.375rem",
+			font: `0.8125rem ${MONO}`,
+		}) as HTMLSelectElement;
+		for (const o of options) {
+			const opt = document.createElement("option");
+			opt.value = o.value;
+			opt.textContent = o.label;
+			if (o.value === selected) opt.selected = true;
+			sel.appendChild(opt);
+		}
+		sel.addEventListener("change", () => onPick(sel.value));
+		row.append(text, sel);
+		return row;
+	};
+
+	/**
+	 * The start screen: pick review / walkthrough / video, and set the narration the
+	 * recording will use. Shown before the stepper, so the plan can be run without
+	 * paging through steps that were already right.
+	 */
 	const buildDoneCard = (root: HTMLElement): void => {
-		const card = panel("Review & edit");
+		const card = panel(draft.title || "Demo plan");
 		const h = el("div", {
 			fontWeight: "700",
 			textTransform: "uppercase",
 			letterSpacing: "0.06em",
 			marginBottom: "0.25rem",
 		});
-		h.textContent = "✅ All steps reviewed";
+		h.textContent = "▶ Plan ready";
 		const sub = el("div", { color: "var(--muted)", marginBottom: "0.75rem" });
-		sub.textContent = `${reviewRows.length} reviewed step(s), including ${draft.setup?.rows.length ?? 0} setup step(s). Download the plan, or play/record now.`;
+		const setupCount = draft.setup?.rows.length ?? 0;
+		sub.textContent = `${reviewRows.length} step(s)${
+			setupCount ? `, including ${setupCount} setup step(s)` : ""
+		}. Review it, or start straight away.`;
 		card.append(h, sub);
 		if (draft.setup) {
 			const setupLabel = el("label", {
@@ -2148,6 +2214,29 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			card.appendChild(setupLabel);
 		}
 
+		card.appendChild(
+			settingRow(
+				"Narration",
+				NARRATION_MODES,
+				editorConfig.narration,
+				(value) => {
+					editorConfig.narration = getNarrationMode(value);
+					void patchConfig({ narration: editorConfig.narration });
+				},
+			),
+		);
+		card.appendChild(
+			settingRow(
+				"Voice",
+				VOICES.map((v) => ({ value: v, label: v })),
+				editorConfig.voice,
+				(value) => {
+					editorConfig.voice = value;
+					void patchConfig({ voice: value });
+				},
+			),
+		);
+
 		const mk = (lbl: string, primary: boolean, onClick: () => void): void => {
 			const b = pillButton(lbl, primary);
 			b.style.width = "100%";
@@ -2155,10 +2244,10 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			b.addEventListener("click", onClick);
 			card.appendChild(b);
 		};
-		mk("⬇ Download plan (.md)", false, download);
+		mk("🔍 Review the plan step by step", false, () => dispatch("editAgain"));
 		mk("▶ Play walkthrough", true, () => void finish("walkthrough"));
 		mk("⏺ Record video", false, () => void finish("video"));
-		mk("← Back to editing", false, () => dispatch("editAgain"));
+		mk("⬇ Download plan (.md)", false, download);
 		root.appendChild(card);
 	};
 
