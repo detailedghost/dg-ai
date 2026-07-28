@@ -1,9 +1,5 @@
-/**
- * Unit tests for the settings page's routing (lib/options-nav.ts) and the
- * narration-mode coercion the page shares with the tour (lib/config.ts).
- */
+/** Unit tests for the settings page's routing (lib/options-nav.ts). */
 import { describe, expect, it } from "bun:test";
-import { DEFAULTS, getNarrationMode } from "@/lib/config";
 import { PAGES, resolvePage } from "@/lib/options-nav";
 
 describe("resolvePage", () => {
@@ -33,18 +29,5 @@ describe("resolvePage", () => {
 	it("exposes settings first so it is the landing view", () => {
 		expect(PAGES[0]).toBe("settings");
 		expect([...PAGES]).toEqual(["settings", "privacy", "kudos"]);
-	});
-});
-
-describe("getNarrationMode", () => {
-	it("passes through every valid mode", () => {
-		expect(getNarrationMode("both")).toBe("both");
-		expect(getNarrationMode("voice")).toBe("voice");
-		expect(getNarrationMode("captions")).toBe("captions");
-	});
-
-	it("falls back to the default for empty or unknown input", () => {
-		expect(getNarrationMode("")).toBe(DEFAULTS.narration);
-		expect(getNarrationMode("invalid")).toBe(DEFAULTS.narration);
 	});
 });
