@@ -106,6 +106,17 @@ export async function setConfig(cfg: Config): Promise<void> {
  * used to abort the entire "press to record" prompt, leaving the user no visible
  * way to start a recording at all.
  */
+/**
+ * Change some fields, re-reading the stored config first so the rest survive.
+ *
+ * Use this instead of spreading a config a caller is already holding: a long-lived
+ * panel's snapshot goes stale the moment the settings page saves, so writing it back
+ * wholesale silently reverts whatever else the user changed.
+ */
+export async function patchConfig(patch: Partial<Config>): Promise<void> {
+	await setConfig({ ...(await getConfig()), ...patch });
+}
+
 export async function readNarrationMode(): Promise<NarrationMode> {
 	try {
 		return getNarrationMode((await getConfig()).narration);
