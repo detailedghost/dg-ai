@@ -36,6 +36,7 @@ import {
 	automaticPlayback,
 	buildOverlay,
 	buildVideoReviewHtml,
+	captureMarkerEarly,
 	completeSetupPhase,
 	draftToScript,
 	type EditEvent,
@@ -54,6 +55,7 @@ import {
 	maybePerformAction,
 	missingActionTargetWarning,
 	performAction,
+	resolvePendingMarker,
 	reviewAction,
 	setupActionConsentRequired,
 	type TourState,
@@ -833,5 +835,106 @@ describe("buildOverlay — callout controls", () => {
 		);
 
 		expect(root.textContent).not.toContain("Target not found");
+	});
+});
+
+// ── Defect 3: a tour behind a client-side auth redirect keeps its marker ───
+
+describe("resolvePendingMarker", () => {
+	const script: TourScript = {
+		startUrl: "https://app.example/start",
+		steps: [{ body: "Tour" }],
+	};
+	const pending = { script, edit: false, capturedAt: 1_000 };
+
+	it("leaves an absent capture untouched", () => {
+		expect(
+			resolvePendingMarker(undefined, "https://app.example/start", 1_500),
+		).toEqual({
+			action: "leave",
+		});
+	});
+
+	it("consumes a fresh capture once back on the tour's own origin", () => {
+		expect(
+			resolvePendingMarker(pending, "https://app.example/callback", 1_500),
+		).toEqual({
+			action: "consume",
+			capture: pending,
+		});
+	});
+
+	it("drops a capture once it exceeds the TTL, regardless of origin", () => {
+		const stale = 1_000 + 2 * 60 * 1000 + 1;
+
+		expect(
+			resolvePendingMarker(pending, "https://app.example/start", stale),
+		).toEqual({
+			action: "drop",
+		});
+	});
+
+	it("leaves a not-yet-expired capture on a different origin (e.g. an IdP mid-redirect)", () => {
+		expect(
+			resolvePendingMarker(pending, "https://idp.example/login", 1_500),
+		).toEqual({
+			action: "leave",
+		});
+	});
+});
+
+describe("captureMarkerEarly", () => {
+	function withLocation(url: string): void {
+		const win = new Window({ url });
+		Object.defineProperty(globalThis, "location", {
+			configurable: true,
+			value: win.location,
+		});
+		Object.defineProperty(globalThis, "history", {
+			configurable: true,
+			value: win.history,
+		});
+	}
+
+	beforeEach(() => {
+		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
+	});
+
+	it("is a no-op when the current URL carries no marker", async () => {
+		withLocation("https://app.example/start");
+
+		await captureMarkerEarly();
+
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
+		expect(location.href).toBe("https://app.example/start");
+	});
+
+	it("persists the marker per-tab and strips it from the URL", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			steps: [{ body: "Tour" }],
+		};
+		withLocation(`${script.startUrl}#${demoMarkerFragment(script, false)}`);
+
+		await captureMarkerEarly();
+
+		expect(browser.storage.local.set).toHaveBeenCalledWith({
+			"demo_pending:-1": expect.objectContaining({ script, edit: false }),
+		});
+		expect(location.href).toBe(script.startUrl);
+	});
+
+	it("captures the edit flag alongside the script", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			steps: [{ body: "Tour" }],
+		};
+		withLocation(`${script.startUrl}#${demoMarkerFragment(script, true)}`);
+
+		await captureMarkerEarly();
+
+		expect(browser.storage.local.set).toHaveBeenCalledWith({
+			"demo_pending:-1": expect.objectContaining({ edit: true }),
+		});
 	});
 });

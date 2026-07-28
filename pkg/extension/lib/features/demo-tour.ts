@@ -217,6 +217,7 @@ let myTabId = -1;
 const stateKey = () => `demo_tour:${myTabId}`;
 const recKey = () => `demo_recording:${myTabId}`;
 const editKey = () => `demo_edit:${myTabId}`;
+const pendingMarkerKey = () => `demo_pending:${myTabId}`;
 
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
 async function takeEditCursor(): Promise<number> {
@@ -291,22 +292,95 @@ function sameUrl(a: string, b: string): boolean {
 	}
 }
 
+// --- pending marker capture (survives a client-side auth redirect) ---
+
+/** A `_demo` marker captured (and stripped) before its page could redirect out from under it. */
+type PendingMarkerCapture = {
+	script: TourScript;
+	edit: boolean;
+	capturedAt: number;
+};
+
+// Long enough for a real IdP round-trip; short enough that an abandoned tab can't
+// resurrect a stale tour on whatever unrelated page loads in it next.
+const PENDING_MARKER_TTL_MS = 2 * 60 * 1000;
+
+/**
+ * Decide what to do with a stored pending capture on this page load: start its tour
+ * (still within the TTL, and we're back on its own origin), drop it (expired), or
+ * leave it for a later load (not yet expired, but this page isn't the tour's origin —
+ * e.g. we're transiently on an IdP's login page mid-redirect).
+ */
+export function resolvePendingMarker(
+	pending: PendingMarkerCapture | undefined,
+	currentUrl: string,
+	now: number,
+): { action: "consume" | "drop" | "leave"; capture?: PendingMarkerCapture } {
+	if (!pending) return { action: "leave" };
+	if (now - pending.capturedAt > PENDING_MARKER_TTL_MS)
+		return { action: "drop" };
+	if (!sameOrigin(pending.script.startUrl, currentUrl, currentUrl))
+		return { action: "leave" };
+	return { action: "consume", capture: pending };
+}
+
+/**
+ * Capture a `_demo` marker off the URL as early as possible (document_start) and
+ * strip it immediately — so a client-side auth redirect that rewrites the URL before
+ * document_idle runs can't discard the tour along with the fragment it lived in.
+ * A no-op when the current URL carries no marker.
+ */
+export async function captureMarkerEarly(): Promise<void> {
+	const script = readDemoScript(location.href);
+	if (!script?.steps?.length) return;
+	await initTabId();
+	const capture: PendingMarkerCapture = {
+		script,
+		edit: readEditFlag(location.href),
+		capturedAt: Date.now(),
+	};
+	await browser.storage.local.set({ [pendingMarkerKey()]: capture });
+	history.replaceState(history.state, "", stripDemoMarker(location.href));
+}
+
+/** Consume a same-tab pending capture left by captureMarkerEarly, if usable here. */
+async function takeUsablePendingMarker(): Promise<
+	PendingMarkerCapture | undefined
+> {
+	const got = await browser.storage.local.get(pendingMarkerKey());
+	const pending = got[pendingMarkerKey()] as PendingMarkerCapture | undefined;
+	const decision = resolvePendingMarker(pending, location.href, Date.now());
+	if (decision.action !== "leave")
+		await browser.storage.local.remove(pendingMarkerKey());
+	return decision.capture;
+}
+
+/** The URL's own marker takes priority; else fall back to an earlier same-tab capture. */
+async function resolveEntryMarker(): Promise<
+	{ script: TourScript; edit: boolean } | undefined
+> {
+	const fromUrl = readDemoScript(location.href);
+	if (fromUrl?.steps?.length)
+		return { script: fromUrl, edit: readEditFlag(location.href) };
+	const pending = await takeUsablePendingMarker();
+	return pending ? { script: pending.script, edit: pending.edit } : undefined;
+}
+
 // --- entry point (called by the content script on every page load) ---
 
 export async function runDemoTour(ctx: Ctx): Promise<void> {
 	await initTabId();
-	const fromMarker = readDemoScript(location.href);
-	if (fromMarker?.steps?.length) {
-		const edit = readEditFlag(location.href);
-		await initializeMarkerPlayback(fromMarker, saveState);
+	const marker = await resolveEntryMarker();
+	if (marker) {
+		await initializeMarkerPlayback(marker.script, saveState);
 		await setRecording(false);
-		if (edit) {
+		if (marker.edit) {
 			// Keep the marker in the URL so a reload re-opens the editor (durable).
-			await showEditPanel(ctx, fromMarker);
+			await showEditPanel(ctx, marker.script);
 		} else {
 			// Strip the marker in place — same-document, no reload.
 			history.replaceState(history.state, "", stripDemoMarker(location.href));
-			await begin(ctx, fromMarker);
+			await begin(ctx, marker.script);
 		}
 		return;
 	}
