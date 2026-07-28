@@ -875,17 +875,31 @@ export function buildOverlay(
 				"Go to first step",
 			),
 		);
-		if (state.index > 0) {
-			const prev = btn("Back", false);
-			prev.addEventListener("click", () => void goTo(ctx, state.index - 1));
-			controls.appendChild(prev);
-		}
+		// Single-step ‹ replaces the old "Back" text button so the arrow cluster
+		// reads « ‹ › » and matches the review editor's controls.
+		controls.appendChild(
+			arrowButton(
+				"‹",
+				state.index > 0,
+				() => void goTo(ctx, state.index - 1),
+				"Previous step",
+			),
+		);
 		const next = btn(last ? "Done" : "Next", true);
 		next.addEventListener(
 			"click",
 			() => void advanceWithAction(ctx, state, step, target),
 		);
 		controls.appendChild(next);
+		// Mirrors Next (action included), so stepping by arrow can't skip an action.
+		controls.appendChild(
+			arrowButton(
+				"›",
+				!last,
+				() => void advanceWithAction(ctx, state, step, target),
+				"Next step",
+			),
+		);
 		controls.appendChild(
 			arrowButton(
 				"»",
@@ -1771,6 +1785,30 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		void render();
 	};
 
+	/**
+	 * Advance the review, performing the step's authored action first.
+	 *
+	 * Planning has to move the page the same way playback does. Reviewing used to
+	 * only walk the cursor, so a plan whose later steps live behind a click — a
+	 * wizard, a menu, a tab — left every one of those selectors unresolvable, and
+	 * the editor showed a centered modal instead of the element being authored.
+	 *
+	 * Only the forward arrow does this; ‹ and the jump controls stay pure
+	 * navigation, since replaying an action backwards has no meaning. The action
+	 * runs because the user pressed forward on a step whose action is visible in
+	 * the row they are looking at — per-step intent, not an unattended run.
+	 */
+	const advanceReview = async (cursor: number): Promise<void> => {
+		const current = reviewRows[cursor];
+		const step = current ? draftRowToStep(current.row) : undefined;
+		if (step?.action) {
+			const target = editorSpotlightTarget(document, step.selector ?? "");
+			if (target) await performAction(step.action, target);
+			else console.warn(missingActionTargetWarning(step));
+		}
+		dispatch("next");
+	};
+
 	// The page a step runs on: the most recent `navigate` at/before it, else startUrl.
 	const pageUrl = (idx: number): string =>
 		editorPageUrl(draft, script.startUrl, idx);
@@ -1978,7 +2016,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			color: "var(--muted)",
 		});
 		trace.textContent = `${cursor + 1} / ${total}`;
-		const fwd = arrowButton("›", !last, () => dispatch("next"));
+		const fwd = arrowButton("›", !last, () => void advanceReview(cursor));
 		card.addEventListener("input", persist); // persist edits into the URL
 		bar.append(back, trace, fwd);
 		if (last) {

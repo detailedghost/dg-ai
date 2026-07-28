@@ -812,7 +812,7 @@ describe("buildOverlay — callout controls", () => {
 	const buttonByLabel = (root: HTMLElement, label: string): HTMLButtonElement =>
 		root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
 
-	it("shows enabled first/last jump controls with real aria-labels mid-tour", () => {
+	it("shows enabled jump and single-step controls with real aria-labels mid-tour", () => {
 		const root = domRoot();
 
 		buildOverlay(
@@ -825,9 +825,52 @@ describe("buildOverlay — callout controls", () => {
 			false,
 		);
 
-		expect(ariaLabels(root)).toEqual(["Go to first step", "Go to last step"]);
-		expect(buttonByLabel(root, "Go to first step").disabled).toBe(false);
-		expect(buttonByLabel(root, "Go to last step").disabled).toBe(false);
+		// Order is the rendered order: « ‹ [Next] › »
+		expect(ariaLabels(root)).toEqual([
+			"Go to first step",
+			"Previous step",
+			"Next step",
+			"Go to last step",
+		]);
+		for (const label of [
+			"Go to first step",
+			"Previous step",
+			"Next step",
+			"Go to last step",
+		]) {
+			expect(buttonByLabel(root, label).disabled).toBe(false);
+		}
+	});
+
+	it("disables both backward controls on the first step and both forward on the last", () => {
+		const first = domRoot();
+		buildOverlay(
+			first,
+			fakeCtx,
+			{ script, index: 0 },
+			script.steps[0],
+			null,
+			[],
+			false,
+		);
+		expect(buttonByLabel(first, "Go to first step").disabled).toBe(true);
+		expect(buttonByLabel(first, "Previous step").disabled).toBe(true);
+		expect(buttonByLabel(first, "Next step").disabled).toBe(false);
+
+		const lastIndex = script.steps.length - 1;
+		const atEnd = domRoot();
+		buildOverlay(
+			atEnd,
+			fakeCtx,
+			{ script, index: lastIndex },
+			script.steps[lastIndex],
+			null,
+			[],
+			false,
+		);
+		expect(buttonByLabel(atEnd, "Previous step").disabled).toBe(false);
+		expect(buttonByLabel(atEnd, "Next step").disabled).toBe(true);
+		expect(buttonByLabel(atEnd, "Go to last step").disabled).toBe(true);
 	});
 
 	it("disables « on the first step and » on the last step", () => {
