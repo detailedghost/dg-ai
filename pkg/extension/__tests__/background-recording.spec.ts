@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import {
 	createRecordingRouter,
 	maybeStartRecording,
-	recordingStartAllowed,
+	recordingRefusal,
 } from "@/lib/background/recording";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
@@ -229,7 +229,7 @@ describe("handleRecordingMessage", () => {
 	});
 });
 
-describe("recordingStartAllowed", () => {
+describe("recordingRefusal", () => {
 	const excludedSetupVideo: TourScript = {
 		startUrl: "https://app.example",
 		mode: "video",
@@ -242,35 +242,48 @@ describe("recordingStartAllowed", () => {
 
 	it("keeps excluded setup outside capture until tutorial handoff", () => {
 		expect(
-			recordingStartAllowed({
+			recordingRefusal({
 				script: excludedSetupVideo,
 				phase: "setup",
 				setupActionsApproved: true,
 			}),
-		).toBe(false);
+		).toMatch(/setup steps first/);
 		expect(
-			recordingStartAllowed({
+			recordingRefusal({
 				script: excludedSetupVideo,
 				phase: "tutorial",
 				setupActionsApproved: true,
 			}),
-		).toBe(true);
+		).toBeNull();
 	});
 
 	it("blocks recording setup actions until explicit approval", () => {
 		expect(
-			recordingStartAllowed({
+			recordingRefusal({
 				script: excludedSetupVideo,
 				phase: "tutorial",
 			}),
-		).toBe(false);
+		).toMatch(/[Aa]pprove/);
 		expect(
-			recordingStartAllowed({
+			recordingRefusal({
 				script: excludedSetupVideo,
 				phase: "tutorial",
 				setupActionsApproved: true,
 			}),
-		).toBe(true);
+		).toBeNull();
+	});
+
+	// Every refusal has to name itself: this is the gesture the user was told to press.
+	it("gives a distinct reason for each way it can decline", () => {
+		const reasons = [
+			recordingRefusal(undefined),
+			recordingRefusal({ script: excludedSetupVideo, phase: "setup" }),
+			recordingRefusal({ script: excludedSetupVideo, phase: "tutorial" }),
+		];
+		expect(reasons.every((r) => typeof r === "string" && r.length > 0)).toBe(
+			true,
+		);
+		expect(new Set(reasons).size).toBe(3);
 	});
 });
 
@@ -299,6 +312,7 @@ describe("maybeStartRecording", () => {
 		const startRecording = mock(
 			async (_tabId: number, _script: TourScript) => undefined,
 		);
+		const sendMessage = mock((_tabId: number, _msg: unknown) => undefined);
 		const blockedStates = [
 			{ script: tutorialActionVideo, automaticActionsApproved: true },
 			{
@@ -315,6 +329,7 @@ describe("maybeStartRecording", () => {
 
 		for (const state of blockedStates) {
 			Object.assign(chrome, {
+				tabs: { sendMessage },
 				storage: {
 					local: {
 						get: mock(async () => ({ [`demo_tour:${TAB_ID}`]: state })),
@@ -325,6 +340,36 @@ describe("maybeStartRecording", () => {
 		}
 
 		expect(startRecording).not.toHaveBeenCalled();
+		// Refusing quietly is the bug: Alt+Shift+D did nothing and said nothing.
+		expect(sendMessage).toHaveBeenCalledTimes(blockedStates.length);
+		for (const [, msg] of sendMessage.mock.calls) {
+			const blocked = msg as { type: string; reason: string };
+			expect(blocked.type).toBe(MSG.videoBlocked);
+			expect(blocked.reason.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("says nothing to a tab that has no video tour, so the toolbar opens settings", async () => {
+		const startRecording = mock(
+			async (_tabId: number, _script: TourScript) => undefined,
+		);
+		const sendMessage = mock((_tabId: number, _msg: unknown) => undefined);
+		Object.assign(chrome, {
+			tabs: { sendMessage },
+			storage: {
+				local: {
+					get: mock(async () => ({
+						[`demo_tour:${TAB_ID}`]: {
+							script: { ...tutorialActionVideo, mode: "walkthrough" },
+							phase: "tutorial",
+						},
+					})),
+				},
+			},
+		});
+
+		expect(await maybeStartRecording(tab, startRecording)).toBe(false);
+		expect(sendMessage).not.toHaveBeenCalled();
 	});
 
 	it("starts only after tutorial phase and all-action consent are persisted", async () => {
