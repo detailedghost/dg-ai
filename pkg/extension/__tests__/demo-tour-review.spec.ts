@@ -2,10 +2,10 @@
  * Pure-function tests for review modal helpers extracted from demo-tour.ts.
  * No DOM or WebExtension APIs needed — pure logic only.
  */
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/demo-messages";
-import type { TourScript } from "@/lib/demo-types";
+import type { TourScript, TourStep } from "@/lib/demo-types";
 import { demoMarkerFragment, readDemoScript } from "@/utils/demo-marker";
 
 // Stub WXT's browser export so demo-tour.ts can be imported in Bun's test environment.
@@ -29,10 +29,12 @@ mock.module("wxt/browser", () => ({
 	},
 }));
 
+import { browser } from "wxt/browser";
 import {
 	automaticActionConsentGranted,
 	automaticActionConsentRequired,
 	automaticPlayback,
+	buildOverlay,
 	buildVideoReviewHtml,
 	completeSetupPhase,
 	draftToScript,
@@ -49,6 +51,9 @@ import {
 	initializeMarkerPlayback,
 	initializeReviewedEditorPlayback,
 	initialPlayPhase,
+	maybePerformAction,
+	missingActionTargetWarning,
+	performAction,
 	reviewAction,
 	setupActionConsentRequired,
 	type TourState,
@@ -649,5 +654,184 @@ describe("editor security sinks", () => {
 			startUrl,
 		);
 		expect(editorPageUrl(draft, startUrl, firstTutorial)).toBe(startUrl);
+	});
+});
+
+// ── Defect 1: a missing action target must warn, not silently no-op ────────
+
+describe("missingActionTargetWarning", () => {
+	it("names the action kind and the selector that never resolved", () => {
+		const message = missingActionTargetWarning({
+			body: "Save",
+			selector: "#save",
+			action: { do: "click" },
+		});
+
+		expect(message).toContain("click");
+		expect(message).toContain("#save");
+	});
+});
+
+describe("performAction", () => {
+	// performAction dispatches a real `input` event, which must come from the same
+	// realm as the target element (happy-dom checks `instanceof Event` internally).
+	function domInput(): HTMLElement {
+		const win = new Window();
+		Object.defineProperty(globalThis, "Event", {
+			configurable: true,
+			value: win.Event,
+		});
+		return win.document.createElement("input") as unknown as HTMLElement;
+	}
+
+	it("clicks the target and resolves once the click has fired", async () => {
+		const target = new Window().document.createElement("button");
+		let clicked = false;
+		target.addEventListener("click", () => {
+			clicked = true;
+		});
+
+		await performAction({ do: "click" }, target as unknown as HTMLElement);
+
+		expect(clicked).toBe(true);
+	});
+
+	it("types the value into the target character by character, then resolves", async () => {
+		const target = domInput();
+
+		await performAction({ do: "fill", value: "hi" }, target);
+
+		expect((target as unknown as HTMLInputElement).value).toBe("hi");
+	});
+});
+
+describe("maybePerformAction", () => {
+	const tourScript: TourScript = { startUrl: "https://app.example", steps: [] };
+
+	beforeEach(() => {
+		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
+	});
+
+	it("does nothing when the step has no action", async () => {
+		const target = new Window().document.createElement("button");
+
+		await maybePerformAction(
+			{ script: tourScript, index: 0 },
+			{ body: "No action" },
+			target as unknown as HTMLElement,
+		);
+
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
+	});
+
+	it("marks the step acted and performs the action exactly once", async () => {
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+		});
+
+		await maybePerformAction(
+			{ script: tourScript, index: 2 },
+			{ body: "Click it", action: { do: "click" } },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(1);
+		expect(browser.storage.local.set).toHaveBeenCalledWith({
+			"demo_tour:-1": expect.objectContaining({ acted: 2 }),
+		});
+	});
+
+	it("does not repeat an action already marked acted for this index", async () => {
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+		});
+
+		await maybePerformAction(
+			{ script: tourScript, index: 1, acted: 1 },
+			{ body: "Click it", action: { do: "click" } },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(0);
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
+	});
+});
+
+// ── Defect 2: an authored action must respect walkthrough pacing ───────────
+
+describe("automaticPlayback — mode gating", () => {
+	it("is false in walkthrough mode even for an action-bearing tutorial step", () => {
+		const walkthroughScript: TourScript = {
+			startUrl: "https://app.example",
+			mode: "walkthrough",
+			steps: [{ body: "Click it", action: { do: "click" } }],
+		};
+
+		expect(
+			automaticPlayback({
+				script: walkthroughScript,
+				phase: "tutorial",
+				index: 0,
+			}),
+		).toBe(false);
+	});
+});
+
+describe("buildOverlay — callout controls", () => {
+	function domRoot(): HTMLElement {
+		const win = new Window();
+		Object.defineProperty(globalThis, "window", {
+			configurable: true,
+			value: win,
+		});
+		Object.defineProperty(globalThis, "document", {
+			configurable: true,
+			value: win.document,
+		});
+		return win.document.createElement("div") as unknown as HTMLElement;
+	}
+
+	const script: TourScript = {
+		startUrl: "https://app.example/start",
+		mode: "walkthrough",
+		steps: [{ body: "Step one" }, { body: "Step two" }, { body: "Step three" }],
+	};
+	const fakeCtx = {} as Parameters<typeof buildOverlay>[1];
+
+	it("shows a visible warning when a step's action target was not found", () => {
+		const root = domRoot();
+		const actionStep: TourStep = { body: "Click it", action: { do: "click" } };
+
+		buildOverlay(
+			root,
+			fakeCtx,
+			{ script, index: 0 },
+			actionStep,
+			null,
+			[],
+			false,
+		);
+
+		expect(root.textContent).toContain("Target not found");
+	});
+
+	it("omits the warning for a step with no action, even without a target", () => {
+		const root = domRoot();
+
+		buildOverlay(
+			root,
+			fakeCtx,
+			{ script, index: 0 },
+			script.steps[0],
+			null,
+			[],
+			false,
+		);
+
+		expect(root.textContent).not.toContain("Target not found");
 	});
 });
