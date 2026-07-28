@@ -805,6 +805,76 @@ describe("buildOverlay — callout controls", () => {
 	};
 	const fakeCtx = {} as Parameters<typeof buildOverlay>[1];
 
+	const ariaLabels = (root: HTMLElement): string[] =>
+		[...root.querySelectorAll("button[aria-label]")].map(
+			(b) => b.getAttribute("aria-label") ?? "",
+		);
+	const buttonByLabel = (root: HTMLElement, label: string): HTMLButtonElement =>
+		root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
+
+	it("shows enabled first/last jump controls with real aria-labels mid-tour", () => {
+		const root = domRoot();
+
+		buildOverlay(
+			root,
+			fakeCtx,
+			{ script, index: 1 },
+			script.steps[1],
+			null,
+			[],
+			false,
+		);
+
+		expect(ariaLabels(root)).toEqual(["Go to first step", "Go to last step"]);
+		expect(buttonByLabel(root, "Go to first step").disabled).toBe(false);
+		expect(buttonByLabel(root, "Go to last step").disabled).toBe(false);
+	});
+
+	it("disables « on the first step and » on the last step", () => {
+		const first = domRoot();
+		buildOverlay(
+			first,
+			fakeCtx,
+			{ script, index: 0 },
+			script.steps[0],
+			null,
+			[],
+			false,
+		);
+		expect(buttonByLabel(first, "Go to first step").disabled).toBe(true);
+		expect(buttonByLabel(first, "Go to last step").disabled).toBe(false);
+
+		const lastIndex = script.steps.length - 1;
+		const last = domRoot();
+		buildOverlay(
+			last,
+			fakeCtx,
+			{ script, index: lastIndex },
+			script.steps[lastIndex],
+			null,
+			[],
+			false,
+		);
+		expect(buttonByLabel(last, "Go to first step").disabled).toBe(false);
+		expect(buttonByLabel(last, "Go to last step").disabled).toBe(true);
+	});
+
+	it("hides every manual control, including the jump buttons, in video mode", () => {
+		const root = domRoot();
+
+		buildOverlay(
+			root,
+			fakeCtx,
+			{ script, index: 1 },
+			script.steps[1],
+			null,
+			[],
+			true,
+		);
+
+		expect(root.querySelectorAll("button[aria-label]")).toHaveLength(0);
+	});
+
 	it("shows a visible warning when a step's action target was not found", () => {
 		const root = domRoot();
 		const actionStep: TourStep = { body: "Click it", action: { do: "click" } };

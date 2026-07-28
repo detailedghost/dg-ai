@@ -108,6 +108,13 @@ Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
 - **`<number>`** — auto-advance after that many milliseconds (hands-off
   playback).
 
+## Walkthrough controls
+
+Each step's callout shows **Back** / **Next** (**Done** on the last step), plus
+**«** / **»** to jump straight to the first or last step of the current phase
+(setup or tutorial) — each disabled at the end it already points to, so the
+affordance never lies about where a jump would land.
+
 ## Optional setup stage
 
 Use `## Setup` for durable preparation such as signing in, seeding data, or
@@ -185,6 +192,6 @@ Because Chrome requires a user gesture to start tab capture, the page shows a
 toolbar icon) once, then it's fully automatic through to the saved-confirmation
 message. Chrome/Edge only — `tabCapture`/`offscreen` aren't available in Firefox.
 
-In video mode the manual Next/Back controls are hidden (there's no one to
+In video mode the manual Next/Back/jump controls are hidden (there's no one to
 click them); an authored action still auto-fires on its short timer as usual.
 Use numeric `advance` values to pace important steps.

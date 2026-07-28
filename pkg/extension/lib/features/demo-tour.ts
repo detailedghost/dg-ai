@@ -867,6 +867,14 @@ export function buildOverlay(
 		close.addEventListener("click", () => void finish(ctx));
 		controls.appendChild(close);
 
+		controls.appendChild(
+			arrowButton(
+				"«",
+				state.index > 0,
+				() => void goTo(ctx, 0),
+				"Go to first step",
+			),
+		);
 		if (state.index > 0) {
 			const prev = btn("Back", false);
 			prev.addEventListener("click", () => void goTo(ctx, state.index - 1));
@@ -878,6 +886,14 @@ export function buildOverlay(
 			() => void advanceWithAction(ctx, state, step, target),
 		);
 		controls.appendChild(next);
+		controls.appendChild(
+			arrowButton(
+				"»",
+				!last,
+				() => void goTo(ctx, total - 1),
+				"Go to last step",
+			),
+		);
 		card.appendChild(controls);
 	}
 
@@ -1600,6 +1616,7 @@ function arrowButton(
 	glyph: string,
 	enabled: boolean,
 	onClick: () => void,
+	ariaLabel?: string,
 ): HTMLButtonElement {
 	const b = el("button", {
 		cursor: enabled ? "pointer" : "default",
@@ -1614,6 +1631,7 @@ function arrowButton(
 	if (enabled) b.className = "dg-btn";
 	b.type = "button";
 	b.textContent = glyph;
+	if (ariaLabel) b.setAttribute("aria-label", ariaLabel);
 	if (enabled) b.addEventListener("click", onClick);
 	else b.disabled = true;
 	return b;

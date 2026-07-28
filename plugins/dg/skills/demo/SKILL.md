@@ -12,7 +12,8 @@ extension before playback.
 
 Two modes (first arg; default `walkthrough`):
 
-- **`walkthrough`** — live and user-paced. The user clicks Next/Back through the steps.
+- **`walkthrough`** — live and user-paced. The user clicks Next/Back (or jumps
+  to the first/last step) through the steps.
 - **`video`** — auto-plays hands-free and records the tour, saving a `.zip` (the video
   **plus** a re-runnable `plan.md`) to the user's Downloads.
 
