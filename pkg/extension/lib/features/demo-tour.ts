@@ -551,36 +551,64 @@ function removeUi(): void {
 }
 
 /** Click the target, or type text into it char-by-char (visible in the recording). */
-function performAction(action: StepAction, target: HTMLElement): void {
+export function performAction(
+	action: StepAction,
+	target: HTMLElement,
+): Promise<void> {
 	if (action.do === "click") {
 		target.click();
-		return;
+		return Promise.resolve();
 	}
 	const field = target as HTMLInputElement;
 	field.focus();
 	field.value = "";
 	const text = action.value;
-	let i = 0;
-	const tick = (): void => {
-		if (i >= text.length) return;
-		field.value += text[i++];
-		field.dispatchEvent(new Event("input", { bubbles: true }));
-		setTimeout(tick, 70);
-	};
-	tick();
+	return new Promise((resolve) => {
+		let i = 0;
+		const tick = (): void => {
+			if (i >= text.length) {
+				resolve();
+				return;
+			}
+			field.value += text[i++];
+			field.dispatchEvent(new Event("input", { bubbles: true }));
+			setTimeout(tick, 70);
+		};
+		tick();
+	});
+}
+
+/** Logged (and shown on the card) when a step's action never got a target to act on. */
+export function missingActionTargetWarning(step: TourStep): string {
+	return `dg-demo: step action "${step.action?.do}" was skipped — target "${step.selector ?? ""}" was not found on the page.`;
 }
 
 /** Run a step's action once — guarded so a nav-triggered reload doesn't repeat it. */
-async function maybePerformAction(
+export async function maybePerformAction(
+	state: PlayState,
+	step: TourStep,
+	target: HTMLElement,
+): Promise<void> {
+	if (!step.action) return;
+	if ((state.acted ?? -1) >= state.index) return;
+	await saveState({ ...state, acted: state.index });
+	await performAction(step.action, target);
+}
+
+/**
+ * Advance from `step` to the next index, running its authored action first if it
+ * hasn't already run. Walkthrough (and setup) playback is user-paced — see
+ * `automaticPlayback` — so the action fires on this deliberate advance rather than
+ * on a timer; video mode auto-fires it from `renderStep` instead.
+ */
+async function advanceWithAction(
+	ctx: Ctx,
 	state: PlayState,
 	step: TourStep,
 	target: HTMLElement | null,
 ): Promise<void> {
-	if (!step.action || !target) return;
-	if ((state.acted ?? -1) >= state.index) return;
-	await saveState({ ...state, acted: state.index });
-	const { action } = step;
-	setTimeout(() => performAction(action, target), 600);
+	if (step.action && target) await maybePerformAction(state, step, target);
+	await goTo(ctx, state.index + 1);
 }
 
 async function renderStep(
@@ -591,6 +619,10 @@ async function renderStep(
 	const video = automaticPlayback(state);
 	const target = step.selector ? await waitForEl(step.selector) : null;
 	target?.scrollIntoView({ block: "center", inline: "center" });
+
+	// Surface it immediately — an unresolved target otherwise drops the authored
+	// action with no sign anything was supposed to happen.
+	if (step.action && !target) console.warn(missingActionTargetWarning(step));
 
 	// teardown runs every cleanup at call-time, so later pushes are still honored.
 	const cleanups: Array<() => void> = [];
@@ -611,9 +643,10 @@ async function renderStep(
 	ui.mount();
 	cleanups.push(() => ui.remove());
 
-	void maybePerformAction(state, step, target);
-
 	if (video) {
+		// Video auto-plays: fire the action on a short timer, same as always.
+		if (target)
+			setTimeout(() => void maybePerformAction(state, step, target), 600);
 		// Cue this step's narration clip, then hold for its recorder-supplied duration
 		// (narration length, floored by any numeric `advance`) before advancing.
 		void browser.runtime.sendMessage({
@@ -628,16 +661,17 @@ async function renderStep(
 		return;
 	}
 
-	// Walkthrough is user-paced (Next/Back); numeric timings are video-only, so they
-	// don't auto-advance here (a video plan would otherwise self-run and vanish).
+	// Walkthrough/setup is user-paced (Next/Back): no auto-advance timing, and an
+	// authored action waits for that advance too — see automaticPlayback.
 	if (step.advance === "click" && target) {
-		const onClick = () => void goTo(ctx, state.index + 1);
+		const onClick = () => void advanceWithAction(ctx, state, step, target);
 		target.addEventListener("click", onClick, { once: true });
 		cleanups.push(() => target.removeEventListener("click", onClick));
 	}
 }
 
-function buildOverlay(
+/** Builds the spotlight + callout card into `root`. Exported for direct DOM tests. */
+export function buildOverlay(
 	root: HTMLElement,
 	ctx: Ctx,
 	state: PlayState,
@@ -722,6 +756,17 @@ function buildOverlay(
 		card.appendChild(body);
 	}
 
+	if (step.action && !target) {
+		const warn = el("div", {
+			fontSize: "0.75rem",
+			fontWeight: "600",
+			color: "var(--accent2)",
+			marginBottom: "0.625rem",
+		});
+		warn.textContent = "⚠ Target not found — this step's action did not run";
+		card.appendChild(warn);
+	}
+
 	if (step.advance === "click" && target) {
 		const hint = el("div", {
 			fontSize: "0.75rem",
@@ -754,7 +799,10 @@ function buildOverlay(
 			controls.appendChild(prev);
 		}
 		const next = btn(last ? "Done" : "Next", true);
-		next.addEventListener("click", () => void goTo(ctx, state.index + 1));
+		next.addEventListener(
+			"click",
+			() => void advanceWithAction(ctx, state, step, target),
+		);
 		controls.appendChild(next);
 		card.appendChild(controls);
 	}

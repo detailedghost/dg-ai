@@ -30,11 +30,14 @@ N. **<title>** [`<css-selector>`] [→ <navigate-url>] [<action>] — <body> [`<
 - `` `<css-selector>` `` — element to spotlight; omit for a centered modal.
 - `→ <navigate-url>` — navigate here before showing this step (multi-page).
 - `<action>` — an action the **tour itself** performs on the spotlighted
-  element before the callout shows: `@click` (clicks it) or `@type="<text>"`
-  (types `<text>` into it — a literal `"` or `\` inside `<text>` must be
-  escaped as `\"` / `\\`). Omit for no automatic action — the step just
-  spotlights. It's parsed out of whatever comes before the em dash
-  regardless of position, but the generator always writes it after the
+  element: `@click` (clicks it) or `@type="<text>"` (types `<text>` into it —
+  a literal `"` or `\` inside `<text>` must be escaped as `\"` / `\\`). Omit
+  for no automatic action — the step just spotlights. **Timing is mode-aware:**
+  in `video` mode it fires on a short timer right after the callout shows
+  (hands-off playback); in `walkthrough` mode it waits for the user to advance
+  past the step (Next, or the target click for a `click` timing) so a live
+  viewer is never raced ahead of. It's parsed out of whatever comes before the
+  em dash regardless of position, but the generator always writes it after the
   selector/navigate, e.g. `` `#save-filter-btn` @click `` or
   `` `input[name=q]` @type="cute puppies" ``.
 - `` `<timing>` `` — the `advance` mode: `4s` / `500ms` / a bare ms count
@@ -157,6 +160,11 @@ won't loop.
   ~1.5s for it to appear, then falls back to a centered modal if it never shows.
 - Keep the target reachable — the player calls `scrollIntoView` before
   spotlighting.
+- If a step has an `<action>` and its selector never resolves (slow-loading
+  SPA, wrong selector), the action is skipped rather than run against nothing —
+  the callout shows a "Target not found" warning and the browser console logs
+  it. It never halts the tour, but treat it as a sign to fix the selector or
+  give the page more time to render before that step.
 
 ## Writing callouts
 
@@ -177,5 +185,6 @@ Because Chrome requires a user gesture to start tab capture, the page shows a
 toolbar icon) once, then it's fully automatic through to the saved-confirmation
 message. Chrome/Edge only — `tabCapture`/`offscreen` aren't available in Firefox.
 
-In video mode the manual Next/Back controls are hidden (there's no one to click
-them); use numeric `advance` values to pace important steps.
+In video mode the manual Next/Back controls are hidden (there's no one to
+click them); an authored action still auto-fires on its short timer as usual.
+Use numeric `advance` values to pace important steps.
