@@ -7,6 +7,9 @@ import {
 	validateMailboxInventory,
 	validateMailboxPlanRevision,
 	validateMailboxProviderObservation,
+	validateCanonicalMailboxAction,
+	validateCanonicalMailboxActions,
+	validateCanonicalMailboxPlanRevision,
 } from "./contracts";
 import { failMailboxBoundary } from "./errors";
 
@@ -46,8 +49,20 @@ export function serializeMailboxPlanRevision(value: unknown): string {
 
 export const serializeMailboxRevision = serializeMailboxPlanRevision;
 
+export function serializeCanonicalMailboxPlanRevision(value: unknown): string {
+	return serializeValidated(validateCanonicalMailboxPlanRevision(value));
+}
+
 export function serializeMailboxAction(value: unknown): string {
 	return serializeValidated(validateMailboxAction(value));
+}
+
+export function serializeCanonicalMailboxAction(value: unknown): string {
+	return serializeValidated(validateCanonicalMailboxAction(value));
+}
+
+export function serializeCanonicalMailboxActions(value: unknown): string {
+	return serializeValidated(validateCanonicalMailboxActions(value));
 }
 
 export function serializeMailboxProviderObservation(value: unknown): string {

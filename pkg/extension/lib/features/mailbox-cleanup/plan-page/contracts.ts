@@ -49,8 +49,13 @@ export type MailboxPlanWorkspaceDeps = Readonly<{
 		value: MailboxScopedFingerprintInput,
 	): Promise<MailboxPlanRevision["inventoryFingerprint"]>;
 	createRevisionAlias(): string;
+	createActionAlias(): string;
 	now(): number;
 	bridge: MailboxPlanChatSeam;
+	startExecution(command: Readonly<{
+		planAlias: string;
+		revisionAlias: string;
+	}>): Promise<unknown>;
 }>;
 
 export type MailboxChoiceId =

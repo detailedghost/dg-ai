@@ -15,6 +15,7 @@ import {
 import { computeMailboxScopedFingerprint } from "@/lib/features/mailbox-cleanup/planning";
 import { isValidMailboxScopedAlias } from "@/lib/features/mailbox-cleanup/privacy";
 import {
+	createBrowserRawBindingAlarms,
 	createMailboxPlanStore,
 	createRawBindingStore,
 	type SessionStorageSeam,
@@ -36,15 +37,23 @@ function sessionStorage(): SessionStorageSeam {
 	};
 }
 
-function revisionAlias(): string {
+function scopedAlias(prefix: "rev" | "act"): string {
 	for (let attempt = 0; attempt < 4; attempt += 1) {
 		const bytes = crypto.getRandomValues(new Uint8Array(16));
-		const alias = `rev_${[...bytes]
+		const alias = `${prefix}_${[...bytes]
 			.map((byte) => byte.toString(16).padStart(2, "0"))
 			.join("")}`;
-		if (isValidMailboxScopedAlias(alias, "rev")) return alias;
+		if (isValidMailboxScopedAlias(alias, prefix)) return alias;
 	}
-	throw new Error("Mailbox revision entropy unavailable");
+	throw new Error("Mailbox plan entropy unavailable");
+}
+
+function revisionAlias(): string {
+	return scopedAlias("rev");
+}
+
+function actionAlias(): string {
+	return scopedAlias("act");
 }
 
 function showUnavailable(root: HTMLElement, message: string): void {
@@ -72,9 +81,14 @@ async function start(root: HTMLElement): Promise<void> {
 		return;
 	}
 
+	const alarmRegistration = createBrowserRawBindingAlarms({
+		alarms: browser.alarms,
+		session: browser.storage.session,
+	});
 	const bindings = createRawBindingStore({
 		session,
 		now: Date.now,
+		alarms: alarmRegistration.alarms,
 	});
 	const plans = createMailboxPlanStore({
 		indexedDB,
@@ -114,8 +128,14 @@ async function start(root: HTMLElement): Promise<void> {
 				rawBindings: bindings,
 				computeFingerprint: computeMailboxScopedFingerprint,
 				createRevisionAlias: revisionAlias,
+				createActionAlias: actionAlias,
 				now: Date.now,
 				bridge,
+				startExecution: (command) =>
+					browser.runtime.sendMessage({
+						type: "dg-mailbox-cleanup:execution-start",
+						command,
+					}),
 			}),
 		mount: (workspace) => mountMailboxPlanPage(root, workspace),
 	});
@@ -124,6 +144,7 @@ async function start(root: HTMLElement): Promise<void> {
 	const dispose = (): void => {
 		disposePage();
 		bridge.dispose();
+		alarmRegistration.dispose();
 		void plans.close();
 	};
 	window.addEventListener("pagehide", dispose, { once: true });

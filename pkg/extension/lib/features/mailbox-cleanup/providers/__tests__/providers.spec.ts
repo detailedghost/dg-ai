@@ -1,22 +1,30 @@
 import { describe, expect, it, mock } from "bun:test";
 import type {
+	MailboxProviderDispatchRequest,
 	MailboxProvider,
 	MailboxProviderMutationRequest,
 	MailboxProviderVerificationRequest,
 } from "../index";
 import {
 	assertMailboxProviderPageReady,
+	createGuardedMailboxExecutionProvider,
 	defineMailboxProvider,
 	discoverMailboxProviders,
 	guardedProviderApply,
 	guardedProviderCapture,
+	guardedProviderDispatch,
+	guardedProviderObserve,
+	guardedProviderObserveInbox,
+	guardedProviderPreflight,
 	guardedProviderVerify,
+	guardedProviderVerifyFresh,
 } from "../index";
 
 const ACCOUNT_ALIAS = "acct_00112233445566778899aabbccddeeff";
 const RUN_ALIAS = "run_102132435465768798a9bacbdcedfe0f";
 const REVISION_ALIAS = "rev_fedcba98765432100123456789abcdef";
 const MESSAGE_ALIAS = "msg_89abcdef01234567fedcba9876543210";
+const ACTION_ALIAS = "act_79abcdef01234567fedcba9876543210";
 
 function provider(
 	id: string,
@@ -25,6 +33,25 @@ function provider(
 	return {
 		id,
 		surfaces: ["inbox"],
+		coordinator: {
+			async probe(request) {
+				return {
+					status: "ready",
+					accountAlias: request.accountAlias,
+					surface: request.surface,
+				};
+			},
+			async *capture() {},
+			async readBodies() {
+				return [];
+			},
+			async captureResult() {
+				return { status: "complete" };
+			},
+			async bindings() {
+				return {};
+			},
+		},
 		readLocale: mock(() => "en_us"),
 		hasPositiveLayoutSignature: mock(() => true),
 		capture: mock(() => ({ messages: [] })),
@@ -42,7 +69,56 @@ function provider(
 			affectedCount: 1,
 			observations: [],
 		})),
+		preflight: mock((preflight) => ({
+			status: "ready" as const,
+			providerId: id,
+			surface: preflight.surface,
+			accountAlias: preflight.accountAlias,
+			locale: "en-US",
+			layout: "supported" as const,
+			capabilities: ["archive"] as const,
+			targets: "available" as const,
+		})),
+		dispatch: mock(() => ({ status: "dispatched" as const })),
+		observe: mock(() => ({
+			status: "observed" as const,
+			observedAt: "2026-07-27T12:00:01.000Z",
+		})),
+		verifyFresh: mock(() => ({
+			status: "verified" as const,
+			verifiedAt: "2026-07-27T12:00:02.000Z",
+			delta: {
+				schemaVersion: 1 as const,
+				scope: "entire_fingerprint" as const,
+				actionAlias: ACTION_ALIAS,
+				changedAliases: [MESSAGE_ALIAS],
+			},
+		})),
+		observeInbox: mock(() => ({
+			status: "observed" as const,
+			count: 0,
+			observedAt: "2026-07-27T12:00:03.000Z",
+		})),
 		...overrides,
+	};
+}
+
+function dispatchRequest(): MailboxProviderDispatchRequest {
+	return {
+		providerId: "fake-mail",
+		surface: "inbox",
+		accountAlias: ACCOUNT_ALIAS,
+		runAlias: RUN_ALIAS,
+		revisionAlias: REVISION_ALIAS,
+		action: {
+			schemaVersion: 1,
+			actionAlias: ACTION_ALIAS,
+			type: "archive",
+			messageAlias: MESSAGE_ALIAS,
+		},
+		rawTargets: {
+			[MESSAGE_ALIAS]: "provider-message-42",
+		},
 	};
 }
 
@@ -292,7 +368,7 @@ describe("guarded mailbox providers", () => {
 			expect(replacementApply).not.toHaveBeenCalled();
 		});
 
-		it("rejects verification for a different canonical action", async () => {
+	it("rejects verification for a different canonical action", async () => {
 			await expect(
 				guardedProviderVerify(
 					provider("fake-mail", {
@@ -310,5 +386,131 @@ describe("guarded mailbox providers", () => {
 					request(),
 				),
 			).rejects.toThrow(/action_mismatch/i);
-		});
 	});
+
+	it("guards the complete execution preflight and fresh-observation facade", async () => {
+		const guarded = provider("fake-mail");
+		const dispatch = dispatchRequest();
+		const { action, rawTargets, ...scope } = dispatch;
+
+		await expect(
+			guardedProviderPreflight(guarded, {
+				...scope,
+				actions: [action],
+				rawTargets,
+			}),
+		).resolves.toMatchObject({
+			status: "ready",
+			providerId: "fake-mail",
+			accountAlias: ACCOUNT_ALIAS,
+			locale: "en-US",
+			layout: "supported",
+			targets: "available",
+		});
+		await expect(
+			guardedProviderDispatch(guarded, dispatch),
+		).resolves.toEqual({ status: "dispatched" });
+		await expect(
+			guardedProviderObserve(guarded, dispatch),
+		).resolves.toMatchObject({ status: "observed" });
+		await expect(
+			guardedProviderVerifyFresh(guarded, dispatch),
+		).resolves.toMatchObject({ status: "verified" });
+		await expect(
+			guardedProviderObserveInbox(guarded, scope),
+		).resolves.toMatchObject({ status: "observed", count: 0 });
+	});
+
+	it("binds the execution coordinator to exact projected results and call-scoped deadlines", async () => {
+		const dispatch = dispatchRequest();
+		const facade = createGuardedMailboxExecutionProvider(
+			provider("fake-mail", {
+				observe: async () => ({
+					status: "observed",
+					observedAt: "2026-07-27T12:00:01.000Z",
+					rawSubject: "must-not-cross",
+				}) as never,
+			}),
+		);
+		await expect(
+			facade.observe(dispatch, { timeoutMs: 100 }),
+		).rejects.toThrow(/provider_shape/i);
+
+		const hanging = createGuardedMailboxExecutionProvider(
+			provider("fake-mail", {
+				dispatch: () => new Promise(() => undefined),
+			}),
+		);
+		await expect(
+			hanging.dispatch(dispatch, { timeoutMs: 1 }),
+		).rejects.toThrow(/provider_timeout/i);
+	});
+
+	it("rejects extra raw authority and classifies aborts and bounded timeouts", async () => {
+		const dispatch = dispatchRequest();
+		const apply = mock(() => ({ status: "dispatched" as const }));
+		await expect(
+			guardedProviderDispatch(
+				provider("fake-mail", { dispatch: apply }),
+				{
+					...dispatch,
+					rawTargets: {
+						...dispatch.rawTargets,
+						[`msg_${"a".repeat(32)}`]: "selector-or-token",
+					},
+				},
+			),
+		).rejects.toThrow(/provider_shape/i);
+		expect(apply).not.toHaveBeenCalled();
+
+		const abort = new AbortController();
+		abort.abort();
+		await expect(
+			guardedProviderDispatch(provider("fake-mail"), dispatch, {
+				signal: abort.signal,
+			}),
+		).rejects.toThrow(/provider_canceled/i);
+
+		await expect(
+			guardedProviderDispatch(
+				provider("fake-mail", {
+					dispatch: () => new Promise(() => undefined),
+				}),
+				dispatch,
+				{ timeoutMs: 1 },
+			),
+		).rejects.toThrow(/provider_timeout/i);
+	});
+
+	it("propagates the dispatch deadline signal so cooperative providers cannot mutate late", async () => {
+		let receivedSignal: AbortSignal | undefined;
+		let mutated = false;
+		const guarded = createGuardedMailboxExecutionProvider(
+			provider("fake-mail", {
+				async dispatch(_request, options) {
+					receivedSignal = options?.signal;
+					await new Promise<void>((resolve) =>
+						options?.signal?.addEventListener(
+							"abort",
+							() => resolve(),
+							{ once: true },
+						)
+					);
+					if (options?.signal?.aborted) {
+						throw new Error("dispatch canceled");
+					}
+					mutated = true;
+					return { status: "dispatched" };
+				},
+			}),
+		);
+
+		await expect(
+			guarded.dispatch(dispatchRequest(), { timeoutMs: 1 }),
+		).rejects.toThrow(/provider_timeout/i);
+		await Promise.resolve();
+
+		expect(receivedSignal?.aborted).toBe(true);
+		expect(mutated).toBe(false);
+	});
+});

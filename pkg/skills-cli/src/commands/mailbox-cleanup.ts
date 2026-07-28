@@ -4,9 +4,13 @@ import {
 	launchMailboxCleanupPlan,
 	type MailboxCleanupHostAdapter as ExtensionMailboxCleanupHostAdapter,
 } from "../../../extension/lib/features/mailbox-cleanup/plan-page/launcher";
+import { runMailboxCleanupLoopback } from "./mailbox-loopback";
 
 export type MailboxCleanupHostAdapter =
 	ExtensionMailboxCleanupHostAdapter;
+
+export type MailboxCleanupCommandRunner =
+	() => Promise<MailboxChatSubmitResult>;
 
 export async function runMailboxCleanup(
 	host: MailboxCleanupHostAdapter,
@@ -17,6 +21,7 @@ export async function runMailboxCleanup(
 export function registerMailboxCleanup(
 	program: Command,
 	host?: MailboxCleanupHostAdapter,
+	runConcrete: MailboxCleanupCommandRunner = runMailboxCleanupLoopback,
 ): void {
 	program
 		.command("mailbox-cleanup")
@@ -24,21 +29,19 @@ export function registerMailboxCleanup(
 			"capture a mailbox and open a sanitized cleanup plan for review",
 		)
 		.action(async () => {
-			if (host === undefined) {
-				throw new Error(
-					"mailbox-cleanup requires an installed, connected dg-ai-extension mailbox host",
-				);
-			}
-			const result = await runMailboxCleanup(host);
+			const result =
+				host === undefined
+					? await runConcrete()
+					: await runMailboxCleanup(host);
 			switch (result.status) {
 				case "proposal":
-					console.log("Mailbox cleanup proposal is ready for review.");
+					console.error("Mailbox cleanup proposal is ready for review.");
 					break;
 				case "canceled":
-					console.log("Mailbox cleanup was canceled.");
+					console.error("Mailbox cleanup was canceled.");
 					break;
 				case "error":
-					console.log(`Mailbox cleanup stopped: ${result.code}.`);
+					console.error(`Mailbox cleanup stopped: ${result.code}.`);
 					break;
 			}
 		});

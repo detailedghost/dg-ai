@@ -106,6 +106,14 @@ function attributeCorpus(root: HTMLElement): string {
 		.join("\n");
 }
 
+function withoutExecutionAuthority(
+	actions: readonly Readonly<Record<string, unknown>>[],
+): readonly Readonly<Record<string, unknown>>[] {
+	return actions.map(({ schemaVersion: _schemaVersion, actionAlias: _actionAlias, ...action }) =>
+		Object.freeze(action),
+	);
+}
+
 async function settleDom(): Promise<void> {
 	await new Promise<void>((resolve) => {
 		setTimeout(resolve, 0);
@@ -910,13 +918,35 @@ describe("mountMailboxPlanPage Node DOM smoke", () => {
 					"approved",
 					scenario.name,
 				);
-				assert.deepEqual(
-					view(harness.workspace).actions,
-					before.actions,
+				const accepted = view(harness.workspace);
+				const acceptedActions = accepted.revision.actions.map(
+					(action) =>
+						action as unknown as Readonly<Record<string, unknown>>,
+				);
+				assert.ok(
+					acceptedActions.every(
+						(action) =>
+							typeof action.actionAlias === "string" &&
+							/^act_[a-f0-9]{32}$/.test(action.actionAlias),
+					),
+					scenario.name,
+				);
+				assert.equal(
+					new Set(acceptedActions.map((action) => action.actionAlias))
+						.size,
+					acceptedActions.length,
 					scenario.name,
 				);
 				assert.deepEqual(
-					harness.fingerprintInputs.at(-1)?.actions,
+					withoutExecutionAuthority(acceptedActions),
+					before.actions,
+					scenario.name,
+				);
+				assert.deepEqual(accepted.actions, before.actions, scenario.name);
+				assert.deepEqual(
+					withoutExecutionAuthority(
+						harness.fingerprintInputs.at(-1)?.actions ?? [],
+					),
 					before.actions,
 					scenario.name,
 				);

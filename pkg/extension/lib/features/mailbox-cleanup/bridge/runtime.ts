@@ -253,8 +253,8 @@ async function inbound(
 	submission: MailboxChatOutboundMessage | undefined,
 	verifyProposalFingerprint:
 		| ((
-				input: MailboxRuntimeProposalFingerprintInput,
-		  ) => Promise<boolean>)
+					input: MailboxRuntimeProposalFingerprintInput,
+			  ) => Promise<boolean | MailboxPlanRevision>)
 		| undefined,
 ): Promise<unknown> {
 	if (activeMarker === undefined) invalid();
@@ -284,11 +284,11 @@ async function inbound(
 		nonce: input.nonce,
 	});
 	if (!sameMarker(activeMarker, scopedMarker)) invalid();
+	if (type === "mailbox_chat_canceled") {
+		return Object.freeze({ ...input });
+	}
 	if (submission === undefined) invalid();
-	if (
-		type === "mailbox_chat_ack" ||
-		type === "mailbox_chat_canceled"
-	) {
+	if (type === "mailbox_chat_ack") {
 		return Object.freeze({ ...input });
 	}
 	if (type === "mailbox_chat_error") {
@@ -323,9 +323,9 @@ async function inbound(
 		invalid();
 	}
 	validateRevisionScope(proposal, submission);
-	let fingerprintMatches = false;
+	let fingerprintResult: boolean | MailboxPlanRevision = false;
 	try {
-		fingerprintMatches = await verifyProposalFingerprint({
+		fingerprintResult = await verifyProposalFingerprint({
 			inventory: submission.inventory,
 			submittedRevision: submission.revision,
 			proposal,
@@ -333,7 +333,23 @@ async function inbound(
 	} catch {
 		invalid();
 	}
-	if (!fingerprintMatches) invalid();
+	if (fingerprintResult === false) invalid();
+	if (fingerprintResult !== true) {
+		try {
+			proposal = deepFreeze(
+				validateMailboxPlanRevision(structuredClone(fingerprintResult)),
+			);
+		} catch {
+			invalid();
+		}
+		if (
+			proposal.state !== "draft" ||
+			proposal.planAlias !== activeMarker.planAlias
+		) {
+			invalid();
+		}
+		validateRevisionScope(proposal, submission);
+	}
 	return Object.freeze({ ...input, proposal });
 }
 
@@ -393,7 +409,7 @@ export function registerMailboxRuntimeChatHandoff(deps: {
 	receiver: MailboxRuntimeChatReceiver;
 	verifyProposalFingerprint?(
 		input: MailboxRuntimeProposalFingerprintInput,
-	): Promise<boolean>;
+	): Promise<boolean | MailboxPlanRevision>;
 }): MailboxRuntimeChatRegistration {
 	let activeMarker: MailboxChatMarker | undefined;
 	let opening:

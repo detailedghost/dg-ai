@@ -1,10 +1,12 @@
 import {
 	type MailboxAction,
+	type MailboxCanonicalAction,
 	type MailboxFingerprint,
 	type MailboxInventory,
 	type MailboxRevisionTargets,
 	preflightMailboxValue,
 	validateMailboxAction,
+	validateCanonicalMailboxAction,
 	validateMailboxFingerprint,
 } from "@dg/common";
 import {
@@ -26,7 +28,7 @@ import { isValidMailboxScopedAlias } from "../privacy";
 export type MailboxScopedFingerprintInput = Readonly<{
 	inventory: MailboxInventory;
 	metadata: MailboxCaptureMetadata;
-	actions: readonly MailboxAction[];
+	actions: readonly (MailboxAction | MailboxCanonicalAction)[];
 	targets: MailboxRevisionTargets;
 }>;
 
@@ -350,8 +352,44 @@ export async function computeMailboxScopedFingerprint(
 	preflightInput(value);
 	const scope = inventoryScope(value.inventory);
 	const metadata = validateMetadata(value.metadata);
-	const actions = value.actions.map(validateMailboxAction);
+	const actions = value.actions.map(
+		(action): MailboxAction | MailboxCanonicalAction =>
+			action !== null &&
+			typeof action === "object" &&
+			Object.hasOwn(action, "actionAlias")
+				? validateCanonicalMailboxAction(action)
+				: validateMailboxAction(action),
+	);
 	const targets = validateTargets(value.targets);
+	const desiredFolders = new Set<string>();
+	const desiredLabels = new Set<string>();
+	const desiredFilters = new Set<string>();
+	for (const action of actions) {
+		if (action.type === "create_folder") {
+			desiredFolders.add(action.folderAlias);
+		}
+		if (action.type === "rename_folder") {
+			desiredFolders.add(action.replacementFolderAlias);
+		}
+		if (
+			action.type === "create_label" ||
+			action.type === "create_category"
+		) {
+			desiredLabels.add(action.labelAlias);
+		}
+		if (
+			action.type === "rename_label" ||
+			action.type === "rename_category"
+		) {
+			desiredLabels.add(action.replacementLabelAlias);
+		}
+		if (action.type === "create_filter") {
+			desiredFilters.add(action.filterAlias);
+		}
+		if (action.type === "change_filter") {
+			desiredFilters.add(action.replacementFilterAlias);
+		}
+	}
 	const aliases: {
 		messages: Set<string>;
 		folders: Set<string>;
@@ -359,15 +397,42 @@ export async function computeMailboxScopedFingerprint(
 		filters: Set<string>;
 	} = {
 		messages: new Set(),
-		folders: new Set(targets.folderAliases),
-		labels: new Set(targets.labelAliases),
-		filters: new Set(targets.filterAliases),
+		folders: new Set(
+			targets.folderAliases.filter(
+				(alias) => !desiredFolders.has(alias),
+			),
+		),
+		labels: new Set(
+			targets.labelAliases.filter(
+				(alias) => !desiredLabels.has(alias),
+			),
+		),
+		filters: new Set(
+			targets.filterAliases.filter(
+				(alias) => !desiredFilters.has(alias),
+			),
+		),
 	};
 	for (const action of actions) {
 		if ("messageAlias" in action) aliases.messages.add(action.messageAlias);
-		if ("folderAlias" in action) aliases.folders.add(action.folderAlias);
-		if ("labelAlias" in action) aliases.labels.add(action.labelAlias);
-		if ("filterAlias" in action) aliases.filters.add(action.filterAlias);
+		if (
+			"folderAlias" in action &&
+			!desiredFolders.has(action.folderAlias)
+		) {
+			aliases.folders.add(action.folderAlias);
+		}
+		if (
+			"labelAlias" in action &&
+			!desiredLabels.has(action.labelAlias)
+		) {
+			aliases.labels.add(action.labelAlias);
+		}
+		if (
+			"filterAlias" in action &&
+			!desiredFilters.has(action.filterAlias)
+		) {
+			aliases.filters.add(action.filterAlias);
+		}
 	}
 	const collections = {
 		messages: Object.freeze([...value.inventory.messages]),

@@ -1,5 +1,6 @@
 import {
 	preflightMailboxValue,
+	validateCanonicalMailboxActions,
 	validateMailboxAction,
 	validateMailboxPlanRevision,
 	type MailboxAction,
@@ -1445,7 +1446,20 @@ export function createMailboxPlanWorkspace(
 			try {
 				await requireUserDecision();
 				if (restartRequired) fail("restart_required");
-				const plan = operationPlanSnapshot();
+				const draftPlan = operationPlanSnapshot();
+				const canonicalActions = validateCanonicalMailboxActions(
+					draftPlan.actions.map((action) => ({
+						...action,
+						schemaVersion: 1,
+						actionAlias: deps.createActionAlias(),
+					})),
+				);
+				const plan: OperationPlanSnapshot = Object.freeze({
+					...draftPlan,
+					// The editor emits only legacy-safe payloads; canonical
+					// metadata remains present on the runtime objects.
+					actions: canonicalActions as readonly MailboxAction[],
+				});
 				const fingerprint = await deps.computeFingerprint({
 					inventory: input.capture.inventory,
 					metadata: input.capture.metadata,
@@ -1456,6 +1470,11 @@ export function createMailboxPlanWorkspace(
 				if (!(await refreshBindingStatus())) fail("binding_expired");
 				if (
 					dirty ||
+					revision.actions.some(
+						(action) =>
+							!("actionAlias" in action) ||
+							!("schemaVersion" in action),
+					) ||
 					revision.inventoryFingerprint.digest !==
 						fingerprint.digest
 				) {
@@ -1480,6 +1499,13 @@ export function createMailboxPlanWorkspace(
 				if (!(await refreshBindingStatus())) {
 					fail("binding_expired");
 				}
+				await deps.startExecution(
+					Object.freeze({
+						planAlias: revision.planAlias,
+						revisionAlias: revision.revisionAlias,
+					}),
+				);
+				announcement = "Revision accepted. Cleanup execution started.";
 				return revision;
 			} finally {
 				end();

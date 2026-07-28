@@ -30,6 +30,32 @@ async function waitFor(
 	throw new Error(message);
 }
 
+function expectCanonicalActions(
+	actual: readonly unknown[],
+	legacyPayloads: readonly unknown[],
+): void {
+	const aliases: string[] = [];
+	const payloads = actual.map((value) => {
+		const {
+			schemaVersion,
+			actionAlias,
+			dependsOn: _dependsOn,
+			...payload
+		} = value as Record<string, unknown>;
+		expect(schemaVersion).toBe(1);
+		expect(actionAlias).toMatch(/^act_[a-f0-9]{32}$/);
+		aliases.push(String(actionAlias));
+		return payload;
+	});
+	expect(new Set(aliases).size).toBe(aliases.length);
+	expect(payloads as readonly unknown[]).toEqual([...legacyPayloads]);
+}
+
+function expectFrozenActions(actions: readonly unknown[]): void {
+	expect(Object.isFrozen(actions)).toBe(true);
+	expect(actions.every((action) => Object.isFrozen(action))).toBe(true);
+}
+
 describe("mailbox plan workspace", () => {
 	it("applies exclusion, then exception, then cohort edit over the deterministic baseline and routes ambiguity to Review", async () => {
 		const { workspace } = workspaceHarness();
@@ -313,11 +339,16 @@ describe("mailbox plan workspace", () => {
 
 		expect(view(harness.workspace).transitionPending).toBe(false);
 		expect(harness.fingerprintInputs).toHaveLength(1);
-		expect(harness.fingerprintInputs[0]?.actions).toEqual(expected.actions);
+		const fingerprintActions =
+			harness.fingerprintInputs[0]?.actions ?? [];
+		expectCanonicalActions(fingerprintActions, expected.actions);
 		expect(harness.fingerprintInputs[0]?.targets).toEqual(
 			expected.revision.targets,
 		);
-		expect(accepted.actions).toEqual(expected.actions);
+		expect([...(accepted.actions as readonly unknown[])]).toEqual([
+			...fingerprintActions,
+		]);
+		expectFrozenActions(accepted.actions);
 	});
 
 	it("locks the exact action snapshot before deferred fingerprinting and rejects a concurrent edit", async () => {
@@ -340,8 +371,13 @@ describe("mailbox plan workspace", () => {
 
 		const accepted = await accepting;
 		expect(harness.fingerprintInputs).toHaveLength(1);
-		expect(harness.fingerprintInputs[0]?.actions).toEqual(before.actions);
-		expect(accepted.actions).toEqual(before.actions);
+		const fingerprintActions =
+			harness.fingerprintInputs[0]?.actions ?? [];
+		expectCanonicalActions(fingerprintActions, before.actions);
+		expect([...(accepted.actions as readonly unknown[])]).toEqual([
+			...fingerprintActions,
+		]);
+		expectFrozenActions(accepted.actions);
 		expect(
 			harness.lifecycleCalls.filter((call) => call[0] === "transition"),
 		).toHaveLength(1);
@@ -350,6 +386,12 @@ describe("mailbox plan workspace", () => {
 	it("makes repeated acceptance idempotent without touching, forking, or transitioning twice", async () => {
 		const harness = workspaceHarness();
 		const first = await harness.workspace.acceptRevision();
+		expect(harness.executionStarts).toEqual([
+			{
+				planAlias: first.planAlias,
+				revisionAlias: first.revisionAlias,
+			},
+		]);
 		const callsAfterFirst = {
 			edits: harness.lifecycleCalls.filter((call) => call[0] === "edit").length,
 			touches: harness.touches.length,
@@ -368,6 +410,7 @@ describe("mailbox plan workspace", () => {
 		expect(
 			harness.lifecycleCalls.filter((call) => call[0] === "transition"),
 		).toHaveLength(callsAfterFirst.transitions);
+		expect(harness.executionStarts).toHaveLength(1);
 	});
 
 	it("reopens the authoritative base revision and lets a later slider choice override chat", async () => {

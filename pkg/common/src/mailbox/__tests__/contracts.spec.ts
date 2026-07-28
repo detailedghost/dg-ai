@@ -2,7 +2,11 @@ import { describe, expect, it } from "bun:test";
 import {
 	attachMailboxHintProvenance,
 	preflightMailboxValue,
+	serializeCanonicalMailboxAction,
 	serializeMailboxInventory,
+	validateCanonicalMailboxAction,
+	validateCanonicalMailboxActions,
+	validateCanonicalMailboxPlanRevision,
 	validateMailboxAction,
 	validateMailboxCohort,
 	validateMailboxInferenceOutput,
@@ -485,5 +489,218 @@ describe("mailbox boundary contracts", () => {
 			},
 		);
 		expect(validated.provenance.source).toBe("validated_local");
+	});
+
+	it("accepts only the exact canonical non-destructive execution allowlist", () => {
+		const metadata = (offset: number) => ({
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", offset),
+		});
+		const actions = [
+			{ ...metadata(1), type: "archive", messageAlias: MESSAGE_ALIAS },
+			{ ...metadata(2), type: "mark_read", messageAlias: MESSAGE_ALIAS },
+			{
+				...metadata(3),
+				type: "move_to_folder",
+				messageAlias: MESSAGE_ALIAS,
+				folderAlias: FOLDER_ALIAS,
+			},
+			{ ...metadata(4), type: "create_folder", folderAlias: FOLDER_ALIAS },
+			{
+				...metadata(5),
+				type: "rename_folder",
+				folderAlias: FOLDER_ALIAS,
+				replacementFolderAlias: OTHER_FOLDER_ALIAS,
+			},
+			{ ...metadata(6), type: "create_label", labelAlias: LABEL_ALIAS },
+			{
+				...metadata(7),
+				type: "rename_label",
+				labelAlias: LABEL_ALIAS,
+				replacementLabelAlias: OTHER_LABEL_ALIAS,
+			},
+			{
+				...metadata(8),
+				type: "apply_label",
+				messageAlias: MESSAGE_ALIAS,
+				labelAlias: LABEL_ALIAS,
+			},
+			{ ...metadata(9), type: "create_category", labelAlias: LABEL_ALIAS },
+			{
+				...metadata(10),
+				type: "rename_category",
+				labelAlias: LABEL_ALIAS,
+				replacementLabelAlias: OTHER_LABEL_ALIAS,
+			},
+			{
+				...metadata(11),
+				type: "apply_category",
+				messageAlias: MESSAGE_ALIAS,
+				labelAlias: LABEL_ALIAS,
+			},
+			{ ...metadata(12), type: "create_filter", filterAlias: FILTER_ALIAS },
+			{
+				...metadata(13),
+				type: "change_filter",
+				filterAlias: FILTER_ALIAS,
+				replacementFilterAlias: OTHER_FILTER_ALIAS,
+			},
+			{ ...metadata(14), type: "deactivate_filter", filterAlias: FILTER_ALIAS },
+		] as const;
+		for (const action of actions) {
+			expect(validateCanonicalMailboxAction(action).type).toBe(action.type);
+			expect(serializeCanonicalMailboxAction(action)).not.toContain(
+				"undefined",
+			);
+		}
+		for (const type of [
+			"remove_label",
+			"delete",
+			"trash",
+			"move_to_trash",
+			"empty_trash",
+			"delete_folder",
+			"delete_label",
+			"delete_category",
+			"delete_filter",
+		]) {
+			expect(() =>
+				validateCanonicalMailboxAction({
+					...metadata(15),
+					type,
+					messageAlias: MESSAGE_ALIAS,
+					labelAlias: LABEL_ALIAS,
+				}),
+			).toThrow(/unsupported|unknown/i);
+		}
+	});
+
+	it("validates canonical action dependencies and exact authority", () => {
+		const first = {
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", 1),
+			type: "create_folder",
+			folderAlias: FOLDER_ALIAS,
+		} as const;
+		const second = {
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", 2),
+			dependsOn: [first.actionAlias],
+			type: "move_to_folder",
+			messageAlias: MESSAGE_ALIAS,
+			folderAlias: FOLDER_ALIAS,
+		} as const;
+		expect(validateCanonicalMailboxActions([second, first])).toHaveLength(2);
+		expect(() =>
+			validateCanonicalMailboxActions([
+				{ ...first, dependsOn: [second.actionAlias] },
+				second,
+			]),
+		).toThrow(/reference/i);
+		expect(() =>
+			validateCanonicalMailboxAction({
+				...first,
+				selector: "#mail-row",
+			}),
+		).toThrow(/unknown/i);
+		expect(() =>
+			validateCanonicalMailboxAction({
+				type: "create_folder",
+				folderAlias: FOLDER_ALIAS,
+			}),
+		).toThrow(/missing/i);
+	});
+
+	it("keeps legacy plans readable and validates full execution revisions separately", () => {
+		const createFolder = {
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", 1),
+			type: "create_folder",
+			folderAlias: FOLDER_ALIAS,
+		} as const;
+		const renameFolder = {
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", 2),
+			dependsOn: [createFolder.actionAlias],
+			type: "rename_folder",
+			folderAlias: FOLDER_ALIAS,
+			replacementFolderAlias: OTHER_FOLDER_ALIAS,
+		} as const;
+		const canonical = revision({
+			state: "approved",
+			targets: {
+				folderAliases: [FOLDER_ALIAS, OTHER_FOLDER_ALIAS],
+				labelAliases: [LABEL_ALIAS],
+				filterAliases: [FILTER_ALIAS],
+			},
+			actions: [createFolder, renameFolder],
+		});
+		expect(validateCanonicalMailboxPlanRevision(canonical).actions).toEqual([
+			createFolder,
+			renameFolder,
+		]);
+		const sealedArchive = {
+			schemaVersion: 1,
+			actionAlias: opaqueAlias("act", 3),
+			type: "archive",
+			messageAlias: MESSAGE_ALIAS,
+		} as const;
+		expect(
+			validateMailboxPlanRevision(
+				revision({
+					state: "approved",
+					actions: [sealedArchive],
+				}),
+			).actions,
+		).toEqual([sealedArchive]);
+		expect(
+			validateMailboxPlanRevision(
+				revision({
+					state: "draft",
+					actions: [sealedArchive],
+				}),
+			).actions,
+		).toEqual([sealedArchive]);
+		expect(() =>
+			validateMailboxPlanRevision(canonical),
+		).toThrow(/unsupported/i);
+		expect(() =>
+			validateMailboxPlanRevision(
+				revision({
+					state: "approved",
+					actions: [
+						createFolder,
+						{ type: "archive", messageAlias: MESSAGE_ALIAS },
+					],
+				}),
+			),
+		).toThrow(/invalid/i);
+		expect(() =>
+			validateMailboxPlanRevision(
+				revision({
+					state: "draft",
+					actions: [createFolder],
+				}),
+			),
+		).toThrow(/unsupported/i);
+		expect(() =>
+			validateCanonicalMailboxPlanRevision({
+				...canonical,
+				targets: {
+					...canonical.targets,
+					folderAliases: [FOLDER_ALIAS],
+				},
+			}),
+		).toThrow(/reference/i);
+		expect(
+			validateMailboxPlanRevision(
+				revision({
+					state: "approved",
+					actions: [
+						{ type: "archive", messageAlias: MESSAGE_ALIAS },
+					],
+				}),
+			).state,
+		).toBe("approved");
 	});
 });

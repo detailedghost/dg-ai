@@ -4,11 +4,16 @@ import {
 	defineMailboxProvider,
 	guardedProviderApply,
 	guardedProviderCapture,
+	guardedProviderDispatch,
+	guardedProviderVerifyFresh,
 	guardedProviderVerify,
+	type MailboxProviderDispatchRequest,
 	type MailboxProviderMutationRequest,
 } from "../../index";
 import {
+	MAILBOX_CAPTURE_LIMITS,
 	computeMailboxCaptureChunkDigest,
+	consumeMailboxCaptureChunks,
 	type MailboxCaptureChunk,
 } from "../../../coordinator";
 import { createFakeMailboxProviderHarness } from "../index";
@@ -21,6 +26,13 @@ const MESSAGE_ALIAS = "msg_89abcdef01234567fedcba9876543210";
 const FOLDER_ALIAS = "fld_79abcdef01234567fedcba9876543210";
 const LABEL_ALIAS = "lbl_69abcdef01234567fedcba9876543210";
 const FILTER_ALIAS = "flt_59abcdef01234567fedcba9876543210";
+const ACTION_ALIAS = "act_49abcdef01234567fedcba9876543210";
+const NEW_FOLDER_ALIAS = "fld_39abcdef01234567fedcba9876543210";
+const NEW_LABEL_ALIAS = "lbl_29abcdef01234567fedcba9876543210";
+const NEW_FILTER_ALIAS = "flt_19abcdef01234567fedcba9876543210";
+const REPLACEMENT_FOLDER_ALIAS = "fld_09abcdef01234567fedcba9876543210";
+const REPLACEMENT_LABEL_ALIAS = "lbl_f9abcdef01234567fedcba9876543210";
+const REPLACEMENT_FILTER_ALIAS = "flt_e9abcdef01234567fedcba9876543210";
 
 function captureRequest() {
 	return {
@@ -114,6 +126,7 @@ function rawInventory(
 function harness(
 	overrides: Parameters<typeof createFakeMailboxProviderHarness>[0] = {},
 ) {
+	const { bindings, ...rest } = overrides;
 	return createFakeMailboxProviderHarness({
 		now: () => NOW,
 		accountAlias: ACCOUNT_ALIAS,
@@ -124,8 +137,15 @@ function harness(
 			[FOLDER_ALIAS]: "provider-folder-1",
 			[LABEL_ALIAS]: "provider-label-1",
 			[FILTER_ALIAS]: "provider-filter-1",
+			[NEW_FOLDER_ALIAS]: "provider-folder-new",
+			[NEW_LABEL_ALIAS]: "provider-label-new",
+			[NEW_FILTER_ALIAS]: "provider-filter-new",
+			[REPLACEMENT_FOLDER_ALIAS]: "Renamed folder",
+			[REPLACEMENT_LABEL_ALIAS]: "Renamed label",
+			[REPLACEMENT_FILTER_ALIAS]: "changed-filter-config",
+			...bindings,
 		},
-		...overrides,
+		...rest,
 	});
 }
 
@@ -138,11 +158,17 @@ describe("fake mailbox-provider-v1", () => {
 			[
 				"id",
 				"surfaces",
+				"coordinator",
 				"readLocale",
 				"hasPositiveLayoutSignature",
 				"capture",
+				"preflight",
+				"dispatch",
+				"observe",
 				"apply",
 				"verify",
+				"verifyFresh",
+				"observeInbox",
 			].sort(),
 		);
 		expect(Object.isFrozen(provider)).toBe(true);
@@ -242,6 +268,29 @@ describe("fake mailbox-provider-v1", () => {
 		});
 	});
 
+	it("preserves a scripted digest fault instead of repairing adversarial capture", async () => {
+		const fake = harness({
+			chunks: [{
+				...DEFAULT_MESSAGE_CHUNK,
+				digest: "0".repeat(64),
+			}],
+		});
+		const abort = new AbortController();
+
+		await expect(
+			consumeMailboxCaptureChunks(
+				fake.coordinatorSeams.capture(
+					captureRequest(),
+					abort.signal,
+				),
+				{
+					runAlias: RUN_ALIAS,
+					limits: MAILBOX_CAPTURE_LIMITS,
+				},
+			),
+		).rejects.toMatchObject({ code: "malformed_stream" });
+	});
+
 	it("uses fresh state rather than cached capture data for observation and verification", async () => {
 		let now = NOW;
 		const fake = harness({ now: () => now });
@@ -277,6 +326,40 @@ describe("fake mailbox-provider-v1", () => {
 		});
 	});
 
+	it("recaptures coordinator chunks from mutable provider state", async () => {
+		const fake = harness();
+		const abort = new AbortController();
+		const action = {
+			schemaVersion: 1 as const,
+			actionAlias: ACTION_ALIAS,
+			type: "archive" as const,
+			messageAlias: MESSAGE_ALIAS,
+		};
+		await guardedProviderDispatch(fake.provider, {
+			...captureRequest(),
+			action,
+			rawTargets: {
+				[MESSAGE_ALIAS]: "provider-message-1",
+			},
+		});
+
+		const received: MailboxCaptureChunk[] = [];
+		for await (const chunk of fake.coordinatorSeams.capture(
+			captureRequest(),
+			abort.signal,
+		)) {
+			received.push(chunk);
+		}
+
+		expect(received).toHaveLength(1);
+		expect(received[0]?.payload).toEqual({
+			kind: "messages",
+			items: [],
+		});
+		expect(received[0]?.sequence).toBe(0);
+		expect(received[0]?.declaredTotal).toBe(1);
+	});
+
 	it.each([
 		[
 			"archive",
@@ -301,7 +384,10 @@ describe("fake mailbox-provider-v1", () => {
 			},
 			"provider-message-1",
 			rawInventory(),
-			{ messages: [{ folderId: "provider-folder-1" }] },
+			{
+				messages: [{ folderId: "provider-folder-1" }],
+				folders: [{ messageCount: 0 }, { messageCount: 1 }],
+			},
 		],
 		[
 			"apply_label",
@@ -312,7 +398,10 @@ describe("fake mailbox-provider-v1", () => {
 			},
 			"provider-message-1",
 			rawInventory(),
-			{ messages: [{ labelIds: ["provider-label-1"] }] },
+			{
+				messages: [{ labelIds: ["provider-label-1"] }],
+				labels: [{ messageCount: 1 }],
+			},
 		],
 		[
 			"remove_label",
@@ -353,6 +442,168 @@ describe("fake mailbox-provider-v1", () => {
 				status: "completed",
 				affectedCount: 1,
 				observations: [{ code: "verified" }],
+			});
+		},
+	);
+
+	it.each([
+		["archive", { type: "archive", messageAlias: MESSAGE_ALIAS }],
+		["mark_read", { type: "mark_read", messageAlias: MESSAGE_ALIAS }],
+		[
+			"move_to_folder",
+			{
+				type: "move_to_folder",
+				messageAlias: MESSAGE_ALIAS,
+				folderAlias: FOLDER_ALIAS,
+			},
+		],
+		["create_folder", { type: "create_folder", folderAlias: NEW_FOLDER_ALIAS }],
+		[
+			"rename_folder",
+			{
+				type: "rename_folder",
+				folderAlias: FOLDER_ALIAS,
+				replacementFolderAlias: REPLACEMENT_FOLDER_ALIAS,
+			},
+		],
+		["create_label", { type: "create_label", labelAlias: NEW_LABEL_ALIAS }],
+		[
+			"rename_label",
+			{
+				type: "rename_label",
+				labelAlias: LABEL_ALIAS,
+				replacementLabelAlias: REPLACEMENT_LABEL_ALIAS,
+			},
+		],
+		[
+			"apply_label",
+			{
+				type: "apply_label",
+				messageAlias: MESSAGE_ALIAS,
+				labelAlias: LABEL_ALIAS,
+			},
+		],
+		[
+			"create_category",
+			{ type: "create_category", labelAlias: NEW_LABEL_ALIAS },
+		],
+		[
+			"rename_category",
+			{
+				type: "rename_category",
+				labelAlias: LABEL_ALIAS,
+				replacementLabelAlias: REPLACEMENT_LABEL_ALIAS,
+			},
+		],
+		[
+			"apply_category",
+			{
+				type: "apply_category",
+				messageAlias: MESSAGE_ALIAS,
+				labelAlias: LABEL_ALIAS,
+			},
+		],
+		["create_filter", { type: "create_filter", filterAlias: NEW_FILTER_ALIAS }],
+		[
+			"change_filter",
+			{
+				type: "change_filter",
+				filterAlias: FILTER_ALIAS,
+				replacementFilterAlias: REPLACEMENT_FILTER_ALIAS,
+			},
+		],
+		[
+			"deactivate_filter",
+			{ type: "deactivate_filter", filterAlias: FILTER_ALIAS },
+		],
+	] as const)(
+		"dispatches and freshly verifies canonical %s",
+		async (_name, payload) => {
+			const fake = harness();
+			const action = {
+				schemaVersion: 1 as const,
+				actionAlias: ACTION_ALIAS,
+				...payload,
+			} as MailboxProviderDispatchRequest["action"];
+			const rawByAlias: Readonly<Record<string, string>> = {
+				[MESSAGE_ALIAS]: "provider-message-1",
+				[FOLDER_ALIAS]: "provider-folder-1",
+				[LABEL_ALIAS]: "provider-label-1",
+				[FILTER_ALIAS]: "provider-filter-1",
+				[NEW_FOLDER_ALIAS]: "provider-folder-new",
+				[NEW_LABEL_ALIAS]: "provider-label-new",
+				[NEW_FILTER_ALIAS]: "provider-filter-new",
+				[REPLACEMENT_FOLDER_ALIAS]: "Renamed folder",
+				[REPLACEMENT_LABEL_ALIAS]: "Renamed label",
+				[REPLACEMENT_FILTER_ALIAS]: "changed-filter-config",
+			};
+			const rawTargets = Object.fromEntries(
+				[
+					"messageAlias",
+					"folderAlias",
+					"replacementFolderAlias",
+					"labelAlias",
+					"replacementLabelAlias",
+					"filterAlias",
+					"replacementFilterAlias",
+				].flatMap((key) => {
+					const target = (action as unknown as Record<string, unknown>)[key];
+					return typeof target === "string"
+						? [[target, rawByAlias[target]]]
+						: [];
+				}),
+			) as Readonly<Record<string, string>>;
+			const request: MailboxProviderDispatchRequest = {
+				...captureRequest(),
+				action,
+				rawTargets,
+			};
+
+			await expect(
+				guardedProviderDispatch(fake.provider, request),
+			).resolves.toEqual({ status: "dispatched" });
+			await expect(
+				guardedProviderVerifyFresh(fake.provider, request),
+			).resolves.toEqual({
+				status: "verified",
+				verifiedAt: NOW,
+				delta: {
+					schemaVersion: 1,
+					scope: "entire_fingerprint",
+					actionAlias: ACTION_ALIAS,
+					changedAliases: (() => {
+						switch (action.type) {
+							case "archive":
+							case "mark_read":
+								return [action.messageAlias];
+							case "move_to_folder":
+								return [
+									action.messageAlias,
+									action.folderAlias,
+								].sort();
+							case "apply_label":
+							case "apply_category":
+								return [
+									action.messageAlias,
+									action.labelAlias,
+								].sort();
+							case "create_folder":
+							case "create_label":
+							case "create_category":
+							case "create_filter":
+								return [];
+							case "rename_folder":
+								return [action.folderAlias];
+							case "rename_label":
+							case "rename_category":
+								return [action.labelAlias];
+							case "deactivate_filter":
+								return [action.filterAlias];
+							case "change_filter":
+								return [action.filterAlias];
+						}
+					})(),
+				},
 			});
 		},
 	);
