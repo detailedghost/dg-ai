@@ -867,37 +867,34 @@ export function buildOverlay(
 		close.addEventListener("click", () => void finish(ctx));
 		controls.appendChild(close);
 
+		// Arrows carry navigation on their own — no Next button. Backward is tinted
+		// --accent2, forward --accent, so direction reads from color at a glance.
 		controls.appendChild(
 			arrowButton(
 				"«",
 				state.index > 0,
 				() => void goTo(ctx, 0),
 				"Go to first step",
+				"var(--accent2)",
 			),
 		);
-		// Single-step ‹ replaces the old "Back" text button so the arrow cluster
-		// reads « ‹ › » and matches the review editor's controls.
 		controls.appendChild(
 			arrowButton(
 				"‹",
 				state.index > 0,
 				() => void goTo(ctx, state.index - 1),
 				"Previous step",
+				"var(--accent2)",
 			),
 		);
-		const next = btn(last ? "Done" : "Next", true);
-		next.addEventListener(
-			"click",
-			() => void advanceWithAction(ctx, state, step, target),
-		);
-		controls.appendChild(next);
-		// Mirrors Next (action included), so stepping by arrow can't skip an action.
+		// Forward runs the step's action, so arrow-stepping can't skip one.
 		controls.appendChild(
 			arrowButton(
 				"›",
 				!last,
 				() => void advanceWithAction(ctx, state, step, target),
 				"Next step",
+				"var(--accent)",
 			),
 		);
 		controls.appendChild(
@@ -906,8 +903,18 @@ export function buildOverlay(
 				!last,
 				() => void goTo(ctx, total - 1),
 				"Go to last step",
+				"var(--accent)",
 			),
 		);
+		// Only affordance that ends the tour, so it stays a labelled button.
+		if (last) {
+			const done = btn("Done", true);
+			done.addEventListener(
+				"click",
+				() => void advanceWithAction(ctx, state, step, target),
+			);
+			controls.appendChild(done);
+		}
 		card.appendChild(controls);
 	}
 
@@ -1631,15 +1638,17 @@ function arrowButton(
 	enabled: boolean,
 	onClick: () => void,
 	ariaLabel?: string,
+	/** Theme var (e.g. "var(--accent)") tinting the glyph and its border. */
+	accent?: string,
 ): HTMLButtonElement {
 	const b = el("button", {
 		cursor: enabled ? "pointer" : "default",
-		border: "0.125rem solid var(--line)",
+		border: `0.125rem solid ${accent ?? "var(--line)"}`,
 		borderRadius: "0",
 		padding: "0.25rem 0.625rem",
 		font: `0.9375rem ${MONO}`,
 		background: "transparent",
-		color: "var(--ink)",
+		color: accent ?? "var(--ink)",
 		opacity: enabled ? "1" : "0.4",
 	});
 	if (enabled) b.className = "dg-btn";
@@ -1793,17 +1802,25 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	 * wizard, a menu, a tab — left every one of those selectors unresolvable, and
 	 * the editor showed a centered modal instead of the element being authored.
 	 *
+	 * A step timed `click` counts too, not just one with an authored `@click`.
+	 * `advance: "click"` means playback waits for the user to click the target, so
+	 * during planning the forward press *is* that click — without this, stepping a
+	 * plan built from advance-timings (the common shape) still moved nothing.
+	 *
 	 * Only the forward arrow does this; ‹ and the jump controls stay pure
-	 * navigation, since replaying an action backwards has no meaning. The action
-	 * runs because the user pressed forward on a step whose action is visible in
-	 * the row they are looking at — per-step intent, not an unattended run.
+	 * navigation, since replaying an action backwards has no meaning. It runs
+	 * because the user pressed forward on a step whose action and timing are both
+	 * visible in the row they are looking at — per-step intent, not an unattended
+	 * run.
 	 */
 	const advanceReview = async (cursor: number): Promise<void> => {
 		const current = reviewRows[cursor];
 		const step = current ? draftRowToStep(current.row) : undefined;
-		if (step?.action) {
+		const action: StepAction | undefined =
+			step?.action ?? (step?.advance === "click" ? { do: "click" } : undefined);
+		if (step && action) {
 			const target = editorSpotlightTarget(document, step.selector ?? "");
-			if (target) await performAction(step.action, target);
+			if (target) await performAction(action, target);
 			else console.warn(missingActionTargetWarning(step));
 		}
 		dispatch("next");
