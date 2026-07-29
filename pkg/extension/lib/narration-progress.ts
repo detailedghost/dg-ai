@@ -11,6 +11,11 @@ export type ModelLoadProgress = {
 const MODEL_READY_PERCENT = 60;
 const SYNTHESIS_READY_PERCENT = 98;
 
+/** Round an untrusted progress number into 0-100, for anything rendering a percentage. */
+export function clampPercent(progress: number): number {
+	return Math.min(Math.max(Math.round(progress), 0), 100);
+}
+
 /** Keep a monotonic overall percentage while several model files load in parallel. */
 export class NarrationProgressTracker {
 	private readonly files = new Map<string, { loaded: number; total: number }>();

@@ -11,6 +11,7 @@ import {
 	formatAdvance,
 	parseAdvance,
 	partitionTourSteps,
+	slugify,
 	toPlanMarkdown,
 	tourHasAutomaticActions,
 } from "@dg/common";
@@ -32,6 +33,7 @@ import type {
 	TourScript,
 	TourStep,
 } from "@/lib/demo-types";
+import { clampPercent } from "@/lib/narration-progress";
 import {
 	injectTheme,
 	type SelectorQueryRoot,
@@ -51,14 +53,6 @@ import {
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 /**
- * Ask the background which shortcut Chrome bound to the record command, or null.
- *
- * Never assume the manifest's suggested key: if anything else already holds the combo
- * — most easily a stale unpacked copy of this extension — Chrome assigns ours nothing,
- * the keypress goes to that other extension, and printing the suggested key here tells
- * the user to press something this extension will never receive.
- */
-/**
  * Where this browser lets the user rebind extension shortcuts.
  *
  * Named per browser rather than relying on a `chrome://` → `edge://` redirect, since
@@ -71,6 +65,14 @@ function shortcutsPageUrl(): string {
 		: "chrome://extensions/shortcuts";
 }
 
+/**
+ * Ask the background which shortcut Chrome bound to the record command, or null.
+ *
+ * Never assume the manifest's suggested key: if anything else already holds the combo
+ * — most easily a stale unpacked copy of this extension — Chrome assigns ours nothing,
+ * the keypress goes to that other extension, and printing the suggested key here tells
+ * the user to press something this extension will never receive.
+ */
 async function readRecordShortcut(): Promise<string | null> {
 	try {
 		const res = (await browser.runtime.sendMessage({
@@ -1382,7 +1384,7 @@ async function renderModal(
 				});
 				bar.max = 100;
 				const update = (progress: number, label: string | undefined): void => {
-					const value = Math.min(Math.max(Math.round(progress), 0), 100);
+					const value = clampPercent(progress);
 					bar.value = value;
 					bar.setAttribute("aria-valuetext", `${value}%`);
 					status.textContent = `${label ?? opts.progressLabel ?? "Preparing"} · ${value}%`;
@@ -1825,10 +1827,6 @@ export function scriptToDraft(script: TourScript): Draft {
 	};
 }
 
-function editSlug(s: string): string {
-	return s.replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() || "demo";
-}
-
 /** Editor navigation state: a step being reviewed, or the final actions screen. */
 export type EditPhase = { kind: "step"; cursor: number } | { kind: "done" };
 export type EditEvent = "next" | "back" | "approve" | "editAgain";
@@ -2180,7 +2178,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");
 		a.href = url;
-		a.download = `${editSlug(draft.title)}.demo.md`;
+		a.download = `${slugify(draft.title)}.demo.md`;
 		a.click();
 		setTimeout(() => URL.revokeObjectURL(url), 1000);
 	};

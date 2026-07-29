@@ -159,7 +159,7 @@ export function createRecordingRouter(
 	msg: RecordingMessage,
 	sender: RecordingSender,
 	sendResponse: (data: RecordingResponse) => void,
-) => boolean | void {
+) => boolean | undefined {
 	const routes = buildRoutes(deps);
 	return (msg, sender, sendResponse) => {
 		if (msg?.type === MSG.requestVideoData && sender.tab?.id != null) {
