@@ -162,10 +162,11 @@ describe("demo-recorder", () => {
 	// ── confirmDownload ──────────────────────────────────────────────────────
 
 	describe("confirmDownload", () => {
-		it("reads IDB, calls downloads.download with filename matching dg-demo/<slug>/<slug>.zip; IDB entry absent after success", async () => {
+		it("downloads the video and the plan as two separate files under dg-demo/<slug>/; IDB entry absent after success", async () => {
+			const dataUrl = "data:video/webm;base64,AAAA";
 			await saveRecording({
 				tabId: TAB_ID,
-				dataUrl: "data:video/webm;base64,AAAA",
+				dataUrl,
 				slug: "my-tour",
 				planMarkdown: "# Plan",
 				createdAt: Date.now(),
@@ -175,10 +176,18 @@ describe("demo-recorder", () => {
 
 			expect(downloadMock).toHaveBeenCalledWith(
 				expect.objectContaining({
-					filename: "dg-demo/my-tour/my-tour.zip",
+					filename: "dg-demo/my-tour/my-tour.webm",
+					url: dataUrl,
 				}),
 				expect.any(Function),
 			);
+			expect(downloadMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					filename: "dg-demo/my-tour/my-tour.demo.md",
+				}),
+				expect.any(Function),
+			);
+			expect(downloadMock).toHaveBeenCalledTimes(2);
 			expect(sendMessage).toHaveBeenCalledWith(
 				TAB_ID,
 				expect.objectContaining({ type: MSG.videoSaved }),
@@ -186,6 +195,26 @@ describe("demo-recorder", () => {
 
 			const entry = await getRecording(TAB_ID);
 			expect(entry).toBeUndefined();
+		});
+
+		it("passes the stored dataUrl straight through with no base64 decode", async () => {
+			const dataUrl = "data:video/webm;base64,SGVsbG8=";
+			await saveRecording({
+				tabId: TAB_ID,
+				dataUrl,
+				slug: "my-tour",
+				planMarkdown: "# Plan",
+				createdAt: Date.now(),
+			});
+
+			await confirmDownload(TAB_ID);
+
+			const videoCall = downloadMock.mock.calls.find(
+				(call: unknown[]) =>
+					(call[0] as { filename: string }).filename ===
+					"dg-demo/my-tour/my-tour.webm",
+			);
+			expect(videoCall?.[0]).toMatchObject({ url: dataUrl });
 		});
 
 		it("missing IDB entry: sends MSG.videoError; download not called", async () => {
@@ -511,7 +540,7 @@ describe("demo-recorder", () => {
 	// ── Additional behavior ─────────────────────────────────────────────────
 
 	describe("confirmDownload — download failure", () => {
-		it("chrome.runtime.lastError set → sends MSG.videoError; IDB entry is still removed", async () => {
+		it("chrome.runtime.lastError set → sends MSG.videoError; both downloads still attempted; IDB entry is still removed", async () => {
 			await saveRecording({
 				tabId: TAB_ID,
 				dataUrl: "data:video/webm;base64,AAAA",
@@ -523,6 +552,7 @@ describe("demo-recorder", () => {
 			downloadShouldFail = true;
 			await confirmDownload(TAB_ID);
 
+			expect(downloadMock).toHaveBeenCalledTimes(2);
 			expect(sendMessage).toHaveBeenCalledWith(
 				TAB_ID,
 				expect.objectContaining({ type: MSG.videoError }),

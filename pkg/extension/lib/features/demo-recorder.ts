@@ -25,7 +25,6 @@ import {
 	removeRecording,
 	saveRecording,
 } from "@/utils/recording-db";
-import { zipStore } from "@/utils/zip";
 
 const OFFSCREEN_URL = "offscreen.html";
 const ACTIVE_KEY = "demo_active_recording";
@@ -279,7 +278,19 @@ export async function handleRecordingData(dataUrl: string): Promise<void> {
 	notify({ type: MSG.videoReview });
 }
 
-/** Read the IDB entry, zip it, trigger download, then clean up IDB. */
+/** Trigger a `chrome.downloads.download`, resolving to the failure message (if any). */
+function downloadFile(
+	filename: string,
+	url: string,
+): Promise<string | undefined> {
+	return new Promise((resolve) => {
+		chrome.downloads.download({ url, filename }, () => {
+			resolve(chrome.runtime.lastError?.message);
+		});
+	});
+}
+
+/** Download the video and plan as separate files, then clean up IDB. */
 export async function confirmDownload(tabId: number): Promise<void> {
 	const notify = (msg: object): void => {
 		void chrome.tabs.sendMessage(tabId, msg);
@@ -290,28 +301,24 @@ export async function confirmDownload(tabId: number): Promise<void> {
 		return;
 	}
 	const { slug, dataUrl, planMarkdown } = entry;
-	const zip = zipStore([
-		{ name: `${slug}.webm`, data: base64ToBytes(dataUrl.split(",")[1] ?? "") },
-		{ name: `${slug}.demo.md`, data: new TextEncoder().encode(planMarkdown) },
-	]);
-	const filename = `dg-demo/${slug}/${slug}.zip`;
-	const zipUrl = `data:application/zip;base64,${bytesToBase64(zip)}`;
+	const folder = `dg-demo/${slug}`;
+	const planUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(planMarkdown)}`;
 
-	// Wrap callback in a Promise so the caller can await the full operation,
-	// including the IDB removal that follows the download callback.
-	return new Promise<void>((resolve) => {
-		chrome.downloads.download({ url: zipUrl, filename }, () => {
-			const failed = !!chrome.runtime.lastError;
-			notify(
-				failed
-					? { type: MSG.videoError, error: chrome.runtime.lastError?.message }
-					: { type: MSG.videoSaved, filename },
-			);
-			// Remove the IDB entry regardless of success/failure so a stale
-			// recording can't linger after the user has acted on it.
-			void removeRecording(tabId).finally(resolve);
-		});
-	});
+	// Straight from the stored dataUrl: no base64 decode, no second in-memory
+	// copy of a video that can already be tens of megabytes.
+	const [videoError, planError] = await Promise.all([
+		downloadFile(`${folder}/${slug}.webm`, dataUrl),
+		downloadFile(`${folder}/${slug}.demo.md`, planUrl),
+	]);
+	const error = videoError ?? planError;
+	notify(
+		error
+			? { type: MSG.videoError, error }
+			: { type: MSG.videoSaved, filename: folder },
+	);
+	// Remove the IDB entry regardless of success/failure so a stale
+	// recording can't linger after the user has acted on it.
+	await removeRecording(tabId);
 }
 
 /** Remove the IDB entry without notifying the tab (user chose to discard). */
@@ -376,21 +383,6 @@ async function getActive(): Promise<ActiveRecording | undefined> {
 async function cleanup(): Promise<void> {
 	await chrome.storage.local.remove(ACTIVE_KEY);
 	await closeOffscreen();
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-	const bin = atob(b64);
-	const out = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-	return out;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-	let bin = "";
-	const chunk = 0x8000;
-	for (let i = 0; i < bytes.length; i += chunk)
-		bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-	return btoa(bin);
 }
 
 async function ensureOffscreen(): Promise<void> {

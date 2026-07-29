@@ -142,7 +142,7 @@ user's. A raw `.json` script is also accepted.
 
 For a video, excluded setup runs first; once it hands off, the user presses
 **`Alt+Shift+D`** (or clicks the DeeGee toolbar icon) to start recording. The tour then
-auto-plays and saves `dg-demo/<tour>/<tour>.zip` — the video **and** its `plan.md` — to
+auto-plays and saves `dg-demo/<tour>/<tour>.webm` and `dg-demo/<tour>/<tour>.demo.md` to
 their Downloads. Chrome/Edge only (tabCapture + an offscreen document). The first
 narrated run downloads the ~86 MB Kokoro model; if synthesis fails the video still
 records silently.
@@ -154,8 +154,8 @@ records silently.
 
 ## Replaying a saved demo
 
-Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every video bundles a copy in
-its `.zip`. Replay either without recompiling:
+Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every recorded video downloads
+alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
 
 ```bash
 "$DG" rerun <path-to>.demo.md
