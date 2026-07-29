@@ -2,6 +2,7 @@ import { tourHasAutomaticActions } from "@dg/common";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import {
+	activeRecordingRefusal,
 	confirmDownload,
 	discardRecording,
 	handleClearForCapture,
@@ -112,9 +113,12 @@ const defaultDeps: RecordingDeps = {
 
 function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 	return {
-		[MSG.videoStop]: () => void deps.stopVideoRecording(),
-		[MSG.playStep]: (msg) => {
-			if (typeof msg.index === "number") void deps.relayPlayStep(msg.index);
+		[MSG.videoStop]: (_msg, sender) => {
+			if (sender.tab?.id != null) void deps.stopVideoRecording(sender.tab.id);
+		},
+		[MSG.playStep]: (msg, sender) => {
+			if (sender.tab?.id != null && typeof msg.index === "number")
+				void deps.relayPlayStep(sender.tab.id, msg.index);
 		},
 		[MSG.clearForCapture]: (msg) => {
 			if (msg.target === "background") void deps.handleClearForCapture();
@@ -202,6 +206,16 @@ export async function maybeStartRecording(
 		void chrome.tabs.sendMessage(tab.id, {
 			type: MSG.videoBlocked,
 			reason: refusal,
+		});
+		return true;
+	}
+	// One offscreen doc captures one tab; must be decided before startRecording
+	// ever calls acquireStreamId — see that function's doc comment for why.
+	const activeConflict = await activeRecordingRefusal(tab.id);
+	if (activeConflict) {
+		void chrome.tabs.sendMessage(tab.id, {
+			type: MSG.videoBlocked,
+			reason: activeConflict,
 		});
 		return true;
 	}

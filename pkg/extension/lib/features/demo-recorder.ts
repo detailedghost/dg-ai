@@ -17,6 +17,7 @@ import { getConfig } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import { clampPercent } from "@/lib/narration-progress";
+import { wait } from "@/utils/async";
 import { toPlanMarkdown } from "@/utils/plan-format";
 import {
 	getRecording,
@@ -46,6 +47,12 @@ type ActiveRecording = {
  * only on the failure it exists for: a previous aborted recording can leave an
  * offscreen document holding a getUserMedia stream, and Chrome refuses to capture a
  * tab that already has one.
+ *
+ * This makes the function destructive, not just slow: its retry path closes the
+ * shared offscreen document. If another tab is genuinely mid-recording, that
+ * document's stream is live, so a failed first attempt here can and will tear it
+ * down. Never call this speculatively for a start that might still be refused —
+ * decide whether the start may proceed *before* calling this, never after.
  */
 async function acquireStreamId(tabId: number): Promise<string> {
 	try {
@@ -66,9 +73,6 @@ async function acquireStreamId(tabId: number): Promise<string> {
  */
 const HANDOFF_ATTEMPTS = 6;
 const HANDOFF_BACKOFF_MS = 120;
-
-const wait = (ms: number): Promise<void> =>
-	new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Deliver a message to the offscreen recorder, retrying until it acknowledges.
@@ -96,6 +100,16 @@ async function sendToOffscreen(msg: object): Promise<void> {
 	);
 }
 
+/** Whether `tabId` still exists — a `chrome.tabs.get` rejection means it's gone. */
+async function tabIsOpen(tabId: number): Promise<boolean> {
+	try {
+		await chrome.tabs.get(tabId);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** Whether video recording is supported here (offscreen + tabCapture are Chrome-only). */
 export function videoRecordingSupported(): boolean {
 	return (
@@ -105,7 +119,22 @@ export function videoRecordingSupported(): boolean {
 	);
 }
 
-/** Start recording `tabId` and hand the tour to the offscreen recorder. Must run in a user gesture. */
+/**
+ * Start recording `tabId` and hand the tour to the offscreen recorder.
+ *
+ * Must run in a user gesture, and `acquireStreamId` must be the first thing this
+ * function awaits — nothing else, not a storage read, not a `chrome.tabs.get`
+ * round trip, not the single-active check. Any await ahead of it risks the
+ * invoking gesture no longer counting, which Chrome reports as "Extension has
+ * not been invoked for the current page": indistinguishable from a missing
+ * permission, and a bug this file has already shipped twice.
+ *
+ * The single-active check therefore cannot live here at all — it lives in the
+ * caller (`maybeStartRecording`, via `activeRecordingRefusal`), which decides
+ * whether this function should run before ever calling it. Calling
+ * `acquireStreamId` speculatively for a start that might get refused is worse
+ * than the gesture risk: see its doc comment for why.
+ */
 export async function startVideoRecording(
 	tabId: number,
 	script: TourScript,
@@ -178,8 +207,13 @@ export async function handleClearForCapture(): Promise<void> {
 		void chrome.tabs.sendMessage(active.tabId, { type: MSG.videoClearUi });
 }
 
-/** Relay a play-step cue from the content script to the offscreen recorder. */
-export async function relayPlayStep(index: number): Promise<void> {
+/** Relay a play-step cue from the content script to the offscreen recorder — ignored from any tab but the active recording's. */
+export async function relayPlayStep(
+	tabId: number,
+	index: number,
+): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId !== tabId) return;
 	try {
 		await sendToOffscreen({ type: MSG.playStep, index });
 	} catch (err) {
@@ -188,19 +222,19 @@ export async function relayPlayStep(index: number): Promise<void> {
 	}
 }
 
-/** Tell the offscreen recorder to stop; it replies with the data via handleRecordingData. */
-export async function stopVideoRecording(): Promise<void> {
+/** Tell the offscreen recorder to stop — ignored from any tab but the active recording's. */
+export async function stopVideoRecording(tabId: number): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId !== tabId) return;
 	try {
 		await sendToOffscreen({ type: MSG.stopRecording });
 	} catch (err) {
 		// Nothing will ever send recordingData now, so say so rather than hang the tour
 		// on a recording that has already stopped being watched.
-		const active = await getActive();
-		if (active?.tabId != null)
-			void chrome.tabs.sendMessage(active.tabId, {
-				type: MSG.videoError,
-				error: err instanceof Error ? err.message : String(err),
-			});
+		void chrome.tabs.sendMessage(tabId, {
+			type: MSG.videoError,
+			error: err instanceof Error ? err.message : String(err),
+		});
 		await cleanup();
 	}
 }
@@ -292,6 +326,46 @@ export async function handleRequestVideoData(
 ): Promise<void> {
 	const entry = await getRecording(tabId);
 	sendResponse({ dataUrl: entry?.dataUrl ?? null });
+}
+
+/**
+ * Tear down the active recording if the tab that just closed owned it.
+ *
+ * The content script dies with its tab, so a closed recording tab never sends
+ * MSG.videoStop — without this, the offscreen doc keeps capturing a dead tab
+ * forever, and ACTIVE_KEY (persisted in storage.local) locks out every future
+ * start until storage is cleared by hand. Called from tour-state.ts's onRemoved.
+ */
+export async function handleRecordingTabClosed(tabId: number): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId === tabId) await cleanup();
+}
+
+/**
+ * Why `tabId` may not start a video recording right now, given the single
+ * active-recording slot — or null when it may, exactly like `recordingRefusal`.
+ *
+ * Must be checked (and awaited to completion) by the caller *before*
+ * `startVideoRecording`/`acquireStreamId` ever runs — see that function's doc
+ * comment for why calling it speculatively is unsafe.
+ *
+ * A different tab that's still open holds the slot: refuse. A different tab
+ * that's gone (crash or restart outran onRemoved's cleanup): the entry is
+ * stale, so drop it with a single fast write and let the start proceed — not
+ * `cleanup()`, which also awaits `closeOffscreen()` and would reintroduce the
+ * same gesture risk one layer up. If a stream is genuinely still open,
+ * `acquireStreamId`'s own retry is the machinery built to tear it down.
+ */
+export async function activeRecordingRefusal(
+	tabId: number,
+): Promise<string | null> {
+	const existing = await getActive();
+	if (!existing || existing.tabId === tabId) return null;
+	if (await tabIsOpen(existing.tabId)) {
+		return "Another tab is already recording a demo tour. Finish or discard it before starting a new one.";
+	}
+	await chrome.storage.local.remove(ACTIVE_KEY);
+	return null;
 }
 
 async function getActive(): Promise<ActiveRecording | undefined> {

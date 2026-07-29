@@ -1,4 +1,5 @@
 import { MSG } from "@/lib/demo-messages";
+import { handleRecordingTabClosed } from "@/lib/features/demo-recorder";
 import { removeRecording } from "@/utils/recording-db";
 
 /** Answer "which tab am I?" and drop a tab's tour state when it closes. */
@@ -20,5 +21,6 @@ export function registerTourState(): void {
 			`demo_pending:${tabId}`,
 		]);
 		void removeRecording(tabId).catch(() => {});
+		void handleRecordingTabClosed(tabId).catch(() => {});
 	});
 }
