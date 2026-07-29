@@ -211,7 +211,21 @@ function playStep(index: number): void {
 	const src = audioCtx.createBufferSource();
 	src.buffer = buf;
 	src.connect(narrationDest);
+	relayNarrationCompletionOnEnd(src, index);
 	src.start();
+}
+
+export function relayNarrationCompletionOnEnd(
+	source: AudioBufferSourceNode,
+	index: number,
+): void {
+	source.onended = () => {
+		chrome.runtime.sendMessage({
+			type: MSG.narrationComplete,
+			target: "background",
+			index,
+		});
+	};
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 	activeRecordingRefusal,
 	confirmDownload,
 	discardRecording,
+	handleNarrationComplete,
 	handleNarrationProgress,
 	handleRecordingData,
 	handleRecordingTabClosed,
@@ -98,6 +99,10 @@ function buildChromeStub() {
 		},
 		runtime: {
 			getContexts: mock(async () => []),
+			onMessage: {
+				addListener: mock(() => undefined),
+				removeListener: mock(() => undefined),
+			},
 			sendMessage: mock(() => undefined),
 			get lastError() {
 				return mockLastError;
@@ -533,6 +538,33 @@ describe("demo-recorder", () => {
 				type: MSG.narrationProgress,
 				progress: 100,
 				label: "Narration ready",
+			});
+		});
+	});
+
+	describe("handleNarrationComplete", () => {
+		it("forwards the completed step index to the active tour tab", async () => {
+			await handleNarrationComplete(2);
+
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.narrationComplete,
+				index: 2,
+			});
+		});
+
+		it("emits from the audio source onended event with the same step index", async () => {
+			const { relayNarrationCompletionOnEnd } = await import(
+				"@/entrypoints/offscreen/main"
+			);
+			const source = {} as AudioBufferSourceNode;
+			relayNarrationCompletionOnEnd(source, 4);
+
+			source.onended?.({} as Event);
+
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+				type: MSG.narrationComplete,
+				target: "background",
+				index: 4,
 			});
 		});
 	});
