@@ -71,9 +71,7 @@ export async function removeRecording(tabId: number): Promise<void> {
 }
 
 /** Delete all entries older than `maxAgeMs` (default 8 hours). */
-export async function pruneStaleRecordings(
-	maxAgeMs = STALE_MS,
-): Promise<void> {
+export async function pruneStaleRecordings(maxAgeMs = STALE_MS): Promise<void> {
 	const db = await openDb();
 	const cutoff = Date.now() - maxAgeMs;
 	return new Promise((resolve, reject) => {
