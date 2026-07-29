@@ -65,15 +65,9 @@ those values in a fill action.
 
 ## Step 2 — Open it in the extension
 
-Write the plan to `/tmp/ai/demo/tour.md` and run **one** command — no `--video` flag,
-because the mode is chosen in the browser:
-
-```bash
-"$DG" demo --edit /tmp/ai/demo/tour.md
-```
-
-Resolve `$DG` first. In a dev checkout, compile the local source so the demo exercises
-the latest code rather than a stale released binary:
+Write the plan to `/tmp/ai/demo/tour.md`. Resolve `$DG` first — in a dev checkout,
+compile the local source so the demo (and the verify pass below) exercise the latest
+code rather than a stale released binary:
 
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
@@ -98,6 +92,34 @@ fi
 
 On Windows PowerShell use the checkout's `bootstrap.ps1`, or pipe the repository's raw
 `bootstrap.ps1` to `Invoke-Expression`.
+
+### Verify, then correct, then repeat — bounded
+
+Before handing the plan to the user, walk it yourself in a real throwaway browser —
+you are the first one to hit a bad selector or an unrecorded navigation, not them:
+
+```bash
+"$DG" demo --verify /tmp/ai/demo/tour.md
+```
+
+This prints `{"ok": boolean, "findings": [...]}` to stdout. Each finding names a step
+and what's wrong: `selector-unresolved` (nothing on the page matches that selector),
+`unrecorded-navigation` (a click moved the page to a URL the plan never recorded), or
+`page-mismatch` (the step landed somewhere other than its authored `navigate` URL).
+
+If `findings` is non-empty, fix the plan — correct the selector, add the missing
+`navigate` line — and run `--verify` again. **Attempt at most 3 correction passes.** If
+a finding still cannot be resolved after 3 passes, stop: surface that finding to the
+user rather than looping forever or handing off a plan you know is broken. A clean run
+(`ok: true`, empty `findings`) is what clears the plan for the next step.
+
+### Open it
+
+Run **one** command — no `--video` flag, because the mode is chosen in the browser:
+
+```bash
+"$DG" demo --edit /tmp/ai/demo/tour.md
+```
 
 This opens `startUrl` with the tour in a `_demo` marker and shows the **start screen**,
 which is the approval gate. Confirm the browser reached it, then stop — the rest is the

@@ -129,6 +129,8 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	}
 });
 
+// Rewritten post-611ca75: one CLI command opens both walkthrough and video;
+// the browser's start screen, not a chat table, is the approval gate.
 describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
@@ -136,25 +138,21 @@ describe("demo workflow parity", () => {
 		expect(demo).toContain('"$DG" demo --edit /tmp/ai/demo/tour.md');
 	});
 
-	test("new videos open in the extension editor", () => {
-		expect(demo).toContain('"$DG" demo --video --edit /tmp/ai/demo/tour.md');
+	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {
+		expect(demo).toContain("no `--video` flag");
+		expect(demo).toContain("the mode is chosen in the browser");
 	});
 
 	test("the editor is required rather than host-discretionary", () => {
-		expect(demo).toContain(
-			"Always open a newly authored tour in the extension's",
-		);
-		expect(demo).toContain("Do not launch a new tour directly");
-		expect(demo).toContain(
-			"review and approve it in the extension, then play it",
-		);
+		expect(demo).toContain("Your job is two steps");
+		expect(demo).toContain("## Step 2");
+		expect(demo).toContain("Open it in the extension");
+		expect(demo).toContain("Confirm the browser reached it, then stop");
 	});
 
 	test("the extension editor is the only approval gate", () => {
-		expect(demo).toContain(
-			"The extension editor is the approval gate for both",
-		);
-		expect(demo).toContain("Do not present a chat approval table");
+		expect(demo).toContain("shows the **start screen**");
+		expect(demo).toContain("which is the approval gate");
 		expect(demo).not.toContain("Chat approval gate");
 		expect(demo).not.toContain("After chat approval");
 	});
@@ -164,20 +162,60 @@ describe("demo setup phase", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
 	test("setup is optional and excluded from the demo by default", () => {
-		expect(demo).toContain("## Phase 2 — Optional setup (off-demo by default)");
-		expect(demo).toContain("Author reproducible preparation in `## Setup`");
-		expect(demo).toContain("Keep `includeSetup: false` unless");
-		expect(demo).toContain("the extension runs setup first as a durable");
+		expect(demo).toContain(
+			"### Setup steps, when the tour needs prerequisite state",
+		);
+		expect(demo).toContain(
+			"Use `## Setup` only for state the tutorial can't reach on its own",
+		);
+		expect(demo).toContain("Keep `includeSetup: false` (the default) unless");
+		expect(demo).toContain(
+			"**video narration and capture start only after that handoff**",
+		);
+		expect(demo).toContain("never contains the preparation.");
 	});
 
 	test("explicitly included setup becomes leading tutorial steps", () => {
 		expect(demo).toContain("With `includeSetup: true`");
 		expect(demo).toContain("leading tutorial steps");
-		expect(demo).toContain("included in narration, timing, progress, and");
 	});
 
 	test("setup protects authentication secrets", () => {
-		expect(demo).toContain("credentials, MFA codes, CAPTCHA answers");
-		expect(demo).toContain("Never put those values in a fill action");
+		// Whitespace-tolerant: the actual sentence wraps mid-phrase, and a prior
+		// version of this test broke on that wrap alone, not a design change.
+		expect(demo).toMatch(/credentials,\s+MFA codes,\s+and\s+CAPTCHA answers/);
+		expect(demo).toMatch(/Never put\s+those values in a fill action\./);
+	});
+});
+
+// Slice 6's verify loop; assertions target the contract (a real bound, a real
+// escape hatch), not exact prose, since the rewrite's wording isn't fixed yet.
+describe("demo verify-and-correct loop", () => {
+	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
+
+	test("documents running demo --verify against the written plan before handing it off", () => {
+		expect(demo).toContain("--verify");
+	});
+
+	test("bounds how many correction passes to attempt", () => {
+		// A concrete numeral tied to pass/attempt/time — an unbounded "keep fixing
+		// it" description must not satisfy this.
+		expect(demo).toMatch(
+			/\b\d+\b[^.\n]{0,40}\b(pass|passes|attempt|attempts|time|times)\b/i,
+		);
+	});
+
+	test("tells the AI to stop and surface an uncorrectable finding, not loop forever or ship it broken", () => {
+		const lower = demo.toLowerCase();
+		expect(lower).toContain("cannot");
+		expect(
+			/surface|tell the user|ask the user|show the user|hand.{0,20}(back|off) to the user/.test(
+				lower,
+			),
+		).toBe(true);
+	});
+
+	test("still chooses mode/narration/voice in the browser, not in chat", () => {
+		expect(demo).toContain("Don't ask them in chat");
 	});
 });
