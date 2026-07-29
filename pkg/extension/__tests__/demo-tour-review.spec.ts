@@ -65,6 +65,7 @@ import {
 	missingActionTargetWarning,
 	type PlayState,
 	performAction,
+	primeClickNavigation,
 	recordingStartState,
 	resetTabIdForTests,
 	resolvePendingMarker,
@@ -1491,6 +1492,47 @@ describe("advanceClickNeeded", () => {
 			false,
 		);
 		expect(advanceClickNeeded({ body: "x" }, true, true)).toBe(false);
+	});
+});
+
+describe("primeClickNavigation", () => {
+	it("persists the destination before either kind of click effect can navigate", async () => {
+		const state = initialPlayState(
+			{
+				startUrl: "https://app.example/start",
+				steps: [{ body: "Open" }, { body: "Landed" }],
+			},
+			"marker",
+		);
+		for (const step of [
+			{ body: "Timed", advance: "click" },
+			{ body: "Action", action: { do: "click" } },
+		] satisfies TourStep[]) {
+			const writeState = mock(() => Promise.resolve());
+
+			await primeClickNavigation(state, step, writeState);
+
+			expect(writeState).toHaveBeenCalledWith({ ...state, index: 1 });
+		}
+	});
+
+	it("does not move the cursor early for a non-navigation effect", async () => {
+		const state = initialPlayState(
+			{
+				startUrl: "https://app.example/start",
+				steps: [{ body: "Type" }],
+			},
+			"marker",
+		);
+		const writeState = mock(() => Promise.resolve());
+
+		await primeClickNavigation(
+			state,
+			{ body: "Type", action: { do: "fill", value: "hello" } },
+			writeState,
+		);
+
+		expect(writeState).not.toHaveBeenCalled();
 	});
 });
 
