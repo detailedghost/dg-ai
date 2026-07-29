@@ -18,8 +18,8 @@ import {
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 
-const stopVideoRecording = mock(async () => undefined);
-const relayPlayStep = mock(async (_index: number) => undefined);
+const stopVideoRecording = mock(async (_tabId: number) => undefined);
+const relayPlayStep = mock(async (_tabId: number, _index: number) => undefined);
 const relayCaptureCleared = mock(async () => undefined);
 const handleClearForCapture = mock(async () => undefined);
 const handleRecordingReady = mock(async (_durations: number[]) => undefined);
@@ -79,22 +79,42 @@ beforeEach(() => {
 });
 
 describe("handleRecordingMessage", () => {
-	it("routes videoStop to stopVideoRecording", () => {
+	it("routes videoStop to stopVideoRecording with the sender's tab id", () => {
 		handleRecordingMessage({ type: MSG.videoStop }, sender, noopSendResponse);
-		expect(stopVideoRecording).toHaveBeenCalledTimes(1);
+		expect(stopVideoRecording).toHaveBeenCalledWith(TAB_ID);
 	});
 
-	it("routes playStep with a numeric index to relayPlayStep", () => {
+	it("ignores videoStop without a sender tab id", () => {
+		const noTabSender = {} as chrome.runtime.MessageSender;
+		handleRecordingMessage(
+			{ type: MSG.videoStop },
+			noTabSender,
+			noopSendResponse,
+		);
+		expect(stopVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it("routes playStep with a numeric index to relayPlayStep with the sender's tab id", () => {
 		handleRecordingMessage(
 			{ type: MSG.playStep, index: 3 },
 			sender,
 			noopSendResponse,
 		);
-		expect(relayPlayStep).toHaveBeenCalledWith(3);
+		expect(relayPlayStep).toHaveBeenCalledWith(TAB_ID, 3);
 	});
 
 	it("ignores playStep without a numeric index", () => {
 		handleRecordingMessage({ type: MSG.playStep }, sender, noopSendResponse);
+		expect(relayPlayStep).not.toHaveBeenCalled();
+	});
+
+	it("ignores playStep without a sender tab id", () => {
+		const noTabSender = {} as chrome.runtime.MessageSender;
+		handleRecordingMessage(
+			{ type: MSG.playStep, index: 3 },
+			noTabSender,
+			noopSendResponse,
+		);
 		expect(relayPlayStep).not.toHaveBeenCalled();
 	});
 
@@ -456,6 +476,91 @@ describe("maybeStartRecording", () => {
 		});
 
 		expect(await maybeStartRecording(tab, startRecording)).toBe(true);
+		expect(startRecording).toHaveBeenCalledWith(TAB_ID, tutorialActionVideo);
+	});
+
+	/** Storage stub keyed by request: demo_tour:<tab> vs the single active-recording slot. */
+	function stubKeyedStorage(
+		activeRecording: unknown,
+		storageRemove = mock(async () => undefined),
+	) {
+		return {
+			get: mock(async (key: string) => {
+				if (key === `demo_tour:${TAB_ID}`) {
+					return {
+						[`demo_tour:${TAB_ID}`]: {
+							script: tutorialActionVideo,
+							phase: "tutorial",
+							automaticActionsApproved: true,
+						},
+					};
+				}
+				if (key === "demo_active_recording")
+					return { demo_active_recording: activeRecording };
+				return {};
+			}),
+			set: mock(async () => undefined),
+			remove: storageRemove,
+		};
+	}
+
+	/**
+	 * The regression a single-active guard almost reintroduced: acquireStreamId's
+	 * retry path closes the shared offscreen document, which would destroy tab A's
+	 * live recording if ever called for a start that's going to be refused anyway.
+	 * The conflict must be decided — and must refuse — before startRecording runs.
+	 */
+	it("refuses a different, still-open tab's start without ever acquiring a stream or touching the offscreen doc", async () => {
+		const sendMessage = mock((_tabId: number, _msg: unknown) => undefined);
+		const getMediaStreamId = mock(async () => "stream-id");
+		const closeDocument = mock(async () => undefined);
+		const OTHER_TAB_ID = 999;
+		Object.assign(chrome, {
+			tabs: { sendMessage, get: mock(async (id: number) => ({ id })) },
+			tabCapture: { getMediaStreamId },
+			offscreen: { closeDocument, createDocument: mock(async () => undefined) },
+			storage: {
+				local: stubKeyedStorage({
+					tabId: OTHER_TAB_ID,
+					tour: "Other",
+					hideBody: false,
+					planMarkdown: "",
+				}),
+			},
+		});
+
+		// No startRecording override: the real startVideoRecording must never run.
+		expect(await maybeStartRecording(tab)).toBe(true);
+
+		expect(sendMessage).toHaveBeenCalledWith(
+			TAB_ID,
+			expect.objectContaining({ type: MSG.videoBlocked }),
+		);
+		expect(getMediaStreamId).not.toHaveBeenCalled();
+		expect(closeDocument).not.toHaveBeenCalled();
+	});
+
+	it("treats a stale active-recording slot (its tab is gone) as free: drops it and lets the start proceed", async () => {
+		const startRecording = mock(
+			async (_tabId: number, _script: TourScript) => undefined,
+		);
+		const storageRemove = mock(async () => undefined);
+		Object.assign(chrome, {
+			tabs: {
+				get: mock(async () => {
+					throw new Error("No tab with id");
+				}),
+			},
+			storage: {
+				local: stubKeyedStorage(
+					{ tabId: 999, tour: "Other", hideBody: false, planMarkdown: "" },
+					storageRemove,
+				),
+			},
+		});
+
+		expect(await maybeStartRecording(tab, startRecording)).toBe(true);
+		expect(storageRemove).toHaveBeenCalledWith("demo_active_recording");
 		expect(startRecording).toHaveBeenCalledWith(TAB_ID, tutorialActionVideo);
 	});
 });

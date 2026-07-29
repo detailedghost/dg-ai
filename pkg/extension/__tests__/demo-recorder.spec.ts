@@ -13,12 +13,16 @@ import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from "fake-indexeddb";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import {
+	activeRecordingRefusal,
 	confirmDownload,
 	discardRecording,
 	handleNarrationProgress,
 	handleRecordingData,
+	handleRecordingTabClosed,
 	handleRequestVideoData,
+	relayPlayStep,
 	startVideoRecording,
+	stopVideoRecording,
 } from "@/lib/features/demo-recorder";
 import { getRecording, saveRecording } from "@/utils/recording-db";
 
@@ -63,7 +67,11 @@ function buildChromeStub() {
 	});
 
 	(globalThis as any).chrome = {
-		tabs: { sendMessage },
+		tabs: {
+			sendMessage,
+			// Resolves by default (tab exists); tests simulating a closed tab override this.
+			get: mock(async (id: number) => ({ id })),
+		},
 		tabCapture: { getMediaStreamId: mock(async () => "stream-id") },
 		offscreen: {
 			closeDocument: mock(async () => undefined),
@@ -246,6 +254,48 @@ describe("demo-recorder", () => {
 	});
 
 	describe("startVideoRecording", () => {
+		/**
+		 * getMediaStreamId consumes the user gesture: any await ahead of it risks
+		 * Chrome reporting "Extension has not been invoked for the current page"
+		 * (a bug this file has shipped twice — once by omission, once by a
+		 * single-active guard placed ahead of it here before being moved out to
+		 * maybeStartRecording). A stub can't reproduce gesture invalidation itself,
+		 * but it can pin the one thing that actually causes it: call order.
+		 */
+		it("acquires the stream id before any other await in the function", async () => {
+			const order: string[] = [];
+			(globalThis as any).chrome.tabCapture.getMediaStreamId = mock(
+				async () => {
+					order.push("getMediaStreamId");
+					return "stream-id";
+				},
+			);
+			(globalThis as any).chrome.runtime.getContexts = mock(async () => {
+				order.push("ensureOffscreen");
+				return [];
+			});
+			const realSet = chrome.storage.local.set;
+			(globalThis as any).chrome.storage.local.set = mock(
+				async (items: Record<string, any>) => {
+					order.push("storage.set");
+					return realSet(items);
+				},
+			);
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				steps: [{ body: "Show dashboard" }],
+			};
+
+			await startVideoRecording(TAB_ID, script, readConfig);
+
+			expect(order).toEqual([
+				"getMediaStreamId",
+				"ensureOffscreen",
+				"storage.set",
+			]);
+		});
+
 		it("sends included setup before tutorial steps so narration indexes match recorded playback", async () => {
 			const script: TourScript = {
 				title: "Setup demo",
@@ -347,6 +397,102 @@ describe("demo-recorder", () => {
 				type: MSG.videoPreparing,
 				narrate: true,
 			});
+		});
+	});
+
+	describe("activeRecordingRefusal", () => {
+		it("allows the start when no recording is active", async () => {
+			delete storageData["demo_active_recording"];
+
+			expect(await activeRecordingRefusal(TAB_ID)).toBeNull();
+		});
+
+		it("allows the same tab that already holds the slot to start again", async () => {
+			// beforeEach seeds demo_active_recording with tabId: TAB_ID.
+			expect(await activeRecordingRefusal(TAB_ID)).toBeNull();
+		});
+
+		it("refuses a different tab while the recording tab is still open", async () => {
+			const reason = await activeRecordingRefusal(999);
+
+			expect(reason).toMatch(/already recording/);
+		});
+
+		it("treats a different tab's slot as stale once that tab is gone, clears it, and allows the start", async () => {
+			// A service-worker restart or browser crash can strand ACTIVE_KEY on a tab
+			// that onRemoved never got a chance to clear.
+			(globalThis as any).chrome.tabs.get = mock(async () => {
+				throw new Error("No tab with id: 999");
+			});
+
+			expect(await activeRecordingRefusal(999)).toBeNull();
+			expect(storageData["demo_active_recording"]).toBeUndefined();
+		});
+	});
+
+	describe("handleRecordingTabClosed", () => {
+		it("clears the active recording when its own tab closes", async () => {
+			await handleRecordingTabClosed(TAB_ID);
+
+			expect(storageData["demo_active_recording"]).toBeUndefined();
+			expect(chrome.offscreen.closeDocument).toHaveBeenCalled();
+		});
+
+		it("leaves the active recording alone when a different tab closes", async () => {
+			await handleRecordingTabClosed(999);
+
+			expect(storageData["demo_active_recording"]).toBeDefined();
+		});
+
+		// The regression this whole guard exists to prevent: closing the recording
+		// tab must free the slot, or every later start is refused forever.
+		it("frees the slot on tab close so a different tab is not refused", async () => {
+			await handleRecordingTabClosed(TAB_ID);
+
+			expect(await activeRecordingRefusal(7)).toBeNull();
+		});
+	});
+
+	describe("stopVideoRecording", () => {
+		it("ignores a stop from a tab that is not the active recording", async () => {
+			await stopVideoRecording(999);
+
+			expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: MSG.stopRecording }),
+			);
+		});
+
+		it("forwards the stop to the offscreen recorder for the active tab", async () => {
+			await stopVideoRecording(TAB_ID);
+
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.stopRecording,
+					target: "offscreen",
+				}),
+			);
+		});
+	});
+
+	describe("relayPlayStep", () => {
+		it("ignores a play-step cue from a tab that is not the active recording", async () => {
+			await relayPlayStep(999, 2);
+
+			expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: MSG.playStep }),
+			);
+		});
+
+		it("forwards the play-step cue to the offscreen recorder for the active tab", async () => {
+			await relayPlayStep(TAB_ID, 2);
+
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.playStep,
+					index: 2,
+					target: "offscreen",
+				}),
+			);
 		});
 	});
 
