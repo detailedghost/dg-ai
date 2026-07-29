@@ -23,6 +23,7 @@ const relayPlayStep = mock(async (_tabId: number, _index: number) => undefined);
 const relayCaptureCleared = mock(async () => undefined);
 const handleClearForCapture = mock(async () => undefined);
 const handleRecordingReady = mock(async (_durations: number[]) => undefined);
+const handleNarrationComplete = mock(async (_index: number) => undefined);
 const handleNarrationProgress = mock(
 	async (_progress: number, _label?: string) => undefined,
 );
@@ -44,6 +45,7 @@ const handleRecordingMessage = createRecordingRouter({
 	relayCaptureCleared,
 	handleClearForCapture,
 	handleRecordingReady,
+	handleNarrationComplete,
 	handleNarrationProgress,
 	handleRecordingData,
 	confirmDownload,
@@ -67,6 +69,7 @@ beforeEach(() => {
 	relayCaptureCleared.mockClear();
 	handleClearForCapture.mockClear();
 	handleRecordingReady.mockClear();
+	handleNarrationComplete.mockClear();
 	handleNarrationProgress.mockClear();
 	handleRecordingData.mockClear();
 	confirmDownload.mockClear();
@@ -178,6 +181,19 @@ describe("handleRecordingMessage", () => {
 			64,
 			"Synthesizing step 1 of 2",
 		);
+	});
+
+	it("routes an indexed narration completion targeting background", () => {
+		handleRecordingMessage(
+			{
+				type: MSG.narrationComplete,
+				target: "background",
+				index: 3,
+			},
+			sender,
+			noopSendResponse,
+		);
+		expect(handleNarrationComplete).toHaveBeenCalledWith(3);
 	});
 
 	it("routes recordingData with a string dataUrl targeting background to handleRecordingData", () => {

@@ -12,6 +12,8 @@ export const MSG = {
 	recordingReady: "dg-demo:recording-ready",
 	// offscreen → background → content: local model/synthesis completion percentage
 	narrationProgress: "dg-demo:narration-progress",
+	// offscreen → background → content: step narration reached AudioBufferSourceNode.onended
+	narrationComplete: "dg-demo:narration-complete",
 	// background → content script
 	videoPreparing: "dg-demo:video-preparing",
 	// offscreen → background → content: clear overlay UI just before capture starts

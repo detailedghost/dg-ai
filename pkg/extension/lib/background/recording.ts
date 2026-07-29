@@ -6,6 +6,7 @@ import {
 	confirmDownload,
 	discardRecording,
 	handleClearForCapture,
+	handleNarrationComplete,
 	handleNarrationProgress,
 	handleRecordingData,
 	handleRecordingReady,
@@ -90,6 +91,7 @@ export type RecordingDeps = {
 	relayPlayStep: typeof relayPlayStep;
 	handleClearForCapture: typeof handleClearForCapture;
 	handleRecordingReady: typeof handleRecordingReady;
+	handleNarrationComplete: typeof handleNarrationComplete;
 	handleNarrationProgress: typeof handleNarrationProgress;
 	handleRecordingData: typeof handleRecordingData;
 	confirmDownload: typeof confirmDownload;
@@ -104,6 +106,7 @@ const defaultDeps: RecordingDeps = {
 	relayCaptureCleared,
 	handleClearForCapture,
 	handleRecordingReady,
+	handleNarrationComplete,
 	handleNarrationProgress,
 	handleRecordingData,
 	confirmDownload,
@@ -137,6 +140,10 @@ function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 				Number.isFinite(msg.progress)
 			)
 				void deps.handleNarrationProgress(msg.progress, msg.label);
+		},
+		[MSG.narrationComplete]: (msg) => {
+			if (msg.target === "background" && typeof msg.index === "number")
+				void deps.handleNarrationComplete(msg.index);
 		},
 		[MSG.recordingData]: (msg) => {
 			if (msg.target === "background" && typeof msg.dataUrl === "string")

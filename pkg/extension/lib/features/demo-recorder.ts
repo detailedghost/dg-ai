@@ -199,6 +199,16 @@ export async function handleNarrationProgress(
 		});
 }
 
+/** Relay a finished narration clip to the active tour tab. */
+export async function handleNarrationComplete(index: number): Promise<void> {
+	const active = await getActive();
+	if (active?.tabId != null)
+		void chrome.tabs.sendMessage(active.tabId, {
+			type: MSG.narrationComplete,
+			index,
+		});
+}
+
 /** Offscreen is about to start capture: tell the tour tab to clear any overlay first. */
 export async function handleClearForCapture(): Promise<void> {
 	const active = await getActive();

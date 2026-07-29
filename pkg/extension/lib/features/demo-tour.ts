@@ -102,6 +102,10 @@ export type PlayState = {
 	acted?: number;
 	/** Launched from the review editor — a walkthrough end bounces back into it. */
 	fromEdit?: boolean;
+	/** Recorder-supplied holds persist across click-navigation content-script reloads. */
+	videoDurations?: number[];
+	/** Voice-only recordings keep spoken body copy off-screen after navigation too. */
+	videoHideBody?: boolean;
 };
 
 // --- exported pure helpers (testable without browser/DOM) ---
@@ -284,11 +288,13 @@ const recKey = () => `demo_recording:${myTabId}`;
 const editKey = () => `demo_edit:${myTabId}`;
 const pendingMarkerKey = () => `demo_pending:${myTabId}`;
 
-/** Test-only: undo initTabId's memoization — a real content script loads this module
- *  once per tab, but bun:test shares it across every spec file in the run. */
+/** Reset content-script module state shared by Bun's single-process test runner. */
 export function resetTabIdForTests(): void {
+	removeUi();
 	myTabId = -1;
 	performingStepEffects.clear();
+	narrationWaiters.clear();
+	recorderListening = false;
 }
 
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
@@ -302,11 +308,6 @@ async function takeEditCursor(): Promise<number | null> {
 }
 const setEditCursor = (n: number): Promise<void> =>
 	browser.storage.local.set({ [editKey()]: n });
-
-// Per-step hold durations (ms) from the recorder, so visuals track the narration.
-let videoDurations: number[] = [];
-// Voice-only recording: the body text is spoken, so keep it off-screen (title stays).
-let videoHideBody = false;
 
 /**
  * Bounded retry for the whoami round trip, because the worker can still be starting on
@@ -620,6 +621,7 @@ function listenForRecorder(ctx: Ctx): void {
 			error?: string;
 			reason?: string;
 			durations?: number[];
+			index?: number;
 			hideBody?: boolean;
 			dataUrl?: string;
 			progress?: number;
@@ -664,13 +666,23 @@ function listenForRecorder(ctx: Ctx): void {
 				typeof msg.progress === "number"
 			) {
 				updateModalProgress?.(msg.progress, msg.label);
+			} else if (
+				msg?.type === MSG.narrationComplete &&
+				typeof msg.index === "number"
+			) {
+				narrationWaiters.get(msg.index)?.();
 			} else if (msg?.type === MSG.videoStart) {
 				void (async () => {
-					videoDurations = msg.durations ?? [];
-					videoHideBody = msg.hideBody === true;
 					await setRecording(true);
 					const state = await loadState();
-					if (state) await saveState(recordingStartState(state));
+					if (state)
+						await saveState(
+							recordingStartState({
+								...state,
+								videoDurations: msg.durations ?? [],
+								videoHideBody: msg.hideBody === true,
+							}),
+						);
 					removeUi();
 					await playCurrent(ctx);
 				})();
@@ -1132,6 +1144,55 @@ async function runToStep(
 	await goTo(ctx, target);
 }
 
+type NarrationOutcome = "ended" | "timeout" | "cancelled";
+const narrationWaiters = new Map<number, () => void>();
+
+function waitForNarration(
+	index: number,
+	timeoutMs: number,
+	signal: AbortSignal,
+): Promise<NarrationOutcome> {
+	if (signal.aborted) return Promise.resolve("cancelled");
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = (outcome: NarrationOutcome): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			signal.removeEventListener("abort", onAbort);
+			if (narrationWaiters.get(index) === onEnded)
+				narrationWaiters.delete(index);
+			resolve(outcome);
+		};
+		const onEnded = (): void => finish("ended");
+		const onAbort = (): void => finish("cancelled");
+		const timer = setTimeout(() => finish("timeout"), timeoutMs);
+		narrationWaiters.set(index, onEnded);
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+export type VideoStepSequenceDeps = {
+	waitForNarration: () => Promise<NarrationOutcome>;
+	performEffect: () => Promise<void>;
+	pause: (ms: number) => Promise<void>;
+	advance: () => Promise<void>;
+	cancelled: () => boolean;
+};
+
+/** Order one recorded step: narration, effect, authored tail, then advance. */
+export async function runVideoStepSequence(
+	step: TourStep,
+	deps: VideoStepSequenceDeps,
+): Promise<void> {
+	const narration = await deps.waitForNarration();
+	if (narration === "cancelled" || deps.cancelled()) return;
+	await deps.performEffect();
+	if (deps.cancelled()) return;
+	if (narration === "ended") await deps.pause(holdFor(step, 0));
+	if (!deps.cancelled()) await deps.advance();
+}
+
 async function renderStep(
 	ctx: Ctx,
 	state: PlayState,
@@ -1165,19 +1226,31 @@ async function renderStep(
 	cleanups.push(() => ui.remove());
 
 	if (video) {
-		// Nobody is clicking during a recording, so a click-timed step's click has to be
-		// supplied here too — not only an authored action.
-		if (target)
-			setTimeout(() => void maybePerformStepEffect(state, step, target), 600);
-		// Cue this step's narration clip, then hold for the recorder-supplied duration
-		// (narration + tail + any authored `advance`); holdFor covers the unnarrated case.
-		void browser.runtime.sendMessage({
-			type: MSG.playStep,
-			index: state.index,
+		const controller = new AbortController();
+		cleanups.push(() => controller.abort());
+		const effectAlreadyRan = (state.acted ?? -1) >= state.index;
+		const narration = effectAlreadyRan
+			? Promise.resolve<NarrationOutcome>("ended")
+			: waitForNarration(
+					state.index,
+					state.videoDurations?.[state.index] ?? holdFor(step, null),
+					controller.signal,
+				);
+		if (!effectAlreadyRan)
+			void browser.runtime.sendMessage({
+				type: MSG.playStep,
+				index: state.index,
+			});
+		void runVideoStepSequence(step, {
+			waitForNarration: () => narration,
+			performEffect: async () => {
+				if (!effectAlreadyRan && target)
+					await maybePerformStepEffect(state, step, target);
+			},
+			pause: wait,
+			advance: () => goTo(ctx, state.index + 1),
+			cancelled: () => controller.signal.aborted,
 		});
-		const hold = videoDurations[state.index] ?? holdFor(step, null);
-		const t = setTimeout(() => void goTo(ctx, state.index + 1), hold);
-		cleanups.push(() => clearTimeout(t));
 		return;
 	}
 
@@ -1277,7 +1350,7 @@ export function buildOverlay(
 	}
 
 	// Voice-only recording speaks the body, so omit the text box (title stays).
-	if (!(video && videoHideBody)) {
+	if (!(video && state.videoHideBody)) {
 		const body = el("div", { marginBottom: "0.75rem" });
 		body.textContent = step.body;
 		card.appendChild(body);
@@ -1784,8 +1857,6 @@ async function showVideoReview(ctx: Ctx): Promise<void> {
 				.querySelector("#dg-review-discard")
 				?.addEventListener("click", () => {
 					void browser.runtime.sendMessage(reviewAction("discard"));
-					videoDurations = [];
-					videoHideBody = false;
 					void (async () => {
 						const s = await loadState();
 						await setRecording(false);

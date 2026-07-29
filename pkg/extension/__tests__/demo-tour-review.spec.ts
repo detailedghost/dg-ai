@@ -7,6 +7,7 @@ import { toPlanMarkdown } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript, TourStep } from "@/lib/demo-types";
+import { holdFor } from "@/lib/video-timing";
 import {
 	demoMarkerFragment,
 	readDemoScript,
@@ -70,6 +71,7 @@ import {
 	restartState,
 	reviewAction,
 	runDemoTour,
+	runVideoStepSequence,
 	scriptToDraft,
 	setupActionConsentRequired,
 	stepEffect,
@@ -92,13 +94,27 @@ const originalGlobals = new Map(
 	]),
 );
 
-// myTabId is module-scope in demo-tour.ts, which bun:test shares across every spec
-// file in the run — reset it so this file never inherits a tabId another file resolved.
+// bun:test shares module state across spec files, unlike the extension's per-tab realm.
 beforeEach(() => {
 	resetTabIdForTests();
 });
 afterEach(() => {
 	resetTabIdForTests();
+	(browser.runtime.sendMessage as ReturnType<typeof mock>).mockImplementation(
+		() => Promise.resolve(),
+	);
+	(
+		browser.runtime.onMessage.addListener as ReturnType<typeof mock>
+	).mockImplementation(() => {});
+	(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
+		() => Promise.resolve({}),
+	);
+	(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
+		() => Promise.resolve(),
+	);
+	(browser.storage.local.remove as ReturnType<typeof mock>).mockImplementation(
+		() => Promise.resolve(),
+	);
 	for (const key of GLOBAL_KEYS) {
 		const descriptor = originalGlobals.get(key);
 		if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -1478,6 +1494,81 @@ describe("advanceClickNeeded", () => {
 	});
 });
 
+describe("runVideoStepSequence", () => {
+	it("waits for narration, then the effect, then the authored tail before advancing", async () => {
+		let finishNarration: ((outcome: "ended") => void) | undefined;
+		const narration = new Promise<"ended">((resolve) => {
+			finishNarration = resolve;
+		});
+		const order: string[] = [];
+		const step: TourStep = { body: "Save", advance: 1200 };
+		const sequence = runVideoStepSequence(step, {
+			waitForNarration: () => narration,
+			performEffect: async () => {
+				order.push("effect");
+			},
+			pause: async (ms) => {
+				order.push(`pause:${ms}`);
+			},
+			advance: async () => {
+				order.push("advance");
+			},
+			cancelled: () => false,
+		});
+
+		expect(order).toEqual([]);
+		finishNarration?.("ended");
+		await sequence;
+
+		expect(order).toEqual(["effect", `pause:${holdFor(step, 0)}`, "advance"]);
+	});
+
+	it("uses the bounded silent fallback without adding a narrated tail", async () => {
+		const order: string[] = [];
+
+		await runVideoStepSequence(
+			{ body: "Silent" },
+			{
+				waitForNarration: async () => "timeout",
+				performEffect: async () => {
+					order.push("effect");
+				},
+				pause: async () => {
+					order.push("pause");
+				},
+				advance: async () => {
+					order.push("advance");
+				},
+				cancelled: () => false,
+			},
+		);
+
+		expect(order).toEqual(["effect", "advance"]);
+	});
+
+	it("continues when synthesis fails after an earlier narrated step", async () => {
+		const order: string[] = [];
+		for (const [index, outcome] of ["ended", "timeout"].entries()) {
+			await runVideoStepSequence(
+				{ body: `Step ${index}` },
+				{
+					waitForNarration: async () => outcome as "ended" | "timeout",
+					performEffect: async () => {
+						order.push(`effect:${index}`);
+					},
+					pause: async () => {},
+					advance: async () => {
+						order.push(`advance:${index}`);
+					},
+					cancelled: () => false,
+				},
+			);
+		}
+
+		expect(order).toEqual(["effect:0", "advance:0", "effect:1", "advance:1"]);
+	});
+});
+
 // ── Defect 3: a tour behind a client-side auth redirect keeps its marker ───
 
 describe("resolvePendingMarker", () => {
@@ -1538,6 +1629,10 @@ function withLocation(
 		value: win.history,
 	});
 	if (opts.withDocument) {
+		Object.defineProperty(globalThis, "window", {
+			configurable: true,
+			value: win,
+		});
 		Object.defineProperty(globalThis, "document", {
 			configurable: true,
 			value: win.document,
@@ -1988,6 +2083,158 @@ describe("runDemoTour — entry-marker resolution (document_idle)", () => {
 		expect(browser.storage.local.set).not.toHaveBeenCalled();
 		expect(browser.storage.local.remove).not.toHaveBeenCalled();
 		expect(location.href).toBe(markedUrl);
+	});
+});
+
+describe("video narration completion", () => {
+	function videoHarness(
+		tabId: number,
+		script: TourScript,
+		recording: boolean,
+		durations: number[] = [],
+	): {
+		store: Map<string, unknown>;
+		listener: (msg: {
+			type?: string;
+			index?: number;
+			durations?: number[];
+			hideBody?: boolean;
+		}) => void;
+	} {
+		withTabId(tabId);
+		withLocation(script.startUrl, { withDocument: true });
+		const store = new Map<string, unknown>([
+			[
+				`demo_tour:${tabId}`,
+				{
+					script,
+					index: 0,
+					phase: "tutorial",
+					videoDurations: durations,
+				},
+			],
+			...(recording ? ([[`demo_recording:${tabId}`, true]] as const) : []),
+		]);
+		(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
+			(key: string) =>
+				Promise.resolve(store.has(key) ? { [key]: store.get(key) } : {}),
+		);
+		(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
+			(value: Record<string, unknown>) => {
+				for (const [key, next] of Object.entries(value)) store.set(key, next);
+				return Promise.resolve();
+			},
+		);
+		(
+			browser.storage.local.remove as ReturnType<typeof mock>
+		).mockImplementation((key: string) => {
+			store.delete(key);
+			return Promise.resolve();
+		});
+		let listener:
+			| ((msg: {
+					type?: string;
+					index?: number;
+					durations?: number[];
+					hideBody?: boolean;
+			  }) => void)
+			| undefined;
+		(
+			browser.runtime.onMessage.addListener as ReturnType<typeof mock>
+		).mockImplementation((next: typeof listener) => {
+			listener = next;
+		});
+		Object.defineProperty(globalThis, "createShadowRootUi", {
+			configurable: true,
+			value: mock(
+				async (
+					_ctx: unknown,
+					opts: { onMount: (root: HTMLElement) => void },
+				) => {
+					const root = document.createElement("div");
+					return { mount: () => opts.onMount(root), remove: () => {} };
+				},
+			),
+		});
+		return {
+			store,
+			listener: (msg) => listener?.(msg),
+		};
+	}
+
+	it("ignores a stale index and runs the effect only after the current narration ends", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [{ selector: "#target", body: "Open it", advance: "click" }],
+		};
+		const { listener } = videoHarness(70, script, true, [100]);
+		document.body.innerHTML = '<button id="target"></button>';
+		let clicks = 0;
+		document
+			.getElementById("target")
+			?.addEventListener("click", () => clicks++);
+
+		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
+		listener({ type: MSG.narrationComplete, index: 69 });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(clicks).toBe(0);
+
+		listener({ type: MSG.narrationComplete, index: 0 });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(clicks).toBe(1);
+	});
+
+	it("advances a captions-only timings tour when no completion signal arrives", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [
+				{ selector: "#target", body: "First", advance: "click" },
+				{ selector: "#target", body: "Second", advance: "click" },
+			],
+		};
+		const originalScript = JSON.stringify(script);
+		const { store } = videoHarness(71, script, true, [1, 1]);
+		document.body.innerHTML = '<button id="target"></button>';
+		let clicks = 0;
+		document
+			.getElementById("target")
+			?.addEventListener("click", () => clicks++);
+
+		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(clicks).toBe(2);
+		expect(
+			JSON.stringify(
+				(store.get("demo_tour:71") as PlayState | undefined)?.script,
+			),
+		).toBe(originalScript);
+		expect((store.get("demo_tour:71") as PlayState | undefined)?.index).toBe(2);
+	});
+
+	it("persists recorder durations and voice-only display state for navigation reloads", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [{ body: "First" }, { body: "Second" }],
+		};
+		const { store, listener } = videoHarness(72, script, false);
+
+		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
+		listener({
+			type: MSG.videoStart,
+			durations: [1200, 2400],
+			hideBody: true,
+		});
+		await new Promise((resolve) => setTimeout(resolve, 5));
+
+		expect(store.get("demo_tour:72")).toMatchObject({
+			index: 0,
+			videoDurations: [1200, 2400],
+			videoHideBody: true,
+		});
 	});
 });
 
