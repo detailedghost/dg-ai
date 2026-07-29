@@ -1035,6 +1035,16 @@ export function stepEffect(step: TourStep | undefined): StepAction | undefined {
 	return step?.advance === "click" ? { do: "click" } : undefined;
 }
 
+/** Persist the destination before a click can unload the current document. */
+export async function primeClickNavigation(
+	state: PlayState,
+	step: TourStep,
+	writeState: PlayStateWriter,
+): Promise<void> {
+	if (stepEffect(step)?.do === "click")
+		await writeState({ ...state, index: state.index + 1 });
+}
+
 /** Run `action` once for this step — guarded so a nav-triggered reload can't repeat it. */
 async function performOnce(
 	state: PlayState,
@@ -1113,6 +1123,7 @@ async function advanceWithAction(
 	/** True when a callout control drove this, false when the target's own click did. */
 	fromControl = false,
 ): Promise<void> {
+	if (target) await primeClickNavigation(state, step, saveState);
 	if (step.action && target) {
 		await maybePerformAction(state, step, target);
 	} else if (target && advanceClickNeeded(step, true, fromControl)) {
@@ -1268,8 +1279,10 @@ async function renderStep(
 		void runVideoStepSequence(step, {
 			waitForNarration: () => narration,
 			performEffect: async () => {
-				if (!effectAlreadyRan && target)
+				if (!effectAlreadyRan && target) {
+					await primeClickNavigation(state, step, saveState);
 					await maybePerformStepEffect(state, step, target);
+				}
 			},
 			pause: wait,
 			advance: () => goTo(ctx, state.index + 1),
