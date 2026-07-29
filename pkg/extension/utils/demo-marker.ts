@@ -33,10 +33,20 @@ export function validateDemoMarkerScript(
 ): TourScript | undefined {
 	try {
 		const script = validate(candidate);
-		if (new URL(markerUrl).origin !== new URL(script.startUrl).origin)
+		if (new URL(markerUrl).origin !== new URL(script.startUrl).origin) {
+			console.warn(
+				"[dg-ai-extension] ignoring a _demo marker whose startUrl is a different origin than the page carrying it",
+			);
 			return undefined;
+		}
 		return script;
-	} catch {
+	} catch (err) {
+		// Say why. A rejected plan used to vanish with no trace at all, which reads as
+		// the extension being broken rather than the plan being malformed.
+		console.warn(
+			"[dg-ai-extension] ignoring an invalid _demo marker:",
+			err instanceof Error ? err.message : err,
+		);
 		return undefined;
 	}
 }

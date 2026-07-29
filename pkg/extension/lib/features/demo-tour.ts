@@ -43,6 +43,7 @@ import {
 } from "@/lib/picker";
 import { ACCENT, createEl as el } from "@/lib/ui-helpers";
 import { holdFor } from "@/lib/video-timing";
+import { wait } from "@/utils/async";
 import {
 	demoMarkerFragment,
 	readDemoScript,
@@ -282,6 +283,12 @@ const recKey = () => `demo_recording:${myTabId}`;
 const editKey = () => `demo_edit:${myTabId}`;
 const pendingMarkerKey = () => `demo_pending:${myTabId}`;
 
+/** Test-only: undo initTabId's memoization — a real content script loads this module
+ *  once per tab, but bun:test shares it across every spec file in the run. */
+export function resetTabIdForTests(): void {
+	myTabId = -1;
+}
+
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
 async function takeEditCursor(): Promise<number | null> {
 	const got = await browser.storage.local.get(editKey());
@@ -299,15 +306,38 @@ let videoDurations: number[] = [];
 // Voice-only recording: the body text is spoken, so keep it off-screen (title stays).
 let videoHideBody = false;
 
-async function initTabId(): Promise<void> {
-	try {
-		const res = (await browser.runtime.sendMessage({ type: MSG.whoami })) as {
-			tabId?: number | null;
-		};
-		myTabId = res?.tabId ?? -1;
-	} catch {
-		myTabId = -1;
+/**
+ * Bounded retry for the whoami round trip, because the worker can still be starting on
+ * the first page load of a session and rejects a send with no receiver yet — the same
+ * failure `sendToOffscreen` retries past in demo-recorder.ts.
+ */
+const WHOAMI_ATTEMPTS = 3;
+const WHOAMI_BACKOFF_MS = 50;
+
+/**
+ * Learn which tab this content script runs in; returns whether it now knows.
+ *
+ * There is deliberately no sentinel fallback. A `-1` tab id makes all four keys above
+ * process-global, so any `<all_urls>` content script could resume another tab's tour
+ * and even redirect it on a `navigate` step, and `chrome.tabs.onRemoved` never cleans a
+ * key for a tab that never existed. Callers skip per-tab storage entirely on false.
+ */
+async function initTabId(): Promise<boolean> {
+	for (let attempt = 1; attempt <= WHOAMI_ATTEMPTS; attempt++) {
+		try {
+			const res = (await browser.runtime.sendMessage({ type: MSG.whoami })) as {
+				tabId?: number | null;
+			};
+			if (typeof res?.tabId === "number") {
+				myTabId = res.tabId;
+				return true;
+			}
+		} catch {
+			// No receiver yet — fall through to the backoff and ask again.
+		}
+		if (attempt < WHOAMI_ATTEMPTS) await wait(WHOAMI_BACKOFF_MS * attempt);
 	}
+	return false;
 }
 
 async function loadState(): Promise<PlayState | undefined> {
@@ -366,22 +396,48 @@ type PendingMarkerCapture = {
 	capturedAt: number;
 };
 
+/**
+ * Left in the pending key by the URL branch instead of removing it outright, so a
+ * captureMarkerEarly write for the same marker that resolves later (behind whoami's
+ * backoff) can see it and skip instead of resurrecting a consumed tour. Never a usable
+ * capture itself — any load that reads one drops it (see resolvePendingMarker).
+ */
+type PendingMarkerClaim = {
+	claimed: true;
+	script: TourScript;
+	claimedAt: number;
+};
+
+type PendingMarkerSlot = PendingMarkerCapture | PendingMarkerClaim;
+
+const isClaim = (v: PendingMarkerSlot | undefined): v is PendingMarkerClaim =>
+	!!v && "claimed" in v && v.claimed === true;
+
+// Identity for suppressing a delayed captureMarkerEarly write: the marker payload itself.
+const sameScript = (a: TourScript, b: TourScript): boolean =>
+	JSON.stringify(a) === JSON.stringify(b);
+
 // Long enough for a real IdP round-trip; short enough that an abandoned tab can't
 // resurrect a stale tour on whatever unrelated page loads in it next.
 const PENDING_MARKER_TTL_MS = 2 * 60 * 1000;
 
+// Outlasts the claim→delayed-capture gap; short enough not to block a later new tour.
+const CLAIM_SUPPRESS_MS = 10_000;
+
 /**
  * Decide what to do with a stored pending capture on this page load: start its tour
- * (still within the TTL, and we're back on its own origin), drop it (expired), or
- * leave it for a later load (not yet expired, but this page isn't the tour's origin —
- * e.g. we're transiently on an IdP's login page mid-redirect).
+ * (still within the TTL, and we're back on its own origin), drop it (expired or a
+ * claim — never itself a usable capture), or leave it for a later load (not yet
+ * expired, but this page isn't the tour's origin — e.g. we're transiently on an IdP's
+ * login page mid-redirect).
  */
 export function resolvePendingMarker(
-	pending: PendingMarkerCapture | undefined,
+	pending: PendingMarkerSlot | undefined,
 	currentUrl: string,
 	now: number,
 ): { action: "consume" | "drop" | "leave"; capture?: PendingMarkerCapture } {
 	if (!pending) return { action: "leave" };
+	if (isClaim(pending)) return { action: "drop" };
 	if (now - pending.capturedAt > PENDING_MARKER_TTL_MS)
 		return { action: "drop" };
 	if (!sameOrigin(pending.script.startUrl, currentUrl, currentUrl))
@@ -396,16 +452,46 @@ export function resolvePendingMarker(
  * A no-op when the current URL carries no marker.
  */
 export async function captureMarkerEarly(): Promise<void> {
-	const script = readDemoScript(location.href);
+	const markerUrl = location.href;
+	const script = readDemoScript(markerUrl);
 	if (!script?.steps?.length) return;
-	await initTabId();
+	// Read every field the fragment carries *before* stripping it: readEditFlag on a
+	// stripped URL always answers false, demoting `_edit=1` to a plain walkthrough.
+	const edit = readEditFlag(markerUrl);
+	// Strip ahead of the awaits below, so an app whose router snapshots the URL during
+	// hydration has the smallest window to capture — and later replay — the marker.
+	history.replaceState(history.state, "", stripDemoMarker(markerUrl));
+	if (!(await initTabId())) {
+		// No tab id to publish under — hand the marker back. Reattach to the *current*
+		// href, not `markerUrl`: a nav during the whoami retries must not be clobbered.
+		// stripDemoMarker rather than a bare split: the current href may carry the app's
+		// own fragment state, and only our own markers may be replaced.
+		const kept = stripDemoMarker(location.href);
+		history.replaceState(
+			history.state,
+			"",
+			`${kept}${kept.includes("#") ? "&" : "#"}${demoMarkerFragment(script, edit)}`,
+		);
+		return;
+	}
+	// A same-tab URL branch may have already claimed this exact marker while this
+	// write waited behind whoami's backoff — drop the claim rather than resurrect it.
+	const got = await browser.storage.local.get(pendingMarkerKey());
+	const existing = got[pendingMarkerKey()] as PendingMarkerSlot | undefined;
+	if (
+		isClaim(existing) &&
+		sameScript(existing.script, script) &&
+		Date.now() - existing.claimedAt < CLAIM_SUPPRESS_MS
+	) {
+		await browser.storage.local.remove(pendingMarkerKey());
+		return;
+	}
 	const capture: PendingMarkerCapture = {
 		script,
-		edit: readEditFlag(location.href),
+		edit,
 		capturedAt: Date.now(),
 	};
 	await browser.storage.local.set({ [pendingMarkerKey()]: capture });
-	history.replaceState(history.state, "", stripDemoMarker(location.href));
 }
 
 /** Consume a same-tab pending capture left by captureMarkerEarly, if usable here. */
@@ -413,20 +499,44 @@ async function takeUsablePendingMarker(): Promise<
 	PendingMarkerCapture | undefined
 > {
 	const got = await browser.storage.local.get(pendingMarkerKey());
-	const pending = got[pendingMarkerKey()] as PendingMarkerCapture | undefined;
+	const pending = got[pendingMarkerKey()] as PendingMarkerSlot | undefined;
 	const decision = resolvePendingMarker(pending, location.href, Date.now());
 	if (decision.action !== "leave")
 		await browser.storage.local.remove(pendingMarkerKey());
 	return decision.capture;
 }
 
+/** Claim this tab's pending marker as consumed, so a delayed capture write for the
+ *  same marker can see it and skip instead of resurrecting a finished tour. */
+const claimPendingMarker = (script: TourScript): Promise<void> =>
+	browser.storage.local.set({
+		[pendingMarkerKey()]: {
+			claimed: true,
+			script,
+			claimedAt: Date.now(),
+		} satisfies PendingMarkerClaim,
+	});
+
 /** The URL's own marker takes priority; else fall back to an earlier same-tab capture. */
 async function resolveEntryMarker(): Promise<
 	{ script: TourScript; edit: boolean } | undefined
 > {
-	const fromUrl = readDemoScript(location.href);
-	if (fromUrl?.steps?.length)
-		return { script: fromUrl, edit: readEditFlag(location.href) };
+	const url = location.href;
+	const fromUrl = readDemoScript(url);
+	if (fromUrl?.steps?.length) {
+		// Snapshot edit alongside fromUrl, before the awaits below: a router that
+		// rewrites the fragment during that round trip must not flip _edit=1 to false.
+		const edit = readEditFlag(url);
+		// Strip before the claim's await, mirroring captureMarkerEarly's item (a) fix.
+		// Edit mode keeps it instead — a reload must still re-open the editor (durable).
+		if (!edit) {
+			history.replaceState(history.state, "", stripDemoMarker(location.href));
+		}
+		// Claim (not remove): a captureMarkerEarly write still in flight for this
+		// marker must see it and skip, not resurrect it (see PendingMarkerClaim).
+		await claimPendingMarker(fromUrl);
+		return { script: fromUrl, edit };
+	}
 	const pending = await takeUsablePendingMarker();
 	return pending ? { script: pending.script, edit: pending.edit } : undefined;
 }
@@ -434,19 +544,17 @@ async function resolveEntryMarker(): Promise<
 // --- entry point (called by the content script on every page load) ---
 
 export async function runDemoTour(ctx: Ctx): Promise<void> {
-	await initTabId();
+	// Every key this reads or writes is per-tab; without an id they would all collide
+	// with other tabs, so stay inert rather than touch a shared one.
+	if (!(await initTabId())) return;
 	const marker = await resolveEntryMarker();
 	if (marker) {
+		// resolveEntryMarker already stripped the URL (non-edit case) before its own
+		// claim-write await — see the ordering comment there.
 		await initializeMarkerPlayback(marker.script, saveState);
 		await setRecording(false);
-		if (marker.edit) {
-			// Keep the marker in the URL so a reload re-opens the editor (durable).
-			await showEditPanel(ctx, marker.script);
-		} else {
-			// Strip the marker in place — same-document, no reload.
-			history.replaceState(history.state, "", stripDemoMarker(location.href));
-			await begin(ctx, marker.script);
-		}
+		if (marker.edit) await showEditPanel(ctx, marker.script);
+		else await begin(ctx, marker.script);
 		return;
 	}
 	const state = await loadState();
@@ -1004,7 +1112,7 @@ async function runToStep(
 			}
 		}
 		await saveState({ ...state, index: i + 1 });
-		await new Promise((resolve) => setTimeout(resolve, JUMP_STEP_MS));
+		await wait(JUMP_STEP_MS);
 	}
 	await goTo(ctx, target);
 }
@@ -1094,6 +1202,10 @@ export function buildOverlay(
 
 	if (video) layer.appendChild(recIndicator());
 
+	// Setup and tutorial share this overlay but must read as different moments —
+	// orange marks "preparation, not the demo yet", blue is the tour proper.
+	const phaseAccent = isSetup(state) ? "var(--accent-setup)" : "var(--accent)";
+
 	const highlight = el("div", { position: "fixed", pointerEvents: "none" });
 	if (target) {
 		const r = target.getBoundingClientRect();
@@ -1102,9 +1214,8 @@ export function buildOverlay(
 			top: `${r.top - 6}px`,
 			width: `${r.width + 12}px`,
 			height: `${r.height + 12}px`,
-			border: "0.125rem solid var(--accent)",
+			border: `0.125rem solid ${phaseAccent}`,
 			borderRadius: "0",
-			boxShadow: "0 0 0 624.9375rem rgba(0,0,0,0.55)",
 		});
 	} else {
 		// No target → dim the whole viewport, card is centered.
@@ -1123,7 +1234,7 @@ export function buildOverlay(
 		border: "0.125rem solid var(--line)",
 		borderRadius: "0",
 		padding: "0.875rem 1rem",
-		boxShadow: "0.375rem 0.375rem 0 var(--accent)",
+		boxShadow: `0.375rem 0.375rem 0 ${phaseAccent}`,
 		font: `0.8125rem/1.5 ${MONO}`,
 		pointerEvents: "auto",
 	});
@@ -2095,22 +2206,53 @@ function actionField(row: DraftStep): HTMLElement {
 async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	removeUi();
 	const draft: Draft = scriptToDraft(script);
-	const reviewRows = editorReviewRows(draft);
-	const machine = editMachine(reviewRows.length);
+	let reviewRows = editorReviewRows(draft);
+	let machine = editMachine(reviewRows.length);
 	// Narration is chosen here rather than at the record prompt, so it is set before
 	// anything starts. Local copy keeps the selects showing the user's own picks.
 	const editorConfig = await readConfig();
 	let phase = machine.next().value; // prime → the actions screen
+
+	/**
+	 * Re-derive the row list from the draft and rebuild the stepper machine
+	 * seeking to `want` (clamped to a valid row, or 0 if none remain).
+	 *
+	 * Add/remove changes the row count the machine was created with, and a
+	 * generator can't be resized in place — replacing it and replaying
+	 * editAgain + next(cursor) times is the same seek-to-cursor trick the
+	 * URL-resume path below already relies on.
+	 */
+	const gotoCursor = (want: number): void => {
+		reviewRows = editorReviewRows(draft);
+		const target =
+			reviewRows.length === 0
+				? 0
+				: Math.max(0, Math.min(want, reviewRows.length - 1));
+		machine = editMachine(reviewRows.length);
+		phase = machine.next().value;
+		phase = machine.next("editAgain").value;
+		for (let i = 0; i < target; i++) phase = machine.next("next").value;
+	};
+
 	// Resume at the step we navigated for (a step-driven page change reloads us here),
 	// re-entering the stepper first since the machine now starts on the actions screen.
 	const resume = await takeEditCursor();
-	if (resume !== null) {
-		phase = machine.next("editAgain").value;
-		for (let i = 0; i < resume; i++) phase = machine.next("next").value;
-	}
+	if (resume !== null) gotoCursor(resume);
 	const dispatch = (event: EditEvent): void => {
 		phase = machine.next(event).value;
 		void render();
+	};
+
+	/** Perform cursor's row action against the live page, if it has one — an
+	 *  authored action, or the click an advance:"click" row is waiting for. */
+	const performReviewRowAction = async (cursor: number): Promise<void> => {
+		const current = reviewRows[cursor];
+		const step = current ? draftRowToStep(current.row) : undefined;
+		const action = stepEffect(step);
+		if (!step || !action) return;
+		const target = editorSpotlightTarget(document, step.selector ?? "");
+		if (target) await performAction(action, target);
+		else console.warn(missingActionTargetWarning(step));
 	};
 
 	/**
@@ -2126,22 +2268,73 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	 * during planning the forward press *is* that click — without this, stepping a
 	 * plan built from advance-timings (the common shape) still moved nothing.
 	 *
-	 * Only the forward arrow does this; ‹ and the jump controls stay pure
-	 * navigation, since replaying an action backwards has no meaning. It runs
-	 * because the user pressed forward on a step whose action and timing are both
-	 * visible in the row they are looking at — per-step intent, not an unattended
-	 * run.
+	 * `‹` stays pure navigation and `«` reloads outright — neither replays an
+	 * action. `»` is the deliberate exception: it runs every intervening row's
+	 * action on the way to the last row, an intentional unattended multi-action
+	 * run, not the single-row intent behind one forward press.
 	 */
 	const advanceReview = async (cursor: number): Promise<void> => {
-		const current = reviewRows[cursor];
-		const step = current ? draftRowToStep(current.row) : undefined;
-		const action = stepEffect(step);
-		if (step && action) {
-			const target = editorSpotlightTarget(document, step.selector ?? "");
-			if (target) await performAction(action, target);
-			else console.warn(missingActionTargetWarning(step));
-		}
+		await performReviewRowAction(cursor);
 		dispatch("next");
+	};
+
+	/**
+	 * Run forward to the last row, performing each row's action on the way — the
+	 * planning-time equivalent of pressing › until it's disabled. Done in one
+	 * pass with a single render at the end, rather than one render per row.
+	 */
+	const jumpToEnd = async (): Promise<void> => {
+		while (phase.kind === "step") {
+			await performReviewRowAction(phase.cursor);
+			if (phase.cursor >= reviewRows.length - 1) break;
+			phase = machine.next("next").value;
+		}
+		void render();
+	};
+
+	/** Reload back to the first step — only a fresh load undoes on-page effects
+	 *  clicks already fired; the draft survives via the URL-fragment mirror. */
+	const restartReview = async (): Promise<void> => {
+		await setEditCursor(0);
+		location.reload();
+	};
+
+	const blankDraftStep = (): DraftStep => ({
+		title: "",
+		selector: "",
+		body: "",
+		timing: "",
+		navigate: "",
+		actKind: "",
+		actText: "",
+	});
+
+	/** Insert a step after `cursor`, into whichever section (setup/tutorial) the
+	 *  cursor is currently in, then land the cursor on the new row. */
+	const addRow = (cursor: number): void => {
+		const current = reviewRows[cursor];
+		const kind = current?.kind ?? "tutorial";
+		const rows = kind === "setup" ? draft.setup?.rows : draft.rows;
+		if (!rows) return;
+		const setupCount = draft.setup?.rows.length ?? 0;
+		const localIndex = kind === "setup" ? cursor : cursor - setupCount;
+		const insertAt = Math.min(Math.max(localIndex + 1, 0), rows.length);
+		rows.splice(insertAt, 0, blankDraftStep());
+		gotoCursor((kind === "setup" ? 0 : setupCount) + insertAt);
+		void render();
+	};
+
+	/** Remove the row under review, then land the cursor on a valid remaining row. */
+	const removeRow = (cursor: number): void => {
+		const current = reviewRows[cursor];
+		if (!current) return;
+		const rows = current.kind === "setup" ? draft.setup?.rows : draft.rows;
+		if (!rows) return;
+		const setupCount = draft.setup?.rows.length ?? 0;
+		const localIndex = current.kind === "setup" ? cursor : cursor - setupCount;
+		rows.splice(localIndex, 1);
+		gotoCursor(cursor);
+		void render();
 	};
 
 	// The page a step runs on: the most recent `navigate` at/before it, else startUrl.
@@ -2266,17 +2459,17 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	};
 
 	const buildStepCard = (root: HTMLElement, cursor: number): void => {
+		const total = reviewRows.length;
 		const review = reviewRows[cursor];
-		const row = review.row;
-		const status =
-			review.kind === "setup"
+		const status = review
+			? review.kind === "setup"
 				? draft.setup?.includeInTour
 					? "Setup · included in tour/video"
 					: "Setup · excluded preparation"
-				: "Tutorial";
+				: "Tutorial"
+			: "No steps yet";
 		const card = panel(`Review & edit · ${status}`);
-		const total = reviewRows.length;
-		const last = cursor === total - 1;
+		const last = total === 0 || cursor >= total - 1;
 
 		if (cursor === 0)
 			card.appendChild(
@@ -2284,64 +2477,79 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 					draft.title = v;
 				}),
 			);
-		card.appendChild(
-			labeled("Step title", row.title, "Step title", (v) => {
-				row.title = v;
-			}),
-		);
-		card.appendChild(selectorField(row));
-		card.appendChild(
-			labeled(
-				"Body",
-				row.body,
-				"Callout text",
-				(v) => {
-					row.body = v;
-				},
-				true,
-			),
-		);
-		card.appendChild(
-			labeled("Timing", row.timing, "4s / click / next", (v) => {
-				row.timing = v;
-			}),
-		);
-		// Page URL: pre-filled with the step's effective page. Editing it to a new URL
-		// records a `navigate`; matching the inherited page clears it (no redundant nav).
-		const inherited = editorInheritedPageUrl(draft, script.startUrl, cursor);
-		card.appendChild(
-			labeled(
-				"Page URL",
-				row.navigate.trim() || inherited,
-				"https://…",
-				(v) => {
-					row.navigate = v.trim() === inherited ? "" : v.trim();
-				},
-			),
-		);
-		card.appendChild(actionField(row));
-		if (review.kind === "setup") {
-			const warning = el("div", {
-				marginTop: "0.625rem",
-				padding: "0.5rem",
-				border: "0.125rem solid var(--line)",
-				color: "var(--accent)",
-				fontWeight: "600",
-			});
-			warning.textContent =
-				"Setup actions are saved as plain text and require playback approval. Never put credentials, passwords, tokens, or MFA codes in Fill text; enter them manually.";
-			card.appendChild(warning);
+
+		if (review) {
+			const row = review.row;
+			card.appendChild(
+				labeled("Step title", row.title, "Step title", (v) => {
+					row.title = v;
+				}),
+			);
+			card.appendChild(selectorField(row));
+			card.appendChild(
+				labeled(
+					"Body",
+					row.body,
+					"Callout text",
+					(v) => {
+						row.body = v;
+					},
+					true,
+				),
+			);
+			card.appendChild(
+				labeled("Timing", row.timing, "4s / click / next", (v) => {
+					row.timing = v;
+				}),
+			);
+			// Page URL: pre-filled with the step's effective page. Editing it to a new URL
+			// records a `navigate`; matching the inherited page clears it (no redundant nav).
+			const inherited = editorInheritedPageUrl(draft, script.startUrl, cursor);
+			card.appendChild(
+				labeled(
+					"Page URL",
+					row.navigate.trim() || inherited,
+					"https://…",
+					(v) => {
+						row.navigate = v.trim() === inherited ? "" : v.trim();
+					},
+				),
+			);
+			card.appendChild(actionField(row));
+			if (review.kind === "setup") {
+				const warning = el("div", {
+					marginTop: "0.625rem",
+					padding: "0.5rem",
+					border: "0.125rem solid var(--line)",
+					color: "var(--accent)",
+					fontWeight: "600",
+				});
+				warning.textContent =
+					"Setup actions are saved as plain text and require playback approval. Never put credentials, passwords, tokens, or MFA codes in Fill text; enter them manually.";
+				card.appendChild(warning);
+			}
+		} else {
+			const empty = el("div", { color: "var(--muted)", marginTop: "0.625rem" });
+			empty.textContent = "No steps yet — add one to get started.";
+			card.appendChild(empty);
 		}
 
 		// No cancel button here on purpose — an accidental click shouldn't drop the
 		// editor. The URL keeps the draft (durable), so a stray reload restores it.
 		const bar = el("div", {
 			display: "flex",
-			gap: "0.5rem",
+			flexWrap: "wrap",
+			gap: "0.375rem",
 			alignItems: "center",
 			justifyContent: "center",
 			marginTop: "0.875rem",
 		});
+		const restart = arrowButton(
+			"«",
+			cursor > 0,
+			() => void restartReview(),
+			"Restart at the first step",
+		);
 		const back = arrowButton(
 			"‹",
 			cursor > 0,
@@ -2356,13 +2564,26 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			letterSpacing: "0.08em",
 			color: "var(--muted)",
 		});
-		trace.textContent = `${cursor + 1} / ${total}`;
+		trace.textContent = `${total === 0 ? 0 : cursor + 1} / ${total}`;
 		const fwd = arrowButton(
 			"›",
 			!last,
 			() => void advanceReview(cursor),
 			"Next step",
 			"var(--accent)",
+		);
+		const runEnd = arrowButton(
+			"»",
+			!last,
+			() => void jumpToEnd(),
+			"Run to the last step",
+		);
+		const addBtn = arrowButton("+", true, () => addRow(cursor), "Add step");
+		const removeBtn = arrowButton(
+			"−",
+			total > 0,
+			() => removeRow(cursor),
+			"Remove step",
 		);
 		card.addEventListener("input", persist); // persist edits into the URL
 		// Always available — reviewing every step to reach it was busywork when the plan
@@ -2372,7 +2593,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 		approve.style.borderColor = "#00c853";
 		approve.style.color = "#000";
 		approve.addEventListener("click", () => dispatch("approve"));
-		bar.append(back, trace, fwd, approve);
+		bar.append(restart, back, trace, fwd, runEnd, addBtn, removeBtn, approve);
 		card.appendChild(bar);
 		root.appendChild(card);
 	};
@@ -2515,7 +2736,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			for (const c of cleanups) c();
 		};
 		if (phase.kind === "step")
-			updateSpotlight(reviewRows[phase.cursor].row.selector);
+			updateSpotlight(reviewRows[phase.cursor]?.row.selector ?? "");
 		else clearSpotlight();
 
 		const ui = await createShadowRootUi(ctx, {
