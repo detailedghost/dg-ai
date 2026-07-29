@@ -7,12 +7,17 @@
  *     browser missing either never registers the record gesture
  *   - shortcutsPageUrl names the page each Chromium-family browser really serves
  *   - the manifest ships the permission set tabCapture needs, per browser target
+ *   - assignedRecordShortcut keeps whichever modifier spelling the browser reports
  *
  * Chrome and Brave share an engine and are exercised through the same branches here;
  * Edge differs only in the scheme it serves its extensions pages under.
  */
 
 import { describe, expect, it } from "bun:test";
+import {
+	assignedRecordShortcut,
+	RECORD_COMMAND,
+} from "@/lib/background/recording";
 import { videoRecordingSupported } from "@/lib/features/demo-recorder";
 import { shortcutsPageUrl } from "@/lib/features/demo-tour";
 import config from "../wxt.config";
@@ -127,6 +132,20 @@ type RelevantManifest = { permissions?: string[]; host_permissions?: string[] };
 const manifestFor = config.manifest as unknown as (env: {
 	browser: "chrome" | "firefox";
 }) => RelevantManifest;
+
+/**
+ * Observed live: Chrome for Testing 151 reports the same binding as "Alt+Shift+D" while
+ * Brave 150 reports "Shift+Alt+D". The string is only ever displayed, never parsed, so
+ * both must pass through untouched rather than being normalised to one spelling.
+ */
+describe("assignedRecordShortcut across browsers", () => {
+	for (const shortcut of ["Alt+Shift+D", "Shift+Alt+D"])
+		it(`passes through ${shortcut} verbatim`, () => {
+			expect(assignedRecordShortcut([{ name: RECORD_COMMAND, shortcut }])).toBe(
+				shortcut,
+			);
+		});
+});
 
 describe("manifest permissions per target", () => {
 	// Chrome and Brave load the same build, so one target covers both.
