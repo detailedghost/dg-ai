@@ -101,6 +101,7 @@ async function start(
 		let durations: number[];
 		if (narrate) {
 			audioCtx = new AudioContext();
+			await resumeAudio(audioCtx);
 			narrationDest = audioCtx.createMediaStreamDestination();
 			// Synthesize all narration; a failure degrades to a silent video.
 			durations = await synthAll(steps, voice, audioCtx);
@@ -205,10 +206,37 @@ function waitForClearFrame(): Promise<void> {
 function playStep(index: number): void {
 	const buf = stepBuffers[index];
 	if (!buf || !audioCtx || !narrationDest) return;
+	// Chrome can re-suspend an idle context mid-recording, which would silence the rest.
+	if (audioCtx.state === "suspended") void audioCtx.resume();
 	const src = audioCtx.createBufferSource();
 	src.buffer = buf;
 	src.connect(narrationDest);
 	src.start();
+}
+
+/**
+ * Start the audio clock, without which the recording is silent.
+ *
+ * An AudioContext constructed outside a user gesture starts `suspended`, and a
+ * suspended context renders nothing into its destination — so the narration track
+ * mixed into the video carries silence while every clip appears to play fine. An
+ * offscreen document never has a gesture, so this is the normal case here, not an edge
+ * case. Failure is reported but not fatal: a silent video still beats no video.
+ */
+async function resumeAudio(ctx: AudioContext): Promise<void> {
+	if (ctx.state !== "suspended") return;
+	try {
+		await ctx.resume();
+	} catch (e) {
+		console.warn(
+			"[dg-ai-extension] could not start the audio clock; video will be silent",
+			e,
+		);
+	}
+	if (ctx.state === "suspended")
+		console.warn(
+			"[dg-ai-extension] audio context still suspended; narration will not be recorded",
+		);
 }
 
 /**
