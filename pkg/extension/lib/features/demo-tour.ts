@@ -287,6 +287,11 @@ const stateKey = () => `demo_tour:${myTabId}`;
 const recKey = () => `demo_recording:${myTabId}`;
 const editKey = () => `demo_edit:${myTabId}`;
 const pendingMarkerKey = () => `demo_pending:${myTabId}`;
+const MARKER_CAPTURE_KEY = "__dgDemoMarkerCapture";
+type MarkerCaptureScope = typeof globalThis & {
+	[MARKER_CAPTURE_KEY]?: Promise<void>;
+};
+const markerCaptureScope = () => globalThis as MarkerCaptureScope;
 
 /** Reset content-script module state shared by Bun's single-process test runner. */
 export function resetTabIdForTests(): void {
@@ -295,6 +300,23 @@ export function resetTabIdForTests(): void {
 	performingStepEffects.clear();
 	narrationWaiters.clear();
 	recorderListening = false;
+}
+
+function signalMarkerCapture(): () => void {
+	const scope = markerCaptureScope();
+	let resolve!: () => void;
+	const pending = new Promise<void>((done) => {
+		resolve = done;
+	});
+	scope[MARKER_CAPTURE_KEY] = pending;
+	return () => {
+		if (scope[MARKER_CAPTURE_KEY] === pending) delete scope[MARKER_CAPTURE_KEY];
+		resolve();
+	};
+}
+
+async function waitForMarkerCapture(): Promise<void> {
+	await markerCaptureScope()[MARKER_CAPTURE_KEY];
 }
 
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
@@ -458,43 +480,40 @@ export async function captureMarkerEarly(): Promise<void> {
 	const markerUrl = location.href;
 	const script = readDemoScript(markerUrl);
 	if (!script?.steps?.length) return;
-	// Read every field the fragment carries *before* stripping it: readEditFlag on a
-	// stripped URL always answers false, demoting `_edit=1` to a plain walkthrough.
-	const edit = readEditFlag(markerUrl);
-	// Strip ahead of the awaits below, so an app whose router snapshots the URL during
-	// hydration has the smallest window to capture — and later replay — the marker.
-	history.replaceState(history.state, "", stripDemoMarker(markerUrl));
-	if (!(await initTabId())) {
-		// No tab id to publish under — hand the marker back. Reattach to the *current*
-		// href, not `markerUrl`: a nav during the whoami retries must not be clobbered.
-		// stripDemoMarker rather than a bare split: the current href may carry the app's
-		// own fragment state, and only our own markers may be replaced.
-		const kept = stripDemoMarker(location.href);
-		history.replaceState(
-			history.state,
-			"",
-			`${kept}${kept.includes("#") ? "&" : "#"}${demoMarkerFragment(script, edit)}`,
-		);
-		return;
+	const finishCapture = signalMarkerCapture();
+	try {
+		// Read every field before stripping; otherwise `_edit=1` becomes false.
+		const edit = readEditFlag(markerUrl);
+		// Strip before awaiting so page routers cannot replay the marker.
+		history.replaceState(history.state, "", stripDemoMarker(markerUrl));
+		if (!(await initTabId())) {
+			const kept = stripDemoMarker(location.href);
+			history.replaceState(
+				history.state,
+				"",
+				`${kept}${kept.includes("#") ? "&" : "#"}${demoMarkerFragment(script, edit)}`,
+			);
+			return;
+		}
+		const got = await browser.storage.local.get(pendingMarkerKey());
+		const existing = got[pendingMarkerKey()] as PendingMarkerSlot | undefined;
+		if (
+			isClaim(existing) &&
+			sameScript(existing.script, script) &&
+			Date.now() - existing.claimedAt < CLAIM_SUPPRESS_MS
+		) {
+			await browser.storage.local.remove(pendingMarkerKey());
+			return;
+		}
+		const capture: PendingMarkerCapture = {
+			script,
+			edit,
+			capturedAt: Date.now(),
+		};
+		await browser.storage.local.set({ [pendingMarkerKey()]: capture });
+	} finally {
+		finishCapture();
 	}
-	// A same-tab URL branch may have already claimed this exact marker while this
-	// write waited behind whoami's backoff — drop the claim rather than resurrect it.
-	const got = await browser.storage.local.get(pendingMarkerKey());
-	const existing = got[pendingMarkerKey()] as PendingMarkerSlot | undefined;
-	if (
-		isClaim(existing) &&
-		sameScript(existing.script, script) &&
-		Date.now() - existing.claimedAt < CLAIM_SUPPRESS_MS
-	) {
-		await browser.storage.local.remove(pendingMarkerKey());
-		return;
-	}
-	const capture: PendingMarkerCapture = {
-		script,
-		edit,
-		capturedAt: Date.now(),
-	};
-	await browser.storage.local.set({ [pendingMarkerKey()]: capture });
 }
 
 /** Consume a same-tab pending capture left by captureMarkerEarly, if usable here. */
@@ -524,8 +543,13 @@ const claimPendingMarker = (script: TourScript): Promise<void> =>
 async function resolveEntryMarker(): Promise<
 	{ script: TourScript; edit: boolean } | undefined
 > {
-	const url = location.href;
-	const fromUrl = readDemoScript(url);
+	let url = location.href;
+	let fromUrl = readDemoScript(url);
+	if (!fromUrl?.steps?.length) {
+		await waitForMarkerCapture();
+		url = location.href;
+		fromUrl = readDemoScript(url);
+	}
 	if (fromUrl?.steps?.length) {
 		// Snapshot edit alongside fromUrl, before the awaits below: a router that
 		// rewrites the fragment during that round trip must not flip _edit=1 to false.
