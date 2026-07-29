@@ -32,6 +32,19 @@ describe("validate()", () => {
 		expect(() => validate(bad)).toThrow("non-empty");
 	});
 
+	// Regression guard: a zero-step tour is genuinely invalid (callers gate on
+	// script?.steps?.length) — only setup.steps may be empty, never this one.
+	it("still throws on empty top-level steps even once setup.steps is allowed to be empty", () => {
+		const bad = {
+			...validScript,
+			steps: [],
+			setup: { steps: [], includeInTour: true },
+		};
+		expect(() => validate(bad)).toThrow(
+			"script.steps must be a non-empty array",
+		);
+	});
+
 	it("throws on invalid mode", () => {
 		const bad = {
 			startUrl: "https://example.com",
@@ -54,6 +67,24 @@ describe("validate()", () => {
 		expect(validate(withSetup)).toEqual(withSetup);
 	});
 
+	it("accepts a setup block with no steps, meaning no preparation", () => {
+		const emptySetup = {
+			...validScript,
+			setup: { steps: [], includeInTour: true },
+		};
+
+		expect(validate(emptySetup)).toEqual(emptySetup);
+	});
+
+	it("accepts an empty setup block with includeInTour false too", () => {
+		const emptySetup = {
+			...validScript,
+			setup: { steps: [], includeInTour: false },
+		};
+
+		expect(validate(emptySetup)).toEqual(emptySetup);
+	});
+
 	it("reports setup paths when setup is malformed", () => {
 		expect(() => validate({ ...validScript, setup: "not setup" })).toThrow(
 			"script.setup",
@@ -61,7 +92,7 @@ describe("validate()", () => {
 		expect(() =>
 			validate({
 				...validScript,
-				setup: { steps: [], includeInTour: false },
+				setup: { steps: "nope", includeInTour: false },
 			}),
 		).toThrow("script.setup.steps");
 		expect(() =>
@@ -131,5 +162,21 @@ describe("extractScriptFromMarkdown()", () => {
 		expect(() => extractScriptFromMarkdown("# No code block here")).toThrow(
 			"no ```json script block found",
 		);
+	});
+
+	// Regression: empty setup.steps used to make validate() throw, and callers that
+	// swallow the throw (readDemoScript) dropped the whole tour, not just setup.
+	it("does not drop a legacy plan whose embedded script has an empty setup.steps", () => {
+		const scriptWithEmptySetup: TourScript = {
+			...validScript,
+			steps: [{ body: "Welcome." }, { body: "Click here." }],
+			setup: { steps: [], includeInTour: true },
+		};
+		const md = `# old plan\n\n\`\`\`json\n${JSON.stringify(scriptWithEmptySetup)}\n\`\`\`\n`;
+
+		const tour = validate(extractScriptFromMarkdown(md));
+
+		expect(tour.steps.length).toBeGreaterThan(0);
+		expect(tour).toEqual(scriptWithEmptySetup);
 	});
 });

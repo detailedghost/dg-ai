@@ -15,8 +15,10 @@ import type { StepAction, StepAdvance, TourScript, TourStep } from "./types";
 function validateSteps(
 	steps: unknown,
 	prefix: string,
+	allowEmpty = false,
 ): asserts steps is TourStep[] {
-	if (!Array.isArray(steps) || steps.length === 0)
+	if (!Array.isArray(steps)) throw new Error(`${prefix} must be an array`);
+	if (!allowEmpty && steps.length === 0)
 		throw new Error(`${prefix} must be a non-empty array`);
 	steps.forEach((step: Record<string, unknown>, i) => {
 		const label = prefix === "script.steps" ? `step ${i}` : `setup step ${i}`;
@@ -65,7 +67,9 @@ export function validate(script: unknown): TourScript {
 		if (!s.setup || typeof s.setup !== "object")
 			throw new Error("script.setup must be an object");
 		const setup = s.setup as Record<string, unknown>;
-		validateSteps(setup.steps, "script.setup.steps");
+		// An empty Setup section means "no preparation"; rejecting it discarded the
+		// whole marker, since readDemoScript answers a validation failure with undefined.
+		validateSteps(setup.steps, "script.setup.steps", true);
 		if (typeof setup.includeInTour !== "boolean")
 			throw new Error("script.setup.includeInTour must be a boolean");
 	}
