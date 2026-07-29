@@ -9,14 +9,14 @@
  *       Yellow installs it; they will fail at import time until then.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from "fake-indexeddb";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from "fake-indexeddb";
 import {
-	saveRecording,
 	getRecording,
-	removeRecording,
 	pruneStaleRecordings,
 	type RecordingEntry,
+	removeRecording,
+	saveRecording,
 } from "@/utils/recording-db";
 
 // ---------------------------------------------------------------------------
@@ -91,8 +91,14 @@ describe("recording-db", () => {
 	// ── upsert semantics ────────────────────────────────────────────────────
 
 	it("saveRecording twice with same tabId (different dataUrl): getRecording returns second write (upsert)", async () => {
-		const first = makeEntry({ tabId: 3, dataUrl: "data:video/webm;base64,FIRST" });
-		const second = makeEntry({ tabId: 3, dataUrl: "data:video/webm;base64,SECOND" });
+		const first = makeEntry({
+			tabId: 3,
+			dataUrl: "data:video/webm;base64,FIRST",
+		});
+		const second = makeEntry({
+			tabId: 3,
+			dataUrl: "data:video/webm;base64,SECOND",
+		});
 
 		await saveRecording(first);
 		await saveRecording(second);
@@ -119,8 +125,14 @@ describe("recording-db", () => {
 
 	it("pruneStaleRecordings() default 8 h: 9 h-old entry deleted; 1 h-old entry survives", async () => {
 		const now = Date.now();
-		const staleEntry = makeEntry({ tabId: 200, createdAt: now - 9 * 3_600_000 });
-		const freshEntry = makeEntry({ tabId: 201, createdAt: now - 1 * 3_600_000 });
+		const staleEntry = makeEntry({
+			tabId: 200,
+			createdAt: now - 9 * 3_600_000,
+		});
+		const freshEntry = makeEntry({
+			tabId: 201,
+			createdAt: now - 1 * 3_600_000,
+		});
 
 		await saveRecording(staleEntry);
 		await saveRecording(freshEntry);
@@ -198,7 +210,10 @@ describe("recording-db", () => {
 	});
 
 	it("getRecording returns the correct entry when multiple entries exist", async () => {
-		const target = makeEntry({ tabId: 55, dataUrl: "data:video/webm;base64,TARGET" });
+		const target = makeEntry({
+			tabId: 55,
+			dataUrl: "data:video/webm;base64,TARGET",
+		});
 		await saveRecording(makeEntry({ tabId: 50 }));
 		await saveRecording(target);
 		await saveRecording(makeEntry({ tabId: 60 }));
@@ -213,9 +228,18 @@ describe("recording-db", () => {
 	// ── coverage gap: removeRecording does not affect siblings ──────────────
 
 	it("removeRecording only removes the targeted tabId, leaving others intact", async () => {
-		const keep1 = makeEntry({ tabId: 401, dataUrl: "data:video/webm;base64,KEEP1" });
-		const remove = makeEntry({ tabId: 402, dataUrl: "data:video/webm;base64,REMOVE" });
-		const keep2 = makeEntry({ tabId: 403, dataUrl: "data:video/webm;base64,KEEP2" });
+		const keep1 = makeEntry({
+			tabId: 401,
+			dataUrl: "data:video/webm;base64,KEEP1",
+		});
+		const remove = makeEntry({
+			tabId: 402,
+			dataUrl: "data:video/webm;base64,REMOVE",
+		});
+		const keep2 = makeEntry({
+			tabId: 403,
+			dataUrl: "data:video/webm;base64,KEEP2",
+		});
 
 		await saveRecording(keep1);
 		await saveRecording(remove);
