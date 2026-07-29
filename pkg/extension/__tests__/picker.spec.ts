@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { Window } from "happy-dom";
-import { cssSelectorFor, waitForEl } from "@/lib/picker";
+import { cssSelectorFor, injectTheme, waitForEl } from "@/lib/picker";
 
 const window = new Window();
 const document = window.document as unknown as Document;
@@ -68,6 +68,19 @@ describe("cssSelectorFor", () => {
 
 		expect(target).not.toBeNull();
 		expectUniqueSelectorFor(target as Element);
+	});
+});
+
+describe("injectTheme — setup-phase accent variable (slice 3)", () => {
+	it("exposes --accent-setup alongside --accent/--accent2 in both color schemes", () => {
+		const root = document.createElement("div");
+
+		injectTheme(root);
+
+		const css = root.querySelector("style")?.textContent ?? "";
+		const [light, dark] = css.split("@media");
+		expect(light).toContain("--accent-setup:");
+		expect(dark).toContain("--accent-setup:");
 	});
 });
 

@@ -10,12 +10,12 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 export const DEMO_THEME_CSS = `
 :host {
   --panel: #ffffff; --ink: #0a0a0a; --muted: #52525b;
-  --line: #0a0a0a; --accent: #0891b2; --accent2: #c026d3; --code-bg: #f4f4f5;
+  --line: #0a0a0a; --accent: #0891b2; --accent2: #c026d3; --accent-setup: #c2410c; --code-bg: #f4f4f5;
 }
 @media (prefers-color-scheme: dark) {
   :host {
     --panel: #111111; --ink: #e8e8e8; --muted: #8a8a8a;
-    --line: #e8e8e8; --accent: #00f0ff; --accent2: #ff2bd6; --code-bg: #000000;
+    --line: #e8e8e8; --accent: #00f0ff; --accent2: #ff2bd6; --accent-setup: #ff8c1a; --code-bg: #000000;
   }
 }
 .dg-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 0.125rem var(--accent); }
