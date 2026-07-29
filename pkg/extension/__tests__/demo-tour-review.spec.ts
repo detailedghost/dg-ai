@@ -2,7 +2,8 @@
  * Pure-function tests for review modal helpers extracted from demo-tour.ts.
  * No DOM or WebExtension APIs needed — pure logic only.
  */
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { toPlanMarkdown } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript, TourStep } from "@/lib/demo-types";
@@ -76,11 +77,33 @@ import {
 } from "@/lib/features/demo-tour";
 
 const baseState: TourState = {};
+const GLOBAL_KEYS = [
+	"window",
+	"document",
+	"location",
+	"history",
+	"Event",
+	"createShadowRootUi",
+] as const;
+const originalGlobals = new Map(
+	GLOBAL_KEYS.map((key) => [
+		key,
+		Object.getOwnPropertyDescriptor(globalThis, key),
+	]),
+);
 
 // myTabId is module-scope in demo-tour.ts, which bun:test shares across every spec
 // file in the run — reset it so this file never inherits a tabId another file resolved.
 beforeEach(() => {
 	resetTabIdForTests();
+});
+afterEach(() => {
+	resetTabIdForTests();
+	for (const key of GLOBAL_KEYS) {
+		const descriptor = originalGlobals.get(key);
+		if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+		else Reflect.deleteProperty(globalThis, key);
+	}
 });
 
 // ── getNarrationMode ────────────────────────────────────────────────────────
@@ -896,6 +919,52 @@ describe("maybePerformAction", () => {
 
 		expect(clicks).toBe(0);
 		expect(browser.storage.local.set).not.toHaveBeenCalled();
+	});
+
+	it("runs once per index while another state write races the action", async () => {
+		const state: PlayState = {
+			script: tourScript,
+			index: 0,
+			phase: "tutorial",
+		};
+		const store = new Map<string, PlayState>([["demo_tour:-1", state]]);
+		(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
+			(key: string) =>
+				Promise.resolve(store.has(key) ? { [key]: store.get(key) } : {}),
+		);
+		(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
+			(value: Record<string, PlayState>) => {
+				for (const [key, next] of Object.entries(value)) store.set(key, next);
+				return Promise.resolve();
+			},
+		);
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+			store.set("demo_tour:-1", { ...state, index: 1 });
+		});
+
+		await Promise.all([
+			maybePerformAction(
+				state,
+				{ body: "Click it", action: { do: "click" } },
+				target as unknown as HTMLElement,
+			),
+			maybePerformAction(
+				state,
+				{ body: "Click it", action: { do: "click" } },
+				target as unknown as HTMLElement,
+			),
+		]);
+		await maybePerformAction(
+			{ ...state, index: 1 },
+			{ body: "Click it", action: { do: "click" } },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(2);
+		expect(store.get("demo_tour:-1")).toMatchObject({ index: 1, acted: 1 });
 	});
 });
 
@@ -2236,6 +2305,87 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		expect(clicks).toEqual({ s0: 0, s1: 1, s2: 1 });
 		const last = containers[containers.length - 1];
 		expect(last.textContent).toContain("3 / 3");
+	});
+
+	it("records a click-navigation in the draft and serialized plan without markers", async () => {
+		const store = statefulLocalStorage();
+		const containers = await openEditorAtStep(57, 0, store);
+		document.getElementById("s0")?.addEventListener("click", () => {
+			history.pushState(
+				history.state,
+				"",
+				`https://app.example/landed#${demoMarkerFragment(script, false)}`,
+			);
+		});
+
+		buttonByLabel(containers[containers.length - 1], "Next step").click();
+		await flush();
+
+		const captured = readDemoScript(location.href);
+		expect(captured?.steps[0]?.navigate).toBeUndefined();
+		expect(captured?.steps[1]?.navigate).toBe("https://app.example/landed");
+		expect(captured?.steps[1]?.navigate).not.toContain("_demo");
+		expect(toPlanMarkdown(captured as TourScript)).toContain(
+			"https://app.example/landed",
+		);
+
+		resetTabIdForTests();
+		withTabId(58);
+		withLocation("https://app.example/landed", { withDocument: true });
+		document.body.innerHTML = '<button id="s1"></button>';
+		const replayStore = statefulLocalStorage();
+		replayStore.set("demo_tour:58", {
+			script: captured,
+			index: 1,
+			phase: "tutorial",
+		});
+		const uiNames: string[] = [];
+		Object.defineProperty(globalThis, "createShadowRootUi", {
+			configurable: true,
+			value: mock(async (_ctx: unknown, opts: { name: string }) => {
+				uiNames.push(opts.name);
+				return { mount: () => {}, remove: () => {} };
+			}),
+		});
+
+		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
+
+		expect(location.href).toBe("https://app.example/landed");
+		expect(uiNames).toEqual(["dg-demo-tour"]);
+	});
+
+	it("carries the draft and next-row cursor through an anchor navigation", async () => {
+		const store = statefulLocalStorage();
+		const containers = await openEditorAtStep(60, 0, store);
+		const button = document.getElementById("s0");
+		const anchor = document.createElement("a");
+		anchor.id = "s0";
+		anchor.href = "https://app.example/landed";
+		button?.replaceWith(anchor);
+
+		buttonByLabel(containers[containers.length - 1], "Next step").click();
+		await flush();
+
+		expect(location.href).toBe("https://app.example/landed");
+		const continuation = store.get("demo_pending:60") as {
+			script: TourScript;
+			edit: boolean;
+		};
+		expect(continuation.script.steps[1]?.navigate).toBe(
+			"https://app.example/landed",
+		);
+		expect(continuation.edit).toBe(true);
+		expect(store.get("demo_edit:60")).toBe(1);
+	});
+
+	it("leaves navigate empty when the planning click stays on the same page", async () => {
+		const store = statefulLocalStorage();
+		const containers = await openEditorAtStep(59, 0, store);
+
+		buttonByLabel(containers[containers.length - 1], "Next step").click();
+		await flush();
+
+		expect(readDemoScript(location.href)?.steps[0]?.navigate).toBeUndefined();
 	});
 
 	it("adding a step inserts it immediately after the cursor's row, not at the end", async () => {
