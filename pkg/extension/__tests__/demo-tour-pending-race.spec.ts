@@ -109,6 +109,55 @@ function statefulStorage(): Map<string, unknown> {
 }
 
 describe("demo_pending write-after-remove (residual, TTL-bounded)", () => {
+	it("waits for document_start capture before document_idle resolves the entry marker", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			steps: [{ body: "Tour step" }],
+		};
+		const pendingKey = "demo_pending:21";
+		const store = statefulStorage();
+		withLocation(`${script.startUrl}#${demoMarkerFragment(script, false)}`);
+		fakeShadowRootUi();
+		(browser.runtime.sendMessage as ReturnType<typeof mock>).mockImplementation(
+			() => Promise.resolve({ tabId: 21 }),
+		);
+
+		let releaseCapture!: () => void;
+		const captureGate = new Promise<void>((resolve) => {
+			releaseCapture = resolve;
+		});
+		let captureWriteStarted!: () => void;
+		const captureWrite = new Promise<void>((resolve) => {
+			captureWriteStarted = resolve;
+		});
+		(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
+			async (obj: Record<string, unknown>) => {
+				const pending = obj[pendingKey] as { capturedAt?: number } | undefined;
+				if (typeof pending?.capturedAt === "number") {
+					captureWriteStarted();
+					await captureGate;
+				}
+				for (const [key, value] of Object.entries(obj)) store.set(key, value);
+			},
+		);
+
+		const captureDone = captureMarkerEarly();
+		await captureWrite;
+		const tourDone = runDemoTour({} as Parameters<typeof runDemoTour>[0]);
+		const resolvedEarly = await Promise.race([
+			tourDone.then(() => true),
+			new Promise<false>((resolve) => setTimeout(() => resolve(false), 20)),
+		]);
+
+		expect(resolvedEarly).toBe(false);
+		releaseCapture();
+		await Promise.all([captureDone, tourDone]);
+		expect(store.has(pendingKey)).toBe(false);
+		expect(store.get("demo_tour:21")).toEqual(
+			expect.objectContaining({ script, index: 0 }),
+		);
+	});
+
 	/**
 	 * The reverse interleaving of the leak this slice fixes: captureMarkerEarly's
 	 * `set` (document_start, gated behind whoami's retry backoff) landing AFTER
