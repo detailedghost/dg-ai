@@ -54,6 +54,7 @@ import {
 	initializeReviewedEditorPlayback,
 	initialPlayPhase,
 	maybePerformAction,
+	maybePerformStepEffect,
 	missingActionTargetWarning,
 	type PlayState,
 	performAction,
@@ -63,6 +64,7 @@ import {
 	reviewAction,
 	scriptToDraft,
 	setupActionConsentRequired,
+	stepEffect,
 	type TourState,
 } from "@/lib/features/demo-tour";
 
@@ -717,6 +719,114 @@ describe("performAction", () => {
 		await performAction({ do: "fill", value: "hi" }, target);
 
 		expect((target as unknown as HTMLInputElement).value).toBe("hi");
+	});
+});
+
+describe("stepEffect", () => {
+	it("returns an authored action as-is", () => {
+		expect(
+			stepEffect({ body: "x", action: { do: "fill", value: "hi" } }),
+		).toEqual({
+			do: "fill",
+			value: "hi",
+		});
+	});
+
+	// `advance: "click"` is a timing, not an action, so a tour built from timings alone
+	// has no `action` anywhere — unattended playback must supply the click itself.
+	it("synthesizes a click for a click-timed step with no authored action", () => {
+		expect(stepEffect({ body: "x", advance: "click" })).toEqual({
+			do: "click",
+		});
+	});
+
+	it("prefers the authored action over the click timing", () => {
+		expect(
+			stepEffect({
+				body: "x",
+				advance: "click",
+				action: { do: "fill", value: "q" },
+			}),
+		).toEqual({
+			do: "fill",
+			value: "q",
+		});
+	});
+
+	it("returns nothing for a step that does not touch the page", () => {
+		expect(stepEffect({ body: "x" })).toBeUndefined();
+		expect(stepEffect({ body: "x", advance: "next" })).toBeUndefined();
+		expect(stepEffect({ body: "x", advance: 2000 })).toBeUndefined();
+		expect(stepEffect(undefined)).toBeUndefined();
+	});
+});
+
+describe("maybePerformStepEffect", () => {
+	const effectScript: TourScript = {
+		startUrl: "https://app.example",
+		steps: [],
+	};
+
+	beforeEach(() => {
+		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
+	});
+
+	/**
+	 * The bug this exists for: video playback called maybePerformAction, which bails on
+	 * a step with no authored action. Every tour built from `click` timings therefore
+	 * recorded without ever clicking anything, so the page never moved.
+	 */
+	it("clicks a click-timed step that has no authored action", async () => {
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+		});
+
+		await maybePerformStepEffect(
+			{ script: effectScript, index: 0 },
+			{ body: "Press it", advance: "click" },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(1);
+		expect(browser.storage.local.set).toHaveBeenCalledWith({
+			"demo_tour:-1": expect.objectContaining({ acted: 0 }),
+		});
+	});
+
+	it("still honours the acted guard, so a reload cannot re-click", async () => {
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+		});
+
+		await maybePerformStepEffect(
+			{ script: effectScript, index: 1, acted: 1 },
+			{ body: "Press it", advance: "click" },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(0);
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
+	});
+
+	it("does nothing for a step that neither acts nor waits on a click", async () => {
+		const target = new Window().document.createElement("button");
+		let clicks = 0;
+		target.addEventListener("click", () => {
+			clicks++;
+		});
+
+		await maybePerformStepEffect(
+			{ script: effectScript, index: 0 },
+			{ body: "Just read this", advance: "next" },
+			target as unknown as HTMLElement,
+		);
+
+		expect(clicks).toBe(0);
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
 	});
 });
 

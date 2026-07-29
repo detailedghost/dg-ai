@@ -872,16 +872,54 @@ export function missingActionTargetWarning(step: TourStep): string {
 	return `dg-demo: step action "${step.action?.do}" was skipped — target "${step.selector ?? ""}" was not found on the page.`;
 }
 
-/** Run a step's action once — guarded so a nav-triggered reload doesn't repeat it. */
+/**
+ * What a step does to the page when nobody is driving it by hand.
+ *
+ * An authored `@click`/`@type` action, or else the click an `advance: "click"` step is
+ * waiting for. The second half is the load-bearing part: `advance: "click"` is a
+ * *timing* — "hold here until the user clicks the target" — not an action, so a tour
+ * built entirely from timings (the common shape) has no `action` anywhere. Anything
+ * replaying such a tour unattended has to supply that click itself, or the page never
+ * moves and every later step spotlights an element that isn't there yet.
+ */
+export function stepEffect(step: TourStep | undefined): StepAction | undefined {
+	if (step?.action) return step.action;
+	return step?.advance === "click" ? { do: "click" } : undefined;
+}
+
+/** Run `action` once for this step — guarded so a nav-triggered reload can't repeat it. */
+async function performOnce(
+	state: PlayState,
+	action: StepAction,
+	target: HTMLElement,
+): Promise<void> {
+	if ((state.acted ?? -1) >= state.index) return;
+	await saveState({ ...state, acted: state.index });
+	await performAction(action, target);
+}
+
+/** Run a step's authored action once. Ignores click-timings — see maybePerformStepEffect. */
 export async function maybePerformAction(
 	state: PlayState,
 	step: TourStep,
 	target: HTMLElement,
 ): Promise<void> {
 	if (!step.action) return;
-	if ((state.acted ?? -1) >= state.index) return;
-	await saveState({ ...state, acted: state.index });
-	await performAction(step.action, target);
+	await performOnce(state, step.action, target);
+}
+
+/**
+ * Run whatever the step does to the page, including a synthesized click for a
+ * click-timed step. Used by unattended playback (video), where waiting for a user
+ * click would wait forever.
+ */
+export async function maybePerformStepEffect(
+	state: PlayState,
+	step: TourStep,
+	target: HTMLElement,
+): Promise<void> {
+	const action = stepEffect(step);
+	if (action) await performOnce(state, action, target);
 }
 
 /**
@@ -1002,9 +1040,10 @@ async function renderStep(
 	cleanups.push(() => ui.remove());
 
 	if (video) {
-		// Video auto-plays: fire the action on a short timer, same as always.
+		// Nobody is clicking during a recording, so a click-timed step's click has to be
+		// supplied here too — not only an authored action.
 		if (target)
-			setTimeout(() => void maybePerformAction(state, step, target), 600);
+			setTimeout(() => void maybePerformStepEffect(state, step, target), 600);
 		// Cue this step's narration clip, then hold for the recorder-supplied duration
 		// (narration + tail + any authored `advance`); holdFor covers the unnarrated case.
 		void browser.runtime.sendMessage({
@@ -2098,8 +2137,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	const advanceReview = async (cursor: number): Promise<void> => {
 		const current = reviewRows[cursor];
 		const step = current ? draftRowToStep(current.row) : undefined;
-		const action: StepAction | undefined =
-			step?.action ?? (step?.advance === "click" ? { do: "click" } : undefined);
+		const action = stepEffect(step);
 		if (step && action) {
 			const target = editorSpotlightTarget(document, step.selector ?? "");
 			if (target) await performAction(action, target);
