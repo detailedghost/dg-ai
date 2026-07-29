@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { slugify } from "@dg/common";
 import type { Command } from "commander";
 import { addDemoMarker } from "../utils/demo-marker";
+import type { VerifyResult } from "../utils/demo-verify";
+import { verifyScript } from "../utils/demo-verify";
 import { tryOpen } from "../utils/lib";
 import {
 	parsePlanMarkdown,
@@ -43,6 +45,49 @@ export function loadScript(path: string): TourScript {
 }
 
 type PlayOpts = { video?: boolean; print?: boolean; edit?: boolean };
+type VerifyOpts = { verify?: string };
+
+/**
+ * Walk a plan in a real throwaway browser and print `{ok, findings[]}` as the sole
+ * line of stdout — an unreadable plan or a harness failure is reported the same way,
+ * never an unhandled throw, so a caller can always `JSON.parse` this line.
+ */
+export async function runVerify(planPath: string): Promise<void> {
+	let script: TourScript;
+	try {
+		script = loadScript(planPath);
+	} catch (err) {
+		console.log(
+			JSON.stringify({
+				ok: false,
+				findings: [
+					{
+						step: 0,
+						kind: "plan-unreadable",
+						message: err instanceof Error ? err.message : String(err),
+					},
+				],
+			} satisfies VerifyResult),
+		);
+		return;
+	}
+	let result: VerifyResult;
+	try {
+		result = await verifyScript(script);
+	} catch (err) {
+		result = {
+			ok: false,
+			findings: [
+				{
+					step: 0,
+					kind: "harness-error",
+					message: err instanceof Error ? err.message : String(err),
+				},
+			],
+		};
+	}
+	console.log(JSON.stringify(result));
+}
 
 /** Encode the tour into a `_demo` URL, save its plan, and open it (or just print). */
 export async function playScript(
@@ -81,7 +126,10 @@ export function registerDemo(program: Command): void {
 		.description(
 			"play a guided tour from a script.json via the dg-ai-extension",
 		)
-		.argument("<script>", "path to a tour plan (.md) or script JSON file")
+		.argument(
+			"[script]",
+			"path to a tour plan (.md) or script JSON file — omit with --verify",
+		)
 		.option(
 			"--video",
 			"record the tour to a video (auto-play) instead of a live walkthrough",
@@ -91,7 +139,18 @@ export function registerDemo(program: Command): void {
 			"--edit",
 			"open a review/edit panel in the browser before playing or recording",
 		)
-		.action((scriptPath: string, opts: PlayOpts) => {
+		.option(
+			"--verify <plan>",
+			"walk the plan in a real throwaway browser and print findings as JSON, instead of playing it",
+		)
+		.action((scriptPath: string | undefined, opts: PlayOpts & VerifyOpts) => {
+			if (opts.verify) return runVerify(opts.verify);
+			if (!scriptPath) {
+				console.error(
+					"demo: a script path is required (or use --verify <plan.md>)",
+				);
+				process.exit(1);
+			}
 			return playScript(loadScript(scriptPath), opts);
 		});
 }
