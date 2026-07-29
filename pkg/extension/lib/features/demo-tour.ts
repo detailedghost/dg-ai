@@ -59,8 +59,8 @@ const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
  * this string is displayed for the user to type: being right on both is cheaper than
  * being confidently wrong on one.
  */
-function shortcutsPageUrl(): string {
-	return navigator.userAgent.includes("Edg/")
+export function shortcutsPageUrl(ua: string = navigator.userAgent): string {
+	return ua.includes("Edg/")
 		? "edge://extensions/shortcuts"
 		: "chrome://extensions/shortcuts";
 }
