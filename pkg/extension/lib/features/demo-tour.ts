@@ -278,6 +278,7 @@ const isSetup = (state: PlayState): boolean => state.phase === "setup";
  * ask the background which tab we're in; it also clears these keys on tab close.
  */
 let myTabId = -1;
+const performingStepEffects = new Set<number>();
 const stateKey = () => `demo_tour:${myTabId}`;
 const recKey = () => `demo_recording:${myTabId}`;
 const editKey = () => `demo_edit:${myTabId}`;
@@ -287,6 +288,7 @@ const pendingMarkerKey = () => `demo_pending:${myTabId}`;
  *  once per tab, but bun:test shares it across every spec file in the run. */
 export function resetTabIdForTests(): void {
 	myTabId = -1;
+	performingStepEffects.clear();
 }
 
 /** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
@@ -1003,9 +1005,22 @@ async function performOnce(
 	action: StepAction,
 	target: HTMLElement,
 ): Promise<void> {
-	if ((state.acted ?? -1) >= state.index) return;
-	await saveState({ ...state, acted: state.index });
-	await performAction(action, target);
+	if (
+		(state.acted ?? -1) >= state.index ||
+		performingStepEffects.has(state.index)
+	)
+		return;
+	performingStepEffects.add(state.index);
+	try {
+		await performAction(action, target);
+		const latest = (await loadState()) ?? state;
+		await saveState({
+			...latest,
+			acted: Math.max(latest.acted ?? -1, state.index),
+		});
+	} finally {
+		performingStepEffects.delete(state.index);
+	}
 }
 
 /** Run a step's authored action once. Ignores click-timings — see maybePerformStepEffect. */
@@ -2245,14 +2260,54 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 
 	/** Perform cursor's row action against the live page, if it has one — an
 	 *  authored action, or the click an advance:"click" row is waiting for. */
-	const performReviewRowAction = async (cursor: number): Promise<void> => {
+	const performReviewRowAction = async (cursor: number): Promise<boolean> => {
 		const current = reviewRows[cursor];
 		const step = current ? draftRowToStep(current.row) : undefined;
 		const action = stepEffect(step);
-		if (!step || !action) return;
+		if (!step || !action) return false;
 		const target = editorSpotlightTarget(document, step.selector ?? "");
-		if (target) await performAction(action, target);
-		else console.warn(missingActionTargetWarning(step));
+		if (!target) {
+			console.warn(missingActionTargetWarning(step));
+			return false;
+		}
+		const before = stripDemoMarker(location.href);
+		const anchor =
+			action.do === "click"
+				? target.closest<HTMLAnchorElement>("a[href]")
+				: undefined;
+		const destinationCursor = cursor + 1;
+		const destination = reviewRows[destinationCursor];
+		if (anchor && destination && !sameUrl(before, anchor.href)) {
+			const normalized = stripDemoMarker(anchor.href);
+			destination.row.navigate = normalized;
+			persist();
+			await setEditCursor(destinationCursor);
+			await browser.storage.local.set({
+				[pendingMarkerKey()]: {
+					script: draftToScript(script.startUrl, draft),
+					edit: true,
+					capturedAt: Date.now(),
+				} satisfies PendingMarkerCapture,
+			});
+			anchor.href = normalized;
+			await performAction(action, target);
+			return true;
+		}
+		await performAction(action, target);
+		if (action.do !== "click") return false;
+		const currentUrl = stripDemoMarker(location.href);
+		if (sameUrl(before, currentUrl) || !destination) return false;
+		const normalized = stripDemoMarker(currentUrl);
+		const inherited = editorInheritedPageUrl(
+			draft,
+			script.startUrl,
+			destinationCursor,
+		);
+		if (!sameUrl(normalized, inherited)) {
+			destination.row.navigate = normalized;
+			persist();
+		}
+		return false;
 	};
 
 	/**
@@ -2274,7 +2329,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	 * run, not the single-row intent behind one forward press.
 	 */
 	const advanceReview = async (cursor: number): Promise<void> => {
-		await performReviewRowAction(cursor);
+		if (await performReviewRowAction(cursor)) return;
 		dispatch("next");
 	};
 
@@ -2285,7 +2340,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 	 */
 	const jumpToEnd = async (): Promise<void> => {
 		while (phase.kind === "step") {
-			await performReviewRowAction(phase.cursor);
+			if (await performReviewRowAction(phase.cursor)) return;
 			if (phase.cursor >= reviewRows.length - 1) break;
 			phase = machine.next("next").value;
 		}
