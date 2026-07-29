@@ -130,29 +130,27 @@ async function testNarration(): Promise<void> {
 }
 
 /** Decode the wav → AudioContext → MediaRecorder → webm blob; the exact mix path video mode uses. */
-function recordToWebm(wav: Blob): Promise<Blob> {
-	return (async () => {
-		const ctx = new AudioContext();
-		const buf = await ctx.decodeAudioData(await wav.arrayBuffer());
-		const dest = ctx.createMediaStreamDestination();
-		const src = ctx.createBufferSource();
-		src.buffer = buf;
-		src.connect(dest);
-		const rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm" });
-		const chunks: Blob[] = [];
-		rec.ondataavailable = (e) => {
-			if (e.data.size) chunks.push(e.data);
+async function recordToWebm(wav: Blob): Promise<Blob> {
+	const ctx = new AudioContext();
+	const buf = await ctx.decodeAudioData(await wav.arrayBuffer());
+	const dest = ctx.createMediaStreamDestination();
+	const src = ctx.createBufferSource();
+	src.buffer = buf;
+	src.connect(dest);
+	const rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm" });
+	const chunks: Blob[] = [];
+	rec.ondataavailable = (e) => {
+		if (e.data.size) chunks.push(e.data);
+	};
+	return await new Promise<Blob>((resolve) => {
+		rec.onstop = () => {
+			void ctx.close();
+			resolve(new Blob(chunks, { type: "audio/webm" }));
 		};
-		return await new Promise<Blob>((resolve) => {
-			rec.onstop = () => {
-				void ctx.close();
-				resolve(new Blob(chunks, { type: "audio/webm" }));
-			};
-			rec.start();
-			src.start();
-			src.onended = () => rec.stop();
-		});
-	})();
+		rec.start();
+		src.start();
+		src.onended = () => rec.stop();
+	});
 }
 
 function downloadTest(): void {

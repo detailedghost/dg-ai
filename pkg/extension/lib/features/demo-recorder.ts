@@ -16,6 +16,7 @@ import { partitionTourSteps, slugify } from "@dg/common";
 import { getConfig } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
+import { clampPercent } from "@/lib/narration-progress";
 import { toPlanMarkdown } from "@/utils/plan-format";
 import {
 	getRecording,
@@ -165,7 +166,7 @@ export async function handleNarrationProgress(
 	if (active?.tabId != null)
 		void chrome.tabs.sendMessage(active.tabId, {
 			type: MSG.narrationProgress,
-			progress: Math.min(Math.max(Math.round(progress), 0), 100),
+			progress: clampPercent(progress),
 			label,
 		});
 }
