@@ -4,6 +4,7 @@
  * read must not stop a display path from rendering).
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { getVideoQuality } from "@/lib/capture-quality";
 
 const store: Record<string, unknown> = {};
 const syncGet = mock((defaults: Record<string, unknown>) =>
@@ -46,6 +47,24 @@ describe("getNarrationMode", () => {
 		expect(getNarrationMode("")).toBe(DEFAULTS.narration);
 		expect(getNarrationMode("invalid")).toBe(DEFAULTS.narration);
 		expect(getNarrationMode("BOTH")).toBe(DEFAULTS.narration);
+	});
+});
+
+describe("videoQuality", () => {
+	it("defaults to 1080p — sharper than Chrome's 720p, without 4K file sizes", () => {
+		expect(DEFAULTS.videoQuality).toBe("1080p");
+	});
+
+	it("round-trips a chosen preset through storage", async () => {
+		await setConfig({ ...DEFAULTS, videoQuality: "2160p" });
+
+		expect((await getConfig()).videoQuality).toBe("2160p");
+	});
+
+	// The recorder indexes a table with this, so an unknown value must not reach it.
+	it("coerces a stored value that is no longer a valid preset", () => {
+		expect(getVideoQuality("4320p")).toBe(DEFAULTS.videoQuality);
+		expect(getVideoQuality("")).toBe(DEFAULTS.videoQuality);
 	});
 });
 

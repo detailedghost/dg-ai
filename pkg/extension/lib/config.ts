@@ -1,4 +1,8 @@
 import { browser } from "wxt/browser";
+import {
+	DEFAULT_VIDEO_QUALITY,
+	type VideoQuality,
+} from "@/lib/capture-quality";
 
 /** The nine tab-group colors Chrome/Firefox accept. */
 export type GroupColor =
@@ -68,12 +72,14 @@ export type Config = {
 	color: ColorSetting;
 	voice: string;
 	narration: NarrationMode;
+	videoQuality: VideoQuality;
 };
 
 export const DEFAULTS: Config = {
 	color: "random",
 	voice: "af_heart",
 	narration: "both",
+	videoQuality: DEFAULT_VIDEO_QUALITY,
 };
 
 // Kokoro ids encode origin and gender as a prefix: <a|b><f|m>_<name>.

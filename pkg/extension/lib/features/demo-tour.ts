@@ -139,51 +139,6 @@ export function restartState(state: PlayState): PlayState {
 	};
 }
 
-export function reviewAction(action: "confirm" | "discard"): { type: string } {
-	return {
-		type: action === "confirm" ? MSG.videoConfirmDownload : MSG.videoDiscard,
-	};
-}
-
-/** Minimal UI state shape used by handleTourMessage. */
-export type TourState = { showingReview?: boolean; [key: string]: unknown };
-export type TourStateUpdate = Partial<TourState>;
-
-export function handleTourMessage(
-	type: string,
-	_state: TourState,
-): TourStateUpdate | null {
-	if (type === MSG.videoReview) return { showingReview: true };
-	if (type === MSG.videoSaved || type === MSG.videoDiscard)
-		return { showingReview: false };
-	return null;
-}
-
-/** Escape text for safe interpolation into an HTML string. */
-export function escapeHtml(s: string): string {
-	return s.replace(
-		/[&<>"']/g,
-		(c) =>
-			({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-				c
-			] as string,
-	);
-}
-
-export function buildVideoReviewHtml(slug: string, hasVideo: boolean): string {
-	const video = hasVideo
-		? `<video id="dg-review-video" controls style="max-width:100%;margin-bottom:8px"></video>`
-		: `<p style="color:#888">No preview available</p>`;
-	return `<div class="dg-review-modal">
-  <h3>Review Recording: ${escapeHtml(slug)}</h3>
-  ${video}
-  <div class="dg-review-actions">
-    <button id="dg-review-download">Download</button>
-    <button id="dg-review-discard">Discard</button>
-  </div>
-</div>`;
-}
-
 // --- end pure helpers ---
 
 const isVideo = (s: TourScript): boolean => s.mode === "video";
@@ -647,7 +602,6 @@ function listenForRecorder(ctx: Ctx): void {
 			durations?: number[];
 			index?: number;
 			hideBody?: boolean;
-			dataUrl?: string;
 			progress?: number;
 			label?: string;
 			narrate?: boolean;
@@ -665,9 +619,9 @@ function listenForRecorder(ctx: Ctx): void {
 						}),
 					),
 				);
-			} else if (msg?.type === MSG.videoReview) {
-				removeUi();
-				void showVideoReview(ctx);
+			} else if (msg?.type === MSG.videoRearm) {
+				// Discarded in the review tab — offer another take right where they are.
+				void rearmAfterDiscard(ctx);
 			} else if (msg?.type === MSG.videoPreparing) {
 				removeUi();
 				void renderModal(ctx, {
@@ -1841,77 +1795,26 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 	cleanups.push(() => ui.remove());
 }
 
-/** Fetch the recorded data URL from the background and render the review overlay. */
-async function showVideoReview(ctx: Ctx): Promise<void> {
-	let dataUrl: string | null = null;
-	try {
-		const res = (await browser.runtime.sendMessage({
-			type: MSG.requestVideoData,
-		})) as { dataUrl: string | null } | undefined;
-		dataUrl = res?.dataUrl ?? null;
-	} catch {
-		// Render with no preview rather than crashing.
+/**
+ * Put this tab back where another take can start, after a discard in the review tab.
+ *
+ * This has to run here rather than in the review page or the background: both
+ * outcomes are page overlays that need the content script's `ctx`. Review only
+ * decides *that* the user wants another take; the tour tab still decides what that
+ * means for it.
+ */
+export async function rearmAfterDiscard(ctx: Ctx): Promise<void> {
+	const s = await loadState();
+	await setRecording(false);
+	removeUi();
+	// Launched from the editor → return there; otherwise re-prompt.
+	if (s?.fromEdit) {
+		await clearState();
+		await showEditPanel(ctx, s.script);
+		return;
 	}
-
-	const state = await loadState();
-	const slug =
-		state?.script.title ??
-		(() => {
-			try {
-				return new URL(location.href).hostname;
-			} catch {
-				return "demo";
-			}
-		})();
-
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const c of cleanups) c();
-	};
-
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-review",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (root) => {
-			root.innerHTML = buildVideoReviewHtml(slug, dataUrl != null);
-			injectTheme(root); // after innerHTML so the style element survives
-
-			const video = root.querySelector<HTMLVideoElement>("#dg-review-video");
-			if (video && dataUrl) video.src = dataUrl;
-
-			root
-				.querySelector("#dg-review-download")
-				?.addEventListener("click", () => {
-					void browser.runtime.sendMessage(reviewAction("confirm"));
-					void clearState();
-					void setRecording(false);
-					removeUi();
-				});
-
-			root
-				.querySelector("#dg-review-discard")
-				?.addEventListener("click", () => {
-					void browser.runtime.sendMessage(reviewAction("discard"));
-					void (async () => {
-						const s = await loadState();
-						await setRecording(false);
-						removeUi();
-						// Launched from the editor → return there; otherwise re-prompt.
-						if (s?.fromEdit) {
-							await clearState();
-							await showEditPanel(ctx, s.script);
-						} else {
-							if (s) await saveState({ ...s, index: 0 });
-							promptToRecord(ctx);
-						}
-					})();
-				});
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
+	if (s) await saveState({ ...s, index: 0 });
+	promptToRecord(ctx);
 }
 
 // --- review/edit stepper (opened by the `_edit` marker before playing) ---

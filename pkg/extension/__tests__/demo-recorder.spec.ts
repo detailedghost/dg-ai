@@ -1,11 +1,17 @@
 /**
- * Unit tests for Slice 2 — background-video-review-flow.
+ * Unit tests for the background half of the video-review flow.
  *
- * Tests: handleRecordingData, confirmDownload, discardRecording,
- * handleRequestVideoData from demo-recorder.ts.
+ * Tests: handleRecordingSaved, confirmDownload, discardRecording,
+ * handleReviewTabClosed from demo-recorder.ts, plus the recording lifecycle.
  *
  * chrome.* APIs are hand-rolled stubs on globalThis. IDB is shimmed via
- * fake-indexeddb, reset per test so no state leaks between cases.
+ * fake-indexeddb, reset per test so no state leaks between cases — and because
+ * `recording-db.ts` runs for real here, recordings are stored as actual `Blob`s.
+ *
+ * The offscreen document is faked through `runtime.sendMessage`: it is the only
+ * context that can mint an object URL, so `offscreenReplies` is what stands in for
+ * it. `settleDownload` drives `downloads.onChanged`, which is how the code learns a
+ * download finished and its URL may be released.
  */
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
@@ -18,58 +24,102 @@ import {
 	discardRecording,
 	handleNarrationComplete,
 	handleNarrationProgress,
-	handleRecordingData,
+	handleRecordingSaved,
 	handleRecordingTabClosed,
-	handleRequestVideoData,
+	handleReviewTabClosed,
 	relayPlayStep,
 	startVideoRecording,
 	stopVideoRecording,
+	warmNarration,
 } from "@/lib/features/demo-recorder";
-import { getRecording, saveRecording } from "@/utils/recording-db";
+import {
+	getRecording,
+	hasRecording,
+	saveRecording,
+} from "@/utils/recording-db";
 
-// ---------------------------------------------------------------------------
-// Chrome stub helpers
-// ---------------------------------------------------------------------------
+// ── chrome stub helpers ─────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let sendMessage: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let downloadMock: any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+let runtimeSendMessage: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let tabsCreate: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let storageData: Record<string, any>;
 let mockLastError: { message?: string } | undefined;
 let downloadShouldFail: boolean;
+/** Canned offscreen answers by message type — the stand-in for that document. */
+let offscreenReplies: Record<string, unknown>;
+let downloadListeners: Array<(delta: chrome.downloads.DownloadDelta) => void>;
 
 const TAB_ID = 42;
+const REVIEW_TAB_ID = 77;
+const DOWNLOAD_ID = 42;
+const BLOB_URL = "blob:chrome-extension://abc/deadbeef";
 
-const ACTIVE_RECORDING = {
-	tabId: TAB_ID,
-	tour: "My Tour",
-	hideBody: false,
-	planMarkdown: "# Plan",
-};
+const ACTIVE_RECORDING = { tabId: TAB_ID, hideBody: false };
 const readConfig = async () => ({
 	color: "random" as const,
 	voice: "af_heart",
 	narration: "both" as const,
+	videoQuality: "1440p" as const,
 });
+
+/** A stored recording, with a real Blob rather than a string stand-in. */
+function storeRecording(overrides?: {
+	tabId?: number;
+	slug?: string;
+	planMarkdown?: string;
+}): Promise<void> {
+	return saveRecording({
+		tabId: overrides?.tabId ?? TAB_ID,
+		blob: new Blob(["AAAA"], { type: "video/webm" }),
+		slug: overrides?.slug ?? "my-tour",
+		planMarkdown: overrides?.planMarkdown ?? "# Plan",
+		createdAt: Date.now(),
+	});
+}
+
+/** Let unawaited follow-up work (the revoke bookkeeping) run before asserting. */
+const flush = (): Promise<void> =>
+	new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Drive downloads.onChanged the way Chrome does when a download ends. */
+function settleDownload(
+	state: "complete" | "interrupted",
+	id = DOWNLOAD_ID,
+): void {
+	for (const listener of [...downloadListeners])
+		listener({ id, state: { current: state, previous: "in_progress" } });
+}
 
 function buildChromeStub() {
 	sendMessage = mock((..._args: unknown[]) => undefined);
 	downloadShouldFail = false;
-	downloadMock = mock((opts: unknown, cb?: (id?: number) => void) => {
+	downloadListeners = [];
+	offscreenReplies = { [MSG.mintBlobUrl]: { url: BLOB_URL } };
+	downloadMock = mock((_opts: unknown, cb?: (id?: number) => void) => {
 		if (downloadShouldFail) {
 			mockLastError = { message: "Download failed" };
 			cb?.(undefined);
 			mockLastError = undefined;
 		} else {
-			cb?.(42);
+			cb?.(DOWNLOAD_ID);
 		}
 	});
+	runtimeSendMessage = mock(
+		async (msg: { type?: string }) => offscreenReplies[msg?.type ?? ""],
+	);
+	tabsCreate = mock(async (_opts: unknown) => ({ id: REVIEW_TAB_ID }));
 
 	(globalThis as any).chrome = {
 		tabs: {
 			sendMessage,
+			create: tabsCreate,
 			// Resolves by default (tab exists); tests simulating a closed tab override this.
 			get: mock(async (id: number) => ({ id })),
 		},
@@ -78,7 +128,21 @@ function buildChromeStub() {
 			closeDocument: mock(async () => undefined),
 			createDocument: mock(async () => undefined),
 		},
-		downloads: { download: downloadMock },
+		downloads: {
+			download: downloadMock,
+			onChanged: {
+				addListener: mock(
+					(fn: (delta: chrome.downloads.DownloadDelta) => void) => {
+						downloadListeners.push(fn);
+					},
+				),
+				removeListener: mock(
+					(fn: (delta: chrome.downloads.DownloadDelta) => void) => {
+						downloadListeners = downloadListeners.filter((l) => l !== fn);
+					},
+				),
+			},
+		},
 		storage: {
 			local: {
 				get: mock(async (key: string | string[]) => {
@@ -99,11 +163,12 @@ function buildChromeStub() {
 		},
 		runtime: {
 			getContexts: mock(async () => []),
+			getURL: mock((path: string) => `chrome-extension://abc/${path}`),
 			onMessage: {
 				addListener: mock(() => undefined),
 				removeListener: mock(() => undefined),
 			},
-			sendMessage: mock(() => undefined),
+			sendMessage: runtimeSendMessage,
 			get lastError() {
 				return mockLastError;
 			},
@@ -111,9 +176,7 @@ function buildChromeStub() {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Suite
-// ---------------------------------------------------------------------------
+// ── suite ───────────────────────────────────────────────────────────────────
 
 describe("demo-recorder", () => {
 	beforeEach(() => {
@@ -130,37 +193,64 @@ describe("demo-recorder", () => {
 		buildChromeStub();
 	});
 
-	// ── handleRecordingData ──────────────────────────────────────────────────
+	// ── handleRecordingSaved ─────────────────────────────────────────────────
 
-	describe("handleRecordingData", () => {
-		it("valid dataUrl: downloads.download NOT called; MSG.videoReview sent to tab; IDB entry exists with correct slug and dataUrl", async () => {
-			const dataUrl = "data:video/webm;base64,AAAA";
+	describe("handleRecordingSaved", () => {
+		it("opens the review page in its own tab, carrying the recording's tab id", async () => {
+			await handleRecordingSaved(true);
 
-			await handleRecordingData(dataUrl);
-
-			expect(downloadMock).not.toHaveBeenCalled();
-			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
-				type: MSG.videoReview,
+			expect(tabsCreate).toHaveBeenCalledWith({
+				url: `chrome-extension://abc/review.html?tab=${TAB_ID}`,
 			});
-
-			const entry = await getRecording(TAB_ID);
-			expect(entry).toBeDefined();
-			expect(entry?.tabId).toBe(TAB_ID);
-			expect(entry?.dataUrl).toBe(dataUrl);
-			expect(entry?.slug).toBe("my-tour");
+			expect(downloadMock).not.toHaveBeenCalled();
 		});
 
-		it("empty string: MSG.videoError sent; IDB empty; no download call", async () => {
-			await handleRecordingData("");
+		it("remembers which review tab is showing which recording", async () => {
+			await handleRecordingSaved(true);
 
-			expect(downloadMock).not.toHaveBeenCalled();
+			expect(storageData.demo_review_tab).toEqual({
+				reviewTabId: REVIEW_TAB_ID,
+				tabId: TAB_ID,
+			});
+		});
+
+		it("frees the recording slot so the next tour can record", async () => {
+			await handleRecordingSaved(true);
+
+			expect(storageData.demo_active_recording).toBeUndefined();
+		});
+
+		it("saved: false reports the failure to the tour tab and opens no review tab", async () => {
+			await handleRecordingSaved(false, "recording did not start");
+
+			expect(tabsCreate).not.toHaveBeenCalled();
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoError,
+				error: "recording did not start",
+			});
+			expect(storageData.demo_active_recording).toBeUndefined();
+		});
+
+		it("saved: false without a reason still says something the tour tab can show", async () => {
+			await handleRecordingSaved(false);
+
 			expect(sendMessage).toHaveBeenCalledWith(
 				TAB_ID,
 				expect.objectContaining({ type: MSG.videoError }),
 			);
+		});
 
-			const entry = await getRecording(TAB_ID);
-			expect(entry).toBeUndefined();
+		it("a review tab that cannot be opened surfaces as an error, not a frozen tour", async () => {
+			tabsCreate.mockImplementation(async () => {
+				throw new Error("no window");
+			});
+
+			await handleRecordingSaved(true);
+
+			expect(sendMessage).toHaveBeenCalledWith(
+				TAB_ID,
+				expect.objectContaining({ type: MSG.videoError }),
+			);
 		});
 	});
 
@@ -168,21 +258,15 @@ describe("demo-recorder", () => {
 
 	describe("confirmDownload", () => {
 		it("downloads the video and the plan as two separate files under dg-demo/<slug>/; IDB entry absent after success", async () => {
-			const dataUrl = "data:video/webm;base64,AAAA";
-			await saveRecording({
-				tabId: TAB_ID,
-				dataUrl,
-				slug: "my-tour",
-				planMarkdown: "# Plan",
-				createdAt: Date.now(),
-			});
+			await storeRecording();
 
-			await confirmDownload(TAB_ID);
+			const result = await confirmDownload(TAB_ID);
 
+			expect(result).toEqual({ ok: true, folder: "dg-demo/my-tour" });
 			expect(downloadMock).toHaveBeenCalledWith(
 				expect.objectContaining({
 					filename: "dg-demo/my-tour/my-tour.webm",
-					url: dataUrl,
+					url: BLOB_URL,
 				}),
 				expect.any(Function),
 			);
@@ -193,43 +277,136 @@ describe("demo-recorder", () => {
 				expect.any(Function),
 			);
 			expect(downloadMock).toHaveBeenCalledTimes(2);
-			expect(sendMessage).toHaveBeenCalledWith(
-				TAB_ID,
-				expect.objectContaining({ type: MSG.videoSaved }),
-			);
 
-			const entry = await getRecording(TAB_ID);
-			expect(entry).toBeUndefined();
+			expect(await getRecording(TAB_ID)).toBeUndefined();
 		});
 
-		it("passes the stored dataUrl straight through with no base64 decode", async () => {
-			const dataUrl = "data:video/webm;base64,SGVsbG8=";
-			await saveRecording({
-				tabId: TAB_ID,
-				dataUrl,
-				slug: "my-tour",
-				planMarkdown: "# Plan",
-				createdAt: Date.now(),
-			});
+		it("downloads the video from an object URL minted by the offscreen document", async () => {
+			// The bytes never reach the worker: it asks the one context that can make a
+			// URL for them, and hands the downloads API that string.
+			await storeRecording();
 
 			await confirmDownload(TAB_ID);
 
+			expect(runtimeSendMessage).toHaveBeenCalledWith({
+				type: MSG.mintBlobUrl,
+				tabId: TAB_ID,
+				target: "offscreen",
+			});
 			const videoCall = downloadMock.mock.calls.find(
 				(call: unknown[]) =>
 					(call[0] as { filename: string }).filename ===
 					"dg-demo/my-tour/my-tour.webm",
 			);
-			expect(videoCall?.[0]).toMatchObject({ url: dataUrl });
+			expect(videoCall?.[0]).toMatchObject({ url: BLOB_URL });
 		});
 
-		it("missing IDB entry: sends MSG.videoError; download not called", async () => {
+		it("stands the tour tab down once the files are on disk", async () => {
+			await storeRecording();
+
 			await confirmDownload(TAB_ID);
 
-			expect(sendMessage).toHaveBeenCalledWith(
-				TAB_ID,
-				expect.objectContaining({ type: MSG.videoError }),
-			);
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoSaved,
+				filename: "dg-demo/my-tour",
+			});
+		});
+
+		it("forgets the review-tab pairing, so closing that tab does not re-arm the tour", async () => {
+			storageData.demo_review_tab = {
+				reviewTabId: REVIEW_TAB_ID,
+				tabId: TAB_ID,
+			};
+			await storeRecording();
+
+			await confirmDownload(TAB_ID);
+
+			expect(storageData.demo_review_tab).toBeUndefined();
+		});
+
+		it("missing IDB entry: reports the failure and never starts a download", async () => {
+			const result = await confirmDownload(TAB_ID);
+
+			expect(result).toEqual({ ok: false, error: "no recording found" });
 			expect(downloadMock).not.toHaveBeenCalled();
+		});
+
+		it("a recorder that cannot mint a URL fails without deleting the recording", async () => {
+			await storeRecording();
+			offscreenReplies = { [MSG.mintBlobUrl]: { url: null } };
+
+			const result = await confirmDownload(TAB_ID);
+
+			expect(result.ok).toBe(false);
+			expect(downloadMock).not.toHaveBeenCalled();
+			expect(await hasRecording(TAB_ID)).toBe(true);
+		});
+	});
+
+	// ── confirmDownload: releasing the object URL ────────────────────────────
+
+	describe("confirmDownload — object URL lifetime", () => {
+		it("does not release the URL when the download is merely created", async () => {
+			// The create callback fires before Chrome has read the bytes; revoking there
+			// truncates exactly the large files a higher preset produces.
+			await storeRecording();
+
+			await confirmDownload(TAB_ID);
+			await flush();
+
+			expect(runtimeSendMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: MSG.revokeBlobUrl }),
+			);
+		});
+
+		it("releases the URL once the download completes", async () => {
+			await storeRecording();
+			await confirmDownload(TAB_ID);
+
+			settleDownload("complete");
+			await flush();
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith({
+				type: MSG.revokeBlobUrl,
+				url: BLOB_URL,
+				target: "offscreen",
+			});
+		});
+
+		it("releases the URL when the download is interrupted, rather than leaking it", async () => {
+			await storeRecording();
+			await confirmDownload(TAB_ID);
+
+			settleDownload("interrupted");
+			await flush();
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith({
+				type: MSG.revokeBlobUrl,
+				url: BLOB_URL,
+				target: "offscreen",
+			});
+		});
+
+		it("ignores state changes belonging to a different download", async () => {
+			await storeRecording();
+			await confirmDownload(TAB_ID);
+
+			settleDownload("complete", DOWNLOAD_ID + 1);
+			await flush();
+
+			expect(runtimeSendMessage).not.toHaveBeenCalledWith(
+				expect.objectContaining({ type: MSG.revokeBlobUrl }),
+			);
+		});
+
+		it("stops listening to downloads.onChanged once the URL is released", async () => {
+			await storeRecording();
+			await confirmDownload(TAB_ID);
+
+			settleDownload("complete");
+			await flush();
+
+			expect(downloadListeners).toHaveLength(0);
 		});
 	});
 
@@ -237,53 +414,93 @@ describe("demo-recorder", () => {
 
 	describe("discardRecording", () => {
 		it("IDB entry absent after call", async () => {
-			await saveRecording({
-				tabId: TAB_ID,
-				dataUrl: "data:video/webm;base64,AAAA",
-				slug: "demo",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
+			await storeRecording({ slug: "demo" });
 
 			await discardRecording(TAB_ID);
 
 			expect(await getRecording(TAB_ID)).toBeUndefined();
 		});
 
-		it("no crash if entry was never there", async () => {
-			await expect(discardRecording(TAB_ID)).resolves.toBeUndefined();
+		it("tells the tour tab to re-arm, which is where another take starts", async () => {
+			await storeRecording();
+
+			const result = await discardRecording(TAB_ID);
+
+			expect(result).toEqual({ ok: true });
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoRearm,
+			});
+		});
+
+		it("re-arms even when the entry was already gone — a stranded tour tab is the worse outcome", async () => {
+			const result = await discardRecording(TAB_ID);
+
+			expect(result).toEqual({ ok: false });
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoRearm,
+			});
+		});
+
+		it("forgets the review-tab pairing", async () => {
+			storageData.demo_review_tab = {
+				reviewTabId: REVIEW_TAB_ID,
+				tabId: TAB_ID,
+			};
+
+			await discardRecording(TAB_ID);
+
+			expect(storageData.demo_review_tab).toBeUndefined();
 		});
 	});
 
-	// ── handleRequestVideoData ───────────────────────────────────────────────
+	// ── handleReviewTabClosed ────────────────────────────────────────────────
 
-	describe("handleRequestVideoData", () => {
-		it("sendResponse called with stored dataUrl when entry is present", async () => {
-			await saveRecording({
+	describe("handleReviewTabClosed", () => {
+		beforeEach(() => {
+			storageData.demo_review_tab = {
+				reviewTabId: REVIEW_TAB_ID,
 				tabId: TAB_ID,
-				dataUrl: "data:video/webm;base64,PAYLOAD",
-				slug: "demo",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
+			};
+		});
 
-			const sendResponse = mock(
-				(_data: { dataUrl: string | null }) => undefined,
-			);
-			await handleRequestVideoData(TAB_ID, sendResponse);
+		it("re-arms the tour tab when the review was abandoned with the recording still there", async () => {
+			await storeRecording();
 
-			expect(sendResponse).toHaveBeenCalledWith({
-				dataUrl: "data:video/webm;base64,PAYLOAD",
+			await handleReviewTabClosed(REVIEW_TAB_ID);
+
+			expect(sendMessage).toHaveBeenCalledWith(TAB_ID, {
+				type: MSG.videoRearm,
 			});
 		});
 
-		it("sendResponse called with { dataUrl: null } when entry is absent", async () => {
-			const sendResponse = mock(
-				(_data: { dataUrl: string | null }) => undefined,
-			);
-			await handleRequestVideoData(TAB_ID, sendResponse);
+		it("leaves the abandoned recording in place rather than destroying it", async () => {
+			await storeRecording();
 
-			expect(sendResponse).toHaveBeenCalledWith({ dataUrl: null });
+			await handleReviewTabClosed(REVIEW_TAB_ID);
+
+			expect(await hasRecording(TAB_ID)).toBe(true);
+		});
+
+		it("does nothing when the recording was already acted on", async () => {
+			// Download and discard both clear the entry, so nothing left means nothing owed.
+			await handleReviewTabClosed(REVIEW_TAB_ID);
+
+			expect(sendMessage).not.toHaveBeenCalled();
+		});
+
+		it("ignores an unrelated tab closing", async () => {
+			await storeRecording();
+
+			await handleReviewTabClosed(REVIEW_TAB_ID + 1);
+
+			expect(sendMessage).not.toHaveBeenCalled();
+			expect(storageData.demo_review_tab).toBeDefined();
+		});
+
+		it("clears the pairing so a recycled tab id cannot re-trigger it", async () => {
+			await handleReviewTabClosed(REVIEW_TAB_ID);
+
+			expect(storageData.demo_review_tab).toBeUndefined();
 		});
 	});
 
@@ -572,50 +789,59 @@ describe("demo-recorder", () => {
 	// ── Additional behavior ─────────────────────────────────────────────────
 
 	describe("confirmDownload — download failure", () => {
-		it("chrome.runtime.lastError set → sends MSG.videoError; both downloads still attempted; IDB entry is still removed", async () => {
-			await saveRecording({
-				tabId: TAB_ID,
-				dataUrl: "data:video/webm;base64,AAAA",
-				slug: "demo",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
+		it("chrome.runtime.lastError set → reports the failure; both downloads still attempted", async () => {
+			await storeRecording({ slug: "demo", planMarkdown: "" });
+
+			downloadShouldFail = true;
+			const result = await confirmDownload(TAB_ID);
+
+			expect(downloadMock).toHaveBeenCalledTimes(2);
+			expect(result).toEqual({ ok: false, error: "Download failed" });
+		});
+
+		it("keeps the recording on failure, so Download can simply be pressed again", async () => {
+			// Dropping the entry here used to be the behaviour; with review in its own
+			// tab that would cost the user the whole take instead of one retry.
+			await storeRecording({ slug: "demo", planMarkdown: "" });
 
 			downloadShouldFail = true;
 			await confirmDownload(TAB_ID);
 
-			expect(downloadMock).toHaveBeenCalledTimes(2);
-			expect(sendMessage).toHaveBeenCalledWith(
+			expect(await hasRecording(TAB_ID)).toBe(true);
+		});
+
+		it("leaves the tour tab alone on failure — it is not finished with yet", async () => {
+			await storeRecording({ slug: "demo", planMarkdown: "" });
+
+			downloadShouldFail = true;
+			await confirmDownload(TAB_ID);
+
+			expect(sendMessage).not.toHaveBeenCalledWith(
 				TAB_ID,
-				expect.objectContaining({ type: MSG.videoError }),
+				expect.objectContaining({ type: MSG.videoSaved }),
 			);
-			expect(await getRecording(TAB_ID)).toBeUndefined();
+		});
+
+		it("releases the object URL even though the download never started", async () => {
+			await storeRecording({ slug: "demo", planMarkdown: "" });
+
+			downloadShouldFail = true;
+			await confirmDownload(TAB_ID);
+			await flush();
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith({
+				type: MSG.revokeBlobUrl,
+				url: BLOB_URL,
+				target: "offscreen",
+			});
 		});
 	});
 
 	describe("discardRecording — isolation", () => {
 		it("removes ONLY the targeted tabId, leaves others intact", async () => {
-			await saveRecording({
-				tabId: 1,
-				dataUrl: "url1",
-				slug: "s1",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
-			await saveRecording({
-				tabId: 2,
-				dataUrl: "url2",
-				slug: "s2",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
-			await saveRecording({
-				tabId: 3,
-				dataUrl: "url3",
-				slug: "s3",
-				planMarkdown: "",
-				createdAt: Date.now(),
-			});
+			await storeRecording({ tabId: 1, slug: "s1", planMarkdown: "" });
+			await storeRecording({ tabId: 2, slug: "s2", planMarkdown: "" });
+			await storeRecording({ tabId: 3, slug: "s3", planMarkdown: "" });
 
 			await discardRecording(2);
 
@@ -625,19 +851,162 @@ describe("demo-recorder", () => {
 		});
 	});
 
-	describe("handleRecordingData — slug computation", () => {
-		it("computes slug correctly for tour name with spaces and punctuation ('My Demo Tour!')", async () => {
-			storageData["demo_active_recording"] = {
-				tabId: TAB_ID,
-				tour: "My Demo Tour!",
-				hideBody: false,
-				planMarkdown: "# Plan",
+	// ── narration warm-up ────────────────────────────────────────────────────
+
+	describe("warmNarration", () => {
+		it("creates the offscreen document and tells it to load the model", async () => {
+			await warmNarration(readConfig);
+
+			expect(chrome.offscreen.createDocument).toHaveBeenCalled();
+			expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.warmNarration,
+					target: "offscreen",
+				}),
+			);
+		});
+
+		// Captions-only never synthesizes, so warming it downloads ~90 MB for nothing.
+		it("skips silent mode entirely, touching no offscreen document", async () => {
+			const captionsOnly = async () => ({
+				...(await readConfig()),
+				narration: "captions" as const,
+			});
+
+			await warmNarration(captionsOnly);
+
+			expect(chrome.offscreen.createDocument).not.toHaveBeenCalled();
+			expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+		});
+
+		/**
+		 * A warm-up runs on a message the tour is waiting on, well before the user has
+		 * committed to recording. Throwing here would abort a tour to save a few seconds
+		 * the recorder's own load path can still spend.
+		 */
+		it("resolves rather than throwing when the offscreen document is unreachable", async () => {
+			(globalThis as any).chrome.runtime.sendMessage = mock(async () => {
+				throw new Error("Receiving end does not exist.");
+			});
+
+			await expect(warmNarration(readConfig)).resolves.toBeUndefined();
+		});
+
+		it("resolves when the config read fails", async () => {
+			const brokenConfig = async () => {
+				throw new Error("sync storage unavailable");
 			};
 
-			await handleRecordingData("data:video/webm;base64,AAAA");
+			await expect(warmNarration(brokenConfig as any)).resolves.toBeUndefined();
+		});
+	});
 
-			const entry = await getRecording(TAB_ID);
-			expect(entry?.slug).toBe("my-demo-tour-");
+	// ── warm-document lifecycle ──────────────────────────────────────────────
+
+	/**
+	 * The narration model is cached for the offscreen document's lifetime, so closing
+	 * that document after every recording is what forced every recording to reload it.
+	 * A finished recorder has already stopped its own tracks, so what is left behind
+	 * holds no stream to block the next start.
+	 */
+	describe("offscreen reuse across recordings", () => {
+		it("keeps the document alive after a finished recording", async () => {
+			await handleRecordingSaved(true);
+
+			expect(chrome.offscreen.closeDocument).not.toHaveBeenCalled();
+			// The slot itself must still be freed, or the next recording is refused.
+			expect(storageData["demo_active_recording"]).toBeUndefined();
+		});
+
+		it("keeps the document alive when the recorder aborted with no video", async () => {
+			await handleRecordingSaved(false);
+
+			expect(chrome.offscreen.closeDocument).not.toHaveBeenCalled();
+			expect(storageData["demo_active_recording"]).toBeUndefined();
+		});
+
+		// A closed tab may still be being captured, and only closing the doc stops that.
+		it("still closes the document when the recording tab disappears", async () => {
+			await handleRecordingTabClosed(TAB_ID);
+
+			expect(chrome.offscreen.closeDocument).toHaveBeenCalled();
+		});
+
+		// An unacknowledged handoff means the document is broken, not warm.
+		it("still closes the document when the handoff is never acknowledged", async () => {
+			(globalThis as any).chrome.runtime.sendMessage = mock(async () => {
+				throw new Error("Receiving end does not exist.");
+			});
+			const script: TourScript = {
+				startUrl: "https://app.example",
+				mode: "video",
+				steps: [{ body: "Show dashboard" }],
+			};
+
+			await expect(
+				startVideoRecording(TAB_ID, script, readConfig),
+			).rejects.toThrow();
+
+			expect(chrome.offscreen.closeDocument).toHaveBeenCalled();
+		});
+	});
+
+	/**
+	 * The recorder writes the IDB entry itself, so everything that entry needs has to
+	 * travel out with the start handoff — nothing comes back but a "saved" flag.
+	 */
+	describe("startVideoRecording — the entry the recorder will write", () => {
+		const videoScript = (title?: string): TourScript => ({
+			startUrl: "https://app.example",
+			mode: "video",
+			...(title === undefined ? {} : { title }),
+			steps: [{ body: "Show dashboard" }],
+		});
+
+		it("hands over the tab id, slug, and plan markdown", async () => {
+			await startVideoRecording(
+				TAB_ID,
+				videoScript("My Demo Tour!"),
+				readConfig,
+			);
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.startRecording,
+					tabId: TAB_ID,
+					slug: "my-demo-tour-",
+					planMarkdown: expect.stringContaining("Show dashboard"),
+				}),
+			);
+		});
+
+		it("hands over the configured video quality, which decides capture size", async () => {
+			// Nothing downstream can recover it: the constraint is applied at getUserMedia.
+			await startVideoRecording(TAB_ID, videoScript("My Tour"), readConfig);
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: MSG.startRecording,
+					quality: "1440p",
+				}),
+			);
+		});
+
+		it("falls back to a 'demo' slug for an untitled tour", async () => {
+			await startVideoRecording(TAB_ID, videoScript(), readConfig);
+
+			expect(runtimeSendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({ type: MSG.startRecording, slug: "demo" }),
+			);
+		});
+
+		it("keeps only the fields the tour tab still needs in the active-recording record", async () => {
+			await startVideoRecording(TAB_ID, videoScript("My Tour"), readConfig);
+
+			expect(storageData.demo_active_recording).toEqual({
+				tabId: TAB_ID,
+				hideBody: false,
+			});
 		});
 	});
 });

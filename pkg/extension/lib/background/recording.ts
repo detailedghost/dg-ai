@@ -1,5 +1,5 @@
 import { tourHasAutomaticActions } from "@dg/common";
-import { MSG } from "@/lib/demo-messages";
+import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import {
 	activeRecordingRefusal,
@@ -8,20 +8,23 @@ import {
 	handleClearForCapture,
 	handleNarrationComplete,
 	handleNarrationProgress,
-	handleRecordingData,
 	handleRecordingReady,
-	handleRequestVideoData,
+	handleRecordingSaved,
 	relayCaptureCleared,
 	relayPlayStep,
 	startVideoRecording,
 	stopVideoRecording,
 	videoRecordingSupported,
+	warmNarration,
 } from "@/lib/features/demo-recorder";
 
 type RecordingMessage = {
 	type?: string;
 	target?: string;
-	dataUrl?: string;
+	saved?: boolean;
+	error?: string;
+	/** The *recording's* tab, named explicitly because review messages come from another one. */
+	tabId?: number;
 	durations?: number[];
 	index?: number;
 	progress?: number;
@@ -34,7 +37,8 @@ type RouteHandler = (msg: RecordingMessage, sender: RecordingSender) => void;
 
 /** Replies the router can send back over an open message channel. */
 type RecordingResponse =
-	| { dataUrl: string | null }
+	| DownloadResult
+	| { ok: boolean }
 	| { shortcut: string | null };
 
 /** The manifest command whose keypress starts a recording. */
@@ -93,11 +97,11 @@ export type RecordingDeps = {
 	handleRecordingReady: typeof handleRecordingReady;
 	handleNarrationComplete: typeof handleNarrationComplete;
 	handleNarrationProgress: typeof handleNarrationProgress;
-	handleRecordingData: typeof handleRecordingData;
+	handleRecordingSaved: typeof handleRecordingSaved;
 	confirmDownload: typeof confirmDownload;
 	discardRecording: typeof discardRecording;
-	handleRequestVideoData: typeof handleRequestVideoData;
 	relayCaptureCleared: typeof relayCaptureCleared;
+	warmNarration: typeof warmNarration;
 };
 
 const defaultDeps: RecordingDeps = {
@@ -108,10 +112,10 @@ const defaultDeps: RecordingDeps = {
 	handleRecordingReady,
 	handleNarrationComplete,
 	handleNarrationProgress,
-	handleRecordingData,
+	handleRecordingSaved,
 	confirmDownload,
 	discardRecording,
-	handleRequestVideoData,
+	warmNarration,
 };
 
 function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
@@ -145,24 +149,23 @@ function buildRoutes(deps: RecordingDeps): Record<string, RouteHandler> {
 			if (msg.target === "background" && typeof msg.index === "number")
 				void deps.handleNarrationComplete(msg.index);
 		},
-		[MSG.recordingData]: (msg) => {
-			if (msg.target === "background" && typeof msg.dataUrl === "string")
-				void deps.handleRecordingData(msg.dataUrl);
-		},
-		[MSG.videoConfirmDownload]: (_msg, sender) => {
-			if (sender.tab?.id != null) void deps.confirmDownload(sender.tab.id);
-		},
-		[MSG.videoDiscard]: (_msg, sender) => {
-			if (sender.tab?.id != null) void deps.discardRecording(sender.tab.id);
+		[MSG.recordingSaved]: (msg) => {
+			if (msg.target === "background" && typeof msg.saved === "boolean")
+				void deps.handleRecordingSaved(msg.saved, msg.error);
 		},
 	};
 }
 
 /**
  * Build a recording-message router bound to `deps` (real demo-recorder functions
- * in production, injected mocks in tests). requestVideoData and requestRecordShortcut
- * are special-cased — they reply asynchronously, so the caller must keep the message
- * channel open (return true from the onMessage listener) when the handler returns true.
+ * in production, injected mocks in tests). The review-page buttons and
+ * requestRecordShortcut are special-cased — they reply asynchronously, so the caller
+ * must keep the message channel open (return true from the onMessage listener) when
+ * the handler returns true.
+ *
+ * The review routes take their tab id from the *payload*, never from `sender`: the
+ * sender is the review tab, and the recording is keyed by the tab that was recorded.
+ * Reading `sender.tab.id` here would look right and silently act on nothing.
  */
 export function createRecordingRouter(
 	deps: RecordingDeps,
@@ -173,11 +176,29 @@ export function createRecordingRouter(
 ) => boolean | undefined {
 	const routes = buildRoutes(deps);
 	return (msg, sender, sendResponse) => {
-		if (msg?.type === MSG.requestVideoData && sender.tab?.id != null) {
-			void deps.handleRequestVideoData(sender.tab.id, sendResponse);
+		if (
+			msg?.type === MSG.videoConfirmDownload &&
+			typeof msg.tabId === "number"
+		) {
+			void deps
+				.confirmDownload(msg.tabId)
+				.then(sendResponse)
+				.catch((err: unknown) =>
+					sendResponse({ ok: false, error: String(err) }),
+				);
+			return true;
+		}
+		if (msg?.type === MSG.videoDiscard && typeof msg.tabId === "number") {
+			void deps
+				.discardRecording(msg.tabId)
+				.then(sendResponse)
+				.catch(() => sendResponse({ ok: false }));
 			return true;
 		}
 		if (msg?.type === MSG.requestRecordShortcut) {
+			// Asking for the shortcut means a tour is about to display "press this to
+			// record" — the earliest honest signal that narration will be needed soon.
+			void deps.warmNarration().catch(() => {});
 			void chrome.commands
 				.getAll()
 				.then((cmds) =>

@@ -1,4 +1,10 @@
 import {
+	getVideoQuality,
+	QUALITY_PRESETS,
+	VIDEO_QUALITIES,
+	type VideoQuality,
+} from "@/lib/capture-quality";
+import {
 	type ColorSetting,
 	DEFAULTS,
 	getConfig,
@@ -41,6 +47,17 @@ function populateNarration(selected: NarrationMode): void {
 	sel.value = selected;
 }
 
+function populateQuality(selected: VideoQuality): void {
+	const sel = $<HTMLSelectElement>("videoQuality");
+	for (const q of VIDEO_QUALITIES) {
+		const o = document.createElement("option");
+		o.value = q;
+		o.textContent = QUALITY_PRESETS[q].label;
+		sel.appendChild(o);
+	}
+	sel.value = selected;
+}
+
 function flash(status: HTMLElement, msg: string): void {
 	status.classList.remove("err");
 	status.textContent = msg;
@@ -61,6 +78,7 @@ async function load(): Promise<void> {
 		$<HTMLSelectElement>("color").value = cfg.color;
 		populateNarration(getNarrationMode(cfg.narration));
 		populateVoices(cfg.voice || DEFAULTS.voice);
+		populateQuality(getVideoQuality(cfg.videoQuality));
 	} catch (e) {
 		// Surfaced rather than swallowed: empty dropdowns are the visible symptom.
 		fail($<HTMLElement>("status"), "Could not read saved settings", e);
@@ -84,6 +102,7 @@ async function persist(statusId: string): Promise<void> {
 				($<HTMLSelectElement>("color").value as ColorSetting) || DEFAULTS.color,
 			voice: $<HTMLSelectElement>("voice").value || DEFAULTS.voice,
 			narration: getNarrationMode($<HTMLSelectElement>("narration").value),
+			videoQuality: getVideoQuality($<HTMLSelectElement>("videoQuality").value),
 		});
 		flash(status, "Saved ✓");
 	} catch (e) {
@@ -165,7 +184,7 @@ $<HTMLSelectElement>("color").addEventListener(
 	"change",
 	() => void persist("colorStatus"),
 );
-for (const id of ["narration", "voice"]) {
+for (const id of ["narration", "voice", "videoQuality"]) {
 	$<HTMLSelectElement>(id).addEventListener(
 		"change",
 		() => void persist("status"),

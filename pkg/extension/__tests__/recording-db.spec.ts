@@ -1,33 +1,39 @@
 /**
  * Unit tests for extension-src/utils/recording-db.ts
  *
- * Uses fake-indexeddb to shim the IDB globals so the module runs in Bun.
- * A fresh IDBFactory is installed on globalThis before each test so tests
- * never share database state.
+ * Uses fake-indexeddb to shim the IDB globals so the module runs in Bun. A fresh
+ * IDBFactory is installed on globalThis before each test so tests never share
+ * database state.
  *
- * NOTE: fake-indexeddb must be installed (devDep) for these tests to run.
- *       Yellow installs it; they will fail at import time until then.
+ * The video is stored as a `Blob`, and fake-indexeddb round-trips one through its
+ * structured clone — so these tests exercise the real storage path rather than a
+ * string stand-in. A retrieved Blob is always a *fresh instance*, so it is never
+ * compared with `toEqual`; `expectEntry` checks type, size, and bytes instead.
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from "fake-indexeddb";
 import {
 	getRecording,
+	hasRecording,
 	pruneStaleRecordings,
 	type RecordingEntry,
 	removeRecording,
 	saveRecording,
 } from "@/utils/recording-db";
 
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
+// ── builders + Blob-aware assertions ────────────────────────────────────────
+
+/** A stand-in webm whose bytes identify it, so a mix-up between rows is visible. */
+function makeBlob(marker = "AAAA"): Blob {
+	return new Blob([marker], { type: "video/webm" });
+}
 
 /** Build a RecordingEntry with sensible defaults; override only what the test cares about. */
 function makeEntry(overrides?: Partial<RecordingEntry>): RecordingEntry {
 	return {
 		tabId: 1,
-		dataUrl: "data:video/webm;base64,AAAA",
+		blob: makeBlob(),
 		slug: "test-slug",
 		planMarkdown: "# Plan\n\nContent",
 		createdAt: Date.now(),
@@ -35,9 +41,27 @@ function makeEntry(overrides?: Partial<RecordingEntry>): RecordingEntry {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Suite
-// ---------------------------------------------------------------------------
+async function bytesOf(blob: Blob): Promise<number[]> {
+	return [...new Uint8Array(await blob.arrayBuffer())];
+}
+
+/** Compare a retrieved entry field-by-field, the Blob by content rather than identity. */
+async function expectEntry(
+	actual: RecordingEntry | undefined,
+	expected: RecordingEntry,
+): Promise<void> {
+	expect(actual).toBeDefined();
+	if (!actual) return;
+	const { blob: actualBlob, ...actualRest } = actual;
+	const { blob: expectedBlob, ...expectedRest } = expected;
+	expect(actualRest).toEqual(expectedRest);
+	expect(actualBlob).toBeInstanceOf(Blob);
+	expect(actualBlob.type).toBe(expectedBlob.type);
+	expect(actualBlob.size).toBe(expectedBlob.size);
+	expect(await bytesOf(actualBlob)).toEqual(await bytesOf(expectedBlob));
+}
+
+// ── suite ───────────────────────────────────────────────────────────────────
 
 describe("recording-db", () => {
 	beforeEach(() => {
@@ -54,22 +78,55 @@ describe("recording-db", () => {
 	it("saveRecording → getRecording round-trips the full RecordingEntry without mutation", async () => {
 		const entry = makeEntry({
 			tabId: 42,
-			dataUrl: "data:video/webm;base64,ROUND_TRIP",
+			blob: makeBlob("ROUND_TRIP"),
 			slug: "demo-tour",
 			planMarkdown: "# Round-trip Plan",
 			createdAt: 1_700_000_000_000,
 		});
 
 		await saveRecording(entry);
-		const retrieved = await getRecording(42);
 
-		expect(retrieved).toEqual(entry);
+		await expectEntry(await getRecording(42), entry);
+	});
+
+	it("returns the video as a Blob with its bytes intact, never a base64 stand-in", async () => {
+		// The point of the schema: bytes survive storage without a data-URL detour.
+		const entry = makeEntry({ tabId: 43, blob: makeBlob("VP9-BYTES") });
+		await saveRecording(entry);
+
+		const blob = (await getRecording(43))?.blob;
+
+		expect(blob).toBeInstanceOf(Blob);
+		expect(blob).not.toBe(entry.blob);
+		expect(await bytesOf(blob as Blob)).toEqual(await bytesOf(entry.blob));
 	});
 
 	it("getRecording on unknown tabId resolves undefined (does not reject)", async () => {
 		const result = await getRecording(9999);
 
 		expect(result).toBeUndefined();
+	});
+
+	// ── hasRecording ────────────────────────────────────────────────────────
+
+	it("hasRecording is true for a stored entry and false for an unknown tabId", async () => {
+		await saveRecording(makeEntry({ tabId: 71 }));
+
+		expect(await hasRecording(71)).toBe(true);
+		expect(await hasRecording(72)).toBe(false);
+	});
+
+	it("hasRecording is false again once the entry is removed", async () => {
+		await saveRecording(makeEntry({ tabId: 73 }));
+		await removeRecording(73);
+
+		expect(await hasRecording(73)).toBe(false);
+	});
+
+	it("hasRecording answers for tabId 0, which is a real key rather than a falsy miss", async () => {
+		await saveRecording(makeEntry({ tabId: 0 }));
+
+		expect(await hasRecording(0)).toBe(true);
 	});
 
 	// ── removeRecording ─────────────────────────────────────────────────────
@@ -90,22 +147,14 @@ describe("recording-db", () => {
 
 	// ── upsert semantics ────────────────────────────────────────────────────
 
-	it("saveRecording twice with same tabId (different dataUrl): getRecording returns second write (upsert)", async () => {
-		const first = makeEntry({
-			tabId: 3,
-			dataUrl: "data:video/webm;base64,FIRST",
-		});
-		const second = makeEntry({
-			tabId: 3,
-			dataUrl: "data:video/webm;base64,SECOND",
-		});
+	it("saveRecording twice with same tabId (different video): getRecording returns second write (upsert)", async () => {
+		const first = makeEntry({ tabId: 3, blob: makeBlob("FIRST") });
+		const second = makeEntry({ tabId: 3, blob: makeBlob("SECOND") });
 
 		await saveRecording(first);
 		await saveRecording(second);
 
-		const retrieved = await getRecording(3);
-		expect(retrieved).toEqual(second);
-		expect(retrieved?.dataUrl).toBe("data:video/webm;base64,SECOND");
+		await expectEntry(await getRecording(3), second);
 	});
 
 	// ── pruneStaleRecordings ─────────────────────────────────────────────────
@@ -143,7 +192,7 @@ describe("recording-db", () => {
 		await pruneStaleRecordings();
 
 		expect(await getRecording(200)).toBeUndefined();
-		expect(await getRecording(201)).toEqual(freshEntry);
+		await expectEntry(await getRecording(201), freshEntry);
 	});
 
 	it("pruneStaleRecordings: mixed entries — only stale rows deleted, fresh rows intact (≥ 3 entries)", async () => {
@@ -164,26 +213,25 @@ describe("recording-db", () => {
 		expect(await getRecording(300)).toBeUndefined();
 		expect(await getRecording(301)).toBeUndefined();
 		// Fresh entries (<8 h old) must be intact
-		expect(await getRecording(302)).toEqual(fresh1);
-		expect(await getRecording(303)).toEqual(fresh2);
+		await expectEntry(await getRecording(302), fresh1);
+		await expectEntry(await getRecording(303), fresh2);
 	});
 
 	// ── coverage gap: boundary values ───────────────────────────────────────
 
-	it("saveRecording with boundary values (tabId=0, empty strings) round-trips intact", async () => {
-		// tabId=0 is a valid key; empty string fields are allowed by the schema.
+	it("saveRecording with boundary values (tabId=0, empty blob and strings) round-trips intact", async () => {
+		// tabId=0 is a valid key; empty fields are allowed by the schema.
 		const entry = makeEntry({
 			tabId: 0,
-			dataUrl: "",
+			blob: new Blob([], { type: "video/webm" }),
 			slug: "",
 			planMarkdown: "",
 			createdAt: 0,
 		});
 
 		await saveRecording(entry);
-		const retrieved = await getRecording(0);
 
-		expect(retrieved).toEqual(entry);
+		await expectEntry(await getRecording(0), entry);
 	});
 
 	// ── coverage gap: pruneStaleRecordings on empty store ───────────────────
@@ -196,50 +244,35 @@ describe("recording-db", () => {
 	// ── coverage gap: multiple tabIds coexist ───────────────────────────────
 
 	it("multiple saveRecording calls with different tabIds coexist independently", async () => {
-		const a = makeEntry({ tabId: 10, dataUrl: "data:video/webm;base64,A" });
-		const b = makeEntry({ tabId: 20, dataUrl: "data:video/webm;base64,B" });
-		const c = makeEntry({ tabId: 30, dataUrl: "data:video/webm;base64,C" });
+		const a = makeEntry({ tabId: 10, blob: makeBlob("A") });
+		const b = makeEntry({ tabId: 20, blob: makeBlob("B") });
+		const c = makeEntry({ tabId: 30, blob: makeBlob("C") });
 
 		await saveRecording(a);
 		await saveRecording(b);
 		await saveRecording(c);
 
-		expect(await getRecording(10)).toEqual(a);
-		expect(await getRecording(20)).toEqual(b);
-		expect(await getRecording(30)).toEqual(c);
+		await expectEntry(await getRecording(10), a);
+		await expectEntry(await getRecording(20), b);
+		await expectEntry(await getRecording(30), c);
 	});
 
 	it("getRecording returns the correct entry when multiple entries exist", async () => {
-		const target = makeEntry({
-			tabId: 55,
-			dataUrl: "data:video/webm;base64,TARGET",
-		});
+		const target = makeEntry({ tabId: 55, blob: makeBlob("TARGET") });
 		await saveRecording(makeEntry({ tabId: 50 }));
 		await saveRecording(target);
 		await saveRecording(makeEntry({ tabId: 60 }));
 
-		const retrieved = await getRecording(55);
-
 		// Must be exactly the entry for tabId=55, not its neighbours.
-		expect(retrieved).toEqual(target);
-		expect(retrieved?.dataUrl).toBe("data:video/webm;base64,TARGET");
+		await expectEntry(await getRecording(55), target);
 	});
 
 	// ── coverage gap: removeRecording does not affect siblings ──────────────
 
 	it("removeRecording only removes the targeted tabId, leaving others intact", async () => {
-		const keep1 = makeEntry({
-			tabId: 401,
-			dataUrl: "data:video/webm;base64,KEEP1",
-		});
-		const remove = makeEntry({
-			tabId: 402,
-			dataUrl: "data:video/webm;base64,REMOVE",
-		});
-		const keep2 = makeEntry({
-			tabId: 403,
-			dataUrl: "data:video/webm;base64,KEEP2",
-		});
+		const keep1 = makeEntry({ tabId: 401, blob: makeBlob("KEEP1") });
+		const remove = makeEntry({ tabId: 402, blob: makeBlob("REMOVE") });
+		const keep2 = makeEntry({ tabId: 403, blob: makeBlob("KEEP2") });
 
 		await saveRecording(keep1);
 		await saveRecording(remove);
@@ -248,7 +281,7 @@ describe("recording-db", () => {
 		await removeRecording(402);
 
 		expect(await getRecording(402)).toBeUndefined();
-		expect(await getRecording(401)).toEqual(keep1);
-		expect(await getRecording(403)).toEqual(keep2);
+		await expectEntry(await getRecording(401), keep1);
+		await expectEntry(await getRecording(403), keep2);
 	});
 });
