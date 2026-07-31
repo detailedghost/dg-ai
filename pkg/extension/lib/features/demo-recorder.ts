@@ -4,8 +4,14 @@
  * recorder exists → hand it the stream + tour steps + narration voice/mode. The
  * offscreen doc synthesizes narration (unless captions-only), starts capture, and
  * replies `recordingReady` with per-step hold durations, which we forward to the
- * content script to start auto-play. On stop the recording is saved to IDB for user
- * review; the user either confirms download or discards and re-records.
+ * content script to start auto-play. On stop the recorder writes the video to IDB
+ * itself and we open the review page in its own tab.
+ *
+ * Review is a separate extension page, not an overlay in the tour tab: the video is
+ * a Blob, and only an extension-origin document can play the object URL for it. That
+ * split is why the buttons send us the *recording's* tab id — the sender is the
+ * review tab — and why finishing a review means messaging the tour tab about what to
+ * do next (`videoSaved` to stand down, `videoRearm` to offer another take).
  *
  * Recording metadata lives in storage.local, not module globals: an MV3 service
  * worker can be suspended mid-tour, so globals may be gone when the recording data
@@ -14,27 +20,39 @@
 
 import { partitionTourSteps, slugify } from "@dg/common";
 import { getConfig } from "@/lib/config";
-import { MSG } from "@/lib/demo-messages";
+import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import { clampPercent } from "@/lib/narration-progress";
 import { wait } from "@/utils/async";
 import { toPlanMarkdown } from "@/utils/plan-format";
 import {
 	getRecording,
+	hasRecording,
 	pruneStaleRecordings,
 	removeRecording,
-	saveRecording,
 } from "@/utils/recording-db";
 
 const OFFSCREEN_URL = "offscreen.html";
+const REVIEW_URL = "review.html";
 const ACTIVE_KEY = "demo_active_recording";
+const REVIEW_TAB_KEY = "demo_review_tab";
 
 type ActiveRecording = {
 	tabId: number;
-	tour: string;
 	hideBody: boolean;
-	planMarkdown: string;
 };
+
+/** Which review tab is showing which recording, so an abandoned review can be spotted. */
+type ReviewTab = { reviewTabId: number; tabId: number };
+
+/** Fire-and-forget a message at a tab that may already have closed. */
+function notifyTab(tabId: number, msg: object): void {
+	void Promise.resolve(chrome.tabs.sendMessage(tabId, msg)).catch(() => {});
+}
+
+function errorText(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Grab the tab's capture stream id, retrying once past a leaked offscreen stream.
@@ -74,7 +92,8 @@ const HANDOFF_ATTEMPTS = 6;
 const HANDOFF_BACKOFF_MS = 120;
 
 /**
- * Deliver a message to the offscreen recorder, retrying until it acknowledges.
+ * Deliver a message to the offscreen recorder, retrying until it acknowledges, and
+ * hand back whatever it answered with.
  *
  * `chrome.offscreen.createDocument` can resolve before the document's module script
  * has registered its onMessage listener, and Chrome rejects a send with no receiver
@@ -83,12 +102,14 @@ const HANDOFF_BACKOFF_MS = 120;
  * offscreen listener acks every message it handles, so a resolved send means the
  * recorder genuinely has it — never a retry that double-starts or replays a clip.
  */
-async function sendToOffscreen(msg: object): Promise<void> {
+async function sendToOffscreen<T = void>(msg: object): Promise<T | undefined> {
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= HANDOFF_ATTEMPTS; attempt++) {
 		try {
-			await chrome.runtime.sendMessage({ ...msg, target: "offscreen" });
-			return;
+			return (await chrome.runtime.sendMessage({
+				...msg,
+				target: "offscreen",
+			})) as T;
 		} catch (err) {
 			lastError = err;
 			if (attempt < HANDOFF_ATTEMPTS) await wait(HANDOFF_BACKOFF_MS * attempt);
@@ -106,6 +127,32 @@ async function tabIsOpen(tabId: number): Promise<boolean> {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Load the narration model before the user reaches the record gesture.
+ *
+ * The tour arms its record prompt well ahead of the keypress — usually a whole
+ * user-paced setup phase ahead — so paying the 10-30 s first-run model load here spends
+ * time the user was already going to spend reading. Combined with the offscreen document
+ * now surviving a finished recording, the load happens once per browser session instead
+ * of once per recording.
+ *
+ * Silent (captions-only) mode never synthesizes anything, so warming it would fetch
+ * ~90 MB of weights nothing will read. Every failure is swallowed: the recorder still
+ * has its own load path and its own degrade-to-silent fallback, and a warm-up that
+ * could abort a tour would be worse than no warm-up at all.
+ */
+export async function warmNarration(
+	readConfig: typeof getConfig = getConfig,
+): Promise<void> {
+	try {
+		if ((await readConfig()).narration === "captions") return;
+		await ensureOffscreen();
+		await sendToOffscreen({ type: MSG.warmNarration });
+	} catch (err) {
+		console.warn("[dg-ai-extension] narration warm-up skipped", err);
 	}
 }
 
@@ -142,22 +189,17 @@ export async function startVideoRecording(
 	const streamId = await acquireStreamId(tabId);
 	await ensureOffscreen();
 	const tour = script.title || "demo";
-	const { voice, narration } = await readConfig();
+	const { voice, narration, videoQuality } = await readConfig();
 	await chrome.storage.local.set({
 		[ACTIVE_KEY]: {
 			tabId,
-			tour,
 			hideBody: narration === "voice",
-			planMarkdown: toPlanMarkdown(script),
 		} satisfies ActiveRecording,
 	});
 	const narrate = narration !== "captions";
 	// Paint the loading state before offscreen work begins so early progress
 	// updates cannot arrive before the tab has mounted its progress bar.
-	void chrome.tabs.sendMessage(tabId, {
-		type: MSG.videoPreparing,
-		narrate,
-	});
+	notifyTab(tabId, { type: MSG.videoPreparing, narrate });
 	try {
 		await sendToOffscreen({
 			type: MSG.startRecording,
@@ -165,6 +207,12 @@ export async function startVideoRecording(
 			steps: partitionTourSteps(script).tutorial,
 			voice,
 			narrate,
+			// The recorder writes the finished entry itself, so it needs every field
+			// that entry carries — nothing comes back here but a "saved" flag.
+			tabId,
+			slug: slugify(tour),
+			planMarkdown: toPlanMarkdown(script),
+			quality: videoQuality,
 		});
 	} catch (err) {
 		// The recorder never got the tour, so drop the half-built state and let the
@@ -178,7 +226,7 @@ export async function startVideoRecording(
 export async function handleRecordingReady(durations: number[]): Promise<void> {
 	const active = await getActive();
 	if (active?.tabId != null)
-		void chrome.tabs.sendMessage(active.tabId, {
+		notifyTab(active.tabId, {
 			type: MSG.videoStart,
 			durations,
 			hideBody: active.hideBody,
@@ -192,7 +240,7 @@ export async function handleNarrationProgress(
 ): Promise<void> {
 	const active = await getActive();
 	if (active?.tabId != null)
-		void chrome.tabs.sendMessage(active.tabId, {
+		notifyTab(active.tabId, {
 			type: MSG.narrationProgress,
 			progress: clampPercent(progress),
 			label,
@@ -203,17 +251,14 @@ export async function handleNarrationProgress(
 export async function handleNarrationComplete(index: number): Promise<void> {
 	const active = await getActive();
 	if (active?.tabId != null)
-		void chrome.tabs.sendMessage(active.tabId, {
-			type: MSG.narrationComplete,
-			index,
-		});
+		notifyTab(active.tabId, { type: MSG.narrationComplete, index });
 }
 
 /** Offscreen is about to start capture: tell the tour tab to clear any overlay first. */
 export async function handleClearForCapture(): Promise<void> {
 	const active = await getActive();
 	if (active?.tabId != null)
-		void chrome.tabs.sendMessage(active.tabId, { type: MSG.videoClearUi });
+		notifyTab(active.tabId, { type: MSG.videoClearUi });
 }
 
 /** Relay a play-step cue from the content script to the offscreen recorder — ignored from any tab but the active recording's. */
@@ -238,12 +283,9 @@ export async function stopVideoRecording(tabId: number): Promise<void> {
 	try {
 		await sendToOffscreen({ type: MSG.stopRecording });
 	} catch (err) {
-		// Nothing will ever send recordingData now, so say so rather than hang the tour
-		// on a recording that has already stopped being watched.
-		void chrome.tabs.sendMessage(tabId, {
-			type: MSG.videoError,
-			error: err instanceof Error ? err.message : String(err),
-		});
+		// Nothing will ever report a saved recording now, so say so rather than hang the
+		// tour on a recording that has already stopped being watched.
+		notifyTab(tabId, { type: MSG.videoError, error: errorText(err) });
 		await cleanup();
 	}
 }
@@ -258,91 +300,200 @@ export async function relayCaptureCleared(): Promise<void> {
 	}
 }
 
-/** Save the finished recording to IDB and prompt the tab to show the review modal. */
-export async function handleRecordingData(dataUrl: string): Promise<void> {
+/**
+ * The recorder finished: free the slot and put the recording in front of the user.
+ *
+ * Nothing but a flag arrives here — the video is already in IDB, written by the
+ * document that encoded it.
+ */
+export async function handleRecordingSaved(
+	saved: boolean,
+	error?: string,
+): Promise<void> {
 	const active = await getActive();
 	const tabId = active?.tabId ?? null;
-	const notify = (msg: object): void => {
-		if (tabId != null) void chrome.tabs.sendMessage(tabId, msg);
-	};
 
-	// Empty payload = the recorder aborted before producing any video.
-	if (!dataUrl) {
-		notify({ type: MSG.videoError, error: "recording did not start" });
-		await cleanup();
+	if (!saved) {
+		if (tabId != null)
+			notifyTab(tabId, {
+				type: MSG.videoError,
+				error: error ?? "recording did not start",
+			});
+		// An abort tore its own stream down and left the document healthy — keep it warm.
+		await releaseSlot();
 		return;
 	}
-
-	if (tabId != null && active) {
-		const slug = slugify(active.tour ?? "demo");
-		void pruneStaleRecordings();
-		await saveRecording({
-			tabId,
-			dataUrl,
-			slug,
-			planMarkdown: active.planMarkdown,
-			createdAt: Date.now(),
-		});
-	}
-	await cleanup();
-	notify({ type: MSG.videoReview });
+	void pruneStaleRecordings();
+	await releaseSlot();
+	if (tabId != null) await openReviewTab(tabId);
 }
 
-/** Trigger a `chrome.downloads.download`, resolving to the failure message (if any). */
+/**
+ * Open the review page in its own tab and remember which recording it is showing.
+ *
+ * The pairing is what lets an abandoned review be detected later: without it, a tour
+ * tab whose review tab was closed unanswered would sit in its recording state with no
+ * route back to the record prompt.
+ */
+async function openReviewTab(tabId: number): Promise<void> {
+	try {
+		const tab = await chrome.tabs.create({
+			url: chrome.runtime.getURL(`${REVIEW_URL}?tab=${tabId}`),
+		});
+		if (tab.id != null)
+			await chrome.storage.local.set({
+				[REVIEW_TAB_KEY]: {
+					reviewTabId: tab.id,
+					tabId,
+				} satisfies ReviewTab,
+			});
+	} catch (err) {
+		// No review tab means no way to reach the recording, so re-arm rather than
+		// leave the tour frozen on a capture the user can never act on.
+		notifyTab(tabId, { type: MSG.videoError, error: errorText(err) });
+	}
+}
+
+/** Trigger a `chrome.downloads.download`, resolving once Chrome has accepted it. */
 function downloadFile(
 	filename: string,
 	url: string,
-): Promise<string | undefined> {
+): Promise<{ error?: string; downloadId?: number }> {
 	return new Promise((resolve) => {
-		chrome.downloads.download({ url, filename }, () => {
-			resolve(chrome.runtime.lastError?.message);
+		chrome.downloads.download({ url, filename }, (downloadId) => {
+			resolve({ error: chrome.runtime.lastError?.message, downloadId });
 		});
 	});
 }
 
-/** Download the video and plan as separate files, then clean up IDB. */
-export async function confirmDownload(tabId: number): Promise<void> {
-	const notify = (msg: object): void => {
-		void chrome.tabs.sendMessage(tabId, msg);
-	};
-	const entry = await getRecording(tabId);
-	if (!entry) {
-		notify({ type: MSG.videoError, error: "no recording found" });
-		return;
+/** Ceiling on how long an object URL is held open waiting for its download to end. */
+const DOWNLOAD_SETTLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Wait for a download to reach a terminal state.
+ *
+ * `chrome.downloads.download`'s callback fires when the download is *created*, not
+ * when its bytes have been read, so it is not a safe moment to release the object URL
+ * the bytes are coming from — a large file would be truncated. `interrupted` counts as
+ * settled too: a failed download that still holds the URL open is a leak, not a retry.
+ */
+function downloadSettled(downloadId: number): Promise<void> {
+	return new Promise((resolve) => {
+		const done = (): void => {
+			clearTimeout(timer);
+			chrome.downloads.onChanged.removeListener(onChanged);
+			resolve();
+		};
+		const onChanged = (delta: chrome.downloads.DownloadDelta): void => {
+			if (delta.id !== downloadId) return;
+			const state = delta.state?.current;
+			if (state === "complete" || state === "interrupted") done();
+		};
+		const timer = setTimeout(done, DOWNLOAD_SETTLE_TIMEOUT_MS);
+		chrome.downloads.onChanged.addListener(onChanged);
+	});
+}
+
+/** Release the video's object URL once Chrome is finished reading from it. */
+async function revokeWhenSettled(
+	url: string,
+	downloadId?: number,
+): Promise<void> {
+	if (downloadId != null) await downloadSettled(downloadId);
+	try {
+		await sendToOffscreen({ type: MSG.revokeBlobUrl, url });
+	} catch (err) {
+		// Costs one object URL until the offscreen document closes — never the download.
+		console.warn("[dg-ai-extension] could not release the recording url", err);
 	}
-	const { slug, dataUrl, planMarkdown } = entry;
+}
+
+/**
+ * Download the video and its plan, and stand the tour tab down.
+ *
+ * The video never passes through here as data: the offscreen document mints an object
+ * URL from the stored Blob, and this hands that string to the downloads API. A failure
+ * deliberately *keeps* the IDB entry so the review tab's Download button can simply be
+ * pressed again — dropping it would cost the user the whole recording.
+ */
+export async function confirmDownload(tabId: number): Promise<DownloadResult> {
+	const entry = await getRecording(tabId);
+	if (!entry) return { ok: false, error: "no recording found" };
+	const { slug, planMarkdown } = entry;
 	const folder = `dg-demo/${slug}`;
 	const planUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(planMarkdown)}`;
 
-	// Straight from the stored dataUrl: no base64 decode, no second in-memory
-	// copy of a video that can already be tens of megabytes.
-	const [videoError, planError] = await Promise.all([
-		downloadFile(`${folder}/${slug}.webm`, dataUrl),
+	let url: string | undefined;
+	try {
+		await ensureOffscreen();
+		url =
+			(
+				await sendToOffscreen<{ url: string | null }>({
+					type: MSG.mintBlobUrl,
+					tabId,
+				})
+			)?.url ?? undefined;
+	} catch (err) {
+		return {
+			ok: false,
+			error: `the recorder never answered: ${errorText(err)}`,
+		};
+	}
+	if (!url) return { ok: false, error: "the recording is no longer available" };
+
+	const [video, plan] = await Promise.all([
+		downloadFile(`${folder}/${slug}.webm`, url),
 		downloadFile(`${folder}/${slug}.demo.md`, planUrl),
 	]);
-	const error = videoError ?? planError;
-	notify(
-		error
-			? { type: MSG.videoError, error }
-			: { type: MSG.videoSaved, filename: folder },
-	);
-	// Remove the IDB entry regardless of success/failure so a stale
-	// recording can't linger after the user has acted on it.
+	// Not awaited: a multi-minute download must not keep the review tab waiting to
+	// hear whether its click worked. Revoking is bookkeeping, not part of the answer.
+	void revokeWhenSettled(url, video.downloadId);
+
+	const error = video.error ?? plan.error;
+	if (error) return { ok: false, error };
+
 	await removeRecording(tabId);
+	await chrome.storage.local.remove(REVIEW_TAB_KEY);
+	notifyTab(tabId, { type: MSG.videoSaved, filename: folder });
+	return { ok: true, folder };
 }
 
-/** Remove the IDB entry without notifying the tab (user chose to discard). */
-export async function discardRecording(tabId: number): Promise<void> {
-	await removeRecording(tabId);
-}
-
-/** Reply to a MSG.requestVideoData round-trip with the stored dataUrl (or null). */
-export async function handleRequestVideoData(
+/**
+ * Drop the recording and offer the tour tab another take.
+ *
+ * The re-arm decision itself belongs to the content script — returning to the editor
+ * or rewinding to step 1 both need page context — so this only pulls its trigger. It
+ * fires whether or not an entry was there: a tour tab left in its recording state is
+ * the one outcome that strands the user with no way to record again.
+ */
+export async function discardRecording(
 	tabId: number,
-	sendResponse: (data: { dataUrl: string | null }) => void,
+): Promise<{ ok: boolean }> {
+	const existed = await hasRecording(tabId);
+	await removeRecording(tabId);
+	await chrome.storage.local.remove(REVIEW_TAB_KEY);
+	notifyTab(tabId, { type: MSG.videoRearm });
+	return { ok: existed };
+}
+
+/**
+ * The review tab closed. Re-arm its tour tab if the user never chose.
+ *
+ * A recording that was downloaded or discarded is already gone from IDB, so a
+ * surviving entry means the review was abandoned — including the download-failed case,
+ * where the entry is kept on purpose. The entry itself is left alone: it is keyed by
+ * the tour tab's id, so the next recording overwrites it, and pruning catches the rest.
+ */
+export async function handleReviewTabClosed(
+	closedTabId: number,
 ): Promise<void> {
-	const entry = await getRecording(tabId);
-	sendResponse({ dataUrl: entry?.dataUrl ?? null });
+	const pairing = (await chrome.storage.local.get(REVIEW_TAB_KEY))[
+		REVIEW_TAB_KEY
+	] as ReviewTab | undefined;
+	if (pairing?.reviewTabId !== closedTabId) return;
+	await chrome.storage.local.remove(REVIEW_TAB_KEY);
+	if (await hasRecording(pairing.tabId))
+		notifyTab(pairing.tabId, { type: MSG.videoRearm });
 }
 
 /**
@@ -388,6 +539,20 @@ export async function activeRecordingRefusal(
 async function getActive(): Promise<ActiveRecording | undefined> {
 	const got = await chrome.storage.local.get(ACTIVE_KEY);
 	return got[ACTIVE_KEY] as ActiveRecording | undefined;
+}
+
+/**
+ * Free the single-recording slot but leave the offscreen document running.
+ *
+ * That document is where the narration model lives, cached for the document's lifetime —
+ * so tearing it down after every recording is exactly what made every recording pay the
+ * model load again. A recorder that finished has already stopped its capture tracks, so
+ * the document left behind holds no stream to block the next start. `cleanup` (which does
+ * close it) stays for the paths where the document is unresponsive or still capturing a
+ * tab that no longer exists.
+ */
+async function releaseSlot(): Promise<void> {
+	await chrome.storage.local.remove(ACTIVE_KEY);
 }
 
 async function cleanup(): Promise<void> {

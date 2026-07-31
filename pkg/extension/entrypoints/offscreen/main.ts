@@ -4,15 +4,30 @@
  * steps + narration voice. We synthesize each step's narration with Kokoro up
  * front, then record the tab's video mixed with a WebAudio track we play the
  * narration into — advancing in lock-step with the content script (playStep). On
- * stop we send the webm back for download. Chrome-only (offscreen + tabCapture).
+ * stop we write the webm straight to IndexedDB. Chrome-only (offscreen + tabCapture).
+ *
+ * This document is also where object URLs for finished recordings are minted: the
+ * service worker that drives the download has no URL.createObjectURL of its own.
  */
 
+import {
+	presetFor,
+	recorderOptions,
+	tabCaptureConstraints,
+} from "@/lib/capture-quality";
 import { MSG } from "@/lib/demo-messages";
 import { NarrationProgressTracker } from "@/lib/narration-progress";
 import { holdFor } from "@/lib/video-timing";
-import { loadKokoro } from "@/utils/kokoro";
+import { loadKokoro, narrationLoaded } from "@/utils/kokoro";
+import { getRecording, saveRecording } from "@/utils/recording-db";
 
 type Step = { body?: string; advance?: unknown };
+
+/** Everything the stored entry needs beyond the bytes, handed over at start. */
+type RecordingTarget = { tabId: number; slug: string; planMarkdown: string };
+
+/** Quality name as it arrives on the wire — coerced, never indexed with directly. */
+type QualityName = string | undefined;
 
 let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
@@ -43,6 +58,11 @@ chrome.runtime.onMessage.addListener(
 			voice?: string;
 			narrate?: boolean;
 			index?: number;
+			tabId?: number;
+			slug?: string;
+			planMarkdown?: string;
+			url?: string;
+			quality?: string;
 		},
 		_sender,
 		sendResponse,
@@ -55,13 +75,31 @@ chrome.runtime.onMessage.addListener(
 				msg.steps ?? [],
 				msg.voice,
 				msg.narrate !== false,
+				{
+					tabId: msg.tabId ?? -1,
+					slug: msg.slug || "demo",
+					planMarkdown: msg.planMarkdown ?? "",
+				},
+				msg.quality,
 			);
+		} else if (msg.type === MSG.mintBlobUrl && typeof msg.tabId === "number") {
+			// The one handler whose answer *is* the payload, so it cannot ack up front
+			// like the rest; returning true holds the channel open until it resolves.
+			void mintBlobUrl(msg.tabId).then((url) => sendResponse({ url }));
+			return true;
+		} else if (msg.type === MSG.revokeBlobUrl && msg.url) {
+			sendResponse({ ok: true });
+			URL.revokeObjectURL(msg.url);
 		} else if (msg.type === MSG.stopRecording) {
 			sendResponse({ ok: true });
 			stop();
 		} else if (msg.type === MSG.playStep && typeof msg.index === "number") {
 			sendResponse({ ok: true });
 			playStep(msg.index);
+		} else if (msg.type === MSG.warmNarration) {
+			sendResponse({ ok: true });
+			// Failures are the recorder's problem to re-hit and report, not the warm-up's.
+			void loadKokoro().catch(() => {});
 		}
 	},
 );
@@ -71,10 +109,13 @@ async function start(
 	steps: Step[],
 	voice: string | undefined,
 	narrate: boolean,
+	target: RecordingTarget,
+	quality: QualityName,
 ): Promise<void> {
 	// Double-start guard: ignore a second start while one is in flight or active.
 	if (starting || recorder) return;
 	starting = true;
+	const preset = presetFor(quality);
 	stopRequested = false;
 	let videoStream: MediaStream | null = null;
 	try {
@@ -82,13 +123,9 @@ async function start(
 		// getMediaStreamId is only valid for a few seconds; Kokoro model loading can
 		// take 10-30 s on first use, which easily expires it. getUserMedia here holds
 		// the capture open regardless of how long TTS preparation takes.
-		videoStream = await navigator.mediaDevices.getUserMedia({
-			audio: false,
-			// Non-standard tab-capture constraint shape — not in lib.dom types.
-			video: {
-				mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId },
-			} as unknown as MediaTrackConstraints,
-		});
+		videoStream = await navigator.mediaDevices.getUserMedia(
+			tabCaptureConstraints(streamId, preset),
+		);
 		// Stop asked for before capture was ready → tear down, never record.
 		if (stopRequested) {
 			teardown(videoStream);
@@ -132,19 +169,20 @@ async function start(
 			...(narrationDest ? narrationDest.stream.getAudioTracks() : []),
 		]);
 		chunks = [];
-		recorder = new MediaRecorder(mixed, { mimeType: "video/webm" });
+		// Encode at the size actually captured, not MediaRecorder's 2.5 Mbps VP8 default.
+		const { width, height } =
+			videoStream.getVideoTracks()[0]?.getSettings() ?? {};
+		recorder = new MediaRecorder(
+			mixed,
+			recorderOptions(mixed.getAudioTracks().length > 0, width, height, preset),
+		);
 		const capture = videoStream;
 		recorder.ondataavailable = (e) => {
 			if (e.data.size) chunks.push(e.data);
 		};
-		recorder.onstop = async () => {
+		recorder.onstop = () => {
 			teardown(capture);
-			const blob = new Blob(chunks, { type: "video/webm" });
-			chrome.runtime.sendMessage({
-				type: MSG.recordingData,
-				target: "background",
-				dataUrl: await blobToDataUrl(blob),
-			});
+			void persist(new Blob(chunks, { type: "video/webm" }), target);
 		};
 		recorder.start();
 		starting = false;
@@ -165,6 +203,41 @@ async function start(
 		if (videoStream) teardown(videoStream);
 		starting = false;
 		abort();
+	}
+}
+
+/**
+ * Store the finished recording and tell background it is there.
+ *
+ * The bytes stop here — background reads them back out of IndexedDB when it needs a
+ * URL, so nothing this size ever crosses a runtime message. A failed write is
+ * reported rather than swallowed: the review tab would otherwise open on a recording
+ * that does not exist.
+ */
+async function persist(blob: Blob, target: RecordingTarget): Promise<void> {
+	let error: string | undefined;
+	try {
+		await saveRecording({ ...target, blob, createdAt: Date.now() });
+	} catch (e) {
+		console.error("[dg-ai-extension] could not store the recording", e);
+		error = "the recording could not be stored";
+	}
+	chrome.runtime.sendMessage({
+		type: MSG.recordingSaved,
+		target: "background",
+		saved: !error,
+		...(error ? { error } : {}),
+	});
+}
+
+/** An object URL for a stored recording, for the service worker to download from. */
+async function mintBlobUrl(tabId: number): Promise<string | null> {
+	try {
+		const entry = await getRecording(tabId);
+		return entry ? URL.createObjectURL(entry.blob) : null;
+	} catch (e) {
+		console.error("[dg-ai-extension] could not read the stored recording", e);
+		return null;
 	}
 }
 
@@ -274,7 +347,12 @@ async function synthAll(
 		reportNarrationProgress(progress, label);
 	};
 	try {
-		report(0, "Loading local voice model");
+		// A warm-up already finished loading emits no further progress, so credit it up
+		// front rather than showing a bar that cannot move.
+		report(
+			narrationLoaded() ? tracker.modelReady() : 0,
+			narrationLoaded() ? "Voice model ready" : "Loading local voice model",
+		);
 		const tts = await loadKokoro((info) => {
 			report(tracker.model(info), "Loading local voice model");
 		});
@@ -321,9 +399,10 @@ function abort(): void {
 	narrationDest = null;
 	stepBuffers = [];
 	chrome.runtime.sendMessage({
-		type: MSG.recordingData,
+		type: MSG.recordingSaved,
 		target: "background",
-		dataUrl: "",
+		saved: false,
+		error: "recording did not start",
 	});
 }
 
@@ -335,13 +414,4 @@ function teardown(stream: MediaStream): void {
 	narrationDest = null;
 	stepBuffers = [];
 	recorder = null;
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const fr = new FileReader();
-		fr.onload = () => resolve(fr.result as string);
-		fr.onerror = reject;
-		fr.readAsDataURL(blob);
-	});
 }

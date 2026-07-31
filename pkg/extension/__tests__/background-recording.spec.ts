@@ -15,7 +15,7 @@ import {
 	RECORD_COMMAND,
 	recordingRefusal,
 } from "@/lib/background/recording";
-import { MSG } from "@/lib/demo-messages";
+import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 
 const stopVideoRecording = mock(async (_tabId: number) => undefined);
@@ -27,17 +27,15 @@ const handleNarrationComplete = mock(async (_index: number) => undefined);
 const handleNarrationProgress = mock(
 	async (_progress: number, _label?: string) => undefined,
 );
-const handleRecordingData = mock(async (_dataUrl: string) => undefined);
-const confirmDownload = mock(async (_tabId: number) => undefined);
-const discardRecording = mock(async (_tabId: number) => undefined);
-const handleRequestVideoData = mock(
-	async (
-		_tabId: number,
-		sendResponse: (data: { dataUrl: string | null }) => void,
-	) => {
-		sendResponse({ dataUrl: "mocked" });
-	},
+const handleRecordingSaved = mock(
+	async (_saved: boolean, _error?: string) => undefined,
 );
+const confirmDownload = mock(
+	async (_tabId: number) =>
+		({ ok: true, folder: "dg-demo/mocked" }) as DownloadResult,
+);
+const discardRecording = mock(async (_tabId: number) => ({ ok: true }));
+const warmNarration = mock(async () => undefined);
 
 const handleRecordingMessage = createRecordingRouter({
 	stopVideoRecording,
@@ -47,19 +45,25 @@ const handleRecordingMessage = createRecordingRouter({
 	handleRecordingReady,
 	handleNarrationComplete,
 	handleNarrationProgress,
-	handleRecordingData,
+	handleRecordingSaved,
 	confirmDownload,
 	discardRecording,
-	handleRequestVideoData,
+	warmNarration,
 });
 
 const TAB_ID = 7;
+/** The review tab's own id — deliberately not the recording's, which is the trap. */
+const REVIEW_TAB_ID = 99;
 /** Let queued promise callbacks run — the async reply routes land on a later tick. */
 const settle = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
 const sender = { tab: { id: TAB_ID } } as chrome.runtime.MessageSender;
+/** A message arriving from the review tab, which is a different tab entirely. */
+const reviewSender = {
+	tab: { id: REVIEW_TAB_ID },
+} as chrome.runtime.MessageSender;
 const noopSendResponse = mock(
-	(_data: { dataUrl: string | null } | { shortcut: string | null }) =>
+	(_data: DownloadResult | { ok: boolean } | { shortcut: string | null }) =>
 		undefined,
 );
 
@@ -71,10 +75,10 @@ beforeEach(() => {
 	handleRecordingReady.mockClear();
 	handleNarrationComplete.mockClear();
 	handleNarrationProgress.mockClear();
-	handleRecordingData.mockClear();
+	handleRecordingSaved.mockClear();
 	confirmDownload.mockClear();
 	discardRecording.mockClear();
-	handleRequestVideoData.mockClear();
+	warmNarration.mockClear();
 	noopSendResponse.mockClear();
 	(globalThis as unknown as { chrome: unknown }).chrome = {
 		runtime: { sendMessage: mock(() => undefined) },
@@ -196,80 +200,117 @@ describe("handleRecordingMessage", () => {
 		expect(handleNarrationComplete).toHaveBeenCalledWith(3);
 	});
 
-	it("routes recordingData with a string dataUrl targeting background to handleRecordingData", () => {
+	it("routes recordingSaved targeting background to handleRecordingSaved", () => {
 		handleRecordingMessage(
-			{ type: MSG.recordingData, target: "background", dataUrl: "data:x" },
+			{ type: MSG.recordingSaved, target: "background", saved: true },
 			sender,
 			noopSendResponse,
 		);
-		expect(handleRecordingData).toHaveBeenCalledWith("data:x");
+		expect(handleRecordingSaved).toHaveBeenCalledWith(true, undefined);
 	});
 
-	it("ignores recordingData when dataUrl is not a string", () => {
+	it("passes the recorder's failure reason through to handleRecordingSaved", () => {
 		handleRecordingMessage(
-			{ type: MSG.recordingData, target: "background" },
+			{
+				type: MSG.recordingSaved,
+				target: "background",
+				saved: false,
+				error: "recording did not start",
+			},
 			sender,
 			noopSendResponse,
 		);
-		expect(handleRecordingData).not.toHaveBeenCalled();
+		expect(handleRecordingSaved).toHaveBeenCalledWith(
+			false,
+			"recording did not start",
+		);
 	});
 
-	it("routes videoConfirmDownload with a sender tab to confirmDownload", () => {
+	it("ignores recordingSaved when saved is not a boolean", () => {
 		handleRecordingMessage(
-			{ type: MSG.videoConfirmDownload },
+			{ type: MSG.recordingSaved, target: "background" },
 			sender,
 			noopSendResponse,
 		);
+		expect(handleRecordingSaved).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The review routes must read the tab id from the payload. Falling back to
+	 * `sender.tab.id` would look correct and act on the review tab's own id, which no
+	 * recording is ever keyed by — a silent no-op rather than a visible failure.
+	 */
+	it("routes videoConfirmDownload to the tab id in the payload, not the sender's", async () => {
+		const result = handleRecordingMessage(
+			{ type: MSG.videoConfirmDownload, tabId: TAB_ID },
+			reviewSender,
+			noopSendResponse,
+		);
+		expect(result).toBe(true);
 		expect(confirmDownload).toHaveBeenCalledWith(TAB_ID);
+		expect(confirmDownload).not.toHaveBeenCalledWith(REVIEW_TAB_ID);
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith({
+			ok: true,
+			folder: "dg-demo/mocked",
+		});
 	});
 
-	it("routes videoDiscard with a sender tab to discardRecording", () => {
-		handleRecordingMessage(
-			{ type: MSG.videoDiscard },
-			sender,
+	it("routes videoDiscard to the tab id in the payload, not the sender's", async () => {
+		const result = handleRecordingMessage(
+			{ type: MSG.videoDiscard, tabId: TAB_ID },
+			reviewSender,
 			noopSendResponse,
 		);
+		expect(result).toBe(true);
 		expect(discardRecording).toHaveBeenCalledWith(TAB_ID);
+		expect(discardRecording).not.toHaveBeenCalledWith(REVIEW_TAB_ID);
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith({ ok: true });
 	});
 
-	it("ignores videoConfirmDownload/videoDiscard without a sender tab id", () => {
-		const noTabSender = {} as chrome.runtime.MessageSender;
+	it("ignores videoConfirmDownload/videoDiscard with no tab id in the payload", () => {
 		handleRecordingMessage(
 			{ type: MSG.videoConfirmDownload },
-			noTabSender,
+			reviewSender,
 			noopSendResponse,
 		);
 		handleRecordingMessage(
 			{ type: MSG.videoDiscard },
-			noTabSender,
+			reviewSender,
 			noopSendResponse,
 		);
 		expect(confirmDownload).not.toHaveBeenCalled();
 		expect(discardRecording).not.toHaveBeenCalled();
 	});
 
-	it("special-cases requestVideoData: calls handleRequestVideoData and returns true to keep the channel open", () => {
-		const result = handleRecordingMessage(
-			{ type: MSG.requestVideoData },
-			sender,
+	it("answers the review tab even when the download handler rejects", async () => {
+		// An unanswered sendMessage leaves the review tab's button disabled forever.
+		confirmDownload.mockImplementationOnce(async () => {
+			throw new Error("boom");
+		});
+		handleRecordingMessage(
+			{ type: MSG.videoConfirmDownload, tabId: TAB_ID },
+			reviewSender,
 			noopSendResponse,
 		);
-		expect(result).toBe(true);
-		expect(handleRequestVideoData).toHaveBeenCalledWith(
-			TAB_ID,
-			noopSendResponse,
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith(
+			expect.objectContaining({ ok: false }),
 		);
 	});
 
-	it("requestVideoData without a sender tab id is not routed", () => {
-		const noTabSender = {} as chrome.runtime.MessageSender;
-		const result = handleRecordingMessage(
-			{ type: MSG.requestVideoData },
-			noTabSender,
+	it("answers the review tab even when the discard handler rejects", async () => {
+		discardRecording.mockImplementationOnce(async () => {
+			throw new Error("boom");
+		});
+		handleRecordingMessage(
+			{ type: MSG.videoDiscard, tabId: TAB_ID },
+			reviewSender,
 			noopSendResponse,
 		);
-		expect(result).toBeUndefined();
-		expect(handleRequestVideoData).not.toHaveBeenCalled();
+		await settle();
+		expect(noopSendResponse).toHaveBeenCalledWith({ ok: false });
 	});
 
 	it("answers requestRecordShortcut from what Chrome assigned, not from the manifest", async () => {
@@ -302,6 +343,48 @@ describe("handleRecordingMessage", () => {
 		);
 		await settle();
 		expect(noopSendResponse).toHaveBeenCalledWith({ shortcut: null });
+	});
+
+	/**
+	 * The shortcut request is the tour about to render "press this to record", which is
+	 * typically a whole setup phase ahead of the keypress — the last free moment to
+	 * absorb the model load before the user is left watching a progress modal.
+	 */
+	it("starts the narration warm-up when a tour asks for the record shortcut", async () => {
+		Object.assign(chrome, {
+			commands: { getAll: mock(async () => []) },
+		});
+
+		handleRecordingMessage(
+			{ type: MSG.requestRecordShortcut },
+			sender,
+			noopSendResponse,
+		);
+		await settle();
+
+		expect(warmNarration).toHaveBeenCalled();
+	});
+
+	it("still answers the shortcut when the warm-up rejects", async () => {
+		Object.assign(chrome, {
+			commands: {
+				getAll: mock(async () => [
+					{ name: RECORD_COMMAND, shortcut: "Alt+Shift+K" },
+				]),
+			},
+		});
+		warmNarration.mockImplementationOnce(async () => {
+			throw new Error("offscreen unavailable");
+		});
+
+		handleRecordingMessage(
+			{ type: MSG.requestRecordShortcut },
+			sender,
+			noopSendResponse,
+		);
+		await settle();
+
+		expect(noopSendResponse).toHaveBeenCalledWith({ shortcut: "Alt+Shift+K" });
 	});
 });
 

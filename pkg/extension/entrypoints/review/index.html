@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeeGee — Review recording</title>
+  </head>
+  <body>
+    <header class="mb-8">
+      <div class="flex items-center gap-3">
+        <img src="/icon/48.png" alt="DeeGee ghost logo" class="h-11 w-11" />
+        <h1 class="neon-title">Review</h1>
+      </div>
+      <p class="sub mt-2">
+        // watch it back, then keep it or record another take
+      </p>
+    </header>
+
+    <main>
+      <div class="panel">
+        <h2 class="sec-h" id="slug">Recording</h2>
+
+        <p class="note" id="unavailable" hidden></p>
+
+        <!-- nodownload: the player's own save bypasses the naming and skips the plan. -->
+        <video class="w-full" controlslist="nodownload" id="video" controls hidden>
+          <track kind="captions" />
+        </video>
+
+        <div class="flex flex-wrap items-center gap-3" id="actions" hidden>
+          <button class="btn" id="download" type="button">Download</button>
+          <button class="btn" id="discard" type="button">
+            Discard &amp; re-record
+          </button>
+        </div>
+        <div class="status" id="status" role="status"></div>
+
+        <!-- Root-relative: this page is served from the extension origin already. -->
+        <p class="note mt-4">
+          Too soft? Raise <b>Video quality</b> in
+          <a href="/options.html#/settings">settings</a>, then discard and record
+          another take.
+        </p>
+      </div>
+    </main>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

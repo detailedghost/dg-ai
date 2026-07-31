@@ -43,7 +43,6 @@ import {
 	automaticActionConsentRequired,
 	automaticPlayback,
 	buildOverlay,
-	buildVideoReviewHtml,
 	captureMarkerEarly,
 	completeSetupPhase,
 	draftToScript,
@@ -54,7 +53,6 @@ import {
 	editorPageUrl,
 	editorReviewRows,
 	editorSpotlightTarget,
-	handleTourMessage,
 	handoffCompletedSetup,
 	initializeMarkerPlayback,
 	initializeReviewedEditorPlayback,
@@ -66,20 +64,18 @@ import {
 	type PlayState,
 	performAction,
 	primeClickNavigation,
+	rearmAfterDiscard,
 	recordingStartState,
 	resetTabIdForTests,
 	resolvePendingMarker,
 	restartState,
-	reviewAction,
 	runDemoTour,
 	runVideoStepSequence,
 	scriptToDraft,
 	setupActionConsentRequired,
 	stepEffect,
-	type TourState,
 } from "@/lib/features/demo-tour";
 
-const baseState: TourState = {};
 const GLOBAL_KEYS = [
 	"window",
 	"document",
@@ -147,83 +143,104 @@ describe("getNarrationMode", () => {
 	});
 });
 
-// ── reviewAction ────────────────────────────────────────────────────────────
+// ── rearmAfterDiscard ───────────────────────────────────────────────────────
 
-describe("reviewAction", () => {
-	it("'confirm' returns object with type === MSG.videoConfirmDownload", () => {
-		expect(reviewAction("confirm").type).toBe(MSG.videoConfirmDownload);
-	});
+/**
+ * Review lives in its own extension tab now, so a discard reaches this tab as a
+ * message rather than a click. What it has to do is unchanged, and is still only
+ * doable here: both outcomes are page overlays that need the content script's ctx.
+ */
+describe("rearmAfterDiscard", () => {
+	const script: TourScript = {
+		startUrl: "https://app.example",
+		mode: "video",
+		steps: [{ body: "Show dashboard" }, { body: "Show settings" }],
+	};
 
-	it("'discard' returns object with type === MSG.videoDiscard", () => {
-		expect(reviewAction("discard").type).toBe(MSG.videoDiscard);
-	});
-});
-
-// ── handleTourMessage ───────────────────────────────────────────────────────
-
-describe("handleTourMessage", () => {
-	it("MSG.videoReview → { showingReview: true }", () => {
-		expect(handleTourMessage(MSG.videoReview, baseState)).toEqual({
-			showingReview: true,
+	/** Record which named surface was mounted — enough to tell the two branches apart. */
+	function mountedUiNames(): string[] {
+		const names: string[] = [];
+		Object.defineProperty(globalThis, "createShadowRootUi", {
+			configurable: true,
+			value: mock(async (_ctx: unknown, opts: { name: string }) => {
+				names.push(opts.name);
+				return { mount: () => {}, remove: () => {} };
+			}),
 		});
+		return names;
+	}
+
+	function withState(state: PlayState | undefined): void {
+		(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
+			(key: string) =>
+				Promise.resolve(
+					state && key === "demo_tour:-1" ? { [key]: state } : {},
+				),
+		);
+	}
+
+	/**
+	 * Re-arm, then let the prompt finish mounting.
+	 *
+	 * `promptToRecord` is deliberately fire-and-forget in production — a prompt that
+	 * fails to render must not reject the discard — so its overlay lands a tick later.
+	 * Draining that tick here also keeps the unfinished work out of the next test.
+	 */
+	async function rearm(): Promise<void> {
+		await rearmAfterDiscard({} as Parameters<typeof rearmAfterDiscard>[0]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+
+	beforeEach(() => {
+		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
+		(browser.storage.local.remove as ReturnType<typeof mock>).mockClear();
 	});
 
-	it("MSG.videoSaved → { showingReview: false }", () => {
-		expect(handleTourMessage(MSG.videoSaved, baseState)).toEqual({
-			showingReview: false,
-		});
-	});
+	it("clears the recording flag, so the tab prompts instead of resuming playback", async () => {
+		withState({ script, index: 1 });
+		mountedUiNames();
 
-	it("unknown type → null", () => {
-		expect(handleTourMessage("unknown-type", baseState)).toBeNull();
-	});
-});
+		await rearm();
 
-// ── buildVideoReviewHtml ────────────────────────────────────────────────────
-
-describe("buildVideoReviewHtml", () => {
-	it("contains the slug name", () => {
-		expect(buildVideoReviewHtml("my-demo", true)).toContain("my-demo");
-	});
-
-	it("contains <video when hasVideo is true", () => {
-		expect(buildVideoReviewHtml("my-demo", true)).toContain("<video");
-	});
-
-	it("contains a Download button", () => {
-		expect(buildVideoReviewHtml("my-demo", true)).toContain("Download");
-	});
-
-	it("contains a Discard button", () => {
-		expect(buildVideoReviewHtml("my-demo", true)).toContain("Discard");
-	});
-
-	it("does NOT contain <video when hasVideo is false", () => {
-		expect(buildVideoReviewHtml("my-demo", false)).not.toContain("<video");
-	});
-});
-
-// ── Additional behavior ────────────────────────────────────────────────────
-
-describe("handleTourMessage — coverage gaps", () => {
-	it("MSG.videoDiscard → { showingReview: false }", () => {
-		expect(handleTourMessage(MSG.videoDiscard, baseState)).toEqual({
-			showingReview: false,
-		});
-	});
-});
-
-describe("buildVideoReviewHtml — id attributes", () => {
-	it("contains dg-review-download id", () => {
-		expect(buildVideoReviewHtml("my-slug", true)).toContain(
-			"dg-review-download",
+		expect(browser.storage.local.remove).toHaveBeenCalledWith(
+			"demo_recording:-1",
 		);
 	});
 
-	it("contains dg-review-discard id", () => {
-		expect(buildVideoReviewHtml("my-slug", true)).toContain(
-			"dg-review-discard",
-		);
+	it("rewinds to step 1 and re-shows the record prompt", async () => {
+		withState({ script, index: 1 });
+		const names = mountedUiNames();
+
+		await rearm();
+
+		expect(browser.storage.local.set).toHaveBeenCalledWith({
+			"demo_tour:-1": expect.objectContaining({ index: 0 }),
+		});
+		expect(names).toContain("dg-demo-modal");
+	});
+
+	it("returns an editor-launched tour to the editor instead of the record prompt", async () => {
+		// The editor mirrors its draft into the URL fragment, so it needs a real document.
+		withLocation("https://app.example/start", { withDocument: true });
+		withState({ script, index: 1, fromEdit: true });
+		const names = mountedUiNames();
+
+		await rearm();
+
+		expect(names).toContain("dg-demo-edit");
+		expect(names).not.toContain("dg-demo-modal");
+		// The editor owns the script from here, so the playback state is dropped.
+		expect(browser.storage.local.remove).toHaveBeenCalledWith("demo_tour:-1");
+	});
+
+	it("still offers the record prompt when no tour state survived", async () => {
+		withState(undefined);
+		const names = mountedUiNames();
+
+		await rearm();
+
+		expect(names).toContain("dg-demo-modal");
+		expect(browser.storage.local.set).not.toHaveBeenCalled();
 	});
 });
 

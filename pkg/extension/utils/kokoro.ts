@@ -5,6 +5,8 @@
  * The model is loaded once and cached for the life of the page.
  */
 
+import type { ModelLoadProgress } from "@/lib/narration-progress";
+
 type KokoroAudio = {
 	audio: Float32Array;
 	sampling_rate: number;
@@ -14,18 +16,30 @@ export type KokoroInstance = {
 	generate(text: string, opts: { voice: string }): Promise<KokoroAudio>;
 };
 
+type ProgressCallback = (progress: ModelLoadProgress) => void;
+
 let ttsPromise: Promise<KokoroInstance> | null = null;
+let loaded = false;
+const listeners = new Set<ProgressCallback>();
+
+/**
+ * Whether the model is already in memory, so a caller can skip its load UI entirely.
+ *
+ * A load that already finished reports no progress to a caller arriving after it —
+ * there is nothing left to report — so a bar keyed only on the callback would sit at
+ * 0% describing work that is long done.
+ */
+export function narrationLoaded(): boolean {
+	return loaded;
+}
 
 /** Load (and cache) the Kokoro model, pointing ORT at the extension's local wasm. */
 export function loadKokoro(
-	onProgress?: (progress: {
-		status: string;
-		name?: string;
-		file?: string;
-		loaded?: number;
-		total?: number;
-	}) => void,
+	onProgress?: ProgressCallback,
 ): Promise<KokoroInstance> {
+	// Every caller subscribes, not just the load's starter: otherwise a warm-up already
+	// in flight leaves the recorder's preparation bar frozen at 0% for the whole load.
+	if (onProgress) listeners.add(onProgress);
 	if (ttsPromise) return ttsPromise;
 	ttsPromise = (async () => {
 		/**
@@ -42,9 +56,28 @@ export function loadKokoro(
 			{
 				dtype: "q8",
 				device: "wasm",
-				progress_callback: onProgress,
+				progress_callback: (info: ModelLoadProgress) => {
+					for (const listener of listeners) listener(info);
+				},
 			},
 		)) as unknown as KokoroInstance;
 	})();
+	/**
+	 * Settle bookkeeping on a derived chain, so callers still receive the real result.
+	 *
+	 * A failure drops the cached promise rather than poisoning it: the offscreen document
+	 * now outlives a single recording, so caching a rejection would disable narration for
+	 * the rest of the browser session over one transient fetch.
+	 */
+	void ttsPromise
+		.then(() => {
+			loaded = true;
+		})
+		.catch(() => {
+			ttsPromise = null;
+		})
+		.finally(() => {
+			listeners.clear();
+		});
 	return ttsPromise;
 }
