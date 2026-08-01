@@ -36,7 +36,7 @@ function row(
 		stale: false,
 		staleReason: "check_required" as const,
 		updatedAt,
-		expiresAt: "2026-07-29T12:00:00.000Z",
+		expiresAt: "9999-12-31T23:59:59.999Z",
 		nextAction: { type: "edit" as const },
 	};
 }

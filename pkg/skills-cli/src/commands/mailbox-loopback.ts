@@ -447,7 +447,13 @@ export async function runMailboxCleanupLoopback(
 	const url = `${origin}${CONNECT_PREFIX}${runAlias}#${MARKER_KEY}=${marker}`;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
-		if (!(await deps.open(url))) {
+		let opened: boolean;
+		try {
+			opened = await deps.open(url);
+		} catch {
+			throw new Error("Mailbox cleanup extension failed safely");
+		}
+		if (!opened) {
 			throw new Error(
 				"Mailbox cleanup could not open the browser extension rendezvous",
 			);
