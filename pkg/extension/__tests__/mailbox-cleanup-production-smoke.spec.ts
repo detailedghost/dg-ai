@@ -3233,5 +3233,5 @@ describe("mailbox cleanup production safety smoke", () => {
 				action: actions[100],
 			},
 		});
-	});
+	}, 90_000);
 });

@@ -178,7 +178,7 @@
   },
   "hash": {
     "algorithm": "sha256",
-    "digest": "a589ad2a716b5c4ec25a27a7ecd99d00fc9a5a209ba847507277ea07964ad7f5"
+    "digest": "dc5f22f6c494cdac510b6435e6c3cd45aa449facf7b4651c4c609dd668355ac8"
   },
   "successRecord": {
     "format": "canonical-json",
