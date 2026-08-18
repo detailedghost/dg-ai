@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Ctext%20x%3D%2250%22%20y%3D%2254%22%20font-size%3D%2280%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22central%22%3E%E2%9C%8F%EF%B8%8F%3C%2Ftext%3E%3C%2Fsvg%3E">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat Harness — workset layouts (D family)</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f7f7f8; --fg:#1a1a1e; --muted:#6b7280; --border:#e2e2e6; --surface:#ffffff;
+  --bar-bg:rgba(20,24,31,0.94); --bar-fg:#e8ecf2; --approve:#1f9d55; --reject:#d97706; --accent:#4c8dff;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0f1115; --fg:#e8ecf2; --muted:#8b93a3; --border:#262a33; --surface:#161a21; }
+}
+html[data-theme="light"]{ --bg:#f7f7f8; --fg:#1a1a1e; --muted:#6b7280; --border:#e2e2e6; --surface:#ffffff; }
+html[data-theme="dark"]{ --bg:#0f1115; --fg:#e8ecf2; --muted:#8b93a3; --border:#262a33; --surface:#161a21; }
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+#proto-root{min-height:100vh;padding:2.5rem 2rem 7rem;}
+section[data-variant]{display:none;max-width:960px;margin:0 auto;}
+section[data-variant].is-active{display:block;}
+#protobar{position:fixed;left:50%;bottom:1.1rem;transform:translateX(-50%);z-index:90;display:flex;align-items:center;
+  gap:0.45rem;background:var(--bar-bg);color:var(--bar-fg);border-radius:999px;padding:0.5rem 0.6rem 0.5rem 0.9rem;
+  border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 10px 34px rgba(0,0,0,0.42);flex-wrap:wrap;max-width:calc(100vw - 2rem);font-size:0.85rem;}
+#protobar button{font:inherit;border:none;border-radius:999px;padding:0.45rem 0.8rem;cursor:pointer;color:inherit;
+  transition:transform .14s cubic-bezier(.34,1.56,.64,1),box-shadow .14s ease,filter .14s ease,background .14s ease;}
+#protobar button:active{transform:translateY(1px) scale(.97);}
+#proto-prev,#proto-next{background:rgba(255,255,255,0.12);color:var(--bar-fg);font-weight:700;padding:0.4rem 0.62rem;}
+#proto-prev:hover,#proto-next:hover,#proto-notes-toggle:hover{background:rgba(255,255,255,0.22);transform:translateY(-1px);}
+#proto-label{padding:0 0.4rem;color:var(--bar-fg);opacity:0.92;white-space:nowrap;font-weight:600;letter-spacing:.2px;}
+.proto-divider{width:1px;height:1.25rem;background:rgba(255,255,255,0.16);margin:0 0.2rem;border-radius:1px;}
+#proto-notes-toggle{background:rgba(255,255,255,0.12);}
+#proto-notes-toggle.has-notes{box-shadow:0 0 0 2px var(--accent) inset;color:#fff;}
+#proto-approve{color:#fff;font-weight:700;letter-spacing:.2px;padding:0.5rem 1.05rem;
+  background:linear-gradient(180deg,#2bbd6b,#1f9d55);
+  box-shadow:0 2px 10px rgba(31,157,85,.45),inset 0 1px 0 rgba(255,255,255,.28);
+  animation:proto-approve-pulse 3.6s ease-in-out infinite;}
+#proto-approve:hover{transform:translateY(-2px);filter:brightness(1.08);
+  box-shadow:0 7px 22px rgba(31,157,85,.62),inset 0 1px 0 rgba(255,255,255,.34);}
+#proto-reject{color:#fff;font-weight:700;letter-spacing:.2px;padding:0.5rem 1.05rem;
+  background:linear-gradient(180deg,#f0991f,#d97706);
+  box-shadow:0 2px 10px rgba(217,119,6,.4),inset 0 1px 0 rgba(255,255,255,.24);}
+#proto-reject:hover{transform:translateY(-2px);filter:brightness(1.08);
+  box-shadow:0 7px 22px rgba(217,119,6,.58),inset 0 1px 0 rgba(255,255,255,.3);}
+#protobar button:disabled{opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none;animation:none;filter:none;}
+@keyframes proto-approve-pulse{
+  0%,100%{box-shadow:0 2px 10px rgba(31,157,85,.42),inset 0 1px 0 rgba(255,255,255,.28);}
+  50%{box-shadow:0 3px 13px rgba(43,189,107,.58),inset 0 1px 0 rgba(255,255,255,.32);}
+}
+@media (prefers-reduced-motion:reduce){
+  #proto-approve{animation:none;}
+  #protobar button{transition:none;}
+}
+#proto-notes-panel{position:fixed;left:50%;bottom:4.5rem;transform:translateX(-50%);z-index:91;background:var(--surface);
+  color:var(--fg);border:1px solid var(--border);border-radius:12px;padding:0.9rem 1rem;width:min(420px,calc(100vw - 2rem));
+  box-shadow:0 8px 30px rgba(0,0,0,0.35);}
+#proto-notes-panel[hidden]{display:none;}
+#proto-notes{width:100%;min-height:5.5rem;resize:vertical;font:inherit;padding:0.5rem;border-radius:8px;
+  border:1px solid var(--border);background:var(--bg);color:var(--fg);}
+#proto-reject-chips{display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;}
+.proto-chip{font-size:0.75rem;padding:0.3rem 0.6rem;border-radius:999px;border:1px solid var(--border);
+  background:var(--bg);color:var(--fg);cursor:pointer;}
+#proto-notes-hint{font-size:0.75rem;color:var(--muted);margin-top:0.4rem;}
+</style>
+</head>
+<body>
+<div id="proto-root">
+<section data-variant="A">
+<style>
+.pwa{--bg:#f4f4f5;--panel:#fff;--ink:#0a0a0a;--muted:#52525b;--line:#0a0a0a;--accent:#0891b2;--accent2:#c026d3;--code-bg:#f4f4f5}
+html.dark .pwa{--bg:#0a0a0a;--panel:#111;--ink:#e8e8e8;--muted:#8a8a8a;--line:#e8e8e8;--accent:#00f0ff;--accent2:#ff2bd6;--code-bg:#000}
+.pwa *{box-sizing:border-box}
+.pwa{position:fixed;inset:0;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;
+  font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:15px;line-height:1.5}
+.pwa .rail{width:336px;flex:0 0 336px;border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.pwa .rh{display:flex;align-items:center;gap:.75rem;padding:1.1rem 1.25rem;border-bottom:2px solid var(--line)}
+.pwa .brand{font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  text-shadow:0 0 0.625rem var(--accent),0 0 0.125rem var(--accent)}
+.pwa .spacer{margin-left:auto}
+.pwa .btn{border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:.7rem;
+  text-transform:uppercase;letter-spacing:.14em;padding:.5rem .9rem;cursor:pointer}
+.pwa .btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.pwa .btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pwa .scroll{flex:1;overflow:auto;padding:1rem}
+.pwa .ws{margin-bottom:1.5rem}
+.pwa .wsh{display:flex;align-items:center;gap:.6rem;padding:.4rem 0 .6rem;border-bottom:2px solid var(--line);margin-bottom:.75rem}
+.pwa .wsname{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--accent)}
+.pwa .wsmeta{margin-left:auto;font-size:.65rem;color:var(--muted)}
+.pwa .row{display:flex;align-items:center;gap:.6rem;padding:.65rem .75rem;border:2px solid transparent;cursor:pointer}
+.pwa .row:hover{border-color:var(--line)}
+.pwa .row.on{border-color:var(--line);background:var(--bg);box-shadow:0.375rem 0.375rem 0 var(--accent2)}
+.pwa .row.orch{border-color:var(--line);background:var(--bg);margin-bottom:.6rem}
+.pwa .row.orch .who{color:var(--accent)}
+.pwa .who{font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--ink)}
+.pwa .row.agent .who{color:var(--muted);padding-left:1rem;position:relative}
+.pwa .row.agent .who::before{content:"└";position:absolute;left:0;color:var(--line);opacity:.5}
+.pwa .badge{margin-left:auto;font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.14em;
+  border:2px solid var(--line);padding:.12rem .4rem}
+.pwa .b-run{border-color:var(--accent);color:var(--accent);animation:pwaP 1.5s ease-in-out infinite}
+.pwa .b-need{border-color:var(--accent2);background:var(--accent2);color:var(--bg)}
+.pwa .b-done{border-color:var(--muted);color:var(--muted)}
+@keyframes pwaP{0%,100%{opacity:1}50%{opacity:.4}}
+.pwa .main{flex:1;display:flex;flex-direction:column;min-width:0}
+.pwa .mh{display:flex;align-items:center;gap:.85rem;padding:1.1rem 1.75rem;border-bottom:2px solid var(--line)}
+.pwa .crumb{font-size:.7rem;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
+.pwa .crumb b{color:var(--accent);font-weight:700}
+.pwa .title{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--accent2)}
+.pwa .thread{flex:1;overflow:auto;padding:2rem 1.75rem;display:flex;flex-direction:column;gap:1.5rem;max-width:880px}
+.pwa .msg{font-size:.95rem;line-height:1.7}
+.pwa .lbl{display:block;margin-bottom:.35rem;font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}
+.pwa .msg.me{border-left:2px solid var(--line);padding-left:1rem}
+.pwa .prog{font-size:.8rem;color:var(--muted);font-style:italic}
+.pwa code{background:var(--code-bg);color:var(--accent);border:1px solid var(--line);padding:0 .3rem;font-size:.88rem}
+.pwa .cmp{display:flex;align-items:center;gap:.7rem;padding:1.1rem 1.75rem;border-top:2px solid var(--line);font-size:.9rem;color:var(--muted)}
+.pwa .sig{color:var(--accent);font-weight:700;font-size:1.05rem}
+.pwa .sig2{color:var(--accent2);font-weight:700;font-size:1.05rem}
+</style>
+<div class="pwa">
+  <div class="rail">
+    <div class="rh"><span class="brand">DeeGee</span><span class="spacer"></span><button class="btn pri">+ new</button></div>
+    <div class="scroll">
+      <div class="ws">
+        <div class="wsh"><span class="wsname">001 chat_harness</span><span class="wsmeta">11 slices</span></div>
+        <div class="row orch on"><span class="who">orchestrator</span><span class="badge b-need">needs you</span></div>
+        <div class="row agent"><span class="who">@js · s1</span><span class="badge b-done">done</span></div>
+        <div class="row agent"><span class="who">@js · s2</span><span class="badge b-run">running</span></div>
+        <div class="row agent"><span class="who">@security · s3</span><span class="badge b-run">running</span></div>
+        <div class="row agent"><span class="who">@devops · s10</span><span class="badge b-need">needs you</span></div>
+      </div>
+      <div class="ws">
+        <div class="wsh"><span class="wsname">002 vela_favorites</span><span class="wsmeta">4 slices</span></div>
+        <div class="row orch"><span class="who">orchestrator</span><span class="badge b-run">running</span></div>
+        <div class="row agent"><span class="who">@dba · s2</span><span class="badge b-run">running</span></div>
+      </div>
+      <div class="ws">
+        <div class="wsh"><span class="wsname">loose chats</span><span class="wsmeta">1</span></div>
+        <div class="row"><span class="who">@shell</span><span class="badge b-done">idle</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="mh"><span class="crumb"><b>001 chat_harness</b> / orchestrator</span><span class="spacer"></span><span class="title">orchestrator</span></div>
+    <div class="thread">
+      <div class="msg"><span class="lbl">orchestrator</span>Wave 2 is done. <code>s1 shared-contracts</code> landed green — 11 contract tests, no <code>node:</code> leak in the extension build.</div>
+      <div class="msg me"><span class="lbl">you</span>What's blocking s3?</div>
+      <div class="msg"><span class="lbl">orchestrator</span><code>s3 sqlite-store-and-encryption</code> is waiting on a call I can't make: the keychain probe returns exit 1 both when the secret is absent and when the session bus is down. @security is holding.</div>
+      <div class="msg"><span class="lbl">orchestrator</span>Want me to route that to @security directly, or answer it here?</div>
+      <div class="prog">@js · s2 is running — dg-server skeleton, 18/28 checklist items…</div>
+    </div>
+    <div class="cmp"><span class="sig">$</span><span class="sig2">@</span><span>message the orchestrator…</span></div>
+  </div>
+</div>
+</section>
+<section data-variant="B">
+<style>
+.pwb{--bg:#f4f4f5;--panel:#fff;--ink:#0a0a0a;--muted:#52525b;--line:#0a0a0a;--accent:#0891b2;--accent2:#c026d3;--code-bg:#f4f4f5}
+html.dark .pwb{--bg:#0a0a0a;--panel:#111;--ink:#e8e8e8;--muted:#8a8a8a;--line:#e8e8e8;--accent:#00f0ff;--accent2:#ff2bd6;--code-bg:#000}
+.pwb *{box-sizing:border-box}
+.pwb{position:fixed;inset:0;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;
+  font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:15px;line-height:1.5}
+.pwb .strip{width:180px;flex:0 0 180px;border-right:2px solid var(--line);background:var(--bg);display:flex;flex-direction:column}
+.pwb .sh{padding:1.1rem 1rem;border-bottom:2px solid var(--line)}
+.pwb .brand{font-size:1.05rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  text-shadow:0 0 0.625rem var(--accent),0 0 0.125rem var(--accent)}
+.pwb .wslist{flex:1;overflow:auto;padding:.75rem}
+.pwb .wsc{border:2px solid var(--line);padding:.7rem .75rem;margin-bottom:.75rem;cursor:pointer;background:var(--panel)}
+.pwb .wsc.on{box-shadow:0.375rem 0.375rem 0 var(--accent)}
+.pwb .wsn{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);word-break:break-all}
+.pwb .wsc.on .wsn{color:var(--accent)}
+.pwb .wsm{margin-top:.35rem;font-size:.62rem;color:var(--muted)}
+.pwb .dots{margin-top:.45rem;display:flex;gap:.25rem}
+.pwb .dot{width:.5rem;height:.5rem;border:1.5px solid var(--line)}
+.pwb .dot.r{border-color:var(--accent);background:var(--accent)}
+.pwb .dot.n{border-color:var(--accent2);background:var(--accent2)}
+.pwb .rail{width:288px;flex:0 0 288px;border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.pwb .rh{padding:1.1rem 1.25rem;border-bottom:2px solid var(--line);display:flex;align-items:center;gap:.6rem}
+.pwb .rt{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}
+.pwb .spacer{margin-left:auto}
+.pwb .btn{border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:.66rem;
+  text-transform:uppercase;letter-spacing:.14em;padding:.4rem .7rem;cursor:pointer}
+.pwb .btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.pwb .btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pwb .cards{flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;gap:.85rem}
+.pwb .sc{border:2px solid var(--line);background:var(--bg);padding:.75rem .85rem;cursor:pointer}
+.pwb .sc.on{background:var(--panel);box-shadow:0.375rem 0.375rem 0 var(--accent2)}
+.pwb .sc.orch{border-width:2px;background:var(--panel);box-shadow:0.375rem 0.375rem 0 var(--accent)}
+.pwb .scr{display:flex;align-items:center;gap:.55rem}
+.pwb .who{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--ink)}
+.pwb .sc.orch .who{color:var(--accent)}
+.pwb .badge{margin-left:auto;font-size:.58rem;font-weight:600;text-transform:uppercase;letter-spacing:.14em;border:2px solid var(--line);padding:.12rem .4rem}
+.pwb .b-run{border-color:var(--accent);color:var(--accent);animation:pwbP 1.5s ease-in-out infinite}
+.pwb .b-need{border-color:var(--accent2);background:var(--accent2);color:var(--bg)}
+.pwb .b-done{border-color:var(--muted);color:var(--muted)}
+@keyframes pwbP{0%,100%{opacity:1}50%{opacity:.4}}
+.pwb .snip{margin-top:.45rem;font-size:.72rem;line-height:1.5;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pwb .main{flex:1;display:flex;flex-direction:column;min-width:0}
+.pwb .mh{display:flex;align-items:center;gap:.85rem;padding:1.1rem 1.75rem;border-bottom:2px solid var(--line)}
+.pwb .title{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--accent)}
+.pwb .crumb{font-size:.7rem;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
+.pwb .thread{flex:1;overflow:auto;padding:2rem 1.75rem;display:flex;flex-direction:column;gap:1.5rem;max-width:880px}
+.pwb .msg{font-size:.95rem;line-height:1.7}
+.pwb .lbl{display:block;margin-bottom:.35rem;font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}
+.pwb .msg.me{border-left:2px solid var(--line);padding-left:1rem}
+.pwb .prog{font-size:.8rem;color:var(--muted);font-style:italic}
+.pwb code{background:var(--code-bg);color:var(--accent);border:1px solid var(--line);padding:0 .3rem;font-size:.88rem}
+.pwb .cmp{display:flex;align-items:center;gap:.7rem;padding:1.1rem 1.75rem;border-top:2px solid var(--line);font-size:.9rem;color:var(--muted)}
+.pwb .sig{color:var(--accent);font-weight:700;font-size:1.05rem}
+.pwb .sig2{color:var(--accent2);font-weight:700;font-size:1.05rem}
+</style>
+<div class="pwb">
+  <div class="strip">
+    <div class="sh"><span class="brand">DeeGee</span></div>
+    <div class="wslist">
+      <div class="wsc on"><div class="wsn">001 chat_harness</div><div class="wsm">11 slices · 5 chats</div><div class="dots"><i class="dot r"></i><i class="dot r"></i><i class="dot n"></i><i class="dot"></i><i class="dot"></i></div></div>
+      <div class="wsc"><div class="wsn">002 vela_favorites</div><div class="wsm">4 slices · 2 chats</div><div class="dots"><i class="dot r"></i><i class="dot r"></i></div></div>
+      <div class="wsc"><div class="wsn">loose</div><div class="wsm">1 chat</div><div class="dots"><i class="dot"></i></div></div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="rh"><span class="rt">001 chat_harness</span><span class="spacer"></span><button class="btn pri">+</button></div>
+    <div class="cards">
+      <div class="sc orch on">
+        <div class="scr"><span class="who">orchestrator</span><span class="badge b-need">needs you</span></div>
+        <div class="snip">s3 is waiting on a call I can't make — route to @security, or answer here?</div>
+      </div>
+      <div class="sc">
+        <div class="scr"><span class="who">@js · s2</span><span class="badge b-run">running</span></div>
+        <div class="snip">dg-server skeleton — 18/28 checklist items…</div>
+      </div>
+      <div class="sc">
+        <div class="scr"><span class="who">@security · s3</span><span class="badge b-run">running</span></div>
+        <div class="snip">Probing keychain reachability before writing the resolver…</div>
+      </div>
+      <div class="sc">
+        <div class="scr"><span class="who">@devops · s10</span><span class="badge b-need">needs you</span></div>
+        <div class="snip">Branch protection needs a manual add — confirm the check name?</div>
+      </div>
+      <div class="sc">
+        <div class="scr"><span class="who">@js · s1</span><span class="badge b-done">done</span></div>
+        <div class="snip">11 contract tests green, extension build clean.</div>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="mh"><span class="title">orchestrator</span><span class="crumb">/ 001 chat_harness</span></div>
+    <div class="thread">
+      <div class="msg"><span class="lbl">orchestrator</span>Wave 2 is done. <code>s1 shared-contracts</code> landed green — 11 contract tests, no <code>node:</code> leak in the extension build.</div>
+      <div class="msg me"><span class="lbl">you</span>What's blocking s3?</div>
+      <div class="msg"><span class="lbl">orchestrator</span><code>s3</code> is waiting on a call I can't make: the keychain probe returns exit 1 both when the secret is absent and when the session bus is down. @security is holding.</div>
+      <div class="msg"><span class="lbl">orchestrator</span>Want me to route that to @security directly, or answer it here?</div>
+      <div class="prog">2 running · 2 need you · 1 done</div>
+    </div>
+    <div class="cmp"><span class="sig">$</span><span class="sig2">@</span><span>message the orchestrator…</span></div>
+  </div>
+</div>
+</section>
+<section data-variant="C">
+<style>
+.pwc{--bg:#f4f4f5;--panel:#fff;--ink:#0a0a0a;--muted:#52525b;--line:#0a0a0a;--accent:#0891b2;--accent2:#c026d3;--code-bg:#f4f4f5}
+html.dark .pwc{--bg:#0a0a0a;--panel:#111;--ink:#e8e8e8;--muted:#8a8a8a;--line:#e8e8e8;--accent:#00f0ff;--accent2:#ff2bd6;--code-bg:#000}
+.pwc *{box-sizing:border-box}
+.pwc{position:fixed;inset:0;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;
+  font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:15px;line-height:1.5}
+.pwc .rail{width:300px;flex:0 0 300px;border-right:2px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+.pwc .rh{display:flex;align-items:center;gap:.75rem;padding:1.1rem 1.25rem;border-bottom:2px solid var(--line)}
+.pwc .brand{font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  text-shadow:0 0 0.625rem var(--accent),0 0 0.125rem var(--accent)}
+.pwc .spacer{margin-left:auto}
+.pwc .btn{border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:.68rem;
+  text-transform:uppercase;letter-spacing:.14em;padding:.45rem .8rem;cursor:pointer}
+.pwc .btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.pwc .btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pwc .cards{flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;gap:.9rem}
+.pwc .sc{border:2px solid var(--line);background:var(--bg);padding:.8rem .9rem;cursor:pointer}
+.pwc .sc.on{background:var(--panel);box-shadow:0.375rem 0.375rem 0 var(--accent)}
+.pwc .scr{display:flex;align-items:center;gap:.55rem}
+.pwc .who{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--ink)}
+.pwc .sc.on .who{color:var(--accent)}
+.pwc .ws{margin-top:.4rem;font-size:.62rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent2)}
+.pwc .badge{margin-left:auto;font-size:.58rem;font-weight:600;text-transform:uppercase;letter-spacing:.14em;border:2px solid var(--line);padding:.12rem .4rem}
+.pwc .b-run{border-color:var(--accent);color:var(--accent);animation:pwcP 1.5s ease-in-out infinite}
+.pwc .b-need{border-color:var(--accent2);background:var(--accent2);color:var(--bg)}
+.pwc .b-done{border-color:var(--muted);color:var(--muted)}
+@keyframes pwcP{0%,100%{opacity:1}50%{opacity:.4}}
+.pwc .main{flex:1;display:flex;flex-direction:column;min-width:0}
+.pwc .wsbar{display:flex;align-items:center;gap:.6rem;padding:.9rem 1.75rem;border-bottom:2px solid var(--line);background:var(--panel)}
+.pwc .wsname{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--accent);margin-right:.5rem}
+.pwc .tab{border:2px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-size:.66rem;
+  text-transform:uppercase;letter-spacing:.14em;padding:.35rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.4rem}
+.pwc .tab.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pwc .tab i{width:.45rem;height:.45rem;display:block;border:1.5px solid currentColor}
+.pwc .tab i.r{background:var(--accent);border-color:var(--accent)}
+.pwc .tab i.n{background:var(--accent2);border-color:var(--accent2)}
+.pwc .mh{display:flex;align-items:center;gap:.85rem;padding:1rem 1.75rem;border-bottom:2px solid var(--line)}
+.pwc .title{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--accent2)}
+.pwc .thread{flex:1;overflow:auto;padding:2rem 1.75rem;display:flex;flex-direction:column;gap:1.5rem;max-width:880px}
+.pwc .msg{font-size:.95rem;line-height:1.7}
+.pwc .lbl{display:block;margin-bottom:.35rem;font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}
+.pwc .msg.me{border-left:2px solid var(--line);padding-left:1rem}
+.pwc .prog{font-size:.8rem;color:var(--muted);font-style:italic}
+.pwc code{background:var(--code-bg);color:var(--accent);border:1px solid var(--line);padding:0 .3rem;font-size:.88rem}
+.pwc .cmp{display:flex;align-items:center;gap:.7rem;padding:1.1rem 1.75rem;border-top:2px solid var(--line);font-size:.9rem;color:var(--muted)}
+.pwc .sig{color:var(--accent);font-weight:700;font-size:1.05rem}
+.pwc .sig2{color:var(--accent2);font-weight:700;font-size:1.05rem}
+</style>
+<div class="pwc">
+  <div class="rail">
+    <div class="rh"><span class="brand">DeeGee</span><span class="spacer"></span><button class="btn pri">+ new</button></div>
+    <div class="cards">
+      <div class="sc on"><div class="scr"><span class="who">orchestrator</span><span class="badge b-need">needs you</span></div><div class="ws">001 chat_harness</div></div>
+      <div class="sc"><div class="scr"><span class="who">@js · s2</span><span class="badge b-run">running</span></div><div class="ws">001 chat_harness</div></div>
+      <div class="sc"><div class="scr"><span class="who">@security · s3</span><span class="badge b-run">running</span></div><div class="ws">001 chat_harness</div></div>
+      <div class="sc"><div class="scr"><span class="who">orchestrator</span><span class="badge b-run">running</span></div><div class="ws">002 vela_favorites</div></div>
+      <div class="sc"><div class="scr"><span class="who">@dba · s2</span><span class="badge b-run">running</span></div><div class="ws">002 vela_favorites</div></div>
+      <div class="sc"><div class="scr"><span class="who">@shell</span><span class="badge b-done">idle</span></div><div class="ws">loose</div></div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="wsbar">
+      <span class="wsname">001 chat_harness</span>
+      <button class="tab on">orchestrator</button>
+      <button class="tab"><i class="r"></i>@js · s2</button>
+      <button class="tab"><i class="r"></i>@security · s3</button>
+      <button class="tab"><i class="n"></i>@devops · s10</button>
+      <button class="tab">@js · s1</button>
+    </div>
+    <div class="mh"><span class="title">orchestrator</span><span class="spacer"></span><button class="btn">linear view</button></div>
+    <div class="thread">
+      <div class="msg"><span class="lbl">orchestrator</span>Wave 2 is done. <code>s1 shared-contracts</code> landed green — 11 contract tests, no <code>node:</code> leak in the extension build.</div>
+      <div class="msg me"><span class="lbl">you</span>What's blocking s3?</div>
+      <div class="msg"><span class="lbl">orchestrator</span><code>s3</code> is waiting on a call I can't make: the keychain probe returns exit 1 both when the secret is absent and when the session bus is down. @security is holding.</div>
+      <div class="msg"><span class="lbl">orchestrator</span>Want me to route that to @security directly, or answer it here?</div>
+      <div class="prog">2 running · 2 need you · 1 done</div>
+    </div>
+    <div class="cmp"><span class="sig">$</span><span class="sig2">@</span><span>message the orchestrator…</span></div>
+  </div>
+</div>
+</section>
+<section data-variant="D">
+<style>
+.pwd{--bg:#f4f4f5;--panel:#fff;--ink:#0a0a0a;--muted:#52525b;--line:#0a0a0a;--accent:#0891b2;--accent2:#c026d3;--code-bg:#f4f4f5}
+html.dark .pwd{--bg:#0a0a0a;--panel:#111;--ink:#e8e8e8;--muted:#8a8a8a;--line:#e8e8e8;--accent:#00f0ff;--accent2:#ff2bd6;--code-bg:#000}
+.pwd *{box-sizing:border-box}
+.pwd{position:fixed;inset:0;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;
+  font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-size:15px;line-height:1.5}
+.pwd .rail{width:352px;flex:0 0 352px;border-right:2px solid var(--line);background:var(--bg);display:flex;flex-direction:column}
+.pwd .rh{display:flex;align-items:center;gap:.75rem;padding:1.1rem 1.25rem;border-bottom:2px solid var(--line);background:var(--panel)}
+.pwd .brand{font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  text-shadow:0 0 0.625rem var(--accent),0 0 0.125rem var(--accent)}
+.pwd .spacer{margin-left:auto}
+.pwd .btn{border:2px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:.68rem;
+  text-transform:uppercase;letter-spacing:.14em;padding:.45rem .8rem;cursor:pointer}
+.pwd .btn:hover{background:var(--accent);border-color:var(--accent);color:#000}
+.pwd .btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pwd .list{flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;gap:1.1rem}
+.pwd .wsc{border:2px solid var(--line);background:var(--panel);box-shadow:0.375rem 0.375rem 0 var(--accent)}
+.pwd .wsc.open{box-shadow:0.375rem 0.375rem 0 var(--accent2)}
+.pwd .wsc.dim{box-shadow:none;opacity:.85}
+.pwd .och{padding:.85rem 1rem;cursor:pointer;border-bottom:2px solid var(--line)}
+.pwd .ocr{display:flex;align-items:center;gap:.55rem}
+.pwd .caret{font-size:.7rem;color:var(--muted)}
+.pwd .wsn{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--accent)}
+.pwd .wsc.open .wsn{color:var(--accent2)}
+.pwd .badge{margin-left:auto;font-size:.58rem;font-weight:600;text-transform:uppercase;letter-spacing:.14em;border:2px solid var(--line);padding:.12rem .4rem}
+.pwd .b-run{border-color:var(--accent);color:var(--accent);animation:pwdP 1.5s ease-in-out infinite}
+.pwd .b-need{border-color:var(--accent2);background:var(--accent2);color:var(--bg)}
+.pwd .b-done{border-color:var(--muted);color:var(--muted)}
+@keyframes pwdP{0%,100%{opacity:1}50%{opacity:.4}}
+.pwd .orole{margin-top:.4rem;font-size:.62rem;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
+.pwd .osnip{margin-top:.45rem;font-size:.74rem;line-height:1.5;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pwd .kids{padding:.6rem}
+.pwd .kid{display:flex;align-items:center;gap:.55rem;padding:.55rem .7rem;border:2px solid transparent;cursor:pointer}
+.pwd .kid:hover{border-color:var(--line)}
+.pwd .who{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
+.pwd .main{flex:1;display:flex;flex-direction:column;min-width:0}
+.pwd .mh{display:flex;align-items:center;gap:.85rem;padding:1.1rem 1.75rem;border-bottom:2px solid var(--line)}
+.pwd .crumb{font-size:.7rem;text-transform:uppercase;letter-spacing:.16em;color:var(--muted)}
+.pwd .crumb b{color:var(--accent2);font-weight:700}
+.pwd .title{font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:var(--accent2)}
+.pwd .thread{flex:1;overflow:auto;padding:2rem 1.75rem;display:flex;flex-direction:column;gap:1.5rem;max-width:880px}
+.pwd .msg{font-size:.95rem;line-height:1.7}
+.pwd .lbl{display:block;margin-bottom:.35rem;font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}
+.pwd .msg.me{border-left:2px solid var(--line);padding-left:1rem}
+.pwd .prog{font-size:.8rem;color:var(--muted);font-style:italic}
+.pwd code{background:var(--code-bg);color:var(--accent);border:1px solid var(--line);padding:0 .3rem;font-size:.88rem}
+.pwd .cmp{display:flex;align-items:center;gap:.7rem;padding:1.1rem 1.75rem;border-top:2px solid var(--line);font-size:.9rem;color:var(--muted)}
+.pwd .sig{color:var(--accent);font-weight:700;font-size:1.05rem}
+.pwd .sig2{color:var(--accent2);font-weight:700;font-size:1.05rem}
+</style>
+<div class="pwd">
+  <div class="rail">
+    <div class="rh"><span class="brand">DeeGee</span><span class="spacer"></span><button class="btn pri">+ new</button></div>
+    <div class="list">
+      <div class="wsc open">
+        <div class="och">
+          <div class="ocr"><span class="caret">▾</span><span class="wsn">001 chat_harness</span><span class="badge b-need">needs you</span></div>
+          <div class="orole">talk to the orchestrator</div>
+          <div class="osnip">s3 is waiting on a call I can't make — route to @security, or answer here?</div>
+        </div>
+        <div class="kids">
+          <div class="kid"><span class="who">@js · s1</span><span class="badge b-done">done</span></div>
+          <div class="kid"><span class="who">@js · s2</span><span class="badge b-run">running</span></div>
+          <div class="kid"><span class="who">@security · s3</span><span class="badge b-run">running</span></div>
+          <div class="kid"><span class="who">@devops · s10</span><span class="badge b-need">needs you</span></div>
+        </div>
+      </div>
+      <div class="wsc">
+        <div class="och">
+          <div class="ocr"><span class="caret">▸</span><span class="wsn">002 vela_favorites</span><span class="badge b-run">running</span></div>
+          <div class="orole">talk to the orchestrator</div>
+          <div class="osnip">Wave 1 building — @dba is on the schema slice.</div>
+        </div>
+      </div>
+      <div class="wsc dim">
+        <div class="och">
+          <div class="ocr"><span class="caret">▸</span><span class="wsn">loose chats</span><span class="badge b-done">1 idle</span></div>
+          <div class="orole">no orchestrator — ad-hoc</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="mh"><span class="crumb"><b>001 chat_harness</b> / orchestrator</span><span class="spacer"></span><span class="title">orchestrator</span></div>
+    <div class="thread">
+      <div class="msg"><span class="lbl">orchestrator</span>Wave 2 is done. <code>s1 shared-contracts</code> landed green — 11 contract tests, no <code>node:</code> leak in the extension build.</div>
+      <div class="msg me"><span class="lbl">you</span>What's blocking s3?</div>
+      <div class="msg"><span class="lbl">orchestrator</span><code>s3</code> is waiting on a call I can't make: the keychain probe returns exit 1 both when the secret is absent and when the session bus is down. @security is holding.</div>
+      <div class="msg"><span class="lbl">orchestrator</span>Want me to route that to @security directly, or answer it here?</div>
+      <div class="prog">2 running · 2 need you · 1 done</div>
+    </div>
+    <div class="cmp"><span class="sig">$</span><span class="sig2">@</span><span>message the orchestrator…</span></div>
+  </div>
+</div>
+</section>
+</div>
+<div id="protobar">
+  <button type="button" id="proto-prev" title="Previous variant (←)">←</button>
+  <span id="proto-label"></span>
+  <button type="button" id="proto-next" title="Next variant (→)">→</button>
+  <span class="proto-divider" aria-hidden="true"></span>
+  <button type="button" id="proto-notes-toggle" title="Add notes to send with your choice">Notes</button>
+  <button type="button" id="proto-approve" title="Keep this variant — notes optional">Approve</button>
+  <button type="button" id="proto-reject" title="Discard all and start over — note required">Reject</button>
+</div>
+<div id="proto-notes-panel" hidden>
+  <textarea id="proto-notes" placeholder="Optional for Approve. Required for Reject — what should change?"></textarea>
+  <div id="proto-reject-chips"><button type="button" class="proto-chip" data-reason="Workset grouping still not clear enough">Workset grouping still not clear enough</button><button type="button" class="proto-chip" data-reason="Orchestrator should be more prominent">Orchestrator should be more prominent</button><button type="button" class="proto-chip" data-reason="Rail is too wide / too narrow">Rail is too wide / too narrow</button><button type="button" class="proto-chip" data-reason="Want a mix of two of these">Want a mix of two of these</button><button type="button" class="proto-chip" data-reason="Dark palette is off">Dark palette is off</button><button type="button" class="proto-chip" data-reason="Need to see an unassigned / loose chat too">Need to see an unassigned / loose chat too</button></div>
+  <div id="proto-notes-hint">Notes ride along with whichever button you click next.</div>
+</div>
+<script>
+(function(){
+  var VARIANTS = ["A","B","C","D"];
+  var LABELS = {"A":"Grouped rail — worksets as sections, orchestrator pinned","B":"Three columns — workset strip, session list, thread","C":"Flat rail + workset tab bar over the thread","D":"Expandable workset cards — card header IS the orchestrator"};
+
+  var root = document.getElementById('proto-root');
+  var sections = {};
+  VARIANTS.forEach(function(k){ sections[k] = root.querySelector('section[data-variant="' + k + '"]'); });
+
+  function paramVariant(){
+    var v = new URL(window.location.href).searchParams.get('variant');
+    return (v && sections[v]) ? v : VARIANTS[0];
+  }
+  var current = paramVariant();
+
+  function label(k){ return LABELS[k] ? (k + ' — ' + LABELS[k]) : k; }
+
+  function show(k){
+    if (!sections[k]) return;
+    current = k;
+    VARIANTS.forEach(function(key){ sections[key].classList.toggle('is-active', key === k); });
+    document.getElementById('proto-label').textContent = label(k) + ' (' + (VARIANTS.indexOf(k) + 1) + '/' + VARIANTS.length + ')';
+    var url = new URL(window.location.href);
+    url.searchParams.set('variant', k);
+    history.replaceState(null, '', url);
+  }
+
+  function nav(dir){
+    var i = VARIANTS.indexOf(current);
+    var next = VARIANTS[(i + dir + VARIANTS.length) % VARIANTS.length];
+    show(next);
+  }
+
+  document.getElementById('proto-prev').addEventListener('click', function(){ nav(-1); });
+  document.getElementById('proto-next').addEventListener('click', function(){ nav(1); });
+
+  document.addEventListener('keydown', function(e){
+    var el = document.activeElement;
+    var tag = el ? el.tagName : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (el && el.isContentEditable)) return;
+    if (e.key === 'ArrowLeft') nav(-1);
+    if (e.key === 'ArrowRight') nav(1);
+  });
+
+  var notesPanel = document.getElementById('proto-notes-panel');
+  var notesArea = document.getElementById('proto-notes');
+  var notesToggle = document.getElementById('proto-notes-toggle');
+  function syncNotesGlow(){ notesToggle.classList.toggle('has-notes', notesArea.value.trim().length > 0); }
+  notesToggle.addEventListener('click', function(){
+    notesPanel.hidden = !notesPanel.hidden;
+  });
+  notesArea.addEventListener('input', syncNotesGlow);
+  document.querySelectorAll('#proto-reject-chips .proto-chip').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      var reason = chip.getAttribute('data-reason') || '';
+      notesArea.value = notesArea.value ? (notesArea.value + '; ' + reason) : reason;
+      notesPanel.hidden = false;
+      syncNotesGlow();
+    });
+  });
+
+  document.getElementById('proto-approve').addEventListener('click', function(){
+    var notes = notesArea.value.trim();
+    window.prototypeDecide('confirm', current, notes);
+  });
+  document.getElementById('proto-reject').addEventListener('click', function(){
+    var notes = notesArea.value.trim();
+    if (!notes) {
+      notesPanel.hidden = false;
+      notesArea.focus();
+      notesArea.placeholder = 'Reject requires a note — what should change?';
+      return;
+    }
+    window.prototypeDecide('reject', '', '[was viewing ' + current + '] ' + notes);
+  });
+
+  show(current);
+})();
+</script>
+
+<script>
+(function() {
+  // Tab favicon: ⏳ waiting · 🔄 processing (rework) · ✅ done (approved, no notes).
+  var _FAVICON = { waiting: '⏳', processing: '🔄', done: '✅' };
+  function _setFavicon(state) {
+    var emoji = _FAVICON[state] || _FAVICON.waiting;
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">' + emoji + '</text></svg>';
+    var href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    var link = document.querySelector("link[rel='icon']");
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = href;
+  }
+
+  // Live-reload: poll /prototype-reload; reload page when token changes.
+  // Stopped once approve-with-no-notes tears the server down (see _closeOrFallback).
+  var _reloadToken = null;
+  var _reloadIntervalId = null;
+  function pollReload() {
+    fetch('/prototype-reload').then(function(r){ return r.json(); }).then(function(d){
+      if (_reloadToken === null) { _reloadToken = d.token; return; }
+      if (d.token !== _reloadToken) { window.location.reload(); }
+    }).catch(function(){});
+  }
+  _reloadIntervalId = setInterval(pollReload, 2000);
+
+  // Best-effort tab close (approve, no notes). Browsers only honor window.close()
+  // on script-opened tabs, and this one was opened by explorer.exe/xdg-open.
+  function _closeOrFallback(onBlocked) {
+    try { window.open('', '_self'); } catch (e) {}
+    window.close();
+    setTimeout(function() {
+      if (!document.hidden) onBlocked();
+    }, 300);
+  }
+
+  // "What changed" — optional .changes sidecar written before the reload
+  // bump. rev must match the current reload token, else stale/no-op.
+  document.addEventListener('DOMContentLoaded', function() {
+    fetch('/prototype-reload').then(function(r){ return r.json(); }).then(function(d){
+      return fetch('/prototype-changes').then(function(r){ return r.json(); }).then(function(c){
+        _renderChanges(c, d.token);
+      });
+    }).catch(function(){});
+  });
+
+  function _renderChanges(manifest, currentToken) {
+    if (!manifest || !manifest.rev || manifest.rev !== currentToken) return;
+    var screens = Array.isArray(manifest.screens) ? manifest.screens.filter(function(s){ return s && s.id; }) : [];
+    if (!screens.length && !manifest.summary) return;
+
+    var seenKey = 'protoChangesSeen:' + "chat_harness_canvas";
+    if (sessionStorage.getItem(seenKey) === currentToken) return; // already dismissed this revision
+
+    screens.forEach(function(s) {
+      document.querySelectorAll('[data-go="' + s.id + '"]').forEach(function(navEl) {
+        navEl.classList.add('_proto_changed_dot');
+        navEl.addEventListener('click', function clearDot() {
+          navEl.classList.remove('_proto_changed_dot');
+          navEl.removeEventListener('click', clearDot);
+        });
+      });
+    });
+
+    // z-index sits below any decision bar (protobar uses up to z-90 utility
+    // classes, i.e. <100) so Approve/Decline are never covered or unclickable.
+    var style = document.createElement('style');
+    style.textContent = [
+      '._proto_changed_dot{position:relative;}',
+      '._proto_changed_dot::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;',
+        'border-radius:50%;background:#4c8dff;box-shadow:0 0 0 2px rgba(76,141,255,0.25);}',
+      '#_proto_changes_pill{position:fixed;right:1.25rem;bottom:1.25rem;z-index:80;',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;',
+        'display:flex;flex-direction:column-reverse;align-items:flex-end;}',
+      '#_proto_changes_btn{cursor:pointer;background:#4c8dff;color:#fff;border:none;border-radius:999px;',
+        'padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.35);}',
+      '#_proto_changes_panel{display:none;margin-bottom:0.5rem;background:#14181f;border:1px solid #2a2f3a;',
+        'border-radius:10px;padding:1rem 1.1rem;width:300px;max-height:min(320px,50vh);overflow:auto;',
+        'box-shadow:0 8px 30px rgba(0,0,0,0.5);}',
+      '#_proto_changes_panel.is-open{display:block;}',
+      '#_proto_changes_panel h4{margin:0 0 0.6rem;color:#e8ecf2;font-size:0.85rem;}',
+      '#_proto_changes_panel ul{list-style:none;margin:0;padding:0;}',
+      '#_proto_changes_panel li{color:#a8b0c0;font-size:0.8rem;line-height:1.5;padding:0.3rem 0;',
+        'border-top:1px solid #232838;cursor:pointer;}',
+      '#_proto_changes_panel li:first-child{border-top:none;}',
+      '#_proto_changes_panel li b{color:#e8ecf2;}',
+      '#_proto_changes_dismiss{margin-top:0.6rem;background:none;border:none;color:#6b7488;',
+        'font-size:0.72rem;cursor:pointer;padding:0;}'
+    ].join('');
+    document.head.appendChild(style);
+
+    var count = screens.length;
+    var wrap = document.createElement('div');
+    wrap.id = '_proto_changes_pill';
+    var listHtml = screens.map(function(s) {
+      return '<li data-go="' + s.id + '"><b>' + s.id + '</b>' + (s.note ? ' — ' + s.note : '') + '</li>';
+    }).join('');
+    // column-reverse (see CSS above): panel comes first in markup so it renders
+    // above the button and grows upward, away from any bar docked at the bottom.
+    wrap.innerHTML = [
+      '<div id="_proto_changes_panel">',
+        '<h4>' + (manifest.summary || 'What changed this revision') + '</h4>',
+        '<ul>' + listHtml + '</ul>',
+        '<button id="_proto_changes_dismiss" type="button">Dismiss</button>',
+      '</div>',
+      '<button id="_proto_changes_btn" type="button">' + count + ' screen' + (count === 1 ? '' : 's') + ' changed this revision</button>'
+    ].join('');
+    document.body.appendChild(wrap);
+
+    // Anchor above #protobar (height varies at the ~900px breakpoint) rather
+    // than a hardcoded offset; no bar present → default bottom-right gap.
+    function _repositionAboveBar() {
+      var bar = document.getElementById('protobar');
+      // offsetParent is null for position:fixed elements, so it can't signal
+      // visibility here — check computed display/visibility instead.
+      var visible = false;
+      if (bar) {
+        var cs = getComputedStyle(bar);
+        visible = cs.display !== 'none' && cs.visibility !== 'hidden' && bar.offsetHeight > 0;
+      }
+      wrap.style.bottom = (visible ? bar.offsetHeight + 16 : 20) + 'px';
+    }
+    _repositionAboveBar();
+    window.addEventListener('resize', _repositionAboveBar);
+
+    document.getElementById('_proto_changes_btn').addEventListener('click', function() {
+      document.getElementById('_proto_changes_panel').classList.toggle('is-open');
+    });
+    document.getElementById('_proto_changes_dismiss').addEventListener('click', function() {
+      sessionStorage.setItem(seenKey, currentToken);
+      wrap.remove();
+      document.querySelectorAll('._proto_changed_dot').forEach(function(el){ el.classList.remove('_proto_changed_dot'); });
+    });
+    wrap.querySelectorAll('#_proto_changes_panel li[data-go]').forEach(function(li) {
+      li.addEventListener('click', function() {
+        var navEl = document.querySelector('[data-go="' + li.dataset.go + '"]');
+        if (navEl && navEl !== li) navEl.click();
+        navEl && navEl.classList.remove('_proto_changed_dot');
+      });
+    });
+  }
+
+  // Intercept the decision form submission so the page auto-closes on success.
+  // Works with any form that POSTs to /prototype-decision, or with the helper below.
+  document.addEventListener('DOMContentLoaded', function() {
+    _setFavicon('waiting');
+    document.querySelectorAll('form[action="/prototype-decision"]').forEach(function(form) {
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var fd = new FormData(form);
+        var body = {};
+        fd.forEach(function(v, k) { body[k] = v; });
+        body.name = body.name || "chat_harness_canvas";
+        fetch('/prototype-decision', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body)
+        }).then(function(r){ return r.json(); }).then(function(d){
+          if (d.ok) { _showDecisionOverlay(_overlayState(body), !!(body.notes && body.notes.trim())); }
+        });
+      });
+    });
+  });
+
+  function _overlayState(body) {
+    if (body && body.decision) {
+      return String(body.decision).toUpperCase() === 'REWORK' ? 'rework' : 'approved';
+    }
+    return (body && body.action) || 'confirm';
+  }
+
+  // Approve-with-no-notes (state 'confirm') is the only outcome that closes the
+  // tab; rework/approve-with-notes/plan-approve all leave the tab open.
+  function _showDecisionOverlay(state, hasNotes) {
+    var isRework = state === 'reject' || state === 'rework';
+    var isApproved = state === 'approved';
+    var isConfirmNoNotes = state === 'confirm' && !hasNotes;
+    _setFavicon(isRework || (!isApproved && hasNotes) ? 'processing' : 'done');
+    var pillColor = isRework ? '#e8a838' : '#2ebb6e';
+    var pillLabel = isRework ? 'REWORKING' : 'APPROVED';
+    var subtitle = isRework
+      ? 'Reworking your prototype — this page reloads automatically when the new version is ready.'
+      : (!isApproved && hasNotes
+          ? 'Notes sent to AI Chat — this page reloads when the rework is ready.'
+          : (isConfirmNoNotes
+              ? 'Selection recorded — this tab will close automatically.'
+              : 'Decision recorded — this tab will stay open for review or another iteration.'));
+    var overlay = document.createElement('div');
+    overlay.id = '_proto_overlay';
+    overlay.innerHTML = [
+      '<style>',
+      '#_proto_overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;',
+        'background:rgba(10,12,18,0.97);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
+      '#_proto_card{background:#14181f;border:1px solid #2a2f3a;border-radius:12px;padding:2.5rem 3rem;',
+        'max-width:480px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.6);}',
+      '#_proto_pill{display:inline-block;padding:0.25rem 0.75rem;border-radius:999px;font-size:0.7rem;',
+        'font-weight:700;letter-spacing:0.08em;color:#fff;background:' + pillColor + ';margin-bottom:1.1rem;}',
+      '#_proto_title{color:#e8ecf2;font-size:1.45rem;font-weight:600;margin:0 0 0.65rem;}',
+      '#_proto_sub{color:#7a8499;font-size:0.9rem;line-height:1.5;margin:0 0 2rem;}',
+      '#_proto_track{height:3px;border-radius:2px;background:#1e2330;overflow:hidden;position:relative;}',
+      '#_proto_bar{position:absolute;top:0;left:-40%;width:40%;height:100%;',
+        'background:#4c8dff;border-radius:2px;animation:_proto_slide 1.6s ease-in-out infinite;}',
+      '@keyframes _proto_slide{0%{left:-40%;}100%{left:110%;}}',
+      '</style>',
+      '<div id="_proto_card">',
+        '<div id="_proto_pill">' + pillLabel + '</div>',
+        '<h2 id="_proto_title">Sent to AI Chat</h2>',
+        '<p id="_proto_sub">' + subtitle + '</p>',
+        '<div id="_proto_track"><div id="_proto_bar"></div></div>',
+      '</div>'
+    ].join('');
+    document.body.appendChild(overlay);
+    if (!isConfirmNoNotes) return;
+    // Server tears itself down once prototype-cli wait resolves this decision
+    // (see prototype-ui-cli), so stop polling a route that's about to disappear.
+    if (_reloadIntervalId) { clearInterval(_reloadIntervalId); _reloadIntervalId = null; }
+    setTimeout(function() {
+      _closeOrFallback(function() {
+        document.getElementById('_proto_pill').textContent = 'DONE';
+        document.getElementById('_proto_title').textContent = 'You can close this tab';
+        document.getElementById('_proto_sub').textContent = 'The prototype session has ended.';
+        document.getElementById('_proto_track').style.display = 'none';
+      });
+    }, 2200);
+  }
+
+  // Global helpers for inline onclick handlers.
+  // Variant flow: prototypeDecide(action, variant, notes)
+  //   action: "confirm" (default) or "reject". variant is required for confirm.
+  // Plan flow: prototypePlanDecision(decision, notes)
+  //   decision: "APPROVED" or "REWORK".
+  window.prototypeDecide = function(action, variant, notes) {
+    var hasNotes = !!(notes && notes.trim());
+    _setFavicon(action === 'reject' || hasNotes ? 'processing' : 'done');
+    fetch('/prototype-decision', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: "chat_harness_canvas", action: action || 'confirm', variant: variant || '', notes: notes || '' })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes); }
+    });
+  };
+
+  window.prototypePlanDecision = function(decision, notes) {
+    var normalized = String(decision || '').toUpperCase();
+    fetch('/prototype-decision', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: "chat_harness_canvas", decision: normalized, notes: notes || '' })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { _showDecisionOverlay(normalized === 'REWORK' ? 'rework' : 'approved', !!(notes && notes.trim())); }
+    });
+  };
+})();
+</script>
+</body>
+</html>

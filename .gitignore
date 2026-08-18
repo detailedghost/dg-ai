@@ -3,5 +3,6 @@ node_modules/
 .agents/*
 !.agents/plugins/
 !.agents/plugins/marketplace.json
+!.agents/spec/
 dist/
 .output/
