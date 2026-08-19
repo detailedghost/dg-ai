@@ -601,18 +601,18 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: a $ entry in the manifest executes and its output returns as a successful terminal result frame
-- [ ] Contract: a $ entry NOT in the manifest is refused and nothing is executed
-- [ ] Contract: a user-supplied argument can neither be split into additional argv elements nor be interpreted by the target as an option, with a dash-prefixed input as a named case
-- [ ] Contract: session A's token cannot dispatch against session B's manifest entry
-- [ ] Contract: a secret present in the daemon's environment does not appear in captured output
-- [ ] Source-inspection spec over src/dispatch/** fails on Bun.$, an imported $ from bun, a shell option, sh, bash, /bin/sh, cmd.exe, powershell, or a -c flag
-- [ ] A SIGTERM-trapping child is still killed at the timeout via the process group
-- [ ] Output exceeding 256 KiB is truncated with an explicit marker and the group is killed
-- [ ] A non-zero exit, a timeout and a missing binary each yield a failure frame naming the reason, with partial output retained on the timeout case
-- [ ] Concurrency and rate bounds each reject with their own distinct reason
-- [ ] An @ mention with no reader is queued and claimed by the next recv, and an unresolved mention passes through as prose
-- [ ] Autocomplete offers only manifest entries, renders the resolved argv, supports arrow traversal, accepts on Enter, dismisses on Escape without sending, and exposes a listbox role with aria-activedescendant
+- [x] Contract: a $ entry in the manifest executes and its output returns as a successful terminal result frame
+- [x] Contract: a $ entry NOT in the manifest is refused and nothing is executed
+- [x] Contract: a user-supplied argument can neither be split into additional argv elements nor be interpreted by the target as an option, with a dash-prefixed input as a named case
+- [x] Contract: session A's token cannot dispatch against session B's manifest entry
+- [x] Contract: a secret present in the daemon's environment does not appear in captured output
+- [x] Source-inspection spec over src/dispatch/** fails on Bun.$, an imported $ from bun, a shell option, sh, bash, /bin/sh, cmd.exe, powershell, or a -c flag
+- [x] A SIGTERM-trapping child is still killed at the timeout via the process group
+- [x] Output exceeding 256 KiB is truncated with an explicit marker and the group is killed
+- [x] A non-zero exit, a timeout and a missing binary each yield a failure frame naming the reason, with partial output retained on the timeout case
+- [x] Concurrency and rate bounds each reject with their own distinct reason
+- [x] An @ mention with no reader is queued and claimed by the next recv, and an unresolved mention passes through as prose
+- [x] Autocomplete offers only manifest entries, renders the resolved argv, supports arrow traversal, accepts on Enter, dismisses on Escape without sending, and exposes a listbox role with aria-activedescendant
 
 #### Acceptance Criteria
 - [ ] Given a published command manifest, when the user types $ in the composer, then only manifest commands are offered and each row shows the argv that will run
@@ -642,17 +642,17 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: an asset staged by the agent is retrievable with a valid token header
-- [ ] Contract: a request without a token, with another session's token, or with the token only in the query string is refused
-- [ ] Contract: an id containing traversal segments, or resolving through a symlink out of the session directory, is refused
-- [ ] Contract: an SVG or HTML asset is never served inline, and every response carries the nosniff header
-- [ ] Contract: the daemon config file is authoritative and a storage.sync value never overrides it
-- [ ] Contract: the config round trip requires an authenticated frame, and an unauthenticated attempt is refused
-- [ ] A pruned asset returns a reason distinguishable from unknown-id and from wrong-token
-- [ ] Per-OS default asset directories resolve to the documented paths
-- [ ] Closing a session removes its staged assets, startup prunes orphans, and the two are separately observable
-- [ ] An unwritable configured directory is rejected at configuration time with a clear reason
-- [ ] An asset exceeding the max-asset constant is rejected
+- [x] Contract: an asset staged by the agent is retrievable with a valid token header
+- [x] Contract: a request without a token, with another session's token, or with the token only in the query string is refused
+- [x] Contract: an id containing traversal segments, or resolving through a symlink out of the session directory, is refused
+- [x] Contract: an SVG or HTML asset is never served inline, and every response carries the nosniff header
+- [x] Contract: the daemon config file is authoritative and a storage.sync value never overrides it
+- [x] Contract: the config round trip requires an authenticated frame, and an unauthenticated attempt is refused
+- [x] A pruned asset returns a reason distinguishable from unknown-id and from wrong-token
+- [x] Per-OS default asset directories resolve to the documented paths (already fully covered, per-OS, by pkg/common/__tests__/node-paths.spec.ts's `resolveDgPaths` assertions — not re-tested here; see config-directory.spec.ts for the new getConfiguredAssetDirectory default-fallback wiring)
+- [x] Closing a session removes its staged assets, startup prunes orphans, and the two are separately observable
+- [x] An unwritable configured directory is rejected at configuration time with a clear reason
+- [x] An asset exceeding the max-asset constant is rejected
 
 #### Acceptance Criteria
 - [ ] Given the agent stages an image, when it is presented, then the chat node renders it from a fetched blob URL with no token in any URL and no base64 in the transcript
@@ -709,14 +709,14 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: clampScale and clampPan keep the viewport within documented bounds for representative inputs
-- [ ] Contract: screenToBoard and boardToScreen round-trip a point
-- [ ] Node positions persist per session and are restored on a page reload within one daemon lifetime, and orphan keys are pruned on load
-- [ ] A wheel event over a transcript scrolls it and does not change board scale
-- [ ] A ctrlKey wheel is treated as zoom and calls preventDefault
-- [ ] The reduced-motion attribute suppresses easing
-- [ ] Board chrome is not a descendant of the transformed element
-- [ ] isNodeInView reports a node dragged outside the viewport, which the page's pan-to-focused-node uses to recover it
+- [x] Contract: clampScale and clampPan keep the viewport within documented bounds for representative inputs
+- [x] Contract: screenToBoard and boardToScreen round-trip a point
+- [x] Node positions persist per session and are restored on a page reload within one daemon lifetime, and orphan keys are pruned on load
+- [x] A wheel event over a transcript scrolls it and does not change board scale
+- [x] A ctrlKey wheel is treated as zoom and calls preventDefault
+- [x] The reduced-motion attribute suppresses easing
+- [x] Board chrome is not a descendant of the transformed element
+- [x] isNodeInView reports a node dragged outside the viewport, which the page's pan-to-focused-node uses to recover it
 
 #### Acceptance Criteria
 - [ ] Given several nodes, when the canvas loads, then each appears in its saved position
@@ -1196,3 +1196,92 @@ ships — most are prototype-fidelity or accessibility gaps, not cosmetics in th
   row", which stays unchecked until then.
 - **Slice 8 owes encryption of the persisted command manifest**, likewise through
   `createCipherBox`/`buildAad` with its own AAD domain tag. Do not hand-roll a second cipher.
+
+### Layer-4 deferral resolutions (execute-mode, post-RED)
+
+Layer 4's RED pass returned 15 deferrals. Four were the human's and were ratified by direct answer;
+the rest are resolved here as orchestrator. Every identifier below is pinned by a committed RED spec,
+so treat these as the contract, not as suggestions.
+
+**Human-ratified (do not re-raise):**
+
+- **`config-result` becomes the 19th discriminant, in `pkg/common/src/chat-format.ts`.** Shape
+  `{ key, value?, error? }`. Slice 9 **may edit `chat-format.ts`** for this one addition and nothing
+  else. Chosen over a structural pre-`validateChatFrame` carve-out because a frame the validator does
+  not know about is exactly how the unstructured-error-frame gap arose, which is already recorded as a
+  known limitation deferred to bundle 2.
+- **The options page piggybacks an open chat session's capability for `config-get`/`config-set`.**
+  When no session is open, disable the directory field and show the daemon-not-running hint — the same
+  disabled state the plan already requires for the load-failure path. Do **not** mint a throwaway
+  session via `POST /start`: that would put a session-minting path behind a settings page, on the one
+  route that writes a filesystem path.
+- **Asset ciphertext carries its envelope in-file: `<12-byte IV><16-byte tag><ciphertext>`**, one file
+  at `<assetsDir>/<sessionId>/<id>` with no extension; content type comes from the DB row's decrypted
+  filename, never the disk name. No migration, and the envelope stays atomic with the bytes it
+  authenticates, so a crash cannot leave the DB and the file disagreeing about which IV decrypts what.
+- **Startup orphan-pruning sweeps every asset directory unconditionally at boot.** `SessionRegistry`
+  has no persistence across a restart, so nothing on disk at boot can belong to a live session.
+  **A future persisted registry invalidates this reading** — that is the trigger to revisit it.
+
+**Orchestrator-resolved:**
+
+- **Slice 9 may edit `pkg/dg-server/src/store/index.ts` and `pkg/dg-server/src/server/http.ts`**,
+  resolving its CRITICAL. `store/index.ts` gains `insertAsset`/`getAsset`/`pruneSessionAssets`/
+  `encryptAssetBytes`/`decryptAssetBytes`; `http.ts`'s `fetch()` gains the `GET /assets/:id` branch,
+  whose route and header names already match slice 5's shipped `defaultFetchAsset` verbatim. Same
+  explicit grant slices 5 and 7 received.
+- **`getAsset` returns `undefined` for an unknown id AND for a wrong-session id** — one indistinguishable
+  answer, so the response cannot be used to probe whether another session's asset exists.
+- **`CommandEntry.limits?`** is an additive optional field: `{ timeoutMs?, maxOutputBytes?,
+  maxConcurrentPerSession?, maxInvocationsPerMinute? }`, each clamped to a daemon maximum declared
+  alongside the `CHAT_MAX_*` constants. An override may lower a bound, never raise it past the clamp.
+- **`InsertMessageInput`/`ClaimedMessage`/`PeekedMessage` gain `subagentName?: string`**, mirroring the
+  shipped `attachmentId?`. `handleUserMessage` resolves inline `@name` tokens against the session's
+  published subagent list *before* calling `store.insertMessage`. Without this the `@` mention criterion
+  is unsatisfiable.
+- **Slice 8 owns the persisted per-session command-manifest and subagent-list store.** Today
+  `cli-manifest-publish` validates and broadcasts but persists nothing, so no lookup surface exists for
+  a later `command-invocation` to resolve `commandLabel -> argv`. Persist through `ChatStore`, encrypted
+  via `createCipherBox`/`buildAad` with its own AAD domain tag.
+- **`attachCommandAutocomplete(inputElement, { getCommands, getSubagents?, onDispatch })
+  -> { listElement, destroy }`** is adopted as specified. `listElement` carries `role="listbox"` with
+  `aria-activedescendant`. Enter on a `$` match calls `onDispatch` and clears the input **without**
+  calling the composer's own `onSubmit`; Enter on an `@` match inserts the resolved name and does not
+  dispatch; Escape closes with no side effects.
+- **`chat-canvas.ts`'s pure-function surface is adopted as specified** — `Point`, `Viewport`
+  (`width`/`height` are the *injected* viewport size in screen px, never read from a rect),
+  `clampScale`, `clampPan`, `screenToBoard`, `boardToScreen`, `applyDragDelta`, `isNodeInView`, plus
+  `canvasPositionKey(sessionId)`, `saveNodePosition`, and `loadNodePositions(liveSessionIds)`.
+  `loadNodePositions` both returns only live sessions' positions **and** removes stored keys outside the
+  live list — "pruned on load" is an actual storage mutation, not a filter.
+  `createChatCanvas(container, { viewport }) -> { boardElement, chromeElement, viewport() }` stays
+  minimal; `chromeElement` is an empty sibling slot, and populating it belongs to whichever later
+  integration mounts the canvas.
+
+**Deferred to bundle 2, deliberately:**
+
+- **No `invocationId` correlation id on `command-invocation`/`command-result`.** With 2 concurrent
+  invocations per session a client genuinely cannot pair a result to its request; tests assert on
+  filtered counts instead. Real gap, but nothing in this bundle renders per-invocation UI, so adding a
+  field to a ratified frame is not yet earned. Close it before any per-row spinner is built.
+- **`ASSET_DIRECTORY_CONFIG_KEY` (`'assetDirectory'`) stays duplicated** in
+  `pkg/dg-server/src/assets/config.ts` and `pkg/extension/lib/config.ts`, agreeing by convention only.
+  Hoist it into `@dg/common` beside the `CHAT_MAX_*` constants when a slice next has cause to edit there.
+
+### Test-harness hazard — bun:test timeouts and daemon reaping
+
+Recorded because it corrupted results during layer 4 and cost real time to diagnose. `bun:test`'s
+default per-test timeout is **5000 ms**. Any daemon-harness test whose own internal wait budget sits at
+or near that value races the framework's timeout; when bun wins, it abandons the test while the
+already-started WebSocket or `Bun.spawn` keeps running, and the late settlement corrupts a **different**
+test's reported result. A surviving daemon subprocess then spins CPU, which starves and fails unrelated
+committed specs.
+
+Rules for any new test under `pkg/dg-server/__tests__/`:
+
+- Pass an explicit `it(name, fn, timeoutMs)` comfortably above the test's own total internal budget
+  whenever that budget is >= 3000 ms.
+- Track every opened WebSocket in an array and close it unconditionally in `afterEach`.
+- After a suite run, assert no `index.ts __serve` process survives. Measured on a clean machine, one
+  isolated run of `command-invocation.spec.ts` leaks **zero** daemons — a non-zero count means a test
+  abandoned in-flight work, not that the daemon is slow to exit.
