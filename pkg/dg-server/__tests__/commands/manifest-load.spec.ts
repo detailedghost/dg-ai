@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	loadManifestFile,
+	loadSubagentManifestFile,
 	resolveManifestForPublish,
 } from "../../src/manifest/load";
 
@@ -58,6 +59,30 @@ describe("loadManifestFile", () => {
 	});
 });
 
+function writeSubagentFile(contents: unknown): string {
+	scratchDir = mkdtempSync(join(tmpdir(), "dg-subagents-test-"));
+	const path = join(scratchDir, "subagents.json");
+	writeFileSync(path, JSON.stringify(contents));
+	return path;
+}
+
+describe("loadSubagentManifestFile", () => {
+	it("reads and validates a list of subagent names", () => {
+		const path = writeSubagentFile(["reviewer", "planner-2"]);
+		expect(loadSubagentManifestFile(path)).toEqual(["reviewer", "planner-2"]);
+	});
+
+	it("rejects a name that fails the shared identifier grammar", () => {
+		const path = writeSubagentFile(["ok", "not a valid name"]);
+		expect(() => loadSubagentManifestFile(path)).toThrow(/\[1\]/);
+	});
+
+	it("rejects a file that isn't a JSON array", () => {
+		const path = writeSubagentFile({ names: ["reviewer"] });
+		expect(() => loadSubagentManifestFile(path)).toThrow(/array/i);
+	});
+});
+
 describe("resolveManifestForPublish", () => {
 	it("resolves an ordinary binary's argv[0] and leaves the entry otherwise unchanged", () => {
 		const entries = resolveManifestForPublish([SAFE_ENTRY]);
@@ -77,6 +102,18 @@ describe("resolveManifestForPublish", () => {
 		];
 		expect(() => resolveManifestForPublish(entries)).toThrow(/shell|bash/i);
 	});
+
+	// python3 is on this box's PATH via a version-suffixed symlink (python3 ->
+	// python3.14) — exactly the shape a literal-only denylist match misses.
+	it.skipIf(!Bun.which("python3"))(
+		"refuses python3 even when it resolves through a version-suffixed symlink",
+		() => {
+			const entries = [
+				{ label: "python", argv: ["python3", "-c", "print(1)"], params: [] },
+			];
+			expect(() => resolveManifestForPublish(entries)).toThrow(/python/i);
+		},
+	);
 
 	it("does not resolve/refuse other entries once one entry in the same file fails — no partial publish", () => {
 		const entries = [

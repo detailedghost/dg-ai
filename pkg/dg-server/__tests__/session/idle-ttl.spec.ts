@@ -1,16 +1,17 @@
 /**
  * Idle-TTL: zero sessions AND zero open connections, for the whole window.
- * Slice 7 promotes the "blocking recv parked" half — its live /cli socket
- * already pins isIdle()'s connection-count check with no special-casing.
+ * The "blocking recv parked" case closes recv's OWN session (unblocking it)
+ * so registry.activeCount() hits zero, then leaves recv's /cli socket open —
+ * only the connection-count half of isIdle() can still be pinning the daemon.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { spawnCli } from "../commands/cli-wire";
 import {
 	allocatePort,
 	cleanupDgHome,
+	collectFrames,
 	connectCli,
 	decodeChatMarker,
 	extractUrl,
@@ -20,6 +21,7 @@ import {
 	spawnServe,
 	waitForHealth,
 	waitForOpen,
+	waitForValue,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
@@ -74,7 +76,7 @@ describe("idle-TTL does not fire while a page is connected but idle", () => {
 });
 
 describe("idle-TTL does not fire while a blocking recv is parked", () => {
-	it("holds the daemon alive across a full idle-TTL window while a recv --block stays genuinely parked (not exited) on its session", async () => {
+	it("holds the daemon alive across a full idle-TTL window on a parked recv's /cli connection, even after its session closes and zero sessions remain registered", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		const result = await runStart(dgHome, port, {
@@ -85,30 +87,58 @@ describe("idle-TTL does not fire while a blocking recv is parked", () => {
 			decodeChatMarker(extractUrl(result.stdout)),
 		);
 
-		const recv = spawnCli(dgHome, port, [
-			"recv",
-			"--session",
-			bootstrap.sessionId,
-			"--block",
-			"--timeout",
-			String(IDLE_TTL_MS * 8),
-		]);
+		// /cli's upgrade requires an ACTIVE session, so the parked recv's own
+		// connection has to open before the session below is closed.
+		const recvSocket = await connectCli(port, bootstrap);
+		const recvFrames = collectFrames(recvSocket);
+		recvSocket.send(
+			JSON.stringify({
+				type: "cli-recv",
+				block: true,
+				timeoutMs: IDLE_TTL_MS * 8,
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 100)); // let it genuinely park
 
-		try {
-			await new Promise((r) => setTimeout(r, IDLE_TTL_MS * 4));
+		// Close the ONLY registered session from a SEPARATE connection, exactly
+		// like the sibling test — only the still-open recv connection can pin it now.
+		const closer = await connectCli(port, bootstrap);
+		closer.send(
+			JSON.stringify({
+				type: "session-close",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 100));
+		closer.close();
 
-			// Must still be blocked, not exited early — else this passes vacuously
-			// off the session's own registration, without recv doing anything.
-			expect(recv.exitCode).toBeNull();
+		// The parked cli-recv unblocks once its session closes, proving it was
+		// genuinely live — recvSocket itself stays open on purpose (see header doc).
+		const closedResult = await waitForValue(
+			() =>
+				recvFrames.find(
+					(f) =>
+						typeof f === "object" &&
+						f !== null &&
+						(f as { type?: string }).type === "cli-recv-result",
+				),
+			3000,
+			"cli-recv-result",
+		);
+		expect(closedResult).toEqual({
+			type: "cli-recv-result",
+			outcome: "closed",
+		});
 
-			const resp = await fetch(`http://127.0.0.1:${port}/health`, {
-				headers: { Host: `127.0.0.1:${port}` },
-			});
-			expect(resp.status).toBe(200);
-		} finally {
-			recv.kill();
-			await recv.exited;
-		}
+		await new Promise((r) => setTimeout(r, IDLE_TTL_MS * 4));
+
+		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+		expect(resp.status).toBe(200);
+		recvSocket.close();
 	});
 });
 

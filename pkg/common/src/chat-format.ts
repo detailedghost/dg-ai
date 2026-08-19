@@ -76,6 +76,7 @@ export type ChatFrame =
 			token: string;
 			role: SessionRole;
 			workset?: string;
+			agentIdentity?: string;
 	  })
 	| (Envelope & {
 			type: "session-pending";
@@ -220,6 +221,11 @@ function validateFrameBody(
 			requireRole(value.role, `${path}.role`);
 			if (value.workset !== undefined) {
 				requireString(value.workset, `${path}.workset`, { nonEmpty: true });
+			}
+			if (value.agentIdentity !== undefined) {
+				requireString(value.agentIdentity, `${path}.agentIdentity`, {
+					nonEmpty: true,
+				});
 			}
 			return;
 		case "session-pending": {

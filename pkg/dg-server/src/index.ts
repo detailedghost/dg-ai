@@ -8,6 +8,7 @@
 
 import type { SessionRole } from "@dg/common";
 import { Command } from "commander";
+import { registerAgentCommands } from "./commands";
 import { cmdServe, cmdStart, cmdStatus } from "./server/bootstrap";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./server/errors";
 
@@ -18,6 +19,8 @@ program
 		"Loopback HTTP+WebSocket daemon hosting many chat sessions for dg:start.",
 	)
 	.showHelpAfterError();
+
+registerAgentCommands(program);
 
 program
 	.command("start")

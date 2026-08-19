@@ -110,10 +110,48 @@ describe("dg-server spawn", () => {
 
 		const spawned = list.sessions.find((s) => s.workset === "my-workset");
 		expect(spawned).toBeDefined();
-		// The ratified session-create frame inherits agentIdentity from the
-		// requester (frame-handlers.ts's handleSessionCreate) — spawn cannot
-		// set a distinct identity via this frame shape. See deferrals.
+		// No --agent-identity given — inherits the requester's, per handleSessionCreate.
 		expect(spawned?.agentIdentity).toBe(bootstrap.agentIdentity);
+		page.close();
+	});
+
+	it("binds the spawned session to a distinct agent identity via --agent-identity", async () => {
+		const { port, bootstrap } = await startWithSession();
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
+		await nextParsedMessage(page); // initial session-list (one session)
+		const frames = collectFrames(page);
+
+		const result = await runCli(dgHome, port, [
+			"spawn",
+			"--session",
+			bootstrap.sessionId,
+			"--agent-identity",
+			"a-different-agent",
+		]);
+		expect(result.exitCode).toBe(0);
+
+		const list = (await waitForValue(
+			() =>
+				frames.find(
+					(f) =>
+						typeof f === "object" &&
+						f !== null &&
+						(f as { type?: string }).type === "session-list" &&
+						(f as { sessions: { agentIdentity: string }[] }).sessions.some(
+							(s) => s.agentIdentity === "a-different-agent",
+						),
+				),
+			3000,
+			"session-list including the spawned agent identity",
+		)) as { sessions: { agentIdentity: string }[] };
+
+		const spawned = list.sessions.find(
+			(s) => s.agentIdentity === "a-different-agent",
+		);
+		expect(spawned).toBeDefined();
+		expect(spawned?.agentIdentity).not.toBe(bootstrap.agentIdentity);
 		page.close();
 	});
 });

@@ -1,11 +1,8 @@
 /**
  * The exit-code contract this slice exists for: recv --block --timeout has
- * exactly three outcomes (Testing Criteria) — delivered (0), timeout (a
- * reserved non-1 code, distinct from failure), and every other failure (1).
- *
- * [SPEC] ASSUMED: EXIT_RECV_TIMEOUT = 5 and EXIT_RECV_SESSION_CLOSED = 6,
- * the next free values after errors.ts's EXIT_PROTOCOL_MISMATCH = 4 — no
- * value is named in plan.md. See deferrals.
+ * exactly three ratified, mutually-distinct outcomes — delivered (0), timeout
+ * (a reserved non-1 code), and session-closed (a second reserved non-1 code,
+ * per plan.md's Layer-3 ratification), plus every other failure (1).
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
@@ -15,6 +12,7 @@ import { resolveDgPaths } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
+	connectCli,
 	decodeChatMarker,
 	extractUrl,
 	freshDgHome,
@@ -25,9 +23,10 @@ import {
 	waitForOpen,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
-import { runCli } from "./cli-wire";
+import { runCli, spawnCli } from "./cli-wire";
 
 const EXIT_RECV_TIMEOUT = 5;
+const EXIT_RECV_SESSION_CLOSED = 6;
 const EXIT_GENERAL_FAILURE = 1;
 
 let dgHome: string;
@@ -164,6 +163,45 @@ describe("recv --block --timeout", () => {
 		]);
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("lease should expire");
+	});
+
+	it("exits with the reserved session-closed code, reporting the closed outcome, when the session closes while recv is genuinely blocked", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const recv = spawnCli(dgHome, port, [
+			"recv",
+			"--session",
+			bootstrap.sessionId,
+			"--block",
+			"--timeout",
+			"10000",
+		]);
+
+		await new Promise((r) => setTimeout(r, 200)); // let it genuinely park
+		// Must still be blocked, not exited early — else this passes vacuously.
+		expect(recv.exitCode).toBeNull();
+
+		const closer = await connectCli(port, bootstrap);
+		closer.send(
+			JSON.stringify({
+				type: "session-close",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+			}),
+		);
+
+		const [stdout, exitCode] = await Promise.all([
+			new Response(recv.stdout).text(),
+			recv.exited,
+		]);
+		closer.close();
+
+		expect(exitCode).toBe(EXIT_RECV_SESSION_CLOSED);
+		expect(JSON.parse(stdout.trim())).toEqual({
+			type: "cli-recv-result",
+			outcome: "closed",
+		});
 	});
 
 	it("fails with the general-failure code (never the timeout code) against an unknown session", async () => {
