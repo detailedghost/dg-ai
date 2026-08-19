@@ -1285,3 +1285,122 @@ Rules for any new test under `pkg/dg-server/__tests__/`:
 - After a suite run, assert no `index.ts __serve` process survives. Measured on a clean machine, one
   isolated run of `command-invocation.spec.ts` leaks **zero** daemons — a non-zero count means a test
   abandoned in-flight work, not that the daemon is slow to exit.
+
+### Slice-9 security QA resolutions (execute-mode, post-implementation)
+
+Slice 9's QA stage was killed by a session limit and run separately afterwards. It returned
+**DO NOT SHIP** with one CRITICAL and one HIGH that I confirmed independently before acting. Slice 9
+is **not committable** until C1 and H2 are closed. Everything below is binding.
+
+**C1 (CRITICAL, confirmed) — an authenticated `config-set` arms an arbitrary recursive delete.**
+`assets/cleanup.ts`'s `sweepOrphanedAssetDirectories` does `rmSync(getConfiguredAssetDirectory(paths),
+{ recursive: true, force: true })` — it deletes **the configured root itself**, not the per-session
+subdirectories under it — and `installAssetLifecycle` runs it unconditionally at every successful port
+bind. `assets/config.ts`'s `validateAssetDirectory` accepts any path the daemon's uid can write, with
+no absoluteness, symlink or containment check, and `mkdirSync`s it *before* validating. So one
+`config-set` naming `$HOME` destroys `~/.ssh`, `~/.dg` (keys plus the encrypted DB) and every
+worktree at the next start. It is reachable from any `/cli` socket holding a session token, not just
+the options page, and it fires inside our own test suite — which reports green.
+
+Human-ratified fix, all three parts required:
+- **Always append a fixed daemon-owned leaf.** The stored value means `<configured>/dg-assets/`, so
+  the daemon only ever prunes a directory it created. This changes what an already-persisted
+  `assetDirectory` means, so the read path needs a **migration**: treat a persisted value as the
+  parent and append the leaf.
+- **Prune only UUID-shaped subdirectories**, never the root — enumerate with
+  `readdirSync(root, { withFileTypes: true })`, skip non-directories and symlinks. Defense in depth.
+- **Gate `config-set` on `ws.data.kind === "ws"`** so a `/cli` socket cannot reach it at all.
+- `validateAssetDirectory` must require `isAbsolute`, `lstat`-reject a symlink, and validate **before**
+  any `mkdirSync` — today probing `config-set` is itself a directory-creation primitive.
+
+**H2 (HIGH, confirmed) — the whole staging write-path is dead code.** `registerAsset`, `insertAsset`
+and `encryptAssetBytes` have **zero production callers**; the live `stage` verb in
+`commands/index.ts` still does `copyFileSync(source, "<sessionDir>/<id><ext>")`. Consequences: staged
+bytes are **cleartext on disk**, no row is written (so every retrieval 404s), the configured directory
+is ignored, `CHAT_MAX_ASSET_BYTES` is unchecked, and the appended extension means
+`resolveAssetFilePath(sessionDir, id)` can never find the file. Requirements 4, 10 and 12 pass only in
+tests that call `registerAsset` directly. The ratified obligation "slice 9 owes the `assets` row
+write-path … until it lands a staged asset is unretrievable" is therefore **not closed**, and neither
+is slice 7's "stage registers an asset row" bullet. Fix: rewrite `stage` to size-check and call
+`registerAsset`, deleting its own `mkdirSync`/`copyFileSync`.
+
+The extension half is dead the same way: `mountAssetDirectoryPanel` and
+`createLiveAssetDirectoryTransport` have no non-test caller, so `#assetDirectoryPanel` is inert.
+**Wire the panel only after C1 is fixed** — wiring it as-is is what makes C1 reachable from the UI.
+
+**Also binding, from the same review:**
+- **H3** — `pruned` is unreachable on the real close path: `registry.close()` sets `state = "closed"`
+  before the cleanup hook, and `validate()` fails for a non-active session, so a closed session's
+  asset returns 401, byte-identical to a wrong token. Give the serve path a closed-session outcome
+  distinct from a bad token, and have the startup sweep also mark rows deleted.
+- **H4** — the options page reads the raw session token from `browser.storage.session` and opens its
+  **own** `/ws` socket, contradicting the ratified "one socket, one auth path, one validator" and
+  `background/chat.ts`'s own documented invariant. Not web-reachable, but it is a second auth path in
+  the one place that writes a filesystem path. Route `config-get`/`config-set` through the background
+  relay via a new `MSG.CONFIG_REQUEST`; the options page must never hold a token.
+- **M5** — `decodeURIComponent` at the top of the asset route runs **before** the credential check, and
+  `getAsset` sits outside `serve.ts`'s `try`. Both throw out of the handler, so `Bun.serve` returns its
+  dev error page — HTML with an inline `<script>`, a stack trace, and **no nosniff** — on an
+  unauthenticated request. Add `error()` + `development: false` to the `Bun.serve` config, guard the
+  decode, and move `getAsset` inside the try.
+- **M6/M7** — `resolveAssetFilePath` returns a path string that `serve.ts` then re-opens, reintroducing
+  exactly the TOCTOU the ratified key-file rule forbids; a symlink swapped to a FIFO blocks the
+  synchronous handler forever. And the max-asset check runs *after* a full read and decrypt, through a
+  1.333x base64 detour, in a handler with zero `await`s — so it bounds no work and an authenticated
+  loop can wedge the daemon. Return an fd from `openSync(..., O_NOFOLLOW)`, `fstatSync` it for size
+  before reading, and make the handler actually async.
+- **M8** — the per-component walk stops at `sessionDir` and containment is measured against
+  `sessionDir`, so a symlinked assets **root** is accepted (confirmed empirically). Pass the root in,
+  walk `relative(root, target)` component-by-component, and contain against `realpath(root)`.
+- **M9** — the cleanup hook runs unguarded inside `registry.close()` after the state transition but
+  before the `closed`/`changed` emits, so an EACCES leaves a session closed with no broadcast, no
+  capability revocation and parked `recv`s never released. Wrap it in try/catch, and prune rows
+  **before** removing the directory.
+- **L10** — `row.state === "deleted"` is fail-open against an unchecked cast on a column with no CHECK
+  constraint: any unexpected value is **served**. Invert to `state !== "active"` and add
+  `CHECK (state IN ('active','deleted'))`. `deleted_at` is written but never read.
+- Remaining LOWs to close in the same pass: no blob-URL revocation and no fetch size cap in the
+  extension; `Content-Disposition` percent-mangling (use RFC 6266 `filename*`); `setAssetCleanupHook`
+  as a module-level singleton; the cold-start bind race widening C1; `serve.ts` conflating four
+  outcomes into `unsafe-path`; and missing `assertFlatSegment` on `sessionId` in `serve.ts`/`cleanup.ts`.
+
+**Requirement 1 wording — layer-4 supersedes (human-ratified).** Requirement 1's "using the ROW's own
+stored filename" now means only that the **content type** derives from the row's decrypted filename,
+never the disk name. The on-disk name is the bare `id` with no extension, per the layer-4 envelope
+decision, which is the later ratification and which the code already follows. Recorded so no future
+reviewer re-litigates it. One-line hardening worth taking: pass `row.id` rather than the URL segment
+into the path resolver.
+
+**Vacuous coverage to fix in the same pass.** The suite passes against several deliberately broken
+implementations. Confirmed: `asset-cleanup.spec.ts` passes for an `rm -rf` of the whole configured root
+(assert a sentinel file in the root survives); the two `pruned` tests call `store.pruneSessionAssets`
+out of band instead of closing the session, testing an unreachable branch; every registration passes a
+`contentType` that already agrees with its extension, so "type from the row, not the declaration" is
+undiscriminated (register `safe.png` declared `text/html`, and `evil.html` declared `image/png`);
+`serve.ts`'s max check executes in no test at all; seven `not.toBe(200)` assertions pass for a 500
+crash, which M5 makes a real outcome; no test asserts the on-disk envelope byte order; `config.ts`'s
+`accessSync(W_OK)` branch is never reached; and `asset-settings.spec.ts` injects a fake transport in
+every test, so the code that reads the token and puts it on a socket is exercised by nothing.
+
+Also correct the stale header comment in `config-directory.spec.ts`, which still claims `config-result`
+is a structural carve-out that touches no file in `pkg/common` — the opposite of what shipped.
+
+### Slice 12 — integration wiring (new, human-ratified)
+
+Four finished, tested modules are unreachable: nothing outside tests imports
+`chat-autocomplete.ts`, `chat-canvas.ts`, `mountAssetDirectoryPanel` or
+`createLiveAssetDirectoryTransport`. The cause is structural, not agent error — slice file lists were
+made disjoint so slices could run in parallel, which worked, and left no owner for the mount seams.
+
+Slice 12 runs **before** slice 10 and owns exactly `pkg/extension/entrypoints/chat/main.ts` and
+`pkg/extension/entrypoints/options/main.ts`:
+- Mount `attachCommandAutocomplete` on the composer's `inputElement` and wire its `onDispatch` to a
+  real `command-invocation` frame through the existing `ChatClient` — the seam slice 8 flagged.
+- Add the grouped-rail toggle that reveals the canvas as a secondary view, and populate
+  `chromeElement` (create-chat button, daemon banner, zoom controls). This closes slice 11's one
+  deliberately-unchecked Engineering box.
+- Mount the asset-directory panel on `#assetDirectoryPanel` — **only after C1 is fixed**.
+
+Its verification is structural, not a passing test: grep the **built** bundle for wire-protocol string
+literals (`aria-activedescendant`, the canvas class hooks), never for a function name — `bun run build`
+minifies and mangles local identifiers, so a name grep returns zero even when the code shipped.
