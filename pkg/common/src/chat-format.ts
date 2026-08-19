@@ -15,6 +15,14 @@ export const CHAT_MAX_MESSAGE_BODY_BYTES = 262_144;
 export const CHAT_MAX_MANIFEST_BYTES = 65_536;
 export const CHAT_MAX_ASSET_BYTES = 26_214_400;
 
+/**
+ * Fixed default port plus a deterministic fallback range (Code Structure's
+ * transport ratification: slice 2 may add these here despite pkg/common
+ * being absent from its file list).
+ */
+export const CHAT_DEFAULT_PORT = 47823;
+export const CHAT_PORT_FALLBACK_COUNT = 9;
+
 export type SessionRole = "orchestrator" | "agent";
 
 /** Session-list entry; the daemon stores/echoes workset+role without interpreting them. */
@@ -73,6 +81,7 @@ export type ChatFrame =
 			type: "session-pending";
 			newSession: { sessionId: string; token: string };
 	  })
+	| (Envelope & { type: "keepalive"; token: string })
 	| (Envelope & { type: "session-close"; token: string })
 	| (Envelope & { type: "session-closed" })
 	| (Envelope & { type: "history-request"; token: string })
@@ -86,7 +95,7 @@ export type ChatFrame =
 	  })
 	| (Envelope & { type: "error"; message: string });
 
-/** The 17 ratified kebab-case discriminants — see plan.md's Slice-1 ratification subsection. */
+/** The 18 ratified kebab-case discriminants — see plan.md's Slice-1 ratification subsection. */
 const CHAT_FRAME_TYPES = new Set([
 	"user-message",
 	"ack",
@@ -98,6 +107,7 @@ const CHAT_FRAME_TYPES = new Set([
 	"session-list",
 	"session-create",
 	"session-pending",
+	"keepalive",
 	"session-close",
 	"session-closed",
 	"history-request",
@@ -113,6 +123,7 @@ const INBOUND_FRAME_TYPES = new Set([
 	"command-invocation",
 	"session-create",
 	"session-close",
+	"keepalive",
 	"history-request",
 	"config-get",
 	"config-set",
@@ -225,6 +236,8 @@ function validateFrameBody(
 			});
 			return;
 		}
+		case "keepalive":
+			return;
 		case "session-close":
 			return;
 		case "session-closed":
@@ -257,7 +270,7 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	const { type } = value;
 	if (typeof type !== "string" || !CHAT_FRAME_TYPES.has(type)) {
 		fail(
-			`chat frame.type must be one of the 17 ratified discriminants, got ${String(type)}`,
+			`chat frame.type must be one of the 18 ratified discriminants, got ${String(type)}`,
 		);
 	}
 	requireString(value.sessionId, "chat frame.sessionId", { nonEmpty: true });

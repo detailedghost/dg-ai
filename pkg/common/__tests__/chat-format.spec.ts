@@ -149,6 +149,18 @@ function buildSessionPendingFrame(overrides: Record<string, unknown> = {}) {
 
 // Inbound close request from the page. Distinct from the session-closed
 // broadcast so the capability check can gate which session a socket may close.
+// Inbound liveness frame. The daemon notes activity and replies with nothing,
+// so a keepalive never doubles the traffic it exists to minimise.
+function buildKeepaliveFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "keepalive" as const,
+		sessionId: "session-a",
+		token: "token-a-0000000000000000000000",
+		protocolVersion: PROTOCOL_VERSION,
+		...overrides,
+	};
+}
+
 function buildSessionCloseFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "session-close" as const,
@@ -254,6 +266,7 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["session-list", buildSessionListFrame],
 	["session-create", buildSessionCreateFrame],
 	["session-pending", buildSessionPendingFrame],
+	["keepalive", buildKeepaliveFrame],
 	["session-close", buildSessionCloseFrame],
 	["session-closed", buildSessionClosedFrame],
 	["history-request", buildHistoryRequestFrame],
