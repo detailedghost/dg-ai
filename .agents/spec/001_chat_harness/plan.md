@@ -113,6 +113,10 @@ slices:
       qa:
         - design
         - qa-code
+      proxy: codex
+      proxy_skills:
+        - polish
+        - standard-test
     prototype:
       path: prototype/slice_6_index.html
       variant: A
@@ -129,6 +133,10 @@ slices:
       primary: js
       qa:
         - qa-code
+      proxy: codex
+      proxy_skills:
+        - polish
+        - standard-test
   - id: 8
     name: command-and-subagent-dispatch
     depends_on:
@@ -514,16 +522,16 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the page renders one node per live session and removes a node when its session closes
-- [ ] Contract: the composer exposes the documented mount seam slice 8 attaches to
-- [ ] The status badge reflects chat-sessions' state for the right node, including agent-gone
-- [ ] The create-chat affordance results in a new session node, and the close control emits a session-close frame
-- [ ] Every node action is reachable by keyboard alone, and repositioning is achievable with a single pointer without dragging
-- [ ] prefers-reduced-motion flips the data-motion attribute via the injected seam
-- [ ] The rail renders sections in workset order with the orchestrator first in each, and sessions with no workset fall into the loose-chats section
-- [ ] Rail and thread content is reachable in document order without a separate view
-- [ ] Source-text scan over slice 6's own files finds no hard-coded hex colors, and slice 6 imports nothing from ui-helpers.ts
-- [ ] Both zero-states render with their distinct copy
+- [x] Contract: the page renders one node per live session and removes a node when its session closes
+- [x] Contract: the composer exposes the documented mount seam slice 8 attaches to
+- [x] The status badge reflects chat-sessions' state for the right node, including agent-gone
+- [x] The create-chat affordance results in a new session node, and the close control emits a session-close frame
+- [x] Every node action is reachable by keyboard alone, and repositioning is achievable with a single pointer without dragging
+- [x] prefers-reduced-motion flips the data-motion attribute via the injected seam
+- [x] The rail renders sections in workset order with the orchestrator first in each, and sessions with no workset fall into the loose-chats section
+- [x] Rail and thread content is reachable in document order without a separate view
+- [x] Source-text scan over slice 6's own files finds no hard-coded hex colors, and slice 6 imports nothing from ui-helpers.ts
+- [x] Both zero-states render with their distinct copy
 
 #### Acceptance Criteria
 - [ ] Given several live sessions, when the page loads, then each appears as its own node with its agent identity
@@ -1066,3 +1074,23 @@ that session's keepalive bookkeeping, or its invalidated token keeps spending a 
 that force-closes the socket for every session still open.
 
 Verified: `pkg/extension` 456 pass / 0 fail, lint clean, build clean.
+
+### Layer-3 ratifications (execute-mode, pre-proxy)
+
+Settled before slices 6 and 7 were handed to the `codex` backend, so an external agent builds one
+contract rather than inventing its own. Binding.
+
+#### Slice 6 — chat page
+
+- **Module surfaces, ratified as RED proposed and pinned by its tests.** `chat-node.ts` exports `createComposer(container, onSubmit) -> { inputElement }` (Enter submits the trimmed body and clears; empty/whitespace is a no-op) — **this IS the ratified composer mount seam**, one exported hook plus the input element, and slice 8 attaches autocomplete listeners directly to `inputElement`. Plus `createChatNode(entry, options?) -> { element, transcript, composer, render(entry), destroy() }` where `element` carries class `chat-node`, `render()` updates in place rather than replacing the node, and a `[data-status]` element holds the label as `textContent` with the raw status in the attribute; `statusLabel(status)` mapping `running -> "RUNNING"`, `awaiting-input -> "NEEDS YOU"`, `agent-gone`, `unknown`; and `groupSessionsByWorkset(sessions)` returning sections in first-seen workset order, orchestrator sorted first within each, and a single trailing `{workset: undefined}` group placed last regardless of when its sessions were first seen. `entrypoints/chat/main.ts` exports `ChatPageOptions` and `renderChatPage(options?)`, with module-scope auto-invocation guarded on `typeof document !== "undefined"` so importing it under `bun:test` never throws.
+- **The spatial-repositioning block in slice 6's Engineering checklist is carryover from slice 11 and does NOT apply.** Arrow-nudge, Shift-jump, roving tabindex, pan-to-focused-node and the aria-grabbed discussion all presuppose x/y coordinates; the grouped rail beat the canvas precisely because it is linear and non-spatial. The bound Testing Criterion — "repositioning is achievable with a single pointer without dragging" — is satisfied as **list reorder**: a per-row Move button arms move mode, ArrowUp/ArrowDown swap the row among its siblings, Enter commits, Escape restores the original order, and a plain click on another row places it there. Do NOT invent coordinates the settled layout has no use for.
+- **The open chat tab does NOT open its own socket. The background relays frames to it.** RED correctly surfaced this as an unresolved architectural choice, but a standing ratification already decides it: Code Structure's marker decision gives the background ownership of the WebSocket, and `### Layer-2 module surface ratifications` requires exactly one socket — "a second client-side socket would break that". So `registerChat`'s `onFrame` relays every frame to open chat tabs over `lib/chat-messages.ts`'s `MSG` (the `dg-chat:` prefixed IPC that already exists for the marker relay), outbound sends travel the same path in reverse, and the page's `createClient` wraps that relay behind the same `ChatClient` interface its tests already inject. **Slice 6 may therefore edit `pkg/extension/lib/background/chat.ts`** to add the relay. The cost is a message hop; the alternative is two live sockets per session, each holding the token, with the background's doing nothing useful whenever the tab is open.
+
+#### Slice 7 — agent-facing CLI
+
+- **[CRITICAL, and it is slice 7's job] `handleUserMessage` must persist to the store.** It does not today — its own source comment defers persistence to "slice 7/8's dispatch wiring", and RED confirmed empirically that after a page sends a `user-message`, `claimNext` returns nothing. Without this the entire `recv` path is inert. Slice 7 wires `store.insertMessage` there and **may edit `src/server/frame-handlers.ts`** to do it.
+- **CLI-native messages are a `cli-*` family over `/cli` only, outside the 18 ratified discriminants.** Ratified as RED proposed: `{type:"cli-recv",block,timeoutMs}` answered by `{type:"cli-recv-result",outcome:"delivered"|"empty"|"timeout"|"closed",message?}`, plus `{type:"cli-ack",claimId}`, `{type:"cli-send",body}`, `{type:"cli-progress",state}`, `{type:"cli-manifest-publish",commands}`. They are checked structurally BEFORE `validateChatFrame`, exactly like the existing `connect` carve-out, and trusted via the `/cli` connection's already-proven capability rather than a per-frame token — which is necessary, because `agent-message`, `progress` and `manifest-publish` are structurally outbound-only and a CLI-authored instance could never pass `authorizeFrame`. The daemon relays them onward to `/ws` holders as the REAL ratified frame types, so the page-facing wire is unchanged. Slice 1's Engineering already carves out "the `/cli` route's pre-session frames" for this. Slice 7 **may edit `src/server/frame-handlers.ts`** and **`src/index.ts`** — the verbs have to register with commander somewhere reachable, and no later slice claims either file.
+- **Verbs, flags and exit codes, ratified as RED proposed.** `recv --session <id> [--block] [--timeout <ms>]`, `send --session <id> <body>`, **`progress`** `--session <id> --state <running|awaiting-input>`, `spawn --session <id> [--workset <label>] [--orchestrator]`, `stage <path> --session <id>`, `close --session <id>`, `manifest --session <id> --commands <path> [--subagents <path>]`, and a global `--session` honored by every verb, omitted to resolve by cwd. The verb is `progress`, NOT `status`: `status` is already slice 2's daemon-status report and the ratified discriminant is `progress`. `EXIT_RECV_TIMEOUT = 5` and `EXIT_RECV_SESSION_CLOSED = 6`, the next free values after `EXIT_PROTOCOL_MISMATCH = 4`.
+- **`session-create` gains an optional `agentIdentity`.** RED found no way for a spawned session to carry a distinct agent identity — the ratified frame has only token/role/workset and `handleSessionCreate` always inherits from the requester. But Scope's headline is that an agent "can spawn additional background chats **bound to different agents**", so the field is required, not optional scope. Add it to `@dg/common` as an optional field (additive, so no existing caller breaks); `handleSessionCreate` uses it when present and inherits when absent. **Slice 7 may edit `pkg/common/src/chat-format.ts`** for exactly this.
+- **`stage` writes the file; slice 9 writes the `assets` row.** RED was right to scope its test to the filesystem contract. The `assets` table requires an encrypted filename, and `### Encryption write-paths owned by later slices` already assigns asset bytes and filenames to slice 9, which owns `src/assets/**` and asset serving. So slice 7's `stage` resolves the assets dir, writes the bytes and prints an id; **slice 9 owes the `assets`-row write-path plus encryption**, and the slice-7 Engineering bullet "stage registers an asset row" stays UNCHECKED until slice 9 closes it. A staged asset is unretrievable until then, which is fine — retrieval is slice 9's too.
+- **Manifest loading, ratified as RED proposed**, with the denylist made concrete. `loadManifestFile(path)` reads, parses and validates, throwing on the first invalid entry with its path in the message; `resolveManifestForPublish(entries)` resolves `argv[0]` via `Bun.which` and refuses an unresolved binary. It also refuses one whose resolved basename is any of: `sh`, `bash`, `dash`, `zsh`, `ksh`, `csh`, `tcsh`, `fish`, `cmd`, `cmd.exe`, `powershell`, `powershell.exe`, `pwsh`, `pwsh.exe`, `env`, `osascript`, `node`, `bun`, `python`, `python3`, `perl`, `ruby`. The rule behind the list: any binary that accepts a string of code to execute (`-c`, `-e`) defeats the whole point of `argv` being a `string[]` where a placeholder occupies a WHOLE element — `bash -c "<placeholder>"` reintroduces exactly the shell injection that design prevents.
