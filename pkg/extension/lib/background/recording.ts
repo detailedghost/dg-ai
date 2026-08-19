@@ -219,6 +219,9 @@ export async function maybeStartRecording(
 	startRecording: typeof startVideoRecording = startVideoRecording,
 ): Promise<boolean> {
 	if (!tab?.id) return false;
+	// Every call site must skip video capture where tabCapture/offscreen don't exist,
+	// same invariant registerRecording's own command listener guards separately.
+	if (!videoRecordingSupported()) return false;
 	const key = `demo_tour:${tab.id}`;
 	const stored = (await chrome.storage.local.get(key)) as Record<
 		string,
@@ -258,17 +261,10 @@ export async function maybeStartRecording(
 	return true;
 }
 
-/** Wire the recording gestures (toolbar click, keyboard command) and message router. */
+/** Wire the recording message router and (Chrome/Edge only) keyboard command. */
 export function registerRecording(): void {
-	// Toolbar-icon click is a valid user gesture: start recording if the active
-	// tab has a pending video tour (shortcut fallback), else open settings.
-	chrome.action.onClicked.addListener((tab) => {
-		void (async () => {
-			if (videoRecordingSupported() && (await maybeStartRecording(tab))) return;
-			void chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
-		})();
-	});
-
+	// Toolbar-icon click is owned by registerChat now — it starts a pending
+	// recording first and opens chat otherwise, so it lives in exactly one place.
 	chrome.runtime.onMessage.addListener(
 		(msg: RecordingMessage, sender, sendResponse) =>
 			handleRecordingMessage(msg, sender, sendResponse),
