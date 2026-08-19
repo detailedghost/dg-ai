@@ -8,6 +8,12 @@ import {
 import { browser } from "wxt/browser";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import { MSG } from "@/lib/chat-messages";
+import {
+	type ChatClient,
+	type ChatClientSocket,
+	createChatClient,
+	defaultOpenSocket,
+} from "@/lib/features/chat-client";
 
 /**
  * The chat page's URL path. Named once here rather than inlined — slice 6 owns
@@ -28,15 +34,6 @@ function chatSessionKey(sessionId: string): string {
 // "at most every 20s" per plan.md Slice 4 — keeps the service-worker-owned
 // socket receiving without waking the worker more often than needed.
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
-
-/** The subset of a WebSocket registerChat needs — real or a test double. */
-export type ChatSocket = {
-	send(data: string): void;
-	addEventListener(
-		type: "open" | "close" | "message" | "error",
-		listener: (event?: unknown) => void,
-	): void;
-};
 
 type ChatActionApi = {
 	onClicked: {
@@ -74,7 +71,7 @@ export type ChatBrowserApi = {
 /** Injectable browser seams and timing, mirroring RegisterProtoOptions. */
 export type RegisterChatOptions = {
 	browserApi?: ChatBrowserApi;
-	openSocket?: (url: string) => ChatSocket;
+	openSocket?: (url: string) => ChatClientSocket;
 	keepaliveIntervalMs?: number;
 	maybeStartRecording?: (tab?: chrome.tabs.Tab) => Promise<boolean>;
 };
@@ -105,30 +102,11 @@ function asSessionBootstrap(candidate: unknown): SessionBootstrap | undefined {
 	}
 }
 
-function chatSocketUrl(bootstrap: SessionBootstrap): string {
-	return `ws://127.0.0.1:${bootstrap.port}/ws`;
-}
-
-function defaultOpenSocket(url: string): ChatSocket {
-	return new WebSocket(url) as unknown as ChatSocket;
-}
-
 /** MV3 builds expose `action`; Firefox's MV2 build exposes `browserAction` instead. */
 function resolveActionApi(api: ChatBrowserApi): ChatActionApi {
 	const action = api.action ?? api.browserAction;
 	if (!action) throw new Error("no action or browserAction API available");
 	return action;
-}
-
-// "connect" sits outside the 17 ratified ChatFrame discriminants — the daemon's
-// capability handshake, required before any other frame can be routed here.
-function connectFrame(bootstrap: SessionBootstrap): string {
-	return JSON.stringify({
-		type: "connect",
-		sessionId: bootstrap.sessionId,
-		token: bootstrap.token,
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-	});
 }
 
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
@@ -143,39 +121,75 @@ function keepaliveFrame(bootstrap: SessionBootstrap): string {
 }
 
 /**
- * On open: send the connect handshake first to establish capability, then
- * fire a keepalive frame immediately and every interval after, clearing the
- * timer on close/error so it never outlives the socket.
+ * Central toolbar-click router, the marker-capture relay, and the ONE
+ * background-owned chat socket — ownership, reconnection, rediscovery and
+ * demux all delegate to createChatClient (plan.md: "exactly ONE socket
+ * implementation").
  */
-function startKeepalive(
-	socket: ChatSocket,
-	bootstrap: SessionBootstrap,
-	intervalMs: number,
-): void {
-	socket.addEventListener("open", () => {
-		socket.send(connectFrame(bootstrap));
-		socket.send(keepaliveFrame(bootstrap));
-		const timer = setInterval(() => {
-			socket.send(keepaliveFrame(bootstrap));
-		}, intervalMs);
-		const stop = () => clearInterval(timer);
-		socket.addEventListener("close", stop);
-		socket.addEventListener("error", stop);
-	});
-}
-
-/**
- * Central toolbar-click router, the marker-capture relay (storage.session write
- * plus tab open), and the background-owned socket that keeps a session
- * receiving while its chat tab is closed.
- */
-export function registerChat(options: RegisterChatOptions = {}): void {
+export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
 	const keepaliveIntervalMs =
 		options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS;
 	const maybeStartRecording =
 		options.maybeStartRecording ?? defaultMaybeStartRecording;
+
+	const bootstrapsBySession = new Map<string, SessionBootstrap>();
+	// Sessions the daemon has ack'd on this socket (a session-list frame follows
+	// its accepted connect) — an earlier keepalive would fail capability checks.
+	const keepaliveEligible = new Set<string>();
+	let currentSocket: ChatClientSocket | undefined;
+	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+
+	function stopKeepalive(): void {
+		if (keepaliveTimer !== undefined) clearInterval(keepaliveTimer);
+		keepaliveTimer = undefined;
+		keepaliveEligible.clear();
+	}
+
+	function sendKeepalives(): void {
+		if (!currentSocket) return;
+		for (const sessionId of keepaliveEligible) {
+			const bootstrap = bootstrapsBySession.get(sessionId);
+			if (bootstrap) currentSocket.send(keepaliveFrame(bootstrap));
+		}
+	}
+
+	function openSocketWithKeepaliveTeardown(url: string): ChatClientSocket {
+		const socket = openSocket(url);
+		currentSocket = socket;
+		const cleanup = () => {
+			if (currentSocket === socket) currentSocket = undefined;
+			stopKeepalive();
+		};
+		socket.addEventListener("close", cleanup);
+		socket.addEventListener("error", cleanup);
+		return socket;
+	}
+
+	const client = createChatClient({
+		openSocket: openSocketWithKeepaliveTeardown,
+	});
+
+	client.onFrame((frame) => {
+		if (frame.type === "session-closed") {
+			// Its token is invalidated, and one shared socket means a further
+			// keepalive would burn the failed-frame budget for every session on it.
+			bootstrapsBySession.delete(frame.sessionId);
+			keepaliveEligible.delete(frame.sessionId);
+			if (keepaliveEligible.size === 0) stopKeepalive();
+			return;
+		}
+		if (frame.type !== "session-list") return;
+		const sessionId = frame.sessionId;
+		const bootstrap = bootstrapsBySession.get(sessionId);
+		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
+		keepaliveEligible.add(sessionId);
+		currentSocket?.send(keepaliveFrame(bootstrap));
+		if (keepaliveTimer === undefined) {
+			keepaliveTimer = setInterval(sendKeepalives, keepaliveIntervalMs);
+		}
+	});
 
 	// Pending-recording start wins; otherwise open chat. Settings stays reachable
 	// separately, and this is the ONLY action.onClicked listener registered.
@@ -195,9 +209,11 @@ export function registerChat(options: RegisterChatOptions = {}): void {
 				[chatSessionKey(bootstrap.sessionId)]: bootstrap,
 			});
 			await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
-			const socket = openSocket(chatSocketUrl(bootstrap));
-			startKeepalive(socket, bootstrap, keepaliveIntervalMs);
+			bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+			client.connect(bootstrap);
 		})();
 		return undefined;
 	});
+
+	return client;
 }
