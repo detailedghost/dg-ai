@@ -11,11 +11,27 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
+import { MSG } from "@/lib/chat-messages";
 
-// Required whenever a lib/features or lib/background barrel is reachable from
-// a dynamic import — see plan.md's Agent Notes / this bundle's slice-4 lesson.
+// A barrel-reachable dynamic import needs this stub (plan.md's slice-4 lesson).
+// `runtime` exercises the real relay client for finding 2's regression test only.
+let relayMessageListener: ((message: unknown) => void) | undefined;
+const relaySentMessages: unknown[] = [];
 mock.module("wxt/browser", () => ({
-	browser: { storage: { session: { get: mock(() => Promise.resolve({})) } } },
+	browser: {
+		storage: { session: { get: mock(() => Promise.resolve({})) } },
+		runtime: {
+			onMessage: {
+				addListener: mock((cb: (message: unknown) => void) => {
+					relayMessageListener = cb;
+				}),
+			},
+			sendMessage: mock((message: unknown) => {
+				relaySentMessages.push(message);
+				return Promise.resolve({ ok: true, state: "connected" });
+			}),
+		},
+	},
 }));
 
 const { renderChatPage } = await import("../entrypoints/chat/main");
@@ -279,10 +295,15 @@ test("every rail row exposes a keyboard-operable Move control that reorders with
 
 	// Enter arms move mode for the first row...
 	moveButtons[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-	// ...ArrowDown reorders it past its sibling without any pointer/drag event...
-	root.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+	// ...ArrowDown reorders it past its sibling without any pointer/drag event —
+	// dispatched on the document, where the delegated handler now lives.
+	root.ownerDocument.dispatchEvent(
+		new KeyboardEvent("keydown", { key: "ArrowDown" }),
+	);
 	// ...and Enter again commits the placement.
-	root.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	root.ownerDocument.dispatchEvent(
+		new KeyboardEvent("keydown", { key: "Enter" }),
+	);
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -319,8 +340,12 @@ test("Escape cancels an in-progress move and restores the original order", async
 		"[data-action='move']",
 	);
 	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-	root.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
-	root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+	root.ownerDocument.dispatchEvent(
+		new KeyboardEvent("keydown", { key: "ArrowDown" }),
+	);
+	root.ownerDocument.dispatchEvent(
+		new KeyboardEvent("keydown", { key: "Escape" }),
+	);
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -360,6 +385,80 @@ test("clicking a different row while a move is armed places it there with a sing
 	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 	// Click-to-place: a plain click on the target row, never mousedown+move+up.
 	rows[1]?.click();
+
+	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
+		(n) => n.textContent,
+	);
+	expect(orderAfter[0]).toContain("claude-security");
+	expect(orderAfter[1]).toContain("claude-js");
+});
+
+// --- Regression (finding 1): syncPage() must not steal focus on every frame ---
+
+test("regression: a progress frame arriving mid-typing does not move focus off the composer input", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	const input = root.querySelector<HTMLInputElement>(".chat-node input");
+	input?.focus();
+	expect(doc.activeElement).toBe(input);
+
+	fake.emit(progressFrame("session-a", "running"));
+
+	// A previous bug called replaceChildren() on the thread pane on every
+	// frame, detaching the focused composer input and dropping focus to body.
+	expect(doc.activeElement).toBe(input);
+});
+
+test("regression: the arrow-key move sequence survives more than one frame arriving while armed", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+			{
+				sessionId: "session-b",
+				agentIdentity: "claude-security",
+				role: "agent",
+			},
+		]),
+	);
+
+	const KeyboardEvent = (
+		doc.defaultView as unknown as {
+			KeyboardEvent: typeof globalThis.KeyboardEvent;
+		}
+	).KeyboardEvent;
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	moveButton?.focus();
+	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	expect(doc.activeElement).toBe(moveButton);
+
+	// A progress frame lands mid-move — a prior bug rebuilt the thread pane
+	// here, dropping focus to <body> and killing every key after the first.
+	fake.emit(progressFrame("session-a", "running"));
+	expect(doc.activeElement).toBe(moveButton);
+	expect(doc.activeElement).not.toBe(doc.body);
+
+	doc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+	doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -526,6 +625,38 @@ test("slice 6's source files use neither aria-grabbed nor aria-dropeffect", () =
 	}
 });
 
+// --- Accent tokens must follow the forced theme, not the OS preference ---
+
+test("both inversion blocks remap the accent tokens too, not just bg/panel/ink/muted/line", () => {
+	const css = readFileSync(join(CHAT_ENTRY_DIR, "style.css"), "utf8");
+	const darkBlock = /\[data-theme=["']dark["']\]\s*\{([^}]*)\}/.exec(css)?.[1];
+	const lightBlock = /\[data-theme=["']light["']\]\s*\{([^}]*)\}/.exec(
+		css,
+	)?.[1];
+	expect(darkBlock).toBeDefined();
+	expect(lightBlock).toBeDefined();
+
+	const accentIn = (block: string, name: string): string | undefined =>
+		new RegExp(`${name}:\\s*var\\((--[\\w-]+)\\)`).exec(block)?.[1];
+
+	const darkAccent = accentIn(darkBlock as string, "--chat-accent");
+	const lightAccent = accentIn(lightBlock as string, "--chat-accent");
+	const darkAccent2 = accentIn(darkBlock as string, "--chat-accent-secondary");
+	const lightAccent2 = accentIn(
+		lightBlock as string,
+		"--chat-accent-secondary",
+	);
+
+	expect(darkAccent).toBeDefined();
+	expect(lightAccent).toBeDefined();
+	expect(darkAccent2).toBeDefined();
+	expect(lightAccent2).toBeDefined();
+	// The whole point: each forced theme resolves to its OWN accent regardless
+	// of which prefers-color-scheme block it's declared under.
+	expect(darkAccent).not.toBe(lightAccent);
+	expect(darkAccent2).not.toBe(lightAccent2);
+});
+
 // --- Two distinct zero-states ---
 
 test("renders the 'no session ever registered' zero-state when there are no stored bootstraps", async () => {
@@ -567,4 +698,168 @@ test("renders the 'daemon unreachable' zero-state, with distinct copy, when a se
 	expect(empty?.textContent).not.toBe(
 		otherRoot.querySelector("[data-empty-state]")?.textContent,
 	);
+});
+
+// --- Regression (finding 2): recovery after a browser restart clears
+// storage.session, but the daemon's own sessions outlive that by design. ---
+
+test("regression: a relayed session-list populates the rail and lets messages send even with no stored bootstraps", async () => {
+	const root = newRoot();
+	relaySentMessages.length = 0;
+	await renderChatPage({ root, loadBootstraps: async () => [] });
+
+	expect(
+		root.querySelector("[data-empty-state]")?.getAttribute("data-empty-state"),
+	).toBe("no-session");
+
+	// The background relays this regardless of whether THIS page ever called
+	// connect() itself — the page must trust it and learn its roster from it.
+	relayMessageListener?.({
+		type: MSG.frame,
+		frame: sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js" },
+		]),
+	});
+
+	expect(root.querySelector("[data-empty-state]")).toBeNull();
+	const input = root.querySelector<HTMLInputElement>(".chat-node input");
+	expect(input).not.toBeNull();
+
+	const KeyboardEvent = (
+		root.ownerDocument.defaultView as unknown as {
+			KeyboardEvent: typeof globalThis.KeyboardEvent;
+		}
+	).KeyboardEvent;
+	input!.value = "hello after restart";
+	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	expect(relaySentMessages).toContainEqual(
+		expect.objectContaining({
+			type: MSG.userMessage,
+			sessionId: "session-a",
+			body: "hello after restart",
+		}),
+	);
+	expect(
+		root.querySelector(".chat-transcript__message--user")?.textContent,
+	).toContain("hello after restart");
+});
+
+// --- Regression (finding 4): errors must be visible, and a send must be
+// confirmed before it renders as delivered. ---
+
+test("a send that is accepted still appends the user message to the transcript", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	const KeyboardEvent = (
+		root.ownerDocument.defaultView as unknown as {
+			KeyboardEvent: typeof globalThis.KeyboardEvent;
+		}
+	).KeyboardEvent;
+	const input = root.querySelector<HTMLInputElement>(".chat-node input");
+	input!.value = "hello agent";
+	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	expect(
+		root.querySelector(".chat-transcript__message--user")?.textContent,
+	).toContain("hello agent");
+});
+
+test("regression: a rejected send does not render as delivered, and shows a visible error", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	fake.client.sendUserMessage = mock(() => {
+		throw new Error("session not available in this chat page");
+	});
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	const KeyboardEvent = (
+		root.ownerDocument.defaultView as unknown as {
+			KeyboardEvent: typeof globalThis.KeyboardEvent;
+		}
+	).KeyboardEvent;
+	const input = root.querySelector<HTMLInputElement>(".chat-node input");
+	input!.value = "will this vanish?";
+	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	expect(root.textContent).not.toContain("will this vanish?");
+	const error = root.querySelector(".chat-thread__error");
+	expect(error).not.toBeNull();
+	expect(error?.hasAttribute("hidden")).toBe(false);
+	expect(error?.textContent).toContain("session not available");
+});
+
+test("a daemon error frame renders into a visible surface, not the screen-reader-only move status", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	fake.emit({
+		type: "error",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		message: "command-invocation is not implemented yet",
+	} as ChatFrame);
+
+	const error = root.querySelector(".chat-thread__error");
+	expect(error).not.toBeNull();
+	expect(error?.hasAttribute("hidden")).toBe(false);
+	expect(error?.textContent).toContain("not implemented yet");
+	expect(
+		root.querySelector(".chat-move-status")?.textContent ?? "",
+	).not.toContain("not implemented yet");
+});
+
+// --- Regression (finding 7): the daemon-unreachable zero-state must not
+// flash on a healthy load, judged from a stale synchronous read. ---
+
+test("regression: the daemon-unreachable zero-state does not flash when connect() settles to connected before the check", async () => {
+	const root = newRoot();
+	let state: "connected" | "reconnecting" | "daemon-not-running" =
+		"daemon-not-running";
+	const client = {
+		connect: mock(() => {
+			setTimeout(() => {
+				state = "connected";
+			}, 0);
+		}),
+		onFrame: mock(() => {}),
+		sendUserMessage: mock(() => "message-id"),
+		getConnectionState: () => state,
+		requestNewSession: mock(() => {}),
+		closeSession: mock(() => {}),
+	};
+	await renderChatPage({
+		root,
+		createClient: () => client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+
+	expect(root.querySelector("[data-empty-state]")).toBeNull();
 });

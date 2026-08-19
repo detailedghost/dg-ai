@@ -47,7 +47,9 @@ test("createComposer returns exactly the input element, mountable by an external
 test("Enter in the composer input submits the trimmed body and clears the field", () => {
 	const container = newContainer();
 	const submitted: string[] = [];
-	const composer = createComposer(container, (body: string) => submitted.push(body));
+	const composer = createComposer(container, (body: string) =>
+		submitted.push(body),
+	);
 
 	composer.inputElement.value = "  hello agent  ";
 	composer.inputElement.dispatchEvent(
@@ -65,7 +67,9 @@ test("Enter in the composer input submits the trimmed body and clears the field"
 test("an empty or whitespace-only Enter submits nothing", () => {
 	const container = newContainer();
 	const submitted: string[] = [];
-	const composer = createComposer(container, (body: string) => submitted.push(body));
+	const composer = createComposer(container, (body: string) =>
+		submitted.push(body),
+	);
 
 	composer.inputElement.value = "   ";
 	composer.inputElement.dispatchEvent(
@@ -86,6 +90,7 @@ test("createChatNode renders the agent identity and mounts a transcript and a co
 	const node = createChatNode(
 		buildEntry({ agentIdentity: "claude-security" }),
 		{
+			document: container.ownerDocument,
 			port: 47823,
 		},
 	);
@@ -101,6 +106,7 @@ test("createChatNode wires the composer onSubmit option through to the composer 
 	const container = newContainer();
 	const submitted: string[] = [];
 	const node = createChatNode(buildEntry(), {
+		document: container.ownerDocument,
 		port: 47823,
 		onSubmit: (body: string) => submitted.push(body),
 	});
@@ -118,9 +124,18 @@ test("createChatNode wires the composer onSubmit option through to the composer 
 	expect(submitted).toEqual(["status please"]);
 });
 
+test("createChatNode throws rather than falling back to a document left over from an earlier test's composer", () => {
+	// Must never resolve its document from a prior createComposer call's side effect.
+	expect(() => createChatNode(buildEntry())).toThrow(
+		/requires a browser document/,
+	);
+});
+
 test("destroy removes the node's element from its parent", () => {
 	const container = newContainer();
-	const node = createChatNode(buildEntry());
+	const node = createChatNode(buildEntry(), {
+		document: container.ownerDocument,
+	});
 	container.appendChild(node.element);
 
 	node.destroy();
@@ -130,7 +145,9 @@ test("destroy removes the node's element from its parent", () => {
 
 test("render() updates the badge from a fresh session entry without replacing the element", () => {
 	const container = newContainer();
-	const node = createChatNode(buildEntry({ status: "running" }));
+	const node = createChatNode(buildEntry({ status: "running" }), {
+		document: container.ownerDocument,
+	});
 	container.appendChild(node.element);
 	const originalElement = node.element;
 
@@ -156,7 +173,9 @@ test("statusLabel maps every ProgressState plus the pre-progress unknown default
 
 test("createChatNode's badge text and data-status attribute reflect the entry's status, including agent-gone", () => {
 	const container = newContainer();
-	const node = createChatNode(buildEntry({ status: "agent-gone" }));
+	const node = createChatNode(buildEntry({ status: "agent-gone" }), {
+		document: container.ownerDocument,
+	});
 	container.appendChild(node.element);
 
 	const badge = node.element.querySelector("[data-status]");
@@ -169,7 +188,9 @@ test("createChatNode's badge text and data-status attribute reflect the entry's 
 
 test("createChatNode emits no inline styles anywhere in its subtree", () => {
 	const container = newContainer();
-	const node = createChatNode(buildEntry());
+	const node = createChatNode(buildEntry(), {
+		document: container.ownerDocument,
+	});
 	container.appendChild(node.element);
 
 	expect(node.element.getAttribute("style")).toBeNull();
@@ -179,7 +200,9 @@ test("createChatNode emits no inline styles anywhere in its subtree", () => {
 
 test("createChatNode's root element carries a stable class hook", () => {
 	const container = newContainer();
-	const node = createChatNode(buildEntry());
+	const node = createChatNode(buildEntry(), {
+		document: container.ownerDocument,
+	});
 	container.appendChild(node.element);
 
 	expect(node.element.classList.contains("chat-node")).toBe(true);
@@ -227,10 +250,9 @@ test("groupSessionsByWorkset trails sessions with no workset into one loose-chat
 	const groups = groupSessionsByWorkset(sessions);
 
 	expect(groups.at(-1)?.workset).toBeUndefined();
-	expect(groups.at(-1)?.sessions.map((s: { sessionId: string }) => s.sessionId)).toEqual([
-		"loose-a",
-		"loose-b",
-	]);
+	expect(
+		groups.at(-1)?.sessions.map((s: { sessionId: string }) => s.sessionId),
+	).toEqual(["loose-a", "loose-b"]);
 	// The loose section is always last, even though it wasn't the last one seen.
 	expect(groups[0]?.workset).toBe("001_chat_harness");
 });

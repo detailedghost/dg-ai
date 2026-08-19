@@ -189,6 +189,23 @@ test("progress frames update a single indicator element rather than appending tr
 	expect(indicators[0]?.getAttribute("data-state")).toBe("agent-gone");
 });
 
+test("the progress indicator carries real text for sighted users and assistive tech, not an empty div", () => {
+	const container = newContainer();
+	const view = createTranscriptView(container);
+
+	view.updateProgress("running");
+	const indicator = container.querySelector(".chat-transcript__progress");
+	expect(indicator?.textContent?.trim().length).toBeGreaterThan(0);
+	expect(indicator?.getAttribute("role")).toBe("status");
+
+	view.updateProgress("awaiting-input");
+	const textAtAwaitingInput = indicator?.textContent;
+	view.updateProgress("agent-gone");
+	// The text must actually change per state, not just the data-state attribute.
+	expect(indicator?.textContent).not.toBe(textAtAwaitingInput);
+	expect(indicator?.textContent?.trim().length).toBeGreaterThan(0);
+});
+
 test("appending a real agent message does not touch the progress indicator's element count", async () => {
 	const container = newContainer();
 	const view = createTranscriptView(container);

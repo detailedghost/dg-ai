@@ -7,7 +7,7 @@ import {
 } from "@dg/common";
 import { browser } from "wxt/browser";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
-import { MSG } from "@/lib/chat-messages";
+import { CHAT_SESSION_KEY_PREFIX, MSG } from "@/lib/chat-messages";
 import {
 	type ChatClient,
 	type ChatClientSocket,
@@ -25,7 +25,7 @@ export const CHAT_PAGE_PATH = "chat.html";
  * storage.session key prefix for a captured bootstrap — named once because
  * slice 6's chat page reads these entries and must derive the identical prefix.
  */
-export const CHAT_SESSION_KEY_PREFIX = "chat_session:";
+export { CHAT_SESSION_KEY_PREFIX } from "@/lib/chat-messages";
 
 function chatSessionKey(sessionId: string): string {
 	return `${CHAT_SESSION_KEY_PREFIX}${sessionId}`;
@@ -57,6 +57,7 @@ export type ChatBrowserApi = {
 			): void;
 		};
 		getURL(path: string): string;
+		sendMessage(message: unknown): Promise<unknown>;
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
@@ -87,6 +88,18 @@ function isMarkerCapturedMessage(
 }
 
 const CHAT_MAX_PORT = CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT;
+
+/**
+ * True only for a sender belonging to one of THIS extension's own pages — a
+ * content script's sender.url is the hosting web page's URL, never a
+ * chrome-extension:// one. MSG.clientConnect mints a live session capability
+ * from whatever bootstrap it's handed, so it must not trust an arbitrary tab.
+ */
+function isExtensionPageSender(sender: unknown, api: ChatBrowserApi): boolean {
+	if (typeof sender !== "object" || sender === null) return false;
+	const url = (sender as { url?: unknown }).url;
+	return typeof url === "string" && url.startsWith(api.runtime.getURL(""));
+}
 
 /** The relay only ever carries a marker's SessionBootstrap, never a lockfile — validate as such directly. */
 function asSessionBootstrap(candidate: unknown): SessionBootstrap | undefined {
@@ -172,12 +185,26 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	});
 
 	client.onFrame((frame) => {
+		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		if (frame.type === "session-closed") {
 			// Its token is invalidated, and one shared socket means a further
 			// keepalive would burn the failed-frame budget for every session on it.
 			bootstrapsBySession.delete(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			if (keepaliveEligible.size === 0) stopKeepalive();
+			return;
+		}
+		if (frame.type === "session-pending") {
+			// A session the page's create-chat affordance spawned — without this
+			// it never enters bootstrapsBySession and so never draws a keepalive.
+			const requester = bootstrapsBySession.get(frame.sessionId);
+			if (requester) {
+				bootstrapsBySession.set(frame.newSession.sessionId, {
+					...requester,
+					sessionId: frame.newSession.sessionId,
+					token: frame.newSession.token,
+				});
+			}
 			return;
 		}
 		if (frame.type !== "session-list") return;
@@ -200,18 +227,81 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		})();
 	});
 
-	api.runtime.onMessage.addListener((message) => {
-		if (!isMarkerCapturedMessage(message)) return undefined;
-		const bootstrap = asSessionBootstrap(message.bootstrap);
-		if (!bootstrap) return undefined;
-		void (async () => {
-			await api.storage.session.set({
-				[chatSessionKey(bootstrap.sessionId)]: bootstrap,
+	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		if (isMarkerCapturedMessage(message)) {
+			const bootstrap = asSessionBootstrap(message.bootstrap);
+			if (!bootstrap) return undefined;
+			void (async () => {
+				await api.storage.session.set({
+					[chatSessionKey(bootstrap.sessionId)]: bootstrap,
+				});
+				await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
+				bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+				client.connect(bootstrap);
+			})();
+			return undefined;
+		}
+
+		if (typeof message !== "object" || message === null) return undefined;
+		const payload = message as Record<string, unknown>;
+		try {
+			switch (payload.type) {
+				case MSG.clientConnect: {
+					// Mints a live capability from whatever bootstrap it's handed —
+					// only an extension page (the chat tab), never a content script.
+					if (!isExtensionPageSender(sender, api)) return undefined;
+					const bootstrap = asSessionBootstrap(payload.bootstrap);
+					if (!bootstrap) return undefined;
+					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+					client.connect(bootstrap);
+					sendResponse({ ok: true, state: client.getConnectionState() });
+					return undefined;
+				}
+				case MSG.userMessage:
+					if (
+						typeof payload.sessionId !== "string" ||
+						typeof payload.body !== "string"
+					) {
+						return undefined;
+					}
+					client.sendUserMessage(payload.sessionId, payload.body, {
+						...(typeof payload.messageId === "string"
+							? { messageId: payload.messageId }
+							: {}),
+						...(typeof payload.subagentName === "string"
+							? { subagentName: payload.subagentName }
+							: {}),
+					});
+					sendResponse({ ok: true });
+					return undefined;
+				case MSG.sessionCreate:
+					if (
+						typeof payload.sessionId !== "string" ||
+						(payload.role !== "orchestrator" && payload.role !== "agent")
+					) {
+						return undefined;
+					}
+					client.requestNewSession(
+						payload.sessionId,
+						payload.role,
+						typeof payload.workset === "string" ? payload.workset : undefined,
+					);
+					sendResponse({ ok: true });
+					return undefined;
+				case MSG.sessionClose:
+					if (typeof payload.sessionId !== "string") return undefined;
+					client.closeSession(payload.sessionId);
+					sendResponse({ ok: true });
+					return undefined;
+				default:
+					return undefined;
+			}
+		} catch (error) {
+			sendResponse({
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
 			});
-			await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
-			bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
-			client.connect(bootstrap);
-		})();
+		}
 		return undefined;
 	});
 
