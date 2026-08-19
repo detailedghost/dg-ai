@@ -7,6 +7,8 @@ import {
 import type { DgPaths } from "@dg/common/node";
 import { resolveDgPaths } from "@dg/common/node";
 import { type CloseReason, SessionRegistry } from "../session/registry";
+import { ChatStore } from "../store";
+import { setKeySourceProvider } from "../utils/key-source";
 import { buildBootstrapUrl } from "../utils/marker";
 import { ConnectionManager, sendViaQueue } from "./connection";
 import {
@@ -207,6 +209,10 @@ export async function cmdServe(): Promise<void> {
 	const wslNetworkingMode = await checkWslNetworking();
 
 	const logger = createLogger(paths);
+	const store = await ChatStore.open(paths);
+	// Wires slice 3's real key source into slice 2's status seam without
+	// editing key-source.ts itself.
+	setKeySourceProvider(() => store.cryptoMeta().keySource);
 	const registry = new SessionRegistry(paths);
 	const connections = new ConnectionManager();
 	const instanceId = newInstanceId();
@@ -236,6 +242,7 @@ export async function cmdServe(): Promise<void> {
 				logger,
 				noteActivity,
 				statusDeps,
+				store,
 			});
 			boundPort = candidate;
 			break;
@@ -248,11 +255,13 @@ export async function cmdServe(): Promise<void> {
 				logger.warn(
 					`port ${candidate} bind conflict: deferring to daemon instance ${liveHandle.instanceId} already live on ${liveHandle.port}`,
 				);
+				store.close();
 				process.exit(0);
 			}
 		}
 	}
 	if (!server || boundPort === undefined) {
+		store.close();
 		throw new DgCliError(
 			`no available port in the configured range (${String(lastBindError)})`,
 			EXIT_NO_PORT_AVAILABLE,
@@ -328,6 +337,7 @@ export async function cmdServe(): Promise<void> {
 		await Promise.all(pendingCloseSends); // let queued session-closed frames leave the wire before exit
 		removeLockfile(paths);
 		boundServer.stop(true);
+		store.close();
 		process.exit(0);
 	}
 	process.on("SIGTERM", () => void shutdown("daemon-shutdown"));

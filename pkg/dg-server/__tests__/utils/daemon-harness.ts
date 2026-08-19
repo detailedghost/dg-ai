@@ -37,6 +37,9 @@ function subprocessEnv(
 	}
 	env.DG_HOME = dgHome;
 	env.DG_PORT = String(port);
+	// Default to the file key source so a subprocess test never probes or
+	// writes the developer's real OS keychain (this box has a working one).
+	env.DG_KEY_SOURCE = "file";
 	Object.assign(env, extraEnv);
 	return env;
 }

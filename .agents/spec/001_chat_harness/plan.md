@@ -375,27 +375,27 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 3 — sqlite-store-and-encryption
 
 #### Engineering
-- [ ] Open the database under the ~/.dg state directory with bun:sqlite, Bun strict true, SQLite STRICT on every CREATE TABLE, PRAGMA journal_mode = WAL, PRAGMA foreign_keys = ON outside any transaction, and an explicit busy_timeout
-- [ ] Create the state directory 0700 and assert its mode at startup — the main database, -wal, -shm and any VACUUM INTO output are all created 0644 and come and go on SQLite's schedule, so only the directory contains them
-- [ ] Tables: sessions, messages, status_events, assets, command_invocations and crypto_meta
-- [ ] crypto_meta holds format_version, key_id (a non-secret hkdfSync fingerprint of the key-encryption key), key_source and the wrapped data key
-- [ ] Envelope encryption: generate a random per-database data key, store it wrapped by the keychain or file key-encryption key, and encrypt all record content with the unwrapped data key
-- [ ] Identity-first key resolution: read crypto_meta.key_id, collect candidates from every source that answers, use the one whose fingerprint matches, and REFUSE TO START when none matches, naming recorded versus resolved source and id. Mint and store only when no crypto_meta row exists
-- [ ] Mint randomBytes(32) and WRITE it into the keychain when reachable — a resolution path that never writes leaves the keychain branch dead
-- [ ] Name four key sources and treat unreachable as distinct from absent for each: secret-tool on Linux, which exits 1 with empty stdout for absent AND exits 1 when the session bus is unreachable even though the secret exists; security on macOS, with a GUI ACL prompt hazard under a detached daemon and no secrets in argv; DPAPI over ~/.dg/key.dpapi on Windows, reported as protected file rather than keychain; and a plain file
-- [ ] Mint the fallback key file with O_CREAT, O_EXCL and 0600, treat EEXIST as re-read rather than overwrite, fstat-and-refuse on every read, and store it base64 with key_id and format version — writeFileSync with a mode option does not change an existing file's mode
+- [x] Open the database under the ~/.dg state directory with bun:sqlite, Bun strict true, SQLite STRICT on every CREATE TABLE, PRAGMA journal_mode = WAL, PRAGMA foreign_keys = ON outside any transaction, and an explicit busy_timeout
+- [x] Create the state directory 0700 and assert its mode at startup — the main database, -wal, -shm and any VACUUM INTO output are all created 0644 and come and go on SQLite's schedule, so only the directory contains them
+- [x] Tables: sessions, messages, status_events, assets, command_invocations and crypto_meta
+- [x] crypto_meta holds format_version, key_id (a non-secret hkdfSync fingerprint of the key-encryption key), key_source and the wrapped data key
+- [x] Envelope encryption: generate a random per-database data key, store it wrapped by the keychain or file key-encryption key, and encrypt all record content with the unwrapped data key
+- [x] Identity-first key resolution: read crypto_meta.key_id, collect candidates from every source that answers, use the one whose fingerprint matches, and REFUSE TO START when none matches, naming recorded versus resolved source and id. Mint and store only when no crypto_meta row exists
+- [x] Mint randomBytes(32) and WRITE it into the keychain when reachable — a resolution path that never writes leaves the keychain branch dead
+- [x] Name four key sources and treat unreachable as distinct from absent for each: secret-tool on Linux, which exits 1 with empty stdout for absent AND exits 1 when the session bus is unreachable even though the secret exists; security on macOS, with a GUI ACL prompt hazard under a detached daemon and no secrets in argv; DPAPI over ~/.dg/key.dpapi on Windows, reported as protected file rather than keychain; and a plain file
+- [x] Mint the fallback key file with O_CREAT, O_EXCL and 0600, treat EEXIST as re-read rather than overwrite, fstat-and-refuse on every read, and store it base64 with key_id and format version — writeFileSync with a mode option does not change an existing file's mode
 - [ ] Encrypt message bodies, asset bytes, command_invocations argv and captured stdout and stderr and truncation marker, status_events progress text, asset display filenames, and the persisted command manifest, each with a distinct AAD domain tag
-- [ ] encryptRecord(plaintext, aad) generates its own randomBytes(12), with no IV parameter on the public surface; every UPDATE re-encrypts with a fresh IV, and counter or deterministic IVs are prohibited
-- [ ] AAD is domain, format version, sessionId and rowId over immutable columns only; the 16-byte tag lives in its own BLOB NOT NULL column; assert the IV length is 12 because createCipheriv silently accepts 8, 16 and 32-byte IVs
-- [ ] Keep ids, sessionId, role, kind and timestamps plaintext so they stay indexable, and document that the exact-length side channel is inherent to GCM and accepted
-- [ ] messages carries seq INTEGER PRIMARY KEY AUTOINCREMENT as the ordering key because timestamps are neither unique nor monotonic, id TEXT NOT NULL UNIQUE for AAD and idempotent dedupe, plus claim_id, claimed_at and delivered_at
-- [ ] Store API is exactly claimNext, ack and peekAll implemented as a single UPDATE with RETURNING — deliberately NO atomic pop, so a crash between claim and stdout costs a duplicate rather than a lost human message
-- [ ] assets carries deleted_at and state so a pruned asset is a known-gone row rather than a missing one
-- [ ] Hand-roll schema versioning on PRAGMA user_version: one transaction per step with the version bump inside it, BEGIN IMMEDIATE, a re-read of user_version inside the transaction, and close(false) on failure paths
-- [ ] Migration steps MUST be synchronous — db.transaction with an async body commits before that body finishes
-- [ ] Forward-only: refuse to open a database whose user_version exceeds the binary's and exit non-zero naming both versions, worded distinctly from a protocol-version mismatch
-- [ ] Export describeKeySource() for slice 2's status seam rather than editing slice 2's files
-- [ ] Take a VACUUM INTO snapshot before any multi-statement migration step
+- [x] encryptRecord(plaintext, aad) generates its own randomBytes(12), with no IV parameter on the public surface; every UPDATE re-encrypts with a fresh IV, and counter or deterministic IVs are prohibited
+- [x] AAD is domain, format version, sessionId and rowId over immutable columns only; the 16-byte tag lives in its own BLOB NOT NULL column; assert the IV length is 12 because createCipheriv silently accepts 8, 16 and 32-byte IVs
+- [x] Keep ids, sessionId, role, kind and timestamps plaintext so they stay indexable, and document that the exact-length side channel is inherent to GCM and accepted
+- [x] messages carries seq INTEGER PRIMARY KEY AUTOINCREMENT as the ordering key because timestamps are neither unique nor monotonic, id TEXT NOT NULL UNIQUE for AAD and idempotent dedupe, plus claim_id, claimed_at and delivered_at
+- [x] Store API is exactly claimNext, ack and peekAll implemented as a single UPDATE with RETURNING — deliberately NO atomic pop, so a crash between claim and stdout costs a duplicate rather than a lost human message
+- [x] assets carries deleted_at and state so a pruned asset is a known-gone row rather than a missing one
+- [x] Hand-roll schema versioning on PRAGMA user_version: one transaction per step with the version bump inside it, BEGIN IMMEDIATE, a re-read of user_version inside the transaction, and close(false) on failure paths
+- [x] Migration steps MUST be synchronous — db.transaction with an async body commits before that body finishes
+- [x] Forward-only: refuse to open a database whose user_version exceeds the binary's and exit non-zero naming both versions, worded distinctly from a protocol-version mismatch
+- [x] Export describeKeySource() for slice 2's status seam rather than editing slice 2's files
+- [x] Take a VACUUM INTO snapshot before any multi-statement migration step
 
 #### Testing Criteria
 ##### Contracts
@@ -413,10 +413,10 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 - [x] Key resolution is driven through an injected KeychainBackend seam and DG_KEY_SOURCE of file, keychain or auto — the suite must never read or write the developer's real login keyring
 
 #### Acceptance Criteria
-- [ ] Given a machine with no reachable keychain, when the daemon starts fresh, then it warns, uses the file key-encryption key, and dg-server status names the file source
-- [ ] Given a store whose recorded key_id does not match any resolvable key, when the daemon starts, then it refuses and names both the recorded and resolved identities instead of starting with a new key
-- [ ] Given three messages sent while the agent is not listening, when the agent reads, then it receives all three in seq order
-- [ ] Given the raw database and -wal files, when scanned with an external tool, then no message body, command argv or captured output appears as plaintext
+- [x] Given a machine with no reachable keychain, when the daemon starts fresh, then it warns, uses the file key-encryption key, and dg-server status names the file source
+- [x] Given a store whose recorded key_id does not match any resolvable key, when the daemon starts, then it refuses and names both the recorded and resolved identities instead of starting with a new key
+- [x] Given three messages sent while the agent is not listening, when the agent reads, then it receives all three in seq order
+- [x] Given the raw database and -wal files, when scanned with an external tool, then no message body, command argv or captured output appears as plaintext
 
 ### Slice 4 — extension-marker-and-background
 
@@ -453,23 +453,23 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 5 — extension-chat-client
 
 #### Engineering
-- [ ] Add lib/features/chat-client.ts: one WebSocket owned by the background, the sessionId and token pair on every outbound frame, exponential backoff with jitter on reconnect, and createSerialQueue from @dg/common for the outbox
-- [ ] Demultiplex inbound frames by sessionId across the socket's capability set, dropping frames for sessions not in it rather than misfiling them
-- [ ] Validate every inbound payload with validateChatFrame before acting; a malformed frame is logged, not thrown past the demux
-- [ ] Rediscover the daemon on the fixed port and fallback range via GET /health, matching instanceId, when the cached port goes stale
-- [ ] Add lib/features/chat-sessions.ts holding the live session list, each session's agent identity, unread count, and RUNNING / NEEDS YOU / agent-gone status read from the status frame's explicit state field — never inferred from silence
-- [ ] Expose markSessionRead(sessionId) rather than inferring read state
-- [ ] Add lib/features/chat-transcript.ts rendering whole agent messages and folding progress frames into an advancing indicator rather than new transcript entries
-- [ ] RENDERING CONTRACT: transcript content is untrusted agent and user text and MUST render as plain text via textContent by default, following demo-tour.ts. An innerHTML or Markdown implementation would give transcript content extension-page script privileges including the session token and $ dispatch. If Markdown is wanted, sanitize at the browser boundary and prohibit raw HTML, event handlers and javascript URLs
-- [ ] Render the command result frame type, and render an attachment by fetching the asset with the session token as a HEADER and displaying the resulting blob URL — never a token in an img query string
-- [ ] Render a gone asset as an explicit asset-removed placeholder, distinguishable from a load failure
-- [ ] Emit class-hooked plain DOM only, with zero inline styles and zero positioning — do NOT follow the demo-tour.ts inline-style precedent, which exists for shadow-root overlays on third-party pages
-- [ ] Request transcript backfill on connect and reconnect via the history frame, so a canvas opened against already-running sessions does not render empty nodes
-- [ ] Queue messages composed while disconnected and deliver them exactly once on reconnect, deduplicating on the client-generated message id and the daemon's ack
-- [ ] Expose connection state as an explicit union of connected, reconnecting and daemon-not-running
-- [ ] Request a new session over the socket so the UI layer can offer a create-chat affordance
-- [ ] Keep the in-page session object a separate type from the daemon-side handle, per the mirrored-twin rule
-- [ ] Keep this slice headless beyond the transcript renderer, so slice 6 owns presentation
+- [x] Add lib/features/chat-client.ts: one WebSocket owned by the background, the sessionId and token pair on every outbound frame, exponential backoff with jitter on reconnect, and createSerialQueue from @dg/common for the outbox
+- [x] Demultiplex inbound frames by sessionId across the socket's capability set, dropping frames for sessions not in it rather than misfiling them
+- [x] Validate every inbound payload with validateChatFrame before acting; a malformed frame is logged, not thrown past the demux
+- [x] Rediscover the daemon on the fixed port and fallback range via GET /health, matching instanceId, when the cached port goes stale
+- [x] Add lib/features/chat-sessions.ts holding the live session list, each session's agent identity, unread count, and RUNNING / NEEDS YOU / agent-gone status read from the status frame's explicit state field — never inferred from silence
+- [x] Expose markSessionRead(sessionId) rather than inferring read state
+- [x] Add lib/features/chat-transcript.ts rendering whole agent messages and folding progress frames into an advancing indicator rather than new transcript entries
+- [x] RENDERING CONTRACT: transcript content is untrusted agent and user text and MUST render as plain text via textContent by default, following demo-tour.ts. An innerHTML or Markdown implementation would give transcript content extension-page script privileges including the session token and $ dispatch. If Markdown is wanted, sanitize at the browser boundary and prohibit raw HTML, event handlers and javascript URLs
+- [x] Render the command result frame type, and render an attachment by fetching the asset with the session token as a HEADER and displaying the resulting blob URL — never a token in an img query string
+- [x] Render a gone asset as an explicit asset-removed placeholder, distinguishable from a load failure
+- [x] Emit class-hooked plain DOM only, with zero inline styles and zero positioning — do NOT follow the demo-tour.ts inline-style precedent, which exists for shadow-root overlays on third-party pages
+- [x] Request transcript backfill on connect and reconnect via the history frame, so a canvas opened against already-running sessions does not render empty nodes
+- [x] Queue messages composed while disconnected and deliver them exactly once on reconnect, deduplicating on the client-generated message id and the daemon's ack
+- [x] Expose connection state as an explicit union of connected, reconnecting and daemon-not-running
+- [x] Request a new session over the socket so the UI layer can offer a create-chat affordance
+- [x] Keep the in-page session object a separate type from the daemon-side handle, per the mirrored-twin rule
+- [x] Keep this slice headless beyond the transcript renderer, so slice 6 owns presentation
 
 #### Testing Criteria
 ##### Contracts
@@ -485,10 +485,10 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 - [x] An attachment renders from a fetched blob URL, and a gone asset renders the removed placeholder
 
 #### Acceptance Criteria
-- [ ] Given two live sessions on one socket, when both receive messages, then each transcript contains only its own
-- [ ] Given the daemon is stopped and restarted on a fallback port, when the page stays open, then the client rediscovers it via health and reconnects without a reload
-- [ ] Given a message typed while disconnected, when the connection returns, then it is delivered exactly once
-- [ ] Given an agent message containing hostile HTML, when it renders, then no script executes and the markup is visible as text
+- [x] Given two live sessions on one socket, when both receive messages, then each transcript contains only its own
+- [x] Given the daemon is stopped and restarted on a fallback port, when the page stays open, then the client rediscovers it via health and reconnects without a reload
+- [x] Given a message typed while disconnected, when the connection returns, then it is delivered exactly once
+- [x] Given an agent message containing hostile HTML, when it renders, then no script executes and the markup is visible as text
 
 ### Slice 6 — extension-chat-page
 
@@ -972,3 +972,25 @@ later. `history-response.messages[]` items are the **stored-record projection, n
 ordered by `seq` ascending. Keying on `role` rather than a frame `type` follows the schema, where
 `role` is one of the plaintext indexable columns, and keeps stored records distinct from the frame
 union. `seq` is the ordering key because timestamps are neither unique nor monotonic.
+
+### Encryption write-paths owned by later slices (execute-mode)
+
+Slice 3 encrypted every field it has a write-path for and flagged the rest rather than inventing
+uncalled API. Accepted — the alternative was adding `insertAsset`/`insertStatusEvent`/
+`persistManifest` to a just-ratified `ChatStore` surface with no caller and no coverage.
+
+**Done in slice 3:** message bodies and `command_invocations` argv/stdout/stderr, with distinct AAD
+domains (`message-body`, `command-argv`, `command-stdout`, `command-stderr`), all covered by the
+on-disk byte-scan tests.
+
+**Owed by later slices**, each of which must EXTEND `ChatStore` with its own write-path and encrypt
+through slice 3's exported `createCipherBox`/`buildAad` rather than hand-rolling a second cipher:
+
+- **Slice 7** — `status_events` progress text. Its own AAD domain tag.
+- **Slice 8** — the persisted command manifest. Its own AAD domain tag.
+- **Slice 9** — asset bytes and asset display filenames. A distinct AAD domain tag for each.
+
+The `assets` and `status_events` tables already carry the correct ciphertext/iv/tag column shapes, so
+these are write-path additions, not migrations. The slice-3 Engineering bullet covering all of them
+stays UNCHECKED until slice 9 closes the last one — it is a real obligation, not a documentation
+nicety, and the final review should treat an unencrypted asset filename as a defect.

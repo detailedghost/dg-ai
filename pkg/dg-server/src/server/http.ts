@@ -7,6 +7,7 @@ import {
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
 import type { SessionRegistry } from "../session/registry";
+import type { ChatStore } from "../store";
 import {
 	type ConnectionManager,
 	createSocketState,
@@ -35,6 +36,7 @@ export type HttpServerDeps = {
 	logger: Logger;
 	noteActivity: () => void;
 	statusDeps: Omit<StatusDeps, "instanceId" | "boundPort" | "registry">;
+	store: ChatStore;
 };
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -56,9 +58,17 @@ function bootstrapPageHtml(): string {
 }
 
 export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
-	const { port, paths, registry, connections, logger, noteActivity } = deps;
+	const { port, paths, registry, connections, logger, noteActivity, store } =
+		deps;
 
-	const frameDeps = { registry, connections, logger, paths, noteActivity };
+	const frameDeps = {
+		registry,
+		connections,
+		logger,
+		paths,
+		noteActivity,
+		store,
+	};
 
 	return Bun.serve<SocketState>({
 		hostname: "127.0.0.1", // Bun defaults to 0.0.0.0 — never inherit that.
