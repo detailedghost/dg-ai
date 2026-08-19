@@ -4,15 +4,14 @@ import { homedir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { slugify } from "@dg/common";
 import {
+	type SystemSeams as DgSystemSeams,
 	isWSL as detectWSL,
 	run as runCommand,
-	windowsUserProfile,
-} from "./lib";
+} from "@dg/common/node";
+import { windowsUserProfile } from "./lib";
 
-type SystemSeams = {
-	platform?: NodeJS.Platform;
-	homeDir?: string;
-	env?: Record<string, string | undefined>;
+// Extends the shared seam shape rather than redeclaring it, so the two can't drift apart.
+type SystemSeams = DgSystemSeams & {
 	isWSL?: () => boolean;
 	run?: (command: string, args: string[]) => string;
 	windowsUserProfile?: () => string;

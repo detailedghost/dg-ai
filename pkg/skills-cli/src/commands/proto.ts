@@ -23,7 +23,7 @@ import {
 	validateVerdict,
 } from "@dg/common";
 import type { Command } from "commander";
-import { tryOpen } from "../utils/lib";
+import { tryOpen } from "@dg/common/node";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
 import {
 	answerPagePath,

@@ -18,6 +18,7 @@ import {
 	statSync,
 } from "node:fs";
 import { join } from "node:path";
+import { run } from "@dg/common/node";
 import type { Command } from "commander";
 import {
 	cliDest,
@@ -29,7 +30,6 @@ import {
 	readMarker,
 	repoRoot,
 	resolveCliAsset,
-	run,
 	type Target,
 	versionGte,
 	writeMarkerEntry,

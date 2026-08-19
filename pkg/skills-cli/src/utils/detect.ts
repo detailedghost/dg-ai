@@ -4,7 +4,7 @@
  * extension through the `--load-extension` flag.
  */
 
-import { isWSL, run } from "./lib";
+import { isWSL, run } from "@dg/common/node";
 
 export type BrowserKind = "chromium" | "chrome-stable" | "firefox" | "other";
 
