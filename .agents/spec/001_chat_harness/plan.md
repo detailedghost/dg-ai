@@ -317,60 +317,60 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 2 — dg-server-skeleton
 
 #### Engineering
-- [ ] Create pkg/dg-server as a workspace package mirroring pkg/skills-cli's package.json and tsconfig.json exactly: commander entry, bun build --compile --outfile dist/dg-server, lint via tsc --noEmit, test via bun test
-- [ ] Update bun.lock for the new workspace member — CI installs with --frozen-lockfile, so an unupdated lockfile fails the first workflow run before lint or test
-- [ ] Implement the daemonize path: start re-execs process.execPath on a hidden __serve subcommand with detached true, stdio ignore, unref() and windowsHide on win32, then polls GET /health for its own instanceId before printing the URL
-- [ ] Bind hostname 127.0.0.1 explicitly (Bun defaults to 0.0.0.0), ignore PORT and BUN_PORT, and never set reusePort — reusePort lets two daemons bind one port and load-balance between them
-- [ ] Bind a fixed default high port with a deterministic 8-to-10 port fallback range, published as a @dg/common constant; a second Bun.serve on a bound port throws, which gives the cold-start mutex for free
-- [ ] Serve GET /health returning only daemon, protocolVersion and instanceId, and 204 to any caller failing the Host or Origin check
-- [ ] Serve GET /start as the bootstrap page; the marker lives ONLY in the fragment of the URL the CLI prints — a server-injected marker cannot work because document_start runs before inline script, and it would exfiltrate a live token to any local GET
-- [ ] Implement the session registry: start registers a session with an id, a minted token, a realpath-resolved cwd, and an optional agent identity, workset label and role, then returns or opens the marked bootstrap URL
-- [ ] Store and echo the workset label and role without interpreting them — grouping is the page's job, and the daemon must not couple to the /spec bundle format
-- [ ] Handle a session-create frame from a connected page so a chat can be started from the canvas, returning the new session's id and token nested in the response
-- [ ] Implement the session state machine active to closed, terminal, with three legitimate closers: CLI verb, canvas frame, daemon shutdown. On close mark the row, emit session closed to all sockets, invalidate the token with a distinct reason, release any parked blocking recv with a distinct closed result, trigger asset cleanup, and retain the transcript
-- [ ] Implement the capability-set model: a socket accumulates sessionId-to-token capabilities, gaining entries only via a newly captured bootstrap or an authenticated session-create response, and every inbound frame is validated against the exact pair
-- [ ] Two upgrade routes: /ws requires an extension-scheme Origin, /cli requires a session token and REJECTS any browser Origin, so the two client classes never share an auth path
-- [ ] Trust-on-first-use origin pinning: accept the first extension-scheme origin that completes a token-authenticated handshake, pin it in ~/.dg/config.json and refuse mismatches after. Document honestly that Origin is attacker-controlled from any local non-browser process and that the token is the sole access control
-- [ ] Require the Host header to be exactly 127.0.0.1 or localhost with the bound port on every request and upgrade — DNS-rebinding defense the Origin check does not provide
-- [ ] Session token at least 128 bits from a CSPRNG, compared with timingSafeEqual, never logged, with the connection closed after a small failed-frame budget
-- [ ] Write the session token to ~/.dg/sessions/<id>.json mode 0600 inside a 0700 directory with a DG_SESSION_TOKEN override; the lockfile holds a DaemonHandle only and never a token
-- [ ] Write the lockfile via a temp file plus rename(), and reclaim a lockfile whose daemon does not answer /health with a matching instanceId — pid liveness is wrong in both directions because pids recycle
-- [ ] Idle-TTL self-exit predicate is zero registered sessions AND zero open connections for the whole window; an open socket or an in-flight blocking recv pins the daemon
-- [ ] Refuse to start on WSL in NAT networking mode, naming the .wslconfig networkingMode=mirrored fix — the loopback design is only reachable from a Windows-side browser under mirrored mode
-- [ ] Enforce the shared v1 size limits at the transport boundary before JSON parsing, returning a distinct oversized error with no store side effects
-- [ ] One createSerialQueue per socket, awaiting ServerWebSocket drain, with errors surfaced via onError — a daemon-wide instance head-of-line-blocks every session
-- [ ] Set both Bun timeouts explicitly: HTTP idleTimeout defaults to 10s and caps at 255, and WebSocket defaults to 120s with sendPings
-- [ ] Typed error carrying its own exit code in src/index.ts's top-level handler, defaulting to 1 — a blanket exit(1) forecloses slice 7's distinct timeout code
-- [ ] Size-capped ~/.dg/dg-server.log, and status reporting bound port, key source, last error, WSL networking mode, session count and all four versions: package, protocol, user_version and extension
-- [ ] Expose a keySource seam in the status renderer that slice 3 contributes describeKeySource() into, so slice 3 never edits slice 2's merged files
-- [ ] Gate daemon attach on protocolVersion, never on the package version; on mismatch refuse and print remediation naming how many sessions a stop would end, and never auto-restart a shared daemon
-- [ ] DG_HOME and DG_PORT test seams — contract tests drive the compiled binary as a subprocess where injected seams are unreachable, and without these bun test clobbers the developer's real ~/.dg and daemon
-- [ ] Commit pkg/dg-server/scripts/verify-wsl-loopback.ts as the evidence artifact for the WSL-to-Windows loopback assumption; no CI runner can host the pair
+- [x] Create pkg/dg-server as a workspace package mirroring pkg/skills-cli's package.json and tsconfig.json exactly: commander entry, bun build --compile --outfile dist/dg-server, lint via tsc --noEmit, test via bun test
+- [x] Update bun.lock for the new workspace member — CI installs with --frozen-lockfile, so an unupdated lockfile fails the first workflow run before lint or test
+- [x] Implement the daemonize path: start re-execs process.execPath on a hidden __serve subcommand with detached true, stdio ignore, unref() and windowsHide on win32, then polls GET /health for its own instanceId before printing the URL
+- [x] Bind hostname 127.0.0.1 explicitly (Bun defaults to 0.0.0.0), ignore PORT and BUN_PORT, and never set reusePort — reusePort lets two daemons bind one port and load-balance between them
+- [x] Bind a fixed default high port with a deterministic 8-to-10 port fallback range, published as a @dg/common constant; a second Bun.serve on a bound port throws, which gives the cold-start mutex for free
+- [x] Serve GET /health returning only daemon, protocolVersion and instanceId, and 204 to any caller failing the Host or Origin check
+- [x] Serve GET /start as the bootstrap page; the marker lives ONLY in the fragment of the URL the CLI prints — a server-injected marker cannot work because document_start runs before inline script, and it would exfiltrate a live token to any local GET
+- [x] Implement the session registry: start registers a session with an id, a minted token, a realpath-resolved cwd, and an optional agent identity, workset label and role, then returns or opens the marked bootstrap URL
+- [x] Store and echo the workset label and role without interpreting them — grouping is the page's job, and the daemon must not couple to the /spec bundle format
+- [x] Handle a session-create frame from a connected page so a chat can be started from the canvas, returning the new session's id and token nested in the response
+- [x] Implement the session state machine active to closed, terminal, with three legitimate closers: CLI verb, canvas frame, daemon shutdown. On close mark the row, emit session closed to all sockets, invalidate the token with a distinct reason, release any parked blocking recv with a distinct closed result, trigger asset cleanup, and retain the transcript
+- [x] Implement the capability-set model: a socket accumulates sessionId-to-token capabilities, gaining entries only via a newly captured bootstrap or an authenticated session-create response, and every inbound frame is validated against the exact pair
+- [x] Two upgrade routes: /ws requires an extension-scheme Origin, /cli requires a session token and REJECTS any browser Origin, so the two client classes never share an auth path
+- [x] Trust-on-first-use origin pinning: accept the first extension-scheme origin that completes a token-authenticated handshake, pin it in ~/.dg/config.json and refuse mismatches after. Document honestly that Origin is attacker-controlled from any local non-browser process and that the token is the sole access control
+- [x] Require the Host header to be exactly 127.0.0.1 or localhost with the bound port on every request and upgrade — DNS-rebinding defense the Origin check does not provide
+- [x] Session token at least 128 bits from a CSPRNG, compared with timingSafeEqual, never logged, with the connection closed after a small failed-frame budget
+- [x] Write the session token to ~/.dg/sessions/<id>.json mode 0600 inside a 0700 directory with a DG_SESSION_TOKEN override; the lockfile holds a DaemonHandle only and never a token
+- [x] Write the lockfile via a temp file plus rename(), and reclaim a lockfile whose daemon does not answer /health with a matching instanceId — pid liveness is wrong in both directions because pids recycle
+- [x] Idle-TTL self-exit predicate is zero registered sessions AND zero open connections for the whole window; an open socket or an in-flight blocking recv pins the daemon
+- [x] Refuse to start on WSL in NAT networking mode, naming the .wslconfig networkingMode=mirrored fix — the loopback design is only reachable from a Windows-side browser under mirrored mode
+- [x] Enforce the shared v1 size limits at the transport boundary before JSON parsing, returning a distinct oversized error with no store side effects
+- [x] One createSerialQueue per socket, awaiting ServerWebSocket drain, with errors surfaced via onError — a daemon-wide instance head-of-line-blocks every session
+- [x] Set both Bun timeouts explicitly: HTTP idleTimeout defaults to 10s and caps at 255, and WebSocket defaults to 120s with sendPings
+- [x] Typed error carrying its own exit code in src/index.ts's top-level handler, defaulting to 1 — a blanket exit(1) forecloses slice 7's distinct timeout code
+- [x] Size-capped ~/.dg/dg-server.log, and status reporting bound port, key source, last error, WSL networking mode, session count and all four versions: package, protocol, user_version and extension
+- [x] Expose a keySource seam in the status renderer that slice 3 contributes describeKeySource() into, so slice 3 never edits slice 2's merged files
+- [x] Gate daemon attach on protocolVersion, never on the package version; on mismatch refuse and print remediation naming how many sessions a stop would end, and never auto-restart a shared daemon
+- [x] DG_HOME and DG_PORT test seams — contract tests drive the compiled binary as a subprocess where injected seams are unreachable, and without these bun test clobbers the developer's real ~/.dg and daemon
+- [x] Commit pkg/dg-server/scripts/verify-wsl-loopback.ts as the evidence artifact for the WSL-to-Windows loopback assumption; no CI runner can host the pair
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: dg-server start on a cold machine binds the fixed port, writes a token-free lockfile, and prints a bootstrap URL whose fragment decodes to the registered session
-- [ ] Contract: a second dg-server start reuses the live daemon and registers a second session rather than binding a second port
-- [ ] Contract: GET /start returns no session data in its body, and the marker exists only in the printed URL's fragment
-- [ ] Contract: a socket may only act on sessions in its capability set, and session A's pair cannot address session B
-- [ ] Contract: a session-create frame bearing an unknown or closed session's token is refused and creates nothing
-- [ ] Contract: an upgrade on /cli bearing a browser Origin is refused, and an upgrade on /ws without an extension-scheme Origin is refused
-- [ ] Contract: a request whose Host header is not the loopback authority is refused
-- [ ] GET /health returns only the three published fields and 204s a non-loopback caller
-- [ ] The daemon is not reachable on any non-loopback local address, and reusePort is never set
-- [ ] A lockfile whose daemon does not answer /health with a matching instance id is reclaimed, and a live one is not
+- [x] Contract: dg-server start on a cold machine binds the fixed port, writes a token-free lockfile, and prints a bootstrap URL whose fragment decodes to the registered session
+- [x] Contract: a second dg-server start reuses the live daemon and registers a second session rather than binding a second port
+- [x] Contract: GET /start returns no session data in its body, and the marker exists only in the printed URL's fragment
+- [x] Contract: a socket may only act on sessions in its capability set, and session A's pair cannot address session B
+- [x] Contract: a session-create frame bearing an unknown or closed session's token is refused and creates nothing
+- [x] Contract: an upgrade on /cli bearing a browser Origin is refused, and an upgrade on /ws without an extension-scheme Origin is refused
+- [x] Contract: a request whose Host header is not the loopback authority is refused
+- [x] GET /health returns only the three published fields and 204s a non-loopback caller
+- [x] The daemon is not reachable on any non-loopback local address, and reusePort is never set
+- [x] A lockfile whose daemon does not answer /health with a matching instance id is reclaimed, and a live one is not
 - [ ] Idle-TTL does not fire while a page is connected but idle, nor while a blocking recv is parked
-- [ ] Repeated invalid frames close the connection, and no rejected token appears in log output
-- [ ] A payload exceeding the max-payload constant is rejected before JSON parsing with no store write
-- [ ] A protocol-version mismatch refuses with a message distinct from a schema-too-new refusal
-- [ ] Startup on NAT-mode WSL refuses with the mirrored-mode remediation
+- [x] Repeated invalid frames close the connection, and no rejected token appears in log output
+- [x] A payload exceeding the max-payload constant is rejected before JSON parsing with no store write
+- [x] A protocol-version mismatch refuses with a message distinct from a schema-too-new refusal
+- [x] Startup on NAT-mode WSL refuses with the mirrored-mode remediation
 
 #### Acceptance Criteria
 - [ ] Given a Windows-side browser and a WSL-side daemon in mirrored networking mode, when the printed loopback /start URL is opened, then the page loads and a WebSocket connects — proven by the committed verify-wsl-loopback.ts probe, not by CI
-- [ ] Given two repos, when dg:start runs in each, then one daemon process holds two registered sessions on one port with separate tokens
-- [ ] Given a killed daemon, when dg-server status runs, then it reports no live daemon and leaves no stale lockfile behind
+- [x] Given two repos, when dg:start runs in each, then one daemon process holds two registered sessions on one port with separate tokens
+- [x] Given a killed daemon, when dg-server status runs, then it reports no live daemon and leaves no stale lockfile behind
 - [ ] Given a session close, when an agent is parked in a blocking recv on it, then that recv returns a distinct closed result rather than running to timeout
-- [ ] bun run --filter='./pkg/dg-server' test and lint both pass, and bun install --frozen-lockfile succeeds
+- [x] bun run --filter='./pkg/dg-server' test and lint both pass, and bun install --frozen-lockfile succeeds
 
 ### Slice 3 — sqlite-store-and-encryption
 
@@ -421,17 +421,17 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 4 — extension-marker-and-background
 
 #### Engineering
-- [ ] Add utils/chat-marker.ts as its own module for the _chat key, following the one-module-per-marker-key convention and the mirrored-twin rule — do not import the dg-server twin
-- [ ] Add a content script matched ONLY to http://127.0.0.1/* capturing and stripping the #_chat= marker at document_start
-- [ ] The content script ONLY parses, strips and relays over lib/chat-messages.ts — chrome.storage.session is not exposed to content scripts and tabs.create is unavailable there, so a naive in-script write throws at runtime
-- [ ] registerChat in the background performs the storage.session write and the tabs.create, and owns the WebSocket to the daemon so background chats keep receiving while the chat tab is closed
-- [ ] Add lib/chat-messages.ts as a chat-scoped MSG const object for in-browser IPC, sibling to demo-messages.ts rather than an addition to it
-- [ ] Wire registerChat through lib/background/index.ts and entrypoints/background.ts
-- [ ] Route the shared chrome.action.onClicked listener centrally: registerRecording already claims it to start a pending recording or open settings, so preserve pending-recording start first, otherwise open chat, keeping settings reachable separately — two independent listeners would both act
-- [ ] Add minimum_chrome_version 116 to wxt.config.ts, required for a service-worker-owned WebSocket, and send a keepalive at most every 20s for the socket's whole life
-- [ ] Add http://127.0.0.1/* to the Firefox branch's host_permissions — Firefox requires matches origins to also be declared there, and that branch currently declares none, while Chrome's all-urls already covers loopback
-- [ ] Name the chat page URL string once and note the coupling to slice 6, which owns that page
-- [ ] Give registerChat an injectable options and seams parameter mirroring RegisterProtoOptions
+- [x] Add utils/chat-marker.ts as its own module for the _chat key, following the one-module-per-marker-key convention and the mirrored-twin rule — do not import the dg-server twin
+- [x] Add a content script matched ONLY to http://127.0.0.1/* capturing and stripping the #_chat= marker at document_start
+- [x] The content script ONLY parses, strips and relays over lib/chat-messages.ts — chrome.storage.session is not exposed to content scripts and tabs.create is unavailable there, so a naive in-script write throws at runtime
+- [x] registerChat in the background performs the storage.session write and the tabs.create, and owns the WebSocket to the daemon so background chats keep receiving while the chat tab is closed
+- [x] Add lib/chat-messages.ts as a chat-scoped MSG const object for in-browser IPC, sibling to demo-messages.ts rather than an addition to it
+- [x] Wire registerChat through lib/background/index.ts and entrypoints/background.ts
+- [x] Route the shared chrome.action.onClicked listener centrally: registerRecording already claims it to start a pending recording or open settings, so preserve pending-recording start first, otherwise open chat, keeping settings reachable separately — two independent listeners would both act
+- [x] Add minimum_chrome_version 116 to wxt.config.ts, required for a service-worker-owned WebSocket, and send a keepalive at most every 20s for the socket's whole life
+- [x] Add http://127.0.0.1/* to the Firefox branch's host_permissions — Firefox requires matches origins to also be declared there, and that branch currently declares none, while Chrome's all-urls already covers loopback
+- [x] Name the chat page URL string once and note the coupling to slice 6, which owns that page
+- [x] Give registerChat an injectable options and seams parameter mirroring RegisterProtoOptions
 
 #### Testing Criteria
 ##### Contracts
@@ -445,10 +445,10 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 - [x] The Firefox manifest branch includes the loopback host permission, and minimum_chrome_version is set
 
 #### Acceptance Criteria
-- [ ] Given the daemon's bootstrap URL, when it opens in the browser, then the background captures the session and the marker is gone from the address bar
-- [ ] Given a page that is not on loopback carrying a lookalike marker, when it loads, then the chat content script does not run
-- [ ] Given the chat tab is closed, when a message arrives for a live session, then the background still receives it
-- [ ] bun run --filter='./pkg/extension' test and lint both pass
+- [x] Given the daemon's bootstrap URL, when it opens in the browser, then the background captures the session and the marker is gone from the address bar
+- [x] Given a page that is not on loopback carrying a lookalike marker, when it loads, then the chat content script does not run
+- [x] Given the chat tab is closed, when a message arrives for a live session, then the background still receives it
+- [x] bun run --filter='./pkg/extension' test and lint both pass
 
 ### Slice 5 — extension-chat-client
 
@@ -881,3 +881,13 @@ so slices 5-11 read them rather than re-deriving them. Binding on every slice.
 - **`RegisterChatOptions` is all-optional with `DEFAULT_*` consts for the numbers**, mirroring `RegisterProtoOptions = { previewDownloadTimeoutMs?, browserApi? }`. Fields: `browserApi?`, `openSocket?`, `keepaliveIntervalMs?`, `maybeStartRecording?`.
 - **`registerChat` owns the single `chrome.action.onClicked` listener**, and `lib/background/recording.ts`'s own registration is REMOVED rather than left alongside it. Two listeners would both fire, which is the regression slice 4's Testing Criteria guards. Pending-recording start wins; otherwise open chat; settings stays reachable separately.
 - **Deferred to slice 7, not dropped:** the idle-TTL contract's "nor while a blocking recv is parked" half cannot be asserted until slice 7 ships `recv --block`. It stays an `it.todo` in `pkg/dg-server/__tests__/session/idle-ttl.spec.ts` and slice 7 must promote it.
+
+### Layer-1 QA corrections (execute-mode)
+
+Contract-level consequences of layer 1's QA findings. The rest of those findings are ordinary bugs
+fixed in place; these three change what later slices build against.
+
+- **An 18th discriminant, `keepalive`** — inbound, carries the `sessionId`+`token` pair, and the daemon notes activity and replies with **nothing**. Slice 4's keepalive was a `config-get` with `key: "keepalive"`, which slice 2 answers with "config transport is not implemented yet (lands in slice 9)" — so every session emitted one unsolicited `error` frame every 20s for the life of the socket, and slice 5 owns the connection-state UI that would have to explain them. A browser `WebSocket` cannot send protocol-level pings, so an application frame is required; overloading config transport for liveness is not it. Replying with nothing avoids doubling the traffic this exists to minimise.
+- **The page learns the session list on connect.** `handleConnectHandshake` must send a `session-list` built from the registry immediately after granting the capability. Pushing it only from the registry's "changed" listener means a page connecting after the sessions already exist sees none of them, and `session-list` is outbound-only so the page cannot ask. Without this the grouped-rail verdict is unreachable for slices 6 and 11.
+- **`POST /start` gets the same Origin check as `/ws`, `/cli` and `/health`.** It mints and returns a live session capability, and today it is the one route with no Origin check at all — verified against the running daemon, `Origin: https://evil.example` gets a 200 with a fresh sessionId and token. Its CSRF defense currently rests entirely on a browser declining to send that cross-origin POST, which is an implicit guarantee for the most sensitive route in the daemon.
+- **Deferred to slice 7, not dropped:** `readSessionToken` and the `DG_SESSION_TOKEN` override in `pkg/dg-server/src/session/tokens.ts` have no callers and no tests yet. Slice 7 is their consumer and must prove the override wins over the on-disk file, and that the JSON shape it parses matches what `writeSessionToken` emits.
