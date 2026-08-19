@@ -3,8 +3,8 @@ feature: Chat Harness
 feature_snake_case: chat_harness
 date: '2026-08-18'
 version: '1.0'
-status: draft
-current_slice: 0
+status: in-progress
+current_slice: 2
 pr_strategy: single
 slices:
   - id: 1
@@ -214,6 +214,13 @@ slices:
       proxy_skills:
         - polish
         - standard-test
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Chat Harness
@@ -262,50 +269,50 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 1 — shared-contracts
 
 #### Engineering
-- [ ] Add pkg/common/src/chat-format.ts with a ChatFrame discriminated union keyed on `type`, following the Verdict / validateVerdict idiom in src/types.ts and src/proto-format.ts
-- [ ] Cover these frame types: user message, agent message, progress/status, command invocation, command result, manifest publish, session list, session create, session closed, history request, history response, config get, config set, and error
-- [ ] Authorization contract: every INBOUND frame carries a sessionId and token pair validated against the socket's capability set; OUTBOUND frames carry sessionId only and never a token
-- [ ] Carve out the two pre-capability cases explicitly: a session-create request authenticates with the REQUESTING session's pair and returns the new session's id and token in a nested response field, and the /cli route's pre-session frames
-- [ ] Add hand-rolled validateChatFrame plus per-frame narrowing helpers using the existing requireX/fail assertion style — no schema library, matching proto-format.ts
-- [ ] Extract fail, isRecord and the requireX helpers from proto-format.ts into pkg/common/src/assert.ts and have both format modules import them
-- [ ] Add a client-generated message id on the user-message frame plus an ack frame, so delivery can be deduplicated idempotently
-- [ ] Add explicit state running | awaiting-input | agent-gone to the progress/status frame — RUNNING versus NEEDS YOU must never be inferred from silence
-- [ ] Add protocolVersion to the frame envelope plus a connect handshake; version it by hand, independent of the package version
-- [ ] Add an optional attachment field carrying an asset id on the agent-message frame; do NOT embed asset URIs in message bodies, which are encrypted and therefore unindexable
-- [ ] Add a resolved-subagent-name field on the user-message frame, left absent when an @ mention does not resolve
-- [ ] Give the session handle an optional workset label and a role of orchestrator or agent, so the rail can group sessions and pin the orchestrator
-- [ ] CommandEntry declares argv as string[] — never a command string — plus a display label distinct from argv and typed params slots; a placeholder occupies a WHOLE argv element
-- [ ] Split the session handle into two validated types: DaemonHandle (pid, port, instanceId, versions) for the singleton lockfile, and SessionBootstrap (port, sessionId, token, agentIdentity) for the marker; the lockfile must NEVER contain a session token
-- [ ] Add validateSessionHandle for each, so slices 2 and 4 parse the lockfile and marker through one agreed function
-- [ ] Publish fixed v1 size limits as shared constants: max WebSocket payload, max message body, max manifest, max asset
-- [ ] Add pkg/common/src/node/paths.ts resolving one uniform ~/.dg layout under homedir() on all three platforms — per-OS means seam resolution only, matching protoScratchPath and slice 10's ~/.dg/bin
-- [ ] Pin the resolver's returned shape by name: lockfilePath, dbPath, keyPath, assetsDir, sessionsDir, logPath, plus a 0700 state directory
-- [ ] DG_HOME is the ONLY root override; AI_SCRATCH_DIR must not affect the persistent root
-- [ ] Hoist isWSL, run, tryOpen and openers into pkg/common/src/node/**, and add runCapture(cmd, args, {stdin}) returning status, stdout and stderr — the existing run() throws, merges streams and trims, all three fatal to a keychain backend
-- [ ] Expose it as a new ./node subpath export in pkg/common/package.json, kept OUT of the . barrel so no node: import can reach the extension's Vite bundle
-- [ ] Re-export chat-format and assert from src/index.ts; leave src/node/** unreferenced by the barrel
-- [ ] Reuse the barrel-exported validateProtoIdentifier for subagent-name shape rather than a second regex
+- [x] Add pkg/common/src/chat-format.ts with a ChatFrame discriminated union keyed on `type`, following the Verdict / validateVerdict idiom in src/types.ts and src/proto-format.ts
+- [x] Cover these frame types: user message, agent message, progress/status, command invocation, command result, manifest publish, session list, session create, session closed, history request, history response, config get, config set, and error
+- [x] Authorization contract: every INBOUND frame carries a sessionId and token pair validated against the socket's capability set; OUTBOUND frames carry sessionId only and never a token
+- [x] Carve out the two pre-capability cases explicitly: a session-create request authenticates with the REQUESTING session's pair and returns the new session's id and token in a nested response field, and the /cli route's pre-session frames
+- [x] Add hand-rolled validateChatFrame plus per-frame narrowing helpers using the existing requireX/fail assertion style — no schema library, matching proto-format.ts
+- [x] Extract fail, isRecord and the requireX helpers from proto-format.ts into pkg/common/src/assert.ts and have both format modules import them
+- [x] Add a client-generated message id on the user-message frame plus an ack frame, so delivery can be deduplicated idempotently
+- [x] Add explicit state running | awaiting-input | agent-gone to the progress/status frame — RUNNING versus NEEDS YOU must never be inferred from silence
+- [x] Add protocolVersion to the frame envelope plus a connect handshake; version it by hand, independent of the package version
+- [x] Add an optional attachment field carrying an asset id on the agent-message frame; do NOT embed asset URIs in message bodies, which are encrypted and therefore unindexable
+- [x] Add a resolved-subagent-name field on the user-message frame, left absent when an @ mention does not resolve
+- [x] Give the session handle an optional workset label and a role of orchestrator or agent, so the rail can group sessions and pin the orchestrator
+- [x] CommandEntry declares argv as string[] — never a command string — plus a display label distinct from argv and typed params slots; a placeholder occupies a WHOLE argv element
+- [x] Split the session handle into two validated types: DaemonHandle (pid, port, instanceId, versions) for the singleton lockfile, and SessionBootstrap (port, sessionId, token, agentIdentity) for the marker; the lockfile must NEVER contain a session token
+- [x] Add validateSessionHandle for each, so slices 2 and 4 parse the lockfile and marker through one agreed function
+- [x] Publish fixed v1 size limits as shared constants: max WebSocket payload, max message body, max manifest, max asset
+- [x] Add pkg/common/src/node/paths.ts resolving one uniform ~/.dg layout under homedir() on all three platforms — per-OS means seam resolution only, matching protoScratchPath and slice 10's ~/.dg/bin
+- [x] Pin the resolver's returned shape by name: lockfilePath, dbPath, keyPath, assetsDir, sessionsDir, logPath, plus a 0700 state directory
+- [x] DG_HOME is the ONLY root override; AI_SCRATCH_DIR must not affect the persistent root
+- [x] Hoist isWSL, run, tryOpen and openers into pkg/common/src/node/**, and add runCapture(cmd, args, {stdin}) returning status, stdout and stderr — the existing run() throws, merges streams and trims, all three fatal to a keychain backend
+- [x] Expose it as a new ./node subpath export in pkg/common/package.json, kept OUT of the . barrel so no node: import can reach the extension's Vite bundle
+- [x] Re-export chat-format and assert from src/index.ts; leave src/node/** unreferenced by the barrel
+- [x] Reuse the barrel-exported validateProtoIdentifier for subagent-name shape rather than a second regex
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: validateChatFrame accepts every valid frame type and rejects unknown discriminants and a missing sessionId
-- [ ] Contract: an inbound frame whose sessionId and token pair is not in the capability set is rejected, and an outbound frame carrying a token is rejected as malformed
-- [ ] Contract: a session-create request validates against the requesting pair and returns the new id and token nested, not at the envelope level
-- [ ] Contract: validateCommandManifest accepts argv arrays with typed param slots and rejects any entry declaring a command string
-- [ ] Contract: validateSessionHandle accepts a DaemonHandle and a SessionBootstrap and rejects a lockfile shape containing a token
-- [ ] Contract: a session handle validates with and without a workset label, and rejects an unknown role value
-- [ ] Contract: @dg/common/node resolves the documented ~/.dg paths on win32, darwin and linux via injected platform and homedir seams, mirroring how proto-paths.ts takes SystemSeams
-- [ ] Contract: DG_HOME overrides the root and AI_SCRATCH_DIR does not
-- [ ] Contract: a frame exceeding the published max-payload constant is rejected by the validator
-- [ ] Importing @dg/common (the . barrel) pulls in no node: builtin — assert by static inspection of the barrel's transitive imports
-- [ ] Round-trip: a frame serialized to JSON and re-validated is deep-equal to the original
-- [ ] runCapture returns a non-zero status with stdout and stderr separated instead of throwing
+- [x] Contract: validateChatFrame accepts every valid frame type and rejects unknown discriminants and a missing sessionId
+- [x] Contract: an inbound frame whose sessionId and token pair is not in the capability set is rejected, and an outbound frame carrying a token is rejected as malformed
+- [x] Contract: a session-create request validates against the requesting pair and returns the new id and token nested, not at the envelope level
+- [x] Contract: validateCommandManifest accepts argv arrays with typed param slots and rejects any entry declaring a command string
+- [x] Contract: validateSessionHandle accepts a DaemonHandle and a SessionBootstrap and rejects a lockfile shape containing a token
+- [x] Contract: a session handle validates with and without a workset label, and rejects an unknown role value
+- [x] Contract: @dg/common/node resolves the documented ~/.dg paths on win32, darwin and linux via injected platform and homedir seams, mirroring how proto-paths.ts takes SystemSeams
+- [x] Contract: DG_HOME overrides the root and AI_SCRATCH_DIR does not
+- [x] Contract: a frame exceeding the published max-payload constant is rejected by the validator
+- [x] Importing @dg/common (the . barrel) pulls in no node: builtin — assert by static inspection of the barrel's transitive imports
+- [x] Round-trip: a frame serialized to JSON and re-validated is deep-equal to the original
+- [x] runCapture returns a non-zero status with stdout and stderr separated instead of throwing
 
 #### Acceptance Criteria
-- [ ] Given the extension's Vite build, when bun run --filter='./pkg/extension' build runs, then it succeeds with no node: polyfill and no reference to src/node/** — tsc --noEmit does NOT catch this because a wildcard path mapping resolves the subpath
-- [ ] Given a frame whose sessionId and token pair is unknown to the socket, when it is validated, then it is rejected naming the failure
-- [ ] Given each supported platform, when the ~/.dg resolver runs, then it returns the documented paths and a 0700 state directory
-- [ ] bun run --filter='./pkg/common' test and lint both pass
+- [x] Given the extension's Vite build, when bun run --filter='./pkg/extension' build runs, then it succeeds with no node: polyfill and no reference to src/node/** — tsc --noEmit does NOT catch this because a wildcard path mapping resolves the subpath
+- [x] Given a frame whose sessionId and token pair is unknown to the socket, when it is validated, then it is rejected naming the failure
+- [x] Given each supported platform, when the ~/.dg resolver runs, then it returns the documented paths and a 0700 state directory
+- [x] bun run --filter='./pkg/common' test and lint both pass
 
 ### Slice 2 — dg-server-skeleton
 
@@ -711,7 +718,22 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 ## Slice Summaries
 
+### Slice 1 — shared-contracts
+
+Landed the shared wire-format and path contracts every later slice imports. `chat-format.ts` carries the 17-discriminant `ChatFrame` union with a hand-rolled `validateChatFrame` in the existing `validateVerdict` idiom, plus `authorizeFrame` as a separate capability-set check so shape validation and authorization never collapse into one call that can silently authorize. `assert.ts` now owns `fail`/`isRecord`/`requireX`, shared with `proto-format.ts`. `SessionBootstrap` and `DaemonHandle` are distinct types and the lockfile shape cannot hold a token. `@dg/common/node` is a new subpath export kept out of the `.` barrel, carrying `resolveDgPaths` and the `isWSL`/`run`/`tryOpen`/`openers` helpers hoisted out of `pkg/skills-cli` plus the new `runCapture`.
+
+Took four passes: three stopped at RED because the plan pinned behavior in detail but identifiers barely at all, so each pass invented names and reported them as `[SPEC]` deferrals. Eleven contract decisions are now recorded in `## Code Structure`'s ratifications subsection, which is where slices 2, 5, 6, 8 and 9 should read their identifiers from. The last pass also caught a real design hole: `session-close` and `session-closed` had been collapsed into one bidirectional discriminant, which would have either broken slice 6's close control or allowed a socket holding session A's capability to close session B. Split and covered by tests.
+
+Verified: `pkg/common` 107 pass / 0 fail, `pkg/skills-cli` 96 pass / 0 fail, both `tsc --noEmit` clean, and `pkg/extension` builds with no `node:` polyfill.
+
 ## Agent Notes
+
+- (slice 1, qa-writer) Cross-platform path-resolver tests should derive expected paths through `node:path`'s `win32`/`posix` submodules rather than hardcoding separator literals — that keeps exact-equality assertions valid for an injected `platform` seam regardless of the CI host OS.
+
+- (slice 1, js) `pkg/common/src/node/process.ts` holds `isWSL`/`openers`/`tryOpen`/`run` hoisted verbatim, plus the new `runCapture(cmd, args, {stdin})` that never throws and keeps stdout and stderr separate — that separation is what slice 3's keychain backend needs. `pkg/skills-cli/src/utils/lib.ts` re-exports them for backward compatibility, but every direct call site in `pkg/skills-cli` now imports straight from `@dg/common/node`.
+- (slice 1, js) **`runCapture` rejects for a nonexistent binary** rather than resolving `{status,...}` — confirmed empirically. A caller probing for an optional CLI (slice 3's keychain probe) must `try/catch`; branching on `.status` alone misses the missing-binary case.
+- (slice 1, js) `authorizeFrame`'s parameter is a minimal structural `{ type: string; sessionId: string }` rather than `ChatFrame`. `ChatFrame` stays assignable to it, so callers are unaffected.
+- (slice 1, qa-writer) Frame-builder test helpers need `as const` on the `type:` literal when they spread a `Record<string, unknown>` overrides parameter after it — without it `tsc --noEmit` fails on structural widening even though `bun:test` runs fine. The fix belongs in the test literals, not in production types.
 
 ## Issues Remediation
 
@@ -811,3 +833,34 @@ against these; per-slice reviews check them.
 - **Rationale:** The rail layout needs grouping and a pinned orchestrator, and two nullable fields buy exactly that. Keeping the daemon uninterpreting means no coupling to the `/spec` bundle format lands in bundle 1.
 - **Alternatives:** Deriving worksets from `/spec` bundles — couples the daemon to that format and adds real slices; a full orchestrator that routes work to member sessions — an agent-supervision feature larger than the rest of the bundle, and overlapping bundle 2.
 - **Applies to:** slices 1, 2, 6
+
+### Slice-1 contract ratifications (execute-mode, layer 0)
+
+Pinned when slice 1's RED stage reported them as `[SPEC]` deferrals. Three were settled by the user; the rest against existing repo convention or a plain reading of
+spec bullets the enumerated lists had missed.
+These are binding on every slice that imports `@dg/common`.
+
+- **Frame discriminants are kebab-case**, and there are **17** of them. The Engineering checklist enumerates 14 concepts; `ack` is a 15th that the “client-generated message id … plus an ack frame” bullet requires and the enumeration omitted; and both `session create` and `session closed` expand into a request/broadcast pair (see the next bullet and the close-split bullet below), which makes 17. The full set, verbatim: `user-message`, `ack`, `agent-message`, `progress`, `command-invocation`, `command-result`, `manifest-publish`, `session-list`, `session-create`, `session-pending`, `session-close`, `session-closed`, `history-request`, `history-response`, `config-get`, `config-set`, `error`. Tests should enumerate this set rather than assert a total as a magic number.
+- **The `progress/status` bullet offers two words for one concept; the discriminant is `progress`.** Purpose and Scope both call these “progress frames”, so the spec’s own prose settles it. It carries the ratified `state: running | awaiting-input | agent-gone` field.
+- **Session creation is two discriminants, not one:** `session-create` (inbound request, authenticated with the REQUESTING session's pair) and **`session-pending`** (outbound response, carrying the new session's id and token in a nested field). Two types let the validator enforce "outbound frames never carry a token" structurally per type, with `session-pending` as the single declared carve-out; one shared discriminant would force the validator to infer direction, which it cannot do.
+- **Authorization is a separate export:** `authorizeFrame(frame, capabilities)`. `validateChatFrame(value)` stays pure shape validation, matching the `validateVerdict` / `validateProtoPlan` idiom. Not an optional second parameter — an omitted capability set would silently authorize every frame, and slice 2's enforcement layer is the one place that must never do that.
+- **`workset` and `role` live on a distinct `SessionSummary`** (the session-list entry type), and the `session-create` frame sets them. **`SessionBootstrap` keeps exactly its four ratified fields** (port, sessionId, token, agentIdentity). The rail needs grouping for every live session, which it learns from the session list — the marker describes only the one session being bootstrapped, so it never needs these fields.
+- **Size-limit constants use the `CHAT_MAX_*` prefix** (e.g. `CHAT_MAX_PAYLOAD_BYTES`), mirroring `PROTO_MAX_VARIATIONS` / `PROTO_MAX_MARKUP_CHARS` in `proto-format.ts`.
+- **The path resolver is `resolveDgPaths(seams: SystemSeams = {})`**, mirroring `resolveDownloadsDir` in `pkg/skills-cli/src/utils/proto-paths.ts` — same `SystemSeams` injection shape for `platform`, `homeDir` and `env`.
+- **It returns seven fields:** the six named in the `~/.dg` decision above plus **`stateDir`**, the 0700 directory that decision calls for.
+- **`DG_HOME` replaces `<home>/.dg` wholesale** — `DG_HOME=/custom/root` yields `stateDir=/custom/root`, not `/custom/root/.dg`. This mirrors how `protoScratchPath` already treats `AI_SCRATCH_DIR` (`join(AI_SCRATCH_DIR, "proto")` replacing `join(homeDir, ".dg", "proto")`). `AI_SCRATCH_DIR` still must not affect this root.
+- **`session-close` and `session-closed` are two discriminants, not one** — a correction to this
+  subsection's own first draft, which counted 16 by collapsing them. `session-close` is the
+  **inbound** close request and carries the `sessionId`+`token` pair; `session-closed` is the
+  **outbound** broadcast and carries no token. The spec already made this distinction and the
+  first draft missed it: slices 6, 7 and 9 all name the `session-close` frame, while slice 1's
+  enumeration names the `session closed` broadcast.
+  **Why it must be split rather than given an optional token:** the `/ws` page socket holds
+  capabilities for MANY sessions, and slice 2 lists the canvas as one of three legitimate
+  closers. With one bidirectional discriminant, either the validator rejects every
+  page-originated close — silently breaking slice 6's close control — or `authorizeFrame` is
+  skipped for it, letting a socket holding only session A's capability close session B by naming
+  it, invalidating B's token, releasing B's parked `recv` and triggering B's asset cleanup. That
+  is exactly the cross-session escalation the capability model exists to prevent. Splitting keeps
+  "outbound frames never carry a token" enforceable per type, the same reason
+  `session-create`/`session-pending` are split.
