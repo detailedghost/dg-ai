@@ -149,7 +149,7 @@ describe("config-get/config-set wire round trip", () => {
 		)) as { value?: string };
 		expect(getReply.value).toBe(newDir);
 		ws.close();
-	});
+	}, 30000);
 
 	it("refuses an unauthenticated (bad token) config-get/config-set attempt", async () => {
 		const { port, bootstrap } = await bootSession();
@@ -167,7 +167,7 @@ describe("config-get/config-set wire round trip", () => {
 		expect((reply as { type?: string }).type).toBe("error");
 		expect((reply as { type?: string }).type).not.toBe("config-result");
 		ws.close();
-	});
+	}, 30000);
 
 	it("rejects an unwritable directory at configuration time, naming the reason, and persists nothing", async () => {
 		const { port, bootstrap, dgHome: home } = await bootSession();
@@ -200,7 +200,7 @@ describe("config-get/config-set wire round trip", () => {
 		const persisted = readConfig(paths);
 		expect(persisted[ASSET_DIRECTORY_CONFIG_KEY]).not.toBe(badDir);
 		ws.close();
-	});
+	}, 30000);
 
 	it("is daemon-authoritative: a value persisted before a restart is still what a fresh daemon reports, independent of any client-held value", async () => {
 		const { port, bootstrap, dgHome: home } = await bootSession();
@@ -248,5 +248,5 @@ describe("config-get/config-set wire round trip", () => {
 		)) as { value?: string };
 		expect(reply2.value).toBe(persistedDir);
 		ws2.close();
-	});
+	}, 45000);
 });

@@ -580,24 +580,24 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 8 — command-and-subagent-dispatch
 
 #### Engineering
-- [ ] Derive the manifest and cwd strictly from the sessionId the presented TOKEN authenticates, never from a sessionId field the frame carries
-- [ ] Execute a $ entry as a typed argv array with whole-element parameter substitution; the daemon never splits a user string and never concatenates user text into an existing argv element
-- [ ] Reject any user-supplied argv element beginning with a dash unless the entry opts in, and insert a literal double-dash before user elements where the target supports it — argv arrays make metacharacters literal but do NOT prevent option injection
-- [ ] Spawn with detached true and kill the whole process group with TERM then KILL — a child shares the daemon's process group by default, so a negative-pid kill would signal the daemon, and a SIGTERM-trapping child ignores Bun's timeout entirely
-- [ ] Pin cwd to the session's registered realpath-resolved cwd, returning a failed result with a distinct reason if it is gone
-- [ ] Pass an explicit minimal env allowlist of PATH, HOME, LANG and TZ, plus SystemRoot, USERPROFILE, TEMP and PATHEXT on win32, extensible per entry. Omitting env hands the child the daemon's full environment INCLUDING values Bun's DotEnv loader read from a .env in its cwd
-- [ ] Drain both streams in the daemon, counting bytes, stopping at the cap, appending a truncation marker and killing the group — Bun's maxBuffer overshoots by up to 500 times
-- [ ] Set stderr to pipe explicitly; the async default is inherit, which sends the failure reason text to the daemon's console instead of the frame
-- [ ] Derive the failure reason from signalCode plus the daemon's own knowledge of why it killed; after a kill the exit code reads null while the awaited exit returns 143 or 137. Retain and return partial output captured before a timeout kill
-- [ ] Wrap the synchronous Bun.spawn call in try/catch for the missing-binary path and release the invocation row, temp dir and concurrency slot on that throw — Bun.spawn throws ENOENT synchronously
-- [ ] Concrete bounds: 30s wall clock, 256 KiB combined stdout and stderr, 2 concurrent per session, 8 daemon-wide, plus a per-session invocations-per-minute ceiling, each overridable per entry but clamped to a daemon maximum, with a distinct failure reason at every bound
-- [ ] Return one buffered terminal result frame; chunked or incremental output is deferred to bundle 2
-- [ ] Write the command_invocations row before the spawn and update it on completion, recording the exact resolved argv executed as an audit log with the display label kept separate
-- [ ] Persist an @ mention as a queued message the next recv claims rather than re-implementing slice 3's queue, and handle the no-reader case
-- [ ] An unresolved @ mention passes through as ordinary prose with the resolved-name field absent — never refuse a whole message over a typo
-- [ ] Settle and document whether $ and @ must be leading tokens or may appear inline
-- [ ] Result frames go out through slice 2's per-socket createSerialQueue
-- [ ] Add lib/features/chat-autocomplete.ts attaching to slice 6's documented composer mount seam, offering only manifest entries and rendering the RESOLVED argv on each row so the user sees what will actually run
+- [x] Derive the manifest and cwd strictly from the sessionId the presented TOKEN authenticates, never from a sessionId field the frame carries
+- [x] Execute a $ entry as a typed argv array with whole-element parameter substitution; the daemon never splits a user string and never concatenates user text into an existing argv element
+- [x] Reject any user-supplied argv element beginning with a dash unless the entry opts in, and insert a literal double-dash before user elements where the target supports it — argv arrays make metacharacters literal but do NOT prevent option injection
+- [x] Spawn with detached true and kill the whole process group with TERM then KILL — a child shares the daemon's process group by default, so a negative-pid kill would signal the daemon, and a SIGTERM-trapping child ignores Bun's timeout entirely
+- [x] Pin cwd to the session's registered realpath-resolved cwd, returning a failed result with a distinct reason if it is gone
+- [x] Pass an explicit minimal env allowlist of PATH, HOME, LANG and TZ, plus SystemRoot, USERPROFILE, TEMP and PATHEXT on win32, extensible per entry. Omitting env hands the child the daemon's full environment INCLUDING values Bun's DotEnv loader read from a .env in its cwd
+- [x] Drain both streams in the daemon, counting bytes, stopping at the cap, appending a truncation marker and killing the group — Bun's maxBuffer overshoots by up to 500 times
+- [x] Set stderr to pipe explicitly; the async default is inherit, which sends the failure reason text to the daemon's console instead of the frame
+- [x] Derive the failure reason from signalCode plus the daemon's own knowledge of why it killed; after a kill the exit code reads null while the awaited exit returns 143 or 137. Retain and return partial output captured before a timeout kill
+- [x] Wrap the synchronous Bun.spawn call in try/catch for the missing-binary path and release the invocation row, temp dir and concurrency slot on that throw — Bun.spawn throws ENOENT synchronously
+- [x] Concrete bounds: 30s wall clock, 256 KiB combined stdout and stderr, 2 concurrent per session, 8 daemon-wide, plus a per-session invocations-per-minute ceiling, each overridable per entry but clamped to a daemon maximum, with a distinct failure reason at every bound
+- [x] Return one buffered terminal result frame; chunked or incremental output is deferred to bundle 2
+- [x] Write the command_invocations row before the spawn and update it on completion, recording the exact resolved argv executed as an audit log with the display label kept separate
+- [x] Persist an @ mention as a queued message the next recv claims rather than re-implementing slice 3's queue, and handle the no-reader case
+- [x] An unresolved @ mention passes through as ordinary prose with the resolved-name field absent — never refuse a whole message over a typo
+- [x] Settle and document whether $ and @ must be leading tokens or may appear inline
+- [x] Result frames go out through slice 2's per-socket createSerialQueue
+- [x] Add lib/features/chat-autocomplete.ts attaching to slice 6's documented composer mount seam, offering only manifest entries and rendering the RESOLVED argv on each row so the user sees what will actually run
 
 #### Testing Criteria
 ##### Contracts
@@ -616,9 +616,9 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Acceptance Criteria
 - [ ] Given a published command manifest, when the user types $ in the composer, then only manifest commands are offered and each row shows the argv that will run
-- [ ] Given the user fires a $ command, when it completes, then the result appears in the transcript and the agent was never invoked
-- [ ] Given the user fires an @ mention, when the agent next calls recv, then it receives the mention with the resolved subagent name
-- [ ] Given a $ command that traps SIGTERM and runs past its timeout, when the bound expires, then the process group is killed and a failure frame names the timeout
+- [x] Given the user fires a $ command, when it completes, then the result appears in the transcript and the agent was never invoked
+- [x] Given the user fires an @ mention, when the agent next calls recv, then it receives the mention with the resolved subagent name
+- [x] Given a $ command that traps SIGTERM and runs past its timeout, when the bound expires, then the process group is killed and a failure frame names the timeout
 
 ### Slice 9 — asset-staging-and-serving
 
@@ -699,13 +699,13 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Engineering
 - [ ] Ship the canvas as an OPTIONAL spatial view toggled from the grouped rail, never as the default surface — the rail won the prototype bake-off and is the primary layout
-- [ ] Pan and zoom over an unbounded board using one CSS transform on a single board element
-- [ ] Export the arithmetic as pure functions over an injected viewport — clampScale, clampPan, screenToBoard, boardToScreen, applyDragDelta and isNodeInView — and drive the spec through those; happy-dom has no layout engine, so no assertion may read a rect
-- [ ] Board chrome such as the create-chat button, the daemon banner and zoom controls must be a SIBLING of the transformed board, never a descendant — a transformed or will-change ancestor becomes the containing block for fixed positioning
-- [ ] touch-action none, a non-passive wheel listener calling preventDefault, ctrlKey wheel intercepted as pinch, and a wheel over a transcript scrolling that transcript without zooming the board
-- [ ] will-change transform only during an active gesture, and one requestAnimationFrame write per frame
-- [ ] Persist node positions in chrome.storage.local keyed by session id, pruned on load against the live session list
-- [ ] Honour the board root's reduced-motion attribute for pan and zoom easing
+- [x] Pan and zoom over an unbounded board using one CSS transform on a single board element
+- [x] Export the arithmetic as pure functions over an injected viewport — clampScale, clampPan, screenToBoard, boardToScreen, applyDragDelta and isNodeInView — and drive the spec through those; happy-dom has no layout engine, so no assertion may read a rect
+- [x] Board chrome such as the create-chat button, the daemon banner and zoom controls must be a SIBLING of the transformed board, never a descendant — a transformed or will-change ancestor becomes the containing block for fixed positioning
+- [x] touch-action none, a non-passive wheel listener calling preventDefault, ctrlKey wheel intercepted as pinch, and a wheel over a transcript scrolling that transcript without zooming the board
+- [x] will-change transform only during an active gesture, and one requestAnimationFrame write per frame
+- [x] Persist node positions in chrome.storage.local keyed by session id, pruned on load against the live session list
+- [x] Honour the board root's reduced-motion attribute for pan and zoom easing
 
 #### Testing Criteria
 ##### Contracts

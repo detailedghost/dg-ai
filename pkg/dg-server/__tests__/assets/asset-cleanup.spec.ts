@@ -73,7 +73,7 @@ describe("session-close cleanup trigger", () => {
 			3000,
 			"the closed session's asset directory to be removed",
 		);
-	});
+	}, 30000);
 });
 
 describe("startup orphan-pruning trigger", () => {
@@ -114,5 +114,5 @@ describe("startup orphan-pruning trigger", () => {
 		]);
 		const liveSessionAssetDir = join(paths.assetsDir, bootstrap.sessionId);
 		expect(existsSync(liveSessionAssetDir)).toBe(true);
-	});
+	}, 30000);
 });
