@@ -9,7 +9,7 @@ import { type DaemonHandle, validateDaemonHandle } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import type { Subprocess } from "bun";
 
-const ENTRY = join(import.meta.dir, "../../src/index.ts");
+export const ENTRY = join(import.meta.dir, "../../src/index.ts");
 
 // Private test-only range: never the real published default, so a run here
 // can never collide with (or accidentally exercise) a developer's live daemon.
@@ -26,7 +26,7 @@ export function cleanupDgHome(dgHome: string): void {
 	rmSync(dgHome, { recursive: true, force: true });
 }
 
-function subprocessEnv(
+export function subprocessEnv(
 	dgHome: string,
 	port: number,
 	extraEnv: Record<string, string> = {},

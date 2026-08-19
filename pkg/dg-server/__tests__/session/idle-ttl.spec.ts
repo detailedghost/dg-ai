@@ -1,15 +1,13 @@
 /**
- * Idle-TTL self-exit predicate: "zero registered sessions AND zero open
- * connections for the whole window; an open socket or an in-flight blocking
- * recv pins the daemon." `DG_IDLE_TTL_MS` (Code Structure's transport
- * ratification) makes the "connected but idle" half boundable in CI time.
- * "Blocking recv" is Slice 7's verb and does not exist yet — that half stays
- * `it.todo`, ratified to stay that way until slice 7 can park one.
+ * Idle-TTL: zero sessions AND zero open connections, for the whole window.
+ * Slice 7 promotes the "blocking recv parked" half — its live /cli socket
+ * already pins isIdle()'s connection-count check with no special-casing.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { spawnCli } from "../commands/cli-wire";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -76,7 +74,42 @@ describe("idle-TTL does not fire while a page is connected but idle", () => {
 });
 
 describe("idle-TTL does not fire while a blocking recv is parked", () => {
-	it.todo("holds the daemon alive across a full idle-TTL window while a recv is parked — Slice 7's `recv --block` verb does not exist yet to park one", () => {});
+	it("holds the daemon alive across a full idle-TTL window while a recv --block stays genuinely parked (not exited) on its session", async () => {
+		dgHome = freshDgHome();
+		const port = allocatePort();
+		const result = await runStart(dgHome, port, {
+			DG_IDLE_TTL_MS: String(IDLE_TTL_MS),
+		});
+		await waitForHealth(port);
+		const bootstrap = validateSessionBootstrap(
+			decodeChatMarker(extractUrl(result.stdout)),
+		);
+
+		const recv = spawnCli(dgHome, port, [
+			"recv",
+			"--session",
+			bootstrap.sessionId,
+			"--block",
+			"--timeout",
+			String(IDLE_TTL_MS * 8),
+		]);
+
+		try {
+			await new Promise((r) => setTimeout(r, IDLE_TTL_MS * 4));
+
+			// Must still be blocked, not exited early — else this passes vacuously
+			// off the session's own registration, without recv doing anything.
+			expect(recv.exitCode).toBeNull();
+
+			const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+				headers: { Host: `127.0.0.1:${port}` },
+			});
+			expect(resp.status).toBe(200);
+		} finally {
+			recv.kill();
+			await recv.exited;
+		}
+	});
 });
 
 // Complements the negative case above: a predicate that silently never fires
