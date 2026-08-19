@@ -435,14 +435,14 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: the _chat marker encodes and decodes a SessionBootstrap, and a malformed payload is rejected rather than partially applied
-- [ ] Contract: registerChat is exported from lib/background/index.ts and invoked by the background entrypoint
-- [ ] The content script's manifest match pattern is loopback-only — assert it does not match all-urls
-- [ ] Capturing a marker relays to the background, which writes storage.session and opens the chat page exactly once
-- [ ] The marker is stripped from the URL after capture
-- [ ] Regression: with a pending recording the toolbar action starts it, with none the toolbar action opens chat, and the recording path is not broken by the new listener
-- [ ] The background keepalive fires at least every 20s while the socket is open
-- [ ] The Firefox manifest branch includes the loopback host permission, and minimum_chrome_version is set
+- [x] Contract: the _chat marker encodes and decodes a SessionBootstrap, and a malformed payload is rejected rather than partially applied
+- [x] Contract: registerChat is exported from lib/background/index.ts and invoked by the background entrypoint
+- [x] The content script's manifest match pattern is loopback-only — assert it does not match all-urls
+- [x] Capturing a marker relays to the background, which writes storage.session and opens the chat page exactly once
+- [x] The marker is stripped from the URL after capture
+- [x] Regression: with a pending recording the toolbar action starts it, with none the toolbar action opens chat, and the recording path is not broken by the new listener
+- [x] The background keepalive fires at least every 20s while the socket is open
+- [x] The Firefox manifest branch includes the loopback host permission, and minimum_chrome_version is set
 
 #### Acceptance Criteria
 - [ ] Given the daemon's bootstrap URL, when it opens in the browser, then the background captures the session and the marker is gone from the address bar
@@ -864,3 +864,20 @@ These are binding on every slice that imports `@dg/common`.
   is exactly the cross-session escalation the capability model exists to prevent. Splitting keeps
   "outbound frames never carry a token" enforceable per type, the same reason
   `session-create`/`session-pending` are split.
+
+### Transport and naming ratifications (execute-mode, layer 1)
+
+Slices 2 and 4 each stopped at RED on the same class of gap: the plan pins behavior but not wire
+encodings, seam shapes or identifier strings. Settled here once, against existing repo convention,
+so slices 5-11 read them rather than re-deriving them. Binding on every slice.
+
+- **Marker payload is `base64url(JSON)` in the URL fragment**, no compression. `utils/demo-marker.ts` already does exactly this (`#…_demo=<base64url(json)>`, `&`-separated `k=v` parts), and `SessionBootstrap` is four short fields — `proto-marker.ts`'s gzip exists only for `ProtoPlan`'s markup payload. Slices 2 and 4 arrived at this independently; it is now the contract for both twins.
+- **Capability capture is a post-connect handshake frame on `/ws`, and a request header on `/cli`.** NOT a query string on either. A browser `WebSocket` cannot set request headers at all, so `/ws` has no header option; and the asset-retrieval decision above already ruled that a query-string token "leaks into logs, `Referer`, and history" — the daemon's own size-capped `~/.dg/dg-server.log` is one of those logs. The `connect` handshake the frame-protocol decision calls for is the natural carrier. Bun's `WebSocket` client *can* set headers (verified empirically, see `## Agent Notes`), which is what makes the `/cli` half workable.
+- **`GET /health`'s `daemon` field is the service-name string `"dg-server"`**, not a boolean. Its stated job is rediscovery, which needs an identity to match on.
+- **The hidden daemonizing subcommand is `__serve`** — slice 2's own Engineering bullet names it in prose ("start re-execs … on a hidden `__serve` subcommand"). Not open.
+- **Slice 2 may add the default-port and fallback-range constants to `pkg/common`** despite `pkg/common/**` being absent from its file list — the Engineering bullet requires them to be `@dg/common` constants, and that beats the file-list omission. They belong beside `CHAT_MAX_*`. Safe in this layer because slice 4, its only parallel sibling, must not touch `pkg/common`.
+- **Test seams follow the `DG_`-prefixed env convention** that `DG_HOME` and `DG_PORT` establish. Slice 2 adds **`DG_IDLE_TTL_MS`** so the idle-TTL contract is testable in bounded CI time, and an injectable **WSL networking-mode seam** mirroring `SystemSeams`, because ambient `.wslconfig` state cannot exercise the NAT-mode refusal branch on a mirrored-mode box.
+- **In-browser IPC message values are `"dg-chat:<kebab-verb>"` strings**, mirroring `demo-messages.ts`'s `"dg-demo:<kebab-verb>"`. The captured-bootstrap relay is `MSG.markerCaptured` carrying `{ type, bootstrap }`.
+- **`RegisterChatOptions` is all-optional with `DEFAULT_*` consts for the numbers**, mirroring `RegisterProtoOptions = { previewDownloadTimeoutMs?, browserApi? }`. Fields: `browserApi?`, `openSocket?`, `keepaliveIntervalMs?`, `maybeStartRecording?`.
+- **`registerChat` owns the single `chrome.action.onClicked` listener**, and `lib/background/recording.ts`'s own registration is REMOVED rather than left alongside it. Two listeners would both fire, which is the regression slice 4's Testing Criteria guards. Pending-recording start wins; otherwise open chat; settings stays reachable separately.
+- **Deferred to slice 7, not dropped:** the idle-TTL contract's "nor while a blocking recv is parked" half cannot be asserted until slice 7 ships `recv --block`. It stays an `it.todo` in `pkg/dg-server/__tests__/session/idle-ttl.spec.ts` and slice 7 must promote it.
