@@ -399,18 +399,18 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: a message written and read back round-trips its body exactly through encrypt and decrypt
-- [ ] Contract: byte-scan the database file AND its -wal sidecar on disk for the plaintext needle and find nothing — asserting on the column value alone cannot fail
-- [ ] Contract: plaintext metadata columns remain queryable by sessionId and seq
-- [ ] Contract: key resolution matches on fingerprint and REFUSES to start on mismatch rather than minting a second key
-- [ ] Contract: with the keychain reachable, minting writes the key into it; with the keychain unreachable but populated, resolution does not mistake that for absence
-- [ ] Contract: claimNext under two concurrent readers claims different rows, and an unacked claim is redeliverable
-- [ ] Contract: command_invocations argv and captured output are ciphertext on disk
-- [ ] A tampered auth tag fails decryption loudly rather than returning garbage, and a ciphertext moved to another row fails its AAD check
-- [ ] A fresh database initializes at the current user_version, an older one migrates forward preserving rows, and a newer one is refused
-- [ ] A migration that throws mid-step leaves user_version at the last completed step
-- [ ] The state directory is 0700 and the key file is 0600, and an existing key file with the wrong mode is refused
-- [ ] Key resolution is driven through an injected KeychainBackend seam and DG_KEY_SOURCE of file, keychain or auto — the suite must never read or write the developer's real login keyring
+- [x] Contract: a message written and read back round-trips its body exactly through encrypt and decrypt
+- [x] Contract: byte-scan the database file AND its -wal sidecar on disk for the plaintext needle and find nothing — asserting on the column value alone cannot fail
+- [x] Contract: plaintext metadata columns remain queryable by sessionId and seq
+- [x] Contract: key resolution matches on fingerprint and REFUSES to start on mismatch rather than minting a second key
+- [x] Contract: with the keychain reachable, minting writes the key into it; with the keychain unreachable but populated, resolution does not mistake that for absence
+- [x] Contract: claimNext under two concurrent readers claims different rows, and an unacked claim is redeliverable
+- [x] Contract: command_invocations argv and captured output are ciphertext on disk
+- [x] A tampered auth tag fails decryption loudly rather than returning garbage, and a ciphertext moved to another row fails its AAD check
+- [x] A fresh database initializes at the current user_version, an older one migrates forward preserving rows, and a newer one is refused
+- [x] A migration that throws mid-step leaves user_version at the last completed step
+- [x] The state directory is 0700 and the key file is 0600, and an existing key file with the wrong mode is refused
+- [x] Key resolution is driven through an injected KeychainBackend seam and DG_KEY_SOURCE of file, keychain or auto — the suite must never read or write the developer's real login keyring
 
 #### Acceptance Criteria
 - [ ] Given a machine with no reachable keychain, when the daemon starts fresh, then it warns, uses the file key-encryption key, and dg-server status names the file source
@@ -473,16 +473,16 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: every outbound frame carries the correct sessionId and token pair, and inbound frames for sessions outside the capability set are dropped
-- [ ] Contract: hostile transcript content — script tags, event-handler attributes, javascript URLs and code fences — renders as visible text and executes nothing
-- [ ] Contract: frames for two live sessions are routed to their own transcripts with no cross-talk
-- [ ] Contract: connection state transitions through the documented union and never reports connected while the socket is closed
-- [ ] A dropped socket reconnects with jittered backoff and does not duplicate already-acked messages
-- [ ] Messages composed while disconnected are delivered exactly once on reconnect, in order
-- [ ] Progress frames advance the indicator without appending a transcript message
-- [ ] Status resolves from the frame's explicit state field, including agent-gone
-- [ ] Backfill on reconnect populates the transcript from the history response
-- [ ] An attachment renders from a fetched blob URL, and a gone asset renders the removed placeholder
+- [x] Contract: every outbound frame carries the correct sessionId and token pair, and inbound frames for sessions outside the capability set are dropped
+- [x] Contract: hostile transcript content — script tags, event-handler attributes, javascript URLs and code fences — renders as visible text and executes nothing
+- [x] Contract: frames for two live sessions are routed to their own transcripts with no cross-talk
+- [x] Contract: connection state transitions through the documented union and never reports connected while the socket is closed
+- [x] A dropped socket reconnects with jittered backoff and does not duplicate already-acked messages
+- [x] Messages composed while disconnected are delivered exactly once on reconnect, in order
+- [x] Progress frames advance the indicator without appending a transcript message
+- [x] Status resolves from the frame's explicit state field, including agent-gone
+- [x] Backfill on reconnect populates the transcript from the history response
+- [x] An attachment renders from a fetched blob URL, and a gone asset renders the removed placeholder
 
 #### Acceptance Criteria
 - [ ] Given two live sessions on one socket, when both receive messages, then each transcript contains only its own
@@ -945,3 +945,30 @@ rather than re-deriving them. These are observations of committed code, not open
 - **`keepalive` draws no reply at all** — the daemon calls `noteActivity()` and returns. Slice 5's connection-state logic must not wait on a response to it.
 - **`history-request` currently answers `history-response` with an empty `messages` array**, a faithful pre-persistence placeholder until slice 3 wires the store. Slice 5's backfill-on-reconnect will read empty until then; that is expected, not a bug to work around.
 - **`command-invocation` and `config-get`/`config-set` answer with an explicit "not implemented yet" `error` frame** naming slice 8 and slice 9 respectively. Slice 5's connection-state UI should not treat those as connection faults.
+
+### Layer-2 module surface ratifications (execute-mode)
+
+Slices 3 and 5 both stopped at RED asking for the same thing: the plan pins their behavior in
+detail and names almost none of their identifiers. Settled here. Binding.
+
+#### Slice 3 — store and crypto
+
+- **Module surface, ratified as RED proposed it.** `src/store/index.ts` exports `class ChatStore` with `static open(paths: DgPaths, seams?: {env?, keychain?}): Promise<ChatStore>`, `close()`, `userVersion()`, `cryptoMeta()`, `insertMessage({sessionId,id,role,body})`, `insertCommandInvocation({sessionId,id,argv,stdout,stderr,truncated})`, `claimNext(sessionId)`, `ack(sessionId,claimId)`, `peekAll(sessionId)`. `src/store/migrations.ts` exports `MigrationStep{version,run}`, `runMigrations(db,steps,{snapshotDir}?)`, `ForwardOnlyVersionError`. `src/crypto/envelope.ts` exports `createCipherBox(dataKey, seams?:{randomIv?}).{encryptRecord(plaintext,aad),decryptRecord(ciphertext,iv,tag,aad)}` and `buildAad({domain,sessionId,rowId,formatVersion})`. `src/crypto/key-file.ts` exports `mintFallbackKeyFile(keyPath,kek,keyId)` and `readFallbackKeyFile(keyPath)`. `src/crypto/key-resolution.ts` exports `fingerprintKey`, `wrapDataKey`/`unwrapDataKey`, `resolveDataKey({existing,keyPath,mode,keychain})`, `KeyResolutionRefusedError{recordedSource,recordedKeyId,candidates}`, `KeychainBackend{lookup,store}`. The `randomIv` seam is a test seam, not an IV parameter on the public surface — `encryptRecord` still generates its own 12 bytes, and the spec's prohibition stands.
+- **Claim redelivery is a TIME-BOUNDED lease, not restart-only** — this OVERRIDES RED's recommendation. RED proposed resetting in-flight claims only when `ChatStore` reopens. That loses messages in the ordinary case: slice 7's `recv` is a short-lived CLI process, so if it claims a message and dies, the long-lived daemon never restarts (its idle-TTL requires zero sessions AND zero connections) and the human's message is stranded indefinitely — contradicting Scope's "claim-lease read semantics so a non-listening agent misses nothing". The word is *lease*, and `claimed_at` exists in the required schema for exactly this. `claimNext` reclaims any row whose `claim_id` is set and whose `claimed_at` is older than the lease, **inside the same single UPDATE … RETURNING** — so this adds no fourth verb and no change to the ratified API. Lease duration takes a `DG_CLAIM_LEASE_MS` seam, per the `DG_`-prefixed convention. Resetting in-flight claims on reopen is kept as well; it is free and covers the crash case.
+- **A wrong-mode state directory self-heals, but audibly.** `chmod` to 0700 and log a warning naming the prior mode. The spec's wording difference is deliberate — "assert its mode" for the daemon-owned directory versus "refused" for the key file, which another process could have planted — but a silent `chmod` would hide that the 0644 database and `-wal` files had been group- or world-readable. The contents are encrypted, so continuing is defensible; losing the signal is not.
+- **`DG_KEY_SOURCE` gates PROBING, not just fresh-mint source choice** — confirmed as RED proposed. `DG_KEY_SOURCE=file` must not probe the keychain even when `crypto_meta.key_source` records `keychain`. Its documented purpose is test isolation ("the suite must never read or write the developer's real login keyring"), and it also lets an operator sidestep the macOS `security` GUI-ACL prompt hazard under a detached daemon. When the gated source cannot match the recorded `key_id`, resolution REFUSES TO START — that is the correct outcome, not a regression: an honest refusal is exactly what identity-first resolution exists to produce, versus silently minting a second key.
+
+#### Slice 5 — extension chat client
+
+- **Module surfaces, ratified as RED proposed them.** `createChatClient` with `connect(bootstrap)` (opens the shared socket on first call, accumulates further session capabilities on later calls — no separate `addCapability`), `onFrame(listener)` as a single demuxed subscription that never fires for a sessionId outside the capability set, `sendUserMessage(sessionId, body, opts?)` returning the messageId and throwing for an uncaptured sessionId, `getConnectionState()`, and `ChatClientOptions = {openSocket?, backoffBaseMs?, backoffMaxMs?, randomJitter?}`. `createChatSessions` with `applyFrame(frame)`/`list()`/`get(sessionId)`/`markSessionRead(sessionId)`. `createTranscriptView` with `appendUserMessage`/`appendAgentMessage(frame, token)`/`updateProgress(state)`/`applyHistory(messages)` and an injectable `fetchAsset(assetId, sessionId, token)` seam returning `{status:"ok",blobUrl}` | `{status:"removed"}` | `{status:"error"}` — the three-way result is what makes a pruned asset distinguishable from a load failure, as the plan requires.
+- **A session's status defaults to `"unknown"`, typed `ProgressState | "unknown"`.** RED's reasoning is right and worth keeping: defaulting to `running` in the absence of a progress frame would itself be inferring live state from silence, which the plan explicitly forbids. A progress or agent-message frame for a sessionId with no roster entry is ignored rather than fabricating a partial one.
+- **Slice 5 MAY edit `pkg/extension/lib/background/chat.ts`** so `registerChat` delegates its socket handling to `createChatClient`. There must be exactly ONE socket implementation: the background owns the socket so background chats keep receiving while the tab is closed, and a second client-side socket would break that. Safe in this layer because slice 3, its only parallel sibling, is `pkg/dg-server`-only.
+
+#### Cross-slice: `history-response` item shape
+
+Settled now rather than deferred, so slice 3 builds to it and slice 5's tests do not need reworking
+later. `history-response.messages[]` items are the **stored-record projection, not wire frames**:
+`{ seq: number, id: string, role: "user" | "agent", body: string, createdAt: string, attachmentId?: string }`,
+ordered by `seq` ascending. Keying on `role` rather than a frame `type` follows the schema, where
+`role` is one of the plaintext indexable columns, and keeps stored records distinct from the frame
+union. `seq` is the ordering key because timestamps are neither unique nor monotonic.
