@@ -78,8 +78,30 @@ function createV1Tables(db: Database): void {
 	) STRICT`);
 }
 
+/**
+ * v2: slice 8's $ dispatch and @ mention routing. subagent_name/label are
+ * plaintext (routing labels, not secrets) like the existing attachment_id;
+ * command_manifests is one upsertable row per session, each field its own
+ * AAD domain.
+ */
+function createV2Additions(db: Database): void {
+	db.run(`ALTER TABLE messages ADD COLUMN subagent_name TEXT`);
+	db.run(`ALTER TABLE command_invocations ADD COLUMN label TEXT`);
+	db.run(`CREATE TABLE command_manifests (
+		session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+		updated_at TEXT NOT NULL,
+		commands_ciphertext BLOB NOT NULL,
+		commands_iv BLOB NOT NULL,
+		commands_tag BLOB NOT NULL,
+		subagents_ciphertext BLOB NOT NULL,
+		subagents_iv BLOB NOT NULL,
+		subagents_tag BLOB NOT NULL
+	) STRICT`);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
+	{ version: 2, run: createV2Additions },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

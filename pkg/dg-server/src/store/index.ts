@@ -6,7 +6,7 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
-import type { ProgressState } from "@dg/common";
+import type { CommandEntry, ProgressState } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { buildAad, type CipherBox, createCipherBox } from "../crypto/envelope";
 import {
@@ -26,6 +26,8 @@ const AAD_COMMAND_ARGV = "command-argv";
 const AAD_COMMAND_STDOUT = "command-stdout";
 const AAD_COMMAND_STDERR = "command-stderr";
 const AAD_STATUS_PROGRESS = "status-progress";
+const AAD_COMMAND_MANIFEST = "command-manifest";
+const AAD_SUBAGENT_LIST = "subagent-list";
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -40,12 +42,24 @@ export type InsertMessageInput = {
 	role: MessageRole;
 	body: string;
 	attachmentId?: string;
+	subagentName?: string;
 };
 
 export type InsertCommandInvocationInput = {
 	sessionId: string;
 	id: string;
 	argv: string[];
+	stdout: string;
+	stderr: string;
+	truncated: boolean;
+	/** Display label from the manifest entry — kept separate from the resolved argv audit trail. */
+	label?: string;
+};
+
+export type UpdateCommandInvocationResultInput = {
+	seq: number;
+	sessionId: string;
+	id: string;
 	stdout: string;
 	stderr: string;
 	truncated: boolean;
@@ -71,6 +85,7 @@ export type ClaimedMessage = {
 	body: string;
 	createdAt: string;
 	attachmentId?: string;
+	subagentName?: string;
 };
 
 /** Cross-slice contract: exactly the history-response.messages[] item shape. */
@@ -81,6 +96,7 @@ export type PeekedMessage = {
 	body: string;
 	createdAt: string;
 	attachmentId?: string;
+	subagentName?: string;
 };
 
 export type CryptoMetaInfo = {
@@ -99,6 +115,7 @@ type RawMessageRow = {
 	body_iv: Uint8Array;
 	body_tag: Uint8Array;
 	attachment_id: string | null;
+	subagent_name: string | null;
 };
 
 type RawCryptoMetaRow = {
@@ -271,8 +288,8 @@ export class ChatStore {
 		const createdAt = new Date().toISOString();
 		const row = this.db
 			.query(
-				`INSERT INTO messages (id, session_id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				`INSERT INTO messages (id, session_id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 				 RETURNING seq`,
 			)
 			.get(
@@ -284,6 +301,7 @@ export class ChatStore {
 				enc.iv,
 				enc.tag,
 				input.attachmentId ?? null,
+				input.subagentName ?? null,
 			) as { seq: number };
 		return { seq: row.seq };
 	}
@@ -330,8 +348,8 @@ export class ChatStore {
 					argv_ciphertext, argv_iv, argv_tag,
 					stdout_ciphertext, stdout_iv, stdout_tag,
 					stderr_ciphertext, stderr_iv, stderr_tag,
-					truncated
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					truncated, label
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				RETURNING seq`,
 			)
 			.get(
@@ -348,8 +366,173 @@ export class ChatStore {
 				stderrEnc.iv,
 				stderrEnc.tag,
 				input.truncated ? 1 : 0,
+				input.label ?? null,
 			) as { seq: number };
 		return { seq: row.seq };
+	}
+
+	/** Called once dispatch's exec finishes — the row itself is written before the spawn. */
+	updateCommandInvocationResult(
+		input: UpdateCommandInvocationResultInput,
+	): void {
+		const formatVersion = this.meta.formatVersion;
+		const stdoutEnc = this.cipherBox.encryptRecord(
+			input.stdout,
+			buildAad({
+				domain: AAD_COMMAND_STDOUT,
+				sessionId: input.sessionId,
+				rowId: input.id,
+				formatVersion,
+			}),
+		);
+		const stderrEnc = this.cipherBox.encryptRecord(
+			input.stderr,
+			buildAad({
+				domain: AAD_COMMAND_STDERR,
+				sessionId: input.sessionId,
+				rowId: input.id,
+				formatVersion,
+			}),
+		);
+		this.db.run(
+			`UPDATE command_invocations
+			 SET stdout_ciphertext = ?, stdout_iv = ?, stdout_tag = ?,
+			     stderr_ciphertext = ?, stderr_iv = ?, stderr_tag = ?,
+			     truncated = ?
+			 WHERE seq = ?`,
+			[
+				stdoutEnc.ciphertext,
+				stdoutEnc.iv,
+				stdoutEnc.tag,
+				stderrEnc.ciphertext,
+				stderrEnc.iv,
+				stderrEnc.tag,
+				input.truncated ? 1 : 0,
+				input.seq,
+			],
+		);
+	}
+
+	/** One upsertable row per session; commands and subagent names each carry their own AAD domain tag. */
+	saveCommandManifest(input: {
+		sessionId: string;
+		commands: CommandEntry[];
+		subagentNames: string[];
+	}): void {
+		this.ensureSessionRow(input.sessionId);
+		const formatVersion = this.meta.formatVersion;
+		const commandsEnc = this.cipherBox.encryptRecord(
+			JSON.stringify(input.commands),
+			buildAad({
+				domain: AAD_COMMAND_MANIFEST,
+				sessionId: input.sessionId,
+				rowId: input.sessionId,
+				formatVersion,
+			}),
+		);
+		const subagentsEnc = this.cipherBox.encryptRecord(
+			JSON.stringify(input.subagentNames),
+			buildAad({
+				domain: AAD_SUBAGENT_LIST,
+				sessionId: input.sessionId,
+				rowId: input.sessionId,
+				formatVersion,
+			}),
+		);
+		this.db.run(
+			`INSERT INTO command_manifests (
+				session_id, updated_at,
+				commands_ciphertext, commands_iv, commands_tag,
+				subagents_ciphertext, subagents_iv, subagents_tag
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(session_id) DO UPDATE SET
+				updated_at = excluded.updated_at,
+				commands_ciphertext = excluded.commands_ciphertext,
+				commands_iv = excluded.commands_iv,
+				commands_tag = excluded.commands_tag,
+				subagents_ciphertext = excluded.subagents_ciphertext,
+				subagents_iv = excluded.subagents_iv,
+				subagents_tag = excluded.subagents_tag`,
+			[
+				input.sessionId,
+				new Date().toISOString(),
+				commandsEnc.ciphertext,
+				commandsEnc.iv,
+				commandsEnc.tag,
+				subagentsEnc.ciphertext,
+				subagentsEnc.iv,
+				subagentsEnc.tag,
+			],
+		);
+	}
+
+	private readManifestRow(sessionId: string):
+		| {
+				commands_ciphertext: Uint8Array;
+				commands_iv: Uint8Array;
+				commands_tag: Uint8Array;
+				subagents_ciphertext: Uint8Array;
+				subagents_iv: Uint8Array;
+				subagents_tag: Uint8Array;
+		  }
+		| undefined {
+		const row = this.db
+			.query(
+				`SELECT commands_ciphertext, commands_iv, commands_tag,
+				        subagents_ciphertext, subagents_iv, subagents_tag
+				 FROM command_manifests WHERE session_id = ?`,
+			)
+			.get(sessionId) as {
+			commands_ciphertext: Uint8Array;
+			commands_iv: Uint8Array;
+			commands_tag: Uint8Array;
+			subagents_ciphertext: Uint8Array;
+			subagents_iv: Uint8Array;
+			subagents_tag: Uint8Array;
+		} | null;
+		return row ?? undefined;
+	}
+
+	/** undefined means no manifest has been published for this session yet — never a lookup error. */
+	getCommandManifest(sessionId: string): CommandEntry[] | undefined {
+		const row = this.readManifestRow(sessionId);
+		if (!row) return undefined;
+		const formatVersion = this.meta.formatVersion;
+		const json = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.commands_ciphertext),
+				Buffer.from(row.commands_iv),
+				Buffer.from(row.commands_tag),
+				buildAad({
+					domain: AAD_COMMAND_MANIFEST,
+					sessionId,
+					rowId: sessionId,
+					formatVersion,
+				}),
+			)
+			.toString("utf8");
+		return JSON.parse(json) as CommandEntry[];
+	}
+
+	/** undefined means no manifest (and so no subagent list) has been published yet. */
+	getSubagentNames(sessionId: string): string[] | undefined {
+		const row = this.readManifestRow(sessionId);
+		if (!row) return undefined;
+		const formatVersion = this.meta.formatVersion;
+		const json = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.subagents_ciphertext),
+				Buffer.from(row.subagents_iv),
+				Buffer.from(row.subagents_tag),
+				buildAad({
+					domain: AAD_SUBAGENT_LIST,
+					sessionId,
+					rowId: sessionId,
+					formatVersion,
+				}),
+			)
+			.toString("utf8");
+		return JSON.parse(json) as string[];
 	}
 
 	insertStatusEvent(input: InsertStatusEventInput): { seq: number } {
@@ -441,7 +624,7 @@ export class ChatStore {
 					 ORDER BY seq ASC
 					 LIMIT 1
 				 )
-				 RETURNING seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id`,
+				 RETURNING seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name`,
 			)
 			.get(claimId, now, sessionId, leaseCutoff) as RawMessageRow | null;
 
@@ -456,6 +639,7 @@ export class ChatStore {
 			body: this.decryptMessageBody(row, sessionId),
 			createdAt: row.created_at,
 			attachmentId: row.attachment_id ?? undefined,
+			subagentName: row.subagent_name ?? undefined,
 		};
 	}
 
@@ -475,7 +659,7 @@ export class ChatStore {
 	peekAll(sessionId: string): PeekedMessage[] {
 		const rows = this.db
 			.query(
-				`SELECT seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id
+				`SELECT seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name
 				 FROM messages WHERE session_id = ? ORDER BY seq ASC`,
 			)
 			.all(sessionId) as RawMessageRow[];
@@ -486,6 +670,7 @@ export class ChatStore {
 			body: this.decryptMessageBody(row, sessionId),
 			createdAt: row.created_at,
 			attachmentId: row.attachment_id ?? undefined,
+			subagentName: row.subagent_name ?? undefined,
 		}));
 	}
 }

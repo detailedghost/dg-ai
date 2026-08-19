@@ -14,6 +14,11 @@ import {
 import type { DgPaths } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
 import type { CliFrame } from "../commands/wire";
+import {
+	type DispatchScheduler,
+	dispatchCommand,
+	resolveSubagentMention,
+} from "../dispatch";
 import { ManifestLoadError, resolveManifestForPublish } from "../manifest/load";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
@@ -33,6 +38,7 @@ export type FrameHandlerDeps = {
 	paths: DgPaths;
 	noteActivity: () => void;
 	store: ChatStore;
+	dispatchScheduler: DispatchScheduler;
 };
 
 function sendFrame(
@@ -277,6 +283,13 @@ async function handleCliFrame(
 				);
 				return;
 			}
+			// Otherwise a later command-invocation has no lookup surface to
+			// resolve commandLabel -> argv against.
+			deps.store.saveCommandManifest({
+				sessionId,
+				commands: frame.commands,
+				subagentNames: frame.subagents ?? [],
+			});
 			setTimeout(() => {
 				void broadcastPageFrame(deps, sessionId, {
 					type: "manifest-publish",
@@ -442,16 +455,40 @@ async function handleUserMessage(
 		);
 		return;
 	}
+	// Resolved BEFORE insertMessage — an unresolved mention still delivers,
+	// unchanged, with the field simply absent (never refuse over a typo).
+	const subagentNames = deps.store.getSubagentNames(frame.sessionId) ?? [];
+	const subagentName = resolveSubagentMention(frame.body, subagentNames);
 	deps.store.insertMessage({
 		sessionId: frame.sessionId,
 		id: frame.messageId,
 		role: "user",
 		body: frame.body,
+		...(subagentName ? { subagentName } : {}),
 	});
 	await sendFrame(ws, frame.sessionId, {
 		type: "ack",
 		messageId: frame.messageId,
 	});
+}
+
+/** frame.sessionId here has already passed authorizeFrame against the socket's own capability map — never a lookup keyed on an unchecked frame field. */
+async function handleCommandInvocation(
+	ws: ServerWebSocket<SocketState>,
+	frame: Extract<ChatFrame, { type: "command-invocation" }>,
+	deps: FrameHandlerDeps,
+): Promise<void> {
+	const result = await dispatchCommand(
+		frame.sessionId,
+		frame.commandLabel,
+		frame.params,
+		{
+			store: deps.store,
+			registry: deps.registry,
+			scheduler: deps.dispatchScheduler,
+		},
+	);
+	await sendFrame(ws, frame.sessionId, { type: "command-result", ...result });
 }
 
 async function dispatchFrame(
@@ -476,13 +513,7 @@ async function dispatchFrame(
 		case "config-set":
 			return handleConfigFrame(ws, frame);
 		case "command-invocation":
-			// Slice 8 owns $ dispatch (src/dispatch/**, also outside src/server/**).
-			await sendError(
-				ws,
-				frame.sessionId,
-				"$ command dispatch is not implemented yet (lands in slice 8)",
-			);
-			return;
+			return handleCommandInvocation(ws, frame, deps);
 		default:
 			// Every other type is outbound-only, so authorizeFrame already rejected
 			// it upstream — an unreachable defensive fallback, not an assertNever crash.

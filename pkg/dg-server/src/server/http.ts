@@ -6,6 +6,7 @@ import {
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
+import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
 import {
@@ -61,6 +62,9 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	const { port, paths, registry, connections, logger, noteActivity, store } =
 		deps;
 
+	// One scheduler for the daemon's lifetime — concurrency/rate bounds are
+	// meaningless if reset per connection.
+	const dispatchScheduler = new DispatchScheduler();
 	const frameDeps = {
 		registry,
 		connections,
@@ -68,6 +72,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		paths,
 		noteActivity,
 		store,
+		dispatchScheduler,
 	};
 
 	return Bun.serve<SocketState>({
