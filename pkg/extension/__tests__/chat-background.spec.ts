@@ -54,6 +54,7 @@ function makeBrowserApi() {
 		Promise.resolve(),
 	);
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
+	const sendMessage = mock((_message: unknown) => Promise.resolve(undefined));
 	const api = {
 		action: {
 			onClicked: {
@@ -69,6 +70,7 @@ function makeBrowserApi() {
 				}),
 			},
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
+			sendMessage,
 		},
 		tabs: { create: tabsCreate },
 		storage: { session: { set: sessionSet } },
@@ -77,9 +79,15 @@ function makeBrowserApi() {
 		api,
 		sessionSet,
 		tabsCreate,
+		sendMessage,
 		getOnMessage: () => onMessageListener,
 		getOnClicked: () => onClickedListener,
 	};
+}
+
+/** A sender shaped like this extension's own chat tab, for MSG.clientConnect's sender check. */
+function extensionPageSender(api: ReturnType<typeof makeBrowserApi>["api"]) {
+	return { url: api.runtime.getURL("chat.html") };
 }
 
 test("registerChat is exported as a function from the background barrel", () => {
@@ -699,8 +707,14 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const closing = makeBootstrap({ sessionId: "sess-closing", token: "tok-closing" });
-	const staying = makeBootstrap({ sessionId: "sess-staying", token: "tok-staying" });
+	const closing = makeBootstrap({
+		sessionId: "sess-closing",
+		token: "tok-closing",
+	});
+	const staying = makeBootstrap({
+		sessionId: "sess-staying",
+		token: "tok-staying",
+	});
 	await captureMarker(getOnMessage, closing);
 	await captureMarker(getOnMessage, staying);
 
@@ -730,6 +744,188 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 		.map(([raw]) => (JSON.parse(raw as string) as { token?: string }).token);
 	expect(tokensAfter).not.toContain(closing.token);
 	expect(tokensAfter).toContain(staying.token);
+});
+
+// --- Regression (finding 3): session-pending must enter bootstrapsBySession,
+// so a session created from the page's create-chat affordance draws a keepalive. ---
+
+test("regression: a session created via session-pending is registered for keepalive, not silently dropped", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	const requester = makeBootstrap();
+	await captureMarker(getOnMessage, requester);
+
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(requester.sessionId)),
+	);
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-pending",
+			sessionId: requester.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
+		}),
+	);
+	socket.dispatch("message", message(buildSessionListFrame("sess-spawned")));
+	await new Promise((resolve) => setTimeout(resolve, 40));
+
+	const tokens = socket.send.mock.calls
+		.map(
+			([raw]) => JSON.parse(raw as string) as { type: string; token?: string },
+		)
+		.filter((f) => f.type === "keepalive")
+		.map((f) => f.token);
+	expect(tokens).toContain("tok-spawned");
+});
+
+// --- Regression (finding 8): relay coverage for the untested inbound
+// directions, plus the sender.url tightening on MSG.clientConnect. ---
+
+test("MSG.clientConnect from an extension page connects the client and responds with the connection state", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	const sendResponse = mock((_r: unknown) => undefined);
+
+	getOnMessage()?.(
+		{ type: MSG.clientConnect, bootstrap },
+		extensionPageSender(api),
+		sendResponse,
+	);
+	await settle();
+
+	expect(openSocket).toHaveBeenCalledWith(
+		`ws://127.0.0.1:${bootstrap.port}/ws`,
+	);
+	expect(sendResponse).toHaveBeenCalledWith(
+		expect.objectContaining({ ok: true }),
+	);
+});
+
+test("MSG.clientConnect from a non-extension-page sender is refused without connecting", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	const sendResponse = mock((_r: unknown) => undefined);
+
+	getOnMessage()?.(
+		{ type: MSG.clientConnect, bootstrap },
+		{ url: "http://example.com/evil", tab: { id: 9 } },
+		sendResponse,
+	);
+	await settle();
+
+	expect(openSocket).not.toHaveBeenCalled();
+	expect(sendResponse).not.toHaveBeenCalled();
+});
+
+test("MSG.userMessage relays to the daemon as a real user-message frame and acks the sender", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	const sendResponse = mock((_r: unknown) => undefined);
+
+	getOnMessage()?.(
+		{ type: MSG.userMessage, sessionId: bootstrap.sessionId, body: "hello" },
+		extensionPageSender(api),
+		sendResponse,
+	);
+	await settle();
+
+	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
+	expect(
+		sent.some((f) => f.type === "user-message" && f.body === "hello"),
+	).toBe(true);
+	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+});
+
+test("MSG.sessionCreate relays to the daemon as a real session-create frame", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	const sendResponse = mock((_r: unknown) => undefined);
+
+	getOnMessage()?.(
+		{ type: MSG.sessionCreate, sessionId: bootstrap.sessionId, role: "agent" },
+		extensionPageSender(api),
+		sendResponse,
+	);
+	await settle();
+
+	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
+	expect(sent.some((f) => f.type === "session-create")).toBe(true);
+	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+});
+
+test("MSG.sessionClose relays to the daemon as a real session-close frame", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	const sendResponse = mock((_r: unknown) => undefined);
+
+	getOnMessage()?.(
+		{ type: MSG.sessionClose, sessionId: bootstrap.sessionId },
+		extensionPageSender(api),
+		sendResponse,
+	);
+	await settle();
+
+	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
+	expect(sent.some((f) => f.type === "session-close")).toBe(true);
+	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+});
+
+test("every daemon frame is broadcast outward via api.runtime.sendMessage, not just relied on to no-op", async () => {
+	const { api, sendMessage, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "agent-message",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			body: "hi from the daemon",
+		}),
+	);
+
+	expect(sendMessage).toHaveBeenCalledWith({
+		type: MSG.frame,
+		frame: expect.objectContaining({ type: "agent-message" }),
+	});
 });
 
 test("regression: registerRecording still wires its message router, unaffected by the removed onClicked registration", () => {
