@@ -4,7 +4,7 @@ feature_snake_case: chat_harness
 date: '2026-08-18'
 version: '1.0'
 status: in-progress
-current_slice: 6
+current_slice: 8
 pr_strategy: single
 slices:
   - id: 1
@@ -773,8 +773,52 @@ against an MV2-shaped global.
 
 Verified: `pkg/extension` 397 pass / 0 fail, lint clean, build succeeds.
 
+### Slice 7 — agent-facing-cli
+
+Built by an external `codex` backend against tests written first; it changed no tests. The verbs
+speak a `cli-*` family over `/cli`, outside the 18 ratified discriminants and checked structurally
+before `validateChatFrame` — the same carve-out `connect` uses, and necessary because the outbound
+frames it maps onto have no token field. `recv` has three distinct exit codes, and
+`handleUserMessage` now persists, without which the whole path was inert.
+
+QA found two security holes, both traceable to ratification wording rather than the implementation:
+manifest validation ran only in the CLI wrapper, so a raw `/cli` socket could publish
+`argv:["bash","-c","{cmd}"]` with no error at all; and `CHAT_MAX_MANIFEST_BYTES` was likewise
+client-side, admitting a 123KB manifest against a 64KB cap. Both now enforce in the daemon handler.
+It also found that the `it.todo` this slice was tasked with promoting was **vacuous** — it never
+closed the auto-registered session, so the session count kept the daemon alive rather than the parked
+connection, and deleting the connection check from `isIdle()` left the test green. Fixed and
+re-verified by mutation.
+
+Verified: `pkg/dg-server` 140 pass / 0 fail / 0 todo, `@dg/common` 108 pass, lint clean, binary
+compiles.
+
+### Slice 6 — extension-chat-page
+
+Built by `codex` against tests written first; it changed no tests and kept the one-socket invariant —
+the built page chunk contains zero `WebSocket` references while the background holds the single
+socket, which is the check that verifies it (identifier greps are useless here, since the production
+build minifies and mangles local names).
+
+QA returned 24 findings. The two worst were state, not appearance. `syncPage()` called
+`replaceChildren()` on every inbound frame, and detaching a focused element drops focus to `body` —
+so the caret was yanked out of the composer on every progress frame, and arrow-key reorder died after
+one press with move mode armed and no keyboard exit. And the page kept a *second* capability set
+seeded only from `storage.session`, which is in-memory: restarting the browser while the daemon held
+a live session left the rail empty with no recovery path, since the page could only gain a capability
+from a stored bootstrap or a `session-pending` it requested itself. Also fixed: errors rendered into
+a 1px screen-reader-only node; a user message was appended before its send was accepted; the theme
+toggle left accent text at 1.15:1 because the inversion blocks remapped five tokens but neither
+accent.
+
+Verified: `pkg/extension` 503 pass / 0 fail, lint clean, build clean.
+
 ## Agent Notes
 
+- (slice 6, js) `pkg/extension/entrypoints/options/style.css` gained four OS-invariant accent token aliases — a boundary crossing into **slice 9's** file. They restate hex values already in that file (no new palette) and had to live outside the `prefers-color-scheme` gate so the chat page's inversion blocks can reach the forced theme's accents. Slice 9 should keep them.
+- (slice 6, js) `createRelayChatClient` carries a local `sendUserMessageAndWait` beyond the ratified `ChatClient` interface, feature-detected by `main.ts` so injected fakes fall back to the shared contract. It exists so a rejected send is distinguishable from an accepted one without widening a cross-consumer type.
+- (slice 6, js) `ChatBrowserApi.runtime.sendMessage` is now REQUIRED rather than optional. Real Chrome MV3 and Firefox both always have it, and optional meant the relay's outbound half could silently no-op — the same shape of gap that shipped slice 4's Firefox crash.
+- (any slice) Never build a dedupe or cache key by concatenating untrusted text around a control character. `chat-transcript.ts` used a literal NUL, which made git treat the whole file as BINARY (`Bin 7288 -> 7719 bytes`, zero insertions) — unreviewable in a diff — and was a latent collision risk since a body can contain a NUL. Length-prefix instead (`role:len:body`).
 - (slice 3, js) Wiring a `ChatStore.open()`-style call into the daemon's real startup path makes EVERY subprocess-driven test inherit its key-resolution defaults — including tests unrelated to crypto. Force `DG_KEY_SOURCE=file` at the shared subprocess-env harness, not per test file, or `auto` mode will probe and WRITE to the developer's real OS keychain during ordinary runs.
 - (slice 3, js) `PRAGMA foreign_keys` and `busy_timeout` are per-CONNECTION and reset to 0 on any fresh `Database` instance; only `journal_mode` persists in the DB header. A test asserting them through a separate raw connection can never pass for any implementation — drive the real setup function against that connection instead.
 - (slice 3, js) Read a key file by `fstatSync(fd)` after `openSync`, never `statSync(path)` then open separately — the path-based check has a TOCTOU race where the file can be swapped between check and read.
@@ -1104,3 +1148,30 @@ Corrected here.
 - **The denylist matches a NORMALIZED basename, not a fixed literal set.** A literal list cannot work: on this very box `Bun.which("python3")` resolves through symlinks to `python3.14`, whose basename is not in the list, so `python3 -c "{arg}"` passes the check the rule exists to stop. Match the **un-realpath'd** basename as well as the resolved one, and strip trailing version suffixes (`python3.14` → `python3`, `python3` → `python`) before comparing. The rule stands as written — anything accepting a string of code to execute defeats `argv` being a `string[]` — only the matching is fixed.
 - **`spawn` must expose `--agent-identity`.** Adding the optional `agentIdentity` field to `session-create` left it unreachable: the daemon honors it but no CLI flag can send it, so every spawned session silently inherits the requester's identity. Scope's headline is spawning chats "bound to different agents", so the flag is required, not polish.
 - **`--subagents` must read and validate, or not exist.** As shipped it only `realpathSync`s the path — contents are never read, validated or sent. `@dg/common` has no subagent-manifest type, but slice 1 already ratified that subagent names validate through the barrel-exported `validateProtoIdentifier`. So a subagent manifest is a list of names checked with that validator; no new contract is needed. Slice 8 consumes it for `@` resolution.
+
+### Deferred to the final polish pass (execute-mode)
+
+Sixteen MEDIUM/LOW findings from slice 6's QA were deliberately not fixed in the correction round, to
+keep it focused on the CRITICAL and HIGH set. They are real and should be closed before this bundle
+ships — most are prototype-fidelity or accessibility gaps, not cosmetics in the dismissible sense:
+
+- **Accessible names flatten.** The rail row's button nests two adjacent `<span>`s with no separating
+  text, so its computed name reads `CLAUDE-JSRUNNING`; the section `<h2>` reads `001_chat_harness2 slices`.
+  Heading levels are also flat.
+- **Transcript messages carry no author label.** The prototype renders an explicit `orchestrator` /
+  `you` label above every message; the implementation conveys the difference only as a left border,
+  so a screen-reader user cannot tell who spoke.
+- **The Move control is not per-row.** It lives in the chat-node header inside the thread pane, and
+  non-selected nodes are `hidden` — so it is reachable for exactly one session, and click-to-place is
+  dead code guarded on an event target that never matches.
+- **`touch-action: none`** on `.chat-page` disables pinch-zoom page-wide. That bullet is slice 11
+  canvas carryover, which the layer-3 ratification voided.
+- **The theme toggle is hidden below 44rem**, which at 200% zoom on a 1280px viewport removes the only
+  control for the ratified light/dark toggle.
+- **The orchestrator row lacks its prototype treatment** — accent identity, panel background, and the
+  `└` tree connector on indented agent rows.
+- **Attachment `<img>` has no `alt`**, so AT announces the blob URL (WCAG 1.1.1). `URL.createObjectURL`
+  is also never revoked.
+- **`formatGroupCount` labels a live-agent count as "slices".** This one needs a decision, not just a
+  fix: the Worksets ratification gives a session only `workset` and `role`, so **no slice count exists
+  in the data model at all**. Either add a field or relabel the header to what it actually counts.
