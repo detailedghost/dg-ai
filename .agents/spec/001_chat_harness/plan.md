@@ -4,7 +4,7 @@ feature_snake_case: chat_harness
 date: '2026-08-18'
 version: '1.0'
 status: in-progress
-current_slice: 3
+current_slice: 6
 pr_strategy: single
 slices:
   - id: 1
@@ -767,6 +767,11 @@ Verified: `pkg/extension` 397 pass / 0 fail, lint clean, build succeeds.
 
 ## Agent Notes
 
+- (slice 3, js) Wiring a `ChatStore.open()`-style call into the daemon's real startup path makes EVERY subprocess-driven test inherit its key-resolution defaults — including tests unrelated to crypto. Force `DG_KEY_SOURCE=file` at the shared subprocess-env harness, not per test file, or `auto` mode will probe and WRITE to the developer's real OS keychain during ordinary runs.
+- (slice 3, js) `PRAGMA foreign_keys` and `busy_timeout` are per-CONNECTION and reset to 0 on any fresh `Database` instance; only `journal_mode` persists in the DB header. A test asserting them through a separate raw connection can never pass for any implementation — drive the real setup function against that connection instead.
+- (slice 3, js) Read a key file by `fstatSync(fd)` after `openSync`, never `statSync(path)` then open separately — the path-based check has a TOCTOU race where the file can be swapped between check and read.
+- (slice 5, js) To verify a module is actually SHIPPED, grep the built bundle for wire-protocol string literals, not identifier names: `bun run build` minifies and mangles every local name, so a correct delegation greps to zero hits by function name.
+- (slice 5, js) This repo's comment-length hook re-checks a whole `/** */` block whenever an edit touches it, not just the diff. Several pre-existing spec-file headers run past the cap and were never re-triggered; the moment you edit one you must shrink it in the same edit or the write is blocked.
 - (slice 2, js) `/cli` authenticates with the `X-Dg-Session-Id` and `X-Dg-Session-Token` request headers; `/ws` with a `{type:"connect",...}` frame after open. Slice 7 must use those exact header names.
 - (slice 2, js) The dev box runs genuine WSL2 with `WSL_DISTRO_NAME` set and `.wslconfig` at `networkingMode=mirrored`, so `isWSL()` is true and the real probe path runs here. The NAT-branch test forces `WSL_DISTRO_NAME` in a subprocess env rather than depending on that ambient state.
 - (slice 4, js) An agent researching the pre-monorepo `action`/`browserAction` split checked out historical `extension-src/` copies, which left stale unmerged index entries that block `git commit` repo-wide. If a commit fails with unmerged paths, check `git ls-files -u` for artifacts like this before assuming a real conflict.
@@ -994,3 +999,70 @@ The `assets` and `status_events` tables already carry the correct ciphertext/iv/
 these are write-path additions, not migrations. The slice-3 Engineering bullet covering all of them
 stays UNCHECKED until slice 9 closes the last one — it is a real obligation, not a documentation
 nicety, and the final review should treat an unencrypted asset filename as a defect.
+
+### Known limitation — unstructured error frames (deferred to bundle 2)
+
+The `error` frame carries free text and no structured code, so a client cannot tell a **fatal**
+rejection ("this capability is dead, stop retrying") from a **benign** per-request one ("that verb
+lands in slice 8"). Slice 5's reconnect logic therefore cannot correctly give up against a daemon
+that has forgotten the session entirely.
+
+Not fixed here, deliberately. Nothing in the plan requires a client to give up — slice 5's
+Engineering asks for jittered backoff and `instanceId`-matched rediscovery, both of which are built —
+and adding a code enum is a cross-slice protocol change to `@dg/common`, the daemon and the client
+with no spec mandate behind it. The realistic symptoms ARE fixed: keepalives are gated on a
+confirmed `session-list`, and a `session-closed` frame prunes that session so its dead token never
+burns the shared socket's failed-frame budget. What remains is the narrow case of a daemon restart
+that leaves a stale capability with no `session-closed` to observe.
+
+Bundle 2 should add an optional `code` to the error frame. Reacting to the current free-text message
+would mean string-matching daemon-controlled text, which is worse than the gap.
+
+### Slice 3 — sqlite-store-and-encryption
+
+The encrypted store, and the only store of record. `bun:sqlite` in WAL with `STRICT` tables and
+hand-rolled `PRAGMA user_version` migrations, plus AES-GCM envelope encryption over a random
+per-database data key wrapped by a keychain or file KEK. Key resolution is identity-first: it refuses
+to start on a fingerprint mismatch rather than minting a second key and orphaning the transcript, and
+each of the four sources distinguishes *unreachable* from *absent* — which matters because
+`secret-tool` exits 1 both when a secret is absent and when the session bus is down while the secret
+exists.
+
+Three empirical findings shaped the implementation rather than staying as notes. A *consistently*
+wrong-length IV round-trips fine through GCM, whose auth tag only catches a mismatch between encrypt
+and decrypt — so the 12-byte assertion is an explicit check, not something the tag provides. WAL
+holds plaintext in the `-wal` sidecar before checkpoint, so the byte-scan test reads that file while
+the store is still open. And `PRAGMA foreign_keys`/`busy_timeout` are per-connection and reset on
+every fresh `Database`, so a test asserting them through a separate raw connection could never pass
+for any implementation; the suite drives the real setup function instead.
+
+One incident worth recording: an early test run wrote a real key into the developer's live login
+keyring, because wiring `ChatStore.open()` into the daemon's startup path made every
+subprocess-driven test inherit `DG_KEY_SOURCE=auto`. Fixed at the shared harness level and the entry
+removed. Verified absent.
+
+Verified: `pkg/dg-server` 96 pass / 1 todo / 0 fail, lint clean, binary compiles.
+
+### Slice 5 — extension-chat-client
+
+One socket, session state, and the transcript renderer. Transcript content renders through
+`textContent` only — it is untrusted agent and user text, and an `innerHTML` path would hand it
+extension-page script privileges including the session token and `$` dispatch.
+
+This slice needed a full rework pass. Its first attempt added a SECOND socket engine instead of
+delegating to `createChatClient` as ratified, which QA proved by building the extension and finding
+none of the three new modules in the bundle at all — they were reachable only from their own tests.
+Three CRITICALs followed from that one root cause: the background socket registered no `message`
+listener so it discarded every inbound frame; an unbounded reconnect loop dropped `instanceId`
+matching and would latch onto an unrelated fresh daemon, spamming dead-token keepalives until it
+earned a 1008 close, forever; and `connect()`'s `if (socket)` guard went false after a synchronous
+open throw, so a queued message could be flushed twice across two live sockets — reproduced, and a
+direct violation of the exactly-once criterion.
+
+All fixed, with the delegation verified by wire-protocol literals present in the built bundle rather
+than by identifier names, which minification mangles. A further HIGH surfaced from the corrected
+architecture itself: with one socket shared across sessions, a `session-closed` frame has to prune
+that session's keepalive bookkeeping, or its invalidated token keeps spending a failed-frame budget
+that force-closes the socket for every session still open.
+
+Verified: `pkg/extension` 456 pass / 0 fail, lint clean, build clean.

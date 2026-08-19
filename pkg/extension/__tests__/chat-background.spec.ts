@@ -5,7 +5,7 @@
  * pinned in plan.md's "Transport and naming ratifications (execute-mode, layer 1)".
  */
 
-import { expect, mock, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -250,64 +250,99 @@ test("regression: lib/background/recording.ts no longer registers its own action
 	expect(source).not.toMatch(/action\.onClicked/);
 });
 
+// --- Socket ownership: registerChat delegates to createChatClient (plan.md's
+// Layer-2 ratification — "exactly ONE socket implementation"). ---
+
 type FakeSocket = {
 	send: ReturnType<typeof mock>;
 	addEventListener: ReturnType<typeof mock>;
-	dispatch(type: string): void;
+	dispatch(type: string, event?: unknown): void;
 };
 
 function makeFakeSocket(): FakeSocket {
-	const listeners: Record<string, Array<() => void>> = {};
+	const listeners: Record<string, Array<(event?: unknown) => void>> = {};
 	return {
 		send: mock((_data: string) => undefined),
-		addEventListener: mock((type: string, cb: () => void) => {
+		addEventListener: mock((type: string, cb: (event?: unknown) => void) => {
 			if (!listeners[type]) listeners[type] = [];
 			listeners[type].push(cb);
 		}),
-		dispatch(type: string) {
-			for (const cb of listeners[type] ?? []) cb();
+		dispatch(type: string, event?: unknown) {
+			for (const cb of listeners[type] ?? []) cb(event);
 		},
 	};
 }
 
-test("sends a keepalive periodically once the socket reports itself open", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	// Short override so the periodic behavior is observable without a real 20s wait.
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
+function message(frame: Record<string, unknown>) {
+	return { data: JSON.stringify(frame) };
+}
+
+function buildSessionListFrame(
+	sessionId: string,
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "session-list",
+		sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		sessions: [],
+		...overrides,
+	};
+}
+
+function sentTypes(socket: FakeSocket): string[] {
+	return socket.send.mock.calls.map(
+		([raw]) => (JSON.parse(raw as string) as { type: string }).type,
+	);
+}
+
+async function captureMarker(
+	getOnMessage: () => Listener | undefined,
+	bootstrap: SessionBootstrap,
+): Promise<void> {
+	getOnMessage()?.(
+		{ type: MSG.markerCaptured, bootstrap },
 		{},
 		mock(() => undefined),
 	);
 	await settle();
-	expect(openSocket).toHaveBeenCalledTimes(1);
+}
+
+test("sends no keepalive before the daemon confirms this session's connect handshake", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	await captureMarker(getOnMessage, makeBootstrap());
 
 	socket.dispatch("open");
-	await new Promise((resolve) => setTimeout(resolve, 70));
+	await settle();
+	await new Promise((resolve) => setTimeout(resolve, 50));
 
-	expect(socket.send.mock.calls.length).toBeGreaterThanOrEqual(3);
+	expect(sentTypes(socket)).not.toContain("keepalive");
 });
 
-test("sends no keepalive before the socket reports itself open", async () => {
+test("sends a keepalive immediately once the daemon confirms the session, then periodically after", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-		{},
-		mock(() => undefined),
-	);
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+
+	socket.dispatch("open");
 	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
 
-	// Deliberately never dispatch "open" — the socket stays pending.
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	const sentAfterConfirm = sentTypes(socket).filter((t) => t === "keepalive");
+	expect(sentAfterConfirm.length).toBeGreaterThan(0);
 
-	expect(socket.send).not.toHaveBeenCalled();
+	await new Promise((resolve) => setTimeout(resolve, 70));
+	const sentAfterInterval = sentTypes(socket).filter((t) => t === "keepalive");
+	expect(sentAfterInterval.length).toBeGreaterThan(sentAfterConfirm.length);
 });
 
 test("the production default keepalive interval is at most 20s, not just an overridable option", async () => {
@@ -324,14 +359,14 @@ test("the production default keepalive interval is at most 20s, not just an over
 	}) as typeof setInterval;
 	try {
 		registerChat({ browserApi: api, openSocket });
-		const listener = getOnMessage();
-		listener?.(
-			{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-			{},
-			mock(() => undefined),
-		);
-		await settle();
+		const bootstrap = makeBootstrap();
+		await captureMarker(getOnMessage, bootstrap);
 		socket.dispatch("open");
+		await settle();
+		socket.dispatch(
+			"message",
+			message(buildSessionListFrame(bootstrap.sessionId)),
+		);
 	} finally {
 		globalThis.setInterval = realSetInterval;
 	}
@@ -344,16 +379,11 @@ test("the first frame sent on open is the connect capability handshake carrying 
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
 	const bootstrap = makeBootstrap();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	await captureMarker(getOnMessage, bootstrap);
 
 	socket.dispatch("open");
+	await settle();
 
 	expect(socket.send.mock.calls.length).toBeGreaterThan(0);
 	const [rawFrame] = socket.send.mock.calls[0] as [string];
@@ -371,30 +401,25 @@ test("the keepalive frames are real ratified ChatFrames, not ad-hoc pings the da
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
 	const bootstrap = makeBootstrap();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	await captureMarker(getOnMessage, bootstrap);
 
 	socket.dispatch("open");
-	await new Promise((resolve) => setTimeout(resolve, 25));
+	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
+	await new Promise((resolve) => setTimeout(resolve, 40));
 
-	// index 0 is the "connect" handshake (separately asserted above) — every
-	// frame after it is a keepalive.
 	const keepaliveFrames = socket.send.mock.calls
-		.slice(1)
-		.map(([raw]) => JSON.parse(raw as string));
+		.map(([raw]) => JSON.parse(raw as string))
+		.filter((f) => f.type === "keepalive");
 	expect(keepaliveFrames.length).toBeGreaterThan(0);
 	for (const parsed of keepaliveFrames) {
 		// Real production validator from @dg/common — catches wire-format drift
 		// between this seam and the daemon's own parser, not a re-implemented shape check.
 		expect(() => validateChatFrame(parsed)).not.toThrow();
-		// Not "config-get": that discriminant always draws an unimplemented-transport
-		// error frame from the daemon every interval — see plan.md's Layer-1 QA corrections.
 		expect(parsed).toEqual({
 			type: "keepalive",
 			sessionId: bootstrap.sessionId,
@@ -404,25 +429,25 @@ test("the keepalive frames are real ratified ChatFrames, not ad-hoc pings the da
 	}
 });
 
-test("sends the first keepalive frame immediately on open (right after the handshake), not after waiting one full interval", async () => {
-	// Regression: no inbound frame routes until the handshake lands, and the
-	// keepalive must not then wait 20s more before its own first send.
+test("sends the first keepalive frame immediately once the daemon confirms the session, without waiting a full interval", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 10_000 });
-	const listener = getOnMessage();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
 
 	socket.dispatch("open");
+	await settle();
+	const sentBeforeConfirm = socket.send.mock.calls.length;
 
-	// Frame 0 is "connect", frame 1 is the immediate keepalive.
-	expect(socket.send).toHaveBeenCalledTimes(2);
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
+
+	const sentAfterConfirm = sentTypes(socket).slice(sentBeforeConfirm);
+	expect(sentAfterConfirm).toContain("keepalive");
 });
 
 test("opens the WebSocket at the bootstrap's own port, never a hardcoded one", async () => {
@@ -430,16 +455,10 @@ test("opens the WebSocket at the bootstrap's own port, never a hardcoded one", a
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket });
-	const listener = getOnMessage();
 	// Within the daemon's ratified fallback range but not the default port itself.
 	const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT + 3 });
 
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	await captureMarker(getOnMessage, bootstrap);
 
 	expect(openSocket).toHaveBeenCalledWith(
 		`ws://127.0.0.1:${CHAT_DEFAULT_PORT + 3}/ws`,
@@ -451,15 +470,15 @@ test("keepalive stops once the socket reports itself closed, leaving no dangling
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
 
 	socket.dispatch("open");
+	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	const sentBeforeClose = socket.send.mock.calls.length;
 	expect(sentBeforeClose).toBeGreaterThan(0);
@@ -476,15 +495,15 @@ test("keepalive stops once the socket reports an error, leaving no dangling time
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const listener = getOnMessage();
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
 
 	socket.dispatch("open");
+	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	const sentBeforeError = socket.send.mock.calls.length;
 	expect(sentBeforeError).toBeGreaterThan(0);
@@ -493,6 +512,224 @@ test("keepalive stops once the socket reports an error, leaving no dangling time
 	await new Promise((resolve) => setTimeout(resolve, 50));
 
 	expect(socket.send.mock.calls.length).toBe(sentBeforeError);
+});
+
+// --- Regression (finding 2): the background socket must not merely open —
+// it must actually demux inbound frames, with no chat tab ever attached. ---
+
+test("regression: with no chat tab attached, an inbound frame for a captured session still reaches the client's demux", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	const client = registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+
+	socket.dispatch("open");
+	await settle();
+
+	const received: unknown[] = [];
+	client.onFrame((frame) => received.push(frame));
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "agent-message",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			body: "hello while the tab is closed",
+		}),
+	);
+
+	expect(received).toHaveLength(1);
+	expect((received[0] as { body: string }).body).toBe(
+		"hello while the tab is closed",
+	);
+});
+
+// --- Regression (finding 9): the background's own real path reconnects,
+// rediscovers a relocated daemon, and backs off with a bounded, jittered delay. ---
+
+/** Promise-only microtask flush — safe to use even while setTimeout is mocked. */
+async function flushMicrotasks(times = 40): Promise<void> {
+	for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+test("regression: the background's socket reopens automatically after the daemon connection drops", async () => {
+	const sockets: FakeSocket[] = [];
+	const openSocket = mock((_url: string) => {
+		const s = makeFakeSocket();
+		sockets.push(s);
+		return s;
+	});
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+		(async () =>
+			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
+	);
+
+	// registerChat + marker capture first, under the REAL setTimeout — settle()
+	// (used by captureMarker) would hang forever once setTimeout is mocked below.
+	const { api, getOnMessage } = makeBrowserApi();
+	registerChat({ browserApi: api, openSocket });
+	await captureMarker(getOnMessage, makeBootstrap());
+
+	const scheduled: Array<() => void> = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((fn: () => void) => {
+		scheduled.push(fn);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+
+	try {
+		sockets[0]?.dispatch("open");
+		sockets[0]?.dispatch("close");
+
+		expect(scheduled.length).toBe(1);
+		scheduled[0]?.();
+		await flushMicrotasks();
+
+		expect(sockets.length).toBe(2);
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+		fetchSpy.mockRestore();
+	}
+});
+
+test("regression: the background rediscovers a relocated daemon via GET /health, preferring the matching instanceId over a decoy", async () => {
+	const sockets: FakeSocket[] = [];
+	const openSocket = mock((_url: string) => {
+		const s = makeFakeSocket();
+		sockets.push(s);
+		return s;
+	});
+
+	const decoyPort = CHAT_DEFAULT_PORT + 1;
+	const relocatedPort = CHAT_DEFAULT_PORT + 3;
+	let daemonRestarted = false;
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+		url: string,
+	) => {
+		const port = Number(/:(\d+)\/health$/.exec(url)?.[1]);
+		if (!daemonRestarted) {
+			if (port === CHAT_DEFAULT_PORT) {
+				return {
+					ok: true,
+					json: async () => ({ daemon: "dg-server", instanceId: "inst-fixed" }),
+				} as unknown as Response;
+			}
+			return { ok: false } as unknown as Response;
+		}
+		if (port === decoyPort) {
+			return {
+				ok: true,
+				json: async () => ({ daemon: "dg-server", instanceId: "inst-other" }),
+			} as unknown as Response;
+		}
+		if (port === relocatedPort) {
+			return {
+				ok: true,
+				json: async () => ({ daemon: "dg-server", instanceId: "inst-fixed" }),
+			} as unknown as Response;
+		}
+		return { ok: false } as unknown as Response;
+	}) as unknown as typeof fetch);
+
+	const { api, getOnMessage } = makeBrowserApi();
+	registerChat({ browserApi: api, openSocket });
+	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks(); // let handleOpen's fire-and-forget /health lookup learn "inst-fixed"
+
+	const scheduled: Array<() => void> = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((fn: () => void) => {
+		scheduled.push(fn);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+
+	try {
+		daemonRestarted = true;
+		sockets[0]?.dispatch("close");
+
+		expect(scheduled.length).toBe(1);
+		scheduled[0]?.();
+		await flushMicrotasks(); // rediscovery scans candidate ports sequentially via awaited /health calls
+
+		expect(sockets.length).toBe(2);
+		expect(openSocket).toHaveBeenLastCalledWith(
+			`ws://127.0.0.1:${relocatedPort}/ws`,
+		);
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+		fetchSpy.mockRestore();
+	}
+});
+
+test("regression: the background's reconnect backoff grows across attempts and stays bounded", async () => {
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	const { api, getOnMessage } = makeBrowserApi();
+	registerChat({ browserApi: api, openSocket });
+	await captureMarker(getOnMessage, makeBootstrap());
+
+	const delays: number[] = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((_fn: () => void, ms?: number) => {
+		delays.push(ms ?? 0);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+
+	try {
+		socket.dispatch("close");
+		socket.dispatch("close");
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+	}
+
+	expect(delays.length).toBeGreaterThanOrEqual(2);
+	// Doubling the base each attempt dominates jitter's bounded [0,1) range, so
+	// growth holds regardless of the draw — no jitter override needed to assert it.
+	expect(delays[1]).toBeGreaterThan(delays[0] as number);
+	for (const d of delays) expect(d).toBeLessThanOrEqual(30_000);
+});
+
+test("a closed session stops drawing keepalives, so its dead token cannot burn the shared socket's budget", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	const closing = makeBootstrap({ sessionId: "sess-closing", token: "tok-closing" });
+	const staying = makeBootstrap({ sessionId: "sess-staying", token: "tok-staying" });
+	await captureMarker(getOnMessage, closing);
+	await captureMarker(getOnMessage, staying);
+
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(closing.sessionId)));
+	socket.dispatch("message", message(buildSessionListFrame(staying.sessionId)));
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: closing.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+	await settle();
+	const sentBefore = socket.send.mock.calls.length;
+
+	await new Promise((resolve) => setTimeout(resolve, 70));
+
+	// One socket serves every session, so a keepalive for the closed one would
+	// spend the failed-frame budget that disconnects the sessions still open.
+	const tokensAfter = socket.send.mock.calls
+		.slice(sentBefore)
+		.map(([raw]) => (JSON.parse(raw as string) as { token?: string }).token);
+	expect(tokensAfter).not.toContain(closing.token);
+	expect(tokensAfter).toContain(staying.token);
 });
 
 test("regression: registerRecording still wires its message router, unaffected by the removed onClicked registration", () => {
