@@ -241,7 +241,7 @@ export function wsExtensionSocket(port: number): WebSocket {
 }
 
 // [SPEC] ASSUMED: Code Structure names only "a connect handshake" (plan.md
-// 280, 875), not a wire shape — `type: "connect"` (deliberately outside the 17 ratified ChatFrame types, which all assume capability already exists) is the most reasonable reading.
+// 280, 875), not a wire shape — `type: "connect"` (deliberately outside the 18 ratified ChatFrame types, which all assume capability already exists) is the most reasonable reading.
 export function sendConnectHandshake(
 	ws: WebSocket,
 	credentials: Credentials,

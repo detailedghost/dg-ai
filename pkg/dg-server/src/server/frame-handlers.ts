@@ -68,7 +68,7 @@ type ConnectHandshake = {
 };
 
 /**
- * "connect" is deliberately outside the 17 ratified ChatFrame types (they all
+ * "connect" is deliberately outside the 18 ratified ChatFrame types (they all
  * assume capability already exists) — it is the /ws capability-capture
  * handshake, checked structurally here rather than through validateChatFrame.
  */
