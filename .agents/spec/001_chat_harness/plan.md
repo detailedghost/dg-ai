@@ -4,7 +4,7 @@ feature_snake_case: chat_harness
 date: '2026-08-18'
 version: '1.0'
 status: in-progress
-current_slice: 2
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
@@ -726,8 +726,50 @@ Took four passes: three stopped at RED because the plan pinned behavior in detai
 
 Verified: `pkg/common` 107 pass / 0 fail, `pkg/skills-cli` 96 pass / 0 fail, both `tsc --noEmit` clean, and `pkg/extension` builds with no `node:` polyfill.
 
+### Slice 2 — dg-server-skeleton
+
+One 127.0.0.1 HTTP+WebSocket daemon hosting many sessions, compiled to a `dg-server` binary. 28
+source modules across `server/`, `session/` and `utils/`, plus the `verify-wsl-loopback.ts` evidence
+probe. Authorization is a per-socket capability set: a socket accumulates `sessionId -> token` only
+via a captured bootstrap or an authenticated session-create, and every inbound frame is checked
+against the exact pair, so a socket holding session A cannot act on session B.
+
+QA found four things worth naming. `start` never actually exercised the WSL NAT refusal where it
+reaches the user — a mutation test (commenting out `checkWslNetworking()` in `cmdStart`) left the
+suite fully green, because the identical call in the detached `__serve` child has stdio ignored and
+surfaces only as a generic 15s timeout. The refusal was also dead for default WSL2: a missing
+`.wslconfig` read as `unknown` and was treated as permissive, but NAT *is* the default and
+`.wslconfig` is opt-in. `POST /start` had no Origin check at all despite minting a live capability —
+verified against the running daemon, `Origin: https://evil.example` returned a 200 and a fresh
+token. And the connect handshake sent nothing back, so a page connecting after sessions already
+existed could not learn of them and had no way to ask, since `session-list` is outbound-only.
+
+Verified: 47 pass / 1 todo / 0 fail, lint clean, binary compiles, `bun install --frozen-lockfile`
+succeeds. Two items stay deferred by ratification: the idle-TTL "blocking recv parked" assertion
+waits on slice 7's `recv --block`, and the WSL-mirrored acceptance criterion needs the hardware pair
+no CI runner can host.
+
+### Slice 4 — extension-marker-and-background
+
+A content script matched only to `http://127.0.0.1/*` parses and strips the `#_chat=` marker and
+relays it; the background does the `storage.session` write and the tab open and owns the WebSocket,
+so background chats keep receiving while the chat tab is closed. `registerChat` now owns the single
+`chrome.action.onClicked` listener and `registerRecording` no longer registers its own, with
+pending-recording start still winning so the recorder path is unchanged.
+
+QA caught a Firefox crash that had shipped green through test, lint and build: the default
+`browserApi` seam read `browser.action`, but WXT emits firefox-mv2 where `action` is undefined
+(`browser_action` instead, and `action` is MV3-only). Every test injected the seam, so the
+production default path was never exercised. Fixed, with a test that drives the default resolution
+against an MV2-shaped global.
+
+Verified: `pkg/extension` 397 pass / 0 fail, lint clean, build succeeds.
+
 ## Agent Notes
 
+- (slice 2, js) `/cli` authenticates with the `X-Dg-Session-Id` and `X-Dg-Session-Token` request headers; `/ws` with a `{type:"connect",...}` frame after open. Slice 7 must use those exact header names.
+- (slice 2, js) The dev box runs genuine WSL2 with `WSL_DISTRO_NAME` set and `.wslconfig` at `networkingMode=mirrored`, so `isWSL()` is true and the real probe path runs here. The NAT-branch test forces `WSL_DISTRO_NAME` in a subprocess env rather than depending on that ambient state.
+- (slice 4, js) An agent researching the pre-monorepo `action`/`browserAction` split checked out historical `extension-src/` copies, which left stale unmerged index entries that block `git commit` repo-wide. If a commit fails with unmerged paths, check `git ls-files -u` for artifacts like this before assuming a real conflict.
 - (slice 1, qa-writer) Cross-platform path-resolver tests should derive expected paths through `node:path`'s `win32`/`posix` submodules rather than hardcoding separator literals — that keeps exact-equality assertions valid for an injected `platform` seam regardless of the CI host OS.
 
 - (slice 1, js) `pkg/common/src/node/process.ts` holds `isWSL`/`openers`/`tryOpen`/`run` hoisted verbatim, plus the new `runCapture(cmd, args, {stdin})` that never throws and keeps stdout and stderr separate — that separation is what slice 3's keychain backend needs. `pkg/skills-cli/src/utils/lib.ts` re-exports them for backward compatibility, but every direct call site in `pkg/skills-cli` now imports straight from `@dg/common/node`.
@@ -891,3 +933,15 @@ fixed in place; these three change what later slices build against.
 - **The page learns the session list on connect.** `handleConnectHandshake` must send a `session-list` built from the registry immediately after granting the capability. Pushing it only from the registry's "changed" listener means a page connecting after the sessions already exist sees none of them, and `session-list` is outbound-only so the page cannot ask. Without this the grouped-rail verdict is unreachable for slices 6 and 11.
 - **`POST /start` gets the same Origin check as `/ws`, `/cli` and `/health`.** It mints and returns a live session capability, and today it is the one route with no Origin check at all — verified against the running daemon, `Origin: https://evil.example` gets a 200 with a fresh sessionId and token. Its CSRF defense currently rests entirely on a browser declining to send that cross-origin POST, which is an implicit guarantee for the most sensitive route in the daemon.
 - **Deferred to slice 7, not dropped:** `readSessionToken` and the `DG_SESSION_TOKEN` override in `pkg/dg-server/src/session/tokens.ts` have no callers and no tests yet. Slice 7 is their consumer and must prove the override wins over the on-disk file, and that the JSON shape it parses matches what `writeSessionToken` emits.
+
+### Layer-1 wire details as built (execute-mode)
+
+What slice 2 actually implemented, recorded so slices 5, 6, 7 and 9 build against the real strings
+rather than re-deriving them. These are observations of committed code, not open decisions.
+
+- **`/ws` capability capture** is a `{ type: "connect", sessionId, token, protocolVersion }` frame sent after the socket opens. `connect` sits deliberately OUTSIDE the 18 ratified `ChatFrame` types — all of those assume a capability already exists — and is checked structurally, not through `validateChatFrame`. It is one of the two pre-capability carve-outs slice 1's Engineering calls for.
+- **The daemon answers a successful handshake with a `session-list`** built from the registry, on that socket. A protocol-version mismatch or an invalid/closed capability gets an `error` frame instead and counts against the socket's failed-frame budget.
+- **`/cli` capability capture** is via request headers `X-Dg-Session-Id` and `X-Dg-Session-Token` on the upgrade. Slice 7 must use these exact names.
+- **`keepalive` draws no reply at all** — the daemon calls `noteActivity()` and returns. Slice 5's connection-state logic must not wait on a response to it.
+- **`history-request` currently answers `history-response` with an empty `messages` array**, a faithful pre-persistence placeholder until slice 3 wires the store. Slice 5's backfill-on-reconnect will read empty until then; that is expected, not a bug to work around.
+- **`command-invocation` and `config-get`/`config-set` answer with an explicit "not implemented yet" `error` frame** naming slice 8 and slice 9 respectively. Slice 5's connection-state UI should not treat those as connection faults.
