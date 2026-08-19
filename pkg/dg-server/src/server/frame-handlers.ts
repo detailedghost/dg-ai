@@ -9,6 +9,7 @@ import {
 import type { DgPaths } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
 import type { SessionRegistry } from "../session/registry";
+import type { ChatStore } from "../store";
 import type { ConnectionManager } from "./connection";
 import {
 	registerInvalidFrame,
@@ -24,6 +25,7 @@ export type FrameHandlerDeps = {
 	logger: Logger;
 	paths: DgPaths;
 	noteActivity: () => void;
+	store: ChatStore;
 };
 
 function sendFrame(
@@ -183,12 +185,13 @@ async function handleSessionClose(
 async function handleHistoryRequest(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "history-request" }>,
+	deps: FrameHandlerDeps,
 ): Promise<void> {
-	// Slice 3 wires the real transcript store (src/store/**, outside src/server/**);
-	// empty is a faithful pre-persistence placeholder.
+	// Stored-record projection (seq, id, role, body, createdAt, attachmentId?),
+	// ordered by seq ascending — the cross-slice history-response contract.
 	await sendFrame(ws, frame.sessionId, {
 		type: "history-response",
-		messages: [],
+		messages: deps.store.peekAll(frame.sessionId),
 	});
 }
 
@@ -218,8 +221,8 @@ async function handleUserMessage(
 		);
 		return;
 	}
-	// Slice 3's store lands persistence + delivery; ack-without-persistence is
-	// the honest placeholder until then.
+	// deps.store exists now; user-message persistence is slice 7/8's dispatch
+	// wiring — ack-without-persistence stays the honest placeholder here.
 	await sendFrame(ws, frame.sessionId, {
 		type: "ack",
 		messageId: frame.messageId,
@@ -243,7 +246,7 @@ async function dispatchFrame(
 			deps.noteActivity();
 			return;
 		case "history-request":
-			return handleHistoryRequest(ws, frame);
+			return handleHistoryRequest(ws, frame, deps);
 		case "config-get":
 		case "config-set":
 			return handleConfigFrame(ws, frame);
