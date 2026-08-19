@@ -1,4 +1,5 @@
 import {
+	registerChat,
 	registerProto,
 	registerRecording,
 	registerTabGrouping,
@@ -12,4 +13,5 @@ export default defineBackground(() => {
 	registerTourState();
 	registerProto();
 	registerRecording();
+	registerChat();
 });

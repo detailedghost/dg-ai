@@ -44,7 +44,11 @@ export default defineConfig({
 			// Kokoro fetches its model from Hugging Face; ONNX wasm ships locally.
 			// Keep jsDelivr fallback access and permit local wasm compilation.
 			...(firefox
-				? {}
+				? {
+						// Firefox requires match origins declared here too; Chrome's
+						// <all_urls> below already covers the chat marker's loopback match.
+						host_permissions: ["http://127.0.0.1/*"],
+					}
 				: {
 						host_permissions: [
 							"<all_urls>",
@@ -56,10 +60,13 @@ export default defineConfig({
 							extension_pages:
 								"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
 						},
+						// registerChat's background-owned WebSocket needs Chrome 116+;
+						// meaningless (and an unsupported key) on Firefox's MV2 branch.
+						minimum_chrome_version: "116",
 					}),
-			// Toolbar icon + keyboard shortcut: the user gesture that starts video recording.
+			// Toolbar icon: starts a pending recording, otherwise opens chat.
 			action: {
-				default_title: "DeeGee settings",
+				default_title: "DeeGee chat",
 			},
 			commands: {
 				"start-demo-recording": {
