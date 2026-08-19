@@ -6,6 +6,7 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
+import type { ProgressState } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { buildAad, type CipherBox, createCipherBox } from "../crypto/envelope";
 import {
@@ -24,6 +25,7 @@ const AAD_MESSAGE_BODY = "message-body";
 const AAD_COMMAND_ARGV = "command-argv";
 const AAD_COMMAND_STDOUT = "command-stdout";
 const AAD_COMMAND_STDERR = "command-stderr";
+const AAD_STATUS_PROGRESS = "status-progress";
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -47,6 +49,17 @@ export type InsertCommandInvocationInput = {
 	stdout: string;
 	stderr: string;
 	truncated: boolean;
+};
+
+export type InsertStatusEventInput = {
+	sessionId: string;
+	state: ProgressState;
+};
+
+export type StatusEvent = {
+	seq: number;
+	state: ProgressState;
+	createdAt: string;
 };
 
 export type ClaimedMessage = {
@@ -93,6 +106,14 @@ type RawCryptoMetaRow = {
 	key_id: string;
 	key_source: string;
 	wrapped_data_key: Uint8Array;
+};
+
+type RawStatusEventRow = {
+	seq: number;
+	created_at: string;
+	progress_ciphertext: Uint8Array;
+	progress_iv: Uint8Array;
+	progress_tag: Uint8Array;
 };
 
 function resolveKeyMode(raw: string | undefined): KeyMode {
@@ -329,6 +350,73 @@ export class ChatStore {
 				input.truncated ? 1 : 0,
 			) as { seq: number };
 		return { seq: row.seq };
+	}
+
+	insertStatusEvent(input: InsertStatusEventInput): { seq: number } {
+		this.ensureSessionRow(input.sessionId);
+		const createdAt = new Date().toISOString();
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.db.run(
+				`INSERT INTO status_events (
+					session_id, created_at, progress_ciphertext, progress_iv, progress_tag
+				) VALUES (?, ?, X'', X'', X'')`,
+				[input.sessionId, createdAt],
+			);
+			const row = this.db.query("SELECT last_insert_rowid() AS seq").get() as {
+				seq: number;
+			};
+			const encrypted = this.cipherBox.encryptRecord(
+				input.state,
+				buildAad({
+					domain: AAD_STATUS_PROGRESS,
+					sessionId: input.sessionId,
+					rowId: String(row.seq),
+					formatVersion: this.meta.formatVersion,
+				}),
+			);
+			this.db.run(
+				`UPDATE status_events
+				 SET progress_ciphertext = ?, progress_iv = ?, progress_tag = ?
+				 WHERE seq = ?`,
+				[encrypted.ciphertext, encrypted.iv, encrypted.tag, row.seq],
+			);
+			this.db.run("COMMIT");
+			return row;
+		} catch (error) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {
+				// Preserve the write-path error if SQLite already ended the transaction.
+			}
+			throw error;
+		}
+	}
+
+	peekStatusEvents(sessionId: string): StatusEvent[] {
+		const rows = this.db
+			.query(
+				`SELECT seq, created_at, progress_ciphertext, progress_iv, progress_tag
+				 FROM status_events WHERE session_id = ? ORDER BY seq ASC`,
+			)
+			.all(sessionId) as RawStatusEventRow[];
+		return rows.map((row) => ({
+			seq: row.seq,
+			state: this.cipherBox
+				.decryptRecord(
+					Buffer.from(row.progress_ciphertext),
+					Buffer.from(row.progress_iv),
+					Buffer.from(row.progress_tag),
+					buildAad({
+						domain: AAD_STATUS_PROGRESS,
+						sessionId,
+						rowId: String(row.seq),
+						formatVersion: this.meta.formatVersion,
+					}),
+				)
+				.toString("utf8") as ProgressState,
+			createdAt: row.created_at,
+		}));
 	}
 
 	/**

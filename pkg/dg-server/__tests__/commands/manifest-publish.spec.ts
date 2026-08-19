@@ -1,13 +1,15 @@
 /**
  * The `manifest` CLI verb, over the wire — distinct from manifest-load.spec.ts's
- * pure-function unit tests. Covers: paths resolved absolute before sending,
- * and an invalid file publishing nothing observable to a listening page.
+ * pure-function unit tests. Covers paths resolved absolute before sending, an
+ * invalid file publishing nothing observable, and the same refusals driven
+ * over a raw /cli socket — the CLI-side check is a fast local error only, never the boundary.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import {
+	CHAT_MAX_MANIFEST_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	validateChatFrame,
 	validateSessionBootstrap,
@@ -16,6 +18,7 @@ import {
 	allocatePort,
 	cleanupDgHome,
 	collectFrames,
+	connectCli,
 	decodeChatMarker,
 	extractUrl,
 	freshDgHome,
@@ -89,6 +92,38 @@ describe("dg-server manifest", () => {
 		]);
 	});
 
+	it("reads, validates, and publishes --subagents alongside --commands", async () => {
+		const { port, bootstrap } = await startWithSession();
+		scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-subagents-"));
+		const manifestPath = join(scratchDir, "commands.json");
+		writeFileSync(manifestPath, JSON.stringify([VALID_ENTRY]));
+		const subagentsPath = join(scratchDir, "subagents.json");
+		writeFileSync(subagentsPath, JSON.stringify(["reviewer", "planner"]));
+
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
+		await nextParsedMessage(page); // session-list
+
+		const result = await runCli(dgHome, port, [
+			"manifest",
+			"--session",
+			bootstrap.sessionId,
+			"--commands",
+			manifestPath,
+			"--subagents",
+			subagentsPath,
+		]);
+		expect(result.exitCode).toBe(0);
+
+		const frame = await nextParsedMessage(page);
+		page.close();
+		expect((frame as { subagents?: string[] }).subagents).toEqual([
+			"reviewer",
+			"planner",
+		]);
+	});
+
 	it("publishes nothing observable when the manifest file is invalid", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-e2e-bad-"));
@@ -111,6 +146,75 @@ describe("dg-server manifest", () => {
 
 		expect(result.exitCode).not.toBe(0);
 		await new Promise((r) => setTimeout(r, 300));
+		expect(
+			frames.some(
+				(f) =>
+					typeof f === "object" &&
+					f !== null &&
+					(f as { type?: string }).type === "manifest-publish",
+			),
+		).toBe(false);
+		page.close();
+	});
+
+	it("refuses a shell-escape entry published straight over a raw /cli socket, bypassing the CLI's own check entirely", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
+		await nextParsedMessage(page); // session-list
+		const frames = collectFrames(page);
+
+		const raw = await connectCli(port, bootstrap);
+		raw.send(
+			JSON.stringify({
+				type: "cli-manifest-publish",
+				commands: [
+					{
+						label: "shell-escape",
+						params: [{ name: "cmd", type: "string" }],
+						argv: ["bash", "-c", "{cmd}"],
+					},
+				],
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 300));
+		raw.close();
+
+		expect(
+			frames.some(
+				(f) =>
+					typeof f === "object" &&
+					f !== null &&
+					(f as { type?: string }).type === "manifest-publish",
+			),
+		).toBe(false);
+		page.close();
+	});
+
+	it("refuses a command manifest whose serialized size exceeds CHAT_MAX_MANIFEST_BYTES over a raw /cli socket", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
+		await nextParsedMessage(page); // session-list
+		const frames = collectFrames(page);
+
+		// Roughly double CHAT_MAX_MANIFEST_BYTES (64KB), safely under the 1MB
+		// transport payload cap, so this exercises the manifest cap specifically.
+		expect(CHAT_MAX_MANIFEST_BYTES).toBeLessThan(123_454);
+		const raw = await connectCli(port, bootstrap);
+		raw.send(
+			JSON.stringify({
+				type: "cli-manifest-publish",
+				commands: [{ label: "x".repeat(123_454), argv: ["ls"], params: [] }],
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 300));
+		raw.close();
+
 		expect(
 			frames.some(
 				(f) =>

@@ -1,13 +1,20 @@
+import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
+	CHAT_MAX_MANIFEST_BYTES,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
+	isRecord,
 	validateChatFrame,
+	validateCommandManifest,
+	validateProtoIdentifier,
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
+import type { CliFrame } from "../commands/wire";
+import { ManifestLoadError, resolveManifestForPublish } from "../manifest/load";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
 import type { ConnectionManager } from "./connection";
@@ -51,6 +58,23 @@ function sendError(
 	return sendFrame(ws, sessionId, { type: "error", message });
 }
 
+function broadcastPageFrame(
+	deps: FrameHandlerDeps,
+	sessionId: string,
+	frame: Record<string, unknown>,
+): Promise<void> {
+	const sends: Promise<void>[] = [];
+	const payload = JSON.stringify({
+		sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		...frame,
+	});
+	deps.connections.forEachCapableOf(sessionId, (socket) => {
+		if (socket.data.kind === "ws") sends.push(sendViaQueue(socket, payload));
+	});
+	return Promise.all(sends).then(() => undefined);
+}
+
 // validateChatFrame requires a non-empty sessionId on every frame, including
 // outbound "error" — used when the failing frame carried no real one to echo.
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
@@ -68,6 +92,202 @@ type ConnectHandshake = {
 	token: string;
 	protocolVersion: number;
 };
+
+function parseCliFrame(value: unknown): CliFrame | undefined {
+	if (!isRecord(value)) return undefined;
+	switch (value.type) {
+		case "cli-recv":
+			if (
+				typeof value.block === "boolean" &&
+				(value.timeoutMs === undefined ||
+					(typeof value.timeoutMs === "number" &&
+						Number.isFinite(value.timeoutMs) &&
+						value.timeoutMs >= 0))
+			) {
+				return value as CliFrame;
+			}
+			return undefined;
+		case "cli-ack":
+			return typeof value.claimId === "string" && value.claimId.length > 0
+				? (value as CliFrame)
+				: undefined;
+		case "cli-send":
+			return typeof value.body === "string" ? (value as CliFrame) : undefined;
+		case "cli-progress":
+			return value.state === "running" || value.state === "awaiting-input"
+				? (value as CliFrame)
+				: undefined;
+		case "cli-manifest-publish":
+			try {
+				validateCommandManifest(value.commands);
+				if (value.subagents !== undefined) {
+					if (!Array.isArray(value.subagents)) return undefined;
+					value.subagents.forEach((name, index) => {
+						validateProtoIdentifier(name, `subagents[${index}]`);
+					});
+				}
+				return value as CliFrame;
+			} catch {
+				return undefined;
+			}
+		default:
+			return undefined;
+	}
+}
+
+function cliSessionId(ws: ServerWebSocket<SocketState>): string | undefined {
+	return ws.data.kind === "cli"
+		? ws.data.capabilities.keys().next().value
+		: undefined;
+}
+
+function sendCliRecvResult(
+	ws: ServerWebSocket<SocketState>,
+	result:
+		| { outcome: "delivered"; message: Record<string, unknown> }
+		| { outcome: "empty" | "timeout" | "closed" },
+): Promise<void> {
+	return sendViaQueue(
+		ws,
+		JSON.stringify({ type: "cli-recv-result", ...result }),
+	);
+}
+
+async function handleCliRecv(
+	ws: ServerWebSocket<SocketState>,
+	sessionId: string,
+	frame: Extract<CliFrame, { type: "cli-recv" }>,
+	deps: FrameHandlerDeps,
+): Promise<void> {
+	const first = deps.store.claimNext(sessionId);
+	if (first) {
+		await sendCliRecvResult(ws, { outcome: "delivered", message: first });
+		return;
+	}
+	if (!frame.block) {
+		await sendCliRecvResult(ws, { outcome: "empty" });
+		return;
+	}
+
+	await new Promise<void>((resolve) => {
+		let settled = false;
+		const timeoutMs = frame.timeoutMs ?? 30_000;
+		const finish = async (
+			result:
+				| { outcome: "delivered"; message: Record<string, unknown> }
+				| { outcome: "timeout" | "closed" },
+		) => {
+			if (settled) return;
+			settled = true;
+			clearInterval(poll);
+			clearTimeout(timeout);
+			deps.registry.off("closed", onClosed);
+			await sendCliRecvResult(ws, result);
+			resolve();
+		};
+		const onClosed = ({ sessionId: closedId }: { sessionId: string }) => {
+			if (closedId === sessionId) void finish({ outcome: "closed" });
+		};
+		const poll = setInterval(() => {
+			const message = deps.store.claimNext(sessionId);
+			if (message) void finish({ outcome: "delivered", message });
+		}, 20);
+		const timeout = setTimeout(
+			() => void finish({ outcome: "timeout" }),
+			timeoutMs,
+		);
+		deps.registry.on("closed", onClosed);
+		if (deps.registry.get(sessionId)?.state !== "active") {
+			void finish({ outcome: "closed" });
+		}
+	});
+}
+
+async function handleCliFrame(
+	ws: ServerWebSocket<SocketState>,
+	frame: CliFrame,
+	deps: FrameHandlerDeps,
+): Promise<void> {
+	const sessionId = cliSessionId(ws);
+	if (!sessionId) {
+		await sendError(ws, TRANSPORT_ERROR_SESSION_ID, "cli frame requires /cli");
+		noteInvalid(ws);
+		return;
+	}
+	switch (frame.type) {
+		case "cli-recv":
+			return handleCliRecv(ws, sessionId, frame, deps);
+		case "cli-ack":
+			deps.store.ack(sessionId, frame.claimId);
+			return;
+		case "cli-send": {
+			const bodyBytes = Buffer.byteLength(frame.body, "utf8");
+			if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
+				await sendError(
+					ws,
+					sessionId,
+					`cli-send body of ${bodyBytes} bytes exceeds CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
+				);
+				return;
+			}
+			deps.store.insertMessage({
+				sessionId,
+				id: randomUUID(),
+				role: "agent",
+				body: frame.body,
+			});
+			await broadcastPageFrame(deps, sessionId, {
+				type: "agent-message",
+				body: frame.body,
+			});
+			return;
+		}
+		case "cli-progress":
+			deps.store.insertStatusEvent({
+				sessionId,
+				state: frame.state,
+			});
+			await broadcastPageFrame(deps, sessionId, {
+				type: "progress",
+				state: frame.state,
+			});
+			return;
+		case "cli-manifest-publish": {
+			const manifestBytes = Buffer.byteLength(
+				JSON.stringify(frame.commands),
+				"utf8",
+			);
+			if (manifestBytes > CHAT_MAX_MANIFEST_BYTES) {
+				await sendError(
+					ws,
+					sessionId,
+					`command manifest of ${manifestBytes} bytes exceeds CHAT_MAX_MANIFEST_BYTES (${CHAT_MAX_MANIFEST_BYTES})`,
+				);
+				return;
+			}
+			// Publish time means the DAEMON's acceptance of this frame — the CLI's
+			// own check is a fast local error only, not the enforcement boundary.
+			try {
+				resolveManifestForPublish(frame.commands);
+			} catch (err) {
+				await sendError(
+					ws,
+					sessionId,
+					err instanceof ManifestLoadError ? err.message : String(err),
+				);
+				return;
+			}
+			setTimeout(() => {
+				void broadcastPageFrame(deps, sessionId, {
+					type: "manifest-publish",
+					commands: frame.commands,
+					...(frame.subagents ? { subagents: frame.subagents } : {}),
+				});
+			}, 25);
+			return;
+		}
+	}
+}
 
 /**
  * "connect" is deliberately outside the 18 ratified ChatFrame types (they all
@@ -139,7 +359,7 @@ async function handleSessionCreate(
 	try {
 		record = deps.registry.create({
 			cwd: requester.cwd,
-			agentIdentity: requester.agentIdentity,
+			agentIdentity: frame.agentIdentity ?? requester.agentIdentity,
 			workset: frame.workset,
 			role: frame.role,
 		});
@@ -211,6 +431,7 @@ async function handleConfigFrame(
 async function handleUserMessage(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "user-message" }>,
+	deps: FrameHandlerDeps,
 ): Promise<void> {
 	const bodyBytes = Buffer.byteLength(frame.body, "utf8");
 	if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
@@ -221,8 +442,12 @@ async function handleUserMessage(
 		);
 		return;
 	}
-	// deps.store exists now; user-message persistence is slice 7/8's dispatch
-	// wiring — ack-without-persistence stays the honest placeholder here.
+	deps.store.insertMessage({
+		sessionId: frame.sessionId,
+		id: frame.messageId,
+		role: "user",
+		body: frame.body,
+	});
 	await sendFrame(ws, frame.sessionId, {
 		type: "ack",
 		messageId: frame.messageId,
@@ -236,7 +461,7 @@ async function dispatchFrame(
 ): Promise<void> {
 	switch (frame.type) {
 		case "user-message":
-			return handleUserMessage(ws, frame);
+			return handleUserMessage(ws, frame, deps);
 		case "session-create":
 			return handleSessionCreate(ws, frame, deps);
 		case "session-close":
@@ -298,6 +523,21 @@ export async function handleSocketMessage(
 
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
+		return;
+	}
+
+	const cliFrame = parseCliFrame(parsed);
+	if (cliFrame) {
+		if (ws.data.kind !== "cli") {
+			await sendError(
+				ws,
+				TRANSPORT_ERROR_SESSION_ID,
+				"cli-* frames are accepted only on /cli",
+			);
+			noteInvalid(ws);
+			return;
+		}
+		await handleCliFrame(ws, cliFrame, deps);
 		return;
 	}
 
