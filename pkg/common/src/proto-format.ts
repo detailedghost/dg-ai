@@ -1,3 +1,12 @@
+import {
+	fail,
+	isRecord,
+	requireFiniteNumber,
+	requireRecord,
+	requireString,
+	requireStringArray,
+	requireStringRecord,
+} from "./assert";
 import type {
 	AnswerPageMeta,
 	ProtoPlan,
@@ -192,43 +201,6 @@ const NAMED_ENTITIES: Readonly<Record<string, string>> = {
  */
 const PROTO_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
-function fail(message: string): never {
-	throw new TypeError(message);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function requireRecord(
-	value: unknown,
-	path: string,
-): asserts value is Record<string, unknown> {
-	if (!isRecord(value)) fail(`${path} must be an object`);
-}
-
-function requireString(
-	value: unknown,
-	path: string,
-	options: { nonEmpty?: boolean } = {},
-): asserts value is string {
-	if (
-		typeof value !== "string" ||
-		(options.nonEmpty === true && value.trim().length === 0)
-	) {
-		fail(`${path} must be ${options.nonEmpty ? "a non-empty " : ""}string`);
-	}
-}
-
-function requireFiniteNumber(
-	value: unknown,
-	path: string,
-): asserts value is number {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		fail(`${path} must be a finite number`);
-	}
-}
-
 /** Validate a file-safe prototype slug/key and return the original string. */
 export function validateProtoIdentifier(
 	value: unknown,
@@ -240,33 +212,6 @@ export function validateProtoIdentifier(
 		);
 	}
 	return value;
-}
-
-function requireStringArray(
-	value: unknown,
-	path: string,
-	options: { nonEmpty?: boolean } = {},
-): asserts value is string[] {
-	if (
-		!Array.isArray(value) ||
-		(options.nonEmpty === true && value.length === 0)
-	) {
-		fail(`${path} must be ${options.nonEmpty ? "a non-empty " : "an "}array`);
-	}
-
-	for (const [index, item] of value.entries()) {
-		requireString(item, `${path}[${index}]`);
-	}
-}
-
-function requireStringRecord(
-	value: unknown,
-	path: string,
-): asserts value is Record<string, string> {
-	requireRecord(value, path);
-	for (const [key, item] of Object.entries(value)) {
-		requireString(item, `${path}.${key}`);
-	}
 }
 
 /** Validate an unknown value against the complete StyleGuide contract. */

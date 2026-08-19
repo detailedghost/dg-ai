@@ -1,11 +1,10 @@
 /**
  * Shared helpers for the dg-browser CLI (batch-open/demo/install/launch/detect):
- * platform detection, the default-browser opener, subprocess running, per-OS
- * extension paths, zip extraction, and fetching the CI-built extension from
- * GitHub Releases.
+ * per-OS extension paths, zip extraction, and fetching the CI-built extension
+ * from GitHub Releases. Platform detection (isWSL) and subprocess running
+ * (run) live in @dg/common/node and are only imported here.
  */
 
-import { spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	mkdirSync,
@@ -15,75 +14,10 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isWSL, run } from "@dg/common/node";
 
 export type Target = "chrome" | "firefox";
 export const REPO = "detailedghost/dg-ai";
-
-export function isWSL(): boolean {
-	if (process.env.WSL_DISTRO_NAME) return true;
-	if (process.platform !== "linux") return false;
-	try {
-		return readFileSync("/proc/version", "utf8")
-			.toLowerCase()
-			.includes("microsoft");
-	} catch {
-		return false;
-	}
-}
-
-/** Ordered [command, argsBuilder] openers to try for this platform. */
-export function openers(): Array<[string, (url: string) => string[]]> {
-	if (process.platform === "darwin") return [["open", (u) => [u]]];
-	if (isWSL()) {
-		return [
-			["wslview", (u) => [u]],
-			[
-				"powershell.exe",
-				// Single-quote-escape the URL so it's passed as data, never as code.
-				(u) => [
-					"-NoProfile",
-					"-Command",
-					`Start-Process '${u.replace(/'/g, "''")}'`,
-				],
-			],
-			["cmd.exe", (u) => ["/c", "start", "", u]],
-		];
-	}
-	return [["xdg-open", (u) => [u]]];
-}
-
-/** Open a URL in the OS default browser; resolves false if every opener failed. */
-export function tryOpen(url: string): Promise<boolean> {
-	const candidates = openers();
-	return new Promise((resolve) => {
-		const attempt = (i: number) => {
-			if (i >= candidates.length) return resolve(false);
-			const [cmd, build] = candidates[i];
-			const child = spawn(cmd, build(url), { stdio: "ignore", detached: true });
-			child.on("error", () => attempt(i + 1)); // opener missing — try next
-			child.on("spawn", () => {
-				child.unref();
-				resolve(true);
-			});
-		};
-		attempt(0);
-	});
-}
-
-export function run(command: string, args: string[]): string {
-	const r = spawnSync(command, args, { encoding: "utf8" });
-	if (r.error) {
-		throw new Error(
-			`${command} not found or failed to start: ${r.error.message}`,
-		);
-	}
-	if (r.status !== 0) {
-		throw new Error(
-			`${command} ${args.join(" ")} failed: ${r.stderr || r.stdout}`,
-		);
-	}
-	return r.stdout.trim();
-}
 
 /** Repo root: the plugin dir when installed, else four levels up from bin/utils/. */
 export function repoRoot(): string {

@@ -4,7 +4,7 @@
  */
 
 import type { Command } from "commander";
-import { tryOpen } from "../utils/lib";
+import { tryOpen } from "@dg/common/node";
 import { addGroupMarker } from "../utils/marker";
 import { loadConfig, resolveRef } from "../utils/refs";
 

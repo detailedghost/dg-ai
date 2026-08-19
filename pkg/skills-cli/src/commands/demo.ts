@@ -14,7 +14,7 @@ import type { Command } from "commander";
 import { addDemoMarker } from "../utils/demo-marker";
 import type { VerifyResult } from "../utils/demo-verify";
 import { verifyScript } from "../utils/demo-verify";
-import { tryOpen } from "../utils/lib";
+import { tryOpen } from "@dg/common/node";
 import {
 	parsePlanMarkdown,
 	type TourScript,
