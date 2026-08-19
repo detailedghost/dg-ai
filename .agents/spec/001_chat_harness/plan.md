@@ -1175,3 +1175,24 @@ ships — most are prototype-fidelity or accessibility gaps, not cosmetics in th
 - **`formatGroupCount` labels a live-agent count as "slices".** This one needs a decision, not just a
   fix: the Worksets ratification gives a session only `workset` and `role`, so **no slice count exists
   in the data model at all**. Either add a field or relabel the header to what it actually counts.
+
+### Layer-4 ratifications (execute-mode)
+
+- **`$` must be the LEADING token; `@` may appear inline.** Slice 8's Engineering asks for this to be
+  settled and documented, so it is settled here. A `$` entry *executes* — the whole message is the
+  invocation, so allowing it mid-sentence makes "did that run?" depend on parsing prose, and ordinary
+  text contains `$` for money. An `@` is a *mention*: the message stays prose that gets routed, which
+  is exactly why an unresolved mention passes through untouched rather than failing the message. So a
+  leading `$` is a dispatch, a `$` anywhere else is literal text, and an `@` is resolved wherever it
+  appears. Autocomplete triggers on a leading `$` and on any `@`.
+- **Slice 9 inherits the accent token aliases slice 6 added to `entrypoints/options/style.css`.** They
+  restate hex values already in that file and must stay outside the `prefers-color-scheme` gate, or
+  the chat page's theme toggle regresses to 1.15:1 accent contrast. The slice-9 Engineering bullet
+  already warns that slice 9 owns this file while slice 6 reads it — this is the concrete instance.
+- **Slice 9 owes the `assets` row write-path**, including encryption of asset bytes AND display
+  filenames through slice 3's exported `createCipherBox`/`buildAad` with a distinct AAD domain tag for
+  each. Slice 7's `stage` deliberately writes only the file; the row is slice 9's, and until it lands a
+  staged asset is unretrievable. Closing this also closes the slice-7 bullet "stage registers an asset
+  row", which stays unchecked until then.
+- **Slice 8 owes encryption of the persisted command manifest**, likewise through
+  `createCipherBox`/`buildAad` with its own AAD domain tag. Do not hand-roll a second cipher.
