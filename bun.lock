@@ -12,9 +12,21 @@
         "typescript": "^5",
       },
     },
+    "pkg/dg-server": {
+      "name": "@dg/dg-server",
+      "version": "1.0.0",
+      "dependencies": {
+        "@dg/common": "workspace:*",
+        "commander": "^14.0.0",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5",
+      },
+    },
     "pkg/extension": {
       "name": "@dg/extension",
-      "version": "1.7.6",
+      "version": "1.7.38",
       "dependencies": {
         "@dg/common": "workspace:*",
         "kokoro-js": "^1.2.1",
@@ -79,6 +91,8 @@
     "@devicefarmer/adbkit-monkey": ["@devicefarmer/adbkit-monkey@1.2.1", "", {}, "sha512-ZzZY/b66W2Jd6NHbAhLyDWOEIBWC11VizGFk7Wx7M61JZRz7HR9Cq5P+65RKWUU7u6wgsE8Lmh9nE4Mz+U2eTg=="],
 
     "@dg/common": ["@dg/common@workspace:pkg/common"],
+
+    "@dg/dg-server": ["@dg/dg-server@workspace:pkg/dg-server"],
 
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
