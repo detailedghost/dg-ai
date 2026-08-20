@@ -70,9 +70,9 @@ the `/dg:*` skills are available.
 
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The skills run a compiled `dg-skills` binary. Bootstrap it once — this downloads
-the binary for the current platform into `~/.dg/bin`, **then runs
-`dg-skills install`**, which stages the extension and prints the exact **Load
+The skills run compiled binaries. Bootstrap once — this downloads `dg-skills`
+for the current platform into `~/.dg/bin`, **then runs `dg-skills install`**,
+which fetches `dg-server` too, stages the extension, and prints the exact **Load
 unpacked** path:
 
 ```bash
@@ -91,9 +91,17 @@ fi
 
 - No Bun needed at runtime — the binary is self-contained. Bun is only required
   for the `--local` source build.
-- Re-run `"$DG" install` anytime to update both the extension and the CLI. For
-  Firefox: `"$DG" install firefox`. Default target is **chrome** (also serves
+- Re-run `"$DG" install` anytime to update the extension, `dg-skills` and
+  `dg-server` together; each is skipped when already current. For Firefox:
+  `"$DG" install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
+- The chat skill runs `~/.dg/bin/dg-server`, released separately under
+  `server-v*`. Its own bootstrap gate tests for `dg-server`, not `dg-skills` — a
+  machine that already used `browser`, `demo` or `proto` has `dg-skills`
+  already, so gating on that would skip the download the gate exists for.
+- On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
+  Windows-side browser cannot reach the loopback port; `dg-server` exits with
+  code 3 rather than pretending to be reachable.
 - Add `--local` to **build the extension from source** (requires a repository checkout
   with `pkg/extension/`); otherwise it downloads the CI-built `ext-v*` asset.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
@@ -122,7 +130,15 @@ first:
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm
-grouping/tours work with the browser or demo skill. Claude Code uses the
+grouping/tours work with the browser or demo skill. For the chat harness:
+
+```bash
+"$HOME/.dg/bin/dg-server" --help
+"$HOME/.dg/bin/dg-server" status
+```
+
+Should list `start`, `status`, `recv`, `send`, `progress`, `spawn`, `stage`,
+`close` and `manifest`; `status` reports that no daemon is running yet. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
 so nothing happens until it is loaded in that browser profile.
 
@@ -134,7 +150,12 @@ ______________________________________________________________________
 | --- | --- |
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
-| `dg-skills install` (stage extension) | Yes |
+| `dg-skills install` (stage extension + refresh both binaries) | Yes |
+| `dg-server start` (register a chat session) | Yes |
+| `dg-server start --open` (open the chat page) | Yes (default browser) |
+| Read a human's chat reply (`dg-server recv --block`) | Yes — it waits for them |
+| Switch WSL to mirrored networking mode | No — manual host config |
+| Add `dg-server-blt` to branch protection | No — repo admin |
 | Load unpacked in the browser | No — manual browser UI |
 | `launch` cold-start with extension | Yes (browser fully closed) |
 | `batch-open` / `demo` / `rerun` | Yes (extension loaded) |

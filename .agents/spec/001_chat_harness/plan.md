@@ -663,36 +663,36 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 10 — distribution-skill-and-ci
 
 #### Engineering
-- [ ] Land a stub dg-server-blt.yml as soon as slice 2 exists, path-filtered to pkg/dg-server/** and pkg/common/**, so slices 2 through 9 are gated rather than discovering a broken pipeline at the end; amend it here
-- [ ] Add dg-server-release.yml mirroring skills-release.yml's platform matrix and its push filter, which includes pkg/common/**, releasing under a server-v* tag
-- [ ] Add plugins/dg/skills/chat/SKILL.md exposing dg:start, documenting the recv, send, status, spawn, stage and close loop, every exit code including the reserved timeout code, and the manifest JSON format
-- [ ] The SKILL.md bootstrap gate must test for the dg-server binary, NOT dg-skills — copying the browser skill's gate verbatim short-circuits on any machine that already used browser, demo or proto, so dg-server would never be fetched
-- [ ] Generalize the six functions in pkg/skills-cli/src/utils/lib.ts that hardcode dg-skills or the skills tag prefix — cliAssetName, pickCliAsset, resolveCliAsset, fetchCliBinary, cliDest and cliVersionFile — taking binaryName and tagPrefix as two explicit parameters with no derivation rule. versionGte is already binary-agnostic and needs no change
-- [ ] Make install refresh all three prebuilt artifacts from GitHub Releases — dg-skills, dg-server and the extension zip — keeping the existing per-binary already-current skip and installCli's warn-and-continue behaviour
-- [ ] Verify bootstrap.sh and bootstrap.ps1's existing install tail call already covers dg-server once the fetcher is generalized, BEFORE writing new fetch code — bootstrap.sh's own curl loop hard-exits on a missing asset, so duplicating it would abort the whole bootstrap including the good dg-skills and extension install
-- [ ] Extend pkg/skills-test/__tests__/skill-manifests.spec.ts's CLI-invoking block with a dg-server-gated branch — it currently gates on a dg-skills substring, so the chat skill would get zero parity coverage
-- [ ] Own the cross-package integration checklist: the browser-plus-daemon criteria no single package's tests can observe, with a browser harness or the documented manual WSL probe, rather than faking depends_on edges that sequence work without making criteria observable
-- [ ] Add a manual post-merge step: a repo admin must add the dg-server build check to branch protection, and update docs/DEVELOPER.md's Branch Protection line and CI Overview table
-- [ ] Register the chat skill in plugins/dg/skills/README.md's table
-- [ ] Document the harness in README.md, docs/DEVELOPER.md and docs/AGENT-INSTALL.md, including the keychain-versus-file-key behaviour, the WSL mirrored-mode requirement, and the four independently versioned artifacts
-- [ ] Record in .agents/monolith.md the new vocabulary plus two deliberate departures: dg-server uses a domain-module layout, and its tests directory uses subdirectories
-- [ ] Grow docs/AGENT-INSTALL.md's automation matrix and Step 3 help list to mention dg-server and dg:start
+- [x] Land a stub dg-server-blt.yml as soon as slice 2 exists, path-filtered to pkg/dg-server/** and pkg/common/**, so slices 2 through 9 are gated rather than discovering a broken pipeline at the end; amend it here
+- [x] Add dg-server-release.yml mirroring skills-release.yml's platform matrix and its push filter, which includes pkg/common/**, releasing under a server-v* tag
+- [x] Add plugins/dg/skills/chat/SKILL.md exposing dg:start, documenting the recv, send, status, spawn, stage and close loop, every exit code including the reserved timeout code, and the manifest JSON format
+- [x] The SKILL.md bootstrap gate must test for the dg-server binary, NOT dg-skills — copying the browser skill's gate verbatim short-circuits on any machine that already used browser, demo or proto, so dg-server would never be fetched
+- [x] Generalize the six functions in pkg/skills-cli/src/utils/lib.ts that hardcode dg-skills or the skills tag prefix — cliAssetName, pickCliAsset, resolveCliAsset, fetchCliBinary, cliDest and cliVersionFile — taking binaryName and tagPrefix as two explicit parameters with no derivation rule. versionGte is already binary-agnostic and needs no change
+- [x] Make install refresh all three prebuilt artifacts from GitHub Releases — dg-skills, dg-server and the extension zip — keeping the existing per-binary already-current skip and installCli's warn-and-continue behaviour
+- [x] Verify bootstrap.sh and bootstrap.ps1's existing install tail call already covers dg-server once the fetcher is generalized, BEFORE writing new fetch code — bootstrap.sh's own curl loop hard-exits on a missing asset, so duplicating it would abort the whole bootstrap including the good dg-skills and extension install
+- [x] Extend pkg/skills-test/__tests__/skill-manifests.spec.ts's CLI-invoking block with a dg-server-gated branch — it currently gates on a dg-skills substring, so the chat skill would get zero parity coverage
+- [x] Own the cross-package integration checklist: the browser-plus-daemon criteria no single package's tests can observe, with a browser harness or the documented manual WSL probe, rather than faking depends_on edges that sequence work without making criteria observable
+- [x] Add a manual post-merge step: a repo admin must add the dg-server build check to branch protection, and update docs/DEVELOPER.md's Branch Protection line and CI Overview table
+- [x] Register the chat skill in plugins/dg/skills/README.md's table
+- [x] Document the harness in README.md, docs/DEVELOPER.md and docs/AGENT-INSTALL.md, including the keychain-versus-file-key behaviour, the WSL mirrored-mode requirement, and the four independently versioned artifacts
+- [x] Record in .agents/monolith.md the new vocabulary plus two deliberate departures: dg-server uses a domain-module layout, and its tests directory uses subdirectories
+- [x] Grow docs/AGENT-INSTALL.md's automation matrix and Step 3 help list to mention dg-server and dg:start
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: install resolves and fetches a dg-server asset for the current platform and arch, and skips the download when already current
-- [ ] Contract: a platform with no published dg-server asset warns and continues rather than failing the whole install
-- [ ] Contract: the generalized fetcher is called once per binary with the right binaryName and tagPrefix, and no fetch logic is duplicated
-- [ ] Contract: skill-manifests.spec.ts asserts the chat skill against the dg-server binary path, not dg-skills
-- [ ] bootstrap.sh and bootstrap.ps1 place both binaries in the dg bin directory and mark them executable
-- [ ] The dg-server workflows' path filters match pkg/dg-server/** and pkg/common/** and do not fire on unrelated changes
-- [ ] SKILL.md's documented commands, flags and exit codes match the CLI's actual surface
-- [ ] Multi-word prose assertions use a whitespace-tolerant regex, per .agents/school/quality.md
+- [x] Contract: install resolves and fetches a dg-server asset for the current platform and arch, and skips the download when already current
+- [x] Contract: a platform with no published dg-server asset warns and continues rather than failing the whole install
+- [x] Contract: the generalized fetcher is called once per binary with the right binaryName and tagPrefix, and no fetch logic is duplicated
+- [x] Contract: skill-manifests.spec.ts asserts the chat skill against the dg-server binary path, not dg-skills
+- [x] bootstrap.sh and bootstrap.ps1 place both binaries in the dg bin directory and mark them executable
+- [x] The dg-server workflows' path filters match pkg/dg-server/** and pkg/common/** and do not fire on unrelated changes
+- [x] SKILL.md's documented commands, flags and exit codes match the CLI's actual surface
+- [x] Multi-word prose assertions use a whitespace-tolerant regex, per .agents/school/quality.md
 
 #### Acceptance Criteria
 - [ ] Given a clean machine, when install runs, then dg-skills and dg-server are both in the dg bin directory and the extension is staged, all from GitHub Releases with no local build
 - [ ] Given dg:start invoked from a plugin install with no source checkout, when the skill bootstraps, then it obtains the prebuilt dg-server binary and opens a working chat window
-- [ ] Given a change under pkg/dg-server, when CI runs, then the dg-server build workflow fires and the skills workflow does not
+- [x] Given a change under pkg/dg-server, when CI runs, then the dg-server build workflow fires and the skills workflow does not
 - [ ] Integration: with the daemon running and the extension loaded, a message typed in the chat page reaches a blocked recv, an agent reply renders in its node, a $ command runs without waking the agent, and a staged image renders from a blob URL
 
 ### Slice 11 — extension-canvas-surface
@@ -1576,3 +1576,65 @@ directly. Retargeted at `boardElement.style.transform`, the mutant dies.
 
 Slice 11's remaining acceptance criteria are now met except the prototype comparison, which needs the
 untracked `.agents/prototype/` artifact and cannot be checked from this checkout.
+
+### Slice-10 outcome (execute-mode)
+
+Built in the main loop rather than delegated to `codex` as the frontmatter's `proxy` key suggested,
+because the session's standing instruction is not to delegate unless asked.
+
+**The stub that was supposed to land early never landed.** The first Engineering bullet asked for a
+`dg-server-blt.yml` stub "as soon as slice 2 exists, so slices 2 through 9 are gated rather than
+discovering a broken pipeline at the end". It was never created, so slices 2–9 shipped with no CI gate
+at all. Both workflows exist now, and the tests pin their path filters, but the intent of that bullet —
+early gating — was lost and cannot be recovered retroactively.
+
+**The fetcher is generalized with two explicit parameters and no derivation rule.** `cliAssetName`,
+`pickCliAsset`, `cliDest`, `cliVersionFile`, `resolveCliAsset` and `fetchCliBinary` now take
+`binaryName` and `tagPrefix`. A test asserts a mismatched pair (`dg-server` + `skills-v`, or
+`dg-skills` + `server-v`) resolves nothing, which is what "no derivation rule" has to mean in practice.
+`versionGte` was already binary-agnostic and is untouched.
+
+A leftover the tests caught: `pickCliAsset` still stripped the version with a hardcoded
+`/^skills-v/`, so a `server-v1.0.0` tag yielded the version string `"server-v1.0.0"`. It now slices
+`tagPrefix.length`.
+
+**`install` fetches through one code path.** `installBinary(binaryName, tagPrefix)` runs over a
+`BINARIES` table, so there is exactly one `fetchCliBinary` and one `resolveCliAsset` call site — pinned
+by a test that counts them. The per-binary already-current skip and the warn-and-continue behaviour are
+preserved per binary, so a platform with no published `dg-server` warns and the `dg-skills` install
+still succeeds.
+
+**The bootstrap scripts needed no new fetch code, which was worth verifying before writing any.**
+`bootstrap.sh` ends in `"${DEST}" install` and `bootstrap.ps1` in `& $dest install`, so generalizing
+the fetcher is enough. Tests assert both tails and assert neither script names a `dg-server-*` asset —
+duplicating bootstrap.sh's curl loop would have hard-exited the whole bootstrap on a missing asset,
+taking the good `dg-skills` and extension install down with it.
+
+**The SKILL.md bootstrap gate tests `dg-server`, and a mutant proves it matters.** Replacing the gate
+with the browser skill's verbatim `DG="$HOME/.dg/bin/dg-skills"` fails the new test. Any machine that
+has used `browser`, `demo` or `proto` already has `dg-skills`, so that gate would short-circuit and
+`dg-server` would never be fetched.
+
+**The existing `dg-skills` parity block had to be tightened, not worked around.** It gated on
+`md.includes("dg-skills")`, which the chat skill trips merely by mentioning `dg-skills` in prose. The
+gate now keys on `.dg/bin/dg-skills` — actual invocation, which is what the block's own title claims —
+and both blocks carry a "at least one skill matches" test so a filter that silently matches nothing
+cannot pass as green.
+
+**A drift guard, not just documentation.** Six tests cross-check `chat/SKILL.md` against the daemon's
+real source: every non-hidden registered command, every `EXIT_*` constant with its number, the
+`--block`/`--timeout`/`--state`/`--commands`/`--subagents`/`--workset`/`--orchestrator`/`--open` flags,
+and the documented 30000 ms `recv` default. Changing `DEFAULT_RECV_TIMEOUT_MS` or adding an
+undocumented exit code each fail a test.
+
+**Three acceptance criteria stay open, and cannot be closed from this checkout.**
+- Both "clean machine" criteria depend on a published `server-v*` release, which only exists after this
+  lands on `master` and `dg-server-release.yml` runs. Ticking them now would be a claim about a release
+  that does not exist.
+- The browser-plus-daemon integration criterion needs a real browser and a real daemon together. It is
+  written out as a five-item manual checklist in `docs/DEVELOPER.md` rather than faked as a
+  `depends_on` edge, since an edge sequences work without making a criterion observable.
+
+`.agents/monolith.md` is **gitignored**, so its new vocabulary and the two recorded departures
+(dg-server's domain-module `src/` layout, and its `__tests__/` subdirectories) are a local reference
+only — no CI lints them and no reviewer sees them in the diff.

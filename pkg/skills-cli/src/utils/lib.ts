@@ -104,18 +104,19 @@ export type PickedAsset = { name: string; url: string; version: string };
 const UA = { "User-Agent": "dg-ai-extension" };
 
 /**
- * The skills-v* release asset name for a platform+arch, or undefined if the
- * combination isn't built. Kept in lockstep with skills-release.yml's matrix
- * and bootstrap.sh/bootstrap.ps1's os/arch mapping.
+ * A release asset name for a platform+arch, or undefined if that combination
+ * isn't built. Kept in lockstep with each release workflow's matrix and
+ * bootstrap.sh/bootstrap.ps1's os/arch mapping.
  */
 export function cliAssetName(
+	binaryName: string,
 	platform: string,
 	arch: string,
 ): string | undefined {
 	const os = { linux: "linux", darwin: "macos", win32: "windows" }[platform];
 	const cpu = { x64: "x64", arm64: "arm64" }[arch];
 	if (!os || !cpu) return undefined;
-	return `dg-skills-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
+	return `${binaryName}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
 }
 
 /**
@@ -137,23 +138,25 @@ export function pickExtAsset(
 	};
 }
 
-/** Newest skills-v* release's binary for platform+arch. */
+/** Newest non-draft release under `tagPrefix`, and its binary for platform+arch. */
 export function pickCliAsset(
 	releases: Release[],
+	binaryName: string,
+	tagPrefix: string,
 	platform: string,
 	arch: string,
 ): PickedAsset | undefined {
-	const name = cliAssetName(platform, arch);
+	const name = cliAssetName(binaryName, platform, arch);
 	if (!name) return undefined;
 	const rel = releases.find(
-		(r) => r.tag_name.startsWith("skills-v") && !r.draft,
+		(r) => r.tag_name.startsWith(tagPrefix) && !r.draft,
 	);
 	const asset = rel?.assets.find((a) => a.name === name);
 	if (!rel || !asset) return undefined;
 	return {
 		name: asset.name,
 		url: asset.browser_download_url,
-		version: rel.tag_name.replace(/^skills-v/, ""),
+		version: rel.tag_name.slice(tagPrefix.length),
 	};
 }
 
@@ -179,32 +182,40 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** Stable path for the compiled CLI binary (runs in the shell, so always local home). */
-export function cliDest(): string {
-	const name = process.platform === "win32" ? "dg-skills.exe" : "dg-skills";
+/** Stable path for a compiled binary (runs in the shell, so always local home). */
+export function cliDest(binaryName: string): string {
+	const name =
+		process.platform === "win32" ? `${binaryName}.exe` : binaryName;
 	return join(homedir(), ".dg", "bin", name);
 }
 
-/** Records the installed CLI version so `install` can skip a needless ~big re-download. */
-export function cliVersionFile(): string {
-	return join(homedir(), ".dg", "bin", ".dg-skills.version");
+/** Records an installed version so `install` can skip a needless ~big re-download. */
+export function cliVersionFile(binaryName: string): string {
+	return join(homedir(), ".dg", "bin", `.${binaryName}.version`);
 }
 
-/** The newest skills-v* binary for this platform, or undefined if unbuilt/unavailable. */
-export function resolveCliAsset(): Promise<PickedAsset | undefined> {
+/** The newest binary under `tagPrefix` for this platform, or undefined if unbuilt. */
+export function resolveCliAsset(
+	binaryName: string,
+	tagPrefix: string,
+): Promise<PickedAsset | undefined> {
 	return listReleases().then((r) =>
-		pickCliAsset(r, process.platform, process.arch),
+		pickCliAsset(r, binaryName, tagPrefix, process.platform, process.arch),
 	);
 }
 
-/** Download a resolved CLI asset to cliDest() and stamp its version. */
-export async function fetchCliBinary(asset: PickedAsset): Promise<string> {
+/** Download a resolved asset to cliDest(binaryName) and stamp its version. */
+export async function fetchCliBinary(
+	binaryName: string,
+	asset: PickedAsset,
+): Promise<string> {
 	const dl = await fetch(asset.url, { headers: UA });
-	if (!dl.ok) throw new Error(`CLI binary download failed: HTTP ${dl.status}`);
-	const dest = cliDest();
+	if (!dl.ok)
+		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
+	const dest = cliDest(binaryName);
 	mkdirSync(join(homedir(), ".dg", "bin"), { recursive: true });
 	writeFileSync(dest, Buffer.from(await dl.arrayBuffer()));
 	chmodSync(dest, 0o755);
-	writeFileSync(cliVersionFile(), `${asset.version}\n`);
+	writeFileSync(cliVersionFile(binaryName), `${asset.version}\n`);
 	return dest;
 }

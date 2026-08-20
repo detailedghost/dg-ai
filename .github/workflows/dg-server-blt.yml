@@ -1,0 +1,43 @@
+---
+name: DG Server - Build, Lint, and Test
+
+on:
+  pull_request:
+    paths:
+      - pkg/dg-server/**
+      - pkg/common/**
+      - .github/workflows/dg-server-blt.yml
+  workflow_call:
+
+jobs:
+  dg-server-blt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (root — wires workspace symlinks, skip extension postinstall)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Lint (common)
+        working-directory: pkg/common
+        run: bun run lint
+
+      - name: Test (common)
+        working-directory: pkg/common
+        run: bun test
+
+      - name: Lint (dg-server)
+        working-directory: pkg/dg-server
+        run: bun run lint
+
+      - name: Test (dg-server — daemon, store, dispatch, assets)
+        working-directory: pkg/dg-server
+        run: bun test
+
+      - name: Build (dg-server)
+        working-directory: pkg/dg-server
+        run: bun run build

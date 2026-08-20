@@ -5,7 +5,7 @@
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
  * checkout (dev) it falls back to a local `wxt build`. It also refreshes the
- * compiled dg-skills CLI binary (the release artifact the skills invoke).
+ * compiled dg-skills and dg-server binaries (the release artifacts skills invoke).
  */
 
 import {
@@ -92,35 +92,50 @@ function printSteps(target: Target, path: string): void {
 	console.log("5. Done.");
 }
 
-/** Download/refresh the compiled dg-skills binary; best-effort (warn, never throw). */
-async function installCli(): Promise<void> {
+/** One binary's download/refresh; best-effort per binary (warn, never throw). */
+async function installBinary(
+	binaryName: string,
+	tagPrefix: string,
+): Promise<void> {
 	try {
-		const asset = await resolveCliAsset();
+		const asset = await resolveCliAsset(binaryName, tagPrefix);
 		if (!asset) {
 			console.warn(
-				`⚠ no dg-skills binary for ${process.platform}-${process.arch}; skipping CLI refresh.`,
+				`⚠ no ${binaryName} binary for ${process.platform}-${process.arch}; skipping its refresh.`,
 			);
 			return;
 		}
-		const vf = cliVersionFile();
+		const vf = cliVersionFile(binaryName);
 		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
 		// The binary is large; skip the download when we're already current.
 		if (
 			installed &&
-			existsSync(cliDest()) &&
+			existsSync(cliDest(binaryName)) &&
 			versionGte(installed, asset.version)
 		) {
-			console.log(`dg-skills CLI already current (v${installed}).`);
+			console.log(`${binaryName} already current (v${installed}).`);
 			return;
 		}
-		const path = await fetchCliBinary(asset);
+		const path = await fetchCliBinary(binaryName, asset);
 		console.log(
-			`dg-skills CLI ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`,
+			`${binaryName} ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`,
 		);
 	} catch (err) {
 		console.warn(
-			`⚠ dg-skills CLI install skipped: ${err instanceof Error ? err.message : err}`,
+			`⚠ ${binaryName} install skipped: ${err instanceof Error ? err.message : err}`,
 		);
+	}
+}
+
+/** Every prebuilt binary the harness needs, each independently versioned. */
+const BINARIES: { binaryName: string; tagPrefix: string }[] = [
+	{ binaryName: "dg-skills", tagPrefix: "skills-v" },
+	{ binaryName: "dg-server", tagPrefix: "server-v" },
+];
+
+async function installCli(): Promise<void> {
+	for (const { binaryName, tagPrefix } of BINARIES) {
+		await installBinary(binaryName, tagPrefix);
 	}
 }
 
@@ -182,7 +197,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + refresh the compiled dg-skills CLI",
+			"stage the dg-ai-extension for loading + refresh the compiled dg-skills and dg-server binaries",
 		)
 		.argument(
 			"[target]",
