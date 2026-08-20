@@ -12,8 +12,8 @@ and **live-page prototype**. The companion extension is `dg-ai-extension`.
 /plugin install dg@detailedghost
 ```
 
-**Standalone — one command installs the `dg-skills` CLI *and* the browser
-extension** (compiled binary, no Bun needed):
+**Standalone — one command installs the `dg-skills` and `dg-server` binaries
+*and* the browser extension** (compiled binaries, no Bun needed):
 
 macOS / Linux (x64 or arm64):
 
@@ -31,10 +31,12 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 
 <!-- markdownlint-enable MD013 -->
 
-Both install `~/.dg/bin/dg-skills`, then run `dg-skills install` to stage the
-extension and print the **Load unpacked** steps. Re-run `dg-skills install`
-anytime to update. (Building the extension from source with `--local` needs
-[Bun](https://bun.sh).)
+Both install `~/.dg/bin/dg-skills`, then run `dg-skills install`, which also
+fetches `~/.dg/bin/dg-server`, stages the extension and prints the **Load
+unpacked** steps. Re-run `dg-skills install` anytime to update all three; each
+is skipped when already current, and a platform with no published binary warns
+and continues instead of failing the install. (Building the extension from
+source with `--local` needs [Bun](https://bun.sh).)
 
 ### Codex plugin
 
@@ -96,6 +98,20 @@ pre-loaded — no manual load step (`--list` shows what's installed):
 Claude Code: /dg:browser launch --browser brave-beta --group "PRs" work#1517 work#1518
 Codex:      $dg:browser launch --browser brave-beta --group "PRs" work#1517 work#1518
 ```
+
+Hold a **live chat with the agent in a browser tab** while it works — it can
+ask you questions, show you staged files, and run commands you publish without
+waking itself up:
+
+```text
+Claude Code: /dg:chat
+Codex:      $dg:chat
+```
+
+The `dg-server` daemon hosts every session on loopback only, each gated by a
+capability token, with messages and staged assets encrypted at rest. On WSL it
+needs **mirrored** networking mode, since NAT cannot reach the loopback port
+from the Windows-side browser.
 
 Play a **live guided tour** of a feature in your real browser — the extension
 spotlights each element and injects explanatory text boxes, step by step:

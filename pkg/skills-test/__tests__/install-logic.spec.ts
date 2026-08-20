@@ -6,6 +6,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	cliAssetName,
+	cliDest,
+	cliVersionFile,
 	pickCliAsset,
 	pickExtAsset,
 	type Release,
@@ -38,6 +40,17 @@ const RELEASES: Release[] = [
 			},
 		],
 	},
+	{
+		tag_name: "server-v1.0.0",
+		draft: false,
+		assets: [
+			{ name: "dg-server-linux-x64", browser_download_url: "u/srv-linux-x64" },
+			{
+				name: "dg-server-windows-x64.exe",
+				browser_download_url: "u/srv-win-x64",
+			},
+		],
+	},
 	// legacy pre-split tag — must be ignored by both selectors
 	{ tag_name: "v1.2.0", draft: false, assets: [] },
 ];
@@ -53,13 +66,13 @@ describe("cliAssetName", () => {
 	];
 	for (const [platform, arch, expected] of cases) {
 		test(`${platform}/${arch} → ${expected}`, () => {
-			expect(cliAssetName(platform, arch)).toBe(expected);
+			expect(cliAssetName("dg-skills", platform, arch)).toBe(expected);
 		});
 	}
 
 	test("unsupported OS/arch → undefined", () => {
-		expect(cliAssetName("aix", "x64")).toBeUndefined();
-		expect(cliAssetName("linux", "mips")).toBeUndefined();
+		expect(cliAssetName("dg-skills", "aix", "x64")).toBeUndefined();
+		expect(cliAssetName("dg-skills", "linux", "mips")).toBeUndefined();
 	});
 });
 
@@ -81,14 +94,16 @@ describe("pickExtAsset (extension zip from ext-v* only)", () => {
 
 describe("pickCliAsset (binary from skills-v* only)", () => {
 	test("linux/x64 resolves the skills-v* binary, not ext-v*", () => {
-		const a = pickCliAsset(RELEASES, "linux", "x64");
+		const a = pickCliAsset(RELEASES, "dg-skills", "skills-v", "linux", "x64");
 		expect(a?.name).toBe("dg-skills-linux-x64");
 		expect(a?.version).toBe("1.0.0");
 	});
 
 	test("platform with no matching asset in the release → undefined", () => {
 		// linux/arm64 isn't in the fixture's asset list
-		expect(pickCliAsset(RELEASES, "linux", "arm64")).toBeUndefined();
+		expect(
+			pickCliAsset(RELEASES, "dg-skills", "skills-v", "linux", "arm64"),
+		).toBeUndefined();
 	});
 
 	test("draft releases are skipped", () => {
@@ -102,6 +117,59 @@ describe("pickCliAsset (binary from skills-v* only)", () => {
 			},
 			...RELEASES,
 		];
-		expect(pickCliAsset(withDraft, "linux", "x64")?.version).toBe("1.0.0");
+		expect(
+			pickCliAsset(withDraft, "dg-skills", "skills-v", "linux", "x64")?.version,
+		).toBe("1.0.0");
+	});
+});
+
+describe("the fetcher is generalized over binaryName and tagPrefix, with no derivation rule", () => {
+	test("cliAssetName builds a dg-server name for every supported platform", () => {
+		const cases: [string, string, string][] = [
+			["linux", "x64", "dg-server-linux-x64"],
+			["linux", "arm64", "dg-server-linux-arm64"],
+			["darwin", "x64", "dg-server-macos-x64"],
+			["darwin", "arm64", "dg-server-macos-arm64"],
+			["win32", "x64", "dg-server-windows-x64.exe"],
+			["win32", "arm64", "dg-server-windows-arm64.exe"],
+		];
+		for (const [platform, arch, expected] of cases) {
+			expect(cliAssetName("dg-server", platform, arch)).toBe(expected);
+		}
+	});
+
+	test("pickCliAsset resolves dg-server from server-v*, never from skills-v*", () => {
+		const picked = pickCliAsset(
+			RELEASES,
+			"dg-server",
+			"server-v",
+			"linux",
+			"x64",
+		);
+		expect(picked?.name).toBe("dg-server-linux-x64");
+		expect(picked?.version).toBe("1.0.0");
+		expect(picked?.url).toBe("u/srv-linux-x64");
+	});
+
+	test("the tag prefix is not derived from the binary name — a mismatched pair resolves nothing", () => {
+		expect(
+			pickCliAsset(RELEASES, "dg-server", "skills-v", "linux", "x64"),
+		).toBeUndefined();
+		expect(
+			pickCliAsset(RELEASES, "dg-skills", "server-v", "linux", "x64"),
+		).toBeUndefined();
+	});
+
+	test("a platform with no published dg-server asset resolves undefined rather than a skills binary", () => {
+		expect(
+			pickCliAsset(RELEASES, "dg-server", "server-v", "darwin", "arm64"),
+		).toBeUndefined();
+	});
+
+	test("cliDest and cliVersionFile are per-binary, so one install cannot overwrite the other", () => {
+		expect(cliDest("dg-skills")).not.toBe(cliDest("dg-server"));
+		expect(cliDest("dg-server")).toContain("dg-server");
+		expect(cliVersionFile("dg-server")).toContain(".dg-server.version");
+		expect(cliVersionFile("dg-skills")).toContain(".dg-skills.version");
 	});
 });

@@ -6,6 +6,7 @@
 pkg/
   common/      @dg/common — shared types + pure functions
   extension/   WXT MV3 browser extension (was extension-src/)
+  dg-server/   loopback HTTP+WS chat daemon — bun build --compile distributable
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
@@ -49,6 +50,23 @@ bun test                         # unit tests
 bun run build                    # compile binary to dist/
 ```
 
+### pkg/dg-server (chat daemon)
+
+```bash
+cd pkg/dg-server
+bun src/index.ts --help   # run locally
+bun run lint              # tsc --noEmit
+bun test                  # daemon, store, dispatch and asset tests
+bun run build             # compile binary to dist/dg-server
+```
+
+The daemon is loopback-only and capability-gated. Its store is encrypted at
+rest: the data key comes from the OS keychain when one is available and from a
+file-backed key otherwise, so a machine with no keychain still works. On WSL it
+needs **mirrored** networking mode — under NAT the Windows-side browser cannot
+reach the loopback port, and the daemon exits with code 3 rather than pretending
+to be reachable.
+
 ### pkg/common (shared library)
 
 ```bash
@@ -73,7 +91,45 @@ bun test       # install logic + skill manifests + CLI smoke
 | `ext-release` | push master: extension | tags `ext-v*` |
 | `skills-blt` | PR: skills-cli, common, skills, skills-test | required |
 | `skills-release` | push master: skills-cli, common | `skills-v*`, 6 bins |
+| `dg-server-blt` | PR: dg-server, common | required |
+| `dg-server-release` | push master: dg-server, common | `server-v*`, 6 bins |
 
 ## Branch Protection
 
-PRs to `master` require both `ext-blt` and `skills-blt` to pass.
+PRs to `master` require `ext-blt`, `skills-blt` and `dg-server-blt` to pass.
+
+> **Manual step, post-merge.** A repository admin must add the `dg-server-blt`
+> check to branch protection. Until that is done the workflow runs but cannot
+> block a merge, so a broken daemon build would land silently.
+
+## Four independently versioned artifacts
+
+| Artifact | Version source | Release tag |
+| --- | --- | --- |
+| `dg-ai-extension` zip | `pkg/extension/package.json` | `ext-v*` |
+| `dg-skills` binary | `pkg/skills-cli/package.json` | `skills-v*` |
+| `dg-server` binary | `pkg/dg-server/package.json` | `server-v*` |
+| skill tree | the repository itself | tracked in `master` |
+
+They move independently on purpose. `dg-skills install` refreshes the extension
+zip, `dg-skills` and `dg-server` in one pass, skipping any that is already
+current. A platform with no published binary warns and continues rather than
+failing the whole install.
+
+## Cross-package integration checklist
+
+Some criteria no single package's tests can observe, because they need a real
+browser and a real daemon at the same time. Run these by hand on WSL in
+mirrored mode, or through a browser harness:
+
+- [ ] With the daemon running and the extension loaded, a message typed in the
+      chat page reaches a blocked `recv`.
+- [ ] An agent reply from `send` renders in that session's node.
+- [ ] A `$` command published by `manifest` runs from the composer without
+      waking the agent.
+- [ ] A file passed to `stage` renders in the transcript from a blob URL.
+- [ ] Killing the daemon mid-conversation leaves the page in a
+      `daemon-not-running` state, and restarting it recovers without a reload.
+
+These are listed rather than faked as `depends_on` edges: an edge only sequences
+work, it does not make a criterion observable.

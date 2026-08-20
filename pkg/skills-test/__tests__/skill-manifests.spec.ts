@@ -106,13 +106,19 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	for (const name of skillDirs) {
-		const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
-		if (!md.includes("dg-skills")) continue; // non-CLI skill
+	const cliSkills = skillDirs.filter((name) =>
+		readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8").includes(
+			".dg/bin/dg-skills",
+		),
+	);
 
-		test(`${name}: invokes ~/.dg/bin/dg-skills`, () => {
-			expect(md).toContain(".dg/bin/dg-skills");
-		});
+	test("at least one skill invokes the dg-skills binary", () => {
+		expect(cliSkills.length).toBeGreaterThan(0);
+	});
+
+	for (const name of cliSkills) {
+		const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
+
 		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
 			expect(md).toContain("skills-cli");
 			expect(md).toContain("bootstrap.sh");
@@ -123,6 +129,60 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 			);
 			expect(md).not.toContain('SRC="${CLAUDE_PLUGIN_ROOT}/');
 		});
+		test(`${name}: does not run the TS source entrypoint`, () => {
+			expect(md).not.toContain("src/index.ts");
+		});
+	}
+});
+
+describe("dg-server-invoking SKILL.md uses the compiled daemon binary", () => {
+	const serverSkills = skillDirs.filter((name) =>
+		readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8").includes(
+			"dg-server",
+		),
+	);
+
+	test("at least one skill exposes the dg-server harness", () => {
+		expect(serverSkills.length).toBeGreaterThan(0);
+	});
+
+	for (const name of serverSkills) {
+		const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
+
+		test(`${name}: invokes ~/.dg/bin/dg-server`, () => {
+			expect(md).toContain(".dg/bin/dg-server");
+		});
+
+		test(`${name}: gates its bootstrap on the dg-server binary, not on dg-skills`, () => {
+			const gates = md.match(/if\s*\[\s*!\s*-x\s*"([^"]+)"\s*\]/g) ?? [];
+			expect(gates.length).toBeGreaterThan(0);
+			const gated = gates.join("\n");
+			expect(gated).toMatch(/DG_SERVER|dg-server/);
+			expect(gated).not.toMatch(/^\s*if\s*\[\s*!\s*-x\s*"\$DG"\s*\]$/m);
+		});
+
+		test(`${name}: names the server-v release tag its binary ships under`, () => {
+			expect(md).toMatch(/server-v/);
+		});
+
+		test(`${name}: documents the recv send status spawn stage close loop`, () => {
+			for (const verb of [
+				"recv",
+				"send",
+				"status",
+				"spawn",
+				"stage",
+				"close",
+			]) {
+				expect(md).toMatch(new RegExp(`\\b${verb}\\b`));
+			}
+		});
+
+		test(`${name}: documents the reserved timeout exit code`, () => {
+			expect(md).toMatch(/exit\s+code/i);
+			expect(md).toMatch(/timeout/i);
+		});
+
 		test(`${name}: does not run the TS source entrypoint`, () => {
 			expect(md).not.toContain("src/index.ts");
 		});
