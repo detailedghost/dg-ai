@@ -698,7 +698,7 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 ### Slice 11 — extension-canvas-surface
 
 #### Engineering
-- [ ] Ship the canvas as an OPTIONAL spatial view toggled from the grouped rail, never as the default surface — the rail won the prototype bake-off and is the primary layout
+- [x] Ship the canvas as an OPTIONAL spatial view toggled from the grouped rail, never as the default surface — the rail won the prototype bake-off and is the primary layout
 - [x] Pan and zoom over an unbounded board using one CSS transform on a single board element
 - [x] Export the arithmetic as pure functions over an injected viewport — clampScale, clampPan, screenToBoard, boardToScreen, applyDragDelta and isNodeInView — and drive the spec through those; happy-dom has no layout engine, so no assertion may read a rect
 - [x] Board chrome such as the create-chat button, the daemon banner and zoom controls must be a SIBLING of the transformed board, never a descendant — a transformed or will-change ancestor becomes the containing block for fixed positioning
@@ -1471,3 +1471,74 @@ serving path end to end including every containment check; and the extension's s
 invariant with the background/page split. Call out where a slice boundary left a seam unowned — slice
 12 exists because four modules had no mount owner — and where a ratification supersedes earlier spec
 wording, since this bundle accumulated fifteen such subsections.
+
+### Slice-12 outcome (execute-mode)
+
+All four previously-unreachable modules now ship, verified against the **built** bundle rather than by
+reading source. `chat.html` loads `chunks/chat-*.js`, which carries `aria-activedescendant`,
+`chat-canvas__board` and `toggle-canvas`; `options.html` loads `chunks/options-*.js`, which carries
+`data-asset-directory-input` and the minified mount call `x(S("assetDirectoryPanel"),{transport:v()})`;
+`background.js` carries `dg-chat:command-invocation`. The minified call is the reason the plan demanded
+literal greps — `mountAssetDirectoryPanel` became `x`.
+
+**The ratified two-file list was insufficient, and the correction follows slice 9's own precedent.**
+`onDispatch` cannot reach the daemon from `entrypoints/chat/main.ts` alone: by H4 the page holds no
+token and no socket. So the slice also owns `lib/chat-messages.ts` (one new `MSG.commandInvocation`
+channel) and `lib/background/chat.ts` (a `dispatchCommand` that attaches the session's own token to a
+`command-invocation` frame on the background's one socket). This needs **no** change to the ratified
+`ChatClient` type, because slice 9's config relay had already established a raw token-attaching send
+path in the background. Four guards are mutation-proven: dropping the extension-page sender check,
+the `commandLabel` validation, the per-session bootstrap lookup, or the `params` object check each
+fails a test.
+
+**Human-ratified override — the canvas ships as an optional second view.** Slice 11's Engineering box
+("ship the canvas as an OPTIONAL spatial view toggled from the grouped rail") and slice 6's layout
+verdict ("no drill-down and no second navigation level... without a second view to keep in sync")
+were in direct contradiction, and slice 6's committed test enforced its side by asserting
+`[data-view], [aria-hidden='true']` was null. The human chose to **ship the toggle and amend the
+slice-6 test**. That test is now narrowed to the primary surface: it pins `root.dataset.view === "rail"`
+as the default, and that nothing inside `.chat-rail`/`.chat-thread` is hidden. Two new tests carry the
+accessibility cost the original verdict was protecting: the canvas is off on load and only a
+`[data-action='toggle-canvas']` button with `aria-pressed` reveals it, and switching to the canvas
+leaves the rail present and un-hidden, so the linear surface never disappears. The rail-versus-canvas
+sync problem the bake-off warned about is now real and owned by this page.
+
+`chromeElement` is populated with a create-chat button, a `[data-canvas-connection]` banner fed by the
+same `updateConnectionStatus` the rail uses, and zoom controls. The zoom buttons dispatch a real
+`ctrlKey` wheel event at `boardElement` rather than calling a setter, because the ratified
+`createChatCanvas` surface is deliberately read-only (`boardElement`, `chromeElement`, `viewport()`)
+and adding a setter would widen it. The rail's create-chat handler was extracted so both buttons share
+one path instead of duplicating the request logic.
+
+**`getSubagents` is deliberately left unwired.** `cli-manifest-publish` accepts a `subagents` array and
+the daemon persists it for its own `@`-mention resolution, but the outbound `manifest-publish` frame
+carries **only `commands`** — so the page has no wire source for subagent names. Offering completions
+the daemon would silently ignore would be a UX lie, so only `$` command completion is mounted. Closing
+this needs a subagent list on an outbound frame, which is the same class of protocol gap as the
+deferred `invocationId`.
+
+**Two test-harness duplications collapsed instead of copied.** `bootRelay`/`makeFakeSocket`/`frameEvent`
+moved to `__tests__/utils/relay-harness.ts` and `asset-settings.spec.ts` now imports them (19/19 still
+pass), rather than a second hand-rolled copy landing in `chat-wiring.spec.ts`. The realm-correct
+event helpers moved to `__tests__/utils/dom-events.ts`; the five pre-existing copies noted earlier
+are now a delete-and-import job for the polish pass, not an extraction.
+
+**One of my own tests was wrong, not the code.** The first dispatch test pressed Enter straight after
+typing `$rev` and failed. `acceptActive()` returns early while `activeIndex < 0`, and the committed
+autocomplete spec pins ArrowDown-then-Enter as the ratified interaction. The test was corrected to the
+ratified path; plain Enter with no highlighted option still falls through to the composer's own submit,
+which is the settled behaviour and was not changed.
+
+**The canvas board ships empty, and that is a real gap, not a finished feature.** Slice 12's ratified
+scope was the toggle plus `chromeElement`, and it delivers exactly that: the board pans, zooms and
+honours reduced motion. But `loadNodePositions`, `saveNodePosition` and `isNodeInView` are still called
+from nowhere in production, so no session node is placed on the board, positions are neither restored
+nor saved, and focus never pans to an off-view node. Slice 11's remaining acceptance criteria — saved
+positions on load, pan-to-focused-node, and the prototype comparison — are therefore **still unmet**,
+and only its toggle Engineering box is closed. Placing nodes on the board is slice 11's unfinished
+work; it was not silently folded into slice 12.
+
+One bug of my own, found and fixed while mounting: `chat-canvas.ts` reads
+`container.dataset.motion`, not the page root's, so the canvas ignored `prefers-reduced-motion`
+entirely until the mount set it on its own container and kept it synced. A test pins it and reverting
+the line fails.

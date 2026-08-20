@@ -206,6 +206,33 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		return undefined;
 	}
 
+	/** Dispatches one command on the background's own socket, so the chat page never needs a token. */
+	function dispatchCommand(
+		sessionId: string,
+		commandLabel: string,
+		params: Record<string, unknown>,
+	): { ok: boolean; error?: string } {
+		const socket = currentSocket;
+		const bootstrap = bootstrapsBySession.get(sessionId);
+		if (!socket || !bootstrap) {
+			return {
+				ok: false,
+				error: "no chat session is open — start one to run a command",
+			};
+		}
+		socket.send(
+			JSON.stringify({
+				type: "command-invocation",
+				sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				commandLabel,
+				params,
+			}),
+		);
+		return { ok: true };
+	}
+
 	/** Relays one config-get/config-set on the background's own socket, so the requesting page never needs a token. */
 	function requestDaemonConfig(
 		kind: "config-get" | "config-set",
@@ -387,6 +414,26 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						typeof payload.value === "string" ? payload.value : undefined,
 					).then(sendResponse);
 					return true; // the reply is a round trip to the daemon
+				}
+				case MSG.commandInvocation: {
+					if (!isExtensionPageSender(sender, api)) return undefined;
+					if (
+						typeof payload.sessionId !== "string" ||
+						typeof payload.commandLabel !== "string" ||
+						payload.commandLabel.length === 0
+					) {
+						return undefined;
+					}
+					const params =
+						typeof payload.params === "object" &&
+						payload.params !== null &&
+						!Array.isArray(payload.params)
+							? (payload.params as Record<string, unknown>)
+							: {};
+					sendResponse(
+						dispatchCommand(payload.sessionId, payload.commandLabel, params),
+					);
+					return undefined;
 				}
 				default:
 					return undefined;

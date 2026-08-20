@@ -8,6 +8,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_DEFAULT_PORT, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { Window } from "happy-dom";
+import {
+	bootRelay as bootSharedRelay,
+	type FakeSocket,
+	frameEvent,
+} from "./utils/relay-harness";
 
 const syncGet = mock(() => Promise.resolve({}));
 const syncSet = mock(() => Promise.resolve());
@@ -78,105 +83,16 @@ async function flush(): Promise<void> {
 const settle = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
 
-type Listener = (
-	msg: unknown,
-	sender: unknown,
-	sendResponse: (r: unknown) => void,
-) => boolean | undefined;
 
-type FakeSocket = {
-	send: ReturnType<typeof mock>;
-	addEventListener: ReturnType<typeof mock>;
-	dispatch(type: string, event?: unknown): void;
-};
-
-/** Mirrors chat-background.spec.ts's fake socket — the background's ONE socket, under test control. */
-function makeFakeSocket(): FakeSocket {
-	const listeners: Record<string, Array<(event?: unknown) => void>> = {};
-	return {
-		send: mock((_data: string) => undefined),
-		addEventListener: mock((type: string, cb: (event?: unknown) => void) => {
-			if (!listeners[type]) listeners[type] = [];
-			listeners[type].push(cb);
-		}),
-		dispatch(type: string, event?: unknown) {
-			for (const cb of listeners[type] ?? []) cb(event);
-		},
-	};
-}
-
-function frameEvent(frame: Record<string, unknown>) {
-	return { data: JSON.stringify(frame) };
-}
-
-/**
- * Boots a real registerChat over a fake socket and points the mocked
- * browser.runtime at its message listener, so `relay` carries exactly what an
- * options page would post.
- */
+/** Boots the shared relay harness and points the mocked browser.runtime at it. */
 async function bootRelay(options: { confirmSession?: boolean } = {}) {
-	const socket = makeFakeSocket();
-	let onMessage: Listener | undefined;
-	const posted: unknown[] = [];
-	const api = {
-		action: { onClicked: { addListener: mock(() => undefined) } },
-		runtime: {
-			onMessage: {
-				addListener: mock((cb: Listener) => {
-					onMessage = cb;
-				}),
-			},
-			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
-			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
-		},
-		tabs: { create: mock(() => Promise.resolve()) },
-		storage: { session: { set: mock(() => Promise.resolve()) } },
-	};
-	registerChat({
-		browserApi: api,
-		openSocket: () => socket,
-		maybeStartRecording: () => Promise.resolve(false),
+	const booted = await bootSharedRelay({
+		...options,
+		sessionId: SESSION_ID,
+		token: TOKEN,
 	});
-
-	function postAs(senderUrl: string, message: unknown): Promise<unknown> {
-		posted.push(message);
-		return new Promise((resolve) => {
-			const kept = onMessage?.(message, { url: senderUrl }, resolve);
-			if (!kept) resolve(undefined);
-		});
-	}
-	relay = (message: unknown) =>
-		postAs(api.runtime.getURL("options.html"), message);
-
-	onMessage?.(
-		{
-			type: MSG.markerCaptured,
-			bootstrap: {
-				port: CHAT_DEFAULT_PORT,
-				sessionId: SESSION_ID,
-				token: TOKEN,
-				agentIdentity: "claude-orchestrator",
-			},
-		},
-		{},
-		mock(() => undefined),
-	);
-	await settle();
-	socket.dispatch("open");
-	await settle();
-	if (options.confirmSession !== false) {
-		socket.dispatch(
-			"message",
-			frameEvent({
-				type: "session-list",
-				sessionId: SESSION_ID,
-				protocolVersion: CHAT_PROTOCOL_VERSION,
-				sessions: [],
-			}),
-		);
-		await settle();
-	}
-	return { socket, posted, postAs };
+	relay = booted.postAsOptionsPage;
+	return booted;
 }
 
 /** The config frames the background put on its socket, newest last. */
