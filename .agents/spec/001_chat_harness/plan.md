@@ -719,10 +719,10 @@ Give a terminal coding agent a browser chat window to converse with the user thr
 - [x] isNodeInView reports a node dragged outside the viewport, which the page's pan-to-focused-node uses to recover it
 
 #### Acceptance Criteria
-- [ ] Given several nodes, when the canvas loads, then each appears in its saved position
-- [ ] Given a node moved off-view, when it receives focus, then the board pans to it
+- [x] Given several nodes, when the canvas loads, then each appears in its saved position
+- [x] Given a node moved off-view, when it receives focus, then the board pans to it
 - [ ] Given the accepted prototype verdict, when the built canvas is compared against its recorded description, then the layout and theme match
-- [ ] Given prefers-reduced-motion, when the user pans or zooms, then no easing animation plays
+- [x] Given prefers-reduced-motion, when the user pans or zooms, then no easing animation plays
 
 ## Slice Summaries
 
@@ -1529,16 +1529,50 @@ autocomplete spec pins ArrowDown-then-Enter as the ratified interaction. The tes
 ratified path; plain Enter with no highlighted option still falls through to the composer's own submit,
 which is the settled behaviour and was not changed.
 
-**The canvas board ships empty, and that is a real gap, not a finished feature.** Slice 12's ratified
-scope was the toggle plus `chromeElement`, and it delivers exactly that: the board pans, zooms and
-honours reduced motion. But `loadNodePositions`, `saveNodePosition` and `isNodeInView` are still called
-from nowhere in production, so no session node is placed on the board, positions are neither restored
-nor saved, and focus never pans to an off-view node. Slice 11's remaining acceptance criteria — saved
-positions on load, pan-to-focused-node, and the prototype comparison — are therefore **still unmet**,
-and only its toggle Engineering box is closed. Placing nodes on the board is slice 11's unfinished
-work; it was not silently folded into slice 12.
+**The canvas board shipped empty at first, and the human then asked for the node work.** The initial
+pass delivered only slice 12's ratified scope — the toggle plus `chromeElement` — leaving
+`loadNodePositions`, `saveNodePosition` and `isNodeInView` called from nowhere in production. That gap
+was reported rather than hidden, and the human's answer was to do the canvas work. It is now done, in a
+follow-up commit.
 
 One bug of my own, found and fixed while mounting: `chat-canvas.ts` reads
 `container.dataset.motion`, not the page root's, so the canvas ignored `prefers-reduced-motion`
 entirely until the mount set it on its own container and kept it synced. A test pins it and reverting
 the line fails.
+
+### Slice-11 canvas node placement (execute-mode, human-requested follow-up)
+
+Session nodes now live on the board. Opening the canvas reparents each live session's real
+`chat-node` element onto `boardElement` at its stored position, or a deterministic grid slot when it
+has none; switching back to the rail returns them to the thread pane and strips the inline placement.
+Reparenting the real node rather than rendering a lightweight card is what `chat-canvas.ts` already
+assumed — its wheel handler's `isTranscriptTarget` guard only makes sense if full transcripts sit on
+the board.
+
+A per-node drag handle writes positions through `saveNodePosition`, and `loadNodePositions` prunes any
+stored key whose session is gone. `chat_pos:` now appears in the built chat chunk, which is the proof
+that both functions are reachable from production and no longer test-only.
+
+**One surface addition, and it was unavoidable.** Slice 11's acceptance criterion "given a node moved
+off-view, when it receives focus, then the board pans to it" cannot be met against a read-only
+viewport: `createChatCanvas` exposed only `boardElement`, `chromeElement` and `viewport()`. So the
+canvas gains exactly one writer, `panTo(pan)`, which clamps through the existing `clampPan` and
+schedules the same transform. The alternative — synthesising pointerdown/move/up drags to steer the
+board programmatically — was rejected as fragile. Zoom still goes through a synthesised `ctrlKey`
+wheel event, because a single event is not fragile in the same way and needs no new surface.
+
+**Two mutants survived the first pass, and both were real findings.**
+- Removing the `isNodeInView` early return changed nothing, because no test pinned the converse: an
+  in-view node must NOT pan. Without that, the board would jerk on every focus change. A test now
+  covers it and the mutant dies.
+- Removing `event.stopPropagation()` from the drag handle changed nothing either — the board's own
+  `pointerdown` already bails unless `event.target === boardElement`, so the call was dead. It was
+  **deleted** rather than kept as decoration.
+
+**A third vacuous test of my own, caught the same way.** The `panTo` clamp test asserted through
+`canvas.viewport()`, which re-clamps on read via `copyViewport` — so an unclamped `panTo` passed it.
+The clamp only observably matters in the transform, since `applyTransform` reads `currentViewport.pan`
+directly. Retargeted at `boardElement.style.transform`, the mutant dies.
+
+Slice 11's remaining acceptance criteria are now met except the prototype comparison, which needs the
+untracked `.agents/prototype/` artifact and cannot be checked from this checkout.
