@@ -17,7 +17,13 @@ import {
 	attachCommandAutocomplete,
 	type CommandAutocomplete,
 } from "@/lib/features/chat-autocomplete";
-import { createChatCanvas } from "@/lib/features/chat-canvas";
+import {
+	createChatCanvas,
+	isNodeInView,
+	loadNodePositions,
+	type Point,
+	saveNodePosition,
+} from "@/lib/features/chat-canvas";
 import {
 	type ChatNode,
 	createChatNode,
@@ -370,6 +376,8 @@ export async function renderChatPage(
 	const nodes = new Map<string, ChatNode>();
 	const autocompletes = new Map<string, CommandAutocomplete>();
 	const manifests = new Map<string, CommandEntry[]>();
+	const canvasPositions = new Map<string, Point>();
+	const dragHandles = new Map<string, HTMLElement>();
 	const bootstrapBySession = new Map(
 		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap]),
 	);
@@ -490,15 +498,133 @@ export async function renderChatPage(
 		updateConnectionStatus();
 	}
 
+	const CANVAS_SLOT = { x: 40, y: 40, dx: 360, dy: 320, perRow: 3 };
+
+	function defaultCanvasSlot(index: number): Point {
+		return {
+			x: CANVAS_SLOT.x + (index % CANVAS_SLOT.perRow) * CANVAS_SLOT.dx,
+			y:
+				CANVAS_SLOT.y +
+				Math.floor(index / CANVAS_SLOT.perRow) * CANVAS_SLOT.dy,
+		};
+	}
+
+	function placeNode(sessionId: string, nodeElement: HTMLElement): void {
+		const position = canvasPositions.get(sessionId);
+		if (!position) return;
+		nodeElement.style.position = "absolute";
+		nodeElement.style.left = `${position.x}px`;
+		nodeElement.style.top = `${position.y}px`;
+	}
+
+	function clearNodePlacement(nodeElement: HTMLElement): void {
+		nodeElement.style.position = "";
+		nodeElement.style.left = "";
+		nodeElement.style.top = "";
+	}
+
+	function panFocusedNodeIntoView(sessionId: string): void {
+		const position = canvasPositions.get(sessionId);
+		const element = nodes.get(sessionId)?.element;
+		if (!canvas || !position || !element) return;
+		const view = canvas.viewport();
+		const rect = {
+			x: position.x,
+			y: position.y,
+			width: element.offsetWidth,
+			height: element.offsetHeight,
+		};
+		if (isNodeInView(rect, view)) return;
+		canvas.panTo({
+			x: view.width / 2 - position.x * view.scale,
+			y: view.height / 2 - position.y * view.scale,
+		});
+	}
+
+	function ensureDragHandle(sessionId: string, nodeElement: HTMLElement): void {
+		if (dragHandles.has(sessionId)) return;
+		const handle = element(doc, "button", "chat-node__drag", "\u2725");
+		handle.type = "button";
+		handle.dataset.action = "drag-node";
+		handle.setAttribute("aria-label", "Move this session on the canvas");
+		handle.addEventListener("pointerdown", (event) => {
+			const pointerEvent = event as PointerEvent;
+			if (pointerEvent.button !== 0) return;
+			const origin = canvasPositions.get(sessionId);
+			if (!origin || !canvas) return;
+			const scale = canvas.viewport().scale;
+			const start = { x: pointerEvent.clientX, y: pointerEvent.clientY };
+			let latest = { ...origin };
+
+			const onMove = (moveEvent: Event): void => {
+				const point = moveEvent as PointerEvent;
+				if (point.pointerId !== pointerEvent.pointerId) return;
+				latest = {
+					x: origin.x + (point.clientX - start.x) / scale,
+					y: origin.y + (point.clientY - start.y) / scale,
+				};
+				canvasPositions.set(sessionId, latest);
+				placeNode(sessionId, nodeElement);
+			};
+			const onUp = (upEvent: Event): void => {
+				const point = upEvent as PointerEvent;
+				if (point.pointerId !== pointerEvent.pointerId) return;
+				doc.removeEventListener("pointermove", onMove);
+				doc.removeEventListener("pointerup", onUp);
+				doc.removeEventListener("pointercancel", onUp);
+				void saveNodePosition(sessionId, latest);
+			};
+			doc.addEventListener("pointermove", onMove);
+			doc.addEventListener("pointerup", onUp);
+			doc.addEventListener("pointercancel", onUp);
+		});
+		nodeElement.prepend(handle);
+		dragHandles.set(sessionId, handle);
+	}
+
+	function removeDragHandle(sessionId: string): void {
+		dragHandles.get(sessionId)?.remove();
+		dragHandles.delete(sessionId);
+	}
+
+	async function loadCanvasPositions(): Promise<void> {
+		const liveIds = sessions.list().map((entry) => entry.sessionId);
+		const stored = await loadNodePositions(liveIds);
+		liveIds.forEach((sessionId, index) => {
+			const saved = stored.get(sessionId);
+			canvasPositions.set(sessionId, saved ?? defaultCanvasSlot(index));
+		});
+		for (const sessionId of [...canvasPositions.keys()]) {
+			if (!liveIds.includes(sessionId)) canvasPositions.delete(sessionId);
+		}
+		syncPage();
+	}
+
 	function setCanvasVisible(visible: boolean): void {
 		if (visible) mountCanvas();
 		root.dataset.view = visible ? "canvas" : "rail";
 		canvasButton.setAttribute("aria-pressed", String(visible));
 		if (canvasContainer) canvasContainer.hidden = !visible;
+		if (visible) void loadCanvasPositions();
+		else {
+			for (const [sessionId, node] of nodes) {
+				removeDragHandle(sessionId);
+				clearNodePlacement(node.element);
+			}
+			syncPage();
+		}
 	}
 
 	canvasButton.addEventListener("click", () => {
 		setCanvasVisible(root.dataset.view !== "canvas");
+	});
+
+	root.addEventListener("focusin", (event) => {
+		if (root.dataset.view !== "canvas") return;
+		const target = event.target as HTMLElement | null;
+		const owner = target?.closest<HTMLElement>(".chat-node");
+		const sessionId = owner?.dataset.sessionId;
+		if (sessionId) panFocusedNodeIntoView(sessionId);
 	});
 
 	const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
@@ -695,6 +821,8 @@ export async function renderChatPage(
 			autocompletes.get(sessionId)?.destroy();
 			autocompletes.delete(sessionId);
 			manifests.delete(sessionId);
+			canvasPositions.delete(sessionId);
+			removeDragHandle(sessionId);
 			node.destroy();
 			nodes.delete(sessionId);
 		}
@@ -768,12 +896,20 @@ export async function renderChatPage(
 
 				const node = ensureNode(entry.sessionId);
 				if (node) {
+					const onCanvas = root.dataset.view === "canvas" && canvas !== undefined;
 					const focused = entry.sessionId === selectedSessionId;
-					node.element.hidden = !focused;
+					node.element.hidden = onCanvas ? false : !focused;
 					const transcript = node.element.querySelector(".chat-transcript");
-					if (focused) transcript?.setAttribute("aria-live", "polite");
+					if (onCanvas || focused)
+						transcript?.setAttribute("aria-live", "polite");
 					else transcript?.removeAttribute("aria-live");
-					threadNodes.appendChild(node.element);
+					if (onCanvas && canvas) {
+						ensureDragHandle(entry.sessionId, node.element);
+						placeNode(entry.sessionId, node.element);
+						canvas.boardElement.appendChild(node.element);
+					} else {
+						threadNodes.appendChild(node.element);
+					}
 				}
 			}
 			railSections.appendChild(section);

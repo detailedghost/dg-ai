@@ -25,3 +25,21 @@ export function click(el: HTMLElement): void {
 	const Ctor = view<typeof Event>(el, "Event");
 	el.dispatchEvent(new Ctor("click", { bubbles: true, cancelable: true }));
 }
+
+export function pointer(
+	el: HTMLElement,
+	type: "pointerdown" | "pointermove" | "pointerup",
+	init: { clientX: number; clientY: number; pointerId?: number },
+): void {
+	const Ctor = view<typeof Event>(el, "Event");
+	const event = new Ctor(type, { bubbles: true, cancelable: true });
+	Object.assign(event, {
+		clientX: init.clientX,
+		clientY: init.clientY,
+		pointerId: init.pointerId ?? 1,
+		button: 0,
+	});
+	const target =
+		type === "pointerdown" ? el : (el.ownerDocument as unknown as HTMLElement);
+	target.dispatchEvent(event);
+}

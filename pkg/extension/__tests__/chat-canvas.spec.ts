@@ -271,3 +271,40 @@ test("isNodeInView applies pan, not raw board coordinates, to recover an off-vie
 		isNodeInView({ x: 5000, y: 50, width: 100, height: 100 }, viewport),
 	).toBe(true);
 });
+
+// --- panTo: the one viewport writer, added so a focused node can be recovered ---
+
+test("panTo moves the board to the requested pan and reflects it in the transform", () => {
+	const { container } = newCanvasHost();
+	const canvas = createChatCanvas(container, { viewport: baseViewport() });
+
+	canvas.panTo({ x: -640, y: -400 });
+
+	expect(canvas.viewport().pan).toEqual({ x: -640, y: -400 });
+	expect(canvas.boardElement.style.transform).toContain(
+		"translate(-640px, -400px)",
+	);
+});
+
+test("panTo clamps to PAN_BOUND in the transform it writes, not just in what viewport() reports", () => {
+	const { container } = newCanvasHost();
+	const canvas = createChatCanvas(container, { viewport: baseViewport() });
+
+	canvas.panTo({ x: PAN_BOUND + 5000, y: -PAN_BOUND - 5000 });
+
+	expect(canvas.boardElement.style.transform).toContain(
+		`translate(${PAN_BOUND}px, ${-PAN_BOUND}px)`,
+	);
+	expect(canvas.viewport().pan).toEqual({ x: PAN_BOUND, y: -PAN_BOUND });
+});
+
+test("panTo leaves the scale alone — it is a pan, not a viewport reset", () => {
+	const { container } = newCanvasHost();
+	const canvas = createChatCanvas(container, {
+		viewport: baseViewport({ scale: 2 }),
+	});
+
+	canvas.panTo({ x: 10, y: 20 });
+
+	expect(canvas.viewport().scale).toBe(2);
+});

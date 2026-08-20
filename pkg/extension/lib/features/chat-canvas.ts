@@ -129,6 +129,7 @@ type ChatCanvas = {
 	boardElement: HTMLElement;
 	chromeElement: HTMLElement;
 	viewport(): Viewport;
+	panTo(pan: Point): void;
 };
 
 type DragState = {
@@ -277,5 +278,9 @@ export function createChatCanvas(
 		boardElement,
 		chromeElement,
 		viewport: () => copyViewport(currentViewport),
+		panTo(pan: Point): void {
+			currentViewport = { ...currentViewport, pan: clampPan(pan) };
+			scheduleTransform();
+		},
 	};
 }
