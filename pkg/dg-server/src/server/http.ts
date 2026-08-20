@@ -6,6 +6,9 @@ import {
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
+import { installAssetLifecycle } from "../assets/cleanup";
+import { assetContentDisposition } from "../assets/content-type";
+import { resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
@@ -75,11 +78,24 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		dispatchScheduler,
 	};
 
-	return Bun.serve<SocketState>({
+	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1", // Bun defaults to 0.0.0.0 — never inherit that.
 		port,
 		reusePort: false, // NEVER true: would let two daemons load-balance the same port.
 		idleTimeout: 255, // HTTP idleTimeout caps at 255s.
+		development: false,
+		error(err) {
+			logger.error(
+				`unhandled request error: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			return new Response("internal error", {
+				status: 500,
+				headers: {
+					"Content-Type": "text/plain; charset=utf-8",
+					...NOSNIFF_HEADERS,
+				},
+			});
+		},
 		websocket: {
 			idleTimeout: 120,
 			sendPings: true,
@@ -149,9 +165,16 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleCliUpgrade(req, server, deps);
 			}
 
+			if (url.pathname.startsWith("/assets/") && req.method === "GET") {
+				return handleAssetGet(req, url, deps);
+			}
+
 			return new Response("not found", { status: 404 });
 		},
 	});
+
+	installAssetLifecycle(paths, store, logger, port);
+	return boundServer;
 }
 
 async function handleRegisterSession(
@@ -272,6 +295,100 @@ function handleCliUpgrade(
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });
+}
+
+const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
+
+/** Opaque id, looked up scoped to the requesting session; auth by request header only. */
+async function handleAssetGet(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const sessionId = req.headers.get(CLI_SESSION_ID_HEADER);
+	const token = req.headers.get(CLI_SESSION_TOKEN_HEADER);
+	if (!sessionId || !token) {
+		return new Response("refused: missing session credentials", {
+			status: 401,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	let id: string;
+	try {
+		id = decodeURIComponent(url.pathname.slice("/assets/".length));
+	} catch {
+		return new Response("refused: asset id is not valid percent-encoding", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	const result = await resolveAssetForServing(
+		{ paths: deps.paths, store: deps.store, registry: deps.registry },
+		{ sessionId, token, id },
+	);
+
+	switch (result.status) {
+		case "ok": {
+			const disposition = assetContentDisposition(
+				{ contentType: result.contentType, inline: result.inline },
+				result.filename,
+			);
+			const body = new Uint8Array(
+				result.bytes.buffer as ArrayBuffer,
+				result.bytes.byteOffset,
+				result.bytes.byteLength,
+			);
+			return new Response(body, {
+				status: 200,
+				headers: {
+					"Content-Type": result.contentType,
+					"Content-Disposition": disposition,
+					...NOSNIFF_HEADERS,
+				},
+			});
+		}
+		case "unauthorized":
+			return new Response("refused: invalid session capability", {
+				status: 401,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "session-closed":
+			return new Response("asset not found: session closed", {
+				status: 404,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "unknown":
+			return new Response("asset not found: unknown", {
+				status: 404,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "pruned":
+			return new Response("asset not found: pruned", {
+				status: 404,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "missing-file":
+			return new Response("asset not found: staged bytes are gone", {
+				status: 404,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "unsafe-path":
+			return new Response("refused: asset path is unsafe", {
+				status: 500,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "too-large":
+			return new Response("refused: staged asset exceeds the maximum size", {
+				status: 500,
+				headers: NOSNIFF_HEADERS,
+			});
+		case "corrupt":
+			return new Response("refused: staged asset failed integrity checks", {
+				status: 500,
+				headers: NOSNIFF_HEADERS,
+			});
+	}
 }
 
 export function newInstanceId(): string {

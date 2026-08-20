@@ -1,74 +1,192 @@
 /**
- * resolveAssetFilePath: defense-in-depth path containment, layering
- * proto.ts's ensureSafeAnswerPaths pattern (per-component lstat symlink
- * rejection PLUS a final realpath containment check) rather than a
- * from-scratch check (Engineering bullet, explicit).
- *
- * [SPEC] ASSUMED module surface (`resolveAssetFilePath(sessionDir, storedName)`,
- * throwing `AssetPathUnsafeError`) — plan.md pins the CHECK, not the function
- * shape; see deferrals.
+ * Layers proto.ts's ensureSafeAnswerPaths pattern: per-component lstat
+ * symlink rejection from the assets ROOT down, plus a realpath containment
+ * check. The root is a parameter because containment measured against the
+ * session directory alone accepted a symlinked assets root.
  */
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+	AssetMissingError,
 	AssetPathUnsafeError,
+	assertFlatSegment,
+	openAssetFile,
 	resolveAssetFilePath,
 } from "../../src/assets/safe-path";
+
+const SESSION = "session-a";
 
 function freshDir(): string {
 	return mkdtempSync(join(tmpdir(), "dg-asset-safe-path-"));
 }
 
+/** An assets root holding one real session directory, as registerAsset leaves it. */
+function freshRootWithSession(): { root: string; sessionDir: string } {
+	const root = freshDir();
+	const sessionDir = join(root, SESSION);
+	mkdirSync(sessionDir);
+	return { root, sessionDir };
+}
+
+describe("assertFlatSegment", () => {
+	it.each([
+		["", "empty"],
+		[".", "dot"],
+		["..", "dot-dot"],
+		["a/b", "separator"],
+		["../escape", "traversal"],
+		["a\\b", "backslash separator"],
+		["/absolute", "absolute path"],
+		["nul\0byte", "embedded NUL"],
+	])("refuses %p (%s)", (name) => {
+		expect(() => assertFlatSegment(name)).toThrow(AssetPathUnsafeError);
+	});
+
+	it("accepts the flat uuid-shaped segment registerAsset actually writes", () => {
+		expect(() =>
+			assertFlatSegment("1f0a7b6c-2d3e-4f50-8a9b-0c1d2e3f4a5b"),
+		).not.toThrow();
+	});
+});
+
 describe("resolveAssetFilePath", () => {
 	it("resolves a legitimate file that lives directly under the session directory", () => {
-		const sessionDir = freshDir();
+		const { root, sessionDir } = freshRootWithSession();
 		writeFileSync(join(sessionDir, "asset-1"), "hello");
 
-		const resolved = resolveAssetFilePath(sessionDir, "asset-1");
+		const resolved = resolveAssetFilePath(root, SESSION, "asset-1");
 
 		expect(resolved).toBe(resolve(join(sessionDir, "asset-1")));
 	});
 
 	it("refuses a stored name that is itself a symlink out of the session directory", () => {
-		const sessionDir = freshDir();
+		const { root, sessionDir } = freshRootWithSession();
 		const outsideDir = freshDir();
 		const secretPath = join(outsideDir, "secret");
 		writeFileSync(secretPath, "outside contents");
 		symlinkSync(secretPath, join(sessionDir, "asset-1"));
 
-		expect(() => resolveAssetFilePath(sessionDir, "asset-1")).toThrow(
+		expect(() => resolveAssetFilePath(root, SESSION, "asset-1")).toThrow(
 			AssetPathUnsafeError,
 		);
 	});
 
-	it("refuses a stored name embedding a traversal segment, even though the id/filename is server-controlled", () => {
-		const sessionDir = freshDir();
-		expect(() => resolveAssetFilePath(sessionDir, "../escape")).toThrow(
+	it("refuses a stored name embedding a traversal segment, even though the id is server-controlled", () => {
+		const { root } = freshRootWithSession();
+		expect(() => resolveAssetFilePath(root, SESSION, "../escape")).toThrow(
 			AssetPathUnsafeError,
 		);
 		expect(() =>
-			resolveAssetFilePath(sessionDir, "nested/../../escape"),
+			resolveAssetFilePath(root, SESSION, "nested/../../escape"),
 		).toThrow(AssetPathUnsafeError);
 	});
 
-	it("refuses when the session directory itself resolves through a symlink out of its parent", () => {
-		const assetsRoot = freshDir();
+	it("refuses a traversal segment in the SESSION id too, not only in the stored name", () => {
+		const { root } = freshRootWithSession();
+		expect(() => resolveAssetFilePath(root, "../elsewhere", "asset-1")).toThrow(
+			AssetPathUnsafeError,
+		);
+	});
+
+	it("refuses when the session directory itself is a symlink out of the assets root", () => {
+		const root = freshDir();
 		const outsideRoot = freshDir();
 		const realSessionDir = join(outsideRoot, "session-real");
 		mkdirSync(realSessionDir);
 		writeFileSync(join(realSessionDir, "asset-1"), "hello");
-		const linkedSessionDir = join(assetsRoot, "session-a");
-		symlinkSync(realSessionDir, linkedSessionDir);
+		symlinkSync(realSessionDir, join(root, SESSION));
 
-		expect(() => resolveAssetFilePath(linkedSessionDir, "asset-1")).toThrow(
+		expect(() => resolveAssetFilePath(root, SESSION, "asset-1")).toThrow(
 			AssetPathUnsafeError,
 		);
 	});
 
-	it("throws rather than silently returning a made-up path for a file that was never staged", () => {
-		const sessionDir = freshDir();
-		expect(() => resolveAssetFilePath(sessionDir, "never-staged")).toThrow();
+	it("refuses a session directory symlinked to a SIBLING inside the same root, which realpath containment alone would allow", () => {
+		const root = freshDir();
+		const realSessionDir = join(root, "session-elsewhere");
+		mkdirSync(realSessionDir);
+		writeFileSync(join(realSessionDir, "asset-1"), "hello");
+		symlinkSync(realSessionDir, join(root, SESSION));
+
+		expect(() => resolveAssetFilePath(root, SESSION, "asset-1")).toThrow(
+			AssetPathUnsafeError,
+		);
+	});
+
+	it("refuses when the assets ROOT is a symlink — the hole a session-directory-only walk left open", () => {
+		const parent = freshDir();
+		const outsideRoot = freshDir();
+		const realSessionDir = join(outsideRoot, SESSION);
+		mkdirSync(realSessionDir);
+		writeFileSync(join(realSessionDir, "asset-1"), "hello");
+		const linkedRoot = join(parent, "dg-assets");
+		symlinkSync(outsideRoot, linkedRoot);
+
+		expect(() => resolveAssetFilePath(linkedRoot, SESSION, "asset-1")).toThrow(
+			AssetPathUnsafeError,
+		);
+	});
+
+	it("refuses a relative assets root outright rather than resolving it against cwd", () => {
+		expect(() =>
+			resolveAssetFilePath("relative/assets", SESSION, "asset-1"),
+		).toThrow(AssetPathUnsafeError);
+	});
+
+	it("refuses a stored name that is a directory rather than a regular file", () => {
+		const { root, sessionDir } = freshRootWithSession();
+		mkdirSync(join(sessionDir, "asset-1"));
+
+		expect(() => resolveAssetFilePath(root, SESSION, "asset-1")).toThrow(
+			AssetPathUnsafeError,
+		);
+	});
+
+	it("refuses a FIFO planted at the staged path — a synchronous open on one never returns", () => {
+		const { root, sessionDir } = freshRootWithSession();
+		const fifo = join(sessionDir, "asset-1");
+		const made = Bun.spawnSync(["mkfifo", fifo]);
+		expect(made.exitCode).toBe(0);
+
+		expect(() => resolveAssetFilePath(root, SESSION, "asset-1")).toThrow(
+			AssetPathUnsafeError,
+		);
+	});
+
+	it("reports a never-staged name as MISSING, distinct from a containment refusal", () => {
+		const { root } = freshRootWithSession();
+		expect(() => resolveAssetFilePath(root, SESSION, "never-staged")).toThrow(
+			AssetMissingError,
+		);
+	});
+});
+
+describe("openAssetFile", () => {
+	it("resolves and opens in one step, handing back the staged bytes", async () => {
+		const { root, sessionDir } = freshRootWithSession();
+		writeFileSync(join(sessionDir, "asset-1"), "staged bytes");
+
+		const handle = await openAssetFile(root, SESSION, "asset-1");
+		try {
+			const stats = await handle.stat();
+			expect(stats.isFile()).toBe(true);
+			expect(stats.size).toBe("staged bytes".length);
+			expect((await handle.readFile()).toString("utf8")).toBe("staged bytes");
+		} finally {
+			await handle.close();
+		}
+	});
+
+	it("refuses rather than opening through a symlink at the staged path", async () => {
+		const { root, sessionDir } = freshRootWithSession();
+		const outsideDir = freshDir();
+		writeFileSync(join(outsideDir, "secret"), "outside contents");
+		symlinkSync(join(outsideDir, "secret"), join(sessionDir, "asset-1"));
+
+		await expect(openAssetFile(root, SESSION, "asset-1")).rejects.toThrow(
+			AssetPathUnsafeError,
+		);
 	});
 });

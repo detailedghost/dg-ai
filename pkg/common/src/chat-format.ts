@@ -94,9 +94,15 @@ export type ChatFrame =
 			key: string;
 			value: unknown;
 	  })
-	| (Envelope & { type: "error"; message: string });
+	| (Envelope & { type: "error"; message: string })
+	| (Envelope & {
+			type: "config-result";
+			key: string;
+			value?: unknown;
+			error?: string;
+	  });
 
-/** The 18 ratified kebab-case discriminants — see plan.md's Slice-1 ratification subsection. */
+/** The 19 ratified kebab-case discriminants — see plan.md's Slice-1 ratification subsection and the slice-9 config-result addition. */
 const CHAT_FRAME_TYPES = new Set([
 	"user-message",
 	"ack",
@@ -116,6 +122,7 @@ const CHAT_FRAME_TYPES = new Set([
 	"config-get",
 	"config-set",
 	"error",
+	"config-result",
 ]);
 
 // Frames the socket receives; every other type is outbound and must never carry a token.
@@ -265,6 +272,12 @@ function validateFrameBody(
 		case "error":
 			requireString(value.message, `${path}.message`, { nonEmpty: true });
 			return;
+		case "config-result":
+			requireString(value.key, `${path}.key`, { nonEmpty: true });
+			if (value.error !== undefined) {
+				requireString(value.error, `${path}.error`);
+			}
+			return;
 		default:
 			fail(`${path}.type "${type}" is not a ratified discriminant`);
 	}
@@ -276,7 +289,7 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	const { type } = value;
 	if (typeof type !== "string" || !CHAT_FRAME_TYPES.has(type)) {
 		fail(
-			`chat frame.type must be one of the 18 ratified discriminants, got ${String(type)}`,
+			`chat frame.type must be one of the 19 ratified discriminants, got ${String(type)}`,
 		);
 	}
 	requireString(value.sessionId, "chat frame.sessionId", { nonEmpty: true });

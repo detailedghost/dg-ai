@@ -13,10 +13,12 @@
  */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { AssetTooLargeError, ChatStore } from "../../src/store";
+import { runMigrations } from "../../src/store/migrations";
+import { SCHEMA_STEPS } from "../../src/store/schema";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
 const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
@@ -187,6 +189,60 @@ describe("ChatStore asset row write-path", () => {
 				store.decryptAssetBytes(SESSION_B, "asset-1", envelope),
 			).toThrow();
 			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("constrains assets.state to the two known values, so an unexpected one cannot be stored at all", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			store.insertAsset({
+				sessionId: SESSION_A,
+				id: "asset-1",
+				filename: "picture.png",
+				contentType: "image/png",
+				byteLength: 10,
+			});
+			store.close();
+
+			const raw = new Database(paths.dbPath, { strict: true });
+			expect(() =>
+				raw.run("UPDATE assets SET state = 'quarantined' WHERE id = 'asset-1'"),
+			).toThrow();
+			raw.close(true);
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("coerces an unrecognized pre-v3 state to deleted while migrating, rather than carrying a servable unknown forward", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
+			const legacy = new Database(paths.dbPath, { strict: true, create: true });
+			runMigrations(legacy, SCHEMA_STEPS.slice(0, 2)); // a database left at v2
+			legacy.run("INSERT INTO sessions (id, created_at) VALUES (?, ?)", [
+				SESSION_A,
+				new Date().toISOString(),
+			]);
+			legacy.run(
+				`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
+				 VALUES ('legacy-1', ?, ?, X'00', X'00', X'00', 'image/png', 10, NULL, 'wat')`,
+				[SESSION_A, new Date().toISOString()],
+			);
+			legacy.close(true);
+
+			const migrated = new Database(paths.dbPath, { strict: true });
+			runMigrations(migrated, SCHEMA_STEPS);
+			const row = migrated
+				.query("SELECT state FROM assets WHERE id = 'legacy-1'")
+				.get() as { state: string };
+			expect(row.state).toBe("deleted");
+			migrated.close(true);
 		} finally {
 			cleanupDgHome(dgHome);
 		}

@@ -101,9 +101,10 @@ export async function runStatus(
 	return { stdout, stderr, exitCode };
 }
 
+/** Deliberately under bun:test's own 5000ms default, so this loses the race cleanly. */
 export async function waitForHealth(
 	port: number,
-	timeoutMs = 5000,
+	timeoutMs = 3000,
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	let lastError: unknown;

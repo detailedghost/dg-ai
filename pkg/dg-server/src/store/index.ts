@@ -6,9 +6,18 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
-import type { CommandEntry, ProgressState } from "@dg/common";
+import {
+	CHAT_MAX_ASSET_BYTES,
+	type CommandEntry,
+	type ProgressState,
+} from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
-import { buildAad, type CipherBox, createCipherBox } from "../crypto/envelope";
+import {
+	buildAad,
+	type CipherBox,
+	type CipherEnvelope,
+	createCipherBox,
+} from "../crypto/envelope";
 import {
 	type CryptoMetaRow,
 	type KeychainBackend,
@@ -28,6 +37,18 @@ const AAD_COMMAND_STDERR = "command-stderr";
 const AAD_STATUS_PROGRESS = "status-progress";
 const AAD_COMMAND_MANIFEST = "command-manifest";
 const AAD_SUBAGENT_LIST = "subagent-list";
+const AAD_ASSET_FILENAME = "asset-filename";
+const AAD_ASSET_BYTES = "asset-bytes";
+
+/** Thrown by insertAsset/registerAsset — no row and no bytes are ever written past this. */
+export class AssetTooLargeError extends Error {
+	constructor(byteLength: number) {
+		super(
+			`asset of ${byteLength} bytes exceeds CHAT_MAX_ASSET_BYTES (${CHAT_MAX_ASSET_BYTES})`,
+		);
+		this.name = "AssetTooLargeError";
+	}
+}
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -99,6 +120,26 @@ export type PeekedMessage = {
 	subagentName?: string;
 };
 
+export type AssetState = "active" | "deleted";
+
+export type InsertAssetInput = {
+	sessionId: string;
+	id: string;
+	filename: string;
+	contentType: string;
+	byteLength: number;
+};
+
+/** getAsset returns undefined for BOTH an unknown id and a wrong-session id — one indistinguishable answer, so it cannot probe another session's assets. */
+export type AssetRow = {
+	id: string;
+	sessionId: string;
+	filename: string;
+	contentType: string;
+	byteLength: number;
+	state: AssetState;
+};
+
 export type CryptoMetaInfo = {
 	formatVersion: number;
 	keyId: string;
@@ -123,6 +164,17 @@ type RawCryptoMetaRow = {
 	key_id: string;
 	key_source: string;
 	wrapped_data_key: Uint8Array;
+};
+
+type RawAssetRow = {
+	id: string;
+	session_id: string;
+	filename_ciphertext: Uint8Array;
+	filename_iv: Uint8Array;
+	filename_tag: Uint8Array;
+	content_type: string;
+	byte_length: number;
+	state: string;
 };
 
 type RawStatusEventRow = {
@@ -175,12 +227,6 @@ export class ChatStore {
 		try {
 			applyConnectionPragmas(db, DEFAULT_BUSY_TIMEOUT_MS);
 			runMigrations(db, SCHEMA_STEPS, { snapshotDir: paths.stateDir });
-
-			// Free crash-during-restart coverage alongside the lease: any claim left
-			// in flight from a prior process life is reclaimable immediately on reopen.
-			db.run(
-				"UPDATE messages SET claim_id = NULL, claimed_at = NULL WHERE delivered_at IS NULL AND claim_id IS NOT NULL",
-			);
 
 			const existingRow = db
 				.query(
@@ -602,6 +648,13 @@ export class ChatStore {
 		}));
 	}
 
+	/** Daemon-boot only: clears claims left in flight by a prior process life. */
+	recoverStaleClaims(): number {
+		return this.db.run(
+			"UPDATE messages SET claim_id = NULL, claimed_at = NULL WHERE delivered_at IS NULL AND claim_id IS NOT NULL",
+		).changes;
+	}
+
 	/**
 	 * Single UPDATE...RETURNING claims the oldest un-delivered, un-leased row —
 	 * "un-leased" meaning claim_id is NULL or its claimed_at predates the
@@ -672,5 +725,114 @@ export class ChatStore {
 			attachmentId: row.attachment_id ?? undefined,
 			subagentName: row.subagent_name ?? undefined,
 		}));
+	}
+
+	/** Filename is the only asset field this row encrypts — bytes live on disk (Code Structure's in-file envelope). */
+	insertAsset(input: InsertAssetInput): void {
+		if (input.byteLength > CHAT_MAX_ASSET_BYTES) {
+			throw new AssetTooLargeError(input.byteLength);
+		}
+		this.ensureSessionRow(input.sessionId);
+		const enc = this.cipherBox.encryptRecord(
+			input.filename,
+			buildAad({
+				domain: AAD_ASSET_FILENAME,
+				sessionId: input.sessionId,
+				rowId: input.id,
+				formatVersion: this.meta.formatVersion,
+			}),
+		);
+		this.db.run(
+			`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'active')`,
+			[
+				input.id,
+				input.sessionId,
+				new Date().toISOString(),
+				enc.ciphertext,
+				enc.iv,
+				enc.tag,
+				input.contentType,
+				input.byteLength,
+			],
+		);
+	}
+
+	/** Scoped to sessionId+id in one WHERE — an unknown id and a wrong-session id are one indistinguishable answer. */
+	getAsset(sessionId: string, id: string): AssetRow | undefined {
+		const row = this.db
+			.query(
+				`SELECT id, session_id, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, state
+				 FROM assets WHERE id = ? AND session_id = ?`,
+			)
+			.get(id, sessionId) as RawAssetRow | null;
+		if (!row) return undefined;
+
+		const filename = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.filename_ciphertext),
+				Buffer.from(row.filename_iv),
+				Buffer.from(row.filename_tag),
+				buildAad({
+					domain: AAD_ASSET_FILENAME,
+					sessionId,
+					rowId: id,
+					formatVersion: this.meta.formatVersion,
+				}),
+			)
+			.toString("utf8");
+
+		return {
+			id: row.id,
+			sessionId: row.session_id,
+			filename,
+			contentType: row.content_type,
+			byteLength: row.byte_length,
+			state: row.state as AssetState,
+		};
+	}
+
+	/** Marks only this session's active rows deleted — other sessions' assets are untouched. */
+	pruneSessionAssets(sessionId: string): void {
+		this.db.run(
+			`UPDATE assets SET state = 'deleted', deleted_at = ? WHERE session_id = ? AND state = 'active'`,
+			[new Date().toISOString(), sessionId],
+		);
+	}
+
+	/** Routes arbitrary binary through the string-only CipherBox via base64. */
+	encryptAssetBytes(
+		sessionId: string,
+		id: string,
+		plaintext: Buffer,
+	): CipherEnvelope {
+		return this.cipherBox.encryptRecord(
+			plaintext.toString("base64"),
+			buildAad({
+				domain: AAD_ASSET_BYTES,
+				sessionId,
+				rowId: id,
+				formatVersion: this.meta.formatVersion,
+			}),
+		);
+	}
+
+	decryptAssetBytes(
+		sessionId: string,
+		id: string,
+		envelope: CipherEnvelope,
+	): Buffer {
+		const decrypted = this.cipherBox.decryptRecord(
+			envelope.ciphertext,
+			envelope.iv,
+			envelope.tag,
+			buildAad({
+				domain: AAD_ASSET_BYTES,
+				sessionId,
+				rowId: id,
+				formatVersion: this.meta.formatVersion,
+			}),
+		);
+		return Buffer.from(decrypted.toString("utf8"), "base64");
 	}
 }

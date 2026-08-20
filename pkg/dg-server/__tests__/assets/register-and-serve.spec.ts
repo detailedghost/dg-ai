@@ -1,21 +1,17 @@
 /**
  * registerAsset + resolveAssetForServing: the write-and-read halves of the
- * asset row Code Structure assigns to slice 9 (stage writes only the file;
- * slice 9 writes the row and serves it back). Module-level, no daemon
- * subprocess needed — SessionRegistry supplies a real capability pair the
- * same way the HTTP layer's registry.validate() would.
- *
- * [SPEC] ASSUMED module surface — registerAsset/resolveAssetForServing/
- * AssetServeResult are this pass's invention; see deferrals. The no-follow
- * write requirement (Engineering, explicit) is tested by pre-planting a
- * symlink at the exact path the write would use and confirming the write
- * refuses rather than following it.
+ * asset row. Module-level, no daemon subprocess — SessionRegistry supplies a
+ * real capability pair the way the HTTP layer's own lookup would, and
+ * installAssetLifecycle wires the real session-close cleanup.
  */
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import {
+	closeSync,
 	existsSync,
+	ftruncateSync,
 	mkdirSync,
 	mkdtempSync,
+	openSync,
 	readFileSync,
 	rmSync,
 	symlinkSync,
@@ -25,13 +21,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { registerAsset } from "../../src/assets/register";
+import { installAssetLifecycle } from "../../src/assets/cleanup";
+import { getConfiguredAssetDirectory } from "../../src/assets/config";
+import { readAssetSourceFile, registerAsset } from "../../src/assets/register";
 import { resolveAssetForServing } from "../../src/assets/serve";
+import { createLogger } from "../../src/server/log";
 import { SessionRegistry } from "../../src/session/registry";
 import { AssetTooLargeError, ChatStore } from "../../src/store";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
 const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
+
+let disposeLifecycle: (() => void) | undefined;
+
+afterEach(() => {
+	disposeLifecycle?.();
+	disposeLifecycle = undefined;
+});
 
 async function setup(dgHome: string) {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -43,8 +51,40 @@ async function setup(dgHome: string) {
 		agentIdentity: "test-agent",
 		role: "agent",
 	});
-	return { paths, store, registry, session, scratch };
+	return {
+		paths,
+		store,
+		registry,
+		session,
+		scratch,
+		root: getConfiguredAssetDirectory(paths),
+		installLifecycle: () => {
+			disposeLifecycle = installAssetLifecycle(
+				paths,
+				store,
+				createLogger(paths),
+				47000,
+			);
+		},
+	};
 }
+
+describe("readAssetSourceFile", () => {
+	it("refuses an oversized source on the fd's own size, before reading it into memory", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-source-"));
+		const path = join(scratch, "huge.bin");
+		const fd = openSync(path, "w");
+		ftruncateSync(fd, CHAT_MAX_ASSET_BYTES + 1); // sparse: size without bytes
+		closeSync(fd);
+
+		expect(() => readAssetSourceFile(path)).toThrow(AssetTooLargeError);
+	});
+
+	it("refuses a source that is not a regular file at all", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-source-dir-"));
+		expect(() => readAssetSourceFile(scratch)).toThrow(/regular file/i);
+	});
+});
 
 describe("registerAsset + resolveAssetForServing", () => {
 	it("round-trips staged bytes: retrievable with the valid session capability, byte-identical", async () => {
@@ -82,6 +122,111 @@ describe("registerAsset + resolveAssetForServing", () => {
 		}
 	});
 
+	it("stages the envelope as <12-byte iv><16-byte tag><ciphertext>, in that ORDER", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, session, root } = await setup(dgHome);
+			const bytes = Buffer.from("envelope order matters");
+
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-1",
+					filename: "picture.png",
+					contentType: "image/png",
+					bytes,
+				},
+			);
+
+			const raw = readFileSync(join(root, session.sessionId, "asset-1"));
+			const base64Length = 4 * Math.ceil(bytes.byteLength / 3);
+			expect(raw.byteLength).toBe(IV_LENGTH + TAG_LENGTH + base64Length);
+
+			const iv = raw.subarray(0, IV_LENGTH);
+			const tag = raw.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
+			const ciphertext = raw.subarray(IV_LENGTH + TAG_LENGTH);
+			expect(
+				store
+					.decryptAssetBytes(session.sessionId, "asset-1", {
+						iv,
+						tag,
+						ciphertext,
+					})
+					.equals(bytes),
+			).toBe(true);
+
+			expect(() =>
+				store.decryptAssetBytes(session.sessionId, "asset-1", {
+					iv: raw.subarray(TAG_LENGTH, TAG_LENGTH + IV_LENGTH),
+					tag: raw.subarray(0, TAG_LENGTH),
+					ciphertext,
+				}),
+			).toThrow();
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("types the response from the ROW's filename, never the contentType the caller declared", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session } = await setup(dgHome);
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-safe",
+					filename: "safe.png",
+					contentType: "text/html", // a lie the row must not be believed on
+					bytes: Buffer.from("PNG-ish"),
+				},
+			);
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-evil",
+					filename: "evil.html",
+					contentType: "image/png", // the dangerous direction of the same lie
+					bytes: Buffer.from("<script>alert(1)</script>"),
+				},
+			);
+
+			const safe = await resolveAssetForServing(
+				{ paths, store, registry },
+				{
+					sessionId: session.sessionId,
+					token: session.token,
+					id: "asset-safe",
+				},
+			);
+			expect(safe.status).toBe("ok");
+			if (safe.status === "ok") {
+				expect(safe.contentType).toBe("image/png");
+				expect(safe.inline).toBe(true);
+			}
+
+			const evil = await resolveAssetForServing(
+				{ paths, store, registry },
+				{
+					sessionId: session.sessionId,
+					token: session.token,
+					id: "asset-evil",
+				},
+			);
+			expect(evil.status).toBe("ok");
+			if (evil.status === "ok") {
+				expect(evil.contentType).toBe("text/html");
+				expect(evil.inline).toBe(false);
+			}
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("refuses a request with no valid capability — status unauthorized", async () => {
 		const dgHome = freshDgHome();
 		try {
@@ -112,10 +257,12 @@ describe("registerAsset + resolveAssetForServing", () => {
 		}
 	});
 
-	it("distinguishes unknown-id from wrong-token from a pruned asset — three different reasons", async () => {
+	it("distinguishes unknown-id from wrong-token from a session CLOSE that pruned the row", async () => {
 		const dgHome = freshDgHome();
 		try {
-			const { paths, store, registry, session } = await setup(dgHome);
+			const { paths, store, registry, session, installLifecycle } =
+				await setup(dgHome);
+			installLifecycle();
 			await registerAsset(
 				{ paths, store },
 				{
@@ -143,7 +290,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 			);
 			expect(wrongToken.status).toBe("unauthorized");
 
-			store.pruneSessionAssets(session.sessionId);
+			expect(registry.close(session.sessionId, "cli")).toBe(true);
 			const pruned = await resolveAssetForServing(
 				{ paths, store, registry },
 				{ sessionId: session.sessionId, token: session.token, id: "asset-1" },
@@ -162,10 +309,67 @@ describe("registerAsset + resolveAssetForServing", () => {
 		}
 	});
 
+	it("removes the closed session's staged directory while leaving the assets root and its siblings alone", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session, root, installLifecycle } =
+				await setup(dgHome);
+			installLifecycle();
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-1",
+					filename: "picture.png",
+					contentType: "image/png",
+					bytes: Buffer.from("hi"),
+				},
+			);
+			const sentinel = join(root, "sentinel.txt");
+			writeFileSync(sentinel, "must survive every cleanup");
+
+			registry.close(session.sessionId, "cli");
+
+			expect(existsSync(join(root, session.sessionId))).toBe(false);
+			expect(existsSync(root)).toBe(true);
+			expect(existsSync(sentinel)).toBe(true);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("answers a CLOSED session whose rows were never pruned distinguishably from a bad token", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session } = await setup(dgHome);
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-1",
+					filename: "picture.png",
+					contentType: "image/png",
+					bytes: Buffer.from("hi"),
+				},
+			);
+			registry.close(session.sessionId, "cli");
+
+			const closed = await resolveAssetForServing(
+				{ paths, store, registry },
+				{ sessionId: session.sessionId, token: session.token, id: "asset-1" },
+			);
+			expect(closed.status).toBe("session-closed");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("rejects registering bytes over CHAT_MAX_ASSET_BYTES, leaving no row and no on-disk file behind", async () => {
 		const dgHome = freshDgHome();
 		try {
-			const { paths, store, session } = await setup(dgHome);
+			const { paths, store, session, root } = await setup(dgHome);
 			const oversized = Buffer.alloc(CHAT_MAX_ASSET_BYTES + 1024, 1);
 
 			await expect(
@@ -182,9 +386,97 @@ describe("registerAsset + resolveAssetForServing", () => {
 			).rejects.toThrow(AssetTooLargeError);
 
 			expect(store.getAsset(session.sessionId, "asset-huge")).toBeUndefined();
-			expect(
-				existsSync(join(paths.assetsDir, session.sessionId, "asset-huge")),
-			).toBe(false);
+			expect(existsSync(join(root, session.sessionId, "asset-huge"))).toBe(
+				false,
+			);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("refuses an oversized staged file on the SIZE of its fd, before reading or decrypting a byte", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session, root } = await setup(dgHome);
+			store.insertAsset({
+				sessionId: session.sessionId,
+				id: "asset-huge",
+				filename: "huge.png",
+				contentType: "image/png",
+				byteLength: 1,
+			});
+			mkdirSync(join(root, session.sessionId), { recursive: true });
+			const fd = openSync(join(root, session.sessionId, "asset-huge"), "w");
+			ftruncateSync(fd, CHAT_MAX_ASSET_BYTES * 4);
+			closeSync(fd);
+
+			const result = await resolveAssetForServing(
+				{ paths, store, registry },
+				{
+					sessionId: session.sessionId,
+					token: session.token,
+					id: "asset-huge",
+				},
+			);
+			expect(result.status).toBe("too-large");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("reports a row whose staged bytes are gone as missing, not as a containment refusal", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session, root } = await setup(dgHome);
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-1",
+					filename: "picture.png",
+					contentType: "image/png",
+					bytes: Buffer.from("hi"),
+				},
+			);
+			rmSync(join(root, session.sessionId, "asset-1"));
+
+			const result = await resolveAssetForServing(
+				{ paths, store, registry },
+				{ sessionId: session.sessionId, token: session.token, id: "asset-1" },
+			);
+			expect(result.status).toBe("missing-file");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("reports a tampered envelope as corrupt, distinct from both missing and unsafe", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session, root } = await setup(dgHome);
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-1",
+					filename: "picture.png",
+					contentType: "image/png",
+					bytes: Buffer.from("hi"),
+				},
+			);
+			const staged = join(root, session.sessionId, "asset-1");
+			const raw = readFileSync(staged);
+			raw[raw.byteLength - 1] ^= 0xff;
+			writeFileSync(staged, raw);
+
+			const result = await resolveAssetForServing(
+				{ paths, store, registry },
+				{ sessionId: session.sessionId, token: session.token, id: "asset-1" },
+			);
+			expect(result.status).toBe("corrupt");
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -194,14 +486,11 @@ describe("registerAsset + resolveAssetForServing", () => {
 	it("refuses to write through a symlink pre-planted at the staging path — no-follow, not a bare writeFile", async () => {
 		const dgHome = freshDgHome();
 		try {
-			const { paths, store, session, scratch } = await setup(dgHome);
+			const { paths, store, session, scratch, root } = await setup(dgHome);
 			const outsideTarget = join(scratch, "outside-target");
-			mkdirSync(join(paths.assetsDir, session.sessionId), { recursive: true });
+			mkdirSync(join(root, session.sessionId), { recursive: true });
 			writeFileSync(outsideTarget, "must not be touched");
-			symlinkSync(
-				outsideTarget,
-				join(paths.assetsDir, session.sessionId, "asset-1"),
-			);
+			symlinkSync(outsideTarget, join(root, session.sessionId, "asset-1"));
 
 			await expect(
 				registerAsset(
@@ -228,7 +517,8 @@ describe("registerAsset + resolveAssetForServing", () => {
 	it("refuses to serve an asset whose on-disk file was swapped for a symlink after registration — status unsafe-path", async () => {
 		const dgHome = freshDgHome();
 		try {
-			const { paths, store, registry, session, scratch } = await setup(dgHome);
+			const { paths, store, registry, session, scratch, root } =
+				await setup(dgHome);
 			await registerAsset(
 				{ paths, store },
 				{
@@ -244,11 +534,8 @@ describe("registerAsset + resolveAssetForServing", () => {
 			// a symlink pointing outside the session directory.
 			const outsideTarget = join(scratch, "swapped-target");
 			writeFileSync(outsideTarget, "someone else's bytes");
-			rmSync(join(paths.assetsDir, session.sessionId, "asset-1"));
-			symlinkSync(
-				outsideTarget,
-				join(paths.assetsDir, session.sessionId, "asset-1"),
-			);
+			rmSync(join(root, session.sessionId, "asset-1"));
+			symlinkSync(outsideTarget, join(root, session.sessionId, "asset-1"));
 
 			const result = await resolveAssetForServing(
 				{ paths, store, registry },

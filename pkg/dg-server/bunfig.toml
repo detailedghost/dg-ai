@@ -1,4 +1,0 @@
-[test]
-# Contract tests drive a compiled/foregrounded daemon as a real subprocess
-# (bind + health-poll round trips) — the 5s bun:test default is too tight.
-timeout = 20000

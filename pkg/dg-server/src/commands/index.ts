@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, realpathSync } from "node:fs";
-import { extname, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { isRecord } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
+import { resolveAssetContentType } from "../assets/content-type";
+import { readAssetSourceFile, registerAsset } from "../assets/register";
 import {
 	loadManifestFile,
 	loadSubagentManifestFile,
@@ -14,6 +16,7 @@ import {
 	EXIT_RECV_SESSION_CLOSED,
 	EXIT_RECV_TIMEOUT,
 } from "../server/errors";
+import { ChatStore } from "../store";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
 import type { CliRecvResult } from "./wire";
 
@@ -207,11 +210,26 @@ export function registerAgentCommands(program: Command): void {
 			const session = resolveCliSession(selectedSession(command));
 			const client = await CliClient.connect(session);
 			client.close();
+
+			const filename = basename(source);
+			const bytes = readAssetSourceFile(source);
 			const assetId = randomUUID();
 			const paths = resolveDgPaths();
-			const sessionDir = `${paths.assetsDir}/${session.sessionId}`;
-			mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
-			copyFileSync(source, `${sessionDir}/${assetId}${extname(source)}`);
+			const store = await ChatStore.open(paths);
+			try {
+				await registerAsset(
+					{ paths, store },
+					{
+						sessionId: session.sessionId,
+						id: assetId,
+						filename,
+						contentType: resolveAssetContentType(filename).contentType,
+						bytes,
+					},
+				);
+			} finally {
+				store.close();
+			}
 			await writeStdout(`${assetId}\n`);
 		});
 

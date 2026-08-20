@@ -2,17 +2,15 @@
  * spawn and close ride the ALREADY-ratified session-create / session-close
  * ChatFrame types over the CLI's own /cli connection (its header-captured
  * capability supplies the token) — no new wire shape needed for either.
- *
- * stage is scoped narrowly here: this pass tests only the filesystem +
- * CLI-output contract (a staged file lands under the resolved assets dir and
- * the CLI prints an id). Whether `stage` also inserts an `assets` table row
- * is left to the manifest [SPEC] deferral — the schema's write-path for
- * asset bytes/filenames is explicitly "owed" to slice 9 in Code Structure.
+ * stage goes through slice 9's registerAsset: encrypted bytes plus a row.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
+	closeSync,
 	existsSync,
+	ftruncateSync,
 	mkdtempSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
@@ -21,8 +19,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import {
+	CHAT_MAX_ASSET_BYTES,
+	CHAT_PROTOCOL_VERSION,
+	validateSessionBootstrap,
+} from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -189,7 +192,7 @@ describe("dg-server close", () => {
 });
 
 describe("dg-server stage", () => {
-	it("copies the staged file's bytes somewhere under the resolved assets directory and prints an asset id", async () => {
+	it("registers an assets row and stages ENCRYPTED bytes under the configured directory, retrievable byte-identical", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = mkdtempSync(join(tmpdir(), "dg-stage-test-"));
 		const sourcePath = join(scratchDir, "picture.png");
@@ -210,7 +213,49 @@ describe("dg-server stage", () => {
 		expect(assetId.length).toBeGreaterThan(0);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(existsSync(paths.assetsDir)).toBe(true);
-		expect(findFileContaining(paths.assetsDir, marker)).toBe(true);
+		const sessionDir = join(
+			getConfiguredAssetDirectory(paths),
+			bootstrap.sessionId,
+		);
+		expect(existsSync(join(sessionDir, assetId))).toBe(true);
+		expect(findFileContaining(getConfiguredAssetDirectory(paths), marker)).toBe(
+			false,
+		);
+
+		const resp = await fetch(
+			`http://127.0.0.1:${port}/assets/${encodeURIComponent(assetId)}`,
+			{
+				headers: {
+					Host: `127.0.0.1:${port}`,
+					"X-Dg-Session-Id": bootstrap.sessionId,
+					"X-Dg-Session-Token": bootstrap.token,
+				},
+			},
+		);
+		expect(resp.status).toBe(200);
+		expect(Buffer.from(await resp.arrayBuffer()).equals(marker)).toBe(true);
+	});
+
+	it("refuses a source file over CHAT_MAX_ASSET_BYTES without staging anything", async () => {
+		const { port, bootstrap } = await startWithSession();
+		scratchDir = mkdtempSync(join(tmpdir(), "dg-stage-huge-"));
+		const sourcePath = join(scratchDir, "huge.bin");
+		const fd = openSync(sourcePath, "w");
+		ftruncateSync(fd, CHAT_MAX_ASSET_BYTES + 1);
+		closeSync(fd);
+
+		const result = await runCli(dgHome, port, [
+			"stage",
+			sourcePath,
+			"--session",
+			bootstrap.sessionId,
+		]);
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("CHAT_MAX_ASSET_BYTES");
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		expect(
+			existsSync(join(getConfiguredAssetDirectory(paths), bootstrap.sessionId)),
+		).toBe(false);
 	});
 });

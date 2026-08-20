@@ -1,22 +1,16 @@
 /**
- * Two DISTINCT cleanup triggers (Engineering, explicit): session-close
- * removes ONE session's staged assets via the already-wired
- * setAssetCleanupHook/triggerAssetCleanup seam (utils/asset-cleanup.ts,
- * called from registry.close()); a fresh daemon's startup sweep removes
- * whatever was left on disk from a PRIOR process life, since SessionRegistry
- * is in-memory only and no session can survive a restart to reclaim it.
- *
- * [SPEC] ASSUMED design: "startup prunes orphans" is read here as "every
- * asset directory that predates this process's (empty, on cold start)
- * registry is an orphan" — see deferrals for the alternative (persisting
- * session state) and why it was rejected.
+ * Two DISTINCT cleanup triggers (Engineering, explicit): session-close removes
+ * ONE session's staged assets through the setAssetCleanupHook seam
+ * registry.close() already calls; a fresh daemon's startup sweep removes
+ * whatever a PRIOR process life left, since SessionRegistry is in-memory only.
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { validateSessionBootstrap } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import { runCli } from "../commands/cli-wire";
 import {
 	allocatePort,
@@ -37,8 +31,18 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
+/** A well-formed session id the sweep must recognize as its own, unlike a hand-written name. */
+const UUID_SHAPED_ORPHAN = "9f2c1b40-6a7d-4e58-9b31-0c5d8e2a71f4";
+
+function stagedSource(bytes: number[]): string {
+	const scratch = freshDgHome();
+	const sourcePath = join(scratch, "picture.png");
+	writeFileSync(sourcePath, Buffer.from(bytes));
+	return sourcePath;
+}
+
 describe("session-close cleanup trigger", () => {
-	it("removes a session's staged asset directory once it closes, leaving no trace", async () => {
+	it("removes a session's staged asset directory once it closes, without touching the root it lives in", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		const result = await runStart(dgHome, port);
@@ -47,19 +51,20 @@ describe("session-close cleanup trigger", () => {
 			decodeChatMarker(extractUrl(result.stdout)),
 		);
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const root = getConfiguredAssetDirectory(paths);
 
-		const scratch = freshDgHome();
-		const sourcePath = join(scratch, "picture.png");
-		writeFileSync(sourcePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 		const staged = await runCli(dgHome, port, [
 			"stage",
-			sourcePath,
+			stagedSource([0x89, 0x50, 0x4e, 0x47]),
 			"--session",
 			bootstrap.sessionId,
 		]);
 		expect(staged.exitCode).toBe(0);
-		const sessionAssetDir = join(paths.assetsDir, bootstrap.sessionId);
+		const sessionAssetDir = join(root, bootstrap.sessionId);
 		expect(existsSync(sessionAssetDir)).toBe(true);
+
+		const sentinel = join(root, "sentinel.txt");
+		writeFileSync(sentinel, "must survive every cleanup");
 
 		const closed = await runCli(dgHome, port, [
 			"close",
@@ -73,17 +78,20 @@ describe("session-close cleanup trigger", () => {
 			3000,
 			"the closed session's asset directory to be removed",
 		);
+		expect(existsSync(root)).toBe(true);
+		expect(existsSync(sentinel)).toBe(true);
 	}, 30000);
 });
 
 describe("startup orphan-pruning trigger", () => {
-	it("removes an asset directory left over from a prior process life, without touching a session created in the new one", async () => {
+	it("sweeps a session directory left over from a prior process life, without touching a session created in the new one", async () => {
 		dgHome = freshDgHome();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const root = getConfiguredAssetDirectory(paths);
 
 		// Simulate a leftover from a previous daemon life — no session for this
 		// id will ever exist in the fresh registry this test's daemon starts.
-		const orphanDir = join(paths.assetsDir, "stale-session-from-last-run");
+		const orphanDir = join(root, UUID_SHAPED_ORPHAN);
 		mkdirSync(orphanDir, { recursive: true });
 		writeFileSync(join(orphanDir, "leftover.bin"), "orphaned bytes");
 
@@ -103,16 +111,65 @@ describe("startup orphan-pruning trigger", () => {
 		// The startup sweep ran before this session existed — its own,
 		// later-staged assets must survive it, proving the two triggers are
 		// separate rather than one sweep re-running destructively.
-		const scratch = freshDgHome();
-		const sourcePath = join(scratch, "picture.png");
-		writeFileSync(sourcePath, Buffer.from([1, 2, 3]));
 		await runCli(dgHome, port, [
 			"stage",
-			sourcePath,
+			stagedSource([1, 2, 3]),
 			"--session",
 			bootstrap.sessionId,
 		]);
-		const liveSessionAssetDir = join(paths.assetsDir, bootstrap.sessionId);
-		expect(existsSync(liveSessionAssetDir)).toBe(true);
+		expect(existsSync(join(root, bootstrap.sessionId))).toBe(true);
+	}, 30000);
+
+	it("skips the sweep entirely when the lockfile names a daemon on another port, which a bind-race loser would be", async () => {
+		dgHome = freshDgHome();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const root = getConfiguredAssetDirectory(paths);
+		const orphanDir = join(root, UUID_SHAPED_ORPHAN);
+		mkdirSync(orphanDir, { recursive: true });
+
+		mkdirSync(paths.stateDir, { recursive: true });
+		writeFileSync(
+			paths.lockfilePath,
+			JSON.stringify({
+				pid: 1,
+				port: 1,
+				instanceId: "00000000-0000-4000-8000-000000000000",
+				versions: { package: "1.0.0", protocol: CHAT_PROTOCOL_VERSION },
+			}),
+		);
+
+		const port = allocatePort();
+		await runStart(dgHome, port);
+		await waitForHealth(port);
+
+		expect(existsSync(orphanDir)).toBe(true);
+	}, 30000);
+
+	it("leaves the configured root, a stray file in it, and any non-session directory untouched", async () => {
+		dgHome = freshDgHome();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const root = getConfiguredAssetDirectory(paths);
+		mkdirSync(root, { recursive: true });
+
+		const sentinel = join(root, "keep-me.txt");
+		writeFileSync(sentinel, "not a session directory");
+		const notASession = join(root, "definitely-not-a-uuid");
+		mkdirSync(notASession);
+		writeFileSync(join(notASession, "inner.bin"), "still here");
+		const orphanDir = join(root, UUID_SHAPED_ORPHAN);
+		mkdirSync(orphanDir);
+
+		const port = allocatePort();
+		await runStart(dgHome, port);
+		await waitForHealth(port);
+
+		await waitForValue(
+			() => (existsSync(orphanDir) ? undefined : true),
+			3000,
+			"the uuid-shaped orphan directory to be swept",
+		);
+		expect(existsSync(root)).toBe(true);
+		expect(existsSync(sentinel)).toBe(true);
+		expect(existsSync(join(notASession, "inner.bin"))).toBe(true);
 	}, 30000);
 });

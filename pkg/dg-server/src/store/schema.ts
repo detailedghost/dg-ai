@@ -99,9 +99,38 @@ function createV2Additions(db: Database): void {
 	) STRICT`);
 }
 
+/** v3: assets.state gains a CHECK, which SQLite can only add by rebuilding the table. */
+function createV3AssetStateCheck(db: Database): void {
+	db.run(`CREATE TABLE assets_v3 (
+		id TEXT PRIMARY KEY,
+		session_id TEXT NOT NULL REFERENCES sessions(id),
+		created_at TEXT NOT NULL,
+		filename_ciphertext BLOB NOT NULL,
+		filename_iv BLOB NOT NULL,
+		filename_tag BLOB NOT NULL,
+		content_type TEXT NOT NULL,
+		byte_length INTEGER NOT NULL,
+		deleted_at TEXT,
+		state TEXT NOT NULL CHECK (state IN ('active', 'deleted'))
+	) STRICT`);
+	db.run(`INSERT INTO assets_v3 (
+		id, session_id, created_at,
+		filename_ciphertext, filename_iv, filename_tag,
+		content_type, byte_length, deleted_at, state
+	) SELECT
+		id, session_id, created_at,
+		filename_ciphertext, filename_iv, filename_tag,
+		content_type, byte_length, deleted_at,
+		CASE WHEN state IN ('active', 'deleted') THEN state ELSE 'deleted' END
+	FROM assets`);
+	db.run("DROP TABLE assets");
+	db.run("ALTER TABLE assets_v3 RENAME TO assets");
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
+	{ version: 3, run: createV3AssetStateCheck },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

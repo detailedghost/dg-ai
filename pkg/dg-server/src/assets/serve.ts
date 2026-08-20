@@ -1,0 +1,106 @@
+/** The read half: bounds the read by the open fd's size, then decrypts and verifies in memory. */
+import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
+import type { DgPaths } from "@dg/common/node";
+import type { SessionRegistry } from "../session/registry";
+import { tokensEqual } from "../session/tokens";
+import type { ChatStore } from "../store";
+import { getConfiguredAssetDirectory } from "./config";
+import { resolveAssetContentType } from "./content-type";
+import {
+	AssetMissingError,
+	AssetPathUnsafeError,
+	assertFlatSegment,
+	openAssetFile,
+} from "./safe-path";
+
+export type ResolveAssetDeps = {
+	paths: DgPaths;
+	store: ChatStore;
+	registry: SessionRegistry;
+};
+
+export type ResolveAssetInput = {
+	sessionId: string;
+	token: string;
+	id: string;
+};
+
+/** Every refusal carries its own reason: collapsing them hid a containment refusal behind a plain not-found. */
+export type AssetServeResult =
+	| {
+			status: "ok";
+			bytes: Buffer;
+			contentType: string;
+			inline: boolean;
+			filename: string;
+	  }
+	| { status: "unauthorized" }
+	| { status: "session-closed" }
+	| { status: "unknown" }
+	| { status: "pruned" }
+	| { status: "unsafe-path" }
+	| { status: "missing-file" }
+	| { status: "too-large" }
+	| { status: "corrupt" };
+
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
+
+const MAX_ENVELOPE_BYTES =
+	IV_LENGTH + TAG_LENGTH + 4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3);
+
+export async function resolveAssetForServing(
+	deps: ResolveAssetDeps,
+	input: ResolveAssetInput,
+): Promise<AssetServeResult> {
+	const record = deps.registry.get(input.sessionId);
+	if (!record || !tokensEqual(record.token, input.token)) {
+		return { status: "unauthorized" };
+	}
+
+	try {
+		assertFlatSegment(input.sessionId);
+		const row = deps.store.getAsset(input.sessionId, input.id);
+		if (!row) return { status: "unknown" };
+		if (row.state !== "active") return { status: "pruned" };
+		if (record.state !== "active") return { status: "session-closed" };
+
+		const handle = await openAssetFile(
+			getConfiguredAssetDirectory(deps.paths),
+			input.sessionId,
+			row.id,
+		);
+		let raw: Buffer;
+		try {
+			const stats = await handle.stat();
+			if (!stats.isFile()) return { status: "unsafe-path" };
+			if (stats.size > MAX_ENVELOPE_BYTES) return { status: "too-large" };
+			if (stats.size < IV_LENGTH + TAG_LENGTH) return { status: "corrupt" };
+			raw = await handle.readFile();
+		} finally {
+			await handle.close();
+		}
+
+		const bytes = deps.store.decryptAssetBytes(input.sessionId, row.id, {
+			iv: raw.subarray(0, IV_LENGTH),
+			tag: raw.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH),
+			ciphertext: raw.subarray(IV_LENGTH + TAG_LENGTH),
+		});
+		if (bytes.byteLength > CHAT_MAX_ASSET_BYTES) {
+			return { status: "too-large" };
+		}
+
+		const typeInfo = resolveAssetContentType(row.filename);
+		return {
+			status: "ok",
+			bytes,
+			contentType: typeInfo.contentType,
+			inline: typeInfo.inline,
+			filename: row.filename,
+		};
+	} catch (err) {
+		if (err instanceof AssetMissingError) return { status: "missing-file" };
+		if (err instanceof AssetPathUnsafeError) return { status: "unsafe-path" };
+		return { status: "corrupt" };
+	}
+}

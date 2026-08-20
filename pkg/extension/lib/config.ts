@@ -3,6 +3,7 @@ import {
 	DEFAULT_VIDEO_QUALITY,
 	type VideoQuality,
 } from "@/lib/capture-quality";
+import { type ConfigRelayReply, MSG } from "@/lib/chat-messages";
 
 /** The nine tab-group colors Chrome/Firefox accept. */
 export type GroupColor =
@@ -148,4 +149,94 @@ export async function readNarrationMode(): Promise<NarrationMode> {
 		console.warn("[dg-ai-extension] narration mode read failed", e);
 		return DEFAULTS.narration;
 	}
+}
+
+/** Daemon-authoritative, deliberately not browser.storage.sync. */
+export const ASSET_DIRECTORY_CONFIG_KEY = "assetDirectory";
+
+export type ConfigFrameReply = { value?: unknown; error?: string };
+export type ConfigFrameRequest = {
+	type: "config-get" | "config-set";
+	key: string;
+	value?: string;
+};
+export type SendConfigFrame = (
+	frame: ConfigFrameRequest,
+) => Promise<ConfigFrameReply>;
+
+export type AssetDirectoryLoadResult =
+	| { status: "ok"; value: string }
+	| { status: "unavailable" };
+export type AssetDirectorySaveResult =
+	| { ok: true }
+	| { ok: false; error: string };
+
+export type ConfigTransport = {
+	getAssetDirectory(): Promise<AssetDirectoryLoadResult>;
+	setAssetDirectory(value: string): Promise<AssetDirectorySaveResult>;
+};
+
+/** Wraps an injected sendConfigFrame seam — never touches browser.storage.sync. */
+export function createDaemonConfigTransport(seams: {
+	sendConfigFrame: SendConfigFrame;
+}): ConfigTransport {
+	return {
+		async getAssetDirectory() {
+			try {
+				const reply = await seams.sendConfigFrame({
+					type: "config-get",
+					key: ASSET_DIRECTORY_CONFIG_KEY,
+				});
+				if (reply.error !== undefined || typeof reply.value !== "string") {
+					return { status: "unavailable" };
+				}
+				return { status: "ok", value: reply.value };
+			} catch {
+				return { status: "unavailable" };
+			}
+		},
+		async setAssetDirectory(value: string) {
+			try {
+				const reply = await seams.sendConfigFrame({
+					type: "config-set",
+					key: ASSET_DIRECTORY_CONFIG_KEY,
+					value,
+				});
+				if (reply.error !== undefined) {
+					return { ok: false, error: reply.error };
+				}
+				return { ok: true };
+			} catch (e) {
+				return { ok: false, error: e instanceof Error ? e.message : String(e) };
+			}
+		},
+	};
+}
+
+type ConfigRelayRuntime = { sendMessage(message: unknown): Promise<unknown> };
+
+/** Posts through the background relay, which owns the one socket and the one auth path. */
+export function createLiveAssetDirectoryTransport(): ConfigTransport {
+	const runtime = browser.runtime as unknown as ConfigRelayRuntime;
+	return createDaemonConfigTransport({
+		sendConfigFrame: async (frame) => {
+			const response = await runtime.sendMessage({
+				type: MSG.configRequest,
+				request: frame.type,
+				key: frame.key,
+				...(frame.value === undefined ? {} : { value: frame.value }),
+			});
+			if (typeof response !== "object" || response === null) {
+				throw new Error("the background relay did not answer");
+			}
+			const reply = response as Partial<ConfigRelayReply>;
+			if (reply.key !== frame.key) {
+				throw new Error("the background relay answered a different config key");
+			}
+			return {
+				value: reply.value,
+				error: typeof reply.error === "string" ? reply.error : undefined,
+			};
+		},
+	});
 }
