@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/chat-messages";
+import { click, keydown, typeValue } from "./utils/dom-events";
 
 // A barrel-reachable dynamic import needs this stub (plan.md's slice-4 lesson).
 // `runtime` exercises the real relay client for finding 2's regression test only.
@@ -539,7 +540,7 @@ test("the rail renders sections in workset order, orchestrator first, with a tra
 
 // --- Document-order reachability, no second navigation level ---
 
-test("rail and thread content live in one document with no second navigation level to keep in sync", async () => {
+test("the primary rail-and-thread surface is the default view, reachable in document order with nothing hidden inside it", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -551,9 +552,13 @@ test("rail and thread content live in one document with no second navigation lev
 		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
 	);
 
-	// Everything a screen reader needs is reachable by walking childNodes in
-	// order — no hidden panel, no second "view" toggle to switch into.
-	expect(root.querySelector("[data-view], [aria-hidden='true']")).toBeNull();
+	expect(root.dataset.view).toBe("rail");
+	const primary = root.querySelector(".chat-rail")?.parentElement;
+	expect(primary).toBe(root);
+	expect(
+		root.querySelector(".chat-rail [aria-hidden='true'], .chat-thread [aria-hidden='true']"),
+	).toBeNull();
+	expect(root.querySelector(".chat-thread")?.hasAttribute("hidden")).toBe(false);
 	expect(root.textContent).toContain("claude-js");
 });
 
@@ -862,4 +867,236 @@ test("regression: the daemon-unreachable zero-state does not flash when connect(
 	});
 
 	expect(root.querySelector("[data-empty-state]")).toBeNull();
+});
+
+// --- Slice 12: autocomplete dispatch, and the canvas as an optional second view ---
+
+test("mounts command autocomplete on a node's composer, offering the published manifest's commands", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	fake.emit({
+		type: "manifest-publish",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		commands: [
+			{ label: "review", argv: ["gh", "pr", "review"], params: [] },
+			{ label: "deploy", argv: ["make", "deploy"], params: [] },
+		],
+	} as ChatFrame);
+
+	const input = root.querySelector(
+		".chat-composer__input",
+	) as unknown as HTMLInputElement;
+	expect(input).toBeDefined();
+	typeValue(input, "$rev");
+
+	const listbox = input.ownerDocument.querySelector("[role='listbox']");
+	expect(listbox).not.toBeNull();
+	expect(listbox?.textContent).toContain("review");
+	expect(listbox?.textContent).not.toContain("deploy");
+});
+
+test("Enter on a $ match dispatches a command instead of sending it as a chat message", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	const dispatched: Array<{ sessionId: string; commandLabel: string }> = [];
+	const client = {
+		...fake.client,
+		sendCommandInvocation: (sessionId: string, commandLabel: string) => {
+			dispatched.push({ sessionId, commandLabel });
+			return Promise.resolve({ ok: true as const });
+		},
+	};
+	await renderChatPage({
+		root,
+		createClient: () => client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	fake.emit({
+		type: "manifest-publish",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		commands: [{ label: "review", argv: ["gh", "pr", "review"], params: [] }],
+	} as ChatFrame);
+
+	const input = root.querySelector(
+		".chat-composer__input",
+	) as unknown as HTMLInputElement;
+	typeValue(input, "$rev");
+	keydown(input, "ArrowDown");
+	keydown(input, "Enter");
+
+	expect(dispatched).toEqual([
+		{ sessionId: "session-a", commandLabel: "review" },
+	]);
+	expect(fake.client.sendUserMessage).not.toHaveBeenCalled();
+	expect(input.value).toBe("");
+});
+
+test("a session's manifest never offers another session's commands", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js" },
+			{ sessionId: "session-b", agentIdentity: "claude-security" },
+		]),
+	);
+	fake.emit({
+		type: "manifest-publish",
+		sessionId: "session-b",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		commands: [{ label: "audit", argv: ["audit"], params: [] }],
+	} as ChatFrame);
+
+	const inputs = Array.from(
+		root.querySelectorAll(".chat-composer__input"),
+	) as unknown as HTMLInputElement[];
+	const first = inputs[0] as HTMLInputElement;
+	typeValue(first, "$aud");
+
+	const listbox = first.ownerDocument.querySelector("[role='listbox']");
+	expect(listbox?.textContent ?? "").not.toContain("audit");
+});
+
+test("the canvas is an optional second view: off by default, revealed by an accessible rail toggle", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	const toggle = root.querySelector(
+		"[data-action='toggle-canvas']",
+	) as unknown as HTMLButtonElement;
+	expect(toggle).toBeDefined();
+	expect(toggle.getAttribute("aria-pressed")).toBe("false");
+	expect(root.dataset.view).toBe("rail");
+	expect(root.querySelector(".chat-canvas__board")).toBeNull();
+
+	click(toggle);
+
+	expect(toggle.getAttribute("aria-pressed")).toBe("true");
+	expect(root.dataset.view).toBe("canvas");
+	expect(root.querySelector(".chat-canvas__board")).not.toBeNull();
+
+	click(toggle);
+
+	expect(root.dataset.view).toBe("rail");
+	expect(toggle.getAttribute("aria-pressed")).toBe("false");
+});
+
+test("the canvas chrome carries the create-chat button, the daemon banner and zoom controls", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(
+		root.querySelector(
+			"[data-action='toggle-canvas']",
+		) as unknown as HTMLElement,
+	);
+
+	const chrome = root.querySelector(".chat-canvas__chrome");
+	expect(chrome).not.toBeNull();
+	expect(chrome?.querySelector("[data-action='create-chat']")).not.toBeNull();
+	expect(chrome?.querySelector("[data-action='zoom-in']")).not.toBeNull();
+	expect(chrome?.querySelector("[data-action='zoom-out']")).not.toBeNull();
+	expect(chrome?.querySelector("[data-canvas-connection]")).not.toBeNull();
+});
+
+test("switching to the canvas keeps the rail reachable rather than replacing it, so the linear surface never disappears", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(
+		root.querySelector(
+			"[data-action='toggle-canvas']",
+		) as unknown as HTMLElement,
+	);
+
+	const rail = root.querySelector(".chat-rail");
+	expect(rail).not.toBeNull();
+	expect(rail?.hasAttribute("hidden")).toBe(false);
+	expect(rail?.getAttribute("aria-hidden")).not.toBe("true");
+	expect(root.textContent).toContain("claude-js");
+});
+
+test("closing a session tears down its autocomplete listbox rather than leaving it in the document", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	const doc = root.ownerDocument;
+	expect(doc.querySelectorAll("[role='listbox']").length).toBe(1);
+
+	fake.emit({
+		type: "session-closed",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	} as ChatFrame);
+
+	expect(doc.querySelectorAll("[role='listbox']").length).toBe(0);
+});
+
+test("the canvas honours prefers-reduced-motion, which it reads from its own container not the page root", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+		matchMedia: () => ({ matches: true, addEventListener: () => {} }),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(
+		root.querySelector(
+			"[data-action='toggle-canvas']",
+		) as unknown as HTMLElement,
+	);
+
+	const container = root.querySelector(".chat-canvas") as HTMLElement | null;
+	expect(container?.dataset.motion).toBe("reduced");
 });

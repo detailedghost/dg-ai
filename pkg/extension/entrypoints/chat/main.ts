@@ -1,5 +1,6 @@
 import {
 	type ChatFrame,
+	type CommandEntry,
 	type SessionBootstrap,
 	type SessionRole,
 	validateChatFrame,
@@ -12,6 +13,11 @@ import type {
 	ChatConnectionState,
 	SendUserMessageOptions,
 } from "@/lib/features/chat-client";
+import {
+	attachCommandAutocomplete,
+	type CommandAutocomplete,
+} from "@/lib/features/chat-autocomplete";
+import { createChatCanvas } from "@/lib/features/chat-canvas";
 import {
 	type ChatNode,
 	createChatNode,
@@ -76,6 +82,11 @@ type SendResult = { ok: true } | { ok: false; error: string };
  * type — main.ts's own wiring feature-detects it (see sendAndWaitForAccept).
  */
 type PageChatClient = ChatClient & {
+	sendCommandInvocation(
+		sessionId: string,
+		commandLabel: string,
+		params?: Record<string, unknown>,
+	): Promise<SendResult>;
 	sendUserMessageAndWait(
 		sessionId: string,
 		body: string,
@@ -245,7 +256,42 @@ function createRelayChatClient(): PageChatClient {
 			}
 			send({ type: MSG.sessionClose, sessionId });
 		},
+
+		sendCommandInvocation(
+			sessionId: string,
+			commandLabel: string,
+			params: Record<string, unknown> = {},
+		): Promise<SendResult> {
+			if (!knownSessions.has(sessionId)) {
+				return Promise.resolve({
+					ok: false,
+					error: `Session ${sessionId} is not available in this chat page`,
+				});
+			}
+			return sendAndWait({
+				type: MSG.commandInvocation,
+				sessionId,
+				commandLabel,
+				params,
+			});
+		},
 	};
+}
+
+/** Mirrors sendAndWaitForAccept: the real relay dispatches, an injected fake may not. */
+function dispatchCommandThroughClient(
+	client: ChatClient,
+	sessionId: string,
+	commandLabel: string,
+): Promise<SendResult> {
+	const maybeRelay = client as Partial<PageChatClient>;
+	if (maybeRelay.sendCommandInvocation) {
+		return maybeRelay.sendCommandInvocation(sessionId, commandLabel);
+	}
+	return Promise.resolve({
+		ok: false,
+		error: "this chat page cannot dispatch commands",
+	});
 }
 
 /**
@@ -322,6 +368,8 @@ export async function renderChatPage(
 	const bootstraps = await (options.loadBootstraps ?? loadStoredBootstraps)();
 	const sessions = createChatSessions();
 	const nodes = new Map<string, ChatNode>();
+	const autocompletes = new Map<string, CommandAutocomplete>();
+	const manifests = new Map<string, CommandEntry[]>();
 	const bootstrapBySession = new Map(
 		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap]),
 	);
@@ -353,7 +401,11 @@ export async function renderChatPage(
 	);
 	createButton.type = "button";
 	createButton.dataset.action = "create-chat";
-	railActions.append(themeButton, createButton);
+	const canvasButton = element(doc, "button", "chat-button", "Canvas");
+	canvasButton.type = "button";
+	canvasButton.dataset.action = "toggle-canvas";
+	canvasButton.setAttribute("aria-pressed", "false");
+	railActions.append(themeButton, canvasButton, createButton);
 	railHeader.append(brand, railActions);
 	const railSections = element(doc, "nav", "chat-rail__sections");
 	railSections.setAttribute("aria-label", "Sessions by workset");
@@ -375,10 +427,85 @@ export async function renderChatPage(
 	const moveStatus = element(doc, "div", "chat-move-status");
 	moveStatus.setAttribute("role", "status");
 	root.append(rail, thread, moveStatus);
+	root.dataset.view = "rail";
+
+	let canvas: ReturnType<typeof createChatCanvas> | undefined;
+	let canvasContainer: HTMLElement | undefined;
+
+	function zoomCanvas(deltaY: number): void {
+		const board = canvas?.boardElement;
+		if (!board) return;
+		const WheelCtor = (
+			doc.defaultView as unknown as { WheelEvent: typeof WheelEvent }
+		).WheelEvent;
+		board.dispatchEvent(
+			new WheelCtor("wheel", { deltaY, ctrlKey: true, cancelable: true }),
+		);
+	}
+
+	function mountCanvas(): void {
+		if (canvasContainer) return;
+		const view = doc.defaultView as unknown as {
+			innerWidth?: number;
+			innerHeight?: number;
+		};
+		canvasContainer = element(doc, "section", "chat-canvas");
+		canvasContainer.setAttribute("aria-label", "Session canvas");
+		canvasContainer.dataset.motion = root.dataset.motion ?? "full";
+
+		root.appendChild(canvasContainer);
+		canvas = createChatCanvas(canvasContainer, {
+			viewport: {
+				scale: 1,
+				pan: { x: 0, y: 0 },
+				width: view.innerWidth ?? 1280,
+				height: view.innerHeight ?? 800,
+			},
+		});
+
+		const chrome = canvas.chromeElement;
+		const canvasCreate = element(
+			doc,
+			"button",
+			"chat-button chat-button--primary",
+			"+ New",
+		);
+		canvasCreate.type = "button";
+		canvasCreate.dataset.action = "create-chat";
+		canvasCreate.addEventListener("click", requestNewChatSession);
+		const zoomOut = element(doc, "button", "chat-button", "\u2212");
+		zoomOut.type = "button";
+		zoomOut.dataset.action = "zoom-out";
+		zoomOut.setAttribute("aria-label", "Zoom out");
+		zoomOut.addEventListener("click", () => zoomCanvas(120));
+		const zoomIn = element(doc, "button", "chat-button", "+");
+		zoomIn.type = "button";
+		zoomIn.dataset.action = "zoom-in";
+		zoomIn.setAttribute("aria-label", "Zoom in");
+		zoomIn.addEventListener("click", () => zoomCanvas(-120));
+		const canvasConnection = element(doc, "div", "chat-canvas__connection");
+		canvasConnection.dataset.canvasConnection = "";
+		canvasConnection.setAttribute("role", "status");
+		chrome.append(canvasConnection, zoomOut, zoomIn, canvasCreate);
+		updateConnectionStatus();
+	}
+
+	function setCanvasVisible(visible: boolean): void {
+		if (visible) mountCanvas();
+		root.dataset.view = visible ? "canvas" : "rail";
+		canvasButton.setAttribute("aria-pressed", String(visible));
+		if (canvasContainer) canvasContainer.hidden = !visible;
+	}
+
+	canvasButton.addEventListener("click", () => {
+		setCanvasVisible(root.dataset.view !== "canvas");
+	});
 
 	const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
 	const syncMotion = () => {
-		root.dataset.motion = motionQuery.matches ? "reduced" : "full";
+		const motion = motionQuery.matches ? "reduced" : "full";
+		root.dataset.motion = motion;
+		if (canvasContainer) canvasContainer.dataset.motion = motion;
 	};
 	syncMotion();
 	motionQuery.addEventListener("change", syncMotion);
@@ -405,6 +532,17 @@ export async function renderChatPage(
 		moveStatus.textContent = message;
 	}
 
+	function requestNewChatSession(): void {
+		const requestingSessionId = selectedSessionId ?? bootstraps[0]?.sessionId;
+		if (!requestingSessionId) return;
+		const selected = sessions.get(requestingSessionId);
+		try {
+			client.requestNewSession(requestingSessionId, "agent", selected?.workset);
+		} catch (error) {
+			showError(error);
+		}
+	}
+
 	function showError(error: unknown): void {
 		threadError.textContent =
 			error instanceof Error ? error.message : String(error);
@@ -416,12 +554,21 @@ export async function renderChatPage(
 		const state = client.getConnectionState();
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
-		connectionStatus.textContent =
+		const message =
 			state === "reconnecting"
 				? "Reconnecting to daemon…"
 				: state === "daemon-not-running"
 					? "Daemon unreachable"
 					: "";
+		connectionStatus.textContent = message;
+		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
+			"[data-canvas-connection]",
+		);
+		if (canvasBanner) {
+			canvasBanner.dataset.connection = state;
+			canvasBanner.hidden = state === "connected";
+			canvasBanner.textContent = message;
+		}
 	}
 
 	function setSelected(sessionId: string): void {
@@ -514,6 +661,21 @@ export async function renderChatPage(
 			swapSessions(moving.sessionId, sessionId);
 			finishMove(false);
 		});
+		autocompletes.set(
+			sessionId,
+			attachCommandAutocomplete(node.composer.inputElement, {
+				getCommands: () => manifests.get(sessionId) ?? [],
+				onDispatch: (commandLabel) => {
+					void dispatchCommandThroughClient(
+						client,
+						sessionId,
+						commandLabel,
+					).then((result) => {
+						if (!result.ok) showError(result.error);
+					});
+				},
+			}),
+		);
 		nodes.set(sessionId, node);
 		return node;
 	}
@@ -530,6 +692,9 @@ export async function renderChatPage(
 		}
 		for (const [sessionId, node] of nodes) {
 			if (liveIds.has(sessionId)) continue;
+			autocompletes.get(sessionId)?.destroy();
+			autocompletes.delete(sessionId);
+			manifests.delete(sessionId);
 			node.destroy();
 			nodes.delete(sessionId);
 		}
@@ -648,16 +813,7 @@ export async function renderChatPage(
 		themeButton.textContent = light ? "Light" : "Dark";
 	});
 
-	createButton.addEventListener("click", () => {
-		const requestingSessionId = selectedSessionId ?? bootstraps[0]?.sessionId;
-		if (!requestingSessionId) return;
-		const selected = sessions.get(requestingSessionId);
-		try {
-			client.requestNewSession(requestingSessionId, "agent", selected?.workset);
-		} catch (error) {
-			showError(error);
-		}
-	});
+	createButton.addEventListener("click", requestNewChatSession);
 
 	// Bound on the document, not root: a rail rebuild can momentarily leave
 	// focus on <body>, and a root-level listener would never see events from there.
@@ -708,6 +864,9 @@ export async function renderChatPage(
 				break;
 			case "command-result":
 				node?.transcript.appendCommandResult(frame);
+				break;
+			case "manifest-publish":
+				manifests.set(frame.sessionId, frame.commands);
 				break;
 			case "history-response":
 				node?.transcript.applyHistory(frame.messages.filter(isChatHistoryItem));

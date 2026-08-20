@@ -6,6 +6,7 @@ import {
 } from "@/lib/capture-quality";
 import {
 	type ColorSetting,
+	createLiveAssetDirectoryTransport,
 	DEFAULTS,
 	getConfig,
 	getNarrationMode,
@@ -16,6 +17,7 @@ import {
 	voiceLabel,
 } from "@/lib/config";
 import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
+import { mountAssetDirectoryPanel } from "./asset-directory";
 import { loadKokoro } from "@/utils/kokoro";
 import "./style.css";
 
@@ -198,6 +200,10 @@ $<HTMLButtonElement>("ttsDownload").addEventListener("click", downloadTest);
 window.addEventListener("hashchange", () =>
 	showPage(resolvePage(window.location.hash)),
 );
+
+mountAssetDirectoryPanel($<HTMLElement>("assetDirectoryPanel"), {
+	transport: createLiveAssetDirectoryTransport(),
+});
 
 showPage(resolvePage(window.location.hash));
 void load();

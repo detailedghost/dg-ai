@@ -11,6 +11,7 @@ export const MSG = {
 	sessionClose: "dg-chat:session-close",
 	frame: "dg-chat:frame",
 	configRequest: "dg-chat:config-request",
+	commandInvocation: "dg-chat:command-invocation",
 } as const;
 
 /** Answer to MSG.configRequest — carries the key it answers, never a token. */
