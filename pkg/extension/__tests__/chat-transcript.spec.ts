@@ -3,10 +3,10 @@
  * blob-URL attachments. Surface + history-response item shape RATIFIED in Code Structure.
  */
 
-import { expect, spyOn, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_MAX_ASSET_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { Window } from "happy-dom";
 
 const { createTranscriptView } = await import("@/lib/features/chat-transcript");
@@ -386,6 +386,129 @@ test("the default fetchAsset throws a clear configuration error when port is omi
 		expect(fetchSpy).not.toHaveBeenCalled();
 	} finally {
 		fetchSpy.mockRestore();
+	}
+});
+
+test("the default asset fetch refuses an oversized asset on its Content-Length, before the body is ever read", async () => {
+	const container = newContainer();
+	const view = createTranscriptView(container, { port: 47823 });
+	const blobCalls = mock(() => Promise.resolve(new Blob(["never read"])));
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+		(async () =>
+			({
+				status: 200,
+				ok: true,
+				headers: { get: () => String(CHAT_MAX_ASSET_BYTES + 1) },
+				blob: blobCalls,
+			}) as unknown as Response) as unknown as typeof fetch,
+	);
+
+	try {
+		await view.appendAgentMessage(
+			buildAgentMessageFrame({ body: "huge", attachmentId: "asset-huge" }),
+			"tok",
+		);
+	} finally {
+		fetchSpy.mockRestore();
+	}
+
+	expect(blobCalls).not.toHaveBeenCalled();
+	expect(
+		container.querySelector(".chat-transcript__attachment--error"),
+	).not.toBeNull();
+	expect(
+		container.querySelector(".chat-transcript__attachment-image"),
+	).toBeNull();
+});
+
+test("the default asset fetch refuses a body that outruns a missing or lying Content-Length", async () => {
+	const container = newContainer();
+	const view = createTranscriptView(container, { port: 47823 });
+	const oversized = new Blob([new Uint8Array(CHAT_MAX_ASSET_BYTES + 1)]);
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+		(async () =>
+			({
+				status: 200,
+				ok: true,
+				headers: { get: () => null },
+				blob: async () => oversized,
+			}) as unknown as Response) as unknown as typeof fetch,
+	);
+
+	try {
+		await view.appendAgentMessage(
+			buildAgentMessageFrame({ body: "liar", attachmentId: "asset-liar" }),
+			"tok",
+		);
+	} finally {
+		fetchSpy.mockRestore();
+	}
+
+	expect(
+		container.querySelector(".chat-transcript__attachment--error"),
+	).not.toBeNull();
+});
+
+test("a rendered attachment hands its blob URL back once the image settles, instead of pinning the bytes for the tab's life", async () => {
+	const container = newContainer();
+	const blobUrl = "blob:fake-url-to-revoke";
+	const view = createTranscriptView(container, {
+		fetchAsset: async () => ({ status: "ok" as const, blobUrl }),
+	});
+	const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(
+		() => undefined,
+	);
+
+	try {
+		await view.appendAgentMessage(
+			buildAgentMessageFrame({ body: "see attached", attachmentId: "asset-1" }),
+			"tok",
+		);
+		const image = container.querySelector(
+			".chat-transcript__attachment-image",
+		) as unknown as HTMLImageElement;
+		expect(image.getAttribute("src")).toBe(blobUrl);
+		expect(revokeSpy).not.toHaveBeenCalled();
+
+		const EventCtor = (
+			container.ownerDocument.defaultView as unknown as { Event: typeof Event }
+		).Event;
+		image.dispatchEvent(new EventCtor("load"));
+		expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+		expect(revokeSpy).toHaveBeenCalledTimes(1);
+
+		image.dispatchEvent(new EventCtor("load"));
+		expect(revokeSpy).toHaveBeenCalledTimes(1);
+	} finally {
+		revokeSpy.mockRestore();
+	}
+});
+
+test("a failed image load also releases the blob URL, so a broken attachment leaks nothing", async () => {
+	const container = newContainer();
+	const blobUrl = "blob:fake-url-that-fails";
+	const view = createTranscriptView(container, {
+		fetchAsset: async () => ({ status: "ok" as const, blobUrl }),
+	});
+	const revokeSpy = spyOn(URL, "revokeObjectURL").mockImplementation(
+		() => undefined,
+	);
+
+	try {
+		await view.appendAgentMessage(
+			buildAgentMessageFrame({ body: "broken", attachmentId: "asset-2" }),
+			"tok",
+		);
+		const image = container.querySelector(
+			".chat-transcript__attachment-image",
+		) as unknown as HTMLImageElement;
+		const EventCtor = (
+			container.ownerDocument.defaultView as unknown as { Event: typeof Event }
+		).Event;
+		image.dispatchEvent(new EventCtor("error"));
+		expect(revokeSpy).toHaveBeenCalledWith(blobUrl);
+	} finally {
+		revokeSpy.mockRestore();
 	}
 });
 

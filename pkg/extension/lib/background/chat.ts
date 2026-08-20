@@ -7,7 +7,11 @@ import {
 } from "@dg/common";
 import { browser } from "wxt/browser";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
-import { CHAT_SESSION_KEY_PREFIX, MSG } from "@/lib/chat-messages";
+import {
+	CHAT_SESSION_KEY_PREFIX,
+	type ConfigRelayReply,
+	MSG,
+} from "@/lib/chat-messages";
 import {
 	type ChatClient,
 	type ChatClientSocket,
@@ -133,6 +137,10 @@ function keepaliveFrame(bootstrap: SessionBootstrap): string {
 	});
 }
 
+type ConfigWaiter = { key: string; settle(reply: ConfigRelayReply): void };
+
+const CONFIG_ROUND_TRIP_TIMEOUT_MS = 5000;
+
 /**
  * Central toolbar-click router, the marker-capture relay, and the ONE
  * background-owned chat socket — ownership, reconnection, rediscovery and
@@ -151,6 +159,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	// Sessions the daemon has ack'd on this socket (a session-list frame follows
 	// its accepted connect) — an earlier keepalive would fail capability checks.
 	const keepaliveEligible = new Set<string>();
+	const configWaiters: ConfigWaiter[] = [];
 	let currentSocket: ChatClientSocket | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -168,16 +177,79 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 	}
 
+	/** Settles every parked config request; the reply can only arrive on the socket that just went away. */
+	function failPendingConfigRequests(error: string): void {
+		for (const waiter of configWaiters.splice(0)) {
+			waiter.settle({ key: waiter.key, error });
+		}
+	}
+
 	function openSocketWithKeepaliveTeardown(url: string): ChatClientSocket {
 		const socket = openSocket(url);
 		currentSocket = socket;
 		const cleanup = () => {
 			if (currentSocket === socket) currentSocket = undefined;
 			stopKeepalive();
+			failPendingConfigRequests("the daemon connection closed");
 		};
 		socket.addEventListener("close", cleanup);
 		socket.addEventListener("error", cleanup);
 		return socket;
+	}
+
+	/** A session the daemon has already ack'd, so its capability passes the config frame's authorization check. */
+	function firstConfirmedBootstrap(): SessionBootstrap | undefined {
+		for (const sessionId of keepaliveEligible) {
+			const bootstrap = bootstrapsBySession.get(sessionId);
+			if (bootstrap) return bootstrap;
+		}
+		return undefined;
+	}
+
+	/** Relays one config-get/config-set on the background's own socket, so the requesting page never needs a token. */
+	function requestDaemonConfig(
+		kind: "config-get" | "config-set",
+		key: string,
+		value?: string,
+	): Promise<ConfigRelayReply> {
+		const socket = currentSocket;
+		const bootstrap = firstConfirmedBootstrap();
+		if (!socket || !bootstrap) {
+			return Promise.resolve({
+				key,
+				error: "no chat session is open — start one to configure this",
+			});
+		}
+		return new Promise((resolve) => {
+			let settled = false;
+			const waiter: ConfigWaiter = {
+				key,
+				settle(reply) {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					const idx = configWaiters.indexOf(waiter);
+					if (idx !== -1) configWaiters.splice(idx, 1);
+					resolve(reply);
+				},
+			};
+			const timer = setTimeout(
+				() =>
+					waiter.settle({ key, error: "daemon config round trip timed out" }),
+				CONFIG_ROUND_TRIP_TIMEOUT_MS,
+			);
+			configWaiters.push(waiter);
+			socket.send(
+				JSON.stringify({
+					type: kind,
+					sessionId: bootstrap.sessionId,
+					token: bootstrap.token,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+					key,
+					...(kind === "config-set" ? { value } : {}),
+				}),
+			);
+		});
 	}
 
 	const client = createChatClient({
@@ -186,6 +258,12 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
+		if (frame.type === "config-result") {
+			configWaiters
+				.find((w) => w.key === frame.key)
+				?.settle({ key: frame.key, value: frame.value, error: frame.error });
+			return;
+		}
 		if (frame.type === "session-closed") {
 			// Its token is invalidated, and one shared socket means a further
 			// keepalive would burn the failed-frame budget for every session on it.
@@ -293,6 +371,23 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					client.closeSession(payload.sessionId);
 					sendResponse({ ok: true });
 					return undefined;
+				case MSG.configRequest: {
+					if (!isExtensionPageSender(sender, api)) return undefined;
+					const kind = payload.request;
+					if (kind !== "config-get" && kind !== "config-set") return undefined;
+					if (typeof payload.key !== "string" || payload.key.length === 0) {
+						return undefined;
+					}
+					if (kind === "config-set" && typeof payload.value !== "string") {
+						return undefined;
+					}
+					void requestDaemonConfig(
+						kind,
+						payload.key,
+						typeof payload.value === "string" ? payload.value : undefined,
+					).then(sendResponse);
+					return true; // the reply is a round trip to the daemon
+				}
 				default:
 					return undefined;
 			}

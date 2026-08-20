@@ -1404,3 +1404,70 @@ Slice 12 runs **before** slice 10 and owns exactly `pkg/extension/entrypoints/ch
 Its verification is structural, not a passing test: grep the **built** bundle for wire-protocol string
 literals (`aria-activedescendant`, the canvas class hooks), never for a function name — `bun run build`
 minifies and mangles local identifiers, so a name grep returns zero even when the code shipped.
+
+### Slice-9 correction-round outcome (execute-mode)
+
+The correction pass closed C1's headline and every other confirmed finding, verified by construction
+against a live daemon rather than by reading code: decoys survived two boot cycles, and the whole
+attack matrix (relative path, symlinked value, `..` component, non-string, embedded NUL, `config-set`
+over `/cli`) was refused with a named reason. H2, H3, M5, M6/M7, M8, M9, L10, H4 and L12 are closed
+with mutation proof; `stage` now writes a real 92-byte envelope for a 46-byte source with the
+plaintext absent from disk. Full suite 1068 pass / 0 fail, lint clean, build green, zero leaked
+daemons.
+
+**One residual, found by the verifier and since closed.** The daemon-owned leaf was never `lstat`ed,
+so a symlinked `dg-assets` re-armed the recursive delete outside the leaf — one symlink was the whole
+attacker step, no `config-set` needed. `resolveAssetFilePath` guarded the *read* path, which is why it
+went unnoticed; nothing guarded the *delete* path. Closed by `assetRootIfOwned` in `assets/cleanup.ts`
+(used by both the sweep and the session-close prune) plus the same guard before `registerAsset`'s
+`mkdirSync`, which also fixes staging through a symlinked root. Rows are still pruned when the root is
+unusable: a servable row pointing at bytes nothing can reach is worse than an unswept directory.
+
+**Human-ratified during this round:**
+- **The fixed leaf applies to the default too** — an unconfigured root is `<DG_HOME>/assets/dg-assets`.
+  One rule, no branch where the leaf is absent, because the delete guard is only as good as its
+  weakest path.
+- **`config-get` still answers a `/cli` socket; only `config-set` is gated** to the extension socket.
+  An agent runs as the same user and can read `~/.dg/config.json` directly, so the frame discloses
+  nothing new, and the destructive verb is the one that needed closing.
+- **Stale-claim recovery is an explicit daemon-boot step, not an open-time side effect.** The
+  `reclaimInFlightClaims` seam is gone; `ChatStore.open` no longer resets anything, and
+  `bootstrap.ts` calls the named `store.recoverStaleClaims()` once. This exists because H2 made
+  `stage` a second opener of the same database: an open-time reset fired from a process that had not
+  crashed would clear a claim the daemon held but had not acked, and the next `claimNext` would
+  hand the same message out twice. Routing bytes to the daemon instead cannot work — 25 MiB max asset
+  against a 1 MiB max frame payload — and a metadata-only frame collapses into the same seam, since
+  `encryptAssetBytes` is a `ChatStore` method so `stage` must open the store regardless.
+
+**Test-harness hazard, corrected.** `pkg/dg-server/bunfig.toml`'s `[test] timeout = 20000` is **inert**
+in bun 1.2.22 — verified independently, ignored both from the repo root and from the package directory,
+so its comment promised a protection that never existed. With ~100 daemon-driving tests and
+`waitForHealth` also budgeting 5000 ms, every one of them raced bun's 5000 ms default; that is the real
+cause of the intermittent `idle-ttl` failures seen earlier in this run, which were wrongly attributed to
+a stray process. `waitForHealth` now defaults to **3000 ms** so it always loses the race cleanly and
+reports "daemon never became healthy" instead of being abandoned with work in flight. `bunfig.toml`
+is **deleted** — the inert `timeout` was its only content, so the file was pure dead config that
+promised a protection it never delivered. This section is the durable record, so nobody re-adds it.
+
+**Two hardenings deliberately have no test, disclosed rather than faked.** L10's fail-closed
+`state !== "active"` is behaviourally identical to `state === "deleted"` once the v3 CHECK exists, and
+`O_NOFOLLOW | O_NONBLOCK` only narrows a race window that `lstat` already rejects deterministically. A
+test pinning either would be a test that cannot fail. The hazards are covered instead by a
+CHECK-rejection test and a legacy-row coercion test.
+
+Also: `assertFlatSegment` in `assets/safe-path.ts` was a **no-op stub** (`return;`), so every caller
+that appeared to validate a segment validated nothing — the original LOW understated it. It now rejects
+empty, `.`, `..`, `/`, `\`, NUL and absolute paths, and reverting it to a no-op fails 9 tests.
+
+### Final `/review` — required scope (human-directed)
+
+The blocking human `/review` at `finish.md` step 7 must include a **full code-architecture breakdown**,
+not just a diff walkthrough. At minimum: the module graph across `pkg/common`, `pkg/dg-server` and
+`pkg/extension` and what each package owns; the wire protocol's 19 discriminants and which direction
+each travels; the capability/authorization model (socket kinds, token scoping, which frames are gated
+to which socket); the encryption envelope and AAD domains, and every write-path that owes one; the
+store's queue semantics (claim/lease/ack, and the boot-time recovery step); the asset staging and
+serving path end to end including every containment check; and the extension's single-socket relay
+invariant with the background/page split. Call out where a slice boundary left a seam unowned — slice
+12 exists because four modules had no mount owner — and where a ratification supersedes earlier spec
+wording, since this bundle accumulated fifteen such subsections.

@@ -4,7 +4,11 @@
  * would give it extension-page script privileges including the session token.
  */
 
-import type { ChatFrame, ProgressState } from "@dg/common";
+import {
+	CHAT_MAX_ASSET_BYTES,
+	type ChatFrame,
+	type ProgressState,
+} from "@dg/common";
 
 /** Stored-record projection returned by history-response — not a wire ChatFrame. */
 export type ChatHistoryItem = {
@@ -71,7 +75,12 @@ function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
 			);
 			if (res.status === 404) return { status: "removed" };
 			if (!res.ok) return { status: "error" };
+			const declared = Number(res.headers?.get("content-length"));
+			if (Number.isFinite(declared) && declared > CHAT_MAX_ASSET_BYTES) {
+				return { status: "error" };
+			}
 			const blob = await res.blob();
+			if (blob.size > CHAT_MAX_ASSET_BYTES) return { status: "error" };
 			return { status: "ok", blobUrl: URL.createObjectURL(blob) };
 		} catch {
 			return { status: "error" };
@@ -165,6 +174,9 @@ export function createTranscriptView(
 			const wrap = makeEl("div", "chat-transcript__attachment");
 			const img = doc.createElement("img") as unknown as HTMLImageElement;
 			img.className = "chat-transcript__attachment-image";
+			const release = () => URL.revokeObjectURL(result.blobUrl);
+			img.addEventListener("load", release, { once: true });
+			img.addEventListener("error", release, { once: true });
 			img.setAttribute("src", result.blobUrl);
 			wrap.appendChild(img as unknown as HTMLElement);
 			return wrap;

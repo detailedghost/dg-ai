@@ -5,10 +5,16 @@
  */
 export type AssetCleanupHook = (sessionId: string) => void;
 
-let hook: AssetCleanupHook = () => {};
+const NO_CLEANUP: AssetCleanupHook = () => {};
 
-export function setAssetCleanupHook(next: AssetCleanupHook): void {
+let hook: AssetCleanupHook = NO_CLEANUP;
+
+/** Last install wins; the returned disposer un-installs only its own hook. */
+export function setAssetCleanupHook(next: AssetCleanupHook): () => void {
 	hook = next;
+	return () => {
+		if (hook === next) hook = NO_CLEANUP;
+	};
 }
 
 export function triggerAssetCleanup(sessionId: string): void {

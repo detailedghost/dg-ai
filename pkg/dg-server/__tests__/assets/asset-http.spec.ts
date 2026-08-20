@@ -1,20 +1,15 @@
 /**
- * GET /assets/:id — the real wire contract pkg/extension/lib/features/
- * chat-transcript.ts's defaultFetchAsset already calls verbatim (that route,
- * those exact header names) — this is the daemon-side half. Registers assets
- * by opening a second ChatStore against the SAME DG_HOME the running daemon
- * uses (WAL supports the extra reader/writer), so the row/bytes exist
- * without depending on slice 7's `stage` CLI action ever being wired to this
- * slice's write-path.
- *
- * [SPEC] ASSUMED: the route/headers are NOT invented here — matching already-
- * shipped client code (chat-transcript.ts:64,67-68) exactly. The response
- * status/body-reason shape for each refusal IS this pass's invention; see
- * deferrals.
+ * GET /assets/:id — the daemon half of the wire contract chat-transcript.ts's
+ * defaultFetchAsset already calls verbatim (that route, those header names).
+ * Rows are written by opening a second ChatStore against the SAME DG_HOME the
+ * running daemon uses; WAL supports the extra writer.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { validateSessionBootstrap } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { closeSync, ftruncateSync, mkdirSync, openSync } from "node:fs";
+import { join } from "node:path";
+import { CHAT_MAX_ASSET_BYTES, validateSessionBootstrap } from "@dg/common";
+import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import { registerAsset } from "../../src/assets/register";
 import { ChatStore } from "../../src/store";
 import { runCli } from "../commands/cli-wire";
@@ -36,6 +31,14 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
+const SECOND_OPENER_SEAMS = {
+	env: { DG_KEY_SOURCE: "file" },
+};
+
+function openSecondStore(paths: DgPaths): Promise<ChatStore> {
+	return ChatStore.open(paths, SECOND_OPENER_SEAMS);
+}
+
 async function bootWithAsset(input: {
 	id: string;
 	filename: string;
@@ -51,7 +54,7 @@ async function bootWithAsset(input: {
 	);
 
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const store = await ChatStore.open(paths, { env: { DG_KEY_SOURCE: "file" } });
+	const store = await openSecondStore(paths);
 	await registerAsset(
 		{ paths, store },
 		{ sessionId: bootstrap.sessionId, ...input },
@@ -65,6 +68,17 @@ function assetUrl(port: number, id: string): string {
 	return `http://127.0.0.1:${port}/assets/${encodeURIComponent(id)}`;
 }
 
+function authedHeaders(
+	port: number,
+	credentials: { sessionId: string; token: string },
+) {
+	return {
+		Host: `127.0.0.1:${port}`,
+		"X-Dg-Session-Id": credentials.sessionId,
+		"X-Dg-Session-Token": credentials.token,
+	};
+}
+
 describe("GET /assets/:id", () => {
 	it("serves a staged asset's bytes given the owning session's valid header credential", async () => {
 		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
@@ -76,20 +90,17 @@ describe("GET /assets/:id", () => {
 		});
 
 		const resp = await fetch(assetUrl(port, "asset-1"), {
-			headers: {
-				Host: `127.0.0.1:${port}`,
-				"X-Dg-Session-Id": bootstrap.sessionId,
-				"X-Dg-Session-Token": bootstrap.token,
-			},
+			headers: authedHeaders(port, bootstrap),
 		});
 
 		expect(resp.status).toBe(200);
 		expect(resp.headers.get("x-content-type-options")).toBe("nosniff");
+		expect(resp.headers.get("content-disposition")).toBe("inline");
 		const body = Buffer.from(await resp.arrayBuffer());
 		expect(body.equals(png)).toBe(true);
 	});
 
-	it("refuses with no token, with a wrong token, and with the token only in the query string — never 200", async () => {
+	it("answers 401 with no token, with a wrong token, and with the token only in the query string", async () => {
 		const { port, bootstrap } = await bootWithAsset({
 			id: "asset-1",
 			filename: "picture.png",
@@ -99,7 +110,7 @@ describe("GET /assets/:id", () => {
 		const base = { Host: `127.0.0.1:${port}` };
 
 		const noToken = await fetch(assetUrl(port, "asset-1"), { headers: base });
-		expect(noToken.status).not.toBe(200);
+		expect(noToken.status).toBe(401);
 
 		const wrongToken = await fetch(assetUrl(port, "asset-1"), {
 			headers: {
@@ -108,17 +119,52 @@ describe("GET /assets/:id", () => {
 				"X-Dg-Session-Token": "not-the-real-token",
 			},
 		});
-		expect(wrongToken.status).not.toBe(200);
+		expect(wrongToken.status).toBe(401);
 
 		// Token in the query string only, no header at all — must not authenticate.
 		const queryOnly = await fetch(
 			`${assetUrl(port, "asset-1")}?sessionId=${bootstrap.sessionId}&token=${bootstrap.token}`,
 			{ headers: base },
 		);
-		expect(queryOnly.status).not.toBe(200);
+		expect(queryOnly.status).toBe(401);
 	});
 
-	it("refuses another session's own valid credential — it authenticates as itself but the asset isn't its own", async () => {
+	it("answers a malformed percent-encoded id with a plain-text 400, never Bun's scripted error page", async () => {
+		const { port, bootstrap } = await bootWithAsset({
+			id: "asset-1",
+			filename: "picture.png",
+			contentType: "image/png",
+			bytes: Buffer.from("hi"),
+		});
+
+		const resp = await fetch(`http://127.0.0.1:${port}/assets/%`, {
+			headers: authedHeaders(port, bootstrap),
+		});
+
+		expect(resp.status).toBe(400);
+		expect(resp.headers.get("x-content-type-options")).toBe("nosniff");
+		expect(resp.headers.get("content-type") ?? "").not.toMatch(/html/i);
+		expect(await resp.text()).not.toMatch(/<script/i);
+	});
+
+	it("answers an unauthenticated malformed id with 401 and no page body either — the credential check runs first", async () => {
+		const { port } = await bootWithAsset({
+			id: "asset-1",
+			filename: "picture.png",
+			contentType: "image/png",
+			bytes: Buffer.from("hi"),
+		});
+
+		const resp = await fetch(`http://127.0.0.1:${port}/assets/%`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+
+		expect(resp.status).toBe(401);
+		expect(resp.headers.get("x-content-type-options")).toBe("nosniff");
+		expect(await resp.text()).not.toMatch(/<script/i);
+	});
+
+	it("answers 404 for another session's own valid credential — it authenticates as itself but the asset isn't its own", async () => {
 		const { port, bootstrap } = await bootWithAsset({
 			id: "asset-1",
 			filename: "picture.png",
@@ -132,101 +178,112 @@ describe("GET /assets/:id", () => {
 		) as { sessionId: string; token: string };
 
 		const resp = await fetch(assetUrl(port, "asset-1"), {
-			headers: {
-				Host: `127.0.0.1:${port}`,
-				"X-Dg-Session-Id": spawned.sessionId,
-				"X-Dg-Session-Token": spawned.token,
-			},
+			headers: authedHeaders(port, spawned),
 		});
-		expect(resp.status).not.toBe(200);
+		expect(resp.status).toBe(404);
+		expect(await resp.text()).toContain("unknown");
 	});
 
 	it("never serves an SVG or HTML asset inline, and always carries the nosniff header, including on refusals", async () => {
-		const { port, bootstrap } = await bootWithAsset({
+		const { port, bootstrap, paths } = await bootWithAsset({
 			id: "asset-svg",
 			filename: "logo.svg",
 			contentType: "image/svg+xml",
 			bytes: Buffer.from("<svg onload=alert(1)></svg>"),
 		});
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		const store = await ChatStore.open(paths, {
-			env: { DG_KEY_SOURCE: "file" },
-		});
+		const store = await openSecondStore(paths);
 		await registerAsset(
 			{ paths, store },
 			{
 				sessionId: bootstrap.sessionId,
 				id: "asset-html",
 				filename: "page.html",
-				contentType: "text/html",
+				contentType: "image/png",
 				bytes: Buffer.from("<script>alert(1)</script>"),
 			},
 		);
 		store.close();
+		const headers = authedHeaders(port, bootstrap);
 
-		const authedHeaders = {
-			Host: `127.0.0.1:${port}`,
-			"X-Dg-Session-Id": bootstrap.sessionId,
-			"X-Dg-Session-Token": bootstrap.token,
-		};
-
-		const svgResp = await fetch(assetUrl(port, "asset-svg"), {
-			headers: authedHeaders,
-		});
+		const svgResp = await fetch(assetUrl(port, "asset-svg"), { headers });
 		expect(svgResp.headers.get("x-content-type-options")).toBe("nosniff");
 		expect(svgResp.headers.get("content-disposition") ?? "").toMatch(
 			/attachment/i,
 		);
 
-		const htmlResp = await fetch(assetUrl(port, "asset-html"), {
-			headers: authedHeaders,
-		});
+		const htmlResp = await fetch(assetUrl(port, "asset-html"), { headers });
+		expect(htmlResp.headers.get("content-type")).toBe("text/html");
 		expect(htmlResp.headers.get("x-content-type-options")).toBe("nosniff");
 		expect(htmlResp.headers.get("content-disposition") ?? "").toMatch(
 			/attachment/i,
 		);
 
 		// Even a refusal carries nosniff — "every response", not just the successes.
-		const refused = await fetch(assetUrl(port, "unknown-id"), {
-			headers: authedHeaders,
-		});
-		expect(refused.status).not.toBe(200);
+		const refused = await fetch(assetUrl(port, "unknown-id"), { headers });
+		expect(refused.status).toBe(404);
 		expect(refused.headers.get("x-content-type-options")).toBe("nosniff");
 	});
 
-	it("distinguishes an unknown id from a pruned one in the response body, not just by identical 404 status", async () => {
+	it("distinguishes an unknown id from one pruned by a real session close, in the body not just the status", async () => {
 		const { port, bootstrap } = await bootWithAsset({
 			id: "asset-1",
 			filename: "picture.png",
 			contentType: "image/png",
 			bytes: Buffer.from("hi"),
 		});
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		const store = await ChatStore.open(paths, {
-			env: { DG_KEY_SOURCE: "file" },
-		});
-		store.pruneSessionAssets(bootstrap.sessionId);
-		store.close();
+		const headers = authedHeaders(port, bootstrap);
 
-		const authedHeaders = {
-			Host: `127.0.0.1:${port}`,
-			"X-Dg-Session-Id": bootstrap.sessionId,
-			"X-Dg-Session-Token": bootstrap.token,
-		};
+		const closed = await runCli(dgHome, port, [
+			"close",
+			"--session",
+			bootstrap.sessionId,
+		]);
+		expect(closed.exitCode).toBe(0);
 
-		const prunedResp = await fetch(assetUrl(port, "asset-1"), {
-			headers: authedHeaders,
-		});
+		const prunedResp = await fetch(assetUrl(port, "asset-1"), { headers });
 		const unknownResp = await fetch(assetUrl(port, "never-existed"), {
-			headers: authedHeaders,
+			headers,
 		});
 
-		expect(prunedResp.status).not.toBe(200);
-		expect(unknownResp.status).not.toBe(200);
+		expect(prunedResp.status).toBe(404);
+		expect(unknownResp.status).toBe(404);
 		const [prunedBody, unknownBody] = await Promise.all([
 			prunedResp.text(),
 			unknownResp.text(),
 		]);
-		expect(prunedBody).not.toBe(unknownBody);
+		expect(prunedBody).toContain("pruned");
+		expect(unknownBody).toContain("unknown");
+	});
+
+	it("refuses an oversized staged file with its own reason rather than a generic path refusal", async () => {
+		const { port, bootstrap, paths } = await bootWithAsset({
+			id: "asset-1",
+			filename: "picture.png",
+			contentType: "image/png",
+			bytes: Buffer.from("hi"),
+		});
+		const store = await openSecondStore(paths);
+		store.insertAsset({
+			sessionId: bootstrap.sessionId,
+			id: "asset-huge",
+			filename: "huge.png",
+			contentType: "image/png",
+			byteLength: 1,
+		});
+		store.close();
+		const sessionDir = join(
+			getConfiguredAssetDirectory(paths),
+			bootstrap.sessionId,
+		);
+		mkdirSync(sessionDir, { recursive: true });
+		const fd = openSync(join(sessionDir, "asset-huge"), "w");
+		ftruncateSync(fd, CHAT_MAX_ASSET_BYTES * 4);
+		closeSync(fd);
+
+		const resp = await fetch(assetUrl(port, "asset-huge"), {
+			headers: authedHeaders(port, bootstrap),
+		});
+		expect(resp.status).toBe(500);
+		expect(await resp.text()).toContain("maximum size");
 	});
 });

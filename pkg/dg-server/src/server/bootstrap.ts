@@ -210,6 +210,7 @@ export async function cmdServe(): Promise<void> {
 
 	const logger = createLogger(paths);
 	const store = await ChatStore.open(paths);
+	store.recoverStaleClaims();
 	// Wires slice 3's real key source into slice 2's status seam without
 	// editing key-source.ts itself.
 	setKeySourceProvider(() => store.cryptoMeta().keySource);

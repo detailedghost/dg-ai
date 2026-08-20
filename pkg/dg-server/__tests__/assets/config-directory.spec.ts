@@ -1,28 +1,31 @@
 /**
- * Daemon-authoritative asset-directory config: Code Structure's "Daemon
- * config transport" decision — read/write over AUTHENTICATED WebSocket
- * config-get/config-set frames, validated then persisted to the daemon's
- * OWN config.json (server/config-store.ts, already built for exactly this).
- *
- * [SPEC] ASSUMED: neither the reply frame shape nor the config module are
- * named by the plan. `config-result` (outbound-only, `{key, value?, error?}`)
- * is modeled as a structural carve-out BEFORE validateChatFrame — mirroring
- * slice 7's cli-recv-result — specifically so this pass touches no file in
- * pkg/common (no edit access granted there for this slice). See deferrals.
+ * Daemon-authoritative asset-directory config: read and written over
+ * AUTHENTICATED config-get/config-set frames, validated then persisted to the
+ * daemon's own config.json. `config-result` is the 19th ratified ChatFrame
+ * discriminant in pkg/common/src/chat-format.ts, not a structural carve-out.
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	ASSET_DIRECTORY_CONFIG_KEY,
+	DAEMON_ASSET_LEAF,
+	getAssetDirectorySetting,
 	getConfiguredAssetDirectory,
 	validateAssetDirectory,
 } from "../../src/assets/config";
-import { readConfig } from "../../src/server/config-store";
+import { readConfig, writeConfig } from "../../src/server/config-store";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -33,25 +36,34 @@ import {
 	freshDgHome,
 	killDaemonByLockfile,
 	runStart,
+	sendConnectHandshake,
 	waitForHealth,
+	waitForOpen,
 	waitForValue,
+	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
 let dgHome: string;
 
 afterEach(() => {
+	if (!dgHome) return;
 	killDaemonByLockfile(dgHome);
 	cleanupDgHome(dgHome);
+	dgHome = "";
 });
+
+function freshTempDir(label: string): string {
+	return mkdtempSync(join(tmpdir(), `dg-asset-dir-${label}-`));
+}
 
 describe("validateAssetDirectory", () => {
 	it("accepts an existing writable directory", () => {
-		const dir = mkdtempSync(join(tmpdir(), "dg-asset-dir-ok-"));
+		const dir = freshTempDir("ok");
 		expect(validateAssetDirectory(dir)).toEqual({ ok: true, value: dir });
 	});
 
 	it("rejects a path that cannot be a directory at all, naming the reason — portable even under root", () => {
-		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-dir-bad-"));
+		const scratch = freshTempDir("bad");
 		const notADirectory = join(scratch, "this-is-a-file");
 		writeFileSync(notADirectory, "not a directory");
 		const impossiblePath = join(notADirectory, "subdir");
@@ -63,16 +75,76 @@ describe("validateAssetDirectory", () => {
 			expect(result.reason.length).toBeGreaterThan(0);
 		}
 	});
+
+	it("creates nothing: a probing config-set must not double as a mkdir primitive", () => {
+		const scratch = freshTempDir("nomkdir");
+		const candidate = join(scratch, "should-not-appear");
+
+		expect(validateAssetDirectory(candidate).ok).toBe(false);
+		expect(existsSync(candidate)).toBe(false);
+	});
+
+	it("rejects a relative path — a cwd-relative assets root means a different directory per caller", () => {
+		const result = validateAssetDirectory("relative/assets");
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toMatch(/absolute/i);
+	});
+
+	it("rejects a symlink, even one pointing at a perfectly writable directory", () => {
+		const parent = freshTempDir("symlink");
+		const real = join(parent, "real-target");
+		mkdirSync(real);
+		const link = join(parent, "linked");
+		symlinkSync(real, link);
+
+		const result = validateAssetDirectory(link);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.reason).toMatch(/symbolic link/i);
+	});
+
+	it.skipIf(process.getuid?.() === 0)(
+		"rejects a directory that exists but is not writable, naming that reason",
+		() => {
+			const unwritable = freshTempDir("unwritable");
+			chmodSync(unwritable, 0o500);
+			try {
+				const result = validateAssetDirectory(unwritable);
+				expect(result.ok).toBe(false);
+				if (!result.ok) expect(result.reason).toMatch(/not writable/i);
+			} finally {
+				chmodSync(unwritable, 0o700);
+			}
+		},
+	);
 });
 
-describe("getConfiguredAssetDirectory default fallback", () => {
+describe("asset directory resolution", () => {
 	it("falls back to resolveDgPaths' own assetsDir when nothing has been persisted yet — per-OS resolution stays slice 1's job", () => {
-		const dgHome = freshDgHome();
+		const home = freshDgHome();
 		try {
-			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			expect(getConfiguredAssetDirectory(paths)).toBe(paths.assetsDir);
+			const paths = resolveDgPaths({ env: { DG_HOME: home } });
+			expect(getAssetDirectorySetting(paths)).toBe(paths.assetsDir);
+			expect(getConfiguredAssetDirectory(paths)).toBe(
+				join(paths.assetsDir, DAEMON_ASSET_LEAF),
+			);
 		} finally {
-			cleanupDgHome(dgHome);
+			cleanupDgHome(home);
+		}
+	});
+
+	it("treats a persisted value as the PARENT and appends the daemon-owned leaf, which is also the migration for values stored before it existed", () => {
+		const home = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: home } });
+			const parent = freshTempDir("parent");
+			writeConfig(paths, { [ASSET_DIRECTORY_CONFIG_KEY]: parent });
+
+			expect(getAssetDirectorySetting(paths)).toBe(parent);
+			expect(getConfiguredAssetDirectory(paths)).toBe(
+				join(parent, DAEMON_ASSET_LEAF),
+			);
+		} finally {
+			cleanupDgHome(home);
 		}
 	});
 });
@@ -86,6 +158,17 @@ async function bootSession() {
 		decodeChatMarker(extractUrl(result.stdout)),
 	);
 	return { dgHome, port, bootstrap };
+}
+
+/** The extension socket: the only transport allowed to WRITE the asset directory. */
+async function connectPage(
+	port: number,
+	credentials: { sessionId: string; token: string },
+): Promise<WebSocket> {
+	const ws = wsExtensionSocket(port);
+	await waitForOpen(ws);
+	sendConnectHandshake(ws, credentials, CHAT_PROTOCOL_VERSION);
+	return ws;
 }
 
 function configSetFrame(sessionId: string, token: string, value: string) {
@@ -109,45 +192,74 @@ function configGetFrame(sessionId: string, token: string) {
 	};
 }
 
+type ConfigReply = { value?: string; error?: string };
+
+function awaitConfigResult(
+	frames: unknown[],
+	label: string,
+): Promise<ConfigReply> {
+	return waitForValue(
+		() =>
+			frames.find(
+				(f) =>
+					(f as { type?: string }).type === "config-result" &&
+					(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
+			),
+		3000,
+		label,
+	) as Promise<ConfigReply>;
+}
+
 describe("config-get/config-set wire round trip", () => {
-	it("persists an authenticated, valid asset directory and hands it back on config-get", async () => {
+	it("persists an authenticated, valid asset directory and hands the same value back on config-get", async () => {
 		const { port, bootstrap } = await bootSession();
-		const ws = await connectCli(port, bootstrap);
+		const ws = await connectPage(port, bootstrap);
 		const frames = collectFrames(ws);
-		const newDir = mkdtempSync(join(tmpdir(), "dg-asset-dir-set-"));
+		const newDir = freshTempDir("set");
 
 		ws.send(
 			JSON.stringify(
 				configSetFrame(bootstrap.sessionId, bootstrap.token, newDir),
 			),
 		);
-		const setReply = (await waitForValue(
-			() =>
-				frames.find(
-					(f) =>
-						(f as { type?: string; key?: string }).type === "config-result" &&
-						(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
-				),
-			3000,
+		const setReply = await awaitConfigResult(
+			frames,
 			"a config-result reply to config-set",
-		)) as { value?: string; error?: string };
+		);
 		expect(setReply.error).toBeUndefined();
+		expect(setReply.value).toBe(newDir);
 
 		frames.length = 0;
 		ws.send(
 			JSON.stringify(configGetFrame(bootstrap.sessionId, bootstrap.token)),
 		);
-		const getReply = (await waitForValue(
-			() =>
-				frames.find(
-					(f) =>
-						(f as { type?: string; key?: string }).type === "config-result" &&
-						(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
-				),
-			3000,
+		const getReply = await awaitConfigResult(
+			frames,
 			"a config-result reply to config-get",
-		)) as { value?: string };
+		);
 		expect(getReply.value).toBe(newDir);
+		ws.close();
+	}, 30000);
+
+	it("refuses config-set on a /cli socket — an agent's session token must not write a filesystem path", async () => {
+		const { port, bootstrap, dgHome: home } = await bootSession();
+		const ws = await connectCli(port, bootstrap);
+		const frames = collectFrames(ws);
+		const newDir = freshTempDir("cli-refused");
+
+		ws.send(
+			JSON.stringify(
+				configSetFrame(bootstrap.sessionId, bootstrap.token, newDir),
+			),
+		);
+		const reply = await awaitConfigResult(
+			frames,
+			"a config-result refusal on the /cli socket",
+		);
+		expect(reply.error).toMatch(/extension socket/i);
+
+		const paths = resolveDgPaths({ env: { DG_HOME: home } });
+		expect(readConfig(paths)[ASSET_DIRECTORY_CONFIG_KEY]).toBeUndefined();
 		ws.close();
 	}, 30000);
 
@@ -171,9 +283,9 @@ describe("config-get/config-set wire round trip", () => {
 
 	it("rejects an unwritable directory at configuration time, naming the reason, and persists nothing", async () => {
 		const { port, bootstrap, dgHome: home } = await bootSession();
-		const ws = await connectCli(port, bootstrap);
+		const ws = await connectPage(port, bootstrap);
 		const frames = collectFrames(ws);
-		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-dir-unwritable-"));
+		const scratch = freshTempDir("unwritable-wire");
 		const notADirectory = join(scratch, "a-file");
 		writeFileSync(notADirectory, "x");
 		const badDir = join(notADirectory, "subdir");
@@ -183,45 +295,29 @@ describe("config-get/config-set wire round trip", () => {
 				configSetFrame(bootstrap.sessionId, bootstrap.token, badDir),
 			),
 		);
-		const reply = (await waitForValue(
-			() =>
-				frames.find(
-					(f) =>
-						(f as { type?: string; key?: string }).type === "config-result" &&
-						(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
-				),
-			3000,
+		const reply = await awaitConfigResult(
+			frames,
 			"a config-result reply naming the rejection reason",
-		)) as { error?: string };
+		);
 		expect(typeof reply.error).toBe("string");
 		expect((reply.error as string).length).toBeGreaterThan(0);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: home } });
-		const persisted = readConfig(paths);
-		expect(persisted[ASSET_DIRECTORY_CONFIG_KEY]).not.toBe(badDir);
+		expect(readConfig(paths)[ASSET_DIRECTORY_CONFIG_KEY]).not.toBe(badDir);
 		ws.close();
 	}, 30000);
 
 	it("is daemon-authoritative: a value persisted before a restart is still what a fresh daemon reports, independent of any client-held value", async () => {
 		const { port, bootstrap, dgHome: home } = await bootSession();
-		const ws = await connectCli(port, bootstrap);
+		const ws = await connectPage(port, bootstrap);
 		const frames = collectFrames(ws);
-		const persistedDir = mkdtempSync(join(tmpdir(), "dg-asset-dir-restart-"));
+		const persistedDir = freshTempDir("restart");
 		ws.send(
 			JSON.stringify(
 				configSetFrame(bootstrap.sessionId, bootstrap.token, persistedDir),
 			),
 		);
-		await waitForValue(
-			() =>
-				frames.find(
-					(f) =>
-						(f as { type?: string; key?: string }).type === "config-result" &&
-						(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
-				),
-			3000,
-			"the config-set to complete",
-		);
+		await awaitConfigResult(frames, "the config-set to complete");
 		ws.close();
 		killDaemonByLockfile(home);
 
@@ -231,21 +327,15 @@ describe("config-get/config-set wire round trip", () => {
 		const bootstrap2 = validateSessionBootstrap(
 			decodeChatMarker(extractUrl(restarted.stdout)),
 		);
-		const ws2 = await connectCli(port2, bootstrap2);
+		const ws2 = await connectPage(port2, bootstrap2);
 		const frames2 = collectFrames(ws2);
 		ws2.send(
 			JSON.stringify(configGetFrame(bootstrap2.sessionId, bootstrap2.token)),
 		);
-		const reply2 = (await waitForValue(
-			() =>
-				frames2.find(
-					(f) =>
-						(f as { type?: string; key?: string }).type === "config-result" &&
-						(f as { key?: string }).key === ASSET_DIRECTORY_CONFIG_KEY,
-				),
-			3000,
+		const reply2 = await awaitConfigResult(
+			frames2,
 			"a config-result reply from the restarted daemon",
-		)) as { value?: string };
+		);
 		expect(reply2.value).toBe(persistedDir);
 		ws2.close();
 	}, 45000);

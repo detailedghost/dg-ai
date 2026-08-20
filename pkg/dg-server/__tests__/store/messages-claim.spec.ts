@@ -1,8 +1,7 @@
 /**
  * Store API is exactly claimNext, ack and peekAll — a single UPDATE with
- * RETURNING. Redelivery is a TIME-BOUNDED LEASE (claimNext reclaims a row
- * whose claimed_at exceeds DG_CLAIM_LEASE_MS, in that same UPDATE) plus a
- * free reset-on-reopen for the crash-during-restart case.
+ * RETURNING. Redelivery is a TIME-BOUNDED LEASE: claimNext reclaims a row
+ * whose claimed_at exceeds DG_CLAIM_LEASE_MS, in that same UPDATE.
  */
 import { describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
@@ -108,31 +107,6 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 
 			expect(claim2?.id).toBe("m2");
 			store.close();
-		} finally {
-			cleanupDgHome(dgHome);
-		}
-	});
-
-	it("redelivers an unacked claim once the store reopens — models a crash between claim and stdout", async () => {
-		const dgHome = freshDgHome();
-		try {
-			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			const first = await ChatStore.open(paths, FILE_ONLY_SEAMS);
-			first.insertMessage({
-				sessionId: SESSION_ID,
-				id: "m1",
-				role: "user",
-				body: "first",
-			});
-			const claimed = first.claimNext(SESSION_ID);
-			expect(claimed?.id).toBe("m1"); // claimed, never acked — simulates the crash
-			first.close();
-
-			const reopened = await ChatStore.open(paths, FILE_ONLY_SEAMS);
-			const redelivered = reopened.claimNext(SESSION_ID);
-
-			expect(redelivered?.id).toBe("m1");
-			reopened.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}

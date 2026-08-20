@@ -13,6 +13,12 @@ import {
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
+import {
+	ASSET_DIRECTORY_CONFIG_KEY,
+	getAssetDirectorySetting,
+	setConfiguredAssetDirectory,
+	validateAssetDirectory,
+} from "../assets/config";
 import type { CliFrame } from "../commands/wire";
 import {
 	type DispatchScheduler,
@@ -428,17 +434,63 @@ async function handleHistoryRequest(
 	});
 }
 
+/** Only the daemon-authoritative asset directory key exists today — an unknown key is its own config-result error, not a transport error. */
 async function handleConfigFrame(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "config-get" | "config-set" }>,
+	deps: FrameHandlerDeps,
 ): Promise<void> {
-	// config-set is inbound-only (validateChatFrame requires a token), so it
-	// can't double as this reply. Real transport lands in slice 9 (outside src/server/**).
-	await sendError(
-		ws,
-		frame.sessionId,
-		"daemon config transport is not implemented yet (lands in slice 9)",
-	);
+	if (frame.type === "config-set" && ws.data.kind !== "ws") {
+		await sendFrame(ws, frame.sessionId, {
+			type: "config-result",
+			key: frame.key,
+			error: "config-set is accepted only on the extension socket",
+		});
+		return;
+	}
+
+	if (frame.key !== ASSET_DIRECTORY_CONFIG_KEY) {
+		await sendFrame(ws, frame.sessionId, {
+			type: "config-result",
+			key: frame.key,
+			error: `unknown config key "${frame.key}"`,
+		});
+		return;
+	}
+
+	if (frame.type === "config-get") {
+		await sendFrame(ws, frame.sessionId, {
+			type: "config-result",
+			key: frame.key,
+			value: getAssetDirectorySetting(deps.paths),
+		});
+		return;
+	}
+
+	if (typeof frame.value !== "string" || frame.value.length === 0) {
+		await sendFrame(ws, frame.sessionId, {
+			type: "config-result",
+			key: frame.key,
+			error: `${ASSET_DIRECTORY_CONFIG_KEY} value must be a non-empty string`,
+		});
+		return;
+	}
+
+	const validated = validateAssetDirectory(frame.value);
+	if (!validated.ok) {
+		await sendFrame(ws, frame.sessionId, {
+			type: "config-result",
+			key: frame.key,
+			error: validated.reason,
+		});
+		return;
+	}
+	setConfiguredAssetDirectory(deps.paths, validated.value);
+	await sendFrame(ws, frame.sessionId, {
+		type: "config-result",
+		key: frame.key,
+		value: validated.value,
+	});
 }
 
 async function handleUserMessage(
@@ -511,7 +563,7 @@ async function dispatchFrame(
 			return handleHistoryRequest(ws, frame, deps);
 		case "config-get":
 		case "config-set":
-			return handleConfigFrame(ws, frame);
+			return handleConfigFrame(ws, frame, deps);
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
 		default:
