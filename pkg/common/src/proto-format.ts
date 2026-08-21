@@ -2,6 +2,7 @@ import {
 	fail,
 	isRecord,
 	requireFiniteNumber,
+	requireOneOf,
 	requireRecord,
 	requireString,
 	requireStringArray,
@@ -259,9 +260,10 @@ export function validateProtoPlan(value: unknown): ProtoPlan {
 			nonEmpty: true,
 		});
 	}
-	if (value.mode !== "replace" && value.mode !== "takeover") {
-		fail('prototype plan.mode must be "replace" or "takeover"');
-	}
+	requireOneOf(value.mode, "prototype plan.mode", [
+		"replace",
+		"takeover",
+	] as const);
 	if (!Array.isArray(value.variations) || value.variations.length === 0) {
 		fail("prototype plan.variations must be a non-empty array");
 	}

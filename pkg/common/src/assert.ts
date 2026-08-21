@@ -1,5 +1,3 @@
-/** Shared assertion primitives for every hand-rolled validator (proto-format, chat-format). */
-
 export function fail(message: string): never {
 	throw new TypeError(message);
 }
@@ -34,6 +32,22 @@ export function requireFiniteNumber(
 ): asserts value is number {
 	if (typeof value !== "number" || !Number.isFinite(value)) {
 		fail(`${path} must be a finite number`);
+	}
+}
+
+/** Asserts `value` is one of `allowed`, joining them into the failure message as a quoted list. */
+export function requireOneOf<T extends string>(
+	value: unknown,
+	path: string,
+	allowed: readonly T[],
+): asserts value is T {
+	if (!(allowed as readonly unknown[]).includes(value)) {
+		const quoted = allowed.map((item) => `"${item}"`);
+		const list =
+			quoted.length <= 2
+				? quoted.join(" or ")
+				: `${quoted.slice(0, -1).join(", ")}, or ${quoted.at(-1)}`;
+		fail(`${path} must be ${list}`);
 	}
 }
 

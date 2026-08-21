@@ -2,8 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, posix, resolve, sep, win32 } from "node:path";
-// resolveDgPaths/runCapture live in pkg/common/src/node/** per the ratified
-// Slice-1 subsection of Code Structure.
 import { resolveDgPaths, runCapture } from "@dg/common/node";
 
 const SRC_DIR = resolve(import.meta.dir, "../src");
@@ -33,7 +31,6 @@ function resolveLocalSpecifier(fromFile: string, specifier: string): string {
 	return base;
 }
 
-/** Walk the barrel's real transitive import graph, following only relative specifiers. */
 function collectBarrelReachableFiles(): {
 	files: Set<string>;
 	nodeBuiltins: string[];
@@ -122,7 +119,6 @@ describe("resolveDgPaths", () => {
 			platform: "linux",
 			env: { DG_HOME: "/custom/dg-root" },
 		});
-		// Wholesale replacement: NOT /custom/dg-root/.dg.
 		expect(paths.stateDir).toBe("/custom/dg-root");
 		expect(posix.dirname(paths.dbPath)).toBe("/custom/dg-root");
 	});
@@ -181,8 +177,6 @@ describe("runCapture", () => {
 		expect(result.stdout).toContain("piped-input");
 	});
 
-	// A missing binary can't produce a status code at all — callers (e.g. slice
-	// 3's keychain probe) must catch this rather than branch on `status`.
 	it("rejects rather than resolving a fake status for a nonexistent binary", async () => {
 		await expect(
 			runCapture("dg-nonexistent-binary-xyz", []),
