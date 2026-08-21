@@ -1,31 +1,12 @@
-/**
- * The `_chat` URL marker (utils/chat-marker.ts). Own module per the one-module-
- * per-marker-key convention — mirrors utils/demo-marker.ts's read/strip shape but
- * decodes a SessionBootstrap via @dg/common's shared validator, never hand-rolled.
- */
-
 import { expect, test } from "bun:test";
-import { type SessionBootstrap, validateSessionHandle } from "@dg/common";
+import { validateSessionBootstrap } from "@dg/common";
 import {
 	CHAT_MARKER_KEY,
 	readChatBootstrap,
 	stripChatMarker,
 } from "@/utils/chat-marker";
+import { makeBootstrap } from "./utils/relay-harness";
 
-function makeBootstrap(
-	overrides: Partial<SessionBootstrap> = {},
-): SessionBootstrap {
-	return {
-		port: 4317,
-		sessionId: "sess-abc123",
-		token: "tok-xyz789",
-		agentIdentity: "claude-orchestrator",
-		...overrides,
-	};
-}
-
-// base64url(JSON), no compression — ratified in plan.md's "Transport and naming
-// ratifications (execute-mode, layer 1)" subsection.
 function encodeMarkerPayload(payload: unknown): string {
 	const bytes = new TextEncoder().encode(JSON.stringify(payload));
 	let bin = "";
@@ -43,16 +24,13 @@ test("CHAT_MARKER_KEY is the _chat fragment key", () => {
 
 test("decodes a valid _chat marker into exactly the shared validator's SessionBootstrap", () => {
 	const bootstrap = makeBootstrap();
-	// Ground truth from the same validator chat-marker.ts must use — cast is safe since
-	// makeBootstrap's fixture has no `pid`, so this is always the SessionBootstrap branch.
-	const expected = validateSessionHandle(bootstrap) as SessionBootstrap;
+	const expected = validateSessionBootstrap(bootstrap);
 	expect(readChatBootstrap(urlWithChatMarker(bootstrap))).toEqual(expected);
 });
 
 test("rejects a marker missing required SessionBootstrap fields rather than returning a partial object", () => {
 	const incomplete = { port: 4317, sessionId: "sess-abc123" };
-	// Sanity-check the fixture is genuinely invalid per the shared contract.
-	expect(() => validateSessionHandle(incomplete)).toThrow();
+	expect(() => validateSessionBootstrap(incomplete)).toThrow();
 	expect(readChatBootstrap(urlWithChatMarker(incomplete))).toBeUndefined();
 });
 
@@ -63,16 +41,10 @@ test("rejects a DaemonHandle-shaped payload as an invalid chat marker, not a hal
 		instanceId: "instance-1",
 		versions: { package: "1.0.0", protocol: 1 },
 	};
-	// Confirms the ambiguity is real: the shared validator accepts this shape fine —
-	// just as a DaemonHandle, not a SessionBootstrap.
-	const handle = validateSessionHandle(lockfileShaped);
-	expect(handle).not.toHaveProperty("agentIdentity");
 	expect(readChatBootstrap(urlWithChatMarker(lockfileShaped))).toBeUndefined();
 });
 
 test("rejects a DaemonHandle-shaped payload that also carries a spurious agentIdentity (no token), not a corrupted bootstrap", () => {
-	// Distinct from "lacking agentIdentity" above: validateDaemonHandle only rejects
-	// a `token` key, so this shape still satisfies an `"agentIdentity" in handle` guard.
 	const daemonWithAgentIdentity = {
 		pid: 4242,
 		port: 4317,

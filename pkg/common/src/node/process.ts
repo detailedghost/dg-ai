@@ -14,15 +14,13 @@ export function isWSL(): boolean {
 	}
 }
 
-/** Ordered [command, argsBuilder] openers to try for this platform. */
-export function openers(): Array<[string, (url: string) => string[]]> {
+function openers(): Array<[string, (url: string) => string[]]> {
 	if (process.platform === "darwin") return [["open", (u) => [u]]];
 	if (isWSL()) {
 		return [
 			["wslview", (u) => [u]],
 			[
 				"powershell.exe",
-				// Single-quote-escape the URL so it's passed as data, never as code.
 				(u) => [
 					"-NoProfile",
 					"-Command",
@@ -35,7 +33,6 @@ export function openers(): Array<[string, (url: string) => string[]]> {
 	return [["xdg-open", (u) => [u]]];
 }
 
-/** Open a URL in the OS default browser; resolves false if every opener failed. */
 export function tryOpen(url: string): Promise<boolean> {
 	const candidates = openers();
 	return new Promise((resolve) => {
@@ -43,7 +40,7 @@ export function tryOpen(url: string): Promise<boolean> {
 			if (i >= candidates.length) return resolve(false);
 			const [cmd, build] = candidates[i];
 			const child = spawn(cmd, build(url), { stdio: "ignore", detached: true });
-			child.on("error", () => attempt(i + 1)); // opener missing — try next
+			child.on("error", () => attempt(i + 1));
 			child.on("spawn", () => {
 				child.unref();
 				resolve(true);
@@ -77,11 +74,6 @@ export type RunCaptureResult = {
 	stderr: string;
 };
 
-/**
- * Like run(), but resolves non-zero statuses instead of throwing and keeps
- * stdout/stderr separate; it still rejects if the binary itself can't be
- * spawned, since that produces no exit code to branch on at all.
- */
 export function runCapture(
 	command: string,
 	args: string[],
@@ -99,8 +91,6 @@ export function runCapture(
 		});
 		child.on("error", reject);
 		child.on("close", (code, signal) => {
-			// 128+signum (POSIX shell convention) keeps a signal kill distinct from
-			// a same-numbered real exit code; callers needing the signal name have `signal`.
 			const status =
 				code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0);
 			resolve({ status, signal, stdout, stderr });

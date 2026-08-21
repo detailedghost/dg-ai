@@ -1,24 +1,20 @@
 import { describe, expect, it } from "bun:test";
-// Frame shapes below mirror the ratified "Slice-1 contract ratifications"
-// subsection of Code Structure.
+import { readFileSync } from "node:fs";
 import {
 	authorizeFrame,
 	CHAT_MAX_PAYLOAD_BYTES,
+	CHAT_PROTOCOL_VERSION,
+	fitHistoryPage,
 	validateChatFrame,
 	validateCommandManifest,
-	validateSessionHandle,
 } from "../src/index";
-
-const PROTOCOL_VERSION = 1;
-
-// --- Frame builders (one per ratified ChatFrame discriminant) -----------
 
 function buildUserMessageFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "user-message" as const,
 		sessionId: "session-a",
 		token: "token-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		messageId: "msg-001",
 		body: "hello agent",
 		...overrides,
@@ -29,7 +25,7 @@ function buildAckFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "ack" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		messageId: "msg-001",
 		...overrides,
 	};
@@ -39,19 +35,17 @@ function buildAgentMessageFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "agent-message" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		body: "here is my answer",
 		...overrides,
 	};
 }
 
-// Ratification pins the discriminant as "progress" (state: running |
-// awaiting-input | agent-gone), not the earlier "status" naming.
 function buildProgressFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "progress" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		state: "running",
 		...overrides,
 	};
@@ -62,7 +56,7 @@ function buildCommandInvocationFrame(overrides: Record<string, unknown> = {}) {
 		type: "command-invocation" as const,
 		sessionId: "session-a",
 		token: "token-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		commandLabel: "Build project",
 		params: { target: "web" },
 		...overrides,
@@ -73,7 +67,7 @@ function buildCommandResultFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "command-result" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		ok: true,
 		output: "build ok",
 		...overrides,
@@ -93,7 +87,7 @@ function buildManifestPublishFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "manifest-publish" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		commands: [buildCommandEntry()],
 		...overrides,
 	};
@@ -112,33 +106,29 @@ function buildSessionListFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "session-list" as const,
 		sessionId: "session-viewer",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		sessions: [buildSessionSummary()],
 		...overrides,
 	};
 }
 
-// Carries the REQUESTING session's own pair; role/workset describe the session
-// being created, per the ratification.
 function buildSessionCreateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "session-create" as const,
 		sessionId: "session-requester",
 		token: "token-requester",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		role: "agent",
 		workset: "billing-refactor",
 		...overrides,
 	};
 }
 
-// Outbound response: the new id/token nest under `newSession` rather than
-// spreading at the envelope level, so no token rides an outbound envelope.
 function buildSessionPendingFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "session-pending" as const,
 		sessionId: "session-requester",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		newSession: {
 			sessionId: "session-new",
 			token: "token-new-000000000000000000",
@@ -147,16 +137,12 @@ function buildSessionPendingFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-// Inbound close request from the page. Distinct from the session-closed
-// broadcast so the capability check can gate which session a socket may close.
-// Inbound liveness frame. The daemon notes activity and replies with nothing,
-// so a keepalive never doubles the traffic it exists to minimise.
 function buildKeepaliveFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "keepalive" as const,
 		sessionId: "session-a",
 		token: "token-a-0000000000000000000000",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...overrides,
 	};
 }
@@ -166,7 +152,7 @@ function buildSessionCloseFrame(overrides: Record<string, unknown> = {}) {
 		type: "session-close" as const,
 		sessionId: "session-a",
 		token: "token-a-0000000000000000000000",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...overrides,
 	};
 }
@@ -175,7 +161,7 @@ function buildSessionClosedFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "session-closed" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...overrides,
 	};
 }
@@ -185,7 +171,7 @@ function buildHistoryRequestFrame(overrides: Record<string, unknown> = {}) {
 		type: "history-request" as const,
 		sessionId: "session-a",
 		token: "token-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...overrides,
 	};
 }
@@ -194,7 +180,7 @@ function buildHistoryResponseFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "history-response" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		messages: [],
 		...overrides,
 	};
@@ -205,7 +191,7 @@ function buildConfigGetFrame(overrides: Record<string, unknown> = {}) {
 		type: "config-get" as const,
 		sessionId: "session-a",
 		token: "token-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		key: "assetsDir",
 		...overrides,
 	};
@@ -216,7 +202,7 @@ function buildConfigSetFrame(overrides: Record<string, unknown> = {}) {
 		type: "config-set" as const,
 		sessionId: "session-a",
 		token: "token-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		key: "assetsDir",
 		value: "/home/user/.dg/assets",
 		...overrides,
@@ -227,34 +213,23 @@ function buildErrorFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "error" as const,
 		sessionId: "session-a",
-		protocolVersion: PROTOCOL_VERSION,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
 		message: "something went wrong",
 		...overrides,
 	};
 }
 
-function buildDaemonHandle(overrides: Record<string, unknown> = {}) {
+function buildConfigResultFrame(overrides: Record<string, unknown> = {}) {
 	return {
-		pid: 4242,
-		port: 47411,
-		instanceId: "instance-abc123",
-		versions: { package: "1.0.0", protocol: 1 },
-		...overrides,
-	};
-}
-
-function buildSessionBootstrap(overrides: Record<string, unknown> = {}) {
-	return {
-		port: 47411,
+		type: "config-result" as const,
 		sessionId: "session-a",
-		token: "token-a-0000000000000000000000",
-		agentIdentity: "js",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		key: "theme",
+		value: "dark",
 		...overrides,
 	};
 }
 
-// All 17 ratified discriminants; the request/broadcast splits are deliberate,
-// so a token can never ride an outbound frame.
 const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["user-message", buildUserMessageFrame],
 	["ack", buildAckFrame],
@@ -274,7 +249,21 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-get", buildConfigGetFrame],
 	["config-set", buildConfigSetFrame],
 	["error", buildErrorFrame],
+	["config-result", buildConfigResultFrame],
 ];
+
+function ratifiedDiscriminants(): string[] {
+	const source = readFileSync(
+		new URL("../src/chat-format.ts", import.meta.url),
+		"utf8",
+	);
+	const start = source.indexOf("const CHAT_FRAME_TYPES = new Set([");
+	const end = source.indexOf("]);", start);
+	if (start < 0 || end < 0) throw new Error("CHAT_FRAME_TYPES not found");
+	return Array.from(source.slice(start, end).matchAll(/"([a-z-]+)"/g)).map(
+		(match) => match[1] as string,
+	);
+}
 
 describe("validateChatFrame — frame type coverage", () => {
 	for (const [type, build] of FRAME_FIXTURES) {
@@ -282,6 +271,12 @@ describe("validateChatFrame — frame type coverage", () => {
 			expect(() => validateChatFrame(build())).not.toThrow();
 		});
 	}
+
+	it("covers every discriminant the production module ratifies, leaving no frame type unexercised", () => {
+		expect([...FRAME_FIXTURES.map(([type]) => type)].sort()).toEqual(
+			ratifiedDiscriminants().sort(),
+		);
+	});
 
 	it("rejects an unknown discriminant", () => {
 		expect(() =>
@@ -303,8 +298,6 @@ describe("validateChatFrame — outbound frames never carry a token", () => {
 	});
 });
 
-// The page originates session-close while the daemon broadcasts session-closed.
-// Splitting them is what lets the capability check gate a cross-session close.
 describe("validateChatFrame — session-close is inbound, session-closed is not", () => {
 	it("requires a token on a page-originated session-close request", () => {
 		const { token, ...withoutToken } = buildSessionCloseFrame();
@@ -431,31 +424,10 @@ describe("validateCommandManifest", () => {
 	});
 
 	it("rejects a placeholder embedded within a larger argv element", () => {
-		// "a placeholder occupies a WHOLE argv element" — embedding one inside a
-		// longer string (e.g. "--target={target}") is not a whole element.
 		const manifest = [
 			buildCommandEntry({ argv: ["bun", "run", "build", "--target={target}"] }),
 		];
 		expect(() => validateCommandManifest(manifest)).toThrow();
-	});
-});
-
-describe("validateSessionHandle", () => {
-	it("accepts a well-formed DaemonHandle", () => {
-		const handle = buildDaemonHandle();
-		expect(validateSessionHandle(handle)).toEqual(handle);
-	});
-
-	it("accepts a well-formed SessionBootstrap with exactly its four ratified fields", () => {
-		const bootstrap = buildSessionBootstrap();
-		expect(validateSessionHandle(bootstrap)).toEqual(bootstrap);
-	});
-
-	it("rejects a lockfile-shaped value that also carries a session token", () => {
-		const tainted = buildDaemonHandle({
-			token: "leaked-token-should-never-appear",
-		});
-		expect(() => validateSessionHandle(tainted)).toThrow();
 	});
 });
 
@@ -488,8 +460,6 @@ describe("validateChatFrame — protocolVersion envelope field", () => {
 	});
 });
 
-// session-pending nests a token by ratified carve-out, but must still refuse
-// one spread onto the envelope like every other outbound frame.
 describe("validateChatFrame — session-pending still refuses an envelope-level token", () => {
 	it("rejects a session-pending frame carrying a token beside its nested newSession", () => {
 		const frame = buildSessionPendingFrame({ token: "leaked-envelope-token" });
@@ -497,8 +467,6 @@ describe("validateChatFrame — session-pending still refuses an envelope-level 
 	});
 });
 
-// config-set's value is `unknown` and legitimately falsy (false/0/null/"");
-// presence must be checked with Object.hasOwn, not truthiness, or these regress to rejected.
 describe("validateChatFrame — config-set distinguishes absent value from falsy value", () => {
 	it.each([
 		false,
@@ -542,16 +510,42 @@ describe("validateCommandManifest — malformed param slots", () => {
 	});
 });
 
-describe("validateSessionHandle — rejects incomplete handles", () => {
-	it("rejects a DaemonHandle-shaped value missing instanceId", () => {
-		const handle = buildDaemonHandle();
-		delete (handle as Record<string, unknown>).instanceId;
-		expect(() => validateSessionHandle(handle)).toThrow();
+describe("fitHistoryPage", () => {
+	function item(seq: number, bodyBytes: number) {
+		return {
+			seq,
+			id: `msg-${seq}`,
+			role: "user" as const,
+			body: "x".repeat(bodyBytes),
+			createdAt: "2026-08-18T00:00:00.000Z",
+		};
+	}
+
+	it("keeps a whole history that already fits, unchanged and in seq order", () => {
+		const items = [item(1, 10), item(2, 10), item(3, 10)];
+
+		expect(fitHistoryPage(items, 100)).toEqual(items);
 	});
 
-	it("rejects a SessionBootstrap-shaped value missing agentIdentity", () => {
-		const bootstrap = buildSessionBootstrap();
-		delete (bootstrap as Record<string, unknown>).agentIdentity;
-		expect(() => validateSessionHandle(bootstrap)).toThrow();
+	it("drops the oldest items so the carrying frame stays under CHAT_MAX_PAYLOAD_BYTES", () => {
+		const items = [1, 2, 3, 4, 5].map((seq) => item(seq, 300_000));
+
+		const page = fitHistoryPage(items, 100);
+
+		expect(page.map((i) => i.seq)).toEqual([3, 4, 5]);
+		expect(
+			new TextEncoder().encode(JSON.stringify({ messages: page })).length,
+		).toBeLessThan(CHAT_MAX_PAYLOAD_BYTES);
+	});
+
+	it("returns an empty page rather than an oversized frame when even the newest item cannot fit", () => {
+		expect(fitHistoryPage([item(1, CHAT_MAX_PAYLOAD_BYTES)], 100)).toEqual([]);
+	});
+
+	it("counts the carrying frame's own overhead against the budget", () => {
+		const items = [item(1, 500_000), item(2, 500_000)];
+
+		expect(fitHistoryPage(items, 0).length).toBe(2);
+		expect(fitHistoryPage(items, 48_600).length).toBe(1);
 	});
 });

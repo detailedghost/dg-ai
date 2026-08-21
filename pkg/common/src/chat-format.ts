@@ -1,31 +1,43 @@
 import {
 	fail,
 	requireFiniteNumber,
+	requireOneOf,
 	requireRecord,
 	requireString,
 } from "./assert";
 import { validateProtoIdentifier } from "./proto-format";
 
-/** Hand-versioned independently of the package version — bump on wire-format changes only. */
+const UTF8_ENCODER = new TextEncoder();
+
+/** Byte length of `value` once JSON-serialized and UTF-8 encoded. */
+function jsonByteLength(value: unknown): number {
+	return UTF8_ENCODER.encode(JSON.stringify(value)).length;
+}
+
 export const CHAT_PROTOCOL_VERSION = 1;
 
-/** Fixed v1 size limits, mirroring PROTO_MAX_* naming in proto-format.ts. */
 export const CHAT_MAX_PAYLOAD_BYTES = 1_048_576;
 export const CHAT_MAX_MESSAGE_BODY_BYTES = 262_144;
 export const CHAT_MAX_MANIFEST_BYTES = 65_536;
 export const CHAT_MAX_ASSET_BYTES = 26_214_400;
 
-/**
- * Fixed default port plus a deterministic fallback range (Code Structure's
- * transport ratification: slice 2 may add these here despite pkg/common
- * being absent from its file list).
- */
+export function fitHistoryPage<T>(items: T[], overheadBytes: number): T[] {
+	let used = overheadBytes;
+	let first = items.length;
+	for (let i = items.length - 1; i >= 0; i--) {
+		const cost = jsonByteLength(items[i]) + 1;
+		if (used + cost > CHAT_MAX_PAYLOAD_BYTES) break;
+		used += cost;
+		first = i;
+	}
+	return items.slice(first);
+}
+
 export const CHAT_DEFAULT_PORT = 47823;
 export const CHAT_PORT_FALLBACK_COUNT = 9;
 
 export type SessionRole = "orchestrator" | "agent";
 
-/** Session-list entry; the daemon stores/echoes workset+role without interpreting them. */
 export type SessionSummary = {
 	sessionId: string;
 	agentIdentity: string;
@@ -35,7 +47,6 @@ export type SessionSummary = {
 
 export type CommandParam = { name: string; type: string };
 
-/** argv is a real argument vector; a placeholder occupies a WHOLE argv element. */
 export type CommandEntry = {
 	label: string;
 	argv: string[];
@@ -102,7 +113,6 @@ export type ChatFrame =
 			error?: string;
 	  });
 
-/** The 19 ratified kebab-case discriminants — see plan.md's Slice-1 ratification subsection and the slice-9 config-result addition. */
 const CHAT_FRAME_TYPES = new Set([
 	"user-message",
 	"ack",
@@ -125,7 +135,6 @@ const CHAT_FRAME_TYPES = new Set([
 	"config-result",
 ]);
 
-// Frames the socket receives; every other type is outbound and must never carry a token.
 const INBOUND_FRAME_TYPES = new Set([
 	"user-message",
 	"command-invocation",
@@ -141,25 +150,20 @@ function requireProgressState(
 	value: unknown,
 	path: string,
 ): asserts value is ProgressState {
-	if (
-		value !== "running" &&
-		value !== "awaiting-input" &&
-		value !== "agent-gone"
-	) {
-		fail(`${path} must be "running", "awaiting-input", or "agent-gone"`);
-	}
+	requireOneOf(value, path, [
+		"running",
+		"awaiting-input",
+		"agent-gone",
+	] as const);
 }
 
 function requireRole(
 	value: unknown,
 	path: string,
 ): asserts value is SessionRole {
-	if (value !== "orchestrator" && value !== "agent") {
-		fail(`${path} must be "orchestrator" or "agent"`);
-	}
+	requireOneOf(value, path, ["orchestrator", "agent"] as const);
 }
 
-/** Validate one session-list entry; workset stays optional and daemon-uninterpreted. */
 function validateSessionSummary(value: unknown, path: string): SessionSummary {
 	requireRecord(value, path);
 	requireString(value.sessionId, `${path}.sessionId`, { nonEmpty: true });
@@ -235,7 +239,7 @@ function validateFrameBody(
 				});
 			}
 			return;
-		case "session-pending": {
+		case "session-pending":
 			requireRecord(value.newSession, `${path}.newSession`);
 			requireString(
 				value.newSession.sessionId,
@@ -248,7 +252,6 @@ function validateFrameBody(
 				nonEmpty: true,
 			});
 			return;
-		}
 		case "keepalive":
 			return;
 		case "session-close":
@@ -283,7 +286,6 @@ function validateFrameBody(
 	}
 }
 
-/** Pure shape validation for the ChatFrame wire envelope — no authorization. */
 export function validateChatFrame(value: unknown): ChatFrame {
 	requireRecord(value, "chat frame");
 	const { type } = value;
@@ -303,7 +305,7 @@ export function validateChatFrame(value: unknown): ChatFrame {
 
 	validateFrameBody(type, value, "chat frame");
 
-	const size = new TextEncoder().encode(JSON.stringify(value)).length;
+	const size = jsonByteLength(value);
 	if (size > CHAT_MAX_PAYLOAD_BYTES) {
 		fail(
 			`chat frame exceeds CHAT_MAX_PAYLOAD_BYTES (${CHAT_MAX_PAYLOAD_BYTES})`,
@@ -313,8 +315,6 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	return value as ChatFrame;
 }
 
-// chat-format.ts is barrel-reachable and must stay node:-free, so the token
-// compare is hand-rolled rather than node:crypto's timingSafeEqual.
 function timingSafeEqualString(a: string, b: string): boolean {
 	let diff = a.length ^ b.length;
 	for (let i = 0; i < Math.max(a.length, b.length); i++) {
@@ -323,12 +323,11 @@ function timingSafeEqualString(a: string, b: string): boolean {
 	return diff === 0;
 }
 
-/** Authorize an already shape-valid frame against a session's known capability set. */
 export function authorizeFrame(
-	frame: { type: string; sessionId: string },
+	frame: { type: string; sessionId: string; token?: unknown },
 	capabilities: ReadonlyMap<string, string>,
 ): void {
-	const token = (frame as { token?: unknown }).token;
+	const token = frame.token;
 	if (typeof token !== "string") {
 		fail(`chat frame "${frame.type}" carries no token to authorize against`);
 	}
@@ -341,11 +340,6 @@ export function authorizeFrame(
 const WHOLE_PLACEHOLDER = /^\{([A-Za-z0-9_]+)\}$/;
 const EMBEDDED_PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 
-/**
- * A whole-element placeholder must name a declared param (catches typos); an
- * embedded `{name}` is only rejected when `name` is itself a declared param —
- * anything else (jq/awk brace syntax) is a literal, not an attempted substitution.
- */
 function validateArgvElement(
 	value: unknown,
 	path: string,
@@ -368,7 +362,6 @@ function validateArgvElement(
 	}
 }
 
-/** Validate a manifest's CommandEntry list; argv is a real argv, never a command string. */
 export function validateCommandManifest(
 	value: unknown,
 	path = "command manifest",
@@ -406,7 +399,6 @@ export function validateCommandManifest(
 	return value as CommandEntry[];
 }
 
-/** One daemon, singleton lockfile — never a session token. */
 export type DaemonHandle = {
 	pid: number;
 	port: number;
@@ -414,7 +406,6 @@ export type DaemonHandle = {
 	versions: { package: string; protocol: number };
 };
 
-/** One session's marker; distinct from SessionSummary, which lives only in session-list. */
 export type SessionBootstrap = {
 	port: number;
 	sessionId: string;
@@ -422,12 +413,6 @@ export type SessionBootstrap = {
 	agentIdentity: string;
 };
 
-/**
- * Validate a value as the lockfile handle. Rejects a token unconditionally —
- * the caller (reading the known lockfile path) selects this branch, not the
- * attacker-controlled content, so a bootstrap-shaped payload with no `pid`
- * can no longer sneak a token through by omitting the field this used to key on.
- */
 export function validateDaemonHandle(value: unknown): DaemonHandle {
 	requireRecord(value, "daemon handle");
 	if (Object.hasOwn(value, "token")) {
@@ -447,7 +432,6 @@ export function validateDaemonHandle(value: unknown): DaemonHandle {
 	return value as DaemonHandle;
 }
 
-/** Validate a value as one session's bootstrap marker (never the lockfile). */
 export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 	requireRecord(value, "session bootstrap");
 	requireFiniteNumber(value.port, "session bootstrap.port");
@@ -459,18 +443,4 @@ export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 		nonEmpty: true,
 	});
 	return value as SessionBootstrap;
-}
-
-/**
- * Generic dispatch by shape — kept for callers with no a-priori expectation
- * of which kind they're reading. Prefer validateDaemonHandle/
- * validateSessionBootstrap wherever the caller already knows which file it opened.
- */
-export function validateSessionHandle(
-	value: unknown,
-): DaemonHandle | SessionBootstrap {
-	requireRecord(value, "session handle");
-	return Object.hasOwn(value, "pid")
-		? validateDaemonHandle(value)
-		: validateSessionBootstrap(value);
 }
