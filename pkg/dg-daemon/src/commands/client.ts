@@ -62,7 +62,7 @@ function formatCandidates(records: SessionTokenRecord[]): string {
 export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	const paths = resolveDgPaths();
 	const handle = readPidFile(paths);
-	if (!handle) throw new DgCliError("no live dg-server pid file was found");
+	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
 
 	let sessionId = explicitSessionId;
 	if (!sessionId) {
@@ -112,7 +112,7 @@ export class CliClient {
 			} catch (error) {
 				reject(
 					new DgCliError(
-						`cannot connect to dg-server on port ${session.port}: ${describeError(error)}`,
+						`cannot connect to dg-daemon on port ${session.port}: ${describeError(error)}`,
 					),
 				);
 				return;
@@ -131,7 +131,7 @@ export class CliClient {
 				cleanup();
 				reject(
 					new DgCliError(
-						`cannot connect to dg-server on port ${session.port}; the daemon may be stopped or the session capability may be invalid`,
+						`cannot connect to dg-daemon on port ${session.port}; the daemon may be stopped or the session capability may be invalid`,
 					),
 				);
 			};
@@ -140,7 +140,7 @@ export class CliClient {
 				socket.close();
 				reject(
 					new DgCliError(
-						`timed out connecting to dg-server on port ${session.port}`,
+						`timed out connecting to dg-daemon on port ${session.port}`,
 					),
 				);
 			}, timeoutMs);
@@ -178,15 +178,15 @@ export class CliClient {
 			};
 			const onClose = () => {
 				cleanup();
-				reject(new DgCliError("dg-server closed the CLI connection"));
+				reject(new DgCliError("dg-daemon closed the CLI connection"));
 			};
 			const onError = () => {
 				cleanup();
-				reject(new DgCliError("the dg-server CLI connection failed"));
+				reject(new DgCliError("the dg-daemon CLI connection failed"));
 			};
 			const timer = setTimeout(() => {
 				cleanup();
-				reject(new DgCliError("dg-server did not answer the CLI request"));
+				reject(new DgCliError("dg-daemon did not answer the CLI request"));
 			}, timeoutMs);
 			this.socket.addEventListener("message", onMessage);
 			this.socket.addEventListener("close", onClose, { once: true });

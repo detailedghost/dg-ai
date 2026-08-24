@@ -1,22 +1,22 @@
 ---
 name: chat
-description: Talk to a human through a live browser chat window while you work, using the companion dg-ai-extension and the dg-server daemon. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply, progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, and close to finish. Every session is loopback-only and capability-gated.
+description: Talk to a human through a live browser chat window while you work, using the companion dg-ai-extension and the dg-daemon daemon. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply, progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, and close to finish. Every session is loopback-only and capability-gated.
 ---
 
 # Chat
 
 Hold a real conversation with a human in a browser tab while you work. The
-`dg-server` daemon hosts many chat sessions on loopback, the `dg-ai-extension`
+`dg-daemon` daemon hosts many chat sessions on loopback, the `dg-ai-extension`
 renders them, and this skill is the agent side of the loop.
 
-Commands run the **compiled `dg-server` binary** at `~/.dg/bin/dg-server` — a
+Commands run the **compiled `dg-daemon` binary** at `~/.dg/bin/dg-daemon` — a
 self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
-(the installer pulls `dg-server` from the latest `server-v*` release, alongside
+(the installer pulls `dg-daemon` from the latest `daemon-v*` release, alongside
 `dg-skills` from `skills-v*`):
 
 ```bash
-DG_SERVER="$HOME/.dg/bin/dg-server"
-if [ ! -x "$DG_SERVER" ]; then
+DG_DAEMON="$HOME/.dg/bin/dg-daemon"
+if [ ! -x "$DG_DAEMON" ]; then
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
@@ -26,9 +26,9 @@ if [ ! -x "$DG_SERVER" ]; then
 fi
 ```
 
-The gate tests `dg-server`, **not** `dg-skills`. A machine that has already used
+The gate tests `dg-daemon`, **not** `dg-skills`. A machine that has already used
 `browser`, `demo` or `proto` already has `dg-skills`, so gating on that binary
-would short-circuit and `dg-server` would never arrive.
+would short-circuit and `dg-daemon` would never arrive.
 
 On Windows PowerShell, run the local `bootstrap.ps1` through
 `$env:CLAUDE_PLUGIN_ROOT` when available; otherwise pipe the repository's raw
@@ -37,18 +37,18 @@ On Windows PowerShell, run the local `bootstrap.ps1` through
 Then run every command through it:
 
 ```bash
-"$DG_SERVER" <command> <args>
+"$DG_DAEMON" <command> <args>
 ```
 
 ## The loop
 
 ```bash
-"$DG_SERVER" start --open              # register a session, open the chat page
-"$DG_SERVER" progress --state running  # tell the human you are working
-"$DG_SERVER" send "Looking at it now." # say something
-"$DG_SERVER" progress --state awaiting-input
-"$DG_SERVER" recv --block              # wait for their reply
-"$DG_SERVER" close                     # finish the session
+"$DG_DAEMON" start --open              # register a session, open the chat page
+"$DG_DAEMON" progress --state running  # tell the human you are working
+"$DG_DAEMON" send "Looking at it now." # say something
+"$DG_DAEMON" progress --state awaiting-input
+"$DG_DAEMON" recv --block              # wait for their reply
+"$DG_DAEMON" close                     # finish the session
 ```
 
 `recv` prints one JSON object per call and acknowledges the message only after
@@ -134,5 +134,5 @@ point of publishing it.
 - On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach the
   loopback port from the Windows-side browser, and the daemon exits with code 3
   rather than pretending to be reachable.
-- `dg-skills install` refreshes `dg-server` too, so re-running it keeps both
+- `dg-skills install` refreshes `dg-daemon` too, so re-running it keeps both
   binaries current.

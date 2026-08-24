@@ -9,7 +9,7 @@ import { describeError } from "./utils/errors";
 
 const program = new Command();
 program
-	.name("dg-server")
+	.name("dg-daemon")
 	.description(
 		"Loopback HTTP+WebSocket daemon hosting many chat sessions for dg:start.",
 	)
@@ -58,6 +58,6 @@ program
 	});
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-	console.error(`dg-server: ${describeError(err)}`);
+	console.error(`dg-daemon: ${describeError(err)}`);
 	process.exit(err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE);
 });

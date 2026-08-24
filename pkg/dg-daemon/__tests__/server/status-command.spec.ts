@@ -21,7 +21,7 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
-describe("dg-server status", () => {
+describe("dg-daemon status", () => {
 	it("reports no live daemon when none has ever run", async () => {
 		dgHome = freshDgHome();
 		const result = await runStatus(dgHome);
@@ -38,7 +38,7 @@ describe("dg-server status", () => {
 		const result = await runStatus(dgHome);
 		expect(result.exitCode).toBe(0);
 		const report = JSON.parse(result.stdout);
-		expect(report.daemon).toBe("dg-server");
+		expect(report.daemon).toBe("dg-daemon");
 		expect(report.boundPort).toBe(port);
 		expect(report.sessionCount).toBeGreaterThan(0);
 

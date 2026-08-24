@@ -117,7 +117,7 @@ export function registerAgentCommands(program: Command): void {
 						const claimId = result.message.claimId;
 						if (typeof claimId !== "string") {
 							throw new DgCliError(
-								"dg-server delivered a message without a claimId",
+								"dg-daemon delivered a message without a claimId",
 							);
 						}
 						client.send({ type: "cli-ack", claimId });

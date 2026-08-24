@@ -8,7 +8,7 @@ folder holds one skill:
 | `browser/` | Tab batch-open, demo tour launch, extension install |
 | `demo/` | Guided in-browser feature demos with video recording |
 | `proto/` | Live-page UI comparisons, explicit verdicts, and answer export |
-| `chat/` | Live browser chat with a human through the dg-server daemon |
+| `chat/` | Live browser chat with a human through the dg-daemon daemon |
 
 ## Structure
 
@@ -29,5 +29,5 @@ skills/
 
 The CLI implementation lives in
 [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md). `chat/` is the one skill
-that does not run `dg-skills`: it runs the `dg-server` daemon binary, released
-separately under `server-v*`.
+that does not run `dg-skills`: it runs the `dg-daemon` daemon binary, released
+separately under `daemon-v*`.

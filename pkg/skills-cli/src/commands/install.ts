@@ -5,7 +5,7 @@
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
  * checkout (dev) it falls back to a local `wxt build`. It also refreshes the
- * compiled dg-skills and dg-server binaries (the release artifacts skills invoke).
+ * compiled dg-skills and dg-daemon binaries (the release artifacts skills invoke).
  */
 
 import {
@@ -130,9 +130,21 @@ async function installBinary(
 	}
 }
 
+const RETIRED_BINARIES = ["dg-server"];
+
+function removeRetiredBinaries(): void {
+	for (const name of RETIRED_BINARIES) {
+		const dest = cliDest(name);
+		if (!existsSync(dest)) continue;
+		rmSync(dest, { force: true });
+		rmSync(cliVersionFile(name), { force: true });
+		console.log(`removed the retired ${name} binary at ${dest}.`);
+	}
+}
+
 const BINARIES: BinarySpec[] = [
 	{ binaryName: "dg-skills", tagPrefix: "skills-v" },
-	{ binaryName: "dg-server", tagPrefix: "server-v" },
+	{ binaryName: "dg-daemon", tagPrefix: "daemon-v" },
 ];
 
 async function installCli(): Promise<void> {
@@ -140,6 +152,7 @@ async function installCli(): Promise<void> {
 	for (const spec of BINARIES) {
 		await installBinary(spec, releases);
 	}
+	removeRetiredBinaries();
 }
 
 async function install(target: Target, forceLocal: boolean): Promise<void> {
@@ -200,7 +213,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + refresh the compiled dg-skills and dg-server binaries",
+			"stage the dg-ai-extension for loading + refresh the compiled dg-skills and dg-daemon binaries",
 		)
 		.argument(
 			"[target]",

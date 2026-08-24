@@ -1,16 +1,16 @@
 ---
-name: DG Server - Build, Lint, and Test
+name: DG Daemon - Build, Lint, and Test
 
 on:
   pull_request:
     paths:
-      - pkg/dg-server/**
+      - pkg/dg-daemon/**
       - pkg/common/**
-      - .github/workflows/dg-server-blt.yml
+      - .github/workflows/dg-daemon-blt.yml
   workflow_call:
 
 jobs:
-  dg-server-blt:
+  dg-daemon-blt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,14 +30,14 @@ jobs:
         working-directory: pkg/common
         run: bun test
 
-      - name: Lint (dg-server)
-        working-directory: pkg/dg-server
+      - name: Lint (dg-daemon)
+        working-directory: pkg/dg-daemon
         run: bun run lint
 
-      - name: Test (dg-server — daemon, store, dispatch, assets)
-        working-directory: pkg/dg-server
+      - name: Test (dg-daemon — daemon, store, dispatch, assets)
+        working-directory: pkg/dg-daemon
         run: bun test
 
-      - name: Build (dg-server)
-        working-directory: pkg/dg-server
+      - name: Build (dg-daemon)
+        working-directory: pkg/dg-daemon
         run: bun run build

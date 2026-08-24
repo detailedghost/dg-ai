@@ -42,12 +42,12 @@ const RELEASES: Release[] = [
 		],
 	},
 	{
-		tag_name: "server-v1.0.0",
+		tag_name: "daemon-v1.0.0",
 		draft: false,
 		assets: [
-			{ name: "dg-server-linux-x64", browser_download_url: "u/srv-linux-x64" },
+			{ name: "dg-daemon-linux-x64", browser_download_url: "u/srv-linux-x64" },
 			{
-				name: "dg-server-windows-x64.exe",
+				name: "dg-daemon-windows-x64.exe",
 				browser_download_url: "u/srv-win-x64",
 			},
 		],
@@ -57,7 +57,7 @@ const RELEASES: Release[] = [
 ];
 
 const SKILLS_SPEC = { binaryName: "dg-skills", tagPrefix: "skills-v" };
-const SERVER_SPEC = { binaryName: "dg-server", tagPrefix: "server-v" };
+const DAEMON_SPEC = { binaryName: "dg-daemon", tagPrefix: "daemon-v" };
 
 describe("cliAssetName", () => {
 	for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
@@ -121,17 +121,17 @@ describe("pickCliAsset (binary from skills-v* only)", () => {
 });
 
 describe("the fetcher is generalized over binaryName and tagPrefix, with no derivation rule", () => {
-	test("cliAssetName builds a dg-server name for every supported platform", () => {
+	test("cliAssetName builds a dg-daemon name for every supported platform", () => {
 		for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
-			expect(cliAssetName("dg-server", platform, arch)).toBe(
-				assetName["dg-server"],
+			expect(cliAssetName("dg-daemon", platform, arch)).toBe(
+				assetName["dg-daemon"],
 			);
 		}
 	});
 
-	test("pickCliAsset resolves dg-server from server-v*, never from skills-v*", () => {
-		const picked = pickCliAsset(RELEASES, SERVER_SPEC, "linux", "x64");
-		expect(picked?.name).toBe("dg-server-linux-x64");
+	test("pickCliAsset resolves dg-daemon from daemon-v*, never from skills-v*", () => {
+		const picked = pickCliAsset(RELEASES, DAEMON_SPEC, "linux", "x64");
+		expect(picked?.name).toBe("dg-daemon-linux-x64");
 		expect(picked?.version).toBe("1.0.0");
 		expect(picked?.url).toBe("u/srv-linux-x64");
 	});
@@ -140,7 +140,7 @@ describe("the fetcher is generalized over binaryName and tagPrefix, with no deri
 		expect(
 			pickCliAsset(
 				RELEASES,
-				{ binaryName: "dg-server", tagPrefix: "skills-v" },
+				{ binaryName: "dg-daemon", tagPrefix: "skills-v" },
 				"linux",
 				"x64",
 			),
@@ -148,23 +148,23 @@ describe("the fetcher is generalized over binaryName and tagPrefix, with no deri
 		expect(
 			pickCliAsset(
 				RELEASES,
-				{ binaryName: "dg-skills", tagPrefix: "server-v" },
+				{ binaryName: "dg-skills", tagPrefix: "daemon-v" },
 				"linux",
 				"x64",
 			),
 		).toBeUndefined();
 	});
 
-	test("a platform with no published dg-server asset resolves undefined rather than a skills binary", () => {
+	test("a platform with no published dg-daemon asset resolves undefined rather than a skills binary", () => {
 		expect(
-			pickCliAsset(RELEASES, SERVER_SPEC, "darwin", "arm64"),
+			pickCliAsset(RELEASES, DAEMON_SPEC, "darwin", "arm64"),
 		).toBeUndefined();
 	});
 
 	test("cliDest and cliVersionFile are per-binary, so one install cannot overwrite the other", () => {
-		expect(cliDest("dg-skills")).not.toBe(cliDest("dg-server"));
-		expect(cliDest("dg-server")).toContain("dg-server");
-		expect(cliVersionFile("dg-server")).toContain(".dg-server.version");
+		expect(cliDest("dg-skills")).not.toBe(cliDest("dg-daemon"));
+		expect(cliDest("dg-daemon")).toContain("dg-daemon");
+		expect(cliVersionFile("dg-daemon")).toContain(".dg-daemon.version");
 		expect(cliVersionFile("dg-skills")).toContain(".dg-skills.version");
 	});
 });

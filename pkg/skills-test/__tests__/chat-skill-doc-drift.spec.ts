@@ -3,15 +3,15 @@ import { readRepoFile } from "./test-support";
 
 describe("the chat SKILL.md does not drift from the daemon's real surface", () => {
 	const skill = readRepoFile("plugins", "dg", "skills", "chat", "SKILL.md");
-	const errors = readRepoFile("pkg", "dg-server", "src", "server", "errors.ts");
+	const errors = readRepoFile("pkg", "dg-daemon", "src", "server", "errors.ts");
 	const agentCmds = readRepoFile(
 		"pkg",
-		"dg-server",
+		"dg-daemon",
 		"src",
 		"commands",
 		"index.ts",
 	);
-	const entry = readRepoFile("pkg", "dg-server", "src", "index.ts");
+	const entry = readRepoFile("pkg", "dg-daemon", "src", "index.ts");
 
 	function declaredCommands(...sources: string[]): string[] {
 		return sources

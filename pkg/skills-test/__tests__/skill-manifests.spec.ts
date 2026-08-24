@@ -136,28 +136,28 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	}
 });
 
-describe("dg-server-invoking SKILL.md uses the compiled daemon binary", () => {
-	const serverSkills = skillsMentioning("dg-server");
+describe("dg-daemon-invoking SKILL.md uses the compiled daemon binary", () => {
+	const serverSkills = skillsMentioning("dg-daemon");
 
-	test("at least one skill exposes the dg-server harness", () => {
+	test("at least one skill exposes the dg-daemon harness", () => {
 		expect(serverSkills.length).toBeGreaterThan(0);
 	});
 
 	for (const { name, md } of serverSkills) {
-		test(`${name}: invokes ~/.dg/bin/dg-server`, () => {
-			expect(md).toContain(".dg/bin/dg-server");
+		test(`${name}: invokes ~/.dg/bin/dg-daemon`, () => {
+			expect(md).toContain(".dg/bin/dg-daemon");
 		});
 
-		test(`${name}: gates its bootstrap on the dg-server binary, not on dg-skills`, () => {
+		test(`${name}: gates its bootstrap on the dg-daemon binary, not on dg-skills`, () => {
 			const gates = md.match(/if\s*\[\s*!\s*-x\s*"([^"]+)"\s*\]/g) ?? [];
 			expect(gates.length).toBeGreaterThan(0);
 			const gated = gates.join("\n");
-			expect(gated).toMatch(/DG_SERVER|dg-server/);
+			expect(gated).toMatch(/DG_DAEMON|dg-daemon/);
 			expect(gated).not.toMatch(/^\s*if\s*\[\s*!\s*-x\s*"\$DG"\s*\]$/m);
 		});
 
-		test(`${name}: names the server-v release tag its binary ships under`, () => {
-			expect(md).toMatch(/server-v/);
+		test(`${name}: names the daemon-v release tag its binary ships under`, () => {
+			expect(md).toMatch(/daemon-v/);
 		});
 
 		test(`${name}: documents the recv send status spawn stage close loop`, () => {

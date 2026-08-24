@@ -555,7 +555,7 @@ test("regression: the background rediscovers a relocated daemon via GET /health,
 			if (port === CHAT_DEFAULT_PORT) {
 				return {
 					ok: true,
-					json: async () => ({ daemon: "dg-server", instanceId: "inst-fixed" }),
+					json: async () => ({ daemon: "dg-daemon", instanceId: "inst-fixed" }),
 				} as unknown as Response;
 			}
 			return { ok: false } as unknown as Response;
@@ -563,13 +563,13 @@ test("regression: the background rediscovers a relocated daemon via GET /health,
 		if (port === decoyPort) {
 			return {
 				ok: true,
-				json: async () => ({ daemon: "dg-server", instanceId: "inst-other" }),
+				json: async () => ({ daemon: "dg-daemon", instanceId: "inst-other" }),
 			} as unknown as Response;
 		}
 		if (port === relocatedPort) {
 			return {
 				ok: true,
-				json: async () => ({ daemon: "dg-server", instanceId: "inst-fixed" }),
+				json: async () => ({ daemon: "dg-daemon", instanceId: "inst-fixed" }),
 			} as unknown as Response;
 		}
 		return { ok: false } as unknown as Response;

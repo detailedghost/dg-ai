@@ -63,7 +63,7 @@ async function waitForFreshDaemon(paths: DgPaths, timeoutMs = 15000) {
 		await sleep(100);
 	}
 	throw new DgCliError(
-		"dg-server did not become healthy within the startup timeout",
+		"dg-daemon did not become healthy within the startup timeout",
 		EXIT_GENERAL_FAILURE,
 	);
 }
@@ -123,9 +123,9 @@ export async function cmdStart(options: StartOptions = {}): Promise<void> {
 		if (existing.versions.protocol !== CHAT_PROTOCOL_VERSION) {
 			const status = await fetchStatus(existing.port);
 			throw new DgCliError(
-				`dg-server: the running daemon speaks protocol v${existing.versions.protocol}, ` +
+				`dg-daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
 					`this CLI speaks v${CHAT_PROTOCOL_VERSION}. Refusing to attach — stopping it would ` +
-					`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-server ` +
+					`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-daemon ` +
 					"never auto-restarts a shared daemon. Stop it yourself once nothing depends on it.",
 				EXIT_PROTOCOL_MISMATCH,
 			);
@@ -167,12 +167,12 @@ export async function cmdStatus(): Promise<void> {
 	const paths = resolveDgPaths();
 	const handle = readPidFile(paths);
 	if (!handle) {
-		console.log("dg-server: no live daemon");
+		console.log("dg-daemon: no live daemon");
 		return;
 	}
 	if (!(await isDaemonLive(handle))) {
 		removePidFile(paths);
-		console.log("dg-server: no live daemon (stale pid file removed)");
+		console.log("dg-daemon: no live daemon (stale pid file removed)");
 		return;
 	}
 	const resp = await fetch(`http://127.0.0.1:${handle.port}/status`, {
@@ -309,6 +309,6 @@ export async function cmdServe(): Promise<void> {
 	process.on("SIGINT", () => void shutdown("daemon-shutdown"));
 
 	logger.info(
-		`dg-server listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
+		`dg-daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
 	);
 }

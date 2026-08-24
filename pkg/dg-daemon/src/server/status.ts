@@ -9,7 +9,7 @@ import type { WslNetworkingMode } from "./wsl-guard";
 export const DG_SERVER_PACKAGE_VERSION = "1.0.0";
 
 export type StatusReport = {
-	daemon: "dg-server";
+	daemon: "dg-daemon";
 	instanceId: string;
 	boundPort: number;
 	keySource: string;
@@ -35,7 +35,7 @@ export type StatusDeps = {
 
 export function renderStatus(deps: StatusDeps): StatusReport {
 	return {
-		daemon: "dg-server",
+		daemon: "dg-daemon",
 		instanceId: deps.instanceId,
 		boundPort: deps.boundPort,
 		keySource: describeKeySource(),

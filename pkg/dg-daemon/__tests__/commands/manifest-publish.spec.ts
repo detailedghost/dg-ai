@@ -37,7 +37,7 @@ async function startWithSession() {
 
 const VALID_ENTRY = { label: "List files", argv: ["ls"], params: [] };
 
-describe("dg-server manifest", () => {
+describe("dg-daemon manifest", () => {
 	it("publishes the validated manifest, resolving a relative --commands path to absolute before sending", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = freshTempDir("dg-manifest-e2e");

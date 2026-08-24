@@ -12,8 +12,8 @@
         "typescript": "^5",
       },
     },
-    "pkg/dg-server": {
-      "name": "@dg/dg-server",
+    "pkg/dg-daemon": {
+      "name": "@dg/dg-daemon",
       "version": "1.0.0",
       "dependencies": {
         "@dg/common": "workspace:*",
@@ -92,7 +92,7 @@
 
     "@dg/common": ["@dg/common@workspace:pkg/common"],
 
-    "@dg/dg-server": ["@dg/dg-server@workspace:pkg/dg-server"],
+    "@dg/dg-daemon": ["@dg/dg-daemon@workspace:pkg/dg-daemon"],
 
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
