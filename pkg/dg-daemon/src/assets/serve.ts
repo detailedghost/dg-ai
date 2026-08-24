@@ -1,8 +1,7 @@
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
+import { type DgPaths, tokensEqual } from "@dg/common/node";
 import { AES_GCM_IV_BYTES, AES_GCM_TAG_BYTES } from "../crypto/constants";
 import type { SessionRegistry } from "../session/registry";
-import { tokensEqual } from "../session/tokens";
 import type { ChatStore } from "../store";
 import { getConfiguredAssetDirectory } from "./config";
 import { resolveAssetContentType } from "./content-type";

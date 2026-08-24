@@ -4,7 +4,7 @@ import {
 	loadManifestFile,
 	loadSubagentManifestFile,
 	resolveManifestForPublish,
-} from "../../src/manifest/load";
+} from "@dg/common/node";
 import {
 	scratchDir as makeScratchDir,
 	writeJsonFile,

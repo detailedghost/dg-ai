@@ -1,7 +1,7 @@
 import { constants, lstatSync, realpathSync } from "node:fs";
 import { type FileHandle, open } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { describeError, isEnoent } from "../utils/errors";
+import { describeError, isEnoent } from "@dg/common";
 
 export class AssetPathUnsafeError extends Error {}
 

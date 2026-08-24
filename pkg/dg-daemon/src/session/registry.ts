@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { realpathSync } from "node:fs";
 import type { SessionRole, SessionSummary } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
-import { triggerAssetCleanup } from "../utils/asset-cleanup";
 import {
+	type DgPaths,
 	mintToken,
 	removeSessionToken,
 	tokensEqual,
 	writeSessionToken,
-} from "./tokens";
+} from "@dg/common/node";
+import { triggerAssetCleanup } from "../utils/asset-cleanup";
 
 export type SessionState = "active" | "closed";
 

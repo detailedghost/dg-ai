@@ -1,11 +1,10 @@
 import { type Dirent, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import type { DgPaths } from "@dg/common/node";
-import { readPidFile } from "../server/pidfile";
+import { describeError } from "@dg/common";
+import { type DgPaths, readPidFile } from "@dg/common/node";
 import type { Logger } from "../server/log";
 import type { ChatStore } from "../store";
 import { setAssetCleanupHook } from "../utils/asset-cleanup";
-import { describeError } from "../utils/errors";
 import { getConfiguredAssetDirectory } from "./config";
 import { assertFlatSegment, lstatIfExists } from "./safe-path";
 

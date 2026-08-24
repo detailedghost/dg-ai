@@ -1,11 +1,21 @@
 import { spawn } from "node:child_process";
 import {
 	CHAT_PROTOCOL_VERSION,
+	DgCliError,
+	EXIT_GENERAL_FAILURE,
+	EXIT_NO_PORT_AVAILABLE,
+	EXIT_PROTOCOL_MISMATCH,
 	type SessionRole,
 	validateSessionBootstrap,
 } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
-import { resolveDgPaths } from "@dg/common/node";
+import {
+	type DgPaths,
+	isDaemonLive,
+	readPidFile,
+	removePidFile,
+	resolveDgPaths,
+	writePidFileAtomic,
+} from "@dg/common/node";
 import { type CloseReason, SessionRegistry } from "../session/registry";
 import { ChatStore } from "../store";
 import { readEnvNumber } from "../utils/env";
@@ -15,20 +25,8 @@ import {
 } from "../utils/key-source";
 import { buildBootstrapUrl } from "../utils/marker";
 import { ConnectionManager, sendViaQueue } from "./connection";
-import {
-	DgCliError,
-	EXIT_GENERAL_FAILURE,
-	EXIT_NO_PORT_AVAILABLE,
-	EXIT_PROTOCOL_MISMATCH,
-} from "./errors";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
-import {
-	isDaemonLive,
-	readPidFile,
-	removePidFile,
-	writePidFileAtomic,
-} from "./pidfile";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_SERVER_PACKAGE_VERSION } from "./status";

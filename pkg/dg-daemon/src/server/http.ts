@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import {
+	ASSET_FILENAME_HEADER,
+	AssetTooLargeError,
 	CHAT_HEALTH_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CLI_SESSION_ID_HEADER,
+	CLI_SESSION_TOKEN_HEADER,
+	describeError,
 	type SessionRole,
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
@@ -19,8 +24,7 @@ import { assertFlatSegment } from "../assets/safe-path";
 import { resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
-import { AssetTooLargeError, type ChatStore } from "../store";
-import { describeError } from "../utils/errors";
+import type { ChatStore } from "../store";
 import {
 	type ConnectionManager,
 	createSocketState,
@@ -36,10 +40,6 @@ import {
 	isExtensionOrigin,
 } from "./origin";
 import { renderStatus, type StatusDeps } from "./status";
-
-export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
-export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
-export const ASSET_FILENAME_HEADER = "X-Dg-Filename";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
 

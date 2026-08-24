@@ -187,8 +187,9 @@ describe("recv --block --timeout", () => {
 		try {
 			dgHome = freshDgHome();
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			const { writePidFileAtomic } = await import("../../src/server/pidfile");
-			const { writeSessionToken } = await import("../../src/session/tokens");
+			const { writePidFileAtomic, writeSessionToken } = await import(
+				"@dg/common/node"
+			);
 			writePidFileAtomic(paths, {
 				pid: 999999,
 				port: hungServer.port,

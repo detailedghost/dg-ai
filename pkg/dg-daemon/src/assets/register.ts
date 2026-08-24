@@ -1,16 +1,8 @@
-import {
-	closeSync,
-	constants,
-	fstatSync,
-	openSync,
-	readFileSync,
-	writeSync,
-} from "node:fs";
+import { closeSync, constants, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
-import { AssetTooLargeError, type ChatStore } from "../store";
-import { ensurePrivateDir } from "../utils/fs";
+import { AssetTooLargeError, CHAT_MAX_ASSET_BYTES } from "@dg/common";
+import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
+import type { ChatStore } from "../store";
 import { getConfiguredAssetDirectory } from "./config";
 import { assertFlatSegment, assertRealDirectory } from "./safe-path";
 
@@ -35,22 +27,6 @@ function writeNoFollow(path: string, bytes: Buffer): void {
 	const fd = openSync(path, STAGE_WRITE_FLAGS, 0o600);
 	try {
 		writeSync(fd, bytes);
-	} finally {
-		closeSync(fd);
-	}
-}
-
-export function readAssetSourceFile(path: string): Buffer {
-	const fd = openSync(path, constants.O_RDONLY);
-	try {
-		const stats = fstatSync(fd);
-		if (!stats.isFile()) {
-			throw new Error(`${path} is not a regular file`);
-		}
-		if (stats.size > CHAT_MAX_ASSET_BYTES) {
-			throw new AssetTooLargeError(stats.size);
-		}
-		return readFileSync(fd);
 	} finally {
 		closeSync(fd);
 	}

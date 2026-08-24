@@ -1,8 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import {
+	CHAT_PROTOCOL_VERSION,
+	EXIT_PROTOCOL_MISMATCH,
+	validateSessionBootstrap,
+} from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { EXIT_PROTOCOL_MISMATCH } from "../../src/server/errors";
 import {
 	allocatePort,
 	cleanupDgHome,

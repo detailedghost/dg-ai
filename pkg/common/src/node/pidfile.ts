@@ -4,9 +4,9 @@ import {
 	CHAT_HEALTH_PATH,
 	type DaemonHandle,
 	validateDaemonHandle,
-} from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
-import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
+} from "../chat-format";
+import { ensurePrivateDir, writeFileAtomic } from "./fs";
+import type { DgPaths } from "./paths";
 
 export function readPidFile(paths: DgPaths): DaemonHandle | undefined {
 	if (!existsSync(paths.pidPath)) return undefined;

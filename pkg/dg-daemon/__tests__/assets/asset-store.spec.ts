@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
+import { AssetTooLargeError, CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { AssetTooLargeError, ChatStore } from "../../src/store";
+import { ChatStore } from "../../src/store";
 import { runMigrations } from "../../src/store/migrations";
 import { SCHEMA_STEPS } from "../../src/store/schema";
 import {

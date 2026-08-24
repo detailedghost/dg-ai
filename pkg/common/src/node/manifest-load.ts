@@ -4,9 +4,9 @@ import {
 	CHAT_MAX_MANIFEST_BYTES,
 	type CommandEntry,
 	validateCommandManifest,
-	validateProtoIdentifier,
-} from "@dg/common";
-import { describeError } from "../utils/errors";
+} from "../chat-format";
+import { describeError } from "../errors";
+import { validateProtoIdentifier } from "../proto-format";
 
 const FORBIDDEN_EXECUTABLES = new Set([
 	"sh",

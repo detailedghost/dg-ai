@@ -1,8 +1,8 @@
 import { accessSync, constants, lstatSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { describeError } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { readConfig, writeConfig } from "../server/config-store";
-import { describeError } from "../utils/errors";
 
 export const ASSET_DIRECTORY_CONFIG_KEY = "assetDirectory";
 

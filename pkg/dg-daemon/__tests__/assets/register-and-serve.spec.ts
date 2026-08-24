@@ -11,15 +11,15 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { AssetTooLargeError, CHAT_MAX_ASSET_BYTES } from "@dg/common";
+import { readAssetSourceFile, resolveDgPaths } from "@dg/common/node";
 import { installAssetLifecycle } from "../../src/assets/cleanup";
 import { getConfiguredAssetDirectory } from "../../src/assets/config";
-import { readAssetSourceFile, registerAsset } from "../../src/assets/register";
+import { registerAsset } from "../../src/assets/register";
 import { resolveAssetForServing } from "../../src/assets/serve";
 import { createLogger } from "../../src/server/log";
 import { SessionRegistry } from "../../src/session/registry";
-import { AssetTooLargeError, ChatStore } from "../../src/store";
+import { ChatStore } from "../../src/store";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
