@@ -35,10 +35,12 @@ export { ChatStore } from "../../src/store";
 export const ENTRY = join(import.meta.dir, "../../src/index.ts");
 
 const PORT_SEARCH_BASE = 47500;
-const PORT_SEARCH_SPAN = 2048;
+const PORT_SEARCH_SPAN = 16_896;
+const PORT_BUCKETS = 512;
+const PORT_BUCKET_STRIDE = PORT_SEARCH_SPAN / PORT_BUCKETS;
 
 let nextPort =
-	PORT_SEARCH_BASE + (process.pid % 64) * Math.floor(PORT_SEARCH_SPAN / 64);
+	PORT_SEARCH_BASE + (process.pid % PORT_BUCKETS) * PORT_BUCKET_STRIDE;
 
 function isPortFree(port: number): boolean {
 	try {
@@ -145,14 +147,30 @@ export type ServeBoot = {
 	proc: ReturnType<typeof spawnServe>;
 };
 
+const BOOT_BIND_ATTEMPTS = 5;
+
+/** Boots a daemon, retrying on a fresh port when another process wins the bind race. */
 export async function bootServe(
 	extraEnv: Record<string, string> = {},
 ): Promise<ServeBoot> {
 	const dgHome = freshDgHome();
-	const port = allocatePort();
-	const proc = spawnServe(dgHome, port, extraEnv);
-	await waitForHealth(port);
-	return { dgHome, port, proc };
+	let lastError: unknown;
+
+	for (let attempt = 0; attempt < BOOT_BIND_ATTEMPTS; attempt++) {
+		const port = allocatePort();
+		const proc = spawnServe(dgHome, port, extraEnv);
+		try {
+			await waitForHealth(port);
+			return { dgHome, port, proc };
+		} catch (err) {
+			lastError = err;
+			proc.kill();
+			await proc.exited;
+		}
+	}
+	throw new Error(
+		`no daemon became healthy in ${BOOT_BIND_ATTEMPTS} attempts under ${dgHome}: ${String(lastError)}`,
+	);
 }
 
 export type CleanupSlot = {
