@@ -1,5 +1,5 @@
-import { DgCliError, EXIT_WSL_NAT_NETWORKING } from "@dg/common";
-import { isWSL as detectIsWSL, runCapture } from "@dg/common/node";
+import { DgCliError, EXIT_WSL_NAT_NETWORKING } from "../index";
+import { isWSL as detectIsWSL, runCapture } from "./process";
 
 export type WslNetworkingMode = "mirrored" | "nat" | "unknown";
 

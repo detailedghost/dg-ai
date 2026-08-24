@@ -36,6 +36,8 @@ export function fitHistoryPage<T>(items: T[], overheadBytes: number): T[] {
 export const CHAT_DEFAULT_PORT = 47823;
 export const CHAT_PORT_FALLBACK_COUNT = 9;
 
+export const CHAT_MARKER_KEY = "_chat";
+
 export const CHAT_HEALTH_PATH = "/healthz";
 /** Answered alongside CHAT_HEALTH_PATH for one release, for extensions the user has not reloaded yet. */
 export const CHAT_LEGACY_HEALTH_PATH = "/health";

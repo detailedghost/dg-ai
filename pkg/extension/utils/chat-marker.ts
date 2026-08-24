@@ -1,7 +1,10 @@
+import {
+	CHAT_MARKER_KEY,
+	type SessionBootstrap,
+	validateSessionBootstrap,
+} from "@dg/common";
 
-import { type SessionBootstrap, validateSessionBootstrap } from "@dg/common";
-
-export const CHAT_MARKER_KEY = "_chat";
+export { CHAT_MARKER_KEY };
 
 export function readChatBootstrap(url: string): SessionBootstrap | undefined {
 	const hash = url.split("#")[1];
