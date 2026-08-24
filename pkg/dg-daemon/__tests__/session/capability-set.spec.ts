@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
 	CHAT_PROTOCOL_VERSION,
 	validateChatFrame,
-	validateSessionBootstrap,
+	type validateSessionBootstrap,
 } from "@dg/common";
 import {
 	allocatePort,
@@ -10,15 +10,14 @@ import {
 	cliSocket,
 	collectFrames,
 	connectCli,
-	decodeChatMarker,
-	extractUrl,
 	frameType,
 	freshDgHome,
 	killDaemonByPidFile,
-	runStart,
+	registerSession,
 	runStatus,
 	send,
 	sendConnectHandshake,
+	spawnServe,
 	waitForHealth,
 	waitForOpen,
 	waitForValue,
@@ -33,15 +32,10 @@ let sessionB: ReturnType<typeof validateSessionBootstrap>;
 beforeAll(async () => {
 	dgHome = freshDgHome();
 	port = allocatePort();
-	const first = await runStart(dgHome, port);
+	spawnServe(dgHome, port);
 	await waitForHealth(port);
-	sessionA = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(first.stdout)),
-	);
-	const second = await runStart(dgHome, port);
-	sessionB = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(second.stdout)),
-	);
+	sessionA = await registerSession(port);
+	sessionB = await registerSession(port);
 });
 
 afterAll(() => {
@@ -436,10 +430,7 @@ describe("session-close broadcasts and revokes capability on every socket that h
 
 describe("keepalive", () => {
 	it("draws no reply, so a long-lived socket sees no unsolicited frames", async () => {
-		const started = await runStart(dgHome, port);
-		const session = validateSessionBootstrap(
-			decodeChatMarker(extractUrl(started.stdout)),
-		);
+		const session = await registerSession(port);
 		const ws = wsExtensionSocket(port);
 		await waitForOpen(ws);
 		const frames = collectFrames(ws);

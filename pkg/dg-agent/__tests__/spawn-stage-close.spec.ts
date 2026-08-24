@@ -12,18 +12,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_MAX_ASSET_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import {
 	startWithSession as bootDaemonSession,
 	cleanupDgHome,
 	collectFrames,
 	findFileContaining,
+	getConfiguredAssetDirectory,
 	killDaemonByPidFile,
 	sendConnectHandshake,
 	waitForOpen,
 	waitForValue,
 	wsExtensionSocket,
-} from "../utils/daemon-harness";
+} from "@dg/dg-daemon/test-harness";
 import { nextParsedMessage, runCli } from "./cli-wire";
 
 let dgHome: string;

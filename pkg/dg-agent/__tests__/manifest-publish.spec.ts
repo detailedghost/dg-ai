@@ -17,7 +17,7 @@ import {
 	waitForOpen,
 	writeJsonFile,
 	wsExtensionSocket,
-} from "../utils/daemon-harness";
+} from "@dg/dg-daemon/test-harness";
 import { nextParsedMessage, runCli } from "./cli-wire";
 
 let dgHome: string;

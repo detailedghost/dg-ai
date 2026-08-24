@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
 import { DgCliError, EXIT_WSL_NAT_NETWORKING } from "@dg/common";
-import { isWSL, resolveDgPaths } from "@dg/common/node";
-import { checkWslNetworking } from "@dg/common/node";
+import { checkWslNetworking, isWSL } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
 	createCleanupSlot,
 	freshDgHome,
-	runStart,
 	spawnServe,
 	stopServe,
 	waitForHealth,
@@ -54,32 +51,6 @@ describe("startup on NAT-mode WSL", () => {
 			await waitForHealth(port);
 		},
 	);
-});
-
-describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () => {
-	it("exits WSL-NAT, prints the mirrored-mode remediation, and creates neither a pid file nor a daemon", async () => {
-		const dgHome = freshDgHome();
-		const port = allocatePort();
-		cleanupSlot.set(async () => cleanupDgHome(dgHome));
-
-		const result = await runStart(dgHome, port, {
-			WSL_DISTRO_NAME: "test-distro",
-			DG_WSL_NETWORKING_MODE: "nat",
-		});
-
-		expect(result.exitCode).toBe(EXIT_WSL_NAT_NETWORKING);
-		expect(result.stderr).toContain(".wslconfig");
-		expect(result.stderr).toContain("networkingMode=mirrored");
-
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(existsSync(paths.pidPath)).toBe(false);
-		await expect(
-			fetch(`http://127.0.0.1:${port}/healthz`, {
-				headers: { Host: `127.0.0.1:${port}` },
-				signal: AbortSignal.timeout(500),
-			}),
-		).rejects.toBeDefined();
-	});
 });
 
 describe("checkWslNetworking with injected seams", () => {

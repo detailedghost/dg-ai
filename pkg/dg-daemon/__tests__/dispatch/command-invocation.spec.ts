@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { runCli } from "../commands/cli-wire";
 import {
 	startWithSession as bootDaemonSession,
 	cleanupDgHome,
@@ -9,6 +8,7 @@ import {
 	collectFrames,
 	connectPage,
 	killDaemonByPidFile,
+	spawnSession,
 	waitForValue,
 } from "../utils/daemon-harness";
 import {
@@ -143,15 +143,14 @@ describe("$ command-invocation: manifest scoping", () => {
 	it("refuses a commandLabel published only for a different session, even when the requester presents its own valid token", async () => {
 		const { port, bootstrap: a } = await startWithSession();
 		scratchDir = scratchScriptDir();
-		const spawned = await runCli(dgHome, port, [
-			"spawn",
-			"--session",
+		const b: DispatchCredentials = await spawnSession(
+			dgHome,
+			port,
 			a.sessionId,
-			"--agent-identity",
-			"session-b",
-		]);
-		expect(spawned.exitCode).toBe(0);
-		const b = JSON.parse(spawned.stdout.trim()) as DispatchCredentials;
+			{
+				agentIdentity: "session-b",
+			},
+		);
 
 		await publishManifest(
 			dgHome,

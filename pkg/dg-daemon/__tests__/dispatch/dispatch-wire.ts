@@ -1,9 +1,16 @@
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, isRecord } from "@dg/common";
-import { runCli } from "../commands/cli-wire";
 import {
+	loadManifestFile,
+	loadSubagentManifestFile,
+	resolveManifestForPublish,
+} from "@dg/common/node";
+import {
+	connectCli,
 	scratchDir,
+	send,
+	sessionCredentials,
 	waitForValue,
 	writeJsonFile,
 } from "../utils/daemon-harness";
@@ -33,17 +40,11 @@ export async function publishManifest(
 	scratchDir: string,
 ): Promise<void> {
 	const path = writeJsonFile(scratchDir, `commands-${sessionId}.json`, entries);
-	const result = await runCli(dgHome, port, [
-		"manifest",
-		"--session",
-		sessionId,
-		"--commands",
-		path,
-	]);
-	if (result.exitCode !== 0) {
-		throw new Error(`manifest publish failed: ${result.stderr}`);
-	}
+	const commands = resolveManifestForPublish(loadManifestFile(path));
+	const ws = await connectCli(port, sessionCredentials(dgHome, sessionId));
+	send(ws, { type: "cli-manifest-publish", commands });
 	await new Promise((r) => setTimeout(r, 100));
+	ws.close();
 }
 
 export async function publishSubagents(
@@ -63,19 +64,12 @@ export async function publishSubagents(
 		`subagents-${sessionId}.json`,
 		names,
 	);
-	const result = await runCli(dgHome, port, [
-		"manifest",
-		"--session",
-		sessionId,
-		"--commands",
-		commandsPath,
-		"--subagents",
-		subagentsPath,
-	]);
-	if (result.exitCode !== 0) {
-		throw new Error(`subagent publish failed: ${result.stderr}`);
-	}
+	const commands = resolveManifestForPublish(loadManifestFile(commandsPath));
+	const subagents = loadSubagentManifestFile(subagentsPath);
+	const ws = await connectCli(port, sessionCredentials(dgHome, sessionId));
+	send(ws, { type: "cli-manifest-publish", commands, subagents });
 	await new Promise((r) => setTimeout(r, 100));
+	ws.close();
 }
 
 export function commandInvocationFrame(

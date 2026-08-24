@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { getConfiguredAssetDirectory } from "../../src/assets/config";
-import { runCli } from "../commands/cli-wire";
 import {
 	allocatePort,
 	cleanupDgHome,
-	decodeChatMarker,
-	extractUrl,
+	closeSession,
 	freshDgHome,
 	freshTempDir,
 	killDaemonByPidFile,
-	runStart,
+	registerSession,
+	spawnServe,
+	stageAsset,
 	waitForHealth,
 	waitForValue,
 } from "../utils/daemon-harness";
@@ -38,33 +38,26 @@ describe("session-close cleanup trigger", () => {
 	it("removes a session's staged asset directory once it closes, without touching the root it lives in", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
-		const result = await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
-		const bootstrap = validateSessionBootstrap(
-			decodeChatMarker(extractUrl(result.stdout)),
-		);
+		const bootstrap = await registerSession(port);
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const root = getConfiguredAssetDirectory(paths);
 
-		const staged = await runCli(dgHome, port, [
-			"stage",
-			stagedSource([0x89, 0x50, 0x4e, 0x47]),
-			"--session",
+		const assetId = await stageAsset(
+			dgHome,
+			port,
 			bootstrap.sessionId,
-		]);
-		expect(staged.exitCode).toBe(0);
+			stagedSource([0x89, 0x50, 0x4e, 0x47]),
+		);
+		expect(assetId.length).toBeGreaterThan(0);
 		const sessionAssetDir = join(root, bootstrap.sessionId);
 		expect(existsSync(sessionAssetDir)).toBe(true);
 
 		const sentinel = join(root, "sentinel.txt");
 		writeFileSync(sentinel, "must survive every cleanup");
 
-		const closed = await runCli(dgHome, port, [
-			"close",
-			"--session",
-			bootstrap.sessionId,
-		]);
-		expect(closed.exitCode).toBe(0);
+		await closeSession(dgHome, port, bootstrap.sessionId);
 
 		await waitForValue(
 			() => (existsSync(sessionAssetDir) ? undefined : true),
@@ -87,11 +80,9 @@ describe("startup orphan-pruning trigger", () => {
 		writeFileSync(join(orphanDir, "leftover.bin"), "orphaned bytes");
 
 		const port = allocatePort();
-		const result = await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
-		const bootstrap = validateSessionBootstrap(
-			decodeChatMarker(extractUrl(result.stdout)),
-		);
+		const bootstrap = await registerSession(port);
 
 		await waitForValue(
 			() => (existsSync(orphanDir) ? undefined : true),
@@ -99,12 +90,12 @@ describe("startup orphan-pruning trigger", () => {
 			"the orphaned pre-existing asset directory to be swept at startup",
 		);
 
-		await runCli(dgHome, port, [
-			"stage",
-			stagedSource([1, 2, 3]),
-			"--session",
+		await stageAsset(
+			dgHome,
+			port,
 			bootstrap.sessionId,
-		]);
+			stagedSource([1, 2, 3]),
+		);
 		expect(existsSync(join(root, bootstrap.sessionId))).toBe(true);
 	}, 30000);
 
@@ -127,7 +118,7 @@ describe("startup orphan-pruning trigger", () => {
 		);
 
 		const port = allocatePort();
-		await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
 
 		expect(existsSync(orphanDir)).toBe(true);
@@ -148,7 +139,7 @@ describe("startup orphan-pruning trigger", () => {
 		mkdirSync(orphanDir);
 
 		const port = allocatePort();
-		await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
 
 		await waitForValue(

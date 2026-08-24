@@ -12,6 +12,19 @@
         "typescript": "^5",
       },
     },
+    "pkg/dg-agent": {
+      "name": "@dg/dg-agent",
+      "version": "1.0.0",
+      "dependencies": {
+        "@dg/common": "workspace:*",
+        "commander": "^14.0.0",
+      },
+      "devDependencies": {
+        "@dg/dg-daemon": "workspace:*",
+        "bun-types": "^1.3.14",
+        "typescript": "^5",
+      },
+    },
     "pkg/dg-daemon": {
       "name": "@dg/dg-daemon",
       "version": "1.0.0",
@@ -91,6 +104,8 @@
     "@devicefarmer/adbkit-monkey": ["@devicefarmer/adbkit-monkey@1.2.1", "", {}, "sha512-ZzZY/b66W2Jd6NHbAhLyDWOEIBWC11VizGFk7Wx7M61JZRz7HR9Cq5P+65RKWUU7u6wgsE8Lmh9nE4Mz+U2eTg=="],
 
     "@dg/common": ["@dg/common@workspace:pkg/common"],
+
+    "@dg/dg-agent": ["@dg/dg-agent@workspace:pkg/dg-agent"],
 
     "@dg/dg-daemon": ["@dg/dg-daemon@workspace:pkg/dg-daemon"],
 

@@ -9,8 +9,9 @@ import {
 	freshDgHome,
 	killDaemonByPidFile,
 	readPidFile,
-	runStart,
+	registerSession,
 	runStatus,
+	spawnServe,
 	waitForHealth,
 } from "../utils/daemon-harness";
 
@@ -32,8 +33,9 @@ describe("dg-daemon status", () => {
 	it("reports the live daemon's status while it is running", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
-		await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
+		await registerSession(port);
 
 		const result = await runStatus(dgHome);
 		expect(result.exitCode).toBe(0);
@@ -58,8 +60,9 @@ describe("dg-daemon status", () => {
 	it("reports no live daemon and removes a stale pid file left by a hard-killed daemon", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
-		await runStart(dgHome, port);
+		spawnServe(dgHome, port);
 		await waitForHealth(port);
+		await registerSession(port);
 		const handle = readPidFile(dgHome);
 		process.kill(handle.pid, "SIGKILL");
 

@@ -1,15 +1,9 @@
-import { spawn } from "node:child_process";
 import {
 	CHAT_PROTOCOL_VERSION,
 	DgCliError,
-	EXIT_GENERAL_FAILURE,
 	EXIT_NO_PORT_AVAILABLE,
-	EXIT_PROTOCOL_MISMATCH,
-	type SessionRole,
-	validateSessionBootstrap,
 } from "@dg/common";
 import {
-	buildBootstrapUrl,
 	checkWslNetworking,
 	type DgPaths,
 	isDaemonLive,
@@ -38,34 +32,6 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function reExecPrefix(): string[] {
-	const arg1 = process.argv[1];
-	return arg1 !== undefined && !arg1.startsWith("/$bunfs/") ? [arg1] : [];
-}
-
-function spawnDaemonProcess(): void {
-	const child = spawn(process.execPath, [...reExecPrefix(), "__serve"], {
-		detached: true,
-		stdio: "ignore",
-		windowsHide: process.platform === "win32",
-		env: process.env,
-	});
-	child.unref();
-}
-
-async function waitForFreshDaemon(paths: DgPaths, timeoutMs = 15000) {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const handle = readPidFile(paths);
-		if (handle && (await isDaemonLive(handle))) return handle;
-		await sleep(100);
-	}
-	throw new DgCliError(
-		"dg-daemon did not become healthy within the startup timeout",
-		EXIT_GENERAL_FAILURE,
-	);
-}
-
 async function awaitBindRival(
 	paths: DgPaths,
 	budgetMs = 500,
@@ -77,87 +43,6 @@ async function awaitBindRival(
 		if (handle && (await isDaemonLive(handle))) return handle;
 		if (Date.now() >= deadline) return undefined;
 		await sleep(pollMs);
-	}
-}
-
-type RegisterInput = {
-	cwd: string;
-	role: SessionRole;
-	workset?: string;
-	agentIdentity?: string;
-};
-
-async function registerSession(port: number, input: RegisterInput) {
-	const resp = await fetch(`http://127.0.0.1:${port}/start`, {
-		method: "POST",
-		headers: {
-			...HOST_HEADER(port),
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify(input),
-	});
-	if (!resp.ok) {
-		throw new DgCliError(
-			`session registration failed: ${resp.status} ${await resp.text()}`,
-		);
-	}
-	return validateSessionBootstrap(await resp.json());
-}
-
-export type StartOptions = {
-	workset?: string;
-	role?: SessionRole;
-	agentIdentity?: string;
-	open?: boolean;
-};
-
-export async function cmdStart(options: StartOptions = {}): Promise<void> {
-	const paths = resolveDgPaths();
-	const existing = readPidFile(paths);
-	const existingLive = existing ? await isDaemonLive(existing) : false;
-
-	let targetPort: number;
-	if (existing && existingLive) {
-		if (existing.versions.protocol !== CHAT_PROTOCOL_VERSION) {
-			const status = await fetchStatus(existing.port);
-			throw new DgCliError(
-				`dg-daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
-					`this CLI speaks v${CHAT_PROTOCOL_VERSION}. Refusing to attach — stopping it would ` +
-					`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-daemon ` +
-					"never auto-restarts a shared daemon. Stop it yourself once nothing depends on it.",
-				EXIT_PROTOCOL_MISMATCH,
-			);
-		}
-		targetPort = existing.port;
-	} else {
-		await checkWslNetworking();
-		spawnDaemonProcess();
-		targetPort = (await waitForFreshDaemon(paths)).port;
-	}
-
-	const bootstrap = await registerSession(targetPort, {
-		cwd: process.cwd(),
-		role: options.role ?? "agent",
-		workset: options.workset,
-		agentIdentity: options.agentIdentity,
-	});
-	const url = buildBootstrapUrl(targetPort, bootstrap);
-	console.log(url);
-	if (options.open) {
-		const { tryOpen } = await import("@dg/common/node");
-		await tryOpen(url);
-	}
-}
-
-async function fetchStatus(port: number) {
-	try {
-		const resp = await fetch(`http://127.0.0.1:${port}/status`, {
-			headers: HOST_HEADER(port),
-		});
-		if (!resp.ok) return undefined;
-		return (await resp.json()) as { sessionCount?: number };
-	} catch {
-		return undefined;
 	}
 }
 

@@ -1,16 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
-import { runCli } from "../commands/cli-wire";
 import {
 	BROWSER_ORIGIN,
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
 	killDaemonByPidFile,
 	scanFileForBytes,
+	spawnSession,
 	startWithSession,
 } from "../utils/daemon-harness";
 
@@ -165,11 +163,7 @@ describe("POST /assets", () => {
 		);
 		expect(fabricated.status).toBe(401);
 
-		const spawned = JSON.parse(
-			(
-				await runCli(dgHome, port, ["spawn", "--session", bootstrap.sessionId])
-			).stdout.trim(),
-		) as { sessionId: string; token: string };
+		const spawned = await spawnSession(dgHome, port, bootstrap.sessionId);
 		const wrongPairing = await postAsset(
 			port,
 			{
@@ -312,15 +306,5 @@ describe("POST /assets", () => {
 
 		expect(scanFileForBytes(paths.dbPath, needle)).toBe(false);
 		expect(scanFileForBytes(`${paths.dbPath}-wal`, needle)).toBe(false);
-	});
-});
-
-describe("dg-daemon commands module no longer opens the store directly", () => {
-	it("commands/index.ts contains no reference to ChatStore", () => {
-		const source = readFileSync(
-			join(import.meta.dir, "../../src/commands/index.ts"),
-			"utf8",
-		);
-		expect(source).not.toContain("ChatStore");
 	});
 });
