@@ -31,16 +31,25 @@ aarch64 | arm64) cpu="arm64" ;;
 esac
 asset="dg-skills-${osname}-${cpu}"
 
-# GitHub /releases is newest-first, so the first matching asset URL is the latest.
-url=$(curl -fsSL -H "User-Agent: dg-ai" \
-  "https://api.github.com/repos/${REPO}/releases?per_page=30" |
-  grep -oE '"browser_download_url":[[:space:]]*"[^"]+"' |
-  sed -E 's/.*"(https:[^"]+)".*/\1/' |
-  grep -E "/${asset}$" |
+releases=$(curl -fsSL -H "User-Agent: dg-ai" \
+  "https://api.github.com/repos/${REPO}/releases?per_page=30")
+
+tag=$(printf '%s' "${releases}" |
+  grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
+  head -1 |
+  sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+
+if [ -z "${tag}" ]; then
+  echo "dg-skills: no published skills-v* release found" >&2
+  exit 1
+fi
+
+url=$(printf '%s' "${releases}" |
+  grep -oE "https://[^\"]+/download/${tag}/${asset}" |
   head -1)
 
 if [ -z "${url}" ]; then
-  echo "dg-skills: no ${asset} asset in latest skills-v* release" >&2
+  echo "dg-skills: no ${asset} asset in ${tag}" >&2
   exit 1
 fi
 
@@ -49,7 +58,7 @@ curl -fsSL -H "User-Agent: dg-ai" -o "${DEST}" "${url}"
 chmod +x "${DEST}"
 
 # Stamp the installed version so `dg-skills install` won't re-download the binary.
-version=$(echo "${url}" | sed -E 's#.*/download/skills-v([^/]+)/.*#\1#')
+version=${tag#skills-v}
 [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
 echo "dg-skills installed at ${DEST}"
 

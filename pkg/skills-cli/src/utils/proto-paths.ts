@@ -10,7 +10,6 @@ import {
 } from "@dg/common/node";
 import { windowsUserProfile } from "./lib";
 
-// Extends the shared seam shape rather than redeclaring it, so the two can't drift apart.
 type SystemSeams = DgSystemSeams & {
 	isWSL?: () => boolean;
 	run?: (command: string, args: string[]) => string;

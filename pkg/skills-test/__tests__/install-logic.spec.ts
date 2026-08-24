@@ -12,6 +12,7 @@ import {
 	pickExtAsset,
 	type Release,
 } from "@dg/skills-cli/lib";
+import { SUPPORTED_PLATFORMS } from "./supported-platforms";
 
 const RELEASES: Release[] = [
 	{
@@ -55,16 +56,12 @@ const RELEASES: Release[] = [
 	{ tag_name: "v1.2.0", draft: false, assets: [] },
 ];
 
+const SKILLS_SPEC = { binaryName: "dg-skills", tagPrefix: "skills-v" };
+const SERVER_SPEC = { binaryName: "dg-server", tagPrefix: "server-v" };
+
 describe("cliAssetName", () => {
-	const cases: [string, string, string][] = [
-		["linux", "x64", "dg-skills-linux-x64"],
-		["linux", "arm64", "dg-skills-linux-arm64"],
-		["darwin", "x64", "dg-skills-macos-x64"],
-		["darwin", "arm64", "dg-skills-macos-arm64"],
-		["win32", "x64", "dg-skills-windows-x64.exe"],
-		["win32", "arm64", "dg-skills-windows-arm64.exe"],
-	];
-	for (const [platform, arch, expected] of cases) {
+	for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
+		const expected = assetName["dg-skills"];
 		test(`${platform}/${arch} → ${expected}`, () => {
 			expect(cliAssetName("dg-skills", platform, arch)).toBe(expected);
 		});
@@ -94,7 +91,7 @@ describe("pickExtAsset (extension zip from ext-v* only)", () => {
 
 describe("pickCliAsset (binary from skills-v* only)", () => {
 	test("linux/x64 resolves the skills-v* binary, not ext-v*", () => {
-		const a = pickCliAsset(RELEASES, "dg-skills", "skills-v", "linux", "x64");
+		const a = pickCliAsset(RELEASES, SKILLS_SPEC, "linux", "x64");
 		expect(a?.name).toBe("dg-skills-linux-x64");
 		expect(a?.version).toBe("1.0.0");
 	});
@@ -102,7 +99,7 @@ describe("pickCliAsset (binary from skills-v* only)", () => {
 	test("platform with no matching asset in the release → undefined", () => {
 		// linux/arm64 isn't in the fixture's asset list
 		expect(
-			pickCliAsset(RELEASES, "dg-skills", "skills-v", "linux", "arm64"),
+			pickCliAsset(RELEASES, SKILLS_SPEC, "linux", "arm64"),
 		).toBeUndefined();
 	});
 
@@ -117,35 +114,23 @@ describe("pickCliAsset (binary from skills-v* only)", () => {
 			},
 			...RELEASES,
 		];
-		expect(
-			pickCliAsset(withDraft, "dg-skills", "skills-v", "linux", "x64")?.version,
-		).toBe("1.0.0");
+		expect(pickCliAsset(withDraft, SKILLS_SPEC, "linux", "x64")?.version).toBe(
+			"1.0.0",
+		);
 	});
 });
 
 describe("the fetcher is generalized over binaryName and tagPrefix, with no derivation rule", () => {
 	test("cliAssetName builds a dg-server name for every supported platform", () => {
-		const cases: [string, string, string][] = [
-			["linux", "x64", "dg-server-linux-x64"],
-			["linux", "arm64", "dg-server-linux-arm64"],
-			["darwin", "x64", "dg-server-macos-x64"],
-			["darwin", "arm64", "dg-server-macos-arm64"],
-			["win32", "x64", "dg-server-windows-x64.exe"],
-			["win32", "arm64", "dg-server-windows-arm64.exe"],
-		];
-		for (const [platform, arch, expected] of cases) {
-			expect(cliAssetName("dg-server", platform, arch)).toBe(expected);
+		for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
+			expect(cliAssetName("dg-server", platform, arch)).toBe(
+				assetName["dg-server"],
+			);
 		}
 	});
 
 	test("pickCliAsset resolves dg-server from server-v*, never from skills-v*", () => {
-		const picked = pickCliAsset(
-			RELEASES,
-			"dg-server",
-			"server-v",
-			"linux",
-			"x64",
-		);
+		const picked = pickCliAsset(RELEASES, SERVER_SPEC, "linux", "x64");
 		expect(picked?.name).toBe("dg-server-linux-x64");
 		expect(picked?.version).toBe("1.0.0");
 		expect(picked?.url).toBe("u/srv-linux-x64");
@@ -153,16 +138,26 @@ describe("the fetcher is generalized over binaryName and tagPrefix, with no deri
 
 	test("the tag prefix is not derived from the binary name — a mismatched pair resolves nothing", () => {
 		expect(
-			pickCliAsset(RELEASES, "dg-server", "skills-v", "linux", "x64"),
+			pickCliAsset(
+				RELEASES,
+				{ binaryName: "dg-server", tagPrefix: "skills-v" },
+				"linux",
+				"x64",
+			),
 		).toBeUndefined();
 		expect(
-			pickCliAsset(RELEASES, "dg-skills", "server-v", "linux", "x64"),
+			pickCliAsset(
+				RELEASES,
+				{ binaryName: "dg-skills", tagPrefix: "server-v" },
+				"linux",
+				"x64",
+			),
 		).toBeUndefined();
 	});
 
 	test("a platform with no published dg-server asset resolves undefined rather than a skills binary", () => {
 		expect(
-			pickCliAsset(RELEASES, "dg-server", "server-v", "darwin", "arm64"),
+			pickCliAsset(RELEASES, SERVER_SPEC, "darwin", "arm64"),
 		).toBeUndefined();
 	});
 

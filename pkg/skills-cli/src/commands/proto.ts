@@ -22,8 +22,8 @@ import {
 	validateStyleGuide,
 	validateVerdict,
 } from "@dg/common";
-import type { Command } from "commander";
 import { tryOpen } from "@dg/common/node";
+import type { Command } from "commander";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
 import {
 	answerPagePath,

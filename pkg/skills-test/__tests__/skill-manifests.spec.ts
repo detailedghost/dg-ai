@@ -5,14 +5,24 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { REPO_ROOT, readRepoFile } from "./test-support";
 
-const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 const CODEX_PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
 const SKILLS_DIR = join(CODEX_PLUGIN_DIR, "skills");
 
 const skillDirs = readdirSync(SKILLS_DIR, { withFileTypes: true })
 	.filter((d) => d.isDirectory())
 	.map((d) => d.name);
+
+/** Skill name + SKILL.md contents pairs whose markdown contains substr. */
+function skillsMentioning(substr: string): { name: string; md: string }[] {
+	return skillDirs
+		.map((name) => ({
+			name,
+			md: readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8"),
+		}))
+		.filter(({ md }) => md.includes(substr));
+}
 
 /** Every markdown file under pkg/skills. */
 function markdownFiles(dir: string): string[] {
@@ -27,7 +37,7 @@ function markdownFiles(dir: string): string[] {
 
 describe("plugin manifests", () => {
 	const claudePlugin = JSON.parse(
-		readFileSync(join(REPO_ROOT, ".claude-plugin", "plugin.json"), "utf8"),
+		readRepoFile(".claude-plugin", "plugin.json"),
 	);
 	const codexPlugin = JSON.parse(
 		readFileSync(
@@ -52,10 +62,7 @@ describe("plugin manifests", () => {
 
 describe("Codex marketplace", () => {
 	const marketplace = JSON.parse(
-		readFileSync(
-			join(REPO_ROOT, ".agents", "plugins", "marketplace.json"),
-			"utf8",
-		),
+		readRepoFile(".agents", "plugins", "marketplace.json"),
 	);
 
 	test("publishes the dg plugin from the standard repo-local path", () => {
@@ -106,19 +113,13 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	const cliSkills = skillDirs.filter((name) =>
-		readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8").includes(
-			".dg/bin/dg-skills",
-		),
-	);
+	const cliSkills = skillsMentioning(".dg/bin/dg-skills");
 
 	test("at least one skill invokes the dg-skills binary", () => {
 		expect(cliSkills.length).toBeGreaterThan(0);
 	});
 
-	for (const name of cliSkills) {
-		const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
-
+	for (const { name, md } of cliSkills) {
 		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
 			expect(md).toContain("skills-cli");
 			expect(md).toContain("bootstrap.sh");
@@ -136,19 +137,13 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 });
 
 describe("dg-server-invoking SKILL.md uses the compiled daemon binary", () => {
-	const serverSkills = skillDirs.filter((name) =>
-		readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8").includes(
-			"dg-server",
-		),
-	);
+	const serverSkills = skillsMentioning("dg-server");
 
 	test("at least one skill exposes the dg-server harness", () => {
 		expect(serverSkills.length).toBeGreaterThan(0);
 	});
 
-	for (const name of serverSkills) {
-		const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
-
+	for (const { name, md } of serverSkills) {
 		test(`${name}: invokes ~/.dg/bin/dg-server`, () => {
 			expect(md).toContain(".dg/bin/dg-server");
 		});
