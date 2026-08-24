@@ -1,32 +1,21 @@
-/**
- * The `manifest` CLI verb, over the wire — distinct from manifest-load.spec.ts's
- * pure-function unit tests. Covers paths resolved absolute before sending, an
- * invalid file publishing nothing observable, and the same refusals driven
- * over a raw /cli socket — the CLI-side check is a fast local error only, never the boundary.
- */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { rmSync } from "node:fs";
+import { relative } from "node:path";
 import {
 	CHAT_MAX_MANIFEST_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	validateChatFrame,
-	validateSessionBootstrap,
 } from "@dg/common";
 import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
 	collectFrames,
 	connectCli,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	freshTempDir,
 	killDaemonByLockfile,
-	runStart,
 	sendConnectHandshake,
-	waitForHealth,
 	waitForOpen,
+	writeJsonFile,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
 import { nextParsedMessage, runCli } from "./cli-wire";
@@ -41,14 +30,9 @@ afterEach(() => {
 });
 
 async function startWithSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
+	const started = await bootDaemonSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 const VALID_ENTRY = { label: "List files", argv: ["ls"], params: [] };
@@ -56,17 +40,16 @@ const VALID_ENTRY = { label: "List files", argv: ["ls"], params: [] };
 describe("dg-server manifest", () => {
 	it("publishes the validated manifest, resolving a relative --commands path to absolute before sending", async () => {
 		const { port, bootstrap } = await startWithSession();
-		scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-e2e-"));
-		const manifestPath = join(scratchDir, "commands.json");
-		writeFileSync(manifestPath, JSON.stringify([VALID_ENTRY]));
+		scratchDir = freshTempDir("dg-manifest-e2e");
+		const manifestPath = writeJsonFile(scratchDir, "commands.json", [
+			VALID_ENTRY,
+		]);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 
-		// Run the CLI from a DIFFERENT cwd with a RELATIVE --commands path —
-		// the CLI must resolve it against its own cwd, not the daemon's.
 		const relativePath = relative(scratchDir, manifestPath);
 		const result = await runCli(
 			dgHome,
@@ -94,16 +77,19 @@ describe("dg-server manifest", () => {
 
 	it("reads, validates, and publishes --subagents alongside --commands", async () => {
 		const { port, bootstrap } = await startWithSession();
-		scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-subagents-"));
-		const manifestPath = join(scratchDir, "commands.json");
-		writeFileSync(manifestPath, JSON.stringify([VALID_ENTRY]));
-		const subagentsPath = join(scratchDir, "subagents.json");
-		writeFileSync(subagentsPath, JSON.stringify(["reviewer", "planner"]));
+		scratchDir = freshTempDir("dg-manifest-subagents");
+		const manifestPath = writeJsonFile(scratchDir, "commands.json", [
+			VALID_ENTRY,
+		]);
+		const subagentsPath = writeJsonFile(scratchDir, "subagents.json", [
+			"reviewer",
+			"planner",
+		]);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 
 		const result = await runCli(dgHome, port, [
 			"manifest",
@@ -126,14 +112,15 @@ describe("dg-server manifest", () => {
 
 	it("publishes nothing observable when the manifest file is invalid", async () => {
 		const { port, bootstrap } = await startWithSession();
-		scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-e2e-bad-"));
-		const manifestPath = join(scratchDir, "bad.json");
-		writeFileSync(manifestPath, JSON.stringify([{ command: "not allowed" }]));
+		scratchDir = freshTempDir("dg-manifest-e2e-bad");
+		const manifestPath = writeJsonFile(scratchDir, "bad.json", [
+			{ command: "not allowed" },
+		]);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
 		const result = await runCli(dgHome, port, [
@@ -163,7 +150,7 @@ describe("dg-server manifest", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
 		const raw = await connectCli(port, bootstrap);
@@ -199,11 +186,9 @@ describe("dg-server manifest", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
-		// Roughly double CHAT_MAX_MANIFEST_BYTES (64KB), safely under the 1MB
-		// transport payload cap, so this exercises the manifest cap specifically.
 		expect(CHAT_MAX_MANIFEST_BYTES).toBeLessThan(123_454);
 		const raw = await connectCli(port, bootstrap);
 		raw.send(

@@ -2,30 +2,24 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { networkInterfaces } from "node:os";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import {
-	allocatePort,
+	bootServe as bootDaemonServe,
 	cleanupDgHome,
+	createCleanupSlot,
 	freshDgHome,
 	spawnServe,
 	stopServe,
-	waitForHealth,
 } from "../utils/daemon-harness";
 
-let cleanup: (() => Promise<void>) | undefined;
+const cleanupSlot = createCleanupSlot();
 
-afterEach(async () => {
-	await cleanup?.();
-	cleanup = undefined;
-});
+afterEach(() => cleanupSlot.run());
 
 async function bootServe() {
-	const dgHome = freshDgHome();
-	const port = allocatePort();
-	const proc = spawnServe(dgHome, port);
-	await waitForHealth(port);
-	cleanup = async () => {
+	const { dgHome, port, proc } = await bootDaemonServe();
+	cleanupSlot.set(async () => {
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
-	};
+	});
 	return { dgHome, port };
 }
 
@@ -70,8 +64,6 @@ const externalIp = Object.values(networkInterfaces())
 	.find((addr) => addr?.family === "IPv4" && !addr.internal)?.address;
 
 describe("loopback-only binding", () => {
-	// Environment guard, not a placeholder — runs for real whenever an
-	// external interface exists (true here and on most CI runners).
 	it.skipIf(!externalIp)(
 		"is unreachable on this machine's non-loopback address",
 		async () => {
@@ -90,7 +82,6 @@ describe("loopback-only binding", () => {
 		try {
 			const second = spawnServe(dgHomeB, port);
 			const exitCode = await second.exited;
-			// reusePort would let both bind and load-balance; it must instead fail.
 			expect(exitCode).not.toBe(0);
 		} finally {
 			cleanupDgHome(dgHomeB);

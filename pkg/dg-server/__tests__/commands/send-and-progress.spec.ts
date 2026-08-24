@@ -1,30 +1,10 @@
-/**
- * `send` (whole agent messages) and `progress` (interim running/awaiting-input
- * frames) — Testing Criteria: "send and status produce frames that
- * validateChatFrame accepts, and status carries the explicit state."
- *
- * [SPEC] ASSUMED: the CLI verb is named `progress`, not `status` — plan.md's
- * own prose says "status", but `dg-server status` already exists (slice 2's
- * daemon-status report) and the wire discriminant is ratified as `progress`,
- * not `status`. Reusing the same name for a second, unrelated meaning would
- * collide in the same commander program. See deferrals.
- */
 import { afterEach, describe, expect, it } from "bun:test";
+import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "@dg/common";
 import {
-	CHAT_PROTOCOL_VERSION,
-	validateChatFrame,
-	validateSessionBootstrap,
-} from "@dg/common";
-import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
 	killDaemonByLockfile,
-	runStart,
 	sendConnectHandshake,
-	waitForHealth,
 	waitForOpen,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
@@ -38,14 +18,9 @@ afterEach(() => {
 });
 
 async function startWithSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
+	const started = await bootDaemonSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 describe("dg-server send", () => {
@@ -54,7 +29,7 @@ describe("dg-server send", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // the session-list sent on handshake
+		await nextParsedMessage(page);
 
 		const cliDone = runCli(dgHome, port, [
 			"send",
@@ -81,7 +56,7 @@ describe("dg-server progress", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // session-list
+		await nextParsedMessage(page);
 
 		const cliDone = runCli(dgHome, port, [
 			"progress",

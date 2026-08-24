@@ -1,20 +1,11 @@
-/**
- * Daemon-authoritative asset-directory config: read and written over
- * AUTHENTICATED config-get/config-set frames, validated then persisted to the
- * daemon's own config.json. `config-result` is the 19th ratified ChatFrame
- * discriminant in pkg/common/src/chat-format.ts, not a structural carve-out.
- */
-
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
@@ -31,16 +22,16 @@ import {
 	cleanupDgHome,
 	collectFrames,
 	connectCli,
+	connectPage,
 	decodeChatMarker,
 	extractUrl,
+	freshTempDir as freshDaemonTempDir,
 	freshDgHome,
 	killDaemonByLockfile,
 	runStart,
-	sendConnectHandshake,
+	startWithSession,
 	waitForHealth,
-	waitForOpen,
 	waitForValue,
-	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
 let dgHome: string;
@@ -53,7 +44,7 @@ afterEach(() => {
 });
 
 function freshTempDir(label: string): string {
-	return mkdtempSync(join(tmpdir(), `dg-asset-dir-${label}-`));
+	return freshDaemonTempDir(`dg-asset-dir-${label}`);
 }
 
 describe("validateAssetDirectory", () => {
@@ -119,7 +110,7 @@ describe("validateAssetDirectory", () => {
 });
 
 describe("asset directory resolution", () => {
-	it("falls back to resolveDgPaths' own assetsDir when nothing has been persisted yet — per-OS resolution stays slice 1's job", () => {
+	it("falls back to resolveDgPaths' own assetsDir when nothing has been persisted yet — per-OS resolution stays the shared path module's job", () => {
 		const home = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
@@ -150,25 +141,9 @@ describe("asset directory resolution", () => {
 });
 
 async function bootSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { dgHome, port, bootstrap };
-}
-
-/** The extension socket: the only transport allowed to WRITE the asset directory. */
-async function connectPage(
-	port: number,
-	credentials: { sessionId: string; token: string },
-): Promise<WebSocket> {
-	const ws = wsExtensionSocket(port);
-	await waitForOpen(ws);
-	sendConnectHandshake(ws, credentials, CHAT_PROTOCOL_VERSION);
-	return ws;
+	const started = await startWithSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 function configSetFrame(sessionId: string, token: string, value: string) {

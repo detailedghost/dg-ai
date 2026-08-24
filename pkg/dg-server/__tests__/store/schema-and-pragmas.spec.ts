@@ -1,19 +1,14 @@
-/**
- * Real schema + connection setup: bun:sqlite strict:true, STRICT tables,
- * WAL, foreign_keys ON, busy_timeout, and a crypto_meta row on first open.
- * A wrong-mode state directory self-heals to 0700 AND warns audibly naming
- * the prior mode (ratified) — a silent chmod would hide a leaked window.
- */
-
 import { Database } from "bun:sqlite";
 import { describe, expect, it, spyOn } from "bun:test";
 import { statSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
 import { applyConnectionPragmas } from "../../src/store/connection";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
-
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+} from "../utils/daemon-harness";
 
 const REQUIRED_TABLES = [
 	"sessions",
@@ -52,8 +47,6 @@ describe("ChatStore.open — connection + schema", () => {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
-			// foreign_keys/busy_timeout are per-connection, resetting to 0 on any
-			// fresh connection (verified empirically) — checked via the same setup routine ChatStore.open() itself uses.
 			const raw = new Database(paths.dbPath, { readonly: true });
 			expect(
 				(raw.query("PRAGMA journal_mode").get() as { journal_mode: string })
@@ -99,11 +92,10 @@ describe("ChatStore.open — connection + schema", () => {
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
 			expect(statSync(paths.stateDir).mode & 0o777).toBe(0o700);
-			// A silent chmod would hide that the db/-wal had been group/world-readable.
 			const messages = warn.mock.calls
 				.map((call) => String(call[0]))
 				.join("\n");
-			expect(messages).toContain("755"); // names the PRIOR mode, not the new 0700
+			expect(messages).toContain("755");
 			warn.mockRestore();
 			store.close();
 		} finally {

@@ -1,28 +1,13 @@
-/**
- * Slice 3 left status_events' write-path OWED to slice 7 (Code Structure:
- * "Encryption write-paths owned by later slices" — status_events progress
- * text, its own AAD domain tag). Mirrors byte-scan.spec.ts's established
- * scan-before-and-after-close technique.
- *
- * [SPEC] ASSUMED: ChatStore.insertStatusEvent({sessionId, state}) -> {seq}
- * and peekStatusEvents(sessionId) -> {seq, state, createdAt}[] are RED-stage
- * inventions — the ratified store surface (plan.md's Layer-2 ratification)
- * only lists insertMessage/insertCommandInvocation/claimNext/ack/peekAll.
- * Domain tag "status-progress" is likewise invented. See deferrals.
- */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
-
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
-
-function scanFile(path: string, needle: string): boolean {
-	if (!existsSync(path)) return false;
-	return readFileSync(path).includes(Buffer.from(needle, "utf8"));
-}
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+	scanFileForBytes as scanFile,
+} from "../utils/daemon-harness";
 
 describe("ChatStore.insertStatusEvent", () => {
 	it("round-trips a progress state and keeps it out of the db file and its -wal sidecar", async () => {
@@ -36,8 +21,6 @@ describe("ChatStore.insertStatusEvent", () => {
 				state: "awaiting-input",
 			});
 
-			// "awaiting-input" itself is the plaintext needle here — if it were
-			// stored unencrypted it would appear verbatim in the raw bytes.
 			expect(scanFile(`${paths.dbPath}-wal`, "awaiting-input")).toBe(false);
 			store.close();
 			expect(scanFile(paths.dbPath, "awaiting-input")).toBe(false);
@@ -82,8 +65,6 @@ describe("ChatStore.insertStatusEvent", () => {
 			store.insertStatusEvent({ sessionId, state: "agent-gone" });
 			store.close();
 
-			// Swap the two rows' ciphertext directly on disk (same session, different
-			// seq) — AAD binds rowId, so this must not decrypt cleanly.
 			const raw = new Database(paths.dbPath, { readwrite: true });
 			const rows = raw
 				.query(

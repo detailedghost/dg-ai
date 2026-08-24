@@ -1,12 +1,3 @@
-/**
- * "Refuse to start on WSL in NAT networking mode, naming the .wslconfig
- * networkingMode=mirrored fix." checkWslNetworking() only consults
- * DG_WSL_NETWORKING_MODE after its own real isWSL() check passes (cmdServe()
- * calls it with no seams) — so this only exercises for real on a genuinely-WSL
- * box. Environment guard, not a placeholder: mirrors loopback-and-health.spec.ts's
- * it.skipIf(!externalIp) — runs for real here (confirmed via /proc/version) and
- * on any WSL-hosted CI runner, skips elsewhere rather than asserting nothing.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { isWSL, resolveDgPaths } from "@dg/common/node";
@@ -15,6 +6,7 @@ import { checkWslNetworking } from "../../src/server/wsl-guard";
 import {
 	allocatePort,
 	cleanupDgHome,
+	createCleanupSlot,
 	freshDgHome,
 	runStart,
 	spawnServe,
@@ -22,12 +14,9 @@ import {
 	waitForHealth,
 } from "../utils/daemon-harness";
 
-let cleanup: (() => Promise<void>) | undefined;
+const cleanupSlot = createCleanupSlot();
 
-afterEach(async () => {
-	await cleanup?.();
-	cleanup = undefined;
-});
+afterEach(() => cleanupSlot.run());
 
 describe("startup on NAT-mode WSL", () => {
 	it.skipIf(!isWSL())(
@@ -38,7 +27,7 @@ describe("startup on NAT-mode WSL", () => {
 			const proc = spawnServe(dgHome, port, {
 				DG_WSL_NETWORKING_MODE: "nat",
 			});
-			cleanup = async () => cleanupDgHome(dgHome);
+			cleanupSlot.set(async () => cleanupDgHome(dgHome));
 
 			const [stderr, exitCode] = await Promise.all([
 				new Response(proc.stderr).text(),
@@ -58,25 +47,20 @@ describe("startup on NAT-mode WSL", () => {
 			const proc = spawnServe(dgHome, port, {
 				DG_WSL_NETWORKING_MODE: "mirrored",
 			});
-			cleanup = async () => {
+			cleanupSlot.set(async () => {
 				await stopServe(proc);
 				cleanupDgHome(dgHome);
-			};
-			await waitForHealth(port); // would time out if the refusal path fired instead
+			});
+			await waitForHealth(port);
 		},
 	);
 });
 
-/**
- * `spawnServe`'s child is detached with stdio ignored, so only cmdStart's own
- * foregrounded call ever surfaces the refusal. WSL_DISTRO_NAME forces isWSL()
- * true, so this runs portably rather than gated to a real WSL box.
- */
 describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () => {
 	it("exits WSL-NAT, prints the mirrored-mode remediation, and creates neither a lockfile nor a daemon", async () => {
 		const dgHome = freshDgHome();
 		const port = allocatePort();
-		cleanup = async () => cleanupDgHome(dgHome);
+		cleanupSlot.set(async () => cleanupDgHome(dgHome));
 
 		const result = await runStart(dgHome, port, {
 			WSL_DISTRO_NAME: "test-distro",
@@ -98,7 +82,6 @@ describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () =>
 	});
 });
 
-// Injects WslGuardSeams so the NAT-refusal branch is verifiable off real WSL.
 describe("checkWslNetworking with injected seams", () => {
 	it("rejects with EXIT_WSL_NAT_NETWORKING and names the mirrored-mode remediation", async () => {
 		try {

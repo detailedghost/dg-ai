@@ -1,39 +1,13 @@
-/**
- * @ mention resolution on user-message: an @ anywhere in the body is
- * resolved against the session's published subagent list and carried on the
- * queued message via the already-ratified resolved-subagent-name field; an
- * unresolved mention still delivers, unchanged, with that field absent —
- * never refusing the whole message over a typo.
- *
- * [SPEC] invented — ChatStore's insertMessage/ClaimedMessage/PeekedMessage
- * (ratified in Code Structure's layer-2 subsection) carry no field for this
- * yet. Proposed: subagentName?: string, mirroring the already-shipped
- * attachmentId?: string shape, populated from the wire frame's own
- * already-ratified user-message.subagentName. See deferrals.
- */
 import { afterEach, describe, expect, it } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { runCli } from "../commands/cli-wire";
 import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	deliverUserMessage,
 	killDaemonByLockfile,
-	runStart,
-	sendConnectHandshake,
-	waitForHealth,
-	waitForOpen,
-	wsExtensionSocket,
 } from "../utils/daemon-harness";
-import {
-	type DispatchCredentials,
-	publishSubagents,
-	scratchScriptDir,
-} from "./dispatch-wire";
+import { publishSubagents, scratchScriptDir } from "./dispatch-wire";
 
 let dgHome: string;
 let scratchDir: string;
@@ -45,37 +19,9 @@ afterEach(() => {
 });
 
 async function startWithSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
-}
-
-async function deliverUserMessage(
-	port: number,
-	credentials: DispatchCredentials,
-	body: string,
-): Promise<void> {
-	const page = wsExtensionSocket(port);
-	await waitForOpen(page);
-	sendConnectHandshake(page, credentials, CHAT_PROTOCOL_VERSION);
-	await new Promise((r) => setTimeout(r, 100));
-	page.send(
-		JSON.stringify({
-			type: "user-message",
-			sessionId: credentials.sessionId,
-			token: credentials.token,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-			messageId: randomUUID(),
-			body,
-		}),
-	);
-	await new Promise((r) => setTimeout(r, 150));
-	page.close();
+	const started = await bootDaemonSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 describe("@ mention resolution", () => {
@@ -90,8 +36,6 @@ describe("@ mention resolution", () => {
 			scratchDir,
 		);
 
-		// No recv is parked when this arrives — the "no reader" case, which
-		// rides slice 3's ordinary claim-lease queue with no new mechanism.
 		const body = "could @reviewer take a look at this";
 		await deliverUserMessage(port, bootstrap, body);
 

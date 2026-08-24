@@ -1,9 +1,3 @@
-/**
- * spawn and close ride the ALREADY-ratified session-create / session-close
- * ChatFrame types over the CLI's own /cli connection (its header-captured
- * capability supplies the token) — no new wire shape needed for either.
- * stage goes through slice 9's registerAsset: encrypted bytes plus a row.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	closeSync,
@@ -11,32 +5,21 @@ import {
 	ftruncateSync,
 	mkdtempSync,
 	openSync,
-	readdirSync,
-	readFileSync,
 	rmSync,
-	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	CHAT_MAX_ASSET_BYTES,
-	CHAT_PROTOCOL_VERSION,
-	validateSessionBootstrap,
-} from "@dg/common";
+import { CHAT_MAX_ASSET_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
 	collectFrames,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	findFileContaining,
 	killDaemonByLockfile,
-	runStart,
 	sendConnectHandshake,
-	waitForHealth,
 	waitForOpen,
 	waitForValue,
 	wsExtensionSocket,
@@ -46,21 +29,6 @@ import { nextParsedMessage, runCli } from "./cli-wire";
 let dgHome: string;
 let scratchDir: string;
 
-/** Recursively checks whether any file under `dir` contains `needle`'s bytes. */
-function findFileContaining(dir: string, needle: Buffer): boolean {
-	if (!existsSync(dir)) return false;
-	for (const entry of readdirSync(dir)) {
-		const full = join(dir, entry);
-		const stat = statSync(full);
-		if (stat.isDirectory()) {
-			if (findFileContaining(full, needle)) return true;
-		} else if (readFileSync(full).includes(needle)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 afterEach(() => {
 	killDaemonByLockfile(dgHome);
 	cleanupDgHome(dgHome);
@@ -68,23 +36,18 @@ afterEach(() => {
 });
 
 async function startWithSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
+	const started = await bootDaemonSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 describe("dg-server spawn", () => {
-	it("registers a new session through slice 2's session-create handler, and it shows up in the session list", async () => {
+	it("registers a new session through the daemon's session-create handler, and it shows up in the session list", async () => {
 		const { port, bootstrap } = await startWithSession();
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // initial session-list (one session)
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
 		const result = await runCli(dgHome, port, [
@@ -113,7 +76,6 @@ describe("dg-server spawn", () => {
 
 		const spawned = list.sessions.find((s) => s.workset === "my-workset");
 		expect(spawned).toBeDefined();
-		// No --agent-identity given — inherits the requester's, per handleSessionCreate.
 		expect(spawned?.agentIdentity).toBe(bootstrap.agentIdentity);
 		page.close();
 	});
@@ -123,7 +85,7 @@ describe("dg-server spawn", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // initial session-list (one session)
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
 		const result = await runCli(dgHome, port, [
@@ -165,7 +127,7 @@ describe("dg-server close", () => {
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
 		sendConnectHandshake(page, bootstrap, CHAT_PROTOCOL_VERSION);
-		await nextParsedMessage(page); // initial session-list
+		await nextParsedMessage(page);
 		const frames = collectFrames(page);
 
 		const result = await runCli(dgHome, port, [

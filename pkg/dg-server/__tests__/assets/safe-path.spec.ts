@@ -1,12 +1,5 @@
-/**
- * Layers proto.ts's ensureSafeAnswerPaths pattern: per-component lstat
- * symlink rejection from the assets ROOT down, plus a realpath containment
- * check. The root is a parameter because containment measured against the
- * session directory alone accepted a symlinked assets root.
- */
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
 	AssetMissingError,
@@ -15,14 +8,14 @@ import {
 	openAssetFile,
 	resolveAssetFilePath,
 } from "../../src/assets/safe-path";
+import { freshTempDir } from "../utils/daemon-harness";
 
 const SESSION = "session-a";
 
 function freshDir(): string {
-	return mkdtempSync(join(tmpdir(), "dg-asset-safe-path-"));
+	return freshTempDir("dg-asset-safe-path");
 }
 
-/** An assets root holding one real session directory, as registerAsset leaves it. */
 function freshRootWithSession(): { root: string; sessionDir: string } {
 	const root = freshDir();
 	const sessionDir = join(root, SESSION);

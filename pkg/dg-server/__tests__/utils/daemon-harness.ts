@@ -1,25 +1,73 @@
-/**
- * Subprocess harness: drives the real entry point via DG_HOME/DG_PORT seams.
- * Most tests spawn the ratified hidden `__serve` subcommand directly (bypassing `start`'s detach/re-exec dance); only the two contracts naming `start` drive it itself.
- */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type DaemonHandle, validateDaemonHandle } from "@dg/common";
+import {
+	CHAT_PROTOCOL_VERSION,
+	type DaemonHandle,
+	type SessionBootstrap,
+	validateDaemonHandle,
+	validateSessionBootstrap,
+} from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import type { Subprocess } from "bun";
 
 export const ENTRY = join(import.meta.dir, "../../src/index.ts");
 
-// Private test-only range: never the real published default, so a run here
-// can never collide with (or accidentally exercise) a developer's live daemon.
 let nextPort = 47500;
 export function allocatePort(): number {
 	return nextPort++;
 }
 
+export function scratchDir(prefix: string): string {
+	return mkdtempSync(join(tmpdir(), `${prefix}-test-`));
+}
+
+export function freshTempDir(prefix: string): string {
+	return mkdtempSync(join(tmpdir(), `${prefix}-`));
+}
+
 export function freshDgHome(): string {
-	return mkdtempSync(join(tmpdir(), "dg-server-test-"));
+	return scratchDir("dg-server");
+}
+
+export const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
+
+export function scanFileForBytes(path: string, needle: string): boolean {
+	if (!existsSync(path)) return false;
+	return readFileSync(path).includes(Buffer.from(needle, "utf8"));
+}
+
+export function findFileContaining(dir: string, needle: Buffer): boolean {
+	if (!existsSync(dir)) return false;
+	for (const entry of readdirSync(dir)) {
+		const full = join(dir, entry);
+		const stat = statSync(full);
+		if (stat.isDirectory()) {
+			if (findFileContaining(full, needle)) return true;
+		} else if (readFileSync(full).includes(needle)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function writeJsonFile(
+	dir: string,
+	name: string,
+	contents: unknown,
+): string {
+	const path = join(dir, name);
+	writeFileSync(path, JSON.stringify(contents));
+	return path;
 }
 
 export function cleanupDgHome(dgHome: string): void {
@@ -37,19 +85,11 @@ export function subprocessEnv(
 	}
 	env.DG_HOME = dgHome;
 	env.DG_PORT = String(port);
-	// Default to the file key source so a subprocess test never probes or
-	// writes the developer's real OS keychain (this box has a working one).
 	env.DG_KEY_SOURCE = "file";
 	Object.assign(env, extraEnv);
 	return env;
 }
 
-/**
- * Foreground the actual HTTP+WS server — no daemonize/detach indirection.
- * No explicit return type: annotating it as bare `Subprocess` would widen
- * stdout/stderr away from the "pipe" literal actually passed below, losing
- * their real ReadableStream type for callers that read them directly.
- */
 export function spawnServe(
 	dgHome: string,
 	port: number,
@@ -62,9 +102,42 @@ export function spawnServe(
 	});
 }
 
+export type ServeBoot = {
+	dgHome: string;
+	port: number;
+	proc: ReturnType<typeof spawnServe>;
+};
+
+export async function bootServe(
+	extraEnv: Record<string, string> = {},
+): Promise<ServeBoot> {
+	const dgHome = freshDgHome();
+	const port = allocatePort();
+	const proc = spawnServe(dgHome, port, extraEnv);
+	await waitForHealth(port);
+	return { dgHome, port, proc };
+}
+
+export type CleanupSlot = {
+	set(fn: () => Promise<void>): void;
+	run(): Promise<void>;
+};
+
+export function createCleanupSlot(): CleanupSlot {
+	let cleanup: (() => Promise<void>) | undefined;
+	return {
+		set(fn) {
+			cleanup = fn;
+		},
+		async run() {
+			await cleanup?.();
+			cleanup = undefined;
+		},
+	};
+}
+
 export type StartResult = { stdout: string; stderr: string; exitCode: number };
 
-/** Run the public `start` verb to completion; it daemonizes and exits quickly. */
 export async function runStart(
 	dgHome: string,
 	port: number,
@@ -83,7 +156,6 @@ export async function runStart(
 	return { stdout, stderr, exitCode };
 }
 
-/** Run the public `status` verb to completion. */
 export async function runStatus(
 	dgHome: string,
 	extraEnv: Record<string, string> = {},
@@ -101,7 +173,6 @@ export async function runStatus(
 	return { stdout, stderr, exitCode };
 }
 
-/** Deliberately under bun:test's own 5000ms default, so this loses the race cleanly. */
 export async function waitForHealth(
 	port: number,
 	timeoutMs = 3000,
@@ -150,14 +221,11 @@ export async function waitForLockfile(
 	);
 }
 
-/** Best-effort kill of a `start`-daemonized process, located via its lockfile pid. */
 export function killDaemonByLockfile(dgHome: string): void {
 	try {
 		const handle = readLockfile(dgHome);
 		process.kill(handle.pid, "SIGTERM");
-	} catch {
-		// already gone, or a lockfile was never written — nothing to clean up.
-	}
+	} catch {}
 }
 
 export async function stopServe(proc: Subprocess): Promise<void> {
@@ -165,8 +233,6 @@ export async function stopServe(proc: Subprocess): Promise<void> {
 	await proc.exited;
 }
 
-// --- Bootstrap marker decoding ----------------------------------------------
-// Ratified: base64url(JSON) in the fragment under the "_chat" key, no compression.
 export const CHAT_MARKER_KEY = "_chat";
 
 export function extractUrl(stdout: string): string {
@@ -194,14 +260,29 @@ export function decodeChatMarker(url: string): unknown {
 	return JSON.parse(json);
 }
 
-// Capability capture is a post-connect handshake frame on /ws, a request
-// header on /cli — never a query string (Code Structure's transport ratification).
+export type SessionBoot = {
+	dgHome: string;
+	port: number;
+	bootstrap: SessionBootstrap;
+};
+
+export async function startWithSession(
+	extraEnv: Record<string, string> = {},
+): Promise<SessionBoot> {
+	const dgHome = freshDgHome();
+	const port = allocatePort();
+	const result = await runStart(dgHome, port, extraEnv);
+	await waitForHealth(port);
+	const bootstrap = validateSessionBootstrap(
+		decodeChatMarker(extractUrl(result.stdout)),
+	);
+	return { dgHome, port, bootstrap };
+}
+
 export function wsUrl(port: number, path: "/ws" | "/cli"): string {
 	return `ws://127.0.0.1:${port}${path}`;
 }
 
-// lib.dom's WebSocket overload beats Bun's headers-carrying one under this
-// tsconfig (no explicit `lib`) — verified empirically. Cast through a typed ctor, not `any`.
 type BunWebSocketCtor = new (
 	url: string,
 	options?: Bun.WebSocketOptions,
@@ -213,7 +294,6 @@ export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
 
 export type Credentials = { sessionId: string; token: string };
 
-/** Raw (un-awaited) /cli socket, headers carrying the capability pair — for tests expecting the upgrade itself to fail. */
 export function cliSocket(port: number, credentials: Credentials): WebSocket {
 	return new BunWebSocket(wsUrl(port, "/cli"), {
 		headers: {
@@ -223,7 +303,6 @@ export function cliSocket(port: number, credentials: Credentials): WebSocket {
 	});
 }
 
-/** Open a /cli connection and wait for it to complete — the header pair authenticates at upgrade time. */
 export async function connectCli(
 	port: number,
 	credentials: Credentials,
@@ -237,15 +316,12 @@ export const EXTENSION_ORIGIN =
 	"chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const BROWSER_ORIGIN = "https://evil.example";
 
-/** Raw (un-awaited) /ws socket with a valid extension-scheme Origin — capability capture happens afterward via a connect handshake frame, see sendConnectHandshake. */
 export function wsExtensionSocket(port: number): WebSocket {
 	return new BunWebSocket(wsUrl(port, "/ws"), {
 		headers: { Origin: EXTENSION_ORIGIN },
 	});
 }
 
-// [SPEC] ASSUMED: Code Structure names only "a connect handshake" (plan.md
-// 280, 875), not a wire shape — `type: "connect"` (deliberately outside the 18 ratified ChatFrame types, which all assume capability already exists) is the most reasonable reading.
 export function sendConnectHandshake(
 	ws: WebSocket,
 	credentials: Credentials,
@@ -259,6 +335,51 @@ export function sendConnectHandshake(
 			protocolVersion,
 		}),
 	);
+}
+
+export function frameType(f: unknown): string | undefined {
+	return (f as { type?: string }).type;
+}
+
+export function send(ws: WebSocket, frame: Record<string, unknown>): void {
+	ws.send(JSON.stringify({ protocolVersion: CHAT_PROTOCOL_VERSION, ...frame }));
+}
+
+export async function connectPage(
+	port: number,
+	credentials: Credentials,
+	protocolVersion: number = CHAT_PROTOCOL_VERSION,
+): Promise<WebSocket> {
+	const page = wsExtensionSocket(port);
+	await waitForOpen(page);
+	sendConnectHandshake(page, credentials, protocolVersion);
+	await new Promise((r) => setTimeout(r, 100));
+	return page;
+}
+
+export function closeSockets(sockets: WebSocket[]): void {
+	for (const socket of sockets) socket.close();
+	sockets.length = 0;
+}
+
+export async function deliverUserMessage(
+	port: number,
+	credentials: Credentials,
+	body: string,
+): Promise<void> {
+	const page = await connectPage(port, credentials);
+	page.send(
+		JSON.stringify({
+			type: "user-message",
+			sessionId: credentials.sessionId,
+			token: credentials.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			messageId: randomUUID(),
+			body,
+		}),
+	);
+	await new Promise((r) => setTimeout(r, 150));
+	page.close();
 }
 
 export function waitForOpen(ws: WebSocket, timeoutMs = 3000): Promise<void> {
@@ -309,7 +430,6 @@ export function waitForClose(
 	});
 }
 
-/** Collects every JSON-parseable message frame received on `ws` into an array. */
 export function collectFrames(ws: WebSocket): unknown[] {
 	const frames: unknown[] = [];
 	ws.addEventListener("message", (ev) => {
@@ -322,7 +442,6 @@ export function collectFrames(ws: WebSocket): unknown[] {
 	return frames;
 }
 
-/** Poll `check` until it returns a defined value, or throw after `timeoutMs`. */
 export async function waitForValue<T>(
 	check: () => T | undefined,
 	timeoutMs = 3000,

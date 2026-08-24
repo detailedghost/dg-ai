@@ -1,16 +1,3 @@
-/**
- * Hand-rolled PRAGMA user_version migration runner: one transaction per
- * step (BEGIN IMMEDIATE), forward-only, and close(false) on a failed step so
- * the file is never left locked. Exercised here against FIXTURE steps —
- * fixture-worthy because the real schema only defines version 1 today, so a
- * genuine "older db migrates forward" scenario needs at least two steps to
- * be meaningful; the real schema module gets its own smaller check in
- * schema-and-pragmas.spec.ts that its one real step actually runs.
- *
- * [SPEC] ASSUMED: forward-only refusal is worded distinctly from a protocol
- * version mismatch — asserted here as "mentions schema/user_version,
- * never the word protocol".
- */
 
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
@@ -60,7 +47,7 @@ describe("runMigrations", () => {
 	it("migrates an older database forward, preserving its existing rows", () => {
 		const path = tempDbPath();
 		const first = openDb(path);
-		runMigrations(first, [stepCreateA]); // simulates a db left at version 1
+		runMigrations(first, [stepCreateA]);
 		first.run("INSERT INTO a (v) VALUES ('kept-row')");
 		first.close(true);
 
@@ -95,7 +82,6 @@ describe("runMigrations", () => {
 		const refusal = thrown as ForwardOnlyVersionError;
 		expect(refusal.recordedVersion).toBe(99);
 		expect(refusal.supportedVersion).toBe(2);
-		// Worded distinctly from a protocol-version mismatch (Engineering bullet).
 		expect(refusal.message).not.toMatch(/protocol/i);
 		expect(refusal.message).toMatch(/version/i);
 	});
@@ -115,7 +101,6 @@ describe("runMigrations", () => {
 			"boom mid-step",
 		);
 
-		// The failed step's own DDL must have rolled back together with the version bump.
 		const reopened = openDb(path);
 		const version = (
 			reopened.query("PRAGMA user_version").get() as {
@@ -126,8 +111,6 @@ describe("runMigrations", () => {
 		expect(
 			reopened.query("SELECT name FROM sqlite_master WHERE name = 'b'").get(),
 		).toBeNull();
-		// close(false) on the failure path must not leave a lock behind — a
-		// fresh connection can write immediately with no busy-timeout wait.
 		expect(() =>
 			reopened.run("INSERT INTO a (v) VALUES ('after-failure')"),
 		).not.toThrow();

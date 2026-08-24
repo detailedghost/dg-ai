@@ -1,9 +1,3 @@
-/**
- * The headline security property of Slice 2: a socket that has only ever
- * captured session A's bootstrap must never be able to act on session B,
- * even when B's real (not fabricated) token is presented — proving the
- * daemon scopes capabilities per-socket, not against the global session store.
- */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
 	CHAT_PROTOCOL_VERSION,
@@ -18,10 +12,12 @@ import {
 	connectCli,
 	decodeChatMarker,
 	extractUrl,
+	frameType,
 	freshDgHome,
 	killDaemonByLockfile,
 	runStart,
 	runStatus,
+	send,
 	sendConnectHandshake,
 	waitForHealth,
 	waitForOpen,
@@ -53,10 +49,6 @@ afterAll(() => {
 	cleanupDgHome(dgHome);
 });
 
-function send(ws: WebSocket, frame: Record<string, unknown>): void {
-	ws.send(JSON.stringify({ protocolVersion: CHAT_PROTOCOL_VERSION, ...frame }));
-}
-
 describe("cross-session escalation guard", () => {
 	it("refuses a session-close for B over a socket that only captured A, even using B's real token", async () => {
 		const ws = await connectCli(port, sessionA);
@@ -67,7 +59,7 @@ describe("cross-session escalation guard", () => {
 			token: sessionB.token,
 		});
 		const rejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of the cross-session close",
 		);
@@ -84,7 +76,7 @@ describe("cross-session escalation guard", () => {
 			token: "not-a-real-token",
 		});
 		const rejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of the fabricated-token close",
 		);
@@ -104,8 +96,7 @@ describe("session-create grants the requesting socket a new capability", () => {
 			role: "agent",
 		});
 		const pending = await waitForValue(
-			() =>
-				frames.find((f) => (f as { type?: string }).type === "session-pending"),
+			() => frames.find((f) => frameType(f) === "session-pending"),
 			2000,
 			"a session-pending response",
 		);
@@ -124,13 +115,12 @@ describe("session-create grants the requesting socket a new capability", () => {
 				frames.find(
 					(f) =>
 						(f as { type?: string; sessionId?: string }).sessionId ===
-							newSession.sessionId &&
-						(f as { type?: string }).type !== "session-pending",
+							newSession.sessionId && frameType(f) !== "session-pending",
 				),
 			2000,
 			"a response to the newly-captured session's history-request",
 		);
-		expect((reply as { type?: string }).type).not.toBe("error");
+		expect(frameType(reply)).not.toBe("error");
 		ws.close();
 	});
 });
@@ -150,7 +140,7 @@ describe("session-create authorization", () => {
 			role: "agent",
 		});
 		const wrongTokenRejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of session-create with a wrong token for A's own sessionId",
 		);
@@ -164,7 +154,7 @@ describe("session-create authorization", () => {
 			role: "agent",
 		});
 		const foreignTokenRejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of session-create bearing B's real token over a socket that never captured B",
 		);
@@ -198,7 +188,6 @@ describe("session-create authorization", () => {
 		}
 		expect(refusedAtHandshake).toBe(true);
 
-		// The bogus identity must not have materialized a session either.
 		const reconnect = cliSocket(port, {
 			sessionId: bogusSessionId,
 			token: "unknown-token",
@@ -217,8 +206,6 @@ describe("session-create authorization", () => {
 		expect(after.sessionCount).toBe(before.sessionCount);
 	});
 
-	// The test above proves only the /cli UPGRADE refusal for a bogus pair; this is
-	// the frame-layer case, naming a sessionId the socket never captured at all.
 	it("refuses a session-create frame naming a sessionId the socket holds no capability for", async () => {
 		const before = JSON.parse((await runStatus(dgHome)).stdout) as {
 			sessionCount: number;
@@ -232,7 +219,7 @@ describe("session-create authorization", () => {
 			role: "agent",
 		});
 		const rejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of session-create naming an uncaptured sessionId",
 		);
@@ -246,14 +233,13 @@ describe("session-create authorization", () => {
 	});
 
 	it("refuses a session-create frame bearing a closed session's token", async () => {
-		// Self-close B using its own (legitimate) pair, then try to reuse it.
 		const closer = await connectCli(port, sessionB);
 		send(closer, {
 			type: "session-close",
 			sessionId: sessionB.sessionId,
 			token: sessionB.token,
 		});
-		await new Promise((r) => setTimeout(r, 200)); // let the close land server-side
+		await new Promise((r) => setTimeout(r, 200));
 		closer.close();
 
 		const reuse = cliSocket(port, {
@@ -263,7 +249,6 @@ describe("session-create authorization", () => {
 		let refused = false;
 		try {
 			await waitForOpen(reuse, 1000);
-			// If the handshake itself doesn't gate this, the first frame must.
 			const frames = collectFrames(reuse);
 			send(reuse, {
 				type: "session-create",
@@ -272,7 +257,7 @@ describe("session-create authorization", () => {
 				role: "agent",
 			});
 			const rejection = await waitForValue(
-				() => frames.find((f) => (f as { type?: string }).type === "error"),
+				() => frames.find((f) => frameType(f) === "error"),
 				2000,
 				"a rejection using the closed session's token",
 			);
@@ -303,7 +288,7 @@ describe("/ws capability capture via the post-connect handshake frame", () => {
 			2000,
 			"a response to the handshake-captured session's history-request",
 		);
-		expect((reply as { type?: string }).type).not.toBe("error");
+		expect(frameType(reply)).not.toBe("error");
 		ws.close();
 	});
 
@@ -322,7 +307,7 @@ describe("/ws capability capture via the post-connect handshake frame", () => {
 			token: "not-a-real-token",
 		});
 		const rejection = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "error"),
+			() => frames.find((f) => frameType(f) === "error"),
 			2000,
 			"a rejection of the fabricated handshake token",
 		);
@@ -346,8 +331,7 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 		});
 
 		const pending = await waitForValue(
-			() =>
-				frames.find((f) => (f as { type?: string }).type === "session-pending"),
+			() => frames.find((f) => frameType(f) === "session-pending"),
 			2000,
 			"a session-pending response for the worksetted orchestrator session",
 		);
@@ -358,7 +342,7 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 			() =>
 				frames.find(
 					(f) =>
-						(f as { type?: string }).type === "session-list" &&
+						frameType(f) === "session-list" &&
 						(f as { sessions?: Array<{ sessionId?: string }> }).sessions?.some(
 							(entry) => entry.sessionId === newSessionId,
 						),
@@ -367,8 +351,6 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 			"a session-list frame carrying the newly-created worksetted session",
 		);
 
-		// The point is validating the RECEIVED wire frame, not a hand-written
-		// shape assertion that a daemon-side field rename would sail past.
 		const validated = validateChatFrame(sessionListFrame);
 		if (validated.type !== "session-list") {
 			throw new Error(`expected a session-list frame, got "${validated.type}"`);
@@ -385,8 +367,6 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 	});
 });
 
-// Placed last in the file: it closes sessionA for good, so no test above may
-// depend on it staying open afterward.
 describe("session-close broadcasts and revokes capability on every socket that held it", () => {
 	it("notifies a second socket holding the same capability, whose subsequent frame for it is then refused", async () => {
 		const closer = await connectCli(port, sessionA);
@@ -396,7 +376,6 @@ describe("session-close broadcasts and revokes capability on every socket that h
 		await waitForOpen(bystander);
 		const bystanderFrames = collectFrames(bystander);
 		sendConnectHandshake(bystander, sessionA, CHAT_PROTOCOL_VERSION);
-		// Let the handshake capture land before the close races it.
 		await waitForValue(
 			() => {
 				send(bystander, {
@@ -420,10 +399,7 @@ describe("session-close broadcasts and revokes capability on every socket that h
 		});
 
 		const closedOnCloser = await waitForValue(
-			() =>
-				closerFrames.find(
-					(f) => (f as { type?: string }).type === "session-closed",
-				),
+			() => closerFrames.find((f) => frameType(f) === "session-closed"),
 			2000,
 			"session-closed on the closing socket itself",
 		);
@@ -432,10 +408,7 @@ describe("session-close broadcasts and revokes capability on every socket that h
 		);
 
 		const closedOnBystander = await waitForValue(
-			() =>
-				bystanderFrames.find(
-					(f) => (f as { type?: string }).type === "session-closed",
-				),
+			() => bystanderFrames.find((f) => frameType(f) === "session-closed"),
 			2000,
 			"session-closed broadcast to the bystander socket",
 		);
@@ -450,8 +423,7 @@ describe("session-close broadcasts and revokes capability on every socket that h
 			token: sessionA.token,
 		});
 		const revoked = await waitForValue(
-			() =>
-				bystanderFrames.find((f) => (f as { type?: string }).type === "error"),
+			() => bystanderFrames.find((f) => frameType(f) === "error"),
 			2000,
 			"a refusal proving the bystander's capability was revoked",
 		);
@@ -464,7 +436,6 @@ describe("session-close broadcasts and revokes capability on every socket that h
 
 describe("keepalive", () => {
 	it("draws no reply, so a long-lived socket sees no unsolicited frames", async () => {
-		// Its own session: the escalation tests above deliberately close sessionA.
 		const started = await runStart(dgHome, port);
 		const session = validateSessionBootstrap(
 			decodeChatMarker(extractUrl(started.stdout)),
@@ -474,10 +445,8 @@ describe("keepalive", () => {
 		const frames = collectFrames(ws);
 		sendConnectHandshake(ws, session, CHAT_PROTOCOL_VERSION);
 
-		// The handshake answers with a session-list; drain it first so the keepalive
-		// assertion cannot pass merely because nothing had arrived yet.
 		await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type === "session-list"),
+			() => frames.find((f) => frameType(f) === "session-list"),
 			2000,
 			"the handshake's initial session-list",
 		);
@@ -489,24 +458,20 @@ describe("keepalive", () => {
 			token: session.token,
 		});
 
-		// A history-request after the keepalive proves the socket is still live and
-		// ordered, so silence reads as no reply rather than as a dead socket.
 		send(ws, {
 			type: "history-request",
 			sessionId: session.sessionId,
 			token: session.token,
 		});
 		const reply = await waitForValue(
-			() => frames.find((f) => (f as { type?: string }).type !== undefined),
+			() => frames.find((f) => frameType(f) !== undefined),
 			2000,
 			"the history-request reply that follows the keepalive",
 		);
 
 		expect(() => validateChatFrame(reply)).not.toThrow();
-		expect((reply as { type: string }).type).toBe("history-response");
-		expect(frames.map((f) => (f as { type?: string }).type)).not.toContain(
-			"error",
-		);
+		expect(frameType(reply)).toBe("history-response");
+		expect(frames.map((f) => frameType(f))).not.toContain("error");
 		ws.close();
 	});
 });

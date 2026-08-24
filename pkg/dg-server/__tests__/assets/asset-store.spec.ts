@@ -1,34 +1,20 @@
-/**
- * ChatStore's asset write-path — the write-path Code Structure's "Encryption
- * write-paths owed by later slices" assigns to slice 9: asset bytes AND
- * display filenames, each through createCipherBox/buildAad with a DISTINCT
- * AAD domain, extending the ratified slice-3 ChatStore surface exactly like
- * slice 7/8 extend it for status_events/manifest.
- *
- * [SPEC] ASSUMED module surface — plan.md assigns the OBLIGATION but names no
- * method. insertAsset/getAsset/pruneSessionAssets/encryptAssetBytes/
- * decryptAssetBytes are this pass's invention; see deferrals. Mirrors the
- * existing insertMessage/insertCommandInvocation/peekAll shape and the
- * byte-scan.spec.ts convention for proving encryption at rest.
- */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { AssetTooLargeError, ChatStore } from "../../src/store";
 import { runMigrations } from "../../src/store/migrations";
 import { SCHEMA_STEPS } from "../../src/store/schema";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+	scanFileForBytes as scanFile,
+} from "../utils/daemon-harness";
 
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
 const SESSION_A = "session-asset-a";
 const SESSION_B = "session-asset-b";
-
-function scanFile(path: string, needle: string): boolean {
-	if (!existsSync(path)) return false;
-	return readFileSync(path).includes(Buffer.from(needle, "utf8"));
-}
 
 describe("ChatStore asset row write-path", () => {
 	it("insertAsset + getAsset round-trips filename/contentType/byteLength, scoped to the session, state active", async () => {
@@ -224,7 +210,7 @@ describe("ChatStore asset row write-path", () => {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
 			const legacy = new Database(paths.dbPath, { strict: true, create: true });
-			runMigrations(legacy, SCHEMA_STEPS.slice(0, 2)); // a database left at v2
+			runMigrations(legacy, SCHEMA_STEPS.slice(0, 2));
 			legacy.run("INSERT INTO sessions (id, created_at) VALUES (?, ?)", [
 				SESSION_A,
 				new Date().toISOString(),
@@ -262,8 +248,6 @@ describe("ChatStore asset row write-path", () => {
 			});
 			store.close();
 
-			// Read the filename's raw envelope columns directly, bypassing the
-			// Store — mirrors byte-scan.spec.ts's raw-connection technique.
 			const raw = new Database(paths.dbPath, { readonly: true });
 			const row = raw
 				.query(

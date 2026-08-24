@@ -1,12 +1,3 @@
-/**
- * Identity-first key resolution wired through the real ChatStore.open —
- * complements crypto/key-resolution.spec.ts's pure-function tests with the
- * end-to-end contract: a matching key across a restart keeps old rows
- * readable, a non-matching key REFUSES to start rather than silently
- * minting a second one (Acceptance Criteria), and DG_KEY_SOURCE=file is
- * honored via the env seam without ever touching a real keychain.
- */
-
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
@@ -15,9 +6,12 @@ import { resolveDgPaths } from "@dg/common/node";
 import { mintFallbackKeyFile } from "../../src/crypto/key-file";
 import { fingerprintKey } from "../../src/crypto/key-resolution";
 import { ChatStore } from "../../src/store";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+} from "../utils/daemon-harness";
 
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
 const SESSION_ID = "session-restart-1";
 
 describe("ChatStore.open — key resolution across restarts", () => {
@@ -54,7 +48,6 @@ describe("ChatStore.open — key resolution across restarts", () => {
 			const recordedKeyId = first.cryptoMeta().keyId;
 			first.close();
 
-			// Simulate the key file being swapped for an unrelated key (rotation/tamper).
 			rmSync(paths.keyPath, { force: true });
 			const unrelatedKek = randomBytes(32);
 			mintFallbackKeyFile(
@@ -65,7 +58,6 @@ describe("ChatStore.open — key resolution across restarts", () => {
 
 			await expect(ChatStore.open(paths, FILE_ONLY_SEAMS)).rejects.toThrow();
 
-			// The refusal must not have mutated crypto_meta into accepting the new key.
 			const raw = new Database(paths.dbPath, { readonly: true });
 			const row = raw.query("SELECT key_id FROM crypto_meta").get() as {
 				key_id: string;

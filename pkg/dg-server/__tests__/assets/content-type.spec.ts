@@ -1,15 +1,3 @@
-/**
- * resolveAssetContentType: hand-rolled fixed extension lookup (Engineering —
- * "no new dependency"). Only a small raster allowlist may render inline;
- * SVG/HTML are recognized but MUST NOT be marked inline even though a naive
- * lookup would recognize their extension — that's the whole point of the
- * denylist (Code Structure's "Asset retrieval and content typing" decision).
- *
- * [SPEC] ASSUMED module surface — plan.md pins the SERVING BEHAVIOR ("only
- * safe raster types inline... nosniff... attachment for everything else")
- * but names no module or function. `resolveAssetContentType(filename)` is
- * this pass's invention; see deferrals.
- */
 import { describe, expect, it } from "bun:test";
 import {
 	assetContentDisposition,
@@ -19,7 +7,7 @@ import {
 describe("resolveAssetContentType", () => {
 	it.each([
 		["photo.png", "image/png"],
-		["photo.PNG", "image/png"], // case-insensitive extension match
+		["photo.PNG", "image/png"],
 		["photo.jpg", "image/jpeg"],
 		["photo.jpeg", "image/jpeg"],
 		["photo.gif", "image/gif"],
