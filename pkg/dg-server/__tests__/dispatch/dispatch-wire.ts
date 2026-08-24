@@ -1,26 +1,17 @@
-/**
- * Shared helpers for slice 8's dispatch test suite, sibling to (and reusing)
- * ../commands/cli-wire.ts and ../utils/daemon-harness.ts rather than a second
- * copy of their subprocess/socket plumbing.
- *
- * command-invocation/command-result carry no correlation id (not ratified by
- * any slice), so every test here either keeps at most one invocation in
- * flight at a time, or — where several ARE deliberately concurrent — asserts
- * on counts/predicates over the collected frame array rather than pairing a
- * specific request to a specific reply. See deferrals for the [SPEC] gap
- * this works around.
- */
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, isRecord } from "@dg/common";
 import { runCli } from "../commands/cli-wire";
+import {
+	scratchDir,
+	waitForValue,
+	writeJsonFile,
+} from "../utils/daemon-harness";
 
 export function scratchScriptDir(): string {
-	return mkdtempSync(join(tmpdir(), "dg-dispatch-test-"));
+	return scratchDir("dg-dispatch");
 }
 
-/** Writes an executable #!/bin/sh script — argv[0] is the file's own path, never "sh"/"bash" literally. */
 export function writeExecutableScript(
 	dir: string,
 	name: string,
@@ -34,7 +25,6 @@ export function writeExecutableScript(
 
 export type DispatchCredentials = { sessionId: string; token: string };
 
-/** Publishes a command manifest for one session via the already-shipped `manifest` CLI verb. */
 export async function publishManifest(
 	dgHome: string,
 	port: number,
@@ -42,8 +32,7 @@ export async function publishManifest(
 	entries: unknown[],
 	scratchDir: string,
 ): Promise<void> {
-	const path = join(scratchDir, `commands-${sessionId}.json`);
-	writeFileSync(path, JSON.stringify(entries));
+	const path = writeJsonFile(scratchDir, `commands-${sessionId}.json`, entries);
 	const result = await runCli(dgHome, port, [
 		"manifest",
 		"--session",
@@ -54,12 +43,9 @@ export async function publishManifest(
 	if (result.exitCode !== 0) {
 		throw new Error(`manifest publish failed: ${result.stderr}`);
 	}
-	// Publish is fire-and-forget over /cli, broadcast after the daemon's own
-	// 25ms delay — give it room to land before a test sends its next frame.
 	await new Promise((r) => setTimeout(r, 100));
 }
 
-/** Publishes a session's subagent list (with an empty command manifest) for @ mention resolution. */
 export async function publishSubagents(
 	dgHome: string,
 	port: number,
@@ -67,10 +53,16 @@ export async function publishSubagents(
 	names: string[],
 	scratchDir: string,
 ): Promise<void> {
-	const commandsPath = join(scratchDir, `commands-${sessionId}.json`);
-	const subagentsPath = join(scratchDir, `subagents-${sessionId}.json`);
-	writeFileSync(commandsPath, JSON.stringify([]));
-	writeFileSync(subagentsPath, JSON.stringify(names));
+	const commandsPath = writeJsonFile(
+		scratchDir,
+		`commands-${sessionId}.json`,
+		[],
+	);
+	const subagentsPath = writeJsonFile(
+		scratchDir,
+		`subagents-${sessionId}.json`,
+		names,
+	);
 	const result = await runCli(dgHome, port, [
 		"manifest",
 		"--session",
@@ -116,22 +108,22 @@ export function isCommandResult(value: unknown): value is CommandResultFrame {
 	);
 }
 
-/** Polls `frames` for the (n+1)th command-result, for callers firing several requests on one socket with no correlation id. */
 export async function waitForNthCommandResult(
 	frames: unknown[],
 	countBefore: number,
 	timeoutMs = 3000,
 ): Promise<CommandResultFrame> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const all = frames.filter(isCommandResult);
-		if (all.length > countBefore) return all[countBefore];
-		await new Promise((r) => setTimeout(r, 25));
-	}
-	throw new Error(`timed out waiting for command-result #${countBefore + 1}`);
+	return waitForValue(
+		() => {
+			const all = frames.filter(isCommandResult);
+			return all.length > countBefore ? all[countBefore] : undefined;
+		},
+		timeoutMs,
+		`command-result #${countBefore + 1}`,
+	);
 }
 
-export function isProcessAlive(pid: number): boolean {
+function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -140,15 +132,13 @@ export function isProcessAlive(pid: number): boolean {
 	}
 }
 
-/** Polls until `pid` is no longer signalable, or throws after timeoutMs — proves a real kill, not just a claimed one. */
 export async function waitForProcessExit(
 	pid: number,
 	timeoutMs = 3000,
 ): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		if (!isProcessAlive(pid)) return;
-		await new Promise((r) => setTimeout(r, 25));
-	}
-	throw new Error(`pid ${pid} was still alive after ${timeoutMs}ms`);
+	await waitForValue(
+		() => (isProcessAlive(pid) ? undefined : true),
+		timeoutMs,
+		`pid ${pid} to exit`,
+	);
 }

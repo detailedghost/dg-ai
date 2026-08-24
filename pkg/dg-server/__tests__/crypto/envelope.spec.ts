@@ -1,16 +1,3 @@
-/**
- * AES-256-GCM record envelope: encryptRecord(plaintext, aad) generates its
- * OWN randomBytes(12) — no IV parameter on the public surface — and every
- * decrypt binds ciphertext, tag and AAD together so tampering or a
- * ciphertext moved to another row's AAD both fail loudly rather than
- * returning garbage. See plan.md Slice 3 Engineering + Testing Criteria.
- *
- * [SPEC] ASSUMED: createCipherBox(dataKey, seams?) closes over the data key
- * so the returned encryptRecord(plaintext, aad) really is 2-ary; seams.randomIv
- * is a minimal injected-IV seam (mirrors the DG_-prefixed env-seam convention
- * used elsewhere) that exists ONLY so this suite can prove the internal
- * "IV must be 12 bytes" assertion actually fires, without mocking node:crypto.
- */
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { buildAad, createCipherBox } from "../../src/crypto/envelope";

@@ -1,32 +1,20 @@
-/**
- * Pure manifest-loading logic: JSON file -> validated CommandEntry[] ->
- * publish-time argv[0] resolution/refusal. Deliberately import-only (no
- * subprocess) since none of this depends on a live daemon.
- *
- * [SPEC] ASSUMED module surface — not named anywhere in plan.md:
- *   src/manifest/load.ts exports
- *     loadManifestFile(path: string): CommandEntry[]        (read+parse+validate)
- *     resolveManifestForPublish(entries): CommandEntry[]    (Bun.which + denylist)
- *     ManifestLoadError extends Error                       (thrown by both)
- * See deferrals for the invented shell/script-host denylist.
- */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import {
 	loadManifestFile,
 	loadSubagentManifestFile,
 	resolveManifestForPublish,
 } from "../../src/manifest/load";
+import {
+	scratchDir as makeScratchDir,
+	writeJsonFile,
+} from "../utils/daemon-harness";
 
 let scratchDir: string;
 
 function writeManifestFile(contents: unknown): string {
-	scratchDir = mkdtempSync(join(tmpdir(), "dg-manifest-test-"));
-	const path = join(scratchDir, "manifest.json");
-	writeFileSync(path, JSON.stringify(contents));
-	return path;
+	scratchDir = makeScratchDir("dg-manifest");
+	return writeJsonFile(scratchDir, "manifest.json", contents);
 }
 
 afterEach(() => {
@@ -60,10 +48,8 @@ describe("loadManifestFile", () => {
 });
 
 function writeSubagentFile(contents: unknown): string {
-	scratchDir = mkdtempSync(join(tmpdir(), "dg-subagents-test-"));
-	const path = join(scratchDir, "subagents.json");
-	writeFileSync(path, JSON.stringify(contents));
-	return path;
+	scratchDir = makeScratchDir("dg-subagents");
+	return writeJsonFile(scratchDir, "subagents.json", contents);
 }
 
 describe("loadSubagentManifestFile", () => {
@@ -103,8 +89,6 @@ describe("resolveManifestForPublish", () => {
 		expect(() => resolveManifestForPublish(entries)).toThrow(/shell|bash/i);
 	});
 
-	// python3 is on this box's PATH via a version-suffixed symlink (python3 ->
-	// python3.14) — exactly the shape a literal-only denylist match misses.
 	it.skipIf(!Bun.which("python3"))(
 		"refuses python3 even when it resolves through a version-suffixed symlink",
 		() => {

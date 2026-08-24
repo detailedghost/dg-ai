@@ -1,27 +1,17 @@
-/**
- * GET /assets/:id — the daemon half of the wire contract chat-transcript.ts's
- * defaultFetchAsset already calls verbatim (that route, those header names).
- * Rows are written by opening a second ChatStore against the SAME DG_HOME the
- * running daemon uses; WAL supports the extra writer.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { closeSync, ftruncateSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_MAX_ASSET_BYTES, validateSessionBootstrap } from "@dg/common";
-import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
+import { resolveDgPaths } from "@dg/common/node";
 import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import { registerAsset } from "../../src/assets/register";
 import { ChatStore } from "../../src/store";
 import { runCli } from "../commands/cli-wire";
 import {
-	allocatePort,
 	cleanupDgHome,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	FILE_ONLY_SEAMS,
 	killDaemonByLockfile,
-	runStart,
-	waitForHealth,
+	startWithSession,
 } from "../utils/daemon-harness";
 
 let dgHome: string;
@@ -31,30 +21,18 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
-const SECOND_OPENER_SEAMS = {
-	env: { DG_KEY_SOURCE: "file" },
-};
-
-function openSecondStore(paths: DgPaths): Promise<ChatStore> {
-	return ChatStore.open(paths, SECOND_OPENER_SEAMS);
-}
-
 async function bootWithAsset(input: {
 	id: string;
 	filename: string;
 	contentType: string;
 	bytes: Buffer;
 }) {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
+	const started = await startWithSession();
+	dgHome = started.dgHome;
+	const { port, bootstrap } = started;
 
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const store = await openSecondStore(paths);
+	const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 	await registerAsset(
 		{ paths, store },
 		{ sessionId: bootstrap.sessionId, ...input },
@@ -121,7 +99,6 @@ describe("GET /assets/:id", () => {
 		});
 		expect(wrongToken.status).toBe(401);
 
-		// Token in the query string only, no header at all — must not authenticate.
 		const queryOnly = await fetch(
 			`${assetUrl(port, "asset-1")}?sessionId=${bootstrap.sessionId}&token=${bootstrap.token}`,
 			{ headers: base },
@@ -191,7 +168,7 @@ describe("GET /assets/:id", () => {
 			contentType: "image/svg+xml",
 			bytes: Buffer.from("<svg onload=alert(1)></svg>"),
 		});
-		const store = await openSecondStore(paths);
+		const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 		await registerAsset(
 			{ paths, store },
 			{
@@ -218,7 +195,6 @@ describe("GET /assets/:id", () => {
 			/attachment/i,
 		);
 
-		// Even a refusal carries nosniff — "every response", not just the successes.
 		const refused = await fetch(assetUrl(port, "unknown-id"), { headers });
 		expect(refused.status).toBe(404);
 		expect(refused.headers.get("x-content-type-options")).toBe("nosniff");
@@ -262,7 +238,7 @@ describe("GET /assets/:id", () => {
 			contentType: "image/png",
 			bytes: Buffer.from("hi"),
 		});
-		const store = await openSecondStore(paths);
+		const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 		store.insertAsset({
 			sessionId: bootstrap.sessionId,
 			id: "asset-huge",

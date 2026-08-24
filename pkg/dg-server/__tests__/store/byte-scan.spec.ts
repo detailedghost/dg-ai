@@ -1,30 +1,13 @@
-/**
- * The headline crypto contract: byte-scan the database file AND its -wal
- * sidecar for a plaintext needle and find nothing in EITHER — asserting on
- * a column value alone cannot fail (Testing Criteria). WAL genuinely holds
- * uncommitted page content in plaintext for an unencrypted column (verified
- * empirically against a throwaway table before writing this test), so the
- * scan runs once BEFORE close (against -wal) and once AFTER close (against
- * the checkpointed main file) to cover both.
- *
- * Plaintext metadata (sessionId, seq) is checked by querying the raw file
- * with a SEPARATE connection, bypassing the Store entirely — proving those
- * columns are indexable SQL, not just fields the Store happens to decrypt.
- */
-
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
-
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
-
-function scanFile(path: string, needle: string): boolean {
-	if (!existsSync(path)) return false;
-	return readFileSync(path).includes(Buffer.from(needle, "utf8"));
-}
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+	scanFileForBytes as scanFile,
+} from "../utils/daemon-harness";
 
 describe("on-disk bytes never carry plaintext content", () => {
 	it("keeps a message body out of the db file and its -wal sidecar", async () => {

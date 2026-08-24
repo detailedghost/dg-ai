@@ -1,14 +1,3 @@
-/**
- * Static source-inspection over src/dispatch/** — the daemon must never
- * reach a shell, a script-host flag, or Bun's own shell helper to run a $
- * command; a typed argv array is the only path. Fails now because the
- * directory doesn't exist yet, which is the correct RED state for a safety
- * property nothing has implemented.
- *
- * Mirrors the barrel node:-import scan technique already used for
- * @dg/common's `.` export: read source text directly and regex-scan it,
- * rather than requiring a runtime harness for a static property.
- */
 import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -50,8 +39,6 @@ const BANNED_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
 
 describe("src/dispatch/** source inspection", () => {
 	it("contains dispatch source files to inspect", () => {
-		// Fails until slice 8 actually ships src/dispatch/** — the correct RED
-		// state for a property nothing has implemented yet.
 		expect(listTsFiles(DISPATCH_ROOT).length).toBeGreaterThan(0);
 	});
 

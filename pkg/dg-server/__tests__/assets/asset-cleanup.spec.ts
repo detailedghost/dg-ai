@@ -1,10 +1,3 @@
-/**
- * Two DISTINCT cleanup triggers (Engineering, explicit): session-close removes
- * ONE session's staged assets through the setAssetCleanupHook seam
- * registry.close() already calls; a fresh daemon's startup sweep removes
- * whatever a PRIOR process life left, since SessionRegistry is in-memory only.
- */
-
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,6 +11,7 @@ import {
 	decodeChatMarker,
 	extractUrl,
 	freshDgHome,
+	freshTempDir,
 	killDaemonByLockfile,
 	runStart,
 	waitForHealth,
@@ -31,11 +25,10 @@ afterEach(() => {
 	cleanupDgHome(dgHome);
 });
 
-/** A well-formed session id the sweep must recognize as its own, unlike a hand-written name. */
 const UUID_SHAPED_ORPHAN = "9f2c1b40-6a7d-4e58-9b31-0c5d8e2a71f4";
 
 function stagedSource(bytes: number[]): string {
-	const scratch = freshDgHome();
+	const scratch = freshTempDir("dg-asset-cleanup-source");
 	const sourcePath = join(scratch, "picture.png");
 	writeFileSync(sourcePath, Buffer.from(bytes));
 	return sourcePath;
@@ -89,8 +82,6 @@ describe("startup orphan-pruning trigger", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const root = getConfiguredAssetDirectory(paths);
 
-		// Simulate a leftover from a previous daemon life — no session for this
-		// id will ever exist in the fresh registry this test's daemon starts.
 		const orphanDir = join(root, UUID_SHAPED_ORPHAN);
 		mkdirSync(orphanDir, { recursive: true });
 		writeFileSync(join(orphanDir, "leftover.bin"), "orphaned bytes");
@@ -108,9 +99,6 @@ describe("startup orphan-pruning trigger", () => {
 			"the orphaned pre-existing asset directory to be swept at startup",
 		);
 
-		// The startup sweep ran before this session existed — its own,
-		// later-staged assets must survive it, proving the two triggers are
-		// separate rather than one sweep re-running destructively.
 		await runCli(dgHome, port, [
 			"stage",
 			stagedSource([1, 2, 3]),

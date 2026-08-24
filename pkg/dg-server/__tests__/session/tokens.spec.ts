@@ -1,9 +1,3 @@
-/**
- * Slice 7 is the first CALLER of readSessionToken / DG_SESSION_TOKEN
- * (Code Structure's "Layer-1 QA corrections": both existed with no callers
- * and no tests). Proves the override wins over the on-disk file, and that
- * the on-disk shape matches what writeSessionToken emits.
- */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node";
@@ -59,7 +53,7 @@ describe("writeSessionToken / readSessionToken", () => {
 		expect(readSessionToken(paths, SESSION_ID)).toBe("override-only-token");
 	});
 
-	it("the on-disk JSON shape matches exactly what writeSessionToken emitted — the object slice 7 must parse", () => {
+	it("the on-disk JSON shape matches exactly what writeSessionToken emitted — the object the CLI must parse", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const record = {
 			sessionId: SESSION_ID,

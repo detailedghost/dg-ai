@@ -1,34 +1,20 @@
-/**
- * $ dispatch's resource bounds — wall clock, output cap, concurrency (per
- * session and daemon-wide), and the per-session rate ceiling — each proven
- * to reject with its own distinct, observable reason and to actually kill
- * the child's whole process group, not merely report a timeout.
- *
- * [SPEC] invented — plan.md leaves the per-entry override SHAPE unnamed
- * ("each overridable per entry but clamped to a daemon maximum"); this file
- * proposes CommandEntry.limits = { timeoutMs?, maxOutputBytes?,
- * maxConcurrentPerSession?, maxInvocationsPerMinute? }, used here only for
- * timeoutMs (a real 30s wait is untenable in a test) and
- * maxInvocationsPerMinute (the daemon's own default ceiling number is
- * unspecified, so a low override is the only deterministic way to test it
- * without guessing it). See deferrals for the full recommendation.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import {
+	DISPATCH_MAX_CONCURRENT_DAEMON_WIDE,
+	DISPATCH_MAX_CONCURRENT_PER_SESSION,
+} from "../../src/dispatch/limits";
 import { runCli } from "../commands/cli-wire";
 import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
+	closeSockets,
 	collectFrames,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	connectPage,
 	killDaemonByLockfile,
-	runStart,
 	sendConnectHandshake,
-	waitForHealth,
 	waitForOpen,
 	waitForValue,
 	wsExtensionSocket,
@@ -46,38 +32,27 @@ import {
 
 let dgHome: string;
 let scratchDir: string;
-// A throw skips a test's own page.close() — track every socket so afterEach
-// always closes it, rather than leaking a connection past the daemon's own death.
-let openSockets: WebSocket[] = [];
+const openSockets: WebSocket[] = [];
 
 afterEach(() => {
 	killDaemonByLockfile(dgHome);
-	for (const socket of openSockets) socket.close();
-	openSockets = [];
+	closeSockets(openSockets);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
 });
 
 async function startWithSession() {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
+	const started = await bootDaemonSession();
+	dgHome = started.dgHome;
+	return started;
 }
 
 async function connectedPage(
 	port: number,
 	credentials: DispatchCredentials,
 ): Promise<WebSocket> {
-	const page = wsExtensionSocket(port);
+	const page = await connectPage(port, credentials);
 	openSockets.push(page);
-	await waitForOpen(page);
-	sendConnectHandshake(page, credentials, CHAT_PROTOCOL_VERSION);
-	await new Promise((r) => setTimeout(r, 100));
 	return page;
 }
 
@@ -135,11 +110,9 @@ describe("$ dispatch bounds: timeout and process-group kill", () => {
 			2000,
 			"child pidfile",
 		);
-		// The group kill (TERM then KILL) must have actually happened, not
-		// merely been reported in the failure frame.
 		await waitForProcessExit(Number(pidText), 2000);
 		page.close();
-	}, 20_000); // several sequential waits (5s + 2s + 2s) — stay clear of bun:test's own default
+	}, 20_000);
 });
 
 describe("$ dispatch bounds: output cap", () => {
@@ -184,7 +157,7 @@ describe("$ dispatch bounds: output cap", () => {
 });
 
 describe("$ dispatch bounds: concurrency", () => {
-	it("rejects a 3rd concurrent invocation on the same session with a distinct concurrency reason, and the first two still complete", async () => {
+	it("rejects the invocation past DISPATCH_MAX_CONCURRENT_PER_SESSION on the same session with a distinct concurrency reason, and the admitted ones still complete", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = scratchScriptDir();
 		await publishManifest(
@@ -197,12 +170,10 @@ describe("$ dispatch bounds: concurrency", () => {
 
 		const page = await connectedPage(port, bootstrap);
 		const frames = collectFrames(page);
-		page.send(commandInvocationFrame(bootstrap, "Sleep"));
-		page.send(commandInvocationFrame(bootstrap, "Sleep"));
-		page.send(commandInvocationFrame(bootstrap, "Sleep"));
+		for (let i = 0; i < DISPATCH_MAX_CONCURRENT_PER_SESSION + 1; i++) {
+			page.send(commandInvocationFrame(bootstrap, "Sleep"));
+		}
 
-		// Generous window on the *reject* side — the property under test is
-		// "rejected before the sleep-1 admits finish", not a strict millisecond budget.
 		const rejected = await waitForValue(
 			() => frames.filter(isCommandResult).find((f) => f.ok === false),
 			3000,
@@ -213,21 +184,25 @@ describe("$ dispatch bounds: concurrency", () => {
 		const succeeded = await waitForValue(
 			() => {
 				const done = frames.filter(isCommandResult).filter((f) => f.ok);
-				return done.length >= 2 ? done : undefined;
+				return done.length >= DISPATCH_MAX_CONCURRENT_PER_SESSION
+					? done
+					: undefined;
 			},
 			3000,
-			"the two admitted invocations to complete",
+			"the admitted invocations to complete",
 		);
-		expect(succeeded.length).toBe(2);
+		expect(succeeded.length).toBe(DISPATCH_MAX_CONCURRENT_PER_SESSION);
 		page.close();
 	}, 15_000);
 
-	it("rejects a 9th daemon-wide-concurrent invocation from a session with no in-flight commands of its own", async () => {
+	it("rejects the invocation past DISPATCH_MAX_CONCURRENT_DAEMON_WIDE from a session with no in-flight commands of its own", async () => {
 		const { port, bootstrap: main } = await startWithSession();
 		scratchDir = scratchScriptDir();
 
+		const activeSessionCount =
+			DISPATCH_MAX_CONCURRENT_DAEMON_WIDE / DISPATCH_MAX_CONCURRENT_PER_SESSION;
 		const sessions: DispatchCredentials[] = [main];
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < activeSessionCount - 1; i++) {
 			const spawned = await runCli(dgHome, port, [
 				"spawn",
 				"--session",
@@ -267,15 +242,13 @@ describe("$ dispatch bounds: concurrency", () => {
 		}
 		const frames = collectFrames(page);
 
-		// 4 sessions x 2 in flight each = 8, the daemon-wide cap — none of it
-		// tripping any single session's own 2-concurrent bound.
 		for (const session of sessions) {
-			page.send(commandInvocationFrame(session, "Sleep"));
-			page.send(commandInvocationFrame(session, "Sleep"));
+			for (let i = 0; i < DISPATCH_MAX_CONCURRENT_PER_SESSION; i++) {
+				page.send(commandInvocationFrame(session, "Sleep"));
+			}
 		}
 		await new Promise((r) => setTimeout(r, 200));
 
-		// The 9th, from a session sitting at zero in-flight commands of its own.
 		page.send(commandInvocationFrame(idleSession, "Sleep"));
 
 		const rejected = await waitForValue(
@@ -295,7 +268,7 @@ describe("$ dispatch bounds: concurrency", () => {
 		);
 		expect(succeeded.length).toBe(8);
 		page.close();
-	}, 30_000); // heavy setup: 4 spawns + 5 manifest publishes, each its own subprocess
+	}, 30_000);
 });
 
 describe("$ dispatch bounds: per-session rate ceiling", () => {
@@ -330,5 +303,5 @@ describe("$ dispatch bounds: per-session rate ceiling", () => {
 		expect(rejection).toBeDefined();
 		expect(rejection?.error ?? "").toMatch(/rate|per minute|too many/i);
 		page.close();
-	}, 30_000); // up to 6 sequential 3s waits in the worst case
+	}, 30_000);
 });

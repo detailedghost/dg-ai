@@ -21,8 +21,6 @@ describe("dg-server start — cold start", () => {
 	let port: number;
 	let result: Awaited<ReturnType<typeof runStart>>;
 
-	// afterAll: beforeAll is a one-time fixture shared by 3 tests below —
-	// afterEach would delete dgHome after the first and strand the rest.
 	afterAll(() => {
 		killDaemonByLockfile(dgHome);
 		cleanupDgHome(dgHome);
@@ -42,7 +40,7 @@ describe("dg-server start — cold start", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const raw = JSON.parse(readFileSync(paths.lockfilePath, "utf8"));
 		expect(Object.hasOwn(raw, "token")).toBe(false);
-		const handle = readLockfile(dgHome); // throws if the shape ever grows one
+		const handle = readLockfile(dgHome);
 		expect(handle.port).toBe(port);
 	});
 
@@ -142,8 +140,6 @@ describe("lockfile reclaim", () => {
 		port = allocatePort();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
-		// Claims `port`, but nothing is listening there — health-check liveness
-		// must fail, which is exactly what should trigger a reclaim on start.
 		writeFileSync(
 			paths.lockfilePath,
 			JSON.stringify({
@@ -184,8 +180,6 @@ describe("dg-server start — protocol version mismatch on attach", () => {
 		await runStart(dgHome, port);
 		await waitForHealth(port);
 
-		// Same live daemon (instanceId/pid unchanged) — only the declared
-		// protocol changes, mirroring "lockfile reclaim"'s hand-edit precedent.
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const handle = readLockfile(dgHome);
 		writeFileSync(
@@ -203,8 +197,6 @@ describe("dg-server start — protocol version mismatch on attach", () => {
 
 		expect(result.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
 		expect(result.stderr).toContain("never auto-restarts a shared daemon");
-		// No bootstrap URL printed at all — the mismatch short-circuits before
-		// ever calling registerSession, so nothing was created.
 		expect(result.stdout).not.toMatch(/https?:\/\//);
 	});
 });

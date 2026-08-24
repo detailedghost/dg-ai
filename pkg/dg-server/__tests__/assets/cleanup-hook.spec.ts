@@ -1,4 +1,3 @@
-/** The session-close cleanup seam, which registry.close() calls before it broadcasts. */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,7 +9,11 @@ import {
 	setAssetCleanupHook,
 	triggerAssetCleanup,
 } from "../../src/utils/asset-cleanup";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+} from "../utils/daemon-harness";
 
 let dispose: (() => void) | undefined;
 
@@ -43,9 +46,7 @@ describe("installAssetLifecycle", () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			const store = await ChatStore.open(paths, {
-				env: { DG_KEY_SOURCE: "file" },
-			});
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			dispose = installAssetLifecycle(paths, store, createLogger(paths), 47000);
 
 			store.close();
@@ -73,9 +74,7 @@ describe("the asset root is only ever deleted inside when the daemon owns it", (
 			mkdirSync(paths.assetsDir, { recursive: true });
 			symlinkSync(victim, root, "dir");
 
-			const store = await ChatStore.open(paths, {
-				env: { DG_KEY_SOURCE: "file" },
-			});
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			dispose = installAssetLifecycle(paths, store, createLogger(paths), 47000);
 
 			expect(existsSync(join(victim, session, "nested", "secret.txt"))).toBe(
@@ -97,9 +96,7 @@ describe("the asset root is only ever deleted inside when the daemon owns it", (
 			mkdirSync(paths.assetsDir, { recursive: true });
 			symlinkSync(victim, join(paths.assetsDir, "dg-assets"), "dir");
 
-			const store = await ChatStore.open(paths, {
-				env: { DG_KEY_SOURCE: "file" },
-			});
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			const session = "22222222-3333-4444-8555-666666666666";
 			store.insertAsset({
 				sessionId: session,

@@ -1,21 +1,15 @@
-/**
- * Fallback key file: O_CREAT|O_EXCL at 0600, EEXIST is a re-read (never an
- * overwrite), and every read fstat-and-refuses a file whose mode has drifted
- * from 0600 — writeFileSync's mode option does not fix an EXISTING file's
- * mode, so this can't be tested by asserting the write call alone.
- */
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
 	mintFallbackKeyFile,
 	readFallbackKeyFile,
 } from "../../src/crypto/key-file";
+import { scratchDir } from "../utils/daemon-harness";
 
 function tempKeyPath(): string {
-	return join(mkdtempSync(join(tmpdir(), "dg-key-file-test-")), "key");
+	return join(scratchDir("dg-key-file"), "key");
 }
 
 describe("mintFallbackKeyFile", () => {

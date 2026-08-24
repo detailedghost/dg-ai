@@ -1,9 +1,3 @@
-/**
- * "On zero or multiple cwd matches, error listing live sessions and their
- * cwds and require an explicit --session; never guess." Exercised through
- * `close`, since it needs no invented wire shape (session-close is already
- * ratified) and its effect (a session-closed broadcast) is directly observable.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -97,7 +91,7 @@ describe("CLI session resolution by cwd", () => {
 
 		const first = await startSessionIn(port, dirA);
 		await waitForHealth(port);
-		await startSessionIn(port, dirA); // second session, same cwd — ambiguous by cwd alone
+		await startSessionIn(port, dirA);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
