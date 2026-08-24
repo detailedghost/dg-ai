@@ -1,14 +1,12 @@
-/**
- * Store API is exactly claimNext, ack and peekAll — a single UPDATE with
- * RETURNING. Redelivery is a TIME-BOUNDED LEASE: claimNext reclaims a row
- * whose claimed_at exceeds DG_CLAIM_LEASE_MS, in that same UPDATE.
- */
 import { describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+} from "../utils/daemon-harness";
 
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
 const SESSION_ID = "session-claims-1";
 
 describe("ChatStore claimNext / ack / peekAll", () => {
@@ -116,7 +114,7 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			const LEASE_MS = 200; // generous margin so the "not yet expired" check can't flake
+			const LEASE_MS = 200;
 			const store = await ChatStore.open(paths, {
 				env: { DG_KEY_SOURCE: "file", DG_CLAIM_LEASE_MS: String(LEASE_MS) },
 			});
@@ -128,9 +126,8 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 			});
 
 			const claimed = store.claimNext(SESSION_ID);
-			expect(claimed?.id).toBe("m1"); // claimed, never acked
+			expect(claimed?.id).toBe("m1");
 
-			// Lease not yet expired: the only row is still leased, so nothing claimable.
 			expect(store.claimNext(SESSION_ID)).toBeUndefined();
 
 			await new Promise((r) => setTimeout(r, LEASE_MS * 4));
@@ -138,9 +135,40 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 			const reclaimed = store.claimNext(SESSION_ID);
 			expect(reclaimed?.id).toBe("m1");
 
-			// A late ack from the stale (pre-lease) claimant must not satisfy the new lease.
 			expect(store.ack(SESSION_ID, claimed?.claimId as string)).toBe(false);
 			expect(store.ack(SESSION_ID, reclaimed?.claimId as string)).toBe(true);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("never claims an agent-authored row, so the agent's own reply is transcript and not something recv hands back to it", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			store.insertMessage({
+				sessionId: SESSION_ID,
+				id: "human-1",
+				role: "user",
+				body: "question",
+			});
+			const claim = store.claimNext(SESSION_ID);
+			store.ack(SESSION_ID, claim?.claimId as string);
+
+			store.insertMessage({
+				sessionId: SESSION_ID,
+				id: "agent-1",
+				role: "agent",
+				body: "answer",
+			});
+
+			expect(store.claimNext(SESSION_ID)).toBeUndefined();
+			expect(store.peekAll(SESSION_ID).map((m) => m.id)).toEqual([
+				"human-1",
+				"agent-1",
+			]);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -171,10 +199,9 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 				body: "gamma",
 			});
 
-			const claim1 = store.claimNext(SESSION_ID); // m1 claimed+acked
+			const claim1 = store.claimNext(SESSION_ID);
 			store.ack(SESSION_ID, claim1?.claimId as string);
-			store.claimNext(SESSION_ID); // m2 claimed, left unacked
-			// m3 never claimed at all
+			store.claimNext(SESSION_ID);
 
 			const all = store.peekAll(SESSION_ID);
 
@@ -186,8 +213,6 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 		}
 	});
 
-	// Cross-slice contract: history-response.messages[] items are exactly this
-	// stored-record projection, ordered by seq ascending — not a wire frame.
 	it("peekAll's item shape matches the history-response projection: seq, id, role, body, createdAt, optional attachmentId", async () => {
 		const dgHome = freshDgHome();
 		try {
@@ -209,13 +234,11 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 			const [first, second] = store.peekAll(SESSION_ID);
 
 			expect(typeof first?.seq).toBe("number");
-			// seq orders history because timestamps are neither unique nor monotonic.
 			expect(second?.seq as number).toBeGreaterThan(first?.seq as number);
 			expect(first?.role).toBe("user");
 			expect(second?.role).toBe("agent");
 			expect(typeof first?.createdAt).toBe("string");
 			expect(Number.isNaN(Date.parse(first?.createdAt as string))).toBe(false);
-			// insertMessage never sets one — attachmentId stays optional/absent for now.
 			expect(first?.attachmentId).toBeUndefined();
 			store.close();
 		} finally {

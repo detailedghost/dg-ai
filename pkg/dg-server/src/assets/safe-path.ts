@@ -1,11 +1,10 @@
-/** Path containment for asset reads: per-component symlink rejection plus a realpath check. */
 import { constants, lstatSync, realpathSync } from "node:fs";
 import { type FileHandle, open } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { describeError, isEnoent } from "../utils/errors";
 
 export class AssetPathUnsafeError extends Error {}
 
-/** Distinct from unsafe: the row exists, but its staged bytes do not. */
 export class AssetMissingError extends Error {}
 
 const ASSET_READ_FLAGS =
@@ -29,14 +28,18 @@ export function lstatIfExists(
 	try {
 		return lstatSync(path);
 	} catch (err) {
-		if ((err as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-			return undefined;
-		}
+		if (isEnoent(err)) return undefined;
 		throw err;
 	}
 }
 
-/** An asset id or session id must be one flat path segment — no separators, no traversal, no NUL. */
+export function assertRealDirectory(path: string, message: string): void {
+	const info = lstatIfExists(path);
+	if (!info || info.isSymbolicLink() || !info.isDirectory()) {
+		throw new AssetPathUnsafeError(message);
+	}
+}
+
 export function assertFlatSegment(name: string): void {
 	if (
 		name.length === 0 ||
@@ -51,7 +54,6 @@ export function assertFlatSegment(name: string): void {
 	}
 }
 
-/** Resolves a staged asset's path, refusing anything not a regular file contained by root. */
 export function resolveAssetFilePath(
 	root: string,
 	sessionId: string,
@@ -109,7 +111,6 @@ export function resolveAssetFilePath(
 	return target;
 }
 
-/** Resolve and open in ONE step: handing a path back for the caller to re-open is the race the no-follow rule exists to close. */
 export async function openAssetFile(
 	root: string,
 	sessionId: string,
@@ -119,13 +120,11 @@ export async function openAssetFile(
 	try {
 		return await open(path, ASSET_READ_FLAGS);
 	} catch (err) {
-		if ((err as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+		if (isEnoent(err)) {
 			throw new AssetMissingError(`asset "${storedName}" was never staged`);
 		}
 		throw new AssetPathUnsafeError(
-			`asset "${storedName}" could not be opened without following a link: ${
-				err instanceof Error ? err.message : String(err)
-			}`,
+			`asset "${storedName}" could not be opened without following a link: ${describeError(err)}`,
 		);
 	}
 }

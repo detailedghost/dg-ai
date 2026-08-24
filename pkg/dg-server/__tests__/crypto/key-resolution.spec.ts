@@ -1,25 +1,5 @@
-/**
- * Identity-first key resolution: read crypto_meta.key_id, collect candidates
- * from every source that answers, use the one whose fingerprint matches, and
- * REFUSE TO START when none matches. Mint (and WRITE into the keychain when
- * reachable) only when no crypto_meta row exists yet.
- *
- * Every keychain interaction here goes through an injected KeychainBackend
- * fake — this suite must never read or write the developer's real login
- * keyring (Testing Criteria). DG_KEY_SOURCE selection is exercised via the
- * `mode` field directly; the env-var-to-mode wiring itself is covered at the
- * store level in __tests__/store/key-resolution-startup.spec.ts.
- *
- * [SPEC] ASSUMED: resolveDataKey's `mode` gates which sources are even
- * PROBED (mode:"file" never calls the keychain backend at all) — this is
- * what lets an operator set DG_KEY_SOURCE=file to sidestep the macOS
- * `security` GUI-ACL-prompt hazard under a detached daemon, per the
- * Engineering bullet naming that hazard.
- */
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
 	CryptoMetaRow,
@@ -33,12 +13,12 @@ import {
 	unwrapDataKey,
 	wrapDataKey,
 } from "../../src/crypto/key-resolution";
+import { scratchDir } from "../utils/daemon-harness";
 
 function tempKeyPath(): string {
-	return join(mkdtempSync(join(tmpdir(), "dg-key-resolution-test-")), "key");
+	return join(scratchDir("dg-key-resolution"), "key");
 }
 
-/** A KeychainBackend fake whose lookup/store are pre-programmed and call-counted — never touches a real keyring. */
 function fakeKeychain(
 	lookup: KeychainLookupResult,
 	storeResult: "stored" | "unreachable" = "stored",
@@ -113,7 +93,6 @@ describe("resolveDataKey — fresh init (no crypto_meta row)", () => {
 
 		expect(result.cryptoMeta.keySource).toBe("keychain");
 		expect(keychain.storeCalls.length).toBe(1);
-		// The written value must itself be a real 32-byte KEK, not a placeholder.
 		expect(Buffer.from(keychain.storeCalls[0], "base64").length).toBe(32);
 	});
 
@@ -152,12 +131,32 @@ describe("resolveDataKey — existing crypto_meta row", () => {
 		expect(result.dataKey.equals(dataKey)).toBe(true);
 	});
 
+	it("names the missing keychain backend when mode is 'keychain', instead of reporting a generic identity refusal it never probed for", async () => {
+		const kek = randomBytes(32);
+		const existing: CryptoMetaRow = {
+			formatVersion: 1,
+			keyId: fingerprintKey(kek),
+			keySource: "keychain",
+			wrappedDataKey: wrapDataKey(kek, randomBytes(32)),
+		};
+
+		const attempt = resolveDataKey({
+			existing,
+			keyPath: tempKeyPath(),
+			mode: "keychain",
+		});
+
+		await expect(attempt).rejects.toThrow(
+			"DG_KEY_SOURCE=keychain requires a keychain backend",
+		);
+		await expect(attempt).rejects.not.toBeInstanceOf(KeyResolutionRefusedError);
+	});
+
 	it("REFUSES to start when the recorded key_id matches no resolvable candidate, naming recorded vs. resolved identity", async () => {
 		const recordedKek = randomBytes(32);
 		const unrelatedKek = randomBytes(32);
 		const keyPath = tempKeyPath();
 		const { mintFallbackKeyFile } = await import("../../src/crypto/key-file");
-		// The file on disk holds a DIFFERENT key than the one crypto_meta recorded.
 		mintFallbackKeyFile(keyPath, unrelatedKek, fingerprintKey(unrelatedKek));
 
 		const existing: CryptoMetaRow = {
@@ -179,7 +178,7 @@ describe("resolveDataKey — existing crypto_meta row", () => {
 	it("does not mistake an unreachable keychain for an absent one — the refusal names it distinctly", async () => {
 		const recordedKek = randomBytes(32);
 		const keychain = fakeKeychain({ status: "unreachable" });
-		const keyPath = tempKeyPath(); // no file present at all — genuinely absent on that side
+		const keyPath = tempKeyPath();
 
 		const existing: CryptoMetaRow = {
 			formatVersion: 1,
@@ -211,7 +210,7 @@ describe("resolveDataKey — existing crypto_meta row", () => {
 			status: "found",
 			keyBase64: recordedKek.toString("base64"),
 		});
-		const keyPath = tempKeyPath(); // file has nothing — resolution will fail, but that's not what's under test here
+		const keyPath = tempKeyPath();
 
 		const existing: CryptoMetaRow = {
 			formatVersion: 1,
@@ -225,10 +224,7 @@ describe("resolveDataKey — existing crypto_meta row", () => {
 			keyPath,
 			mode: "file",
 			keychain,
-		}).catch(() => {
-			// Refusal is expected (file alone can't match a keychain-recorded key) —
-			// the point of this test is solely that the keychain was never asked.
-		});
+		}).catch(() => {});
 
 		expect(keychain.lookupCalls).toBe(0);
 	});

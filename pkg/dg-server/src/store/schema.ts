@@ -1,9 +1,3 @@
-/**
- * v1 schema: every table STRICT, messages/status_events/command_invocations
- * keyed by an AUTOINCREMENT seq (timestamps are neither unique nor
- * monotonic), assets carrying deleted_at + state so a pruned asset is a
- * known-gone row rather than a missing one.
- */
 import type { Database } from "bun:sqlite";
 import type { MigrationStep } from "./migrations";
 
@@ -78,12 +72,6 @@ function createV1Tables(db: Database): void {
 	) STRICT`);
 }
 
-/**
- * v2: slice 8's $ dispatch and @ mention routing. subagent_name/label are
- * plaintext (routing labels, not secrets) like the existing attachment_id;
- * command_manifests is one upsertable row per session, each field its own
- * AAD domain.
- */
 function createV2Additions(db: Database): void {
 	db.run(`ALTER TABLE messages ADD COLUMN subagent_name TEXT`);
 	db.run(`ALTER TABLE command_invocations ADD COLUMN label TEXT`);
@@ -99,7 +87,6 @@ function createV2Additions(db: Database): void {
 	) STRICT`);
 }
 
-/** v3: assets.state gains a CHECK, which SQLite can only add by rebuilding the table. */
 function createV3AssetStateCheck(db: Database): void {
 	db.run(`CREATE TABLE assets_v3 (
 		id TEXT PRIMARY KEY,
@@ -127,10 +114,26 @@ function createV3AssetStateCheck(db: Database): void {
 	db.run("ALTER TABLE assets_v3 RENAME TO assets");
 }
 
+function createV4Indexes(db: Database): void {
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_messages_pending ON messages(session_id, role, seq) WHERE delivered_at IS NULL",
+	);
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON messages(session_id, seq)",
+	);
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_assets_session_state ON assets(session_id, state)",
+	);
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_status_events_session ON status_events(session_id, seq)",
+	);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
 	{ version: 3, run: createV3AssetStateCheck },
+	{ version: 4, run: createV4Indexes },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

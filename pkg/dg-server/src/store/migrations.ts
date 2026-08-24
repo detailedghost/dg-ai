@@ -1,9 +1,3 @@
-/**
- * Hand-rolled PRAGMA user_version migrations: one BEGIN IMMEDIATE transaction
- * per step, version bump inside it, forward-only. PRAGMA user_version cannot
- * be parameterised (verified empirically) — the step's own numeric version is
- * validated as an integer before being interpolated as a literal.
- */
 import type { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -13,8 +7,8 @@ export type MigrationStep = { version: number; run: (db: Database) => void };
 export type RunMigrationsOptions = { snapshotDir?: string };
 
 export class ForwardOnlyVersionError extends Error {
-	recordedVersion: number;
-	supportedVersion: number;
+	readonly recordedVersion: number;
+	readonly supportedVersion: number;
 
 	constructor(recordedVersion: number, supportedVersion: number) {
 		super(
@@ -41,7 +35,6 @@ function takeSnapshot(
 		snapshotDir,
 		`pre-migration-v${version}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
 	);
-	// VACUUM INTO cannot run inside a transaction — taken before BEGIN below.
 	db.run(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
 }
 
@@ -57,8 +50,6 @@ function runStep(
 
 	db.run("BEGIN IMMEDIATE");
 	try {
-		// Re-read inside the transaction: a concurrent writer may have already
-		// advanced user_version between our outer read and this BEGIN.
 		if (step.version <= readUserVersion(db)) {
 			db.run("COMMIT");
 			return;
@@ -69,14 +60,11 @@ function runStep(
 	} catch (err) {
 		try {
 			db.run("ROLLBACK");
-		} catch {
-			// best-effort — some failure modes have already rolled back themselves
-		}
+		} catch {}
 		throw err;
 	}
 }
 
-/** Runs every step whose version exceeds the db's current user_version, in order. */
 export function runMigrations(
 	db: Database,
 	steps: MigrationStep[],

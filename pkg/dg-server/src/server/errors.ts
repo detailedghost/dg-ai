@@ -1,8 +1,3 @@
-/**
- * A typed error carrying its own exit code, so src/index.ts's top-level
- * handler never forecloses a distinct code (e.g. slice 7's reserved timeout
- * exit) behind a blanket exit(1).
- */
 export class DgCliError extends Error {
 	readonly exitCode: number;
 

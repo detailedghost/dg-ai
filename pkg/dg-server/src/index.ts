@@ -1,16 +1,11 @@
 #!/usr/bin/env bun
 
-/**
- * dg-server — the loopback HTTP+WebSocket daemon behind `dg:start`. Thin
- * commander entry point; `__serve` is a hidden subcommand (see bootstrap.ts's
- * daemonize note), never invoked directly by a human.
- */
-
 import type { SessionRole } from "@dg/common";
 import { Command } from "commander";
 import { registerAgentCommands } from "./commands";
 import { cmdServe, cmdStart, cmdStatus } from "./server/bootstrap";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./server/errors";
+import { describeError } from "./utils/errors";
 
 const program = new Command();
 program
@@ -63,7 +58,6 @@ program
 	});
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-	const message = err instanceof Error ? err.message : String(err);
-	console.error(`dg-server: ${message}`);
+	console.error(`dg-server: ${describeError(err)}`);
 	process.exit(err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE);
 });

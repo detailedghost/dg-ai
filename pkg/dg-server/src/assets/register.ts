@@ -1,10 +1,7 @@
-/** The single production write-path for staging an asset's encrypted bytes and row. */
 import {
 	closeSync,
 	constants,
 	fstatSync,
-	lstatSync,
-	mkdirSync,
 	openSync,
 	readFileSync,
 	writeSync,
@@ -13,8 +10,9 @@ import { join } from "node:path";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { AssetTooLargeError, type ChatStore } from "../store";
+import { ensurePrivateDir } from "../utils/fs";
 import { getConfiguredAssetDirectory } from "./config";
-import { AssetPathUnsafeError, assertFlatSegment } from "./safe-path";
+import { assertFlatSegment, assertRealDirectory } from "./safe-path";
 
 export type RegisterAssetDeps = {
 	paths: DgPaths;
@@ -42,7 +40,6 @@ function writeNoFollow(path: string, bytes: Buffer): void {
 	}
 }
 
-/** fstat the OPEN fd, never the path: the size bound has to apply to the very file the bytes come from. */
 export function readAssetSourceFile(path: string): Buffer {
 	const fd = openSync(path, constants.O_RDONLY);
 	try {
@@ -81,13 +78,14 @@ export async function registerAsset(
 	]);
 
 	const root = getConfiguredAssetDirectory(deps.paths);
-	mkdirSync(root, { recursive: true, mode: 0o700 });
-	const rootInfo = lstatSync(root);
-	if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
-		throw new AssetPathUnsafeError(`asset root ${root} is not a real directory`);
-	}
+	ensurePrivateDir(root);
+	assertRealDirectory(root, `asset root ${root} is not a real directory`);
 	const sessionDir = join(root, input.sessionId);
-	mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+	ensurePrivateDir(sessionDir);
+	assertRealDirectory(
+		sessionDir,
+		`asset session directory ${sessionDir} is not a real directory`,
+	);
 	writeNoFollow(join(sessionDir, input.id), fileBytes);
 
 	deps.store.insertAsset({

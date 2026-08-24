@@ -12,6 +12,7 @@ import { resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
+import { describeError } from "../utils/errors";
 import {
 	type ConnectionManager,
 	createSocketState,
@@ -43,10 +44,16 @@ export type HttpServerDeps = {
 	store: ChatStore;
 };
 
+const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
+
 function json(body: unknown, init: ResponseInit = {}): Response {
 	return new Response(JSON.stringify(body), {
 		...init,
-		headers: { "Content-Type": "application/json", ...init.headers },
+		headers: {
+			"Content-Type": "application/json",
+			...NOSNIFF_HEADERS,
+			...init.headers,
+		},
 	});
 }
 
@@ -61,12 +68,28 @@ function bootstrapPageHtml(): string {
 	return "<!doctype html><html><head><title>dg chat</title></head><body><p>Starting chat session…</p></body></html>";
 }
 
+function handleHealthCheck(
+	req: Request,
+	port: number,
+	instanceId: string,
+): Response {
+	const failsHostOrOrigin =
+		!isLoopbackHost(req.headers.get("host"), port) ||
+		isBrowserOrigin(req.headers.get("origin"));
+	if (failsHostOrOrigin) {
+		return new Response(null, { status: 204 });
+	}
+	return json({
+		daemon: "dg-server",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		instanceId,
+	});
+}
+
 export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	const { port, paths, registry, connections, logger, noteActivity, store } =
 		deps;
 
-	// One scheduler for the daemon's lifetime — concurrency/rate bounds are
-	// meaningless if reset per connection.
 	const dispatchScheduler = new DispatchScheduler();
 	const frameDeps = {
 		registry,
@@ -79,15 +102,13 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	};
 
 	const boundServer = Bun.serve<SocketState>({
-		hostname: "127.0.0.1", // Bun defaults to 0.0.0.0 — never inherit that.
+		hostname: "127.0.0.1",
 		port,
-		reusePort: false, // NEVER true: would let two daemons load-balance the same port.
-		idleTimeout: 255, // HTTP idleTimeout caps at 255s.
+		reusePort: false,
+		idleTimeout: 255,
 		development: false,
 		error(err) {
-			logger.error(
-				`unhandled request error: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			logger.error(`unhandled request error: ${describeError(err)}`);
 			return new Response("internal error", {
 				status: 500,
 				headers: {
@@ -99,7 +120,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		websocket: {
 			idleTimeout: 120,
 			sendPings: true,
-			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + 4096, // headroom above our own graceful rejection boundary
+			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + 4096,
 			open(ws) {
 				connections.add(ws);
 				noteActivity();
@@ -108,7 +129,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				void handleSocketMessage(ws, message, frameDeps);
 			},
 			close(ws) {
-				resolveDrainWaiters(ws); // never park a queued send on a socket that's gone
+				resolveDrainWaiters(ws);
 				connections.remove(ws);
 				noteActivity();
 			},
@@ -120,17 +141,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			const url = new URL(req.url);
 
 			if (url.pathname === "/health") {
-				const failsHostOrOrigin =
-					!isLoopbackHost(req.headers.get("host"), port) ||
-					isBrowserOrigin(req.headers.get("origin"));
-				if (failsHostOrOrigin) {
-					return new Response(null, { status: 204 });
-				}
-				return json({
-					daemon: "dg-server",
-					protocolVersion: CHAT_PROTOCOL_VERSION,
-					instanceId: deps.instanceId,
-				});
+				return handleHealthCheck(req, port, deps.instanceId);
 			}
 
 			const hostError = requireLoopbackHost(req, port);
@@ -149,7 +160,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === "/start" && req.method === "GET") {
 				return new Response(bootstrapPageHtml(), {
-					headers: { "Content-Type": "text/html; charset=utf-8" },
+					headers: {
+						"Content-Type": "text/html; charset=utf-8",
+						...NOSNIFF_HEADERS,
+					},
 				});
 			}
 
@@ -181,15 +195,11 @@ async function handleRegisterSession(
 	req: Request,
 	deps: HttpServerDeps,
 ): Promise<Response> {
-	// Mints a live session capability, same as /cli's own upgrade — no
-	// legitimate caller (the CLI's own fetch) ever carries a browser Origin.
 	if (isBrowserOrigin(req.headers.get("origin"))) {
 		return new Response("refused: /start rejects a browser Origin", {
 			status: 400,
 		});
 	}
-	// A CORS preflight guards any non-simple Content-Type, so a cross-origin
-	// POST from an attacker page never reaches this handler — hence the exact check.
 	const contentType = (req.headers.get("content-type") ?? "")
 		.split(";")[0]
 		.trim();
@@ -236,8 +246,6 @@ async function handleRegisterSession(
 		return new Response(`cwd does not resolve: ${input.cwd}`, { status: 400 });
 	}
 	deps.noteActivity();
-	// Session-list broadcasting is centralized on registry's "changed" event
-	// (wired once in bootstrap.ts) — deps.registry.create() above already fired it.
 
 	return json({
 		port: deps.port,
@@ -297,9 +305,7 @@ function handleCliUpgrade(
 	return new Response(null, { status: 101 });
 }
 
-const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
 
-/** Opaque id, looked up scoped to the requesting session; auth by request header only. */
 async function handleAssetGet(
 	req: Request,
 	url: URL,

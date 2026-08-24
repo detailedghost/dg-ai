@@ -1,17 +1,11 @@
 import type { CommandEntry } from "@dg/common";
 
-/**
- * Daemon-wide $ dispatch ceilings — conceptually alongside @dg/common's
- * CHAT_MAX_* constants, declared here instead since chat-format.ts is a
- * parallel slice's file this pass. An entry's `limits` override may only
- * lower these, never raise past them.
- */
 export const DISPATCH_MAX_TIMEOUT_MS = 30_000;
-export const DISPATCH_MAX_OUTPUT_BYTES = 262_144; // 256 KiB
+export const DISPATCH_MAX_OUTPUT_BYTES = 262_144;
 export const DISPATCH_MAX_CONCURRENT_PER_SESSION = 2;
-export const DISPATCH_MAX_CONCURRENT_DAEMON_WIDE = 8; // daemon-wide only, not per-entry overridable
+export const DISPATCH_MAX_CONCURRENT_DAEMON_WIDE = 8;
 export const DISPATCH_MAX_INVOCATIONS_PER_MINUTE = 60;
-export const DISPATCH_KILL_GRACE_MS = 500; // TERM-to-KILL escalation window
+export const DISPATCH_KILL_GRACE_MS = 500;
 
 export type CommandLimitOverrides = {
 	timeoutMs?: number;
@@ -20,11 +14,6 @@ export type CommandLimitOverrides = {
 	maxInvocationsPerMinute?: number;
 };
 
-/**
- * `limits?` isn't on CommandEntry itself (chat-format.ts is off-limits this
- * pass) — validateCommandManifest doesn't reject the extra property, so it
- * survives the wire and the manifest store untouched; this is the read-side view.
- */
 export type CommandEntryWithLimits = CommandEntry & {
 	limits?: CommandLimitOverrides;
 };

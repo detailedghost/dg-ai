@@ -1,21 +1,17 @@
-/**
- * Identity-first key resolution: read crypto_meta.key_id, collect candidates
- * from every source that answers, use the one whose fingerprint matches, and
- * REFUSE TO START when none matches — naming recorded vs. resolved identity.
- * Mint (and WRITE into the keychain when reachable) only when no crypto_meta
- * row exists yet.
- */
 import {
 	createCipheriv,
 	createDecipheriv,
 	hkdfSync,
 	randomBytes,
 } from "node:crypto";
+import { isEnoent } from "../utils/errors";
+import {
+	AES_GCM_ALGORITHM,
+	AES_GCM_IV_BYTES,
+	AES_GCM_TAG_BYTES,
+} from "./constants";
 import { mintFallbackKeyFile, readFallbackKeyFile } from "./key-file";
 
-const ALGORITHM = "aes-256-gcm";
-const IV_LENGTH = 12;
-const TAG_LENGTH = 16;
 const FINGERPRINT_SALT = Buffer.from("dg-chat-key-fingerprint-v1", "utf8");
 const CRYPTO_META_FORMAT_VERSION = 1;
 
@@ -27,7 +23,6 @@ export type KeychainLookupResult =
 export type KeychainBackend = {
 	lookup(): Promise<KeychainLookupResult>;
 	store(keyBase64: string): Promise<"stored" | "unreachable">;
-	/** Honest source label for a backend that isn't really a keychain (e.g. DPAPI-over-file). Defaults to "keychain". */
 	sourceLabel?: string;
 };
 
@@ -81,39 +76,32 @@ export class KeyResolutionRefusedError extends Error {
 	}
 }
 
-/** Deterministic, non-secret-derived identity for a KEK — never reveals the key itself. */
 export function fingerprintKey(kek: Buffer): string {
 	const out = hkdfSync("sha256", kek, FINGERPRINT_SALT, Buffer.alloc(0), 16);
 	return Buffer.from(out).toString("hex");
 }
 
-/** Wraps the raw data key under kek: [iv(12) | tag(16) | ciphertext] in one Buffer. */
 export function wrapDataKey(kek: Buffer, dataKey: Buffer): Buffer {
-	const iv = randomBytes(IV_LENGTH);
-	const cipher = createCipheriv(ALGORITHM, kek, iv, {
-		authTagLength: TAG_LENGTH,
+	const iv = randomBytes(AES_GCM_IV_BYTES);
+	const cipher = createCipheriv(AES_GCM_ALGORITHM, kek, iv, {
+		authTagLength: AES_GCM_TAG_BYTES,
 	});
 	const ciphertext = Buffer.concat([cipher.update(dataKey), cipher.final()]);
 	return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]);
 }
 
 export function unwrapDataKey(kek: Buffer, wrapped: Buffer): Buffer {
-	const iv = wrapped.subarray(0, IV_LENGTH);
-	const tag = wrapped.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
-	const ciphertext = wrapped.subarray(IV_LENGTH + TAG_LENGTH);
-	const decipher = createDecipheriv(ALGORITHM, kek, iv, {
-		authTagLength: TAG_LENGTH,
+	const iv = wrapped.subarray(0, AES_GCM_IV_BYTES);
+	const tag = wrapped.subarray(
+		AES_GCM_IV_BYTES,
+		AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES,
+	);
+	const ciphertext = wrapped.subarray(AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES);
+	const decipher = createDecipheriv(AES_GCM_ALGORITHM, kek, iv, {
+		authTagLength: AES_GCM_TAG_BYTES,
 	});
 	decipher.setAuthTag(tag);
 	return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-}
-
-function isEnoent(err: unknown): boolean {
-	return (
-		typeof err === "object" &&
-		err !== null &&
-		(err as NodeJS.ErrnoException).code === "ENOENT"
-	);
 }
 
 function probeFile(keyPath: string): { candidate: KeyCandidate; kek?: Buffer } {
@@ -151,10 +139,16 @@ async function probeKeychain(
 	}
 }
 
+const KEYCHAIN_MODE_WITHOUT_BACKEND =
+	"DG_KEY_SOURCE=keychain requires a keychain backend";
+
 async function resolveExisting(
 	existing: CryptoMetaRow,
 	input: ResolveDataKeyInput,
 ): Promise<ResolveDataKeyResult> {
+	if (input.mode === "keychain" && !input.keychain) {
+		throw new Error(KEYCHAIN_MODE_WITHOUT_BACKEND);
+	}
 	const candidates: KeyCandidate[] = [];
 	let matchedKek: Buffer | undefined;
 
@@ -259,15 +253,12 @@ async function mintFresh(
 
 	if (input.mode === "keychain") {
 		if (!input.keychain) {
-			throw new Error("DG_KEY_SOURCE=keychain requires a keychain backend");
+			throw new Error(KEYCHAIN_MODE_WITHOUT_BACKEND);
 		}
 		const result = await mintViaKeychain(input.keychain, dataKey, true);
-		// mintViaKeychain(strict:true) always returns a result or throws.
 		return result as ResolveDataKeyResult;
 	}
 
-	// auto: a fresh mint has nothing recorded to match against, so probe
-	// reachability via lookup() first rather than committing a store() blind.
 	if (input.keychain) {
 		let reachable = true;
 		try {

@@ -7,16 +7,11 @@ type Admission = { ok: true } | { ok: false; reason: string };
 
 const RATE_WINDOW_MS = 60_000;
 
-/**
- * Per-daemon singleton: session and daemon-wide concurrency counters, plus a
- * per (session, commandLabel) sliding one-minute invocation window. Checked
- * in this order — rate, then per-session, then daemon-wide — so each bound
- * that trips reports its own distinct reason.
- */
 export class DispatchScheduler {
 	private readonly sessionInFlight = new Map<string, number>();
 	private daemonInFlight = 0;
 	private readonly invocationTimestamps = new Map<string, number[]>();
+	private lastSweep = 0;
 
 	tryAdmit(
 		sessionId: string,
@@ -25,6 +20,14 @@ export class DispatchScheduler {
 	): Admission {
 		const key = JSON.stringify([sessionId, commandLabel]);
 		const now = Date.now();
+		if (now - this.lastSweep >= RATE_WINDOW_MS) {
+			this.lastSweep = now;
+			for (const [seen, times] of this.invocationTimestamps) {
+				if (times.every((t) => t <= now - RATE_WINDOW_MS)) {
+					this.invocationTimestamps.delete(seen);
+				}
+			}
+		}
 		const recent = (this.invocationTimestamps.get(key) ?? []).filter(
 			(t) => t > now - RATE_WINDOW_MS,
 		);

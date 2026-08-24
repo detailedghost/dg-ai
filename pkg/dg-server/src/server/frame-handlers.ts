@@ -6,6 +6,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
+	fitHistoryPage,
 	isRecord,
 	validateChatFrame,
 	validateCommandManifest,
@@ -28,6 +29,7 @@ import {
 import { ManifestLoadError, resolveManifestForPublish } from "../manifest/load";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
+import { describeError } from "../utils/errors";
 import type { ConnectionManager } from "./connection";
 import {
 	registerInvalidFrame,
@@ -87,11 +89,8 @@ function broadcastPageFrame(
 	return Promise.all(sends).then(() => undefined);
 }
 
-// validateChatFrame requires a non-empty sessionId on every frame, including
-// outbound "error" — used when the failing frame carried no real one to echo.
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
 
-/** Closes the socket once the small failed-frame budget is exceeded. */
 function noteInvalid(ws: ServerWebSocket<SocketState>): void {
 	if (registerInvalidFrame(ws.data)) {
 		ws.close(1008, "invalid frame budget exceeded");
@@ -277,8 +276,6 @@ async function handleCliFrame(
 				);
 				return;
 			}
-			// Publish time means the DAEMON's acceptance of this frame — the CLI's
-			// own check is a fast local error only, not the enforcement boundary.
 			try {
 				resolveManifestForPublish(frame.commands);
 			} catch (err) {
@@ -289,8 +286,6 @@ async function handleCliFrame(
 				);
 				return;
 			}
-			// Otherwise a later command-invocation has no lookup surface to
-			// resolve commandLabel -> argv against.
 			deps.store.saveCommandManifest({
 				sessionId,
 				commands: frame.commands,
@@ -308,11 +303,6 @@ async function handleCliFrame(
 	}
 }
 
-/**
- * "connect" is deliberately outside the 18 ratified ChatFrame types (they all
- * assume capability already exists) — it is the /ws capability-capture
- * handshake, checked structurally here rather than through validateChatFrame.
- */
 function isConnectHandshake(value: unknown): value is ConnectHandshake {
 	if (typeof value !== "object" || value === null) return false;
 	const record = value as Record<string, unknown>;
@@ -349,14 +339,10 @@ async function handleConnectHandshake(
 	}
 	ws.data.capabilities.set(handshake.sessionId, handshake.token);
 	deps.noteActivity();
-	// A page connecting after sessions already exist otherwise learns of none —
-	// session-list is outbound-only, so it has no other way to ask.
 	await sendFrame(ws, handshake.sessionId, {
 		type: "session-list",
 		sessions: deps.registry.list(),
 	});
-	// TOFU commit point: only a token-proven connection pins the origin, so a
-	// merely well-shaped fake Origin can never pin anything on its own.
 	if (ws.data.kind === "ws" && ws.data.originHeader) {
 		pinOriginIfUnset(deps.paths, ws.data.originHeader);
 	}
@@ -369,8 +355,6 @@ async function handleSessionCreate(
 ): Promise<void> {
 	const requester = deps.registry.get(frame.sessionId);
 	if (!requester) {
-		// Unreachable today (authorizeFrame already matched this pair against the
-		// socket's capability map) — never fall back to the daemon's own cwd.
 		await sendError(ws, frame.sessionId, "session-create: requester unknown");
 		return;
 	}
@@ -396,8 +380,6 @@ async function handleSessionCreate(
 		type: "session-pending",
 		newSession: { sessionId: record.sessionId, token: record.token },
 	});
-	// Session-list broadcasting is centralized on registry's "changed" event
-	// (wired once in bootstrap.ts) — registry.create() above already fired it.
 }
 
 async function handleSessionClose(
@@ -417,8 +399,6 @@ async function handleSessionClose(
 		);
 		return;
 	}
-	// Broadcast + capability revocation happens in the single registry "closed"
-	// listener wired at bootstrap — reused by shutdown and every closer above.
 }
 
 async function handleHistoryRequest(
@@ -426,15 +406,20 @@ async function handleHistoryRequest(
 	frame: Extract<ChatFrame, { type: "history-request" }>,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
-	// Stored-record projection (seq, id, role, body, createdAt, attachmentId?),
-	// ordered by seq ascending — the cross-slice history-response contract.
+	const overhead = new TextEncoder().encode(
+		JSON.stringify({
+			sessionId: frame.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			type: "history-response",
+			messages: [],
+		}),
+	).length;
 	await sendFrame(ws, frame.sessionId, {
 		type: "history-response",
-		messages: deps.store.peekAll(frame.sessionId),
+		messages: fitHistoryPage(deps.store.peekAll(frame.sessionId), overhead),
 	});
 }
 
-/** Only the daemon-authoritative asset directory key exists today — an unknown key is its own config-result error, not a transport error. */
 async function handleConfigFrame(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "config-get" | "config-set" }>,
@@ -507,8 +492,6 @@ async function handleUserMessage(
 		);
 		return;
 	}
-	// Resolved BEFORE insertMessage — an unresolved mention still delivers,
-	// unchanged, with the field simply absent (never refuse over a typo).
 	const subagentNames = deps.store.getSubagentNames(frame.sessionId) ?? [];
 	const subagentName = resolveSubagentMention(frame.body, subagentNames);
 	deps.store.insertMessage({
@@ -524,7 +507,6 @@ async function handleUserMessage(
 	});
 }
 
-/** frame.sessionId here has already passed authorizeFrame against the socket's own capability map — never a lookup keyed on an unchecked frame field. */
 async function handleCommandInvocation(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "command-invocation" }>,
@@ -556,7 +538,6 @@ async function dispatchFrame(
 		case "session-close":
 			return handleSessionClose(ws, frame, deps);
 		case "keepalive":
-			// Liveness only. Replying would double the traffic the keepalive minimises.
 			deps.noteActivity();
 			return;
 		case "history-request":
@@ -567,8 +548,6 @@ async function dispatchFrame(
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
 		default:
-			// Every other type is outbound-only, so authorizeFrame already rejected
-			// it upstream — an unreachable defensive fallback, not an assertNever crash.
 			await sendError(
 				ws,
 				frame.sessionId,
@@ -585,8 +564,6 @@ export async function handleSocketMessage(
 	const bytes =
 		typeof raw === "string" ? Buffer.byteLength(raw, "utf8") : raw.byteLength;
 	if (bytes > CHAT_MAX_PAYLOAD_BYTES) {
-		// Rejected before parsing (no sessionId yet, no store side effect) —
-		// still a distinct, observable error frame, not a silent drop.
 		await sendError(
 			ws,
 			TRANSPORT_ERROR_SESSION_ID,
@@ -630,19 +607,13 @@ export async function handleSocketMessage(
 		typeof (parsed as Record<string, unknown>).sessionId === "string"
 			? ((parsed as Record<string, unknown>).sessionId as string)
 			: "";
-	// validateChatFrame requires a non-empty sessionId, so a missing/blank one
-	// still needs a placeholder to make the schema-failure error deliverable.
 	const rawSessionId = parsedSessionId || TRANSPORT_ERROR_SESSION_ID;
 
 	let frame: ChatFrame;
 	try {
 		frame = validateChatFrame(parsed);
 	} catch (err) {
-		await sendError(
-			ws,
-			rawSessionId,
-			err instanceof Error ? err.message : String(err),
-		);
+		await sendError(ws, rawSessionId, describeError(err));
 		noteInvalid(ws);
 		return;
 	}
@@ -660,11 +631,7 @@ export async function handleSocketMessage(
 	try {
 		authorizeFrame(frame, ws.data.capabilities);
 	} catch (err) {
-		await sendError(
-			ws,
-			frame.sessionId,
-			err instanceof Error ? err.message : String(err),
-		);
+		await sendError(ws, frame.sessionId, describeError(err));
 		noteInvalid(ws);
 		return;
 	}

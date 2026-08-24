@@ -1,11 +1,6 @@
-/**
- * ChatStore — the ONLY store of record. Envelope-encrypted SQLite (bun:sqlite,
- * WAL, STRICT tables) behind the ratified surface: open/close, userVersion,
- * cryptoMeta, insertMessage, insertCommandInvocation, claimNext, ack, peekAll.
- */
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	CHAT_MAX_ASSET_BYTES,
 	type CommandEntry,
@@ -25,6 +20,8 @@ import {
 	resolveDataKey,
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
+import { readEnvNumber } from "../utils/env";
+import { ensurePrivateDir } from "../utils/fs";
 import { applyConnectionPragmas, DEFAULT_BUSY_TIMEOUT_MS } from "./connection";
 import { runMigrations } from "./migrations";
 import { SCHEMA_STEPS } from "./schema";
@@ -40,7 +37,6 @@ const AAD_SUBAGENT_LIST = "subagent-list";
 const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
 
-/** Thrown by insertAsset/registerAsset — no row and no bytes are ever written past this. */
 export class AssetTooLargeError extends Error {
 	constructor(byteLength: number) {
 		super(
@@ -73,7 +69,6 @@ export type InsertCommandInvocationInput = {
 	stdout: string;
 	stderr: string;
 	truncated: boolean;
-	/** Display label from the manifest entry — kept separate from the resolved argv audit trail. */
 	label?: string;
 };
 
@@ -109,7 +104,6 @@ export type ClaimedMessage = {
 	subagentName?: string;
 };
 
-/** Cross-slice contract: exactly the history-response.messages[] item shape. */
 export type PeekedMessage = {
 	seq: number;
 	id: string;
@@ -130,7 +124,6 @@ export type InsertAssetInput = {
 	byteLength: number;
 };
 
-/** getAsset returns undefined for BOTH an unknown id and a wrong-session id — one indistinguishable answer, so it cannot probe another session's assets. */
 export type AssetRow = {
 	id: string;
 	sessionId: string;
@@ -185,14 +178,22 @@ type RawStatusEventRow = {
 	progress_tag: Uint8Array;
 };
 
+type CommandManifestRow = {
+	commands_ciphertext: Uint8Array;
+	commands_iv: Uint8Array;
+	commands_tag: Uint8Array;
+	subagents_ciphertext: Uint8Array;
+	subagents_iv: Uint8Array;
+	subagents_tag: Uint8Array;
+};
+
 function resolveKeyMode(raw: string | undefined): KeyMode {
 	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
 }
 
-/** chmod to 0700 self-heals a wrongly-permissioned state dir, but AUDIBLY — a silent fix would hide that the db/-wal had been group/world-readable. */
 function ensureStateDir(stateDir: string): void {
 	if (!existsSync(stateDir)) {
-		mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+		ensurePrivateDir(stateDir);
 		return;
 	}
 	const mode = statSync(stateDir).mode & 0o777;
@@ -268,9 +269,11 @@ export class ChatStore {
 				);
 			}
 
-			const claimLeaseMs = env.DG_CLAIM_LEASE_MS
-				? Number(env.DG_CLAIM_LEASE_MS)
-				: DEFAULT_CLAIM_LEASE_MS;
+			const claimLeaseMs = readEnvNumber(
+				env,
+				"DG_CLAIM_LEASE_MS",
+				DEFAULT_CLAIM_LEASE_MS,
+			);
 
 			return new ChatStore(
 				db,
@@ -279,7 +282,7 @@ export class ChatStore {
 				claimLeaseMs,
 			);
 		} catch (err) {
-			db.close(false); // don't mask the original error behind a locked-db throw
+			db.close(false);
 			throw err;
 		}
 	}
@@ -305,13 +308,17 @@ export class ChatStore {
 		);
 	}
 
-	private decryptMessageBody(row: RawMessageRow, sessionId: string): string {
-		const aad = buildAad({
-			domain: AAD_MESSAGE_BODY,
+	#aad(domain: string, sessionId: string, rowId: string): Buffer {
+		return buildAad({
+			domain,
 			sessionId,
-			rowId: row.id,
+			rowId,
 			formatVersion: this.meta.formatVersion,
 		});
+	}
+
+	private decryptMessageBody(row: RawMessageRow, sessionId: string): string {
+		const aad = this.#aad(AAD_MESSAGE_BODY, sessionId, row.id);
 		return this.cipherBox
 			.decryptRecord(
 				Buffer.from(row.body_ciphertext),
@@ -324,12 +331,7 @@ export class ChatStore {
 
 	insertMessage(input: InsertMessageInput): { seq: number } {
 		this.ensureSessionRow(input.sessionId);
-		const aad = buildAad({
-			domain: AAD_MESSAGE_BODY,
-			sessionId: input.sessionId,
-			rowId: input.id,
-			formatVersion: this.meta.formatVersion,
-		});
+		const aad = this.#aad(AAD_MESSAGE_BODY, input.sessionId, input.id);
 		const enc = this.cipherBox.encryptRecord(input.body, aad);
 		const createdAt = new Date().toISOString();
 		const row = this.db
@@ -357,34 +359,18 @@ export class ChatStore {
 	} {
 		this.ensureSessionRow(input.sessionId);
 		const createdAt = new Date().toISOString();
-		const formatVersion = this.meta.formatVersion;
 
 		const argvEnc = this.cipherBox.encryptRecord(
 			JSON.stringify(input.argv),
-			buildAad({
-				domain: AAD_COMMAND_ARGV,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_ARGV, input.sessionId, input.id),
 		);
 		const stdoutEnc = this.cipherBox.encryptRecord(
 			input.stdout,
-			buildAad({
-				domain: AAD_COMMAND_STDOUT,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_STDOUT, input.sessionId, input.id),
 		);
 		const stderrEnc = this.cipherBox.encryptRecord(
 			input.stderr,
-			buildAad({
-				domain: AAD_COMMAND_STDERR,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_STDERR, input.sessionId, input.id),
 		);
 
 		const row = this.db
@@ -417,28 +403,16 @@ export class ChatStore {
 		return { seq: row.seq };
 	}
 
-	/** Called once dispatch's exec finishes — the row itself is written before the spawn. */
 	updateCommandInvocationResult(
 		input: UpdateCommandInvocationResultInput,
 	): void {
-		const formatVersion = this.meta.formatVersion;
 		const stdoutEnc = this.cipherBox.encryptRecord(
 			input.stdout,
-			buildAad({
-				domain: AAD_COMMAND_STDOUT,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_STDOUT, input.sessionId, input.id),
 		);
 		const stderrEnc = this.cipherBox.encryptRecord(
 			input.stderr,
-			buildAad({
-				domain: AAD_COMMAND_STDERR,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_STDERR, input.sessionId, input.id),
 		);
 		this.db.run(
 			`UPDATE command_invocations
@@ -459,31 +433,19 @@ export class ChatStore {
 		);
 	}
 
-	/** One upsertable row per session; commands and subagent names each carry their own AAD domain tag. */
 	saveCommandManifest(input: {
 		sessionId: string;
 		commands: CommandEntry[];
 		subagentNames: string[];
 	}): void {
 		this.ensureSessionRow(input.sessionId);
-		const formatVersion = this.meta.formatVersion;
 		const commandsEnc = this.cipherBox.encryptRecord(
 			JSON.stringify(input.commands),
-			buildAad({
-				domain: AAD_COMMAND_MANIFEST,
-				sessionId: input.sessionId,
-				rowId: input.sessionId,
-				formatVersion,
-			}),
+			this.#aad(AAD_COMMAND_MANIFEST, input.sessionId, input.sessionId),
 		);
 		const subagentsEnc = this.cipherBox.encryptRecord(
 			JSON.stringify(input.subagentNames),
-			buildAad({
-				domain: AAD_SUBAGENT_LIST,
-				sessionId: input.sessionId,
-				rowId: input.sessionId,
-				formatVersion,
-			}),
+			this.#aad(AAD_SUBAGENT_LIST, input.sessionId, input.sessionId),
 		);
 		this.db.run(
 			`INSERT INTO command_manifests (
@@ -512,70 +474,40 @@ export class ChatStore {
 		);
 	}
 
-	private readManifestRow(sessionId: string):
-		| {
-				commands_ciphertext: Uint8Array;
-				commands_iv: Uint8Array;
-				commands_tag: Uint8Array;
-				subagents_ciphertext: Uint8Array;
-				subagents_iv: Uint8Array;
-				subagents_tag: Uint8Array;
-		  }
-		| undefined {
+	private readManifestRow(sessionId: string): CommandManifestRow | undefined {
 		const row = this.db
 			.query(
 				`SELECT commands_ciphertext, commands_iv, commands_tag,
 				        subagents_ciphertext, subagents_iv, subagents_tag
 				 FROM command_manifests WHERE session_id = ?`,
 			)
-			.get(sessionId) as {
-			commands_ciphertext: Uint8Array;
-			commands_iv: Uint8Array;
-			commands_tag: Uint8Array;
-			subagents_ciphertext: Uint8Array;
-			subagents_iv: Uint8Array;
-			subagents_tag: Uint8Array;
-		} | null;
+			.get(sessionId) as CommandManifestRow | null;
 		return row ?? undefined;
 	}
 
-	/** undefined means no manifest has been published for this session yet — never a lookup error. */
 	getCommandManifest(sessionId: string): CommandEntry[] | undefined {
 		const row = this.readManifestRow(sessionId);
 		if (!row) return undefined;
-		const formatVersion = this.meta.formatVersion;
 		const json = this.cipherBox
 			.decryptRecord(
 				Buffer.from(row.commands_ciphertext),
 				Buffer.from(row.commands_iv),
 				Buffer.from(row.commands_tag),
-				buildAad({
-					domain: AAD_COMMAND_MANIFEST,
-					sessionId,
-					rowId: sessionId,
-					formatVersion,
-				}),
+				this.#aad(AAD_COMMAND_MANIFEST, sessionId, sessionId),
 			)
 			.toString("utf8");
 		return JSON.parse(json) as CommandEntry[];
 	}
 
-	/** undefined means no manifest (and so no subagent list) has been published yet. */
 	getSubagentNames(sessionId: string): string[] | undefined {
 		const row = this.readManifestRow(sessionId);
 		if (!row) return undefined;
-		const formatVersion = this.meta.formatVersion;
 		const json = this.cipherBox
 			.decryptRecord(
 				Buffer.from(row.subagents_ciphertext),
 				Buffer.from(row.subagents_iv),
 				Buffer.from(row.subagents_tag),
-				buildAad({
-					domain: AAD_SUBAGENT_LIST,
-					sessionId,
-					rowId: sessionId,
-					formatVersion,
-				}),
+				this.#aad(AAD_SUBAGENT_LIST, sessionId, sessionId),
 			)
 			.toString("utf8");
 		return JSON.parse(json) as string[];
@@ -597,12 +529,7 @@ export class ChatStore {
 			};
 			const encrypted = this.cipherBox.encryptRecord(
 				input.state,
-				buildAad({
-					domain: AAD_STATUS_PROGRESS,
-					sessionId: input.sessionId,
-					rowId: String(row.seq),
-					formatVersion: this.meta.formatVersion,
-				}),
+				this.#aad(AAD_STATUS_PROGRESS, input.sessionId, String(row.seq)),
 			);
 			this.db.run(
 				`UPDATE status_events
@@ -615,9 +542,7 @@ export class ChatStore {
 		} catch (error) {
 			try {
 				this.db.run("ROLLBACK");
-			} catch {
-				// Preserve the write-path error if SQLite already ended the transaction.
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -636,31 +561,19 @@ export class ChatStore {
 					Buffer.from(row.progress_ciphertext),
 					Buffer.from(row.progress_iv),
 					Buffer.from(row.progress_tag),
-					buildAad({
-						domain: AAD_STATUS_PROGRESS,
-						sessionId,
-						rowId: String(row.seq),
-						formatVersion: this.meta.formatVersion,
-					}),
+					this.#aad(AAD_STATUS_PROGRESS, sessionId, String(row.seq)),
 				)
 				.toString("utf8") as ProgressState,
 			createdAt: row.created_at,
 		}));
 	}
 
-	/** Daemon-boot only: clears claims left in flight by a prior process life. */
 	recoverStaleClaims(): number {
 		return this.db.run(
 			"UPDATE messages SET claim_id = NULL, claimed_at = NULL WHERE delivered_at IS NULL AND claim_id IS NOT NULL",
 		).changes;
 	}
 
-	/**
-	 * Single UPDATE...RETURNING claims the oldest un-delivered, un-leased row —
-	 * "un-leased" meaning claim_id is NULL or its claimed_at predates the
-	 * DG_CLAIM_LEASE_MS cutoff, so a lease expiry is reclaimed in this same
-	 * statement with no fourth verb (ratified override of restart-only reset).
-	 */
 	claimNext(sessionId: string): ClaimedMessage | undefined {
 		const claimId = randomUUID();
 		const now = Date.now();
@@ -672,6 +585,7 @@ export class ChatStore {
 				 WHERE seq = (
 					 SELECT seq FROM messages
 					 WHERE session_id = ?
+					   AND role = 'user'
 					   AND delivered_at IS NULL
 					   AND (claim_id IS NULL OR claimed_at < ?)
 					 ORDER BY seq ASC
@@ -696,7 +610,6 @@ export class ChatStore {
 		};
 	}
 
-	/** Only the matching claimId acks — a stale claimant from before a lease reclaim must not satisfy the new one. */
 	ack(sessionId: string, claimId: string): boolean {
 		const row = this.db
 			.query(
@@ -727,7 +640,6 @@ export class ChatStore {
 		}));
 	}
 
-	/** Filename is the only asset field this row encrypts — bytes live on disk (Code Structure's in-file envelope). */
 	insertAsset(input: InsertAssetInput): void {
 		if (input.byteLength > CHAT_MAX_ASSET_BYTES) {
 			throw new AssetTooLargeError(input.byteLength);
@@ -735,12 +647,7 @@ export class ChatStore {
 		this.ensureSessionRow(input.sessionId);
 		const enc = this.cipherBox.encryptRecord(
 			input.filename,
-			buildAad({
-				domain: AAD_ASSET_FILENAME,
-				sessionId: input.sessionId,
-				rowId: input.id,
-				formatVersion: this.meta.formatVersion,
-			}),
+			this.#aad(AAD_ASSET_FILENAME, input.sessionId, input.id),
 		);
 		this.db.run(
 			`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
@@ -758,7 +665,6 @@ export class ChatStore {
 		);
 	}
 
-	/** Scoped to sessionId+id in one WHERE — an unknown id and a wrong-session id are one indistinguishable answer. */
 	getAsset(sessionId: string, id: string): AssetRow | undefined {
 		const row = this.db
 			.query(
@@ -773,12 +679,7 @@ export class ChatStore {
 				Buffer.from(row.filename_ciphertext),
 				Buffer.from(row.filename_iv),
 				Buffer.from(row.filename_tag),
-				buildAad({
-					domain: AAD_ASSET_FILENAME,
-					sessionId,
-					rowId: id,
-					formatVersion: this.meta.formatVersion,
-				}),
+				this.#aad(AAD_ASSET_FILENAME, sessionId, id),
 			)
 			.toString("utf8");
 
@@ -792,7 +693,6 @@ export class ChatStore {
 		};
 	}
 
-	/** Marks only this session's active rows deleted — other sessions' assets are untouched. */
 	pruneSessionAssets(sessionId: string): void {
 		this.db.run(
 			`UPDATE assets SET state = 'deleted', deleted_at = ? WHERE session_id = ? AND state = 'active'`,
@@ -800,7 +700,6 @@ export class ChatStore {
 		);
 	}
 
-	/** Routes arbitrary binary through the string-only CipherBox via base64. */
 	encryptAssetBytes(
 		sessionId: string,
 		id: string,
@@ -808,12 +707,7 @@ export class ChatStore {
 	): CipherEnvelope {
 		return this.cipherBox.encryptRecord(
 			plaintext.toString("base64"),
-			buildAad({
-				domain: AAD_ASSET_BYTES,
-				sessionId,
-				rowId: id,
-				formatVersion: this.meta.formatVersion,
-			}),
+			this.#aad(AAD_ASSET_BYTES, sessionId, id),
 		);
 	}
 
@@ -826,12 +720,7 @@ export class ChatStore {
 			envelope.ciphertext,
 			envelope.iv,
 			envelope.tag,
-			buildAad({
-				domain: AAD_ASSET_BYTES,
-				sessionId,
-				rowId: id,
-				formatVersion: this.meta.formatVersion,
-			}),
+			this.#aad(AAD_ASSET_BYTES, sessionId, id),
 		);
 		return Buffer.from(decrypted.toString("utf8"), "base64");
 	}

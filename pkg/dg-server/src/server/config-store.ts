@@ -1,18 +1,8 @@
-import { randomUUID } from "node:crypto";
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DgPaths } from "@dg/common/node";
+import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
 
-/**
- * Generic key/value config persisted at ~/.dg/config.json — origin pinning
- * and slice 9's asset directory both live here, one file and one validator.
- */
 function configPath(paths: DgPaths): string {
 	return `${paths.stateDir}/config.json`;
 }
@@ -37,9 +27,7 @@ export function writeConfig(
 	patch: Record<string, unknown>,
 ): void {
 	const file = configPath(paths);
-	mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+	ensurePrivateDir(dirname(file));
 	const next = { ...readConfig(paths), ...patch };
-	const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, JSON.stringify(next, null, 2));
-	renameSync(tmp, file);
+	writeFileAtomic(file, JSON.stringify(next, null, 2));
 }

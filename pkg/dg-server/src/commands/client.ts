@@ -7,17 +7,11 @@ import {
 	CLI_SESSION_TOKEN_HEADER,
 } from "../server/http";
 import { readLockfile } from "../server/lockfile";
-import { readSessionToken } from "../session/tokens";
+import { readSessionToken, type SessionTokenRecord } from "../session/tokens";
+import { describeError } from "../utils/errors";
 import type { CliRequest } from "./wire";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
-
-type SessionFile = {
-	sessionId: string;
-	token: string;
-	cwd: string;
-	agentIdentity: string;
-};
 
 export type ResolvedSession = {
 	port: number;
@@ -31,7 +25,7 @@ type BunWebSocketCtor = new (
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
-function readSessionFiles(sessionsDir: string): SessionFile[] {
+function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {
 	let names: string[];
 	try {
 		names = readdirSync(sessionsDir).filter((name) => name.endsWith(".json"));
@@ -42,14 +36,14 @@ function readSessionFiles(sessionsDir: string): SessionFile[] {
 		try {
 			const value = JSON.parse(
 				readFileSync(`${sessionsDir}/${name}`, "utf8"),
-			) as Partial<SessionFile>;
+			) as Partial<SessionTokenRecord>;
 			if (
 				typeof value.sessionId === "string" &&
 				typeof value.token === "string" &&
 				typeof value.cwd === "string" &&
 				typeof value.agentIdentity === "string"
 			) {
-				return [value as SessionFile];
+				return [value as SessionTokenRecord];
 			}
 		} catch {
 			return [];
@@ -58,7 +52,7 @@ function readSessionFiles(sessionsDir: string): SessionFile[] {
 	});
 }
 
-function formatCandidates(records: SessionFile[]): string {
+function formatCandidates(records: SessionTokenRecord[]): string {
 	if (records.length === 0) return "  (none)";
 	return records
 		.map((record) => `  ${record.sessionId}  ${record.cwd}`)
@@ -118,7 +112,7 @@ export class CliClient {
 			} catch (error) {
 				reject(
 					new DgCliError(
-						`cannot connect to dg-server on port ${session.port}: ${error instanceof Error ? error.message : String(error)}`,
+						`cannot connect to dg-server on port ${session.port}: ${describeError(error)}`,
 					),
 				);
 				return;

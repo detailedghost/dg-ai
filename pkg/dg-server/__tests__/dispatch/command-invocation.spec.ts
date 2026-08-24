@@ -1,33 +1,15 @@
-/**
- * $ command-invocation over /ws: happy-path execution, manifest scoping, and
- * the core injection/environment defenses. Resource bounds (timeout,
- * truncation, concurrency, rate) live in command-bounds.spec.ts; @ mention
- * routing in mention-routing.spec.ts; the static shell-avoidance check in
- * no-shell-source.spec.ts.
- *
- * command-invocation/command-result are already-ratified ChatFrame types
- * (slice 1) — no new discriminant is invented here, only exercised against
- * the not-yet-built dispatcher.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
 import { runCli } from "../commands/cli-wire";
 import {
-	allocatePort,
+	startWithSession as bootDaemonSession,
 	cleanupDgHome,
+	closeSockets,
 	collectFrames,
-	decodeChatMarker,
-	extractUrl,
-	freshDgHome,
+	connectPage,
 	killDaemonByLockfile,
-	runStart,
-	sendConnectHandshake,
-	waitForHealth,
-	waitForOpen,
 	waitForValue,
-	wsExtensionSocket,
 } from "../utils/daemon-harness";
 import {
 	commandInvocationFrame,
@@ -40,38 +22,27 @@ import {
 
 let dgHome: string;
 let scratchDir: string;
-// A throw skips a test's own page.close() — track every socket so afterEach
-// always closes it, rather than leaking a connection past the daemon's own death.
-let openSockets: WebSocket[] = [];
+const openSockets: WebSocket[] = [];
 
 afterEach(() => {
 	killDaemonByLockfile(dgHome);
-	for (const socket of openSockets) socket.close();
-	openSockets = [];
+	closeSockets(openSockets);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
 });
 
 async function startWithSession(extraEnv: Record<string, string> = {}) {
-	dgHome = freshDgHome();
-	const port = allocatePort();
-	const result = await runStart(dgHome, port, extraEnv);
-	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
-	return { port, bootstrap };
+	const started = await bootDaemonSession(extraEnv);
+	dgHome = started.dgHome;
+	return started;
 }
 
 async function connectedPage(
 	port: number,
 	credentials: DispatchCredentials,
 ): Promise<WebSocket> {
-	const page = wsExtensionSocket(port);
+	const page = await connectPage(port, credentials);
 	openSockets.push(page);
-	await waitForOpen(page);
-	sendConnectHandshake(page, credentials, CHAT_PROTOCOL_VERSION);
-	await new Promise((r) => setTimeout(r, 100)); // let the initial session-list land
 	return page;
 }
 
@@ -107,7 +78,7 @@ describe("$ command-invocation: happy path", () => {
 		expect(result.ok).toBe(true);
 		expect(result.output).toContain("hello-dispatch");
 		page.close();
-	}, 10_000); // above the 5000ms internal wait — never race bun:test's own default timeout
+	}, 10_000);
 
 	it("keeps a shell-metacharacter param value entirely literal in the executed output", async () => {
 		const { port, bootstrap } = await startWithSession();
@@ -220,7 +191,7 @@ describe("$ command-invocation: manifest scoping", () => {
 		expect(success.ok).toBe(true);
 		expect(success.output).toContain("only-b-ran");
 		page.close();
-	}, 15_000); // two sequential 3s waits plus a spawn + two manifest publishes
+	}, 15_000);
 });
 
 describe("$ command-invocation: argument safety", () => {
@@ -315,7 +286,7 @@ describe("$ command-invocation: failure reasons", () => {
 		page.close();
 	}, 10_000);
 
-	it("yields a distinct failure reason when the resolved binary vanishes between publish and invocation", async () => {
+	it("re-resolves argv[0] at invocation and refuses by name when the binary vanished after publish, never reaching a spawn", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = scratchScriptDir();
 		const scriptPath = writeExecutableScript(
@@ -330,8 +301,6 @@ describe("$ command-invocation: failure reasons", () => {
 			[{ label: "Ephemeral", argv: [scriptPath], params: [] }],
 			scratchDir,
 		);
-		// A publish-time resolution check cannot see this — the engineering
-		// bullet requires re-resolving (and re-failing) at invocation time too.
 		rmSync(scriptPath);
 
 		const page = await connectedPage(port, bootstrap);
@@ -344,7 +313,10 @@ describe("$ command-invocation: failure reasons", () => {
 			"command-result",
 		);
 		expect(result.ok).toBe(false);
-		expect(result.error ?? "").toMatch(/not found|missing|enoent|no such/i);
+		expect(result.error ?? "").toBe(
+			`command "Ephemeral" executable "${scriptPath}" does not resolve on PATH`,
+		);
+		expect(result.output ?? "").not.toContain("should-not-run");
 		page.close();
 	}, 10_000);
 });

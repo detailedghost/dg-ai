@@ -1,9 +1,3 @@
-/**
- * Real OS-specific KeychainBackend implementations, selected by platform.
- * DG_KEY_SOURCE=file (the only mode every test drives) never calls any of
- * these — resolveDataKey skips probing the keychain entirely in file mode —
- * so this module is exercised in production, not by the store test suite.
- */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { runCapture } from "@dg/common/node";
@@ -12,12 +6,6 @@ import type { KeychainBackend, KeychainLookupResult } from "./key-resolution";
 const SERVICE = "dg-server";
 const ACCOUNT = "chat-store-kek";
 
-/**
- * secret-tool exits 1 with empty stdout when the secret is absent, AND exits
- * 1 with a connection-failure message on stderr when the session bus is down
- * even though the secret exists (verified empirically) — those are distinct
- * outcomes, not the same "not found".
- */
 export function secretToolBackend(): KeychainBackend {
 	return {
 		async lookup(): Promise<KeychainLookupResult> {
@@ -31,7 +19,7 @@ export function secretToolBackend(): KeychainBackend {
 					ACCOUNT,
 				]);
 			} catch {
-				return { status: "unreachable" }; // binary itself missing
+				return { status: "unreachable" };
 			}
 			if (result.status === 0 && result.stdout.trim().length > 0) {
 				return { status: "found", keyBase64: result.stdout.trim() };
@@ -52,7 +40,7 @@ export function secretToolBackend(): KeychainBackend {
 						"account",
 						ACCOUNT,
 					],
-					{ stdin: keyBase64 }, // never pass the secret as an argv element
+					{ stdin: keyBase64 },
 				);
 				return result.status === 0 ? "stored" : "unreachable";
 			} catch {
@@ -62,12 +50,6 @@ export function secretToolBackend(): KeychainBackend {
 	};
 }
 
-/**
- * macOS `security`: no stdin form exists for `add-generic-password`'s secret
- * — the only argv-free path is an interactive GUI-ACL prompt, which hangs
- * under a detached, TTY-less daemon (named platform limitation, not an
- * oversight left uncovered by this implementation).
- */
 export function macKeychainBackend(): KeychainBackend {
 	return {
 		async lookup(): Promise<KeychainLookupResult> {
@@ -114,11 +96,6 @@ function powershellQuote(value: string): string {
 	return value.replace(/'/g, "''");
 }
 
-/**
- * DPAPI-protected file, not a real OS secrets vault — sourceLabel says so
- * honestly rather than reporting "keychain" for something with different
- * security properties (no ACL/GUI-prompt semantics of a real keychain).
- */
 export function dpapiBackend(dpapiPath: string): KeychainBackend {
 	return {
 		sourceLabel: "dpapi-protected-file",
@@ -153,7 +130,6 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 	};
 }
 
-/** stateDir is the resolved ~/.dg root — DPAPI's file lives alongside the plain key file. */
 export function createKeychainBackendForPlatform(
 	stateDir: string,
 ): KeychainBackend | undefined {

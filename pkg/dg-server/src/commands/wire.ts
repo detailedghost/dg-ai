@@ -26,7 +26,6 @@ export type CliProgressRequest = {
 export type CliManifestPublishRequest = {
 	type: "cli-manifest-publish";
 	commands: CommandEntry[];
-	/** Subagent names for @ resolution — slice 8's consumer, plumbed here first. */
 	subagents?: string[];
 };
 
