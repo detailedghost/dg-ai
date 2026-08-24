@@ -1,5 +1,9 @@
 import type { ChatFrame, CommandEntry } from "./chat-format";
 
+export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
+export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
+export const ASSET_FILENAME_HEADER = "X-Dg-Filename";
+
 export type CliRecvRequest = {
 	type: "cli-recv";
 	block: boolean;

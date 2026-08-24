@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { DgPaths } from "@dg/common/node";
-import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
+import {
+	type DgPaths,
+	ensurePrivateDir,
+	writeFileAtomic,
+} from "@dg/common/node";
 
 export function readConfig(paths: DgPaths): Record<string, unknown> {
 	const file = paths.configPath;

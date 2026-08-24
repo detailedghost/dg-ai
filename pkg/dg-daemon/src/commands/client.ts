@@ -1,14 +1,19 @@
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
-import { CHAT_PROTOCOL_VERSION, type CliRequest } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
-import { DgCliError } from "../server/errors";
+import { realpathSync } from "node:fs";
 import {
+	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
-} from "../server/http";
-import { readPidFile } from "../server/pidfile";
-import { readSessionToken, type SessionTokenRecord } from "../session/tokens";
-import { describeError } from "../utils/errors";
+	type CliRequest,
+	DgCliError,
+	describeError,
+} from "@dg/common";
+import {
+	readPidFile,
+	readSessionFiles,
+	readSessionToken,
+	resolveDgPaths,
+	type SessionTokenRecord,
+} from "@dg/common/node";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
 
@@ -23,33 +28,6 @@ type BunWebSocketCtor = new (
 	options?: Bun.WebSocketOptions,
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
-
-function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {
-	let names: string[];
-	try {
-		names = readdirSync(sessionsDir).filter((name) => name.endsWith(".json"));
-	} catch {
-		return [];
-	}
-	return names.flatMap((name) => {
-		try {
-			const value = JSON.parse(
-				readFileSync(`${sessionsDir}/${name}`, "utf8"),
-			) as Partial<SessionTokenRecord>;
-			if (
-				typeof value.sessionId === "string" &&
-				typeof value.token === "string" &&
-				typeof value.cwd === "string" &&
-				typeof value.agentIdentity === "string"
-			) {
-				return [value as SessionTokenRecord];
-			}
-		} catch {
-			return [];
-		}
-		return [];
-	});
-}
 
 function formatCandidates(records: SessionTokenRecord[]): string {
 	if (records.length === 0) return "  (none)";

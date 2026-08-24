@@ -1,23 +1,22 @@
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { type CliRecvResult, isRecord } from "@dg/common";
-import type { Command } from "commander";
-import { readAssetSourceFile } from "../assets/register";
-import {
-	loadManifestFile,
-	loadSubagentManifestFile,
-	resolveManifestForPublish,
-} from "../manifest/load";
-import {
-	DgCliError,
-	EXIT_RECV_SESSION_CLOSED,
-	EXIT_RECV_TIMEOUT,
-} from "../server/errors";
 import {
 	ASSET_FILENAME_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
-} from "../server/http";
+	type CliRecvResult,
+	DgCliError,
+	EXIT_RECV_SESSION_CLOSED,
+	EXIT_RECV_TIMEOUT,
+	isRecord,
+} from "@dg/common";
+import {
+	loadManifestFile,
+	loadSubagentManifestFile,
+	readAssetSourceFile,
+	resolveManifestForPublish,
+} from "@dg/common/node";
+import type { Command } from "commander";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;

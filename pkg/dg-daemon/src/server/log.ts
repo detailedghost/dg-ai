@@ -8,8 +8,7 @@ import {
 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { DgPaths } from "@dg/common/node";
-import { ensurePrivateDir } from "../utils/fs";
+import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
 
 const MAX_LOG_BYTES = 5_000_000;
 const MS_PER_DAY = 86_400_000;

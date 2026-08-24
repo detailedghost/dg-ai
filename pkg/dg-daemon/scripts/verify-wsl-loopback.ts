@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
-import { isWSL, resolveDgPaths } from "@dg/common/node";
-import { isDaemonLive, readPidFile } from "../src/server/pidfile";
+import {
+	isDaemonLive,
+	isWSL,
+	readPidFile,
+	resolveDgPaths,
+} from "@dg/common/node";
 
 async function main(): Promise<void> {
 	console.log("=== dg-daemon WSL-loopback verification ===\n");

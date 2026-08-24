@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import type { DgPaths } from "@dg/common/node";
-import { ensurePrivateDir } from "../utils/fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { ensurePrivateDir } from "./fs";
+import type { DgPaths } from "./paths";
 
 export function mintToken(): string {
 	return randomBytes(32).toString("base64url");
@@ -51,4 +51,31 @@ export function readSessionToken(paths: DgPaths, sessionId: string): string {
 	if (override !== undefined) return override;
 	const raw = readFileSync(sessionFilePath(paths, sessionId), "utf8");
 	return (JSON.parse(raw) as { token: string }).token;
+}
+
+export function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {
+	let names: string[];
+	try {
+		names = readdirSync(sessionsDir).filter((name) => name.endsWith(".json"));
+	} catch {
+		return [];
+	}
+	return names.flatMap((name) => {
+		try {
+			const value = JSON.parse(
+				readFileSync(`${sessionsDir}/${name}`, "utf8"),
+			) as Partial<SessionTokenRecord>;
+			if (
+				typeof value.sessionId === "string" &&
+				typeof value.token === "string" &&
+				typeof value.cwd === "string" &&
+				typeof value.agentIdentity === "string"
+			) {
+				return [value as SessionTokenRecord];
+			}
+		} catch {
+			return [];
+		}
+		return [];
+	});
 }

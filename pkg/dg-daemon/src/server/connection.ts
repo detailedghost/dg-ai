@@ -1,6 +1,5 @@
-import { createSerialQueue } from "@dg/common";
+import { createSerialQueue, describeError } from "@dg/common";
 import type { ServerWebSocket } from "bun";
-import { describeError } from "../utils/errors";
 import type { Logger } from "./log";
 
 export type SocketKind = "ws" | "cli";

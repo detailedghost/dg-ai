@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolveDgPaths } from "@dg/common/node";
 import {
 	readSessionToken,
 	removeSessionToken,
+	resolveDgPaths,
 	writeSessionToken,
-} from "../../src/session/tokens";
+} from "@dg/common/node";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
 let dgHome: string;

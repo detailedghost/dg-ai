@@ -1,11 +1,14 @@
 #!/usr/bin/env bun
 
-import type { SessionRole } from "@dg/common";
+import {
+	DgCliError,
+	describeError,
+	EXIT_GENERAL_FAILURE,
+	type SessionRole,
+} from "@dg/common";
 import { Command } from "commander";
 import { registerAgentCommands } from "./commands";
 import { cmdServe, cmdStart, cmdStatus } from "./server/bootstrap";
-import { DgCliError, EXIT_GENERAL_FAILURE } from "./server/errors";
-import { describeError } from "./utils/errors";
 
 const program = new Command();
 program

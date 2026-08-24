@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_DEFAULT_PORT, CHAT_PORT_FALLBACK_COUNT } from "@dg/common";
-import { checkExecutable } from "../../src/manifest/load";
+import { checkExecutable } from "@dg/common/node";
 import { isLoopbackHost } from "../../src/server/host-guard";
 import { candidatePorts } from "../../src/server/ports";
 import { checkWslNetworking } from "../../src/server/wsl-guard";

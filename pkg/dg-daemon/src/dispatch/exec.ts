@@ -1,5 +1,5 @@
+import { describeError } from "@dg/common";
 import type { Subprocess } from "bun";
-import { describeError } from "../utils/errors";
 import { buildAllowedEnv } from "./env-allowlist";
 import { DISPATCH_KILL_GRACE_MS } from "./limits";
 

@@ -2,11 +2,12 @@ import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
+	AssetTooLargeError,
 	CHAT_MAX_ASSET_BYTES,
 	type CommandEntry,
 	type ProgressState,
 } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
 import {
 	buildAad,
 	type CipherBox,
@@ -21,7 +22,6 @@ import {
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
 import { readEnvNumber } from "../utils/env";
-import { ensurePrivateDir } from "../utils/fs";
 import { applyConnectionPragmas, DEFAULT_BUSY_TIMEOUT_MS } from "./connection";
 import { runMigrations } from "./migrations";
 import { SCHEMA_STEPS } from "./schema";
@@ -36,15 +36,6 @@ const AAD_COMMAND_MANIFEST = "command-manifest";
 const AAD_SUBAGENT_LIST = "subagent-list";
 const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
-
-export class AssetTooLargeError extends Error {
-	constructor(byteLength: number) {
-		super(
-			`asset of ${byteLength} bytes exceeds CHAT_MAX_ASSET_BYTES (${CHAT_MAX_ASSET_BYTES})`,
-		);
-		this.name = "AssetTooLargeError";
-	}
-}
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;

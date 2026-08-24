@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { checkExecutable } from "../manifest/load";
+import { describeError } from "@dg/common";
+import { checkExecutable } from "@dg/common/node";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
-import { describeError } from "../utils/errors";
 import { substituteArgv } from "./argv";
 import { executeCommand } from "./exec";
 import { type CommandEntryWithLimits, resolveLimits } from "./limits";

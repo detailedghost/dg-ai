@@ -4,7 +4,7 @@ import {
 	hkdfSync,
 	randomBytes,
 } from "node:crypto";
-import { isEnoent } from "../utils/errors";
+import { isEnoent } from "@dg/common";
 import {
 	AES_GCM_ALGORITHM,
 	AES_GCM_IV_BYTES,

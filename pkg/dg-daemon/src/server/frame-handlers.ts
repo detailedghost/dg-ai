@@ -7,13 +7,18 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
 	type CliFrame,
+	describeError,
 	fitHistoryPage,
 	isRecord,
 	validateChatFrame,
 	validateCommandManifest,
 	validateProtoIdentifier,
 } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
+import {
+	type DgPaths,
+	ManifestLoadError,
+	resolveManifestForPublish,
+} from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
 import {
 	ASSET_DIRECTORY_CONFIG_KEY,
@@ -26,10 +31,8 @@ import {
 	dispatchCommand,
 	resolveSubagentMention,
 } from "../dispatch";
-import { ManifestLoadError, resolveManifestForPublish } from "../manifest/load";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
-import { describeError } from "../utils/errors";
 import type { ConnectionManager } from "./connection";
 import {
 	registerInvalidFrame,
