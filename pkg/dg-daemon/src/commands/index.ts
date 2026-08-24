@@ -1,11 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { type CliRecvResult, isRecord } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
-import { resolveAssetContentType } from "../assets/content-type";
-import { readAssetSourceFile, registerAsset } from "../assets/register";
+import { readAssetSourceFile } from "../assets/register";
 import {
 	loadManifestFile,
 	loadSubagentManifestFile,
@@ -16,7 +13,11 @@ import {
 	EXIT_RECV_SESSION_CLOSED,
 	EXIT_RECV_TIMEOUT,
 } from "../server/errors";
-import { ChatStore } from "../store";
+import {
+	ASSET_FILENAME_HEADER,
+	CLI_SESSION_ID_HEADER,
+	CLI_SESSION_TOKEN_HEADER,
+} from "../server/http";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
@@ -73,6 +74,10 @@ function isSessionPending(value: unknown): value is {
 
 function isSessionClosed(value: unknown): value is { type: "session-closed" } {
 	return isRecord(value) && value.type === "session-closed";
+}
+
+function isAssetUploadResult(value: unknown): value is { assetId: string } {
+	return isRecord(value) && typeof value.assetId === "string";
 }
 
 async function connectFor(command: Command): Promise<CliClient> {
@@ -207,29 +212,33 @@ export function registerAgentCommands(program: Command): void {
 		.action(async (path: string, _options: unknown, command: Command) => {
 			const source = realpathSync(resolve(path));
 			const session = resolveCliSession(selectedSession(command));
-			const client = await CliClient.connect(session);
-			client.close();
-
 			const filename = basename(source);
 			const bytes = readAssetSourceFile(source);
-			const assetId = randomUUID();
-			const paths = resolveDgPaths();
-			const store = await ChatStore.open(paths);
-			try {
-				await registerAsset(
-					{ paths, store },
-					{
-						sessionId: session.sessionId,
-						id: assetId,
-						filename,
-						contentType: resolveAssetContentType(filename).contentType,
-						bytes,
-					},
-				);
-			} finally {
-				store.close();
+
+			const resp = await fetch(`http://127.0.0.1:${session.port}/assets`, {
+				method: "POST",
+				headers: {
+					Host: `127.0.0.1:${session.port}`,
+					[CLI_SESSION_ID_HEADER]: session.sessionId,
+					[CLI_SESSION_TOKEN_HEADER]: session.token,
+					[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
+				},
+				body: new Uint8Array(
+					bytes.buffer as ArrayBuffer,
+					bytes.byteOffset,
+					bytes.byteLength,
+				),
+			});
+			if (!resp.ok) {
+				throw new DgCliError(await resp.text());
 			}
-			await writeStdout(`${assetId}\n`);
+			const result: unknown = await resp.json();
+			if (!isAssetUploadResult(result)) {
+				throw new DgCliError(
+					"dg-daemon returned a malformed asset upload response",
+				);
+			}
+			await writeStdout(`${result.assetId}\n`);
 		});
 
 	program
