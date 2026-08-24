@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { isRecord } from "@dg/common";
+import { type CliRecvResult, isRecord } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
 import { resolveAssetContentType } from "../assets/content-type";
@@ -18,7 +18,6 @@ import {
 } from "../server/errors";
 import { ChatStore } from "../store";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
-import type { CliRecvResult } from "./wire";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 

@@ -6,6 +6,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
+	type CliFrame,
 	fitHistoryPage,
 	isRecord,
 	validateChatFrame,
@@ -20,7 +21,6 @@ import {
 	setConfiguredAssetDirectory,
 	validateAssetDirectory,
 } from "../assets/config";
-import type { CliFrame } from "../commands/wire";
 import {
 	type DispatchScheduler,
 	dispatchCommand,
