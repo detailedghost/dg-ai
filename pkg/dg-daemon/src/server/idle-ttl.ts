@@ -1,4 +1,4 @@
-export const DEFAULT_IDLE_TTL_MS = 30 * 60 * 1000;
+export const DEFAULT_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type IdleTtlOptions = {
 	ttlMs: number;
