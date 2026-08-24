@@ -1,13 +1,6 @@
-/**
- * lib/features/chat-canvas.ts: the optional pan/zoom board — pure viewport
- * arithmetic plus wheel/motion/persistence wiring. No implementation exists
- * yet; every exported name here is this RED pass's own invention, pinned by
- * these tests per plan.md slice 11's testability constraint (injected
- * viewport, no rect reads — happy-dom has no layout engine).
- */
-
-import { expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
+import { stubChromeStorage } from "./utils/chrome-storage";
 
 const {
 	MIN_SCALE,
@@ -53,8 +46,6 @@ function windowOf(container: HTMLElement): FakeWheelWindow {
 	return container.ownerDocument.defaultView as unknown as FakeWheelWindow;
 }
 
-// happy-dom's WheelEvent ctor drops MouseEvent modifier keys from its init
-// dict, so ctrlKey has to be assigned after construction, not passed in.
 function wheelEvent(
 	win: FakeWheelWindow,
 	init: { deltaY?: number; ctrlKey?: boolean } = {},
@@ -67,37 +58,6 @@ function wheelEvent(
 	if (init.ctrlKey) (event as unknown as { ctrlKey: boolean }).ctrlKey = true;
 	return event;
 }
-
-// Backs a hand-rolled chrome.storage.local — returns the live object so tests
-// can assert pruning actually removed a key, not just that the return value omitted it.
-function stubChromeStorage(
-	initial: Record<string, unknown> = {},
-): Record<string, unknown> {
-	const data: Record<string, unknown> = { ...initial };
-	(globalThis as any).chrome = {
-		storage: {
-			local: {
-				get: mock(async (keys?: string | string[] | null) => {
-					if (keys === undefined || keys === null) return { ...data };
-					const ks = Array.isArray(keys) ? keys : [keys];
-					const result: Record<string, unknown> = {};
-					for (const k of ks) if (k in data) result[k] = data[k];
-					return result;
-				}),
-				set: mock(async (items: Record<string, unknown>) => {
-					Object.assign(data, items);
-				}),
-				remove: mock(async (keys: string | string[]) => {
-					const ks = Array.isArray(keys) ? keys : [keys];
-					for (const k of ks) delete data[k];
-				}),
-			},
-		},
-	};
-	return data;
-}
-
-// --- clampScale / clampPan (Contract: bounds hold for representative inputs) ---
 
 test("clampScale clamps a value below MIN_SCALE up to MIN_SCALE", () => {
 	expect(clampScale(MIN_SCALE - 1)).toBe(MIN_SCALE);
@@ -123,8 +83,6 @@ test("clampPan leaves an ordinary pan unchanged — the board itself is unbounde
 	expect(clampPan({ x: 12345, y: -6789 })).toEqual({ x: 12345, y: -6789 });
 });
 
-// --- screenToBoard / boardToScreen (Contract: round-trip a point) ---
-
 test("boardToScreen applies the viewport's scale and pan, not an identity pass-through", () => {
 	const viewport = baseViewport({ scale: 2, pan: { x: 50, y: -30 } });
 	expect(boardToScreen({ x: 100, y: 50 }, viewport)).toEqual({ x: 250, y: 70 });
@@ -144,8 +102,6 @@ test("boardToScreen(screenToBoard(p)) round-trips a screen point", () => {
 	expect(boardToScreen(boardPoint, viewport)).toEqual(screenPoint);
 });
 
-// --- applyDragDelta (named by the testability constraint; pure, no listed checkbox) ---
-
 test("applyDragDelta shifts pan by the screen-space delta without mutating the input viewport", () => {
 	const viewport = baseViewport({ scale: 1.5, pan: { x: 20, y: -10 } });
 	const result = applyDragDelta(viewport, { x: 30, y: 40 });
@@ -159,8 +115,6 @@ test("applyDragDelta clamps the resulting pan at PAN_BOUND", () => {
 	const result = applyDragDelta(viewport, { x: 100, y: 0 });
 	expect(result.pan.x).toBe(PAN_BOUND);
 });
-
-// --- Node position persistence (per-session, restored on load, orphans pruned) ---
 
 test("saveNodePosition persists a position that loadNodePositions restores on a later load", async () => {
 	stubChromeStorage();
@@ -179,8 +133,6 @@ test("loadNodePositions prunes an orphaned session's stored position from storag
 	expect(restored.has("session-orphan")).toBe(false);
 	expect(canvasPositionKey("session-orphan") in data).toBe(false);
 });
-
-// --- Wheel semantics: transcript scroll vs. board zoom ---
 
 test("a plain wheel over a transcript descendant does not change the board's scale", () => {
 	const { container, document } = newCanvasHost();
@@ -209,8 +161,6 @@ test("a ctrlKey wheel over the board is treated as zoom and calls preventDefault
 	expect(canvas.viewport().scale).not.toBe(before);
 });
 
-// --- Reduced motion suppresses easing ---
-
 test("data-motion=reduced on the container suppresses the board's transform transition", () => {
 	const { container } = newCanvasHost();
 	container.dataset.motion = "reduced";
@@ -235,8 +185,6 @@ test("data-motion=full on the container applies an eased transform transition", 
 	expect(canvas.boardElement.style.transition).not.toBe("");
 });
 
-// --- Board chrome is a sibling, never a descendant, of the transformed board ---
-
 test("createChatCanvas mounts board and chrome as siblings; chrome is never nested inside the board", () => {
 	const { container } = newCanvasHost();
 	const canvas = createChatCanvas(container, { viewport: baseViewport() });
@@ -246,8 +194,6 @@ test("createChatCanvas mounts board and chrome as siblings; chrome is never nest
 	expect(canvas.boardElement.contains(canvas.chromeElement)).toBe(false);
 	expect(canvas.boardElement.style.touchAction).toBe("none");
 });
-
-// --- isNodeInView (used by the page's pan-to-focused-node recovery) ---
 
 test("isNodeInView is true for a node inside the visible viewport", () => {
 	const viewport = baseViewport();
@@ -264,15 +210,11 @@ test("isNodeInView is false for a node dragged far outside the visible viewport"
 });
 
 test("isNodeInView applies pan, not raw board coordinates, to recover an off-view node", () => {
-	// Same board x (5000) as the false case above, but pan shifts it on-screen —
-	// proves the viewport transform is applied, not a raw-coordinate bounds check.
 	const viewport = baseViewport({ pan: { x: -4900, y: 0 } });
 	expect(
 		isNodeInView({ x: 5000, y: 50, width: 100, height: 100 }, viewport),
 	).toBe(true);
 });
-
-// --- panTo: the one viewport writer, added so a focused node can be recovered ---
 
 test("panTo moves the board to the requested pan and reflects it in the transform", () => {
 	const { container } = newCanvasHost();

@@ -1,9 +1,3 @@
-/**
- * lib/features/chat-client.ts: one shared socket, inbound demux, jittered
- * reconnect, exactly-once outbox delivery. Surface RATIFIED in Code
- * Structure's Layer-2 module surface ratifications, slice 5.
- */
-
 import { expect, spyOn, test } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
@@ -11,34 +5,25 @@ import {
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
-	type SessionBootstrap,
 } from "@dg/common";
+import { buildAgentMessageFrame } from "./utils/frame-fixtures";
+import {
+	type FakeSocket,
+	flushMicrotasks,
+	type MockFn,
+	makeBootstrapFactory,
+	makeFakeSocket,
+	frameEvent as message,
+} from "./utils/relay-harness";
 
 const { createChatClient } = await import("@/lib/features/chat-client");
 
-function makeBootstrap(
-	overrides: Partial<SessionBootstrap> = {},
-): SessionBootstrap {
-	return {
-		port: 47823,
-		sessionId: "session-a",
-		token: "token-a",
-		agentIdentity: "claude-orchestrator",
-		...overrides,
-	};
-}
-
-// --- Frame builders, mirroring pkg/common/__tests__/chat-format.spec.ts ---
-
-function buildAgentMessageFrame(overrides: Record<string, unknown> = {}) {
-	return {
-		type: "agent-message" as const,
-		sessionId: "session-a",
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		body: "here is my answer",
-		...overrides,
-	};
-}
+const makeBootstrap = makeBootstrapFactory({
+	port: 47823,
+	sessionId: "session-a",
+	token: "token-a",
+	agentIdentity: "claude-orchestrator",
+});
 
 function buildAckFrame(overrides: Record<string, unknown> = {}) {
 	return {
@@ -50,17 +35,6 @@ function buildAckFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-type MockFn<Args extends unknown[], R> = ((...args: Args) => R) & {
-	mock: { calls: Args[] };
-};
-
-type FakeSocket = {
-	send: MockFn<[string], void>;
-	addEventListener: MockFn<[string, (event?: unknown) => void], void>;
-	dispatch(type: string, event?: unknown): void;
-};
-
-// Local minimal mock helper — avoids pulling in bun:test's `mock` just for this shape.
 function mockFn<Args extends unknown[], R>(
 	impl: (...args: Args) => R,
 ): MockFn<Args, R> {
@@ -73,36 +47,10 @@ function mockFn<Args extends unknown[], R>(
 	return fn;
 }
 
-function makeFakeSocket(): FakeSocket {
-	const listeners: Record<string, Array<(event?: unknown) => void>> = {};
-	return {
-		send: mockFn((_data: string) => undefined),
-		addEventListener: mockFn((type: string, cb: (event?: unknown) => void) => {
-			if (!listeners[type]) listeners[type] = [];
-			listeners[type].push(cb);
-		}),
-		dispatch(type: string, event?: unknown) {
-			for (const cb of listeners[type] ?? []) cb(event);
-		},
-	};
-}
-
 function sentFrames(socket: FakeSocket): ChatFrame[] {
 	return socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
 }
 
-function message(frame: Record<string, unknown>) {
-	return { data: JSON.stringify(frame) };
-}
-
-// Plain resolved-promise ticks, not setTimeout — several tests mock
-// globalThis.setTimeout to control reconnect timers.
-async function flushOutboundQueue(times = 40): Promise<void> {
-	for (let i = 0; i < times; i++) await Promise.resolve();
-}
-
-// chat-client.ts calls the real GET /health via the module-private
-// defaultFetchHealth — mock globalThis.fetch to serve it, per port.
 function mockHealthFetch(
 	handler: (
 		port: number,
@@ -116,10 +64,8 @@ function mockHealthFetch(
 	}) as unknown as typeof fetch);
 }
 
-// --- Contract: outbound frames carry sessionId+token; unknown-session inbound frames drop ---
-
 test("sendUserMessage sends a frame carrying the connected session's own sessionId and token", async () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	const bootstrap = makeBootstrap();
 	client.connect(bootstrap);
@@ -128,7 +74,7 @@ test("sendUserMessage sends a frame carrying the connected session's own session
 	client.sendUserMessage(bootstrap.sessionId, "hello agent", {
 		messageId: "msg-abc",
 	});
-	await flushOutboundQueue();
+	await flushMicrotasks();
 
 	const userMessages = sentFrames(socket).filter(
 		(f) => f.type === "user-message",
@@ -145,7 +91,7 @@ test("sendUserMessage sends a frame carrying the connected session's own session
 });
 
 test("sendUserMessage throws for a sessionId outside the socket's captured capability set", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	client.connect(makeBootstrap());
 	socket.dispatch("open");
@@ -154,7 +100,7 @@ test("sendUserMessage throws for a sessionId outside the socket's captured capab
 });
 
 test("drops an inbound frame for a session outside the capability set rather than misfiling it", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	const bootstrap = makeBootstrap();
 	client.connect(bootstrap);
@@ -177,7 +123,7 @@ test("drops an inbound frame for a session outside the capability set rather tha
 });
 
 test("a malformed inbound payload is logged and dropped, never thrown past the demux", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	client.connect(makeBootstrap());
 	socket.dispatch("open");
@@ -203,10 +149,8 @@ test("a malformed inbound payload is logged and dropped, never thrown past the d
 	expect(received).toHaveLength(0);
 });
 
-// --- Contract: two live sessions route to their own transcripts, no cross-talk ---
-
 test("routes frames for two captured sessions independently, with no cross-talk, and drops a third unknown session", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	client.connect(makeBootstrap({ sessionId: "session-a", token: "token-a" }));
 	socket.dispatch("open");
@@ -241,7 +185,7 @@ test("routes frames for two captured sessions independently, with no cross-talk,
 });
 
 test("a second captured session reuses the single existing socket rather than opening a second one", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const openSocket = mockFn(() => socket);
 	const client = createChatClient({ openSocket });
 	client.connect(makeBootstrap({ sessionId: "session-a" }));
@@ -252,16 +196,14 @@ test("a second captured session reuses the single existing socket rather than op
 });
 
 test("connecting a second session while already connected immediately sends that session's own connect handshake and history-request on the shared socket", async () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	client.connect(makeBootstrap({ sessionId: "session-a", token: "token-a" }));
 	socket.dispatch("open");
 
 	client.connect(makeBootstrap({ sessionId: "session-b", token: "token-b" }));
-	await flushOutboundQueue();
+	await flushMicrotasks();
 
-	// Raw, not sentFrames()'s ChatFrame typing — "connect" is a pre-capability
-	// handshake that deliberately sits outside the ratified ChatFrame union.
 	const rawFrames = socket.send.mock.calls.map(
 		([raw]) => JSON.parse(raw as string) as Record<string, unknown>,
 	);
@@ -276,10 +218,8 @@ test("connecting a second session while already connected immediately sends that
 	});
 });
 
-// --- Contract: connection state transitions through the documented union ---
-
 test("connection state never reports connected before the socket has fired open, and never after it closes", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 
 	expect(client.getConnectionState()).not.toBe("connected");
@@ -315,7 +255,7 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt (not j
 		return 0 as unknown as ReturnType<typeof setTimeout>;
 	}) as typeof setTimeout;
 
-	const firstSocket = makeFakeSocket();
+	const firstSocket = makeFakeSocket(mockFn);
 	let openCount = 0;
 	const openSocket = (_url: string) => {
 		openCount += 1;
@@ -323,8 +263,6 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt (not j
 		throw new Error("ECONNREFUSED");
 	};
 
-	// No health scan resolves on this path — knownInstanceId stays undefined,
-	// so the reconnect timer retries the same port synchronously instead of rediscovering.
 	const fetchSpy = mockHealthFetch(() => undefined);
 	try {
 		const client = createChatClient({ openSocket, backoffBaseMs: 5 });
@@ -354,8 +292,8 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 		return 0 as unknown as ReturnType<typeof setTimeout>;
 	}) as typeof setTimeout;
 
-	const firstSocket = makeFakeSocket();
-	const thirdSocket = makeFakeSocket();
+	const firstSocket = makeFakeSocket(mockFn);
+	const thirdSocket = makeFakeSocket(mockFn);
 	let openCount = 0;
 	const openSocket = (_url: string) => {
 		openCount += 1;
@@ -371,11 +309,9 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 		firstSocket.dispatch("open");
 		firstSocket.dispatch("close");
 
-		// First scheduled retry: openSocket throws (openCount === 2).
 		scheduled.shift()?.();
 		expect(client.getConnectionState()).toBe("daemon-not-running");
 
-		// The throw must still have left a further retry scheduled.
 		const secondRetry = scheduled.shift();
 		expect(secondRetry).toBeDefined();
 		secondRetry?.();
@@ -388,12 +324,6 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 	}
 });
 
-// --- Contract: rediscover the daemon on the fixed port and fallback range via GET /health ---
-
-async function flushMicrotasks(times = 30): Promise<void> {
-	for (let i = 0; i < times; i++) await Promise.resolve();
-}
-
 test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /health, matching instanceId over a decoy dg-server, once the cached port goes stale", async () => {
 	const sockets: FakeSocket[] = [];
 	const scheduled: Array<() => void> = [];
@@ -404,13 +334,11 @@ test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /he
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn((_url: string) => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
 
-	// decoyPort answers first in scan order but is a DIFFERENT dg-server
-	// instance — rediscovery must prefer the matching instanceId over it.
 	const decoyPort = CHAT_DEFAULT_PORT + 1;
 	const relocatedPort =
 		CHAT_DEFAULT_PORT + Math.min(3, CHAT_PORT_FALLBACK_COUNT);
@@ -434,9 +362,7 @@ test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /he
 		client.connect(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 		sockets[0]?.dispatch("open");
 
-		// Flush handleOpen's fire-and-forget fetchHealth(port).then(...) so the
-		// client learns this daemon's instanceId before it "restarts" elsewhere.
-		await flushMicrotasks();
+		await flushMicrotasks(30);
 
 		daemonRestarted = true;
 		sockets[0]?.dispatch("close");
@@ -445,8 +371,7 @@ test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /he
 		expect(reconnectTimer).toBeDefined();
 		reconnectTimer?.();
 
-		// rediscoverPort() awaits GET /health sequentially per candidate port.
-		await flushMicrotasks();
+		await flushMicrotasks(30);
 
 		expect(sockets.length).toBe(2);
 		expect(openSocket.mock.calls.at(-1)?.[0]).toBe(
@@ -471,7 +396,7 @@ test("rediscovers the daemon on a fallback port even when the cached port was al
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn((_url: string) => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -488,14 +413,12 @@ test("rediscovers the daemon on a fallback port even when the cached port was al
 		const client = createChatClient({ openSocket, backoffBaseMs: 5 });
 		client.connect(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
-		// The first socket never fires "open" — it just closes, as an
-		// unreachable cached port would in the real world.
 		sockets[0]?.dispatch("close");
 
 		const reconnectTimer = scheduled.shift();
 		expect(reconnectTimer).toBeDefined();
 		reconnectTimer?.();
-		await flushMicrotasks();
+		await flushMicrotasks(30);
 
 		expect(sockets.length).toBe(2);
 		expect(openSocket.mock.calls.at(-1)?.[0]).toBe(
@@ -510,11 +433,9 @@ test("rediscovers the daemon on a fallback port even when the cached port was al
 	}
 });
 
-// --- Contract: jittered exponential backoff on reconnect ---
-
 test("schedules a reconnect after the socket drops, with a delay that grows across attempts and honors the injected jitter seam", () => {
-	const socket = makeFakeSocket();
-	const jitteredSocket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
+	const jitteredSocket = makeFakeSocket(mockFn);
 	const delaysWithZeroJitter: number[] = [];
 	const delaysWithMaxJitter: number[] = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -536,7 +457,7 @@ test("schedules a reconnect after the socket drops, with a delay that grows acro
 		});
 		clientZero.connect(makeBootstrap());
 		socket.dispatch("close");
-		socket.dispatch("close"); // second failure, deeper into backoff
+		socket.dispatch("close");
 
 		captureDelays(delaysWithMaxJitter);
 		const clientJittered = createChatClient({
@@ -552,14 +473,12 @@ test("schedules a reconnect after the socket drops, with a delay that grows acro
 	}
 
 	expect(delaysWithZeroJitter.length).toBeGreaterThanOrEqual(2);
-	// Exponential growth across successive attempts on the same client.
 	expect(delaysWithZeroJitter[1]).toBeGreaterThan(delaysWithZeroJitter[0]);
-	// Same first-attempt backoff step, isolated per-client socket: only the jitter seam differs.
 	expect(delaysWithMaxJitter[0]).toBeGreaterThan(delaysWithZeroJitter[0]);
 });
 
 test("reconnect backoff is capped at backoffMaxMs even after many failures", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const scheduled: Array<() => void> = [];
 	const delays: number[] = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -591,8 +510,6 @@ test("reconnect backoff is capped at backoffMaxMs even after many failures", () 
 	}
 });
 
-// --- Contract: exactly-once, in-order delivery across a reconnect; no duplicate acked sends ---
-
 function fireScheduledReconnect(scheduled: Array<() => void>): void {
 	const next = scheduled.shift();
 	expect(next).toBeDefined();
@@ -609,7 +526,7 @@ test("messages composed while disconnected are queued and flushed exactly once, 
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn(() => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -628,7 +545,6 @@ test("messages composed while disconnected are queued and flushed exactly once, 
 			messageId: "msg-second",
 		});
 
-		// Nothing should reach the dead socket after it closed.
 		expect(
 			sentFrames(sockets[0] as FakeSocket).filter(
 				(f) => f.type === "user-message",
@@ -637,7 +553,7 @@ test("messages composed while disconnected are queued and flushed exactly once, 
 
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const flushed = sentFrames(sockets[1] as FakeSocket).filter(
 			(f) => f.type === "user-message",
@@ -661,7 +577,7 @@ test("does not resend a message already acked before the drop, but does resend o
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn(() => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -688,7 +604,7 @@ test("does not resend a message already acked before the drop, but does resend o
 		sockets[0]?.dispatch("close");
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket)
 			.filter((f) => f.type === "user-message")
@@ -709,7 +625,7 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn(() => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -728,8 +644,6 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 			},
 		);
 
-		// A stray/duplicate ack for a messageId this client never sent — must not
-		// splice out an unrelated queued entry (the array index a naive -1 check misses).
 		sockets[0]?.dispatch(
 			"message",
 			message(
@@ -743,7 +657,7 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 		sockets[0]?.dispatch("close");
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket)
 			.filter((f) => f.type === "user-message")
@@ -753,8 +667,6 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 		globalThis.setTimeout = realSetTimeout;
 	}
 });
-
-// --- Contract: transcript backfill requested on connect and again on every reconnect ---
 
 test("requests history backfill immediately on connect, and again on every reconnect", async () => {
 	const sockets: FakeSocket[] = [];
@@ -766,7 +678,7 @@ test("requests history backfill immediately on connect, and again on every recon
 	}) as typeof setTimeout;
 
 	const openSocket = mockFn(() => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -776,7 +688,7 @@ test("requests history backfill immediately on connect, and again on every recon
 		const bootstrap = makeBootstrap();
 		client.connect(bootstrap);
 		sockets[0]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const firstHistoryRequests = sentFrames(sockets[0] as FakeSocket).filter(
 			(f) => f.type === "history-request",
@@ -790,7 +702,7 @@ test("requests history backfill immediately on connect, and again on every recon
 		sockets[0]?.dispatch("close");
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const secondHistoryRequests = sentFrames(sockets[1] as FakeSocket).filter(
 			(f) => f.type === "history-request",
@@ -800,8 +712,6 @@ test("requests history backfill immediately on connect, and again on every recon
 		globalThis.setTimeout = realSetTimeout;
 	}
 });
-
-// --- Regression: connect() must never start a second, un-backed-off attempt ---
 
 test("regression: a second connect() call while the daemon is unreachable does not open a second independent socket, so a message queued before it connects is sent exactly once", async () => {
 	const scheduled: Array<() => void> = [];
@@ -816,7 +726,7 @@ test("regression: a second connect() call while the daemon is unreachable does n
 	const openSocket = mockFn((_url: string) => {
 		openCount += 1;
 		if (openCount === 1) throw new Error("ECONNREFUSED");
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -835,8 +745,6 @@ test("regression: a second connect() call while the daemon is unreachable does n
 			messageId: "msg-1",
 		});
 
-		// A second session connecting while still unreachable must not start an
-		// independent, un-backed-off open — only one retry may ever be in flight.
 		const bootstrapB = makeBootstrap({
 			sessionId: "session-b",
 			token: "token-b",
@@ -846,9 +754,9 @@ test("regression: a second connect() call while the daemon is unreachable does n
 		expect(scheduled).toHaveLength(1);
 
 		fireScheduledReconnect(scheduled);
-		await flushMicrotasks(); // scheduleRetry rediscovers via async findDaemonPort before opening
+		await flushMicrotasks(30);
 		sockets[0]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const sent = sentFrames(sockets[0] as FakeSocket).filter(
 			(f) =>
@@ -863,7 +771,7 @@ test("regression: a second connect() call while the daemon is unreachable does n
 });
 
 test("regression: a superseded reconnect timer is cleared, so firing close twice in a row never leaves two live retry timers", () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	let nextHandle = 1;
 	const setTimeoutCalls: number[] = [];
 	const clearTimeoutCalls: number[] = [];
@@ -885,7 +793,7 @@ test("regression: a superseded reconnect timer is cleared, so firing close twice
 		});
 		client.connect(makeBootstrap());
 		socket.dispatch("close");
-		socket.dispatch("close"); // fired again before the first timer runs
+		socket.dispatch("close");
 
 		expect(setTimeoutCalls).toEqual([1, 2]);
 		expect(clearTimeoutCalls).toEqual([1]);
@@ -895,15 +803,13 @@ test("regression: a superseded reconnect timer is cleared, so firing close twice
 	}
 });
 
-// --- Contract: an oversized message body is refused locally rather than queued forever ---
-
 test("sendUserMessage throws for a body exceeding CHAT_MAX_MESSAGE_BODY_BYTES rather than queueing it for endless resend", async () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	const bootstrap = makeBootstrap();
 	client.connect(bootstrap);
 	socket.dispatch("open");
-	await flushOutboundQueue();
+	await flushMicrotasks();
 	const beforeCount = socket.send.mock.calls.length;
 
 	const oversized = "x".repeat(CHAT_MAX_MESSAGE_BODY_BYTES + 1);
@@ -911,14 +817,12 @@ test("sendUserMessage throws for a body exceeding CHAT_MAX_MESSAGE_BODY_BYTES ra
 		/CHAT_MAX_MESSAGE_BODY_BYTES/,
 	);
 
-	await flushOutboundQueue();
+	await flushMicrotasks();
 	expect(socket.send.mock.calls.length).toBe(beforeCount);
 });
 
-// --- Contract: session-pending grants capability for the daemon-created session ---
-
 test("a session-pending frame grants capability for the newly created session, so sendUserMessage on it succeeds", async () => {
-	const socket = makeFakeSocket();
+	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	const requester = makeBootstrap({
 		sessionId: "session-a",
@@ -940,14 +844,12 @@ test("a session-pending frame grants capability for the newly created session, s
 	);
 
 	expect(() => client.sendUserMessage("session-new", "hi")).not.toThrow();
-	await flushOutboundQueue();
+	await flushMicrotasks();
 	const sent = sentFrames(socket).filter(
 		(f) => f.type === "user-message" && f.sessionId === "session-new",
 	);
 	expect(sent).toHaveLength(1);
 });
-
-// --- Contract: session-closed revokes capability and prunes queued outbox entries ---
 
 test("a session-closed frame revokes the session's capability and prunes its queued outbox entries", async () => {
 	const scheduled: Array<() => void> = [];
@@ -959,7 +861,7 @@ test("a session-closed frame revokes the session's capability and prunes its que
 
 	const sockets: FakeSocket[] = [];
 	const openSocket = mockFn(() => {
-		const s = makeFakeSocket();
+		const s = makeFakeSocket(mockFn);
 		sockets.push(s);
 		return s;
 	});
@@ -973,7 +875,6 @@ test("a session-closed frame revokes the session's capability and prunes its que
 		client.connect(bootstrap);
 		sockets[0]?.dispatch("open");
 
-		// Drop the socket so this entry stays queued rather than flushing right away.
 		sockets[0]?.dispatch("close");
 		client.sendUserMessage(bootstrap.sessionId, "queued", { messageId: "m1" });
 
@@ -992,7 +893,7 @@ test("a session-closed frame revokes the session's capability and prunes its que
 
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
-		await flushOutboundQueue();
+		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket).filter(
 			(f) => f.type === "user-message",

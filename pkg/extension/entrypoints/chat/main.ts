@@ -8,11 +8,6 @@ import {
 } from "@dg/common";
 import { browser } from "wxt/browser";
 import { CHAT_SESSION_KEY_PREFIX, MSG } from "@/lib/chat-messages";
-import type {
-	ChatClient,
-	ChatConnectionState,
-	SendUserMessageOptions,
-} from "@/lib/features/chat-client";
 import {
 	attachCommandAutocomplete,
 	type CommandAutocomplete,
@@ -23,7 +18,13 @@ import {
 	loadNodePositions,
 	type Point,
 	saveNodePosition,
+	trackPointerDrag,
 } from "@/lib/features/chat-canvas";
+import type {
+	ChatClient,
+	ChatConnectionState,
+	SendUserMessageOptions,
+} from "@/lib/features/chat-client";
 import {
 	type ChatNode,
 	createChatNode,
@@ -67,6 +68,17 @@ function isConnectionState(value: unknown): value is ChatConnectionState {
 	);
 }
 
+function connectionStatusLabel(state: ChatConnectionState): string {
+	switch (state) {
+		case "reconnecting":
+			return "Reconnecting to daemon…";
+		case "daemon-not-running":
+			return "Daemon unreachable";
+		case "connected":
+			return "";
+	}
+}
+
 function isChatHistoryItem(value: unknown): value is ChatHistoryItem {
 	if (typeof value !== "object" || value === null) return false;
 	const item = value as Record<string, unknown>;
@@ -82,11 +94,6 @@ function isChatHistoryItem(value: unknown): value is ChatHistoryItem {
 
 type SendResult = { ok: true } | { ok: false; error: string };
 
-/**
- * Extends ChatClient with an awaitable send the composer uses so a rejected
- * message never renders as if delivered. Not part of the ratified ChatClient
- * type — main.ts's own wiring feature-detects it (see sendAndWaitForAccept).
- */
 type PageChatClient = ChatClient & {
 	sendCommandInvocation(
 		sessionId: string,
@@ -102,8 +109,6 @@ type PageChatClient = ChatClient & {
 
 function createRelayChatClient(): PageChatClient {
 	const runtime = browser.runtime as unknown as ChatRuntime;
-	// Populated from session-list, connect() and session-pending — not just
-	// bootstraps this page requested, so a reopened tab recovers its roster.
 	const knownSessions = new Set<string>();
 	const listeners = new Set<(frame: ChatFrame) => void>();
 	let connectionState: ChatConnectionState = "daemon-not-running";
@@ -284,7 +289,6 @@ function createRelayChatClient(): PageChatClient {
 	};
 }
 
-/** Mirrors sendAndWaitForAccept: the real relay dispatches, an injected fake may not. */
 function dispatchCommandThroughClient(
 	client: ChatClient,
 	sessionId: string,
@@ -300,11 +304,6 @@ function dispatchCommandThroughClient(
 	});
 }
 
-/**
- * Awaits the real accept/reject result when the injected client is the
- * default relay; falls back to the synchronous ChatClient contract
- * otherwise (fakes injected via ChatPageOptions.createClient in tests).
- */
 function sendAndWaitForAccept(
 	client: ChatClient,
 	sessionId: string,
@@ -377,13 +376,13 @@ export async function renderChatPage(
 	const autocompletes = new Map<string, CommandAutocomplete>();
 	const manifests = new Map<string, CommandEntry[]>();
 	const canvasPositions = new Map<string, Point>();
-	const dragHandles = new Map<string, HTMLElement>();
 	const bootstrapBySession = new Map(
 		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap]),
 	);
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
 	let selectedSessionId = order[0];
 	let moving: { sessionId: string; originalOrder: string[] } | undefined;
+	let activeDrag: { sessionId: string; cancel(): void } | undefined;
 
 	root.className = "chat-page";
 	root.dataset.theme = "dark";
@@ -424,8 +423,6 @@ export async function renderChatPage(
 	const breadcrumb = element(doc, "div", "chat-thread__breadcrumb");
 	const threadHeading = element(doc, "h2", "chat-thread__heading", "Chat");
 	threadHeader.append(breadcrumb, threadHeading);
-	// Visible (not SR-only, unlike chat-move-status) so a rejected send or a
-	// daemon error frame is actually seen, not just announced to AT.
 	const threadError = element(doc, "div", "chat-thread__error");
 	threadError.setAttribute("role", "alert");
 	threadError.hidden = true;
@@ -441,14 +438,7 @@ export async function renderChatPage(
 	let canvasContainer: HTMLElement | undefined;
 
 	function zoomCanvas(deltaY: number): void {
-		const board = canvas?.boardElement;
-		if (!board) return;
-		const WheelCtor = (
-			doc.defaultView as unknown as { WheelEvent: typeof WheelEvent }
-		).WheelEvent;
-		board.dispatchEvent(
-			new WheelCtor("wheel", { deltaY, ctrlKey: true, cancelable: true }),
-		);
+		canvas?.zoomBy(deltaY);
 	}
 
 	function mountCanvas(): void {
@@ -504,8 +494,7 @@ export async function renderChatPage(
 		return {
 			x: CANVAS_SLOT.x + (index % CANVAS_SLOT.perRow) * CANVAS_SLOT.dx,
 			y:
-				CANVAS_SLOT.y +
-				Math.floor(index / CANVAS_SLOT.perRow) * CANVAS_SLOT.dy,
+				CANVAS_SLOT.y + Math.floor(index / CANVAS_SLOT.perRow) * CANVAS_SLOT.dy,
 		};
 	}
 
@@ -542,7 +531,7 @@ export async function renderChatPage(
 	}
 
 	function ensureDragHandle(sessionId: string, nodeElement: HTMLElement): void {
-		if (dragHandles.has(sessionId)) return;
+		if (nodeElement.querySelector(".chat-node__drag")) return;
 		const handle = element(doc, "button", "chat-node__drag", "\u2725");
 		handle.type = "button";
 		handle.dataset.action = "drag-node";
@@ -556,46 +545,46 @@ export async function renderChatPage(
 			const start = { x: pointerEvent.clientX, y: pointerEvent.clientY };
 			let latest = { ...origin };
 
-			const onMove = (moveEvent: Event): void => {
-				const point = moveEvent as PointerEvent;
-				if (point.pointerId !== pointerEvent.pointerId) return;
-				latest = {
-					x: origin.x + (point.clientX - start.x) / scale,
-					y: origin.y + (point.clientY - start.y) / scale,
-				};
-				canvasPositions.set(sessionId, latest);
-				placeNode(sessionId, nodeElement);
+			activeDrag?.cancel();
+			const drag = trackPointerDrag(doc, pointerEvent.pointerId, {
+				onMove(point) {
+					latest = {
+						x: origin.x + (point.x - start.x) / scale,
+						y: origin.y + (point.y - start.y) / scale,
+					};
+					canvasPositions.set(sessionId, latest);
+					placeNode(sessionId, nodeElement);
+				},
+				onEnd() {
+					activeDrag = undefined;
+					void saveNodePosition(sessionId, latest);
+				},
+			});
+			activeDrag = {
+				sessionId,
+				cancel: () => {
+					drag.cancel();
+					activeDrag = undefined;
+				},
 			};
-			const onUp = (upEvent: Event): void => {
-				const point = upEvent as PointerEvent;
-				if (point.pointerId !== pointerEvent.pointerId) return;
-				doc.removeEventListener("pointermove", onMove);
-				doc.removeEventListener("pointerup", onUp);
-				doc.removeEventListener("pointercancel", onUp);
-				void saveNodePosition(sessionId, latest);
-			};
-			doc.addEventListener("pointermove", onMove);
-			doc.addEventListener("pointerup", onUp);
-			doc.addEventListener("pointercancel", onUp);
 		});
 		nodeElement.prepend(handle);
-		dragHandles.set(sessionId, handle);
 	}
 
-	function removeDragHandle(sessionId: string): void {
-		dragHandles.get(sessionId)?.remove();
-		dragHandles.delete(sessionId);
+	function removeDragHandle(nodeElement: HTMLElement): void {
+		nodeElement.querySelector(".chat-node__drag")?.remove();
 	}
 
 	async function loadCanvasPositions(): Promise<void> {
 		const liveIds = sessions.list().map((entry) => entry.sessionId);
+		const liveIdSet = new Set(liveIds);
 		const stored = await loadNodePositions(liveIds);
 		liveIds.forEach((sessionId, index) => {
 			const saved = stored.get(sessionId);
 			canvasPositions.set(sessionId, saved ?? defaultCanvasSlot(index));
 		});
 		for (const sessionId of [...canvasPositions.keys()]) {
-			if (!liveIds.includes(sessionId)) canvasPositions.delete(sessionId);
+			if (!liveIdSet.has(sessionId)) canvasPositions.delete(sessionId);
 		}
 		syncPage();
 	}
@@ -607,8 +596,8 @@ export async function renderChatPage(
 		if (canvasContainer) canvasContainer.hidden = !visible;
 		if (visible) void loadCanvasPositions();
 		else {
-			for (const [sessionId, node] of nodes) {
-				removeDragHandle(sessionId);
+			for (const node of nodes.values()) {
+				removeDragHandle(node.element);
 				clearNodePlacement(node.element);
 			}
 			syncPage();
@@ -675,17 +664,11 @@ export async function renderChatPage(
 		threadError.hidden = false;
 	}
 
-	/** Reflects the client's live connection state — moveStatus/showError cover one-shot events, this covers the ongoing daemon link. */
 	function updateConnectionStatus(): void {
 		const state = client.getConnectionState();
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
-		const message =
-			state === "reconnecting"
-				? "Reconnecting to daemon…"
-				: state === "daemon-not-running"
-					? "Daemon unreachable"
-					: "";
+		const message = connectionStatusLabel(state);
 		connectionStatus.textContent = message;
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
@@ -762,8 +745,6 @@ export async function renderChatPage(
 			document: doc,
 			port: bootstrap?.port,
 			onSubmit: (body) => {
-				// Append only once the send is accepted — a rejected send must
-				// never render as if delivered with nothing contradicting it.
 				void sendAndWaitForAccept(client, sessionId, body).then((result) => {
 					if (result.ok) node.transcript.appendUserMessage(body);
 					else showError(result.error);
@@ -818,11 +799,17 @@ export async function renderChatPage(
 		}
 		for (const [sessionId, node] of nodes) {
 			if (liveIds.has(sessionId)) continue;
+			if (moving?.sessionId === sessionId) {
+				moving = undefined;
+				announceMove("Move cancelled — the session closed.");
+			}
+			if (activeDrag?.sessionId === sessionId) activeDrag.cancel();
 			autocompletes.get(sessionId)?.destroy();
 			autocompletes.delete(sessionId);
 			manifests.delete(sessionId);
 			canvasPositions.delete(sessionId);
-			removeDragHandle(sessionId);
+			bootstrapBySession.delete(sessionId);
+			removeDragHandle(node.element);
 			node.destroy();
 			nodes.delete(sessionId);
 		}
@@ -835,16 +822,12 @@ export async function renderChatPage(
 			selectedSessionId = groups[0]?.sessions[0]?.sessionId;
 		}
 
-		// The rail's rows are rebuilt from scratch below; capture whichever one
-		// holds focus so a mid-typing/mid-move frame doesn't drop it to <body>.
 		const activeElement = doc.activeElement as HTMLElement | null;
 		const focusedRailRow =
 			activeElement?.closest<HTMLElement>(".chat-rail__row") ?? null;
 		const refocusSessionId = focusedRailRow?.dataset.sessionId;
 
 		railSections.replaceChildren();
-		// threadNodes keeps its live session nodes (ensureNode reuses them), but
-		// a leftover zero-state placeholder from showEmpty() must still go.
 		for (const empty of threadNodes.querySelectorAll(".chat-empty")) {
 			empty.remove();
 		}
@@ -896,7 +879,8 @@ export async function renderChatPage(
 
 				const node = ensureNode(entry.sessionId);
 				if (node) {
-					const onCanvas = root.dataset.view === "canvas" && canvas !== undefined;
+					const onCanvas =
+						root.dataset.view === "canvas" && canvas !== undefined;
 					const focused = entry.sessionId === selectedSessionId;
 					node.element.hidden = onCanvas ? false : !focused;
 					const transcript = node.element.querySelector(".chat-transcript");
@@ -915,8 +899,6 @@ export async function renderChatPage(
 			railSections.appendChild(section);
 		}
 
-		// Thread nodes are the SAME element across renders (just refocus); rail
-		// rows are rebuilt from scratch, so re-find the equivalent by sessionId.
 		if (
 			activeElement &&
 			activeElement !== doc.body &&
@@ -951,8 +933,6 @@ export async function renderChatPage(
 
 	createButton.addEventListener("click", requestNewChatSession);
 
-	// Bound on the document, not root: a rail rebuild can momentarily leave
-	// focus on <body>, and a root-level listener would never see events from there.
 	doc.addEventListener("keydown", (event) => {
 		const target = event.target as HTMLElement;
 		if (event.key === "Enter" && target.dataset.action === "move") {
@@ -1005,7 +985,11 @@ export async function renderChatPage(
 				manifests.set(frame.sessionId, frame.commands);
 				break;
 			case "history-response":
-				node?.transcript.applyHistory(frame.messages.filter(isChatHistoryItem));
+				void node?.transcript.applyHistory(
+					frame.messages.filter(isChatHistoryItem),
+					frame.sessionId,
+					bootstrapBySession.get(frame.sessionId)?.token ?? "",
+				);
 				break;
 			case "progress":
 				node?.transcript.updateProgress(frame.state);
@@ -1032,8 +1016,6 @@ export async function renderChatPage(
 			"Start a DeeGee chat from an agent session to register it here.",
 		);
 	} else {
-		// connect() is fire-and-forget; give it a tick to settle before judging
-		// reachability, or a healthy daemon flashes this zero-state on every load.
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 		updateConnectionStatus();
 		if (

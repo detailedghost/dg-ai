@@ -1,13 +1,7 @@
-/**
- * entrypoints/chat-marker-capture.content.ts — the loopback-only content script
- * that parses, relays, and strips the `_chat` marker. Follows proto-content.spec.ts's
- * technique: stub WXT's defineContentScript macro, capture the real config, invoke it.
- */
-
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
-import type { SessionBootstrap } from "@dg/common";
 import { MSG } from "@/lib/chat-messages";
 import { stripChatMarker } from "@/utils/chat-marker";
+import { captureGlobal, makeBootstrap } from "./utils/relay-harness";
 
 type CapturedContentConfig = {
 	matches?: string[];
@@ -42,44 +36,16 @@ afterAll(() => {
 	}
 });
 
-const originalLocation = Object.getOwnPropertyDescriptor(
-	globalThis,
-	"location",
-);
-const originalHistory = Object.getOwnPropertyDescriptor(globalThis, "history");
-const originalChrome = Object.getOwnPropertyDescriptor(globalThis, "chrome");
+const restoreLocation = captureGlobal("location");
+const restoreHistory = captureGlobal("history");
+const restoreChrome = captureGlobal("chrome");
 
 afterEach(() => {
-	if (originalLocation) {
-		Object.defineProperty(globalThis, "location", originalLocation);
-	} else {
-		Reflect.deleteProperty(globalThis, "location");
-	}
-	if (originalHistory) {
-		Object.defineProperty(globalThis, "history", originalHistory);
-	} else {
-		Reflect.deleteProperty(globalThis, "history");
-	}
-	if (originalChrome) {
-		Object.defineProperty(globalThis, "chrome", originalChrome);
-	} else {
-		Reflect.deleteProperty(globalThis, "chrome");
-	}
+	restoreLocation();
+	restoreHistory();
+	restoreChrome();
 });
 
-function makeBootstrap(
-	overrides: Partial<SessionBootstrap> = {},
-): SessionBootstrap {
-	return {
-		port: 4317,
-		sessionId: "sess-abc123",
-		token: "tok-xyz789",
-		agentIdentity: "claude-orchestrator",
-		...overrides,
-	};
-}
-
-/** base64url(JSON), no compression — plan.md's execute-mode layer-1 transport ratification. */
 function encodeMarkerPayload(payload: unknown): string {
 	const bytes = new TextEncoder().encode(JSON.stringify(payload));
 	let bin = "";
@@ -87,7 +53,6 @@ function encodeMarkerPayload(payload: unknown): string {
 	return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Swap in a plain location/history stub; replaceState just records what it was given. */
 function withLocation(href: string): { replacedUrl(): string | undefined } {
 	let replacedUrl: string | undefined;
 	Object.defineProperty(globalThis, "location", {
@@ -129,7 +94,6 @@ test("relays a captured bootstrap to the background and strips the marker from t
 		type: MSG.markerCaptured,
 		bootstrap,
 	});
-	// Derived from the real strip transform, not a hardcoded duplicate string.
 	expect(replacedUrl()).toBe(stripChatMarker(url));
 	expect(replacedUrl()).toContain("kept=1");
 	expect(replacedUrl()).not.toContain("_chat=");
@@ -146,10 +110,6 @@ test("does nothing when the page carries no _chat marker", async () => {
 	expect(replacedUrl()).toBeUndefined();
 });
 
-/**
- * Mirrors demo-tour.content.ts's runProto convention: any `_chat` marker — valid or
- * malformed — still gets stripped from the address bar, but a malformed one never relays.
- */
 test("strips a malformed _chat marker without relaying it to the background", async () => {
 	const sendMessage = mock(() => undefined);
 	Object.assign(globalThis, { chrome: { runtime: { sendMessage } } });

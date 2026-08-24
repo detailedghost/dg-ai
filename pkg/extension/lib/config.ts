@@ -151,7 +151,6 @@ export async function readNarrationMode(): Promise<NarrationMode> {
 	}
 }
 
-/** Daemon-authoritative, deliberately not browser.storage.sync. */
 export const ASSET_DIRECTORY_CONFIG_KEY = "assetDirectory";
 
 export type ConfigFrameReply = { value?: unknown; error?: string };
@@ -176,7 +175,6 @@ export type ConfigTransport = {
 	setAssetDirectory(value: string): Promise<AssetDirectorySaveResult>;
 };
 
-/** Wraps an injected sendConfigFrame seam — never touches browser.storage.sync. */
 export function createDaemonConfigTransport(seams: {
 	sendConfigFrame: SendConfigFrame;
 }): ConfigTransport {
@@ -215,7 +213,6 @@ export function createDaemonConfigTransport(seams: {
 
 type ConfigRelayRuntime = { sendMessage(message: unknown): Promise<unknown> };
 
-/** Posts through the background relay, which owns the one socket and the one auth path. */
 export function createLiveAssetDirectoryTransport(): ConfigTransport {
 	const runtime = browser.runtime as unknown as ConfigRelayRuntime;
 	return createDaemonConfigTransport({

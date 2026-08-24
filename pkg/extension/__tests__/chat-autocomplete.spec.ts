@@ -1,57 +1,11 @@
-/**
- * lib/features/chat-autocomplete.ts: attaches directly to the ratified
- * composer mount seam's inputElement (chat-node.ts's createComposer) —
- * offers only published manifest entries on a leading $, subagent names on
- * any @, arrow traversal, Enter accepts (never also submitting the raw
- * composer text), Escape dismisses without sending.
- *
- * [SPEC] invented module surface — plan.md names no shape for this file,
- * only that it "attaches to slice 6's documented composer mount seam" and
- * "renders the resolved argv on each row". See deferrals for the full
- * proposed contract, including the cross-slice gap this surfaced: no file
- * in any current slice owns turning a submitted "$label" body into an
- * actual command-invocation wire frame (entrypoints/chat/main.ts is outside
- * slice 8's file list) — attachCommandAutocomplete's onDispatch callback is
- * the seam a later pass must wire to a real ChatClient.
- */
-
 import { expect, test } from "bun:test";
 import type { CommandEntry } from "@dg/common";
-import { Window } from "happy-dom";
 import { createComposer } from "@/lib/features/chat-node";
+import { createTestContainer, keydown, typeValue } from "./utils/dom-events";
 
 const { attachCommandAutocomplete } = await import(
 	"@/lib/features/chat-autocomplete"
 );
-
-function newContainer(): HTMLElement {
-	const window = new Window();
-	const document = window.document as unknown as Document;
-	return document.createElement("div") as unknown as HTMLElement;
-}
-
-function keydown(el: HTMLElement, key: string): void {
-	const KeyboardEventCtor = (
-		el.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof KeyboardEvent;
-		}
-	).KeyboardEvent;
-	el.dispatchEvent(
-		new KeyboardEventCtor("keydown", {
-			key,
-			bubbles: true,
-			cancelable: true,
-		}),
-	);
-}
-
-function typeValue(el: HTMLInputElement, value: string): void {
-	el.value = value;
-	const EventCtor = (
-		el.ownerDocument.defaultView as unknown as { Event: typeof Event }
-	).Event;
-	el.dispatchEvent(new EventCtor("input", { bubbles: true }));
-}
 
 const COMMANDS: CommandEntry[] = [
 	{
@@ -67,7 +21,7 @@ function mountWithAutocomplete(options: {
 	onSubmit?: (body: string) => void;
 	onDispatch?: (label: string) => void;
 }) {
-	const container = newContainer();
+	const container = createTestContainer();
 	const submitted: string[] = [];
 	const dispatched: string[] = [];
 	createComposer(container, options.onSubmit ?? ((b) => submitted.push(b)));
@@ -134,11 +88,9 @@ test("the listbox carries role=listbox, and the input's aria-activedescendant tr
 	keydown(input, "ArrowDown");
 	expect(input.getAttribute("aria-activedescendant")).toBe(options[1]?.id);
 
-	// Wraps back to the first option past the last.
 	keydown(input, "ArrowDown");
 	expect(input.getAttribute("aria-activedescendant")).toBe(options[0]?.id);
 
-	// ArrowUp from the first wraps to the last.
 	keydown(input, "ArrowUp");
 	expect(input.getAttribute("aria-activedescendant")).toBe(options[1]?.id);
 	autocomplete.destroy();
@@ -211,7 +163,7 @@ test("accepting an @ suggestion inserts the resolved name in place, rather than 
 
 test("destroy() removes the listbox and stops the input from reacting to further $ input", () => {
 	const { input, autocomplete } = mountWithAutocomplete({});
-	typeValue(input, "$"); // render it live first, so disconnection below is meaningful
+	typeValue(input, "$");
 	expect(autocomplete.listElement.isConnected).toBe(true);
 
 	autocomplete.destroy();

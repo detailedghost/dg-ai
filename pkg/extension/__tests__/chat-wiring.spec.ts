@@ -1,4 +1,3 @@
-/** Slice 12's integration wiring: the chat page's command dispatch reaching the daemon. */
 
 import { describe, expect, it, mock } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "@dg/common";

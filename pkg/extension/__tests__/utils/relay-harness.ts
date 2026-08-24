@@ -1,7 +1,9 @@
-/** The background's one socket and message listener, under test control. */
-
 import { mock } from "bun:test";
-import { CHAT_DEFAULT_PORT, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import {
+	CHAT_DEFAULT_PORT,
+	CHAT_PROTOCOL_VERSION,
+	type SessionBootstrap,
+} from "@dg/common";
 import { registerChat } from "@/lib/background/chat";
 import { MSG } from "@/lib/chat-messages";
 
@@ -11,17 +13,27 @@ export type Listener = (
 	sendResponse: (r: unknown) => void,
 ) => boolean | undefined;
 
+export type MockFn<Args extends unknown[], R = void> = ((
+	...args: Args
+) => R) & {
+	mock: { calls: Args[] };
+};
+
+export type MockFnFactory = <Args extends unknown[], R>(
+	impl: (...args: Args) => R,
+) => MockFn<Args, R>;
+
 export type FakeSocket = {
-	send: ReturnType<typeof mock>;
-	addEventListener: ReturnType<typeof mock>;
+	send: MockFn<[string]>;
+	addEventListener: MockFn<[string, (event?: unknown) => void]>;
 	dispatch(type: string, event?: unknown): void;
 };
 
-export function makeFakeSocket(): FakeSocket {
+export function makeFakeSocket(mockFn: MockFnFactory = mock): FakeSocket {
 	const listeners: Record<string, Array<(event?: unknown) => void>> = {};
 	return {
-		send: mock((_data: string) => undefined),
-		addEventListener: mock((type: string, cb: (event?: unknown) => void) => {
+		send: mockFn((_data: string) => undefined),
+		addEventListener: mockFn((type: string, cb: (event?: unknown) => void) => {
 			if (!listeners[type]) listeners[type] = [];
 			listeners[type].push(cb);
 		}),
@@ -35,8 +47,37 @@ export function frameEvent(frame: Record<string, unknown>) {
 	return { data: JSON.stringify(frame) };
 }
 
-const settle = (): Promise<void> =>
+export const settle = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
+
+export async function flushMicrotasks(times = 40): Promise<void> {
+	for (let i = 0; i < times; i++) await Promise.resolve();
+}
+
+export function makeBootstrapFactory(
+	defaults: SessionBootstrap,
+): (overrides?: Partial<SessionBootstrap>) => SessionBootstrap {
+	return (overrides = {}) => ({ ...defaults, ...overrides });
+}
+
+export const makeBootstrap = makeBootstrapFactory({
+	port: 4317,
+	sessionId: "sess-abc123",
+	token: "tok-xyz789",
+	agentIdentity: "claude-orchestrator",
+});
+
+/** Captures a globalThis property's descriptor and returns a closure that restores it. */
+export function captureGlobal(name: string): () => void {
+	const original = Object.getOwnPropertyDescriptor(globalThis, name);
+	return () => {
+		if (original) {
+			Object.defineProperty(globalThis, name, original);
+		} else {
+			Reflect.deleteProperty(globalThis, name);
+		}
+	};
+}
 
 export type BootRelayOptions = {
 	confirmSession?: boolean;
@@ -56,7 +97,6 @@ export type BootedRelay = {
 	sentFrames(): Record<string, unknown>[];
 };
 
-/** Boots a real registerChat over a fake socket, so posts carry exactly what a page would send. */
 export async function bootRelay(
 	options: BootRelayOptions = {},
 ): Promise<BootedRelay> {
@@ -77,7 +117,12 @@ export async function bootRelay(
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
 		},
 		tabs: { create: mock(() => Promise.resolve()) },
-		storage: { session: { set: mock(() => Promise.resolve()) } },
+		storage: {
+			session: {
+				set: mock(() => Promise.resolve()),
+				remove: mock(() => Promise.resolve()),
+			},
+		},
 	};
 	registerChat({
 		browserApi: api,

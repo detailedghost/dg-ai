@@ -15,8 +15,6 @@ type Trigger =
 	| { type: "command"; startIndex: number; query: string }
 	| { type: "mention"; startIndex: number; query: string };
 
-// $ must be the leading token (a dispatch is the whole message); @ resolves
-// wherever it last appears while still being typed.
 const TRAILING_MENTION = /@([A-Za-z0-9_-]*)$/;
 
 function parseTrigger(value: string): Trigger | undefined {
@@ -33,14 +31,6 @@ function matchesQuery(text: string, query: string): boolean {
 	return text.toLowerCase().includes(query.toLowerCase());
 }
 
-/**
- * Attaches to createComposer's inputElement (the ratified mount seam) — never
- * edits chat-node.ts. Enter must accept a highlighted suggestion WITHOUT also
- * firing the composer's own Enter-submits-the-raw-text listener, which is
- * already registered (bubble phase) on this same element by the time this
- * attaches. A capturing listener on the input's own parent intercepts first,
- * regardless of registration order, without touching chat-node.ts at all.
- */
 export function attachCommandAutocomplete(
 	inputElement: HTMLInputElement,
 	options: AttachCommandAutocompleteOptions,
@@ -104,14 +94,15 @@ export function attachCommandAutocomplete(
 			inputElement.removeAttribute("aria-activedescendant");
 			return;
 		}
+		const query = trigger.query;
 		if (trigger.type === "command") {
 			commandMatches = options
 				.getCommands()
-				.filter((entry) => matchesQuery(entry.label, trigger?.query ?? ""));
+				.filter((entry) => matchesQuery(entry.label, query));
 			subagentMatches = [];
 		} else {
 			subagentMatches = (options.getSubagents?.() ?? []).filter((name) =>
-				matchesQuery(name, trigger?.query ?? ""),
+				matchesQuery(name, query),
 			);
 			commandMatches = [];
 		}
@@ -156,7 +147,7 @@ export function attachCommandAutocomplete(
 				moveActive(-1);
 				return;
 			case "Enter":
-				if (activeIndex < 0) return; // nothing highlighted — let the composer submit normally
+				if (activeIndex < 0) return;
 				event.preventDefault();
 				event.stopImmediatePropagation();
 				acceptActive();

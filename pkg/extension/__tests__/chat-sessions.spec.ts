@@ -1,30 +1,11 @@
-/**
- * lib/features/chat-sessions.ts: live session-list store — identity, unread
- * count, and status read from the progress frame's explicit `state`, never
- * silence. Surface RATIFIED in Code Structure's Layer-2 module surface
- * ratifications, slice 5.
- */
-
 import { expect, test } from "bun:test";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import {
+	buildAgentMessageFrame,
+	buildSessionListFrame,
+} from "./utils/frame-fixtures";
 
 const { createChatSessions } = await import("@/lib/features/chat-sessions");
-
-function buildSessionListFrame(
-	sessions: Array<{
-		sessionId: string;
-		agentIdentity: string;
-		role?: "orchestrator" | "agent";
-		workset?: string;
-	}>,
-) {
-	return {
-		type: "session-list" as const,
-		sessionId: sessions[0]?.sessionId ?? "session-a",
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		sessions: sessions.map((s) => ({ role: "agent" as const, ...s })),
-	};
-}
 
 function buildProgressFrame(overrides: Record<string, unknown> = {}) {
 	return {
@@ -32,16 +13,6 @@ function buildProgressFrame(overrides: Record<string, unknown> = {}) {
 		sessionId: "session-a",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		state: "running" as const,
-		...overrides,
-	};
-}
-
-function buildAgentMessageFrame(overrides: Record<string, unknown> = {}) {
-	return {
-		type: "agent-message" as const,
-		sessionId: "session-a",
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		body: "reply",
 		...overrides,
 	};
 }
@@ -54,8 +25,6 @@ function buildSessionClosedFrame(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	};
 }
-
-// --- Contract: status resolves from the progress frame's explicit state field ---
 
 test("a freshly listed session has no status until an explicit progress frame arrives — never inferred from silence", () => {
 	const store = createChatSessions();
@@ -95,8 +64,6 @@ test("a progress frame for a session not yet in the roster is ignored rather tha
 	expect(store.list()).toHaveLength(0);
 });
 
-// --- Unread count and markSessionRead ---
-
 test("unread count starts at zero and increments once per agent-message", () => {
 	const store = createChatSessions();
 	store.applyFrame(
@@ -129,8 +96,6 @@ test("markSessionRead resets the unread count to zero without touching status", 
 	expect(store.get("session-a")?.unreadCount).toBe(0);
 	expect(store.get("session-a")?.status).toBe("awaiting-input");
 });
-
-// --- Roster maintenance ---
 
 test("session-list replaces the roster wholesale, dropping a session no longer present", () => {
 	const store = createChatSessions();
@@ -172,8 +137,6 @@ test("a second session-list frame preserves an existing session's status and unr
 	store.applyFrame(buildAgentMessageFrame({ sessionId: "session-a" }));
 	store.applyFrame(buildAgentMessageFrame({ sessionId: "session-a" }));
 
-	// A later roster refresh — e.g. session-c joining — must not reset session-a's
-	// already-known status/unread count back to their pre-progress defaults.
 	store.applyFrame(
 		buildSessionListFrame([
 			{ sessionId: "session-a", agentIdentity: "claude-orchestrator" },

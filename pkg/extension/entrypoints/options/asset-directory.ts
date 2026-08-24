@@ -1,6 +1,5 @@
-/** Options-page asset-directory panel, daemon-authoritative over config-get/config-set. */
-
 import type { ConfigTransport } from "@/lib/config";
+import { failStatus, flashStatus } from "@/lib/ui-helpers";
 
 export type MountAssetDirectoryPanelOptions = {
 	transport: ConfigTransport;
@@ -71,8 +70,8 @@ export function mountAssetDirectoryPanel(
 	input.addEventListener("change", () => {
 		void (async () => {
 			const result = await transport.setAssetDirectory(input.value);
-			status.classList.toggle("err", !result.ok);
-			status.textContent = result.ok ? "Saved ✓" : result.error;
+			if (result.ok) flashStatus(status, "Saved ✓");
+			else failStatus(status, result.error);
 		})();
 	});
 
