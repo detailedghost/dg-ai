@@ -37,42 +37,82 @@ describe("the dg-daemon workflows are path-filtered to their own packages", () =
 	});
 });
 
-describe("the release matrix and the install resolver agree, asset for asset", () => {
-	test("every asset the resolver can ask for is published by the matrix", () => {
-		const rel = workflow("dg-daemon-release.yml");
-		for (const { platform, arch } of SUPPORTED_PLATFORMS) {
-			const name = cliAssetName("dg-daemon", platform, arch);
-			expect(name).toBeDefined();
-			expect(rel).toContain(`asset: ${name}`);
-		}
-	});
+type ReleasedBinary = {
+	binaryName: string;
+	workflow: string;
+	tagPrefix: string;
+};
 
-	test("the matrix publishes nothing the resolver cannot name", () => {
-		const rel = workflow("dg-daemon-release.yml");
-		const declared = [...rel.matchAll(/asset:\s*(\S+)/g)].map((m) => m[1]);
-		const resolvable = new Set(
-			SUPPORTED_PLATFORMS.map(({ platform, arch }) =>
-				cliAssetName("dg-daemon", platform, arch),
-			),
-		);
-		expect(declared.length).toBe(SUPPORTED_PLATFORMS.length);
-		for (const asset of declared) expect(resolvable.has(asset)).toBe(true);
-	});
+const RELEASED_BINARIES: ReleasedBinary[] = [
+	{
+		binaryName: "dg-skills",
+		workflow: "skills-release.yml",
+		tagPrefix: "skills-v",
+	},
+	{
+		binaryName: "dg-daemon",
+		workflow: "dg-daemon-release.yml",
+		tagPrefix: "daemon-v",
+	},
+	{
+		binaryName: "dg-agent",
+		workflow: "dg-agent-release.yml",
+		tagPrefix: "agent-v",
+	},
+];
 
-	test("install asks for the daemon-v tag the release workflow publishes", () => {
-		const rel = workflow("dg-daemon-release.yml");
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell tag text from the workflow, not a JS interpolation
-		expect(rel).toContain('publish "daemon-v${version}"');
-		expect(
-			readRepoFile("pkg", "skills-cli", "src", "commands", "install.ts"),
-		).toContain('tagPrefix: "daemon-v"');
-	});
+for (const {
+	binaryName,
+	workflow: workflowFile,
+	tagPrefix,
+} of RELEASED_BINARIES) {
+	describe(`${binaryName}: the release matrix and the install resolver agree, asset for asset`, () => {
+		test("every asset the resolver can ask for is published by the matrix", () => {
+			const rel = workflow(workflowFile);
 
-	test("the release also publishes the server-v alias, so an installed dg-skills upgrades once more", () => {
+			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
+				const name = cliAssetName(binaryName, platform, arch);
+				expect(name).toBeDefined();
+				expect(rel).toContain(`asset: ${name}`);
+			}
+		});
+
+		test("the matrix publishes nothing the resolver cannot name", () => {
+			const rel = workflow(workflowFile);
+			const declared = [...rel.matchAll(/asset:\s*(\S+)/g)].map((m) => m[1]);
+			const resolvable = new Set(
+				SUPPORTED_PLATFORMS.map(({ platform, arch }) =>
+					cliAssetName(binaryName, platform, arch),
+				),
+			);
+
+			expect(declared.length).toBe(SUPPORTED_PLATFORMS.length);
+			for (const asset of declared) expect(resolvable.has(asset)).toBe(true);
+		});
+
+		test("install asks for the tag prefix this workflow publishes", () => {
+			expect(workflow(workflowFile)).toContain(tagPrefix);
+			expect(
+				readRepoFile("pkg", "skills-cli", "src", "commands", "install.ts"),
+			).toContain(`tagPrefix: "${tagPrefix}"`);
+		});
+	});
+}
+
+describe("the dg-server compatibility alias", () => {
+	test("the daemon release also publishes it, so an installed dg-skills upgrades once more", () => {
 		const rel = workflow("dg-daemon-release.yml");
+
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell tag text from the workflow, not a JS interpolation
 		expect(rel).toContain('publish "server-v${version}"');
 		expect(rel).toContain("s/^dg-daemon-/dg-server-/");
+	});
+
+	test("the agent release publishes no alias, having never shipped under another name", () => {
+		const rel = workflow("dg-agent-release.yml");
+
+		expect(rel).not.toContain("dg-server");
+		expect(rel).not.toContain("legacy");
 	});
 });
 
@@ -85,11 +125,26 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		"install.ts",
 	);
 
-	test("both binaries are declared with their own tag prefix", () => {
-		expect(install).toContain('binaryName: "dg-skills"');
-		expect(install).toContain('tagPrefix: "skills-v"');
-		expect(install).toContain('binaryName: "dg-daemon"');
-		expect(install).toContain('tagPrefix: "daemon-v"');
+	test("every released binary is declared with its own tag prefix, and no others are", () => {
+		const declared = /const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(
+			install,
+		)?.[1];
+
+		for (const { binaryName, tagPrefix } of RELEASED_BINARIES) {
+			expect(declared).toContain(`binaryName: "${binaryName}"`);
+			expect(declared).toContain(`tagPrefix: "${tagPrefix}"`);
+		}
+		expect([...(declared ?? "").matchAll(/binaryName:/g)].length).toBe(
+			RELEASED_BINARIES.length,
+		);
+	});
+
+	test("the daemon and the agent are installed into the same directory, so sibling resolution finds one from the other", () => {
+		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
+		const dest = /export function cliDest[\s\S]*?\n}/.exec(lib)?.[0];
+
+		expect(dest).toContain('join(homedir(), ".dg", "bin"');
+		expect(dest).not.toContain("binaryName ===");
 	});
 
 	test("the fetch is written once, not duplicated per binary", () => {

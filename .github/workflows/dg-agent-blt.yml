@@ -1,0 +1,40 @@
+---
+name: DG Agent - Build, Lint, and Test
+
+on:
+  pull_request:
+    paths:
+      - pkg/dg-agent/**
+      - pkg/dg-daemon/**
+      - pkg/common/**
+      - .github/workflows/dg-agent-blt.yml
+  workflow_call:
+
+jobs:
+  dg-agent-blt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install (root — wires workspace symlinks, skip extension postinstall)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Lint (common)
+        working-directory: pkg/common
+        run: bun run lint
+
+      - name: Lint (dg-agent)
+        working-directory: pkg/dg-agent
+        run: bun run lint
+
+      - name: Test (dg-agent — CLI wire, session resolution, start)
+        working-directory: pkg/dg-agent
+        run: bun test
+
+      - name: Build (dg-agent)
+        working-directory: pkg/dg-agent
+        run: bun run build

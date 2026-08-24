@@ -1,0 +1,106 @@
+---
+name: DG Agent - Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - pkg/dg-agent/**
+      - pkg/common/**
+      - .github/workflows/dg-agent-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  blt:
+    uses: ./.github/workflows/dg-agent-blt.yml
+
+  build:
+    needs: blt
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: dg-agent-linux-x64
+          - target: bun-linux-arm64
+            asset: dg-agent-linux-arm64
+          - target: bun-darwin-x64
+            asset: dg-agent-macos-x64
+          - target: bun-darwin-arm64
+            asset: dg-agent-macos-arm64
+          - target: bun-windows-x64
+            asset: dg-agent-windows-x64.exe
+          - target: bun-windows-arm64
+            asset: dg-agent-windows-arm64.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build ${{ matrix.asset }}
+        working-directory: pkg/dg-agent
+        run: >-
+          bun build src/index.ts --compile
+          --target=${{ matrix.target }}
+          --outfile dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/dg-agent/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: ver
+        working-directory: pkg/dg-agent
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          tag="agent-v${version}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists — nothing to publish."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DG Agent $tag" \
+            --notes "Standalone dg-agent CLI binaries ($tag). Install alongside dg-daemon — dg-agent resolves the daemon as a sibling binary." \
+            dist/*
+
+      - name: Clean up on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          version="${{ steps.ver.outputs.version }}"
+          if [ -n "$version" ]; then
+            tag="agent-v${version}"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
+          fi

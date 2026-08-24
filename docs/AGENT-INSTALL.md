@@ -72,7 +72,7 @@ the `/dg:*` skills are available.
 
 The skills run compiled binaries. Bootstrap once — this downloads `dg-skills`
 for the current platform into `~/.dg/bin`, **then runs `dg-skills install`**,
-which fetches `dg-daemon` too, stages the extension, and prints the exact **Load
+which fetches `dg-daemon` and `dg-agent` too, stages the extension, and prints the exact **Load
 unpacked** path:
 
 ```bash
@@ -92,11 +92,13 @@ fi
 - No Bun needed at runtime — the binary is self-contained. Bun is only required
   for the `--local` source build.
 - Re-run `"$DG" install` anytime to update the extension, `dg-skills` and
-  `dg-daemon` together; each is skipped when already current. For Firefox:
+  `dg-daemon` and `dg-agent` together; each is skipped when already current. For Firefox:
   `"$DG" install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
-- The chat skill runs `~/.dg/bin/dg-daemon`, released separately under
-  `daemon-v*`. Its own bootstrap gate tests for `dg-daemon`, not `dg-skills` — a
+- The chat skill runs `~/.dg/bin/dg-agent`, released separately under
+  `agent-v*`, and `dg-agent start` launches `~/.dg/bin/dg-daemon` (released under
+  `daemon-v*`) by resolving it as a sibling, so both must live in the same
+  directory. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
   machine that already used `browser`, `demo` or `proto` has `dg-skills`
   already, so gating on that would skip the download the gate exists for.
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
@@ -133,7 +135,7 @@ Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm
 grouping/tours work with the browser or demo skill. For the chat harness:
 
 ```bash
-"$HOME/.dg/bin/dg-daemon" --help
+"$HOME/.dg/bin/dg-agent" --help
 "$HOME/.dg/bin/dg-daemon" status
 ```
 
@@ -151,11 +153,11 @@ ______________________________________________________________________
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
 | `dg-skills install` (stage extension + refresh both binaries) | Yes |
-| `dg-daemon start` (register a chat session) | Yes |
-| `dg-daemon start --open` (open the chat page) | Yes (default browser) |
-| Read a human's chat reply (`dg-daemon recv --block`) | Yes — it waits for them |
+| `dg-agent start` (register a chat session) | Yes |
+| `dg-agent start --open` (open the chat page) | Yes (default browser) |
+| Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
 | Switch WSL to mirrored networking mode | No — manual host config |
-| Add `dg-daemon-blt` to branch protection | No — repo admin |
+| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
 | Load unpacked in the browser | No — manual browser UI |
 | `launch` cold-start with extension | Yes (browser fully closed) |
 | `batch-open` / `demo` / `rerun` | Yes (extension loaded) |

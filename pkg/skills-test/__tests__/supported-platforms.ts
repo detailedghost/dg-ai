@@ -1,7 +1,7 @@
 export type SupportedPlatform = {
 	platform: string;
 	arch: string;
-	assetName: Record<"dg-skills" | "dg-daemon", string>;
+	assetName: Record<"dg-skills" | "dg-daemon" | "dg-agent", string>;
 };
 
 export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
@@ -11,6 +11,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-linux-x64",
 			"dg-daemon": "dg-daemon-linux-x64",
+			"dg-agent": "dg-agent-linux-x64",
 		},
 	},
 	{
@@ -19,6 +20,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-linux-arm64",
 			"dg-daemon": "dg-daemon-linux-arm64",
+			"dg-agent": "dg-agent-linux-arm64",
 		},
 	},
 	{
@@ -27,6 +29,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-macos-x64",
 			"dg-daemon": "dg-daemon-macos-x64",
+			"dg-agent": "dg-agent-macos-x64",
 		},
 	},
 	{
@@ -35,6 +38,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-macos-arm64",
 			"dg-daemon": "dg-daemon-macos-arm64",
+			"dg-agent": "dg-agent-macos-arm64",
 		},
 	},
 	{
@@ -43,6 +47,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-windows-x64.exe",
 			"dg-daemon": "dg-daemon-windows-x64.exe",
+			"dg-agent": "dg-agent-windows-x64.exe",
 		},
 	},
 	{
@@ -51,6 +56,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		assetName: {
 			"dg-skills": "dg-skills-windows-arm64.exe",
 			"dg-daemon": "dg-daemon-windows-arm64.exe",
+			"dg-agent": "dg-agent-windows-arm64.exe",
 		},
 	},
 ];
