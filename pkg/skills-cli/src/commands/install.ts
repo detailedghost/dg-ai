@@ -145,6 +145,7 @@ function removeRetiredBinaries(): void {
 const BINARIES: BinarySpec[] = [
 	{ binaryName: "dg-skills", tagPrefix: "skills-v" },
 	{ binaryName: "dg-daemon", tagPrefix: "daemon-v" },
+	{ binaryName: "dg-agent", tagPrefix: "agent-v" },
 ];
 
 async function installCli(): Promise<void> {

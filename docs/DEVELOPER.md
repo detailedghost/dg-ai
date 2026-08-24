@@ -7,6 +7,7 @@ pkg/
   common/      @dg/common — shared types + pure functions
   extension/   WXT MV3 browser extension (was extension-src/)
   dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
+  dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
@@ -92,11 +93,14 @@ bun test       # install logic + skill manifests + CLI smoke
 | `skills-blt` | PR: skills-cli, common, skills, skills-test | required |
 | `skills-release` | push master: skills-cli, common | `skills-v*`, 6 bins |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
-| `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*`, 6 bins |
+| `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
+| `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*` + `server-v*` alias, 6 bins |
+| `dg-agent-release` | push master: dg-agent, common | `agent-v*`, 6 bins |
 
 ## Branch Protection
 
-PRs to `master` require `ext-blt`, `skills-blt` and `dg-daemon-blt` to pass.
+PRs to `master` require `ext-blt`, `skills-blt`, `dg-daemon-blt` and
+`dg-agent-blt` to pass.
 
 > **Manual step, post-merge.** A repository admin must add the `dg-daemon-blt`
 > check to branch protection. Until that is done the workflow runs but cannot
@@ -109,10 +113,11 @@ PRs to `master` require `ext-blt`, `skills-blt` and `dg-daemon-blt` to pass.
 | `dg-ai-extension` zip | `pkg/extension/package.json` | `ext-v*` |
 | `dg-skills` binary | `pkg/skills-cli/package.json` | `skills-v*` |
 | `dg-daemon` binary | `pkg/dg-daemon/package.json` | `daemon-v*` |
+| `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
 | skill tree | the repository itself | tracked in `master` |
 
 They move independently on purpose. `dg-skills install` refreshes the extension
-zip, `dg-skills` and `dg-daemon` in one pass, skipping any that is already
+zip, `dg-skills`, `dg-daemon` and `dg-agent` in one pass, skipping any that is already
 current. A platform with no published binary warns and continues rather than
 failing the whole install.
 

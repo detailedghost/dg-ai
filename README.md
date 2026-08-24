@@ -12,7 +12,7 @@ and **live-page prototype**. The companion extension is `dg-ai-extension`.
 /plugin install dg@detailedghost
 ```
 
-**Standalone — one command installs the `dg-skills` and `dg-daemon` binaries
+**Standalone — one command installs the `dg-skills`, `dg-daemon` and `dg-agent` binaries
 *and* the browser extension** (compiled binaries, no Bun needed):
 
 macOS / Linux (x64 or arm64):
@@ -32,7 +32,7 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 <!-- markdownlint-enable MD013 -->
 
 Both install `~/.dg/bin/dg-skills`, then run `dg-skills install`, which also
-fetches `~/.dg/bin/dg-daemon`, stages the extension and prints the **Load
+fetches `~/.dg/bin/dg-daemon` and `~/.dg/bin/dg-agent`, stages the extension and prints the **Load
 unpacked** steps. Re-run `dg-skills install` anytime to update all three; each
 is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from

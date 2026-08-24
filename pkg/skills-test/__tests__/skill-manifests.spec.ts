@@ -136,28 +136,39 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	}
 });
 
-describe("dg-daemon-invoking SKILL.md uses the compiled daemon binary", () => {
-	const serverSkills = skillsMentioning("dg-daemon");
+describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
+	const harnessSkills = skillsMentioning("dg-agent");
 
-	test("at least one skill exposes the dg-daemon harness", () => {
-		expect(serverSkills.length).toBeGreaterThan(0);
+	test("at least one skill exposes the chat harness", () => {
+		expect(harnessSkills.length).toBeGreaterThan(0);
 	});
 
-	for (const { name, md } of serverSkills) {
-		test(`${name}: invokes ~/.dg/bin/dg-daemon`, () => {
-			expect(md).toContain(".dg/bin/dg-daemon");
+	for (const { name, md } of harnessSkills) {
+		test(`${name}: invokes ~/.dg/bin/dg-agent, not the daemon directly`, () => {
+			expect(md).toContain(".dg/bin/dg-agent");
+			expect(md).not.toContain('"$DG_DAEMON" start');
 		});
 
-		test(`${name}: gates its bootstrap on the dg-daemon binary, not on dg-skills`, () => {
-			const gates = md.match(/if\s*\[\s*!\s*-x\s*"([^"]+)"\s*\]/g) ?? [];
-			expect(gates.length).toBeGreaterThan(0);
-			const gated = gates.join("\n");
-			expect(gated).toMatch(/DG_DAEMON|dg-daemon/);
-			expect(gated).not.toMatch(/^\s*if\s*\[\s*!\s*-x\s*"\$DG"\s*\]$/m);
+		test(`${name}: gates its bootstrap on the dg-agent binary, not on dg-skills`, () => {
+			const gated = [
+				...md.matchAll(/if\s*\[\s*!\s*-x\s*"\$\{?(\w+)\}?"\s*\]/g),
+			].map((match) => match[1]);
+			expect(gated.length).toBeGreaterThan(0);
+
+			for (const variable of gated) {
+				const assigned = new RegExp(`${variable}="([^"]+)"`).exec(md)?.[1];
+				expect(assigned).toBeDefined();
+				expect(assigned?.endsWith("/dg-agent")).toBe(true);
+			}
 		});
 
-		test(`${name}: names the daemon-v release tag its binary ships under`, () => {
+		test(`${name}: names both release tags its two binaries ship under`, () => {
+			expect(md).toMatch(/agent-v/);
 			expect(md).toMatch(/daemon-v/);
+		});
+
+		test(`${name}: says the two binaries must be installed together, which autostart depends on`, () => {
+			expect(md).toMatch(/same directory|next to it|installed together/i);
 		});
 
 		test(`${name}: documents the recv send status spawn stage close loop`, () => {
