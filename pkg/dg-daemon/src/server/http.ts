@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	CHAT_HEALTH_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
+	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type SessionRole,
@@ -9,11 +10,16 @@ import {
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
-import { assetContentDisposition } from "../assets/content-type";
+import {
+	assetContentDisposition,
+	resolveAssetContentType,
+} from "../assets/content-type";
+import { registerAsset } from "../assets/register";
+import { assertFlatSegment } from "../assets/safe-path";
 import { resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
-import type { ChatStore } from "../store";
+import { AssetTooLargeError, type ChatStore } from "../store";
 import { describeError } from "../utils/errors";
 import {
 	type ConnectionManager,
@@ -33,6 +39,9 @@ import { renderStatus, type StatusDeps } from "./status";
 
 export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
 export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
+export const ASSET_FILENAME_HEADER = "X-Dg-Filename";
+
+const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
 
 export type HttpServerDeps = {
 	port: number;
@@ -108,6 +117,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		port,
 		reusePort: false,
 		idleTimeout: 255,
+		maxRequestBodySize: CHAT_MAX_ASSET_BYTES,
 		development: false,
 		error(err) {
 			logger.error(`unhandled request error: ${describeError(err)}`);
@@ -182,6 +192,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === "/cli") {
 				return handleCliUpgrade(req, server, deps);
+			}
+
+			if (url.pathname === "/assets" && req.method === "POST") {
+				return handleAssetPost(req, deps);
 			}
 
 			if (url.pathname.startsWith("/assets/") && req.method === "GET") {
@@ -308,6 +322,120 @@ function handleCliUpgrade(
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });
+}
+
+function isPlainAssetFilename(filename: string): boolean {
+	try {
+		assertFlatSegment(filename);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Buffers the body, abandoning it the moment it passes the cap; undefined means it did. */
+export async function readCappedBody(
+	req: Request,
+	capBytes: number,
+): Promise<Buffer | undefined> {
+	if (!req.body) return Buffer.alloc(0);
+	const reader = req.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > capBytes) {
+			await reader.cancel();
+			return undefined;
+		}
+		chunks.push(value);
+	}
+	return Buffer.concat(chunks);
+}
+
+async function handleAssetPost(
+	req: Request,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	if (isBrowserOrigin(req.headers.get("origin"))) {
+		return new Response("refused: /assets rejects a browser Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	const sessionId = req.headers.get(CLI_SESSION_ID_HEADER);
+	const token = req.headers.get(CLI_SESSION_TOKEN_HEADER);
+	if (!sessionId || !token || !deps.registry.validate(sessionId, token)) {
+		return new Response("refused: invalid or unknown session capability", {
+			status: 401,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	const rawFilename = req.headers.get(ASSET_FILENAME_HEADER);
+	if (!rawFilename) {
+		return new Response(`refused: ${ASSET_FILENAME_HEADER} is required`, {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	let filename: string;
+	try {
+		filename = decodeURIComponent(rawFilename);
+	} catch {
+		return new Response(
+			`refused: ${ASSET_FILENAME_HEADER} is not valid percent-encoding`,
+			{ status: 400, headers: NOSNIFF_HEADERS },
+		);
+	}
+	if (!isPlainAssetFilename(filename)) {
+		return new Response(
+			`refused: ${ASSET_FILENAME_HEADER} must be a plain basename`,
+			{ status: 400, headers: NOSNIFF_HEADERS },
+		);
+	}
+
+	const bytes = await readCappedBody(req, CHAT_MAX_ASSET_BYTES);
+	if (!bytes) {
+		return new Response(ASSET_TOO_LARGE_MESSAGE, {
+			status: 413,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	const id = randomUUID();
+	try {
+		await registerAsset(
+			{ paths: deps.paths, store: deps.store },
+			{
+				sessionId,
+				id,
+				filename,
+				contentType: resolveAssetContentType(filename).contentType,
+				bytes,
+			},
+		);
+	} catch (err) {
+		if (err instanceof AssetTooLargeError) {
+			return new Response(ASSET_TOO_LARGE_MESSAGE, {
+				status: 413,
+				headers: NOSNIFF_HEADERS,
+			});
+		}
+		deps.logger.error(
+			`asset upload failed: ${err instanceof Error ? err.name : "unknown error"}`,
+		);
+		return new Response("failed to register asset", {
+			status: 500,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	deps.noteActivity();
+	return json({ assetId: id });
 }
 
 async function handleAssetGet(
