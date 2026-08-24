@@ -1,5 +1,6 @@
 export * from "./assert";
 export * from "./chat-format";
+export * from "./cli-wire";
 export * from "./plan-format";
 export * from "./proto-format";
 export * from "./serial-queue";

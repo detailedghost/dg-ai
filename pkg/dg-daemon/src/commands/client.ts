@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
-import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION, type CliRequest } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { DgCliError } from "../server/errors";
 import {
@@ -9,7 +9,6 @@ import {
 import { readPidFile } from "../server/pidfile";
 import { readSessionToken, type SessionTokenRecord } from "../session/tokens";
 import { describeError } from "../utils/errors";
-import type { CliRequest } from "./wire";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
 

@@ -1,4 +1,4 @@
-import type { ChatFrame, CommandEntry } from "@dg/common";
+import type { ChatFrame, CommandEntry } from "./chat-format";
 
 export type CliRecvRequest = {
 	type: "cli-recv";
