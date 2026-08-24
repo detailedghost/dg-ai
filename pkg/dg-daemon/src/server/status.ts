@@ -4,7 +4,7 @@ import {
 	describeKeySource,
 	describeUserVersion,
 } from "../utils/key-source";
-import type { WslNetworkingMode } from "./wsl-guard";
+import type { WslNetworkingMode } from "@dg/common/node";
 
 export const DG_SERVER_PACKAGE_VERSION = "1.0.0";
 

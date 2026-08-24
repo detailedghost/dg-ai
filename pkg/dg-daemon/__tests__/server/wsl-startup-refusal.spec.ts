@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { DgCliError, EXIT_WSL_NAT_NETWORKING } from "@dg/common";
 import { isWSL, resolveDgPaths } from "@dg/common/node";
-import { checkWslNetworking } from "../../src/server/wsl-guard";
+import { checkWslNetworking } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,

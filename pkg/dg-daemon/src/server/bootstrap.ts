@@ -9,6 +9,8 @@ import {
 	validateSessionBootstrap,
 } from "@dg/common";
 import {
+	buildBootstrapUrl,
+	checkWslNetworking,
 	type DgPaths,
 	isDaemonLive,
 	readPidFile,
@@ -23,14 +25,12 @@ import {
 	setKeySourceProvider,
 	setUserVersionProvider,
 } from "../utils/key-source";
-import { buildBootstrapUrl } from "../utils/marker";
 import { ConnectionManager, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_SERVER_PACKAGE_VERSION } from "./status";
-import { checkWslNetworking } from "./wsl-guard";
 
 const HOST_HEADER = (port: number) => ({ Host: `127.0.0.1:${port}` });
 

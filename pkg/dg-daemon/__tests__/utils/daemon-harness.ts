@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	CHAT_MARKER_KEY,
 	CHAT_PROTOCOL_VERSION,
 	type DaemonHandle,
 	type SessionBootstrap,
@@ -241,8 +242,6 @@ export async function stopServe(proc: Subprocess): Promise<void> {
 	proc.kill();
 	await proc.exited;
 }
-
-export const CHAT_MARKER_KEY = "_chat";
 
 export function extractUrl(stdout: string): string {
 	const match = stdout.match(/https?:\/\/\S+/);
