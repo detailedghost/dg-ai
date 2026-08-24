@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+	CHAT_HEALTH_PATH,
+	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type SessionRole,
@@ -140,7 +142,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		fetch(req, server) {
 			const url = new URL(req.url);
 
-			if (url.pathname === "/health") {
+			const isHealth =
+				url.pathname === CHAT_HEALTH_PATH ||
+				url.pathname === CHAT_LEGACY_HEALTH_PATH;
+			if (isHealth) {
 				return handleHealthCheck(req, port, deps.instanceId);
 			}
 
@@ -304,7 +309,6 @@ function handleCliUpgrade(
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });
 }
-
 
 async function handleAssetGet(
 	req: Request,

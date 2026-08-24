@@ -1,5 +1,6 @@
 import {
 	CHAT_DEFAULT_PORT,
+	CHAT_HEALTH_PATH,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
@@ -92,7 +93,7 @@ async function defaultFetchHealth(
 	port: number,
 ): Promise<ChatHealth | undefined> {
 	try {
-		const res = await fetch(`http://127.0.0.1:${port}/health`, {
+		const res = await fetch(`http://127.0.0.1:${port}${CHAT_HEALTH_PATH}`, {
 			signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
 		});
 		if (!res.ok) return undefined;

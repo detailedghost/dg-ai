@@ -32,7 +32,7 @@ describe("dg-daemon start — cold start", () => {
 		result = await runStart(dgHome, port);
 	});
 
-	it("binds the fixed test port — a live /health responds", async () => {
+	it("binds the fixed test port — a live /healthz responds", async () => {
 		await waitForHealth(port);
 	});
 
@@ -135,7 +135,7 @@ describe("pid file reclaim", () => {
 		cleanupDgHome(dgHome);
 	});
 
-	it("reclaims a pid file whose daemon does not answer /health with a matching instance id", async () => {
+	it("reclaims a pid file whose daemon does not answer /healthz with a matching instance id", async () => {
 		dgHome = freshDgHome();
 		port = allocatePort();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -157,7 +157,7 @@ describe("pid file reclaim", () => {
 		expect(reclaimed.pid).not.toBe(999_999);
 		await waitForHealth(port);
 		const health = await (
-			await fetch(`http://127.0.0.1:${port}/health`, {
+			await fetch(`http://127.0.0.1:${port}/healthz`, {
 				headers: { Host: `127.0.0.1:${port}` },
 			})
 		).json();

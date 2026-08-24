@@ -1,6 +1,10 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { type DaemonHandle, validateDaemonHandle } from "@dg/common";
+import {
+	CHAT_HEALTH_PATH,
+	type DaemonHandle,
+	validateDaemonHandle,
+} from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
 
@@ -35,10 +39,13 @@ export async function isDaemonLive(
 	timeoutMs = 1500,
 ): Promise<boolean> {
 	try {
-		const resp = await fetchImpl(`http://127.0.0.1:${handle.port}/health`, {
-			headers: { Host: `127.0.0.1:${handle.port}` },
-			signal: AbortSignal.timeout(timeoutMs),
-		});
+		const resp = await fetchImpl(
+			`http://127.0.0.1:${handle.port}${CHAT_HEALTH_PATH}`,
+			{
+				headers: { Host: `127.0.0.1:${handle.port}` },
+				signal: AbortSignal.timeout(timeoutMs),
+			},
+		);
 		if (!resp.ok) return false;
 		const body = (await resp.json()) as { instanceId?: unknown };
 		return body.instanceId === handle.instanceId;

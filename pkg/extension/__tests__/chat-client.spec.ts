@@ -55,7 +55,7 @@ function mockHealthFetch(
 	handler: (port: number) => { daemon: string; instanceId: string } | undefined,
 ) {
 	return spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
-		const port = Number(/:(\d+)\/health$/.exec(url)?.[1]);
+		const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
 		const health = handler(port);
 		if (!health) return { ok: false } as unknown as Response;
 		return { ok: true, json: async () => health } as unknown as Response;
@@ -322,7 +322,7 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 	}
 });
 
-test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /health, matching instanceId over a decoy dg-daemon, once the cached port goes stale", async () => {
+test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /healthz, matching instanceId over a decoy dg-daemon, once the cached port goes stale", async () => {
 	const sockets: FakeSocket[] = [];
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -907,7 +907,7 @@ test.each([
 	["dg-server", true],
 	["dg-relay", false],
 	["", false],
-])("treats a /health answer naming %p as a usable daemon: %p", async (daemon, usable) => {
+])("treats a /healthz answer naming %p as a usable daemon: %p", async (daemon, usable) => {
 	const sockets: FakeSocket[] = [];
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;

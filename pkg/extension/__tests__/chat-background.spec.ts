@@ -536,7 +536,7 @@ test("regression: the background's socket reopens automatically after the daemon
 	}
 });
 
-test("regression: the background rediscovers a relocated daemon via GET /health, preferring the matching instanceId over a decoy", async () => {
+test("regression: the background rediscovers a relocated daemon via GET /healthz, preferring the matching instanceId over a decoy", async () => {
 	const sockets: FakeSocket[] = [];
 	const openSocket = mock((_url: string) => {
 		const s = makeFakeSocket();
@@ -550,7 +550,7 @@ test("regression: the background rediscovers a relocated daemon via GET /health,
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
 		url: string,
 	) => {
-		const port = Number(/:(\d+)\/health$/.exec(url)?.[1]);
+		const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
 		if (!daemonRestarted) {
 			if (port === CHAT_DEFAULT_PORT) {
 				return {
