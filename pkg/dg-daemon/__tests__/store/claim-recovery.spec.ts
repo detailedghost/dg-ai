@@ -7,7 +7,7 @@ import {
 	FILE_ONLY_SEAMS,
 	freshDgHome,
 	killDaemonByPidFile,
-	runStart,
+	spawnServe,
 	waitForHealth,
 } from "../utils/daemon-harness";
 
@@ -79,7 +79,7 @@ describe("stale-claim recovery is a daemon-boot step, not an open-time side effe
 		const dgHome = freshDgHome();
 		try {
 			const firstPort = allocatePort();
-			await runStart(dgHome, firstPort);
+			spawnServe(dgHome, firstPort);
 			await waitForHealth(firstPort, 8000);
 
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -96,7 +96,7 @@ describe("stale-claim recovery is a daemon-boot step, not an open-time side effe
 			killDaemonByPidFile(dgHome);
 
 			const secondPort = allocatePort();
-			await runStart(dgHome, secondPort);
+			spawnServe(dgHome, secondPort);
 			await waitForHealth(secondPort, 8000);
 
 			const after = await ChatStore.open(paths, FILE_ONLY_SEAMS);

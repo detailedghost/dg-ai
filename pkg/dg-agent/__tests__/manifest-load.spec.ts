@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import {
 	loadManifestFile,
 	loadSubagentManifestFile,
@@ -8,7 +9,7 @@ import {
 import {
 	scratchDir as makeScratchDir,
 	writeJsonFile,
-} from "../utils/daemon-harness";
+} from "@dg/dg-daemon/test-harness";
 
 let scratchDir: string;
 
@@ -105,5 +106,15 @@ describe("resolveManifestForPublish", () => {
 			{ label: "shell", argv: ["bash"], params: [] },
 		];
 		expect(() => resolveManifestForPublish(entries)).toThrow();
+	});
+});
+
+describe("dg-agent commands module no longer opens the store directly", () => {
+	it("commands.ts contains no reference to ChatStore", () => {
+		const source = readFileSync(
+			join(import.meta.dir, "../src/commands.ts"),
+			"utf8",
+		);
+		expect(source).not.toContain("ChatStore");
 	});
 });

@@ -41,8 +41,8 @@ describe("the CLI wire contract lives in @dg/common, where both packages can rea
 		).toBe(false);
 
 		for (const rel of [
-			["pkg", "dg-daemon", "src", "commands", "index.ts"],
-			["pkg", "dg-daemon", "src", "commands", "client.ts"],
+			["pkg", "dg-agent", "src", "commands.ts"],
+			["pkg", "dg-agent", "src", "client.ts"],
 			["pkg", "dg-daemon", "src", "server", "frame-handlers.ts"],
 		]) {
 			expect(readRepoFile(...rel)).not.toContain('from "./wire"');

@@ -6,11 +6,12 @@ import { resolveDgPaths } from "@dg/common/node";
 import { getConfiguredAssetDirectory } from "../../src/assets/config";
 import { registerAsset } from "../../src/assets/register";
 import { ChatStore } from "../../src/store";
-import { runCli } from "../commands/cli-wire";
 import {
 	cleanupDgHome,
+	closeSession,
 	FILE_ONLY_SEAMS,
 	killDaemonByPidFile,
+	spawnSession,
 	startWithSession,
 } from "../utils/daemon-harness";
 
@@ -148,11 +149,7 @@ describe("GET /assets/:id", () => {
 			contentType: "image/png",
 			bytes: Buffer.from("hi"),
 		});
-		const spawned = JSON.parse(
-			(
-				await runCli(dgHome, port, ["spawn", "--session", bootstrap.sessionId])
-			).stdout.trim(),
-		) as { sessionId: string; token: string };
+		const spawned = await spawnSession(dgHome, port, bootstrap.sessionId);
 
 		const resp = await fetch(assetUrl(port, "asset-1"), {
 			headers: authedHeaders(port, spawned),
@@ -209,12 +206,7 @@ describe("GET /assets/:id", () => {
 		});
 		const headers = authedHeaders(port, bootstrap);
 
-		const closed = await runCli(dgHome, port, [
-			"close",
-			"--session",
-			bootstrap.sessionId,
-		]);
-		expect(closed.exitCode).toBe(0);
+		await closeSession(dgHome, port, bootstrap.sessionId);
 
 		const prunedResp = await fetch(assetUrl(port, "asset-1"), { headers });
 		const unknownResp = await fetch(assetUrl(port, "never-existed"), {

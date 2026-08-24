@@ -1,5 +1,8 @@
+import { join } from "node:path";
+import { subprocessEnv } from "@dg/dg-daemon/test-harness";
 import type { Subprocess } from "bun";
-import { ENTRY, subprocessEnv } from "../utils/daemon-harness";
+
+export const ENTRY = join(import.meta.dir, "../src/index.ts");
 
 export function nextParsedMessage(
 	ws: WebSocket,

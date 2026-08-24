@@ -2,21 +2,21 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import {
 	allocatePort,
 	cleanupDgHome,
 	collectFrames,
-	decodeChatMarker,
-	extractUrl,
 	freshDgHome,
 	killDaemonByPidFile,
+	registerSession,
 	sendConnectHandshake,
+	spawnServe,
 	waitForHealth,
 	waitForOpen,
 	waitForValue,
 	wsExtensionSocket,
-} from "../utils/daemon-harness";
+} from "@dg/dg-daemon/test-harness";
 import { runCli } from "./cli-wire";
 
 let dgHome: string;
@@ -33,8 +33,7 @@ afterEach(() => {
 });
 
 async function startSessionIn(port: number, cwd: string) {
-	const result = await runCli(dgHome, port, ["start"], {}, { cwd });
-	return validateSessionBootstrap(decodeChatMarker(extractUrl(result.stdout)));
+	return registerSession(port, { cwd });
 }
 
 describe("CLI session resolution by cwd", () => {
@@ -42,9 +41,10 @@ describe("CLI session resolution by cwd", () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		dirA = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-a-")));
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
 
 		const first = await startSessionIn(port, dirA);
-		await waitForHealth(port);
 		const second = await startSessionIn(port, dirA);
 
 		const page = wsExtensionSocket(port);
@@ -75,9 +75,10 @@ describe("CLI session resolution by cwd", () => {
 		const port = allocatePort();
 		dirA = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-a-")));
 		dirC = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-c-empty-")));
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
 
 		await startSessionIn(port, dirA);
-		await waitForHealth(port);
 
 		const result = await runCli(dgHome, port, ["close"], {}, { cwd: dirC });
 
@@ -88,9 +89,10 @@ describe("CLI session resolution by cwd", () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		dirA = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-a-")));
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
 
 		const first = await startSessionIn(port, dirA);
-		await waitForHealth(port);
 		await startSessionIn(port, dirA);
 
 		const page = wsExtensionSocket(port);
@@ -127,9 +129,10 @@ describe("CLI session resolution by cwd", () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		dirB = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-b-unique-")));
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
 
 		const only = await startSessionIn(port, dirB);
-		await waitForHealth(port);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);
@@ -159,9 +162,10 @@ describe("CLI session resolution by cwd", () => {
 		dirB = realpathSync(mkdtempSync(join(tmpdir(), "dg-cwd-real-")));
 		const symlinkDir = join(tmpdir(), `dg-cwd-symlink-${Date.now()}`);
 		symlinkSync(dirB, symlinkDir);
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
 
 		const only = await startSessionIn(port, dirB);
-		await waitForHealth(port);
 
 		const page = wsExtensionSocket(port);
 		await waitForOpen(page);

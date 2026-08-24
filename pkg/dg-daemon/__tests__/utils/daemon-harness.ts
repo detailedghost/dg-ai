@@ -9,23 +9,59 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
+	ASSET_FILENAME_HEADER,
 	CHAT_MARKER_KEY,
 	CHAT_PROTOCOL_VERSION,
+	CLI_SESSION_ID_HEADER,
+	CLI_SESSION_TOKEN_HEADER,
 	type DaemonHandle,
 	type SessionBootstrap,
+	type SessionRole,
 	validateDaemonHandle,
 	validateSessionBootstrap,
 } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import {
+	readAssetSourceFile,
+	readSessionToken,
+	resolveDgPaths,
+} from "@dg/common/node";
 import type { Subprocess } from "bun";
+
+export { getConfiguredAssetDirectory } from "../../src/assets/config";
+export { ChatStore } from "../../src/store";
 
 export const ENTRY = join(import.meta.dir, "../../src/index.ts");
 
-let nextPort = 47500;
+const PORT_SEARCH_BASE = 47500;
+const PORT_SEARCH_SPAN = 2048;
+
+let nextPort =
+	PORT_SEARCH_BASE + (process.pid % 64) * Math.floor(PORT_SEARCH_SPAN / 64);
+
+function isPortFree(port: number): boolean {
+	try {
+		const probe = Bun.serve({
+			hostname: "127.0.0.1",
+			port,
+			fetch: () => new Response(""),
+		});
+		probe.stop(true);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** A port no live process holds; two test packages running at once must not collide. */
 export function allocatePort(): number {
-	return nextPort++;
+	for (let tried = 0; tried < PORT_SEARCH_SPAN; tried++) {
+		const candidate =
+			PORT_SEARCH_BASE + ((nextPort++ - PORT_SEARCH_BASE) % PORT_SEARCH_SPAN);
+		if (isPortFree(candidate)) return candidate;
+	}
+	throw new Error("the test harness found no free port to allocate");
 }
 
 export function scratchDir(prefix: string): string {
@@ -138,24 +174,6 @@ export function createCleanupSlot(): CleanupSlot {
 }
 
 export type StartResult = { stdout: string; stderr: string; exitCode: number };
-
-export async function runStart(
-	dgHome: string,
-	port: number,
-	extraEnv: Record<string, string> = {},
-): Promise<StartResult> {
-	const proc = Bun.spawn([process.execPath, ENTRY, "start"], {
-		env: subprocessEnv(dgHome, port, extraEnv),
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const [stdout, stderr, exitCode] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-		proc.exited,
-	]);
-	return { stdout, stderr, exitCode };
-}
 
 export async function runStatus(
 	dgHome: string,
@@ -274,17 +292,166 @@ export type SessionBoot = {
 	bootstrap: SessionBootstrap;
 };
 
+export type RegisterSessionInput = {
+	cwd?: string;
+	role?: SessionRole;
+	workset?: string;
+	agentIdentity?: string;
+};
+
+export async function registerSession(
+	port: number,
+	input: RegisterSessionInput = {},
+): Promise<SessionBootstrap> {
+	const resp = await fetch(`http://127.0.0.1:${port}/start`, {
+		method: "POST",
+		headers: {
+			Host: `127.0.0.1:${port}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			cwd: input.cwd ?? process.cwd(),
+			role: input.role ?? "agent",
+			...(input.workset ? { workset: input.workset } : {}),
+			...(input.agentIdentity ? { agentIdentity: input.agentIdentity } : {}),
+		}),
+	});
+	if (!resp.ok) {
+		throw new Error(
+			`session registration failed: ${resp.status} ${await resp.text()}`,
+		);
+	}
+	return validateSessionBootstrap(await resp.json());
+}
+
 export async function startWithSession(
 	extraEnv: Record<string, string> = {},
 ): Promise<SessionBoot> {
 	const dgHome = freshDgHome();
 	const port = allocatePort();
-	const result = await runStart(dgHome, port, extraEnv);
+	spawnServe(dgHome, port, extraEnv);
 	await waitForHealth(port);
-	const bootstrap = validateSessionBootstrap(
-		decodeChatMarker(extractUrl(result.stdout)),
-	);
+	const bootstrap = await registerSession(port);
 	return { dgHome, port, bootstrap };
+}
+
+export function sessionCredentials(
+	dgHome: string,
+	sessionId: string,
+): Credentials {
+	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	return { sessionId, token: readSessionToken(paths, sessionId) };
+}
+
+export async function spawnSession(
+	dgHome: string,
+	port: number,
+	sessionId: string,
+	opts: {
+		workset?: string;
+		agentIdentity?: string;
+		orchestrator?: boolean;
+	} = {},
+): Promise<Credentials> {
+	const credentials = sessionCredentials(dgHome, sessionId);
+	const ws = await connectCli(port, credentials);
+	const frames = collectFrames(ws);
+	send(ws, {
+		type: "session-create",
+		sessionId: credentials.sessionId,
+		token: credentials.token,
+		role: opts.orchestrator ? "orchestrator" : "agent",
+		...(opts.workset ? { workset: opts.workset } : {}),
+		...(opts.agentIdentity ? { agentIdentity: opts.agentIdentity } : {}),
+	});
+	const pending = await waitForValue(
+		() => frames.find((f) => frameType(f) === "session-pending"),
+		5000,
+		"a session-pending response to session-create",
+	);
+	ws.close();
+	return (pending as { newSession: Credentials }).newSession;
+}
+
+export async function closeSession(
+	dgHome: string,
+	port: number,
+	sessionId: string,
+): Promise<void> {
+	const credentials = sessionCredentials(dgHome, sessionId);
+	const ws = await connectCli(port, credentials);
+	const frames = collectFrames(ws);
+	send(ws, {
+		type: "session-close",
+		sessionId: credentials.sessionId,
+		token: credentials.token,
+	});
+	await waitForValue(
+		() => frames.find((f) => frameType(f) === "session-closed"),
+		5000,
+		"a session-closed response to session-close",
+	);
+	ws.close();
+}
+
+export type RecvOutcome = {
+	outcome: "delivered" | "empty" | "timeout" | "closed";
+	message?: Record<string, unknown>;
+};
+
+export async function recvMessage(
+	dgHome: string,
+	port: number,
+	sessionId: string,
+	opts: { block?: boolean; timeoutMs?: number } = {},
+): Promise<RecvOutcome> {
+	const credentials = sessionCredentials(dgHome, sessionId);
+	const timeoutMs = opts.timeoutMs ?? 30_000;
+	const ws = await connectCli(port, credentials);
+	const frames = collectFrames(ws);
+	send(ws, {
+		type: "cli-recv",
+		block: opts.block ?? false,
+		...(opts.block ? { timeoutMs } : {}),
+	});
+	const result = (await waitForValue(
+		() => frames.find((f) => frameType(f) === "cli-recv-result"),
+		timeoutMs + 2000,
+		"a cli-recv-result response",
+	)) as RecvOutcome;
+	if (result.outcome === "delivered" && result.message) {
+		send(ws, { type: "cli-ack", claimId: result.message.claimId as string });
+	}
+	ws.close();
+	return result;
+}
+
+export async function stageAsset(
+	dgHome: string,
+	port: number,
+	sessionId: string,
+	sourcePath: string,
+): Promise<string> {
+	const credentials = sessionCredentials(dgHome, sessionId);
+	const filename = basename(sourcePath);
+	const bytes = readAssetSourceFile(sourcePath);
+	const resp = await fetch(`http://127.0.0.1:${port}/assets`, {
+		method: "POST",
+		headers: {
+			Host: `127.0.0.1:${port}`,
+			[CLI_SESSION_ID_HEADER]: credentials.sessionId,
+			[CLI_SESSION_TOKEN_HEADER]: credentials.token,
+			[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
+		},
+		body: new Uint8Array(
+			bytes.buffer as ArrayBuffer,
+			bytes.byteOffset,
+			bytes.byteLength,
+		),
+	});
+	if (!resp.ok) throw new Error(await resp.text());
+	const result = (await resp.json()) as { assetId: string };
+	return result.assetId;
 }
 
 export function wsUrl(port: number, path: "/ws" | "/cli"): string {
@@ -296,9 +463,6 @@ type BunWebSocketCtor = new (
 	options?: Bun.WebSocketOptions,
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
-
-export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
-export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
 
 export type Credentials = { sessionId: string; token: string };
 

@@ -4,6 +4,10 @@
 	"private": true,
 	"type": "module",
 	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for the dg:start chat harness.",
+	"exports": {
+		".": "./src/index.ts",
+		"./test-harness": "./__tests__/utils/daemon-harness.ts"
+	},
 	"scripts": {
 		"build": "bun build src/index.ts --compile --outfile dist/dg-daemon",
 		"lint": "tsc --noEmit",

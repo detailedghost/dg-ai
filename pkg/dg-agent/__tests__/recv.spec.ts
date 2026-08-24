@@ -8,7 +8,7 @@ import {
 	deliverUserMessage,
 	freshDgHome,
 	killDaemonByPidFile,
-} from "../utils/daemon-harness";
+} from "@dg/dg-daemon/test-harness";
 import { runCli, spawnCli } from "./cli-wire";
 
 const EXIT_RECV_TIMEOUT = 5;
@@ -96,7 +96,7 @@ describe("recv --block --timeout", () => {
 		});
 		await deliverUserMessage(port, bootstrap, "lease should expire");
 
-		const { ChatStore } = await import("../../src/store");
+		const { ChatStore } = await import("@dg/dg-daemon/test-harness");
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const probe = await ChatStore.open(paths, {
 			env: { DG_KEY_SOURCE: "file" },

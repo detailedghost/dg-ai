@@ -7,7 +7,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	ASSET_DIRECTORY_CONFIG_KEY,
@@ -23,12 +23,11 @@ import {
 	collectFrames,
 	connectCli,
 	connectPage,
-	decodeChatMarker,
-	extractUrl,
 	freshTempDir as freshDaemonTempDir,
 	freshDgHome,
 	killDaemonByPidFile,
-	runStart,
+	registerSession,
+	spawnServe,
 	startWithSession,
 	waitForHealth,
 	waitForValue,
@@ -297,11 +296,9 @@ describe("config-get/config-set wire round trip", () => {
 		killDaemonByPidFile(home);
 
 		const port2 = allocatePort();
-		const restarted = await runStart(home, port2);
+		spawnServe(home, port2);
 		await waitForHealth(port2);
-		const bootstrap2 = validateSessionBootstrap(
-			decodeChatMarker(extractUrl(restarted.stdout)),
-		);
+		const bootstrap2 = await registerSession(port2);
 		const ws2 = await connectPage(port2, bootstrap2);
 		const frames2 = collectFrames(ws2);
 		ws2.send(

@@ -6,7 +6,6 @@ import {
 	DISPATCH_MAX_CONCURRENT_DAEMON_WIDE,
 	DISPATCH_MAX_CONCURRENT_PER_SESSION,
 } from "../../src/dispatch/limits";
-import { runCli } from "../commands/cli-wire";
 import {
 	startWithSession as bootDaemonSession,
 	cleanupDgHome,
@@ -15,6 +14,7 @@ import {
 	connectPage,
 	killDaemonByPidFile,
 	sendConnectHandshake,
+	spawnSession,
 	waitForOpen,
 	waitForValue,
 	wsExtensionSocket,
@@ -203,25 +203,14 @@ describe("$ dispatch bounds: concurrency", () => {
 			DISPATCH_MAX_CONCURRENT_DAEMON_WIDE / DISPATCH_MAX_CONCURRENT_PER_SESSION;
 		const sessions: DispatchCredentials[] = [main];
 		for (let i = 0; i < activeSessionCount - 1; i++) {
-			const spawned = await runCli(dgHome, port, [
-				"spawn",
-				"--session",
-				main.sessionId,
-				"--agent-identity",
-				`dispatch-bound-${i}`,
-			]);
-			expect(spawned.exitCode).toBe(0);
-			sessions.push(JSON.parse(spawned.stdout.trim()) as DispatchCredentials);
+			const spawned = await spawnSession(dgHome, port, main.sessionId, {
+				agentIdentity: `dispatch-bound-${i}`,
+			});
+			sessions.push(spawned);
 		}
-		const fifth = await runCli(dgHome, port, [
-			"spawn",
-			"--session",
-			main.sessionId,
-			"--agent-identity",
-			"dispatch-bound-idle",
-		]);
-		expect(fifth.exitCode).toBe(0);
-		const idleSession = JSON.parse(fifth.stdout.trim()) as DispatchCredentials;
+		const idleSession = await spawnSession(dgHome, port, main.sessionId, {
+			agentIdentity: "dispatch-bound-idle",
+		});
 
 		for (const session of [...sessions, idleSession]) {
 			await publishManifest(
