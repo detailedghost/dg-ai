@@ -14,8 +14,6 @@
 	--accent: #0891b2;
 	--accent2: #c026d3;
 	--code-bg: #f4f4f5;
-	/* OS-invariant aliases of the two accent values above — a page (chat) that
-	   forces a theme independent of prefers-color-scheme needs both at once. */
 	--accent-light: #0891b2;
 	--accent2-light: #c026d3;
 	--accent-dark: #00f0ff;

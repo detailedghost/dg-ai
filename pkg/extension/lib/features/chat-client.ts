@@ -1,11 +1,3 @@
-/**
- * The headless chat client: one socket shared across every captured session's
- * capability, inbound demux against that capability set, jittered exponential
- * backoff on reconnect, and an outbox that delivers disconnected-composed
- * messages exactly once. Module surface ratified in plan.md's Code Structure
- * ("Layer-2 module surface ratifications", slice 5).
- */
-
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
@@ -18,7 +10,8 @@ import {
 	validateChatFrame,
 } from "@dg/common";
 
-/** The one socket-shape type for the extension — lib/background/chat.ts reuses this rather than redeclaring it. */
+const UTF8_ENCODER = new TextEncoder();
+
 export type ChatClientSocket = {
 	send(data: string): void;
 	addEventListener(
@@ -37,10 +30,8 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
-/** GET /health's shape, per plan.md's transport ratification — `daemon` is the service name, not a boolean. */
 export type ChatHealth = { daemon: "dg-server"; instanceId: string };
 
-/** Ratified verbatim in plan.md's Layer-2 module surface ratifications — exactly these 4 fields. */
 export type ChatClientOptions = {
 	openSocket?: (url: string) => ChatClientSocket;
 	backoffBaseMs?: number;
@@ -72,7 +63,6 @@ function chatSocketUrl(port: number): string {
 	return `ws://127.0.0.1:${port}/ws`;
 }
 
-/** The pre-capability handshake object — the one frame type outside the ratified ChatFrame union. */
 function buildConnectFrame(
 	sessionId: string,
 	token: string,
@@ -89,12 +79,15 @@ export function defaultOpenSocket(url: string): ChatClientSocket {
 	return new WebSocket(url) as unknown as ChatClientSocket;
 }
 
-/** Real GET /health probe; swallows every failure since an unreachable port is the expected steady state during rediscovery. */
+const HEALTH_PROBE_TIMEOUT_MS = 2_000;
+
 async function defaultFetchHealth(
 	port: number,
 ): Promise<ChatHealth | undefined> {
 	try {
-		const res = await fetch(`http://127.0.0.1:${port}/health`);
+		const res = await fetch(`http://127.0.0.1:${port}/health`, {
+			signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+		});
 		if (!res.ok) return undefined;
 		const body = (await res.json()) as {
 			daemon?: unknown;
@@ -109,30 +102,22 @@ async function defaultFetchHealth(
 	}
 }
 
-/**
- * Scans the default port plus its fallback range for a live dg-server,
- * preferring one matching `preferInstanceId` over any other.
- */
 async function findDaemonPort(
 	preferInstanceId?: string,
 ): Promise<number | undefined> {
-	let fallback: number | undefined;
-	for (
-		let candidate = CHAT_DEFAULT_PORT;
-		candidate <= CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT;
-		candidate++
-	) {
-		const health = await defaultFetchHealth(candidate);
-		if (!health || health.daemon !== "dg-server") continue;
-		if (
-			preferInstanceId !== undefined &&
-			health.instanceId === preferInstanceId
-		) {
-			return candidate;
-		}
-		if (fallback === undefined) fallback = candidate;
+	const candidates = Array.from(
+		{ length: CHAT_PORT_FALLBACK_COUNT + 1 },
+		(_, index) => CHAT_DEFAULT_PORT + index,
+	);
+	const healths = await Promise.all(candidates.map(defaultFetchHealth));
+	if (preferInstanceId !== undefined) {
+		const preferred = candidates.find(
+			(_, index) => healths[index]?.instanceId === preferInstanceId,
+		);
+		if (preferred !== undefined) return preferred;
 	}
-	return fallback;
+	const fallbackIndex = healths.findIndex((health) => health !== undefined);
+	return fallbackIndex === -1 ? undefined : candidates[fallbackIndex];
 }
 
 type QueuedMessage = {
@@ -142,7 +127,6 @@ type QueuedMessage = {
 	subagentName?: string;
 };
 
-/** Kept out of the socket-owning module's typed surface; the transcript view types its own record. */
 type OutboundFrame = Record<string, unknown>;
 
 export function createChatClient(options: ChatClientOptions = {}): ChatClient {
@@ -155,24 +139,14 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let port: number | undefined;
 	let connectionState: ChatConnectionState = "daemon-not-running";
 	let reconnectAttempt = 0;
-	// Set on the first connect() call and never reset — guards against a second,
-	// un-backed-off attempt after a throw nulls `socket` (see openAndBind's catch).
 	let hasAttemptInFlight = false;
-	// The one live retry timer — scheduleRetry clears it before storing a new
-	// one, so a superseded retry can never open a second live socket.
 	let retryTimer: ReturnType<typeof setTimeout> | undefined;
-	// Bumped per openAndBind attempt, so a send still queued for a prior
-	// socket can tell it's stale once reconnect re-enqueues the same message.
 	let socketGeneration = 0;
-	// True once "open" has fired at least once — lets scheduleRetry tell a
-	// cached port that was always wrong from one merely missing an instanceId.
 	let everConnected = false;
-	// Learned from /health on every successful open, for rediscoverPort to match against.
 	let knownInstanceId: string | undefined;
 	const capabilities = new Map<string, string>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
 	const outbox: QueuedMessage[] = [];
-	// Ratified "Outbound frame ordering" decision: one createSerialQueue per socket.
 	const enqueueSend = createSerialQueue((err) =>
 		console.error("[dg-chat] outbound send failed:", err),
 	);
@@ -203,8 +177,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	function sendQueuedMessage(msg: QueuedMessage): void {
 		const generationAtEnqueue = socketGeneration;
 		void enqueueSend(async () => {
-			// An ack can prune this from the outbox, or reconnect can re-enqueue it
-			// for a newer socket, while this attempt still sits queued behind a slow send.
 			if (!outbox.includes(msg)) return;
 			if (socketGeneration !== generationAtEnqueue) return;
 			const token = capabilities.get(msg.sessionId);
@@ -232,8 +204,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		reconnectAttempt = 0;
 		everConnected = true;
 		if (port !== undefined) {
-			// Re-learn on every open, not just the first — dg-server mints a fresh
-			// instanceId per restart, so a stale cached id would never match again.
 			void defaultFetchHealth(port).then((health) => {
 				if (health) knownInstanceId = health.instanceId;
 			});
@@ -245,7 +215,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		flushOutbox();
 	}
 
-	/** Backoff bookkeeping shared by every retry path, kept apart from connectionState so a post-throw retry doesn't overwrite "daemon-not-running". */
 	function scheduleRetry(): void {
 		const raw = Math.min(backoffBaseMs * 2 ** reconnectAttempt, backoffMaxMs);
 		const delay = Math.min(raw * (1 + randomJitter()), backoffMaxMs);
@@ -253,8 +222,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (retryTimer !== undefined) clearTimeout(retryTimer);
 		retryTimer = setTimeout(() => {
 			retryTimer = undefined;
-			// Retry the cached port directly once connected but instanceId-less;
-			// otherwise scan (also covers a port that was never reachable at all).
 			if (everConnected && knownInstanceId === undefined) {
 				openAndBind();
 				return;
@@ -272,8 +239,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function handleError(): void {
-		// A close event (real or test-driven) still does the state-setting and
-		// retry scheduling; this just keeps state correct if error fires alone.
 		connectionState = "reconnecting";
 	}
 
@@ -293,8 +258,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			console.warn("[dg-chat] dropping invalid frame:", err);
 			return;
 		}
-		// session-list is roster-wide and tokenless — the envelope sessionId names
-		// whichever session changed, not the receiving page's own capability set.
 		if (frame.type === "session-list") {
 			for (const listener of frameListeners) listener(frame);
 			return;
@@ -303,7 +266,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (!capabilities.has(frame.sessionId)) return;
 
 		if (frame.type === "session-pending") {
-			// The daemon's session-create response grants the new capability here.
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);
 		}
 
@@ -330,7 +292,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		} catch {
 			connectionState = "daemon-not-running";
 			socket = null;
-			// Keep retrying, or a throw mid-retry strands the client with no timer.
 			scheduleRetry();
 			return;
 		}
@@ -370,9 +331,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 					`sendUserMessage: session ${sessionId} is not captured by this client`,
 				);
 			}
-			// Reject oversized bodies here, before queueing — the daemon refuses them
-			// with no ack, and flushOutbox would otherwise resend one forever.
-			const bodyBytes = new TextEncoder().encode(body).length;
+			const bodyBytes = UTF8_ENCODER.encode(body).length;
 			if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
 				throw new Error(
 					`sendUserMessage: body is ${bodyBytes} bytes, exceeding CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,

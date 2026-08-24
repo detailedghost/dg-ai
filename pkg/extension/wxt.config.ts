@@ -45,8 +45,6 @@ export default defineConfig({
 			// Keep jsDelivr fallback access and permit local wasm compilation.
 			...(firefox
 				? {
-						// Firefox requires match origins declared here too; Chrome's
-						// <all_urls> below already covers the chat marker's loopback match.
 						host_permissions: ["http://127.0.0.1/*"],
 					}
 				: {
@@ -60,11 +58,8 @@ export default defineConfig({
 							extension_pages:
 								"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
 						},
-						// registerChat's background-owned WebSocket needs Chrome 116+;
-						// meaningless (and an unsupported key) on Firefox's MV2 branch.
 						minimum_chrome_version: "116",
 					}),
-			// Toolbar icon: starts a pending recording, otherwise opens chat.
 			action: {
 				default_title: "DeeGee chat",
 			},

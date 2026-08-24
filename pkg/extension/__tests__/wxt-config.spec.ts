@@ -44,21 +44,11 @@ it("declares activeTab wherever tabCapture is available", () => {
 	expect(firefoxManifest.permissions).not.toContain("activeTab");
 });
 
-/**
- * A service-worker-owned WebSocket (registerChat) needs Chrome 116+; declaring the
- * floor keeps an unsupported browser from silently getting a chat feature that never
- * receives anything instead of an install-time refusal.
- */
 it("declares the minimum Chrome version the background WebSocket needs", () => {
 	const chromeManifest = manifestFor({ browser: "chrome" });
 	expect(chromeManifest.minimum_chrome_version).toBe("116");
 });
 
-/**
- * Firefox requires match origins to also be declared in host_permissions — unlike
- * Chrome, where <all_urls> already covers loopback — so the chat marker's own
- * content-script match pattern needs a twin permissions entry on this branch.
- */
 it("declares the loopback host permission on the Firefox branch for the chat marker", () => {
 	const firefoxManifest = manifestFor({ browser: "firefox" });
 	expect(firefoxManifest.host_permissions ?? []).toContain(

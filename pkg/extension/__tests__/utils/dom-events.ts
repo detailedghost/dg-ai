@@ -1,4 +1,10 @@
-/** Events constructed from the element's own realm, which happy-dom's dispatchEvent requires. */
+import { Window } from "happy-dom";
+
+export function createTestContainer(): HTMLElement {
+	const window = new Window();
+	const document = window.document as unknown as Document;
+	return document.createElement("div") as unknown as HTMLElement;
+}
 
 function view<T>(el: { ownerDocument: Document }, name: string): T {
 	return (el.ownerDocument.defaultView as unknown as Record<string, T>)[
@@ -6,9 +12,20 @@ function view<T>(el: { ownerDocument: Document }, name: string): T {
 	] as T;
 }
 
-export function keydown(el: HTMLElement, key: string): void {
-	const Ctor = view<typeof KeyboardEvent>(el, "KeyboardEvent");
-	el.dispatchEvent(new Ctor("keydown", { key, bubbles: true, cancelable: true }));
+function ownerDocumentOf(target: HTMLElement | Document): {
+	ownerDocument: Document;
+} {
+	return "defaultView" in target ? { ownerDocument: target } : target;
+}
+
+export function keydown(target: HTMLElement | Document, key: string): void {
+	const Ctor = view<typeof KeyboardEvent>(
+		ownerDocumentOf(target),
+		"KeyboardEvent",
+	);
+	target.dispatchEvent(
+		new Ctor("keydown", { key, bubbles: true, cancelable: true }),
+	);
 }
 
 export function fire(el: HTMLElement, type: string): void {

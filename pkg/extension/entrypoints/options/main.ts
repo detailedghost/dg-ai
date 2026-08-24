@@ -17,8 +17,9 @@ import {
 	voiceLabel,
 } from "@/lib/config";
 import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
-import { mountAssetDirectoryPanel } from "./asset-directory";
+import { failStatus, flashStatus } from "@/lib/ui-helpers";
 import { loadKokoro } from "@/utils/kokoro";
+import { mountAssetDirectoryPanel } from "./asset-directory";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) =>
@@ -60,17 +61,11 @@ function populateQuality(selected: VideoQuality): void {
 	sel.value = selected;
 }
 
-function flash(status: HTMLElement, msg: string): void {
-	status.classList.remove("err");
-	status.textContent = msg;
-	window.setTimeout(() => {
-		status.textContent = "";
-	}, 1500);
-}
-
 function fail(status: HTMLElement, prefix: string, e: unknown): void {
-	status.classList.add("err");
-	status.textContent = `${prefix}: ${e instanceof Error ? e.message : String(e)}`;
+	failStatus(
+		status,
+		`${prefix}: ${e instanceof Error ? e.message : String(e)}`,
+	);
 	console.error(`[dg-ai-extension] ${prefix}`, e);
 }
 
@@ -106,7 +101,7 @@ async function persist(statusId: string): Promise<void> {
 			narration: getNarrationMode($<HTMLSelectElement>("narration").value),
 			videoQuality: getVideoQuality($<HTMLSelectElement>("videoQuality").value),
 		});
-		flash(status, "Saved ✓");
+		flashStatus(status, "Saved ✓");
 	} catch (e) {
 		fail(status, "Save failed", e);
 	}

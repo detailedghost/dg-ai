@@ -82,8 +82,6 @@ beforeEach(() => {
 	noopSendResponse.mockClear();
 	(globalThis as unknown as { chrome: unknown }).chrome = {
 		runtime: { sendMessage: mock(() => undefined) },
-		// These tests exercise the Chrome-only video-recording path, so
-		// videoRecordingSupported() must see both APIs present.
 		offscreen: { createDocument: mock(async () => undefined) },
 		tabCapture: { getMediaStreamId: mock(async () => "stream-id") },
 	};

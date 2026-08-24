@@ -130,12 +130,45 @@ type ChatCanvas = {
 	chromeElement: HTMLElement;
 	viewport(): Viewport;
 	panTo(pan: Point): void;
+	zoomBy(deltaY: number): void;
 };
 
-type DragState = {
-	pointerId: number;
-	lastPoint: Point;
+export type PointerDragHandle = {
+	cancel(): void;
 };
+
+export type PointerDragCallbacks = {
+	onMove(point: Point): void;
+	onEnd?(point: Point): void;
+};
+
+/** Track one pointer gesture across document-level pointermove/up/cancel until it ends or is cancelled. */
+export function trackPointerDrag(
+	doc: Document,
+	pointerId: number,
+	callbacks: PointerDragCallbacks,
+): PointerDragHandle {
+	const detach = (): void => {
+		doc.removeEventListener("pointermove", onMove);
+		doc.removeEventListener("pointerup", onEnd);
+		doc.removeEventListener("pointercancel", onEnd);
+	};
+	const onMove = (event: Event): void => {
+		const point = event as PointerEvent;
+		if (point.pointerId !== pointerId) return;
+		callbacks.onMove({ x: point.clientX, y: point.clientY });
+	};
+	const onEnd = (event: Event): void => {
+		const point = event as PointerEvent;
+		if (point.pointerId !== pointerId) return;
+		detach();
+		callbacks.onEnd?.({ x: point.clientX, y: point.clientY });
+	};
+	doc.addEventListener("pointermove", onMove);
+	doc.addEventListener("pointerup", onEnd);
+	doc.addEventListener("pointercancel", onEnd);
+	return { cancel: detach };
+}
 
 function copyViewport(viewport: Viewport): Viewport {
 	return {
@@ -172,7 +205,8 @@ export function createChatCanvas(
 
 	let currentViewport = copyViewport(options.viewport);
 	let transformScheduled = false;
-	let dragState: DragState | undefined;
+	let dragHandle: PointerDragHandle | undefined;
+	let dragLastPoint: Point | undefined;
 	let wheelGestureTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const applyTransform = (): void => {
@@ -193,7 +227,7 @@ export function createChatCanvas(
 
 	const updateWillChange = (): void => {
 		boardElement.style.willChange =
-			dragState || wheelGestureTimer !== undefined ? "transform" : "";
+			dragHandle || wheelGestureTimer !== undefined ? "transform" : "";
 	};
 
 	const beginWheelGesture = (): void => {
@@ -205,41 +239,49 @@ export function createChatCanvas(
 		updateWillChange();
 	};
 
-	const finishDrag = (event: PointerEvent): void => {
-		if (!dragState || event.pointerId !== dragState.pointerId) return;
-		dragState = undefined;
-		updateWillChange();
-		container.ownerDocument.removeEventListener(
-			"pointermove",
-			handlePointerMove,
-		);
-		container.ownerDocument.removeEventListener("pointerup", finishDrag);
-		container.ownerDocument.removeEventListener("pointercancel", finishDrag);
-	};
+	function zoomBy(deltaY: number): void {
+		beginWheelGesture();
+		boardElement.style.transition =
+			container.dataset.motion === "reduced" ? "" : FULL_MOTION_TRANSITION;
 
-	function handlePointerMove(event: PointerEvent): void {
-		if (!dragState || event.pointerId !== dragState.pointerId) return;
-		const nextPoint = { x: event.clientX, y: event.clientY };
-		currentViewport = applyDragDelta(currentViewport, {
-			x: nextPoint.x - dragState.lastPoint.x,
-			y: nextPoint.y - dragState.lastPoint.y,
-		});
-		dragState.lastPoint = nextPoint;
+		const focusPoint = {
+			x: currentViewport.width / 2,
+			y: currentViewport.height / 2,
+		};
+		const boardFocus = screenToBoard(focusPoint, currentViewport);
+		const scale = clampScale(currentViewport.scale * Math.exp(-deltaY * 0.002));
+		currentViewport = {
+			...currentViewport,
+			scale,
+			pan: clampPan({
+				x: focusPoint.x - boardFocus.x * scale,
+				y: focusPoint.y - boardFocus.y * scale,
+			}),
+		};
 		scheduleTransform();
 	}
 
 	boardElement.addEventListener("pointerdown", (event) => {
-		if (event.button !== 0 || dragState || event.target !== boardElement)
+		if (event.button !== 0 || dragHandle || event.target !== boardElement)
 			return;
-		dragState = {
-			pointerId: event.pointerId,
-			lastPoint: { x: event.clientX, y: event.clientY },
-		};
+		dragLastPoint = { x: event.clientX, y: event.clientY };
 		boardElement.style.transition = "";
 		updateWillChange();
-		container.ownerDocument.addEventListener("pointermove", handlePointerMove);
-		container.ownerDocument.addEventListener("pointerup", finishDrag);
-		container.ownerDocument.addEventListener("pointercancel", finishDrag);
+		dragHandle = trackPointerDrag(container.ownerDocument, event.pointerId, {
+			onMove(point) {
+				const last = dragLastPoint as Point;
+				currentViewport = applyDragDelta(currentViewport, {
+					x: point.x - last.x,
+					y: point.y - last.y,
+				});
+				dragLastPoint = point;
+				scheduleTransform();
+			},
+			onEnd() {
+				dragHandle = undefined;
+				updateWillChange();
+			},
+		});
 	});
 
 	boardElement.addEventListener(
@@ -247,27 +289,7 @@ export function createChatCanvas(
 		(event) => {
 			if (!event.ctrlKey && isTranscriptTarget(event.target)) return;
 			event.preventDefault();
-			beginWheelGesture();
-			boardElement.style.transition =
-				container.dataset.motion === "reduced" ? "" : FULL_MOTION_TRANSITION;
-
-			const focusPoint = {
-				x: currentViewport.width / 2,
-				y: currentViewport.height / 2,
-			};
-			const boardFocus = screenToBoard(focusPoint, currentViewport);
-			const scale = clampScale(
-				currentViewport.scale * Math.exp(-event.deltaY * 0.002),
-			);
-			currentViewport = {
-				...currentViewport,
-				scale,
-				pan: clampPan({
-					x: focusPoint.x - boardFocus.x * scale,
-					y: focusPoint.y - boardFocus.y * scale,
-				}),
-			};
-			scheduleTransform();
+			zoomBy(event.deltaY);
 		},
 		{ passive: false },
 	);
@@ -282,5 +304,6 @@ export function createChatCanvas(
 			currentViewport = { ...currentViewport, pan: clampPan(pan) };
 			scheduleTransform();
 		},
+		zoomBy,
 	};
 }

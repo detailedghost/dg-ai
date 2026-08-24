@@ -1,16 +1,9 @@
-/**
- * Transcript renderer. RENDERING CONTRACT: content is untrusted agent/user
- * text and renders via textContent only, never innerHTML or Markdown, which
- * would give it extension-page script privileges including the session token.
- */
-
 import {
 	CHAT_MAX_ASSET_BYTES,
 	type ChatFrame,
 	type ProgressState,
 } from "@dg/common";
 
-/** Stored-record projection returned by history-response — not a wire ChatFrame. */
 export type ChatHistoryItem = {
 	seq: number;
 	id: string;
@@ -33,7 +26,6 @@ export type FetchAsset = (
 
 export type TranscriptViewOptions = {
 	fetchAsset?: FetchAsset;
-	/** Daemon port for the default fetchAsset — assets live on the daemon, not this extension page's own origin. Required unless fetchAsset is overridden. */
 	port?: number;
 };
 
@@ -47,10 +39,13 @@ export type TranscriptView = {
 		frame: Extract<ChatFrame, { type: "command-result" }>,
 	): void;
 	updateProgress(state: ProgressState): void;
-	applyHistory(messages: ChatHistoryItem[]): void;
+	applyHistory(
+		messages: ChatHistoryItem[],
+		sessionId: string,
+		token: string,
+	): Promise<void>;
 };
 
-/** Token goes in a request HEADER, never the URL — a query-string token leaks into logs. */
 function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
 	return async function defaultFetchAsset(
 		assetId: string,
@@ -58,7 +53,6 @@ function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
 		token: string,
 	): Promise<FetchAssetResult> {
 		if (port === undefined) {
-			// Fail loud instead of silently fetching this page's own chrome-extension:// origin.
 			throw new Error(
 				"createTranscriptView: options.port is required for the default fetchAsset",
 			);
@@ -88,7 +82,6 @@ function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
 	};
 }
 
-/** Inline transcript prose, distinct from chat-node.ts's short badge labels (RUNNING/NEEDS YOU). */
 function progressText(state: ProgressState): string {
 	switch (state) {
 		case "running":
@@ -124,7 +117,7 @@ export function createTranscriptView(
 			`chat-transcript__message chat-transcript__message--${role}`,
 		);
 		const bodyEl = makeEl("div", "chat-transcript__body");
-		bodyEl.textContent = body; // never innerHTML — body is untrusted agent/user text
+		bodyEl.textContent = body;
 		message.appendChild(bodyEl);
 		if (attachmentNode) message.appendChild(attachmentNode);
 		return message;
@@ -138,11 +131,7 @@ export function createTranscriptView(
 		container.appendChild(buildMessageEl(role, body, attachmentNode));
 	}
 
-	// Ids of history items already rendered, so a second backfill (every
-	// reconnect requests one) never re-renders the same stored record.
 	const renderedHistoryIds = new Set<string>();
-	// Live-rendered (role, body) pairs awaiting a stored-record match — the wire
-	// carries no id, so backfill correlates on content instead of duplicating.
 	const liveUnmatchedCounts = new Map<string, number>();
 
 	function liveKey(role: "user" | "agent", body: string): string {
@@ -154,7 +143,6 @@ export function createTranscriptView(
 		liveUnmatchedCounts.set(key, (liveUnmatchedCounts.get(key) ?? 0) + 1);
 	}
 
-	/** Consumes one matching live entry if present; returns whether a match was found. */
 	function consumeLiveMatch(role: "user" | "agent", body: string): boolean {
 		const key = liveKey(role, body);
 		const count = liveUnmatchedCounts.get(key) ?? 0;
@@ -204,8 +192,6 @@ export function createTranscriptView(
 		},
 
 		appendAgentMessage(frame, token): Promise<void> {
-			// Append synchronously so order never depends on attachment fetch
-			// timing — the attachment slots into this same node once ready.
 			noteLiveRendered("agent", frame.body);
 			const messageEl = buildMessageEl("agent", frame.body);
 			container.appendChild(messageEl);
@@ -240,15 +226,24 @@ export function createTranscriptView(
 			progressEl.textContent = progressText(state);
 		},
 
-		applyHistory(messages: ChatHistoryItem[]): void {
-			// Reconnect re-requests the whole seq-ascending backfill; append each
-			// fresh id in order, unless a live-rendered node already stands for it.
+		applyHistory(messages, sessionId, token): Promise<void> {
+			const attachments: Promise<void>[] = [];
 			for (const item of messages) {
 				if (renderedHistoryIds.has(item.id)) continue;
 				renderedHistoryIds.add(item.id);
 				if (consumeLiveMatch(item.role, item.body)) continue;
-				container.appendChild(buildMessageEl(item.role, item.body));
+				const messageEl = buildMessageEl(item.role, item.body);
+				container.appendChild(messageEl);
+				if (!item.attachmentId || !token) continue;
+				attachments.push(
+					renderAttachment(item.attachmentId, sessionId, token).then(
+						(attachmentNode) => {
+							messageEl.appendChild(attachmentNode);
+						},
+					),
+				);
 			}
+			return Promise.all(attachments).then(() => undefined);
 		},
 	};
 }

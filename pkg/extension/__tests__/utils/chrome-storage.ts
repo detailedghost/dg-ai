@@ -1,4 +1,3 @@
-/** Returns the live backing object, so a test can assert a key was really removed. */
 
 import { mock } from "bun:test";
 

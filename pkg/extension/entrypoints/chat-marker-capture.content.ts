@@ -1,11 +1,6 @@
 import { MSG } from "@/lib/chat-messages";
 import { readChatBootstrap, stripChatMarker } from "@/utils/chat-marker";
 
-/**
- * Loopback-only: the `_chat` marker only ever appears on the daemon's own
- * bootstrap page, so this script must never run on `<all_urls>` like the demo
- * marker capture does — that would make session tokens parseable on every page.
- */
 export default defineContentScript({
 	matches: ["http://127.0.0.1/*"],
 	runAt: "document_start",

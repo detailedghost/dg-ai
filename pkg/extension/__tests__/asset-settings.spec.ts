@@ -1,16 +1,13 @@
-/**
- * Options page asset-directory setting: daemon-authoritative config-get/set,
- * never browser.storage.sync. The relay describes drive the REAL page →
- * background → socket path; a fake transport in every test is what let H4 ship.
- */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_DEFAULT_PORT, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { Window } from "happy-dom";
+import { fire } from "./utils/dom-events";
 import {
 	bootRelay as bootSharedRelay,
 	type FakeSocket,
+	flushMicrotasks,
 	frameEvent,
 } from "./utils/relay-harness";
 
@@ -41,7 +38,6 @@ const {
 	createDaemonConfigTransport,
 	createLiveAssetDirectoryTransport,
 } = await import("../lib/config");
-const { registerChat } = await import("../lib/background/chat");
 const { MSG } = await import("../lib/chat-messages");
 
 const RELAY_TEST_TIMEOUT_MS = 12_000;
@@ -57,13 +53,6 @@ function newContainer(): HTMLElement {
 	return container as unknown as HTMLElement;
 }
 
-function fireChange(field: HTMLInputElement): void {
-	const EventCtor = (
-		field.ownerDocument.defaultView as unknown as { Event: typeof Event }
-	).Event;
-	field.dispatchEvent(new EventCtor("change", { bubbles: true }));
-}
-
 function input(container: HTMLElement): HTMLInputElement {
 	return container.querySelector(
 		"[data-asset-directory-input]",
@@ -77,14 +66,9 @@ function statusEl(container: HTMLElement): HTMLElement {
 }
 
 async function flush(): Promise<void> {
-	for (let i = 0; i < 4; i++) await Promise.resolve();
+	return flushMicrotasks(4);
 }
 
-const settle = (): Promise<void> =>
-	new Promise((resolve) => setTimeout(resolve, 0));
-
-
-/** Boots the shared relay harness and points the mocked browser.runtime at it. */
 async function bootRelay(options: { confirmSession?: boolean } = {}) {
 	const booted = await bootSharedRelay({
 		...options,
@@ -95,7 +79,6 @@ async function bootRelay(options: { confirmSession?: boolean } = {}) {
 	return booted;
 }
 
-/** The config frames the background put on its socket, newest last. */
 function configFrames(socket: FakeSocket): Record<string, unknown>[] {
 	return socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
@@ -414,7 +397,7 @@ describe("mountAssetDirectoryPanel", () => {
 
 		const field = input(container);
 		field.value = "/new/dir";
-		fireChange(field);
+		fire(field, "change");
 		await flush();
 
 		expect(transport.setAssetDirectory).toHaveBeenCalledWith("/new/dir");
@@ -433,7 +416,7 @@ describe("mountAssetDirectoryPanel", () => {
 
 		const field = input(container);
 		field.value = "/no/permission";
-		fireChange(field);
+		fire(field, "change");
 		await flush();
 
 		const status = statusEl(container);
@@ -463,7 +446,7 @@ describe("createDaemonConfigTransport — the seam the live transport is built o
 	});
 });
 
-describe("options/style.css — accent token aliases (slice 9 owns this file, slice 6 reads it)", () => {
+describe("options/style.css — accent token aliases the chat page reads", () => {
 	it("keeps all four OS-invariant accent aliases inside the base :root, outside the prefers-color-scheme gate", () => {
 		const css = readFileSync(
 			fileURLToPath(
@@ -485,9 +468,6 @@ describe("options/style.css — accent token aliases (slice 9 owns this file, sl
 			expect(declIndex).toBeLessThan(darkGateIndex);
 		}
 
-		// They restate hex values already in the file, not a new palette — light
-		// aliases match the base :root's --accent/--accent2, dark aliases match
-		// the values inside the dark media query.
 		const rootBlock = css.slice(0, darkGateIndex);
 		const darkBlock = css.slice(darkGateIndex);
 		const hexAfter = (block: string, token: string) =>

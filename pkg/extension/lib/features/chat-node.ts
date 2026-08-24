@@ -81,8 +81,6 @@ export function createChatNode(
 	initialEntry: ChatSessionEntry,
 	options: ChatNodeOptions = {},
 ): ChatNode {
-	// options.document is the ratified seam; main.ts always passes it — no
-	// test-convenience fallback that depends on another test's execution order.
 	const doc = options.document ?? globalThis.document;
 	if (!doc) throw new Error("createChatNode requires a browser document");
 	const element = doc.createElement("article");

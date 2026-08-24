@@ -1,10 +1,3 @@
-/**
- * lib/background/chat.ts's registerChat: toolbar-click router, marker-capture
- * relay (storage.session write + tab open), and the keepalive that keeps a
- * session's WebSocket receiving while its chat tab is closed. Seam names are
- * pinned in plan.md's "Transport and naming ratifications (execute-mode, layer 1)".
- */
-
 import { expect, mock, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -14,31 +7,37 @@ import {
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import { CHAT_PAGE_PATH } from "@/lib/background/chat";
+import { CHAT_PAGE_PATH, CHAT_SESSION_KEY_PREFIX } from "@/lib/background/chat";
+import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
+import {
+	captureGlobal,
+	type FakeSocket,
+	flushMicrotasks,
+	makeBootstrapFactory,
+	makeFakeSocket,
+	frameEvent as message,
+	settle,
+} from "./utils/relay-harness";
 
-// registerTabGrouping (also in the barrel) reads browser.tabGroups at import
-// time — stub it so importing the barrel below doesn't crash.
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { registerChat, registerRecording } = await import("@/lib/background");
 const { MSG } = await import("@/lib/chat-messages");
 const { browser: mockedBrowser } = await import("wxt/browser");
 
-function makeBootstrap(
-	overrides: Partial<SessionBootstrap> = {},
-): SessionBootstrap {
-	return {
-		port: CHAT_DEFAULT_PORT,
-		sessionId: "sess-abc123",
-		token: "tok-xyz789",
-		agentIdentity: "claude-orchestrator",
-		...overrides,
-	};
-}
+const makeBootstrap = makeBootstrapFactory({
+	port: CHAT_DEFAULT_PORT,
+	sessionId: "sess-abc123",
+	token: "tok-xyz789",
+	agentIdentity: "claude-orchestrator",
+});
 
-/** Let queued microtasks/promise callbacks run, mirroring background-recording.spec.ts's settle(). */
-const settle = (): Promise<void> =>
-	new Promise((resolve) => setTimeout(resolve, 0));
+function buildSessionListFrame(
+	sessionId: string,
+	overrides: Record<string, unknown> = {},
+) {
+	return buildSessionListFrameShared([], { sessionId, ...overrides });
+}
 
 type Listener = (
 	msg: unknown,
@@ -53,6 +52,7 @@ function makeBrowserApi() {
 	const sessionSet = mock((_items: Record<string, unknown>) =>
 		Promise.resolve(),
 	);
+	const sessionRemove = mock((_keys: string | string[]) => Promise.resolve());
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
 	const sendMessage = mock((_message: unknown) => Promise.resolve(undefined));
 	const api = {
@@ -73,11 +73,12 @@ function makeBrowserApi() {
 			sendMessage,
 		},
 		tabs: { create: tabsCreate },
-		storage: { session: { set: sessionSet } },
+		storage: { session: { set: sessionSet, remove: sessionRemove } },
 	};
 	return {
 		api,
 		sessionSet,
+		sessionRemove,
 		tabsCreate,
 		sendMessage,
 		getOnMessage: () => onMessageListener,
@@ -85,7 +86,6 @@ function makeBrowserApi() {
 	};
 }
 
-/** A sender shaped like this extension's own chat tab, for MSG.clientConnect's sender check. */
 function extensionPageSender(api: ReturnType<typeof makeBrowserApi>["api"]) {
 	return { url: api.runtime.getURL("chat.html") };
 }
@@ -145,8 +145,6 @@ test("ignores a marker-captured message carrying a malformed bootstrap rather th
 });
 
 test("ignores a marker-captured message whose bootstrap is a DaemonHandle carrying a spurious agentIdentity (no token)", async () => {
-	// Same corrupted-shape case as chat-marker.spec.ts's paired test: pid+agentIdentity,
-	// no token, must not be relayed into storage.session as a half-filled bootstrap.
 	const { api, sessionSet, tabsCreate, getOnMessage } = makeBrowserApi();
 	registerChat({ browserApi: api });
 	const listener = getOnMessage();
@@ -170,8 +168,6 @@ test("ignores a marker-captured message whose bootstrap is a DaemonHandle carryi
 });
 
 test("ignores an otherwise well-formed bootstrap whose port falls outside the daemon's ratified range", async () => {
-	// The content script matches every loopback port; any page on 127.0.0.1 could
-	// forge a bootstrap pointing this socket at an arbitrary local port otherwise.
 	const { api, sessionSet, tabsCreate, getOnMessage } = makeBrowserApi();
 	registerChat({ browserApi: api });
 	const listener = getOnMessage();
@@ -230,8 +226,6 @@ test("regression: registerChat wires exactly one action.onClicked listener, neve
 });
 
 test("registerChat's default browser-api seam registers the toolbar listener on Firefox's MV2 global (browserAction, no action)", () => {
-	// WXT's firefox-mv2 build exposes `browser_action`, never MV3's `action` —
-	// exercises the un-injected seam that shipped broken (plan.md Layer-1 QA #1).
 	const mv2Browser = mockedBrowser as Record<string, unknown>;
 	const addListener = mock(() => undefined);
 	mv2Browser.browserAction = { onClicked: { addListener } };
@@ -249,54 +243,12 @@ test("registerChat's default browser-api seam registers the toolbar listener on 
 });
 
 test("regression: lib/background/recording.ts no longer registers its own action.onClicked listener", () => {
-	// Two listeners would both fire on a click — proves the removal side of the
-	// Engineering checklist, not just registerChat's own single-registration.
 	const source = readFileSync(
 		fileURLToPath(new URL("../lib/background/recording.ts", import.meta.url)),
 		"utf8",
 	);
 	expect(source).not.toMatch(/action\.onClicked/);
 });
-
-// --- Socket ownership: registerChat delegates to createChatClient (plan.md's
-// Layer-2 ratification — "exactly ONE socket implementation"). ---
-
-type FakeSocket = {
-	send: ReturnType<typeof mock>;
-	addEventListener: ReturnType<typeof mock>;
-	dispatch(type: string, event?: unknown): void;
-};
-
-function makeFakeSocket(): FakeSocket {
-	const listeners: Record<string, Array<(event?: unknown) => void>> = {};
-	return {
-		send: mock((_data: string) => undefined),
-		addEventListener: mock((type: string, cb: (event?: unknown) => void) => {
-			if (!listeners[type]) listeners[type] = [];
-			listeners[type].push(cb);
-		}),
-		dispatch(type: string, event?: unknown) {
-			for (const cb of listeners[type] ?? []) cb(event);
-		},
-	};
-}
-
-function message(frame: Record<string, unknown>) {
-	return { data: JSON.stringify(frame) };
-}
-
-function buildSessionListFrame(
-	sessionId: string,
-	overrides: Record<string, unknown> = {},
-) {
-	return {
-		type: "session-list",
-		sessionId,
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		sessions: [],
-		...overrides,
-	};
-}
 
 function sentTypes(socket: FakeSocket): string[] {
 	return socket.send.mock.calls.map(
@@ -359,8 +311,6 @@ test("the production default keepalive interval is at most 20s, not just an over
 	const openSocket = mock((_url: string) => socket);
 	const realSetInterval = globalThis.setInterval;
 	let requestedMs: number | undefined;
-	// Spy without scheduling for real — a genuine 20s timer would dangle past
-	// this test and keep the process alive; only the requested delay matters here.
 	globalThis.setInterval = ((_fn: () => void, ms?: number) => {
 		requestedMs = ms;
 		return 0 as unknown as ReturnType<typeof setInterval>;
@@ -425,8 +375,6 @@ test("the keepalive frames are real ratified ChatFrames, not ad-hoc pings the da
 		.filter((f) => f.type === "keepalive");
 	expect(keepaliveFrames.length).toBeGreaterThan(0);
 	for (const parsed of keepaliveFrames) {
-		// Real production validator from @dg/common — catches wire-format drift
-		// between this seam and the daemon's own parser, not a re-implemented shape check.
 		expect(() => validateChatFrame(parsed)).not.toThrow();
 		expect(parsed).toEqual({
 			type: "keepalive",
@@ -463,7 +411,6 @@ test("opens the WebSocket at the bootstrap's own port, never a hardcoded one", a
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerChat({ browserApi: api, openSocket });
-	// Within the daemon's ratified fallback range but not the default port itself.
 	const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT + 3 });
 
 	await captureMarker(getOnMessage, bootstrap);
@@ -494,7 +441,6 @@ test("keepalive stops once the socket reports itself closed, leaving no dangling
 	socket.dispatch("close");
 	await new Promise((resolve) => setTimeout(resolve, 50));
 
-	// A leaked timer would keep incrementing this past the close event.
 	expect(socket.send.mock.calls.length).toBe(sentBeforeClose);
 });
 
@@ -521,9 +467,6 @@ test("keepalive stops once the socket reports an error, leaving no dangling time
 
 	expect(socket.send.mock.calls.length).toBe(sentBeforeError);
 });
-
-// --- Regression (finding 2): the background socket must not merely open —
-// it must actually demux inbound frames, with no chat tab ever attached. ---
 
 test("regression: with no chat tab attached, an inbound frame for a captured session still reaches the client's demux", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
@@ -555,14 +498,6 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	);
 });
 
-// --- Regression (finding 9): the background's own real path reconnects,
-// rediscovers a relocated daemon, and backs off with a bounded, jittered delay. ---
-
-/** Promise-only microtask flush — safe to use even while setTimeout is mocked. */
-async function flushMicrotasks(times = 40): Promise<void> {
-	for (let i = 0; i < times; i++) await Promise.resolve();
-}
-
 test("regression: the background's socket reopens automatically after the daemon connection drops", async () => {
 	const sockets: FakeSocket[] = [];
 	const openSocket = mock((_url: string) => {
@@ -575,8 +510,6 @@ test("regression: the background's socket reopens automatically after the daemon
 			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
 	);
 
-	// registerChat + marker capture first, under the REAL setTimeout — settle()
-	// (used by captureMarker) would hang forever once setTimeout is mocked below.
 	const { api, getOnMessage } = makeBrowserApi();
 	registerChat({ browserApi: api, openSocket });
 	await captureMarker(getOnMessage, makeBootstrap());
@@ -647,7 +580,7 @@ test("regression: the background rediscovers a relocated daemon via GET /health,
 	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
 	sockets[0]?.dispatch("open");
-	await flushMicrotasks(); // let handleOpen's fire-and-forget /health lookup learn "inst-fixed"
+	await flushMicrotasks();
 
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -662,7 +595,7 @@ test("regression: the background rediscovers a relocated daemon via GET /health,
 
 		expect(scheduled.length).toBe(1);
 		scheduled[0]?.();
-		await flushMicrotasks(); // rediscovery scans candidate ports sequentially via awaited /health calls
+		await flushMicrotasks();
 
 		expect(sockets.length).toBe(2);
 		expect(openSocket).toHaveBeenLastCalledWith(
@@ -696,8 +629,6 @@ test("regression: the background's reconnect backoff grows across attempts and s
 	}
 
 	expect(delays.length).toBeGreaterThanOrEqual(2);
-	// Doubling the base each attempt dominates jitter's bounded [0,1) range, so
-	// growth holds regardless of the draw — no jitter override needed to assert it.
 	expect(delays[1]).toBeGreaterThan(delays[0] as number);
 	for (const d of delays) expect(d).toBeLessThanOrEqual(30_000);
 });
@@ -737,17 +668,12 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 
 	await new Promise((resolve) => setTimeout(resolve, 70));
 
-	// One socket serves every session, so a keepalive for the closed one would
-	// spend the failed-frame budget that disconnects the sessions still open.
 	const tokensAfter = socket.send.mock.calls
 		.slice(sentBefore)
 		.map(([raw]) => (JSON.parse(raw as string) as { token?: string }).token);
 	expect(tokensAfter).not.toContain(closing.token);
 	expect(tokensAfter).toContain(staying.token);
 });
-
-// --- Regression (finding 3): session-pending must enter bootstrapsBySession,
-// so a session created from the page's create-chat affordance draws a keepalive. ---
 
 test("regression: a session created via session-pending is registered for keepalive, not silently dropped", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
@@ -785,9 +711,6 @@ test("regression: a session created via session-pending is registered for keepal
 		.map((f) => f.token);
 	expect(tokens).toContain("tok-spawned");
 });
-
-// --- Regression (finding 8): relay coverage for the untested inbound
-// directions, plus the sender.url tightening on MSG.clientConnect. ---
 
 test("MSG.clientConnect from an extension page connects the client and responds with the connection state", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
@@ -929,9 +852,7 @@ test("every daemon frame is broadcast outward via api.runtime.sendMessage, not j
 });
 
 test("regression: registerRecording still wires its message router, unaffected by the removed onClicked registration", () => {
-	const originalChrome = Object.getOwnPropertyDescriptor(globalThis, "chrome");
-	// Deliberately no `action` field: if registerRecording still tried to touch
-	// chrome.action.onClicked, this would throw instead of silently passing.
+	const restoreChrome = captureGlobal("chrome");
 	const onMessageAddListener = mock(() => undefined);
 	Object.defineProperty(globalThis, "chrome", {
 		configurable: true,
@@ -941,10 +862,31 @@ test("regression: registerRecording still wires its message router, unaffected b
 		expect(() => registerRecording()).not.toThrow();
 		expect(onMessageAddListener).toHaveBeenCalledTimes(1);
 	} finally {
-		if (originalChrome) {
-			Object.defineProperty(globalThis, "chrome", originalChrome);
-		} else {
-			Reflect.deleteProperty(globalThis, "chrome");
-		}
+		restoreChrome();
 	}
+});
+
+test("a closed session's bootstrap is removed from storage.session, so the next chat page never re-handshakes a dead capability", async () => {
+	const { api, sessionRemove, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+	await settle();
+
+	expect(sessionRemove).toHaveBeenCalledWith(
+		`${CHAT_SESSION_KEY_PREFIX}${bootstrap.sessionId}`,
+	);
 });

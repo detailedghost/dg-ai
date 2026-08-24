@@ -28,8 +28,6 @@
 		--chat-ink: var(--bg);
 		--chat-muted: color-mix(in srgb, var(--bg) 62%, var(--muted));
 		--chat-line: var(--bg);
-		/* Accent must follow the forced theme too, not the OS preference — see
-		   plan.md's slice-6 QA correction on this block. */
 		--chat-accent: var(--accent-dark);
 		--chat-accent-secondary: var(--accent2-dark);
 	}
@@ -457,4 +455,85 @@
 	.chat-button[data-action="theme"] {
 		display: none;
 	}
+}
+
+.chat-canvas {
+	position: relative;
+	grid-column: 2;
+	grid-row: 1;
+	min-width: 0;
+	overflow: hidden;
+	background: var(--chat-bg);
+	touch-action: none;
+}
+
+.chat-canvas[hidden] {
+	display: none;
+}
+
+.chat-page[data-view="canvas"] .chat-thread {
+	display: none;
+}
+
+.chat-canvas__board {
+	position: absolute;
+	inset: 0;
+	transform-origin: 0 0;
+	background-image: radial-gradient(
+		circle at 1px 1px,
+		var(--chat-line) 1px,
+		transparent 0
+	);
+	background-size: 2rem 2rem;
+}
+
+.chat-canvas__chrome {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.chat-canvas__connection {
+	border: 0.125rem solid var(--chat-accent-secondary);
+	padding: 0.4rem 0.7rem;
+	background: var(--chat-panel);
+	color: var(--chat-accent-secondary);
+	font-size: 0.72rem;
+}
+
+.chat-canvas__connection[hidden] {
+	display: none;
+}
+
+.chat-canvas__board .chat-node {
+	width: 20rem;
+	height: 17.5rem;
+	flex: none;
+	border: 0.125rem solid var(--chat-line);
+	background: var(--chat-panel);
+}
+
+.chat-node__drag {
+	position: absolute;
+	top: 0.25rem;
+	right: 0.25rem;
+	border: 0.125rem solid var(--chat-line);
+	background: var(--chat-panel);
+	color: var(--chat-muted);
+	cursor: grab;
+	font: inherit;
+	font-size: 0.8rem;
+	line-height: 1;
+	padding: 0.15rem 0.35rem;
+	touch-action: none;
+}
+
+.chat-node__drag:hover,
+.chat-node__drag:focus-visible {
+	border-color: var(--chat-accent);
+	color: var(--chat-ink);
 }

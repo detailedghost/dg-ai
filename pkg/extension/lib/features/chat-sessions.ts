@@ -1,13 +1,6 @@
-/**
- * The live session-list store: each session's agent identity, unread count, and
- * RUNNING/NEEDS-YOU/agent-gone status read from the progress frame's explicit
- * `state` field — never inferred from silence. Module surface ratified in
- * plan.md's Code Structure ("Layer-2 module surface ratifications", slice 5).
- */
 
 import type { ChatFrame, ProgressState, SessionRole } from "@dg/common";
 
-/** The in-page mirrored twin of a session; kept separate from the daemon-side handle. */
 export type ChatSessionEntry = {
 	sessionId: string;
 	agentIdentity: string;
@@ -38,8 +31,6 @@ export function createChatSessions(): ChatSessions {
 				agentIdentity: summary.agentIdentity,
 				role: summary.role,
 				workset: summary.workset,
-				// Defaulting to "running" absent a progress frame would itself be
-				// inferring live state from silence, which the plan forbids.
 				status: existing?.status ?? "unknown",
 				unreadCount: existing?.unreadCount ?? 0,
 			});
@@ -56,7 +47,7 @@ export function createChatSessions(): ChatSessions {
 					return;
 				case "progress": {
 					const entry = roster.get(frame.sessionId);
-					if (!entry) return; // ignore rather than fabricate a partial roster entry
+					if (!entry) return;
 					entry.status = frame.state;
 					return;
 				}

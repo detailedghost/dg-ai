@@ -1,11 +1,11 @@
-/** Session nodes living on the canvas board: saved positions, drag-to-move, pan-to-focus. */
-
 import { expect, mock, test } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
 import { canvasPositionKey } from "@/lib/features/chat-canvas";
 import { stubChromeStorage } from "./utils/chrome-storage";
-import { click, pointer } from "./utils/dom-events";
+import { click, fire, pointer } from "./utils/dom-events";
+import { buildSessionListFrame } from "./utils/frame-fixtures";
+import { flushMicrotasks } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({
 	browser: {
@@ -49,16 +49,12 @@ function makeFakeClient() {
 }
 
 function sessionListFrame(ids: string[]): ChatFrame {
-	return {
-		type: "session-list",
-		sessionId: ids[0] ?? "session-a",
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		sessions: ids.map((sessionId) => ({
+	return buildSessionListFrame(
+		ids.map((sessionId) => ({
 			sessionId,
 			agentIdentity: `agent-${sessionId}`,
-			role: "agent" as const,
 		})),
-	} as ChatFrame;
+	) as ChatFrame;
 }
 
 function bootstraps() {
@@ -88,7 +84,7 @@ async function openCanvas(
 			"[data-action='toggle-canvas']",
 		) as unknown as HTMLElement,
 	);
-	for (let i = 0; i < 10; i++) await Promise.resolve();
+	await flushMicrotasks(10);
 }
 
 function boardNode(root: HTMLElement, sessionId: string): HTMLElement | null {
@@ -105,9 +101,9 @@ test("each live session's node moves onto the board when the canvas opens", asyn
 
 	expect(boardNode(root, "session-a")).not.toBeNull();
 	expect(boardNode(root, "session-b")).not.toBeNull();
-	expect(
-		root.querySelectorAll(".chat-thread__nodes .chat-node").length,
-	).toBe(0);
+	expect(root.querySelectorAll(".chat-thread__nodes .chat-node").length).toBe(
+		0,
+	);
 });
 
 test("a node with a saved position appears at exactly that position", async () => {
@@ -153,7 +149,7 @@ test("dragging a node moves it and persists the new position", async () => {
 	pointer(handle, "pointerdown", { clientX: 100, clientY: 100 });
 	pointer(handle, "pointermove", { clientX: 150, clientY: 190 });
 	pointer(handle, "pointerup", { clientX: 150, clientY: 190 });
-	for (let i = 0; i < 10; i++) await Promise.resolve();
+	await flushMicrotasks(10);
 
 	const node = boardNode(root, "session-a");
 	expect(node?.style.left).toBe("150px");
@@ -198,11 +194,7 @@ test("focusing a node parked far off-view pans the board until it is in view", a
 	const input = node.querySelector(
 		".chat-composer__input",
 	) as unknown as HTMLElement;
-	input.dispatchEvent(
-		new (
-			root.ownerDocument.defaultView as unknown as { Event: typeof Event }
-		).Event("focusin", { bubbles: true }),
-	);
+	fire(input, "focusin");
 
 	expect(board.style.transform).not.toBe(before);
 	expect(board.style.transform).toContain("translate(");
@@ -255,11 +247,35 @@ test("focusing a node already in view leaves the board where it is, so the canva
 	const input = boardNode(root, "session-a")?.querySelector(
 		".chat-composer__input",
 	) as unknown as HTMLElement;
-	input.dispatchEvent(
-		new (
-			root.ownerDocument.defaultView as unknown as { Event: typeof Event }
-		).Event("focusin", { bubbles: true }),
-	);
+	fire(input, "focusin");
 
 	expect(board.style.transform).toBe(before);
+});
+
+test("a session that closes mid-drag cancels the drag instead of persisting a position for a node that is gone", async () => {
+	const data = stubChromeStorage({
+		[canvasPositionKey("session-a")]: { x: 100, y: 100 },
+	});
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await openCanvas(root, fake, ["session-a", "session-b"]);
+
+	const handle = root.querySelector(
+		"[data-session-id='session-a'] [data-action='drag-node']",
+	) as unknown as HTMLElement;
+	pointer(handle, "pointerdown", { clientX: 100, clientY: 100 });
+	pointer(handle, "pointermove", { clientX: 150, clientY: 190 });
+
+	fake.emit({
+		type: "session-closed",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	} as ChatFrame);
+
+	pointer(handle, "pointermove", { clientX: 900, clientY: 900 });
+	pointer(handle, "pointerup", { clientX: 900, clientY: 900 });
+	await flushMicrotasks(10);
+
+	expect(boardNode(root, "session-a")).toBeNull();
+	expect(data[canvasPositionKey("session-a")]).toEqual({ x: 100, y: 100 });
 });

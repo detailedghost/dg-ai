@@ -1,21 +1,13 @@
-/**
- * entrypoints/chat/main.ts: the grouped-rail-plus-thread page (Code
- * Structure's "Chat page layout verdict — grouped rail", variant A). Module
- * surface (`renderChatPage`) is a slice-6 RED invention — see this file's
- * accompanying [SPEC] deferral for the exact injectable-seam shape it pins,
- * mirroring registerChat's RegisterChatOptions pattern from slice 4.
- */
-
 import { expect, mock, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/chat-messages";
+import { stubChromeStorage } from "./utils/chrome-storage";
 import { click, keydown, typeValue } from "./utils/dom-events";
+import { buildSessionListFrame as sessionListFrame } from "./utils/frame-fixtures";
 
-// A barrel-reachable dynamic import needs this stub (plan.md's slice-4 lesson).
-// `runtime` exercises the real relay client for finding 2's regression test only.
 let relayMessageListener: ((message: unknown) => void) | undefined;
 const relaySentMessages: unknown[] = [];
 mock.module("wxt/browser", () => ({
@@ -47,7 +39,6 @@ function newRoot(): HTMLElement {
 
 type FrameListener = (frame: ChatFrame) => void;
 
-/** A minimal fake ChatClient — the page's own dependency, not the real socket. */
 function makeFakeClient(
 	initialState: "connected" | "daemon-not-running" = "connected",
 ) {
@@ -78,22 +69,6 @@ function makeFakeClient(
 	};
 }
 
-function sessionListFrame(
-	sessions: Array<{
-		sessionId: string;
-		agentIdentity: string;
-		role?: "orchestrator" | "agent";
-		workset?: string;
-	}>,
-): ChatFrame {
-	return {
-		type: "session-list",
-		sessionId: sessions[0]?.sessionId ?? "session-a",
-		protocolVersion: CHAT_PROTOCOL_VERSION,
-		sessions: sessions.map((s) => ({ role: "agent" as const, ...s })),
-	} as ChatFrame;
-}
-
 function progressFrame(
 	sessionId: string,
 	state: "running" | "awaiting-input" | "agent-gone",
@@ -116,8 +91,6 @@ function bootstraps() {
 		},
 	];
 }
-
-// --- Contract: one node per live session, removed when its session closes ---
 
 test("renders one node per live session and removes it when session-closed arrives", async () => {
 	const root = newRoot();
@@ -155,9 +128,7 @@ test("renders one node per live session and removes it when session-closed arriv
 	expect(root.textContent).not.toContain("claude-security");
 });
 
-// --- Contract: composer exposes the documented mount seam ---
-
-test("each rendered node exposes a composer input element slice 8 can attach to", async () => {
+test("each rendered node exposes a composer input element the autocomplete can attach to", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -172,8 +143,6 @@ test("each rendered node exposes a composer input element slice 8 can attach to"
 	const inputs = root.querySelectorAll(".chat-node input");
 	expect(inputs.length).toBeGreaterThan(0);
 });
-
-// --- Status badge reflects the right node, including agent-gone ---
 
 test("the status badge on each node reflects that session's own state, including agent-gone", async () => {
 	const root = newRoot();
@@ -207,8 +176,6 @@ test("the status badge on each node reflects that session's own state, including
 			?.getAttribute("data-status"),
 	).toBe("agent-gone");
 });
-
-// --- Create-chat affordance and close control ---
 
 test("the create-chat affordance asks the client for a new session bound to the requesting session", async () => {
 	const root = newRoot();
@@ -256,12 +223,8 @@ test("the close control on a node emits a session-close frame for that session, 
 	closeButton?.click();
 
 	expect(fake.closedSessions).toEqual(["session-a"]);
-	// A session-close request is not a local-hide: the node stays until the
-	// daemon actually confirms with session-closed.
 	expect(root.querySelectorAll(".chat-node").length).toBe(1);
 });
-
-// --- Keyboard reachability and single-pointer (non-drag) repositioning ---
 
 test("every rail row exposes a keyboard-operable Move control that reorders without a drag gesture", async () => {
 	const root = newRoot();
@@ -288,23 +251,9 @@ test("every rail row exposes a keyboard-operable Move control that reorders with
 	expect(moveButtons.length).toBe(2);
 	expect(moveButtons.every((b) => b.tagName === "BUTTON")).toBe(true);
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
-
-	// Enter arms move mode for the first row...
-	moveButtons[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-	// ...ArrowDown reorders it past its sibling without any pointer/drag event —
-	// dispatched on the document, where the delegated handler now lives.
-	root.ownerDocument.dispatchEvent(
-		new KeyboardEvent("keydown", { key: "ArrowDown" }),
-	);
-	// ...and Enter again commits the placement.
-	root.ownerDocument.dispatchEvent(
-		new KeyboardEvent("keydown", { key: "Enter" }),
-	);
+	keydown(moveButtons[0] as HTMLButtonElement, "Enter");
+	keydown(root.ownerDocument, "ArrowDown");
+	keydown(root.ownerDocument, "Enter");
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -332,21 +281,12 @@ test("Escape cancels an in-progress move and restores the original order", async
 		]),
 	);
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
 	const moveButton = root.querySelector<HTMLButtonElement>(
 		"[data-action='move']",
 	);
-	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-	root.ownerDocument.dispatchEvent(
-		new KeyboardEvent("keydown", { key: "ArrowDown" }),
-	);
-	root.ownerDocument.dispatchEvent(
-		new KeyboardEvent("keydown", { key: "Escape" }),
-	);
+	moveButton && keydown(moveButton, "Enter");
+	keydown(root.ownerDocument, "ArrowDown");
+	keydown(root.ownerDocument, "Escape");
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -374,17 +314,11 @@ test("clicking a different row while a move is armed places it there with a sing
 		]),
 	);
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
 	const rows = Array.from(root.querySelectorAll<HTMLElement>(".chat-node"));
 	const moveButton = rows[0]?.querySelector<HTMLButtonElement>(
 		"[data-action='move']",
 	);
-	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-	// Click-to-place: a plain click on the target row, never mousedown+move+up.
+	moveButton && keydown(moveButton, "Enter");
 	rows[1]?.click();
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
@@ -393,8 +327,6 @@ test("clicking a different row while a move is armed places it there with a sing
 	expect(orderAfter[0]).toContain("claude-security");
 	expect(orderAfter[1]).toContain("claude-js");
 });
-
-// --- Regression (finding 1): syncPage() must not steal focus on every frame ---
 
 test("regression: a progress frame arriving mid-typing does not move focus off the composer input", async () => {
 	const root = newRoot();
@@ -415,8 +347,6 @@ test("regression: a progress frame arriving mid-typing does not move focus off t
 
 	fake.emit(progressFrame("session-a", "running"));
 
-	// A previous bug called replaceChildren() on the thread pane on every
-	// frame, detaching the focused composer input and dropping focus to body.
 	expect(doc.activeElement).toBe(input);
 });
 
@@ -440,26 +370,19 @@ test("regression: the arrow-key move sequence survives more than one frame arriv
 		]),
 	);
 
-	const KeyboardEvent = (
-		doc.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
 	const moveButton = root.querySelector<HTMLButtonElement>(
 		"[data-action='move']",
 	);
 	moveButton?.focus();
-	moveButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	moveButton && keydown(moveButton, "Enter");
 	expect(doc.activeElement).toBe(moveButton);
 
-	// A progress frame lands mid-move — a prior bug rebuilt the thread pane
-	// here, dropping focus to <body> and killing every key after the first.
 	fake.emit(progressFrame("session-a", "running"));
 	expect(doc.activeElement).toBe(moveButton);
 	expect(doc.activeElement).not.toBe(doc.body);
 
-	doc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
-	doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	keydown(doc, "ArrowDown");
+	keydown(doc, "Enter");
 
 	const orderAfter = Array.from(root.querySelectorAll(".chat-node")).map(
 		(n) => n.textContent,
@@ -467,8 +390,6 @@ test("regression: the arrow-key move sequence survives more than one frame arriv
 	expect(orderAfter[0]).toContain("claude-security");
 	expect(orderAfter[1]).toContain("claude-js");
 });
-
-// --- prefers-reduced-motion seam ---
 
 test("prefers-reduced-motion flips data-motion on the board root via the injected matchMedia seam", async () => {
 	const root = newRoot();
@@ -496,8 +417,6 @@ test("prefers-reduced-motion flips data-motion on the board root via the injecte
 
 	expect(root.getAttribute("data-motion")).toBe("reduced");
 });
-
-// --- Workset-ordered rail sections, orchestrator pinned, loose chats trailing ---
 
 test("the rail renders sections in workset order, orchestrator first, with a trailing loose-chats section", async () => {
 	const root = newRoot();
@@ -538,8 +457,6 @@ test("the rail renders sections in workset order, orchestrator first, with a tra
 	expect(firstSessionInSection?.textContent).toContain("orchestrator");
 });
 
-// --- Document-order reachability, no second navigation level ---
-
 test("the primary rail-and-thread surface is the default view, reachable in document order with nothing hidden inside it", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
@@ -556,13 +473,15 @@ test("the primary rail-and-thread surface is the default view, reachable in docu
 	const primary = root.querySelector(".chat-rail")?.parentElement;
 	expect(primary).toBe(root);
 	expect(
-		root.querySelector(".chat-rail [aria-hidden='true'], .chat-thread [aria-hidden='true']"),
+		root.querySelector(
+			".chat-rail [aria-hidden='true'], .chat-thread [aria-hidden='true']",
+		),
 	).toBeNull();
-	expect(root.querySelector(".chat-thread")?.hasAttribute("hidden")).toBe(false);
+	expect(root.querySelector(".chat-thread")?.hasAttribute("hidden")).toBe(
+		false,
+	);
 	expect(root.textContent).toContain("claude-js");
 });
-
-// --- Source-text hygiene: no hard-coded hex colors, no ui-helpers.ts import ---
 
 const CHAT_ENTRY_DIR = join(import.meta.dir, "..", "entrypoints", "chat");
 const CHAT_NODE_FILE = join(
@@ -573,13 +492,13 @@ const CHAT_NODE_FILE = join(
 	"chat-node.ts",
 );
 
-function collectSliceSixSourceFiles(): string[] {
+function collectChatPageSourceFiles(): string[] {
 	const files: string[] = [CHAT_NODE_FILE];
 	let entries: string[] = [];
 	try {
 		entries = readdirSync(CHAT_ENTRY_DIR);
 	} catch {
-		return files; // directory doesn't exist yet — RED stage
+		return files;
 	}
 	for (const name of entries) {
 		const full = join(CHAT_ENTRY_DIR, name);
@@ -588,8 +507,8 @@ function collectSliceSixSourceFiles(): string[] {
 	return files;
 }
 
-test("slice 6's own source files contain no hard-coded hex colors", () => {
-	const files = collectSliceSixSourceFiles();
+test("the chat page's own source files contain no hard-coded hex colors", () => {
+	const files = collectChatPageSourceFiles();
 	expect(files.length).toBeGreaterThan(0);
 	const hexColorPattern = /#[0-9a-fA-F]{3,8}\b/;
 	for (const file of files) {
@@ -597,14 +516,14 @@ test("slice 6's own source files contain no hard-coded hex colors", () => {
 		try {
 			text = readFileSync(file, "utf8");
 		} catch {
-			continue; // RED stage: file not written yet
+			continue;
 		}
 		expect(hexColorPattern.test(text)).toBe(false);
 	}
 });
 
-test("slice 6's source files import nothing from ui-helpers.ts", () => {
-	const files = collectSliceSixSourceFiles();
+test("the chat page's source files import nothing from ui-helpers.ts", () => {
+	const files = collectChatPageSourceFiles();
 	for (const file of files) {
 		let text: string;
 		try {
@@ -616,8 +535,8 @@ test("slice 6's source files import nothing from ui-helpers.ts", () => {
 	}
 });
 
-test("slice 6's source files use neither aria-grabbed nor aria-dropeffect", () => {
-	const files = collectSliceSixSourceFiles();
+test("the chat page's source files use neither aria-grabbed nor aria-dropeffect", () => {
+	const files = collectChatPageSourceFiles();
 	for (const file of files) {
 		let text: string;
 		try {
@@ -629,8 +548,6 @@ test("slice 6's source files use neither aria-grabbed nor aria-dropeffect", () =
 		expect(text.includes("aria-dropeffect")).toBe(false);
 	}
 });
-
-// --- Accent tokens must follow the forced theme, not the OS preference ---
 
 test("both inversion blocks remap the accent tokens too, not just bg/panel/ink/muted/line", () => {
 	const css = readFileSync(join(CHAT_ENTRY_DIR, "style.css"), "utf8");
@@ -656,13 +573,9 @@ test("both inversion blocks remap the accent tokens too, not just bg/panel/ink/m
 	expect(lightAccent).toBeDefined();
 	expect(darkAccent2).toBeDefined();
 	expect(lightAccent2).toBeDefined();
-	// The whole point: each forced theme resolves to its OWN accent regardless
-	// of which prefers-color-scheme block it's declared under.
 	expect(darkAccent).not.toBe(lightAccent);
 	expect(darkAccent2).not.toBe(lightAccent2);
 });
-
-// --- Two distinct zero-states ---
 
 test("renders the 'no session ever registered' zero-state when there are no stored bootstraps", async () => {
 	const root = newRoot();
@@ -691,8 +604,6 @@ test("renders the 'daemon unreachable' zero-state, with distinct copy, when a se
 	expect(empty).not.toBeNull();
 	expect(empty?.getAttribute("data-empty-state")).toBe("daemon-unreachable");
 
-	// The two states must not share copy — assert the strings actually differ,
-	// not merely that two different attribute values were set.
 	const otherRoot = newRoot();
 	const otherFake = makeFakeClient();
 	await renderChatPage({
@@ -705,9 +616,6 @@ test("renders the 'daemon unreachable' zero-state, with distinct copy, when a se
 	);
 });
 
-// --- Regression (finding 2): recovery after a browser restart clears
-// storage.session, but the daemon's own sessions outlive that by design. ---
-
 test("regression: a relayed session-list populates the rail and lets messages send even with no stored bootstraps", async () => {
 	const root = newRoot();
 	relaySentMessages.length = 0;
@@ -717,8 +625,6 @@ test("regression: a relayed session-list populates the rail and lets messages se
 		root.querySelector("[data-empty-state]")?.getAttribute("data-empty-state"),
 	).toBe("no-session");
 
-	// The background relays this regardless of whether THIS page ever called
-	// connect() itself — the page must trust it and learn its roster from it.
 	relayMessageListener?.({
 		type: MSG.frame,
 		frame: sessionListFrame([
@@ -730,13 +636,9 @@ test("regression: a relayed session-list populates the rail and lets messages se
 	const input = root.querySelector<HTMLInputElement>(".chat-node input");
 	expect(input).not.toBeNull();
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
-	input!.value = "hello after restart";
-	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	if (!input) throw new Error("the composer input is missing");
+	input.value = "hello after restart";
+	keydown(input, "Enter");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
 	expect(relaySentMessages).toContainEqual(
@@ -751,9 +653,6 @@ test("regression: a relayed session-list populates the rail and lets messages se
 	).toContain("hello after restart");
 });
 
-// --- Regression (finding 4): errors must be visible, and a send must be
-// confirmed before it renders as delivered. ---
-
 test("a send that is accepted still appends the user message to the transcript", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
@@ -766,14 +665,10 @@ test("a send that is accepted still appends the user message to the transcript",
 		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
 	);
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
 	const input = root.querySelector<HTMLInputElement>(".chat-node input");
-	input!.value = "hello agent";
-	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	if (!input) throw new Error("the composer input is missing");
+	input.value = "hello agent";
+	keydown(input, "Enter");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
 	expect(
@@ -796,14 +691,10 @@ test("regression: a rejected send does not render as delivered, and shows a visi
 		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
 	);
 
-	const KeyboardEvent = (
-		root.ownerDocument.defaultView as unknown as {
-			KeyboardEvent: typeof globalThis.KeyboardEvent;
-		}
-	).KeyboardEvent;
 	const input = root.querySelector<HTMLInputElement>(".chat-node input");
-	input!.value = "will this vanish?";
-	input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+	if (!input) throw new Error("the composer input is missing");
+	input.value = "will this vanish?";
+	keydown(input, "Enter");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
 	expect(root.textContent).not.toContain("will this vanish?");
@@ -841,9 +732,6 @@ test("a daemon error frame renders into a visible surface, not the screen-reader
 	).not.toContain("not implemented yet");
 });
 
-// --- Regression (finding 7): the daemon-unreachable zero-state must not
-// flash on a healthy load, judged from a stale synchronous read. ---
-
 test("regression: the daemon-unreachable zero-state does not flash when connect() settles to connected before the check", async () => {
 	const root = newRoot();
 	let state: "connected" | "reconnecting" | "daemon-not-running" =
@@ -868,8 +756,6 @@ test("regression: the daemon-unreachable zero-state does not flash when connect(
 
 	expect(root.querySelector("[data-empty-state]")).toBeNull();
 });
-
-// --- Slice 12: autocomplete dispatch, and the canvas as an optional second view ---
 
 test("mounts command autocomplete on a node's composer, offering the published manifest's commands", async () => {
 	const root = newRoot();
@@ -976,6 +862,7 @@ test("a session's manifest never offers another session's commands", async () =>
 });
 
 test("the canvas is an optional second view: off by default, revealed by an accessible rail toggle", async () => {
+	stubChromeStorage();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -1008,6 +895,7 @@ test("the canvas is an optional second view: off by default, revealed by an acce
 });
 
 test("the canvas chrome carries the create-chat button, the daemon banner and zoom controls", async () => {
+	stubChromeStorage();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -1033,6 +921,7 @@ test("the canvas chrome carries the create-chat button, the daemon banner and zo
 });
 
 test("switching to the canvas keeps the rail reachable rather than replacing it, so the linear surface never disappears", async () => {
+	stubChromeStorage();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -1080,6 +969,7 @@ test("closing a session tears down its autocomplete listbox rather than leaving 
 });
 
 test("the canvas honours prefers-reduced-motion, which it reads from its own container not the page root", async () => {
+	stubChromeStorage();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await renderChatPage({
@@ -1099,4 +989,57 @@ test("the canvas honours prefers-reduced-motion, which it reads from its own con
 
 	const container = root.querySelector(".chat-canvas") as HTMLElement | null;
 	expect(container?.dataset.motion).toBe("reduced");
+});
+
+test("closing the session armed for a keyboard move cancels move mode instead of leaving the rail armed to a session that is gone", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js" },
+			{ sessionId: "session-b", agentIdentity: "claude-security" },
+			{ sessionId: "session-c", agentIdentity: "claude-dba" },
+		]),
+	);
+	click(
+		root.querySelector(
+			"[data-session-id='session-b'] [data-action='move']",
+		) as unknown as HTMLElement,
+	);
+	keydown(
+		root.querySelector(
+			"[data-session-id='session-b']",
+		) as unknown as HTMLElement,
+		"ArrowUp",
+	);
+
+	fake.emit({
+		type: "session-closed",
+		sessionId: "session-b",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	} as ChatFrame);
+
+	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
+		"Move cancelled — the session closed.",
+	);
+	expect(
+		Array.from(root.querySelectorAll(".chat-rail__row")).map(
+			(row) => (row as HTMLElement).dataset.sessionId,
+		),
+	).toEqual(["session-a", "session-c"]);
+
+	click(
+		root.querySelector(
+			"[data-session-id='session-c']",
+		) as unknown as HTMLElement,
+	);
+
+	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
+		"Move cancelled — the session closed.",
+	);
 });

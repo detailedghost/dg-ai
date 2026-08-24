@@ -1,23 +1,10 @@
-/**
- * lib/features/chat-node.ts: one node per session — composer mount seam,
- * identity/status badge, workset grouping — plus the transcript slice 5
- * already owns. Module surface is a slice-6 RED invention; see plan.md's
- * "Composer mount seam" ratification for the cross-slice contract this pins.
- */
-
 import { expect, test } from "bun:test";
 import type { ProgressState } from "@dg/common";
-import { Window } from "happy-dom";
 import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
+import { createTestContainer, keydown } from "./utils/dom-events";
 
 const { createComposer, createChatNode, statusLabel, groupSessionsByWorkset } =
 	await import("@/lib/features/chat-node");
-
-function newContainer(): HTMLElement {
-	const window = new Window();
-	const document = window.document as unknown as Document;
-	return document.createElement("div") as unknown as HTMLElement;
-}
 
 function buildEntry(
 	overrides: Partial<ChatSessionEntry> = {},
@@ -33,10 +20,8 @@ function buildEntry(
 	};
 }
 
-// --- Composer mount seam (Contract: composer exposes the documented mount seam) ---
-
 test("createComposer returns exactly the input element, mountable by an external caller", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const composer = createComposer(container, () => {});
 
 	expect(composer.inputElement).toBeDefined();
@@ -45,48 +30,34 @@ test("createComposer returns exactly the input element, mountable by an external
 });
 
 test("Enter in the composer input submits the trimmed body and clears the field", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const submitted: string[] = [];
 	const composer = createComposer(container, (body: string) =>
 		submitted.push(body),
 	);
 
 	composer.inputElement.value = "  hello agent  ";
-	composer.inputElement.dispatchEvent(
-		new (
-			container.ownerDocument.defaultView as unknown as {
-				KeyboardEvent: typeof KeyboardEvent;
-			}
-		).KeyboardEvent("keydown", { key: "Enter" }),
-	);
+	keydown(composer.inputElement, "Enter");
 
 	expect(submitted).toEqual(["hello agent"]);
 	expect(composer.inputElement.value).toBe("");
 });
 
 test("an empty or whitespace-only Enter submits nothing", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const submitted: string[] = [];
 	const composer = createComposer(container, (body: string) =>
 		submitted.push(body),
 	);
 
 	composer.inputElement.value = "   ";
-	composer.inputElement.dispatchEvent(
-		new (
-			container.ownerDocument.defaultView as unknown as {
-				KeyboardEvent: typeof KeyboardEvent;
-			}
-		).KeyboardEvent("keydown", { key: "Enter" }),
-	);
+	keydown(composer.inputElement, "Enter");
 
 	expect(submitted).toEqual([]);
 });
 
-// --- Node rendering ---
-
 test("createChatNode renders the agent identity and mounts a transcript and a composer", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(
 		buildEntry({ agentIdentity: "claude-security" }),
 		{
@@ -103,7 +74,7 @@ test("createChatNode renders the agent identity and mounts a transcript and a co
 });
 
 test("createChatNode wires the composer onSubmit option through to the composer input", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const submitted: string[] = [];
 	const node = createChatNode(buildEntry(), {
 		document: container.ownerDocument,
@@ -113,26 +84,19 @@ test("createChatNode wires the composer onSubmit option through to the composer 
 	container.appendChild(node.element);
 
 	node.composer.inputElement.value = "status please";
-	node.composer.inputElement.dispatchEvent(
-		new (
-			container.ownerDocument.defaultView as unknown as {
-				KeyboardEvent: typeof KeyboardEvent;
-			}
-		).KeyboardEvent("keydown", { key: "Enter" }),
-	);
+	keydown(node.composer.inputElement, "Enter");
 
 	expect(submitted).toEqual(["status please"]);
 });
 
 test("createChatNode throws rather than falling back to a document left over from an earlier test's composer", () => {
-	// Must never resolve its document from a prior createComposer call's side effect.
 	expect(() => createChatNode(buildEntry())).toThrow(
 		/requires a browser document/,
 	);
 });
 
 test("destroy removes the node's element from its parent", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(buildEntry(), {
 		document: container.ownerDocument,
 	});
@@ -144,7 +108,7 @@ test("destroy removes the node's element from its parent", () => {
 });
 
 test("render() updates the badge from a fresh session entry without replacing the element", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(buildEntry({ status: "running" }), {
 		document: container.ownerDocument,
 	});
@@ -156,8 +120,6 @@ test("render() updates the badge from a fresh session entry without replacing th
 	expect(node.element).toBe(originalElement);
 	expect(node.element.textContent).toContain(statusLabel("awaiting-input"));
 });
-
-// --- Status badge (Contract: badge reflects chat-sessions' state, including agent-gone) ---
 
 test("statusLabel maps every ProgressState plus the pre-progress unknown default to its documented text", () => {
 	const cases: Array<[ProgressState | "unknown", string]> = [
@@ -172,7 +134,7 @@ test("statusLabel maps every ProgressState plus the pre-progress unknown default
 });
 
 test("createChatNode's badge text and data-status attribute reflect the entry's status, including agent-gone", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(buildEntry({ status: "agent-gone" }), {
 		document: container.ownerDocument,
 	});
@@ -184,10 +146,8 @@ test("createChatNode's badge text and data-status attribute reflect the entry's 
 	expect(badge?.textContent).toBe(statusLabel("agent-gone"));
 });
 
-// --- Zero inline styles, class-hooked DOM only ---
-
 test("createChatNode emits no inline styles anywhere in its subtree", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(buildEntry(), {
 		document: container.ownerDocument,
 	});
@@ -199,7 +159,7 @@ test("createChatNode emits no inline styles anywhere in its subtree", () => {
 });
 
 test("createChatNode's root element carries a stable class hook", () => {
-	const container = newContainer();
+	const container = createTestContainer();
 	const node = createChatNode(buildEntry(), {
 		document: container.ownerDocument,
 	});
@@ -207,8 +167,6 @@ test("createChatNode's root element carries a stable class hook", () => {
 
 	expect(node.element.classList.contains("chat-node")).toBe(true);
 });
-
-// --- Workset grouping (Contract: rail sections in workset order, orchestrator first, loose chats trailing) ---
 
 test("groupSessionsByWorkset sections by first-seen workset order, pins the orchestrator first in each section", () => {
 	const sessions: ChatSessionEntry[] = [
@@ -253,7 +211,6 @@ test("groupSessionsByWorkset trails sessions with no workset into one loose-chat
 	expect(
 		groups.at(-1)?.sessions.map((s: { sessionId: string }) => s.sessionId),
 	).toEqual(["loose-a", "loose-b"]);
-	// The loose section is always last, even though it wasn't the last one seen.
 	expect(groups[0]?.workset).toBe("001_chat_harness");
 });
 
