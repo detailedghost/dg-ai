@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { networkInterfaces } from "node:os";
-import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import {
+	CHAT_HEALTH_PATH,
+	CHAT_LEGACY_HEALTH_PATH,
+	CHAT_PROTOCOL_VERSION,
+} from "@dg/common";
 import {
 	bootServe as bootDaemonServe,
 	cleanupDgHome,
@@ -23,10 +27,25 @@ async function bootServe() {
 	return { dgHome, port };
 }
 
-describe("GET /health", () => {
+describe("GET /healthz", () => {
+	it("still answers the legacy /health path, for an extension the user has not reloaded", async () => {
+		const { port } = await bootServe();
+
+		const legacy = await fetch(
+			`http://127.0.0.1:${port}${CHAT_LEGACY_HEALTH_PATH}`,
+			{ headers: { Host: `127.0.0.1:${port}` } },
+		);
+		const current = await fetch(`http://127.0.0.1:${port}${CHAT_HEALTH_PATH}`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+
+		expect(legacy.status).toBe(200);
+		expect(await legacy.json()).toEqual(await current.json());
+	});
+
 	it("returns exactly the three published fields, matching CHAT_PROTOCOL_VERSION", async () => {
 		const { port } = await bootServe();
-		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: { Host: `127.0.0.1:${port}` },
 		});
 		expect(resp.status).toBe(200);
@@ -41,7 +60,7 @@ describe("GET /health", () => {
 
 	it("204s a caller whose Host header is not the loopback authority", async () => {
 		const { port } = await bootServe();
-		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: { Host: "evil.example:9999" },
 		});
 		expect(resp.status).toBe(204);
@@ -49,7 +68,7 @@ describe("GET /health", () => {
 
 	it("204s a browser-Origin caller even with a correct Host header", async () => {
 		const { port } = await bootServe();
-		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: {
 				Host: `127.0.0.1:${port}`,
 				Origin: "https://evil.example",
@@ -69,7 +88,7 @@ describe("loopback-only binding", () => {
 		async () => {
 			const { port } = await bootServe();
 			await expect(
-				fetch(`http://${externalIp}:${port}/health`, {
+				fetch(`http://${externalIp}:${port}/healthz`, {
 					signal: AbortSignal.timeout(1500),
 				}),
 			).rejects.toBeDefined();

@@ -52,7 +52,7 @@ describe("idle-TTL does not fire while a page is connected but idle", () => {
 
 		await new Promise((r) => setTimeout(r, IDLE_TTL_MS * 4));
 
-		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: { Host: `127.0.0.1:${port}` },
 		});
 		expect(resp.status).toBe(200);
@@ -109,7 +109,7 @@ describe("idle-TTL does not fire while a blocking recv is parked", () => {
 
 		await new Promise((r) => setTimeout(r, IDLE_TTL_MS * 4));
 
-		const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: { Host: `127.0.0.1:${port}` },
 		});
 		expect(resp.status).toBe(200);

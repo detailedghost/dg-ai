@@ -74,7 +74,7 @@ describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () =>
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		expect(existsSync(paths.pidPath)).toBe(false);
 		await expect(
-			fetch(`http://127.0.0.1:${port}/health`, {
+			fetch(`http://127.0.0.1:${port}/healthz`, {
 				headers: { Host: `127.0.0.1:${port}` },
 				signal: AbortSignal.timeout(500),
 			}),

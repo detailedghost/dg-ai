@@ -26,7 +26,7 @@ async function main(): Promise<void> {
 	const live = await isDaemonLive(handle);
 	if (!live) {
 		console.error(
-			`Pid file found but /health on port ${handle.port} did not answer with ` +
+			`Pid file found but /healthz on port ${handle.port} did not answer with ` +
 				"a matching instanceId. Start (or restart) the daemon and re-run this script.",
 		);
 		process.exit(1);

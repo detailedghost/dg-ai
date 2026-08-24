@@ -181,11 +181,11 @@ export async function waitForHealth(
 	let lastError: unknown;
 	while (Date.now() < deadline) {
 		try {
-			const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+			const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 				headers: { Host: `127.0.0.1:${port}` },
 			});
 			if (resp.ok) return;
-			lastError = new Error(`/health responded ${resp.status}`);
+			lastError = new Error(`/healthz responded ${resp.status}`);
 		} catch (err) {
 			lastError = err;
 		}
