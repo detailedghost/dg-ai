@@ -13,7 +13,7 @@ import {
 	closeSockets,
 	collectFrames,
 	connectPage,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	sendConnectHandshake,
 	waitForOpen,
 	waitForValue,
@@ -35,7 +35,7 @@ let scratchDir: string;
 const openSockets: WebSocket[] = [];
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	closeSockets(openSockets);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });

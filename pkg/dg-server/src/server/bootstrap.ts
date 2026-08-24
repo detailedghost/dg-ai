@@ -25,10 +25,10 @@ import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
 	isDaemonLive,
-	readLockfile,
-	removeLockfile,
-	writeLockfileAtomic,
-} from "./lockfile";
+	readPidFile,
+	removePidFile,
+	writePidFileAtomic,
+} from "./pidfile";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_SERVER_PACKAGE_VERSION } from "./status";
@@ -58,7 +58,7 @@ function spawnDaemonProcess(): void {
 async function waitForFreshDaemon(paths: DgPaths, timeoutMs = 15000) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		const handle = readLockfile(paths);
+		const handle = readPidFile(paths);
 		if (handle && (await isDaemonLive(handle))) return handle;
 		await sleep(100);
 	}
@@ -72,10 +72,10 @@ async function awaitBindRival(
 	paths: DgPaths,
 	budgetMs = 500,
 	pollMs = 20,
-): Promise<ReturnType<typeof readLockfile>> {
+): Promise<ReturnType<typeof readPidFile>> {
 	const deadline = Date.now() + budgetMs;
 	for (;;) {
-		const handle = readLockfile(paths);
+		const handle = readPidFile(paths);
 		if (handle && (await isDaemonLive(handle))) return handle;
 		if (Date.now() >= deadline) return undefined;
 		await sleep(pollMs);
@@ -115,7 +115,7 @@ export type StartOptions = {
 
 export async function cmdStart(options: StartOptions = {}): Promise<void> {
 	const paths = resolveDgPaths();
-	const existing = readLockfile(paths);
+	const existing = readPidFile(paths);
 	const existingLive = existing ? await isDaemonLive(existing) : false;
 
 	let targetPort: number;
@@ -165,14 +165,14 @@ async function fetchStatus(port: number) {
 
 export async function cmdStatus(): Promise<void> {
 	const paths = resolveDgPaths();
-	const handle = readLockfile(paths);
+	const handle = readPidFile(paths);
 	if (!handle) {
 		console.log("dg-server: no live daemon");
 		return;
 	}
 	if (!(await isDaemonLive(handle))) {
-		removeLockfile(paths);
-		console.log("dg-server: no live daemon (stale lockfile removed)");
+		removePidFile(paths);
+		console.log("dg-server: no live daemon (stale pid file removed)");
 		return;
 	}
 	const resp = await fetch(`http://127.0.0.1:${handle.port}/status`, {
@@ -283,7 +283,7 @@ export async function cmdServe(): Promise<void> {
 		noteActivity();
 	});
 
-	writeLockfileAtomic(paths, {
+	writePidFileAtomic(paths, {
 		pid: process.pid,
 		port: boundPortNumber,
 		instanceId,
@@ -300,7 +300,7 @@ export async function cmdServe(): Promise<void> {
 		idleController?.stop();
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);
-		removeLockfile(paths);
+		removePidFile(paths);
 		boundServer.stop(true);
 		store.close();
 		process.exit(0);

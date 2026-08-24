@@ -67,31 +67,31 @@ describe("ChatStore.open — connection + schema", () => {
 		}
 	});
 
-	it("creates the state directory at mode 0700", async () => {
+	it("creates the daemon directory at mode 0700", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
-			expect(statSync(paths.stateDir).mode & 0o777).toBe(0o700);
+			expect(statSync(paths.daemonDir).mode & 0o777).toBe(0o700);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}
 	});
 
-	it("fixes a pre-existing state directory that is not 0700, and warns audibly naming the prior mode", async () => {
+	it("fixes a pre-existing daemon directory that is not 0700, and warns audibly naming the prior mode", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const { chmodSync, mkdirSync } = await import("node:fs");
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			mkdirSync(paths.stateDir, { recursive: true });
-			chmodSync(paths.stateDir, 0o755);
+			mkdirSync(paths.daemonDir, { recursive: true });
+			chmodSync(paths.daemonDir, 0o755);
 
 			const warn = spyOn(console, "warn").mockImplementation(() => {});
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
-			expect(statSync(paths.stateDir).mode & 0o777).toBe(0o700);
+			expect(statSync(paths.daemonDir).mode & 0o777).toBe(0o700);
 			const messages = warn.mock.calls
 				.map((call) => String(call[0]))
 				.join("\n");

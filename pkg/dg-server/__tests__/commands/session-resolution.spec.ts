@@ -10,7 +10,7 @@ import {
 	decodeChatMarker,
 	extractUrl,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	sendConnectHandshake,
 	waitForHealth,
 	waitForOpen,
@@ -25,7 +25,7 @@ let dirB: string;
 let dirC: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 	for (const d of [dirA, dirB, dirC]) {
 		if (d) rmSync(d, { recursive: true, force: true });

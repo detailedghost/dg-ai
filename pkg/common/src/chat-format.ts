@@ -416,7 +416,7 @@ export type SessionBootstrap = {
 export function validateDaemonHandle(value: unknown): DaemonHandle {
 	requireRecord(value, "daemon handle");
 	if (Object.hasOwn(value, "token")) {
-		fail("DaemonHandle (lockfile) must never contain a session token");
+		fail("DaemonHandle (pid file) must never contain a session token");
 	}
 	requireFiniteNumber(value.pid, "daemon handle.pid");
 	requireFiniteNumber(value.port, "daemon handle.port");

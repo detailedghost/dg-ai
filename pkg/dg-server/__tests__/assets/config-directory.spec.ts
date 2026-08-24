@@ -27,7 +27,7 @@ import {
 	extractUrl,
 	freshTempDir as freshDaemonTempDir,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	runStart,
 	startWithSession,
 	waitForHealth,
@@ -38,7 +38,7 @@ let dgHome: string;
 
 afterEach(() => {
 	if (!dgHome) return;
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 	dgHome = "";
 });
@@ -294,7 +294,7 @@ describe("config-get/config-set wire round trip", () => {
 		);
 		await awaitConfigResult(frames, "the config-set to complete");
 		ws.close();
-		killDaemonByLockfile(home);
+		killDaemonByPidFile(home);
 
 		const port2 = allocatePort();
 		const restarted = await runStart(home, port2);

@@ -1,7 +1,7 @@
 import { type Dirent, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { DgPaths } from "@dg/common/node";
-import { readLockfile } from "../server/lockfile";
+import { readPidFile } from "../server/pidfile";
 import type { Logger } from "../server/log";
 import type { ChatStore } from "../store";
 import { setAssetCleanupHook } from "../utils/asset-cleanup";
@@ -53,7 +53,7 @@ function sweepOrphanedAssetDirectories(paths: DgPaths, store: ChatStore): void {
 }
 
 function ownsTheAssetRoot(paths: DgPaths, boundPort: number): boolean {
-	const handle = readLockfile(paths);
+	const handle = readPidFile(paths);
 	return handle === undefined || handle.port === boundPort;
 }
 
@@ -71,7 +71,7 @@ export function installAssetLifecycle(
 		}
 	} else {
 		logger.warn(
-			"skipping the startup asset sweep: the lockfile names another daemon, which may still own the staged directories",
+			"skipping the startup asset sweep: the pid file names another daemon, which may still own the staged directories",
 		);
 	}
 

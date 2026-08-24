@@ -57,7 +57,7 @@ describe("startup on NAT-mode WSL", () => {
 });
 
 describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () => {
-	it("exits WSL-NAT, prints the mirrored-mode remediation, and creates neither a lockfile nor a daemon", async () => {
+	it("exits WSL-NAT, prints the mirrored-mode remediation, and creates neither a pid file nor a daemon", async () => {
 		const dgHome = freshDgHome();
 		const port = allocatePort();
 		cleanupSlot.set(async () => cleanupDgHome(dgHome));
@@ -72,7 +72,7 @@ describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () =>
 		expect(result.stderr).toContain("networkingMode=mirrored");
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(existsSync(paths.lockfilePath)).toBe(false);
+		expect(existsSync(paths.pidPath)).toBe(false);
 		await expect(
 			fetch(`http://127.0.0.1:${port}/health`, {
 				headers: { Host: `127.0.0.1:${port}` },

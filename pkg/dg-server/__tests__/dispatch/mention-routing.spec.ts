@@ -5,7 +5,7 @@ import {
 	startWithSession as bootDaemonSession,
 	cleanupDgHome,
 	deliverUserMessage,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 } from "../utils/daemon-harness";
 import { publishSubagents, scratchScriptDir } from "./dispatch-wire";
 
@@ -13,7 +13,7 @@ let dgHome: string;
 let scratchDir: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
 });

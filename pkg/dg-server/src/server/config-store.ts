@@ -3,12 +3,8 @@ import { dirname } from "node:path";
 import type { DgPaths } from "@dg/common/node";
 import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
 
-function configPath(paths: DgPaths): string {
-	return `${paths.stateDir}/config.json`;
-}
-
 export function readConfig(paths: DgPaths): Record<string, unknown> {
-	const file = configPath(paths);
+	const file = paths.configPath;
 	if (!existsSync(file)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8"));
@@ -26,7 +22,7 @@ export function writeConfig(
 	paths: DgPaths,
 	patch: Record<string, unknown>,
 ): void {
-	const file = configPath(paths);
+	const file = paths.configPath;
 	ensurePrivateDir(dirname(file));
 	const next = { ...readConfig(paths), ...patch };
 	writeFileAtomic(file, JSON.stringify(next, null, 2));

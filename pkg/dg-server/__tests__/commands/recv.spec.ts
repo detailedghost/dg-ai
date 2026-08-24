@@ -7,7 +7,7 @@ import {
 	connectCli,
 	deliverUserMessage,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 } from "../utils/daemon-harness";
 import { runCli, spawnCli } from "./cli-wire";
 
@@ -18,7 +18,7 @@ const EXIT_GENERAL_FAILURE = 1;
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 
@@ -187,9 +187,9 @@ describe("recv --block --timeout", () => {
 		try {
 			dgHome = freshDgHome();
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			const { writeLockfileAtomic } = await import("../../src/server/lockfile");
+			const { writePidFileAtomic } = await import("../../src/server/pidfile");
 			const { writeSessionToken } = await import("../../src/session/tokens");
-			writeLockfileAtomic(paths, {
+			writePidFileAtomic(paths, {
 				pid: 999999,
 				port: hungServer.port,
 				instanceId: "hung-instance",

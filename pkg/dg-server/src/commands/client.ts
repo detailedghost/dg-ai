@@ -6,7 +6,7 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 } from "../server/http";
-import { readLockfile } from "../server/lockfile";
+import { readPidFile } from "../server/pidfile";
 import { readSessionToken, type SessionTokenRecord } from "../session/tokens";
 import { describeError } from "../utils/errors";
 import type { CliRequest } from "./wire";
@@ -61,8 +61,8 @@ function formatCandidates(records: SessionTokenRecord[]): string {
 
 export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	const paths = resolveDgPaths();
-	const handle = readLockfile(paths);
-	if (!handle) throw new DgCliError("no live dg-server lockfile was found");
+	const handle = readPidFile(paths);
+	if (!handle) throw new DgCliError("no live dg-server pid file was found");
 
 	let sessionId = explicitSessionId;
 	if (!sessionId) {

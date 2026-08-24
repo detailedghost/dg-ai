@@ -18,7 +18,7 @@ import {
 	cleanupDgHome,
 	collectFrames,
 	findFileContaining,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	sendConnectHandshake,
 	waitForOpen,
 	waitForValue,
@@ -30,7 +30,7 @@ let dgHome: string;
 let scratchDir: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
 });
