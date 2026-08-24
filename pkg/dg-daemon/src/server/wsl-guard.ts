@@ -68,7 +68,7 @@ export async function checkWslNetworking(
 
 	if (mode === "nat") {
 		throw new DgCliError(
-			`dg-server refuses to start on WSL in NAT networking mode: ${REMEDIATION}`,
+			`dg-daemon refuses to start on WSL in NAT networking mode: ${REMEDIATION}`,
 			EXIT_WSL_NAT_NETWORKING,
 		);
 	}

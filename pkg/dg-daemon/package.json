@@ -1,11 +1,11 @@
 {
-	"name": "@dg/dg-server",
+	"name": "@dg/dg-daemon",
 	"version": "1.0.0",
 	"private": true,
 	"type": "module",
 	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for the dg:start chat harness.",
 	"scripts": {
-		"build": "bun build src/index.ts --compile --outfile dist/dg-server",
+		"build": "bun build src/index.ts --compile --outfile dist/dg-daemon",
 		"lint": "tsc --noEmit",
 		"test": "bun test"
 	},

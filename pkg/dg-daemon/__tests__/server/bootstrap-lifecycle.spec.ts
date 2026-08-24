@@ -16,7 +16,7 @@ import {
 	waitForPidFile,
 } from "../utils/daemon-harness";
 
-describe("dg-server start — cold start", () => {
+describe("dg-daemon start — cold start", () => {
 	let dgHome: string;
 	let port: number;
 	let result: Awaited<ReturnType<typeof runStart>>;
@@ -86,7 +86,7 @@ describe("GET /start", () => {
 	});
 });
 
-describe("a second dg-server start on a live daemon", () => {
+describe("a second dg-daemon start on a live daemon", () => {
 	let dgHome: string;
 	let port: number;
 	let firstHandle: ReturnType<typeof readPidFile>;
@@ -165,7 +165,7 @@ describe("pid file reclaim", () => {
 	});
 });
 
-describe("dg-server start — protocol version mismatch on attach", () => {
+describe("dg-daemon start — protocol version mismatch on attach", () => {
 	let dgHome: string;
 	let port: number;
 

@@ -80,7 +80,7 @@ function handleHealthCheck(
 		return new Response(null, { status: 204 });
 	}
 	return json({
-		daemon: "dg-server",
+		daemon: "dg-daemon",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		instanceId,
 	});

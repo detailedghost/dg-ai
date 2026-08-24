@@ -41,7 +41,7 @@ async function startWithSession() {
 	return started;
 }
 
-describe("dg-server spawn", () => {
+describe("dg-daemon spawn", () => {
 	it("registers a new session through the daemon's session-create handler, and it shows up in the session list", async () => {
 		const { port, bootstrap } = await startWithSession();
 		const page = wsExtensionSocket(port);
@@ -121,7 +121,7 @@ describe("dg-server spawn", () => {
 	});
 });
 
-describe("dg-server close", () => {
+describe("dg-daemon close", () => {
 	it("emits the session-close frame — a listening page sees session-closed", async () => {
 		const { port, bootstrap } = await startWithSession();
 		const page = wsExtensionSocket(port);
@@ -153,7 +153,7 @@ describe("dg-server close", () => {
 	});
 });
 
-describe("dg-server stage", () => {
+describe("dg-daemon stage", () => {
 	it("registers an assets row and stages ENCRYPTED bytes under the configured directory, retrievable byte-identical", async () => {
 		const { port, bootstrap } = await startWithSession();
 		scratchDir = mkdtempSync(join(tmpdir(), "dg-stage-test-"));

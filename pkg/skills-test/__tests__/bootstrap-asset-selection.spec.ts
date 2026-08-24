@@ -67,14 +67,14 @@ describe("bootstrap.sh picks its binary from the skills-v* tag only", () => {
 		const url = pick(
 			[
 				release("ext-v9.9.9", [SKILLS_ASSET]),
-				release("server-v9.9.9", [SKILLS_ASSET]),
+				release("daemon-v9.9.9", [SKILLS_ASSET]),
 				release("skills-v1.0.0", [SKILLS_ASSET]),
 			],
 			SKILLS_ASSET,
 		);
 		expect(url).toContain("/skills-v1.0.0/");
 		expect(url).not.toContain("ext-v9.9.9");
-		expect(url).not.toContain("server-v9.9.9");
+		expect(url).not.toContain("daemon-v9.9.9");
 	});
 
 	test("takes the first skills-v* tag in listing order, which unauthenticated callers only ever see published", () => {

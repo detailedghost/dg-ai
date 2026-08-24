@@ -1,7 +1,7 @@
 export type SupportedPlatform = {
 	platform: string;
 	arch: string;
-	assetName: Record<"dg-skills" | "dg-server", string>;
+	assetName: Record<"dg-skills" | "dg-daemon", string>;
 };
 
 export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
@@ -10,7 +10,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "x64",
 		assetName: {
 			"dg-skills": "dg-skills-linux-x64",
-			"dg-server": "dg-server-linux-x64",
+			"dg-daemon": "dg-daemon-linux-x64",
 		},
 	},
 	{
@@ -18,7 +18,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "arm64",
 		assetName: {
 			"dg-skills": "dg-skills-linux-arm64",
-			"dg-server": "dg-server-linux-arm64",
+			"dg-daemon": "dg-daemon-linux-arm64",
 		},
 	},
 	{
@@ -26,7 +26,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "x64",
 		assetName: {
 			"dg-skills": "dg-skills-macos-x64",
-			"dg-server": "dg-server-macos-x64",
+			"dg-daemon": "dg-daemon-macos-x64",
 		},
 	},
 	{
@@ -34,7 +34,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "arm64",
 		assetName: {
 			"dg-skills": "dg-skills-macos-arm64",
-			"dg-server": "dg-server-macos-arm64",
+			"dg-daemon": "dg-daemon-macos-arm64",
 		},
 	},
 	{
@@ -42,7 +42,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "x64",
 		assetName: {
 			"dg-skills": "dg-skills-windows-x64.exe",
-			"dg-server": "dg-server-windows-x64.exe",
+			"dg-daemon": "dg-daemon-windows-x64.exe",
 		},
 	},
 	{
@@ -50,7 +50,7 @@ export const SUPPORTED_PLATFORMS: SupportedPlatform[] = [
 		arch: "arm64",
 		assetName: {
 			"dg-skills": "dg-skills-windows-arm64.exe",
-			"dg-server": "dg-server-windows-arm64.exe",
+			"dg-daemon": "dg-daemon-windows-arm64.exe",
 		},
 	},
 ];

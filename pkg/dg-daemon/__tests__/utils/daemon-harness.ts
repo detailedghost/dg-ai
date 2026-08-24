@@ -36,7 +36,7 @@ export function freshTempDir(prefix: string): string {
 }
 
 export function freshDgHome(): string {
-	return scratchDir("dg-server");
+	return scratchDir("dg-daemon");
 }
 
 export const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };

@@ -23,7 +23,7 @@ async function startWithSession() {
 	return started;
 }
 
-describe("dg-server send", () => {
+describe("dg-daemon send", () => {
 	it("delivers an agent-message frame that validateChatFrame accepts, to a listening page", async () => {
 		const { port, bootstrap } = await startWithSession();
 		const page = wsExtensionSocket(port);
@@ -50,7 +50,7 @@ describe("dg-server send", () => {
 	});
 });
 
-describe("dg-server progress", () => {
+describe("dg-daemon progress", () => {
 	it("delivers a progress frame carrying the explicit state, accepted by validateChatFrame", async () => {
 		const { port, bootstrap } = await startWithSession();
 		const page = wsExtensionSocket(port);

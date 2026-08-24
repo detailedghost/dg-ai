@@ -52,9 +52,7 @@ function sentFrames(socket: FakeSocket): ChatFrame[] {
 }
 
 function mockHealthFetch(
-	handler: (
-		port: number,
-	) => { daemon: "dg-server"; instanceId: string } | undefined,
+	handler: (port: number) => { daemon: string; instanceId: string } | undefined,
 ) {
 	return spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
 		const port = Number(/:(\d+)\/health$/.exec(url)?.[1]);
@@ -324,7 +322,7 @@ test("a synchronous openSocket throw during a scheduled reconnect attempt still 
 	}
 });
 
-test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /health, matching instanceId over a decoy dg-server, once the cached port goes stale", async () => {
+test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /health, matching instanceId over a decoy dg-daemon, once the cached port goes stale", async () => {
 	const sockets: FakeSocket[] = [];
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -346,14 +344,14 @@ test("rediscovers the daemon over CHAT_DEFAULT_PORT's fallback range via GET /he
 	const fetchSpy = mockHealthFetch((port) => {
 		if (!daemonRestarted) {
 			if (port === CHAT_DEFAULT_PORT) {
-				return { daemon: "dg-server", instanceId: "inst-fixed" };
+				return { daemon: "dg-daemon", instanceId: "inst-fixed" };
 			}
 			return undefined;
 		}
 		if (port === decoyPort)
-			return { daemon: "dg-server", instanceId: "inst-other" };
+			return { daemon: "dg-daemon", instanceId: "inst-other" };
 		if (port === relocatedPort)
-			return { daemon: "dg-server", instanceId: "inst-fixed" };
+			return { daemon: "dg-daemon", instanceId: "inst-fixed" };
 		return undefined;
 	});
 
@@ -405,7 +403,7 @@ test("rediscovers the daemon on a fallback port even when the cached port was al
 		CHAT_DEFAULT_PORT + Math.min(2, CHAT_PORT_FALLBACK_COUNT);
 	const fetchSpy = mockHealthFetch((port) =>
 		port === relocatedPort
-			? { daemon: "dg-server", instanceId: "inst-1" }
+			? { daemon: "dg-daemon", instanceId: "inst-1" }
 			: undefined,
 	);
 
@@ -901,5 +899,47 @@ test("a session-closed frame revokes the session's capability and prunes its que
 		expect(resent).toHaveLength(0);
 	} finally {
 		globalThis.setTimeout = realSetTimeout;
+	}
+});
+
+test.each([
+	["dg-daemon", true],
+	["dg-server", true],
+	["dg-relay", false],
+	["", false],
+])("treats a /health answer naming %p as a usable daemon: %p", async (daemon, usable) => {
+	const sockets: FakeSocket[] = [];
+	const scheduled: Array<() => void> = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((fn: () => void) => {
+		scheduled.push(fn);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+
+	const openSocket = mockFn((_url: string) => {
+		const s = makeFakeSocket(mockFn);
+		sockets.push(s);
+		return s;
+	});
+	const relocatedPort =
+		CHAT_DEFAULT_PORT + Math.min(2, CHAT_PORT_FALLBACK_COUNT);
+	const fetchSpy = mockHealthFetch((port) =>
+		port === relocatedPort ? { daemon, instanceId: "inst-1" } : undefined,
+	);
+
+	try {
+		const client = createChatClient({ openSocket, backoffBaseMs: 5 });
+		client.connect(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+		sockets[0]?.dispatch("close");
+		scheduled.shift()?.();
+		await flushMicrotasks(30);
+
+		const reached = openSocket.mock.calls
+			.map(([url]) => url)
+			.includes(`ws://127.0.0.1:${relocatedPort}/ws`);
+		expect(reached).toBe(usable);
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+		fetchSpy.mockRestore();
 	}
 });

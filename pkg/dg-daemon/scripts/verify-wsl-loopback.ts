@@ -3,12 +3,12 @@ import { isWSL, resolveDgPaths } from "@dg/common/node";
 import { isDaemonLive, readPidFile } from "../src/server/pidfile";
 
 async function main(): Promise<void> {
-	console.log("=== dg-server WSL-loopback verification ===\n");
+	console.log("=== dg-daemon WSL-loopback verification ===\n");
 
 	if (!isWSL()) {
 		console.error(
 			"This process is not running under WSL — run it from a WSL shell " +
-				"against a WSL-side dg-server daemon. Nothing else to verify here.",
+				"against a WSL-side dg-daemon daemon. Nothing else to verify here.",
 		);
 		process.exit(1);
 	}
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
 	if (!handle) {
 		console.error(
 			`No pid file at ${paths.pidPath} — start a daemon first: ` +
-				"`bun run pkg/dg-server/src/index.ts start`.",
+				"`bun run pkg/dg-daemon/src/index.ts start`.",
 		);
 		process.exit(1);
 	}

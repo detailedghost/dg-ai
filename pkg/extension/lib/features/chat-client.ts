@@ -30,7 +30,14 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
-export type ChatHealth = { daemon: "dg-server"; instanceId: string };
+export const DAEMON_HEALTH_NAMES = ["dg-daemon", "dg-server"] as const;
+
+export type DaemonName = (typeof DAEMON_HEALTH_NAMES)[number];
+export type ChatHealth = { daemon: DaemonName; instanceId: string };
+
+function asDaemonName(value: unknown): DaemonName | undefined {
+	return DAEMON_HEALTH_NAMES.find((name) => name === value);
+}
 
 export type ChatClientOptions = {
 	openSocket?: (url: string) => ChatClientSocket;
@@ -93,10 +100,9 @@ async function defaultFetchHealth(
 			daemon?: unknown;
 			instanceId?: unknown;
 		};
-		if (body.daemon !== "dg-server" || typeof body.instanceId !== "string") {
-			return undefined;
-		}
-		return { daemon: "dg-server", instanceId: body.instanceId };
+		const daemon = asDaemonName(body.daemon);
+		if (!daemon || typeof body.instanceId !== "string") return undefined;
+		return { daemon, instanceId: body.instanceId };
 	} catch {
 		return undefined;
 	}
