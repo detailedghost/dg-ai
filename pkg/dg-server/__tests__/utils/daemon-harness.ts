@@ -196,13 +196,22 @@ export async function waitForHealth(
 	);
 }
 
-export function readLockfile(dgHome: string): DaemonHandle {
+export function readDaemonLog(dgHome: string): string {
+	const { logDir } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	if (!existsSync(logDir)) return "";
+	return readdirSync(logDir)
+		.filter((name) => name.endsWith(".log"))
+		.map((name) => readFileSync(join(logDir, name), "utf8"))
+		.join("");
+}
+
+export function readPidFile(dgHome: string): DaemonHandle {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const raw = JSON.parse(readFileSync(paths.lockfilePath, "utf8"));
+	const raw = JSON.parse(readFileSync(paths.pidPath, "utf8"));
 	return validateDaemonHandle(raw);
 }
 
-export async function waitForLockfile(
+export async function waitForPidFile(
 	dgHome: string,
 	timeoutMs = 5000,
 ): Promise<DaemonHandle> {
@@ -210,20 +219,20 @@ export async function waitForLockfile(
 	let lastErr: unknown;
 	while (Date.now() < deadline) {
 		try {
-			return readLockfile(dgHome);
+			return readPidFile(dgHome);
 		} catch (err) {
 			lastErr = err;
 		}
 		await new Promise((r) => setTimeout(r, 100));
 	}
 	throw new Error(
-		`lockfile never appeared under ${dgHome}: ${String(lastErr)}`,
+		`pid file never appeared under ${dgHome}: ${String(lastErr)}`,
 	);
 }
 
-export function killDaemonByLockfile(dgHome: string): void {
+export function killDaemonByPidFile(dgHome: string): void {
 	try {
-		const handle = readLockfile(dgHome);
+		const handle = readPidFile(dgHome);
 		process.kill(handle.pid, "SIGTERM");
 	} catch {}
 }

@@ -191,17 +191,17 @@ function resolveKeyMode(raw: string | undefined): KeyMode {
 	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
 }
 
-function ensureStateDir(stateDir: string): void {
-	if (!existsSync(stateDir)) {
-		ensurePrivateDir(stateDir);
+function ensureDaemonDir(daemonDir: string): void {
+	if (!existsSync(daemonDir)) {
+		ensurePrivateDir(daemonDir);
 		return;
 	}
-	const mode = statSync(stateDir).mode & 0o777;
+	const mode = statSync(daemonDir).mode & 0o777;
 	if (mode !== 0o700) {
 		console.warn(
-			`dg-server: state directory ${stateDir} had mode ${mode.toString(8)} (expected 0700) — fixing; a permissive directory may have exposed the database or -wal sidecar`,
+			`dg-server: daemon directory ${daemonDir} had mode ${mode.toString(8)} (expected 0700) — fixing; a permissive directory may have exposed the database or -wal sidecar`,
 		);
-		chmodSync(stateDir, 0o700);
+		chmodSync(daemonDir, 0o700);
 	}
 }
 
@@ -218,7 +218,7 @@ export class ChatStore {
 		seams: StoreSeams = {},
 	): Promise<ChatStore> {
 		const env = seams.env ?? process.env;
-		ensureStateDir(paths.stateDir);
+		ensureDaemonDir(paths.daemonDir);
 
 		const db = new Database(paths.dbPath, {
 			strict: true,
@@ -227,7 +227,7 @@ export class ChatStore {
 		});
 		try {
 			applyConnectionPragmas(db, DEFAULT_BUSY_TIMEOUT_MS);
-			runMigrations(db, SCHEMA_STEPS, { snapshotDir: paths.stateDir });
+			runMigrations(db, SCHEMA_STEPS, { snapshotDir: paths.daemonDir });
 
 			const existingRow = db
 				.query(
@@ -245,7 +245,7 @@ export class ChatStore {
 
 			const mode = resolveKeyMode(env.DG_KEY_SOURCE);
 			const keychain =
-				seams.keychain ?? createKeychainBackendForPlatform(paths.stateDir);
+				seams.keychain ?? createKeychainBackendForPlatform(paths.daemonDir);
 
 			const resolved = await resolveDataKey({
 				existing,

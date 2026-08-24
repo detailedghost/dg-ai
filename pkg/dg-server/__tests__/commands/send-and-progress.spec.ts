@@ -3,7 +3,7 @@ import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "@dg/common";
 import {
 	startWithSession as bootDaemonSession,
 	cleanupDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	sendConnectHandshake,
 	waitForOpen,
 	wsExtensionSocket,
@@ -13,7 +13,7 @@ import { nextParsedMessage, runCli } from "./cli-wire";
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 

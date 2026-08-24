@@ -9,11 +9,11 @@ import {
 	decodeChatMarker,
 	extractUrl,
 	freshDgHome,
-	killDaemonByLockfile,
-	readLockfile,
+	killDaemonByPidFile,
+	readPidFile,
 	runStart,
 	waitForHealth,
-	waitForLockfile,
+	waitForPidFile,
 } from "../utils/daemon-harness";
 
 describe("dg-server start — cold start", () => {
@@ -22,7 +22,7 @@ describe("dg-server start — cold start", () => {
 	let result: Awaited<ReturnType<typeof runStart>>;
 
 	afterAll(() => {
-		killDaemonByLockfile(dgHome);
+		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	});
 
@@ -36,11 +36,11 @@ describe("dg-server start — cold start", () => {
 		await waitForHealth(port);
 	});
 
-	it("writes a lockfile with no token field at all", async () => {
+	it("writes a pid file with no token field at all", async () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		const raw = JSON.parse(readFileSync(paths.lockfilePath, "utf8"));
+		const raw = JSON.parse(readFileSync(paths.pidPath, "utf8"));
 		expect(Object.hasOwn(raw, "token")).toBe(false);
-		const handle = readLockfile(dgHome);
+		const handle = readPidFile(dgHome);
 		expect(handle.port).toBe(port);
 	});
 
@@ -60,7 +60,7 @@ describe("GET /start", () => {
 	let firstBootstrapUrl: string;
 
 	afterAll(() => {
-		killDaemonByLockfile(dgHome);
+		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	});
 
@@ -89,12 +89,12 @@ describe("GET /start", () => {
 describe("a second dg-server start on a live daemon", () => {
 	let dgHome: string;
 	let port: number;
-	let firstHandle: ReturnType<typeof readLockfile>;
+	let firstHandle: ReturnType<typeof readPidFile>;
 	let firstBootstrap: ReturnType<typeof validateSessionBootstrap>;
 	let secondResult: Awaited<ReturnType<typeof runStart>>;
 
 	afterAll(() => {
-		killDaemonByLockfile(dgHome);
+		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	});
 
@@ -103,7 +103,7 @@ describe("a second dg-server start on a live daemon", () => {
 		port = allocatePort();
 		const first = await runStart(dgHome, port);
 		await waitForHealth(port);
-		firstHandle = readLockfile(dgHome);
+		firstHandle = readPidFile(dgHome);
 		firstBootstrap = validateSessionBootstrap(
 			decodeChatMarker(extractUrl(first.stdout)),
 		);
@@ -112,7 +112,7 @@ describe("a second dg-server start on a live daemon", () => {
 	});
 
 	it("reuses the same daemon process rather than binding a second port", () => {
-		const secondHandle = readLockfile(dgHome);
+		const secondHandle = readPidFile(dgHome);
 		expect(secondHandle.instanceId).toBe(firstHandle.instanceId);
 		expect(secondHandle.pid).toBe(firstHandle.pid);
 	});
@@ -126,22 +126,22 @@ describe("a second dg-server start on a live daemon", () => {
 	});
 });
 
-describe("lockfile reclaim", () => {
+describe("pid file reclaim", () => {
 	let dgHome: string;
 	let port: number;
 
 	afterEach(() => {
-		killDaemonByLockfile(dgHome);
+		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	});
 
-	it("reclaims a lockfile whose daemon does not answer /health with a matching instance id", async () => {
+	it("reclaims a pid file whose daemon does not answer /health with a matching instance id", async () => {
 		dgHome = freshDgHome();
 		port = allocatePort();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
+		mkdirSync(paths.daemonDir, { recursive: true, mode: 0o700 });
 		writeFileSync(
-			paths.lockfilePath,
+			paths.pidPath,
 			JSON.stringify({
 				pid: 999_999,
 				port,
@@ -151,7 +151,7 @@ describe("lockfile reclaim", () => {
 		);
 
 		await runStart(dgHome, port);
-		const reclaimed = await waitForLockfile(dgHome);
+		const reclaimed = await waitForPidFile(dgHome);
 
 		expect(reclaimed.instanceId).not.toBe("stale-instance-nobody-is-listening");
 		expect(reclaimed.pid).not.toBe(999_999);
@@ -170,7 +170,7 @@ describe("dg-server start — protocol version mismatch on attach", () => {
 	let port: number;
 
 	afterEach(() => {
-		killDaemonByLockfile(dgHome);
+		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	});
 
@@ -181,9 +181,9 @@ describe("dg-server start — protocol version mismatch on attach", () => {
 		await waitForHealth(port);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		const handle = readLockfile(dgHome);
+		const handle = readPidFile(dgHome);
 		writeFileSync(
-			paths.lockfilePath,
+			paths.pidPath,
 			JSON.stringify({
 				...handle,
 				versions: {

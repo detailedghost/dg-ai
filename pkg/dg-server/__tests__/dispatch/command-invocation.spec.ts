@@ -8,7 +8,7 @@ import {
 	closeSockets,
 	collectFrames,
 	connectPage,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	waitForValue,
 } from "../utils/daemon-harness";
 import {
@@ -25,7 +25,7 @@ let scratchDir: string;
 const openSockets: WebSocket[] = [];
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	closeSockets(openSockets);
 	cleanupDgHome(dgHome);
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });

@@ -8,7 +8,7 @@ import {
 	connectCli,
 	frameType,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	send,
 	spawnServe,
 	startWithSession,
@@ -21,7 +21,7 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 
@@ -118,7 +118,7 @@ describe("idle-TTL does not fire while a blocking recv is parked", () => {
 });
 
 describe("idle-TTL self-exit", () => {
-	it("exits the process and removes the lockfile once the idle window elapses with nothing pinning it", async () => {
+	it("exits the process and removes the pid file once the idle window elapses with nothing pinning it", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		const proc = spawnServe(dgHome, port, {
@@ -141,6 +141,6 @@ describe("idle-TTL self-exit", () => {
 		expect(exitCode).toBe(0);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(existsSync(paths.lockfilePath)).toBe(false);
+		expect(existsSync(paths.pidPath)).toBe(false);
 	});
 });

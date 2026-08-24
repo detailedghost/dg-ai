@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { isWSL, resolveDgPaths } from "@dg/common/node";
-import { isDaemonLive, readLockfile } from "../src/server/lockfile";
+import { isDaemonLive, readPidFile } from "../src/server/pidfile";
 
 async function main(): Promise<void> {
 	console.log("=== dg-server WSL-loopback verification ===\n");
@@ -15,10 +15,10 @@ async function main(): Promise<void> {
 	console.log("[1/3] Running under WSL: yes");
 
 	const paths = resolveDgPaths();
-	const handle = readLockfile(paths);
+	const handle = readPidFile(paths);
 	if (!handle) {
 		console.error(
-			`No lockfile at ${paths.lockfilePath} — start a daemon first: ` +
+			`No pid file at ${paths.pidPath} — start a daemon first: ` +
 				"`bun run pkg/dg-server/src/index.ts start`.",
 		);
 		process.exit(1);
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
 	const live = await isDaemonLive(handle);
 	if (!live) {
 		console.error(
-			`Lockfile found but /health on port ${handle.port} did not answer with ` +
+			`Pid file found but /health on port ${handle.port} did not answer with ` +
 				"a matching instanceId. Start (or restart) the daemon and re-run this script.",
 		);
 		process.exit(1);

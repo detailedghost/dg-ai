@@ -4,27 +4,24 @@ import { type DaemonHandle, validateDaemonHandle } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { ensurePrivateDir, writeFileAtomic } from "../utils/fs";
 
-export function readLockfile(paths: DgPaths): DaemonHandle | undefined {
-	if (!existsSync(paths.lockfilePath)) return undefined;
+export function readPidFile(paths: DgPaths): DaemonHandle | undefined {
+	if (!existsSync(paths.pidPath)) return undefined;
 	try {
 		return validateDaemonHandle(
-			JSON.parse(readFileSync(paths.lockfilePath, "utf8")),
+			JSON.parse(readFileSync(paths.pidPath, "utf8")),
 		);
 	} catch {
 		return undefined;
 	}
 }
 
-export function writeLockfileAtomic(
-	paths: DgPaths,
-	handle: DaemonHandle,
-): void {
-	ensurePrivateDir(dirname(paths.lockfilePath));
-	writeFileAtomic(paths.lockfilePath, JSON.stringify(handle));
+export function writePidFileAtomic(paths: DgPaths, handle: DaemonHandle): void {
+	ensurePrivateDir(dirname(paths.pidPath));
+	writeFileAtomic(paths.pidPath, JSON.stringify(handle));
 }
 
-export function removeLockfile(paths: DgPaths): void {
-	rmSync(paths.lockfilePath, { force: true });
+export function removePidFile(paths: DgPaths): void {
+	rmSync(paths.pidPath, { force: true });
 }
 
 export type HealthFetcher = (

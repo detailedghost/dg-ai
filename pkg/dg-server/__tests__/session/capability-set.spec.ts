@@ -14,7 +14,7 @@ import {
 	extractUrl,
 	frameType,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	runStart,
 	runStatus,
 	send,
@@ -45,7 +45,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 

@@ -7,8 +7,8 @@ import {
 	allocatePort,
 	cleanupDgHome,
 	freshDgHome,
-	killDaemonByLockfile,
-	readLockfile,
+	killDaemonByPidFile,
+	readPidFile,
 	runStart,
 	runStatus,
 	waitForHealth,
@@ -17,7 +17,7 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 
@@ -55,12 +55,12 @@ describe("dg-server status", () => {
 		expect(report.versions.extension).toBeNull();
 	});
 
-	it("reports no live daemon and removes a stale lockfile left by a hard-killed daemon", async () => {
+	it("reports no live daemon and removes a stale pid file left by a hard-killed daemon", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		await runStart(dgHome, port);
 		await waitForHealth(port);
-		const handle = readLockfile(dgHome);
+		const handle = readPidFile(dgHome);
 		process.kill(handle.pid, "SIGKILL");
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -75,6 +75,6 @@ describe("dg-server status", () => {
 		}
 
 		expect(status.stdout).toContain("no live daemon");
-		expect(existsSync(paths.lockfilePath)).toBe(false);
+		expect(existsSync(paths.pidPath)).toBe(false);
 	}, 20000);
 });

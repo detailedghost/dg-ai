@@ -12,7 +12,7 @@ import {
 	extractUrl,
 	freshDgHome,
 	freshTempDir,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	runStart,
 	waitForHealth,
 	waitForValue,
@@ -21,7 +21,7 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 
@@ -108,16 +108,16 @@ describe("startup orphan-pruning trigger", () => {
 		expect(existsSync(join(root, bootstrap.sessionId))).toBe(true);
 	}, 30000);
 
-	it("skips the sweep entirely when the lockfile names a daemon on another port, which a bind-race loser would be", async () => {
+	it("skips the sweep entirely when the pid file names a daemon on another port, which a bind-race loser would be", async () => {
 		dgHome = freshDgHome();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const root = getConfiguredAssetDirectory(paths);
 		const orphanDir = join(root, UUID_SHAPED_ORPHAN);
 		mkdirSync(orphanDir, { recursive: true });
 
-		mkdirSync(paths.stateDir, { recursive: true });
+		mkdirSync(paths.daemonDir, { recursive: true });
 		writeFileSync(
-			paths.lockfilePath,
+			paths.pidPath,
 			JSON.stringify({
 				pid: 1,
 				port: 1,

@@ -10,14 +10,14 @@ import { runCli } from "../commands/cli-wire";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	startWithSession,
 } from "../utils/daemon-harness";
 
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 

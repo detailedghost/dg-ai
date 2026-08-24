@@ -6,7 +6,7 @@ import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
 	freshDgHome,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
 	runStart,
 	waitForHealth,
 } from "../utils/daemon-harness";
@@ -93,7 +93,7 @@ describe("stale-claim recovery is a daemon-boot step, not an open-time side effe
 			expect(probe.claimNext(SESSION)?.id).toBe("boot-1");
 			probe.close();
 
-			killDaemonByLockfile(dgHome);
+			killDaemonByPidFile(dgHome);
 
 			const secondPort = allocatePort();
 			await runStart(dgHome, secondPort);
@@ -103,7 +103,7 @@ describe("stale-claim recovery is a daemon-boot step, not an open-time side effe
 			expect(after.claimNext(SESSION)?.id).toBe("boot-1");
 			after.close();
 		} finally {
-			killDaemonByLockfile(dgHome);
+			killDaemonByPidFile(dgHome);
 			cleanupDgHome(dgHome);
 		}
 	}, 30000);

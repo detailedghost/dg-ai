@@ -208,7 +208,7 @@ describe("ChatStore asset row write-path", () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-			mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
+			mkdirSync(paths.daemonDir, { recursive: true, mode: 0o700 });
 			const legacy = new Database(paths.dbPath, { strict: true, create: true });
 			runMigrations(legacy, SCHEMA_STEPS.slice(0, 2));
 			legacy.run("INSERT INTO sessions (id, created_at) VALUES (?, ?)", [

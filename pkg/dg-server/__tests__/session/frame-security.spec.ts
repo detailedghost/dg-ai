@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
 import { CHAT_MAX_PAYLOAD_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
@@ -7,7 +6,8 @@ import {
 	collectFrames,
 	connectCli,
 	frameType,
-	killDaemonByLockfile,
+	killDaemonByPidFile,
+	readDaemonLog,
 	send,
 	startWithSession,
 	waitForClose,
@@ -17,7 +17,7 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	killDaemonByLockfile(dgHome);
+	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
 });
 
@@ -176,9 +176,8 @@ describe("repeated invalid frames", () => {
 		await waitForClose(ws, 5000);
 
 		await new Promise((r) => setTimeout(r, 300));
-		const logPath = resolveDgPaths({ env: { DG_HOME: home } }).logPath;
-		expect(existsSync(logPath)).toBe(true);
-		const log = readFileSync(logPath, "utf8");
+		const log = readDaemonLog(home);
+		expect(log.length).toBeGreaterThan(0);
 		expect(log).not.toContain(bootstrap.token);
 		expect(log).not.toContain(REJECTED_TOKEN);
 	});
