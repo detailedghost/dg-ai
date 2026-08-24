@@ -9,9 +9,9 @@
  */
 
 import { spawn } from "node:child_process";
+import { isWSL, run } from "@dg/common/node";
 import type { Command } from "commander";
 import { type DetectedBrowser, detectBrowsers } from "../utils/detect";
-import { isWSL, run } from "@dg/common/node";
 import { extensionDest, readMarker } from "../utils/lib";
 import { addGroupMarker } from "../utils/marker";
 import { resolveRefs } from "../utils/refs";

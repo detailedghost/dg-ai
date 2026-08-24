@@ -21,12 +21,15 @@ import { join } from "node:path";
 import { run } from "@dg/common/node";
 import type { Command } from "commander";
 import {
+	type BinarySpec,
 	cliDest,
 	cliVersionFile,
 	downloadReleaseAsset,
 	extensionDest,
 	extractZip,
 	fetchCliBinary,
+	listReleases,
+	type Release,
 	readMarker,
 	repoRoot,
 	resolveCliAsset,
@@ -92,13 +95,13 @@ function printSteps(target: Target, path: string): void {
 	console.log("5. Done.");
 }
 
-/** One binary's download/refresh; best-effort per binary (warn, never throw). */
 async function installBinary(
-	binaryName: string,
-	tagPrefix: string,
+	spec: BinarySpec,
+	releases: Release[],
 ): Promise<void> {
+	const { binaryName } = spec;
 	try {
-		const asset = await resolveCliAsset(binaryName, tagPrefix);
+		const asset = resolveCliAsset(spec, releases);
 		if (!asset) {
 			console.warn(
 				`⚠ no ${binaryName} binary for ${process.platform}-${process.arch}; skipping its refresh.`,
@@ -127,15 +130,15 @@ async function installBinary(
 	}
 }
 
-/** Every prebuilt binary the harness needs, each independently versioned. */
-const BINARIES: { binaryName: string; tagPrefix: string }[] = [
+const BINARIES: BinarySpec[] = [
 	{ binaryName: "dg-skills", tagPrefix: "skills-v" },
 	{ binaryName: "dg-server", tagPrefix: "server-v" },
 ];
 
 async function installCli(): Promise<void> {
-	for (const { binaryName, tagPrefix } of BINARIES) {
-		await installBinary(binaryName, tagPrefix);
+	const releases = await listReleases();
+	for (const spec of BINARIES) {
+		await installBinary(spec, releases);
 	}
 }
 

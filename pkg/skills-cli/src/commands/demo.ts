@@ -10,11 +10,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { slugify } from "@dg/common";
+import { tryOpen } from "@dg/common/node";
 import type { Command } from "commander";
 import { addDemoMarker } from "../utils/demo-marker";
 import type { VerifyResult } from "../utils/demo-verify";
 import { verifyScript } from "../utils/demo-verify";
-import { tryOpen } from "@dg/common/node";
 import {
 	parsePlanMarkdown,
 	type TourScript,

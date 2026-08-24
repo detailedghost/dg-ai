@@ -138,29 +138,29 @@ export function pickExtAsset(
 	};
 }
 
-/** Newest non-draft release under `tagPrefix`, and its binary for platform+arch. */
+export type BinarySpec = { binaryName: string; tagPrefix: string };
+
 export function pickCliAsset(
 	releases: Release[],
-	binaryName: string,
-	tagPrefix: string,
+	spec: BinarySpec,
 	platform: string,
 	arch: string,
 ): PickedAsset | undefined {
-	const name = cliAssetName(binaryName, platform, arch);
+	const name = cliAssetName(spec.binaryName, platform, arch);
 	if (!name) return undefined;
 	const rel = releases.find(
-		(r) => r.tag_name.startsWith(tagPrefix) && !r.draft,
+		(r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft,
 	);
 	const asset = rel?.assets.find((a) => a.name === name);
 	if (!rel || !asset) return undefined;
 	return {
 		name: asset.name,
 		url: asset.browser_download_url,
-		version: rel.tag_name.slice(tagPrefix.length),
+		version: rel.tag_name.slice(spec.tagPrefix.length),
 	};
 }
 
-async function listReleases(): Promise<Release[]> {
+export async function listReleases(): Promise<Release[]> {
 	const res = await fetch(
 		`https://api.github.com/repos/${REPO}/releases?per_page=30`,
 		{ headers: UA },
@@ -182,29 +182,22 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** Stable path for a compiled binary (runs in the shell, so always local home). */
 export function cliDest(binaryName: string): string {
-	const name =
-		process.platform === "win32" ? `${binaryName}.exe` : binaryName;
+	const name = process.platform === "win32" ? `${binaryName}.exe` : binaryName;
 	return join(homedir(), ".dg", "bin", name);
 }
 
-/** Records an installed version so `install` can skip a needless ~big re-download. */
 export function cliVersionFile(binaryName: string): string {
 	return join(homedir(), ".dg", "bin", `.${binaryName}.version`);
 }
 
-/** The newest binary under `tagPrefix` for this platform, or undefined if unbuilt. */
 export function resolveCliAsset(
-	binaryName: string,
-	tagPrefix: string,
-): Promise<PickedAsset | undefined> {
-	return listReleases().then((r) =>
-		pickCliAsset(r, binaryName, tagPrefix, process.platform, process.arch),
-	);
+	spec: BinarySpec,
+	releases: Release[],
+): PickedAsset | undefined {
+	return pickCliAsset(releases, spec, process.platform, process.arch);
 }
 
-/** Download a resolved asset to cliDest(binaryName) and stamp its version. */
 export async function fetchCliBinary(
 	binaryName: string,
 	asset: PickedAsset,

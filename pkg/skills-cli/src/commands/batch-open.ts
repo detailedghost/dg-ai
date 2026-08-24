@@ -3,8 +3,8 @@
  * grouped into a named tab group via the `_tab_group` marker.
  */
 
-import type { Command } from "commander";
 import { tryOpen } from "@dg/common/node";
+import type { Command } from "commander";
 import { addGroupMarker } from "../utils/marker";
 import { loadConfig, resolveRef } from "../utils/refs";
 

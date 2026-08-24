@@ -8,7 +8,7 @@
       "name": "@dg/common",
       "version": "1.0.0",
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.3.14",
         "typescript": "^5",
       },
     },
@@ -20,7 +20,7 @@
         "commander": "^14.0.0",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.3.14",
         "typescript": "^5",
       },
     },
@@ -51,7 +51,7 @@
         "marked": "^16.0.0",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.3.14",
         "typescript": "^5",
       },
     },
@@ -62,7 +62,7 @@
         "@dg/skills-cli": "workspace:*",
       },
       "devDependencies": {
-        "bun-types": "latest",
+        "bun-types": "^1.3.14",
         "typescript": "^5",
       },
     },
