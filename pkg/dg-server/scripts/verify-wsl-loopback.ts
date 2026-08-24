@@ -1,21 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Evidence artifact for the WSL-to-Windows loopback assumption this whole
- * package is built on: a WSL-side daemon bound to 127.0.0.1 is reachable
- * from a Windows-side browser ONLY when WSL uses mirrored networking mode.
- * No CI runner hosts a real WSL+Windows pair, so this is a manual probe run
- * by hand on a real dev box — it is not part of `bun test` and never will be.
- *
- * Usage (from a WSL shell, with a dg-server daemon already started):
- *   bun run pkg/dg-server/scripts/verify-wsl-loopback.ts
- *
- * What it checks automatically:
- *   1. This process is actually running under WSL.
- *   2. The daemon's own /health answers on the WSL side.
- * What it asks a human to confirm:
- *   3. The printed URL, opened in a Windows-side browser (not WSL's own),
- *      loads the bootstrap page and completes a WebSocket handshake to /ws.
- */
 import { isWSL, resolveDgPaths } from "@dg/common/node";
 import { isDaemonLive, readLockfile } from "../src/server/lockfile";
 

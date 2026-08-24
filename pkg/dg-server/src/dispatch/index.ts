@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { checkExecutable } from "../manifest/load";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
+import { describeError } from "../utils/errors";
 import { substituteArgv } from "./argv";
 import { executeCommand } from "./exec";
 import { type CommandEntryWithLimits, resolveLimits } from "./limits";
@@ -20,12 +22,6 @@ export type DispatchDeps = {
 	scheduler: DispatchScheduler;
 };
 
-/**
- * Resolves commandLabel -> argv from the manifest published for THIS
- * session, substitutes params, admits against the scheduler's bounds, then
- * spawns. sessionId here has already passed authorizeFrame against the
- * socket's capability map — this function never trusts an unchecked field.
- */
 export async function dispatchCommand(
 	sessionId: string,
 	commandLabel: string,
@@ -58,9 +54,14 @@ export async function dispatchCommand(
 	try {
 		argv = substituteArgv(entry, params);
 	} catch (error) {
+		return { ok: false, error: describeError(error) };
+	}
+
+	const staleExecutable = checkExecutable(argv[0]);
+	if (staleExecutable) {
 		return {
 			ok: false,
-			error: error instanceof Error ? error.message : String(error),
+			error: `command "${commandLabel}" ${staleExecutable}`,
 		};
 	}
 
@@ -71,17 +72,16 @@ export async function dispatchCommand(
 	}
 
 	const invocationId = randomUUID();
-	const { seq } = deps.store.insertCommandInvocation({
-		sessionId,
-		id: invocationId,
-		argv,
-		stdout: "",
-		stderr: "",
-		truncated: false,
-		label: commandLabel,
-	});
-
 	try {
+		const { seq } = deps.store.insertCommandInvocation({
+			sessionId,
+			id: invocationId,
+			argv,
+			stdout: "",
+			stderr: "",
+			truncated: false,
+			label: commandLabel,
+		});
 		const result = await executeCommand(argv, session.cwd, limits);
 		deps.store.updateCommandInvocationResult({
 			seq,

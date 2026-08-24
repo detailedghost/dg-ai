@@ -1,4 +1,3 @@
-/** Fixed extension to content-type lookup, with a denylist for never-inline active content. */
 import { extname } from "node:path";
 
 export type AssetContentTypeInfo = { contentType: string; inline: boolean };
@@ -32,7 +31,6 @@ export function resolveAssetContentType(
 	return { contentType: FALLBACK_CONTENT_TYPE, inline: false };
 }
 
-/** RFC 8187 extended value: encodeURIComponent leaves characters a `token` may not carry. */
 function encodeExtendedValue(value: string): string {
 	return encodeURIComponent(value).replace(
 		/['()*]/g,
@@ -40,7 +38,6 @@ function encodeExtendedValue(value: string): string {
 	);
 }
 
-/** RFC 6266: percent-encoding into `filename=` mangles the name for every client — the UTF-8 form belongs in `filename*`. */
 export function assetContentDisposition(
 	info: AssetContentTypeInfo,
 	filename: string,

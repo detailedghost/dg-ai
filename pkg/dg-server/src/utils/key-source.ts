@@ -1,11 +1,8 @@
-/**
- * Status-renderer seam: slice 3 contributes its real describeKeySource() here
- * via setKeySourceProvider so it never has to edit slice 2's merged files.
- */
 export type KeySourceProvider = () => string;
+export type UserVersionProvider = () => number;
 
-let provider: KeySourceProvider = () =>
-	"unavailable (pre-slice-3: no key store yet)";
+let provider: KeySourceProvider = () => "unavailable (no key store open)";
+let userVersionProvider: UserVersionProvider = () => 0;
 
 export function setKeySourceProvider(next: KeySourceProvider): void {
 	provider = next;
@@ -13,4 +10,12 @@ export function setKeySourceProvider(next: KeySourceProvider): void {
 
 export function describeKeySource(): string {
 	return provider();
+}
+
+export function setUserVersionProvider(next: UserVersionProvider): void {
+	userVersionProvider = next;
+}
+
+export function describeUserVersion(): number {
+	return userVersionProvider();
 }

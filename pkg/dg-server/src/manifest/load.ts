@@ -6,6 +6,7 @@ import {
 	validateCommandManifest,
 	validateProtoIdentifier,
 } from "@dg/common";
+import { describeError } from "../utils/errors";
 
 const FORBIDDEN_EXECUTABLES = new Set([
 	"sh",
@@ -30,6 +31,25 @@ const FORBIDDEN_EXECUTABLES = new Set([
 	"python3",
 	"perl",
 	"ruby",
+	"php",
+	"lua",
+	"luajit",
+	"deno",
+	"tclsh",
+	"wish",
+	"expect",
+	"awk",
+	"gawk",
+	"busybox",
+	"xargs",
+	"find",
+	"nohup",
+	"setsid",
+	"script",
+	"ssh",
+	"nc",
+	"ncat",
+	"socat",
 ]);
 
 export class ManifestLoadError extends Error {
@@ -45,7 +65,7 @@ export function loadManifestFile(path: string): CommandEntry[] {
 		raw = readFileSync(path, "utf8");
 	} catch (error) {
 		throw new ManifestLoadError(
-			`cannot read command manifest ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			`cannot read command manifest ${path}: ${describeError(error)}`,
 		);
 	}
 	if (Buffer.byteLength(raw, "utf8") > CHAT_MAX_MANIFEST_BYTES) {
@@ -59,26 +79,23 @@ export function loadManifestFile(path: string): CommandEntry[] {
 		parsed = JSON.parse(raw);
 	} catch (error) {
 		throw new ManifestLoadError(
-			`invalid JSON in command manifest ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			`invalid JSON in command manifest ${path}: ${describeError(error)}`,
 		);
 	}
 	try {
 		return validateCommandManifest(parsed, `command manifest ${path}`);
 	} catch (error) {
-		throw new ManifestLoadError(
-			error instanceof Error ? error.message : String(error),
-		);
+		throw new ManifestLoadError(describeError(error));
 	}
 }
 
-/** A subagent manifest is a plain list of names, each validated with the shared identifier grammar. */
 export function loadSubagentManifestFile(path: string): string[] {
 	let raw: string;
 	try {
 		raw = readFileSync(path, "utf8");
 	} catch (error) {
 		throw new ManifestLoadError(
-			`cannot read subagent manifest ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			`cannot read subagent manifest ${path}: ${describeError(error)}`,
 		);
 	}
 	let parsed: unknown;
@@ -86,7 +103,7 @@ export function loadSubagentManifestFile(path: string): string[] {
 		parsed = JSON.parse(raw);
 	} catch (error) {
 		throw new ManifestLoadError(
-			`invalid JSON in subagent manifest ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			`invalid JSON in subagent manifest ${path}: ${describeError(error)}`,
 		);
 	}
 	if (!Array.isArray(parsed)) {
@@ -96,19 +113,11 @@ export function loadSubagentManifestFile(path: string): string[] {
 		try {
 			return validateProtoIdentifier(name, `subagent manifest[${index}]`);
 		} catch (error) {
-			throw new ManifestLoadError(
-				error instanceof Error ? error.message : String(error),
-			);
+			throw new ManifestLoadError(describeError(error));
 		}
 	});
 }
 
-/**
- * A literal denylist can't match a version-suffixed basename directly
- * (`python3.14`), so strip a trailing dot-version segment and then a
- * trailing bare digit run before comparing — matching "python3.14" only
- * after both strips reduce it to "python".
- */
 function normalizeExecutableBasename(name: string): string {
 	let normalized = name.toLowerCase();
 	while (/\.\d+$/.test(normalized)) {
@@ -121,35 +130,34 @@ function isForbiddenExecutable(rawBasename: string): boolean {
 	return FORBIDDEN_EXECUTABLES.has(normalizeExecutableBasename(rawBasename));
 }
 
+export function checkExecutable(
+	executable: string | undefined,
+): string | undefined {
+	if (!executable) return "has no executable in argv[0]";
+	const resolved = Bun.which(executable);
+	if (!resolved) {
+		return `executable "${executable}" does not resolve on PATH`;
+	}
+	const linkName = basename(resolved);
+	let realName = linkName;
+	try {
+		realName = basename(realpathSync(resolved));
+	} catch {}
+	if (isForbiddenExecutable(linkName) || isForbiddenExecutable(realName)) {
+		const forbidden = isForbiddenExecutable(linkName) ? linkName : realName;
+		return `resolves "${executable}" to forbidden shell or script host "${forbidden}"`;
+	}
+	return undefined;
+}
+
 export function resolveManifestForPublish(
 	entries: CommandEntry[],
 ): CommandEntry[] {
 	for (const [index, entry] of entries.entries()) {
-		const executable = entry.argv[0];
-		if (!executable) {
+		const reason = checkExecutable(entry.argv[0]);
+		if (reason) {
 			throw new ManifestLoadError(
-				`command manifest[${index}] (${entry.label}) has no executable in argv[0]`,
-			);
-		}
-		const resolved = Bun.which(executable);
-		if (!resolved) {
-			throw new ManifestLoadError(
-				`command manifest[${index}] (${entry.label}) executable "${executable}" does not resolve on PATH`,
-			);
-		}
-		// Bun.which doesn't follow symlinks, so check both the un-realpath'd
-		// name and the symlink-resolved one — either can dodge the denylist alone.
-		const linkName = basename(resolved);
-		let realName = linkName;
-		try {
-			realName = basename(realpathSync(resolved));
-		} catch {
-			// Bun.which already proved the executable path; the link name alone still gets checked.
-		}
-		if (isForbiddenExecutable(linkName) || isForbiddenExecutable(realName)) {
-			const forbidden = isForbiddenExecutable(linkName) ? linkName : realName;
-			throw new ManifestLoadError(
-				`command manifest[${index}] (${entry.label}) resolves "${executable}" to forbidden shell or script host "${forbidden}"`,
+				`command manifest[${index}] (${entry.label}) ${reason}`,
 			);
 		}
 	}

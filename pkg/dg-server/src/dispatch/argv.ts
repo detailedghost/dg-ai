@@ -4,13 +4,6 @@ const WHOLE_PLACEHOLDER = /^\{([A-Za-z0-9_]+)\}$/;
 
 export class ArgvSubstitutionError extends Error {}
 
-/**
- * Whole-element param substitution: a `{name}` placeholder occupies one full
- * argv slot, never spliced into or out of a larger element. A dash-prefixed
- * value is refused outright (no per-entry opt-in is wired on the wire yet),
- * and a literal `--` is inserted before the first substituted element so a
- * value the target WOULD accept as an option is still read as an operand.
- */
 export function substituteArgv(
 	entry: CommandEntryWithLimits,
 	params: Record<string, unknown>,

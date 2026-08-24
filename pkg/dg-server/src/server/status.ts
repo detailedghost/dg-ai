@@ -1,9 +1,11 @@
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import type { SessionRegistry } from "../session/registry";
-import { describeKeySource } from "../utils/key-source";
+import {
+	describeKeySource,
+	describeUserVersion,
+} from "../utils/key-source";
 import type { WslNetworkingMode } from "./wsl-guard";
 
-/** Kept in lockstep with package.json's version by hand — no JSON import in a --compile binary. */
 export const DG_SERVER_PACKAGE_VERSION = "1.0.0";
 
 export type StatusReport = {
@@ -43,7 +45,7 @@ export function renderStatus(deps: StatusDeps): StatusReport {
 		versions: {
 			package: DG_SERVER_PACKAGE_VERSION,
 			protocol: CHAT_PROTOCOL_VERSION,
-			userVersion: 0, // pre-slice-3: no SQLite store yet
+			userVersion: describeUserVersion(),
 			extension: deps.getExtensionVersion(),
 		},
 	};

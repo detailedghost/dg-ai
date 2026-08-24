@@ -1,23 +1,15 @@
-/**
- * registerAsset + resolveAssetForServing: the write-and-read halves of the
- * asset row. Module-level, no daemon subprocess — SessionRegistry supplies a
- * real capability pair the way the HTTP layer's own lookup would, and
- * installAssetLifecycle wires the real session-close cleanup.
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	closeSync,
 	existsSync,
 	ftruncateSync,
 	mkdirSync,
-	mkdtempSync,
 	openSync,
 	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
@@ -28,9 +20,13 @@ import { resolveAssetForServing } from "../../src/assets/serve";
 import { createLogger } from "../../src/server/log";
 import { SessionRegistry } from "../../src/session/registry";
 import { AssetTooLargeError, ChatStore } from "../../src/store";
-import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	FILE_ONLY_SEAMS,
+	freshDgHome,
+	freshTempDir,
+} from "../utils/daemon-harness";
 
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
@@ -45,7 +41,7 @@ async function setup(dgHome: string) {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 	const registry = new SessionRegistry(paths);
-	const scratch = mkdtempSync(join(tmpdir(), "dg-asset-cwd-"));
+	const scratch = freshTempDir("dg-asset-cwd");
 	const session = registry.create({
 		cwd: scratch,
 		agentIdentity: "test-agent",
@@ -71,22 +67,85 @@ async function setup(dgHome: string) {
 
 describe("readAssetSourceFile", () => {
 	it("refuses an oversized source on the fd's own size, before reading it into memory", () => {
-		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-source-"));
+		const scratch = freshTempDir("dg-asset-source");
 		const path = join(scratch, "huge.bin");
 		const fd = openSync(path, "w");
-		ftruncateSync(fd, CHAT_MAX_ASSET_BYTES + 1); // sparse: size without bytes
+		ftruncateSync(fd, CHAT_MAX_ASSET_BYTES + 1);
 		closeSync(fd);
 
 		expect(() => readAssetSourceFile(path)).toThrow(AssetTooLargeError);
 	});
 
 	it("refuses a source that is not a regular file at all", () => {
-		const scratch = mkdtempSync(join(tmpdir(), "dg-asset-source-dir-"));
+		const scratch = freshTempDir("dg-asset-source-dir");
 		expect(() => readAssetSourceFile(scratch)).toThrow(/regular file/i);
 	});
 });
 
 describe("registerAsset + resolveAssetForServing", () => {
+	it("refuses to stage through a symlinked SESSION directory planted before the first write", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, session } = await setup(dgHome);
+			const root = getConfiguredAssetDirectory(paths);
+			mkdirSync(root, { recursive: true });
+			const elsewhere = freshTempDir("dg-asset-escape");
+			symlinkSync(elsewhere, join(root, session.sessionId));
+
+			await expect(
+				registerAsset(
+					{ paths, store },
+					{
+						sessionId: session.sessionId,
+						id: "asset-escape",
+						filename: "leak.png",
+						contentType: "image/png",
+						bytes: Buffer.from([1, 2, 3]),
+					},
+				),
+			).rejects.toThrow(/not a real directory/);
+
+			expect(existsSync(join(elsewhere, "asset-escape"))).toBe(false);
+			rmSync(elsewhere, { recursive: true, force: true });
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("still stages normally when the session directory is a real directory", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session } = await setup(dgHome);
+			const root = getConfiguredAssetDirectory(paths);
+			mkdirSync(join(root, session.sessionId), { recursive: true });
+
+			await registerAsset(
+				{ paths, store },
+				{
+					sessionId: session.sessionId,
+					id: "asset-real",
+					filename: "ok.png",
+					contentType: "image/png",
+					bytes: Buffer.from([9, 8, 7]),
+				},
+			);
+
+			const result = await resolveAssetForServing(
+				{ paths, store, registry },
+				{
+					sessionId: session.sessionId,
+					token: session.token,
+					id: "asset-real",
+				},
+			);
+			expect(result.status).toBe("ok");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("round-trips staged bytes: retrievable with the valid session capability, byte-identical", async () => {
 		const dgHome = freshDgHome();
 		try {
@@ -179,7 +238,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 					sessionId: session.sessionId,
 					id: "asset-safe",
 					filename: "safe.png",
-					contentType: "text/html", // a lie the row must not be believed on
+					contentType: "text/html",
 					bytes: Buffer.from("PNG-ish"),
 				},
 			);
@@ -189,7 +248,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 					sessionId: session.sessionId,
 					id: "asset-evil",
 					filename: "evil.html",
-					contentType: "image/png", // the dangerous direction of the same lie
+					contentType: "image/png",
 					bytes: Buffer.from("<script>alert(1)</script>"),
 				},
 			);
@@ -302,7 +361,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 				wrongToken.status,
 				pruned.status,
 			]);
-			expect(statuses.size).toBe(3); // all three genuinely distinct
+			expect(statuses.size).toBe(3);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -426,6 +485,37 @@ describe("registerAsset + resolveAssetForServing", () => {
 		}
 	});
 
+	it("admits an envelope at the full base64-expanded ceiling — a legitimate max-size asset is encrypted from its base64 text, not its raw bytes", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const { paths, store, registry, session, root } = await setup(dgHome);
+			store.insertAsset({
+				sessionId: session.sessionId,
+				id: "asset-ceiling",
+				filename: "ceiling.png",
+				contentType: "image/png",
+				byteLength: CHAT_MAX_ASSET_BYTES,
+			});
+			mkdirSync(join(root, session.sessionId), { recursive: true });
+			const fd = openSync(join(root, session.sessionId, "asset-ceiling"), "w");
+			ftruncateSync(fd, 12 + 16 + 4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3));
+			closeSync(fd);
+
+			const result = await resolveAssetForServing(
+				{ paths, store, registry },
+				{
+					sessionId: session.sessionId,
+					token: session.token,
+					id: "asset-ceiling",
+				},
+			);
+			expect(result.status).toBe("corrupt");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("reports a row whose staged bytes are gone as missing, not as a containment refusal", async () => {
 		const dgHome = freshDgHome();
 		try {
@@ -505,8 +595,6 @@ describe("registerAsset + resolveAssetForServing", () => {
 				),
 			).rejects.toThrow();
 
-			// The outside file must be untouched — a no-follow write refuses
-			// before ever writing bytes through the symlink.
 			expect(readFileSync(outsideTarget, "utf8")).toBe("must not be touched");
 			store.close();
 		} finally {
@@ -530,8 +618,6 @@ describe("registerAsset + resolveAssetForServing", () => {
 				},
 			);
 
-			// Simulate TOCTOU tampering: swap the legitimately-registered file for
-			// a symlink pointing outside the session directory.
 			const outsideTarget = join(scratch, "swapped-target");
 			writeFileSync(outsideTarget, "someone else's bytes");
 			rmSync(join(root, session.sessionId, "asset-1"));

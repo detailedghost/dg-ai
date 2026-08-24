@@ -33,21 +33,13 @@ export type CreateSessionInput = {
 
 export type CloseReason = "cli" | "canvas" | "daemon-shutdown";
 
-/**
- * In-memory registry for this daemon's lifetime (slice 3 will back it with
- * SQLite for a persisted transcript; the capability model and state machine
- * live here regardless of where rows end up stored).
- */
 export class SessionRegistry extends EventEmitter {
 	private readonly sessions = new Map<string, SessionRecord>();
-	private readonly paths: DgPaths;
 
-	constructor(paths: DgPaths) {
+	constructor(private readonly paths: DgPaths) {
 		super();
-		this.paths = paths;
 	}
 
-	/** Throws (ENOENT/ENOTDIR etc.) if input.cwd does not resolve — callers must catch. */
 	create(input: CreateSessionInput): SessionRecord {
 		const record: SessionRecord = {
 			sessionId: randomUUID(),
@@ -74,7 +66,6 @@ export class SessionRegistry extends EventEmitter {
 		return this.sessions.get(sessionId);
 	}
 
-	/** True only for an ACTIVE session whose token matches — closed and unknown both fail alike here. */
 	validate(sessionId: string, token: string): boolean {
 		const record = this.sessions.get(sessionId);
 		return (
@@ -84,11 +75,6 @@ export class SessionRegistry extends EventEmitter {
 		);
 	}
 
-	/**
-	 * Mark closed, invalidate the token file, and emit "closed" so connection
-	 * broadcast and any parked blocking recv (slice 7) can react. Returns false
-	 * for an unknown or already-closed session.
-	 */
 	close(sessionId: string, reason: CloseReason): boolean {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state === "closed") return false;

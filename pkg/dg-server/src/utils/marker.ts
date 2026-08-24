@@ -1,9 +1,5 @@
 import type { SessionBootstrap } from "@dg/common";
 
-/**
- * base64url(JSON) in the URL fragment, no compression, mirroring demo-marker.ts.
- * SessionBootstrap's four short fields don't need proto-marker.ts's gzip.
- */
 export const CHAT_MARKER_KEY = "_chat";
 
 export function encodeChatMarker(bootstrap: SessionBootstrap): string {

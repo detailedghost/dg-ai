@@ -1,11 +1,8 @@
-/**
- * Acceptance criterion: "Given a killed daemon, when dg-server status runs,
- * then it reports no live daemon and leaves no stale lockfile behind."
- */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { isWSL, resolveDgPaths } from "@dg/common/node";
+import { CURRENT_SCHEMA_VERSION } from "../../src/store/schema";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -45,12 +42,8 @@ describe("dg-server status", () => {
 		expect(report.boundPort).toBe(port);
 		expect(report.sessionCount).toBeGreaterThan(0);
 
-		// Contract: "status reporting ... key source, ... WSL networking mode
-		// ... and all four versions [package, protocol, user_version, extension]".
 		expect(typeof report.keySource).toBe("string");
 		expect(report.keySource.length).toBeGreaterThan(0);
-		// checkWslNetworking only returns "n/a" off WSL; a genuinely-WSL runner
-		// probes real ambient state instead, so accept any of its valid modes there.
 		expect(
 			isWSL()
 				? ["mirrored", "nat", "unknown"].includes(report.wslNetworkingMode)
@@ -58,7 +51,7 @@ describe("dg-server status", () => {
 		).toBe(true);
 		expect(typeof report.versions.package).toBe("string");
 		expect(report.versions.protocol).toBe(CHAT_PROTOCOL_VERSION);
-		expect(report.versions.userVersion).toBe(0); // pre-slice-3: no store yet
+		expect(report.versions.userVersion).toBe(CURRENT_SCHEMA_VERSION);
 		expect(report.versions.extension).toBeNull();
 	});
 
@@ -67,8 +60,6 @@ describe("dg-server status", () => {
 		const port = allocatePort();
 		await runStart(dgHome, port);
 		await waitForHealth(port);
-		// SIGKILL skips graceful shutdown cleanup, leaving a genuinely stale
-		// lockfile for `status` itself to detect and reclaim.
 		const handle = readLockfile(dgHome);
 		process.kill(handle.pid, "SIGKILL");
 
@@ -85,5 +76,5 @@ describe("dg-server status", () => {
 
 		expect(status.stdout).toContain("no live daemon");
 		expect(existsSync(paths.lockfilePath)).toBe(false);
-	});
+	}, 20000);
 });

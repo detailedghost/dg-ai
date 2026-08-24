@@ -1,17 +1,16 @@
-/** Stale-claim recovery as a named daemon-boot step, never an open-time side effect. */
 import { describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
 import {
 	allocatePort,
 	cleanupDgHome,
+	FILE_ONLY_SEAMS,
 	freshDgHome,
 	killDaemonByLockfile,
 	runStart,
 	waitForHealth,
 } from "../utils/daemon-harness";
 
-const FILE_ONLY_SEAMS = { env: { DG_KEY_SOURCE: "file" } };
 const SESSION = "session-second-opener";
 
 async function withClaimedMessage(

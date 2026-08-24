@@ -1,6 +1,6 @@
-/** The read half: bounds the read by the open fd's size, then decrypts and verifies in memory. */
 import { CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
+import { AES_GCM_IV_BYTES, AES_GCM_TAG_BYTES } from "../crypto/constants";
 import type { SessionRegistry } from "../session/registry";
 import { tokensEqual } from "../session/tokens";
 import type { ChatStore } from "../store";
@@ -25,7 +25,6 @@ export type ResolveAssetInput = {
 	id: string;
 };
 
-/** Every refusal carries its own reason: collapsing them hid a containment refusal behind a plain not-found. */
 export type AssetServeResult =
 	| {
 			status: "ok";
@@ -43,11 +42,10 @@ export type AssetServeResult =
 	| { status: "too-large" }
 	| { status: "corrupt" };
 
-const IV_LENGTH = 12;
-const TAG_LENGTH = 16;
-
 const MAX_ENVELOPE_BYTES =
-	IV_LENGTH + TAG_LENGTH + 4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3);
+	AES_GCM_IV_BYTES +
+	AES_GCM_TAG_BYTES +
+	4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3);
 
 export async function resolveAssetForServing(
 	deps: ResolveAssetDeps,
@@ -75,16 +73,18 @@ export async function resolveAssetForServing(
 			const stats = await handle.stat();
 			if (!stats.isFile()) return { status: "unsafe-path" };
 			if (stats.size > MAX_ENVELOPE_BYTES) return { status: "too-large" };
-			if (stats.size < IV_LENGTH + TAG_LENGTH) return { status: "corrupt" };
+			if (stats.size < AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES) {
+				return { status: "corrupt" };
+			}
 			raw = await handle.readFile();
 		} finally {
 			await handle.close();
 		}
 
 		const bytes = deps.store.decryptAssetBytes(input.sessionId, row.id, {
-			iv: raw.subarray(0, IV_LENGTH),
-			tag: raw.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH),
-			ciphertext: raw.subarray(IV_LENGTH + TAG_LENGTH),
+			iv: raw.subarray(0, AES_GCM_IV_BYTES),
+			tag: raw.subarray(AES_GCM_IV_BYTES, AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES),
+			ciphertext: raw.subarray(AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES),
 		});
 		if (bytes.byteLength > CHAT_MAX_ASSET_BYTES) {
 			return { status: "too-large" };

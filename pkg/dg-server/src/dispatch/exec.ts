@@ -1,4 +1,5 @@
 import type { Subprocess } from "bun";
+import { describeError } from "../utils/errors";
 import { buildAllowedEnv } from "./env-allowlist";
 import { DISPATCH_KILL_GRACE_MS } from "./limits";
 
@@ -15,31 +16,22 @@ export type ExecLimits = { timeoutMs: number; maxOutputBytes: number };
 function describeSpawnFailure(executable: string, error: unknown): string {
 	const code = (error as NodeJS.ErrnoException | undefined)?.code;
 	if (code === "ENOENT") return `executable not found (ENOENT): ${executable}`;
-	return `failed to start "${executable}": ${error instanceof Error ? error.message : String(error)}`;
+	return `failed to start "${executable}": ${describeError(error)}`;
 }
 
-/**
- * detached:true put the child in its OWN process group (pgid === its own
- * pid), so -pid targets only it — without that, -pid would signal the
- * daemon's own group. TERM first, KILL after a grace period: a KILL cannot
- * be trapped, which is what defeats a SIGTERM-trapping child.
- */
 function killProcessGroup(pid: number): void {
 	try {
 		process.kill(-pid, "SIGTERM");
 	} catch {
-		return; // already gone — nothing to escalate
+		return;
 	}
 	setTimeout(() => {
 		try {
 			process.kill(-pid, "SIGKILL");
-		} catch {
-			// died to the TERM already
-		}
+		} catch {}
 	}, DISPATCH_KILL_GRACE_MS);
 }
 
-/** Reads until the stream ends; once `capped` flips true it stops accumulating (but keeps draining so the kill's EOF is observed). */
 async function drainCapped(
 	stream: ReadableStream<Uint8Array> | null,
 	sink: Buffer[],
@@ -55,13 +47,6 @@ async function drainCapped(
 	}
 }
 
-/**
- * Spawns the already-resolved argv directly — no interpreter, no host flag —
- * and enforces the daemon's own timeout and combined-output cap by draining
- * the streams itself rather than trusting Bun's built-in `timeout`/`maxBuffer`
- * (the former signals only the direct child, which a trap ignores; the
- * latter overshoots its cap by up to 500x — both verified empirically).
- */
 export async function executeCommand(
 	argv: string[],
 	cwd: string,
