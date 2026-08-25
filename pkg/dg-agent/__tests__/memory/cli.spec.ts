@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
+import { CHAT_MAX_MESSAGE_BODY_BYTES } from "@dg/common";
 import {
 	type DgPaths,
 	resolveDgPaths,
@@ -79,7 +80,48 @@ describe("memory write", () => {
 		});
 
 		expect(written.exitCode).toBe(1);
-		expect(written.stderr).toContain("the piped body was empty");
+		expect(written.stderr).toContain("the body cannot be blank");
+	});
+
+	it("refuses a blank body argument, which is what a failed command prints", async () => {
+		const written = await memory(["write", "idle window", "   "]);
+
+		expect(written.exitCode).toBe(1);
+		expect(written.stderr).toContain("the body cannot be blank");
+	});
+
+	it("refuses a blank title", async () => {
+		const written = await memory(["write", "   ", "a real body"]);
+
+		expect(written.exitCode).toBe(1);
+		expect(written.stderr).toContain("the title cannot be blank");
+	});
+
+	it("refuses a piped body at the read, before the whole of it is buffered", async () => {
+		const written = await memory(["write", "huge"], {
+			stdin: new TextEncoder().encode(
+				"x".repeat(CHAT_MAX_MESSAGE_BODY_BYTES + 1),
+			),
+		});
+
+		expect(written.exitCode).toBe(1);
+		expect(written.stderr).toContain(
+			`the piped body exceeds CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
+		);
+	});
+
+	it("keeps a kind an earlier write set when only the body changes", async () => {
+		const id = await writeMemory([
+			"deploy steps",
+			"old steps",
+			"--kind",
+			"decision",
+		]);
+		await writeMemory(["deploy steps", "new steps"]);
+		const full = await memory(["read", id, "--full"]);
+
+		expect(JSON.parse(full.stdout).kind).toBe("decision");
+		expect(JSON.parse(full.stdout).body).toBe("new steps");
 	});
 
 	it("replaces what the agent knew under that title", async () => {

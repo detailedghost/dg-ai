@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { CHAT_MAX_MESSAGE_BODY_BYTES, DgCliError } from "@dg/common";
 import {
 	applyConnectionPragmas,
 	type DgPaths,
@@ -48,6 +49,8 @@ export type MemorySeams = { now?: () => Date };
 
 type MemoryBindings = Record<string, string | number>;
 
+type WriteBindings = Record<string, string | null>;
+
 type MemoryRow = {
 	id: string;
 	agent_identity: string;
@@ -67,9 +70,9 @@ const JOINED_RECORD_COLUMNS = RECORD_COLUMNS.split(", ")
 	.join(", ");
 
 const UPSERT_SQL = `INSERT INTO memories (${RECORD_COLUMNS})
-VALUES ($id, $identity, $workset, $kind, $title, $body, $now, $now)
+VALUES ($id, $identity, $workset, COALESCE($kind, '${MEMORY_DEFAULT_KIND}'), $title, $body, $now, $now)
 ON CONFLICT (agent_identity, ifnull(workset, ''), title) DO UPDATE SET
-	kind = excluded.kind,
+	kind = COALESCE($kind, kind),
 	body = excluded.body,
 	updated_at = excluded.updated_at
 RETURNING ${RECORD_COLUMNS}`;
@@ -95,7 +98,7 @@ function toRecord(row: MemoryRow): MemoryRecord {
 
 function boundedLimit(limit: number | undefined): number {
 	if (limit === undefined) return MEMORY_PAGE_SIZE;
-	return Math.max(1, Math.min(MEMORY_MAX_PAGE_SIZE, Math.trunc(limit)));
+	return Math.max(0, Math.min(MEMORY_MAX_PAGE_SIZE, Math.trunc(limit)));
 }
 
 export function scopeClauses(input: SearchMemoryInput, table: string): string {
@@ -165,16 +168,22 @@ export class MemoryStore {
 	}
 
 	write(input: WriteMemoryInput): MemoryRecord {
-		const row = this.db.query(UPSERT_SQL).get({
+		const bodyBytes = Buffer.byteLength(input.body, "utf8");
+		if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
+			throw new DgCliError(
+				`memory body of ${bodyBytes} bytes exceeds CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
+			);
+		}
+		const bindings: WriteBindings = {
 			id: randomUUID(),
 			identity: input.agentIdentity,
-			workset: input.workset ?? null,
-			kind: input.kind ?? MEMORY_DEFAULT_KIND,
+			workset: input.workset?.trim() || null,
+			kind: input.kind?.trim() || null,
 			title: input.title,
 			body: input.body,
 			now: this.now().toISOString(),
-		}) as MemoryRow;
-		return toRecord(row);
+		};
+		return toRecord(this.db.query(UPSERT_SQL).get(bindings) as MemoryRow);
 	}
 
 	search(input: SearchMemoryInput = {}): MemoryRecord[] {

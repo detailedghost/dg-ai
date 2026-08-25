@@ -108,3 +108,17 @@ export function writeStdout(value: string): Promise<void> {
 		});
 	});
 }
+
+/** Reads stdin, abandoning it the moment it passes the cap; undefined means it did. */
+export async function readCappedStdin(
+	capBytes: number,
+): Promise<string | undefined> {
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for await (const chunk of Bun.stdin.stream()) {
+		total += chunk.byteLength;
+		if (total > capBytes) return undefined;
+		chunks.push(chunk);
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
