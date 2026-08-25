@@ -10,6 +10,7 @@ import {
 import {
 	readPidFile,
 	readSessionToken,
+	requireMatchingProtocol,
 	resolveDgPaths,
 	soleSessionForCwd,
 } from "@dg/common/node";
@@ -32,6 +33,11 @@ export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	const paths = resolveDgPaths();
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
+	requireMatchingProtocol(
+		handle,
+		'Run "dg-skills install" so both binaries come from the same release, ' +
+			`then stop the daemon (pid ${handle.pid}) once nothing depends on it.`,
+	);
 
 	const sessionId =
 		explicitSessionId ?? soleSessionForCwd(paths.sessionsDir).sessionId;
