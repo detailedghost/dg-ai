@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import {
+	CHAT_CLI_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
@@ -80,12 +81,15 @@ export class CliClient {
 		return new Promise((resolve, reject) => {
 			let socket: WebSocket;
 			try {
-				socket = new BunWebSocket(`ws://127.0.0.1:${session.port}/cli`, {
-					headers: {
-						[CLI_SESSION_ID_HEADER]: session.sessionId,
-						[CLI_SESSION_TOKEN_HEADER]: session.token,
+				socket = new BunWebSocket(
+					`ws://127.0.0.1:${session.port}${CHAT_CLI_PATH}`,
+					{
+						headers: {
+							[CLI_SESSION_ID_HEADER]: session.sessionId,
+							[CLI_SESSION_TOKEN_HEADER]: session.token,
+						},
 					},
-				});
+				);
 			} catch (error) {
 				reject(
 					new DgCliError(

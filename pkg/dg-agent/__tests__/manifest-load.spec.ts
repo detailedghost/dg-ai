@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	loadManifestFile,
@@ -21,6 +21,37 @@ function writeManifestFile(contents: unknown): string {
 afterEach(() => {
 	if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
 });
+
+function checkExecutableOnFreshPath(
+	executable: string,
+	extraPathDir: string,
+): string | undefined {
+	const result = Bun.spawnSync({
+		cmd: [
+			process.execPath,
+			"-e",
+			`import { checkExecutable } from "@dg/common/node"; console.log(JSON.stringify(checkExecutable(${JSON.stringify(executable)}) ?? null));`,
+		],
+		cwd: import.meta.dir,
+		env: { ...process.env, PATH: `${extraPathDir}:${process.env.PATH ?? ""}` },
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	if (result.exitCode !== 0) {
+		throw new Error(
+			`checkExecutable subprocess failed: ${result.stderr.toString("utf8")}`,
+		);
+	}
+	return JSON.parse(result.stdout.toString("utf8").trim()) ?? undefined;
+}
+
+function withExecutableOnPath<T>(basename: string, run: (dir: string) => T): T {
+	scratchDir = makeScratchDir("dg-exec");
+	writeFileSync(join(scratchDir, basename), "#!/bin/sh\nexit 0\n", {
+		mode: 0o755,
+	});
+	return run(scratchDir);
+}
 
 const SAFE_ENTRY = {
 	label: "List files",
@@ -106,6 +137,26 @@ describe("resolveManifestForPublish", () => {
 			{ label: "shell", argv: ["bash"], params: [] },
 		];
 		expect(() => resolveManifestForPublish(entries)).toThrow();
+	});
+});
+
+describe("checkExecutable normalizes a version-suffixed basename before matching the denylist", () => {
+	it.each([
+		["python3.11.2", /forbidden shell or script host/],
+		["python3", /forbidden shell or script host/],
+		["bash", /forbidden shell or script host/],
+	])("refuses %s", (basename, expected) => {
+		withExecutableOnPath(basename, (dir) => {
+			expect(checkExecutableOnFreshPath(basename, dir)).toMatch(expected);
+		});
+	});
+
+	it("still admits a non-interpreter executable with no forbidden basename", () => {
+		withExecutableOnPath("dg-not-an-interpreter", (dir) => {
+			expect(
+				checkExecutableOnFreshPath("dg-not-an-interpreter", dir),
+			).toBeUndefined();
+		});
 	});
 });
 

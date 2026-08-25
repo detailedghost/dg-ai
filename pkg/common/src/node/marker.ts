@@ -1,6 +1,6 @@
 import { CHAT_MARKER_KEY, type SessionBootstrap } from "../index";
 
-export function encodeChatMarker(bootstrap: SessionBootstrap): string {
+function encodeChatMarker(bootstrap: SessionBootstrap): string {
 	return Buffer.from(JSON.stringify(bootstrap), "utf8").toString("base64url");
 }
 

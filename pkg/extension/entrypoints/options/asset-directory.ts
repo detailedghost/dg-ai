@@ -63,7 +63,7 @@ export function mountAssetDirectoryPanel(
 			input.disabled = true;
 			hint.hidden = false;
 			hint.textContent =
-				"The dg-daemon daemon is not running — start a chat session to configure this.";
+				"The dg-daemon is not running — start a chat session to configure this.";
 		}
 	}
 

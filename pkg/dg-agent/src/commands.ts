@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
 	ASSET_FILENAME_HEADER,
+	CHAT_ASSETS_PATH,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	type CliRecvResult,
@@ -13,6 +14,7 @@ import {
 import {
 	loadManifestFile,
 	loadSubagentManifestFile,
+	loopbackHostHeader,
 	readAssetSourceFile,
 	resolveManifestForPublish,
 } from "@dg/common/node";
@@ -214,20 +216,23 @@ export function registerAgentCommands(program: Command): void {
 			const filename = basename(source);
 			const bytes = readAssetSourceFile(source);
 
-			const resp = await fetch(`http://127.0.0.1:${session.port}/assets`, {
-				method: "POST",
-				headers: {
-					Host: `127.0.0.1:${session.port}`,
-					[CLI_SESSION_ID_HEADER]: session.sessionId,
-					[CLI_SESSION_TOKEN_HEADER]: session.token,
-					[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
+			const resp = await fetch(
+				`http://127.0.0.1:${session.port}${CHAT_ASSETS_PATH}`,
+				{
+					method: "POST",
+					headers: {
+						...loopbackHostHeader(session.port),
+						[CLI_SESSION_ID_HEADER]: session.sessionId,
+						[CLI_SESSION_TOKEN_HEADER]: session.token,
+						[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
+					},
+					body: new Uint8Array(
+						bytes.buffer as ArrayBuffer,
+						bytes.byteOffset,
+						bytes.byteLength,
+					),
 				},
-				body: new Uint8Array(
-					bytes.buffer as ArrayBuffer,
-					bytes.byteOffset,
-					bytes.byteLength,
-				),
-			});
+			);
 			if (!resp.ok) {
 				throw new DgCliError(await resp.text());
 			}

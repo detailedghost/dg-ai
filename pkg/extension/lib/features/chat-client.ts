@@ -4,6 +4,7 @@ import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_WS_PATH,
 	type ChatFrame,
 	createSerialQueue,
 	type SessionBootstrap,
@@ -68,7 +69,7 @@ const DEFAULT_BACKOFF_BASE_MS = 500;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
 
 function chatSocketUrl(port: number): string {
-	return `ws://127.0.0.1:${port}/ws`;
+	return `ws://127.0.0.1:${port}${CHAT_WS_PATH}`;
 }
 
 function buildConnectFrame(
