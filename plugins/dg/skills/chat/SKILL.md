@@ -60,23 +60,29 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open]` — start or reuse the
-  daemon and register a new session. `--open` opens the bootstrap URL in the
-  default browser. `-w` attaches a workset label, which is how the chat page
-  groups sessions in its rail.
-- `status` — report the live daemon's status, or that none is running.
-- `recv [--block] [--timeout <ms>]` — receive the next queued human message.
-  `--timeout` defaults to 30000 ms and applies only with `--block`.
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open]` — start or
+  reuse the daemon and register a new session. `--open` opens the bootstrap
+  URL in the default browser. `-w` attaches a workset label, which is how
+  the chat page groups sessions in its rail.
+- `dg-daemon status` — report the live daemon's status, or that none is
+  running. This runs on the daemon binary, not `dg-agent`.
+- `recv [--block] [--timeout <ms>]` — receive the next queued message
+  addressed to this session: a human reply from the chat page, or an
+  agent-to-agent message addressed to this agent's identity. The daemon
+  checks the human queue first, since a human is waiting on a browser tab
+  and another agent is not, and only checks the agent queue once the human
+  queue is empty. `--timeout` defaults to 30000 ms and applies only with
+  `--block`.
 - `send <body> [--to <identity>]` — send one complete agent message. Without
   `--to` it lands on the human's chat page, as it always has. With `--to
   <identity>` it queues for that agent identity instead and never reaches the
-  human's canvas — it waits there until a session under that identity calls
-  `recv`, for up to 7 days — the daemon prunes what nobody claimed, so a
-  mistyped identity does not leave a row behind forever. That `recv` result
-  carries `from` and `to` naming both identities, so a reply is one more
-  `send --to` back. The sending session never gets its own message back;
-  addressing your own identity still reaches your other live sessions, just not
-  the one that sent it.
+  human's canvas. It waits there until a session under that identity calls
+  `recv`, for up to 7 days. The daemon prunes whatever nobody claims by then,
+  so a mistyped identity does not leave a row behind forever. That `recv`
+  result carries `from` and `to` naming both identities, so a reply is one
+  more `send --to` back. The sending session never gets its own message
+  back; addressing your own identity still reaches your other live sessions,
+  just not the one that sent it.
 
   Delivery is at-least-once, not exactly-once. A message is acknowledged only
   after `recv` prints it, so a process that dies in between hands that message
@@ -139,13 +145,19 @@ specific one, or `--identity <name>` to override either outright.
 | 1 | general failure |
 | 2 | no port available |
 | 3 | WSL NAT networking — mirrored mode is required |
-| 4 | protocol mismatch between this binary and the running daemon |
+| 4 | protocol mismatch between this CLI and the daemon it found or started |
 | 5 | **reserved:** `recv --block` timed out with no message |
 | 6 | the session closed while `recv` was blocked |
 
 Code 5 is the one to branch on: it means "nothing arrived yet", not an error.
 Loop on it rather than treating it as a failure. Code 6 means the human ended
 the conversation and you should stop.
+
+Code 4 has three sources: `start` refusing to attach to a running daemon from
+another release, `start` finding that the sibling daemon it just launched is
+from another release, and any session command refusing at the pid file before
+it connects. All three name the two versions and the remedy, so read the
+message rather than retrying.
 
 ## Manifest JSON format
 
@@ -179,16 +191,16 @@ point of publishing it.
 
 ## Notes
 
-- Every session is **loopback-only** and capability-gated. A token authorises one
-  session; it is never written to a log or a URL query string.
+- Every session is **loopback-only** and capability-gated. A token authorises
+  one session; it is never written to a log or a URL query string.
 - Messages and staged assets are encrypted at rest. The data key comes from the
   OS keychain when one is available, and from a file-backed key otherwise.
 - `~/.dg` is two independent trees: `daemon/` holds the encrypted `daemon.db`
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
-- On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach the
-  loopback port from the Windows-side browser, and the daemon exits with code 3
-  rather than pretending to be reachable.
-- `dg-skills install` refreshes `dg-agent` and `dg-daemon` too, so re-running it keeps all
-  binaries current.
+- On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach
+  the loopback port from the Windows-side browser, and the daemon exits with
+  code 3 rather than pretending to be reachable.
+- `dg-skills install` refreshes `dg-agent` and `dg-daemon` too, alongside
+  itself, so re-running it keeps all three binaries current.

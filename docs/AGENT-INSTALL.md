@@ -145,8 +145,9 @@ grouping/tours work with the browser or demo skill. For the chat harness:
 "$HOME/.dg/bin/dg-daemon" status
 ```
 
-Should list `start`, `status`, `recv`, `send`, `progress`, `spawn`, `stage`,
-`close`, `manifest` and `memory`; `status` reports that no daemon is running
+`dg-agent --help` should list `start`, `recv`, `send`, `progress`, `spawn`,
+`stage`, `close`, `manifest` and `memory` — `status` is a `dg-daemon` command,
+not a `dg-agent` one. `dg-daemon status` reports that no daemon is running
 yet, though `memory` works regardless — it opens `~/.dg/agents/memory.db`
 directly rather than asking the daemon. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,

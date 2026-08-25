@@ -21,11 +21,39 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 			.filter((name) => !name.startsWith("__"));
 	}
 
+	function documentedAgentCommands(): string[] {
+		const section = /\n## Commands\n([\s\S]*?)\n## /.exec(skill)?.[1] ?? "";
+		return [...section.matchAll(/^- `([a-z][a-z-]*)[ `]/gm)]
+			.map((m) => m[1])
+			.filter((name) => !name.startsWith("dg-"));
+	}
+
 	test("every non-hidden command the CLI registers is documented", () => {
 		const commands = declaredCommands(agentCmds, entry);
 		expect(commands.length).toBeGreaterThan(5);
 		for (const name of commands) {
 			expect(skill).toMatch(new RegExp(`\`${name}[ \`]`));
+		}
+	});
+
+	test("nothing in the command list is a command the agent CLI does not have", () => {
+		const registered = declaredCommands(agentCmds, entry, memoryCmds);
+		const documented = documentedAgentCommands();
+
+		expect(documented.length).toBeGreaterThan(5);
+		for (const name of documented) {
+			expect(registered).toContain(name);
+		}
+	});
+
+	test("a command belonging to another binary names that binary", () => {
+		const daemonEntry = readRepoFile("pkg", "dg-daemon", "src", "index.ts");
+
+		for (const name of declaredCommands(daemonEntry)) {
+			if (declaredCommands(agentCmds, entry, memoryCmds).includes(name)) {
+				continue;
+			}
+			expect(skill).not.toMatch(new RegExp(`^- \`${name}[ \`]`, "m"));
 		}
 	});
 
