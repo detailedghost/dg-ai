@@ -42,9 +42,7 @@ export type AssetServeResult =
 	| { status: "corrupt" };
 
 const MAX_ENVELOPE_BYTES =
-	AES_GCM_IV_BYTES +
-	AES_GCM_TAG_BYTES +
-	4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3);
+	AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES + CHAT_MAX_ASSET_BYTES;
 
 export async function resolveAssetForServing(
 	deps: ResolveAssetDeps,

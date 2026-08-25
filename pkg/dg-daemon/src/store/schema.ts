@@ -129,11 +129,18 @@ function createV4Indexes(db: Database): void {
 	);
 }
 
+function createV5AckIndex(db: Database): void {
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_messages_claim_id ON messages(claim_id) WHERE claim_id IS NOT NULL",
+	);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
 	{ version: 3, run: createV3AssetStateCheck },
 	{ version: 4, run: createV4Indexes },
+	{ version: 5, run: createV5AckIndex },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

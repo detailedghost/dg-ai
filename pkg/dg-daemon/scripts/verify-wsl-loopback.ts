@@ -12,7 +12,7 @@ async function main(): Promise<void> {
 	if (!isWSL()) {
 		console.error(
 			"This process is not running under WSL — run it from a WSL shell " +
-				"against a WSL-side dg-daemon daemon. Nothing else to verify here.",
+				"against a WSL-side dg-daemon. Nothing else to verify here.",
 		);
 		process.exit(1);
 	}

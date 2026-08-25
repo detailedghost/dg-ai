@@ -199,8 +199,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 			);
 
 			const raw = readFileSync(join(root, session.sessionId, "asset-1"));
-			const base64Length = 4 * Math.ceil(bytes.byteLength / 3);
-			expect(raw.byteLength).toBe(IV_LENGTH + TAG_LENGTH + base64Length);
+			expect(raw.byteLength).toBe(IV_LENGTH + TAG_LENGTH + bytes.byteLength);
 
 			const iv = raw.subarray(0, IV_LENGTH);
 			const tag = raw.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
@@ -485,7 +484,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 		}
 	});
 
-	it("admits an envelope at the full base64-expanded ceiling — a legitimate max-size asset is encrypted from its base64 text, not its raw bytes", async () => {
+	it("admits an envelope at the full ceiling — a legitimate max-size asset is encrypted from its raw bytes, with no base64 inflation", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const { paths, store, registry, session, root } = await setup(dgHome);
@@ -498,7 +497,7 @@ describe("registerAsset + resolveAssetForServing", () => {
 			});
 			mkdirSync(join(root, session.sessionId), { recursive: true });
 			const fd = openSync(join(root, session.sessionId, "asset-ceiling"), "w");
-			ftruncateSync(fd, 12 + 16 + 4 * Math.ceil(CHAT_MAX_ASSET_BYTES / 3));
+			ftruncateSync(fd, 12 + 16 + CHAT_MAX_ASSET_BYTES);
 			closeSync(fd);
 
 			const result = await resolveAssetForServing(

@@ -2,11 +2,16 @@ import { randomUUID } from "node:crypto";
 import {
 	ASSET_FILENAME_HEADER,
 	AssetTooLargeError,
+	CHAT_ASSETS_PATH,
+	CHAT_CLI_PATH,
 	CHAT_HEALTH_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_START_PATH,
+	CHAT_STATUS_PATH,
+	CHAT_WS_PATH,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
@@ -21,11 +26,12 @@ import {
 } from "../assets/content-type";
 import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
-import { resolveAssetForServing } from "../assets/serve";
+import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
 import type { ChatStore } from "../store";
 import {
+	abortPendingWork,
 	type ConnectionManager,
 	createSocketState,
 	resolveDrainWaiters,
@@ -142,6 +148,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			},
 			close(ws) {
 				resolveDrainWaiters(ws);
+				abortPendingWork(ws);
 				connections.remove(ws);
 				noteActivity();
 			},
@@ -162,7 +169,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			const hostError = requireLoopbackHost(req, port);
 			if (hostError) return hostError;
 
-			if (url.pathname === "/status" && req.method === "GET") {
+			if (url.pathname === CHAT_STATUS_PATH && req.method === "GET") {
 				return json(
 					renderStatus({
 						...deps.statusDeps,
@@ -173,7 +180,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				);
 			}
 
-			if (url.pathname === "/start" && req.method === "GET") {
+			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
 				return new Response(bootstrapPageHtml(), {
 					headers: {
 						"Content-Type": "text/html; charset=utf-8",
@@ -182,23 +189,26 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				});
 			}
 
-			if (url.pathname === "/start" && req.method === "POST") {
+			if (url.pathname === CHAT_START_PATH && req.method === "POST") {
 				return handleRegisterSession(req, deps);
 			}
 
-			if (url.pathname === "/ws") {
+			if (url.pathname === CHAT_WS_PATH) {
 				return handleWsUpgrade(req, server, deps);
 			}
 
-			if (url.pathname === "/cli") {
+			if (url.pathname === CHAT_CLI_PATH) {
 				return handleCliUpgrade(req, server, deps);
 			}
 
-			if (url.pathname === "/assets" && req.method === "POST") {
+			if (url.pathname === CHAT_ASSETS_PATH && req.method === "POST") {
 				return handleAssetPost(req, deps);
 			}
 
-			if (url.pathname.startsWith("/assets/") && req.method === "GET") {
+			if (
+				url.pathname.startsWith(`${CHAT_ASSETS_PATH}/`) &&
+				req.method === "GET"
+			) {
 				return handleAssetGet(req, url, deps);
 			}
 
@@ -299,6 +309,21 @@ function handleWsUpgrade(
 	return new Response(null, { status: 101 });
 }
 
+function requireSessionCredentials(
+	req: Request,
+	registry: SessionRegistry,
+): { sessionId: string; token: string } | Response {
+	const sessionId = req.headers.get(CLI_SESSION_ID_HEADER);
+	const token = req.headers.get(CLI_SESSION_TOKEN_HEADER);
+	if (!sessionId || !token || !registry.validate(sessionId, token)) {
+		return new Response("refused: invalid or unknown session capability", {
+			status: 401,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	return { sessionId, token };
+}
+
 function handleCliUpgrade(
 	req: Request,
 	server: Server<SocketState>,
@@ -310,15 +335,10 @@ function handleCliUpgrade(
 			status: 400,
 		});
 	}
-	const sessionId = req.headers.get(CLI_SESSION_ID_HEADER);
-	const token = req.headers.get(CLI_SESSION_TOKEN_HEADER);
-	if (!sessionId || !token || !deps.registry.validate(sessionId, token)) {
-		return new Response("refused: invalid or unknown session capability", {
-			status: 401,
-		});
-	}
+	const credentials = requireSessionCredentials(req, deps.registry);
+	if (credentials instanceof Response) return credentials;
 	const data = createSocketState("cli", deps.logger);
-	data.capabilities.set(sessionId, token);
+	data.capabilities.set(credentials.sessionId, credentials.token);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });
@@ -366,14 +386,9 @@ async function handleAssetPost(
 		});
 	}
 
-	const sessionId = req.headers.get(CLI_SESSION_ID_HEADER);
-	const token = req.headers.get(CLI_SESSION_TOKEN_HEADER);
-	if (!sessionId || !token || !deps.registry.validate(sessionId, token)) {
-		return new Response("refused: invalid or unknown session capability", {
-			status: 401,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
+	const credentials = requireSessionCredentials(req, deps.registry);
+	if (credentials instanceof Response) return credentials;
+	const { sessionId } = credentials;
 
 	const rawFilename = req.headers.get(ASSET_FILENAME_HEADER);
 	if (!rawFilename) {
@@ -438,6 +453,34 @@ async function handleAssetPost(
 	return json({ assetId: id });
 }
 
+type AssetErrorStatus = Exclude<AssetServeResult["status"], "ok">;
+
+const ASSET_ERROR_RESPONSES: Record<
+	AssetErrorStatus,
+	{ status: number; message: string }
+> = {
+	unauthorized: { status: 401, message: "refused: invalid session capability" },
+	"session-closed": {
+		status: 404,
+		message: "asset not found: session closed",
+	},
+	unknown: { status: 404, message: "asset not found: unknown" },
+	pruned: { status: 404, message: "asset not found: pruned" },
+	"missing-file": {
+		status: 404,
+		message: "asset not found: staged bytes are gone",
+	},
+	"unsafe-path": { status: 500, message: "refused: asset path is unsafe" },
+	"too-large": {
+		status: 500,
+		message: "refused: staged asset exceeds the maximum size",
+	},
+	corrupt: {
+		status: 500,
+		message: "refused: staged asset failed integrity checks",
+	},
+};
+
 async function handleAssetGet(
 	req: Request,
 	url: URL,
@@ -453,7 +496,7 @@ async function handleAssetGet(
 	}
 	let id: string;
 	try {
-		id = decodeURIComponent(url.pathname.slice("/assets/".length));
+		id = decodeURIComponent(url.pathname.slice(`${CHAT_ASSETS_PATH}/`.length));
 	} catch {
 		return new Response("refused: asset id is not valid percent-encoding", {
 			status: 400,
@@ -466,67 +509,28 @@ async function handleAssetGet(
 		{ sessionId, token, id },
 	);
 
-	switch (result.status) {
-		case "ok": {
-			const disposition = assetContentDisposition(
-				{ contentType: result.contentType, inline: result.inline },
-				result.filename,
-			);
-			const body = new Uint8Array(
-				result.bytes.buffer as ArrayBuffer,
-				result.bytes.byteOffset,
-				result.bytes.byteLength,
-			);
-			return new Response(body, {
-				status: 200,
-				headers: {
-					"Content-Type": result.contentType,
-					"Content-Disposition": disposition,
-					...NOSNIFF_HEADERS,
-				},
-			});
-		}
-		case "unauthorized":
-			return new Response("refused: invalid session capability", {
-				status: 401,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "session-closed":
-			return new Response("asset not found: session closed", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "unknown":
-			return new Response("asset not found: unknown", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "pruned":
-			return new Response("asset not found: pruned", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "missing-file":
-			return new Response("asset not found: staged bytes are gone", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "unsafe-path":
-			return new Response("refused: asset path is unsafe", {
-				status: 500,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "too-large":
-			return new Response("refused: staged asset exceeds the maximum size", {
-				status: 500,
-				headers: NOSNIFF_HEADERS,
-			});
-		case "corrupt":
-			return new Response("refused: staged asset failed integrity checks", {
-				status: 500,
-				headers: NOSNIFF_HEADERS,
-			});
+	if (result.status === "ok") {
+		const disposition = assetContentDisposition(
+			{ contentType: result.contentType, inline: result.inline },
+			result.filename,
+		);
+		const body = new Uint8Array(
+			result.bytes.buffer as ArrayBuffer,
+			result.bytes.byteOffset,
+			result.bytes.byteLength,
+		);
+		return new Response(body, {
+			status: 200,
+			headers: {
+				"Content-Type": result.contentType,
+				"Content-Disposition": disposition,
+				...NOSNIFF_HEADERS,
+			},
+		});
 	}
+
+	const { status, message } = ASSET_ERROR_RESPONSES[result.status];
+	return new Response(message, { status, headers: NOSNIFF_HEADERS });
 }
 
 export function newInstanceId(): string {

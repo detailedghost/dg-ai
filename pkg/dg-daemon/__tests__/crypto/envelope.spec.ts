@@ -95,6 +95,35 @@ describe("createCipherBox(dataKey).encryptRecord/decryptRecord", () => {
 	});
 });
 
+describe("createCipherBox(dataKey).encryptBytes", () => {
+	it("round-trips arbitrary binary bytes exactly, including sequences that are not valid UTF-8", () => {
+		const box = createCipherBox(DATA_KEY);
+		const plaintext = Buffer.from([
+			0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x00, 0xc0, 0xaf, 1, 2, 3,
+		]);
+		const aad = aadFor("row-bytes-1");
+
+		const envelope = box.encryptBytes(plaintext, aad);
+		const decrypted = box.decryptRecord(
+			envelope.ciphertext,
+			envelope.iv,
+			envelope.tag,
+			aad,
+		);
+
+		expect(decrypted.equals(plaintext)).toBe(true);
+	});
+
+	it("produces ciphertext exactly as long as the plaintext — no base64 or other inflation", () => {
+		const box = createCipherBox(DATA_KEY);
+		const plaintext = randomBytes(4096);
+
+		const envelope = box.encryptBytes(plaintext, aadFor("row-bytes-2"));
+
+		expect(envelope.ciphertext.byteLength).toBe(plaintext.byteLength);
+	});
+});
+
 describe("buildAad", () => {
 	it("binds domain, format version, sessionId and rowId — changing any one changes the AAD", () => {
 		const base = buildAad({

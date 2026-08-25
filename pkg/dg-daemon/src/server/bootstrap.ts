@@ -7,6 +7,7 @@ import {
 	checkWslNetworking,
 	type DgPaths,
 	isDaemonLive,
+	loopbackHostHeader,
 	readPidFile,
 	removePidFile,
 	resolveDgPaths,
@@ -25,8 +26,6 @@ import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_SERVER_PACKAGE_VERSION } from "./status";
-
-const HOST_HEADER = (port: number) => ({ Host: `127.0.0.1:${port}` });
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -59,7 +58,7 @@ export async function cmdStatus(): Promise<void> {
 		return;
 	}
 	const resp = await fetch(`http://127.0.0.1:${handle.port}/status`, {
-		headers: HOST_HEADER(handle.port),
+		headers: loopbackHostHeader(handle.port),
 	});
 	console.log(JSON.stringify(await resp.json(), null, 2));
 }
@@ -135,6 +134,26 @@ export async function cmdServe(): Promise<void> {
 		},
 	});
 
+	const sessionTtlMs = readEnvNumber(
+		process.env,
+		"DG_SESSION_TTL_MS",
+		DEFAULT_IDLE_TTL_MS,
+	);
+	const hasLivePageSocket = (sessionId: string): boolean => {
+		let live = false;
+		connections.forEachCapableOf(sessionId, (ws) => {
+			if (ws.data.kind === "ws") live = true;
+		});
+		return live;
+	};
+	const reapTimer = setInterval(
+		() => {
+			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
+		},
+		Math.min(sessionTtlMs, 60_000),
+	);
+	reapTimer.unref?.();
+
 	const pendingCloseSends: Promise<void>[] = [];
 
 	registry.on(
@@ -181,6 +200,7 @@ export async function cmdServe(): Promise<void> {
 		if (shuttingDown) return;
 		shuttingDown = true;
 		idleController?.stop();
+		clearInterval(reapTimer);
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);
 		removePidFile(paths);

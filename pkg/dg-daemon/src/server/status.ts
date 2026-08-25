@@ -1,10 +1,7 @@
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
-import type { SessionRegistry } from "../session/registry";
-import {
-	describeKeySource,
-	describeUserVersion,
-} from "../utils/key-source";
 import type { WslNetworkingMode } from "@dg/common/node";
+import type { SessionRegistry } from "../session/registry";
+import { describeKeySource, describeUserVersion } from "../utils/key-source";
 
 export const DG_SERVER_PACKAGE_VERSION = "1.0.0";
 

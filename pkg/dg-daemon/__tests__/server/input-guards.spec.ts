@@ -2,10 +2,9 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_DEFAULT_PORT, CHAT_PORT_FALLBACK_COUNT } from "@dg/common";
-import { checkExecutable } from "@dg/common/node";
+import { checkExecutable, checkWslNetworking } from "@dg/common/node";
 import { isLoopbackHost } from "../../src/server/host-guard";
 import { candidatePorts } from "../../src/server/ports";
-import { checkWslNetworking } from "@dg/common/node";
 
 describe("isLoopbackHost", () => {
 	it("accepts every loopback authority form the daemon can be reached on", () => {

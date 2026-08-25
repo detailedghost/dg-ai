@@ -77,6 +77,21 @@ describe("hot-path query plans", () => {
 		db.close();
 	});
 
+	it("ack seeks the claim_id index instead of scanning the session's whole history", () => {
+		const db = migrated();
+		const detail = plan(
+			db,
+			storeSql("SET delivered_at = ?"),
+			0,
+			"session-a",
+			"claim-id",
+		);
+
+		expect(detail).toContain("USING INDEX idx_messages_claim_id");
+		expect(detail).not.toContain("USING INDEX idx_messages_session_seq");
+		db.close();
+	});
+
 	it("every index the hot paths rely on is created by a migration, not by hand", () => {
 		const db = migrated();
 		const names = (
@@ -88,6 +103,7 @@ describe("hot-path query plans", () => {
 		expect(names).toContain("idx_messages_pending");
 		expect(names).toContain("idx_messages_session_seq");
 		expect(names).toContain("idx_assets_session_state");
+		expect(names).toContain("idx_messages_claim_id");
 		db.close();
 	});
 
@@ -115,6 +131,32 @@ describe("hot-path query plans", () => {
 			0,
 		);
 		expect(after).not.toContain("SCAN messages");
+		db.close();
+	});
+
+	it("a database created before v5 resolves ack via the session index until it migrates up", () => {
+		const db = new Database(":memory:", { strict: true });
+		for (const step of SCHEMA_STEPS.filter((s) => s.version < 5)) step.run(db);
+		const before = plan(
+			db,
+			storeSql("SET delivered_at = ?"),
+			0,
+			"session-a",
+			"claim-id",
+		);
+		expect(before).toContain("USING INDEX idx_messages_session_seq");
+		expect(before).not.toContain("USING INDEX idx_messages_claim_id");
+
+		for (const step of SCHEMA_STEPS.filter((s) => s.version === 5))
+			step.run(db);
+		const after = plan(
+			db,
+			storeSql("SET delivered_at = ?"),
+			0,
+			"session-a",
+			"claim-id",
+		);
+		expect(after).toContain("USING INDEX idx_messages_claim_id");
 		db.close();
 	});
 });

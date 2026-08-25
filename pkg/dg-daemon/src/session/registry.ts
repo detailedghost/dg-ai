@@ -22,6 +22,8 @@ export type SessionRecord = {
 	role: SessionRole;
 	state: SessionState;
 	createdAt: number;
+	lastActivityAt: number;
+	closedAt?: number;
 };
 
 export type CreateSessionInput = {
@@ -31,16 +33,29 @@ export type CreateSessionInput = {
 	role: SessionRole;
 };
 
-export type CloseReason = "cli" | "canvas" | "daemon-shutdown";
+export type CloseReason = "cli" | "canvas" | "daemon-shutdown" | "expired";
+
+export type SessionRegistrySeams = {
+	now?: () => number;
+};
+
+/** Bounds how long a closed record lingers for `get()`/asset-serving distinctions before eviction. */
+const CLOSED_RECORD_RETENTION_MS = 10 * 60 * 1000;
 
 export class SessionRegistry extends EventEmitter {
 	private readonly sessions = new Map<string, SessionRecord>();
+	private readonly now: () => number;
 
-	constructor(private readonly paths: DgPaths) {
+	constructor(
+		private readonly paths: DgPaths,
+		seams: SessionRegistrySeams = {},
+	) {
 		super();
+		this.now = seams.now ?? Date.now;
 	}
 
 	create(input: CreateSessionInput): SessionRecord {
+		const createdAt = this.now();
 		const record: SessionRecord = {
 			sessionId: randomUUID(),
 			token: mintToken(),
@@ -49,7 +64,8 @@ export class SessionRegistry extends EventEmitter {
 			workset: input.workset,
 			role: input.role,
 			state: "active",
-			createdAt: Date.now(),
+			createdAt,
+			lastActivityAt: createdAt,
 		};
 		this.sessions.set(record.sessionId, record);
 		writeSessionToken(this.paths, record.sessionId, {
@@ -66,6 +82,12 @@ export class SessionRegistry extends EventEmitter {
 		return this.sessions.get(sessionId);
 	}
 
+	touch(sessionId: string): void {
+		const record = this.sessions.get(sessionId);
+		if (!record || record.state !== "active") return;
+		record.lastActivityAt = this.now();
+	}
+
 	validate(sessionId: string, token: string): boolean {
 		const record = this.sessions.get(sessionId);
 		return (
@@ -79,6 +101,7 @@ export class SessionRegistry extends EventEmitter {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state === "closed") return false;
 		record.state = "closed";
+		record.closedAt = this.now();
 		removeSessionToken(this.paths, sessionId);
 		triggerAssetCleanup(sessionId);
 		this.emit("closed", { sessionId, reason });
@@ -89,6 +112,27 @@ export class SessionRegistry extends EventEmitter {
 	closeAll(reason: CloseReason): void {
 		for (const sessionId of [...this.sessions.keys()])
 			this.close(sessionId, reason);
+	}
+
+	reapExpired(
+		ttlMs: number,
+		isExempt: (sessionId: string) => boolean,
+	): string[] {
+		const now = this.now();
+		const expired: string[] = [];
+		for (const record of [...this.sessions.values()]) {
+			if (record.state !== "active") continue;
+			if (now - record.lastActivityAt < ttlMs) continue;
+			if (isExempt(record.sessionId)) continue;
+			this.close(record.sessionId, "expired");
+			expired.push(record.sessionId);
+		}
+		for (const record of [...this.sessions.values()]) {
+			if (record.state !== "closed" || record.closedAt === undefined) continue;
+			if (now - record.closedAt < CLOSED_RECORD_RETENTION_MS) continue;
+			this.sessions.delete(record.sessionId);
+		}
+		return expired;
 	}
 
 	list(): SessionSummary[] {
