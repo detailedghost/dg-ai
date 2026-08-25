@@ -219,7 +219,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + refresh the compiled dg-skills and dg-daemon binaries",
+			"stage the dg-ai-extension for loading + refresh the compiled dg-skills, dg-daemon and dg-agent binaries",
 		)
 		.argument(
 			"[target]",
