@@ -7,7 +7,13 @@ import {
 	type CommandEntry,
 	type ProgressState,
 } from "@dg/common";
-import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
+import {
+	applyConnectionPragmas,
+	DEFAULT_BUSY_TIMEOUT_MS,
+	type DgPaths,
+	ensurePrivateDir,
+	runMigrations,
+} from "@dg/common/node";
 import {
 	buildAad,
 	type CipherBox,
@@ -22,8 +28,6 @@ import {
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
 import { readEnvNumber } from "../utils/env";
-import { applyConnectionPragmas, DEFAULT_BUSY_TIMEOUT_MS } from "./connection";
-import { runMigrations } from "./migrations";
 import { SCHEMA_STEPS } from "./schema";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;

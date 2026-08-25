@@ -1,9 +1,8 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it, spyOn } from "bun:test";
 import { statSync } from "node:fs";
-import { resolveDgPaths } from "@dg/common/node";
+import { applyConnectionPragmas, resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
-import { applyConnectionPragmas } from "../../src/store/connection";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
