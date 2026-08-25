@@ -10,6 +10,7 @@ import {
 	EXIT_RECV_SESSION_CLOSED,
 	EXIT_RECV_TIMEOUT,
 	isRecord,
+	parseNonNegativeInteger,
 } from "@dg/common";
 import {
 	loadManifestFile,
@@ -29,11 +30,7 @@ export function selectedSession(command: Command): string | undefined {
 }
 
 function parseTimeout(value: string): number {
-	const timeoutMs = Number(value);
-	if (!Number.isInteger(timeoutMs) || timeoutMs < 0) {
-		throw new DgCliError("--timeout must be a non-negative integer");
-	}
-	return timeoutMs;
+	return parseNonNegativeInteger("--timeout", value);
 }
 
 function isRecvResult(value: unknown): value is CliRecvResult {
