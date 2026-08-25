@@ -31,8 +31,9 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 
 <!-- markdownlint-enable MD013 -->
 
-Both install `~/.dg/bin/dg-skills`, then run `dg-skills install`, which also
-fetches `~/.dg/bin/dg-daemon` and `~/.dg/bin/dg-agent`, stages the extension and prints the **Load
+Both install `~/.dg/bin/dg-skills` (released as `skills-v*`), then run
+`dg-skills install`, which also fetches `~/.dg/bin/dg-daemon` (`daemon-v*`) and
+`~/.dg/bin/dg-agent` (`agent-v*`), stages the extension and prints the **Load
 unpacked** steps. Re-run `dg-skills install` anytime to update all three; each
 is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from
@@ -112,6 +113,13 @@ The `dg-daemon` daemon hosts every session on loopback only, each gated by a
 capability token, with messages and staged assets encrypted at rest. On WSL it
 needs **mirrored** networking mode, since NAT cannot reach the loopback port
 from the Windows-side browser.
+
+An agent can also address another agent directly — `dg-agent send --to <identity>`
+queues a message for that identity instead of the human, and the recipient's
+`recv` names both sides in `from` and `to`. Each agent keeps its own long-term
+memory in a separate, plain-text, full-text-searchable `~/.dg/agents/memory.db`,
+which four `dg-agent memory` verbs (`write`, `search`, `read`, `forget`) read and
+write with no daemon running at all.
 
 Play a **live guided tour** of a feature in your real browser — the extension
 spotlights each element and injects explanatory text boxes, step by step:

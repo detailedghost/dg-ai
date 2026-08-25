@@ -6,6 +6,13 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 	const errors = readRepoFile("pkg", "common", "src", "errors.ts");
 	const agentCmds = readRepoFile("pkg", "dg-agent", "src", "commands.ts");
 	const entry = readRepoFile("pkg", "dg-agent", "src", "index.ts");
+	const memoryCmds = readRepoFile(
+		"pkg",
+		"dg-agent",
+		"src",
+		"memory",
+		"commands.ts",
+	);
 
 	function declaredCommands(...sources: string[]): string[] {
 		return sources
@@ -20,6 +27,25 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 		for (const name of commands) {
 			expect(skill).toMatch(new RegExp(`\`${name}[ \`]`));
 		}
+	});
+
+	test("every memory verb the CLI registers is documented under its group", () => {
+		const verbs = declaredCommands(memoryCmds).filter(
+			(name) => name !== "memory",
+		);
+		expect(verbs).toEqual(["write", "search", "read", "forget"]);
+		for (const verb of verbs) {
+			expect(skill).toMatch(new RegExp(`\`memory ${verb}[ \`]`));
+		}
+	});
+
+	test("the memory commands are documented as needing no daemon", () => {
+		expect(skill).toMatch(/memory[\s\S]{0,400}no (live )?daemon/i);
+	});
+
+	test("addressing another agent by identity is documented", () => {
+		expect(agentCmds).toContain('"--to <identity>"');
+		expect(skill).toMatch(/`send .*--to <identity>/);
 	});
 
 	test("every exit code the daemon defines is listed with its number", () => {
@@ -52,6 +78,12 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 			"--workset",
 			"--orchestrator",
 			"--open",
+			"--to",
+			"--kind",
+			"--limit",
+			"--offset",
+			"--full",
+			"--identity",
 		]) {
 			expect(skill).toContain(flag);
 		}

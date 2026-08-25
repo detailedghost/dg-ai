@@ -68,6 +68,37 @@ needs **mirrored** networking mode — under NAT the Windows-side browser cannot
 reach the loopback port, and the daemon exits with code 3 rather than pretending
 to be reachable.
 
+`~/.dg` is two independent trees. `daemon/` holds that encrypted `daemon.db`.
+`agents/` holds session files, staged assets, and a second database,
+`memory.db`, that keeps its records in plain text **on purpose**: FTS5
+cannot index ciphertext, which is why an agent's memory lives in a separate
+database rather than another table in `daemon.db`. Nothing in it is a
+secret the daemon's key protects — it holds an agent's own notes, readable
+by whoever owns the home directory.
+
+### pkg/dg-agent (agent CLI)
+
+```bash
+cd pkg/dg-agent
+bun src/index.ts --help   # run locally
+bun run lint              # tsc --noEmit
+bun test                  # CLI, memory store and agent-to-agent tests
+bun run build             # compile binary to dist/dg-agent
+```
+
+`dg-agent` depends on `dg-daemon` only in its devDependencies. The chat
+commands (`recv`, `send`, `progress`, `spawn`, `stage`, `close`, `manifest`)
+need a live daemon on the other end of the loopback socket; `memory` does
+not — `MemoryStore` opens `agents/memory.db` directly, so every memory verb
+works with nothing else running.
+
+`send --to <identity>` queues a message for another agent identity instead of
+the human, in a second table (`agent_messages`) rather than a nullable column
+on `messages`, so `messages` keeps meaning exactly what it always meant and
+`recv` handing an agent only its own inbound rows holds without a filter to
+get wrong. `recv` checks the human queue first, then the agent queue; a
+sender's own session can never claim its own outbound message back.
+
 ### pkg/common (shared library)
 
 ```bash
@@ -128,13 +159,13 @@ browser and a real daemon at the same time. Run these by hand on WSL in
 mirrored mode, or through a browser harness:
 
 - [ ] With the daemon running and the extension loaded, a message typed in the
-      chat page reaches a blocked `recv`.
+  chat page reaches a blocked `recv`.
 - [ ] An agent reply from `send` renders in that session's node.
 - [ ] A `$` command published by `manifest` runs from the composer without
-      waking the agent.
+  waking the agent.
 - [ ] A file passed to `stage` renders in the transcript from a blob URL.
 - [ ] Killing the daemon mid-conversation leaves the page in a
-      `daemon-not-running` state, and restarting it recovers without a reload.
+  `daemon-not-running` state, and restarting it recovers without a reload.
 
 These are listed rather than faked as `depends_on` edges: an edge only sequences
 work, it does not make a criterion observable.
