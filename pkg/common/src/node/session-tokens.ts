@@ -1,5 +1,12 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { DgCliError } from "../errors";
 import { ensurePrivateDir } from "./fs";
 import type { DgPaths } from "./paths";
 
@@ -78,4 +85,30 @@ export function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {
 		}
 		return [];
 	});
+}
+
+function describeCandidates(records: SessionTokenRecord[]): string {
+	if (records.length === 0) return "  (none)";
+	return records
+		.map((record) => `  ${record.sessionId}  ${record.cwd}`)
+		.join("\n");
+}
+
+/** The one live session registered from this working directory. */
+export function soleSessionForCwd(sessionsDir: string): SessionTokenRecord {
+	const records = readSessionFiles(sessionsDir);
+	const cwd = realpathSync(process.cwd());
+	const matches = records.filter((record) => {
+		try {
+			return realpathSync(record.cwd) === cwd;
+		} catch {
+			return false;
+		}
+	});
+	if (matches.length !== 1) {
+		throw new DgCliError(
+			`cannot resolve a session for cwd ${cwd}: found ${matches.length} matches; pass --session <id>. Live sessions:\n${describeCandidates(records)}`,
+		);
+	}
+	return matches[0];
 }

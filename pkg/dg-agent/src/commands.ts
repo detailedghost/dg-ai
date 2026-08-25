@@ -17,13 +17,14 @@ import {
 	loopbackHostHeader,
 	readAssetSourceFile,
 	resolveManifestForPublish,
+	writeStdout,
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 
-function selectedSession(command: Command): string | undefined {
+export function selectedSession(command: Command): string | undefined {
 	return command.optsWithGlobals<{ session?: string }>().session;
 }
 
@@ -33,15 +34,6 @@ function parseTimeout(value: string): number {
 		throw new DgCliError("--timeout must be a non-negative integer");
 	}
 	return timeoutMs;
-}
-
-function writeStdout(value: string): Promise<void> {
-	return new Promise((resolveWrite, reject) => {
-		process.stdout.write(value, (error) => {
-			if (error) reject(error);
-			else resolveWrite();
-		});
-	});
 }
 
 function isRecvResult(value: unknown): value is CliRecvResult {

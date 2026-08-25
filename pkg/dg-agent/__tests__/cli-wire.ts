@@ -39,11 +39,12 @@ export async function runCli(
 	port: number,
 	args: string[],
 	extraEnv: Record<string, string> = {},
-	opts: { cwd?: string } = {},
+	opts: { cwd?: string; stdin?: Uint8Array } = {},
 ): Promise<CliRunResult> {
 	const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
 		env: subprocessEnv(dgHome, port, extraEnv),
 		cwd: opts.cwd,
+		...(opts.stdin === undefined ? {} : { stdin: opts.stdin }),
 		stdout: "pipe",
 		stderr: "pipe",
 	});

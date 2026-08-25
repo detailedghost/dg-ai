@@ -99,3 +99,12 @@ export function runCapture(
 		child.stdin.end();
 	});
 }
+
+export function writeStdout(value: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		process.stdout.write(value, (error) => {
+			if (error) reject(error);
+			else resolve();
+		});
+	});
+}
