@@ -1,5 +1,5 @@
-import type { MigrationStep } from "@dg/common/node";
 import type { Database } from "bun:sqlite";
+import type { MigrationStep } from "@dg/common/node";
 
 function createV1Memories(db: Database): void {
 	db.run(`CREATE TABLE memories (

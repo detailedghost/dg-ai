@@ -1,5 +1,10 @@
-import { DgCliError } from "@dg/common";
 import {
+	CHAT_MAX_MESSAGE_BODY_BYTES,
+	DgCliError,
+	parseNonNegativeInteger,
+} from "@dg/common";
+import {
+	readCappedStdin,
 	readSessionFiles,
 	resolveDgPaths,
 	soleSessionForCwd,
@@ -17,18 +22,6 @@ type SearchOptions = ScopeOptions & {
 	full?: boolean;
 };
 
-function parseCount(
-	label: string,
-	value: string | undefined,
-): number | undefined {
-	if (value === undefined) return undefined;
-	const count = Number(value);
-	if (!Number.isInteger(count) || count < 0) {
-		throw new DgCliError(`${label} must be a non-negative integer`);
-	}
-	return count;
-}
-
 function resolveIdentity(
 	sessionsDir: string,
 	options: ScopeOptions,
@@ -41,23 +34,36 @@ function resolveIdentity(
 			(candidate) => candidate.sessionId === sessionId,
 		);
 		if (!record) {
-			throw new DgCliError(`no session file for ${sessionId}`);
+			throw new DgCliError(`no usable session file for ${sessionId}`);
 		}
 		return record.agentIdentity;
 	}
 	return soleSessionForCwd(sessionsDir).agentIdentity;
 }
 
+function requireTitle(value: string): string {
+	const title = value.trim();
+	if (title === "") throw new DgCliError("the title cannot be blank");
+	return title;
+}
+
+function requireBody(value: string): string {
+	if (value.trim() === "") throw new DgCliError("the body cannot be blank");
+	return value.trimEnd();
+}
+
 async function readBody(argument: string | undefined): Promise<string> {
-	if (argument !== undefined) return argument;
+	if (argument !== undefined) return requireBody(argument);
 	if (process.stdin.isTTY) {
 		throw new DgCliError("pass a body argument or pipe one on stdin");
 	}
-	const piped = await Bun.stdin.text();
-	if (piped.trim() === "") {
-		throw new DgCliError("the piped body was empty");
+	const piped = await readCappedStdin(CHAT_MAX_MESSAGE_BODY_BYTES);
+	if (piped === undefined) {
+		throw new DgCliError(
+			`the piped body exceeds CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
+		);
 	}
-	return piped.trimEnd();
+	return requireBody(piped);
 }
 
 function summaryLine(record: MemoryRecord): string {
@@ -110,7 +116,7 @@ export function registerMemoryCommands(program: Command): void {
 				const record = await withStore((store) =>
 					store.write({
 						agentIdentity,
-						title,
+						title: requireTitle(title),
 						body: text,
 						...(options.kind ? { kind: options.kind } : {}),
 						...(options.workset ? { workset: options.workset } : {}),
@@ -147,10 +153,10 @@ export function registerMemoryCommands(program: Command): void {
 						...(query !== undefined ? { query } : {}),
 						...(options.workset ? { workset: options.workset } : {}),
 						...(options.limit !== undefined
-							? { limit: parseCount("--limit", options.limit) }
+							? { limit: parseNonNegativeInteger("--limit", options.limit) }
 							: {}),
 						...(options.offset !== undefined
-							? { offset: parseCount("--offset", options.offset) }
+							? { offset: parseNonNegativeInteger("--offset", options.offset) }
 							: {}),
 					}),
 				);

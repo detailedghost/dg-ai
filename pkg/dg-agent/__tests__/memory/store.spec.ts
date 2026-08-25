@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { statSync } from "node:fs";
+import { CHAT_MAX_MESSAGE_BODY_BYTES } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { cleanupDgHome, freshDgHome } from "@dg/dg-daemon/test-harness";
 import {
@@ -89,6 +90,53 @@ describe("write", () => {
 		expect(store.search({ agentIdentity: "alpha" })).toHaveLength(1);
 	});
 
+	it("keeps a kind the caller set when a later write only changes the body", () => {
+		store.write({
+			agentIdentity: "alpha",
+			title: "deploy steps",
+			body: "old",
+			kind: "decision",
+		});
+		const rewritten = store.write({
+			agentIdentity: "alpha",
+			title: "deploy steps",
+			body: "new",
+		});
+
+		expect(rewritten.kind).toBe("decision");
+		expect(rewritten.body).toBe("new");
+	});
+
+	it("replaces a kind the caller does set", () => {
+		store.write({
+			agentIdentity: "alpha",
+			title: "deploy steps",
+			body: "old",
+			kind: "decision",
+		});
+		const rewritten = store.write({
+			agentIdentity: "alpha",
+			title: "deploy steps",
+			body: "new",
+			kind: "note",
+		});
+
+		expect(rewritten.kind).toBe("note");
+	});
+
+	it("treats a blank workset or kind as none at all", () => {
+		const record = store.write({
+			agentIdentity: "alpha",
+			title: "one",
+			body: "body",
+			workset: "   ",
+			kind: "  ",
+		});
+
+		expect(record.workset).toBeUndefined();
+		expect(record.kind).toBe(MEMORY_DEFAULT_KIND);
+	});
+
 	it("keeps the same title in another workset apart", () => {
 		const bare = store.write({
 			agentIdentity: "alpha",
@@ -104,6 +152,16 @@ describe("write", () => {
 
 		expect(scoped.id).not.toBe(bare.id);
 		expect(store.search({ agentIdentity: "alpha" })).toHaveLength(2);
+	});
+
+	it("refuses a body past the message body cap the rest of the protocol uses", () => {
+		expect(() =>
+			store.write({
+				agentIdentity: "alpha",
+				title: "huge",
+				body: "x".repeat(CHAT_MAX_MESSAGE_BODY_BYTES + 1),
+			}),
+		).toThrow("exceeds CHAT_MAX_MESSAGE_BODY_BYTES");
 	});
 
 	it("keeps one agent's memory out of another agent's", () => {
@@ -253,7 +311,7 @@ describe("search", () => {
 				limit: MEMORY_MAX_PAGE_SIZE * 10,
 			}),
 		).toHaveLength(MEMORY_MAX_PAGE_SIZE);
-		expect(store.search({ agentIdentity: "gamma", limit: 0 })).toHaveLength(1);
+		expect(store.search({ agentIdentity: "gamma", limit: 0 })).toHaveLength(0);
 	});
 
 	it("stops matching the body an update replaced", () => {
