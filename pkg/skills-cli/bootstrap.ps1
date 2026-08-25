@@ -12,11 +12,23 @@ $binDir = Join-Path $env:USERPROFILE ".dg\bin"
 $dest = Join-Path $binDir "dg-skills.exe"
 
 $headers = @{ "User-Agent" = "dg-ai" }
-$releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=30"
-$rel = $releases | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+$perPage = 100
+$pageCap = 10
+
+$scanned = 0
+$rel = $null
+for ($page = 1; $page -le $pageCap; $page++) {
+	$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
+	$scanned += $batch.Count
+	$rel = $batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+	if ($rel -or $batch.Count -lt $perPage) { break }
+}
+
+if (-not $rel) { throw "dg-skills: no skills-v* release found in the $scanned releases scanned" }
+
 $url = $rel.assets | Where-Object { $_.name -eq $asset } | Select-Object -ExpandProperty browser_download_url -First 1
 
-if (-not $url) { throw "dg-skills: no $asset in latest skills-v* release" }
+if (-not $url) { throw "dg-skills: no $asset asset in $($rel.tag_name)" }
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 Invoke-WebRequest -Headers $headers -Uri $url -OutFile $dest

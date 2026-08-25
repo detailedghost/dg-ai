@@ -27,6 +27,10 @@ jobs:
         working-directory: pkg/common
         run: bun run lint
 
+      - name: Test (common)
+        working-directory: pkg/common
+        run: bun test
+
       - name: Lint (dg-agent)
         working-directory: pkg/dg-agent
         run: bun run lint
