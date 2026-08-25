@@ -104,8 +104,30 @@ describe("the dg-server compatibility alias", () => {
 		const rel = workflow("dg-daemon-release.yml");
 
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell tag text from the workflow, not a JS interpolation
-		expect(rel).toContain('publish "server-v${version}"');
+		expect(rel).toContain('tag="server-v${version}"');
+		expect(rel).toContain("legacy/*");
 		expect(rel).toContain("s/^dg-daemon-/dg-server-/");
+	});
+
+	test("the alias is published as its own step, so it cannot take the real release down with it", () => {
+		const rel = workflow("dg-daemon-release.yml");
+
+		const daemonStep =
+			/- name: Publish dg-daemon release[\s\S]*?(?=\n {6}- name:)/.exec(
+				rel,
+			)?.[0];
+		const aliasStep =
+			/- name: Publish the legacy dg-server alias[\s\S]*?(?=\n {6}- name:|$)/.exec(
+				rel,
+			)?.[0];
+
+		expect(daemonStep).toBeDefined();
+		expect(aliasStep).toBeDefined();
+		expect(daemonStep).not.toContain("server-v");
+		expect(aliasStep).not.toContain('tag="daemon-v');
+
+		expect(rel).toMatch(/steps\.publish_daemon\.outcome == 'failure'/);
+		expect(rel).toMatch(/steps\.publish_server_alias\.outcome == 'failure'/);
 	});
 
 	test("the agent release publishes no alias, having never shipped under another name", () => {
@@ -157,6 +179,12 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		expect(install).toMatch(/skipping\s+its\s+refresh/);
 		expect(install).toContain("console.warn");
 	});
+
+	test("the not-found warning distinguishes an unbuilt platform from an unpublished release", () => {
+		expect(install).toContain("describeMissingCliAsset(spec, releases)");
+		expect(install).toMatch(/has no published asset/);
+		expect(install).toMatch(/no release with tag prefix/);
+	});
 });
 
 describe("the bootstrap scripts reach dg-daemon through install, not a second curl loop", () => {
@@ -175,8 +203,12 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 	});
 
 	test("the fetcher marks what it downloads executable, so both binaries are runnable", () => {
-		expect(
-			readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts"),
-		).toContain("chmodSync(dest, 0o755)");
+		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
+		const fn = /export async function fetchCliBinary[\s\S]*?\n}/.exec(lib)?.[0];
+
+		expect(fn).toMatch(/chmodSync\(staging, 0o755\)/);
+		expect(fn?.indexOf("chmodSync(staging")).toBeLessThan(
+			fn?.indexOf("renameSync(staging, dest)") ?? -1,
+		);
 	});
 });

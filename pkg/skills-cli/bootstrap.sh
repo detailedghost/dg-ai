@@ -31,16 +31,28 @@ aarch64 | arm64) cpu="arm64" ;;
 esac
 asset="dg-skills-${osname}-${cpu}"
 
-releases=$(curl -fsSL -H "User-Agent: dg-ai" \
-  "https://api.github.com/repos/${REPO}/releases?per_page=30")
+PER_PAGE=100
+PAGE_CAP=10
 
-tag=$(printf '%s' "${releases}" |
-  grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
-  head -1 |
-  sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+releases=""
+tag=""
+page=1
+while [ -z "${tag}" ] && [ "${page}" -le "${PAGE_CAP}" ]; do
+  batch=$(curl -fsSL -H "User-Agent: dg-ai" \
+    "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
+  releases="${releases}${batch}"
+  tag=$(printf '%s' "${batch}" |
+    grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
+    head -1 |
+    sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+  batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
+  [ "${batch_count}" -lt "${PER_PAGE}" ] && break
+  page=$((page + 1))
+done
 
 if [ -z "${tag}" ]; then
-  echo "dg-skills: no published skills-v* release found" >&2
+  scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
+  echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
   exit 1
 fi
 

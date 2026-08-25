@@ -9,6 +9,7 @@ import {
 	chmodSync,
 	mkdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -160,13 +161,38 @@ export function pickCliAsset(
 	};
 }
 
+export const RELEASES_PER_PAGE = 100;
+export const RELEASES_PAGE_CAP = 10;
+
 export async function listReleases(): Promise<Release[]> {
-	const res = await fetch(
-		`https://api.github.com/repos/${REPO}/releases?per_page=30`,
-		{ headers: UA },
+	const releases: Release[] = [];
+	for (let page = 1; page <= RELEASES_PAGE_CAP; page++) {
+		const res = await fetch(
+			`https://api.github.com/repos/${REPO}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`,
+			{ headers: UA },
+		);
+		if (!res.ok) throw new Error(`GitHub API ${res.status} listing releases`);
+		const batch = (await res.json()) as Release[];
+		releases.push(...batch);
+		if (batch.length < RELEASES_PER_PAGE) break;
+	}
+	return releases;
+}
+
+export type MissingCliAssetReason =
+	| { kind: "no-platform-asset" }
+	| { kind: "no-matching-release"; releasesScanned: number };
+
+export function describeMissingCliAsset(
+	spec: BinarySpec,
+	releases: Release[],
+): MissingCliAssetReason {
+	const hasRelease = releases.some(
+		(r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft,
 	);
-	if (!res.ok) throw new Error(`GitHub API ${res.status} listing releases`);
-	return (await res.json()) as Release[];
+	return hasRelease
+		? { kind: "no-platform-asset" }
+		: { kind: "no-matching-release", releasesScanned: releases.length };
 }
 
 /** Download the newest extension release's zip for `target` to a temp file. */
@@ -205,10 +231,19 @@ export async function fetchCliBinary(
 	const dl = await fetch(asset.url, { headers: UA });
 	if (!dl.ok)
 		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
+	const buf = Buffer.from(await dl.arrayBuffer());
+	const binDir = join(homedir(), ".dg", "bin");
+	mkdirSync(binDir, { recursive: true });
 	const dest = cliDest(binaryName);
-	mkdirSync(join(homedir(), ".dg", "bin"), { recursive: true });
-	writeFileSync(dest, Buffer.from(await dl.arrayBuffer()));
-	chmodSync(dest, 0o755);
+	const staging = join(binDir, `.${binaryName}.${process.pid}.tmp`);
+	try {
+		writeFileSync(staging, buf);
+		chmodSync(staging, 0o755);
+		renameSync(staging, dest);
+	} catch (err) {
+		rmSync(staging, { force: true });
+		throw err;
+	}
 	writeFileSync(cliVersionFile(binaryName), `${asset.version}\n`);
 	return dest;
 }

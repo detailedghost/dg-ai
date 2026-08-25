@@ -24,6 +24,7 @@ import {
 	type BinarySpec,
 	cliDest,
 	cliVersionFile,
+	describeMissingCliAsset,
 	downloadReleaseAsset,
 	extensionDest,
 	extractZip,
@@ -103,8 +104,12 @@ async function installBinary(
 	try {
 		const asset = resolveCliAsset(spec, releases);
 		if (!asset) {
+			const reason = describeMissingCliAsset(spec, releases);
+			const platform = `${process.platform}-${process.arch}`;
 			console.warn(
-				`⚠ no ${binaryName} binary for ${process.platform}-${process.arch}; skipping its refresh.`,
+				reason.kind === "no-platform-asset"
+					? `⚠ ${binaryName}: this platform (${platform}) has no published asset; skipping its refresh.`
+					: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
 			);
 			return;
 		}
@@ -132,7 +137,7 @@ async function installBinary(
 
 const RETIRED_BINARIES = ["dg-server"];
 
-function removeRetiredBinaries(): void {
+export function removeRetiredBinaries(): void {
 	for (const name of RETIRED_BINARIES) {
 		const dest = cliDest(name);
 		if (!existsSync(dest)) continue;

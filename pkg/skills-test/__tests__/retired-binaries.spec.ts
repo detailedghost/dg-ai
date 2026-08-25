@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { readRepoFile } from "./test-support";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { REPO_ROOT, readRepoFile, runInHarness } from "./test-support";
 
 const install = readRepoFile(
 	"pkg",
@@ -26,13 +29,31 @@ describe("install retires the pre-rename daemon binary", () => {
 		);
 	});
 
-	test("it clears the version stamp too, so a later install does not think it is current", () => {
-		const fn = install.slice(
-			install.indexOf("function removeRetiredBinaries"),
-			install.indexOf("const BINARIES"),
+	test("it clears the version stamp too, so a later install does not think it is current", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-retired-binaries-test-"));
+		const binDir = join(home, ".dg", "bin");
+		mkdirSync(binDir, { recursive: true });
+		const serverBin = join(binDir, "dg-server");
+		const serverVersion = join(binDir, ".dg-server.version");
+		writeFileSync(serverBin, "old-dg-server-binary");
+		writeFileSync(serverVersion, "1.2.3\n");
+
+		const installPath = join(
+			REPO_ROOT,
+			"pkg",
+			"skills-cli",
+			"src",
+			"commands",
+			"install.ts",
+		);
+		const { code, stderr } = await runInHarness(
+			`const mod = await import(${JSON.stringify(installPath)});\nmod.removeRetiredBinaries();\n`,
+			{ HOME: home },
 		);
 
-		expect(fn).toContain("cliDest(name)");
-		expect(fn).toContain("cliVersionFile(name)");
+		expect(stderr).toBe("");
+		expect(code).toBe(0);
+		expect(existsSync(serverBin)).toBe(false);
+		expect(existsSync(serverVersion)).toBe(false);
 	});
 });
