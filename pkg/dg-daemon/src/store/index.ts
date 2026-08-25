@@ -5,6 +5,7 @@ import {
 	AssetTooLargeError,
 	CHAT_MAX_ASSET_BYTES,
 	type CommandEntry,
+	describeError,
 	type ProgressState,
 } from "@dg/common";
 import {
@@ -659,13 +660,18 @@ export class ChatStore {
 
 		if (!row) return undefined;
 
+		const body = this.#decryptOrDrop("messages", row.id, () =>
+			this.decryptMessageBody(row, sessionId),
+		);
+		if (body === undefined) return undefined;
+
 		return {
 			claimId: claim.claimId,
 			seq: row.seq,
 			id: row.id,
 			sessionId,
 			role: row.role as MessageRole,
-			body: this.decryptMessageBody(row, sessionId),
+			body,
 			createdAt: row.created_at,
 			attachmentId: row.attachment_id ?? undefined,
 			subagentName: row.subagent_name ?? undefined,
@@ -719,14 +725,8 @@ export class ChatStore {
 
 		if (!row) return undefined;
 
-		return {
-			claimId: claim.claimId,
-			seq: row.seq,
-			id: row.id,
-			role: "agent",
-			from: row.sender_identity,
-			to: row.recipient_identity,
-			body: this.cipherBox
+		const body = this.#decryptOrDrop("agent_messages", row.id, () =>
+			this.cipherBox
 				.decryptRecord(
 					Buffer.from(row.body_ciphertext),
 					Buffer.from(row.body_iv),
@@ -738,6 +738,17 @@ export class ChatStore {
 					),
 				)
 				.toString("utf8"),
+		);
+		if (body === undefined) return undefined;
+
+		return {
+			claimId: claim.claimId,
+			seq: row.seq,
+			id: row.id,
+			role: "agent",
+			from: row.sender_identity,
+			to: row.recipient_identity,
+			body,
 			createdAt: row.created_at,
 		};
 	}
@@ -759,7 +770,26 @@ export class ChatStore {
 	}
 
 	#agentMessageAad(from: string, to: string, rowId: string): Buffer {
-		return this.#aad(AAD_AGENT_MESSAGE_BODY, `${from}>${to}`, rowId);
+		return this.#aad(AAD_AGENT_MESSAGE_BODY, JSON.stringify([from, to]), rowId);
+	}
+
+	#decryptOrDrop<T>(
+		table: string,
+		rowId: string,
+		decrypt: () => T,
+	): T | undefined {
+		try {
+			return decrypt();
+		} catch (err) {
+			this.db.run(`UPDATE ${table} SET delivered_at = ? WHERE id = ?`, [
+				Date.now(),
+				rowId,
+			]);
+			console.warn(
+				`dg-daemon: dropped ${table} row ${rowId} from the queue — its body did not decrypt: ${describeError(err)}`,
+			);
+			return undefined;
+		}
 	}
 
 	#toPeekedMessage(row: RawMessageRow, sessionId: string): PeekedMessage {

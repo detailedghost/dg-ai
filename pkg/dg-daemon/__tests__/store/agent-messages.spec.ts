@@ -17,6 +17,12 @@ let dgHome: string;
 let paths: DgPaths;
 let store: ChatStore;
 
+function tamper(sql: string): void {
+	const raw = new Database(paths.dbPath, { strict: true });
+	raw.run(sql);
+	raw.close(true);
+}
+
 function sendToBeta(id: string, body: string): void {
 	store.insertAgentMessage({
 		senderSessionId: ALPHA_SESSION,
@@ -197,33 +203,74 @@ describe("recovery and encryption at rest", () => {
 		store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 	});
 
-	it("refuses to decrypt a row someone re-addressed", async () => {
+	it("drops a row someone re-addressed rather than handing over its body", async () => {
 		sendToBeta("m1", "run the migration");
 		store.close();
-
-		const raw = new Database(paths.dbPath, { strict: true });
-		raw.run(
-			"UPDATE agent_messages SET recipient_identity = 'gamma' WHERE id = 'm1'",
-		);
-		raw.close(true);
+		tamper("UPDATE agent_messages SET recipient_identity = 'gamma'");
 		store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
-		expect(() =>
+		expect(
 			store.claimNextAgentMessage("gamma", "session-gamma"),
-		).toThrow();
+		).toBeUndefined();
 	});
 
-	it("refuses to decrypt a row whose sender was forged", async () => {
+	it("drops a row whose sender was forged", async () => {
 		sendToBeta("m1", "run the migration");
 		store.close();
-
-		const raw = new Database(paths.dbPath, { strict: true });
-		raw.run(
-			"UPDATE agent_messages SET sender_identity = 'orchestrator' WHERE id = 'm1'",
-		);
-		raw.close(true);
+		tamper("UPDATE agent_messages SET sender_identity = 'orchestrator'");
 		store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 
-		expect(() => store.claimNextAgentMessage("beta", BETA_SESSION)).toThrow();
+		expect(store.claimNextAgentMessage("beta", BETA_SESSION)).toBeUndefined();
+	});
+
+	it("binds the two identities apart, so a > in one cannot be shifted into the other", async () => {
+		store.insertAgentMessage({
+			senderSessionId: ALPHA_SESSION,
+			senderIdentity: "alpha",
+			recipientIdentity: "beta>gamma",
+			id: "m1",
+			body: "meant for beta>gamma",
+		});
+		store.close();
+		tamper(
+			"UPDATE agent_messages SET sender_identity = 'alpha>beta', recipient_identity = 'gamma'",
+		);
+		store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+
+		expect(
+			store.claimNextAgentMessage("gamma", "session-gamma"),
+		).toBeUndefined();
+	});
+
+	it("takes the unreadable row out of the queue, so the good one behind it is not stuck", async () => {
+		sendToBeta("m1", "run the migration");
+		sendToBeta("m2", "and then this one");
+		store.close();
+		tamper(
+			"UPDATE agent_messages SET sender_identity = 'forged' WHERE id = 'm1'",
+		);
+		store = await ChatStore.open(paths, {
+			env: { DG_KEY_SOURCE: "file", DG_CLAIM_LEASE_MS: "1" },
+		});
+
+		expect(store.claimNextAgentMessage("beta", BETA_SESSION)).toBeUndefined();
+		await Bun.sleep(5);
+
+		expect(store.claimNextAgentMessage("beta", BETA_SESSION)?.id).toBe("m2");
+	});
+
+	it("does the same for a human message, which shares the claim path", async () => {
+		store.insertMessage({
+			sessionId: BETA_SESSION,
+			id: "h1",
+			role: "user",
+			body: "from the human",
+		});
+		store.close();
+		tamper("UPDATE messages SET body_tag = randomblob(16) WHERE id = 'h1'");
+		store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+
+		expect(store.claimNext(BETA_SESSION)).toBeUndefined();
+		expect(store.claimNext(BETA_SESSION)).toBeUndefined();
 	});
 });

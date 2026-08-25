@@ -144,7 +144,12 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				noteActivity();
 			},
 			message(ws, message) {
-				void handleSocketMessage(ws, message, frameDeps);
+				handleSocketMessage(ws, message, frameDeps).catch((err: unknown) => {
+					frameDeps.logger.error(
+						`frame handling failed: ${describeError(err)}`,
+					);
+					ws.close(1011, "internal error");
+				});
 			},
 			close(ws) {
 				resolveDrainWaiters(ws);
@@ -260,7 +265,7 @@ async function handleRegisterSession(
 	const agentIdentity =
 		typeof input.agentIdentity === "string" &&
 		input.agentIdentity.trim().length > 0
-			? input.agentIdentity
+			? input.agentIdentity.trim()
 			: "agent";
 
 	let record: ReturnType<typeof deps.registry.create>;

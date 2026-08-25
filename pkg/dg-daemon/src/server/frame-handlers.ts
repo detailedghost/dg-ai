@@ -302,7 +302,7 @@ async function handleCliFrame(
 				deps.store.insertAgentMessage({
 					senderSessionId: sessionId,
 					senderIdentity: sender.agentIdentity,
-					recipientIdentity: frame.to,
+					recipientIdentity: frame.to.trim(),
 					id: randomUUID(),
 					body: frame.body,
 				});
@@ -429,7 +429,7 @@ async function handleSessionCreate(
 	try {
 		record = deps.registry.create({
 			cwd: requester.cwd,
-			agentIdentity: frame.agentIdentity ?? requester.agentIdentity,
+			agentIdentity: frame.agentIdentity?.trim() ?? requester.agentIdentity,
 			workset: frame.workset,
 			role: frame.role,
 		});
