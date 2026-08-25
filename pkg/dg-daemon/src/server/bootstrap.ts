@@ -14,7 +14,7 @@ import {
 	writePidFileAtomic,
 } from "@dg/common/node";
 import { type CloseReason, SessionRegistry } from "../session/registry";
-import { ChatStore } from "../store";
+import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../store";
 import { readEnvNumber } from "../utils/env";
 import {
 	setKeySourceProvider,
@@ -149,6 +149,12 @@ export async function cmdServe(): Promise<void> {
 	const reapTimer = setInterval(
 		() => {
 			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
+			const pruned = store.pruneAgentMessages(new Date());
+			if (pruned > 0) {
+				logger.info(
+					`pruned ${pruned} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
+				);
+			}
 		},
 		Math.min(sessionTtlMs, 60_000),
 	);

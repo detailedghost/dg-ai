@@ -43,6 +43,9 @@ const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
 const AAD_AGENT_MESSAGE_BODY = "agent-message-body";
 const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export const AGENT_MESSAGE_RETENTION_DAYS = 7;
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -712,6 +715,16 @@ export class ChatStore {
 				enc.tag,
 			) as { seq: number };
 		return { seq: row.seq };
+	}
+
+	/** Deletes agent-to-agent rows past the retention window; returns how many it removed. */
+	pruneAgentMessages(now: Date): number {
+		const cutoff = new Date(
+			now.getTime() - AGENT_MESSAGE_RETENTION_DAYS * MS_PER_DAY,
+		).toISOString();
+		return this.db.run("DELETE FROM agent_messages WHERE created_at < ?", [
+			cutoff,
+		]).changes;
 	}
 
 	claimNextAgentMessage(

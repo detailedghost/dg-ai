@@ -99,6 +99,12 @@ on `messages`, so `messages` keeps meaning exactly what it always meant and
 get wrong. `recv` checks the human queue first, then the agent queue; a
 sender's own session can never claim its own outbound message back.
 
+The daemon's housekeeping tick prunes `agent_messages` past
+`AGENT_MESSAGE_RETENTION_DAYS`, delivered or not, so a message addressed to an
+identity that never appears cannot accumulate. It never prunes `messages`:
+those rows are the transcript the canvas renders, and a message the human typed
+outlives whether an agent ever collected it.
+
 ### pkg/common (shared library)
 
 ```bash

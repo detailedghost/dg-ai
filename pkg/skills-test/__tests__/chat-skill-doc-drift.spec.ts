@@ -48,6 +48,18 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 		expect(skill).toMatch(/`send .*--to <identity>/);
 	});
 
+	test("the documented retention window matches the daemon's own", () => {
+		const store = readRepoFile("pkg", "dg-daemon", "src", "store", "index.ts");
+		const days = /AGENT_MESSAGE_RETENTION_DAYS\s*=\s*(\d+)/.exec(store)?.[1];
+
+		expect(days).toBeDefined();
+		expect(skill).toMatch(new RegExp(`${days} days`));
+	});
+
+	test("agent-to-agent delivery is documented as at-least-once", () => {
+		expect(skill).toMatch(/at-least-once/);
+	});
+
 	test("every exit code the daemon defines is listed with its number", () => {
 		const codes = [...errors.matchAll(/EXIT_([A-Z_]+)\s*=\s*(\d+)/g)].map(
 			(m) => m[2],

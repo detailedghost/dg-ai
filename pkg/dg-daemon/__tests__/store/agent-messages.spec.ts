@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { ChatStore } from "../../src/store";
+import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../../src/store";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
@@ -172,6 +172,61 @@ describe("the human queue", () => {
 		const claimed = store.claimNextAgentMessage("beta", BETA_SESSION);
 
 		expect(store.ack(BETA_SESSION, claimed?.claimId ?? "")).toBe(false);
+	});
+});
+
+describe("the retention window", () => {
+	const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+	function daysFromNow(days: number): Date {
+		return new Date(Date.now() + days * MS_PER_DAY);
+	}
+
+	it("keeps a message still waiting inside the window, because its agent may start tomorrow", () => {
+		sendToBeta("m1", "waiting for beta");
+
+		expect(
+			store.pruneAgentMessages(daysFromNow(AGENT_MESSAGE_RETENTION_DAYS - 1)),
+		).toBe(0);
+		expect(store.claimNextAgentMessage("beta", BETA_SESSION)?.id).toBe("m1");
+	});
+
+	it("removes one nobody ever claimed, so a mistyped recipient does not leak a row forever", () => {
+		store.insertAgentMessage({
+			senderSessionId: ALPHA_SESSION,
+			senderIdentity: "alpha",
+			recipientIdentity: "bteo",
+			id: "m1",
+			body: "for an identity that never appears",
+		});
+
+		expect(
+			store.pruneAgentMessages(daysFromNow(AGENT_MESSAGE_RETENTION_DAYS + 1)),
+		).toBe(1);
+		expect(store.claimNextAgentMessage("bteo", "session-bteo")).toBeUndefined();
+	});
+
+	it("removes one already delivered, which nothing reads again", () => {
+		sendToBeta("m1", "delivered and done");
+		const claimed = store.claimNextAgentMessage("beta", BETA_SESSION);
+		store.ackAgentMessage("beta", claimed?.claimId ?? "");
+
+		expect(
+			store.pruneAgentMessages(daysFromNow(AGENT_MESSAGE_RETENTION_DAYS + 1)),
+		).toBe(1);
+	});
+
+	it("never touches the human queue, which is the transcript the canvas renders", () => {
+		store.insertMessage({
+			sessionId: BETA_SESSION,
+			id: "h1",
+			role: "user",
+			body: "from the human, months ago",
+		});
+
+		store.pruneAgentMessages(daysFromNow(365));
+
+		expect(store.claimNext(BETA_SESSION)?.id).toBe("h1");
 	});
 });
 
