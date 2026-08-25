@@ -7,7 +7,7 @@ import {
 	ForwardOnlyVersionError,
 	type MigrationStep,
 	runMigrations,
-} from "../../src/store/migrations";
+} from "@dg/common/node";
 
 function tempDbPath(): string {
 	return join(mkdtempSync(join(tmpdir(), "dg-migrations-test-")), "test.db");

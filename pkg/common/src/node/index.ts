@@ -6,4 +6,5 @@ export * from "./paths";
 export * from "./pidfile";
 export * from "./process";
 export * from "./session-tokens";
+export * from "./sqlite";
 export * from "./wsl-guard";
