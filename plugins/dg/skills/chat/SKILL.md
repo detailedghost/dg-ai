@@ -71,10 +71,18 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   `--to` it lands on the human's chat page, as it always has. With `--to
   <identity>` it queues for that agent identity instead and never reaches the
   human's canvas — it waits there until a session under that identity calls
-  `recv`. That `recv` result carries `from` and `to` naming both identities, so
-  a reply is one more `send --to` back. The sending session never gets its own
-  message back; addressing your own identity still reaches your other live
-  sessions, just not the one that sent it.
+  `recv`, for up to 7 days — the daemon prunes what nobody claimed, so a
+  mistyped identity does not leave a row behind forever. That `recv` result
+  carries `from` and `to` naming both identities, so a reply is one more
+  `send --to` back. The sending session never gets its own message back;
+  addressing your own identity still reaches your other live sessions, just not
+  the one that sent it.
+
+  Delivery is at-least-once, not exactly-once. A message is acknowledged only
+  after `recv` prints it, so a process that dies in between hands that message
+  to the next session under the same identity — which, unlike the human queue,
+  may be a different process. Treat a repeated `from`/`body` pair as a repeat,
+  not as a second instruction.
 - `progress --state <running|awaiting-input>` — publish an explicit state. Any
   other value is rejected.
 - `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>]` — spawn
