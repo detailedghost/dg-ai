@@ -161,6 +161,24 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		);
 	});
 
+	test("the command description names every binary it refreshes", () => {
+		const declared =
+			/const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(install)?.[1] ??
+			"";
+		const names = [...declared.matchAll(/binaryName: "([^"]+)"/g)].map(
+			(m) => m[1],
+		);
+		const description = /\.description\(\s*"([^"]*refresh[^"]*)"/.exec(
+			install,
+		)?.[1];
+
+		expect(names.length).toBe(RELEASED_BINARIES.length);
+		expect(description).toBeDefined();
+		for (const name of names) {
+			expect(description).toContain(name);
+		}
+	});
+
 	test("the daemon and the agent are installed into the same directory, so sibling resolution finds one from the other", () => {
 		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
 		const dest = /export function cliDest[\s\S]*?\n}/.exec(lib)?.[0];
