@@ -135,12 +135,37 @@ function createV5AckIndex(db: Database): void {
 	);
 }
 
+function createV6AgentMessages(db: Database): void {
+	db.run(`CREATE TABLE agent_messages (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		id TEXT NOT NULL UNIQUE,
+		sender_session_id TEXT NOT NULL REFERENCES sessions(id),
+		sender_identity TEXT NOT NULL,
+		recipient_identity TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		body_ciphertext BLOB NOT NULL,
+		body_iv BLOB NOT NULL,
+		body_tag BLOB NOT NULL,
+		claim_id TEXT,
+		claimed_at INTEGER,
+		delivered_at INTEGER
+	) STRICT`);
+
+	db.run(
+		"CREATE INDEX idx_agent_messages_pending ON agent_messages(recipient_identity, seq) WHERE delivered_at IS NULL",
+	);
+	db.run(
+		"CREATE INDEX idx_agent_messages_claim_id ON agent_messages(claim_id) WHERE claim_id IS NOT NULL",
+	);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
 	{ version: 3, run: createV3AssetStateCheck },
 	{ version: 4, run: createV4Indexes },
 	{ version: 5, run: createV5AckIndex },
+	{ version: 6, run: createV6AgentMessages },
 ];
 
 export const CURRENT_SCHEMA_VERSION =
