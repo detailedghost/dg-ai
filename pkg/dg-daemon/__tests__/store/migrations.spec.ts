@@ -1,4 +1,3 @@
-
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readdirSync } from "node:fs";

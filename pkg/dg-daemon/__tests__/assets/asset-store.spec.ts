@@ -3,6 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { AssetTooLargeError, CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { buildAad, createCipherBox } from "../../src/crypto/envelope";
+import { readFallbackKeyFile } from "../../src/crypto/key-file";
+import { unwrapDataKey } from "../../src/crypto/key-resolution";
 import { ChatStore } from "../../src/store";
 import { runMigrations } from "../../src/store/migrations";
 import { SCHEMA_STEPS } from "../../src/store/schema";
@@ -151,6 +154,39 @@ describe("ChatStore asset row write-path", () => {
 
 			const decrypted = store.decryptAssetBytes(SESSION_A, "asset-1", envelope);
 			expect(decrypted.equals(plaintext)).toBe(true);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("refuses to decrypt an asset written before the AAD format-version bump — loudly, not as silently-corrupt base64 text", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const meta = store.cryptoMeta();
+
+			const keyFile = readFallbackKeyFile(paths.keyPath);
+			const kek = Buffer.from(keyFile.keyBase64, "base64");
+			const dataKey = unwrapDataKey(kek, meta.wrappedDataKey);
+			const legacyBox = createCipherBox(dataKey);
+
+			const legacyPlaintext = Buffer.from("legacy asset bytes");
+			const legacyAad = buildAad({
+				domain: "asset-bytes",
+				sessionId: SESSION_A,
+				rowId: "asset-legacy",
+				formatVersion: meta.formatVersion,
+			});
+			const legacyEnvelope = legacyBox.encryptRecord(
+				legacyPlaintext.toString("base64"),
+				legacyAad,
+			);
+
+			expect(() =>
+				store.decryptAssetBytes(SESSION_A, "asset-legacy", legacyEnvelope),
+			).toThrow();
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);

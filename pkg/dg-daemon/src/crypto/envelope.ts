@@ -13,6 +13,7 @@ export type CipherBoxSeams = {
 
 export type CipherBox = {
 	encryptRecord(plaintext: string, aad: Buffer): CipherEnvelope;
+	encryptBytes(plaintext: Buffer, aad: Buffer): CipherEnvelope;
 	decryptRecord(
 		ciphertext: Buffer,
 		iv: Buffer,
@@ -36,7 +37,7 @@ export function createCipherBox(
 ): CipherBox {
 	const randomIv = seams.randomIv ?? (() => randomBytes(AES_GCM_IV_BYTES));
 
-	function encryptRecord(plaintext: string, aad: Buffer): CipherEnvelope {
+	function encryptBytes(plaintext: Buffer, aad: Buffer): CipherEnvelope {
 		const iv = randomIv();
 		assertIvLength(iv, "encrypt");
 		const cipher = createCipheriv(AES_GCM_ALGORITHM, dataKey, iv, {
@@ -44,10 +45,14 @@ export function createCipherBox(
 		});
 		cipher.setAAD(aad);
 		const ciphertext = Buffer.concat([
-			cipher.update(plaintext, "utf8"),
+			cipher.update(plaintext),
 			cipher.final(),
 		]);
 		return { ciphertext, iv, tag: cipher.getAuthTag() };
+	}
+
+	function encryptRecord(plaintext: string, aad: Buffer): CipherEnvelope {
+		return encryptBytes(Buffer.from(plaintext, "utf8"), aad);
 	}
 
 	function decryptRecord(
@@ -65,7 +70,7 @@ export function createCipherBox(
 		return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 	}
 
-	return { encryptRecord, decryptRecord };
+	return { encryptRecord, encryptBytes, decryptRecord };
 }
 
 export type AadFields = {

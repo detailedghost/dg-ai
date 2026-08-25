@@ -32,9 +32,10 @@ import {
 	resolveSubagentMention,
 } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
-import type { ChatStore } from "../store";
+import type { ChatStore, PeekedMessage } from "../store";
 import type { ConnectionManager } from "./connection";
 import {
+	onSocketClose,
 	registerInvalidFrame,
 	type SocketState,
 	sendViaQueue,
@@ -93,6 +94,21 @@ function broadcastPageFrame(
 }
 
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
+
+const MIN_PEEKED_MESSAGE_BYTES =
+	new TextEncoder().encode(
+		JSON.stringify({
+			seq: 1,
+			id: "a",
+			role: "user",
+			body: "",
+			createdAt: "2024-01-01T00:00:00.000Z",
+		} satisfies PeekedMessage),
+	).length + 1;
+
+export const HISTORY_TAIL_ROW_LIMIT = Math.ceil(
+	CHAT_MAX_PAYLOAD_BYTES / MIN_PEEKED_MESSAGE_BYTES,
+);
 
 function noteInvalid(ws: ServerWebSocket<SocketState>): void {
 	if (registerInvalidFrame(ws.data)) {
@@ -196,12 +212,17 @@ async function handleCliRecv(
 			clearInterval(poll);
 			clearTimeout(timeout);
 			deps.registry.off("closed", onClosed);
+			offSocketClose();
 			await sendCliRecvResult(ws, result);
 			resolve();
 		};
 		const onClosed = ({ sessionId: closedId }: { sessionId: string }) => {
 			if (closedId === sessionId) void finish({ outcome: "closed" });
 		};
+		const offSocketClose = onSocketClose(
+			ws,
+			() => void finish({ outcome: "closed" }),
+		);
 		const poll = setInterval(() => {
 			const message = deps.store.claimNext(sessionId);
 			if (message) void finish({ outcome: "delivered", message });
@@ -228,6 +249,7 @@ async function handleCliFrame(
 		noteInvalid(ws);
 		return;
 	}
+	deps.registry.touch(sessionId);
 	switch (frame.type) {
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
@@ -417,9 +439,10 @@ async function handleHistoryRequest(
 			messages: [],
 		}),
 	).length;
+	const tail = deps.store.peekTail(frame.sessionId, HISTORY_TAIL_ROW_LIMIT);
 	await sendFrame(ws, frame.sessionId, {
 		type: "history-response",
-		messages: fitHistoryPage(deps.store.peekAll(frame.sessionId), overhead),
+		messages: fitHistoryPage(tail, overhead),
 	});
 }
 
@@ -533,6 +556,7 @@ async function dispatchFrame(
 	frame: ChatFrame,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
+	deps.registry.touch(frame.sessionId);
 	switch (frame.type) {
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);

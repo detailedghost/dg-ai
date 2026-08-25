@@ -1,4 +1,3 @@
-
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,7 +40,12 @@ describe("dispatch admission accounting", () => {
 			await expect(attempt).rejects.toThrow("disk full");
 		}
 
-		const after = await dispatchCommand(SESSION, "Echo", {}, deps(false, scheduler));
+		const after = await dispatchCommand(
+			SESSION,
+			"Echo",
+			{},
+			deps(false, scheduler),
+		);
 
 		expect(after.ok).toBe(true);
 	});

@@ -36,6 +36,7 @@ const AAD_COMMAND_MANIFEST = "command-manifest";
 const AAD_SUBAGENT_LIST = "subagent-list";
 const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
+const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -299,13 +300,13 @@ export class ChatStore {
 		);
 	}
 
-	#aad(domain: string, sessionId: string, rowId: string): Buffer {
-		return buildAad({
-			domain,
-			sessionId,
-			rowId,
-			formatVersion: this.meta.formatVersion,
-		});
+	#aad(
+		domain: string,
+		sessionId: string,
+		rowId: string,
+		formatVersion: number = this.meta.formatVersion,
+	): Buffer {
+		return buildAad({ domain, sessionId, rowId, formatVersion });
 	}
 
 	private decryptMessageBody(row: RawMessageRow, sessionId: string): string {
@@ -613,14 +614,8 @@ export class ChatStore {
 		return row !== null;
 	}
 
-	peekAll(sessionId: string): PeekedMessage[] {
-		const rows = this.db
-			.query(
-				`SELECT seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name
-				 FROM messages WHERE session_id = ? ORDER BY seq ASC`,
-			)
-			.all(sessionId) as RawMessageRow[];
-		return rows.map((row) => ({
+	#toPeekedMessage(row: RawMessageRow, sessionId: string): PeekedMessage {
+		return {
 			seq: row.seq,
 			id: row.id,
 			role: row.role as MessageRole,
@@ -628,7 +623,27 @@ export class ChatStore {
 			createdAt: row.created_at,
 			attachmentId: row.attachment_id ?? undefined,
 			subagentName: row.subagent_name ?? undefined,
-		}));
+		};
+	}
+
+	peekAll(sessionId: string): PeekedMessage[] {
+		const rows = this.db
+			.query(
+				`SELECT seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name
+				 FROM messages WHERE session_id = ? ORDER BY seq ASC`,
+			)
+			.all(sessionId) as RawMessageRow[];
+		return rows.map((row) => this.#toPeekedMessage(row, sessionId));
+	}
+
+	peekTail(sessionId: string, limit: number): PeekedMessage[] {
+		const rows = this.db
+			.query(
+				`SELECT seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name
+				 FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
+			)
+			.all(sessionId, limit) as RawMessageRow[];
+		return rows.reverse().map((row) => this.#toPeekedMessage(row, sessionId));
 	}
 
 	insertAsset(input: InsertAssetInput): void {
@@ -691,14 +706,23 @@ export class ChatStore {
 		);
 	}
 
+	#assetBytesAad(sessionId: string, id: string): Buffer {
+		return this.#aad(
+			AAD_ASSET_BYTES,
+			sessionId,
+			id,
+			AAD_ASSET_BYTES_FORMAT_VERSION,
+		);
+	}
+
 	encryptAssetBytes(
 		sessionId: string,
 		id: string,
 		plaintext: Buffer,
 	): CipherEnvelope {
-		return this.cipherBox.encryptRecord(
-			plaintext.toString("base64"),
-			this.#aad(AAD_ASSET_BYTES, sessionId, id),
+		return this.cipherBox.encryptBytes(
+			plaintext,
+			this.#assetBytesAad(sessionId, id),
 		);
 	}
 
@@ -707,12 +731,11 @@ export class ChatStore {
 		id: string,
 		envelope: CipherEnvelope,
 	): Buffer {
-		const decrypted = this.cipherBox.decryptRecord(
+		return this.cipherBox.decryptRecord(
 			envelope.ciphertext,
 			envelope.iv,
 			envelope.tag,
-			this.#aad(AAD_ASSET_BYTES, sessionId, id),
+			this.#assetBytesAad(sessionId, id),
 		);
-		return Buffer.from(decrypted.toString("utf8"), "base64");
 	}
 }
