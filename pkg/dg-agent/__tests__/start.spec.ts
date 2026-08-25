@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
+	type DgCliError,
 	EXIT_PROTOCOL_MISMATCH,
 	EXIT_WSL_NAT_NETWORKING,
 	validateSessionBootstrap,
 } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -246,6 +247,79 @@ describe("cmdStart refuses before the daemon ever spawns on NAT-mode WSL", () =>
 					signal: AbortSignal.timeout(500),
 				}),
 			).rejects.toBeDefined();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+describe("a daemon of another protocol", () => {
+	const FIXTURE = join(import.meta.dir, "fixtures/mismatched-daemon.ts");
+
+	async function mismatchFrom(
+		dgHome: string,
+		port: number,
+	): Promise<DgCliError> {
+		try {
+			await withDgEnv(
+				{ DG_HOME: dgHome, DG_PORT: String(port), DG_KEY_SOURCE: "file" },
+				() =>
+					cmdStart(
+						{},
+						{ daemonArgv: () => [process.execPath, FIXTURE, "__serve"] },
+					),
+			);
+		} catch (err) {
+			return err as DgCliError;
+		}
+		throw new Error("cmdStart resolved against a mismatched daemon");
+	}
+
+	it("is refused right after this command starts it, not at the first frame of a later one", async () => {
+		const dgHome = freshDgHome();
+		const port = allocatePort();
+		const capture = captureLogs();
+		try {
+			const err = await mismatchFrom(dgHome, port);
+
+			expect(err.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
+			expect(err.message).toContain("another release");
+			expect(err.message).toContain("dg-skills install");
+			expect(capture.logs).toEqual([]);
+		} finally {
+			capture.restore();
+			killDaemonByPidFile(dgHome);
+			cleanupDgHome(dgHome);
+		}
+	}, 20_000);
+
+	it("stops every other command at the pid file, instead of timing out on a frame", async () => {
+		const dgHome = freshDgHome();
+		const port = allocatePort();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			mkdirSync(paths.sessionsDir, { recursive: true });
+			writeFileSync(
+				join(paths.sessionsDir, "session-a.json"),
+				JSON.stringify({
+					sessionId: "session-a",
+					token: "token-a",
+					cwd: process.cwd(),
+					agentIdentity: "alpha",
+				}),
+			);
+			writePidFileAtomic(paths, {
+				pid: process.pid,
+				port,
+				instanceId: "mismatched",
+				versions: { package: "0.0.0", protocol: CHAT_PROTOCOL_VERSION + 99 },
+			});
+
+			const result = await runCli(dgHome, port, ["recv"]);
+
+			expect(result.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
+			expect(result.stderr).toContain("dg-skills install");
+			expect(result.stderr).not.toContain("did not answer");
 		} finally {
 			cleanupDgHome(dgHome);
 		}

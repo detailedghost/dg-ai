@@ -2,9 +2,11 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import {
 	CHAT_HEALTH_PATH,
+	CHAT_PROTOCOL_VERSION,
 	type DaemonHandle,
 	validateDaemonHandle,
 } from "../chat-format";
+import { DgCliError, EXIT_PROTOCOL_MISMATCH } from "../errors";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
 import type { DgPaths } from "./paths";
 
@@ -26,6 +28,19 @@ export function writePidFileAtomic(paths: DgPaths, handle: DaemonHandle): void {
 
 export function removePidFile(paths: DgPaths): void {
 	rmSync(paths.pidPath, { force: true });
+}
+
+/** Refuses to talk to a daemon of another protocol, naming the remedy the caller knows. */
+export function requireMatchingProtocol(
+	handle: DaemonHandle,
+	remedy: string,
+): void {
+	if (handle.versions.protocol === CHAT_PROTOCOL_VERSION) return;
+	throw new DgCliError(
+		`the dg-daemon on port ${handle.port} speaks protocol v${handle.versions.protocol}, ` +
+			`this CLI speaks v${CHAT_PROTOCOL_VERSION}. ${remedy}`,
+		EXIT_PROTOCOL_MISMATCH,
+	);
 }
 
 type HealthFetcher = (url: string, init?: RequestInit) => Promise<Response>;

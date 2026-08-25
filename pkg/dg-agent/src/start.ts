@@ -18,6 +18,7 @@ import {
 	isDaemonLive,
 	loopbackHostHeader,
 	readPidFile,
+	requireMatchingProtocol,
 	resolveDgPaths,
 	tryOpen,
 } from "@dg/common/node";
@@ -120,7 +121,14 @@ async function bootstrapFreshDaemon(
 ): Promise<number> {
 	await checkWslNetworking();
 	spawnDaemonProcess(seams);
-	return (await waitForFreshDaemon(paths)).port;
+	const handle = await waitForFreshDaemon(paths);
+	requireMatchingProtocol(
+		handle,
+		"The dg-daemon binary beside this dg-agent is from another release. " +
+			'Run "dg-skills install" so both come from the same one, then stop the ' +
+			`daemon this command started (pid ${handle.pid}).`,
+	);
+	return handle.port;
 }
 
 export async function cmdStart(
