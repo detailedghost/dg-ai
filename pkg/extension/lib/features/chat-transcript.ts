@@ -1,4 +1,5 @@
 import {
+	CHAT_ASSETS_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	type ChatFrame,
 	type ProgressState,
@@ -59,7 +60,7 @@ function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
 		}
 		try {
 			const res = await fetch(
-				`http://127.0.0.1:${port}/assets/${encodeURIComponent(assetId)}`,
+				`http://127.0.0.1:${port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
 				{
 					headers: {
 						"X-Dg-Session-Id": sessionId,

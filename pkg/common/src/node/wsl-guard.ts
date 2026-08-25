@@ -3,7 +3,7 @@ import { isWSL as detectIsWSL, runCapture } from "./process";
 
 export type WslNetworkingMode = "mirrored" | "nat" | "unknown";
 
-export type WslGuardSeams = {
+type WslGuardSeams = {
 	isWSL?: () => boolean;
 	networkingMode?: () => Promise<WslNetworkingMode>;
 	env?: Record<string, string | undefined>;

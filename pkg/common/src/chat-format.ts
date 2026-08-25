@@ -41,6 +41,11 @@ export const CHAT_MARKER_KEY = "_chat";
 export const CHAT_HEALTH_PATH = "/healthz";
 /** Answered alongside CHAT_HEALTH_PATH for one release, for extensions the user has not reloaded yet. */
 export const CHAT_LEGACY_HEALTH_PATH = "/health";
+export const CHAT_START_PATH = "/start";
+export const CHAT_STATUS_PATH = "/status";
+export const CHAT_WS_PATH = "/ws";
+export const CHAT_CLI_PATH = "/cli";
+export const CHAT_ASSETS_PATH = "/assets";
 
 export type SessionRole = "orchestrator" | "agent";
 

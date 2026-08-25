@@ -119,11 +119,10 @@ export function loadSubagentManifestFile(path: string): string[] {
 }
 
 function normalizeExecutableBasename(name: string): string {
-	let normalized = name.toLowerCase();
-	while (/\.\d+$/.test(normalized)) {
-		normalized = normalized.replace(/\.\d+$/, "");
-	}
-	return normalized.replace(/\d+$/, "");
+	return name
+		.toLowerCase()
+		.replace(/(\.\d+)+$/, "")
+		.replace(/\d+$/, "");
 }
 
 function isForbiddenExecutable(rawBasename: string): boolean {

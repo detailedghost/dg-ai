@@ -2,6 +2,9 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
+	CHAT_START_PATH,
+	CHAT_STATUS_PATH,
+	type DaemonHandle,
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
@@ -13,11 +16,11 @@ import {
 	checkWslNetworking,
 	type DgPaths,
 	isDaemonLive,
+	loopbackHostHeader,
 	readPidFile,
 	resolveDgPaths,
+	tryOpen,
 } from "@dg/common/node";
-
-const HOST_HEADER = (port: number) => ({ Host: `127.0.0.1:${port}` });
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,10 +65,10 @@ type RegisterInput = {
 };
 
 async function registerSession(port: number, input: RegisterInput) {
-	const resp = await fetch(`http://127.0.0.1:${port}/start`, {
+	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_START_PATH}`, {
 		method: "POST",
 		headers: {
-			...HOST_HEADER(port),
+			...loopbackHostHeader(port),
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify(input),
@@ -87,14 +90,37 @@ export type StartOptions = {
 
 async function fetchStatus(port: number) {
 	try {
-		const resp = await fetch(`http://127.0.0.1:${port}/status`, {
-			headers: HOST_HEADER(port),
+		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_STATUS_PATH}`, {
+			headers: loopbackHostHeader(port),
 		});
 		if (!resp.ok) return undefined;
 		return (await resp.json()) as { sessionCount?: number };
 	} catch {
 		return undefined;
 	}
+}
+
+async function attachToRunningDaemon(existing: DaemonHandle): Promise<number> {
+	if (existing.versions.protocol !== CHAT_PROTOCOL_VERSION) {
+		const status = await fetchStatus(existing.port);
+		throw new DgCliError(
+			`dg-daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
+				`this CLI speaks v${CHAT_PROTOCOL_VERSION}. Refusing to attach — stopping it would ` +
+				`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-daemon ` +
+				"never auto-restarts a shared daemon. Stop it yourself once nothing depends on it.",
+			EXIT_PROTOCOL_MISMATCH,
+		);
+	}
+	return existing.port;
+}
+
+async function bootstrapFreshDaemon(
+	paths: DgPaths,
+	seams: StartSeams,
+): Promise<number> {
+	await checkWslNetworking();
+	spawnDaemonProcess(seams);
+	return (await waitForFreshDaemon(paths)).port;
 }
 
 export async function cmdStart(
@@ -105,24 +131,10 @@ export async function cmdStart(
 	const existing = readPidFile(paths);
 	const existingLive = existing ? await isDaemonLive(existing) : false;
 
-	let targetPort: number;
-	if (existing && existingLive) {
-		if (existing.versions.protocol !== CHAT_PROTOCOL_VERSION) {
-			const status = await fetchStatus(existing.port);
-			throw new DgCliError(
-				`dg-daemon: the running daemon speaks protocol v${existing.versions.protocol}, ` +
-					`this CLI speaks v${CHAT_PROTOCOL_VERSION}. Refusing to attach — stopping it would ` +
-					`end ${status?.sessionCount ?? "an unknown number of"} live session(s); dg-daemon ` +
-					"never auto-restarts a shared daemon. Stop it yourself once nothing depends on it.",
-				EXIT_PROTOCOL_MISMATCH,
-			);
-		}
-		targetPort = existing.port;
-	} else {
-		await checkWslNetworking();
-		spawnDaemonProcess(seams);
-		targetPort = (await waitForFreshDaemon(paths)).port;
-	}
+	const targetPort =
+		existing && existingLive
+			? await attachToRunningDaemon(existing)
+			: await bootstrapFreshDaemon(paths, seams);
 
 	const bootstrap = await registerSession(targetPort, {
 		cwd: process.cwd(),
@@ -133,7 +145,6 @@ export async function cmdStart(
 	const url = buildBootstrapUrl(targetPort, bootstrap);
 	console.log(url);
 	if (options.open) {
-		const { tryOpen } = await import("@dg/common/node");
 		await tryOpen(url);
 	}
 }

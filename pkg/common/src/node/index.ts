@@ -5,5 +5,5 @@ export * from "./marker";
 export * from "./paths";
 export * from "./pidfile";
 export * from "./process";
-export * from "./tokens";
+export * from "./session-tokens";
 export * from "./wsl-guard";

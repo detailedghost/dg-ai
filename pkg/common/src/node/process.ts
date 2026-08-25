@@ -65,9 +65,9 @@ export function run(command: string, args: string[]): string {
 	return r.stdout.trim();
 }
 
-export type RunCaptureOptions = { stdin?: string };
+type RunCaptureOptions = { stdin?: string };
 
-export type RunCaptureResult = {
+type RunCaptureResult = {
 	status: number;
 	signal: NodeJS.Signals | null;
 	stdout: string;

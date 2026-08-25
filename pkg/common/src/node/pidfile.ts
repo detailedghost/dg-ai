@@ -28,10 +28,11 @@ export function removePidFile(paths: DgPaths): void {
 	rmSync(paths.pidPath, { force: true });
 }
 
-export type HealthFetcher = (
-	url: string,
-	init?: RequestInit,
-) => Promise<Response>;
+type HealthFetcher = (url: string, init?: RequestInit) => Promise<Response>;
+
+export function loopbackHostHeader(port: number): { Host: string } {
+	return { Host: `127.0.0.1:${port}` };
+}
 
 export async function isDaemonLive(
 	handle: DaemonHandle,
@@ -42,7 +43,7 @@ export async function isDaemonLive(
 		const resp = await fetchImpl(
 			`http://127.0.0.1:${handle.port}${CHAT_HEALTH_PATH}`,
 			{
-				headers: { Host: `127.0.0.1:${handle.port}` },
+				headers: loopbackHostHeader(handle.port),
 				signal: AbortSignal.timeout(timeoutMs),
 			},
 		);
