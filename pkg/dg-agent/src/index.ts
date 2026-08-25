@@ -8,6 +8,7 @@ import {
 } from "@dg/common";
 import { Command } from "commander";
 import { registerAgentCommands } from "./commands";
+import { registerMemoryCommands } from "./memory/commands";
 import { cmdStart } from "./start";
 
 const program = new Command();
@@ -19,6 +20,7 @@ program
 	.showHelpAfterError();
 
 registerAgentCommands(program);
+registerMemoryCommands(program);
 
 program
 	.command("start")

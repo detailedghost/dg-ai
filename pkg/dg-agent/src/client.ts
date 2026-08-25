@@ -1,4 +1,3 @@
-import { realpathSync } from "node:fs";
 import {
 	CHAT_CLI_PATH,
 	CHAT_PROTOCOL_VERSION,
@@ -10,10 +9,9 @@ import {
 } from "@dg/common";
 import {
 	readPidFile,
-	readSessionFiles,
 	readSessionToken,
 	resolveDgPaths,
-	type SessionTokenRecord,
+	soleSessionForCwd,
 } from "@dg/common/node";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
@@ -30,36 +28,13 @@ type BunWebSocketCtor = new (
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
-function formatCandidates(records: SessionTokenRecord[]): string {
-	if (records.length === 0) return "  (none)";
-	return records
-		.map((record) => `  ${record.sessionId}  ${record.cwd}`)
-		.join("\n");
-}
-
 export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	const paths = resolveDgPaths();
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
 
-	let sessionId = explicitSessionId;
-	if (!sessionId) {
-		const records = readSessionFiles(paths.sessionsDir);
-		const cwd = realpathSync(process.cwd());
-		const matches = records.filter((record) => {
-			try {
-				return realpathSync(record.cwd) === cwd;
-			} catch {
-				return false;
-			}
-		});
-		if (matches.length !== 1) {
-			throw new DgCliError(
-				`cannot resolve a session for cwd ${cwd}: found ${matches.length} matches; pass --session <id>. Live sessions:\n${formatCandidates(records)}`,
-			);
-		}
-		sessionId = matches[0].sessionId;
-	}
+	const sessionId =
+		explicitSessionId ?? soleSessionForCwd(paths.sessionsDir).sessionId;
 
 	return {
 		port: handle.port,
