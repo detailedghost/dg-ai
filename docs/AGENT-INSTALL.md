@@ -104,6 +104,12 @@ fi
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
   Windows-side browser cannot reach the loopback port; `dg-daemon` exits with
   code 3 rather than pretending to be reachable.
+- `~/.dg` holds two independent trees: `daemon/`, with the encrypted
+  `daemon.db` behind the chat commands, and `agents/`, with session files and
+  the plain-text `memory.db` behind `dg-agent memory`. An agent can also send
+  another agent identity a message with `dg-agent send --to <identity>`
+  instead of the human. Neither needs the daemon running: `memory` opens
+  `agents/memory.db` directly.
 - Add `--local` to **build the extension from source** (requires a repository checkout
   with `pkg/extension/`); otherwise it downloads the CI-built `ext-v*` asset.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
@@ -140,7 +146,9 @@ grouping/tours work with the browser or demo skill. For the chat harness:
 ```
 
 Should list `start`, `status`, `recv`, `send`, `progress`, `spawn`, `stage`,
-`close` and `manifest`; `status` reports that no daemon is running yet. Claude Code uses the
+`close`, `manifest` and `memory`; `status` reports that no daemon is running
+yet, though `memory` works regardless — it opens `~/.dg/agents/memory.db`
+directly rather than asking the daemon. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
 so nothing happens until it is loaded in that browser profile.
 
@@ -152,7 +160,7 @@ ______________________________________________________________________
 | --- | --- |
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
-| `dg-skills install` (stage extension + refresh both binaries) | Yes |
+| `dg-skills install` (stage extension + refresh all three binaries) | Yes |
 | `dg-agent start` (register a chat session) | Yes |
 | `dg-agent start --open` (open the chat page) | Yes (default browser) |
 | Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |

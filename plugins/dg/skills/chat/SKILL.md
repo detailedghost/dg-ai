@@ -1,6 +1,6 @@
 ---
 name: chat
-description: Talk to a human through a live browser chat window while you work, using the companion dg-ai-extension, the dg-agent CLI and the dg-daemon daemon. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply, progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, and close to finish. Every session is loopback-only and capability-gated.
+description: Talk to a human through a live browser chat window while you work, using the companion dg-ai-extension, the dg-agent CLI and the dg-daemon daemon. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
 ---
 
 # Chat
@@ -67,7 +67,14 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 - `status` — report the live daemon's status, or that none is running.
 - `recv [--block] [--timeout <ms>]` — receive the next queued human message.
   `--timeout` defaults to 30000 ms and applies only with `--block`.
-- `send <body>` — send one complete agent message.
+- `send <body> [--to <identity>]` — send one complete agent message. Without
+  `--to` it lands on the human's chat page, as it always has. With `--to
+  <identity>` it queues for that agent identity instead and never reaches the
+  human's canvas — it waits there until a session under that identity calls
+  `recv`. That `recv` result carries `from` and `to` naming both identities, so
+  a reply is one more `send --to` back. The sending session never gets its own
+  message back; addressing your own identity still reaches your other live
+  sessions, just not the one that sent it.
 - `progress --state <running|awaiting-input>` — publish an explicit state. Any
   other value is rejected.
 - `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>]` — spawn
@@ -81,6 +88,40 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 `-s, --session <id>` selects a session explicitly. Without it, the sole session
 whose realpath-matching cwd matches yours is used.
+
+## Memory
+
+Four verbs read and write this agent's own long-term memory, and none of them
+need a live daemon: the CLI opens `~/.dg/agents/memory.db` itself, so every verb
+below works with no daemon running at all.
+
+- `memory write <title> [body] [--kind <kind>] [--workset <label>] [--identity
+  <name>]` — record one memory. The body is the argument, or stdin when the
+  argument is left off. Writing the same title again replaces what this agent
+  knew under that title instead of adding a duplicate; leaving out `--kind`
+  leaves an existing kind alone. A blank title or body is refused, and the
+  body is capped at `CHAT_MAX_MESSAGE_BODY_BYTES` — the same bound `send` puts
+  on a message body. Prints the memory id.
+
+  A title starting with `-` needs a `--` separator first, or Commander reads
+  it as an unknown option: `memory write -- "-1 on call" "body"`.
+- `memory search [query] [--workset <label>] [--identity <name>] [--limit <n>]
+  [--offset <n>] [--full]` — find this agent's memories, most relevant first.
+  Free text only: punctuation an FTS5 parser would choke on is dropped before
+  matching, so no query is ever a syntax error, though one that is nothing but
+  punctuation returns nothing rather than the full recent list. With no query
+  at all it lists the most recent first. One line per hit — id, date, workset,
+  title — unless `--full` prints the whole record as JSON, one per line. Pages
+  default to 20 hits and cap at 100.
+- `memory read <id> [--full]` — print one memory as text, or the whole record
+  as JSON with `--full`.
+- `memory forget <id>` — remove one memory.
+
+`read` and `forget` both exit 1 on an id that is not there.
+
+The agent identity comes from the session file on disk: the sole session
+registered from this working directory by default, `-s <id>` to name a
+specific one, or `--identity <name>` to override either outright.
 
 ## Exit codes
 
@@ -134,6 +175,10 @@ point of publishing it.
   session; it is never written to a log or a URL query string.
 - Messages and staged assets are encrypted at rest. The data key comes from the
   OS keychain when one is available, and from a file-backed key otherwise.
+- `~/.dg` is two independent trees: `daemon/` holds the encrypted `daemon.db`
+  that stores those messages and assets, and `agents/` holds session files
+  plus the plain-text `memory.db` behind `memory` — plain text on purpose,
+  since FTS5 cannot index ciphertext.
 - On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach the
   loopback port from the Windows-side browser, and the daemon exits with code 3
   rather than pretending to be reachable.
