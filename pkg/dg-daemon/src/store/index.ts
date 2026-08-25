@@ -40,6 +40,7 @@ const AAD_COMMAND_MANIFEST = "command-manifest";
 const AAD_SUBAGENT_LIST = "subagent-list";
 const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
+const AAD_AGENT_MESSAGE_BODY = "agent-message-body";
 const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
 
 export type StoreSeams = {
@@ -85,6 +86,25 @@ export type InsertStatusEventInput = {
 export type StatusEvent = {
 	seq: number;
 	state: ProgressState;
+	createdAt: string;
+};
+
+export type InsertAgentMessageInput = {
+	senderSessionId: string;
+	senderIdentity: string;
+	recipientIdentity: string;
+	id: string;
+	body: string;
+};
+
+export type ClaimedAgentMessage = {
+	claimId: string;
+	seq: number;
+	id: string;
+	role: "agent";
+	from: string;
+	to: string;
+	body: string;
 	createdAt: string;
 };
 
@@ -148,6 +168,17 @@ type RawMessageRow = {
 	subagent_name: string | null;
 };
 
+type RawAgentMessageRow = {
+	seq: number;
+	id: string;
+	sender_identity: string;
+	recipient_identity: string;
+	created_at: string;
+	body_ciphertext: Uint8Array;
+	body_iv: Uint8Array;
+	body_tag: Uint8Array;
+};
+
 type RawCryptoMetaRow = {
 	format_version: number;
 	key_id: string;
@@ -182,6 +213,51 @@ type CommandManifestRow = {
 	subagents_iv: Uint8Array;
 	subagents_tag: Uint8Array;
 };
+
+const MESSAGE_SELECTION =
+	"seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name";
+
+const AGENT_MESSAGE_SELECTION =
+	"seq, id, sender_identity, recipient_identity, created_at, body_ciphertext, body_iv, body_tag";
+
+const CLAIMABLE_TABLES = ["messages", "agent_messages"] as const;
+
+function claimSql(table: string, filter: string, selection: string): string {
+	return `UPDATE ${table}
+		SET claim_id = $claimId, claimed_at = $now
+		WHERE seq = (
+			SELECT seq FROM ${table}
+			WHERE ${filter}
+			  AND delivered_at IS NULL
+			  AND (claim_id IS NULL OR claimed_at < $leaseCutoff)
+			ORDER BY seq ASC
+			LIMIT 1
+		)
+		RETURNING ${selection}`;
+}
+
+function ackSql(table: string, filter: string): string {
+	return `UPDATE ${table}
+		SET delivered_at = $now
+		WHERE ${filter} AND claim_id = $claimId AND delivered_at IS NULL
+		RETURNING seq`;
+}
+
+export const MESSAGE_CLAIM_SQL = claimSql(
+	"messages",
+	"session_id = $sessionId AND role = 'user'",
+	MESSAGE_SELECTION,
+);
+export const MESSAGE_ACK_SQL = ackSql("messages", "session_id = $sessionId");
+export const AGENT_MESSAGE_CLAIM_SQL = claimSql(
+	"agent_messages",
+	"recipient_identity = $identity AND sender_session_id <> $sessionId",
+	AGENT_MESSAGE_SELECTION,
+);
+export const AGENT_MESSAGE_ACK_SQL = ackSql(
+	"agent_messages",
+	"recipient_identity = $identity",
+);
 
 function resolveKeyMode(raw: string | undefined): KeyMode {
 	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
@@ -565,36 +641,26 @@ export class ChatStore {
 	}
 
 	recoverStaleClaims(): number {
-		return this.db.run(
-			"UPDATE messages SET claim_id = NULL, claimed_at = NULL WHERE delivered_at IS NULL AND claim_id IS NOT NULL",
-		).changes;
+		return CLAIMABLE_TABLES.reduce(
+			(total, table) =>
+				total +
+				this.db.run(
+					`UPDATE ${table} SET claim_id = NULL, claimed_at = NULL WHERE delivered_at IS NULL AND claim_id IS NOT NULL`,
+				).changes,
+			0,
+		);
 	}
 
 	claimNext(sessionId: string): ClaimedMessage | undefined {
-		const claimId = randomUUID();
-		const now = Date.now();
-		const leaseCutoff = now - this.claimLeaseMs;
+		const claim = this.#newClaim();
 		const row = this.db
-			.query(
-				`UPDATE messages
-				 SET claim_id = ?, claimed_at = ?
-				 WHERE seq = (
-					 SELECT seq FROM messages
-					 WHERE session_id = ?
-					   AND role = 'user'
-					   AND delivered_at IS NULL
-					   AND (claim_id IS NULL OR claimed_at < ?)
-					 ORDER BY seq ASC
-					 LIMIT 1
-				 )
-				 RETURNING seq, id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name`,
-			)
-			.get(claimId, now, sessionId, leaseCutoff) as RawMessageRow | null;
+			.query(MESSAGE_CLAIM_SQL)
+			.get({ ...claim, sessionId }) as RawMessageRow | null;
 
 		if (!row) return undefined;
 
 		return {
-			claimId,
+			claimId: claim.claimId,
 			seq: row.seq,
 			id: row.id,
 			sessionId,
@@ -608,14 +674,92 @@ export class ChatStore {
 
 	ack(sessionId: string, claimId: string): boolean {
 		const row = this.db
+			.query(MESSAGE_ACK_SQL)
+			.get({ now: Date.now(), sessionId, claimId }) as { seq: number } | null;
+		return row !== null;
+	}
+
+	insertAgentMessage(input: InsertAgentMessageInput): { seq: number } {
+		this.ensureSessionRow(input.senderSessionId);
+		const enc = this.cipherBox.encryptRecord(
+			input.body,
+			this.#agentMessageAad(
+				input.senderIdentity,
+				input.recipientIdentity,
+				input.id,
+			),
+		);
+		const row = this.db
 			.query(
-				`UPDATE messages
-				 SET delivered_at = ?
-				 WHERE session_id = ? AND claim_id = ? AND delivered_at IS NULL
+				`INSERT INTO agent_messages (id, sender_session_id, sender_identity, recipient_identity, created_at, body_ciphertext, body_iv, body_tag)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 				 RETURNING seq`,
 			)
-			.get(Date.now(), sessionId, claimId) as { seq: number } | null;
+			.get(
+				input.id,
+				input.senderSessionId,
+				input.senderIdentity,
+				input.recipientIdentity,
+				new Date().toISOString(),
+				enc.ciphertext,
+				enc.iv,
+				enc.tag,
+			) as { seq: number };
+		return { seq: row.seq };
+	}
+
+	claimNextAgentMessage(
+		identity: string,
+		sessionId: string,
+	): ClaimedAgentMessage | undefined {
+		const claim = this.#newClaim();
+		const row = this.db
+			.query(AGENT_MESSAGE_CLAIM_SQL)
+			.get({ ...claim, identity, sessionId }) as RawAgentMessageRow | null;
+
+		if (!row) return undefined;
+
+		return {
+			claimId: claim.claimId,
+			seq: row.seq,
+			id: row.id,
+			role: "agent",
+			from: row.sender_identity,
+			to: row.recipient_identity,
+			body: this.cipherBox
+				.decryptRecord(
+					Buffer.from(row.body_ciphertext),
+					Buffer.from(row.body_iv),
+					Buffer.from(row.body_tag),
+					this.#agentMessageAad(
+						row.sender_identity,
+						row.recipient_identity,
+						row.id,
+					),
+				)
+				.toString("utf8"),
+			createdAt: row.created_at,
+		};
+	}
+
+	ackAgentMessage(identity: string, claimId: string): boolean {
+		const row = this.db
+			.query(AGENT_MESSAGE_ACK_SQL)
+			.get({ now: Date.now(), identity, claimId }) as { seq: number } | null;
 		return row !== null;
+	}
+
+	#newClaim(): { claimId: string; now: number; leaseCutoff: number } {
+		const now = Date.now();
+		return {
+			claimId: randomUUID(),
+			now,
+			leaseCutoff: now - this.claimLeaseMs,
+		};
+	}
+
+	#agentMessageAad(from: string, to: string, rowId: string): Buffer {
+		return this.#aad(AAD_AGENT_MESSAGE_BODY, `${from}>${to}`, rowId);
 	}
 
 	#toPeekedMessage(row: RawMessageRow, sessionId: string): PeekedMessage {

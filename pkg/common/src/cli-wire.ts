@@ -20,7 +20,7 @@ export type CliRecvResult =
 
 export type CliAckRequest = { type: "cli-ack"; claimId: string };
 
-export type CliSendRequest = { type: "cli-send"; body: string };
+export type CliSendRequest = { type: "cli-send"; body: string; to?: string };
 
 export type CliProgressRequest = {
 	type: "cli-progress";

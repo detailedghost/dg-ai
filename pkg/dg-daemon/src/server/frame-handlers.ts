@@ -32,7 +32,12 @@ import {
 	resolveSubagentMention,
 } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
-import type { ChatStore, PeekedMessage } from "../store";
+import type {
+	ChatStore,
+	ClaimedAgentMessage,
+	ClaimedMessage,
+	PeekedMessage,
+} from "../store";
 import type { ConnectionManager } from "./connection";
 import {
 	onSocketClose,
@@ -142,7 +147,11 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 				? (value as CliFrame)
 				: undefined;
 		case "cli-send":
-			return typeof value.body === "string" ? (value as CliFrame) : undefined;
+			return typeof value.body === "string" &&
+				(value.to === undefined ||
+					(typeof value.to === "string" && value.to.trim().length > 0))
+				? (value as CliFrame)
+				: undefined;
 		case "cli-progress":
 			return value.state === "running" || value.state === "awaiting-input"
 				? (value as CliFrame)
@@ -183,13 +192,24 @@ function sendCliRecvResult(
 	);
 }
 
+function claimForSession(
+	deps: FrameHandlerDeps,
+	sessionId: string,
+): ClaimedMessage | ClaimedAgentMessage | undefined {
+	const fromHuman = deps.store.claimNext(sessionId);
+	if (fromHuman) return fromHuman;
+	const identity = deps.registry.get(sessionId)?.agentIdentity;
+	if (!identity) return undefined;
+	return deps.store.claimNextAgentMessage(identity, sessionId);
+}
+
 async function handleCliRecv(
 	ws: ServerWebSocket<SocketState>,
 	sessionId: string,
 	frame: Extract<CliFrame, { type: "cli-recv" }>,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
-	const first = deps.store.claimNext(sessionId);
+	const first = claimForSession(deps, sessionId);
 	if (first) {
 		await sendCliRecvResult(ws, { outcome: "delivered", message: first });
 		return;
@@ -224,7 +244,7 @@ async function handleCliRecv(
 			() => void finish({ outcome: "closed" }),
 		);
 		const poll = setInterval(() => {
-			const message = deps.store.claimNext(sessionId);
+			const message = claimForSession(deps, sessionId);
 			if (message) void finish({ outcome: "delivered", message });
 		}, 20);
 		const timeout = setTimeout(
@@ -253,9 +273,12 @@ async function handleCliFrame(
 	switch (frame.type) {
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
-		case "cli-ack":
-			deps.store.ack(sessionId, frame.claimId);
+		case "cli-ack": {
+			if (deps.store.ack(sessionId, frame.claimId)) return;
+			const identity = deps.registry.get(sessionId)?.agentIdentity;
+			if (identity) deps.store.ackAgentMessage(identity, frame.claimId);
 			return;
+		}
 		case "cli-send": {
 			const bodyBytes = Buffer.byteLength(frame.body, "utf8");
 			if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
@@ -264,6 +287,25 @@ async function handleCliFrame(
 					sessionId,
 					`cli-send body of ${bodyBytes} bytes exceeds CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
 				);
+				return;
+			}
+			if (frame.to !== undefined) {
+				const sender = deps.registry.get(sessionId);
+				if (!sender) {
+					await sendError(
+						ws,
+						sessionId,
+						"cli-send to an agent identity requires a live session",
+					);
+					return;
+				}
+				deps.store.insertAgentMessage({
+					senderSessionId: sessionId,
+					senderIdentity: sender.agentIdentity,
+					recipientIdentity: frame.to,
+					id: randomUUID(),
+					body: frame.body,
+				});
 				return;
 			}
 			deps.store.insertMessage({

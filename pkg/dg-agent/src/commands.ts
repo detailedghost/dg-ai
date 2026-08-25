@@ -136,11 +136,21 @@ export function registerAgentCommands(program: Command): void {
 		.command("send")
 		.description("send one complete agent message")
 		.argument("<body>", "message body")
-		.action(async (body: string, _options: unknown, command: Command) => {
-			const client = await connectFor(command);
-			client.send({ type: "cli-send", body });
-			client.close();
-		});
+		.option(
+			"--to <identity>",
+			"address the message to an agent identity instead of the human",
+		)
+		.action(
+			async (body: string, options: { to?: string }, command: Command) => {
+				const client = await connectFor(command);
+				client.send({
+					type: "cli-send",
+					body,
+					...(options.to ? { to: options.to } : {}),
+				});
+				client.close();
+			},
+		);
 
 	program
 		.command("progress")
