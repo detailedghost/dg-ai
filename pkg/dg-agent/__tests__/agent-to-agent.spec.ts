@@ -62,6 +62,13 @@ function recv(
 	return runCli(dgHome, port, ["recv", "--session", as.sessionId, ...args]);
 }
 
+function tamperDb(sql: string): void {
+	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	const raw = new Database(paths.dbPath, { strict: true });
+	raw.run(sql);
+	raw.close(true);
+}
+
 function queuedRecipients(): string[] {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	const raw = new Database(paths.dbPath, { strict: true, readonly: true });
@@ -176,6 +183,43 @@ describe("one agent addressing another by identity", () => {
 
 		expect(delivered(await recv(port, beta)).body).toBe("from the human");
 		expect(delivered(await recv(port, beta)).body).toBe("from another agent");
+	});
+
+	it("drops a tampered message and keeps serving, rather than taking the daemon down", async () => {
+		const { port, alpha, beta } = await bootFleet();
+
+		await send(port, alpha, ["--to", "beta", "will be corrupted"]);
+		await waitForValue(
+			() => (queuedRecipients().length > 0 ? true : undefined),
+			3000,
+		);
+		tamperDb("UPDATE agent_messages SET sender_identity = 'forged'");
+
+		expect(outcomeOf(await recv(port, beta)).outcome).toBe("empty");
+
+		await send(port, alpha, ["--to", "beta", "and this one still arrives"]);
+		expect(delivered(await recv(port, beta)).body).toBe(
+			"and this one still arrives",
+		);
+	});
+
+	it("trims the identity it was handed, so a padded --to still reaches its agent", async () => {
+		const { port, alpha, beta } = await bootFleet();
+
+		await send(port, alpha, ["--to", " beta ", "padded but deliverable"]);
+
+		expect(delivered(await recv(port, beta)).body).toBe(
+			"padded but deliverable",
+		);
+	});
+
+	it("trims the identity a session registered under, so the two ends still meet", async () => {
+		const { port, alpha } = await bootFleet();
+		const delta = await registerSession(port, { agentIdentity: " delta " });
+
+		await send(port, alpha, ["--to", "delta", "for delta"]);
+
+		expect(delivered(await recv(port, delta)).body).toBe("for delta");
 	});
 
 	it("refuses an empty identity rather than queueing a message nobody can claim", async () => {

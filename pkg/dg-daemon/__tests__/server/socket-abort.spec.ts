@@ -56,6 +56,19 @@ describe("work abandoned when a socket goes away", () => {
 		expect(closeHandler).toContain("abortPendingWork(ws)");
 	});
 
+	it("hands a rejected frame handler to a catch, so one bad frame cannot kill the process", () => {
+		const http = readFileSync(
+			join(import.meta.dir, "../../src/server/http.ts"),
+			"utf8",
+		);
+		const messageHandler =
+			/message\(ws, message\) \{([\s\S]*?)\n\t\t\t\},/.exec(http)?.[1];
+
+		expect(messageHandler).toBeDefined();
+		expect(messageHandler).toContain(".catch(");
+		expect(messageHandler).not.toContain("void handleSocketMessage");
+	});
+
 	it("is registered by a blocking cli-recv, which is the work that needs abandoning", () => {
 		const handlers = readFileSync(
 			join(import.meta.dir, "../../src/server/frame-handlers.ts"),
