@@ -95,6 +95,7 @@ async function walkTour(
 	const reportedNav = new Set<number>();
 
 	let idleWaits = 0;
+	let reachedDone = false;
 	const maxIdleWaits = Math.ceil(OVERLAY_IDLE_TIMEOUT_MS / OVERLAY_POLL_MS);
 
 	for (let iterations = 0; iterations < steps.length * 4 + 10; iterations++) {
@@ -119,7 +120,10 @@ async function walkTour(
 			await wait(300);
 			continue;
 		}
-		if (overlay.kind === "done") break;
+		if (overlay.kind === "done") {
+			reachedDone = true;
+			break;
+		}
 
 		const i = overlay.index;
 		const step = steps[i];
@@ -165,6 +169,14 @@ async function walkTour(
 				url: unaccountedFor,
 			});
 		}
+	}
+
+	if (!reachedDone && !findings.some((f) => f.kind === "harness-error")) {
+		findings.push({
+			step: 0,
+			kind: "harness-error",
+			message: "the tour never reported done; the walk stopped early",
+		});
 	}
 
 	return { ok: findings.length === 0, findings };
