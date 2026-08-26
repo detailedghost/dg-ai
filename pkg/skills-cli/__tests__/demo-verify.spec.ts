@@ -22,6 +22,7 @@ import type { TourScript, TourStep } from "@dg/common";
 import { toPlanMarkdown } from "@dg/common";
 import {
 	browserArgs,
+	DEVTOOLS_URL_TIMEOUT_MS,
 	sandboxDisabled,
 } from "../src/utils/cdp-harness";
 import { callInSubprocess, mergeEnv } from "./module-call";
@@ -375,4 +376,39 @@ describe("browser sandbox flag", () => {
 		expect(args).toContain("--disable-extensions-except=/tmp/ext");
 		expect(args).toContain("--remote-debugging-port=0");
 	});
+});
+
+describe("the DevTools wait releases the process it was blocking", () => {
+	const HARNESS = join(import.meta.dir, "..", "src", "utils", "cdp-harness.ts");
+
+	/**
+	 * The stream deliberately never closes, the way a live browser's stderr does not.
+	 * An uncleared timeout kept the event loop alive for its whole budget, so every
+	 * `demo --verify` sat idle for 15 seconds after printing its findings.
+	 */
+	test("a process that has its URL exits instead of waiting out the budget", async () => {
+		const started = Date.now();
+		const proc = Bun.spawn(
+			[
+				process.execPath,
+				"-e",
+				`import { waitForDevtoolsUrl, DEVTOOLS_URL_TIMEOUT_MS } from ${JSON.stringify(HARNESS)};
+const stream = new ReadableStream({
+	start(c) {
+		c.enqueue(new TextEncoder().encode("DevTools listening on ws://127.0.0.1:1/probe\\n"));
+	},
+});
+console.log(await waitForDevtoolsUrl(stream, DEVTOOLS_URL_TIMEOUT_MS));`,
+			],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
+		const [out, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			proc.exited,
+		]);
+
+		expect(code).toBe(0);
+		expect(out.trim()).toBe("ws://127.0.0.1:1/probe");
+		expect(Date.now() - started).toBeLessThan(DEVTOOLS_URL_TIMEOUT_MS / 2);
+	}, DEVTOOLS_URL_TIMEOUT_MS * 2);
 });

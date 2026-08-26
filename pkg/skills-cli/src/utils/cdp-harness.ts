@@ -87,9 +87,11 @@ export function resolveBrowserBinary(): string {
 	);
 }
 
+export const DEVTOOLS_URL_TIMEOUT_MS = 15000;
+
 /** Scan the browser's stderr for the `DevTools listening on ws://...` line CLI prints
  *  once `--remote-debugging-port` is bound (port 0 means "OS picks one, tell me which"). */
-async function waitForDevtoolsUrl(
+export async function waitForDevtoolsUrl(
 	stderr: ReadableStream<Uint8Array>,
 	timeoutMs: number,
 ): Promise<string> {
@@ -108,8 +110,11 @@ async function waitForDevtoolsUrl(
 			`browser exited before printing a DevTools URL:\n${buf.slice(-2000)}`,
 		);
 	})();
-	const timeout = new Promise<never>((_, reject) =>
-		setTimeout(
+	// An uncleared timer keeps the event loop alive, so `demo --verify` used to sit
+	// idle for the whole budget after already printing its findings.
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(
 			() =>
 				reject(
 					new Error(
@@ -117,9 +122,13 @@ async function waitForDevtoolsUrl(
 					),
 				),
 			timeoutMs,
-		),
-	).finally(() => reader.releaseLock());
-	return Promise.race([scan, timeout]);
+		);
+	}).finally(() => reader.releaseLock());
+	try {
+		return await Promise.race([scan, timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 /** A thin promise-based wrapper over one CDP websocket connection. */
@@ -365,7 +374,10 @@ export class DemoVerifyHarness {
 				{ stdout: "ignore", stderr: "pipe" },
 			);
 			try {
-				const wsUrl = await waitForDevtoolsUrl(proc.stderr, 15000);
+				const wsUrl = await waitForDevtoolsUrl(
+					proc.stderr,
+					DEVTOOLS_URL_TIMEOUT_MS,
+				);
 				const conn = await CdpConnection.connect(wsUrl);
 				return new DemoVerifyHarness(proc, conn, profileDir);
 			} catch (err) {
