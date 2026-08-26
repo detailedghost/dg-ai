@@ -138,6 +138,22 @@ describe("the dg-server compatibility alias", () => {
 	});
 });
 
+describe("the skills CLI presents itself under its shipped name", () => {
+	const entry = readRepoFile("pkg", "skills-cli", "src", "index.ts");
+	const shipped = RELEASED_BINARIES.find(
+		(b) => b.workflow === "skills-release.yml",
+	)?.binaryName;
+
+	test("the program name and the release asset name are the same word", () => {
+		expect(shipped).toBeDefined();
+		expect(/\.name\("([^"]+)"\)/.exec(entry)?.[1]).toBe(shipped);
+	});
+
+	test("a top-level failure is prefixed with that same name", () => {
+		expect(entry).toContain(`console.error(\`${shipped}: `);
+	});
+});
+
 describe("install refreshes every prebuilt binary through one fetcher", () => {
 	const install = readRepoFile(
 		"pkg",

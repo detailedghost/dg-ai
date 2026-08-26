@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * dg-browser — the /dg:browser CLI. Thin commander entry point; each subcommand
+ * dg-skills — the /dg:browser CLI. Thin commander entry point; each subcommand
  * lives in its own feature module under commands/ and self-registers here.
  */
 
@@ -14,7 +14,7 @@ import { registerRerun } from "./commands/rerun";
 
 const program = new Command();
 program
-	.name("dg-browser")
+	.name("dg-skills")
 	.description(
 		"Group marked tabs, play guided tours, and compare live-page prototypes via the dg-ai-extension.",
 	)
@@ -28,6 +28,6 @@ registerRerun(program);
 registerProto(program);
 
 program.parseAsync(process.argv).catch((err) => {
-	console.error(`dg-browser: ${err instanceof Error ? err.message : err}`);
+	console.error(`dg-skills: ${err instanceof Error ? err.message : err}`);
 	process.exit(1);
 });

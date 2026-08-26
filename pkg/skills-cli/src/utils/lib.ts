@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the dg-browser CLI (batch-open/demo/install/launch/detect):
+ * Shared helpers for the dg-skills CLI (batch-open/demo/install/launch/detect):
  * per-OS extension paths, zip extraction, and fetching the CI-built extension
  * from GitHub Releases. Platform detection (isWSL) and subprocess running
  * (run) live in @dg/common/node and are only imported here.
