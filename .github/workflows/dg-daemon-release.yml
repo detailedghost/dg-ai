@@ -3,6 +3,7 @@ name: DG Daemon - Release
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - master
