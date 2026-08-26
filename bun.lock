@@ -39,7 +39,7 @@
     },
     "pkg/extension": {
       "name": "@dg/extension",
-      "version": "1.7.38",
+      "version": "1.8.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "kokoro-js": "^1.2.1",
