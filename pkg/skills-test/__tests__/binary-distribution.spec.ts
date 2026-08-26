@@ -99,35 +99,14 @@ for (const {
 	});
 }
 
-describe("the dg-server compatibility alias", () => {
-	test("the daemon release also publishes it, so an installed dg-skills upgrades once more", () => {
+describe("the retired dg-server name reaches no new release", () => {
+	test("the daemon release publishes only its own tag, with no alias and no renamed copies", () => {
 		const rel = workflow("dg-daemon-release.yml");
 
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell tag text from the workflow, not a JS interpolation
-		expect(rel).toContain('tag="server-v${version}"');
-		expect(rel).toContain("legacy/*");
-		expect(rel).toContain("s/^dg-daemon-/dg-server-/");
-	});
-
-	test("the alias is published as its own step, so it cannot take the real release down with it", () => {
-		const rel = workflow("dg-daemon-release.yml");
-
-		const daemonStep =
-			/- name: Publish dg-daemon release[\s\S]*?(?=\n {6}- name:)/.exec(
-				rel,
-			)?.[0];
-		const aliasStep =
-			/- name: Publish the legacy dg-server alias[\s\S]*?(?=\n {6}- name:|$)/.exec(
-				rel,
-			)?.[0];
-
-		expect(daemonStep).toBeDefined();
-		expect(aliasStep).toBeDefined();
-		expect(daemonStep).not.toContain("server-v");
-		expect(aliasStep).not.toContain('tag="daemon-v');
-
-		expect(rel).toMatch(/steps\.publish_daemon\.outcome == 'failure'/);
-		expect(rel).toMatch(/steps\.publish_server_alias\.outcome == 'failure'/);
+		expect(rel).toContain('tag="daemon-v');
+		expect(rel).not.toContain("server-v");
+		expect(rel).not.toContain("dg-server");
+		expect(rel).not.toContain("legacy");
 	});
 
 	test("the agent release publishes no alias, having never shipped under another name", () => {

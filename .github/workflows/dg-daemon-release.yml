@@ -77,13 +77,6 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Stage the legacy dg-server asset names
-        run: |
-          mkdir -p legacy
-          for built in dist/dg-daemon-*; do
-            cp "$built" "legacy/$(basename "$built" | sed 's/^dg-daemon-/dg-server-/')"
-          done
-
       - name: Publish dg-daemon release
         id: publish_daemon
         env:
@@ -109,28 +102,3 @@ jobs:
           gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
           gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
 
-      - name: Publish the legacy dg-server alias
-        id: publish_server_alias
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version="${{ steps.ver.outputs.version }}"
-          tag="server-v${version}"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists — nothing to publish."
-            exit 0
-          fi
-          gh release create "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "DG Daemon $tag" \
-            --notes "Alias of daemon-v${version} for builds still fetching dg-server. Removed after the next release." \
-            legacy/*
-
-      - name: Clean up the dg-server alias on failure
-        if: failure() && steps.publish_server_alias.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |-
-          tag="server-v${{ steps.ver.outputs.version }}"
-          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
-          gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" --method DELETE 2>/dev/null || true
