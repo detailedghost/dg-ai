@@ -68,6 +68,26 @@ function parseVerify(out: string): VerifyResult {
 	return JSON.parse(out);
 }
 
+/** A clean run, or a failure that names what the harness actually reported. */
+function expectClean(result: VerifyResult): void {
+	if (result.ok) return;
+	throw new Error(`expected a clean plan; verify reported ${describeFindings(result)}`);
+}
+
+/** The finding of `kind`, or a failure carrying every finding verify did report. */
+function requireFinding(
+	result: VerifyResult,
+	kind: string,
+): Record<string, unknown> {
+	const found = result.findings.find((f) => f.kind === kind);
+	if (!found) throw new Error(`no ${kind} finding in ${describeFindings(result)}`);
+	return found;
+}
+
+function describeFindings(result: VerifyResult): string {
+	return JSON.stringify(result.findings, null, 1);
+}
+
 describe("demo --verify", () => {
 	let server: ReturnType<typeof Bun.serve>;
 	let base: string;
@@ -130,15 +150,12 @@ describe("demo --verify", () => {
 		expect(code).toBe(0);
 		const result = parseVerify(out);
 		expect(result.ok).toBe(false);
-		const finding = result.findings.find(
-			(f) => f.kind === "selector-unresolved",
-		);
-		expect(finding).toBeDefined();
-		expect(finding?.selector).toBe("#totally-bogus-selector-xyz");
+		const finding = requireFinding(result, "selector-unresolved");
+		expect(finding.selector).toBe("#totally-bogus-selector-xyz");
 		// Ambiguous whether `step` is 0- or 1-indexed; the plan's own authored
 		// numbering (`toPlanMarkdown`'s `i + 1`) is 1-indexed and is what an
 		// agent re-reading the plan.md to fix it would expect, so that's assumed.
-		expect(finding?.step).toBe(1);
+		expect(finding.step).toBe(1);
 	}, 45000);
 
 	test("a click that navigates with no authored `navigate` is reported as unrecorded-navigation with the landed URL", async () => {
@@ -161,12 +178,9 @@ describe("demo --verify", () => {
 		expect(code).toBe(0);
 		const result = parseVerify(out);
 		expect(result.ok).toBe(false);
-		const finding = result.findings.find(
-			(f) => f.kind === "unrecorded-navigation",
-		);
-		expect(finding).toBeDefined();
-		expect(finding?.url).toBe(`${base}/landed.html`);
-		expect(typeof finding?.step).toBe("number");
+		const finding = requireFinding(result, "unrecorded-navigation");
+		expect(finding.url).toBe(`${base}/landed.html`);
+		expect(typeof finding.step).toBe("number");
 	}, 45000);
 
 	test("a clean plan yields ok:true and no findings", async () => {
@@ -183,7 +197,7 @@ describe("demo --verify", () => {
 		const { code, out } = await runVerify(plan);
 		expect(code).toBe(0);
 		const result = parseVerify(out);
-		expect(result.ok).toBe(true);
+		expectClean(result);
 		expect(result.findings).toEqual([]);
 	}, 45000);
 
@@ -221,7 +235,7 @@ describe("demo --verify", () => {
 		await proc.exited;
 		const out = Buffer.concat(chunks).toString("utf8");
 		expect(() => JSON.parse(out)).not.toThrow();
-		expect(parseVerify(out).ok).toBe(true);
+		expectClean(parseVerify(out));
 	}, 45000);
 
 	test("two concurrent verify runs both succeed — a throwaway profile per run, not the user's browser", async () => {
@@ -242,8 +256,8 @@ describe("demo --verify", () => {
 		const [a, b] = await Promise.all([runVerify(planA), runVerify(planB)]);
 		expect(a.code).toBe(0);
 		expect(b.code).toBe(0);
-		expect(parseVerify(a.out).ok).toBe(true);
-		expect(parseVerify(b.out).ok).toBe(true);
+		expectClean(parseVerify(a.out));
+		expectClean(parseVerify(b.out));
 	}, 60000);
 
 	test("a plan path that does not exist is reported as plan-unreadable, not thrown", async () => {
