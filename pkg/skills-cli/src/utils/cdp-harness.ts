@@ -326,10 +326,9 @@ export class CdpPageHandle {
 		return JSON.parse(String(await this.evaluate(expr))) as OverlayState;
 	}
 
-	/** Click whichever control the current overlay offers: consent approval, "Next
-	 *  step" (by its accessible name, since it has no stable id), or the final
-	 *  "Done". Mirrors the exact click a real user makes, so it exercises the
-	 *  tour's own action/nav handling rather than a synthesized shortcut. */
+	/** Click whichever control the current overlay offers, by accessible name, the
+	 *  same way a real user would — including skipping a disabled "Next step" so
+	 *  the last step falls through to "Done" instead of a no-op click. */
 	async clickThroughTour(): Promise<boolean> {
 		const expr = `
 			(() => {
@@ -339,7 +338,7 @@ export class CdpPageHandle {
 					const buttons = [...root.querySelectorAll("button")];
 					const approve = buttons.find((b) => (b.textContent || "").trim() === "Approve automatic actions");
 					if (approve) { approve.click(); return true; }
-					const next = root.querySelector('[aria-label="Next step"], [title="Next step"]');
+					const next = root.querySelector('[aria-label="Next step"]:not(:disabled), [title="Next step"]:not(:disabled)');
 					if (next) { next.click(); return true; }
 					const done = buttons.find((b) => (b.textContent || "").trim() === "Done");
 					if (done) { done.click(); return true; }
