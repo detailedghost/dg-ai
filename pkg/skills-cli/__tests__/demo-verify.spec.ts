@@ -45,6 +45,18 @@ const DEMO_VERIFY = join(
 
 type VerifyResult = { ok: boolean; findings: Array<Record<string, unknown>> };
 
+/**
+ * Budget for a test that drives a real browser end to end. A single run is allowed
+ * DEVTOOLS_URL_TIMEOUT_MS just to reach the DevTools URL, and then still has to load
+ * the extension, walk the tour and tear down; the first run of a file pays a cold
+ * browser on top. Derived from that constant so raising the launch budget raises this
+ * one, rather than leaving a literal to go stale.
+ *
+ * This is a budget, not a fix. On a runner a verify run costs 11-16s against about 1s
+ * locally, and where that time goes is not yet explained.
+ */
+const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 6;
+
 async function runVerify(
 	planPath: string,
 	env?: Record<string, string | undefined>,
@@ -161,7 +173,7 @@ describe("demo --verify", () => {
 		// numbering (`toPlanMarkdown`'s `i + 1`) is 1-indexed and is what an
 		// agent re-reading the plan.md to fix it would expect, so that's assumed.
 		expect(finding.step).toBe(1);
-	}, 45000);
+	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("a click that navigates with no authored `navigate` is reported as unrecorded-navigation with the landed URL", async () => {
 		const script = scriptWithSteps([
@@ -186,7 +198,7 @@ describe("demo --verify", () => {
 		const finding = requireFinding(result, "unrecorded-navigation");
 		expect(finding.url).toBe(`${base}/landed.html`);
 		expect(typeof finding.step).toBe("number");
-	}, 45000);
+	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("a clean plan yields ok:true and no findings", async () => {
 		const script = scriptWithSteps([
@@ -204,7 +216,7 @@ describe("demo --verify", () => {
 		const result = parseVerify(out);
 		expectClean(result);
 		expect(result.findings).toEqual([]);
-	}, 45000);
+	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("a malformed plan is reported as a finding, never an unhandled throw", async () => {
 		// No `startUrl`, no `## Steps`, no ```json fallback block — the real
@@ -241,7 +253,7 @@ describe("demo --verify", () => {
 		const out = Buffer.concat(chunks).toString("utf8");
 		expect(() => JSON.parse(out)).not.toThrow();
 		expectClean(parseVerify(out));
-	}, 45000);
+	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("two concurrent verify runs both succeed — a throwaway profile per run, not the user's browser", async () => {
 		const planA = writePlan(
