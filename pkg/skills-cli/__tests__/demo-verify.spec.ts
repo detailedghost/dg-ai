@@ -357,17 +357,18 @@ describe("resolveExtensionDir", () => {
 });
 
 describe("browser sandbox flag", () => {
-	test("a normal run keeps the sandbox", () => {
+	test("an environment that asks for nothing keeps the sandbox", () => {
 		expect(sandboxDisabled({})).toBe(false);
-		expect(browserArgs("/p", "/e")).not.toContain("--no-sandbox");
+		expect(browserArgs("/p", "/e", false)).not.toContain("--no-sandbox");
 	});
 
 	test("DG_VERIFY_NO_SANDBOX turns it off, for a kernel that gives Chrome no usable one", () => {
 		expect(sandboxDisabled({ DG_VERIFY_NO_SANDBOX: "1" })).toBe(true);
+		expect(browserArgs("/p", "/e", true)).toContain("--no-sandbox");
 	});
 
 	test("the launch args always carry the throwaway profile and the extension under test", () => {
-		const args = browserArgs("/tmp/profile", "/tmp/ext");
+		const args = browserArgs("/tmp/profile", "/tmp/ext", false);
 
 		expect(args).toContain("--user-data-dir=/tmp/profile");
 		expect(args).toContain("--load-extension=/tmp/ext");
