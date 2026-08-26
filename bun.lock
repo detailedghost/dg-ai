@@ -57,7 +57,7 @@
     },
     "pkg/skills-cli": {
       "name": "@dg/skills-cli",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "commander": "^14.0.0",
