@@ -236,6 +236,17 @@ describe("the skills build gives the verify harness what it needs", () => {
 		expect(step).toContain("DG_VERIFY_NO_SANDBOX");
 	});
 
+	test("the extension is built before the skills-cli tests that load it", () => {
+		const names = [
+			...workflow("skills-blt.yml").matchAll(/- name: ([^\n]+)/g),
+		].map((m) => m[1]);
+		const built = names.findIndex((n) => n.startsWith("Build (extension"));
+		const tested = names.findIndex((n) => n.startsWith("Test (skills-cli)"));
+
+		expect(built).toBeGreaterThan(-1);
+		expect(tested).toBeGreaterThan(built);
+	});
+
 	test("the harness reads that same variable name", () => {
 		const harness = readRepoFile(
 			"pkg",

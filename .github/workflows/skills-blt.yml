@@ -36,6 +36,18 @@ jobs:
         working-directory: pkg/skills-cli
         run: bun run lint
 
+      # demo --verify drives a real browser with the built extension loaded. Build it
+      # here, not from the spec's beforeAll: a cold wxt build inside a test counts
+      # against that test's own timeout, and a build failure there surfaces as an
+      # unexplained timeout instead of a failed step.
+      - name: Install (extension)
+        working-directory: pkg/extension
+        run: bun install --frozen-lockfile
+
+      - name: Build (extension — the verify harness loads it)
+        working-directory: pkg/extension
+        run: bun run build
+
       - name: Test (skills-cli)
         working-directory: pkg/skills-cli
         env:
