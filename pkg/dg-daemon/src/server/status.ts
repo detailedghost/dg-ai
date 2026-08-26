@@ -3,7 +3,7 @@ import type { WslNetworkingMode } from "@dg/common/node";
 import type { SessionRegistry } from "../session/registry";
 import { describeKeySource, describeUserVersion } from "../utils/key-source";
 
-export const DG_SERVER_PACKAGE_VERSION = "1.0.0";
+export const DG_DAEMON_PACKAGE_VERSION = "1.8.0";
 
 export type StatusReport = {
 	daemon: "dg-daemon";
@@ -40,7 +40,7 @@ export function renderStatus(deps: StatusDeps): StatusReport {
 		wslNetworkingMode: deps.wslNetworkingMode,
 		sessionCount: deps.registry.activeCount(),
 		versions: {
-			package: DG_SERVER_PACKAGE_VERSION,
+			package: DG_DAEMON_PACKAGE_VERSION,
 			protocol: CHAT_PROTOCOL_VERSION,
 			userVersion: describeUserVersion(),
 			extension: deps.getExtensionVersion(),
