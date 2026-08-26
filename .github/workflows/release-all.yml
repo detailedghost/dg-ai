@@ -1,0 +1,25 @@
+---
+name: Release All
+
+# Cuts every published artifact from one dispatch, so the extension and the three
+# binaries reach a release together instead of one path filter at a time. Each
+# called workflow still runs its own BLT and still skips a tag it already
+# published, so a re-run costs nothing and publishes nothing twice.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ext:
+    uses: ./.github/workflows/ext-release.yml
+
+  skills:
+    uses: ./.github/workflows/skills-release.yml
+
+  daemon:
+    uses: ./.github/workflows/dg-daemon-release.yml
+
+  agent:
+    uses: ./.github/workflows/dg-agent-release.yml

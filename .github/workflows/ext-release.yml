@@ -1,15 +1,16 @@
 name: Ext - Release
 
-# Builds and publishes an ext-vX.X.X release whenever extension or browser-skill
+# Builds and publishes an ext-vX.X.X release whenever extension or shared-package
 # source changes land on master. Runs BLT first so a broken build never ships.
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - master
     paths:
       - pkg/extension/**
-      - pkg/skills-cli/**
+      - pkg/common/**
       - .github/workflows/ext-release.yml
 
 permissions:

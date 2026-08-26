@@ -33,6 +33,14 @@ function bufferBody(bytes: Buffer) {
 	);
 }
 
+/** Budget for the tests that push a whole CHAT_MAX_ASSET_BYTES body over loopback.
+ *  Derived from a 2 MB/ms floor rather than pinned, so raising the cap raises the
+ *  budget instead of quietly returning these tests to bun's 5s default. */
+const SLOW_LOOPBACK_BYTES_PER_MS = 2048;
+const OVERSIZED_BODY_TIMEOUT_MS = Math.ceil(
+	CHAT_MAX_ASSET_BYTES / SLOW_LOOPBACK_BYTES_PER_MS,
+);
+
 function streamOf(totalBytes: number): ReadableStream<Uint8Array> {
 	const chunk = new Uint8Array(64 * 1024).fill(1);
 	let sent = 0;
@@ -236,7 +244,7 @@ describe("POST /assets", () => {
 			oversized,
 		);
 		expect(resp.status).toBe(413);
-	});
+	}, OVERSIZED_BODY_TIMEOUT_MS);
 
 	it("answers 413 over the wire for an oversized body that declares its length", async () => {
 		const { port, bootstrap } = await bootUploadSession();
@@ -249,7 +257,7 @@ describe("POST /assets", () => {
 		);
 
 		expect(resp.status).toBe(413);
-	});
+	}, OVERSIZED_BODY_TIMEOUT_MS);
 
 	it("answers 413 over the wire for an oversized body that never declares its length", async () => {
 		const { port, bootstrap } = await bootUploadSession();
@@ -262,7 +270,7 @@ describe("POST /assets", () => {
 		} as RequestInit);
 
 		expect(resp.status).toBe(413);
-	});
+	}, OVERSIZED_BODY_TIMEOUT_MS);
 
 	it("reassembles a streamed body of undeclared length byte for byte", async () => {
 		const { port, bootstrap } = await bootUploadSession();
