@@ -46,6 +46,30 @@ const BROWSER_CANDIDATES = [
 	"chrome-for-testing",
 ];
 
+/** Whether to hand the browser --no-sandbox. Chrome's zygote host aborts where the
+ *  kernel gives it no usable sandbox — a CI container, most notably — and then never
+ *  prints the DevTools URL the harness waits for. Opt in, so a normal run keeps the
+ *  sandbox it is entitled to. */
+export function sandboxDisabled(
+	env: Record<string, string | undefined> = process.env,
+): boolean {
+	return !!env.DG_VERIFY_NO_SANDBOX;
+}
+
+export function browserArgs(profileDir: string, extensionDir: string): string[] {
+	return [
+		"--remote-debugging-port=0",
+		`--user-data-dir=${profileDir}`,
+		`--load-extension=${extensionDir}`,
+		`--disable-extensions-except=${extensionDir}`,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-dev-shm-usage",
+		"--headless=new",
+		...(sandboxDisabled() ? ["--no-sandbox"] : []),
+	];
+}
+
 export function resolveBrowserBinary(): string {
 	const override = process.env.DG_VERIFY_BROWSER;
 	if (override) return override;
@@ -329,18 +353,7 @@ export class DemoVerifyHarness {
 		// so profileDir is never orphaned regardless of where launch fails.
 		try {
 			const proc = Bun.spawn(
-				[
-					bin,
-					"--remote-debugging-port=0",
-					`--user-data-dir=${profileDir}`,
-					`--load-extension=${extensionDir}`,
-					`--disable-extensions-except=${extensionDir}`,
-					"--no-first-run",
-					"--no-default-browser-check",
-					"--disable-dev-shm-usage",
-					"--headless=new",
-					"about:blank",
-				],
+				[bin, ...browserArgs(profileDir, extensionDir), "about:blank"],
 				{ stdout: "ignore", stderr: "pipe" },
 			);
 			try {

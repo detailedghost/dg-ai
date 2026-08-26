@@ -38,6 +38,8 @@ jobs:
 
       - name: Test (skills-cli)
         working-directory: pkg/skills-cli
+        env:
+          DG_VERIFY_NO_SANDBOX: "1"
         run: bun test
 
       - name: Build (skills-cli)
