@@ -108,7 +108,7 @@ export async function playScript(
 		`\n${kind} "${script.title ?? "demo"}" (${script.steps.length} step(s)) handed to dg-ai-extension.`,
 	);
 	console.log(
-		`plan saved: ${planPath}\nre-run with: dg-browser rerun "${planPath}"`,
+		`plan saved: ${planPath}\nre-run with: dg-skills rerun "${planPath}"`,
 	);
 	if (opts.edit)
 		console.log(
