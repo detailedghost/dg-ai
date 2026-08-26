@@ -56,7 +56,11 @@ export function sandboxDisabled(
 	return !!env.DG_VERIFY_NO_SANDBOX;
 }
 
-export function browserArgs(profileDir: string, extensionDir: string): string[] {
+export function browserArgs(
+	profileDir: string,
+	extensionDir: string,
+	noSandbox: boolean,
+): string[] {
 	return [
 		"--remote-debugging-port=0",
 		`--user-data-dir=${profileDir}`,
@@ -66,7 +70,7 @@ export function browserArgs(profileDir: string, extensionDir: string): string[] 
 		"--no-default-browser-check",
 		"--disable-dev-shm-usage",
 		"--headless=new",
-		...(sandboxDisabled() ? ["--no-sandbox"] : []),
+		...(noSandbox ? ["--no-sandbox"] : []),
 	];
 }
 
@@ -353,7 +357,11 @@ export class DemoVerifyHarness {
 		// so profileDir is never orphaned regardless of where launch fails.
 		try {
 			const proc = Bun.spawn(
-				[bin, ...browserArgs(profileDir, extensionDir), "about:blank"],
+				[
+					bin,
+					...browserArgs(profileDir, extensionDir, sandboxDisabled()),
+					"about:blank",
+				],
 				{ stdout: "ignore", stderr: "pipe" },
 			);
 			try {
