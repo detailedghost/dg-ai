@@ -52,8 +52,10 @@ type VerifyResult = { ok: boolean; findings: Array<Record<string, unknown>> };
  * browser on top. Derived from that constant so raising the launch budget raises this
  * one, rather than leaving a literal to go stale.
  *
- * This is a budget, not a fix. On a runner a verify run costs 11-16s against about 1s
- * locally, and where that time goes is not yet explained.
+ * This is a budget, not a fit-to-observed-time value — a runner's cold
+ * browser/extension load still costs more than a warm local one. It no longer
+ * pads for `clickThroughTour` clicking a disabled last-step "Next" arrow as a
+ * no-op (see the single-step regression test above); that's fixed, not budgeted around.
  */
 const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 6;
 
@@ -216,6 +218,30 @@ describe("demo --verify", () => {
 		const result = parseVerify(out);
 		expectClean(result);
 		expect(result.findings).toEqual([]);
+	}, VERIFY_RUN_TIMEOUT_MS);
+
+	/**
+	 * The last step's "Next step" arrow stays in the DOM, disabled, with its
+	 * aria-label intact; `clickThroughTour` used to match it before "Done" and
+	 * click it — a no-op that looked like progress and spun for the whole
+	 * iteration budget. Bounded well under half the DevTools-wait budget.
+	 */
+	test("a single-step tour completes without spinning on its disabled last-step Next arrow", async () => {
+		const script = scriptWithSteps([
+			{
+				title: "Only step",
+				selector: "#ok-target",
+				body: "The only, and therefore last, step.",
+				advance: 500,
+			},
+		]);
+		const plan = writePlan(dir, "single-step-last.md", script);
+		const started = Date.now();
+		const { code, out } = await runVerify(plan);
+		const elapsed = Date.now() - started;
+		expect(code).toBe(0);
+		expectClean(parseVerify(out));
+		expect(elapsed).toBeLessThan(DEVTOOLS_URL_TIMEOUT_MS / 2);
 	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("a malformed plan is reported as a finding, never an unhandled throw", async () => {
