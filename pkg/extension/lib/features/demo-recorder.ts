@@ -88,8 +88,8 @@ async function acquireStreamId(tabId: number): Promise<string> {
  * Bounded retry for the offscreen handoff. Long enough to cover a document that
  * exists but has not run its module script yet; short enough not to strand the user.
  */
-const HANDOFF_ATTEMPTS = 6;
-const HANDOFF_BACKOFF_MS = 120;
+export const HANDOFF_ATTEMPTS = 6;
+export const HANDOFF_BACKOFF_MS = 120;
 
 /**
  * Deliver a message to the offscreen recorder, retrying until it acknowledges, and

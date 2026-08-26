@@ -22,6 +22,8 @@ import {
 	activeRecordingRefusal,
 	confirmDownload,
 	discardRecording,
+	HANDOFF_ATTEMPTS,
+	HANDOFF_BACKOFF_MS,
 	handleNarrationComplete,
 	handleNarrationProgress,
 	handleRecordingSaved,
@@ -60,6 +62,11 @@ const TAB_ID = 42;
 const REVIEW_TAB_ID = 77;
 const DOWNLOAD_ID = 42;
 const BLOB_URL = "blob:chrome-extension://abc/deadbeef";
+
+/** Real wall-clock the exhausted-handoff path spends in backoff, plus headroom. */
+const HANDOFF_LADDER_MS =
+	(HANDOFF_BACKOFF_MS * (HANDOFF_ATTEMPTS - 1) * HANDOFF_ATTEMPTS) / 2;
+const EXHAUSTED_HANDOFF_TIMEOUT_MS = HANDOFF_LADDER_MS * 5;
 
 const ACTIVE_RECORDING = { tabId: TAB_ID, hideBody: false };
 const readConfig = async () => ({
@@ -884,13 +891,19 @@ describe("demo-recorder", () => {
 		 * committed to recording. Throwing here would abort a tour to save a few seconds
 		 * the recorder's own load path can still spend.
 		 */
-		it("resolves rather than throwing when the offscreen document is unreachable", async () => {
-			(globalThis as any).chrome.runtime.sendMessage = mock(async () => {
-				throw new Error("Receiving end does not exist.");
-			});
+		it(
+			"resolves rather than throwing when the offscreen document is unreachable",
+			async () => {
+				const unreachable = mock(async () => {
+					throw new Error("Receiving end does not exist.");
+				});
+				(globalThis as any).chrome.runtime.sendMessage = unreachable;
 
-			await expect(warmNarration(readConfig)).resolves.toBeUndefined();
-		});
+				await expect(warmNarration(readConfig)).resolves.toBeUndefined();
+				expect(unreachable).toHaveBeenCalledTimes(HANDOFF_ATTEMPTS);
+			},
+			EXHAUSTED_HANDOFF_TIMEOUT_MS,
+		);
 
 		it("resolves when the config read fails", async () => {
 			const brokenConfig = async () => {
