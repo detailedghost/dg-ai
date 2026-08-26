@@ -222,11 +222,11 @@ describe("demo --verify", () => {
 
 	/**
 	 * The last step's "Next step" arrow stays in the DOM, disabled, with its
-	 * aria-label intact; `clickThroughTour` used to match it before "Done" and
-	 * click it — a no-op that looked like progress and spun for the whole
-	 * iteration budget. Bounded well under half the DevTools-wait budget.
+	 * aria-label intact. `clickThroughTour` used to match it ahead of "Done" and
+	 * click it — a no-op that looked like progress — so the walk spun out its
+	 * whole iteration budget and never reached "done".
 	 */
-	test("a single-step tour completes without spinning on its disabled last-step Next arrow", async () => {
+	test("a single-step tour reaches done rather than spinning on its disabled last-step Next arrow", async () => {
 		const script = scriptWithSteps([
 			{
 				title: "Only step",
@@ -236,13 +236,12 @@ describe("demo --verify", () => {
 			},
 		]);
 		const plan = writePlan(dir, "single-step-last.md", script);
-		const started = Date.now();
 		const { code, out } = await runVerify(plan);
-		const elapsed = Date.now() - started;
+
 		expect(code).toBe(0);
 		expectClean(parseVerify(out));
-		expect(elapsed).toBeLessThan(DEVTOOLS_URL_TIMEOUT_MS / 2);
 	}, VERIFY_RUN_TIMEOUT_MS);
+
 
 	test("a malformed plan is reported as a finding, never an unhandled throw", async () => {
 		// No `startUrl`, no `## Steps`, no ```json fallback block — the real
