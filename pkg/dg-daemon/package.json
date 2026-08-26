@@ -1,6 +1,6 @@
 {
 	"name": "@dg/dg-daemon",
-	"version": "1.0.0",
+	"version": "1.8.0",
 	"private": true,
 	"type": "module",
 	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for the dg:start chat harness.",

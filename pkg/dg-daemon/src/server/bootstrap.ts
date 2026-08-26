@@ -25,7 +25,7 @@ import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
-import { DG_SERVER_PACKAGE_VERSION } from "./status";
+import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -196,7 +196,7 @@ export async function cmdServe(): Promise<void> {
 		port: boundPortNumber,
 		instanceId,
 		versions: {
-			package: DG_SERVER_PACKAGE_VERSION,
+			package: DG_DAEMON_PACKAGE_VERSION,
 			protocol: CHAT_PROTOCOL_VERSION,
 		},
 	});
