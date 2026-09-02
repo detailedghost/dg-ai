@@ -37,6 +37,7 @@ const {
 	ASSET_DIRECTORY_CONFIG_KEY,
 	createDaemonConfigTransport,
 	createLiveAssetDirectoryTransport,
+	patchConfig,
 } = await import("../lib/config");
 const { MSG } = await import("../lib/chat-messages");
 
@@ -484,6 +485,27 @@ describe("options/style.css — accent token aliases the chat page reads", () =>
 		);
 		expect(hexAfter(rootBlock, "--accent2-dark")).toBe(
 			hexAfter(darkBlock, "--accent2"),
+		);
+	});
+});
+
+describe("patchConfig — fields the caller did not send", () => {
+	it("writes back the stored theme, so saving another setting cannot reset it", async () => {
+		syncGet.mockImplementation(() =>
+			Promise.resolve({
+				color: "random",
+				voice: "af_heart",
+				narration: "both",
+				videoQuality: "1440p",
+				theme: "light",
+			}),
+		);
+		syncSet.mockClear();
+
+		await patchConfig({ voice: "am_michael" });
+
+		expect(syncSet).toHaveBeenCalledWith(
+			expect.objectContaining({ theme: "light", voice: "am_michael" }),
 		);
 	});
 });

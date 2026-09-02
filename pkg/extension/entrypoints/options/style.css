@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 /*
- * Theme tokens. Light is the base; dark overrides via prefers-color-scheme.
- * Component classes below reference these, so the brutalist-neon look stays
- * consistent in both modes from one source.
+ * Theme tokens. The base plus the prefers-color-scheme gate serve surfaces that
+ * express no preference; a surface that sets data-theme on its root gets that
+ * theme unconditionally, which is how the settings page defaults to dark and
+ * still offers light. Component classes below reference these, so the
+ * brutalist-neon look stays consistent in every mode from one source.
  */
 :root {
 	--bg: #f4f4f5;
@@ -31,6 +33,28 @@
 		--accent2: #ff2bd6;
 		--code-bg: #000000;
 	}
+}
+
+:root[data-theme="dark"] {
+	--bg: #0a0a0a;
+	--panel: #111111;
+	--ink: #e8e8e8;
+	--muted: #8a8a8a;
+	--line: #e8e8e8;
+	--accent: #00f0ff;
+	--accent2: #ff2bd6;
+	--code-bg: #000000;
+}
+
+:root[data-theme="light"] {
+	--bg: #f4f4f5;
+	--panel: #ffffff;
+	--ink: #0a0a0a;
+	--muted: #52525b;
+	--line: #0a0a0a;
+	--accent: #0891b2;
+	--accent2: #c026d3;
+	--code-bg: #f4f4f5;
 }
 
 @layer base {
