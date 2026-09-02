@@ -78,9 +78,9 @@ describe("injectTheme — setup-phase accent variable (slice 3)", () => {
 		injectTheme(root);
 
 		const css = root.querySelector("style")?.textContent ?? "";
-		const [light, dark] = css.split("@media");
-		expect(light).toContain("--accent-setup:");
+		const [dark, light] = css.split(':host([data-theme="light"])');
 		expect(dark).toContain("--accent-setup:");
+		expect(light).toContain("--accent-setup:");
 	});
 });
 

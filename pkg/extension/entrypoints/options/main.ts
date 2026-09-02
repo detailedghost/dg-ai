@@ -12,7 +12,10 @@ import {
 	getNarrationMode,
 	NARRATION_MODES,
 	type NarrationMode,
-	setConfig,
+	getTheme,
+	patchConfig,
+	type ThemeSetting,
+	THEMES,
 	VOICES,
 	voiceLabel,
 } from "@/lib/config";
@@ -69,6 +72,13 @@ function fail(status: HTMLElement, prefix: string, e: unknown): void {
 	console.error(`[dg-ai-extension] ${prefix}`, e);
 }
 
+/** Paint a theme and label the button with the one it switches to. */
+function applyTheme(theme: ThemeSetting): void {
+	document.documentElement.dataset.theme = theme;
+	const other = THEMES.find((t) => t.value !== theme);
+	$<HTMLButtonElement>("theme").textContent = other?.label ?? "Light";
+}
+
 async function load(): Promise<void> {
 	try {
 		const cfg = await getConfig();
@@ -76,6 +86,7 @@ async function load(): Promise<void> {
 		populateNarration(getNarrationMode(cfg.narration));
 		populateVoices(cfg.voice || DEFAULTS.voice);
 		populateQuality(getVideoQuality(cfg.videoQuality));
+		applyTheme(getTheme(cfg.theme));
 	} catch (e) {
 		// Surfaced rather than swallowed: empty dropdowns are the visible symptom.
 		fail($<HTMLElement>("status"), "Could not read saved settings", e);
@@ -94,7 +105,7 @@ async function load(): Promise<void> {
 async function persist(statusId: string): Promise<void> {
 	const status = $<HTMLElement>(statusId);
 	try {
-		await setConfig({
+		await patchConfig({
 			color:
 				($<HTMLSelectElement>("color").value as ColorSetting) || DEFAULTS.color,
 			voice: $<HTMLSelectElement>("voice").value || DEFAULTS.voice,
@@ -192,6 +203,12 @@ $<HTMLButtonElement>("testTts").addEventListener(
 	() => void testNarration(),
 );
 $<HTMLButtonElement>("ttsDownload").addEventListener("click", downloadTest);
+$<HTMLButtonElement>("theme").addEventListener("click", () => {
+	const next: ThemeSetting =
+		document.documentElement.dataset.theme === "light" ? "dark" : "light";
+	applyTheme(next);
+	void patchConfig({ theme: next });
+});
 window.addEventListener("hashchange", () =>
 	showPage(resolvePage(window.location.hash)),
 );

@@ -74,6 +74,7 @@ const readConfig = async () => ({
 	voice: "af_heart",
 	narration: "both" as const,
 	videoQuality: "1440p" as const,
+	theme: "dark" as const,
 });
 
 /** A stored recording, with a real Blob rather than a string stand-in. */
