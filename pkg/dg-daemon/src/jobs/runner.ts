@@ -122,6 +122,45 @@ async function runOne(
 	};
 }
 
+async function admitAndRun(
+	job: ScheduledJob,
+	deps: JobRunnerDeps,
+	ranAt: Date,
+): Promise<JobRunOutcome | undefined> {
+	const admission = deps.scheduler.tryAdmit(
+		SCHEDULER_SESSION_ID,
+		job.label,
+		resolveLimits(),
+	);
+	if (!admission.ok) {
+		deps.logger.warn(`job ${job.label} skipped: ${admission.reason}`);
+		return undefined;
+	}
+	try {
+		const outcome = await runOne(job, deps, ranAt);
+		if (outcome.error) {
+			deps.logger.warn(`job ${job.label} failed: ${outcome.error}`);
+		} else if (outcome.inserted > 0) {
+			deps.logger.info(`job ${job.label} added ${outcome.inserted} item(s)`);
+		}
+		return outcome;
+	} catch (err) {
+		const error = describeError(err);
+		deps.logger.warn(`job ${job.label} threw: ${error}`);
+		deps.store.recordJobRun({ jobId: job.id, ranAt, exitCode: 1, error });
+		return {
+			jobId: job.id,
+			label: job.label,
+			exitCode: 1,
+			inserted: 0,
+			duplicates: 0,
+			error,
+		};
+	} finally {
+		deps.scheduler.release(SCHEDULER_SESSION_ID);
+	}
+}
+
 export async function runDueJobs(
 	deps: JobRunnerDeps,
 ): Promise<JobRunOutcome[]> {
@@ -129,41 +168,21 @@ export async function runDueJobs(
 	const outcomes: JobRunOutcome[] = [];
 
 	for (const job of deps.store.dueJobs(ranAt)) {
-		const admission = deps.scheduler.tryAdmit(
-			SCHEDULER_SESSION_ID,
-			job.label,
-			resolveLimits(),
-		);
-		if (!admission.ok) {
-			deps.logger.warn(`job ${job.label} skipped: ${admission.reason}`);
-			continue;
-		}
-		try {
-			const outcome = await runOne(job, deps, ranAt);
-			if (outcome.error) {
-				deps.logger.warn(`job ${job.label} failed: ${outcome.error}`);
-			} else if (outcome.inserted > 0) {
-				deps.logger.info(`job ${job.label} added ${outcome.inserted} item(s)`);
-			}
-			outcomes.push(outcome);
-		} catch (err) {
-			const error = describeError(err);
-			deps.logger.warn(`job ${job.label} threw: ${error}`);
-			deps.store.recordJobRun({ jobId: job.id, ranAt, exitCode: 1, error });
-			outcomes.push({
-				jobId: job.id,
-				label: job.label,
-				exitCode: 1,
-				inserted: 0,
-				duplicates: 0,
-				error,
-			});
-		} finally {
-			deps.scheduler.release(SCHEDULER_SESSION_ID);
-		}
+		const outcome = await admitAndRun(job, deps, ranAt);
+		if (outcome) outcomes.push(outcome);
 	}
 
 	return outcomes;
+}
+
+/** Run one job off-schedule, for the dashboard's "run now" and the CLI's `job run`. */
+export async function runJobNow(
+	jobId: string,
+	deps: JobRunnerDeps,
+): Promise<JobRunOutcome | undefined> {
+	const job = deps.store.getJob(jobId);
+	if (!job) return undefined;
+	return admitAndRun(job, deps, deps.now?.() ?? new Date());
 }
 
 export function startJobRunner(deps: JobRunnerDeps): { stop(): void } {
