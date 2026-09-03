@@ -23,6 +23,7 @@ import { toPlanMarkdown } from "@dg/common";
 import {
 	browserArgs,
 	DEVTOOLS_URL_TIMEOUT_MS,
+	killAndWait,
 	sandboxDisabled,
 } from "../src/utils/cdp-harness";
 import { callInSubprocess, mergeEnv } from "./module-call";
@@ -413,6 +414,68 @@ describe("browser sandbox flag", () => {
 		expect(args).toContain("--disable-extensions-except=/tmp/ext");
 		expect(args).toContain("--remote-debugging-port=0");
 	});
+});
+
+describe("browser teardown always terminates", () => {
+	const HARNESS_PATH = join(
+		import.meta.dir,
+		"..",
+		"src",
+		"utils",
+		"cdp-harness.ts",
+	);
+
+	/**
+	 * The runner's job log ends with `Terminate orphan process: pid (chrome)`, so a
+	 * browser does sometimes outlive SIGTERM. Waiting on that with no bound gave the
+	 * wait no way to fail except by exhausting whatever budget the caller had set.
+	 */
+	test("a process that ignores SIGTERM is still gone when the wait returns", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-teardown-"));
+		const ready = join(dir, "trapped");
+		const proc = Bun.spawn(
+			[
+				"sh",
+				"-c",
+				`trap '' TERM; : > ${ready}; while :; do sleep 0.2; done`,
+			],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+		while (!existsSync(ready)) {
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+		await killAndWait(proc, 500);
+		expect(await proc.exited).not.toBe(0);
+		rmSync(dir, { recursive: true, force: true });
+	}, 15000);
+
+	/**
+	 * The grace is a ceiling, not a delay: an uncleared timer keeps the event loop
+	 * alive, which is what once left `demo --verify` idling after it had already
+	 * printed its findings. A 30s grace against a browser that exits at once is
+	 * only observable from outside the process.
+	 */
+	test("a browser that exits at once leaves no timer holding the process open", async () => {
+		const started = Date.now();
+		const proc = Bun.spawn(
+			[
+				process.execPath,
+				"-e",
+				`import { killAndWait } from ${JSON.stringify(HARNESS_PATH)};
+const child = Bun.spawn(["sh", "-c", "while :; do sleep 0.2; done"], { stdout: "ignore", stderr: "ignore" });
+await killAndWait(child, 30000);
+console.log("returned");`,
+			],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
+		const [out, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			proc.exited,
+		]);
+		expect(code).toBe(0);
+		expect(out.trim()).toBe("returned");
+		expect(Date.now() - started).toBeLessThan(10000);
+	}, 40000);
 });
 
 describe("the DevTools wait releases the process it was blocking", () => {

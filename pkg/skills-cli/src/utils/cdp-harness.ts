@@ -89,6 +89,32 @@ export function resolveBrowserBinary(): string {
 
 export const DEVTOOLS_URL_TIMEOUT_MS = 15000;
 
+const EXIT_GRACE_MS = 2000;
+
+/**
+ * Signal a process and wait for it to go, escalating to SIGKILL. An unbounded wait
+ * on a browser that never honours SIGTERM has no upper bound to fail against, so it
+ * surfaces as whatever budget the caller happened to set.
+ */
+export async function killAndWait(
+	proc: { kill: (signal?: number | NodeJS.Signals) => void; exited: Promise<number> },
+	graceMs: number = EXIT_GRACE_MS,
+): Promise<void> {
+	proc.kill();
+	const exited = await new Promise<boolean>((resolve) => {
+		const timer = setTimeout(() => resolve(false), graceMs);
+		void proc.exited
+			.catch(() => undefined)
+			.then(() => {
+				clearTimeout(timer);
+				resolve(true);
+			});
+	});
+	if (exited) return;
+	proc.kill("SIGKILL");
+	await proc.exited.catch(() => undefined);
+}
+
 /** Scan the browser's stderr for the `DevTools listening on ws://...` line CLI prints
  *  once `--remote-debugging-port` is bound (port 0 means "OS picks one, tell me which"). */
 export async function waitForDevtoolsUrl(
@@ -391,8 +417,7 @@ export class DemoVerifyHarness {
 
 	async close(): Promise<void> {
 		this.conn.close();
-		this.proc.kill();
-		await this.proc.exited.catch(() => undefined);
+		await killAndWait(this.proc);
 		rmSync(this.profileDir, { recursive: true, force: true });
 	}
 
