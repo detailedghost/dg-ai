@@ -9,6 +9,7 @@ import {
 import { browser } from "wxt/browser";
 import { callBrowserApi } from "../browser-call";
 import { injectTheme, startPicking, waitForEl } from "../picker";
+import { SANS } from "../ui-helpers";
 
 /** Content-to-background message requesting a local StyleGuide download. */
 export const PROTO_SAVE_STYLE_GUIDE = "dg-proto:save-style-guide";
@@ -722,7 +723,7 @@ const PICKER_CSS = `
   position: fixed; right: 1rem; bottom: 1rem; z-index: 2147483646;
   width: min(30rem, calc(100vw - 2rem)); padding: .875rem;
   color: var(--ink); background: var(--panel); border: .125rem solid var(--line);
-  box-shadow: .375rem .375rem 0 var(--accent); font: .75rem/1.45 ui-monospace, monospace;
+  box-shadow: .375rem .375rem 0 var(--accent); font: .8125rem/1.5 ${SANS};
 }
 .dg-proto-title { margin: 0 0 .625rem; font-size: .8125rem; text-transform: uppercase; }
 .dg-proto-meta { color: var(--muted); margin-bottom: .5rem; }
