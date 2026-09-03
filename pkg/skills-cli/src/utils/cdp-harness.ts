@@ -90,6 +90,8 @@ export function resolveBrowserBinary(): string {
 export const DEVTOOLS_URL_TIMEOUT_MS = 15000;
 
 const EXIT_GRACE_MS = 2000;
+const CDP_COMMAND_TIMEOUT_MS = 20000;
+const CDP_CONNECT_TIMEOUT_MS = 10000;
 
 /**
  * Signal a process and wait for it to go, escalating to SIGKILL. An unbounded wait
@@ -163,7 +165,20 @@ class CdpConnection {
 	private readonly pending = new Map<number, (m: CdpMessage) => void>();
 	private readonly eventListeners = new Set<(m: CdpMessage) => void>();
 
+	private dead: Error | undefined;
+
 	private constructor(private readonly ws: WebSocket) {
+		const failAll = (reason: string): void => {
+			this.dead ??= new Error(reason);
+			for (const [id, settle] of [...this.pending]) {
+				this.pending.delete(id);
+				settle({ id, error: { message: reason } });
+			}
+		};
+		ws.addEventListener("close", () =>
+			failAll("the CDP connection closed before a reply arrived"),
+		);
+		ws.addEventListener("error", () => failAll("the CDP connection errored"));
 		ws.addEventListener("message", (e) => {
 			const m = JSON.parse(String(e.data)) as CdpMessage;
 			if (m.id !== undefined && this.pending.has(m.id)) {
@@ -217,13 +232,30 @@ class CdpConnection {
 	static async connect(url: string): Promise<CdpConnection> {
 		const ws = new WebSocket(url);
 		await new Promise<void>((resolve, reject) => {
-			ws.addEventListener("open", () => resolve(), { once: true });
+			const timer = setTimeout(
+				() =>
+					reject(
+						new Error(
+							`CDP websocket never opened within ${CDP_CONNECT_TIMEOUT_MS}ms: ${url}`,
+						),
+					),
+				CDP_CONNECT_TIMEOUT_MS,
+			);
+			ws.addEventListener(
+				"open",
+				() => {
+					clearTimeout(timer);
+					resolve();
+				},
+				{ once: true },
+			);
 			ws.addEventListener(
 				"error",
-				() => reject(new Error(`CDP websocket error connecting to ${url}`)),
-				{
-					once: true,
+				() => {
+					clearTimeout(timer);
+					reject(new Error(`CDP websocket error connecting to ${url}`));
 				},
+				{ once: true },
 			);
 		});
 		return new CdpConnection(ws);
@@ -234,12 +266,22 @@ class CdpConnection {
 		params: Record<string, unknown> = {},
 		sessionId?: string,
 	): Promise<Record<string, unknown>> {
+		if (this.dead) return Promise.reject(this.dead);
 		const id = this.nextId++;
 		const payload: CdpMessage = { id, method, params };
 		if (sessionId) payload.sessionId = sessionId;
 		this.ws.send(JSON.stringify(payload));
 		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.pending.delete(id);
+				reject(
+					new Error(
+						`${method} got no CDP reply within ${CDP_COMMAND_TIMEOUT_MS}ms`,
+					),
+				);
+			}, CDP_COMMAND_TIMEOUT_MS);
 			this.pending.set(id, (m) => {
+				clearTimeout(timer);
 				if (m.error) reject(new Error(`${method} failed: ${m.error.message}`));
 				else resolve(m.result ?? {});
 			});

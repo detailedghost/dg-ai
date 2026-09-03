@@ -334,6 +334,80 @@ describe("demo --verify", () => {
 		]);
 	}, 15000);
 
+	/**
+	 * Nothing rejected an in-flight CDP command when the socket went away, so a
+	 * browser that died mid-run left every pending reply unsettled. That has no
+	 * upper bound of its own and surfaces as whatever budget the caller set.
+	 */
+	function fakeBrowser(name: string, host: string): string {
+		const path = join(dir, name);
+		writeFileSync(
+			path,
+			`#!/bin/sh\necho "DevTools listening on ws://${host}/devtools/browser/fake" >&2\nwhile :; do sleep 0.5; done\n`,
+			{ mode: 0o755 },
+		);
+		return path;
+	}
+
+	test("a CDP connection that drops mid-command is reported, not waited out", async () => {
+		const cdp = Bun.serve({
+			port: 0,
+			fetch(req, server) {
+				if (server.upgrade(req)) return;
+				return new Response("no upgrade", { status: 400 });
+			},
+			websocket: {
+				message(sock) {
+					sock.close();
+				},
+			},
+		});
+		try {
+			const plan = writePlan(
+				dir,
+				"cdp-drop.md",
+				scriptWithSteps([{ title: "Any", body: "Any." }]),
+			);
+			const { out } = await runVerify(plan, {
+				DG_VERIFY_BROWSER: fakeBrowser("drop-browser.sh", cdp.url.host),
+			});
+			const finding = requireFinding(parseVerify(out), "harness-error");
+			expect(String(finding.message)).toContain("CDP connection closed");
+		} finally {
+			cdp.stop(true);
+		}
+	}, VERIFY_RUN_TIMEOUT_MS);
+
+	test("a CDP command that never gets a reply names the method it was waiting on", async () => {
+		const cdp = Bun.serve({
+			port: 0,
+			fetch(req, server) {
+				if (server.upgrade(req)) return;
+				return new Response("no upgrade", { status: 400 });
+			},
+			websocket: {
+				message() {
+					return;
+				},
+			},
+		});
+		try {
+			const plan = writePlan(
+				dir,
+				"cdp-silent.md",
+				scriptWithSteps([{ title: "Any", body: "Any." }]),
+			);
+			const { out } = await runVerify(plan, {
+				DG_VERIFY_BROWSER: fakeBrowser("silent-browser.sh", cdp.url.host),
+			});
+			const finding = requireFinding(parseVerify(out), "harness-error");
+			expect(String(finding.message)).toContain("got no CDP reply");
+			expect(String(finding.message)).toContain("Target.getTargets");
+		} finally {
+			cdp.stop(true);
+		}
+	}, VERIFY_RUN_TIMEOUT_MS);
+
 	test("a broken DG_VERIFY_BROWSER override is reported as a harness-error finding, not a crash", async () => {
 		const plan = writePlan(
 			dir,
