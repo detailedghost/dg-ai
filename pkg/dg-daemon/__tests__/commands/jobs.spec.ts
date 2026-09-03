@@ -78,9 +78,13 @@ describe("dg-daemon job add", () => {
 			const store = await openStore(dgHome);
 			try {
 				const job = store.getJobByLabel("jira-sprint");
+				expect(job).toBeDefined();
 				expect(job?.intervalMs).toBe(15 * 60_000);
 				expect(job?.argv[0]).toBe("printf");
 				expect(job?.enabled).toBe(true);
+				expect(store.dueJobs(new Date()).map((due) => due.label)).toEqual([
+					"jira-sprint",
+				]);
 			} finally {
 				store.close();
 			}

@@ -176,7 +176,10 @@ function createV7ScheduledJobs(db: Database): void {
 		last_exit_code INTEGER,
 		last_error_ciphertext BLOB,
 		last_error_iv BLOB,
-		last_error_tag BLOB
+		last_error_tag BLOB,
+		last_stderr_ciphertext BLOB,
+		last_stderr_iv BLOB,
+		last_stderr_tag BLOB
 	) STRICT`);
 
 	db.run(`CREATE TABLE feed_items (
@@ -203,7 +206,7 @@ function createV7ScheduledJobs(db: Database): void {
 	db.run(
 		"CREATE INDEX idx_feed_items_unread ON feed_items(job_id, seq) WHERE read_at IS NULL",
 	);
-	db.run("CREATE INDEX idx_feed_items_recent ON feed_items(seq)");
+	db.run("CREATE INDEX idx_feed_items_job_seq ON feed_items(job_id, seq)");
 	db.run(
 		"CREATE INDEX idx_scheduled_jobs_due ON scheduled_jobs(next_run_at) WHERE enabled = 1",
 	);

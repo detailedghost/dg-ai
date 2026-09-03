@@ -62,6 +62,7 @@ export type HttpServerDeps = {
 	noteActivity: () => void;
 	statusDeps: Omit<StatusDeps, "instanceId" | "boundPort" | "registry">;
 	store: ChatStore;
+	dispatchScheduler: DispatchScheduler;
 };
 
 const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
@@ -131,10 +132,17 @@ function handleHealthCheck(
 }
 
 export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
-	const { port, paths, registry, connections, logger, noteActivity, store } =
-		deps;
+	const {
+		port,
+		paths,
+		registry,
+		connections,
+		logger,
+		noteActivity,
+		store,
+		dispatchScheduler,
+	} = deps;
 
-	const dispatchScheduler = new DispatchScheduler();
 	const frameDeps = {
 		registry,
 		connections,
@@ -368,7 +376,6 @@ async function handleSchedulerRoute(
 			jobs: store.listJobs().map((job) => ({
 				id: job.id,
 				label: job.label,
-				cwd: job.cwd,
 				intervalMs: job.intervalMs,
 				enabled: job.enabled,
 				nextRunAt: job.nextRunAt,
@@ -436,7 +443,7 @@ async function handleSchedulerRoute(
 		const [itemId, action] = rest;
 		if (action === "read") {
 			if (!store.markFeedItemRead(itemId)) {
-				return new Response("no such unread item", {
+				return new Response("no such item", {
 					status: 404,
 					headers: NOSNIFF_HEADERS,
 				});
@@ -478,19 +485,8 @@ function handleWsUpgrade(
 	deps: HttpServerDeps,
 ): Response {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: /ws requires an extension-scheme Origin", {
-			status: 400,
-		});
-	}
-	if (!checkPinnedOrigin(deps.paths, origin as string)) {
-		return new Response(
-			"refused: Origin does not match the pinned extension origin",
-			{
-				status: 400,
-			},
-		);
-	}
+	const originError = requireExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
 	const data = createSocketState("ws", deps.logger, origin as string);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });

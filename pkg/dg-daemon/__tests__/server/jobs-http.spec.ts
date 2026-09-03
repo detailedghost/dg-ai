@@ -369,6 +369,22 @@ describe("the job routes are gated like the rest of the browser surface", () => 
 		).toBe(400);
 	});
 
+	it("refuses a second extension origin once one has been pinned", async () => {
+		const { port, dgHome } = await bootServe();
+
+		const { writeConfig } = await import("../../src/server/config-store");
+		writeConfig(resolveDgPaths({ env: { DG_HOME: dgHome } }), {
+			pinnedOrigin: EXTENSION_ORIGIN,
+		});
+
+		expect((await get(port, CHAT_JOBS_PATH, EXTENSION_ORIGIN)).status).toBe(200);
+
+		const other = "chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+		const refused = await get(port, CHAT_JOBS_PATH, other);
+		expect(refused.status).toBe(400);
+		expect(await refused.text()).toContain("pinned");
+	});
+
 	it("refuses a Host header that is not the loopback authority", async () => {
 		const { port } = await bootServe();
 		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_JOBS_PATH}`, {

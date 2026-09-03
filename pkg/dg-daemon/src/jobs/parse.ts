@@ -16,10 +16,7 @@ function optionalString(
 	return { ok: true, value };
 }
 
-/**
- * Read a job's stdout as one feed item per line. A job speaks JSON lines so the daemon
- * needs no Jira, Datadog or Sentry code of its own, and so dedupe has a stable key.
- */
+/** Read a job's stdout as one feed item per line. */
 export function parseFeedLines(stdout: string): ParseFeedResult {
 	const items: FeedItemInput[] = [];
 	const seen = new Set<string>();

@@ -77,6 +77,7 @@ export async function cmdServe(): Promise<void> {
 	setUserVersionProvider(() => store.userVersion());
 	const registry = new SessionRegistry(paths);
 	const connections = new ConnectionManager();
+	const dispatchScheduler = new DispatchScheduler();
 	const instanceId = newInstanceId();
 
 	let idleController: ReturnType<typeof createIdleController> | undefined;
@@ -103,6 +104,7 @@ export async function cmdServe(): Promise<void> {
 				noteActivity,
 				statusDeps,
 				store,
+				dispatchScheduler,
 			});
 			boundPort = candidate;
 			break;
@@ -146,7 +148,7 @@ export async function cmdServe(): Promise<void> {
 
 	const jobRunner = startJobRunner({
 		store,
-		scheduler: new DispatchScheduler(),
+		scheduler: dispatchScheduler,
 		logger,
 	});
 
