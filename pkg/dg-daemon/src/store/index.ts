@@ -42,10 +42,24 @@ const AAD_SUBAGENT_LIST = "subagent-list";
 const AAD_ASSET_FILENAME = "asset-filename";
 const AAD_ASSET_BYTES = "asset-bytes";
 const AAD_AGENT_MESSAGE_BODY = "agent-message-body";
+const AAD_JOB_ARGV = "job-argv";
+const AAD_JOB_ERROR = "job-error";
+const AAD_FEED_TITLE = "feed-title";
+const AAD_FEED_META = "feed-meta";
+const AAD_FEED_URL = "feed-url";
 const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const AGENT_MESSAGE_RETENTION_DAYS = 7;
+
+/**
+ * Session id every scheduler-owned row is stored under. A job belongs to the daemon,
+ * not to a chat session, but `agent_messages.sender_session_id` requires a real session
+ * row and the record AAD is keyed by session id — one reserved id supplies both.
+ */
+export const SCHEDULER_SESSION_ID = "__scheduler__";
+
+export const DEFAULT_FEED_PAGE_LIMIT = 200;
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -153,6 +167,64 @@ export type AssetRow = {
 	state: AssetState;
 };
 
+export type ScheduledJob = {
+	id: string;
+	label: string;
+	argv: string[];
+	cwd: string;
+	intervalMs: number;
+	enabled: boolean;
+	createdAt: string;
+	nextRunAt: string;
+	notifyIdentity?: string;
+	lastRunAt?: string;
+	lastExitCode?: number;
+	lastError?: string;
+};
+
+export type InsertJobInput = {
+	label: string;
+	argv: string[];
+	cwd: string;
+	intervalMs: number;
+	notifyIdentity?: string;
+	enabled?: boolean;
+	nextRunAt?: string;
+};
+
+export type RecordJobRunInput = {
+	jobId: string;
+	ranAt: Date;
+	exitCode: number;
+	error?: string;
+};
+
+export type FeedItemInput = {
+	fingerprint: string;
+	title: string;
+	meta?: string;
+	url?: string;
+};
+
+export type FeedItem = {
+	id: string;
+	jobId: string;
+	fingerprint: string;
+	createdAt: string;
+	title: string;
+	meta?: string;
+	url?: string;
+	readAt?: string;
+};
+
+export type InsertFeedItemsResult = { inserted: number; duplicates: number };
+
+export type ListFeedItemsOptions = {
+	jobId?: string;
+	unreadOnly?: boolean;
+	limit?: number;
+};
+
 export type CryptoMetaInfo = {
 	formatVersion: number;
 	keyId: string;
@@ -199,6 +271,42 @@ type RawAssetRow = {
 	content_type: string;
 	byte_length: number;
 	state: string;
+};
+
+type RawJobRow = {
+	id: string;
+	label: string;
+	created_at: string;
+	argv_ciphertext: Uint8Array;
+	argv_iv: Uint8Array;
+	argv_tag: Uint8Array;
+	cwd: string;
+	interval_ms: number;
+	enabled: number;
+	notify_identity: string | null;
+	last_run_at: string | null;
+	next_run_at: string;
+	last_exit_code: number | null;
+	last_error_ciphertext: Uint8Array | null;
+	last_error_iv: Uint8Array | null;
+	last_error_tag: Uint8Array | null;
+};
+
+type RawFeedItemRow = {
+	id: string;
+	job_id: string;
+	fingerprint: string;
+	created_at: string;
+	title_ciphertext: Uint8Array;
+	title_iv: Uint8Array;
+	title_tag: Uint8Array;
+	meta_ciphertext: Uint8Array | null;
+	meta_iv: Uint8Array | null;
+	meta_tag: Uint8Array | null;
+	url_ciphertext: Uint8Array | null;
+	url_iv: Uint8Array | null;
+	url_tag: Uint8Array | null;
+	read_at: string | null;
 };
 
 type RawStatusEventRow = {
@@ -351,12 +459,14 @@ export class ChatStore {
 				DEFAULT_CLAIM_LEASE_MS,
 			);
 
-			return new ChatStore(
+			const store = new ChatStore(
 				db,
 				createCipherBox(resolved.dataKey),
 				resolved.cryptoMeta,
 				claimLeaseMs,
 			);
+			store.ensureSessionRow(SCHEDULER_SESSION_ID);
+			return store;
 		} catch (err) {
 			db.close(false);
 			throw err;
@@ -771,6 +881,334 @@ export class ChatStore {
 			.query(AGENT_MESSAGE_ACK_SQL)
 			.get({ now: Date.now(), identity, claimId }) as { seq: number } | null;
 		return row !== null;
+	}
+
+	#schedulerAad(domain: string, rowId: string): Buffer {
+		return this.#aad(domain, SCHEDULER_SESSION_ID, rowId);
+	}
+
+	#decryptOptional(
+		domain: string,
+		rowId: string,
+		ciphertext: Uint8Array | null,
+		iv: Uint8Array | null,
+		tag: Uint8Array | null,
+	): string | undefined {
+		if (!ciphertext || !iv || !tag) return undefined;
+		return this.cipherBox
+			.decryptRecord(
+				Buffer.from(ciphertext),
+				Buffer.from(iv),
+				Buffer.from(tag),
+				this.#schedulerAad(domain, rowId),
+			)
+			.toString("utf8");
+	}
+
+	#hydrateJob(row: RawJobRow): ScheduledJob {
+		const argv = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.argv_ciphertext),
+				Buffer.from(row.argv_iv),
+				Buffer.from(row.argv_tag),
+				this.#schedulerAad(AAD_JOB_ARGV, row.id),
+			)
+			.toString("utf8");
+		return {
+			id: row.id,
+			label: row.label,
+			argv: JSON.parse(argv) as string[],
+			cwd: row.cwd,
+			intervalMs: row.interval_ms,
+			enabled: row.enabled === 1,
+			createdAt: row.created_at,
+			nextRunAt: row.next_run_at,
+			notifyIdentity: row.notify_identity ?? undefined,
+			lastRunAt: row.last_run_at ?? undefined,
+			lastExitCode: row.last_exit_code ?? undefined,
+			lastError: this.#decryptOptional(
+				AAD_JOB_ERROR,
+				row.id,
+				row.last_error_ciphertext,
+				row.last_error_iv,
+				row.last_error_tag,
+			),
+		};
+	}
+
+	#hydrateFeedItem(row: RawFeedItemRow): FeedItem {
+		return {
+			id: row.id,
+			jobId: row.job_id,
+			fingerprint: row.fingerprint,
+			createdAt: row.created_at,
+			title: this.cipherBox
+				.decryptRecord(
+					Buffer.from(row.title_ciphertext),
+					Buffer.from(row.title_iv),
+					Buffer.from(row.title_tag),
+					this.#schedulerAad(AAD_FEED_TITLE, row.id),
+				)
+				.toString("utf8"),
+			meta: this.#decryptOptional(
+				AAD_FEED_META,
+				row.id,
+				row.meta_ciphertext,
+				row.meta_iv,
+				row.meta_tag,
+			),
+			url: this.#decryptOptional(
+				AAD_FEED_URL,
+				row.id,
+				row.url_ciphertext,
+				row.url_iv,
+				row.url_tag,
+			),
+			readAt: row.read_at ?? undefined,
+		};
+	}
+
+	insertJob(input: InsertJobInput): ScheduledJob {
+		const id = randomUUID();
+		const now = new Date().toISOString();
+		const argv = this.cipherBox.encryptRecord(
+			JSON.stringify(input.argv),
+			this.#schedulerAad(AAD_JOB_ARGV, id),
+		);
+		this.db.run(
+			`INSERT INTO scheduled_jobs (
+				id, label, created_at,
+				argv_ciphertext, argv_iv, argv_tag,
+				cwd, interval_ms, enabled, notify_identity, next_run_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				input.label,
+				now,
+				argv.ciphertext,
+				argv.iv,
+				argv.tag,
+				input.cwd,
+				input.intervalMs,
+				input.enabled === false ? 0 : 1,
+				input.notifyIdentity ?? null,
+				input.nextRunAt ?? now,
+			],
+		);
+		const job = this.getJob(id);
+		if (!job) throw new Error(`insertJob: job ${id} vanished after insert`);
+		return job;
+	}
+
+	getJob(id: string): ScheduledJob | undefined {
+		const row = this.db
+			.query("SELECT * FROM scheduled_jobs WHERE id = ?")
+			.get(id) as RawJobRow | null;
+		return row ? this.#hydrateJob(row) : undefined;
+	}
+
+	getJobByLabel(label: string): ScheduledJob | undefined {
+		const row = this.db
+			.query("SELECT * FROM scheduled_jobs WHERE label = ?")
+			.get(label) as RawJobRow | null;
+		return row ? this.#hydrateJob(row) : undefined;
+	}
+
+	listJobs(): ScheduledJob[] {
+		const rows = this.db
+			.query("SELECT * FROM scheduled_jobs ORDER BY created_at ASC, label ASC")
+			.all() as RawJobRow[];
+		return rows.map((row) => this.#hydrateJob(row));
+	}
+
+	dueJobs(now: Date): ScheduledJob[] {
+		const rows = this.db
+			.query(
+				`SELECT * FROM scheduled_jobs
+				 WHERE enabled = 1 AND next_run_at <= ?
+				 ORDER BY next_run_at ASC`,
+			)
+			.all(now.toISOString()) as RawJobRow[];
+		return rows.map((row) => this.#hydrateJob(row));
+	}
+
+	countEnabledJobs(): number {
+		const row = this.db
+			.query("SELECT COUNT(*) AS count FROM scheduled_jobs WHERE enabled = 1")
+			.get() as { count: number };
+		return row.count;
+	}
+
+	setJobEnabled(id: string, enabled: boolean): boolean {
+		const row = this.db
+			.query("UPDATE scheduled_jobs SET enabled = ? WHERE id = ? RETURNING id")
+			.get(enabled ? 1 : 0, id) as { id: string } | null;
+		return row !== null;
+	}
+
+	deleteJob(id: string): boolean {
+		const row = this.db
+			.query("DELETE FROM scheduled_jobs WHERE id = ? RETURNING id")
+			.get(id) as { id: string } | null;
+		return row !== null;
+	}
+
+	recordJobRun(input: RecordJobRunInput): void {
+		const job = this.getJob(input.jobId);
+		if (!job) throw new Error(`recordJobRun: unknown job ${input.jobId}`);
+
+		const ranAt = input.ranAt.toISOString();
+		const nextRunAt = new Date(
+			input.ranAt.getTime() + job.intervalMs,
+		).toISOString();
+		const error = input.error
+			? this.cipherBox.encryptRecord(
+					input.error,
+					this.#schedulerAad(AAD_JOB_ERROR, input.jobId),
+				)
+			: undefined;
+
+		this.db.run(
+			`UPDATE scheduled_jobs
+			 SET last_run_at = ?, next_run_at = ?, last_exit_code = ?,
+			     last_error_ciphertext = ?, last_error_iv = ?, last_error_tag = ?
+			 WHERE id = ?`,
+			[
+				ranAt,
+				nextRunAt,
+				input.exitCode,
+				error?.ciphertext ?? null,
+				error?.iv ?? null,
+				error?.tag ?? null,
+				input.jobId,
+			],
+		);
+	}
+
+	insertFeedItems(
+		jobId: string,
+		items: FeedItemInput[],
+	): InsertFeedItemsResult {
+		let inserted = 0;
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			for (const item of items) {
+				const id = randomUUID();
+				const title = this.cipherBox.encryptRecord(
+					item.title,
+					this.#schedulerAad(AAD_FEED_TITLE, id),
+				);
+				const meta = item.meta
+					? this.cipherBox.encryptRecord(
+							item.meta,
+							this.#schedulerAad(AAD_FEED_META, id),
+						)
+					: undefined;
+				const url = item.url
+					? this.cipherBox.encryptRecord(
+							item.url,
+							this.#schedulerAad(AAD_FEED_URL, id),
+						)
+					: undefined;
+
+				const rows = this.db
+					.query(
+						`INSERT INTO feed_items (
+							id, job_id, fingerprint, created_at,
+							title_ciphertext, title_iv, title_tag,
+							meta_ciphertext, meta_iv, meta_tag,
+							url_ciphertext, url_iv, url_tag
+						) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						ON CONFLICT(job_id, fingerprint) DO NOTHING
+						RETURNING id`,
+					)
+					.all(
+						id,
+						jobId,
+						item.fingerprint,
+						new Date().toISOString(),
+						title.ciphertext,
+						title.iv,
+						title.tag,
+						meta?.ciphertext ?? null,
+						meta?.iv ?? null,
+						meta?.tag ?? null,
+						url?.ciphertext ?? null,
+						url?.iv ?? null,
+						url?.tag ?? null,
+					) as { id: string }[];
+				if (rows.length > 0) inserted += 1;
+			}
+			this.db.run("COMMIT");
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
+
+		return { inserted, duplicates: items.length - inserted };
+	}
+
+	listFeedItems(options: ListFeedItemsOptions = {}): FeedItem[] {
+		const filters: string[] = [];
+		const params: (string | number)[] = [];
+		if (options.jobId) {
+			filters.push("job_id = ?");
+			params.push(options.jobId);
+		}
+		if (options.unreadOnly) filters.push("read_at IS NULL");
+		const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+		params.push(options.limit ?? DEFAULT_FEED_PAGE_LIMIT);
+
+		const rows = this.db
+			.query(`SELECT * FROM feed_items ${where} ORDER BY seq DESC LIMIT ?`)
+			.all(...params) as RawFeedItemRow[];
+		return rows.map((row) => this.#hydrateFeedItem(row));
+	}
+
+	markFeedItemRead(id: string): boolean {
+		const row = this.db
+			.query(
+				`UPDATE feed_items SET read_at = ?
+				 WHERE id = ? AND read_at IS NULL
+				 RETURNING id`,
+			)
+			.get(new Date().toISOString(), id) as { id: string } | null;
+		return row !== null;
+	}
+
+	markAllRead(jobId?: string): number {
+		const now = new Date().toISOString();
+		const rows = jobId
+			? (this.db
+					.query(
+						`UPDATE feed_items SET read_at = ?
+						 WHERE job_id = ? AND read_at IS NULL
+						 RETURNING id`,
+					)
+					.all(now, jobId) as { id: string }[])
+			: (this.db
+					.query(
+						`UPDATE feed_items SET read_at = ?
+						 WHERE read_at IS NULL
+						 RETURNING id`,
+					)
+					.all(now) as { id: string }[]);
+		return rows.length;
+	}
+
+	countUnreadByJob(): Record<string, number> {
+		const rows = this.db
+			.query(
+				`SELECT job_id, COUNT(*) AS count FROM feed_items
+				 WHERE read_at IS NULL
+				 GROUP BY job_id`,
+			)
+			.all() as { job_id: string; count: number }[];
+		const counts: Record<string, number> = {};
+		for (const row of rows) counts[row.job_id] = row.count;
+		return counts;
 	}
 
 	#newClaim(): { claimId: string; now: number; leaseCutoff: number } {
