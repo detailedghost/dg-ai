@@ -58,7 +58,7 @@ type VerifyResult = { ok: boolean; findings: Array<Record<string, unknown>> };
  * pads for `clickThroughTour` clicking a disabled last-step "Next" arrow as a
  * no-op (see the single-step regression test above); that's fixed, not budgeted around.
  */
-const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 6;
+const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 2;
 
 /** A finished run exits at once; a hang here cannot hide inside a browser budget. */
 const CLI_EXIT_TIMEOUT_MS = 20000;

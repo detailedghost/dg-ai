@@ -87,7 +87,12 @@ export function resolveBrowserBinary(): string {
 	);
 }
 
-export const DEVTOOLS_URL_TIMEOUT_MS = 15000;
+/**
+ * A cold two-core runner has taken longer than 15s to bind the debugging port,
+ * logging dbus failures the whole way, so this is sized for the slowest machine
+ * that still works rather than the fastest.
+ */
+export const DEVTOOLS_URL_TIMEOUT_MS = 45000;
 
 const EXIT_GRACE_MS = 2000;
 const CDP_COMMAND_TIMEOUT_MS = 20000;
