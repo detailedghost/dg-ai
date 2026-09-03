@@ -1167,6 +1167,13 @@ export class ChatStore {
 		return rows.map((row) => this.#hydrateFeedItem(row));
 	}
 
+	getFeedItem(id: string): FeedItem | undefined {
+		const row = this.db
+			.query("SELECT * FROM feed_items WHERE id = ?")
+			.get(id) as RawFeedItemRow | null;
+		return row ? this.#hydrateFeedItem(row) : undefined;
+	}
+
 	markFeedItemRead(id: string): boolean {
 		const row = this.db
 			.query(
