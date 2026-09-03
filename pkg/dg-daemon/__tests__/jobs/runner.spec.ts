@@ -137,8 +137,8 @@ describe("runDueJobs", () => {
 
 			const after = store.getJob(job.id);
 			expect(after?.lastExitCode).not.toBe(0);
-			expect(after?.lastError).toContain("command exited with status 1");
-			expect(after?.lastError).toContain("auth token expired");
+			expect(after?.lastError).toBe("command exited with status 1");
+			expect(after?.lastStderr).toBe("auth token expired");
 		});
 	});
 
@@ -243,7 +243,6 @@ describe("runDueJobs", () => {
 	it("skips a job the admission controller refuses, leaving its clock alone", async () => {
 		await withStore(async (store) => {
 			const job = addJob(store);
-			const scheduler = new DispatchScheduler();
 			const refusing = {
 				...deps(store, succeeds('{"id":"a","title":"A"}')),
 				scheduler: {
@@ -251,7 +250,6 @@ describe("runDueJobs", () => {
 					release: () => {},
 				} as unknown as DispatchScheduler,
 			};
-			expect(scheduler).toBeDefined();
 
 			const outcomes = await runDueJobs(refusing);
 
@@ -278,6 +276,49 @@ describe("runDueJobs", () => {
 			});
 
 			expect(released).toEqual([SCHEDULER_SESSION_ID]);
+		});
+	});
+
+	it("keeps the command's own output out of lastError, which reaches the browser", async () => {
+		await withStore(async (store) => {
+			const job = addJob(store);
+
+			await runDueJobs(
+				deps(store, fails("command exited with status 1", "token=s3cret\n")),
+			);
+
+			const after = store.getJob(job.id);
+			expect(after?.lastError).not.toContain("s3cret");
+			expect(after?.lastStderr).toContain("s3cret");
+		});
+	});
+
+	it("runs every due job in one tick rather than one per tick", async () => {
+		await withStore(async (store) => {
+			addJob(store, { label: "one" });
+			addJob(store, { label: "two" });
+			addJob(store, { label: "three" });
+
+			let peak = 0;
+			let live = 0;
+			const outcomes = await runDueJobs({
+				...deps(store, undefined),
+				exec: async () => {
+					live += 1;
+					peak = Math.max(peak, live);
+					await new Promise((resolve) => setTimeout(resolve, 5));
+					live -= 1;
+					return {
+						exitOk: true,
+						stdout: '{"id":"a","title":"A"}',
+						stderr: "",
+						truncated: false,
+					};
+				},
+			});
+
+			expect(outcomes).toHaveLength(3);
+			expect(peak).toBeGreaterThan(1);
 		});
 	});
 

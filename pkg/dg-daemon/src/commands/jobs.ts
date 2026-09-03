@@ -1,5 +1,10 @@
 import { existsSync } from "node:fs";
-import { DgCliError, EXIT_GENERAL_FAILURE } from "@dg/common";
+import {
+	deriveJobState,
+	DgCliError,
+	EXIT_GENERAL_FAILURE,
+	formatIntervalMs,
+} from "@dg/common";
 import { checkExecutable, resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
 import { DispatchScheduler } from "../dispatch";
@@ -31,18 +36,6 @@ export function parseEvery(raw: string): number {
 		);
 	}
 	return count * UNIT_MS[match[2]];
-}
-
-function formatEvery(intervalMs: number): string {
-	if (intervalMs % UNIT_MS.h === 0) return `${intervalMs / UNIT_MS.h}h`;
-	if (intervalMs % UNIT_MS.m === 0) return `${intervalMs / UNIT_MS.m}m`;
-	return `${Math.round(intervalMs / UNIT_MS.s)}s`;
-}
-
-function describeState(job: ScheduledJob): string {
-	if (!job.enabled) return "paused";
-	if (job.lastExitCode !== undefined && job.lastExitCode !== 0) return "failed";
-	return "ok";
 }
 
 async function withStore<T>(run: (store: ChatStore) => Promise<T>): Promise<T> {
@@ -121,7 +114,7 @@ export function registerJobCommands(program: Command): void {
 						notifyIdentity: options.notify,
 					});
 					console.log(
-						`added "${created.label}" — every ${formatEvery(intervalMs)}, first run ${created.nextRunAt}`,
+						`added "${created.label}" — every ${formatIntervalMs(intervalMs)}, first run ${created.nextRunAt}`,
 					);
 				});
 			},
@@ -141,14 +134,15 @@ export function registerJobCommands(program: Command): void {
 				for (const entry of jobs) {
 					const parts = [
 						entry.label,
-						`every ${formatEvery(entry.intervalMs)}`,
-						describeState(entry),
+						`every ${formatIntervalMs(entry.intervalMs)}`,
+						deriveJobState(entry.enabled, entry.lastExitCode),
 						`last ${entry.lastRunAt ?? "never"}`,
 						`next ${entry.enabled ? entry.nextRunAt : "-"}`,
 						`unread ${unread[entry.id] ?? 0}`,
 					];
 					console.log(parts.join("  "));
 					if (entry.lastError) console.log(`    ${entry.lastError}`);
+					if (entry.lastStderr) console.log(`    ${entry.lastStderr}`);
 				}
 			});
 		});

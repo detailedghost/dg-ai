@@ -1,7 +1,4 @@
-/**
- * The daemon stays alive for its scheduled jobs, not only for its chat sessions —
- * without this an idle TTL would kill the feed nothing is watching.
- */
+/** The daemon stays alive for its scheduled jobs, not only for its chat sessions. */
 export function isDaemonIdle(
 	activeSessions: number,
 	openConnections: number,

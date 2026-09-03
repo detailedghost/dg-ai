@@ -258,7 +258,11 @@ describe("ChatStore — feed items", () => {
 				},
 			]);
 
-			expect(result).toEqual({ inserted: 2, duplicates: 0 });
+			expect(result.inserted.map((entry) => entry.fingerprint)).toEqual([
+				"JRDEV-812",
+				"JRDEV-807",
+			]);
+			expect(result.duplicates).toBe(0);
 			expect(store.listFeedItems({ jobId: job.id })).toHaveLength(2);
 			store.close();
 		} finally {
@@ -276,16 +280,16 @@ describe("ChatStore — feed items", () => {
 				title: "Quote export times out",
 			};
 
-			expect(store.insertFeedItems(job.id, [first])).toEqual({
-				inserted: 1,
-				duplicates: 0,
-			});
-			expect(
-				store.insertFeedItems(job.id, [
-					first,
-					{ fingerprint: "JRDEV-900", title: "New one" },
-				]),
-			).toEqual({ inserted: 1, duplicates: 1 });
+			expect(store.insertFeedItems(job.id, [first]).inserted).toHaveLength(1);
+
+			const second = store.insertFeedItems(job.id, [
+				first,
+				{ fingerprint: "JRDEV-900", title: "New one" },
+			]);
+			expect(second.inserted.map((entry) => entry.fingerprint)).toEqual([
+				"JRDEV-900",
+			]);
+			expect(second.duplicates).toBe(1);
 
 			expect(store.listFeedItems({ jobId: job.id })).toHaveLength(2);
 			store.close();
@@ -302,8 +306,8 @@ describe("ChatStore — feed items", () => {
 			const two = store.insertJob(jobInput({ label: "two" }));
 			const item = { fingerprint: "shared", title: "Same id, other source" };
 
-			expect(store.insertFeedItems(one.id, [item]).inserted).toBe(1);
-			expect(store.insertFeedItems(two.id, [item]).inserted).toBe(1);
+			expect(store.insertFeedItems(one.id, [item]).inserted).toHaveLength(1);
+			expect(store.insertFeedItems(two.id, [item]).inserted).toHaveLength(1);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -398,7 +402,8 @@ describe("ChatStore — feed items", () => {
 
 			expect(store.markFeedItemRead(first.id)).toBe(true);
 			expect(store.listFeedItems({ unreadOnly: true })).toHaveLength(1);
-			expect(store.markFeedItemRead(first.id)).toBe(false);
+			expect(store.markFeedItemRead(first.id)).toBe(true);
+			expect(store.markFeedItemRead("no-such-item")).toBe(false);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -449,6 +454,56 @@ describe("ChatStore — feed items", () => {
 });
 
 describe("ChatStore — migration to v7", () => {
+	it("keeps every kind of pre-existing encrypted row readable across the upgrade", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const { mkdirSync } = await import("node:fs");
+			mkdirSync(paths.daemonDir, { recursive: true, mode: 0o700 });
+
+			const seed = new Database(paths.dbPath, { strict: true, create: true });
+			applyConnectionPragmas(seed);
+			runMigrations(seed, SCHEMA_STEPS.slice(0, 6), {
+				snapshotDir: paths.daemonDir,
+			});
+			seed.close(true);
+
+			const before = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			before.insertMessage({
+				sessionId: "s1",
+				id: "m1",
+				role: "user",
+				body: "a human message",
+			});
+			before.insertAgentMessage({
+				senderSessionId: "s1",
+				senderIdentity: "alpha",
+				recipientIdentity: "beta",
+				id: "am1",
+				body: "an agent message",
+			});
+			before.insertAsset({
+				sessionId: "s1",
+				id: "a1",
+				filename: "screenshot.png",
+				contentType: "image/png",
+				byteLength: 4,
+			});
+			expect(before.userVersion()).toBe(7);
+			before.close();
+
+			const after = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			expect(after.peekAll("s1")[0].body).toBe("a human message");
+			expect(after.claimNextAgentMessage("beta", "s2")?.body).toBe(
+				"an agent message",
+			);
+			expect(after.getAsset("s1", "a1")?.filename).toBe("screenshot.png");
+			after.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("carries a v6 database forward without losing its rows", async () => {
 		const dgHome = freshDgHome();
 		try {

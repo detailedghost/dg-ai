@@ -44,6 +44,7 @@ const AAD_ASSET_BYTES = "asset-bytes";
 const AAD_AGENT_MESSAGE_BODY = "agent-message-body";
 const AAD_JOB_ARGV = "job-argv";
 const AAD_JOB_ERROR = "job-error";
+const AAD_JOB_STDERR = "job-stderr";
 const AAD_FEED_TITLE = "feed-title";
 const AAD_FEED_META = "feed-meta";
 const AAD_FEED_URL = "feed-url";
@@ -52,14 +53,12 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const AGENT_MESSAGE_RETENTION_DAYS = 7;
 
-/**
- * Session id every scheduler-owned row is stored under. A job belongs to the daemon,
- * not to a chat session, but `agent_messages.sender_session_id` requires a real session
- * row and the record AAD is keyed by session id — one reserved id supplies both.
- */
+/** Session id every scheduler-owned row is stored under. */
 export const SCHEDULER_SESSION_ID = "__scheduler__";
 
 export const DEFAULT_FEED_PAGE_LIMIT = 200;
+
+const FEED_INSERT_CHUNK = 250;
 
 export type StoreSeams = {
 	env?: Record<string, string | undefined>;
@@ -180,6 +179,7 @@ export type ScheduledJob = {
 	lastRunAt?: string;
 	lastExitCode?: number;
 	lastError?: string;
+	lastStderr?: string;
 };
 
 export type InsertJobInput = {
@@ -197,6 +197,7 @@ export type RecordJobRunInput = {
 	ranAt: Date;
 	exitCode: number;
 	error?: string;
+	stderr?: string;
 };
 
 export type FeedItemInput = {
@@ -217,7 +218,10 @@ export type FeedItem = {
 	readAt?: string;
 };
 
-export type InsertFeedItemsResult = { inserted: number; duplicates: number };
+export type InsertFeedItemsResult = {
+	inserted: FeedItemInput[];
+	duplicates: number;
+};
 
 export type ListFeedItemsOptions = {
 	jobId?: string;
@@ -290,6 +294,9 @@ type RawJobRow = {
 	last_error_ciphertext: Uint8Array | null;
 	last_error_iv: Uint8Array | null;
 	last_error_tag: Uint8Array | null;
+	last_stderr_ciphertext: Uint8Array | null;
+	last_stderr_iv: Uint8Array | null;
+	last_stderr_tag: Uint8Array | null;
 };
 
 type RawFeedItemRow = {
@@ -933,6 +940,13 @@ export class ChatStore {
 				row.last_error_iv,
 				row.last_error_tag,
 			),
+			lastStderr: this.#decryptOptional(
+				AAD_JOB_STDERR,
+				row.id,
+				row.last_stderr_ciphertext,
+				row.last_stderr_iv,
+				row.last_stderr_tag,
+			),
 		};
 	}
 
@@ -1067,11 +1081,18 @@ export class ChatStore {
 					this.#schedulerAad(AAD_JOB_ERROR, input.jobId),
 				)
 			: undefined;
+		const stderr = input.stderr
+			? this.cipherBox.encryptRecord(
+					input.stderr,
+					this.#schedulerAad(AAD_JOB_STDERR, input.jobId),
+				)
+			: undefined;
 
 		this.db.run(
 			`UPDATE scheduled_jobs
 			 SET last_run_at = ?, next_run_at = ?, last_exit_code = ?,
-			     last_error_ciphertext = ?, last_error_iv = ?, last_error_tag = ?
+			     last_error_ciphertext = ?, last_error_iv = ?, last_error_tag = ?,
+			     last_stderr_ciphertext = ?, last_stderr_iv = ?, last_stderr_tag = ?
 			 WHERE id = ?`,
 			[
 				ranAt,
@@ -1080,6 +1101,9 @@ export class ChatStore {
 				error?.ciphertext ?? null,
 				error?.iv ?? null,
 				error?.tag ?? null,
+				stderr?.ciphertext ?? null,
+				stderr?.iv ?? null,
+				stderr?.tag ?? null,
 				input.jobId,
 			],
 		);
@@ -1089,7 +1113,22 @@ export class ChatStore {
 		jobId: string,
 		items: FeedItemInput[],
 	): InsertFeedItemsResult {
-		let inserted = 0;
+		const inserted: FeedItemInput[] = [];
+		for (let start = 0; start < items.length; start += FEED_INSERT_CHUNK) {
+			this.#insertFeedChunk(
+				jobId,
+				items.slice(start, start + FEED_INSERT_CHUNK),
+				inserted,
+			);
+		}
+		return { inserted, duplicates: items.length - inserted.length };
+	}
+
+	#insertFeedChunk(
+		jobId: string,
+		items: FeedItemInput[],
+		inserted: FeedItemInput[],
+	): void {
 		this.db.run("BEGIN IMMEDIATE");
 		try {
 			for (const item of items) {
@@ -1137,7 +1176,7 @@ export class ChatStore {
 						url?.iv ?? null,
 						url?.tag ?? null,
 					) as { id: string }[];
-				if (rows.length > 0) inserted += 1;
+				if (rows.length > 0) inserted.push(item);
 			}
 			this.db.run("COMMIT");
 		} catch (err) {
@@ -1146,8 +1185,6 @@ export class ChatStore {
 			} catch {}
 			throw err;
 		}
-
-		return { inserted, duplicates: items.length - inserted };
 	}
 
 	listFeedItems(options: ListFeedItemsOptions = {}): FeedItem[] {
@@ -1175,14 +1212,12 @@ export class ChatStore {
 	}
 
 	markFeedItemRead(id: string): boolean {
-		const row = this.db
-			.query(
-				`UPDATE feed_items SET read_at = ?
-				 WHERE id = ? AND read_at IS NULL
-				 RETURNING id`,
-			)
-			.get(new Date().toISOString(), id) as { id: string } | null;
-		return row !== null;
+		this.db.run(
+			`UPDATE feed_items SET read_at = ?
+			 WHERE id = ? AND read_at IS NULL`,
+			[new Date().toISOString(), id],
+		);
+		return this.getFeedItem(id) !== undefined;
 	}
 
 	markAllRead(jobId?: string): number {

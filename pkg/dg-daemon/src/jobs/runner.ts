@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { describeError } from "@dg/common";
 import type { DispatchScheduler } from "../dispatch";
 import { executeCommand } from "../dispatch/exec";
-import { resolveLimits } from "../dispatch/limits";
+import {
+	DISPATCH_MAX_CONCURRENT_PER_SESSION,
+	resolveLimits,
+} from "../dispatch/limits";
 import {
 	type ChatStore,
 	SCHEDULER_SESSION_ID,
@@ -57,14 +60,13 @@ async function runOne(
 	const result = await exec(job.argv, job.cwd, limits);
 
 	if (!result.exitOk) {
-		const error = [result.failureReason, result.stderr.trim()]
-			.filter(Boolean)
-			.join(": ");
+		const error = result.failureReason ?? "command failed";
 		deps.store.recordJobRun({
 			jobId: job.id,
 			ranAt,
 			exitCode: 1,
-			error: error || "command failed",
+			error,
+			stderr: result.stderr.trim() || undefined,
 		});
 		return {
 			jobId: job.id,
@@ -72,7 +74,7 @@ async function runOne(
 			exitCode: 1,
 			inserted: 0,
 			duplicates: 0,
-			error: error || "command failed",
+			error,
 		};
 	}
 
@@ -94,22 +96,19 @@ async function runOne(
 		};
 	}
 
-	const before = new Set(
-		deps.store.listFeedItems({ jobId: job.id }).map((item) => item.fingerprint),
-	);
 	const counts = deps.store.insertFeedItems(job.id, parsed.items);
 	deps.store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0 });
 
-	if (job.notifyIdentity && counts.inserted > 0) {
-		const fresh = parsed.items
-			.filter((item) => !before.has(item.fingerprint))
-			.map((item) => item.title);
+	if (job.notifyIdentity && counts.inserted.length > 0) {
 		deps.store.insertAgentMessage({
 			senderSessionId: SCHEDULER_SESSION_ID,
 			senderIdentity: `job:${job.label}`,
 			recipientIdentity: job.notifyIdentity,
 			id: randomUUID(),
-			body: notifyBody(job, fresh),
+			body: notifyBody(
+				job,
+				counts.inserted.map((entry) => entry.title),
+			),
 		});
 	}
 
@@ -117,7 +116,7 @@ async function runOne(
 		jobId: job.id,
 		label: job.label,
 		exitCode: 0,
-		inserted: counts.inserted,
+		inserted: counts.inserted.length,
 		duplicates: counts.duplicates,
 	};
 }
@@ -165,12 +164,22 @@ export async function runDueJobs(
 	deps: JobRunnerDeps,
 ): Promise<JobRunOutcome[]> {
 	const ranAt = deps.now?.() ?? new Date();
+	const queue = deps.store.dueJobs(ranAt);
 	const outcomes: JobRunOutcome[] = [];
+	let cursor = 0;
 
-	for (const job of deps.store.dueJobs(ranAt)) {
-		const outcome = await admitAndRun(job, deps, ranAt);
-		if (outcome) outcomes.push(outcome);
-	}
+	const workers = Array.from(
+		{ length: Math.min(DISPATCH_MAX_CONCURRENT_PER_SESSION, queue.length) },
+		async () => {
+			while (cursor < queue.length) {
+				const job = queue[cursor];
+				cursor += 1;
+				const outcome = await admitAndRun(job, deps, ranAt);
+				if (outcome) outcomes.push(outcome);
+			}
+		},
+	);
+	await Promise.all(workers);
 
 	return outcomes;
 }
