@@ -60,6 +60,9 @@ type VerifyResult = { ok: boolean; findings: Array<Record<string, unknown>> };
  */
 const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 6;
 
+/** A finished run exits at once; a hang here cannot hide inside a browser budget. */
+const CLI_EXIT_TIMEOUT_MS = 20000;
+
 async function runVerify(
 	planPath: string,
 	env?: Record<string, string | undefined>,
@@ -348,6 +351,29 @@ describe("demo --verify", () => {
 		);
 		return path;
 	}
+
+	/**
+	 * The browser's crash-handler children inherit its piped stderr and outlive it,
+	 * so killing the browser does not bring that pipe to EOF. The runtime then holds
+	 * the process open with no work left, which the caller can only see as its own
+	 * budget running out.
+	 */
+	test("a browser that leaves a child holding its stderr does not keep the CLI alive", async () => {
+		const path = join(dir, "grandchild-browser.sh");
+		writeFileSync(
+			path,
+			'#!/bin/sh\necho "DevTools listening on ws://127.0.0.1:1/nope" >&2\nsleep 120 &\nexec sleep 120\n',
+			{ mode: 0o755 },
+		);
+		const plan = writePlan(
+			dir,
+			"grandchild.md",
+			scriptWithSteps([{ title: "Any", body: "Any." }]),
+		);
+		const { code, out } = await runVerify(plan, { DG_VERIFY_BROWSER: path });
+		expect(code).toBe(0);
+		requireFinding(parseVerify(out), "harness-error");
+	}, CLI_EXIT_TIMEOUT_MS);
 
 	test("a CDP connection that drops mid-command is reported, not waited out", async () => {
 		const cdp = Bun.serve({
