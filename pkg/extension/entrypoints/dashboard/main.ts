@@ -2,11 +2,12 @@ import {
 	applyRefresh,
 	connectDashboardApi,
 	createDashboardState,
-	DASHBOARD_POLL_MS,
+	createPoller,
 	type DashboardApi,
 	type DashboardState,
 	firstFailure,
 	type JobPayload,
+	portOf,
 	selectJob,
 	summarize,
 	toFeedView,
@@ -20,7 +21,8 @@ const app = document.querySelector<HTMLDivElement>("#app");
 
 let state: DashboardState = createDashboardState();
 let api: DashboardApi | undefined;
-let timer: ReturnType<typeof setInterval> | undefined;
+let lastPort: number | undefined;
+let lastPainted = "";
 
 function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -131,6 +133,7 @@ function renderQueueControl(itemId: string): HTMLElement {
 function renderItems(now: Date): HTMLElement {
 	const list = el("ul", "dash__feed");
 	const items = visibleItems(state);
+	const jobsById = new Map(state.jobs.map((job) => [job.id, job]));
 
 	if (items.length === 0) {
 		const empty = el(
@@ -153,7 +156,7 @@ function renderItems(now: Date): HTMLElement {
 
 		const body = el("div");
 		const top = el("div", "dash__top");
-		const job = state.jobs.find((candidate) => candidate.id === item.jobId);
+		const job = jobsById.get(item.jobId);
 		const source = job ? toJobView(job, now).source : "Job";
 		top.append(
 			el("span", `dash__badge dash__badge--${source.toLowerCase()}`, source),
@@ -276,8 +279,26 @@ function renderPane(now: Date): HTMLElement {
 	return pane;
 }
 
-function render(): void {
+/** The poll must not tear down a half-typed agent identity under the user. */
+function isEditing(): boolean {
+	return document.activeElement?.classList.contains("dash__identity") ?? false;
+}
+
+function paintKey(): string {
+	return JSON.stringify([
+		state.jobs,
+		state.items,
+		state.selectedJobId,
+		state.offline,
+		state.loaded,
+	]);
+}
+
+function render(force = true): void {
 	if (!app) return;
+	const key = paintKey();
+	if (!force && (key === lastPainted || isEditing())) return;
+	lastPainted = key;
 	const now = new Date();
 	const root = el("div", "dash");
 	root.append(renderRail(now), renderPane(now));
@@ -286,39 +307,26 @@ function render(): void {
 
 async function refresh(): Promise<void> {
 	if (!api) {
-		api = await connectDashboardApi();
+		api = await connectDashboardApi(lastPort);
 		if (!api) {
 			state = applyRefresh(state, { ok: false });
-			render();
+			render(false);
 			return;
 		}
+		lastPort = portOf(api);
 	}
 	const result = await api.refresh();
 	if (!result.ok) api = undefined;
 	state = applyRefresh(state, result);
-	render();
+	render(false);
 }
 
-function startPolling(): void {
-	if (timer !== undefined) return;
-	timer = setInterval(() => void refresh(), DASHBOARD_POLL_MS);
-}
-
-function stopPolling(): void {
-	if (timer === undefined) return;
-	clearInterval(timer);
-	timer = undefined;
-}
+const poller = createPoller(() => void refresh());
 
 document.addEventListener("visibilitychange", () => {
-	if (document.hidden) {
-		stopPolling();
-		return;
-	}
-	void refresh();
-	startPolling();
+	poller.setHidden(document.hidden);
 });
 
 render();
 void refresh();
-startPolling();
+poller.start();

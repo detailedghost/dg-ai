@@ -1,4 +1,10 @@
-import { CHAT_FEED_PATH, CHAT_JOBS_PATH } from "@dg/common";
+import {
+	CHAT_FEED_PATH,
+	CHAT_JOBS_PATH,
+	deriveJobState,
+	formatIntervalMs,
+	type JobState,
+} from "@dg/common";
 import { findDaemonPort } from "@/lib/daemon-port";
 
 export const DASHBOARD_POLL_MS = 10_000;
@@ -6,7 +12,6 @@ export const DASHBOARD_POLL_MS = 10_000;
 export type JobPayload = {
 	id: string;
 	label: string;
-	cwd: string;
 	intervalMs: number;
 	enabled: boolean;
 	nextRunAt: string;
@@ -26,8 +31,6 @@ export type FeedItemPayload = {
 	url: string | null;
 	read: boolean;
 };
-
-export type JobState = "ok" | "failed" | "paused";
 
 export type JobView = {
 	id: string;
@@ -68,9 +71,7 @@ const SOURCES: [RegExp, string][] = [
 	[/datadog|\bdd\b/i, "Datadog"],
 ];
 
-/**
- * The daemon withholds argv, so the label is the only signal for a source badge.
- */
+/** The daemon withholds argv, so the label is the only signal for a source badge. */
 export function sourceFromLabel(label: string): string {
 	for (const [pattern, name] of SOURCES) {
 		if (pattern.test(label)) return name;
@@ -79,10 +80,7 @@ export function sourceFromLabel(label: string): string {
 }
 
 export function formatEvery(intervalMs: number): string {
-	const hour = 60 * 60_000;
-	if (intervalMs % hour === 0) return `every ${intervalMs / hour}h`;
-	if (intervalMs % 60_000 === 0) return `every ${intervalMs / 60_000}m`;
-	return `every ${Math.max(1, Math.round(intervalMs / 1000))}s`;
+	return `every ${formatIntervalMs(intervalMs)}`;
 }
 
 function humanGap(ms: number): string {
@@ -104,9 +102,7 @@ export function relativeTime(iso: string | null, now: Date): string {
 }
 
 export function jobState(job: JobPayload): JobState {
-	if (!job.enabled) return "paused";
-	if (job.lastExitCode !== null && job.lastExitCode !== 0) return "failed";
-	return "ok";
+	return deriveJobState(job.enabled, job.lastExitCode);
 }
 
 /** How far the job has travelled from its last run toward its next, as 0..1. */
@@ -173,8 +169,8 @@ export function firstFailure(
 	return {
 		jobId: failed.id,
 		label: failed.label,
-		message: `failed ${relativeTime(failed.lastRunAt, now)} — exit ${failed.lastExitCode}${
-			failed.lastError ? `: ${failed.lastError}` : ""
+		message: `failed ${relativeTime(failed.lastRunAt, now)} — ${
+			failed.lastError ?? `exit ${failed.lastExitCode}`
 		}`,
 	};
 }
@@ -183,10 +179,7 @@ export function createDashboardState(): DashboardState {
 	return { jobs: [], items: [], offline: false, loaded: false };
 }
 
-/**
- * A failed refresh flips the offline flag and keeps whatever was last on screen —
- * blanking the feed because one poll missed is worse than showing it a moment stale.
- */
+/** A failed refresh keeps the last good data and only raises the offline flag. */
 export function applyRefresh(
 	state: DashboardState,
 	result: RefreshResult,
@@ -216,6 +209,54 @@ export function selectJob(
 export function visibleItems(state: DashboardState): FeedItemPayload[] {
 	if (!state.selectedJobId) return state.items;
 	return state.items.filter((item) => item.jobId === state.selectedJobId);
+}
+
+export type PollerSeams = {
+	schedule?: (fn: () => void, ms: number) => number;
+	cancel?: (handle: number) => void;
+};
+
+export type Poller = {
+	start(): void;
+	stop(): void;
+	running(): boolean;
+	setHidden(hidden: boolean): void;
+};
+
+/** Polling pauses while the page is hidden so a background tab stops waking the daemon. */
+export function createPoller(
+	onTick: () => void,
+	intervalMs = DASHBOARD_POLL_MS,
+	seams: PollerSeams = {},
+): Poller {
+	const schedule = seams.schedule ?? ((fn, ms) => setInterval(fn, ms) as never);
+	const cancel = seams.cancel ?? ((handle) => clearInterval(handle));
+	let handle: number | undefined;
+
+	function start(): void {
+		if (handle !== undefined) return;
+		handle = schedule(onTick, intervalMs);
+	}
+
+	function stop(): void {
+		if (handle === undefined) return;
+		cancel(handle);
+		handle = undefined;
+	}
+
+	return {
+		start,
+		stop,
+		running: () => handle !== undefined,
+		setHidden(hidden: boolean): void {
+			if (hidden) {
+				stop();
+				return;
+			}
+			onTick();
+			start();
+		},
+	};
 }
 
 export type DashboardApi = {
@@ -269,8 +310,20 @@ export function createDashboardApi(baseUrl: string): DashboardApi {
 	};
 }
 
-export async function connectDashboardApi(): Promise<DashboardApi | undefined> {
+/** A known port is retried directly before the candidate ports are probed again. */
+export async function connectDashboardApi(
+	knownPort?: number,
+): Promise<DashboardApi | undefined> {
+	if (knownPort !== undefined) {
+		const direct = createDashboardApi(`http://127.0.0.1:${knownPort}`);
+		if ((await direct.refresh()).ok) return direct;
+	}
 	const port = await findDaemonPort();
 	if (port === undefined) return undefined;
 	return createDashboardApi(`http://127.0.0.1:${port}`);
+}
+
+export function portOf(api: DashboardApi): number | undefined {
+	const port = Number(new URL(api.baseUrl).port);
+	return Number.isFinite(port) && port > 0 ? port : undefined;
 }

@@ -3,6 +3,7 @@ import {
 	applyRefresh,
 	createDashboardApi,
 	createDashboardState,
+	createPoller,
 	type FeedItemPayload,
 	firstFailure,
 	formatEvery,
@@ -24,7 +25,6 @@ function job(overrides: Partial<JobPayload> = {}): JobPayload {
 	return {
 		id: "job-1",
 		label: "jira-sprint",
-		cwd: "/tmp",
 		intervalMs: 15 * 60_000,
 		enabled: true,
 		nextRunAt: "2026-09-03T12:13:00.000Z",
@@ -161,12 +161,34 @@ describe("the summary strip and the failure banner", () => {
 		);
 		expect(failure?.jobId).toBe("b");
 		expect(failure?.label).toBe("sentry-unresolved");
-		expect(failure?.message).toContain("exit 1");
 		expect(failure?.message).toContain("auth token expired");
 	});
 
 	it("has no banner when nothing failed", () => {
 		expect(firstFailure([job()], NOW)).toBeUndefined();
+	});
+
+	it("falls back to the exit code when the daemon recorded no reason", () => {
+		const failure = firstFailure(
+			[job({ lastExitCode: 3, lastError: null })],
+			NOW,
+		);
+		expect(failure?.message).toContain("exit 3");
+	});
+
+	it("does not repeat the exit code when a reason is present", () => {
+		const failure = firstFailure(
+			[
+				job({
+					lastExitCode: 1,
+					lastError: "command exited with status 1",
+				}),
+			],
+			NOW,
+		);
+		expect(failure?.message).toBe(
+			"failed 2m ago — command exited with status 1",
+		);
 	});
 });
 
@@ -250,6 +272,76 @@ describe("selecting a job", () => {
 		expect(visibleItems(selectJob(loaded, "job-2"))).toHaveLength(1);
 		expect(visibleItems(selectJob(loaded, "job-2"))[0].id).toBe("item-2");
 		expect(visibleItems(selectJob(loaded, undefined))).toHaveLength(2);
+	});
+});
+
+describe("polling", () => {
+	function fakeTimers() {
+		const live = new Set<number>();
+		let next = 1;
+		return {
+			live,
+			seams: {
+				schedule: () => {
+					const handle = next;
+					next += 1;
+					live.add(handle);
+					return handle;
+				},
+				cancel: (handle: number) => {
+					live.delete(handle);
+				},
+			},
+		};
+	}
+
+	it("starts once, however many times start is called", () => {
+		const timers = fakeTimers();
+		const poller = createPoller(() => {}, 10_000, timers.seams);
+
+		poller.start();
+		poller.start();
+
+		expect(poller.running()).toBe(true);
+		expect(timers.live.size).toBe(1);
+	});
+
+	it("stops when the page hides and does not tick while hidden", () => {
+		const timers = fakeTimers();
+		let ticks = 0;
+		const poller = createPoller(() => ticks++, 10_000, timers.seams);
+		poller.start();
+
+		poller.setHidden(true);
+
+		expect(poller.running()).toBe(false);
+		expect(timers.live.size).toBe(0);
+		expect(ticks).toBe(0);
+	});
+
+	it("refreshes immediately when the page comes back, then resumes polling", () => {
+		const timers = fakeTimers();
+		let ticks = 0;
+		const poller = createPoller(() => ticks++, 10_000, timers.seams);
+		poller.start();
+		poller.setHidden(true);
+
+		poller.setHidden(false);
+
+		expect(ticks).toBe(1);
+		expect(poller.running()).toBe(true);
+	});
+
+	it("survives hiding twice without leaking a timer", () => {
+		const timers = fakeTimers();
+		const poller = createPoller(() => {}, 10_000, timers.seams);
+		poller.start();
+
+		poller.setHidden(true);
+		poller.setHidden(true);
+		poller.setHidden(false);
+
+		expect(timers.live.size).toBe(1);
 	});
 });
 
