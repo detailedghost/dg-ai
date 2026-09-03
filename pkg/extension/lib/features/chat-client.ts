@@ -1,8 +1,6 @@
+import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
 import {
-	CHAT_DEFAULT_PORT,
-	CHAT_HEALTH_PATH,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
-	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_WS_PATH,
 	type ChatFrame,
@@ -32,14 +30,7 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
-export const DAEMON_HEALTH_NAMES = ["dg-daemon", "dg-server"] as const;
-
-export type DaemonName = (typeof DAEMON_HEALTH_NAMES)[number];
-export type ChatHealth = { daemon: DaemonName; instanceId: string };
-
-function asDaemonName(value: unknown): DaemonName | undefined {
-	return DAEMON_HEALTH_NAMES.find((name) => name === value);
-}
+export type { ChatHealth, DaemonName } from "@/lib/daemon-port";
 
 export type ChatClientOptions = {
 	openSocket?: (url: string) => ChatClientSocket;
@@ -86,46 +77,6 @@ function buildConnectFrame(
 
 export function defaultOpenSocket(url: string): ChatClientSocket {
 	return new WebSocket(url) as unknown as ChatClientSocket;
-}
-
-const HEALTH_PROBE_TIMEOUT_MS = 2_000;
-
-async function defaultFetchHealth(
-	port: number,
-): Promise<ChatHealth | undefined> {
-	try {
-		const res = await fetch(`http://127.0.0.1:${port}${CHAT_HEALTH_PATH}`, {
-			signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
-		});
-		if (!res.ok) return undefined;
-		const body = (await res.json()) as {
-			daemon?: unknown;
-			instanceId?: unknown;
-		};
-		const daemon = asDaemonName(body.daemon);
-		if (!daemon || typeof body.instanceId !== "string") return undefined;
-		return { daemon, instanceId: body.instanceId };
-	} catch {
-		return undefined;
-	}
-}
-
-async function findDaemonPort(
-	preferInstanceId?: string,
-): Promise<number | undefined> {
-	const candidates = Array.from(
-		{ length: CHAT_PORT_FALLBACK_COUNT + 1 },
-		(_, index) => CHAT_DEFAULT_PORT + index,
-	);
-	const healths = await Promise.all(candidates.map(defaultFetchHealth));
-	if (preferInstanceId !== undefined) {
-		const preferred = candidates.find(
-			(_, index) => healths[index]?.instanceId === preferInstanceId,
-		);
-		if (preferred !== undefined) return preferred;
-	}
-	const fallbackIndex = healths.findIndex((health) => health !== undefined);
-	return fallbackIndex === -1 ? undefined : candidates[fallbackIndex];
 }
 
 type QueuedMessage = {
@@ -212,7 +163,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		reconnectAttempt = 0;
 		everConnected = true;
 		if (port !== undefined) {
-			void defaultFetchHealth(port).then((health) => {
+			void fetchDaemonHealth(port).then((health) => {
 				if (health) knownInstanceId = health.instanceId;
 			});
 		}
