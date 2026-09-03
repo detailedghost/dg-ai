@@ -86,7 +86,14 @@ export async function runVerify(planPath: string): Promise<void> {
 			],
 		};
 	}
-	console.log(JSON.stringify(result));
+	/**
+	 * Exit rather than fall off the end. The browser's own children inherit its
+	 * piped stderr and outlive it, so that pipe never reaches EOF and the runtime
+	 * keeps this process alive with no work left to do. The findings are the whole
+	 * deliverable, so once they are written there is nothing to stay open for.
+	 */
+	await Bun.write(Bun.stdout, `${JSON.stringify(result)}\n`);
+	process.exit(0);
 }
 
 /** Encode the tour into a `_demo` URL, save its plan, and open it (or just print). */
