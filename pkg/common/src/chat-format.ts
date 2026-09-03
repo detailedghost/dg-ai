@@ -49,6 +49,37 @@ export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_JOBS_PATH = "/jobs";
 export const CHAT_FEED_PATH = "/feed";
 
+export type JobState = "ok" | "failed" | "paused";
+
+/** Shared so the CLI and the dashboard cannot disagree on what counts as failed. */
+export function deriveJobState(
+	enabled: boolean,
+	lastExitCode: number | null | undefined,
+): JobState {
+	if (!enabled) return "paused";
+	if (
+		lastExitCode !== null &&
+		lastExitCode !== undefined &&
+		lastExitCode !== 0
+	) {
+		return "failed";
+	}
+	return "ok";
+}
+
+const MS_PER_SECOND = 1_000;
+const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+
+/** Render an interval the way `job add --every` accepts one. */
+export function formatIntervalMs(intervalMs: number): string {
+	if (intervalMs % MS_PER_HOUR === 0) return `${intervalMs / MS_PER_HOUR}h`;
+	if (intervalMs % MS_PER_MINUTE === 0) {
+		return `${intervalMs / MS_PER_MINUTE}m`;
+	}
+	return `${Math.max(1, Math.round(intervalMs / MS_PER_SECOND))}s`;
+}
+
 export type SessionRole = "orchestrator" | "agent";
 
 export type SessionSummary = {
