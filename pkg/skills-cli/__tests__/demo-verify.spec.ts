@@ -48,16 +48,15 @@ type VerifyResult = { ok: boolean; findings: Array<Record<string, unknown>> };
 /**
  * Budget for a test that drives a real browser end to end. A single run is allowed
  * DEVTOOLS_URL_TIMEOUT_MS just to reach the DevTools URL, and then still has to load
- * the extension, walk the tour and tear down; the first run of a file pays a cold
- * browser on top. Derived from that constant so raising the launch budget raises this
- * one, rather than leaving a literal to go stale.
+ * the extension, walk the tour and tear down. Derived from that constant so raising
+ * the launch budget raises this one, rather than leaving a literal to go stale.
  *
- * This is a budget, not a fit-to-observed-time value — a runner's cold
- * browser/extension load still costs more than a warm local one. It no longer
- * pads for `clickThroughTour` clicking a disabled last-step "Next" arrow as a
- * no-op (see the single-step regression test above); that's fixed, not budgeted around.
+ * It no longer pads for a cold browser: the `beforeAll` warm-up run pays that once.
  */
 const VERIFY_RUN_TIMEOUT_MS = DEVTOOLS_URL_TIMEOUT_MS * 6;
+
+/** The warm-up is the run that pays the cold costs, so it gets its own headroom. */
+const WARMUP_TIMEOUT_MS = VERIFY_RUN_TIMEOUT_MS * 2;
 
 async function runVerify(
 	planPath: string,
@@ -117,7 +116,7 @@ describe("demo --verify", () => {
 		return { title: "verify fixture", startUrl: `${base}/entry.html`, steps };
 	}
 
-	beforeAll(() => {
+	beforeAll(async () => {
 		server = Bun.serve({
 			port: 0,
 			fetch(req) {
@@ -148,7 +147,24 @@ describe("demo --verify", () => {
 		if (!existsSync(EXTENSION_MANIFEST)) {
 			Bun.spawnSync(["bun", "run", "build"], { cwd: EXTENSION_DIR });
 		}
-	});
+
+		/**
+		 * A throwaway run, result discarded. The first launch on a cold machine pays
+		 * for Chrome's first-run setup and reading the unpacked extension, which is
+		 * process-external: every later run gets a fresh subprocess and a fresh
+		 * throwaway profile and still costs a fraction of the first. Paying it here
+		 * keeps that one-time cost out of whichever test is declared first.
+		 */
+		await runVerify(
+			writePlan(
+				dir,
+				"warmup.md",
+				scriptWithSteps([
+					{ title: "Warm up", body: "Load the browser and extension." },
+				]),
+			),
+		);
+	}, WARMUP_TIMEOUT_MS);
 
 	afterAll(() => {
 		server?.stop(true);
