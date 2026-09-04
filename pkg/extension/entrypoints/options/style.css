@@ -20,6 +20,9 @@
 	--accent2-light: #c026d3;
 	--accent-dark: #00f0ff;
 	--accent2-dark: #ff2bd6;
+	--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+		"Helvetica Neue", Arial, sans-serif;
+	--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,13 +62,15 @@
 
 @layer base {
 	body {
-		@apply mx-auto max-w-2xl px-5 pt-10 pb-16 font-mono;
+		@apply mx-auto max-w-2xl px-5 pt-10 pb-16;
+		font-family: var(--sans);
 		background: var(--bg);
 		color: var(--ink);
 		min-height: 100vh;
 	}
 	code {
 		@apply px-1;
+		font-family: var(--mono);
 		background: var(--code-bg);
 		color: var(--accent);
 		border: 0.0625rem solid var(--line);
@@ -74,18 +79,19 @@
 
 @layer components {
 	.neon-title {
-		@apply text-4xl font-bold uppercase tracking-wide leading-none;
-		color: var(--ink);
-		text-shadow:
-			0 0 0.625rem var(--accent),
-			0 0 0.125rem var(--accent);
+		@apply text-4xl font-bold uppercase leading-none;
+		letter-spacing: -0.01em;
+		background: linear-gradient(96deg, var(--ink) 16%, var(--accent));
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
 	}
 	.sub {
 		@apply text-sm;
 		color: var(--muted);
 	}
 	.navbtn {
-		@apply border-2 px-3 py-1.5 text-xs uppercase tracking-wider no-underline;
+		@apply border-2 px-3 py-1.5 text-sm uppercase tracking-normal no-underline;
 		border-color: var(--line);
 		background: transparent;
 		color: var(--ink);
@@ -110,8 +116,8 @@
 		box-shadow: 0.375rem 0.375rem 0 var(--accent2);
 	}
 	.sec-h {
-		@apply text-xs uppercase mb-2 font-semibold;
-		letter-spacing: 0.18em;
+		@apply text-sm uppercase mb-2 font-semibold;
+		letter-spacing: 0.08em;
 		color: var(--accent);
 	}
 	.panel-alt .sec-h {
@@ -122,8 +128,8 @@
 		color: var(--muted);
 	}
 	.lbl {
-		@apply block text-xs uppercase mt-3 mb-1.5;
-		letter-spacing: 0.12em;
+		@apply block text-sm uppercase mt-3 mb-1.5;
+		letter-spacing: 0.06em;
 	}
 	.field {
 		@apply w-full border-2 p-2 text-sm;

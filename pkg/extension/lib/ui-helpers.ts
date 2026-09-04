@@ -1,6 +1,14 @@
 /** Shared accent color for extension-owned overlays. */
 export const ACCENT = "#6ea8fe";
 
+/** Type stack for chrome and prose on every extension-owned surface. */
+export const SANS =
+	'-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+/** Type stack for machine text — identifiers, paths, command output. */
+export const MONO =
+	'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+
 /** Create an HTML element and assign the supplied inline style properties. */
 export function createEl<K extends keyof HTMLElementTagNameMap>(
 	tag: K,

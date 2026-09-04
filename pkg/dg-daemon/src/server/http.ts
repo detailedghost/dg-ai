@@ -4,7 +4,9 @@ import {
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
 	CHAT_CLI_PATH,
+	CHAT_FEED_PATH,
 	CHAT_HEALTH_PATH,
+	CHAT_JOBS_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
@@ -28,8 +30,9 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import { DispatchScheduler } from "../dispatch";
+import { runJobNow } from "../jobs/runner";
 import type { SessionRegistry } from "../session/registry";
-import type { ChatStore } from "../store";
+import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
 import {
 	abortPendingWork,
 	type ConnectionManager,
@@ -59,6 +62,7 @@ export type HttpServerDeps = {
 	noteActivity: () => void;
 	statusDeps: Omit<StatusDeps, "instanceId" | "boundPort" | "registry">;
 	store: ChatStore;
+	dispatchScheduler: DispatchScheduler;
 };
 
 const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
@@ -72,6 +76,30 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 			...init.headers,
 		},
 	});
+}
+
+/**
+ * The scheduler routes answer the dashboard page, so they take the same origin gate as
+ * the WebSocket upgrade rather than /start's, which exists to refuse browsers outright.
+ */
+function requireExtensionOrigin(
+	req: Request,
+	paths: DgPaths,
+): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (!isExtensionOrigin(origin)) {
+		return new Response("refused: requires an extension-scheme Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (!checkPinnedOrigin(paths, origin as string)) {
+		return new Response(
+			"refused: Origin does not match the pinned extension origin",
+			{ status: 400, headers: NOSNIFF_HEADERS },
+		);
+	}
+	return undefined;
 }
 
 function requireLoopbackHost(req: Request, port: number): Response | undefined {
@@ -104,10 +132,17 @@ function handleHealthCheck(
 }
 
 export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
-	const { port, paths, registry, connections, logger, noteActivity, store } =
-		deps;
+	const {
+		port,
+		paths,
+		registry,
+		connections,
+		logger,
+		noteActivity,
+		store,
+		dispatchScheduler,
+	} = deps;
 
-	const dispatchScheduler = new DispatchScheduler();
 	const frameDeps = {
 		registry,
 		connections,
@@ -217,6 +252,17 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleAssetGet(req, url, deps);
 			}
 
+			if (
+				url.pathname === CHAT_JOBS_PATH ||
+				url.pathname.startsWith(`${CHAT_JOBS_PATH}/`) ||
+				url.pathname === CHAT_FEED_PATH ||
+				url.pathname.startsWith(`${CHAT_FEED_PATH}/`)
+			) {
+				const originError = requireExtensionOrigin(req, deps.paths);
+				if (originError) return originError;
+				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
+			}
+
 			return new Response("not found", { status: 404 });
 		},
 	});
@@ -289,25 +335,158 @@ async function handleRegisterSession(
 	});
 }
 
+function parseLimit(raw: string | null): number | undefined | "invalid" {
+	if (raw === null) return undefined;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value <= 0) return "invalid";
+	return value;
+}
+
+async function readIdentity(req: Request): Promise<string | undefined> {
+	try {
+		const body = (await req.json()) as Record<string, unknown>;
+		const identity = body.identity;
+		return typeof identity === "string" && identity.length > 0
+			? identity
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function handleSchedulerRoute(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	scheduler: DispatchScheduler,
+): Promise<Response> {
+	const { store, logger } = deps;
+	const runnerDeps = { store, scheduler, logger };
+	const isJobs = url.pathname.startsWith(CHAT_JOBS_PATH);
+	const base = isJobs ? CHAT_JOBS_PATH : CHAT_FEED_PATH;
+	const rest = url.pathname
+		.slice(base.length)
+		.split("/")
+		.filter((segment) => segment.length > 0)
+		.map((segment) => decodeURIComponent(segment));
+
+	if (isJobs && rest.length === 0 && req.method === "GET") {
+		const unread = store.countUnreadByJob();
+		return json({
+			jobs: store.listJobs().map((job) => ({
+				id: job.id,
+				label: job.label,
+				intervalMs: job.intervalMs,
+				enabled: job.enabled,
+				nextRunAt: job.nextRunAt,
+				lastRunAt: job.lastRunAt ?? null,
+				lastExitCode: job.lastExitCode ?? null,
+				lastError: job.lastError ?? null,
+				notifyIdentity: job.notifyIdentity ?? null,
+				unread: unread[job.id] ?? 0,
+			})),
+		});
+	}
+
+	if (
+		isJobs &&
+		rest.length === 2 &&
+		rest[1] === "run" &&
+		req.method === "POST"
+	) {
+		const outcome = await runJobNow(rest[0], runnerDeps);
+		if (!outcome) {
+			return new Response("no such job", {
+				status: 404,
+				headers: NOSNIFF_HEADERS,
+			});
+		}
+		return json(outcome);
+	}
+
+	if (!isJobs && rest.length === 0 && req.method === "GET") {
+		const limit = parseLimit(url.searchParams.get("limit"));
+		if (limit === "invalid") {
+			return new Response("refused: limit must be a positive integer", {
+				status: 400,
+				headers: NOSNIFF_HEADERS,
+			});
+		}
+		const items = store.listFeedItems({
+			jobId: url.searchParams.get("jobId") ?? undefined,
+			unreadOnly: url.searchParams.get("unread") === "true",
+			limit,
+		});
+		return json({
+			items: items.map((item) => ({
+				id: item.id,
+				jobId: item.jobId,
+				createdAt: item.createdAt,
+				title: item.title,
+				meta: item.meta ?? null,
+				url: item.url ?? null,
+				read: item.readAt !== undefined,
+			})),
+		});
+	}
+
+	if (
+		!isJobs &&
+		rest.length === 1 &&
+		rest[0] === "read-all" &&
+		req.method === "POST"
+	) {
+		return json({ marked: store.markAllRead() });
+	}
+
+	if (!isJobs && rest.length === 2 && req.method === "POST") {
+		const [itemId, action] = rest;
+		if (action === "read") {
+			if (!store.markFeedItemRead(itemId)) {
+				return new Response("no such item", {
+					status: 404,
+					headers: NOSNIFF_HEADERS,
+				});
+			}
+			return json({ ok: true });
+		}
+		if (action === "queue") {
+			const identity = await readIdentity(req);
+			if (!identity) {
+				return new Response("refused: body must carry a non-empty identity", {
+					status: 400,
+					headers: NOSNIFF_HEADERS,
+				});
+			}
+			const item = store.getFeedItem(itemId);
+			if (!item) {
+				return new Response("no such item", {
+					status: 404,
+					headers: NOSNIFF_HEADERS,
+				});
+			}
+			store.insertAgentMessage({
+				senderSessionId: SCHEDULER_SESSION_ID,
+				senderIdentity: "dashboard",
+				recipientIdentity: identity,
+				id: randomUUID(),
+				body: [item.title, item.meta, item.url].filter(Boolean).join("\n"),
+			});
+			return json({ ok: true });
+		}
+	}
+
+	return new Response("not found", { status: 404, headers: NOSNIFF_HEADERS });
+}
+
 function handleWsUpgrade(
 	req: Request,
 	server: Server<SocketState>,
 	deps: HttpServerDeps,
 ): Response {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: /ws requires an extension-scheme Origin", {
-			status: 400,
-		});
-	}
-	if (!checkPinnedOrigin(deps.paths, origin as string)) {
-		return new Response(
-			"refused: Origin does not match the pinned extension origin",
-			{
-				status: 400,
-			},
-		);
-	}
+	const originError = requireExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
 	const data = createSocketState("ws", deps.logger, origin as string);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });

@@ -71,6 +71,86 @@ function ackPlan(db: Database, sql: string): string {
 	return plan(db, sql, ACK_BINDINGS);
 }
 
+describe("scheduled-job query plans", () => {
+	it("dueJobs seeks the partial due index instead of scanning scheduled_jobs", () => {
+		const db = migrated();
+		const detail = plan(
+			db,
+			`SELECT * FROM scheduled_jobs
+				 WHERE enabled = 1 AND next_run_at <= ?
+				 ORDER BY next_run_at ASC`,
+			["2026-09-03T12:00:00.000Z"],
+		);
+
+		expect(detail).toContain("USING INDEX idx_scheduled_jobs_due");
+		expect(detail).not.toContain("SCAN scheduled_jobs");
+		db.close();
+	});
+
+	it("the runner's own feed read seeks an index and never sorts in a temp b-tree", () => {
+		const db = migrated();
+		const detail = plan(
+			db,
+			"SELECT * FROM feed_items WHERE job_id = ? ORDER BY seq DESC LIMIT ?",
+			["job-a", 200],
+		);
+
+		expect(detail).toContain("USING INDEX idx_feed_items_job_seq");
+		expect(detail.toUpperCase()).not.toContain("TEMP B-TREE");
+		db.close();
+	});
+
+	it("the dashboard's unread feed read seeks an index and never sorts", () => {
+		const db = migrated();
+		const detail = plan(
+			db,
+			`SELECT * FROM feed_items
+			 WHERE job_id = ? AND read_at IS NULL
+			 ORDER BY seq DESC LIMIT ?`,
+			["job-a", 200],
+		);
+
+		expect(detail).toContain("USING INDEX idx_feed_items_");
+		expect(detail).not.toContain("SCAN feed_items");
+		expect(detail.toUpperCase()).not.toContain("TEMP B-TREE");
+		db.close();
+	});
+
+	it("countUnreadByJob groups on the unread index without a temp b-tree", () => {
+		const db = migrated();
+		const detail = plan(
+			db,
+			`SELECT job_id, COUNT(*) AS count FROM feed_items
+				 WHERE read_at IS NULL
+				 GROUP BY job_id`,
+			[],
+		);
+
+		expect(detail).toContain("USING INDEX idx_feed_items_unread");
+		expect(detail.toUpperCase()).not.toContain("TEMP B-TREE");
+		db.close();
+	});
+
+	it("carries no index the planner never picks", () => {
+		const db = migrated();
+		const names = (
+			db
+				.query(
+					"SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('feed_items', 'scheduled_jobs') AND name NOT LIKE 'sqlite_%'",
+				)
+				.all() as { name: string }[]
+		).map((row) => row.name);
+
+		expect(names.sort()).toEqual([
+			"idx_feed_items_dedupe",
+			"idx_feed_items_job_seq",
+			"idx_feed_items_unread",
+			"idx_scheduled_jobs_due",
+		]);
+		db.close();
+	});
+});
+
 describe("hot-path query plans", () => {
 	it("claimNext seeks the pending index instead of scanning messages", () => {
 		const db = migrated();

@@ -1,5 +1,5 @@
-import type { MigrationStep } from "@dg/common/node";
 import type { Database } from "bun:sqlite";
+import type { MigrationStep } from "@dg/common/node";
 
 function createV1Tables(db: Database): void {
 	db.run(`CREATE TABLE sessions (
@@ -159,6 +159,59 @@ function createV6AgentMessages(db: Database): void {
 	);
 }
 
+function createV7ScheduledJobs(db: Database): void {
+	db.run(`CREATE TABLE scheduled_jobs (
+		id TEXT PRIMARY KEY,
+		label TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		argv_ciphertext BLOB NOT NULL,
+		argv_iv BLOB NOT NULL,
+		argv_tag BLOB NOT NULL,
+		cwd TEXT NOT NULL,
+		interval_ms INTEGER NOT NULL,
+		enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+		notify_identity TEXT,
+		last_run_at TEXT,
+		next_run_at TEXT NOT NULL,
+		last_exit_code INTEGER,
+		last_error_ciphertext BLOB,
+		last_error_iv BLOB,
+		last_error_tag BLOB,
+		last_stderr_ciphertext BLOB,
+		last_stderr_iv BLOB,
+		last_stderr_tag BLOB
+	) STRICT`);
+
+	db.run(`CREATE TABLE feed_items (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		id TEXT NOT NULL UNIQUE,
+		job_id TEXT NOT NULL REFERENCES scheduled_jobs(id) ON DELETE CASCADE,
+		fingerprint TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		title_ciphertext BLOB NOT NULL,
+		title_iv BLOB NOT NULL,
+		title_tag BLOB NOT NULL,
+		meta_ciphertext BLOB,
+		meta_iv BLOB,
+		meta_tag BLOB,
+		url_ciphertext BLOB,
+		url_iv BLOB,
+		url_tag BLOB,
+		read_at TEXT
+	) STRICT`);
+
+	db.run(
+		"CREATE UNIQUE INDEX idx_feed_items_dedupe ON feed_items(job_id, fingerprint)",
+	);
+	db.run(
+		"CREATE INDEX idx_feed_items_unread ON feed_items(job_id, seq) WHERE read_at IS NULL",
+	);
+	db.run("CREATE INDEX idx_feed_items_job_seq ON feed_items(job_id, seq)");
+	db.run(
+		"CREATE INDEX idx_scheduled_jobs_due ON scheduled_jobs(next_run_at) WHERE enabled = 1",
+	);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
@@ -166,6 +219,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 4, run: createV4Indexes },
 	{ version: 5, run: createV5AckIndex },
 	{ version: 6, run: createV6AgentMessages },
+	{ version: 7, run: createV7ScheduledJobs },
 ];
 
 export const CURRENT_SCHEMA_VERSION =
