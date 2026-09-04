@@ -18,54 +18,26 @@ import {
 	toJobView,
 	visibleItems,
 } from "@/lib/features/dashboard";
+import { buildFeedItem, buildJob } from "./utils/dashboard-fixtures";
 
 const NOW = new Date("2026-09-03T12:00:00.000Z");
 
-function job(overrides: Partial<JobPayload> = {}): JobPayload {
-	return {
-		id: "job-1",
-		label: "jira-sprint",
-		intervalMs: 15 * 60_000,
-		enabled: true,
-		nextRunAt: "2026-09-03T12:13:00.000Z",
-		lastRunAt: "2026-09-03T11:58:00.000Z",
-		lastExitCode: 0,
-		lastError: null,
-		notifyIdentity: null,
-		unread: 0,
-		...overrides,
-	};
-}
-
-function item(overrides: Partial<FeedItemPayload> = {}): FeedItemPayload {
-	return {
-		id: "item-1",
-		jobId: "job-1",
-		createdAt: "2026-09-03T11:58:00.000Z",
-		title: "Quote export times out",
-		meta: "moved to In Review",
-		url: null,
-		read: false,
-		...overrides,
-	};
-}
-
 describe("job state", () => {
 	it("is failed only when an enabled job's last run exited non-zero", () => {
-		expect(jobState(job())).toBe("ok");
-		expect(jobState(job({ lastExitCode: 1 }))).toBe("failed");
-		expect(jobState(job({ lastExitCode: null }))).toBe("ok");
+		expect(jobState(buildJob())).toBe("ok");
+		expect(jobState(buildJob({ lastExitCode: 1 }))).toBe("failed");
+		expect(jobState(buildJob({ lastExitCode: null }))).toBe("ok");
 	});
 
 	it("is paused whenever the job is disabled, however its last run went", () => {
-		expect(jobState(job({ enabled: false }))).toBe("paused");
-		expect(jobState(job({ enabled: false, lastExitCode: 1 }))).toBe("paused");
+		expect(jobState(buildJob({ enabled: false }))).toBe("paused");
+		expect(jobState(buildJob({ enabled: false, lastExitCode: 1 }))).toBe("paused");
 	});
 });
 
 describe("the job row", () => {
 	it("shows the schedule and the next run for a healthy job", () => {
-		const view = toJobView(job(), NOW);
+		const view = toJobView(buildJob(), NOW);
 		expect(view.every).toBe("every 15m");
 		expect(view.when).toBe("next in 13m");
 		expect(view.detail).toBe("ran 2m ago");
@@ -73,17 +45,17 @@ describe("the job row", () => {
 	});
 
 	it("shows the exit code instead of the last run for a failed job", () => {
-		const view = toJobView(job({ lastExitCode: 1 }), NOW);
+		const view = toJobView(buildJob({ lastExitCode: 1 }), NOW);
 		expect(view.state).toBe("failed");
 		expect(view.detail).toBe("exit 1");
 	});
 
 	it("says paused rather than a next run for a disabled job", () => {
-		expect(toJobView(job({ enabled: false }), NOW).when).toBe("paused");
+		expect(toJobView(buildJob({ enabled: false }), NOW).when).toBe("paused");
 	});
 
 	it("takes the unread count from the payload rather than counting items", () => {
-		expect(toJobView(job({ unread: 7 }), NOW).unread).toBe(7);
+		expect(toJobView(buildJob({ unread: 7 }), NOW).unread).toBe(7);
 	});
 
 	it("names the source from the label, and falls back when it recognises none", () => {
@@ -115,23 +87,23 @@ describe("time and interval wording", () => {
 describe("the sweep toward the next run", () => {
 	it("is zero right after a run and near one just before the next", () => {
 		expect(
-			runProgress(job({ nextRunAt: "2026-09-03T12:15:00.000Z" }), NOW),
+			runProgress(buildJob({ nextRunAt: "2026-09-03T12:15:00.000Z" }), NOW),
 		).toBeCloseTo(0, 5);
 		expect(
-			runProgress(job({ nextRunAt: "2026-09-03T12:00:30.000Z" }), NOW),
+			runProgress(buildJob({ nextRunAt: "2026-09-03T12:00:30.000Z" }), NOW),
 		).toBeGreaterThan(0.9);
 	});
 
 	it("stays inside 0 and 1 for a job that is overdue", () => {
 		const overdue = runProgress(
-			job({ nextRunAt: "2026-09-03T10:00:00.000Z" }),
+			buildJob({ nextRunAt: "2026-09-03T10:00:00.000Z" }),
 			NOW,
 		);
 		expect(overdue).toBe(1);
 	});
 
 	it("is zero for a paused job, which has no next run to travel toward", () => {
-		expect(runProgress(job({ enabled: false }), NOW)).toBe(0);
+		expect(runProgress(buildJob({ enabled: false }), NOW)).toBe(0);
 	});
 });
 
@@ -139,9 +111,9 @@ describe("the summary strip and the failure banner", () => {
 	it("counts jobs, active jobs and failed jobs apart", () => {
 		expect(
 			summarize([
-				job({ id: "a" }),
-				job({ id: "b", lastExitCode: 1 }),
-				job({ id: "c", enabled: false }),
+				buildJob({ id: "a" }),
+				buildJob({ id: "b", lastExitCode: 1 }),
+				buildJob({ id: "c", enabled: false }),
 			]),
 		).toEqual({ total: 3, active: 2, failed: 1 });
 	});
@@ -149,8 +121,8 @@ describe("the summary strip and the failure banner", () => {
 	it("names the failed job and why, so the banner reads without a click", () => {
 		const failure = firstFailure(
 			[
-				job({ id: "a" }),
-				job({
+				buildJob({ id: "a" }),
+				buildJob({
 					id: "b",
 					label: "sentry-unresolved",
 					lastExitCode: 1,
@@ -165,12 +137,12 @@ describe("the summary strip and the failure banner", () => {
 	});
 
 	it("has no banner when nothing failed", () => {
-		expect(firstFailure([job()], NOW)).toBeUndefined();
+		expect(firstFailure([buildJob()], NOW)).toBeUndefined();
 	});
 
 	it("falls back to the exit code when the daemon recorded no reason", () => {
 		const failure = firstFailure(
-			[job({ lastExitCode: 3, lastError: null })],
+			[buildJob({ lastExitCode: 3, lastError: null })],
 			NOW,
 		);
 		expect(failure?.message).toContain("exit 3");
@@ -179,7 +151,7 @@ describe("the summary strip and the failure banner", () => {
 	it("does not repeat the exit code when a reason is present", () => {
 		const failure = firstFailure(
 			[
-				job({
+				buildJob({
 					lastExitCode: 1,
 					lastError: "command exited with status 1",
 				}),
@@ -194,17 +166,17 @@ describe("the summary strip and the failure banner", () => {
 
 describe("the feed row", () => {
 	it("joins the item's own meta with how long ago it arrived", () => {
-		const view = toFeedView(item(), NOW);
+		const view = toFeedView(buildFeedItem(), NOW);
 		expect(view.meta).toBe("moved to In Review · 2m ago");
 		expect(view.unread).toBe(true);
 	});
 
 	it("shows only the time when the item carries no meta", () => {
-		expect(toFeedView(item({ meta: null }), NOW).meta).toBe("2m ago");
+		expect(toFeedView(buildFeedItem({ meta: null }), NOW).meta).toBe("2m ago");
 	});
 
 	it("marks a read item as read", () => {
-		expect(toFeedView(item({ read: true }), NOW).unread).toBe(false);
+		expect(toFeedView(buildFeedItem({ read: true }), NOW).unread).toBe(false);
 	});
 });
 
@@ -212,8 +184,8 @@ describe("refreshing", () => {
 	it("replaces the jobs and items on a good poll", () => {
 		const next = applyRefresh(createDashboardState(), {
 			ok: true,
-			jobs: [job()],
-			items: [item()],
+			jobs: [buildJob()],
+			items: [buildFeedItem()],
 		});
 		expect(next.jobs).toHaveLength(1);
 		expect(next.items).toHaveLength(1);
@@ -224,8 +196,8 @@ describe("refreshing", () => {
 	it("goes offline on a failed poll without clearing the last good data", () => {
 		const loaded = applyRefresh(createDashboardState(), {
 			ok: true,
-			jobs: [job()],
-			items: [item()],
+			jobs: [buildJob()],
+			items: [buildFeedItem()],
 		});
 
 		const next = applyRefresh(loaded, { ok: false });
@@ -237,7 +209,7 @@ describe("refreshing", () => {
 
 	it("comes back online on the next good poll", () => {
 		const offline = applyRefresh(createDashboardState(), { ok: false });
-		const back = applyRefresh(offline, { ok: true, jobs: [job()], items: [] });
+		const back = applyRefresh(offline, { ok: true, jobs: [buildJob()], items: [] });
 		expect(back.offline).toBe(false);
 	});
 
@@ -245,14 +217,14 @@ describe("refreshing", () => {
 		const loaded = selectJob(
 			applyRefresh(createDashboardState(), {
 				ok: true,
-				jobs: [job()],
+				jobs: [buildJob()],
 				items: [],
 			}),
 			"job-1",
 		);
 
 		expect(
-			applyRefresh(loaded, { ok: true, jobs: [job()], items: [] })
+			applyRefresh(loaded, { ok: true, jobs: [buildJob()], items: [] })
 				.selectedJobId,
 		).toBe("job-1");
 		expect(
@@ -265,8 +237,8 @@ describe("selecting a job", () => {
 	it("filters the feed to that job, and shows everything when cleared", () => {
 		const loaded = applyRefresh(createDashboardState(), {
 			ok: true,
-			jobs: [job(), job({ id: "job-2", label: "sentry" })],
-			items: [item(), item({ id: "item-2", jobId: "job-2" })],
+			jobs: [buildJob(), buildJob({ id: "job-2", label: "sentry" })],
+			items: [buildFeedItem(), buildFeedItem({ id: "item-2", jobId: "job-2" })],
 		});
 
 		expect(visibleItems(selectJob(loaded, "job-2"))).toHaveLength(1);
@@ -365,8 +337,8 @@ describe("the api client", () => {
 	it("reads both jobs and feed in one refresh", async () => {
 		const stub = stubFetch((url) =>
 			url.includes("/jobs")
-				? Response.json({ jobs: [job()] })
-				: Response.json({ items: [item()] }),
+				? Response.json({ jobs: [buildJob()] })
+				: Response.json({ items: [buildFeedItem()] }),
 		);
 		try {
 			const result = await createDashboardApi("http://127.0.0.1:1").refresh();

@@ -194,7 +194,10 @@ export async function runJobNow(
 	return admitAndRun(job, deps, deps.now?.() ?? new Date());
 }
 
-export function startJobRunner(deps: JobRunnerDeps): { stop(): void } {
+export function startJobRunner(
+	deps: JobRunnerDeps,
+	tickMs = JOB_TICK_INTERVAL_MS,
+): { stop(): void } {
 	let running = false;
 	const timer = setInterval(() => {
 		if (running) return;
@@ -206,7 +209,7 @@ export function startJobRunner(deps: JobRunnerDeps): { stop(): void } {
 			.finally(() => {
 				running = false;
 			});
-	}, JOB_TICK_INTERVAL_MS);
+	}, tickMs);
 	timer.unref?.();
 	return {
 		stop: () => clearInterval(timer),
