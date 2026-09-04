@@ -15,7 +15,7 @@ import {
 } from "@dg/common/node";
 import { DispatchScheduler } from "../dispatch";
 import { isDaemonIdle } from "../jobs/idle";
-import { startJobRunner } from "../jobs/runner";
+import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
 import { type CloseReason, SessionRegistry } from "../session/registry";
 import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../store";
 import { readEnvNumber } from "../utils/env";
@@ -146,11 +146,10 @@ export async function cmdServe(): Promise<void> {
 		},
 	});
 
-	const jobRunner = startJobRunner({
-		store,
-		scheduler: dispatchScheduler,
-		logger,
-	});
+	const jobRunner = startJobRunner(
+		{ store, scheduler: dispatchScheduler, logger },
+		readEnvNumber(process.env, "DG_JOB_TICK_MS", JOB_TICK_INTERVAL_MS),
+	);
 
 	const sessionTtlMs = readEnvNumber(
 		process.env,
