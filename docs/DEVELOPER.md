@@ -76,6 +76,15 @@ database rather than another table in `daemon.db`. Nothing in it is a
 secret the daemon's key protects — it holds an agent's own notes, readable
 by whoever owns the home directory.
 
+`src/jobs/` is the scheduled-job engine: `runner.ts` ticks every 30s and hands
+each due job to the same `dispatch/` executor a chat session uses, and
+`parse.ts` reads the job's stdout as one JSON feed item per line. Job rows and
+feed items live under one reserved session id, `__scheduler__`, because
+`agent_messages.sender_session_id` needs a real session row and the record AAD
+is keyed by session id. An enabled job keeps the daemon alive: the idle
+predicate in `jobs/idle.ts` counts enabled jobs alongside sessions and open
+connections.
+
 ### pkg/dg-agent (agent CLI)
 
 ```bash

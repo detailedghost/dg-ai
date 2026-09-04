@@ -41,7 +41,7 @@ import {
 	startPicking,
 	waitForEl,
 } from "@/lib/picker";
-import { ACCENT, createEl as el } from "@/lib/ui-helpers";
+import { ACCENT, createEl as el, SANS } from "@/lib/ui-helpers";
 import { holdFor } from "@/lib/video-timing";
 import { wait } from "@/utils/async";
 import {
@@ -50,8 +50,6 @@ import {
 	readEditFlag,
 	stripDemoMarker,
 } from "@/utils/demo-marker";
-
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 /**
  * Where this browser lets the user rebind extension shortcuts.
@@ -869,7 +867,7 @@ async function showTourEnd(ctx: Ctx, state: PlayState): Promise<void> {
 				borderRadius: "0",
 				padding: "1.25rem 1.375rem",
 				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${MONO}`,
+				font: `0.8125rem/1.6 ${SANS}`,
 				textAlign: "center",
 			});
 			const h = el("div", {
@@ -1314,7 +1312,7 @@ export function buildOverlay(
 		borderRadius: "0",
 		padding: "0.875rem 1rem",
 		boxShadow: `0.375rem 0.375rem 0 ${phaseAccent}`,
-		font: `0.8125rem/1.5 ${MONO}`,
+		font: `0.8125rem/1.5 ${SANS}`,
 		pointerEvents: "auto",
 	});
 
@@ -1545,7 +1543,7 @@ async function renderModal(
 				borderRadius: "0",
 				padding: "1.25rem 1.375rem",
 				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${MONO}`,
+				font: `0.8125rem/1.6 ${SANS}`,
 				textAlign: "center",
 			});
 			const h = el("div", {
@@ -1655,7 +1653,7 @@ async function showSetupActionConsent(
 				border: "0.125rem solid var(--line)",
 				padding: "1.25rem",
 				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${MONO}`,
+				font: `0.8125rem/1.6 ${SANS}`,
 			});
 			const heading = el("div", {
 				fontWeight: "700",
@@ -1732,7 +1730,7 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 				borderRadius: "0",
 				padding: "1.25rem 1.375rem",
 				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${MONO}`,
+				font: `0.8125rem/1.6 ${SANS}`,
 				textAlign: "center",
 			});
 
@@ -2051,7 +2049,7 @@ function labeled(
 		border: "0.125rem solid var(--line)",
 		borderRadius: "0",
 		padding: "0.375rem 0.5rem",
-		font: `0.8125rem ${MONO}`,
+		font: `0.8125rem ${SANS}`,
 	});
 	(input as HTMLInputElement).value = value;
 	(input as HTMLInputElement).placeholder = placeholder;
@@ -2070,7 +2068,7 @@ function pillButton(label: string, primary: boolean): HTMLButtonElement {
 		padding: "0.4375rem 0.75rem",
 		textTransform: "uppercase",
 		letterSpacing: "0.06em",
-		font: `0.75rem ${MONO}`,
+		font: `0.75rem ${SANS}`,
 		background: primary ? "var(--accent)" : "transparent",
 		color: primary ? "#000" : "var(--ink)",
 		borderColor: primary ? "var(--accent)" : "var(--line)",
@@ -2095,7 +2093,7 @@ function arrowButton(
 		border: `0.125rem solid ${accent ?? "var(--line)"}`,
 		borderRadius: "0",
 		padding: "0.25rem 0.625rem",
-		font: `0.9375rem ${MONO}`,
+		font: `0.9375rem ${SANS}`,
 		background: "transparent",
 		color: accent ?? "var(--ink)",
 		opacity: enabled ? "1" : "0.4",
@@ -2130,7 +2128,7 @@ function selectorField(row: DraftStep): HTMLElement {
 		border: "0.125rem solid var(--line)",
 		borderRadius: "0",
 		padding: "0.375rem 2rem 0.375rem 0.5rem",
-		font: `0.8125rem ${MONO}`,
+		font: `0.8125rem ${SANS}`,
 	});
 	input.className = "dg-field";
 	input.value = row.selector;
@@ -2176,7 +2174,7 @@ const FIELD_STYLE: Partial<CSSStyleDeclaration> = {
 	border: "0.125rem solid var(--line)",
 	borderRadius: "0",
 	padding: "0.375rem 0.5rem",
-	font: `0.8125rem ${MONO}`,
+	font: `0.8125rem ${SANS}`,
 };
 
 /** Action field: a kind selector (none/click/type) + a text box shown for "type". */
@@ -2487,7 +2485,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			borderRadius: "0",
 			padding: "1rem 1.125rem",
 			boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-			font: `0.8125rem/1.5 ${MONO}`,
+			font: `0.8125rem/1.5 ${SANS}`,
 			pointerEvents: "auto",
 			zIndex: "2147483647",
 		});
@@ -2687,7 +2685,7 @@ async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
 			border: "0.125rem solid var(--line)",
 			borderRadius: "0",
 			padding: "0.1875rem 0.375rem",
-			font: `0.8125rem ${MONO}`,
+			font: `0.8125rem ${SANS}`,
 		}) as HTMLSelectElement;
 		for (const o of options) {
 			const opt = document.createElement("option");

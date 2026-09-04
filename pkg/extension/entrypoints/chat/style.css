@@ -16,8 +16,7 @@
 	touch-action: none;
 	background: var(--chat-bg);
 	color: var(--chat-ink);
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-		monospace;
+	font-family: var(--sans);
 	line-height: 1.5;
 }
 
@@ -73,11 +72,12 @@
 	margin: 0;
 	font-size: 1.2rem;
 	font-weight: 700;
-	letter-spacing: 0.06em;
+	letter-spacing: -0.01em;
 	text-transform: uppercase;
-	text-shadow:
-		0 0 0.625rem var(--chat-accent),
-		0 0 0.125rem var(--chat-accent);
+	background: linear-gradient(96deg, var(--chat-ink) 16%, var(--chat-accent));
+	background-clip: text;
+	-webkit-background-clip: text;
+	color: transparent;
 }
 
 .chat-rail__actions {
@@ -218,9 +218,10 @@
 
 .chat-rail__identity {
 	overflow: hidden;
-	font-size: 0.72rem;
-	font-weight: 700;
-	letter-spacing: 0.12em;
+	font-family: var(--mono);
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: -0.01em;
 	text-overflow: ellipsis;
 	text-transform: uppercase;
 	white-space: nowrap;
@@ -267,8 +268,9 @@
 
 .chat-thread__breadcrumb {
 	color: var(--chat-muted);
-	font-size: 0.7rem;
-	letter-spacing: 0.12em;
+	font-family: var(--mono);
+	font-size: 0.78rem;
+	letter-spacing: -0.01em;
 	text-transform: uppercase;
 }
 
@@ -301,8 +303,9 @@
 
 .chat-node__identity {
 	margin: 0;
-	font-size: 0.8rem;
-	letter-spacing: 0.14em;
+	font-family: var(--mono);
+	font-size: 0.85rem;
+	letter-spacing: -0.01em;
 	text-transform: uppercase;
 }
 
@@ -323,7 +326,8 @@
 }
 
 .chat-transcript__message {
-	font-size: 0.95rem;
+	font-family: var(--mono);
+	font-size: 0.9rem;
 	line-height: 1.7;
 	white-space: pre-wrap;
 }

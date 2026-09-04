@@ -10,11 +10,14 @@ ciphertext
 Codex
 config
 cwd
+Datadog
+dedupes
 [Dd]ev
 devDependencies
 dg
 dotfile
 frontmatter
+Jira
 keypress
 Kokoro
 loopback
@@ -27,6 +30,7 @@ prepends
 proto
 recv
 repo
+Sentry
 Snowflake
 stdin
 stdout

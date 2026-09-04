@@ -1,6 +1,4 @@
-import { ACCENT, createEl } from "./ui-helpers";
-
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+import { ACCENT, createEl, SANS } from "./ui-helpers";
 
 /**
  * Brutalist-neon theme mirroring the settings page (options/style.css): monospace,
@@ -23,14 +21,14 @@ export const DEMO_THEME_CSS = `
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: min(28rem, 90vw); background: var(--panel); color: var(--ink);
   border: 0.125rem solid var(--line); box-shadow: 0.375rem 0.375rem 0 var(--accent);
-  padding: 1rem 1.125rem; font: 0.8125rem/1.5 ${MONO}; z-index: 2147483647;
+  padding: 1rem 1.125rem; font: 0.8125rem/1.5 ${SANS}; z-index: 2147483647;
 }
 .dg-review-modal h3 { margin: 0 0 0.75rem; font-size: 0.9375rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .dg-review-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .dg-review-modal button {
   cursor: pointer; border: 0.125rem solid var(--line); border-radius: 0;
   padding: 0.4375rem 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
-  font: 0.75rem ${MONO}; background: transparent; color: var(--ink);
+  font: 0.75rem ${SANS}; background: transparent; color: var(--ink);
 }
 .dg-review-modal button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
 .dg-review-modal #dg-review-download { background: var(--accent); color: #000; border-color: var(--accent); }

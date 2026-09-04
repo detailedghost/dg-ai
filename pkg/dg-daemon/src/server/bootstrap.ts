@@ -13,6 +13,9 @@ import {
 	resolveDgPaths,
 	writePidFileAtomic,
 } from "@dg/common/node";
+import { DispatchScheduler } from "../dispatch";
+import { isDaemonIdle } from "../jobs/idle";
+import { startJobRunner } from "../jobs/runner";
 import { type CloseReason, SessionRegistry } from "../session/registry";
 import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../store";
 import { readEnvNumber } from "../utils/env";
@@ -74,6 +77,7 @@ export async function cmdServe(): Promise<void> {
 	setUserVersionProvider(() => store.userVersion());
 	const registry = new SessionRegistry(paths);
 	const connections = new ConnectionManager();
+	const dispatchScheduler = new DispatchScheduler();
 	const instanceId = newInstanceId();
 
 	let idleController: ReturnType<typeof createIdleController> | undefined;
@@ -100,6 +104,7 @@ export async function cmdServe(): Promise<void> {
 				noteActivity,
 				statusDeps,
 				store,
+				dispatchScheduler,
 			});
 			boundPort = candidate;
 			break;
@@ -127,11 +132,24 @@ export async function cmdServe(): Promise<void> {
 
 	idleController = createIdleController({
 		ttlMs: readEnvNumber(process.env, "DG_IDLE_TTL_MS", DEFAULT_IDLE_TTL_MS),
-		isIdle: () => registry.activeCount() === 0 && connections.openCount() === 0,
+		isIdle: () =>
+			isDaemonIdle(
+				registry.activeCount(),
+				connections.openCount(),
+				store.countEnabledJobs(),
+			),
 		onExpire: () => {
-			logger.info("idle TTL expired with no sessions or connections — exiting");
+			logger.info(
+				"idle TTL expired with no sessions, connections or enabled jobs — exiting",
+			);
 			void shutdown("daemon-shutdown");
 		},
+	});
+
+	const jobRunner = startJobRunner({
+		store,
+		scheduler: dispatchScheduler,
+		logger,
 	});
 
 	const sessionTtlMs = readEnvNumber(
@@ -206,6 +224,7 @@ export async function cmdServe(): Promise<void> {
 		if (shuttingDown) return;
 		shuttingDown = true;
 		idleController?.stop();
+		jobRunner.stop();
 		clearInterval(reapTimer);
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);

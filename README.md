@@ -121,6 +121,29 @@ memory in a separate, plain-text, full-text-searchable `~/.dg/agents/memory.db`,
 which four `dg-agent memory` verbs (`write`, `search`, `read`, `forget`) read and
 write with no daemon running at all.
 
+Have the daemon **poll something on a schedule** — a Jira board, a Sentry issue
+feed, a Datadog monitor — and collect what comes back:
+
+```sh
+dg-daemon job add --label jira-sprint --every 15m --cwd ~/work \
+  --notify reviewer -- jira issue list --plain --jsonlines
+```
+
+The command prints one JSON object per line — `id` and `title` required, `meta`
+and `url` optional — and each line becomes a feed item. The daemon dedupes on
+`id`, so a second run of the same query adds nothing. `--notify <identity>`
+queues one agent message when a run brings in something new. `job list`, `job
+run`, `job enable`, `job disable` and `job rm` manage them from there.
+
+A job inherits no secrets: the daemon passes only `PATH`, `HOME`, `LANG` and
+`TZ` to the child, so the command must authenticate through its own config
+under `HOME` (`~/.sentryclirc`, `~/.config/jira`, and so on). While any job is
+enabled the daemon stays up, ignoring its idle timeout.
+
+The extension's **dashboard page** shows what has come in — jobs and their next
+run on the left, the feed on the right — and hands any item to an agent. Jobs
+are added by CLI for now; a page for that is the next step.
+
 Play a **live guided tour** of a feature in your real browser — the extension
 spotlights each element and injects explanatory text boxes, step by step:
 
