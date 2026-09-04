@@ -346,10 +346,18 @@ describe("feed and job mutations", () => {
 });
 
 describe("the job routes are gated like the rest of the browser surface", () => {
-	it("refuses a request with no Origin", async () => {
+	it("serves a request with no Origin, which is what the dashboard page sends", async () => {
 		const { port } = await bootServe();
-		expect((await get(port, CHAT_JOBS_PATH, null)).status).toBe(400);
-		expect((await get(port, CHAT_FEED_PATH, null)).status).toBe(400);
+		expect((await get(port, CHAT_JOBS_PATH, null)).status).toBe(200);
+		expect((await get(port, CHAT_FEED_PATH, null)).status).toBe(200);
+	});
+
+	it("still refuses a page origin once an extension origin is pinned", async () => {
+		const { port } = await bootServe();
+		await get(port, CHAT_JOBS_PATH);
+		expect(
+			(await get(port, CHAT_JOBS_PATH, "https://evil.example")).status,
+		).toBe(400);
 	});
 
 	it("refuses a page origin, which is not the extension", async () => {

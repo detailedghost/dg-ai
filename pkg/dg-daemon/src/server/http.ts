@@ -29,7 +29,7 @@ import {
 import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
-import { DispatchScheduler } from "../dispatch";
+import type { DispatchScheduler } from "../dispatch";
 import { runJobNow } from "../jobs/runner";
 import type { SessionRegistry } from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
@@ -79,9 +79,20 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 }
 
 /**
- * The scheduler routes answer the dashboard page, so they take the same origin gate as
- * the WebSocket upgrade rather than /start's, which exists to refuse browsers outright.
+ * Refuse an Origin that is not ours. An absent one is not foreign: Chrome sends no
+ * Origin at all when an extension page fetches a host it holds permission for, while
+ * a web page's fetch always carries its own — so this still refuses every page.
  */
+function refuseForeignOrigin(
+	req: Request,
+	paths: DgPaths,
+): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (origin === null) return undefined;
+	return requireExtensionOrigin(req, paths);
+}
+
+/** The WebSocket upgrade keeps the stricter gate: a browser always sends an Origin. */
 function requireExtensionOrigin(
 	req: Request,
 	paths: DgPaths,
@@ -258,7 +269,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === CHAT_FEED_PATH ||
 				url.pathname.startsWith(`${CHAT_FEED_PATH}/`)
 			) {
-				const originError = requireExtensionOrigin(req, deps.paths);
+				const originError = refuseForeignOrigin(req, deps.paths);
 				if (originError) return originError;
 				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
 			}
