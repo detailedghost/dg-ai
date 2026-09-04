@@ -8,6 +8,9 @@ on:
       - pkg/common/**
       - plugins/dg/skills/**
       - pkg/skills-test/**
+      - pkg/dg-daemon/**
+      - pkg/dg-agent/**
+      - pkg/extension/**
       - .github/workflows/skills-blt.yml
   workflow_call:
 
