@@ -18,6 +18,8 @@
 		"marked": "^16.0.0"
 	},
 	"devDependencies": {
+		"@dg/dg-daemon": "workspace:*",
+		"@dg/dg-agent": "workspace:*",
 		"bun-types": "^1.3.14",
 		"typescript": "^5"
 	}

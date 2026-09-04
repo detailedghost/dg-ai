@@ -423,6 +423,13 @@ export class CdpPageHandle {
 	}
 }
 
+/** `URL.origin` is "null" for a non-special scheme, so read it off the string. */
+function extensionOriginOf(url: string): string {
+	const match = /^(chrome-extension:\/\/[^/]+)/.exec(url);
+	if (!match) throw new Error(`not an extension URL: ${url}`);
+	return match[1];
+}
+
 /** A cold-started, extension-loaded, throwaway-profile browser for one verify run. */
 export class DemoVerifyHarness {
 	private constructor(
@@ -478,7 +485,7 @@ export class DemoVerifyHarness {
 	async confirmExtensionLoaded(
 		manifestName: string,
 		timeoutMs = 10000,
-	): Promise<void> {
+	): Promise<string> {
 		const deadline = Date.now() + timeoutMs;
 		const seen: string[] = [];
 		while (Date.now() < deadline) {
@@ -503,7 +510,7 @@ export class DemoVerifyHarness {
 				seen.push(`${String(name)} @ ${t.url}`);
 				const matched = name === manifestName;
 				await this.conn.send("Target.detachFromTarget", { sessionId });
-				if (matched) return;
+				if (matched) return extensionOriginOf(t.url);
 			}
 			await wait(250);
 		}
