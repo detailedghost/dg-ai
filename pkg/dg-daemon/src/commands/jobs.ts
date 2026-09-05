@@ -1,13 +1,15 @@
 import { existsSync } from "node:fs";
 import {
-	deriveJobState,
 	DgCliError,
+	deriveJobState,
+	describeError,
 	EXIT_GENERAL_FAILURE,
 	formatIntervalMs,
 } from "@dg/common";
-import { checkExecutable, resolveDgPaths } from "@dg/common/node";
+import { checkExecutableResolves, resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
 import { DispatchScheduler } from "../dispatch";
+import { nextCronRun } from "../jobs/cron";
 import { runJobNow } from "../jobs/runner";
 import { ChatStore, type ScheduledJob } from "../store";
 
@@ -36,6 +38,47 @@ export function parseEvery(raw: string): number {
 		);
 	}
 	return count * UNIT_MS[match[2]];
+}
+
+const EVERY_OR_CRON_ERROR =
+	"job add: give exactly one of --every or --cron, not both or neither";
+
+type Schedule =
+	| { intervalMs: number; cronExpr?: never; nextRunAt?: never }
+	| { intervalMs?: never; cronExpr: string; nextRunAt: string };
+
+function resolveSchedule(
+	every: string | undefined,
+	cron: string | undefined,
+): Schedule {
+	if (every !== undefined && cron !== undefined) {
+		throw new DgCliError(EVERY_OR_CRON_ERROR, EXIT_GENERAL_FAILURE);
+	}
+	if (cron !== undefined) {
+		try {
+			return {
+				cronExpr: cron,
+				nextRunAt: nextCronRun(cron, new Date()).toISOString(),
+			};
+		} catch (err) {
+			throw new DgCliError(
+				`--cron: ${describeError(err)}`,
+				EXIT_GENERAL_FAILURE,
+			);
+		}
+	}
+	if (every === undefined) {
+		throw new DgCliError(EVERY_OR_CRON_ERROR, EXIT_GENERAL_FAILURE);
+	}
+	return { intervalMs: parseEvery(every) };
+}
+
+function formatSchedule(
+	job: Pick<ScheduledJob, "intervalMs" | "cronExpr">,
+): string {
+	return job.cronExpr
+		? `cron "${job.cronExpr}"`
+		: `every ${formatIntervalMs(job.intervalMs ?? 0)}`;
 }
 
 async function withStore<T>(run: (store: ChatStore) => Promise<T>): Promise<T> {
@@ -67,7 +110,8 @@ export function registerJobCommands(program: Command): void {
 		.command("add")
 		.description("schedule a command that prints one JSON object per item")
 		.requiredOption("--label <label>", "unique name for the job")
-		.requiredOption("--every <interval>", "how often to run it, e.g. 15m")
+		.option("--every <interval>", "how often to run it, e.g. 15m")
+		.option("--cron <expression>", 'a cron expression, e.g. "0 9 * * 1-5"')
 		.requiredOption("--cwd <path>", "working directory for the command")
 		.option("--notify <identity>", "agent identity to queue new items to")
 		.argument("[command...]", "the command to run, after a bare --")
@@ -76,12 +120,13 @@ export function registerJobCommands(program: Command): void {
 				argv: string[],
 				options: {
 					label: string;
-					every: string;
+					every?: string;
+					cron?: string;
 					cwd: string;
 					notify?: string;
 				},
 			) => {
-				const intervalMs = parseEvery(options.every);
+				const schedule = resolveSchedule(options.every, options.cron);
 				if (argv.length === 0) {
 					throw new DgCliError(
 						"job add: no command given — put it after a bare --",
@@ -94,7 +139,7 @@ export function registerJobCommands(program: Command): void {
 						EXIT_GENERAL_FAILURE,
 					);
 				}
-				const stale = checkExecutable(argv[0]);
+				const stale = checkExecutableResolves(argv[0]);
 				if (stale) {
 					throw new DgCliError(`job add: ${stale}`, EXIT_GENERAL_FAILURE);
 				}
@@ -110,11 +155,11 @@ export function registerJobCommands(program: Command): void {
 						label: options.label,
 						argv,
 						cwd: options.cwd,
-						intervalMs,
+						...schedule,
 						notifyIdentity: options.notify,
 					});
 					console.log(
-						`added "${created.label}" — every ${formatIntervalMs(intervalMs)}, first run ${created.nextRunAt}`,
+						`added "${created.label}" — ${formatSchedule(created)}, first run ${created.nextRunAt}`,
 					);
 				});
 			},
@@ -134,7 +179,7 @@ export function registerJobCommands(program: Command): void {
 				for (const entry of jobs) {
 					const parts = [
 						entry.label,
-						`every ${formatIntervalMs(entry.intervalMs)}`,
+						formatSchedule(entry),
 						deriveJobState(entry.enabled, entry.lastExitCode),
 						`last ${entry.lastRunAt ?? "never"}`,
 						`next ${entry.enabled ? entry.nextRunAt : "-"}`,
