@@ -49,8 +49,14 @@ export async function saveRecording(entry: RecordingEntry): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, "readwrite");
 		tx.objectStore(STORE).put(entry);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
+		tx.oncomplete = () => {
+			db.close();
+			resolve();
+		};
+		tx.onerror = () => {
+			db.close();
+			reject(tx.error);
+		};
 	});
 }
 
@@ -63,6 +69,8 @@ export async function getRecording(
 		const req = tx.objectStore(STORE).get(tabId);
 		req.onsuccess = () => resolve(req.result as RecordingEntry | undefined);
 		req.onerror = () => reject(req.error);
+		tx.oncomplete = () => db.close();
+		tx.onerror = () => db.close();
 	});
 }
 
@@ -80,6 +88,8 @@ export async function hasRecording(tabId: number): Promise<boolean> {
 		const req = tx.objectStore(STORE).count(tabId);
 		req.onsuccess = () => resolve(req.result > 0);
 		req.onerror = () => reject(req.error);
+		tx.oncomplete = () => db.close();
+		tx.onerror = () => db.close();
 	});
 }
 
@@ -88,8 +98,14 @@ export async function removeRecording(tabId: number): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, "readwrite");
 		tx.objectStore(STORE).delete(tabId);
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
+		tx.oncomplete = () => {
+			db.close();
+			resolve();
+		};
+		tx.onerror = () => {
+			db.close();
+			reject(tx.error);
+		};
 	});
 }
 
@@ -110,7 +126,13 @@ export async function pruneStaleRecordings(maxAgeMs = STALE_MS): Promise<void> {
 				cursor.continue();
 			}
 		};
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
+		tx.oncomplete = () => {
+			db.close();
+			resolve();
+		};
+		tx.onerror = () => {
+			db.close();
+			reject(tx.error);
+		};
 	});
 }

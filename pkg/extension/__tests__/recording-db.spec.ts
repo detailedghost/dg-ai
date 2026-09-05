@@ -284,4 +284,47 @@ describe("recording-db", () => {
 		await expectEntry(await getRecording(401), keep1);
 		await expectEntry(await getRecording(403), keep2);
 	});
+
+	it("closes its IndexedDB connection after each call, so a later version bump is not blocked", async () => {
+		await saveRecording(makeEntry({ tabId: 900 }));
+		await getRecording(900);
+		await hasRecording(900);
+		await removeRecording(900);
+		await pruneStaleRecordings(0);
+
+		const currentVersion = await new Promise<number>((resolve, reject) => {
+			const req = indexedDB.open("dg-recordings");
+			req.onsuccess = () => {
+				const version = req.result.version;
+				req.result.close();
+				resolve(version);
+			};
+			req.onerror = () => reject(req.error);
+		});
+
+		const upgraded = new Promise<void>((resolve, reject) => {
+			const req = indexedDB.open("dg-recordings", currentVersion + 1);
+			req.onupgradeneeded = () => {};
+			req.onsuccess = () => {
+				req.result.close();
+				resolve();
+			};
+			req.onerror = () => reject(req.error);
+		});
+
+		await Promise.race([
+			upgraded,
+			new Promise<never>((_, reject) =>
+				setTimeout(
+					() =>
+						reject(
+							new Error(
+								"version-bump open never completed — a leaked connection is blocking it",
+							),
+						),
+					500,
+				),
+			),
+		]);
+	});
 });
