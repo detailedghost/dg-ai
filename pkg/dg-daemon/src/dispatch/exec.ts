@@ -1,4 +1,4 @@
-import { describeError } from "@dg/common";
+import { describeError, wait } from "@dg/common";
 import type { Subprocess } from "bun";
 import { buildAllowedEnv } from "./env-allowlist";
 import { DISPATCH_KILL_GRACE_MS } from "./limits";
@@ -101,10 +101,7 @@ export async function executeCommand(
 	]);
 	const exitCode = await proc.exited;
 	clearTimeout(timeoutTimer);
-	await Promise.race([
-		drained,
-		new Promise<void>((resolve) => setTimeout(resolve, DISPATCH_KILL_GRACE_MS)),
-	]);
+	await Promise.race([drained, wait(DISPATCH_KILL_GRACE_MS)]);
 
 	let stdout = Buffer.concat(stdoutChunks).toString("utf8");
 	const stderr = Buffer.concat(stderrChunks).toString("utf8");

@@ -14,6 +14,7 @@ import {
 	slugify,
 	toPlanMarkdown,
 	tourHasAutomaticActions,
+	wait,
 } from "@dg/common";
 import { browser } from "wxt/browser";
 import {
@@ -43,7 +44,6 @@ import {
 } from "@/lib/picker";
 import { ACCENT, createEl as el, SANS } from "@/lib/ui-helpers";
 import { holdFor } from "@/lib/video-timing";
-import { wait } from "@/utils/async";
 import {
 	demoMarkerFragment,
 	readDemoScript,

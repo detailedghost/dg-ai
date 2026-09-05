@@ -18,12 +18,11 @@
  * finally arrives on a freshly-woken worker.
  */
 
-import { partitionTourSteps, slugify } from "@dg/common";
+import { partitionTourSteps, slugify, wait } from "@dg/common";
 import { getConfig } from "@/lib/config";
 import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import { clampPercent } from "@/lib/narration-progress";
-import { wait } from "@/utils/async";
 import { toPlanMarkdown } from "@/utils/plan-format";
 import {
 	getRecording,

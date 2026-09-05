@@ -289,6 +289,8 @@ export function validateProtoPlan(value: unknown): ProtoPlan {
 export const PROTO_MAX_VARIATIONS = 5;
 /** Maximum combined HTML/CSS character count accepted for one prototype plan. */
 export const PROTO_MAX_MARKUP_CHARS = 524_288;
+/** Conservative URL-size ceiling shared by the `_proto` marker's writer and reader. */
+export const PROTO_MARKER_URL_MAX_LENGTH = 32_000;
 
 /**
  * Validate the bounded comparison/render contract without changing the

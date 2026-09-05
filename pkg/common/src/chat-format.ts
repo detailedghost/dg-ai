@@ -5,6 +5,7 @@ import {
 	requireRecord,
 	requireString,
 } from "./assert";
+import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
 import { validateProtoIdentifier } from "./proto-format";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -78,6 +79,33 @@ export function formatIntervalMs(intervalMs: number): string {
 		return `${intervalMs / MS_PER_MINUTE}m`;
 	}
 	return `${Math.max(1, Math.round(intervalMs / MS_PER_SECOND))}s`;
+}
+
+const UNIT_MS: Record<string, number> = {
+	s: 1_000,
+	m: 60_000,
+	h: 60 * 60_000,
+};
+
+const EVERY_RE = /^(\d+)([smh])$/;
+
+/** Read an interval written the way a person writes one: `30s`, `15m`, `2h`. */
+export function parseEvery(raw: string): number {
+	const match = EVERY_RE.exec(raw.trim());
+	if (!match) {
+		throw new DgCliError(
+			`--every: expected a count and a unit of s, m or h (for example 15m), got "${raw}"`,
+			EXIT_GENERAL_FAILURE,
+		);
+	}
+	const count = Number(match[1]);
+	if (count <= 0) {
+		throw new DgCliError(
+			`--every: interval must be greater than zero, got "${raw}"`,
+			EXIT_GENERAL_FAILURE,
+		);
+	}
+	return count * UNIT_MS[match[2]];
 }
 
 export type SessionRole = "orchestrator" | "agent";

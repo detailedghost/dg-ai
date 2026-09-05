@@ -44,19 +44,28 @@ function openDb(): Promise<IDBDatabase> {
 	});
 }
 
+function bindTxLifecycle(
+	db: IDBDatabase,
+	tx: IDBTransaction,
+	reject: (err: unknown) => void,
+	onComplete?: () => void,
+): void {
+	tx.oncomplete = () => {
+		db.close();
+		onComplete?.();
+	};
+	tx.onerror = () => {
+		db.close();
+		reject(tx.error);
+	};
+}
+
 export async function saveRecording(entry: RecordingEntry): Promise<void> {
 	const db = await openDb();
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, "readwrite");
 		tx.objectStore(STORE).put(entry);
-		tx.oncomplete = () => {
-			db.close();
-			resolve();
-		};
-		tx.onerror = () => {
-			db.close();
-			reject(tx.error);
-		};
+		bindTxLifecycle(db, tx, reject, resolve);
 	});
 }
 
@@ -69,8 +78,7 @@ export async function getRecording(
 		const req = tx.objectStore(STORE).get(tabId);
 		req.onsuccess = () => resolve(req.result as RecordingEntry | undefined);
 		req.onerror = () => reject(req.error);
-		tx.oncomplete = () => db.close();
-		tx.onerror = () => db.close();
+		bindTxLifecycle(db, tx, reject);
 	});
 }
 
@@ -88,8 +96,7 @@ export async function hasRecording(tabId: number): Promise<boolean> {
 		const req = tx.objectStore(STORE).count(tabId);
 		req.onsuccess = () => resolve(req.result > 0);
 		req.onerror = () => reject(req.error);
-		tx.oncomplete = () => db.close();
-		tx.onerror = () => db.close();
+		bindTxLifecycle(db, tx, reject);
 	});
 }
 
@@ -98,14 +105,7 @@ export async function removeRecording(tabId: number): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, "readwrite");
 		tx.objectStore(STORE).delete(tabId);
-		tx.oncomplete = () => {
-			db.close();
-			resolve();
-		};
-		tx.onerror = () => {
-			db.close();
-			reject(tx.error);
-		};
+		bindTxLifecycle(db, tx, reject, resolve);
 	});
 }
 
@@ -126,13 +126,6 @@ export async function pruneStaleRecordings(maxAgeMs = STALE_MS): Promise<void> {
 				cursor.continue();
 			}
 		};
-		tx.oncomplete = () => {
-			db.close();
-			resolve();
-		};
-		tx.onerror = () => {
-			db.close();
-			reject(tx.error);
-		};
+		bindTxLifecycle(db, tx, reject, resolve);
 	});
 }

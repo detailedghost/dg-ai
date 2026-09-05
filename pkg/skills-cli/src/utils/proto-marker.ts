@@ -6,20 +6,19 @@
  */
 
 import { gzipSync } from "node:zlib";
-import { PROTO_MARKER_KEY, type ProtoPlan } from "@dg/common";
+import {
+	PROTO_MARKER_KEY,
+	PROTO_MARKER_URL_MAX_LENGTH,
+	type ProtoPayload,
+} from "@dg/common";
 
-export { PROTO_MARKER_KEY };
+export { PROTO_MARKER_KEY, type ProtoPayload };
 
 /**
  * The WSL Start-Process path is the lowest-common-denominator among supported
  * openers, so every opener intentionally uses the same conservative ~32K cap.
  */
-export const PROTO_URL_MAX_LENGTH = 32_000;
-
-/** Scrape or plant payload encoded into the marked page URL. */
-export type ProtoPayload =
-	| { phase: "scrape"; slug: string }
-	| { phase: "plant"; slug: string; plan: ProtoPlan };
+export const PROTO_URL_MAX_LENGTH = PROTO_MARKER_URL_MAX_LENGTH;
 
 function encodeProtoPayload(payload: ProtoPayload): string {
 	return gzipSync(Buffer.from(JSON.stringify(payload), "utf8")).toString(

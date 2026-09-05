@@ -31,17 +31,18 @@ import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
+const BIND_RIVAL_BUDGET_MS = 500;
+const BIND_RIVAL_POLL_MS = 20;
+
 async function awaitBindRival(
 	paths: DgPaths,
-	budgetMs = 500,
-	pollMs = 20,
 ): Promise<ReturnType<typeof readPidFile>> {
-	const deadline = Date.now() + budgetMs;
+	const deadline = Date.now() + BIND_RIVAL_BUDGET_MS;
 	for (;;) {
 		const handle = readPidFile(paths);
 		if (handle && (await isDaemonLive(handle))) return handle;
 		if (Date.now() >= deadline) return undefined;
-		await wait(pollMs);
+		await wait(BIND_RIVAL_POLL_MS);
 	}
 }
 
@@ -174,7 +175,7 @@ export async function cmdServe(): Promise<void> {
 	);
 	reapTimer.unref?.();
 
-	const pendingCloseSends: Promise<void>[] = [];
+	const pendingCloseSends = new Set<Promise<void>>();
 
 	registry.on(
 		"closed",
@@ -189,11 +190,8 @@ export async function cmdServe(): Promise<void> {
 						type: "session-closed",
 					}),
 				);
-				pendingCloseSends.push(send);
-				void send.finally(() => {
-					const idx = pendingCloseSends.indexOf(send);
-					if (idx !== -1) pendingCloseSends.splice(idx, 1);
-				});
+				pendingCloseSends.add(send);
+				void send.finally(() => pendingCloseSends.delete(send));
 				ws.data.capabilities.delete(sessionId);
 			});
 		},
