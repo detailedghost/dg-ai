@@ -10,9 +10,13 @@ on:
       - .github/workflows/dg-agent-blt.yml
   workflow_call:
 
+# The group is this file's own name, not github.workflow: in a called workflow
+# that expression resolves to the CALLER's name, so a release invoking this build
+# would land in its own group and cancel the run it belongs to. Cancelling is also
+# limited to pull_request runs, so a release's queued rerun is never cut short.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: dg-agent-blt-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dg-agent-blt:
