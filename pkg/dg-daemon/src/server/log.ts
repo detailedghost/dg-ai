@@ -53,6 +53,9 @@ export function pruneLogs(logDir: string, now: Date): string[] {
 	return expired;
 }
 
+/** A stalled write must never stop the daemon exiting. */
+export const FLUSH_BUDGET_MS = 2000;
+
 export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 	const now = seams.now ?? (() => new Date());
 	ensurePrivateDir(paths.logDir);
@@ -97,7 +100,15 @@ export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 		},
 		getLastError: () => lastError,
 		flush: async () => {
-			await Promise.all(pendingWrites);
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const budget = new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, FLUSH_BUDGET_MS);
+			});
+			try {
+				await Promise.race([Promise.all(pendingWrites), budget]);
+			} finally {
+				if (timer) clearTimeout(timer);
+			}
 		},
 	};
 }
