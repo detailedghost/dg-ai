@@ -5,8 +5,9 @@
  * chosen order. Mirrors pkg/extension/utils/marker.ts (separate build roots).
  */
 
-export const MARKER_KEY = "_tab_group";
-export const MARKER_POS_KEY = "_tab_group_pos";
+import { MARKER_KEY, MARKER_POS_KEY } from "@dg/common";
+
+export { MARKER_KEY, MARKER_POS_KEY };
 
 export function addGroupMarker(
 	url: string,

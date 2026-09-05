@@ -2,6 +2,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	DgCliError,
 	EXIT_NO_PORT_AVAILABLE,
+	wait,
 } from "@dg/common";
 import {
 	checkWslNetworking,
@@ -30,10 +31,6 @@ import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function awaitBindRival(
 	paths: DgPaths,
 	budgetMs = 500,
@@ -44,7 +41,7 @@ async function awaitBindRival(
 		const handle = readPidFile(paths);
 		if (handle && (await isDaemonLive(handle))) return handle;
 		if (Date.now() >= deadline) return undefined;
-		await sleep(pollMs);
+		await wait(pollMs);
 	}
 }
 
