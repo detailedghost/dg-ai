@@ -31,8 +31,10 @@ import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
 import { runJobNow } from "../jobs/runner";
+import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import type { SessionRegistry } from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
+import { readEnvNumber } from "../utils/env";
 import {
 	abortPendingWork,
 	type ConnectionManager,
@@ -106,7 +108,9 @@ function requireExtensionOrigin(
 	}
 	if (!checkPinnedOrigin(paths, origin as string)) {
 		return new Response(
-			"refused: Origin does not match the pinned extension origin",
+			"refused: Origin does not match the pinned extension origin — if the " +
+				"extension moved (e.g. an unpacked reload from a new path), run " +
+				"`dg-daemon origin clear` and reconnect",
 			{ status: 400, headers: NOSNIFF_HEADERS },
 		);
 	}
@@ -290,6 +294,17 @@ async function handleRegisterSession(
 		return new Response("refused: /start rejects a browser Origin", {
 			status: 400,
 		});
+	}
+	const maxSessions = readEnvNumber(
+		process.env,
+		"DG_MAX_SESSIONS",
+		SESSION_MAX_ACTIVE_DEFAULT,
+	);
+	if (deps.registry.activeCount() >= maxSessions) {
+		return new Response(
+			`refused: daemon already holds the maximum of ${maxSessions} active sessions`,
+			{ status: 429 },
+		);
 	}
 	const contentType = (req.headers.get("content-type") ?? "")
 		.split(";")[0]
