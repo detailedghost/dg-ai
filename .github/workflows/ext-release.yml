@@ -13,6 +13,13 @@ on:
       - pkg/common/**
       - .github/workflows/ext-release.yml
 
+# Queue, don't cancel: a cancelled run skips its failure-cleanup step (that only
+# fires on `if: failure()`, never on `cancelled()`), which can leave a half-published
+# release with no rollback. The existing "already exists" check makes a queued rerun free.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write  # create release + tag
 
@@ -28,7 +35,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.22
 
       - name: Install
         working-directory: pkg/extension
