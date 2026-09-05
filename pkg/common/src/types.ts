@@ -76,6 +76,11 @@ export type ProtoPlan = {
 	variations: ProtoVariation[];
 };
 
+/** Scrape or plant payload carried by the `_proto` URL marker. */
+export type ProtoPayload =
+	| { phase: "scrape"; slug: string }
+	| { phase: "plant"; slug: string; plan: ProtoPlan };
+
 /** User's explicit approval or feedback-bearing rejection of a variation. */
 export type Verdict =
 	| {

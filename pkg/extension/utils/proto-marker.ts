@@ -8,24 +8,25 @@
 
 import {
 	PROTO_MARKER_KEY,
+	PROTO_MARKER_URL_MAX_LENGTH,
 	PROTO_MAX_MARKUP_CHARS,
 	PROTO_MAX_VARIATIONS,
-	type ProtoPlan,
+	type ProtoPayload,
 	validateProtoIdentifier,
 	validateProtoPlan,
 	validateProtoRenderLimits,
 } from "@dg/common";
 
-/** Mirrors the CLI's conservative complete-URL transport ceiling. */
-export const PROTO_ENCODED_MAX_LENGTH = 32_000;
+/** Bounds the encoded segment, not the full URL; mirrors the CLI's shared ceiling. */
+export const PROTO_ENCODED_MAX_LENGTH = PROTO_MARKER_URL_MAX_LENGTH;
 /** Caps gzip expansion before text or JSON allocation. */
 export const PROTO_EXPANDED_MAX_BYTES = 1_048_576;
-export { PROTO_MARKER_KEY, PROTO_MAX_MARKUP_CHARS, PROTO_MAX_VARIATIONS };
-
-/** Validated scrape or plant payload accepted from a `_proto` marker. */
-export type ProtoPayload =
-	| { phase: "scrape"; slug: string }
-	| { phase: "plant"; slug: string; plan: ProtoPlan };
+export {
+	PROTO_MARKER_KEY,
+	PROTO_MAX_MARKUP_CHARS,
+	PROTO_MAX_VARIATIONS,
+	type ProtoPayload,
+};
 
 function isProtoPayload(value: unknown): value is ProtoPayload {
 	if (typeof value !== "object" || value === null) return false;

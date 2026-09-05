@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseEvery } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { parseEvery } from "../../src/commands/jobs";
 import {
 	ChatStore,
 	cleanupDgHome,

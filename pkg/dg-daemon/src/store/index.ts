@@ -524,6 +524,20 @@ export class ChatStore {
 		return buildAad({ domain, sessionId, rowId, formatVersion });
 	}
 
+	#withImmediateTransaction<T>(fn: () => T): T {
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			const result = fn();
+			this.db.run("COMMIT");
+			return result;
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
+	}
+
 	private decryptMessageBody(row: RawMessageRow, sessionId: string): string {
 		const aad = this.#aad(AAD_MESSAGE_BODY, sessionId, row.id);
 		return this.cipherBox
@@ -540,8 +554,7 @@ export class ChatStore {
 		const aad = this.#aad(AAD_MESSAGE_BODY, input.sessionId, input.id);
 		const enc = this.cipherBox.encryptRecord(input.body, aad);
 		const createdAt = new Date().toISOString();
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		return this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			const row = this.db
 				.query(
@@ -560,14 +573,8 @@ export class ChatStore {
 					input.attachmentId ?? null,
 					input.subagentName ?? null,
 				) as { seq: number };
-			this.db.run("COMMIT");
 			return { seq: row.seq };
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	insertCommandInvocation(input: InsertCommandInvocationInput): {
@@ -588,8 +595,7 @@ export class ChatStore {
 			this.#aad(AAD_COMMAND_STDERR, input.sessionId, input.id),
 		);
 
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		return this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			const row = this.db
 				.query(
@@ -618,14 +624,8 @@ export class ChatStore {
 					input.truncated ? 1 : 0,
 					input.label ?? null,
 				) as { seq: number };
-			this.db.run("COMMIT");
 			return { seq: row.seq };
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	updateCommandInvocationResult(
@@ -671,8 +671,7 @@ export class ChatStore {
 			JSON.stringify(input.subagentNames),
 			this.#aad(AAD_SUBAGENT_LIST, input.sessionId, input.sessionId),
 		);
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			this.db.run(
 				`INSERT INTO command_manifests (
@@ -699,13 +698,7 @@ export class ChatStore {
 					subagentsEnc.tag,
 				],
 			);
-			this.db.run("COMMIT");
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	private readManifestRow(sessionId: string): CommandManifestRow | undefined {
@@ -749,8 +742,7 @@ export class ChatStore {
 
 	insertStatusEvent(input: InsertStatusEventInput): { seq: number } {
 		const createdAt = new Date().toISOString();
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		return this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			this.db.run(
 				`INSERT INTO status_events (
@@ -771,14 +763,8 @@ export class ChatStore {
 				 WHERE seq = ?`,
 				[encrypted.ciphertext, encrypted.iv, encrypted.tag, row.seq],
 			);
-			this.db.run("COMMIT");
 			return row;
-		} catch (error) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw error;
-		}
+		});
 	}
 
 	peekStatusEvents(sessionId: string): StatusEvent[] {
@@ -855,8 +841,7 @@ export class ChatStore {
 				input.id,
 			),
 		);
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		return this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.senderSessionId);
 			const row = this.db
 				.query(
@@ -874,14 +859,8 @@ export class ChatStore {
 					enc.iv,
 					enc.tag,
 				) as { seq: number };
-			this.db.run("COMMIT");
 			return { seq: row.seq };
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	/** Deletes agent-to-agent rows past the retention window; returns how many it removed. */
@@ -1179,8 +1158,7 @@ export class ChatStore {
 		items: FeedItemInput[],
 		inserted: FeedItemInput[],
 	): void {
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		this.#withImmediateTransaction(() => {
 			for (const item of items) {
 				const id = randomUUID();
 				const title = this.cipherBox.encryptRecord(
@@ -1228,13 +1206,7 @@ export class ChatStore {
 					) as { id: string }[];
 				if (rows.length > 0) inserted.push(item);
 			}
-			this.db.run("COMMIT");
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	listFeedItems(options: ListFeedItemsOptions = {}): FeedItem[] {
@@ -1375,8 +1347,7 @@ export class ChatStore {
 			input.filename,
 			this.#aad(AAD_ASSET_FILENAME, input.sessionId, input.id),
 		);
-		this.db.run("BEGIN IMMEDIATE");
-		try {
+		this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			this.db.run(
 				`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
@@ -1392,13 +1363,7 @@ export class ChatStore {
 					input.byteLength,
 				],
 			);
-			this.db.run("COMMIT");
-		} catch (err) {
-			try {
-				this.db.run("ROLLBACK");
-			} catch {}
-			throw err;
-		}
+		});
 	}
 
 	getAsset(sessionId: string, id: string): AssetRow | undefined {

@@ -242,6 +242,7 @@ export function renderDashboard(
 	function renderPane(at: Date): HTMLElement {
 		const pane = el("section", "dash__pane");
 		const selected = state.jobs.find((job) => job.id === state.selectedJobId);
+		const view = selected ? toJobView(selected, at) : undefined;
 
 		const head = el("div", "dash__head");
 		head.append(
@@ -249,8 +250,8 @@ export function renderDashboard(
 			el(
 				"span",
 				"dash__sub",
-				selected
-					? `${toJobView(selected, at).detail} · ${toJobView(selected, at).when}`
+				view
+					? `${view.detail} · ${view.when}`
 					: `${visibleItems(state).length} items`,
 			),
 			spacer(),
@@ -369,5 +370,12 @@ export function renderDashboard(
 
 if (typeof document !== "undefined") {
 	const autoRoot = document.querySelector<HTMLElement>("#app");
-	if (autoRoot) renderDashboard({ root: autoRoot });
+	if (autoRoot) {
+		void renderDashboard({ root: autoRoot }).ready.catch((error) => {
+			console.error(
+				"[dg-dashboard] could not render the dashboard page:",
+				error,
+			);
+		});
+	}
 }

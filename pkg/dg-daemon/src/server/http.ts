@@ -80,11 +80,7 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 	});
 }
 
-/**
- * Refuse an Origin that is not ours. An absent one is not foreign: Chrome sends no
- * Origin at all when an extension page fetches a host it holds permission for, while
- * a web page's fetch always carries its own — so this still refuses every page.
- */
+/** An absent Origin is deliberately allowed — extension pages send none. */
 function refuseForeignOrigin(
 	req: Request,
 	paths: DgPaths,
@@ -273,8 +269,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === CHAT_FEED_PATH ||
 				url.pathname.startsWith(`${CHAT_FEED_PATH}/`)
 			) {
-				const originError = refuseForeignOrigin(req, deps.paths);
-				if (originError) return originError;
 				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
 			}
 
@@ -386,6 +380,8 @@ async function handleSchedulerRoute(
 	deps: HttpServerDeps,
 	scheduler: DispatchScheduler,
 ): Promise<Response> {
+	const originError = refuseForeignOrigin(req, deps.paths);
+	if (originError) return originError;
 	const { store, logger } = deps;
 	const runnerDeps = { store, scheduler, logger };
 	const isJobs = url.pathname.startsWith(CHAT_JOBS_PATH);
