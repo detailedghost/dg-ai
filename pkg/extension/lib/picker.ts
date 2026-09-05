@@ -58,19 +58,6 @@ export function safeQuerySelector<T extends Element>(
 	}
 }
 
-/** Whether an authored selector is syntactically valid for this document. */
-export function isValidSelector(
-	root: SelectorQueryRoot,
-	selector: string,
-): boolean {
-	try {
-		root.querySelector(selector);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 /** Poll for a selector for up to timeoutMs (elements may render after load). */
 export function waitForEl(
 	selector: string,
