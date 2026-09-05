@@ -6,10 +6,9 @@
  */
 
 import { gzipSync } from "node:zlib";
-import type { ProtoPlan } from "@dg/common";
+import { PROTO_MARKER_KEY, type ProtoPlan } from "@dg/common";
 
-/** Fragment key used for the CLI-to-extension prototype handoff. */
-export const PROTO_MARKER_KEY = "_proto";
+export { PROTO_MARKER_KEY };
 
 /**
  * The WSL Start-Process path is the lowest-common-denominator among supported
