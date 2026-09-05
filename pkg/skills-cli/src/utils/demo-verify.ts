@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { partitionTourSteps, type TourScript } from "@dg/common";
+import { partitionTourSteps, type TourScript, wait } from "@dg/common";
 import { type CdpPageHandle, DemoVerifyHarness } from "./cdp-harness";
 import { addDemoMarker } from "./demo-marker";
 import { extensionDest, repoRoot } from "./lib";
@@ -44,10 +44,6 @@ export function resolveExtensionDir(): string {
 const OVERLAY_IDLE_TIMEOUT_MS = 10000;
 const OVERLAY_POLL_MS = 200;
 const STEP_SETTLE_MS = 700;
-
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function absoluteUrl(url: string, base: string): string {
 	return new URL(url, base).href;

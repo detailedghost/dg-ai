@@ -5,8 +5,9 @@
  * loading. Mirrors pkg/extension/utils/demo-marker.ts (separate build roots).
  */
 
-export const DEMO_MARKER_KEY = "_demo";
-export const EDIT_MARKER_KEY = "_edit";
+import { DEMO_MARKER_KEY, EDIT_MARKER_KEY } from "@dg/common";
+
+export { DEMO_MARKER_KEY, EDIT_MARKER_KEY };
 
 /** Append the tour marker; `edit` adds `_edit=1` so the extension opens the review panel. */
 export function addDemoMarker(

@@ -2,13 +2,17 @@
  * The `_demo` URL marker. The CLI appends `#…_demo=<base64url(json)>` to the tour's
  * entry URL; this reads the tour script back and strips the marker. Living in the
  * fragment means the server never sees it and removing it is a same-document change.
- * Mirrors skills/browser-batch/bin/demo-marker.ts (separate build roots can't share).
+ * Mirrors pkg/skills-cli/src/utils/demo-marker.ts (separate build roots can't share).
  */
 
-import { type TourScript, validate } from "@dg/common";
+import {
+	DEMO_MARKER_KEY,
+	EDIT_MARKER_KEY,
+	type TourScript,
+	validate,
+} from "@dg/common";
 
-export const DEMO_MARKER_KEY = "_demo";
-export const EDIT_MARKER_KEY = "_edit";
+export { DEMO_MARKER_KEY, EDIT_MARKER_KEY };
 
 /** Valid same-origin TourScript from a URL marker, or undefined when untrusted. */
 export function readDemoScript(url: string): TourScript | undefined {
