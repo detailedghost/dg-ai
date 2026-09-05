@@ -1,4 +1,5 @@
 export * from "./assert";
+export * from "./async";
 export * from "./chat-format";
 export * from "./cli-wire";
 export * from "./errors";

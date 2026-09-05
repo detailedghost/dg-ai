@@ -13,6 +13,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { wait } from "@dg/common";
 
 export type OverlayState =
 	| { kind: "none" }
@@ -28,10 +29,6 @@ type CdpMessage = {
 	error?: { message: string };
 	sessionId?: string;
 };
-
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Chromium-family binaries to try, in preference order. Chrome's *stable* channel
  *  disabled `--load-extension` on the CLI, so it's deliberately not a candidate here
@@ -104,7 +101,10 @@ const CDP_CONNECT_TIMEOUT_MS = 10000;
  * surfaces as whatever budget the caller happened to set.
  */
 export async function killAndWait(
-	proc: { kill: (signal?: number | NodeJS.Signals) => void; exited: Promise<number> },
+	proc: {
+		kill: (signal?: number | NodeJS.Signals) => void;
+		exited: Promise<number>;
+	},
 	graceMs: number = EXIT_GRACE_MS,
 ): Promise<void> {
 	proc.kill();
