@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_MAX_PAYLOAD_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { CLI_RECV_MAX_TIMEOUT_MS } from "../../src/server/frame-handlers";
 import {
 	cleanupDgHome,
 	collectFrames,
@@ -180,5 +181,47 @@ describe("repeated invalid frames", () => {
 		expect(log.length).toBeGreaterThan(0);
 		expect(log).not.toContain(bootstrap.token);
 		expect(log).not.toContain(REJECTED_TOKEN);
+	});
+});
+
+describe("cli-recv timeoutMs bound", () => {
+	it("accepts a cli-recv exactly at CLI_RECV_MAX_TIMEOUT_MS", async () => {
+		const { port, bootstrap } = await bootSession();
+		const ws = await connectCli(port, bootstrap);
+		const frames = collectFrames(ws);
+
+		ws.send(
+			JSON.stringify({
+				type: "cli-recv",
+				block: false,
+				timeoutMs: CLI_RECV_MAX_TIMEOUT_MS,
+			}),
+		);
+		const reply = await waitForValue(
+			() => frames.find((f) => frameType(f) === "cli-recv-result"),
+			2000,
+			"a cli-recv-result for the at-cap request",
+		);
+		expect((reply as { outcome: string }).outcome).toBe("empty");
+	});
+
+	it("refuses a cli-recv past CLI_RECV_MAX_TIMEOUT_MS instead of parking a multi-year timer", async () => {
+		const { port, bootstrap } = await bootSession();
+		const ws = await connectCli(port, bootstrap);
+		const frames = collectFrames(ws);
+
+		ws.send(
+			JSON.stringify({
+				type: "cli-recv",
+				block: false,
+				timeoutMs: Number.MAX_SAFE_INTEGER,
+			}),
+		);
+		const reply = await waitForValue(
+			() => frames.find((f) => frameType(f) !== undefined),
+			2000,
+			"a rejection of the absurd timeoutMs",
+		);
+		expect(frameType(reply)).toBe("error");
 	});
 });

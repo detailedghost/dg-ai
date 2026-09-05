@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateSessionBootstrap } from "@dg/common";
+import { resolveDgPaths } from "@dg/common/node";
+import { clearPinnedOrigin } from "../../src/server/origin";
 import {
 	BROWSER_ORIGIN,
 	bootServe as bootDaemonServe,
@@ -23,6 +25,15 @@ async function bootServe() {
 		cleanupDgHome(dgHome);
 	});
 	return port;
+}
+
+async function bootServeWithHome() {
+	const { dgHome, port, proc } = await bootDaemonServe();
+	cleanupSlot.set(async () => {
+		await stopServe(proc);
+		cleanupDgHome(dgHome);
+	});
+	return { port, dgHome };
 }
 
 async function registerSession(port: number) {
@@ -143,5 +154,49 @@ describe("trust-on-first-use origin pinning", () => {
 			Origin: EXTENSION_ORIGIN,
 		});
 		expect(resp.status).toBe(101);
+	});
+
+	it("names the recovery command in the mismatch refusal, instead of dead-ending the operator", async () => {
+		const port = await bootServe();
+		const bootstrap = await registerSession(port);
+
+		const first = wsExtensionSocket(port);
+		await waitForOpen(first);
+		sendConnectHandshake(first, bootstrap, CHAT_PROTOCOL_VERSION);
+		await new Promise((r) => setTimeout(r, 300));
+		first.close();
+
+		const resp = await upgradeRequest(port, "/ws", {
+			Host: `127.0.0.1:${port}`,
+			Origin: "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		});
+		expect(resp.status).toBe(400);
+		expect(await resp.text()).toContain("dg-daemon origin clear");
+	});
+
+	it("lets a different origin pin once the previous pin is cleared", async () => {
+		const { port, dgHome } = await bootServeWithHome();
+		const bootstrap = await registerSession(port);
+
+		const first = wsExtensionSocket(port);
+		await waitForOpen(first);
+		sendConnectHandshake(first, bootstrap, CHAT_PROTOCOL_VERSION);
+		await new Promise((r) => setTimeout(r, 300));
+		first.close();
+
+		const otherOrigin = "chrome-extension://cccccccccccccccccccccccccccccccc";
+		const stillRefused = await upgradeRequest(port, "/ws", {
+			Host: `127.0.0.1:${port}`,
+			Origin: otherOrigin,
+		});
+		expect(stillRefused.status).toBe(400);
+
+		clearPinnedOrigin(resolveDgPaths({ env: { DG_HOME: dgHome } }));
+
+		const nowAccepted = await upgradeRequest(port, "/ws", {
+			Host: `127.0.0.1:${port}`,
+			Origin: otherOrigin,
+		});
+		expect(nowAccepted.status).toBe(101);
 	});
 });

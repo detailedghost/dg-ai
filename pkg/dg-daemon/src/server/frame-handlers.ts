@@ -115,6 +115,8 @@ export const HISTORY_TAIL_ROW_LIMIT = Math.ceil(
 	CHAT_MAX_PAYLOAD_BYTES / MIN_PEEKED_MESSAGE_BYTES,
 );
 
+export const CLI_RECV_MAX_TIMEOUT_MS = 300_000;
+
 function noteInvalid(ws: ServerWebSocket<SocketState>): void {
 	if (registerInvalidFrame(ws.data)) {
 		ws.close(1008, "invalid frame budget exceeded");
@@ -137,7 +139,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 				(value.timeoutMs === undefined ||
 					(typeof value.timeoutMs === "number" &&
 						Number.isFinite(value.timeoutMs) &&
-						value.timeoutMs >= 0))
+						value.timeoutMs >= 0 &&
+						value.timeoutMs <= CLI_RECV_MAX_TIMEOUT_MS))
 			) {
 				return value as CliFrame;
 			}
