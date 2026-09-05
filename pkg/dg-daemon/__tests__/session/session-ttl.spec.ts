@@ -23,6 +23,9 @@ afterEach(() => {
 
 const SESSION_TTL_MS = 400;
 
+/** These sleep for whole TTL multiples, then spawn a CLI to read the result. */
+const WALL_CLOCK_BUDGET_MS = 20_000;
+
 describe("a session left active with no CLI or page ever attached to it", () => {
 	it("gets reaped past DG_SESSION_TTL_MS, which unblocks the idle timer and lets the daemon self-exit", async () => {
 		dgHome = freshDgHome();
@@ -49,7 +52,7 @@ describe("a session left active with no CLI or page ever attached to it", () => 
 			),
 		]);
 		expect(exitCode).toBe(0);
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 
 	it("has its capability token removed from disk once reaped, and refuses that token on a fresh /cli upgrade", async () => {
 		dgHome = freshDgHome();
@@ -82,7 +85,7 @@ describe("a session left active with no CLI or page ever attached to it", () => 
 			sessionCount: number;
 		};
 		expect(status.sessionCount).toBe(0);
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
 
 describe("a session with a live page socket holding its capability", () => {
@@ -107,7 +110,7 @@ describe("a session with a live page socket holding its capability", () => {
 		expect(() => readSessionToken(paths, bootstrap.sessionId)).not.toThrow();
 
 		page.close();
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
 
 describe("a session an agent keeps using", () => {
@@ -136,5 +139,5 @@ describe("a session an agent keeps using", () => {
 		} finally {
 			socket.close();
 		}
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
