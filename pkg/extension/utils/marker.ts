@@ -6,8 +6,9 @@
  * it is a same-document change (no reload).
  */
 
-export const MARKER_KEY = "_tab_group";
-export const MARKER_POS_KEY = "_tab_group_pos";
+import { MARKER_KEY, MARKER_POS_KEY } from "@dg/common";
+
+export { MARKER_KEY, MARKER_POS_KEY };
 
 function fragParts(url: string): string[] {
 	const hash = url.split("#")[1];

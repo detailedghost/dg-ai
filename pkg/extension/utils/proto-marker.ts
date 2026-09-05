@@ -7,6 +7,7 @@
  */
 
 import {
+	PROTO_MARKER_KEY,
 	PROTO_MAX_MARKUP_CHARS,
 	PROTO_MAX_VARIATIONS,
 	type ProtoPlan,
@@ -15,13 +16,11 @@ import {
 	validateProtoRenderLimits,
 } from "@dg/common";
 
-/** Fragment key used for the CLI-to-extension prototype handoff. */
-export const PROTO_MARKER_KEY = "_proto";
 /** Mirrors the CLI's conservative complete-URL transport ceiling. */
 export const PROTO_ENCODED_MAX_LENGTH = 32_000;
 /** Caps gzip expansion before text or JSON allocation. */
 export const PROTO_EXPANDED_MAX_BYTES = 1_048_576;
-export { PROTO_MAX_MARKUP_CHARS, PROTO_MAX_VARIATIONS };
+export { PROTO_MARKER_KEY, PROTO_MAX_MARKUP_CHARS, PROTO_MAX_VARIATIONS };
 
 /** Validated scrape or plant payload accepted from a `_proto` marker. */
 export type ProtoPayload =
