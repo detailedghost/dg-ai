@@ -9,8 +9,16 @@ on:
       - master
     paths:
       - pkg/dg-agent/**
+      - pkg/dg-daemon/**
       - pkg/common/**
       - .github/workflows/dg-agent-release.yml
+
+# Queue, don't cancel: a cancelled run skips its failure-cleanup step (that only
+# fires on `if: failure()`, never on `cancelled()`), which can leave a half-published
+# release with no rollback. The existing "already exists" check makes a queued rerun free.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -43,7 +51,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.22
 
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
@@ -54,6 +62,22 @@ jobs:
           bun build src/index.ts --compile
           --target=${{ matrix.target }}
           --outfile dist/${{ matrix.asset }}
+
+      # Only bun-linux-x64 can execute on this ubuntu-latest runner — the one native
+      # leg proves a compiled binary actually starts before any target ships.
+      - name: Smoke test ${{ matrix.asset }}
+        if: matrix.target == 'bun-linux-x64'
+        working-directory: pkg/dg-agent
+        run: |
+          if ! output="$(./dist/${{ matrix.asset }} --help)"; then
+            echo "::error::${{ matrix.asset }} --help failed to run"
+            exit 1
+          fi
+          if [ -z "$output" ]; then
+            echo "::error::${{ matrix.asset }} --help produced no output"
+            exit 1
+          fi
+          echo "$output"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,7 +115,7 @@ jobs:
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --title "DG Agent $tag" \
-            --notes "Standalone dg-agent CLI binaries ($tag). Install alongside dg-daemon — dg-agent resolves the daemon as a sibling binary." \
+            --notes "Standalone dg-agent CLI binaries ($tag). Install alongside dg-daemon, its sibling binary." \
             dist/*
 
       - name: Clean up on failure
