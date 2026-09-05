@@ -9,9 +9,6 @@ on:
       - master
     paths:
       - pkg/skills-cli/**
-      - pkg/dg-daemon/**
-      - pkg/dg-agent/**
-      - pkg/extension/**
       - pkg/common/**
       - .github/workflows/skills-release.yml
 

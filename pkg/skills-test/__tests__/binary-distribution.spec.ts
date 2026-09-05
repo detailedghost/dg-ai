@@ -30,11 +30,6 @@ describe("the dg-daemon workflows are path-filtered to their own packages", () =
 		expect(rel).not.toContain("pkg/extension/**");
 		expect(rel).not.toContain("pkg/skills-cli/**");
 	});
-
-	test("a change under pkg/dg-daemon does not fire the skills workflow", () => {
-		const skills = workflow("skills-blt.yml");
-		expect(skills).not.toContain("pkg/dg-daemon/**");
-	});
 });
 
 type ReleasedBinary = {

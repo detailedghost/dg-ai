@@ -58,11 +58,12 @@ describe("a release fires for exactly the source its artifact is built from", ()
 	});
 
 	test("a build watches its test-only dependencies too, which a release must not", () => {
-		const devDeps = workspaceDeps("dg-agent", "devDependencies");
-
-		expect(devDeps).toEqual(["dg-daemon"]);
-		expect(watchedPackages("dg-agent-blt.yml")).toContain("dg-daemon");
-		expect(watchedPackages("dg-agent-release.yml")).not.toContain("dg-daemon");
+		for (const { pkg, release, blt } of RELEASED) {
+			for (const dep of workspaceDeps(pkg, "devDependencies")) {
+				expect(watchedPackages(blt)).toContain(dep);
+				expect(watchedPackages(release)).not.toContain(dep);
+			}
+		}
 	});
 });
 
