@@ -10,6 +10,7 @@ import {
 	EXIT_PROTOCOL_MISMATCH,
 	type SessionRole,
 	validateSessionBootstrap,
+	wait,
 } from "@dg/common";
 import {
 	buildBootstrapUrl,
@@ -22,10 +23,6 @@ import {
 	resolveDgPaths,
 	tryOpen,
 } from "@dg/common/node";
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function siblingDaemonArgv(): string[] {
 	const name = process.platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
@@ -50,7 +47,7 @@ async function waitForFreshDaemon(paths: DgPaths, timeoutMs = 15000) {
 	while (Date.now() < deadline) {
 		const handle = readPidFile(paths);
 		if (handle && (await isDaemonLive(handle))) return handle;
-		await sleep(100);
+		await wait(100);
 	}
 	throw new DgCliError(
 		"dg-daemon did not become healthy within the startup timeout",
