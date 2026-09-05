@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import { parseEvery } from "../../src/commands/jobs";
 import {
@@ -7,6 +9,7 @@ import {
 	ENTRY,
 	FILE_ONLY_SEAMS,
 	freshDgHome,
+	freshTempDir,
 	subprocessEnv,
 } from "../utils/daemon-harness";
 
@@ -229,6 +232,163 @@ describe("dg-daemon job add", () => {
 				process.cwd(),
 			);
 			expect(result.code).not.toBe(0);
+		});
+	});
+});
+
+describe("dg-daemon job add --cron", () => {
+	it("stores a cron expression instead of an interval", async () => {
+		await withHome(async (dgHome) => {
+			const result = await dg(
+				dgHome,
+				"job",
+				"add",
+				"--label",
+				"weekday-standup",
+				"--cron",
+				"0 9 * * 1-5",
+				"--cwd",
+				process.cwd(),
+				"--",
+				"printf",
+				"",
+			);
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain('cron "0 9 * * 1-5"');
+
+			const store = await openStore(dgHome);
+			try {
+				const job = store.getJobByLabel("weekday-standup");
+				expect(job?.cronExpr).toBe("0 9 * * 1-5");
+				expect(job?.intervalMs).toBeUndefined();
+			} finally {
+				store.close();
+			}
+
+			const list = await dg(dgHome, "job", "list");
+			expect(list.stdout).toContain("weekday-standup");
+			expect(list.stdout).toContain('cron "0 9 * * 1-5"');
+		});
+	});
+
+	it("refuses both --every and --cron together", async () => {
+		await withHome(async (dgHome) => {
+			const result = await dg(
+				dgHome,
+				"job",
+				"add",
+				"--label",
+				"both",
+				"--every",
+				"5m",
+				"--cron",
+				"0 9 * * 1-5",
+				"--cwd",
+				process.cwd(),
+				"--",
+				"printf",
+				"",
+			);
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("--every");
+			expect(result.stderr).toContain("--cron");
+
+			const store = await openStore(dgHome);
+			try {
+				expect(store.listJobs()).toHaveLength(0);
+			} finally {
+				store.close();
+			}
+		});
+	});
+
+	it("refuses neither --every nor --cron", async () => {
+		await withHome(async (dgHome) => {
+			const result = await dg(
+				dgHome,
+				"job",
+				"add",
+				"--label",
+				"neither",
+				"--cwd",
+				process.cwd(),
+				"--",
+				"printf",
+				"",
+			);
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("--every");
+			expect(result.stderr).toContain("--cron");
+		});
+	});
+
+	it("refuses a bad cron expression, naming it", async () => {
+		await withHome(async (dgHome) => {
+			const result = await dg(
+				dgHome,
+				"job",
+				"add",
+				"--label",
+				"bad-cron",
+				"--cron",
+				"not a cron expression",
+				"--cwd",
+				process.cwd(),
+				"--",
+				"printf",
+				"",
+			);
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("not a cron expression");
+
+			const store = await openStore(dgHome);
+			try {
+				expect(store.listJobs()).toHaveLength(0);
+			} finally {
+				store.close();
+			}
+		});
+	});
+
+	it("runs a bun script as a job command", async () => {
+		await withHome(async (dgHome) => {
+			const scriptDir = freshTempDir("dg-daemon-cron-bun");
+			const scriptPath = join(scriptDir, "check.ts");
+			writeFileSync(
+				scriptPath,
+				'console.log(JSON.stringify({ id: "a", title: "From bun" }));\n',
+			);
+			try {
+				const added = await dg(
+					dgHome,
+					"job",
+					"add",
+					"--label",
+					"bun-script",
+					"--cron",
+					"0 9 * * 1-5",
+					"--cwd",
+					scriptDir,
+					"--",
+					"bun",
+					"run",
+					scriptPath,
+				);
+				expect(added.code).toBe(0);
+
+				const ran = await dg(dgHome, "job", "run", "bun-script");
+				expect(ran.code).toBe(0);
+
+				const store = await openStore(dgHome);
+				try {
+					const items = store.listFeedItems();
+					expect(items.map((item) => item.title)).toEqual(["From bun"]);
+				} finally {
+					store.close();
+				}
+			} finally {
+				rmSync(scriptDir, { recursive: true, force: true });
+			}
 		});
 	});
 });

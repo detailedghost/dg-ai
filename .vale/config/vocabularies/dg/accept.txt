@@ -9,6 +9,7 @@ Chromium
 ciphertext
 Codex
 config
+cron
 cwd
 Datadog
 dedupes

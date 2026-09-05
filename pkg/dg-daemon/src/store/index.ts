@@ -28,6 +28,7 @@ import {
 	resolveDataKey,
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
+import { nextCronRun } from "../jobs/cron";
 import { readEnvNumber } from "../utils/env";
 import { SCHEMA_STEPS } from "./schema";
 
@@ -171,7 +172,8 @@ export type ScheduledJob = {
 	label: string;
 	argv: string[];
 	cwd: string;
-	intervalMs: number;
+	intervalMs?: number;
+	cronExpr?: string;
 	enabled: boolean;
 	createdAt: string;
 	nextRunAt: string;
@@ -186,7 +188,8 @@ export type InsertJobInput = {
 	label: string;
 	argv: string[];
 	cwd: string;
-	intervalMs: number;
+	intervalMs?: number;
+	cronExpr?: string;
 	notifyIdentity?: string;
 	enabled?: boolean;
 	nextRunAt?: string;
@@ -285,7 +288,8 @@ type RawJobRow = {
 	argv_iv: Uint8Array;
 	argv_tag: Uint8Array;
 	cwd: string;
-	interval_ms: number;
+	interval_ms: number | null;
+	cron_expr: string | null;
 	enabled: number;
 	notify_identity: string | null;
 	last_run_at: string | null;
@@ -380,6 +384,16 @@ export const AGENT_MESSAGE_ACK_SQL = ackSql(
 
 function resolveKeyMode(raw: string | undefined): KeyMode {
 	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
+}
+
+function computeNextRunAt(job: ScheduledJob, ranAt: Date): Date {
+	if (job.cronExpr) return nextCronRun(job.cronExpr, ranAt);
+	if (job.intervalMs === undefined) {
+		throw new Error(
+			`job ${job.id} has neither an interval nor a cron expression`,
+		);
+	}
+	return new Date(ranAt.getTime() + job.intervalMs);
 }
 
 function ensureDaemonDir(daemonDir: string): void {
@@ -962,7 +976,8 @@ export class ChatStore {
 			label: row.label,
 			argv: JSON.parse(argv) as string[],
 			cwd: row.cwd,
-			intervalMs: row.interval_ms,
+			intervalMs: row.interval_ms ?? undefined,
+			cronExpr: row.cron_expr ?? undefined,
 			enabled: row.enabled === 1,
 			createdAt: row.created_at,
 			nextRunAt: row.next_run_at,
@@ -1029,8 +1044,8 @@ export class ChatStore {
 			`INSERT INTO scheduled_jobs (
 				id, label, created_at,
 				argv_ciphertext, argv_iv, argv_tag,
-				cwd, interval_ms, enabled, notify_identity, next_run_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				cwd, interval_ms, cron_expr, enabled, notify_identity, next_run_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				input.label,
@@ -1039,7 +1054,8 @@ export class ChatStore {
 				argv.iv,
 				argv.tag,
 				input.cwd,
-				input.intervalMs,
+				input.intervalMs ?? null,
+				input.cronExpr ?? null,
 				input.enabled === false ? 0 : 1,
 				input.notifyIdentity ?? null,
 				input.nextRunAt ?? now,
@@ -1108,9 +1124,7 @@ export class ChatStore {
 		if (!job) throw new Error(`recordJobRun: unknown job ${input.jobId}`);
 
 		const ranAt = input.ranAt.toISOString();
-		const nextRunAt = new Date(
-			input.ranAt.getTime() + job.intervalMs,
-		).toISOString();
+		const nextRunAt = computeNextRunAt(job, input.ranAt).toISOString();
 		const error = input.error
 			? this.cipherBox.encryptRecord(
 					input.error,

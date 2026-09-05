@@ -212,6 +212,92 @@ function createV7ScheduledJobs(db: Database): void {
 	);
 }
 
+function createV8CronJobs(db: Database): void {
+	db.run(`CREATE TABLE scheduled_jobs_v8 (
+		id TEXT PRIMARY KEY,
+		label TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		argv_ciphertext BLOB NOT NULL,
+		argv_iv BLOB NOT NULL,
+		argv_tag BLOB NOT NULL,
+		cwd TEXT NOT NULL,
+		interval_ms INTEGER,
+		cron_expr TEXT,
+		enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+		notify_identity TEXT,
+		last_run_at TEXT,
+		next_run_at TEXT NOT NULL,
+		last_exit_code INTEGER,
+		last_error_ciphertext BLOB,
+		last_error_iv BLOB,
+		last_error_tag BLOB,
+		last_stderr_ciphertext BLOB,
+		last_stderr_iv BLOB,
+		last_stderr_tag BLOB,
+		CHECK (interval_ms IS NOT NULL OR cron_expr IS NOT NULL)
+	) STRICT`);
+	db.run(`INSERT INTO scheduled_jobs_v8 (
+		id, label, created_at,
+		argv_ciphertext, argv_iv, argv_tag,
+		cwd, interval_ms, enabled, notify_identity,
+		last_run_at, next_run_at, last_exit_code,
+		last_error_ciphertext, last_error_iv, last_error_tag,
+		last_stderr_ciphertext, last_stderr_iv, last_stderr_tag
+	) SELECT
+		id, label, created_at,
+		argv_ciphertext, argv_iv, argv_tag,
+		cwd, interval_ms, enabled, notify_identity,
+		last_run_at, next_run_at, last_exit_code,
+		last_error_ciphertext, last_error_iv, last_error_tag,
+		last_stderr_ciphertext, last_stderr_iv, last_stderr_tag
+	FROM scheduled_jobs`);
+
+	db.run(`CREATE TABLE feed_items_v8 (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		id TEXT NOT NULL UNIQUE,
+		job_id TEXT NOT NULL REFERENCES scheduled_jobs_v8(id) ON DELETE CASCADE,
+		fingerprint TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		title_ciphertext BLOB NOT NULL,
+		title_iv BLOB NOT NULL,
+		title_tag BLOB NOT NULL,
+		meta_ciphertext BLOB,
+		meta_iv BLOB,
+		meta_tag BLOB,
+		url_ciphertext BLOB,
+		url_iv BLOB,
+		url_tag BLOB,
+		read_at TEXT
+	) STRICT`);
+	db.run(`INSERT INTO feed_items_v8 (
+		seq, id, job_id, fingerprint, created_at,
+		title_ciphertext, title_iv, title_tag,
+		meta_ciphertext, meta_iv, meta_tag,
+		url_ciphertext, url_iv, url_tag, read_at
+	) SELECT
+		seq, id, job_id, fingerprint, created_at,
+		title_ciphertext, title_iv, title_tag,
+		meta_ciphertext, meta_iv, meta_tag,
+		url_ciphertext, url_iv, url_tag, read_at
+	FROM feed_items`);
+
+	db.run("DROP TABLE feed_items");
+	db.run("DROP TABLE scheduled_jobs");
+	db.run("ALTER TABLE scheduled_jobs_v8 RENAME TO scheduled_jobs");
+	db.run("ALTER TABLE feed_items_v8 RENAME TO feed_items");
+
+	db.run(
+		"CREATE UNIQUE INDEX idx_feed_items_dedupe ON feed_items(job_id, fingerprint)",
+	);
+	db.run(
+		"CREATE INDEX idx_feed_items_unread ON feed_items(job_id, seq) WHERE read_at IS NULL",
+	);
+	db.run("CREATE INDEX idx_feed_items_job_seq ON feed_items(job_id, seq)");
+	db.run(
+		"CREATE INDEX idx_scheduled_jobs_due ON scheduled_jobs(next_run_at) WHERE enabled = 1",
+	);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
@@ -220,6 +306,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 5, run: createV5AckIndex },
 	{ version: 6, run: createV6AgentMessages },
 	{ version: 7, run: createV7ScheduledJobs },
+	{ version: 8, run: createV8CronJobs },
 ];
 
 export const CURRENT_SCHEMA_VERSION =
