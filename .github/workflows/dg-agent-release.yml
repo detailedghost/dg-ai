@@ -9,7 +9,6 @@ on:
       - master
     paths:
       - pkg/dg-agent/**
-      - pkg/dg-daemon/**
       - pkg/common/**
       - .github/workflows/dg-agent-release.yml
 
