@@ -5,8 +5,9 @@ import {
 	resolveDgPaths,
 	runMigrations,
 } from "@dg/common/node";
+import { Cron } from "croner";
 import { ChatStore, SCHEDULER_SESSION_ID } from "../../src/store";
-import { SCHEMA_STEPS } from "../../src/store/schema";
+import { CURRENT_SCHEMA_VERSION, SCHEMA_STEPS } from "../../src/store/schema";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
@@ -234,6 +235,102 @@ describe("ChatStore — scheduled jobs", () => {
 			expect(store.getJob(doomed.id)).toBeUndefined();
 			expect(store.listFeedItems({ jobId: doomed.id })).toHaveLength(0);
 			expect(store.listFeedItems({ jobId: kept.id })).toHaveLength(1);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+describe("ChatStore — cron jobs", () => {
+	const CRON_EXPR = "0 9 * * 1-5";
+
+	it("stores a cron expression instead of an interval", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			const job = store.insertJob(
+				jobInput({ intervalMs: undefined, cronExpr: CRON_EXPR }),
+			);
+			store.close();
+
+			const reopened = await openStore(dgHome);
+			const read = reopened.getJob(job.id);
+			expect(read?.cronExpr).toBe(CRON_EXPR);
+			expect(read?.intervalMs).toBeUndefined();
+			reopened.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("computes next_run_at from the cron expression when a run is recorded", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			const job = store.insertJob(
+				jobInput({ intervalMs: undefined, cronExpr: CRON_EXPR }),
+			);
+			const ranAt = new Date("2026-09-03T12:00:00.000Z");
+
+			store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0 });
+
+			const expected = new Cron(CRON_EXPR).nextRun(ranAt);
+			expect(store.getJob(job.id)?.nextRunAt).toBe(expected?.toISOString());
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("advances next_run_at on a failed run too, so a bad cron job cannot spin", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			const job = store.insertJob(
+				jobInput({ intervalMs: undefined, cronExpr: CRON_EXPR }),
+			);
+			const ranAt = new Date("2026-09-03T12:00:00.000Z");
+
+			store.recordJobRun({
+				jobId: job.id,
+				ranAt,
+				exitCode: 1,
+				error: "boom",
+			});
+
+			const expected = new Cron(CRON_EXPR).nextRun(ranAt);
+			expect(store.getJob(job.id)?.nextRunAt).toBe(expected?.toISOString());
+			expect(store.getJob(job.id)?.lastError).toBe("boom");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("picks up a cron job whose time has come", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			const now = new Date("2026-09-03T12:00:00.000Z");
+			const due = store.insertJob(
+				jobInput({
+					label: "due-cron",
+					intervalMs: undefined,
+					cronExpr: CRON_EXPR,
+					nextRunAt: new Date(now.getTime() - 1000).toISOString(),
+				}),
+			);
+			store.insertJob(
+				jobInput({
+					label: "later-cron",
+					intervalMs: undefined,
+					cronExpr: CRON_EXPR,
+					nextRunAt: new Date(now.getTime() + HOUR_MS).toISOString(),
+				}),
+			);
+
+			expect(store.dueJobs(now).map((job) => job.id)).toEqual([due.id]);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -489,7 +586,7 @@ describe("ChatStore — migration to v7", () => {
 				contentType: "image/png",
 				byteLength: 4,
 			});
-			expect(before.userVersion()).toBe(7);
+			expect(before.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 			before.close();
 
 			const after = await ChatStore.open(paths, FILE_ONLY_SEAMS);
@@ -527,7 +624,7 @@ describe("ChatStore — migration to v7", () => {
 			seed.close(true);
 
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
-			expect(store.userVersion()).toBe(7);
+			expect(store.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 			store.close();
 
 			const raw = new Database(paths.dbPath, { readonly: true });
@@ -542,6 +639,124 @@ describe("ChatStore — migration to v7", () => {
 				expect(row?.sql.toUpperCase()).toContain("STRICT");
 			}
 			raw.close(true);
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+function downgradeToV7Shape(dbPath: string): void {
+	const raw = new Database(dbPath, { strict: true });
+	applyConnectionPragmas(raw);
+	raw.run("BEGIN IMMEDIATE");
+	try {
+		raw.run("ALTER TABLE scheduled_jobs RENAME TO scheduled_jobs_v8_tmp");
+		raw.run("ALTER TABLE feed_items RENAME TO feed_items_v8_tmp");
+		raw.run("DROP INDEX idx_feed_items_dedupe");
+		raw.run("DROP INDEX idx_feed_items_unread");
+		raw.run("DROP INDEX idx_feed_items_job_seq");
+		raw.run("DROP INDEX idx_scheduled_jobs_due");
+
+		const createV7 = SCHEMA_STEPS.find((step) => step.version === 7);
+		if (!createV7) throw new Error("no v7 migration step found");
+		createV7.run(raw);
+
+		raw.run(`INSERT INTO scheduled_jobs (
+			id, label, created_at,
+			argv_ciphertext, argv_iv, argv_tag,
+			cwd, interval_ms, enabled, notify_identity,
+			last_run_at, next_run_at, last_exit_code,
+			last_error_ciphertext, last_error_iv, last_error_tag,
+			last_stderr_ciphertext, last_stderr_iv, last_stderr_tag
+		) SELECT
+			id, label, created_at,
+			argv_ciphertext, argv_iv, argv_tag,
+			cwd, interval_ms, enabled, notify_identity,
+			last_run_at, next_run_at, last_exit_code,
+			last_error_ciphertext, last_error_iv, last_error_tag,
+			last_stderr_ciphertext, last_stderr_iv, last_stderr_tag
+		FROM scheduled_jobs_v8_tmp`);
+		raw.run(`INSERT INTO feed_items (
+			seq, id, job_id, fingerprint, created_at,
+			title_ciphertext, title_iv, title_tag,
+			meta_ciphertext, meta_iv, meta_tag,
+			url_ciphertext, url_iv, url_tag, read_at
+		) SELECT
+			seq, id, job_id, fingerprint, created_at,
+			title_ciphertext, title_iv, title_tag,
+			meta_ciphertext, meta_iv, meta_tag,
+			url_ciphertext, url_iv, url_tag, read_at
+		FROM feed_items_v8_tmp`);
+
+		raw.run("DROP TABLE feed_items_v8_tmp");
+		raw.run("DROP TABLE scheduled_jobs_v8_tmp");
+		raw.run("PRAGMA user_version = 7");
+		raw.run("COMMIT");
+	} catch (err) {
+		try {
+			raw.run("ROLLBACK");
+		} catch {}
+		throw err;
+	} finally {
+		raw.close(true);
+	}
+}
+
+describe("ChatStore — migration to v8", () => {
+	it("keeps every job and every feed item readable, still decrypting, after the cron rebuild", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+
+			const before = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const intervalJob = before.insertJob(jobInput({ label: "interval-job" }));
+			const disabledJob = before.insertJob(
+				jobInput({ label: "disabled-job", enabled: false }),
+			);
+			before.insertFeedItems(intervalJob.id, [
+				{
+					fingerprint: "JRDEV-1",
+					title: "Quote export times out",
+					meta: "assigned to you",
+					url: "https://example.invalid/JRDEV-1",
+				},
+				{ fingerprint: "JRDEV-2", title: "Bare item" },
+			]);
+			before.insertFeedItems(disabledJob.id, [
+				{ fingerprint: "JRDEV-3", title: "Untouched job's item" },
+			]);
+			before.close();
+
+			downgradeToV7Shape(paths.dbPath);
+
+			const after = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			expect(after.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
+
+			const readInterval = after.getJob(intervalJob.id);
+			expect(readInterval?.label).toBe("interval-job");
+			expect(readInterval?.intervalMs).toBe(intervalJob.intervalMs);
+			expect(readInterval?.cronExpr).toBeUndefined();
+			expect(readInterval?.argv).toEqual(intervalJob.argv);
+
+			const readDisabled = after.getJob(disabledJob.id);
+			expect(readDisabled?.enabled).toBe(false);
+
+			const intervalItems = after.listFeedItems({ jobId: intervalJob.id });
+			expect(intervalItems.map((item) => item.title).sort()).toEqual(
+				["Bare item", "Quote export times out"].sort(),
+			);
+			const withMeta = intervalItems.find(
+				(item) => item.title === "Quote export times out",
+			);
+			expect(withMeta?.meta).toBe("assigned to you");
+			expect(withMeta?.url).toBe("https://example.invalid/JRDEV-1");
+
+			const disabledItems = after.listFeedItems({ jobId: disabledJob.id });
+			expect(disabledItems.map((item) => item.title)).toEqual([
+				"Untouched job's item",
+			]);
+
+			after.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}

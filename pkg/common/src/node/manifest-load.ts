@@ -129,18 +129,39 @@ function isForbiddenExecutable(rawBasename: string): boolean {
 	return FORBIDDEN_EXECUTABLES.has(normalizeExecutableBasename(rawBasename));
 }
 
+type ExecutableLookup =
+	| { ok: true; resolvedPath: string }
+	| { ok: false; reason: string };
+
+function lookupExecutable(executable: string | undefined): ExecutableLookup {
+	if (!executable) return { ok: false, reason: "has no executable in argv[0]" };
+	const resolved = Bun.which(executable);
+	if (!resolved) {
+		return {
+			ok: false,
+			reason: `executable "${executable}" does not resolve on PATH`,
+		};
+	}
+	return { ok: true, resolvedPath: resolved };
+}
+
+/** Confirms argv[0] still resolves on PATH; does not apply the interpreter denylist. */
+export function checkExecutableResolves(
+	executable: string | undefined,
+): string | undefined {
+	const lookup = lookupExecutable(executable);
+	return lookup.ok ? undefined : lookup.reason;
+}
+
 export function checkExecutable(
 	executable: string | undefined,
 ): string | undefined {
-	if (!executable) return "has no executable in argv[0]";
-	const resolved = Bun.which(executable);
-	if (!resolved) {
-		return `executable "${executable}" does not resolve on PATH`;
-	}
-	const linkName = basename(resolved);
+	const lookup = lookupExecutable(executable);
+	if (!lookup.ok) return lookup.reason;
+	const linkName = basename(lookup.resolvedPath);
 	let realName = linkName;
 	try {
-		realName = basename(realpathSync(resolved));
+		realName = basename(realpathSync(lookup.resolvedPath));
 	} catch {}
 	if (isForbiddenExecutable(linkName) || isForbiddenExecutable(realName)) {
 		const forbidden = isForbiddenExecutable(linkName) ? linkName : realName;
