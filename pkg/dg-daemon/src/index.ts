@@ -3,6 +3,7 @@
 import { DgCliError, describeError, EXIT_GENERAL_FAILURE } from "@dg/common";
 import { Command } from "commander";
 import { registerJobCommands } from "./commands/jobs";
+import { registerOriginCommands } from "./commands/origin";
 import { cmdServe, cmdStatus } from "./server/bootstrap";
 
 const program = new Command();
@@ -30,6 +31,7 @@ program
 	});
 
 registerJobCommands(program);
+registerOriginCommands(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
 	console.error(`dg-daemon: ${describeError(err)}`);

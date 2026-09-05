@@ -35,3 +35,12 @@ export function pinOriginIfUnset(paths: DgPaths, origin: string): void {
 		writeConfig(paths, { [PINNED_ORIGIN_KEY]: origin });
 	}
 }
+
+export function getPinnedOrigin(paths: DgPaths): string | undefined {
+	const pinned = readConfig(paths)[PINNED_ORIGIN_KEY];
+	return typeof pinned === "string" ? pinned : undefined;
+}
+
+export function clearPinnedOrigin(paths: DgPaths): void {
+	writeConfig(paths, { [PINNED_ORIGIN_KEY]: undefined });
+}
