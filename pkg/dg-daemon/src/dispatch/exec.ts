@@ -95,12 +95,16 @@ export async function executeCommand(
 
 	const stdoutChunks: Buffer[] = [];
 	const stderrChunks: Buffer[] = [];
-	await Promise.all([
+	const drained = Promise.all([
 		drainCapped(proc.stdout, stdoutChunks, noteBytes),
 		drainCapped(proc.stderr, stderrChunks, noteBytes),
 	]);
-	clearTimeout(timeoutTimer);
 	const exitCode = await proc.exited;
+	clearTimeout(timeoutTimer);
+	await Promise.race([
+		drained,
+		new Promise<void>((resolve) => setTimeout(resolve, DISPATCH_KILL_GRACE_MS)),
+	]);
 
 	let stdout = Buffer.concat(stdoutChunks).toString("utf8");
 	const stderr = Buffer.concat(stderrChunks).toString("utf8");
