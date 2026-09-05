@@ -129,11 +129,18 @@ dg-daemon job add --label jira-sprint --every 15m --cwd ~/work \
   --notify reviewer -- jira issue list --plain --jsonlines
 ```
 
+Give the job a fixed cadence with `--every` (`30s`, `15m`, `2h`), or a real
+`cron` expression with `--cron` — exactly one of the two is required:
+
+```sh
+dg-daemon job add --label weekday-standup --cron "0 9 * * 1-5" --cwd ~/work \
+  -- bun run ./check-standup.ts
+```
+
 The command prints one JSON object per line — `id` and `title` required, `meta`
 and `url` optional — and each line becomes a feed item. The daemon dedupes on
 `id`, so a second run of the same query adds nothing. `--notify <identity>`
-queues one agent message when a run brings in something new. `job list`, `job
-run`, `job enable`, `job disable` and `job rm` manage them from there.
+queues one agent message when a run brings in something new. `job list`, `job run`, `job enable`, `job disable` and `job rm` manage them from there.
 
 A job inherits no secrets: the daemon passes only `PATH`, `HOME`, `LANG` and
 `TZ` to the child, so the command must authenticate through its own config

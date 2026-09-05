@@ -85,6 +85,12 @@ is keyed by session id. An enabled job keeps the daemon alive: the idle
 predicate in `jobs/idle.ts` counts enabled jobs alongside sessions and open
 connections.
 
+A job carries either a fixed interval (`interval_ms`) or a `cron` expression
+(`cron_expr`), never both — `scheduled_jobs` enforces that with a `CHECK`
+constraint. `jobs/cron.ts` wraps `croner` to validate an expression at `job add` time and to compute the next run from a given instant; `recordJobRun`
+calls it instead of adding an interval when the job has a `cron_expr`, and a
+failed run still advances `next_run_at` so one bad job cannot spin.
+
 ### pkg/dg-agent (agent CLI)
 
 ```bash
