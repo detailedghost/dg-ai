@@ -523,34 +523,42 @@ export class ChatStore {
 	}
 
 	insertMessage(input: InsertMessageInput): { seq: number } {
-		this.ensureSessionRow(input.sessionId);
 		const aad = this.#aad(AAD_MESSAGE_BODY, input.sessionId, input.id);
 		const enc = this.cipherBox.encryptRecord(input.body, aad);
 		const createdAt = new Date().toISOString();
-		const row = this.db
-			.query(
-				`INSERT INTO messages (id, session_id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-				 RETURNING seq`,
-			)
-			.get(
-				input.id,
-				input.sessionId,
-				input.role,
-				createdAt,
-				enc.ciphertext,
-				enc.iv,
-				enc.tag,
-				input.attachmentId ?? null,
-				input.subagentName ?? null,
-			) as { seq: number };
-		return { seq: row.seq };
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.ensureSessionRow(input.sessionId);
+			const row = this.db
+				.query(
+					`INSERT INTO messages (id, session_id, role, created_at, body_ciphertext, body_iv, body_tag, attachment_id, subagent_name)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+					 RETURNING seq`,
+				)
+				.get(
+					input.id,
+					input.sessionId,
+					input.role,
+					createdAt,
+					enc.ciphertext,
+					enc.iv,
+					enc.tag,
+					input.attachmentId ?? null,
+					input.subagentName ?? null,
+				) as { seq: number };
+			this.db.run("COMMIT");
+			return { seq: row.seq };
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
 	}
 
 	insertCommandInvocation(input: InsertCommandInvocationInput): {
 		seq: number;
 	} {
-		this.ensureSessionRow(input.sessionId);
 		const createdAt = new Date().toISOString();
 
 		const argvEnc = this.cipherBox.encryptRecord(
@@ -566,34 +574,44 @@ export class ChatStore {
 			this.#aad(AAD_COMMAND_STDERR, input.sessionId, input.id),
 		);
 
-		const row = this.db
-			.query(
-				`INSERT INTO command_invocations (
-					id, session_id, created_at,
-					argv_ciphertext, argv_iv, argv_tag,
-					stdout_ciphertext, stdout_iv, stdout_tag,
-					stderr_ciphertext, stderr_iv, stderr_tag,
-					truncated, label
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-				RETURNING seq`,
-			)
-			.get(
-				input.id,
-				input.sessionId,
-				createdAt,
-				argvEnc.ciphertext,
-				argvEnc.iv,
-				argvEnc.tag,
-				stdoutEnc.ciphertext,
-				stdoutEnc.iv,
-				stdoutEnc.tag,
-				stderrEnc.ciphertext,
-				stderrEnc.iv,
-				stderrEnc.tag,
-				input.truncated ? 1 : 0,
-				input.label ?? null,
-			) as { seq: number };
-		return { seq: row.seq };
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.ensureSessionRow(input.sessionId);
+			const row = this.db
+				.query(
+					`INSERT INTO command_invocations (
+						id, session_id, created_at,
+						argv_ciphertext, argv_iv, argv_tag,
+						stdout_ciphertext, stdout_iv, stdout_tag,
+						stderr_ciphertext, stderr_iv, stderr_tag,
+						truncated, label
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					RETURNING seq`,
+				)
+				.get(
+					input.id,
+					input.sessionId,
+					createdAt,
+					argvEnc.ciphertext,
+					argvEnc.iv,
+					argvEnc.tag,
+					stdoutEnc.ciphertext,
+					stdoutEnc.iv,
+					stdoutEnc.tag,
+					stderrEnc.ciphertext,
+					stderrEnc.iv,
+					stderrEnc.tag,
+					input.truncated ? 1 : 0,
+					input.label ?? null,
+				) as { seq: number };
+			this.db.run("COMMIT");
+			return { seq: row.seq };
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
 	}
 
 	updateCommandInvocationResult(
@@ -631,7 +649,6 @@ export class ChatStore {
 		commands: CommandEntry[];
 		subagentNames: string[];
 	}): void {
-		this.ensureSessionRow(input.sessionId);
 		const commandsEnc = this.cipherBox.encryptRecord(
 			JSON.stringify(input.commands),
 			this.#aad(AAD_COMMAND_MANIFEST, input.sessionId, input.sessionId),
@@ -640,31 +657,41 @@ export class ChatStore {
 			JSON.stringify(input.subagentNames),
 			this.#aad(AAD_SUBAGENT_LIST, input.sessionId, input.sessionId),
 		);
-		this.db.run(
-			`INSERT INTO command_manifests (
-				session_id, updated_at,
-				commands_ciphertext, commands_iv, commands_tag,
-				subagents_ciphertext, subagents_iv, subagents_tag
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(session_id) DO UPDATE SET
-				updated_at = excluded.updated_at,
-				commands_ciphertext = excluded.commands_ciphertext,
-				commands_iv = excluded.commands_iv,
-				commands_tag = excluded.commands_tag,
-				subagents_ciphertext = excluded.subagents_ciphertext,
-				subagents_iv = excluded.subagents_iv,
-				subagents_tag = excluded.subagents_tag`,
-			[
-				input.sessionId,
-				new Date().toISOString(),
-				commandsEnc.ciphertext,
-				commandsEnc.iv,
-				commandsEnc.tag,
-				subagentsEnc.ciphertext,
-				subagentsEnc.iv,
-				subagentsEnc.tag,
-			],
-		);
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.ensureSessionRow(input.sessionId);
+			this.db.run(
+				`INSERT INTO command_manifests (
+					session_id, updated_at,
+					commands_ciphertext, commands_iv, commands_tag,
+					subagents_ciphertext, subagents_iv, subagents_tag
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(session_id) DO UPDATE SET
+					updated_at = excluded.updated_at,
+					commands_ciphertext = excluded.commands_ciphertext,
+					commands_iv = excluded.commands_iv,
+					commands_tag = excluded.commands_tag,
+					subagents_ciphertext = excluded.subagents_ciphertext,
+					subagents_iv = excluded.subagents_iv,
+					subagents_tag = excluded.subagents_tag`,
+				[
+					input.sessionId,
+					new Date().toISOString(),
+					commandsEnc.ciphertext,
+					commandsEnc.iv,
+					commandsEnc.tag,
+					subagentsEnc.ciphertext,
+					subagentsEnc.iv,
+					subagentsEnc.tag,
+				],
+			);
+			this.db.run("COMMIT");
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
 	}
 
 	private readManifestRow(sessionId: string): CommandManifestRow | undefined {
@@ -707,10 +734,10 @@ export class ChatStore {
 	}
 
 	insertStatusEvent(input: InsertStatusEventInput): { seq: number } {
-		this.ensureSessionRow(input.sessionId);
 		const createdAt = new Date().toISOString();
 		this.db.run("BEGIN IMMEDIATE");
 		try {
+			this.ensureSessionRow(input.sessionId);
 			this.db.run(
 				`INSERT INTO status_events (
 					session_id, created_at, progress_ciphertext, progress_iv, progress_tag
@@ -806,7 +833,6 @@ export class ChatStore {
 	}
 
 	insertAgentMessage(input: InsertAgentMessageInput): { seq: number } {
-		this.ensureSessionRow(input.senderSessionId);
 		const enc = this.cipherBox.encryptRecord(
 			input.body,
 			this.#agentMessageAad(
@@ -815,23 +841,33 @@ export class ChatStore {
 				input.id,
 			),
 		);
-		const row = this.db
-			.query(
-				`INSERT INTO agent_messages (id, sender_session_id, sender_identity, recipient_identity, created_at, body_ciphertext, body_iv, body_tag)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-				 RETURNING seq`,
-			)
-			.get(
-				input.id,
-				input.senderSessionId,
-				input.senderIdentity,
-				input.recipientIdentity,
-				new Date().toISOString(),
-				enc.ciphertext,
-				enc.iv,
-				enc.tag,
-			) as { seq: number };
-		return { seq: row.seq };
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.ensureSessionRow(input.senderSessionId);
+			const row = this.db
+				.query(
+					`INSERT INTO agent_messages (id, sender_session_id, sender_identity, recipient_identity, created_at, body_ciphertext, body_iv, body_tag)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+					 RETURNING seq`,
+				)
+				.get(
+					input.id,
+					input.senderSessionId,
+					input.senderIdentity,
+					input.recipientIdentity,
+					new Date().toISOString(),
+					enc.ciphertext,
+					enc.iv,
+					enc.tag,
+				) as { seq: number };
+			this.db.run("COMMIT");
+			return { seq: row.seq };
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
 	}
 
 	/** Deletes agent-to-agent rows past the retention window; returns how many it removed. */
@@ -1321,25 +1357,34 @@ export class ChatStore {
 		if (input.byteLength > CHAT_MAX_ASSET_BYTES) {
 			throw new AssetTooLargeError(input.byteLength);
 		}
-		this.ensureSessionRow(input.sessionId);
 		const enc = this.cipherBox.encryptRecord(
 			input.filename,
 			this.#aad(AAD_ASSET_FILENAME, input.sessionId, input.id),
 		);
-		this.db.run(
-			`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'active')`,
-			[
-				input.id,
-				input.sessionId,
-				new Date().toISOString(),
-				enc.ciphertext,
-				enc.iv,
-				enc.tag,
-				input.contentType,
-				input.byteLength,
-			],
-		);
+		this.db.run("BEGIN IMMEDIATE");
+		try {
+			this.ensureSessionRow(input.sessionId);
+			this.db.run(
+				`INSERT INTO assets (id, session_id, created_at, filename_ciphertext, filename_iv, filename_tag, content_type, byte_length, deleted_at, state)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'active')`,
+				[
+					input.id,
+					input.sessionId,
+					new Date().toISOString(),
+					enc.ciphertext,
+					enc.iv,
+					enc.tag,
+					input.contentType,
+					input.byteLength,
+				],
+			);
+			this.db.run("COMMIT");
+		} catch (err) {
+			try {
+				this.db.run("ROLLBACK");
+			} catch {}
+			throw err;
+		}
 	}
 
 	getAsset(sessionId: string, id: string): AssetRow | undefined {

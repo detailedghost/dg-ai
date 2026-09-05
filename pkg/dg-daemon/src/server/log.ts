@@ -21,6 +21,7 @@ export type Logger = {
 	warn(message: string): void;
 	error(message: string): void;
 	getLastError(): string | null;
+	flush(): Promise<void>;
 };
 
 export type LoggerSeams = {
@@ -59,6 +60,7 @@ export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 	let openStamp = "";
 	let openFile = "";
 	let lastError: string | null = null;
+	const pendingWrites = new Set<Promise<void>>();
 
 	function fileFor(at: Date): string {
 		const stamp = dayStamp(at);
@@ -76,9 +78,12 @@ export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 		try {
 			if (statSync(file).size > MAX_LOG_BYTES) truncateSync(file, 0);
 		} catch {}
-		void appendFile(file, `${at.toISOString()} [${level}] ${message}\n`).catch(
-			() => {},
-		);
+		const pending = appendFile(
+			file,
+			`${at.toISOString()} [${level}] ${message}\n`,
+		).catch(() => {});
+		pendingWrites.add(pending);
+		void pending.finally(() => pendingWrites.delete(pending));
 	}
 
 	fileFor(now());
@@ -91,5 +96,8 @@ export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 			write("error", message);
 		},
 		getLastError: () => lastError,
+		flush: async () => {
+			await Promise.all(pendingWrites);
+		},
 	};
 }
