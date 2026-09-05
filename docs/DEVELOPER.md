@@ -68,6 +68,15 @@ needs **mirrored** networking mode — under NAT the Windows-side browser cannot
 reach the loopback port, and the daemon exits with code 3 rather than pretending
 to be reachable.
 
+The daemon pins the extension's origin the first time it proves itself with a
+valid session token, and refuses every other origin after that. Reloading an
+unpacked extension from a new path changes its origin, which would otherwise
+lock the daemon out for good. Run `dg-daemon origin show` to see what is
+pinned and `dg-daemon origin clear` to forget it, so the next connecting
+extension can pin again. `/start` also caps how many sessions can be active
+at once (`DG_MAX_SESSIONS`, default 256), so a runaway local caller cannot
+grow the session directory or the in-memory registry without limit.
+
 `~/.dg` is two independent trees. `daemon/` holds that encrypted `daemon.db`.
 `agents/` holds session files, staged assets, and a second database,
 `memory.db`, that keeps its records in plain text **on purpose**: FTS5
