@@ -8,6 +8,10 @@ on:
       - .github/workflows/ext-blt.yml
   workflow_call:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ext-blt:
     runs-on: ubuntu-latest
@@ -16,7 +20,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.22
 
       - name: Install
         working-directory: pkg/extension

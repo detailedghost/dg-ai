@@ -9,6 +9,10 @@ on:
       - .github/workflows/dg-daemon-blt.yml
   workflow_call:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dg-daemon-blt:
     runs-on: ubuntu-latest
@@ -17,7 +21,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.22
 
       - name: Install (root — wires workspace symlinks, skip extension postinstall)
         run: bun install --frozen-lockfile --ignore-scripts
