@@ -184,16 +184,19 @@ export async function cmdServe(): Promise<void> {
 		({ sessionId, reason }: { sessionId: string; reason: CloseReason }) => {
 			logger.info(`session ${sessionId} closed (${reason})`);
 			connections.forEachCapableOf(sessionId, (ws) => {
-				pendingCloseSends.push(
-					sendViaQueue(
-						ws,
-						JSON.stringify({
-							sessionId,
-							protocolVersion: CHAT_PROTOCOL_VERSION,
-							type: "session-closed",
-						}),
-					),
+				const send = sendViaQueue(
+					ws,
+					JSON.stringify({
+						sessionId,
+						protocolVersion: CHAT_PROTOCOL_VERSION,
+						type: "session-closed",
+					}),
 				);
+				pendingCloseSends.push(send);
+				void send.finally(() => {
+					const idx = pendingCloseSends.indexOf(send);
+					if (idx !== -1) pendingCloseSends.splice(idx, 1);
+				});
 				ws.data.capabilities.delete(sessionId);
 			});
 		},
@@ -230,6 +233,7 @@ export async function cmdServe(): Promise<void> {
 		removePidFile(paths);
 		boundServer.stop(true);
 		store.close();
+		await logger.flush();
 		process.exit(0);
 	}
 	process.on("SIGTERM", () => void shutdown("daemon-shutdown"));
