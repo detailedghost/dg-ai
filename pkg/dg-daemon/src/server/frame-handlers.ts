@@ -8,7 +8,6 @@ import {
 	type ChatFrame,
 	type CliFrame,
 	describeError,
-	fitHistoryPage,
 	isRecord,
 	validateChatFrame,
 	validateCommandManifest,
@@ -484,10 +483,14 @@ async function handleHistoryRequest(
 			messages: [],
 		}),
 	).length;
-	const tail = deps.store.peekTail(frame.sessionId, HISTORY_TAIL_ROW_LIMIT);
+	const messages = deps.store.peekTailForHistory(
+		frame.sessionId,
+		overhead,
+		HISTORY_TAIL_ROW_LIMIT,
+	);
 	await sendFrame(ws, frame.sessionId, {
 		type: "history-response",
-		messages: fitHistoryPage(tail, overhead),
+		messages,
 	});
 }
 
