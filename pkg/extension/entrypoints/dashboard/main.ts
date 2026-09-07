@@ -253,7 +253,7 @@ export function renderDashboard(
 		refs.title.textContent = view.title;
 		refs.meta.textContent = view.meta;
 
-		refs.mark.title = view.unread ? "Mark read" : "Read";
+		refs.mark.textContent = view.unread ? "Mark read" : "Read";
 		refs.mark.disabled = !view.unread;
 
 		row.hidden = !filterMatches("feed", view.title);
@@ -331,11 +331,9 @@ export function renderDashboard(
 			if (vim.isActive()) vim.disable();
 			else vim.enable();
 		});
-		const schedule = button("+ Schedule", "dash__btn dash__btn--ghost");
-		schedule.disabled = true;
-		schedule.title =
-			"Adding jobs in the browser is the next page — use `dg-daemon job add` for now";
-		head.append(brand, spacer(), vimToggle, schedule);
+		const settingsLink = el("a", undefined, "Settings");
+		settingsLink.href = "/options.html#/settings";
+		head.append(brand, spacer(), vimToggle, settingsLink);
 
 		vimBar = el("div", "dash__vimbar");
 		vimBar.setAttribute("role", "status");
