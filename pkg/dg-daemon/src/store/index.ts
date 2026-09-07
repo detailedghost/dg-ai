@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
@@ -413,13 +414,18 @@ function ensureDaemonDir(daemonDir: string): void {
 	}
 }
 
-export class ChatStore {
+/** Emitted after a message lands in `messages` or `agent_messages`, so a blocked `cli-recv` can wake without polling. */
+export const CHAT_STORE_MESSAGE_EVENT = "message";
+
+export class ChatStore extends EventEmitter {
 	private constructor(
 		private readonly db: Database,
 		private readonly cipherBox: CipherBox,
 		private readonly meta: CryptoMetaInfo,
 		private readonly claimLeaseMs: number,
-	) {}
+	) {
+		super();
+	}
 
 	static async open(
 		paths: DgPaths,
@@ -557,7 +563,7 @@ export class ChatStore {
 		const aad = this.#aad(AAD_MESSAGE_BODY, input.sessionId, input.id);
 		const enc = this.cipherBox.encryptRecord(input.body, aad);
 		const createdAt = new Date().toISOString();
-		return this.#withImmediateTransaction(() => {
+		const result = this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			const row = this.db
 				.query(
@@ -578,6 +584,8 @@ export class ChatStore {
 				) as { seq: number };
 			return { seq: row.seq };
 		});
+		this.emit(CHAT_STORE_MESSAGE_EVENT, { sessionId: input.sessionId });
+		return result;
 	}
 
 	insertCommandInvocation(input: InsertCommandInvocationInput): {
@@ -844,7 +852,7 @@ export class ChatStore {
 				input.id,
 			),
 		);
-		return this.#withImmediateTransaction(() => {
+		const result = this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.senderSessionId);
 			const row = this.db
 				.query(
@@ -864,6 +872,10 @@ export class ChatStore {
 				) as { seq: number };
 			return { seq: row.seq };
 		});
+		this.emit(CHAT_STORE_MESSAGE_EVENT, {
+			recipientIdentity: input.recipientIdentity,
+		});
+		return result;
 	}
 
 	/** Deletes agent-to-agent rows past the retention window; returns how many it removed. */
