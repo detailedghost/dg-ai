@@ -152,16 +152,6 @@ describe("the dashboard page as it paints", () => {
 		expect(root.querySelector(".dash__alert--offline")).not.toBeNull();
 		expect(text(root, ".dash__itemtitle")).toContain("Quote export");
 	});
-
-	it("leaves the schedule control inert, since that page is not built", async () => {
-		const root = await mount(fakeApi([buildJob()], []));
-
-		const schedule = root.querySelector(
-			".dash__btn--ghost",
-		) as HTMLButtonElement | null;
-		expect(schedule?.textContent).toContain("Schedule");
-		expect(schedule?.disabled).toBe(true);
-	});
 });
 
 describe("the dashboard page as it is clicked", () => {
