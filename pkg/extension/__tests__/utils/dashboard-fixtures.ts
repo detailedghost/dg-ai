@@ -5,6 +5,7 @@ export function buildJob(overrides: Partial<JobPayload> = {}): JobPayload {
 		id: "job-1",
 		label: "jira-sprint",
 		intervalMs: 15 * 60_000,
+		cronExpr: null,
 		enabled: true,
 		nextRunAt: "2026-09-03T12:13:00.000Z",
 		lastRunAt: "2026-09-03T11:58:00.000Z",

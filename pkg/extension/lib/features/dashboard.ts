@@ -2,7 +2,7 @@ import {
 	CHAT_FEED_PATH,
 	CHAT_JOBS_PATH,
 	deriveJobState,
-	formatIntervalMs,
+	formatSchedule,
 	type JobState,
 } from "@dg/common";
 import { findDaemonPort } from "@/lib/daemon-port";
@@ -12,7 +12,8 @@ export const DASHBOARD_POLL_MS = 10_000;
 export type JobPayload = {
 	id: string;
 	label: string;
-	intervalMs: number;
+	intervalMs: number | null;
+	cronExpr: string | null;
 	enabled: boolean;
 	nextRunAt: string;
 	lastRunAt: string | null;
@@ -38,7 +39,7 @@ export type JobView = {
 	source: string;
 	state: JobState;
 	unread: number;
-	every: string;
+	schedule: string;
 	when: string;
 	detail: string;
 	progress: number;
@@ -79,10 +80,6 @@ export function sourceFromLabel(label: string): string {
 	return "Job";
 }
 
-export function formatEvery(intervalMs: number): string {
-	return `every ${formatIntervalMs(intervalMs)}`;
-}
-
 function humanGap(ms: number): string {
 	const seconds = Math.round(ms / 1000);
 	if (seconds < 60) return `${Math.max(1, seconds)}s`;
@@ -109,9 +106,10 @@ export function jobState(job: JobPayload): JobState {
 export function runProgress(job: JobPayload, now: Date): number {
 	if (!job.enabled) return 0;
 	const next = Date.parse(job.nextRunAt);
-	if (Number.isNaN(next) || job.intervalMs <= 0) return 0;
-	const elapsed = job.intervalMs - (next - now.getTime());
-	return Math.min(1, Math.max(0, elapsed / job.intervalMs));
+	const intervalMs = job.intervalMs;
+	if (Number.isNaN(next) || !intervalMs || intervalMs <= 0) return 0;
+	const elapsed = intervalMs - (next - now.getTime());
+	return Math.min(1, Math.max(0, elapsed / intervalMs));
 }
 
 export function toJobView(job: JobPayload, now: Date): JobView {
@@ -122,7 +120,7 @@ export function toJobView(job: JobPayload, now: Date): JobView {
 		source: sourceFromLabel(job.label),
 		state,
 		unread: job.unread,
-		every: formatEvery(job.intervalMs),
+		schedule: formatSchedule(job),
 		when:
 			state === "paused"
 				? "paused"
