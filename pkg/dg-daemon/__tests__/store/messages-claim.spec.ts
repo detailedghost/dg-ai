@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
-import { ChatStore } from "../../src/store";
+import { CHAT_STORE_MESSAGE_EVENT, ChatStore } from "../../src/store";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
@@ -240,6 +240,53 @@ describe("ChatStore claimNext / ack / peekAll", () => {
 			expect(typeof first?.createdAt).toBe("string");
 			expect(Number.isNaN(Date.parse(first?.createdAt as string))).toBe(false);
 			expect(first?.attachmentId).toBeUndefined();
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+describe("ChatStore emits CHAT_STORE_MESSAGE_EVENT so a blocked cli-recv can wake without polling", () => {
+	it("fires with the session id once insertMessage commits", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const events: unknown[] = [];
+			store.on(CHAT_STORE_MESSAGE_EVENT, (payload) => events.push(payload));
+
+			store.insertMessage({
+				sessionId: SESSION_ID,
+				id: "event-m1",
+				role: "user",
+				body: "hi",
+			});
+
+			expect(events).toEqual([{ sessionId: SESSION_ID }]);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("fires with the recipient identity once insertAgentMessage commits", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const events: unknown[] = [];
+			store.on(CHAT_STORE_MESSAGE_EVENT, (payload) => events.push(payload));
+
+			store.insertAgentMessage({
+				senderSessionId: SESSION_ID,
+				senderIdentity: "sender-identity",
+				recipientIdentity: "reviewer",
+				id: "event-a1",
+				body: "hi",
+			});
+
+			expect(events).toEqual([{ recipientIdentity: "reviewer" }]);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);

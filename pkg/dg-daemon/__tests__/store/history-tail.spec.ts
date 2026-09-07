@@ -1,6 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { CHAT_MAX_PAYLOAD_BYTES, fitHistoryPage } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import type { CipherBox } from "../../src/crypto/envelope";
 import { HISTORY_TAIL_ROW_LIMIT } from "../../src/server/frame-handlers";
 import { ChatStore, type PeekedMessage } from "../../src/store";
 import {
@@ -93,6 +94,82 @@ describe("ChatStore.peekTail", () => {
 			expect(store.peekTail(SESSION_ID, 1000)).toEqual(
 				store.peekAll(SESSION_ID),
 			);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+describe("ChatStore.peekTailForHistory", () => {
+	it("matches fitHistoryPage(peekTail(...)) even when message sizes vary", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			for (let i = 0; i < 40; i++) {
+				store.insertMessage({
+					sessionId: SESSION_ID,
+					id: `mixed-${i}`,
+					role: i % 2 === 0 ? "user" : "agent",
+					body: "x".repeat(i % 2 === 0 ? 45_000 : 15_000),
+				});
+			}
+
+			const overhead = 37;
+			const viaOldPath = fitHistoryPage(
+				store.peekTail(SESSION_ID, HISTORY_TAIL_ROW_LIMIT),
+				overhead,
+			);
+			const viaNewPath = store.peekTailForHistory(
+				SESSION_ID,
+				overhead,
+				HISTORY_TAIL_ROW_LIMIT,
+			);
+
+			expect(viaNewPath).toEqual(viaOldPath);
+			expect(viaNewPath.length).toBeGreaterThan(0);
+			expect(viaNewPath.length).toBeLessThan(40);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("decrypts only the rows it ends up keeping, plus the one that overflowed the budget — never the whole tail", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const total = 50;
+			for (let i = 0; i < total; i++) {
+				store.insertMessage({
+					sessionId: SESSION_ID,
+					id: `big-${i}`,
+					role: "user",
+					body: "x".repeat(25_000),
+				});
+			}
+
+			const expected = fitHistoryPage(store.peekTail(SESSION_ID, total), 0);
+			expect(expected.length).toBeGreaterThan(0);
+			expect(expected.length).toBeLessThan(total);
+
+			const cipherBox = (store as unknown as { cipherBox: CipherBox })
+				.cipherBox;
+			const decryptSpy = spyOn(cipherBox, "decryptRecord");
+			const budgeted = store.peekTailForHistory(
+				SESSION_ID,
+				0,
+				HISTORY_TAIL_ROW_LIMIT,
+			);
+			const decryptCalls = decryptSpy.mock.calls.length;
+			decryptSpy.mockRestore();
+
+			expect(budgeted).toEqual(expected);
+			expect(decryptCalls).toBe(expected.length + 1);
+			expect(decryptCalls).toBeLessThan(total);
+
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);

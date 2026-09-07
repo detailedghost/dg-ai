@@ -1,11 +1,12 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import {
 	applyConnectionPragmas,
 	resolveDgPaths,
 	runMigrations,
 } from "@dg/common/node";
 import { Cron } from "croner";
+import type { CipherBox } from "../../src/crypto/envelope";
 import { ChatStore, SCHEDULER_SESSION_ID } from "../../src/store";
 import { CURRENT_SCHEMA_VERSION, SCHEMA_STEPS } from "../../src/store/schema";
 import {
@@ -757,6 +758,77 @@ describe("ChatStore — migration to v8", () => {
 			]);
 
 			after.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+});
+
+describe("ChatStore.listJobSummaries", () => {
+	it("carries every field GET /jobs returns, and neither argv nor lastStderr", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			const job = store.insertJob(jobInput({ label: "sentry" }));
+			store.recordJobRun({
+				jobId: job.id,
+				ranAt: new Date("2026-09-03T12:00:00.000Z"),
+				exitCode: 1,
+				error: "auth token expired",
+				stderr: "full stack trace",
+			});
+
+			const [summary] = store.listJobSummaries();
+
+			expect(summary).toMatchObject({
+				id: job.id,
+				label: "sentry",
+				intervalMs: 15 * 60 * 1000,
+				enabled: true,
+				lastRunAt: "2026-09-03T12:00:00.000Z",
+				lastExitCode: 1,
+				lastError: "auth token expired",
+			});
+			expect(typeof summary?.nextRunAt).toBe("string");
+			expect(Object.hasOwn(summary as object, "argv")).toBe(false);
+			expect(Object.hasOwn(summary as object, "lastStderr")).toBe(false);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("decrypts only last_error per job, unlike listJobs which also decrypts argv and last_stderr", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await openStore(dgHome);
+			for (let i = 0; i < 3; i++) {
+				const job = store.insertJob(jobInput({ label: `job-${i}` }));
+				store.recordJobRun({
+					jobId: job.id,
+					ranAt: new Date(),
+					exitCode: 1,
+					error: "boom",
+					stderr: "trace",
+				});
+			}
+
+			const cipherBox = (store as unknown as { cipherBox: CipherBox })
+				.cipherBox;
+
+			const fullSpy = spyOn(cipherBox, "decryptRecord");
+			store.listJobs();
+			const fullCalls = fullSpy.mock.calls.length;
+			fullSpy.mockRestore();
+
+			const summarySpy = spyOn(cipherBox, "decryptRecord");
+			store.listJobSummaries();
+			const summaryCalls = summarySpy.mock.calls.length;
+			summarySpy.mockRestore();
+
+			expect(fullCalls).toBe(9);
+			expect(summaryCalls).toBe(3);
+			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}
