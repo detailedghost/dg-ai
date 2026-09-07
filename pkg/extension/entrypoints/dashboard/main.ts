@@ -1,3 +1,5 @@
+import { isTextEntryFocused } from "@/lib/dom-focus";
+import { patchKeyedList } from "@/lib/dom-keyed-list";
 import {
 	applyRefresh,
 	connectDashboardApi,
@@ -14,6 +16,7 @@ import {
 	toJobView,
 	visibleItems,
 } from "@/lib/features/dashboard";
+import { createVimNav } from "@/lib/features/vim-nav";
 import "../options/style.css";
 import "./style.css";
 
@@ -30,6 +33,25 @@ export type RenderDashboardOptions = {
 	poll?: boolean;
 };
 
+type JobRowRefs = {
+	target: HTMLButtonElement;
+	dot: HTMLElement;
+	name: HTMLElement;
+	pill: HTMLElement;
+	meta: HTMLElement;
+	badge: HTMLElement;
+	metaText: HTMLElement;
+	when: HTMLElement;
+	progress?: HTMLElement;
+};
+
+type FeedRowRefs = {
+	mark: HTMLButtonElement;
+	badge: HTMLElement;
+	title: HTMLElement;
+	meta: HTMLElement;
+};
+
 export function renderDashboard(
 	options: RenderDashboardOptions,
 ): DashboardHandle {
@@ -43,7 +65,10 @@ export function renderDashboard(
 	let state: DashboardState = createDashboardState();
 	let api: DashboardApi | undefined;
 	let lastPort: number | undefined;
-	let lastPainted = "";
+	let mounted = false;
+
+	const jobRowRefs = new WeakMap<HTMLLIElement, JobRowRefs>();
+	const feedRowRefs = new WeakMap<HTMLLIElement, FeedRowRefs>();
 
 	function el<K extends keyof HTMLElementTagNameMap>(
 		tag: K,
@@ -71,65 +96,6 @@ export function renderDashboard(
 		await refresh();
 	}
 
-	function renderJob(job: JobPayload, at: Date): HTMLLIElement {
-		const view = toJobView(job, at);
-		const row = el("li");
-		const target = el("button", `dash__job dash__job--${view.state}`);
-		target.type = "button";
-		if (state.selectedJobId === job.id)
-			target.setAttribute("aria-current", "true");
-		target.addEventListener("click", () => {
-			state = selectJob(
-				state,
-				state.selectedJobId === job.id ? undefined : job.id,
-			);
-			render();
-		});
-
-		const top = el("div", "dash__jobtop");
-		top.append(
-			el("span", `dash__dot dash__dot--${view.state}`),
-			el("span", "dash__jobname", view.label),
-			el(
-				"span",
-				view.unread > 0 ? "dash__pill" : "dash__pill dash__pill--none",
-				String(view.unread),
-			),
-		);
-
-		const meta = el(
-			"div",
-			view.state === "failed"
-				? "dash__jobmeta dash__jobmeta--failed"
-				: "dash__jobmeta",
-		);
-		meta.append(
-			el(
-				"span",
-				`dash__badge dash__badge--${view.source.toLowerCase()}`,
-				view.source,
-			),
-			el("span", undefined, view.state === "failed" ? view.detail : view.every),
-			spacer(),
-			el("span", undefined, view.when),
-		);
-
-		target.append(top, meta);
-		if (view.state !== "paused") {
-			const progress = el(
-				"span",
-				view.state === "failed"
-					? "dash__prog dash__prog--failed"
-					: "dash__prog",
-			);
-			progress.style.transform = `scaleX(${view.progress.toFixed(3)})`;
-			target.append(progress);
-		}
-
-		row.append(target);
-		return row;
-	}
-
 	function renderQueueControl(itemId: string): HTMLElement {
 		const holder = el("span");
 		const trigger = button("Queue to agent", "dash__btn dash__queue");
@@ -153,179 +119,487 @@ export function renderDashboard(
 		return holder;
 	}
 
-	function renderItems(at: Date): HTMLElement {
-		const list = el("ul", "dash__feed");
-		const items = visibleItems(state);
-		const jobsById = new Map(state.jobs.map((job) => [job.id, job]));
-
-		if (items.length === 0) {
-			const empty = el(
-				"div",
-				"dash__empty",
-				state.loaded ? "Nothing has come in yet." : "Looking for the daemon…",
+	function createJobRow(job: JobPayload): HTMLLIElement {
+		const row = el("li");
+		const target = el("button", "dash__job");
+		target.type = "button";
+		target.addEventListener("click", () => {
+			state = selectJob(
+				state,
+				state.selectedJobId === job.id ? undefined : job.id,
 			);
-			list.append(empty);
-			return list;
-		}
+			render();
+		});
 
-		for (const item of items) {
-			const view = toFeedView(item, at);
-			const row = el(
-				"li",
-				view.unread
-					? "dash__item dash__item--unread"
-					: "dash__item dash__item--read",
-			);
+		const top = el("div", "dash__jobtop");
+		const dot = el("span");
+		const name = el("span", "dash__jobname");
+		const pill = el("span");
+		top.append(dot, name, pill);
 
-			const body = el("div");
-			const top = el("div", "dash__top");
-			const job = jobsById.get(item.jobId);
-			const source = job ? toJobView(job, at).source : "Job";
-			top.append(
-				el("span", `dash__badge dash__badge--${source.toLowerCase()}`, source),
-				el("span", "dash__itemtitle", view.title),
-			);
-			body.append(top, el("div", "dash__meta", view.meta));
+		const meta = el("div");
+		const badge = el("span");
+		const metaText = el("span");
+		const when = el("span");
+		meta.append(badge, metaText, spacer(), when);
 
-			const mark = button("", "dash__mark");
-			mark.title = view.unread ? "Mark read" : "Read";
-			mark.disabled = !view.unread;
-			mark.addEventListener("click", () => {
-				void act(api?.markRead(item.id) ?? Promise.resolve(false));
-			});
-
-			row.append(mark, body, renderQueueControl(item.id));
-			list.append(row);
-		}
-
-		return list;
+		target.append(top, meta);
+		row.append(target);
+		jobRowRefs.set(row, {
+			target,
+			dot,
+			name,
+			pill,
+			meta,
+			badge,
+			metaText,
+			when,
+		});
+		return row;
 	}
 
-	function renderRail(at: Date): HTMLElement {
+	function updateJobRow(row: HTMLLIElement, job: JobPayload, at: Date): void {
+		const refs = jobRowRefs.get(row);
+		if (!refs) return;
+		const view = toJobView(job, at);
+
+		refs.target.className = `dash__job dash__job--${view.state}`;
+		if (state.selectedJobId === job.id) {
+			refs.target.setAttribute("aria-current", "true");
+		} else {
+			refs.target.removeAttribute("aria-current");
+		}
+
+		refs.dot.className = `dash__dot dash__dot--${view.state}`;
+		refs.name.textContent = view.label;
+		refs.pill.className =
+			view.unread > 0 ? "dash__pill" : "dash__pill dash__pill--none";
+		refs.pill.textContent = String(view.unread);
+
+		refs.meta.className =
+			view.state === "failed"
+				? "dash__jobmeta dash__jobmeta--failed"
+				: "dash__jobmeta";
+		refs.badge.className = `dash__badge dash__badge--${view.source.toLowerCase()}`;
+		refs.badge.textContent = view.source;
+		refs.metaText.textContent =
+			view.state === "failed" ? view.detail : view.every;
+		refs.when.textContent = view.when;
+
+		row.hidden = !filterMatches("jobs", job.label);
+
+		if (view.state === "paused") {
+			refs.progress?.remove();
+			refs.progress = undefined;
+			return;
+		}
+		if (!refs.progress) {
+			refs.progress = el("span");
+			refs.target.append(refs.progress);
+		}
+		refs.progress.className =
+			view.state === "failed" ? "dash__prog dash__prog--failed" : "dash__prog";
+		refs.progress.style.transform = `scaleX(${view.progress.toFixed(3)})`;
+	}
+
+	function createFeedRow(item: { id: string; jobId: string }): HTMLLIElement {
+		const row = el("li");
+		const itemId = item.id;
+
+		const mark = button("", "dash__mark");
+		mark.addEventListener("click", () => {
+			void act(api?.markRead(itemId) ?? Promise.resolve(false));
+		});
+
+		const body = el("div");
+		const top = el("div", "dash__top");
+		const badge = el("span");
+		const title = el("span", "dash__itemtitle");
+		top.append(badge, title);
+		const meta = el("div", "dash__meta");
+		body.append(top, meta);
+
+		row.append(mark, body, renderQueueControl(itemId));
+		feedRowRefs.set(row, { mark, badge, title, meta });
+		return row;
+	}
+
+	function updateFeedRow(
+		row: HTMLLIElement,
+		item: {
+			id: string;
+			jobId: string;
+			createdAt: string;
+			title: string;
+			meta: string | null;
+			url: string | null;
+			read: boolean;
+		},
+		jobsById: Map<string, JobPayload>,
+		at: Date,
+	): void {
+		const refs = feedRowRefs.get(row);
+		if (!refs) return;
+		const view = toFeedView(item, at);
+
+		row.className = view.unread
+			? "dash__item dash__item--unread"
+			: "dash__item dash__item--read";
+
+		const job = jobsById.get(item.jobId);
+		const source = job ? toJobView(job, at).source : "Job";
+		refs.badge.className = `dash__badge dash__badge--${source.toLowerCase()}`;
+		refs.badge.textContent = source;
+		refs.title.textContent = view.title;
+		refs.meta.textContent = view.meta;
+
+		refs.mark.title = view.unread ? "Mark read" : "Read";
+		refs.mark.disabled = !view.unread;
+
+		row.hidden = !filterMatches("feed", view.title);
+	}
+
+	const vimFilterQuery: Record<"feed" | "jobs", string> = {
+		feed: "",
+		jobs: "",
+	};
+
+	function filterMatches(list: "feed" | "jobs", searchable: string): boolean {
+		const query = vimFilterQuery[list];
+		return !query || searchable.toLowerCase().includes(query.toLowerCase());
+	}
+
+	function findRow(
+		container: HTMLElement,
+		id: string | undefined,
+	): HTMLElement | undefined {
+		if (!id) return undefined;
+		for (const child of Array.from(container.children)) {
+			if ((child as HTMLElement).dataset.key === id)
+				return child as HTMLElement;
+		}
+		return undefined;
+	}
+
+	let vimCursor: { list: string; id: string | undefined } = {
+		list: "feed",
+		id: undefined,
+	};
+
+	function paintVimCursor(): void {
+		const showCursor = vim.isActive();
+		for (const row of Array.from(railList.children)) {
+			(row as HTMLElement).classList.toggle(
+				"dash__job--cursor",
+				showCursor &&
+					vimCursor.list === "jobs" &&
+					(row as HTMLElement).dataset.key === vimCursor.id,
+			);
+		}
+		for (const row of Array.from(feedList.children)) {
+			(row as HTMLElement).classList.toggle(
+				"dash__item--cursor",
+				showCursor &&
+					vimCursor.list === "feed" &&
+					(row as HTMLElement).dataset.key === vimCursor.id,
+			);
+		}
+	}
+
+	let railList: HTMLUListElement;
+	let railEmpty: HTMLElement;
+	let summaryText: HTMLElement;
+	let summaryFailed: HTMLElement;
+	let vimToggle: HTMLButtonElement;
+	let vimBar: HTMLElement;
+	let vimFilterInput: HTMLInputElement;
+	let vimCheat: HTMLElement;
+
+	const VIM_CHEAT_SHEET =
+		"VIM  j/k move  gg/G ends  Enter act  r run  m read  q queue  \\a mark all  Tab list  / filter  ? this  Esc exit";
+
+	function buildRail(): HTMLElement {
 		const rail = el("aside", "dash__rail");
 
 		const head = el("div", "dash__head");
 		const brand = el("h1", "dash__brand");
 		brand.append(el("span", "dash__mk"), doc.createTextNode("Jobs"));
+		vimToggle = button("Vim", "dash__btn dash__vimtoggle");
+		vimToggle.dataset.action = "vim-toggle";
+		vimToggle.setAttribute("aria-pressed", "false");
+		vimToggle.addEventListener("click", () => {
+			if (vim.isActive()) vim.disable();
+			else vim.enable();
+		});
 		const schedule = button("+ Schedule", "dash__btn dash__btn--ghost");
 		schedule.disabled = true;
 		schedule.title =
 			"Adding jobs in the browser is the next page — use `dg-daemon job add` for now";
-		head.append(brand, spacer(), schedule);
+		head.append(brand, spacer(), vimToggle, schedule);
 
-		const counts = summarize(state.jobs);
+		vimBar = el("div", "dash__vimbar");
+		vimBar.setAttribute("role", "status");
+		vimBar.hidden = true;
+
+		vimFilterInput = el("input", "dash__vimfilter");
+		vimFilterInput.hidden = true;
+		vimFilterInput.addEventListener("input", () => {
+			const list = vim.activeList() as "feed" | "jobs";
+			vimFilterQuery[list] = vimFilterInput.value;
+			render();
+		});
+		vimFilterInput.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				const list = vim.activeList() as "feed" | "jobs";
+				vimFilterQuery[list] = "";
+				vimFilterInput.value = "";
+				vimFilterInput.hidden = true;
+				render();
+			} else if (event.key === "Enter") {
+				event.preventDefault();
+				vimFilterInput.hidden = true;
+			}
+		});
+
+		vimCheat = el("div", "dash__vimcheat", VIM_CHEAT_SHEET);
+		vimCheat.hidden = true;
+
 		const summary = el("div", "dash__summary");
-		summary.append(
-			el("span", undefined, `${counts.total} jobs · ${counts.active} active`),
-			spacer(),
+		summaryText = el("span");
+		summaryFailed = el("b");
+		summaryFailed.hidden = true;
+		summary.append(summaryText, spacer(), summaryFailed);
+
+		railList = el("ul", "dash__jobs");
+		railEmpty = el("div", "dash__empty");
+		railEmpty.hidden = true;
+
+		rail.append(
+			head,
+			vimBar,
+			vimFilterInput,
+			vimCheat,
+			summary,
+			railList,
+			railEmpty,
 		);
-		if (counts.failed > 0) {
-			summary.append(el("b", undefined, `${counts.failed} failed`));
-		}
-
-		const list = el("ul", "dash__jobs");
-		for (const job of state.jobs) list.append(renderJob(job, at));
-		if (state.jobs.length === 0) {
-			list.append(
-				el(
-					"div",
-					"dash__empty",
-					state.loaded ? "No jobs scheduled yet." : "Looking for the daemon…",
-				),
-			);
-		}
-
-		rail.append(head, summary, list);
 		return rail;
 	}
 
-	function renderPane(at: Date): HTMLElement {
-		const pane = el("section", "dash__pane");
-		const selected = state.jobs.find((job) => job.id === state.selectedJobId);
-		const view = selected ? toJobView(selected, at) : undefined;
+	function patchRail(at: Date): void {
+		const counts = summarize(state.jobs);
+		summaryText.textContent = `${counts.total} jobs · ${counts.active} active`;
+		summaryFailed.hidden = counts.failed === 0;
+		if (counts.failed > 0)
+			summaryFailed.textContent = `${counts.failed} failed`;
+
+		patchKeyedList(railList, state.jobs, {
+			key: (job) => job.id,
+			create: createJobRow,
+			update: (row, job) => updateJobRow(row as HTMLLIElement, job, at),
+		});
+
+		railEmpty.hidden = state.jobs.length > 0;
+		railEmpty.textContent = state.loaded
+			? "No jobs scheduled yet."
+			: "Looking for the daemon…";
+	}
+
+	let paneTitle: HTMLElement;
+	let paneSub: HTMLElement;
+	let runButton: HTMLButtonElement;
+	let offlineAlert: HTMLElement;
+	let failureAlert: HTMLElement;
+	let failureLabel: HTMLElement;
+	let failureMessage: Text;
+	let failureShowButton: HTMLButtonElement;
+	let feedList: HTMLUListElement;
+	let feedEmpty: HTMLElement;
+	let pane: HTMLElement;
+	let currentFailureJobId: string | undefined;
+
+	function buildPane(): HTMLElement {
+		pane = el("section", "dash__pane");
 
 		const head = el("div", "dash__head");
-		head.append(
-			el("h2", "dash__title", selected ? selected.label : "All jobs"),
-			el(
-				"span",
-				"dash__sub",
-				view
-					? `${view.detail} · ${view.when}`
-					: `${visibleItems(state).length} items`,
-			),
-			spacer(),
-		);
-
-		if (selected) {
-			const run = button("Run now");
-			run.addEventListener("click", () => {
-				run.disabled = true;
-				void act(api?.runJob(selected.id) ?? Promise.resolve(false));
-			});
-			head.append(run);
-		}
-
+		paneTitle = el("h2", "dash__title");
+		paneSub = el("span", "dash__sub");
+		runButton = button("Run now");
+		runButton.hidden = true;
+		runButton.addEventListener("click", () => {
+			const jobId = state.selectedJobId;
+			if (!jobId) return;
+			runButton.disabled = true;
+			void act(api?.runJob(jobId) ?? Promise.resolve(false));
+		});
 		const markAll = button("Mark all read");
 		markAll.addEventListener("click", () => {
 			void act(api?.markAllRead() ?? Promise.resolve(false));
 		});
-		head.append(markAll);
-		pane.append(head);
+		head.append(paneTitle, paneSub, spacer(), runButton, markAll);
 
-		if (state.offline) {
-			const alert = el("div", "dash__alert dash__alert--offline");
-			alert.append(
-				el("b", undefined, "The daemon is not answering."),
-				doc.createTextNode(" Showing the last data it gave."),
-			);
-			pane.append(alert);
+		offlineAlert = el("div", "dash__alert dash__alert--offline");
+		offlineAlert.append(
+			el("b", undefined, "The daemon is not answering."),
+			doc.createTextNode(" Showing the last data it gave."),
+		);
+
+		failureAlert = el("div", "dash__alert");
+		failureLabel = el("b");
+		failureMessage = doc.createTextNode("");
+		failureShowButton = button("Show job");
+		failureShowButton.addEventListener("click", () => {
+			if (!currentFailureJobId) return;
+			state = selectJob(state, currentFailureJobId);
+			render();
+		});
+		failureAlert.append(
+			failureLabel,
+			failureMessage,
+			spacer(),
+			failureShowButton,
+		);
+
+		feedList = el("ul", "dash__feed");
+		feedEmpty = el("div", "dash__empty");
+		feedEmpty.hidden = true;
+
+		pane.append(head, feedList, feedEmpty);
+		return pane;
+	}
+
+	function patchPane(at: Date): void {
+		const selected = state.jobs.find((job) => job.id === state.selectedJobId);
+		const view = selected ? toJobView(selected, at) : undefined;
+
+		paneTitle.textContent = selected ? selected.label : "All jobs";
+		paneSub.textContent = view
+			? `${view.detail} · ${view.when}`
+			: `${visibleItems(state).length} items`;
+		runButton.hidden = !selected;
+		runButton.disabled = false;
+
+		if (offlineAlert.parentElement !== pane) {
+			if (state.offline) pane.insertBefore(offlineAlert, feedList);
+		} else if (!state.offline) {
+			offlineAlert.remove();
 		}
 
 		const failure = firstFailure(state.jobs, at);
 		if (failure) {
-			const alert = el("div", "dash__alert");
-			alert.append(
-				el("b", undefined, failure.label),
-				doc.createTextNode(` ${failure.message}`),
-				spacer(),
-			);
-			const show = button("Show job");
-			show.addEventListener("click", () => {
-				state = selectJob(state, failure.jobId);
-				render();
-			});
-			alert.append(show);
-			pane.append(alert);
+			currentFailureJobId = failure.jobId;
+			failureLabel.textContent = failure.label;
+			failureMessage.textContent = ` ${failure.message}`;
+			if (failureAlert.parentElement !== pane) {
+				pane.insertBefore(failureAlert, feedList);
+			}
+		} else {
+			currentFailureJobId = undefined;
+			failureAlert.remove();
 		}
 
-		pane.append(renderItems(at));
-		return pane;
+		const items = visibleItems(state);
+		const jobsById = new Map(state.jobs.map((job) => [job.id, job]));
+		patchKeyedList(feedList, items, {
+			key: (item) => item.id,
+			create: createFeedRow,
+			update: (row, item) =>
+				updateFeedRow(row as HTMLLIElement, item, jobsById, at),
+		});
+
+		feedEmpty.hidden = items.length > 0;
+		feedEmpty.textContent = state.loaded
+			? "Nothing has come in yet."
+			: "Looking for the daemon…";
 	}
 
-	/** The poll must not tear down a half-typed agent identity under the user. */
-	function isEditing(): boolean {
-		return doc.activeElement?.classList.contains("dash__identity") ?? false;
-	}
-
-	function paintKey(): string {
-		return JSON.stringify([
-			state.jobs,
-			state.items,
-			state.selectedJobId,
-			state.offline,
-			state.loaded,
-		]);
-	}
+	const vim = createVimNav({
+		order: ["feed", "jobs"],
+		lists: {
+			feed: {
+				rowIds: () =>
+					visibleItems(state)
+						.filter((item) =>
+							filterMatches("feed", toFeedView(item, now()).title),
+						)
+						.map((item) => item.id),
+				select: (id) => {
+					void act(api?.markRead(id) ?? Promise.resolve(false));
+				},
+				actions: {
+					m: (id) => {
+						void act(api?.markRead(id) ?? Promise.resolve(false));
+					},
+					q: (id) => {
+						findRow(feedList, id)
+							?.querySelector<HTMLButtonElement>(".dash__queue")
+							?.click();
+					},
+				},
+			},
+			jobs: {
+				rowIds: () =>
+					state.jobs
+						.filter((job) => filterMatches("jobs", job.label))
+						.map((job) => job.id),
+				select: (id) => {
+					state = selectJob(state, state.selectedJobId === id ? undefined : id);
+					render();
+				},
+				actions: {
+					r: (id) => {
+						void act(api?.runJob(id) ?? Promise.resolve(false));
+					},
+				},
+			},
+		},
+		leaderActions: {
+			a: () => {
+				void act(api?.markAllRead() ?? Promise.resolve(false));
+			},
+		},
+		onCursorChange: (list, id) => {
+			vimCursor = { list, id };
+			paintVimCursor();
+			findRow(list === "jobs" ? railList : feedList, id)?.scrollIntoView?.({
+				block: "nearest",
+			});
+		},
+		onOpenFilter: (list) => {
+			vimFilterInput.placeholder =
+				list === "jobs" ? "Filter jobs…" : "Filter feed…";
+			vimFilterInput.value = vimFilterQuery[list as "feed" | "jobs"];
+			vimFilterInput.hidden = false;
+			vimFilterInput.focus();
+		},
+		onModeChange: (isActive, message) => {
+			vimToggle.setAttribute("aria-pressed", String(isActive));
+			vimBar.textContent = message;
+			vimBar.hidden = !isActive;
+			if (!isActive) {
+				vimFilterInput.hidden = true;
+				paintVimCursor();
+			}
+		},
+		onCheatSheet: (open) => {
+			vimCheat.hidden = !open;
+		},
+		isTextInputFocused: () => isTextEntryFocused(doc),
+	});
 
 	function render(force = true): void {
-		const key = paintKey();
-		if (!force && (key === lastPainted || isEditing())) return;
-		lastPainted = key;
+		if (!force && isTextEntryFocused(doc)) return;
 		const at = now();
-		const painted = el("div", "dash");
-		painted.append(renderRail(at), renderPane(at));
-		root.replaceChildren(painted);
+		if (!mounted) {
+			const painted = el("div", "dash");
+			painted.append(buildRail(), buildPane());
+			root.replaceChildren(painted);
+			mounted = true;
+		}
+		patchRail(at);
+		patchPane(at);
+		paintVimCursor();
 	}
 
 	async function refresh(): Promise<void> {
@@ -350,8 +624,13 @@ export function renderDashboard(
 		poller.setHidden(doc.hidden);
 	}
 
+	function onKeydown(event: KeyboardEvent): void {
+		vim.handleKeydown(event);
+	}
+
 	render();
 	const ready = refresh();
+	doc.addEventListener("keydown", onKeydown);
 
 	if (options.poll !== false) {
 		doc.addEventListener("visibilitychange", onVisibility);
@@ -364,6 +643,7 @@ export function renderDashboard(
 		stop() {
 			poller.stop();
 			doc.removeEventListener("visibilitychange", onVisibility);
+			doc.removeEventListener("keydown", onKeydown);
 		},
 	};
 }

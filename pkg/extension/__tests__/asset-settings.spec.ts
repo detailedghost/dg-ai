@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { Window } from "happy-dom";
-import { fire } from "./utils/dom-events";
+import { fire, keydown } from "./utils/dom-events";
 import {
 	bootRelay as bootSharedRelay,
 	type FakeSocket,
@@ -399,6 +399,21 @@ describe("mountAssetDirectoryPanel", () => {
 		const field = input(container);
 		field.value = "/new/dir";
 		fire(field, "change");
+		await flush();
+
+		expect(transport.setAssetDirectory).toHaveBeenCalledWith("/new/dir");
+	});
+
+	it("saves an edited value on Enter, without waiting for the field to blur", async () => {
+		const container = newContainer();
+		const transport = fakeTransport({ status: "ok", value: "/old/dir" });
+
+		mountAssetDirectoryPanel(container, { transport });
+		await flush();
+
+		const field = input(container);
+		field.value = "/new/dir";
+		keydown(field, "Enter");
 		await flush();
 
 		expect(transport.setAssetDirectory).toHaveBeenCalledWith("/new/dir");

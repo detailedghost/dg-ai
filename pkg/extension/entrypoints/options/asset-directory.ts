@@ -67,12 +67,17 @@ export function mountAssetDirectoryPanel(
 		}
 	}
 
-	input.addEventListener("change", () => {
-		void (async () => {
-			const result = await transport.setAssetDirectory(input.value);
-			if (result.ok) flashStatus(status, "Saved ✓");
-			else failStatus(status, result.error);
-		})();
+	async function commit(): Promise<void> {
+		const result = await transport.setAssetDirectory(input.value);
+		if (result.ok) flashStatus(status, "Saved ✓");
+		else failStatus(status, result.error);
+	}
+
+	input.addEventListener("change", () => void commit());
+	input.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter") return;
+		event.preventDefault();
+		void commit();
 	});
 
 	void load();

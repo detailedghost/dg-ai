@@ -262,6 +262,70 @@ test("every rail row exposes a keyboard-operable Move control that reorders with
 	expect(orderAfter[1]).toContain("claude-js");
 });
 
+test("regression: Enter on the Move button arms on the first press and commits on the second, never both in one press", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+		]),
+	);
+
+	const row = root.querySelector<HTMLElement>(".chat-rail__row");
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	expect(row).not.toBeNull();
+	expect(moveButton).not.toBeNull();
+
+	keydown(moveButton as HTMLButtonElement, "Enter");
+	expect(row?.dataset.moving).toBe("true");
+
+	const moveButtonAfterArm = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	keydown(moveButtonAfterArm as HTMLButtonElement, "Enter");
+	expect(
+		root.querySelector<HTMLElement>(".chat-rail__row")?.dataset.moving,
+	).not.toBe("true");
+	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
+		"Position saved.",
+	);
+});
+
+test("regression: Enter on the Move button never bubbles to a document-level keydown listener", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+		]),
+	);
+
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	let sawItAtDocument = 0;
+	doc.addEventListener("keydown", () => {
+		sawItAtDocument++;
+	});
+
+	keydown(moveButton as HTMLButtonElement, "Enter");
+
+	expect(sawItAtDocument).toBe(0);
+});
+
 test("Escape cancels an in-progress move and restores the original order", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
@@ -293,6 +357,75 @@ test("Escape cancels an in-progress move and restores the original order", async
 	);
 	expect(orderAfter[0]).toContain("claude-js");
 	expect(orderAfter[1]).toContain("claude-security");
+});
+
+test("regression: the moving modal never swallows Escape while a text input has focus", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	moveButton && keydown(moveButton, "Enter");
+	expect(
+		root.querySelector<HTMLElement>(".chat-rail__row")?.dataset.moving,
+	).toBe("true");
+
+	const composerInput =
+		root.querySelector<HTMLInputElement>(".chat-node input");
+	composerInput?.focus();
+	expect(doc.activeElement).toBe(composerInput);
+	keydown(composerInput as HTMLInputElement, "Escape");
+
+	expect(
+		root.querySelector<HTMLElement>(".chat-rail__row")?.dataset.moving,
+	).toBe("true");
+});
+
+test("vim mode yields entirely to an in-progress move — j does not move the vim cursor while armed", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+			{
+				sessionId: "session-b",
+				agentIdentity: "claude-security",
+				role: "agent",
+			},
+		]),
+	);
+	click(root.querySelector("[data-action='vim-toggle']") as HTMLButtonElement);
+	expect(
+		root.querySelector<HTMLElement>("[data-vim-cursor='true']")?.dataset
+			.sessionId,
+	).toBe("session-a");
+
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	moveButton && keydown(moveButton, "Enter");
+
+	keydown(root.ownerDocument, "j");
+
+	expect(
+		root.querySelector<HTMLElement>("[data-vim-cursor='true']")?.dataset
+			.sessionId,
+	).toBe("session-a");
 });
 
 test("clicking a different row while a move is armed places it there with a single pointer action, no drag events", async () => {
@@ -1042,4 +1175,153 @@ test("closing the session armed for a keyboard move cancels move mode instead of
 	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
 		"Move cancelled — the session closed.",
 	);
+});
+
+function vimToggleButton(root: HTMLElement): HTMLButtonElement {
+	return root.querySelector("[data-action='vim-toggle']") as HTMLButtonElement;
+}
+
+test("vim mode is off until the Vim button is clicked, and is clearly indicated once on", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	const toggle = vimToggleButton(root);
+	expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+	click(toggle);
+
+	expect(toggle.getAttribute("aria-pressed")).toBe("true");
+});
+
+test("vim: j moves a visible cursor down the rail, and Enter selects the session under it", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+			{
+				sessionId: "session-b",
+				agentIdentity: "claude-security",
+				role: "agent",
+			},
+		]),
+	);
+	click(vimToggleButton(root));
+
+	keydown(root.ownerDocument, "j");
+	const cursored = root.querySelector<HTMLElement>("[data-vim-cursor='true']");
+	expect(cursored?.dataset.sessionId).toBe("session-b");
+
+	keydown(root.ownerDocument, "Enter");
+
+	expect(
+		root.querySelector<HTMLElement>("[data-session-id='session-b']")?.dataset
+			.active,
+	).toBe("true");
+});
+
+test("vim: x closes the session under the cursor", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(vimToggleButton(root));
+
+	keydown(root.ownerDocument, "x");
+
+	expect(fake.closedSessions).toEqual(["session-a"]);
+});
+
+test("vim: the leader key requests a new chat session", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(vimToggleButton(root));
+
+	keydown(root.ownerDocument, "\\");
+	keydown(root.ownerDocument, "n");
+
+	expect(fake.requestedSessions.length).toBe(1);
+});
+
+test("vim: Escape leaves vim mode", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(vimToggleButton(root));
+
+	keydown(root.ownerDocument, "Escape");
+
+	expect(vimToggleButton(root).getAttribute("aria-pressed")).toBe("false");
+});
+
+test("vim: never swallows j while the message composer has focus", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+			{
+				sessionId: "session-b",
+				agentIdentity: "claude-security",
+				role: "agent",
+			},
+		]),
+	);
+	click(vimToggleButton(root));
+	expect(
+		root.querySelector<HTMLElement>("[data-vim-cursor='true']")?.dataset
+			.sessionId,
+	).toBe("session-a");
+
+	const composerInput =
+		root.querySelector<HTMLInputElement>(".chat-node input");
+	composerInput?.focus();
+	expect(doc.activeElement).toBe(composerInput);
+	keydown(composerInput as HTMLInputElement, "j");
+	typeValue(composerInput as HTMLInputElement, "j");
+
+	expect(composerInput?.value).toBe("j");
+	expect(
+		root.querySelector<HTMLElement>("[data-vim-cursor='true']")?.dataset
+			.sessionId,
+	).toBe("session-a");
 });
