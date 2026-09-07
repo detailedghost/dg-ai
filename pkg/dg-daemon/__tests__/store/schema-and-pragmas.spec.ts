@@ -19,6 +19,22 @@ const REQUIRED_TABLES = [
 ];
 
 describe("ChatStore.open — connection + schema", () => {
+	it("leaves no pre-migration snapshot beside a database that had nothing to lose", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			store.close();
+
+			const snapshots = Array.from(
+				new Bun.Glob("pre-migration-*.db").scanSync(paths.daemonDir),
+			);
+			expect(snapshots).toEqual([]);
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("creates all six tables, each declared STRICT", async () => {
 		const dgHome = freshDgHome();
 		try {

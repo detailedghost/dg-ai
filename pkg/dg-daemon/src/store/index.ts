@@ -16,6 +16,7 @@ import {
 	DEFAULT_BUSY_TIMEOUT_MS,
 	type DgPaths,
 	ensurePrivateDir,
+	readSchemaVersion,
 	runMigrations,
 } from "@dg/common/node";
 import {
@@ -479,7 +480,12 @@ export class ChatStore extends EventEmitter {
 		});
 		try {
 			applyConnectionPragmas(db, DEFAULT_BUSY_TIMEOUT_MS);
-			runMigrations(db, SCHEMA_STEPS, { snapshotDir: paths.daemonDir });
+			const migrated = readSchemaVersion(db) > 0;
+			runMigrations(
+				db,
+				SCHEMA_STEPS,
+				migrated ? { snapshotDir: paths.daemonDir } : {},
+			);
 
 			const existingRow = db
 				.query(
