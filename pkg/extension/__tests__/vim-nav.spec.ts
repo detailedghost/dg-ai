@@ -284,3 +284,49 @@ describe("vim-nav: filter and cheat sheet", () => {
 		expect(nav.isActive()).toBe(true);
 	});
 });
+
+function fakeChordKey(
+	key: string,
+	modifier: "ctrlKey" | "metaKey" | "altKey" | "shiftKey",
+): KeyboardEvent {
+	return {
+		key,
+		[modifier]: true,
+		preventDefault: mock(() => {}),
+	} as unknown as KeyboardEvent;
+}
+
+describe("vim-nav: browser and OS chords", () => {
+	it("leaves a chord to the browser instead of treating it as a command", () => {
+		for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const) {
+			const nav = createVimNav(fakeOptions());
+			nav.enable();
+			expect(nav.cursorId()).toBe("a");
+
+			const event = fakeChordKey("j", modifier);
+			expect(nav.handleKeydown(event)).toBe(false);
+			expect(event.preventDefault).not.toHaveBeenCalled();
+			expect(nav.cursorId()).toBe("a");
+		}
+	});
+
+	it("stays enabled after a chord, so the next bare key still moves the cursor", () => {
+		const nav = createVimNav(fakeOptions());
+		nav.enable();
+
+		nav.handleKeydown(fakeChordKey("j", "ctrlKey"));
+
+		expect(nav.isActive()).toBe(true);
+		expect(nav.handleKeydown(fakeKey("j"))).toBe(true);
+		expect(nav.cursorId()).toBe("b");
+	});
+
+	it("still honours Shift, which G itself requires", () => {
+		const nav = createVimNav(fakeOptions());
+		nav.enable();
+
+		const event = fakeChordKey("G", "shiftKey");
+		expect(nav.handleKeydown(event)).toBe(true);
+		expect(nav.cursorId()).toBe("c");
+	});
+});
