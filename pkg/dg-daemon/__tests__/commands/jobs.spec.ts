@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseEvery } from "@dg/common";
+import { formatSchedule, parseEvery } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	ChatStore,
@@ -56,6 +56,23 @@ describe("parseEvery", () => {
 		for (const bad of ["30", "15x", "0m", "-5m", "m", "", "1.5m"]) {
 			expect(() => parseEvery(bad)).toThrow();
 		}
+	});
+});
+
+describe("formatSchedule", () => {
+	it("writes an interval the way `--every` accepts it", () => {
+		expect(formatSchedule({ intervalMs: 30_000 })).toBe("every 30s");
+		expect(formatSchedule({ intervalMs: 15 * 60_000 })).toBe("every 15m");
+		expect(formatSchedule({ intervalMs: 2 * 60 * 60_000 })).toBe("every 2h");
+	});
+
+	it("writes a cron job's expression, which has no interval to render", () => {
+		expect(formatSchedule({ cronExpr: "0 9 * * 1-5" })).toBe(
+			'cron "0 9 * * 1-5"',
+		);
+		expect(formatSchedule({ intervalMs: null, cronExpr: "*/5 * * * *" })).toBe(
+			'cron "*/5 * * * *"',
+		);
 	});
 });
 

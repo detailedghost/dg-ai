@@ -4,7 +4,7 @@ import {
 	deriveJobState,
 	describeError,
 	EXIT_GENERAL_FAILURE,
-	formatIntervalMs,
+	formatSchedule,
 	parseEvery,
 } from "@dg/common";
 import { checkExecutableResolves, resolveDgPaths } from "@dg/common/node";
@@ -45,14 +45,6 @@ function resolveSchedule(
 		throw new DgCliError(EVERY_OR_CRON_ERROR, EXIT_GENERAL_FAILURE);
 	}
 	return { intervalMs: parseEvery(every) };
-}
-
-function formatSchedule(
-	job: Pick<ScheduledJob, "intervalMs" | "cronExpr">,
-): string {
-	return job.cronExpr
-		? `cron "${job.cronExpr}"`
-		: `every ${formatIntervalMs(job.intervalMs ?? 0)}`;
 }
 
 async function withStore<T>(run: (store: ChatStore) => Promise<T>): Promise<T> {

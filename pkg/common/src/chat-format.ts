@@ -86,6 +86,16 @@ export function formatIntervalMs(intervalMs: number): string {
 	return `${Math.max(1, Math.round(intervalMs / MS_PER_SECOND))}s`;
 }
 
+/** Render a job's schedule the way `job add` accepts one, for a cron job or an interval. */
+export function formatSchedule(job: {
+	intervalMs?: number | null;
+	cronExpr?: string | null;
+}): string {
+	return job.cronExpr
+		? `cron "${job.cronExpr}"`
+		: `every ${formatIntervalMs(job.intervalMs ?? 0)}`;
+}
+
 const UNIT_MS: Record<string, number> = {
 	s: 1_000,
 	m: 60_000,
