@@ -4,8 +4,10 @@ import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
 	CHAT_MAX_ASSET_BYTES,
+	CHAT_MAX_PAYLOAD_BYTES,
 	type CommandEntry,
 	describeError,
+	historyItemCost,
 	type ProgressState,
 } from "@dg/common";
 import {
@@ -33,6 +35,7 @@ import { readEnvNumber } from "../utils/env";
 import { SCHEMA_STEPS } from "./schema";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
+const HISTORY_TAIL_BATCH_ROWS = 200;
 const AAD_MESSAGE_BODY = "message-body";
 const AAD_COMMAND_ARGV = "command-argv";
 const AAD_COMMAND_STDOUT = "command-stdout";
@@ -1337,6 +1340,47 @@ export class ChatStore {
 			)
 			.all(sessionId, limit) as RawMessageRow[];
 		return rows.reverse().map((row) => this.#toPeekedMessage(row, sessionId));
+	}
+
+	/** Equivalent to `fitHistoryPage(peekTail(sessionId, maxRows), overheadBytes)`, without decrypting rows past the fitted budget. */
+	peekTailForHistory(
+		sessionId: string,
+		overheadBytes: number,
+		maxRows: number,
+	): PeekedMessage[] {
+		const newestFirst: PeekedMessage[] = [];
+		let used = overheadBytes;
+		let cursorSeq: number | undefined;
+		let scanned = 0;
+		while (scanned < maxRows) {
+			const batchLimit = Math.min(HISTORY_TAIL_BATCH_ROWS, maxRows - scanned);
+			const rows = (
+				cursorSeq === undefined
+					? this.db
+							.query(
+								`SELECT ${MESSAGE_SELECTION} FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
+							)
+							.all(sessionId, batchLimit)
+					: this.db
+							.query(
+								`SELECT ${MESSAGE_SELECTION} FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+							)
+							.all(sessionId, cursorSeq, batchLimit)
+			) as RawMessageRow[];
+			if (rows.length === 0) break;
+			for (const row of rows) {
+				scanned++;
+				const message = this.#toPeekedMessage(row, sessionId);
+				if (used + historyItemCost(message) > CHAT_MAX_PAYLOAD_BYTES) {
+					return newestFirst.reverse();
+				}
+				used += historyItemCost(message);
+				newestFirst.push(message);
+			}
+			cursorSeq = rows[rows.length - 1].seq;
+			if (rows.length < batchLimit) break;
+		}
+		return newestFirst.reverse();
 	}
 
 	insertAsset(input: InsertAssetInput): void {
