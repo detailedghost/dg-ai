@@ -202,6 +202,12 @@ describe("the dashboard page as it is clicked", () => {
 		);
 	});
 
+	it("gives the mark-read control a visible label, not just a hover title", async () => {
+		const root = await mount(fakeApi([buildJob()], [buildFeedItem()]));
+
+		expect(text(root, ".dash__mark")).toBe("Mark read");
+	});
+
 	it("runs the selected job on demand", async () => {
 		const recorded: Recorded[] = [];
 		const root = await mount(
