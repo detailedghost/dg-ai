@@ -925,7 +925,7 @@ export class ChatStore extends EventEmitter {
 	}
 
 	/** Deletes rows past MESSAGE_RETENTION_ROW_LIMIT per session, never an unclaimed one; returns how many it removed. */
-	pruneMessages(): number {
+	pruneMessages(limit = MESSAGE_RETENTION_ROW_LIMIT): number {
 		return this.#withImmediateTransaction(() => {
 			const sessionIds = this.db.query("SELECT id FROM sessions").all() as {
 				id: string;
@@ -936,7 +936,7 @@ export class ChatStore extends EventEmitter {
 					.query(
 						`SELECT seq FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?`,
 					)
-					.get(sessionId, MESSAGE_RETENTION_ROW_LIMIT - 1) as {
+					.get(sessionId, limit - 1) as {
 					seq: number;
 				} | null;
 				if (!boundary) continue;
@@ -1384,7 +1384,7 @@ export class ChatStore extends EventEmitter {
 	}
 
 	/** Deletes rows past FEED_ITEM_RETENTION_ROW_LIMIT per job, keeping the newest ones. Returns how many rows it removed. */
-	pruneFeedItems(): number {
+	pruneFeedItems(limit = FEED_ITEM_RETENTION_ROW_LIMIT): number {
 		return this.#withImmediateTransaction(() => {
 			const jobIds = this.db.query("SELECT id FROM scheduled_jobs").all() as {
 				id: string;
@@ -1395,7 +1395,7 @@ export class ChatStore extends EventEmitter {
 					.query(
 						`SELECT seq FROM feed_items WHERE job_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?`,
 					)
-					.get(jobId, FEED_ITEM_RETENTION_ROW_LIMIT - 1) as {
+					.get(jobId, limit - 1) as {
 					seq: number;
 				} | null;
 				if (!boundary) continue;

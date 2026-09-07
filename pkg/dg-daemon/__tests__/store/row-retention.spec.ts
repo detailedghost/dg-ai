@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
+import { HISTORY_TAIL_ROW_LIMIT } from "../../src/server/frame-handlers";
 import {
 	ChatStore,
+	DEFAULT_FEED_PAGE_LIMIT,
 	FEED_ITEM_RETENTION_ROW_LIMIT,
 	MESSAGE_RETENTION_ROW_LIMIT,
 } from "../../src/store";
@@ -14,13 +16,14 @@ import {
 const SESSION_ID = "session-retention";
 
 describe("ChatStore.pruneMessages", () => {
-	it("keeps exactly the newest MESSAGE_RETENTION_ROW_LIMIT messages for a session over the cap, in the right order", async () => {
+	it("keeps exactly the newest `limit` messages for a session over the cap, in the right order", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const cap = 20;
 			const overflow = 5;
-			const total = MESSAGE_RETENTION_ROW_LIMIT + overflow;
+			const total = cap + overflow;
 			for (let i = 0; i < total; i++) {
 				store.insertMessage({
 					sessionId: SESSION_ID,
@@ -30,24 +33,48 @@ describe("ChatStore.pruneMessages", () => {
 				});
 			}
 
-			const removed = store.pruneMessages();
+			const removed = store.pruneMessages(cap);
 			expect(removed).toBe(overflow);
 
 			const all = store.peekAll(SESSION_ID);
-			expect(all).toHaveLength(MESSAGE_RETENTION_ROW_LIMIT);
-			expect(all[0].id).toBe(`msg-${overflow}`);
-			expect(all[all.length - 1].id).toBe(`msg-${total - 1}`);
+			expect(all).toHaveLength(cap);
+			expect(all.map((message) => message.id)).toEqual(
+				Array.from({ length: cap }, (_, i) => `msg-${i + overflow}`),
+			);
 
-			const tail = store.peekTail(SESSION_ID, MESSAGE_RETENTION_ROW_LIMIT);
+			const tail = store.peekTail(SESSION_ID, cap);
 			expect(tail).toEqual(all);
-			for (let i = 1; i < tail.length; i++) {
-				expect(tail[i].seq).toBeGreaterThan(tail[i - 1].seq);
-			}
+			const seqs = tail.map((message) => message.seq);
+			expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
 		}
-	}, 20_000);
+	});
+
+	it("defaults to the shipped per-session cap when no limit is given", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			for (let i = 0; i < 50; i++) {
+				store.insertMessage({
+					sessionId: SESSION_ID,
+					id: `msg-${i}`,
+					role: "agent",
+					body: `body-${i}`,
+				});
+			}
+
+			expect(store.pruneMessages()).toBe(0);
+			expect(MESSAGE_RETENTION_ROW_LIMIT).toBeGreaterThan(
+				HISTORY_TAIL_ROW_LIMIT,
+			);
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
 
 	it("a session below the cap loses nothing", async () => {
 		const dgHome = freshDgHome();
@@ -118,28 +145,29 @@ describe("ChatStore.pruneFeedItems", () => {
 		};
 	}
 
-	it("keeps exactly the newest FEED_ITEM_RETENTION_ROW_LIMIT items for a job over the cap", async () => {
+	it("keeps exactly the newest `limit` items for a job over the cap", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			const job = store.insertJob(jobInput());
+			const cap = 20;
 			const overflow = 5;
-			const total = FEED_ITEM_RETENTION_ROW_LIMIT + overflow;
+			const total = cap + overflow;
 			const items = Array.from({ length: total }, (_, i) => ({
 				fingerprint: `fp-${i}`,
 				title: `title-${i}`,
 			}));
 			store.insertFeedItems(job.id, items);
 
-			const removed = store.pruneFeedItems();
+			const removed = store.pruneFeedItems(cap);
 			expect(removed).toBe(overflow);
 
 			const kept = store.listFeedItems({
 				jobId: job.id,
-				limit: FEED_ITEM_RETENTION_ROW_LIMIT,
+				limit: cap,
 			});
-			expect(kept).toHaveLength(FEED_ITEM_RETENTION_ROW_LIMIT);
+			expect(kept).toHaveLength(cap);
 			expect(kept[0].title).toBe(`title-${total - 1}`);
 			expect(kept[kept.length - 1].title).toBe(`title-${overflow}`);
 			store.close();
@@ -163,6 +191,9 @@ describe("ChatStore.pruneFeedItems", () => {
 			const removed = store.pruneFeedItems();
 			expect(removed).toBe(0);
 			expect(store.listFeedItems({ jobId: job.id })).toHaveLength(10);
+			expect(FEED_ITEM_RETENTION_ROW_LIMIT).toBeGreaterThan(
+				DEFAULT_FEED_PAGE_LIMIT,
+			);
 			store.close();
 		} finally {
 			cleanupDgHome(dgHome);
