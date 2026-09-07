@@ -190,6 +190,50 @@ describe("hot-path query plans", () => {
 		db.close();
 	});
 
+	it("pruneMessages' per-session boundary lookup seeks an index instead of scanning messages", () => {
+		const db = migrated();
+		const sql = storeSql(
+			"SELECT seq FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT 1 OFFSET",
+		);
+		const detail = plan(db, sql, ["session-a", 19_999]);
+
+		expect(detail).toContain("USING COVERING INDEX idx_messages_session_seq");
+		expect(detail).not.toContain("SCAN messages");
+		db.close();
+	});
+
+	it("pruneMessages' delete seeks an index instead of scanning messages", () => {
+		const db = migrated();
+		const sql = storeSql("role = 'agent' OR delivered_at IS NOT NULL");
+		const detail = plan(db, sql, ["session-a", 100]);
+
+		expect(detail).toContain("USING INDEX idx_messages_session_seq");
+		expect(detail).not.toContain("SCAN messages");
+		db.close();
+	});
+
+	it("pruneFeedItems' per-job boundary lookup seeks an index instead of scanning feed_items", () => {
+		const db = migrated();
+		const sql = storeSql(
+			"SELECT seq FROM feed_items WHERE job_id = ? ORDER BY seq DESC LIMIT 1 OFFSET",
+		);
+		const detail = plan(db, sql, ["job-a", 1_999]);
+
+		expect(detail).toContain("USING COVERING INDEX idx_feed_items_job_seq");
+		expect(detail).not.toContain("SCAN feed_items");
+		db.close();
+	});
+
+	it("pruneFeedItems' delete seeks an index instead of scanning feed_items", () => {
+		const db = migrated();
+		const sql = storeSql("DELETE FROM feed_items WHERE job_id = ? AND seq < ?");
+		const detail = plan(db, sql, ["job-a", 100]);
+
+		expect(detail).toContain("USING INDEX idx_feed_items_job_seq");
+		expect(detail).not.toContain("SCAN feed_items");
+		db.close();
+	});
+
 	it("the per-session asset prune seeks an index instead of scanning assets", () => {
 		const db = migrated();
 		const detail = plan(db, storeSql("state = 'deleted'"), [0, "session-a"]);
