@@ -206,6 +206,44 @@
 	border-color: var(--chat-accent-secondary);
 }
 
+.chat-rail__row[data-vim-cursor="true"] {
+	border-color: var(--chat-accent);
+	box-shadow: 0.3rem 0.3rem 0 var(--chat-accent);
+}
+
+.chat-button[aria-pressed="true"] {
+	border-color: var(--chat-accent);
+	color: var(--chat-accent);
+}
+
+.chat-vimfilter {
+	margin: 0 1rem 0.75rem;
+	width: calc(100% - 2rem);
+	border: 0.125rem solid var(--chat-line);
+	background: transparent;
+	color: var(--chat-ink);
+	font: inherit;
+	padding: 0.4rem 0.6rem;
+}
+
+.chat-vimfilter[hidden] {
+	display: none;
+}
+
+.chat-vimcheat {
+	margin: 0 1rem 0.75rem;
+	border: 0.125rem dashed var(--chat-line);
+	padding: 0.5rem 0.7rem;
+	color: var(--chat-muted);
+	font-family: var(--mono);
+	font-size: 0.68rem;
+	line-height: 1.5;
+}
+
+.chat-vimcheat[hidden] {
+	display: none;
+}
+
 .chat-rail__focus {
 	display: flex;
 	min-width: 0;

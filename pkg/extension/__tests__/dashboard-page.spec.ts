@@ -90,7 +90,12 @@ describe("the dashboard page as it paints", () => {
 		const root = await mount(
 			fakeApi(
 				[
-					buildJob({ id: "a", label: "broken", lastExitCode: 1, lastError: "boom" }),
+					buildJob({
+						id: "a",
+						label: "broken",
+						lastExitCode: 1,
+						lastError: "boom",
+					}),
 					buildJob({ id: "b", label: "off", enabled: false }),
 				],
 				[],
@@ -127,7 +132,9 @@ describe("the dashboard page as it paints", () => {
 			...fakeApi([buildJob()], [buildFeedItem()]),
 			refresh: () =>
 				Promise.resolve(
-					live ? { ok: true, jobs: [buildJob()], items: [buildFeedItem()] } : { ok: false },
+					live
+						? { ok: true, jobs: [buildJob()], items: [buildFeedItem()] }
+						: { ok: false },
 				),
 		};
 		const handle = renderDashboard({
@@ -164,7 +171,11 @@ describe("the dashboard page as it is clicked", () => {
 				[buildJob(), buildJob({ id: "job-2", label: "sentry-errors" })],
 				[
 					buildFeedItem(),
-					buildFeedItem({ id: "item-2", jobId: "job-2", title: "Sentry blew up" }),
+					buildFeedItem({
+						id: "item-2",
+						jobId: "job-2",
+						title: "Sentry blew up",
+					}),
 				],
 			),
 		);
@@ -181,7 +192,9 @@ describe("the dashboard page as it is clicked", () => {
 
 	it("asks the daemon to mark one item read", async () => {
 		const recorded: Recorded[] = [];
-		const root = await mount(fakeApi([buildJob()], [buildFeedItem()], recorded));
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
 
 		click(all(root, ".dash__mark")[0]);
 		await Bun.sleep(0);
@@ -201,7 +214,9 @@ describe("the dashboard page as it is clicked", () => {
 
 	it("runs the selected job on demand", async () => {
 		const recorded: Recorded[] = [];
-		const root = await mount(fakeApi([buildJob()], [buildFeedItem()], recorded));
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
 		click(all(root, ".dash__job")[0]);
 
 		const run = all(root, ".dash__btn").find(
@@ -215,7 +230,9 @@ describe("the dashboard page as it is clicked", () => {
 
 	it("queues an item to the identity the user types, on Enter", async () => {
 		const recorded: Recorded[] = [];
-		const root = await mount(fakeApi([buildJob()], [buildFeedItem()], recorded));
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
 
 		click(all(root, ".dash__queue")[0]);
 		const input = root.querySelector(".dash__identity") as HTMLInputElement;
@@ -233,7 +250,9 @@ describe("the dashboard page as it is clicked", () => {
 
 	it("queues nothing on Enter with an empty identity", async () => {
 		const recorded: Recorded[] = [];
-		const root = await mount(fakeApi([buildJob()], [buildFeedItem()], recorded));
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
 
 		click(all(root, ".dash__queue")[0]);
 		const input = root.querySelector(".dash__identity") as HTMLInputElement;
@@ -260,7 +279,8 @@ describe("the dashboard page as it is clicked", () => {
 		const root = newRoot();
 		const handle = renderDashboard({
 			root,
-			connect: () => Promise.resolve(fakeApi([buildJob()], [buildFeedItem()], recorded)),
+			connect: () =>
+				Promise.resolve(fakeApi([buildJob()], [buildFeedItem()], recorded)),
 			now: () => NOW,
 			poll: false,
 		});
@@ -275,5 +295,203 @@ describe("the dashboard page as it is clicked", () => {
 		const survivor = root.querySelector(".dash__identity") as HTMLInputElement;
 		expect(survivor).not.toBeNull();
 		expect(survivor.value).toBe("revie");
+	});
+});
+
+describe("the dashboard page as it repaints without tearing down what already exists", () => {
+	it("reuses the same feed row element across a refresh instead of rebuilding it", async () => {
+		const root = newRoot();
+		const handle = renderDashboard({
+			root,
+			connect: () => Promise.resolve(fakeApi([buildJob()], [buildFeedItem()])),
+			now: () => NOW,
+			poll: false,
+		});
+		await handle.ready;
+
+		const rowBefore = root.querySelector(".dash__item");
+		expect(rowBefore).not.toBeNull();
+
+		await handle.refresh();
+
+		expect(root.querySelector(".dash__item")).toBe(rowBefore);
+	});
+
+	it("reuses the same job row element across a refresh instead of rebuilding it", async () => {
+		const root = newRoot();
+		const handle = renderDashboard({
+			root,
+			connect: () => Promise.resolve(fakeApi([buildJob()], [])),
+			now: () => NOW,
+			poll: false,
+		});
+		await handle.ready;
+
+		const rowBefore = root.querySelector(".dash__job");
+		expect(rowBefore).not.toBeNull();
+
+		await handle.refresh();
+
+		expect(root.querySelector(".dash__job")).toBe(rowBefore);
+	});
+
+	it("keeps keyboard focus on a control across a background poll refresh", async () => {
+		const root = newRoot();
+		const handle = renderDashboard({
+			root,
+			connect: () => Promise.resolve(fakeApi([buildJob()], [buildFeedItem()])),
+			now: () => NOW,
+			poll: false,
+		});
+		await handle.ready;
+
+		click(all(root, ".dash__job")[0]);
+		const run = all(root, ".dash__btn").find(
+			(node) => node.textContent === "Run now",
+		) as HTMLButtonElement;
+		run.focus();
+		expect(root.ownerDocument.activeElement).toBe(run);
+
+		await handle.refresh();
+
+		expect(root.ownerDocument.activeElement).toBe(run);
+	});
+});
+
+describe("the dashboard page's vim mode", () => {
+	function vimToggle(root: HTMLElement): HTMLButtonElement {
+		return root.querySelector(
+			"[data-action='vim-toggle']",
+		) as HTMLButtonElement;
+	}
+
+	it("is off until the Vim button is clicked, and is clearly indicated once on", async () => {
+		const root = await mount(fakeApi([buildJob()], [buildFeedItem()]));
+		const toggle = vimToggle(root);
+		expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+		keydown(root.ownerDocument, "j");
+		expect(root.querySelector(".dash__item--cursor")).toBeNull();
+
+		click(toggle);
+
+		expect(toggle.getAttribute("aria-pressed")).toBe("true");
+		expect(root.querySelector<HTMLElement>(".dash__vimbar")?.hidden).toBe(
+			false,
+		);
+	});
+
+	it("j moves a visible cursor down the feed, and Enter marks the row under it read", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+				recorded,
+			),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "j");
+		const cursored = root.querySelector(".dash__item--cursor");
+		expect(cursored?.textContent).toContain("Second item");
+
+		keydown(root.ownerDocument, "Enter");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "markRead", args: ["item-2"] });
+	});
+
+	it("Tab switches to the job list, where r runs the job under the cursor", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "Tab");
+		expect(root.querySelector(".dash__job--cursor")).not.toBeNull();
+
+		keydown(root.ownerDocument, "r");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "runJob", args: ["job-1"] });
+	});
+
+	it("G jumps to the last row and gg jumps back to the first", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+			),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "G");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Second item",
+		);
+
+		keydown(root.ownerDocument, "g");
+		keydown(root.ownerDocument, "g");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
+	});
+
+	it("the leader key runs mark-all-read", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "\\");
+		keydown(root.ownerDocument, "a");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "markAllRead", args: [] });
+	});
+
+	it("Escape leaves vim mode, indicated by the toggle and the status bar", async () => {
+		const root = await mount(fakeApi([buildJob()], [buildFeedItem()]));
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "Escape");
+
+		expect(vimToggle(root).getAttribute("aria-pressed")).toBe("false");
+		expect(root.querySelector<HTMLElement>(".dash__vimbar")?.hidden).toBe(true);
+	});
+
+	it("never swallows j while the queue-to-agent identity input has focus", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+			),
+		);
+		click(vimToggle(root));
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
+
+		click(all(root, ".dash__queue")[0]);
+		const input = root.querySelector(".dash__identity") as HTMLInputElement;
+		keydown(input, "j");
+		typeValue(input, "j");
+
+		expect(input.value).toBe("j");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
 	});
 });
