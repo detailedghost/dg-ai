@@ -142,10 +142,6 @@
 	cursor: not-allowed;
 }
 
-.dash__btn--ghost {
-	border-style: dashed;
-}
-
 .dash__summary {
 	display: flex;
 	align-items: center;
@@ -387,18 +383,26 @@
 }
 
 .dash__mark {
-	width: 0.45rem;
-	height: 0.45rem;
-	margin-top: 0.5rem;
-	border-radius: 50%;
-	background: var(--accent);
+	flex: none;
+	margin-top: 0.1rem;
+	padding: 0.15rem 0.4rem;
+	border: 0.0625rem solid var(--accent);
+	border-radius: 0.75rem;
+	background: transparent;
+	color: var(--accent);
+	font-family: var(--sans);
+	font-size: 0.68rem;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
 	animation: dash-ping 2.6s ease-out infinite;
 }
 
 .dash__item--read .dash__mark {
-	border: 0.0625rem solid var(--dash-line);
-	background: transparent;
+	border-color: var(--dash-line);
+	color: var(--muted);
 	animation: none;
+	cursor: default;
 }
 
 .dash__top {
@@ -425,17 +429,7 @@
 }
 
 .dash__queue {
-	opacity: 0;
-	transform: translateX(8px);
-	transition:
-		opacity 0.18s ease,
-		transform 0.18s ease;
-}
-
-.dash__item:hover .dash__queue,
-.dash__item:focus-within .dash__queue {
-	opacity: 1;
-	transform: none;
+	color: var(--muted);
 }
 
 .dash__identity,
@@ -507,10 +501,5 @@
 	.dash * {
 		animation: none !important;
 		transition: none !important;
-	}
-
-	.dash__queue {
-		opacity: 0.55;
-		transform: none;
 	}
 }

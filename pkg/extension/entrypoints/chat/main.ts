@@ -419,7 +419,15 @@ export async function renderChatPage(
 	vimToggle.type = "button";
 	vimToggle.dataset.action = "vim-toggle";
 	vimToggle.setAttribute("aria-pressed", "false");
-	railActions.append(themeButton, canvasButton, vimToggle, createButton);
+	const settingsLink = element(doc, "a", "", "Settings");
+	settingsLink.href = "/options.html#/settings";
+	railActions.append(
+		themeButton,
+		canvasButton,
+		vimToggle,
+		createButton,
+		settingsLink,
+	);
 	railHeader.append(brand, railActions);
 	const vimFilterInput = element(doc, "input", "chat-vimfilter");
 	vimFilterInput.type = "text";
@@ -494,15 +502,13 @@ export async function renderChatPage(
 		canvasCreate.type = "button";
 		canvasCreate.dataset.action = "create-chat";
 		canvasCreate.addEventListener("click", requestNewChatSession);
-		const zoomOut = element(doc, "button", "chat-button", "\u2212");
+		const zoomOut = element(doc, "button", "chat-button", "Zoom out");
 		zoomOut.type = "button";
 		zoomOut.dataset.action = "zoom-out";
-		zoomOut.setAttribute("aria-label", "Zoom out");
 		zoomOut.addEventListener("click", () => zoomCanvas(120));
-		const zoomIn = element(doc, "button", "chat-button", "+");
+		const zoomIn = element(doc, "button", "chat-button", "Zoom in");
 		zoomIn.type = "button";
 		zoomIn.dataset.action = "zoom-in";
-		zoomIn.setAttribute("aria-label", "Zoom in");
 		zoomIn.addEventListener("click", () => zoomCanvas(-120));
 		const canvasConnection = element(doc, "div", "chat-canvas__connection");
 		canvasConnection.dataset.canvasConnection = "";
@@ -555,7 +561,7 @@ export async function renderChatPage(
 
 	function ensureDragHandle(sessionId: string, nodeElement: HTMLElement): void {
 		if (nodeElement.querySelector(".chat-node__drag")) return;
-		const handle = element(doc, "button", "chat-node__drag", "\u2725");
+		const handle = element(doc, "button", "chat-node__drag", "Move");
 		handle.type = "button";
 		handle.dataset.action = "drag-node";
 		handle.setAttribute("aria-label", "Move this session on the canvas");
@@ -1142,11 +1148,7 @@ export async function renderChatPage(
 
 	for (const bootstrap of bootstraps) client.connect(bootstrap);
 	if (bootstraps.length === 0) {
-		showEmpty(
-			"no-session",
-			"No sessions yet",
-			"Start a DeeGee chat from an agent session to register it here.",
-		);
+		showEmpty("no-session", "No sessions yet", "Start a DeeGee chat.");
 	} else {
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 		updateConnectionStatus();
@@ -1157,7 +1159,7 @@ export async function renderChatPage(
 			showEmpty(
 				"daemon-unreachable",
 				"Daemon unreachable",
-				"A session is registered, but the local DeeGee daemon could not be reached.",
+				"A session is registered.",
 			);
 		}
 	}
