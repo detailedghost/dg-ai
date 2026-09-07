@@ -36,6 +36,9 @@ import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
 
+/** How often the row-cap prunes run, independent of the much faster session reap tick. */
+export const ROW_PRUNE_INTERVAL_MS = 3_600_000;
+
 const BIND_RIVAL_BUDGET_MS = 500;
 const BIND_RIVAL_POLL_MS = 20;
 
@@ -166,6 +169,7 @@ export async function cmdServe(): Promise<void> {
 		});
 		return live;
 	};
+	let lastRowPruneAt = Date.now();
 	const reapTimer = setInterval(
 		() => {
 			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
@@ -175,6 +179,9 @@ export async function cmdServe(): Promise<void> {
 					`pruned ${prunedAgentMessages} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
 				);
 			}
+			const sinceLastRowPrune = Date.now() - lastRowPruneAt;
+			if (sinceLastRowPrune < ROW_PRUNE_INTERVAL_MS) return;
+			lastRowPruneAt = Date.now();
 			const prunedMessages = store.pruneMessages();
 			if (prunedMessages > 0) {
 				logger.info(
