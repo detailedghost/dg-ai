@@ -331,7 +331,9 @@ export function renderDashboard(
 			if (vim.isActive()) vim.disable();
 			else vim.enable();
 		});
-		head.append(brand, spacer(), vimToggle);
+		const settingsLink = el("a", undefined, "Settings");
+		settingsLink.href = "/options.html#/settings";
+		head.append(brand, spacer(), vimToggle, settingsLink);
 
 		vimBar = el("div", "dash__vimbar");
 		vimBar.setAttribute("role", "status");
