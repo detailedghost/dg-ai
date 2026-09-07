@@ -934,13 +934,6 @@ export async function renderChatPage(
 	createButton.addEventListener("click", requestNewChatSession);
 
 	doc.addEventListener("keydown", (event) => {
-		const target = event.target as HTMLElement;
-		if (event.key === "Enter" && target.dataset.action === "move") {
-			event.preventDefault();
-			if (moving?.sessionId === target.dataset.sessionId) finishMove(false);
-			else if (target.dataset.sessionId) armMove(target.dataset.sessionId);
-			return;
-		}
 		if (!moving) return;
 		if (event.key === "ArrowUp" || event.key === "ArrowDown") {
 			event.preventDefault();

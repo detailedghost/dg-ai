@@ -116,6 +116,7 @@ export function createChatNode(
 	move.addEventListener("keydown", (event) => {
 		if (event.key !== "Enter") return;
 		event.preventDefault();
+		event.stopPropagation();
 		options.onMove?.(element.dataset.sessionId ?? initialEntry.sessionId);
 	});
 

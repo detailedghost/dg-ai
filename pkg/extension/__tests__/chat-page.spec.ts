@@ -262,6 +262,70 @@ test("every rail row exposes a keyboard-operable Move control that reorders with
 	expect(orderAfter[1]).toContain("claude-js");
 });
 
+test("regression: Enter on the Move button arms on the first press and commits on the second, never both in one press", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+		]),
+	);
+
+	const row = root.querySelector<HTMLElement>(".chat-rail__row");
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	expect(row).not.toBeNull();
+	expect(moveButton).not.toBeNull();
+
+	keydown(moveButton as HTMLButtonElement, "Enter");
+	expect(row?.dataset.moving).toBe("true");
+
+	const moveButtonAfterArm = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	keydown(moveButtonAfterArm as HTMLButtonElement, "Enter");
+	expect(
+		root.querySelector<HTMLElement>(".chat-rail__row")?.dataset.moving,
+	).not.toBe("true");
+	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
+		"Position saved.",
+	);
+});
+
+test("regression: Enter on the Move button never bubbles to a document-level keydown listener", async () => {
+	const root = newRoot();
+	const doc = root.ownerDocument;
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([
+			{ sessionId: "session-a", agentIdentity: "claude-js", role: "agent" },
+		]),
+	);
+
+	const moveButton = root.querySelector<HTMLButtonElement>(
+		"[data-action='move']",
+	);
+	let sawItAtDocument = 0;
+	doc.addEventListener("keydown", () => {
+		sawItAtDocument++;
+	});
+
+	keydown(moveButton as HTMLButtonElement, "Enter");
+
+	expect(sawItAtDocument).toBe(0);
+});
+
 test("Escape cancels an in-progress move and restores the original order", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
