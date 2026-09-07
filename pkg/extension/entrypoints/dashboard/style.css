@@ -429,17 +429,7 @@
 }
 
 .dash__queue {
-	opacity: 0;
-	transform: translateX(8px);
-	transition:
-		opacity 0.18s ease,
-		transform 0.18s ease;
-}
-
-.dash__item:hover .dash__queue,
-.dash__item:focus-within .dash__queue {
-	opacity: 1;
-	transform: none;
+	color: var(--muted);
 }
 
 .dash__identity,
@@ -511,10 +501,5 @@
 	.dash * {
 		animation: none !important;
 		transition: none !important;
-	}
-
-	.dash__queue {
-		opacity: 0.55;
-		transform: none;
 	}
 }
