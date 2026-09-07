@@ -494,15 +494,13 @@ export async function renderChatPage(
 		canvasCreate.type = "button";
 		canvasCreate.dataset.action = "create-chat";
 		canvasCreate.addEventListener("click", requestNewChatSession);
-		const zoomOut = element(doc, "button", "chat-button", "\u2212");
+		const zoomOut = element(doc, "button", "chat-button", "Zoom out");
 		zoomOut.type = "button";
 		zoomOut.dataset.action = "zoom-out";
-		zoomOut.setAttribute("aria-label", "Zoom out");
 		zoomOut.addEventListener("click", () => zoomCanvas(120));
-		const zoomIn = element(doc, "button", "chat-button", "+");
+		const zoomIn = element(doc, "button", "chat-button", "Zoom in");
 		zoomIn.type = "button";
 		zoomIn.dataset.action = "zoom-in";
-		zoomIn.setAttribute("aria-label", "Zoom in");
 		zoomIn.addEventListener("click", () => zoomCanvas(-120));
 		const canvasConnection = element(doc, "div", "chat-canvas__connection");
 		canvasConnection.dataset.canvasConnection = "";
@@ -555,7 +553,7 @@ export async function renderChatPage(
 
 	function ensureDragHandle(sessionId: string, nodeElement: HTMLElement): void {
 		if (nodeElement.querySelector(".chat-node__drag")) return;
-		const handle = element(doc, "button", "chat-node__drag", "\u2725");
+		const handle = element(doc, "button", "chat-node__drag", "Move");
 		handle.type = "button";
 		handle.dataset.action = "drag-node";
 		handle.setAttribute("aria-label", "Move this session on the canvas");
