@@ -18,6 +18,7 @@ import {
 	ensurePrivateDir,
 	runMigrations,
 } from "@dg/common/node";
+import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import {
 	buildAad,
 	type CipherBox,
@@ -455,6 +456,7 @@ export class ChatStore extends EventEmitter {
 		private readonly claimLeaseMs: number,
 	) {
 		super();
+		this.setMaxListeners(SESSION_MAX_ACTIVE_DEFAULT);
 	}
 
 	static async open(
