@@ -6,7 +6,6 @@ import {
 	createPoller,
 	type FeedItemPayload,
 	firstFailure,
-	formatEvery,
 	type JobPayload,
 	jobState,
 	relativeTime,
@@ -38,7 +37,7 @@ describe("job state", () => {
 describe("the job row", () => {
 	it("shows the schedule and the next run for a healthy job", () => {
 		const view = toJobView(buildJob(), NOW);
-		expect(view.every).toBe("every 15m");
+		expect(view.schedule).toBe("every 15m");
 		expect(view.when).toBe("next in 13m");
 		expect(view.detail).toBe("ran 2m ago");
 		expect(view.state).toBe("ok");
@@ -68,9 +67,34 @@ describe("the job row", () => {
 
 describe("time and interval wording", () => {
 	it("writes an interval the way it was typed", () => {
-		expect(formatEvery(30_000)).toBe("every 30s");
-		expect(formatEvery(15 * 60_000)).toBe("every 15m");
-		expect(formatEvery(2 * 60 * 60_000)).toBe("every 2h");
+		expect(toJobView(buildJob({ intervalMs: 30_000 }), NOW).schedule).toBe(
+			"every 30s",
+		);
+		expect(toJobView(buildJob({ intervalMs: 2 * 60 * 60_000 }), NOW).schedule).toBe(
+			"every 2h",
+		);
+	});
+
+	it("writes a cron job's expression rather than an interval it has none of", () => {
+		const cron = buildJob({ intervalMs: null, cronExpr: "0 9 * * 1-5" });
+		expect(toJobView(cron, NOW).schedule).toBe('cron "0 9 * * 1-5"');
+	});
+
+	it("leaves a cron job's sweep at zero, having no interval to measure it against", () => {
+		for (const nextRunAt of [
+			"2026-09-03T12:13:00.000Z",
+			"2026-09-03T11:00:00.000Z",
+		]) {
+			const cron = buildJob({
+				intervalMs: null,
+				cronExpr: "0 9 * * 1-5",
+				nextRunAt,
+			});
+			expect(runProgress(cron, NOW)).toBe(0);
+			expect(runProgress({ ...cron, intervalMs: undefined as never }, NOW)).toBe(
+				0,
+			);
+		}
 	});
 
 	it("writes past and future apart", () => {

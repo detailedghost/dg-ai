@@ -183,7 +183,7 @@ export function renderDashboard(
 		refs.badge.className = `dash__badge dash__badge--${view.source.toLowerCase()}`;
 		refs.badge.textContent = view.source;
 		refs.metaText.textContent =
-			view.state === "failed" ? view.detail : view.every;
+			view.state === "failed" ? view.detail : view.schedule;
 		refs.when.textContent = view.when;
 
 		row.hidden = !filterMatches("jobs", job.label);
