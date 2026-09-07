@@ -18,7 +18,12 @@ import { DispatchScheduler } from "../dispatch";
 import { isDaemonIdle } from "../jobs/idle";
 import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
 import { type CloseReason, SessionRegistry } from "../session/registry";
-import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../store";
+import {
+	AGENT_MESSAGE_RETENTION_DAYS,
+	ChatStore,
+	FEED_ITEM_RETENTION_ROW_LIMIT,
+	MESSAGE_RETENTION_ROW_LIMIT,
+} from "../store";
 import { readEnvNumber } from "../utils/env";
 import {
 	setKeySourceProvider,
@@ -164,10 +169,22 @@ export async function cmdServe(): Promise<void> {
 	const reapTimer = setInterval(
 		() => {
 			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
-			const pruned = store.pruneAgentMessages(new Date());
-			if (pruned > 0) {
+			const prunedAgentMessages = store.pruneAgentMessages(new Date());
+			if (prunedAgentMessages > 0) {
 				logger.info(
-					`pruned ${pruned} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
+					`pruned ${prunedAgentMessages} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
+				);
+			}
+			const prunedMessages = store.pruneMessages();
+			if (prunedMessages > 0) {
+				logger.info(
+					`pruned ${prunedMessages} message(s) past the ${MESSAGE_RETENTION_ROW_LIMIT}-row per-session cap`,
+				);
+			}
+			const prunedFeedItems = store.pruneFeedItems();
+			if (prunedFeedItems > 0) {
+				logger.info(
+					`pruned ${prunedFeedItems} feed item(s) past the ${FEED_ITEM_RETENTION_ROW_LIMIT}-row per-job cap`,
 				);
 			}
 		},
