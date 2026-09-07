@@ -1140,11 +1140,7 @@ export async function renderChatPage(
 
 	for (const bootstrap of bootstraps) client.connect(bootstrap);
 	if (bootstraps.length === 0) {
-		showEmpty(
-			"no-session",
-			"No sessions yet",
-			"Start a DeeGee chat from an agent session to register it here.",
-		);
+		showEmpty("no-session", "No sessions yet", "Start a DeeGee chat.");
 	} else {
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 		updateConnectionStatus();
@@ -1155,7 +1151,7 @@ export async function renderChatPage(
 			showEmpty(
 				"daemon-unreachable",
 				"Daemon unreachable",
-				"A session is registered, but the local DeeGee daemon could not be reached.",
+				"A session is registered.",
 			);
 		}
 	}
