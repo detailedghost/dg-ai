@@ -110,6 +110,7 @@ export function createVimNav(options: VimNavOptions): VimNav {
 
 	function handleKeydown(event: KeyboardEvent): boolean {
 		if (!active) return false;
+		if (event.ctrlKey || event.metaKey || event.altKey) return false;
 		const key = event.key;
 
 		if (cheatSheetOpen) {
