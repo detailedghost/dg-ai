@@ -188,6 +188,19 @@ export type ScheduledJob = {
 	lastStderr?: string;
 };
 
+/** What `GET /jobs` returns — `ScheduledJob` minus argv and stderr, so listing jobs never decrypts either. */
+export type JobSummary = {
+	id: string;
+	label: string;
+	intervalMs?: number;
+	enabled: boolean;
+	nextRunAt: string;
+	notifyIdentity?: string;
+	lastRunAt?: string;
+	lastExitCode?: number;
+	lastError?: string;
+};
+
 export type InsertJobInput = {
 	label: string;
 	argv: string[];
@@ -306,6 +319,23 @@ type RawJobRow = {
 	last_stderr_iv: Uint8Array | null;
 	last_stderr_tag: Uint8Array | null;
 };
+
+type RawJobSummaryRow = {
+	id: string;
+	label: string;
+	interval_ms: number | null;
+	enabled: number;
+	notify_identity: string | null;
+	last_run_at: string | null;
+	next_run_at: string;
+	last_exit_code: number | null;
+	last_error_ciphertext: Uint8Array | null;
+	last_error_iv: Uint8Array | null;
+	last_error_tag: Uint8Array | null;
+};
+
+const JOB_SUMMARY_SELECTION =
+	"id, label, interval_ms, enabled, notify_identity, last_run_at, next_run_at, last_exit_code, last_error_ciphertext, last_error_iv, last_error_tag";
 
 type RawFeedItemRow = {
 	id: string;
@@ -995,6 +1025,26 @@ export class ChatStore extends EventEmitter {
 		};
 	}
 
+	#hydrateJobSummary(row: RawJobSummaryRow): JobSummary {
+		return {
+			id: row.id,
+			label: row.label,
+			intervalMs: row.interval_ms ?? undefined,
+			enabled: row.enabled === 1,
+			nextRunAt: row.next_run_at,
+			notifyIdentity: row.notify_identity ?? undefined,
+			lastRunAt: row.last_run_at ?? undefined,
+			lastExitCode: row.last_exit_code ?? undefined,
+			lastError: this.#decryptOptional(
+				AAD_JOB_ERROR,
+				row.id,
+				row.last_error_ciphertext,
+				row.last_error_iv,
+				row.last_error_tag,
+			),
+		};
+	}
+
 	#hydrateFeedItem(row: RawFeedItemRow): FeedItem {
 		return {
 			id: row.id,
@@ -1079,6 +1129,16 @@ export class ChatStore extends EventEmitter {
 			.query("SELECT * FROM scheduled_jobs ORDER BY created_at ASC, label ASC")
 			.all() as RawJobRow[];
 		return rows.map((row) => this.#hydrateJob(row));
+	}
+
+	/** For `GET /jobs`: every job's dashboard-facing fields, decrypting only `last_error`. */
+	listJobSummaries(): JobSummary[] {
+		const rows = this.db
+			.query(
+				`SELECT ${JOB_SUMMARY_SELECTION} FROM scheduled_jobs ORDER BY created_at ASC, label ASC`,
+			)
+			.all() as RawJobSummaryRow[];
+		return rows.map((row) => this.#hydrateJobSummary(row));
 	}
 
 	dueJobs(now: Date): ScheduledJob[] {
