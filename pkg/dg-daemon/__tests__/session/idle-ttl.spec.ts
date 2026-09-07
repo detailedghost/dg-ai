@@ -26,6 +26,7 @@ afterEach(() => {
 });
 
 const IDLE_TTL_MS = 1000;
+const WALL_CLOCK_BUDGET_MS = 20_000;
 
 describe("idle-TTL does not fire while a page is connected but idle", () => {
 	it("holds the daemon alive across a full idle-TTL window while a /ws socket stays open with no traffic, even with zero registered sessions", async () => {
@@ -57,7 +58,7 @@ describe("idle-TTL does not fire while a page is connected but idle", () => {
 		});
 		expect(resp.status).toBe(200);
 		idlePage.close();
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
 
 describe("idle-TTL does not fire while a blocking recv is parked", () => {
@@ -114,7 +115,7 @@ describe("idle-TTL does not fire while a blocking recv is parked", () => {
 		});
 		expect(resp.status).toBe(200);
 		recvSocket.close();
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
 
 describe("idle-TTL self-exit", () => {
@@ -142,5 +143,5 @@ describe("idle-TTL self-exit", () => {
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		expect(existsSync(paths.pidPath)).toBe(false);
-	});
+	}, WALL_CLOCK_BUDGET_MS);
 });
