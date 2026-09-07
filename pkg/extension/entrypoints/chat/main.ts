@@ -419,7 +419,15 @@ export async function renderChatPage(
 	vimToggle.type = "button";
 	vimToggle.dataset.action = "vim-toggle";
 	vimToggle.setAttribute("aria-pressed", "false");
-	railActions.append(themeButton, canvasButton, vimToggle, createButton);
+	const settingsLink = element(doc, "a", "", "Settings");
+	settingsLink.href = "/options.html#/settings";
+	railActions.append(
+		themeButton,
+		canvasButton,
+		vimToggle,
+		createButton,
+		settingsLink,
+	);
 	railHeader.append(brand, railActions);
 	const vimFilterInput = element(doc, "input", "chat-vimfilter");
 	vimFilterInput.type = "text";
