@@ -142,10 +142,6 @@
 	cursor: not-allowed;
 }
 
-.dash__btn--ghost {
-	border-style: dashed;
-}
-
 .dash__summary {
 	display: flex;
 	align-items: center;

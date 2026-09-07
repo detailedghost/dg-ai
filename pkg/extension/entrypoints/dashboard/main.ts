@@ -331,11 +331,7 @@ export function renderDashboard(
 			if (vim.isActive()) vim.disable();
 			else vim.enable();
 		});
-		const schedule = button("+ Schedule", "dash__btn dash__btn--ghost");
-		schedule.disabled = true;
-		schedule.title =
-			"Adding jobs in the browser is the next page — use `dg-daemon job add` for now";
-		head.append(brand, spacer(), vimToggle, schedule);
+		head.append(brand, spacer(), vimToggle);
 
 		vimBar = el("div", "dash__vimbar");
 		vimBar.setAttribute("role", "status");
