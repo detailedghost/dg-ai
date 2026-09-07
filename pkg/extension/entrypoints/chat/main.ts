@@ -8,6 +8,7 @@ import {
 } from "@dg/common";
 import { browser } from "wxt/browser";
 import { CHAT_SESSION_KEY_PREFIX, MSG } from "@/lib/chat-messages";
+import { isTextEntryFocused } from "@/lib/dom-focus";
 import {
 	attachCommandAutocomplete,
 	type CommandAutocomplete,
@@ -32,8 +33,10 @@ import {
 	statusLabel,
 	type WorksetGroup,
 } from "@/lib/features/chat-node";
+import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
 import { createChatSessions } from "@/lib/features/chat-sessions";
 import type { ChatHistoryItem } from "@/lib/features/chat-transcript";
+import { createVimNav } from "@/lib/features/vim-nav";
 import "../options/style.css";
 import "./style.css";
 
@@ -412,11 +415,31 @@ export async function renderChatPage(
 	canvasButton.type = "button";
 	canvasButton.dataset.action = "toggle-canvas";
 	canvasButton.setAttribute("aria-pressed", "false");
-	railActions.append(themeButton, canvasButton, createButton);
+	const vimToggle = element(doc, "button", "chat-button", "Vim");
+	vimToggle.type = "button";
+	vimToggle.dataset.action = "vim-toggle";
+	vimToggle.setAttribute("aria-pressed", "false");
+	railActions.append(themeButton, canvasButton, vimToggle, createButton);
 	railHeader.append(brand, railActions);
+	const vimFilterInput = element(doc, "input", "chat-vimfilter");
+	vimFilterInput.type = "text";
+	vimFilterInput.hidden = true;
+	const vimCheat = element(
+		doc,
+		"div",
+		"chat-vimcheat",
+		"VIM  j/k move  gg/G ends  Enter select  x close  \\n new  / filter  ? this  Esc exit",
+	);
+	vimCheat.hidden = true;
 	const railSections = element(doc, "nav", "chat-rail__sections");
 	railSections.setAttribute("aria-label", "Sessions by workset");
-	rail.append(railHeader, connectionStatus, railSections);
+	rail.append(
+		railHeader,
+		connectionStatus,
+		vimFilterInput,
+		vimCheat,
+		railSections,
+	);
 
 	const thread = element(doc, "main", "chat-thread");
 	const threadHeader = element(doc, "header", "chat-thread__header");
@@ -851,6 +874,7 @@ export async function renderChatPage(
 				row.dataset.role = entry.role;
 				row.dataset.active = String(entry.sessionId === selectedSessionId);
 				if (moving?.sessionId === entry.sessionId) row.dataset.moving = "true";
+				row.hidden = !vimFilterMatches(entry);
 
 				const focus = element(doc, "button", "chat-rail__focus");
 				focus.type = "button";
@@ -923,7 +947,96 @@ export async function renderChatPage(
 			: "DeeGee / chat";
 		threadHeading.textContent = selected?.agentIdentity ?? "Chat";
 		updateConnectionStatus();
+		paintVimCursor();
 	}
+
+	let vimCursorId: string | undefined;
+	let vimFilterQuery = "";
+
+	function vimFilterMatches(entry: ChatSessionEntry): boolean {
+		if (!vimFilterQuery) return true;
+		const query = vimFilterQuery.toLowerCase();
+		return (
+			entry.agentIdentity.toLowerCase().includes(query) ||
+			(entry.workset ?? "").toLowerCase().includes(query)
+		);
+	}
+
+	function vimRowIds(): string[] {
+		const orderedEntries = order
+			.map((sessionId) => sessions.get(sessionId))
+			.filter((entry): entry is ChatSessionEntry => entry !== undefined);
+		return groupSessionsByWorkset(orderedEntries).flatMap((group) =>
+			group.sessions.filter(vimFilterMatches).map((entry) => entry.sessionId),
+		);
+	}
+
+	function findRailRow(sessionId: string | undefined): HTMLElement | undefined {
+		if (!sessionId) return undefined;
+		for (const row of railSections.querySelectorAll<HTMLElement>(
+			".chat-rail__row",
+		)) {
+			if (row.dataset.sessionId === sessionId) return row;
+		}
+		return undefined;
+	}
+
+	function paintVimCursor(): void {
+		const active = vim.isActive();
+		for (const row of railSections.querySelectorAll<HTMLElement>(
+			".chat-rail__row",
+		)) {
+			row.dataset.vimCursor = String(
+				active && row.dataset.sessionId === vimCursorId,
+			);
+		}
+	}
+
+	function closeSessionById(sessionId: string): void {
+		try {
+			client.closeSession(sessionId);
+		} catch (error) {
+			showError(error);
+		}
+	}
+
+	const vim = createVimNav({
+		order: ["sessions"],
+		lists: {
+			sessions: {
+				rowIds: vimRowIds,
+				select: (id) => setSelected(id),
+				actions: {
+					x: (id) => closeSessionById(id),
+				},
+			},
+		},
+		leaderActions: {
+			n: () => requestNewChatSession(),
+		},
+		onCursorChange: (_list, id) => {
+			vimCursorId = id;
+			paintVimCursor();
+			findRailRow(id)?.scrollIntoView?.({ block: "nearest" });
+		},
+		onOpenFilter: () => {
+			vimFilterInput.hidden = false;
+			vimFilterInput.value = vimFilterQuery;
+			vimFilterInput.focus();
+		},
+		onModeChange: (isActive, message) => {
+			vimToggle.setAttribute("aria-pressed", String(isActive));
+			announceMove(message);
+			if (!isActive) {
+				vimFilterInput.hidden = true;
+				paintVimCursor();
+			}
+		},
+		onCheatSheet: (open) => {
+			vimCheat.hidden = !open;
+		},
+		isTextInputFocused: () => isTextEntryFocused(doc),
+	});
 
 	themeButton.addEventListener("click", () => {
 		const light = root.dataset.theme === "light";
@@ -933,22 +1046,48 @@ export async function renderChatPage(
 
 	createButton.addEventListener("click", requestNewChatSession);
 
-	doc.addEventListener("keydown", (event) => {
-		if (!moving) return;
-		if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-			event.preventDefault();
-			moveWithArrow(event.key === "ArrowUp" ? -1 : 1);
-			return;
-		}
-		if (event.key === "Enter") {
-			event.preventDefault();
-			finishMove(false);
-			return;
-		}
+	vimToggle.addEventListener("click", () => {
+		if (vim.isActive()) vim.disable();
+		else vim.enable();
+	});
+
+	vimFilterInput.addEventListener("input", () => {
+		vimFilterQuery = vimFilterInput.value;
+		syncPage();
+	});
+	vimFilterInput.addEventListener("keydown", (event) => {
 		if (event.key === "Escape") {
 			event.preventDefault();
-			finishMove(true);
+			vimFilterQuery = "";
+			vimFilterInput.value = "";
+			vimFilterInput.hidden = true;
+			syncPage();
+		} else if (event.key === "Enter") {
+			event.preventDefault();
+			vimFilterInput.hidden = true;
 		}
+	});
+
+	doc.addEventListener("keydown", (event) => {
+		if (moving) {
+			if (isTextEntryFocused(doc)) return;
+			if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+				event.preventDefault();
+				moveWithArrow(event.key === "ArrowUp" ? -1 : 1);
+				return;
+			}
+			if (event.key === "Enter") {
+				event.preventDefault();
+				finishMove(false);
+				return;
+			}
+			if (event.key === "Escape") {
+				event.preventDefault();
+				finishMove(true);
+			}
+			return;
+		}
+		vim.handleKeydown(event);
 	});
 
 	client.onFrame((frame) => {

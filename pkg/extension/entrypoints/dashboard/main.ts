@@ -1,3 +1,4 @@
+import { isTextEntryFocused } from "@/lib/dom-focus";
 import { patchKeyedList } from "@/lib/dom-keyed-list";
 import {
 	applyRefresh,
@@ -15,6 +16,7 @@ import {
 	toJobView,
 	visibleItems,
 } from "@/lib/features/dashboard";
+import { createVimNav } from "@/lib/features/vim-nav";
 import "../options/style.css";
 import "./style.css";
 
@@ -184,6 +186,8 @@ export function renderDashboard(
 			view.state === "failed" ? view.detail : view.every;
 		refs.when.textContent = view.when;
 
+		row.hidden = !filterMatches("jobs", job.label);
+
 		if (view.state === "paused") {
 			refs.progress?.remove();
 			refs.progress = undefined;
@@ -251,12 +255,68 @@ export function renderDashboard(
 
 		refs.mark.title = view.unread ? "Mark read" : "Read";
 		refs.mark.disabled = !view.unread;
+
+		row.hidden = !filterMatches("feed", view.title);
+	}
+
+	const vimFilterQuery: Record<"feed" | "jobs", string> = {
+		feed: "",
+		jobs: "",
+	};
+
+	function filterMatches(list: "feed" | "jobs", searchable: string): boolean {
+		const query = vimFilterQuery[list];
+		return !query || searchable.toLowerCase().includes(query.toLowerCase());
+	}
+
+	function findRow(
+		container: HTMLElement,
+		id: string | undefined,
+	): HTMLElement | undefined {
+		if (!id) return undefined;
+		for (const child of Array.from(container.children)) {
+			if ((child as HTMLElement).dataset.key === id)
+				return child as HTMLElement;
+		}
+		return undefined;
+	}
+
+	let vimCursor: { list: string; id: string | undefined } = {
+		list: "feed",
+		id: undefined,
+	};
+
+	function paintVimCursor(): void {
+		const showCursor = vim.isActive();
+		for (const row of Array.from(railList.children)) {
+			(row as HTMLElement).classList.toggle(
+				"dash__job--cursor",
+				showCursor &&
+					vimCursor.list === "jobs" &&
+					(row as HTMLElement).dataset.key === vimCursor.id,
+			);
+		}
+		for (const row of Array.from(feedList.children)) {
+			(row as HTMLElement).classList.toggle(
+				"dash__item--cursor",
+				showCursor &&
+					vimCursor.list === "feed" &&
+					(row as HTMLElement).dataset.key === vimCursor.id,
+			);
+		}
 	}
 
 	let railList: HTMLUListElement;
 	let railEmpty: HTMLElement;
 	let summaryText: HTMLElement;
 	let summaryFailed: HTMLElement;
+	let vimToggle: HTMLButtonElement;
+	let vimBar: HTMLElement;
+	let vimFilterInput: HTMLInputElement;
+	let vimCheat: HTMLElement;
+
+	const VIM_CHEAT_SHEET =
+		"VIM  j/k move  gg/G ends  Enter act  r run  m read  q queue  \\a mark all  Tab list  / filter  ? this  Esc exit";
 
 	function buildRail(): HTMLElement {
 		const rail = el("aside", "dash__rail");
@@ -264,11 +324,46 @@ export function renderDashboard(
 		const head = el("div", "dash__head");
 		const brand = el("h1", "dash__brand");
 		brand.append(el("span", "dash__mk"), doc.createTextNode("Jobs"));
+		vimToggle = button("Vim", "dash__btn dash__vimtoggle");
+		vimToggle.dataset.action = "vim-toggle";
+		vimToggle.setAttribute("aria-pressed", "false");
+		vimToggle.addEventListener("click", () => {
+			if (vim.isActive()) vim.disable();
+			else vim.enable();
+		});
 		const schedule = button("+ Schedule", "dash__btn dash__btn--ghost");
 		schedule.disabled = true;
 		schedule.title =
 			"Adding jobs in the browser is the next page — use `dg-daemon job add` for now";
-		head.append(brand, spacer(), schedule);
+		head.append(brand, spacer(), vimToggle, schedule);
+
+		vimBar = el("div", "dash__vimbar");
+		vimBar.setAttribute("role", "status");
+		vimBar.hidden = true;
+
+		vimFilterInput = el("input", "dash__vimfilter");
+		vimFilterInput.hidden = true;
+		vimFilterInput.addEventListener("input", () => {
+			const list = vim.activeList() as "feed" | "jobs";
+			vimFilterQuery[list] = vimFilterInput.value;
+			render();
+		});
+		vimFilterInput.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				const list = vim.activeList() as "feed" | "jobs";
+				vimFilterQuery[list] = "";
+				vimFilterInput.value = "";
+				vimFilterInput.hidden = true;
+				render();
+			} else if (event.key === "Enter") {
+				event.preventDefault();
+				vimFilterInput.hidden = true;
+			}
+		});
+
+		vimCheat = el("div", "dash__vimcheat", VIM_CHEAT_SHEET);
+		vimCheat.hidden = true;
 
 		const summary = el("div", "dash__summary");
 		summaryText = el("span");
@@ -280,7 +375,15 @@ export function renderDashboard(
 		railEmpty = el("div", "dash__empty");
 		railEmpty.hidden = true;
 
-		rail.append(head, summary, railList, railEmpty);
+		rail.append(
+			head,
+			vimBar,
+			vimFilterInput,
+			vimCheat,
+			summary,
+			railList,
+			railEmpty,
+		);
 		return rail;
 	}
 
@@ -411,13 +514,82 @@ export function renderDashboard(
 			: "Looking for the daemon…";
 	}
 
-	/** The poll must not tear down a half-typed agent identity under the user. */
-	function isEditing(): boolean {
-		return doc.activeElement?.classList.contains("dash__identity") ?? false;
-	}
+	const vim = createVimNav({
+		order: ["feed", "jobs"],
+		lists: {
+			feed: {
+				rowIds: () =>
+					visibleItems(state)
+						.filter((item) =>
+							filterMatches("feed", toFeedView(item, now()).title),
+						)
+						.map((item) => item.id),
+				select: (id) => {
+					void act(api?.markRead(id) ?? Promise.resolve(false));
+				},
+				actions: {
+					m: (id) => {
+						void act(api?.markRead(id) ?? Promise.resolve(false));
+					},
+					q: (id) => {
+						findRow(feedList, id)
+							?.querySelector<HTMLButtonElement>(".dash__queue")
+							?.click();
+					},
+				},
+			},
+			jobs: {
+				rowIds: () =>
+					state.jobs
+						.filter((job) => filterMatches("jobs", job.label))
+						.map((job) => job.id),
+				select: (id) => {
+					state = selectJob(state, state.selectedJobId === id ? undefined : id);
+					render();
+				},
+				actions: {
+					r: (id) => {
+						void act(api?.runJob(id) ?? Promise.resolve(false));
+					},
+				},
+			},
+		},
+		leaderActions: {
+			a: () => {
+				void act(api?.markAllRead() ?? Promise.resolve(false));
+			},
+		},
+		onCursorChange: (list, id) => {
+			vimCursor = { list, id };
+			paintVimCursor();
+			findRow(list === "jobs" ? railList : feedList, id)?.scrollIntoView?.({
+				block: "nearest",
+			});
+		},
+		onOpenFilter: (list) => {
+			vimFilterInput.placeholder =
+				list === "jobs" ? "Filter jobs…" : "Filter feed…";
+			vimFilterInput.value = vimFilterQuery[list as "feed" | "jobs"];
+			vimFilterInput.hidden = false;
+			vimFilterInput.focus();
+		},
+		onModeChange: (isActive, message) => {
+			vimToggle.setAttribute("aria-pressed", String(isActive));
+			vimBar.textContent = message;
+			vimBar.hidden = !isActive;
+			if (!isActive) {
+				vimFilterInput.hidden = true;
+				paintVimCursor();
+			}
+		},
+		onCheatSheet: (open) => {
+			vimCheat.hidden = !open;
+		},
+		isTextInputFocused: () => isTextEntryFocused(doc),
+	});
 
 	function render(force = true): void {
-		if (!force && isEditing()) return;
+		if (!force && isTextEntryFocused(doc)) return;
 		const at = now();
 		if (!mounted) {
 			const painted = el("div", "dash");
@@ -427,6 +599,7 @@ export function renderDashboard(
 		}
 		patchRail(at);
 		patchPane(at);
+		paintVimCursor();
 	}
 
 	async function refresh(): Promise<void> {
@@ -451,8 +624,13 @@ export function renderDashboard(
 		poller.setHidden(doc.hidden);
 	}
 
+	function onKeydown(event: KeyboardEvent): void {
+		vim.handleKeydown(event);
+	}
+
 	render();
 	const ready = refresh();
+	doc.addEventListener("keydown", onKeydown);
 
 	if (options.poll !== false) {
 		doc.addEventListener("visibilitychange", onVisibility);
@@ -465,6 +643,7 @@ export function renderDashboard(
 		stop() {
 			poller.stop();
 			doc.removeEventListener("visibilitychange", onVisibility);
+			doc.removeEventListener("keydown", onKeydown);
 		},
 	};
 }
