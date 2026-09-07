@@ -18,7 +18,12 @@ import { DispatchScheduler } from "../dispatch";
 import { isDaemonIdle } from "../jobs/idle";
 import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
 import { type CloseReason, SessionRegistry } from "../session/registry";
-import { AGENT_MESSAGE_RETENTION_DAYS, ChatStore } from "../store";
+import {
+	AGENT_MESSAGE_RETENTION_DAYS,
+	ChatStore,
+	FEED_ITEM_RETENTION_ROW_LIMIT,
+	MESSAGE_RETENTION_ROW_LIMIT,
+} from "../store";
 import { readEnvNumber } from "../utils/env";
 import {
 	setKeySourceProvider,
@@ -30,6 +35,9 @@ import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
+
+/** How often the row-cap prunes run, independent of the much faster session reap tick. */
+export const ROW_PRUNE_INTERVAL_MS = 3_600_000;
 
 const BIND_RIVAL_BUDGET_MS = 500;
 const BIND_RIVAL_POLL_MS = 20;
@@ -161,13 +169,29 @@ export async function cmdServe(): Promise<void> {
 		});
 		return live;
 	};
+	let lastRowPruneAt = Date.now();
 	const reapTimer = setInterval(
 		() => {
 			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
-			const pruned = store.pruneAgentMessages(new Date());
-			if (pruned > 0) {
+			const prunedAgentMessages = store.pruneAgentMessages(new Date());
+			if (prunedAgentMessages > 0) {
 				logger.info(
-					`pruned ${pruned} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
+					`pruned ${prunedAgentMessages} agent message(s) past the ${AGENT_MESSAGE_RETENTION_DAYS}-day retention window`,
+				);
+			}
+			const sinceLastRowPrune = Date.now() - lastRowPruneAt;
+			if (sinceLastRowPrune < ROW_PRUNE_INTERVAL_MS) return;
+			lastRowPruneAt = Date.now();
+			const prunedMessages = store.pruneMessages();
+			if (prunedMessages > 0) {
+				logger.info(
+					`pruned ${prunedMessages} message(s) past the ${MESSAGE_RETENTION_ROW_LIMIT}-row per-session cap`,
+				);
+			}
+			const prunedFeedItems = store.pruneFeedItems();
+			if (prunedFeedItems > 0) {
+				logger.info(
+					`pruned ${prunedFeedItems} feed item(s) past the ${FEED_ITEM_RETENTION_ROW_LIMIT}-row per-job cap`,
 				);
 			}
 		},
