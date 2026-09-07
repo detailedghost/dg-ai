@@ -198,6 +198,7 @@ export type JobSummary = {
 	id: string;
 	label: string;
 	intervalMs?: number;
+	cronExpr?: string;
 	enabled: boolean;
 	nextRunAt: string;
 	notifyIdentity?: string;
@@ -329,6 +330,7 @@ type RawJobSummaryRow = {
 	id: string;
 	label: string;
 	interval_ms: number | null;
+	cron_expr: string | null;
 	enabled: number;
 	notify_identity: string | null;
 	last_run_at: string | null;
@@ -340,7 +342,7 @@ type RawJobSummaryRow = {
 };
 
 const JOB_SUMMARY_SELECTION =
-	"id, label, interval_ms, enabled, notify_identity, last_run_at, next_run_at, last_exit_code, last_error_ciphertext, last_error_iv, last_error_tag";
+	"id, label, interval_ms, cron_expr, enabled, notify_identity, last_run_at, next_run_at, last_exit_code, last_error_ciphertext, last_error_iv, last_error_tag";
 
 type RawFeedItemRow = {
 	id: string;
@@ -1063,6 +1065,7 @@ export class ChatStore extends EventEmitter {
 			id: row.id,
 			label: row.label,
 			intervalMs: row.interval_ms ?? undefined,
+			cronExpr: row.cron_expr ?? undefined,
 			enabled: row.enabled === 1,
 			nextRunAt: row.next_run_at,
 			notifyIdentity: row.notify_identity ?? undefined,

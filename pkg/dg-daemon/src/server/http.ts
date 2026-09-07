@@ -398,7 +398,8 @@ async function handleSchedulerRoute(
 			jobs: store.listJobSummaries().map((job) => ({
 				id: job.id,
 				label: job.label,
-				intervalMs: job.intervalMs,
+				intervalMs: job.intervalMs ?? null,
+				cronExpr: job.cronExpr ?? null,
 				enabled: job.enabled,
 				nextRunAt: job.nextRunAt,
 				lastRunAt: job.lastRunAt ?? null,

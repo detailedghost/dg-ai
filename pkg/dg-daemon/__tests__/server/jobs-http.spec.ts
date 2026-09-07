@@ -127,6 +127,25 @@ describe("GET /jobs", () => {
 		});
 	});
 
+	it("reports a cron job's expression, which it has instead of an interval", async () => {
+		const { port, dgHome } = await bootServe();
+		await seed(dgHome, (store) => {
+			seedJob(store, {
+				label: "nightly",
+				intervalMs: undefined,
+				cronExpr: "0 9 * * 1-5",
+			});
+		});
+
+		const resp = await get(port, CHAT_JOBS_PATH);
+		const body = (await resp.json()) as { jobs: Record<string, unknown>[] };
+		expect(body.jobs[0]).toMatchObject({
+			label: "nightly",
+			cronExpr: "0 9 * * 1-5",
+			intervalMs: null,
+		});
+	});
+
 	it("reports a failed job's exit code and message", async () => {
 		const { port, dgHome } = await bootServe();
 		await seed(dgHome, (store) => {
