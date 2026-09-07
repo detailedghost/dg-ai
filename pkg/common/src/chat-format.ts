@@ -11,7 +11,7 @@ import { validateProtoIdentifier } from "./proto-format";
 const UTF8_ENCODER = new TextEncoder();
 
 /** Byte length of `value` once JSON-serialized and UTF-8 encoded. */
-function jsonByteLength(value: unknown): number {
+export function jsonByteLength(value: unknown): number {
 	return UTF8_ENCODER.encode(JSON.stringify(value)).length;
 }
 
@@ -22,11 +22,16 @@ export const CHAT_MAX_MESSAGE_BODY_BYTES = 262_144;
 export const CHAT_MAX_MANIFEST_BYTES = 65_536;
 export const CHAT_MAX_ASSET_BYTES = 26_214_400;
 
+/** Wire cost of one history item: its JSON bytes plus the array-separator byte. */
+export function historyItemCost(item: unknown): number {
+	return jsonByteLength(item) + 1;
+}
+
 export function fitHistoryPage<T>(items: T[], overheadBytes: number): T[] {
 	let used = overheadBytes;
 	let first = items.length;
 	for (let i = items.length - 1; i >= 0; i--) {
-		const cost = jsonByteLength(items[i]) + 1;
+		const cost = historyItemCost(items[i]);
 		if (used + cost > CHAT_MAX_PAYLOAD_BYTES) break;
 		used += cost;
 		first = i;

@@ -1,11 +1,14 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
 	CHAT_MAX_ASSET_BYTES,
+	CHAT_MAX_PAYLOAD_BYTES,
 	type CommandEntry,
 	describeError,
+	historyItemCost,
 	type ProgressState,
 } from "@dg/common";
 import {
@@ -15,6 +18,7 @@ import {
 	ensurePrivateDir,
 	runMigrations,
 } from "@dg/common/node";
+import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import {
 	buildAad,
 	type CipherBox,
@@ -33,6 +37,7 @@ import { readEnvNumber } from "../utils/env";
 import { SCHEMA_STEPS } from "./schema";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
+const HISTORY_TAIL_BATCH_ROWS = 200;
 const AAD_MESSAGE_BODY = "message-body";
 const AAD_COMMAND_ARGV = "command-argv";
 const AAD_COMMAND_STDOUT = "command-stdout";
@@ -184,6 +189,19 @@ export type ScheduledJob = {
 	lastStderr?: string;
 };
 
+/** What `GET /jobs` returns — `ScheduledJob` minus argv and stderr, so listing jobs never decrypts either. */
+export type JobSummary = {
+	id: string;
+	label: string;
+	intervalMs?: number;
+	enabled: boolean;
+	nextRunAt: string;
+	notifyIdentity?: string;
+	lastRunAt?: string;
+	lastExitCode?: number;
+	lastError?: string;
+};
+
 export type InsertJobInput = {
 	label: string;
 	argv: string[];
@@ -303,6 +321,23 @@ type RawJobRow = {
 	last_stderr_tag: Uint8Array | null;
 };
 
+type RawJobSummaryRow = {
+	id: string;
+	label: string;
+	interval_ms: number | null;
+	enabled: number;
+	notify_identity: string | null;
+	last_run_at: string | null;
+	next_run_at: string;
+	last_exit_code: number | null;
+	last_error_ciphertext: Uint8Array | null;
+	last_error_iv: Uint8Array | null;
+	last_error_tag: Uint8Array | null;
+};
+
+const JOB_SUMMARY_SELECTION =
+	"id, label, interval_ms, enabled, notify_identity, last_run_at, next_run_at, last_exit_code, last_error_ciphertext, last_error_iv, last_error_tag";
+
 type RawFeedItemRow = {
 	id: string;
 	job_id: string;
@@ -410,13 +445,19 @@ function ensureDaemonDir(daemonDir: string): void {
 	}
 }
 
-export class ChatStore {
+/** Emitted after a message lands in `messages` or `agent_messages`, so a blocked `cli-recv` can wake without polling. */
+export const CHAT_STORE_MESSAGE_EVENT = "message";
+
+export class ChatStore extends EventEmitter {
 	private constructor(
 		private readonly db: Database,
 		private readonly cipherBox: CipherBox,
 		private readonly meta: CryptoMetaInfo,
 		private readonly claimLeaseMs: number,
-	) {}
+	) {
+		super();
+		this.setMaxListeners(SESSION_MAX_ACTIVE_DEFAULT);
+	}
 
 	static async open(
 		paths: DgPaths,
@@ -554,7 +595,7 @@ export class ChatStore {
 		const aad = this.#aad(AAD_MESSAGE_BODY, input.sessionId, input.id);
 		const enc = this.cipherBox.encryptRecord(input.body, aad);
 		const createdAt = new Date().toISOString();
-		return this.#withImmediateTransaction(() => {
+		const result = this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.sessionId);
 			const row = this.db
 				.query(
@@ -575,6 +616,8 @@ export class ChatStore {
 				) as { seq: number };
 			return { seq: row.seq };
 		});
+		this.emit(CHAT_STORE_MESSAGE_EVENT, { sessionId: input.sessionId });
+		return result;
 	}
 
 	insertCommandInvocation(input: InsertCommandInvocationInput): {
@@ -841,7 +884,7 @@ export class ChatStore {
 				input.id,
 			),
 		);
-		return this.#withImmediateTransaction(() => {
+		const result = this.#withImmediateTransaction(() => {
 			this.ensureSessionRow(input.senderSessionId);
 			const row = this.db
 				.query(
@@ -861,6 +904,10 @@ export class ChatStore {
 				) as { seq: number };
 			return { seq: row.seq };
 		});
+		this.emit(CHAT_STORE_MESSAGE_EVENT, {
+			recipientIdentity: input.recipientIdentity,
+		});
+		return result;
 	}
 
 	/** Deletes agent-to-agent rows past the retention window; returns how many it removed. */
@@ -980,6 +1027,26 @@ export class ChatStore {
 		};
 	}
 
+	#hydrateJobSummary(row: RawJobSummaryRow): JobSummary {
+		return {
+			id: row.id,
+			label: row.label,
+			intervalMs: row.interval_ms ?? undefined,
+			enabled: row.enabled === 1,
+			nextRunAt: row.next_run_at,
+			notifyIdentity: row.notify_identity ?? undefined,
+			lastRunAt: row.last_run_at ?? undefined,
+			lastExitCode: row.last_exit_code ?? undefined,
+			lastError: this.#decryptOptional(
+				AAD_JOB_ERROR,
+				row.id,
+				row.last_error_ciphertext,
+				row.last_error_iv,
+				row.last_error_tag,
+			),
+		};
+	}
+
 	#hydrateFeedItem(row: RawFeedItemRow): FeedItem {
 		return {
 			id: row.id,
@@ -1064,6 +1131,16 @@ export class ChatStore {
 			.query("SELECT * FROM scheduled_jobs ORDER BY created_at ASC, label ASC")
 			.all() as RawJobRow[];
 		return rows.map((row) => this.#hydrateJob(row));
+	}
+
+	/** For `GET /jobs`: every job's dashboard-facing fields, decrypting only `last_error`. */
+	listJobSummaries(): JobSummary[] {
+		const rows = this.db
+			.query(
+				`SELECT ${JOB_SUMMARY_SELECTION} FROM scheduled_jobs ORDER BY created_at ASC, label ASC`,
+			)
+			.all() as RawJobSummaryRow[];
+		return rows.map((row) => this.#hydrateJobSummary(row));
 	}
 
 	dueJobs(now: Date): ScheduledJob[] {
@@ -1337,6 +1414,47 @@ export class ChatStore {
 			)
 			.all(sessionId, limit) as RawMessageRow[];
 		return rows.reverse().map((row) => this.#toPeekedMessage(row, sessionId));
+	}
+
+	/** Equivalent to `fitHistoryPage(peekTail(sessionId, maxRows), overheadBytes)`, without decrypting rows past the fitted budget. */
+	peekTailForHistory(
+		sessionId: string,
+		overheadBytes: number,
+		maxRows: number,
+	): PeekedMessage[] {
+		const newestFirst: PeekedMessage[] = [];
+		let used = overheadBytes;
+		let cursorSeq: number | undefined;
+		let scanned = 0;
+		while (scanned < maxRows) {
+			const batchLimit = Math.min(HISTORY_TAIL_BATCH_ROWS, maxRows - scanned);
+			const rows = (
+				cursorSeq === undefined
+					? this.db
+							.query(
+								`SELECT ${MESSAGE_SELECTION} FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?`,
+							)
+							.all(sessionId, batchLimit)
+					: this.db
+							.query(
+								`SELECT ${MESSAGE_SELECTION} FROM messages WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+							)
+							.all(sessionId, cursorSeq, batchLimit)
+			) as RawMessageRow[];
+			if (rows.length === 0) break;
+			for (const row of rows) {
+				scanned++;
+				const message = this.#toPeekedMessage(row, sessionId);
+				if (used + historyItemCost(message) > CHAT_MAX_PAYLOAD_BYTES) {
+					return newestFirst.reverse();
+				}
+				used += historyItemCost(message);
+				newestFirst.push(message);
+			}
+			cursorSeq = rows[rows.length - 1].seq;
+			if (rows.length < batchLimit) break;
+		}
+		return newestFirst.reverse();
 	}
 
 	insertAsset(input: InsertAssetInput): void {

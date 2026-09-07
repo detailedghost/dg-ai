@@ -8,7 +8,6 @@ import {
 	type ChatFrame,
 	type CliFrame,
 	describeError,
-	fitHistoryPage,
 	isRecord,
 	validateChatFrame,
 	validateCommandManifest,
@@ -32,11 +31,12 @@ import {
 	resolveSubagentMention,
 } from "../dispatch";
 import type { SessionRegistry } from "../session/registry";
-import type {
-	ChatStore,
-	ClaimedAgentMessage,
-	ClaimedMessage,
-	PeekedMessage,
+import {
+	CHAT_STORE_MESSAGE_EVENT,
+	type ChatStore,
+	type ClaimedAgentMessage,
+	type ClaimedMessage,
+	type PeekedMessage,
 } from "../store";
 import type { ConnectionManager } from "./connection";
 import {
@@ -116,6 +116,9 @@ export const HISTORY_TAIL_ROW_LIMIT = Math.ceil(
 );
 
 export const CLI_RECV_MAX_TIMEOUT_MS = 300_000;
+
+/** Safety net for a blocked cli-recv in case its wake event is ever missed — delivery normally comes from CHAT_STORE_MESSAGE_EVENT instead. */
+export const CLI_RECV_BACKSTOP_POLL_MS = 5_000;
 
 function noteInvalid(ws: ServerWebSocket<SocketState>): void {
 	if (registerInvalidFrame(ws.data)) {
@@ -235,26 +238,30 @@ async function handleCliRecv(
 			clearInterval(poll);
 			clearTimeout(timeout);
 			deps.registry.off("closed", onClosed);
+			deps.store.off(CHAT_STORE_MESSAGE_EVENT, onMessage);
 			offSocketClose();
 			await sendCliRecvResult(ws, result);
 			resolve();
 		};
+		const tryClaim = () => {
+			const message = claimForSession(deps, sessionId);
+			if (message) void finish({ outcome: "delivered", message });
+		};
 		const onClosed = ({ sessionId: closedId }: { sessionId: string }) => {
 			if (closedId === sessionId) void finish({ outcome: "closed" });
 		};
+		const onMessage = () => tryClaim();
 		const offSocketClose = onSocketClose(
 			ws,
 			() => void finish({ outcome: "closed" }),
 		);
-		const poll = setInterval(() => {
-			const message = claimForSession(deps, sessionId);
-			if (message) void finish({ outcome: "delivered", message });
-		}, 20);
+		const poll = setInterval(tryClaim, CLI_RECV_BACKSTOP_POLL_MS);
 		const timeout = setTimeout(
 			() => void finish({ outcome: "timeout" }),
 			timeoutMs,
 		);
 		deps.registry.on("closed", onClosed);
+		deps.store.on(CHAT_STORE_MESSAGE_EVENT, onMessage);
 		if (deps.registry.get(sessionId)?.state !== "active") {
 			void finish({ outcome: "closed" });
 		}
@@ -484,10 +491,14 @@ async function handleHistoryRequest(
 			messages: [],
 		}),
 	).length;
-	const tail = deps.store.peekTail(frame.sessionId, HISTORY_TAIL_ROW_LIMIT);
+	const messages = deps.store.peekTailForHistory(
+		frame.sessionId,
+		overhead,
+		HISTORY_TAIL_ROW_LIMIT,
+	);
 	await sendFrame(ws, frame.sessionId, {
 		type: "history-response",
-		messages: fitHistoryPage(tail, overhead),
+		messages,
 	});
 }
 

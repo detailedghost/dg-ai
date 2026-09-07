@@ -395,7 +395,7 @@ async function handleSchedulerRoute(
 	if (isJobs && rest.length === 0 && req.method === "GET") {
 		const unread = store.countUnreadByJob();
 		return json({
-			jobs: store.listJobs().map((job) => ({
+			jobs: store.listJobSummaries().map((job) => ({
 				id: job.id,
 				label: job.label,
 				intervalMs: job.intervalMs,
