@@ -18,7 +18,6 @@ import {
 	ensurePrivateDir,
 	runMigrations,
 } from "@dg/common/node";
-import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import {
 	buildAad,
 	type CipherBox,
@@ -33,6 +32,7 @@ import {
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
 import { nextCronRun } from "../jobs/cron";
+import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import { readEnvNumber } from "../utils/env";
 import { SCHEMA_STEPS } from "./schema";
 
@@ -58,6 +58,10 @@ const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const AGENT_MESSAGE_RETENTION_DAYS = 7;
+
+export const MESSAGE_RETENTION_ROW_LIMIT = 20_000;
+
+export const FEED_ITEM_RETENTION_ROW_LIMIT = 2_000;
 
 /** Session id every scheduler-owned row is stored under. */
 export const SCHEDULER_SESSION_ID = "__scheduler__";
@@ -920,6 +924,33 @@ export class ChatStore extends EventEmitter {
 		]).changes;
 	}
 
+	/** Deletes rows past MESSAGE_RETENTION_ROW_LIMIT per session, never an unclaimed one; returns how many it removed. */
+	pruneMessages(limit = MESSAGE_RETENTION_ROW_LIMIT): number {
+		return this.#withImmediateTransaction(() => {
+			const sessionIds = this.db.query("SELECT id FROM sessions").all() as {
+				id: string;
+			}[];
+			let removed = 0;
+			for (const { id: sessionId } of sessionIds) {
+				const boundary = this.db
+					.query(
+						`SELECT seq FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?`,
+					)
+					.get(sessionId, limit - 1) as {
+					seq: number;
+				} | null;
+				if (!boundary) continue;
+				removed += this.db.run(
+					`DELETE FROM messages
+					 WHERE session_id = ? AND seq < ?
+					   AND (role = 'agent' OR delivered_at IS NOT NULL)`,
+					[sessionId, boundary.seq],
+				).changes;
+			}
+			return removed;
+		});
+	}
+
 	claimNextAgentMessage(
 		identity: string,
 		sessionId: string,
@@ -1350,6 +1381,31 @@ export class ChatStore extends EventEmitter {
 		const counts: Record<string, number> = {};
 		for (const row of rows) counts[row.job_id] = row.count;
 		return counts;
+	}
+
+	/** Deletes rows past FEED_ITEM_RETENTION_ROW_LIMIT per job, keeping the newest ones. Returns how many rows it removed. */
+	pruneFeedItems(limit = FEED_ITEM_RETENTION_ROW_LIMIT): number {
+		return this.#withImmediateTransaction(() => {
+			const jobIds = this.db.query("SELECT id FROM scheduled_jobs").all() as {
+				id: string;
+			}[];
+			let removed = 0;
+			for (const { id: jobId } of jobIds) {
+				const boundary = this.db
+					.query(
+						`SELECT seq FROM feed_items WHERE job_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?`,
+					)
+					.get(jobId, limit - 1) as {
+					seq: number;
+				} | null;
+				if (!boundary) continue;
+				removed += this.db.run(
+					`DELETE FROM feed_items WHERE job_id = ? AND seq < ?`,
+					[jobId, boundary.seq],
+				).changes;
+			}
+			return removed;
+		});
 	}
 
 	#newClaim(): { claimId: string; now: number; leaseCutoff: number } {
