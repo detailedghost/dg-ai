@@ -357,3 +357,141 @@ describe("the dashboard page as it repaints without tearing down what already ex
 		expect(root.ownerDocument.activeElement).toBe(run);
 	});
 });
+
+describe("the dashboard page's vim mode", () => {
+	function vimToggle(root: HTMLElement): HTMLButtonElement {
+		return root.querySelector(
+			"[data-action='vim-toggle']",
+		) as HTMLButtonElement;
+	}
+
+	it("is off until the Vim button is clicked, and is clearly indicated once on", async () => {
+		const root = await mount(fakeApi([buildJob()], [buildFeedItem()]));
+		const toggle = vimToggle(root);
+		expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+		keydown(root.ownerDocument, "j");
+		expect(root.querySelector(".dash__item--cursor")).toBeNull();
+
+		click(toggle);
+
+		expect(toggle.getAttribute("aria-pressed")).toBe("true");
+		expect(root.querySelector<HTMLElement>(".dash__vimbar")?.hidden).toBe(
+			false,
+		);
+	});
+
+	it("j moves a visible cursor down the feed, and Enter marks the row under it read", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+				recorded,
+			),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "j");
+		const cursored = root.querySelector(".dash__item--cursor");
+		expect(cursored?.textContent).toContain("Second item");
+
+		keydown(root.ownerDocument, "Enter");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "markRead", args: ["item-2"] });
+	});
+
+	it("Tab switches to the job list, where r runs the job under the cursor", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "Tab");
+		expect(root.querySelector(".dash__job--cursor")).not.toBeNull();
+
+		keydown(root.ownerDocument, "r");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "runJob", args: ["job-1"] });
+	});
+
+	it("G jumps to the last row and gg jumps back to the first", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+			),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "G");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Second item",
+		);
+
+		keydown(root.ownerDocument, "g");
+		keydown(root.ownerDocument, "g");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
+	});
+
+	it("the leader key runs mark-all-read", async () => {
+		const recorded: Recorded[] = [];
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem()], recorded),
+		);
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "\\");
+		keydown(root.ownerDocument, "a");
+		await Bun.sleep(0);
+
+		expect(recorded[0]).toEqual({ call: "markAllRead", args: [] });
+	});
+
+	it("Escape leaves vim mode, indicated by the toggle and the status bar", async () => {
+		const root = await mount(fakeApi([buildJob()], [buildFeedItem()]));
+		click(vimToggle(root));
+
+		keydown(root.ownerDocument, "Escape");
+
+		expect(vimToggle(root).getAttribute("aria-pressed")).toBe("false");
+		expect(root.querySelector<HTMLElement>(".dash__vimbar")?.hidden).toBe(true);
+	});
+
+	it("never swallows j while the queue-to-agent identity input has focus", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem(),
+					buildFeedItem({ id: "item-2", title: "Second item" }),
+				],
+			),
+		);
+		click(vimToggle(root));
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
+
+		click(all(root, ".dash__queue")[0]);
+		const input = root.querySelector(".dash__identity") as HTMLInputElement;
+		keydown(input, "j");
+		typeValue(input, "j");
+
+		expect(input.value).toBe("j");
+		expect(root.querySelector(".dash__item--cursor")?.textContent).toContain(
+			"Quote export",
+		);
+	});
+});

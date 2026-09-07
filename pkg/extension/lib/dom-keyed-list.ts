@@ -4,12 +4,7 @@ export type KeyedListOptions<Item> = {
 	update: (element: HTMLElement, item: Item) => void;
 };
 
-/**
- * Reconciles `container`'s children against `items` by key: existing rows are
- * patched and reordered in place, only truly new or gone ids are created or
- * removed. Never rebuilds an unchanged row's DOM, so focus and any in-row UI
- * state (a half-typed input, say) survive a repaint untouched.
- */
+/** Reconciles `container`'s children against `items` by key, patching existing rows in place. */
 export function patchKeyedList<Item>(
 	container: HTMLElement,
 	items: Item[],
