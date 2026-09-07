@@ -383,18 +383,26 @@
 }
 
 .dash__mark {
-	width: 0.45rem;
-	height: 0.45rem;
-	margin-top: 0.5rem;
-	border-radius: 50%;
-	background: var(--accent);
+	flex: none;
+	margin-top: 0.1rem;
+	padding: 0.15rem 0.4rem;
+	border: 0.0625rem solid var(--accent);
+	border-radius: 0.75rem;
+	background: transparent;
+	color: var(--accent);
+	font-family: var(--sans);
+	font-size: 0.68rem;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
 	animation: dash-ping 2.6s ease-out infinite;
 }
 
 .dash__item--read .dash__mark {
-	border: 0.0625rem solid var(--dash-line);
-	background: transparent;
+	border-color: var(--dash-line);
+	color: var(--muted);
 	animation: none;
+	cursor: default;
 }
 
 .dash__top {

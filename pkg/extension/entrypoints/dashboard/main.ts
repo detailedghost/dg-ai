@@ -253,7 +253,7 @@ export function renderDashboard(
 		refs.title.textContent = view.title;
 		refs.meta.textContent = view.meta;
 
-		refs.mark.title = view.unread ? "Mark read" : "Read";
+		refs.mark.textContent = view.unread ? "Mark read" : "Read";
 		refs.mark.disabled = !view.unread;
 
 		row.hidden = !filterMatches("feed", view.title);
