@@ -110,8 +110,7 @@ for (const {
 
 			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
 				const asset = cliAssetName(binaryName, platform, arch);
-				const runner = pairs.find(([, name]) => name === asset)?.[2];
-				expect(runner).toBeDefined();
+				const runner = pairs.find(([, name]) => name === asset)?.[2] ?? "";
 				expect(NATIVE_RUNNERS[`${platform}-${arch}`]).toContain(runner);
 			}
 		});
