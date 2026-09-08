@@ -56,6 +56,19 @@ const RELEASED_BINARIES: ReleasedBinary[] = [
 	},
 ];
 
+/**
+ * Runner labels that execute each target natively. Apple Silicon labels carry no
+ * "arm" in their name, so the mapping is spelled out rather than pattern-matched.
+ */
+const NATIVE_RUNNERS: Record<string, string[]> = {
+	"linux-x64": ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"],
+	"linux-arm64": ["ubuntu-24.04-arm", "ubuntu-22.04-arm", "ubuntu-latest-arm"],
+	"darwin-x64": ["macos-13", "macos-12"],
+	"darwin-arm64": ["macos-14", "macos-15", "macos-latest"],
+	"win32-x64": ["windows-latest", "windows-2022", "windows-2025"],
+	"win32-arm64": ["windows-11-arm"],
+};
+
 for (const {
 	binaryName,
 	workflow: workflowFile,
@@ -74,15 +87,33 @@ for (const {
 
 		test("the matrix publishes nothing the resolver cannot name", () => {
 			const rel = workflow(workflowFile);
-			const declared = [...rel.matchAll(/asset:\s*(\S+)/g)].map((m) => m[1]);
+			const declared = new Set(
+				[...rel.matchAll(/asset:\s*(\S+)/g)].map((m) => m[1]),
+			);
 			const resolvable = new Set(
 				SUPPORTED_PLATFORMS.map(({ platform, arch }) =>
 					cliAssetName(binaryName, platform, arch),
 				),
 			);
 
-			expect(declared.length).toBe(SUPPORTED_PLATFORMS.length);
+			expect(declared.size).toBe(SUPPORTED_PLATFORMS.length);
 			for (const asset of declared) expect(resolvable.has(asset)).toBe(true);
+		});
+
+		test("every published binary is executed on a runner of its own platform", () => {
+			const rel = workflow(workflowFile);
+			const smoke = rel.slice(rel.indexOf("\n  smoke:"), rel.indexOf("\n  release:"));
+			expect(smoke).not.toBe("");
+
+			const pairs = [...smoke.matchAll(/asset:\s*(\S+)\s*\n\s*os:\s*(\S+)/g)];
+			expect(pairs.length).toBe(SUPPORTED_PLATFORMS.length);
+
+			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
+				const asset = cliAssetName(binaryName, platform, arch);
+				const runner = pairs.find(([, name]) => name === asset)?.[2];
+				expect(runner).toBeDefined();
+				expect(NATIVE_RUNNERS[`${platform}-${arch}`]).toContain(runner);
+			}
 		});
 
 		test("install asks for the tag prefix this workflow publishes", () => {
