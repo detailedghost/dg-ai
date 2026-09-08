@@ -10,6 +10,7 @@ on:
     paths:
       - pkg/skills-cli/**
       - pkg/common/**
+      - pkg/skills-test/**
       - .github/workflows/skills-release.yml
 
 # Queue, don't cancel: a cancelled run skips its failure-cleanup step (that only
