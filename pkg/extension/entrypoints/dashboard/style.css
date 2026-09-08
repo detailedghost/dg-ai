@@ -415,6 +415,18 @@
 .dash__itemtitle {
 	font-size: 0.925rem;
 	letter-spacing: -0.005em;
+	color: inherit;
+	text-decoration: none;
+}
+
+a.dash__itemtitle[href]:hover,
+a.dash__itemtitle[href]:focus-visible {
+	text-decoration: underline;
+}
+
+a.dash__itemtitle[href]:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
 
 .dash__item--unread .dash__itemtitle {
