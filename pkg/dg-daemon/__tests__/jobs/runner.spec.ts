@@ -206,6 +206,30 @@ describe("runDueJobs", () => {
 		});
 	});
 
+	it("keeps a run that collected items a success when the notify queue throws", async () => {
+		await withStore(async (store) => {
+			const job = addJob(store, { notifyIdentity: "reviewer" });
+			const warnings: string[] = [];
+			const runnerDeps = deps(
+				store,
+				succeeds('{"id":"a","title":"A"}\n{"id":"b","title":"B"}'),
+			);
+			runnerDeps.logger = { info: () => {}, warn: (m) => warnings.push(m) };
+			store.insertAgentMessage = () => {
+				throw new Error("queue is full");
+			};
+
+			const [outcome] = await runDueJobs(runnerDeps);
+
+			expect(outcome.exitCode).toBe(0);
+			expect(outcome.inserted).toBe(2);
+			expect(outcome.error).toBeUndefined();
+			expect(store.getJob(job.id)?.lastExitCode).toBe(0);
+			expect(store.getJob(job.id)?.lastError).toBeUndefined();
+			expect(warnings.join(" ")).toContain("could not notify reviewer");
+		});
+	});
+
 	it("queues nothing when a notifying job reports nothing new", async () => {
 		await withStore(async (store) => {
 			const job = addJob(store, { notifyIdentity: "reviewer" });
