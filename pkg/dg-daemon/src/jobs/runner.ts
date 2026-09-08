@@ -100,16 +100,22 @@ async function runOne(
 	deps.store.recordJobRun({ jobId: job.id, ranAt, exitCode: 0 });
 
 	if (job.notifyIdentity && counts.inserted.length > 0) {
-		deps.store.insertAgentMessage({
-			senderSessionId: SCHEDULER_SESSION_ID,
-			senderIdentity: `job:${job.label}`,
-			recipientIdentity: job.notifyIdentity,
-			id: randomUUID(),
-			body: notifyBody(
-				job,
-				counts.inserted.map((entry) => entry.title),
-			),
-		});
+		try {
+			deps.store.insertAgentMessage({
+				senderSessionId: SCHEDULER_SESSION_ID,
+				senderIdentity: `job:${job.label}`,
+				recipientIdentity: job.notifyIdentity,
+				id: randomUUID(),
+				body: notifyBody(
+					job,
+					counts.inserted.map((entry) => entry.title),
+				),
+			});
+		} catch (err) {
+			deps.logger.warn(
+				`job ${job.label} collected ${counts.inserted.length} item(s) but could not notify ${job.notifyIdentity}: ${describeError(err)}`,
+			);
+		}
 	}
 
 	return {
