@@ -67,6 +67,36 @@ function all(root: HTMLElement, selector: string): HTMLElement[] {
 }
 
 describe("the dashboard page as it paints", () => {
+	it("links an item title to its source, and leaves a link off one with no url", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[
+					buildFeedItem({ url: "https://example.test/JRDEV-101" }),
+					buildFeedItem({ id: "item-2", title: "No link", url: null }),
+				],
+			),
+		);
+
+		const titles = Array.from(
+			root.querySelectorAll<HTMLAnchorElement>(".dash__itemtitle"),
+		);
+		expect(titles[0].getAttribute("href")).toBe(
+			"https://example.test/JRDEV-101",
+		);
+		expect(titles[0].getAttribute("rel")).toBe("noopener noreferrer");
+		expect(titles[1].hasAttribute("href")).toBe(false);
+	});
+
+	it("refuses to put a job-supplied javascript: url in an href", async () => {
+		const root = await mount(
+			fakeApi([buildJob()], [buildFeedItem({ url: "javascript:alert(1)" })]),
+		);
+
+		const title = root.querySelector<HTMLAnchorElement>(".dash__itemtitle");
+		expect(title?.hasAttribute("href")).toBe(false);
+	});
+
 	it("draws a row for every job, with its unread count", async () => {
 		const root = await mount(
 			fakeApi(
@@ -399,6 +429,26 @@ describe("the dashboard page's vim mode", () => {
 		await Bun.sleep(0);
 
 		expect(recorded[0]).toEqual({ call: "markRead", args: ["item-2"] });
+	});
+
+	it("o opens the link on the row under the cursor", async () => {
+		const root = await mount(
+			fakeApi(
+				[buildJob()],
+				[buildFeedItem({ url: "https://example.test/JRDEV-101" })],
+			),
+		);
+		click(vimToggle(root));
+		keydown(root.ownerDocument, "j");
+
+		const link = root.querySelector<HTMLAnchorElement>(
+			".dash__item--cursor .dash__itemtitle",
+		);
+		let opened = 0;
+		if (link) link.click = () => { opened += 1; };
+		keydown(root.ownerDocument, "o");
+
+		expect(opened).toBe(1);
 	});
 
 	it("Tab switches to the job list, where r runs the job under the cursor", async () => {

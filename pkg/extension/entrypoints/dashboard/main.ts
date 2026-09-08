@@ -48,7 +48,7 @@ type JobRowRefs = {
 type FeedRowRefs = {
 	mark: HTMLButtonElement;
 	badge: HTMLElement;
-	title: HTMLElement;
+	title: HTMLAnchorElement;
 	meta: HTMLElement;
 };
 
@@ -214,7 +214,7 @@ export function renderDashboard(
 		const body = el("div");
 		const top = el("div", "dash__top");
 		const badge = el("span");
-		const title = el("span", "dash__itemtitle");
+		const title = el("a", "dash__itemtitle");
 		top.append(badge, title);
 		const meta = el("div", "dash__meta");
 		body.append(top, meta);
@@ -251,6 +251,15 @@ export function renderDashboard(
 		refs.badge.className = `dash__badge dash__badge--${source.toLowerCase()}`;
 		refs.badge.textContent = source;
 		refs.title.textContent = view.title;
+		if (view.url) {
+			refs.title.href = view.url;
+			refs.title.target = "_blank";
+			refs.title.rel = "noopener noreferrer";
+		} else {
+			refs.title.removeAttribute("href");
+			refs.title.removeAttribute("target");
+			refs.title.removeAttribute("rel");
+		}
 		refs.meta.textContent = view.meta;
 
 		refs.mark.textContent = view.unread ? "Mark read" : "Read";
@@ -316,7 +325,7 @@ export function renderDashboard(
 	let vimCheat: HTMLElement;
 
 	const VIM_CHEAT_SHEET =
-		"VIM  j/k move  gg/G ends  Enter act  r run  m read  q queue  \\a mark all  Tab list  / filter  ? this  Esc exit";
+		"VIM  j/k move  gg/G ends  Enter act  r run  m read  o open  q queue  \\a mark all  Tab list  / filter  ? this  Esc exit";
 
 	function buildRail(): HTMLElement {
 		const rail = el("aside", "dash__rail");
@@ -528,6 +537,11 @@ export function renderDashboard(
 				actions: {
 					m: (id) => {
 						void act(api?.markRead(id) ?? Promise.resolve(false));
+					},
+					o: (id) => {
+						findRow(feedList, id)
+							?.querySelector<HTMLAnchorElement>(".dash__itemtitle[href]")
+							?.click();
 					},
 					q: (id) => {
 						findRow(feedList, id)

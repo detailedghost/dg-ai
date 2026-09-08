@@ -133,6 +133,18 @@ export function toJobView(job: JobPayload, now: Date): JobView {
 	};
 }
 
+const SAFE_URL_SCHEMES = ["http:", "https:"];
+
+/** An item's url is whatever the job's command printed, so only web schemes reach an href. */
+export function safeItemUrl(url: string | null): string | null {
+	if (!url) return null;
+	try {
+		return SAFE_URL_SCHEMES.includes(new URL(url).protocol) ? url : null;
+	} catch {
+		return null;
+	}
+}
+
 export function toFeedView(item: FeedItemPayload, now: Date): FeedView {
 	return {
 		id: item.id,
@@ -141,7 +153,7 @@ export function toFeedView(item: FeedItemPayload, now: Date): FeedView {
 		meta: [item.meta, relativeTime(item.createdAt, now)]
 			.filter((part): part is string => Boolean(part))
 			.join(" · "),
-		url: item.url,
+		url: safeItemUrl(item.url),
 		unread: !item.read,
 	};
 }

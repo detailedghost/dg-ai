@@ -10,6 +10,7 @@ import {
 	jobState,
 	relativeTime,
 	runProgress,
+	safeItemUrl,
 	selectJob,
 	sourceFromLabel,
 	summarize,
@@ -201,6 +202,33 @@ describe("the feed row", () => {
 
 	it("marks a read item as read", () => {
 		expect(toFeedView(buildFeedItem({ read: true }), NOW).unread).toBe(false);
+	});
+
+	it("carries a web link through to the row", () => {
+		const view = toFeedView(
+			buildFeedItem({ url: "https://example.test/JRDEV-101" }),
+			NOW,
+		);
+		expect(view.url).toBe("https://example.test/JRDEV-101");
+	});
+
+	it("drops a url whose scheme a job should not be able to put in an href", () => {
+		for (const url of [
+			"javascript:alert(1)",
+			"data:text/html,<script>alert(1)</script>",
+			"file:///etc/passwd",
+			"chrome-extension://abc/options.html",
+			"not a url at all",
+		]) {
+			expect(safeItemUrl(url)).toBeNull();
+			expect(toFeedView(buildFeedItem({ url }), NOW).url).toBeNull();
+		}
+	});
+
+	it("keeps http and https, which is what a job feed actually links to", () => {
+		expect(safeItemUrl("http://example.test/a")).toBe("http://example.test/a");
+		expect(safeItemUrl("https://example.test/b")).toBe("https://example.test/b");
+		expect(safeItemUrl(null)).toBeNull();
 	});
 });
 
