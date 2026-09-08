@@ -63,13 +63,43 @@ jobs:
           --target=${{ matrix.target }}
           --outfile dist/${{ matrix.asset }}
 
-      # Only bun-linux-x64 can execute on this ubuntu-latest runner — the one native
-      # leg proves a compiled binary actually starts before any target ships.
-      - name: Smoke test ${{ matrix.asset }}
-        if: matrix.target == 'bun-linux-x64'
-        working-directory: pkg/dg-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/dg-daemon/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke:
+    needs: build
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: dg-daemon-linux-x64
+            os: ubuntu-latest
+          - asset: dg-daemon-linux-arm64
+            os: ubuntu-24.04-arm
+          - asset: dg-daemon-macos-x64
+            os: macos-13
+          - asset: dg-daemon-macos-arm64
+            os: macos-14
+          - asset: dg-daemon-windows-x64.exe
+            os: windows-latest
+          - asset: dg-daemon-windows-arm64.exe
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+
+      - name: Run ${{ matrix.asset }} --help
+        shell: bash
         run: |
-          if ! output="$(./dist/${{ matrix.asset }} --help)"; then
+          chmod +x "./${{ matrix.asset }}"
+          if ! output="$(./${{ matrix.asset }} --help)"; then
             echo "::error::${{ matrix.asset }} --help failed to run"
             exit 1
           fi
@@ -79,15 +109,8 @@ jobs:
           fi
           echo "$output"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.asset }}
-          path: pkg/dg-daemon/dist/${{ matrix.asset }}
-          if-no-files-found: error
-          retention-days: 1
-
   release:
-    needs: build
+    needs: smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
