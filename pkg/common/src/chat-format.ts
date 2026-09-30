@@ -54,6 +54,7 @@ export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_JOBS_PATH = "/jobs";
 export const CHAT_FEED_PATH = "/feed";
+export const CHAT_SERVICES_PATH = "/services";
 
 export type JobState = "ok" | "failed" | "paused";
 

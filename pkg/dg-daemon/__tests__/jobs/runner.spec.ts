@@ -364,16 +364,20 @@ describe("runDueJobs", () => {
 });
 
 describe("isDaemonIdle", () => {
-	it("is idle only with no sessions, no connections and no enabled jobs", () => {
-		expect(isDaemonIdle(0, 0, 0)).toBe(true);
+	it("is idle only with no sessions, connections, enabled jobs or running services", () => {
+		expect(isDaemonIdle(0, 0, 0, 0)).toBe(true);
 	});
 
 	it("is not idle while a job is enabled, even with nothing else running", () => {
-		expect(isDaemonIdle(0, 0, 1)).toBe(false);
+		expect(isDaemonIdle(0, 0, 1, 0)).toBe(false);
+	});
+
+	it("is not idle while a service is running", () => {
+		expect(isDaemonIdle(0, 0, 0, 1)).toBe(false);
 	});
 
 	it("is not idle while a session or a connection is live", () => {
-		expect(isDaemonIdle(1, 0, 0)).toBe(false);
-		expect(isDaemonIdle(0, 1, 0)).toBe(false);
+		expect(isDaemonIdle(1, 0, 0, 0)).toBe(false);
+		expect(isDaemonIdle(0, 1, 0, 0)).toBe(false);
 	});
 });

@@ -17,6 +17,7 @@ import {
 import { DispatchScheduler } from "../dispatch";
 import { isDaemonIdle } from "../jobs/idle";
 import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
+import { createSupervisor } from "../services/supervisor";
 import { type CloseReason, SessionRegistry } from "../session/registry";
 import {
 	AGENT_MESSAGE_RETENTION_DAYS,
@@ -29,6 +30,7 @@ import {
 	setKeySourceProvider,
 	setUserVersionProvider,
 } from "../utils/key-source";
+import { readConfig } from "./config-store";
 import { ConnectionManager, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
@@ -84,6 +86,11 @@ export async function cmdServe(): Promise<void> {
 	const registry = new SessionRegistry(paths);
 	const connections = new ConnectionManager();
 	const dispatchScheduler = new DispatchScheduler();
+	const supervisor = createSupervisor({
+		paths,
+		loadConfig: () => readConfig(paths),
+		logger,
+	});
 	const instanceId = newInstanceId();
 
 	let idleController: ReturnType<typeof createIdleController> | undefined;
@@ -111,6 +118,7 @@ export async function cmdServe(): Promise<void> {
 				statusDeps,
 				store,
 				dispatchScheduler,
+				supervisor,
 			});
 			boundPort = candidate;
 			break;
@@ -143,10 +151,11 @@ export async function cmdServe(): Promise<void> {
 				registry.activeCount(),
 				connections.openCount(),
 				store.countEnabledJobs(),
+				supervisor.runningCount(),
 			),
 		onExpire: () => {
 			logger.info(
-				"idle TTL expired with no sessions, connections or enabled jobs — exiting",
+				"idle TTL expired with no sessions, connections, enabled jobs or running services — exiting",
 			);
 			void shutdown("daemon-shutdown");
 		},
@@ -156,6 +165,8 @@ export async function cmdServe(): Promise<void> {
 		{ store, scheduler: dispatchScheduler, logger },
 		readEnvNumber(process.env, "DG_JOB_TICK_MS", JOB_TICK_INTERVAL_MS),
 	);
+
+	supervisor.autostart();
 
 	const sessionTtlMs = readEnvNumber(
 		process.env,
@@ -246,6 +257,7 @@ export async function cmdServe(): Promise<void> {
 		shuttingDown = true;
 		idleController?.stop();
 		jobRunner.stop();
+		await supervisor.stopAll();
 		clearInterval(reapTimer);
 		registry.closeAll(reason);
 		await Promise.all(pendingCloseSends);
