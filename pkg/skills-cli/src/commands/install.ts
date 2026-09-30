@@ -57,17 +57,23 @@ function localOutputDir(target: Target): string | undefined {
 	return dir ? join(outRoot, dir) : undefined;
 }
 
+export function localBuildScripts(
+	target: Target,
+	dependenciesInstalled: boolean,
+): string[][] {
+	return [
+		...(dependenciesInstalled ? [] : [["install"]]),
+		["run", target === "firefox" ? "build:firefox" : "build"],
+	];
+}
+
 function buildLocally(target: Target): string {
 	const src = join(repoRoot(), "pkg", "extension");
 	if (!existsSync(src)) throw new Error("no pkg/extension to build from");
-	if (!existsSync(join(src, "node_modules")))
-		run("bun", ["--cwd", src, "install"]);
-	run("bun", [
-		"--cwd",
-		src,
-		"run",
-		target === "firefox" ? "build:firefox" : "build",
-	]);
+	const wxtBin = join(repoRoot(), "node_modules", ".bin", "wxt");
+	localBuildScripts(target, existsSync(wxtBin)).forEach((args) => {
+		run("bun", args, { cwd: src });
+	});
 	const out = localOutputDir(target);
 	if (!out) throw new Error("local build produced no output directory");
 	return out;
