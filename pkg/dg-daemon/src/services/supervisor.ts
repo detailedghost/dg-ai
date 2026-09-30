@@ -1,11 +1,12 @@
 import {
 	closeSync,
+	copyFileSync,
 	existsSync,
 	openSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	statSync,
+	truncateSync,
 } from "node:fs";
 import { join } from "node:path";
 import { describeError } from "@dg/common";
@@ -26,7 +27,8 @@ export const BACKOFF_BASE_MS = 1_000;
 export const BACKOFF_MAX_MS = 60_000;
 export const STABLE_RUN_MS = 60_000;
 export const STOP_GRACE_MS = 5_000;
-const MAX_LOG_BYTES = 5_000_000;
+export const LOG_CHECK_MS = 30_000;
+export const MAX_LOG_BYTES = 5_000_000;
 
 export type ServiceState = "running" | "backoff" | "stopped" | "invalid";
 
@@ -60,6 +62,8 @@ export type SupervisorDeps = {
 	logger: Pick<Logger, "info" | "warn">;
 	backoffMs?: (failures: number) => number;
 	stopGraceMs?: number;
+	logCheckMs?: number;
+	maxLogBytes?: number;
 };
 
 type LiveState = Exclude<ServiceState, "invalid">;
@@ -106,11 +110,15 @@ function describeExit(proc: Subprocess): string {
 		: `exit ${proc.exitCode}`;
 }
 
-function openLog(logDir: string, logFile: string): number {
+export function rotateLogIfLarge(logFile: string, maxBytes: number): void {
+	if (!existsSync(logFile) || statSync(logFile).size <= maxBytes) return;
+	copyFileSync(logFile, `${logFile}.1`);
+	truncateSync(logFile, 0);
+}
+
+function openLog(logDir: string, logFile: string, maxBytes: number): number {
 	ensurePrivateDir(logDir);
-	if (existsSync(logFile) && statSync(logFile).size > MAX_LOG_BYTES) {
-		renameSync(logFile, `${logFile}.1`);
-	}
+	rotateLogIfLarge(logFile, maxBytes);
 	return openSync(logFile, "a", 0o600);
 }
 
@@ -118,6 +126,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const { logger } = deps;
 	const backoffMs = deps.backoffMs ?? exponentialBackoffMs;
 	const stopGraceMs = deps.stopGraceMs ?? STOP_GRACE_MS;
+	const logCheckMs = deps.logCheckMs ?? LOG_CHECK_MS;
+	const maxLogBytes = deps.maxLogBytes ?? MAX_LOG_BYTES;
 	const pidDir = join(deps.paths.daemonDir, "services");
 	const entries = new Map<string, Entry>();
 
@@ -126,7 +136,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const pidFileFor = (label: string) => join(pidDir, `${label}.pid`);
 
 	function launch(decl: ServiceDecl): Subprocess {
-		const fd = openLog(deps.paths.logDir, logFileFor(decl.label));
+		const fd = openLog(deps.paths.logDir, logFileFor(decl.label), maxLogBytes);
 		try {
 			return Bun.spawn(decl.argv, {
 				cwd: decl.cwd,
@@ -160,7 +170,16 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		entry.state = "running";
 		entry.startedAt = new Date();
 		logger.info(`service ${decl.label} started (pid ${proc.pid})`);
-		const code = await proc.exited;
+		const rotation = setInterval(() => {
+			try {
+				rotateLogIfLarge(logFileFor(decl.label), maxLogBytes);
+			} catch (err) {
+				logger.warn(
+					`service ${decl.label}: log rotation failed: ${describeError(err)}`,
+				);
+			}
+		}, logCheckMs);
+		const code = await proc.exited.finally(() => clearInterval(rotation));
 		killProcessGroup(proc.pid, stopGraceMs);
 		entry.proc = undefined;
 		entry.pid = undefined;
@@ -183,7 +202,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				`service ${entry.decl.label}: ${entry.lastExit}; restarting in ${delay}ms`,
 			);
 			await sleepUnlessAborted(delay, signal);
-			entry.restarts += 1;
+			if (!signal.aborted) entry.restarts += 1;
 		}
 		entry.state = "stopped";
 		logger.info(
