@@ -503,7 +503,9 @@ export class ChatStore extends EventEmitter {
 
 			const mode = resolveKeyMode(env.DG_KEY_SOURCE);
 			const keychain =
-				seams.keychain ?? createKeychainBackendForPlatform(paths.daemonDir);
+				mode === "file"
+					? undefined
+					: (seams.keychain ?? createKeychainBackendForPlatform(paths));
 
 			const resolved = await resolveDataKey({
 				existing,

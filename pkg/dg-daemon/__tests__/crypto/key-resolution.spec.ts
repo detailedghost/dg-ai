@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	CryptoMetaRow,
@@ -8,6 +9,7 @@ import type {
 } from "../../src/crypto/key-resolution";
 import {
 	fingerprintKey,
+	KeychainEntryExistsError,
 	KeyResolutionRefusedError,
 	resolveDataKey,
 	unwrapDataKey,
@@ -107,6 +109,39 @@ describe("resolveDataKey — fresh init (no crypto_meta row)", () => {
 
 		expect(result.cryptoMeta.keySource).toBe("file");
 		expect(result.warnings.some((w) => /keychain/i.test(w))).toBe(true);
+	});
+});
+
+describe("resolveDataKey — fresh init against an existing keychain entry", () => {
+	it.each(["auto", "keychain"] as const)(
+		"in '%s' mode, refuses to replace an entry that holds a key and never calls store()",
+		async (mode) => {
+			const keychain = fakeKeychain({
+				status: "found",
+				keyBase64: randomBytes(32).toString("base64"),
+			});
+			const keyPath = tempKeyPath();
+
+			await expect(
+				resolveDataKey({ existing: undefined, keyPath, mode, keychain }),
+			).rejects.toThrow(KeychainEntryExistsError);
+
+			expect(keychain.storeCalls).toEqual([]);
+			expect(existsSync(keyPath)).toBe(false);
+		},
+	);
+
+	it("stores a new key when no entry exists", async () => {
+		const keychain = fakeKeychain({ status: "absent" });
+
+		await resolveDataKey({
+			existing: undefined,
+			keyPath: tempKeyPath(),
+			mode: "auto",
+			keychain,
+		});
+
+		expect(keychain.storeCalls).toHaveLength(1);
 	});
 });
 

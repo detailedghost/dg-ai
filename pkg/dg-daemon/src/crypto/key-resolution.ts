@@ -76,6 +76,15 @@ export class KeyResolutionRefusedError extends Error {
 	}
 }
 
+export class KeychainEntryExistsError extends Error {
+	constructor(readonly source: string) {
+		super(
+			`keychain mint refused: a ${source} key-encryption key already exists and this store has no record of it; remove it by hand only if it protects no data`,
+		);
+		this.name = "KeychainEntryExistsError";
+	}
+}
+
 export function fingerprintKey(kek: Buffer): string {
 	const out = hkdfSync("sha256", kek, FINGERPRINT_SALT, Buffer.alloc(0), 16);
 	return Buffer.from(out).toString("hex");
@@ -218,8 +227,16 @@ async function mintViaKeychain(
 	dataKey: Buffer,
 	strict: boolean,
 ): Promise<ResolveDataKeyResult | undefined> {
+	const source = keychain.sourceLabel ?? "keychain";
+	const probe = await keychain
+		.lookup()
+		.catch((): KeychainLookupResult => ({ status: "unreachable" }));
+	if (probe.status === "found") throw new KeychainEntryExistsError(source);
 	const kek = randomBytes(32);
-	const stored = await keychain.store(kek.toString("base64"));
+	const stored =
+		probe.status === "absent"
+			? await keychain.store(kek.toString("base64"))
+			: "unreachable";
 	if (stored !== "stored") {
 		if (strict) {
 			throw new Error(
@@ -234,7 +251,7 @@ async function mintViaKeychain(
 		cryptoMeta: {
 			formatVersion: CRYPTO_META_FORMAT_VERSION,
 			keyId: fingerprintKey(kek),
-			keySource: keychain.sourceLabel ?? "keychain",
+			keySource: source,
 			wrappedDataKey: wrapDataKey(kek, dataKey),
 		},
 		warnings: [],
@@ -260,17 +277,8 @@ async function mintFresh(
 	}
 
 	if (input.keychain) {
-		let reachable = true;
-		try {
-			const probe = await input.keychain.lookup();
-			reachable = probe.status !== "unreachable";
-		} catch {
-			reachable = false;
-		}
-		if (reachable) {
-			const result = await mintViaKeychain(input.keychain, dataKey, false);
-			if (result) return result;
-		}
+		const result = await mintViaKeychain(input.keychain, dataKey, false);
+		if (result) return result;
 		warnings.push(
 			"keychain unreachable — falling back to the file key-encryption key",
 		);
