@@ -5,6 +5,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
 	exponentialBackoffMs,
 	type ServiceStatus,
 	type Supervisor,
+	type SupervisorDeps,
 } from "../../src/services/supervisor";
 
 const roots: string[] = [];
@@ -30,6 +32,11 @@ afterEach(async () => {
 
 const SLEEPER = "setInterval(() => {}, 1000);";
 
+type Tuning = Pick<
+	SupervisorDeps,
+	"backoffMs" | "logCheckMs" | "maxLogBytes"
+>;
+
 type Kit = {
 	root: string;
 	script: (source: string) => string[];
@@ -42,7 +49,10 @@ type Fixture = Kit & {
 	status: (label?: string) => ServiceStatus;
 };
 
-function fixture(build: (kit: Kit) => Record<string, unknown>): Fixture {
+function fixture(
+	build: (kit: Kit) => Record<string, unknown>,
+	tuning: Tuning = {},
+): Fixture {
 	const root = mkdtempSync(join(tmpdir(), "dg-svc-"));
 	roots.push(root);
 	const kit: Kit = {
@@ -60,6 +70,7 @@ function fixture(build: (kit: Kit) => Record<string, unknown>): Fixture {
 		logger: { info: () => {}, warn: () => {} },
 		backoffMs: () => 25,
 		stopGraceMs: 500,
+		...tuning,
 	});
 	supervisors.push(supervisor);
 	return {
@@ -74,10 +85,17 @@ function fixture(build: (kit: Kit) => Record<string, unknown>): Fixture {
 	};
 }
 
-const botRunning = (source: string, extra: Record<string, unknown> = {}) =>
-	fixture(({ root, script }) => ({
-		bot: { argv: script(source), cwd: root, ...extra },
-	}));
+const botRunning = (
+	source: string,
+	extra: Record<string, unknown> = {},
+	tuning: Tuning = {},
+) =>
+	fixture(
+		({ root, script }) => ({
+			bot: { argv: script(source), cwd: root, ...extra },
+		}),
+		tuning,
+	);
 
 async function until(check: () => boolean, ms = 5000): Promise<void> {
 	const deadline = Date.now() + ms;
@@ -122,6 +140,19 @@ describe("createSupervisor", () => {
 		expect(stopped.ok && stopped.status.state).toBe("stopped");
 		expect(isAlive(running.pid as number)).toBe(false);
 		expect(existsSync(f.pidFile)).toBe(false);
+	});
+
+	it("rotates a log that outgrows its limit while the service keeps running", async () => {
+		const f = botRunning(
+			`setInterval(() => console.log("x".repeat(100)), 10);`,
+			{},
+			{ logCheckMs: 50, maxLogBytes: 2_000 },
+		);
+		expect(f.supervisor.start("bot").ok).toBe(true);
+		await until(() => existsSync(`${f.logFile}.1`));
+		expect(statSync(`${f.logFile}.1`).size).toBeGreaterThan(2_000);
+		await until(() => statSync(f.logFile).size > 0);
+		expect(f.status().state).toBe("running");
 	});
 
 	it("refuses an undeclared label and spawns nothing", () => {
@@ -207,6 +238,14 @@ describe("createSupervisor", () => {
 		const { restarts } = f.status();
 		await wait(150);
 		expect(f.status()).toMatchObject({ restarts, state: "stopped" });
+	});
+
+	it("does not count a restart that a stop cut short", async () => {
+		const f = botRunning("process.exit(1);", {}, { backoffMs: () => 60_000 });
+		f.supervisor.start("bot");
+		await until(() => f.status().state === "backoff");
+		await f.supervisor.stop("bot");
+		expect(f.status()).toMatchObject({ restarts: 0, state: "stopped" });
 	});
 
 	it("does not restart a script that exits cleanly", async () => {
