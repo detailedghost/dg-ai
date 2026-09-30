@@ -70,6 +70,7 @@ function makeBrowserApi() {
 				}),
 			},
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
+			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage,
 		},
 		tabs: { create: tabsCreate },
@@ -351,6 +352,7 @@ test("the first frame sent on open is the connect capability handshake carrying 
 		sessionId: bootstrap.sessionId,
 		token: bootstrap.token,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
+		extensionVersion: "1.9.3",
 	});
 });
 
@@ -889,4 +891,19 @@ test("a closed session's bootstrap is removed from storage.session, so the next 
 	expect(sessionRemove).toHaveBeenCalledWith(
 		`${CHAT_SESSION_KEY_PREFIX}${bootstrap.sessionId}`,
 	);
+});
+
+test("the background announces the manifest version in its connect handshake", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	await captureMarker(getOnMessage, makeBootstrap());
+
+	socket.dispatch("open");
+	await settle();
+
+	const connect = socket.send.mock.calls
+		.map(([raw]) => JSON.parse(raw))
+		.find((frame) => frame.type === "connect");
+	expect(connect).toMatchObject({ extensionVersion: "1.9.3" });
 });

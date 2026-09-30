@@ -6,6 +6,10 @@ import { CURRENT_SCHEMA_VERSION } from "../../src/store/schema";
 import {
 	allocatePort,
 	cleanupDgHome,
+	sendConnectHandshake,
+	waitForClose,
+	waitForOpen,
+	wsExtensionSocket,
 	freshDgHome,
 	killDaemonByPidFile,
 	readPidFile,
@@ -55,6 +59,28 @@ describe("dg-daemon status", () => {
 		expect(report.versions.protocol).toBe(CHAT_PROTOCOL_VERSION);
 		expect(report.versions.userVersion).toBe(CURRENT_SCHEMA_VERSION);
 		expect(report.versions.extension).toBeNull();
+	});
+
+	it("reports the connected extension's version and null again once it disconnects", async () => {
+		dgHome = freshDgHome();
+		const port = allocatePort();
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
+		const credentials = await registerSession(port);
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		sendConnectHandshake(page, credentials, CHAT_PROTOCOL_VERSION, "1.9.3");
+
+		await new Promise((r) => setTimeout(r, 150));
+		const version = async () =>
+			JSON.parse((await runStatus(dgHome)).stdout).versions.extension;
+		expect(await version()).toBe("1.9.3");
+
+		const closed = waitForClose(page);
+		page.close();
+		await closed;
+		await new Promise((r) => setTimeout(r, 150));
+		expect(await version()).toBeNull();
 	});
 
 	it("reports no live daemon and removes a stale pid file left by a hard-killed daemon", async () => {

@@ -943,3 +943,34 @@ test.each([
 		fetchSpy.mockRestore();
 	}
 });
+
+function sentConnect(socket: FakeSocket): Record<string, unknown> | undefined {
+	return socket.send.mock.calls
+		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
+		.find((f) => f.type === "connect");
+}
+
+test("the connect handshake carries the extension version when the client knows it", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({
+		openSocket: () => socket,
+		extensionVersion: "1.9.3",
+	});
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(sentConnect(socket)).toMatchObject({
+		extensionVersion: "1.9.3",
+	});
+});
+
+test("the connect handshake omits the extension version when none is configured", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(sentConnect(socket)).not.toHaveProperty("extensionVersion");
+});

@@ -131,6 +131,7 @@ type ConnectHandshake = {
 	sessionId: string;
 	token: string;
 	protocolVersion: number;
+	extensionVersion?: string;
 };
 
 function parseCliFrame(value: unknown): CliFrame | undefined {
@@ -387,7 +388,9 @@ function isConnectHandshake(value: unknown): value is ConnectHandshake {
 		record.type === "connect" &&
 		typeof record.sessionId === "string" &&
 		typeof record.token === "string" &&
-		typeof record.protocolVersion === "number"
+		typeof record.protocolVersion === "number" &&
+		(record.extensionVersion === undefined ||
+			typeof record.extensionVersion === "string")
 	);
 }
 
@@ -415,6 +418,9 @@ async function handleConnectHandshake(
 		return;
 	}
 	ws.data.capabilities.set(handshake.sessionId, handshake.token);
+	if (handshake.extensionVersion) {
+		ws.data.extensionVersion = handshake.extensionVersion;
+	}
 	deps.noteActivity();
 	await sendFrame(ws, handshake.sessionId, {
 		type: "session-list",
