@@ -11,6 +11,7 @@ import {
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
 	CHAT_WS_PATH,
@@ -31,6 +32,7 @@ import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
 import { runJobNow } from "../jobs/runner";
+import type { Supervisor } from "../services/supervisor";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import type { SessionRegistry } from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
@@ -65,6 +67,7 @@ export type HttpServerDeps = {
 	statusDeps: Omit<StatusDeps, "instanceId" | "boundPort" | "registry">;
 	store: ChatStore;
 	dispatchScheduler: DispatchScheduler;
+	supervisor: Supervisor;
 };
 
 const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
@@ -272,6 +275,13 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
 			}
 
+			if (
+				url.pathname === CHAT_SERVICES_PATH ||
+				url.pathname.startsWith(`${CHAT_SERVICES_PATH}/`)
+			) {
+				return handleServiceRoute(req, url, deps);
+			}
+
 			return new Response("not found", { status: 404 });
 		},
 	});
@@ -372,6 +382,45 @@ async function readIdentity(req: Request): Promise<string | undefined> {
 	} catch {
 		return undefined;
 	}
+}
+
+const SERVICE_ACTION_STATUS = { unknown: 404, invalid: 400, conflict: 409 };
+
+async function handleServiceRoute(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const refusal =
+		requireLoopbackHost(req, deps.port) ??
+		refuseForeignOrigin(req, deps.paths);
+	if (refusal) return refusal;
+	const { supervisor } = deps;
+	const [label, verb, ...extra] = url.pathname
+		.slice(CHAT_SERVICES_PATH.length)
+		.split("/")
+		.filter((segment) => segment.length > 0)
+		.map((segment) => decodeURIComponent(segment));
+
+	if (label === undefined && req.method === "GET") {
+		return json({ services: supervisor.status() });
+	}
+
+	const isAction =
+		label !== undefined &&
+		extra.length === 0 &&
+		req.method === "POST" &&
+		(verb === "start" || verb === "stop");
+	if (!isAction) return new Response("not found", { status: 404 });
+
+	const result =
+		verb === "start" ? supervisor.start(label) : await supervisor.stop(label);
+	return result.ok
+		? json(result.status)
+		: new Response(result.error, {
+				status: SERVICE_ACTION_STATUS[result.kind],
+				headers: NOSNIFF_HEADERS,
+			});
 }
 
 async function handleSchedulerRoute(

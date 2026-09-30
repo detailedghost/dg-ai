@@ -147,6 +147,40 @@ A job inherits no secrets: the daemon passes only `PATH`, `HOME`, `LANG` and
 under `HOME` (`~/.sentryclirc`, `~/.config/jira`, and so on). While any job is
 enabled the daemon stays up, ignoring its idle timeout.
 
+Have the daemon **keep a long-running script alive** — a bot, a watcher —
+by declaring it under `services` in `~/.dg/daemon/config.json`:
+
+```json
+{
+  "services": {
+    "teams-bot": {
+      "argv": ["bun", "run", "bot.ts"],
+      "cwd": "/home/me/bots/teams",
+      "envFile": "/home/me/.config/teams-bot.env",
+      "autostart": true
+    }
+  }
+}
+```
+
+Only a script declared there can start, and `argv` runs with no shell. `cwd`
+and `envFile` must be absolute paths. The child gets `PATH`, `HOME`, `LANG` and
+`TZ`, plus the `KEY=VALUE` lines of `envFile`, which must not be readable by
+other users. Then drive it against the live daemon:
+
+```sh
+dg-daemon service start teams-bot
+dg-daemon service status
+dg-daemon service stop teams-bot
+```
+
+A crash restarts the script after 1s, doubling to a 60s cap; a clean exit does
+not restart it. Output streams to `~/.dg/daemon/logs/service-<label>.log`. One
+instance runs per label, guarded by `~/.dg/daemon/services/<label>.pid`. Stop
+signals the whole process group. A running service keeps the daemon from its
+idle exit. Nothing starts the daemon at login yet, so `autostart` only applies
+once the daemon is running.
+
 The extension's **dashboard page** shows what has come in — jobs and their next
 run on the left, the feed on the right — and hands any item to an agent. Jobs
 are added by CLI for now; a page for that is the next step.

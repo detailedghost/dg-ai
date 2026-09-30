@@ -19,7 +19,10 @@ function describeSpawnFailure(executable: string, error: unknown): string {
 	return `failed to start "${executable}": ${describeError(error)}`;
 }
 
-function killProcessGroup(pid: number): void {
+export function killProcessGroup(
+	pid: number,
+	graceMs = DISPATCH_KILL_GRACE_MS,
+): void {
 	try {
 		process.kill(-pid, "SIGTERM");
 	} catch {
@@ -29,7 +32,7 @@ function killProcessGroup(pid: number): void {
 		try {
 			process.kill(-pid, "SIGKILL");
 		} catch {}
-	}, DISPATCH_KILL_GRACE_MS);
+	}, graceMs);
 }
 
 async function drainCapped(
