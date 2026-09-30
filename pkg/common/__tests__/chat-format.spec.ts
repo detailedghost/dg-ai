@@ -549,3 +549,15 @@ describe("fitHistoryPage", () => {
 		expect(fitHistoryPage(items, 48_600).length).toBe(1);
 	});
 });
+
+describe("validateChatFrame — error frame code", () => {
+	it("accepts an error frame with the invalid-session code", () => {
+		expect(() =>
+			validateChatFrame(buildErrorFrame({ code: "invalid-session" })),
+		).not.toThrow();
+	});
+
+	it("rejects an error frame with an unknown code", () => {
+		expect(() => validateChatFrame(buildErrorFrame({ code: "nope" }))).toThrow();
+	});
+});

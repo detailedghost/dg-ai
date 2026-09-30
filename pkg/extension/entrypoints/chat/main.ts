@@ -24,6 +24,7 @@ import {
 import type {
 	ChatClient,
 	ChatConnectionState,
+	ConnectionListener,
 	SendUserMessageOptions,
 } from "@/lib/features/chat-client";
 import {
@@ -72,15 +73,20 @@ function isConnectionState(value: unknown): value is ChatConnectionState {
 	);
 }
 
-function connectionStatusLabel(state: ChatConnectionState): string {
-	switch (state) {
-		case "reconnecting":
-			return "Reconnecting to daemon…";
-		case "daemon-not-running":
-			return "Daemon unreachable";
-		case "connected":
-			return "";
-	}
+type PillState = ChatConnectionState | "not-paired";
+
+const NOT_PAIRED_HINT = "Not paired. Run `dg-agent start --open`";
+
+function connectionStatusLabel(state: PillState, detail?: string): string {
+	const label = {
+		"not-paired": NOT_PAIRED_HINT,
+		reconnecting: "Reconnecting to daemon…",
+		"daemon-not-running": "Daemon unreachable",
+		connected: "",
+	}[state];
+	return detail && state !== "not-paired" && state !== "connected"
+		? `${label} ${detail}`
+		: label;
 }
 
 function isChatHistoryItem(value: unknown): value is ChatHistoryItem {
@@ -115,9 +121,23 @@ function createRelayChatClient(): PageChatClient {
 	const runtime = browser.runtime as unknown as ChatRuntime;
 	const knownSessions = new Set<string>();
 	const listeners = new Set<(frame: ChatFrame) => void>();
+	const connectionListeners = new Set<ConnectionListener>();
 	let connectionState: ChatConnectionState = "daemon-not-running";
 
 	runtime.onMessage.addListener((message) => {
+		if (
+			typeof message === "object" &&
+			message !== null &&
+			(message as Record<string, unknown>).type === MSG.connection
+		) {
+			const { state, detail } = message as Record<string, unknown>;
+			if (!isConnectionState(state)) return;
+			connectionState = state;
+			for (const listener of connectionListeners) {
+				listener(state, typeof detail === "string" ? detail : undefined);
+			}
+			return;
+		}
 		if (
 			typeof message !== "object" ||
 			message === null ||
@@ -209,6 +229,10 @@ function createRelayChatClient(): PageChatClient {
 
 		onFrame(listener): void {
 			listeners.add(listener);
+		},
+
+		onConnectionChange(listener): void {
+			connectionListeners.add(listener);
 		},
 
 		sendUserMessage(
@@ -401,6 +425,8 @@ export async function renderChatPage(
 	);
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
 	let selectedSessionId = order[0];
+	let tokenRejected = false;
+	let connectionDetail: string | undefined;
 	let moving: { sessionId: string; originalOrder: string[] } | undefined;
 	let activeDrag: { sessionId: string; cancel(): void } | undefined;
 
@@ -718,16 +744,21 @@ export async function renderChatPage(
 		threadError.hidden = false;
 	}
 
+	function isPaired(): boolean {
+		return !tokenRejected && (bootstraps.length > 0 || sessions.list().length > 0);
+	}
+
 	function updateConnectionStatus(): void {
-		const state = client.getConnectionState();
+		const connection = client.getConnectionState();
+		const state: PillState = isPaired() ? connection : "not-paired";
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
-		const message = connectionStatusLabel(state);
+		const message = connectionStatusLabel(state, connectionDetail);
 		connectionStatus.textContent = message;
 		for (const create of root.querySelectorAll<HTMLButtonElement>(
 			'button[data-action="create-chat"]',
 		))
-			create.disabled = state === "daemon-not-running";
+			create.disabled = connection === "daemon-not-running";
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
 		);
@@ -1171,6 +1202,10 @@ export async function renderChatPage(
 				break;
 			case "error":
 				showError(frame.message);
+				if (frame.code === "invalid-session") {
+					tokenRejected = true;
+					updateConnectionStatus();
+				}
 				break;
 		}
 		if (
@@ -1183,9 +1218,15 @@ export async function renderChatPage(
 		}
 	});
 
+	client.onConnectionChange((_state, detail) => {
+		connectionDetail = detail;
+		updateConnectionStatus();
+	});
+
 	for (const bootstrap of bootstraps) client.connect(bootstrap);
 	if (bootstraps.length === 0) {
 		showEmpty("no-session", "No sessions yet", "Start a DeeGee chat.");
+		updateConnectionStatus();
 	} else {
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));
 		updateConnectionStatus();

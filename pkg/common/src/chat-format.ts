@@ -143,6 +143,8 @@ export type CommandEntry = {
 
 export type ProgressState = "running" | "awaiting-input" | "agent-gone";
 
+export type ChatErrorCode = "invalid-session";
+
 type Envelope = { sessionId: string; protocolVersion: number };
 
 export type ChatFrame =
@@ -193,7 +195,11 @@ export type ChatFrame =
 			key: string;
 			value: unknown;
 	  })
-	| (Envelope & { type: "error"; message: string })
+	| (Envelope & {
+			type: "error";
+			message: string;
+			code?: ChatErrorCode;
+	  })
 	| (Envelope & {
 			type: "config-result";
 			key: string;
@@ -362,6 +368,9 @@ function validateFrameBody(
 			return;
 		case "error":
 			requireString(value.message, `${path}.message`, { nonEmpty: true });
+			if (value.code !== undefined && value.code !== "invalid-session") {
+				fail(`${path}.code is not a known error code`);
+			}
 			return;
 		case "config-result":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });

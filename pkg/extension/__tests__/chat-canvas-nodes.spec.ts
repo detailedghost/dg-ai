@@ -34,6 +34,7 @@ function makeFakeClient() {
 	return {
 		client: {
 			connect: mock(() => {}),
+			onConnectionChange: () => {},
 			onFrame(listener: FrameListener) {
 				listeners.add(listener);
 			},

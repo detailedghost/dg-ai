@@ -250,6 +250,16 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		extensionVersion: api.runtime.getManifest?.().version,
 	});
 
+	client.onConnectionChange((state, detail) => {
+		void api.runtime
+			.sendMessage({
+				type: MSG.connection,
+				state,
+				...(detail ? { detail } : {}),
+			})
+			.catch(() => {});
+	});
+
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		if (frame.type === "config-result") {

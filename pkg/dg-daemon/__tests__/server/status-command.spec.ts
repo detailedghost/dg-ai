@@ -6,6 +6,7 @@ import { CURRENT_SCHEMA_VERSION } from "../../src/store/schema";
 import {
 	allocatePort,
 	cleanupDgHome,
+	collectFrames,
 	sendConnectHandshake,
 	waitForClose,
 	waitForOpen,
@@ -81,6 +82,28 @@ describe("dg-daemon status", () => {
 		await closed;
 		await new Promise((r) => setTimeout(r, 150));
 		expect(await version()).toBeNull();
+	});
+
+	it("tags the error for a rejected connect handshake so a page can tell a stale token from a daemon outage", async () => {
+		dgHome = freshDgHome();
+		const port = allocatePort();
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
+		const credentials = await registerSession(port);
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		const frames = collectFrames(page);
+		sendConnectHandshake(
+			page,
+			{ ...credentials, token: "stale-token" },
+			CHAT_PROTOCOL_VERSION,
+		);
+
+		await new Promise((r) => setTimeout(r, 300));
+		expect(frames).toContainEqual(
+			expect.objectContaining({ type: "error", code: "invalid-session" }),
+		);
+		page.close();
 	});
 
 	it("reports no live daemon and removes a stale pid file left by a hard-killed daemon", async () => {
