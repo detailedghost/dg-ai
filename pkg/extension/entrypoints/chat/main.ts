@@ -37,6 +37,7 @@ import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
 import { createChatSessions } from "@/lib/features/chat-sessions";
 import type { ChatHistoryItem } from "@/lib/features/chat-transcript";
 import { createVimNav } from "@/lib/features/vim-nav";
+import { createIcon, type IconName } from "./icons";
 import "../options/style.css";
 import "./style.css";
 
@@ -340,6 +341,22 @@ async function loadStoredBootstraps(): Promise<SessionBootstrap[]> {
 	return bootstraps;
 }
 
+function iconControl<K extends "button" | "a">(
+	doc: Document,
+	tag: K,
+	action: string,
+	icon: IconName,
+	label: string,
+): HTMLElementTagNameMap[K] {
+	const node = element(doc, tag, "chat-icon-button");
+	node.dataset.action = action;
+	node.setAttribute("aria-label", label);
+	node.title = label;
+	if (tag === "button") node.setAttribute("type", "button");
+	node.append(createIcon(doc, icon));
+	return node;
+}
+
 function element<K extends keyof HTMLElementTagNameMap>(
 	doc: Document,
 	tag: K,
@@ -400,35 +417,49 @@ export async function renderChatPage(
 	const railHeader = element(doc, "header", "chat-rail__header");
 	const brand = element(doc, "h1", "chat-rail__brand", "DeeGee");
 	const railActions = element(doc, "div", "chat-rail__actions");
-	const themeButton = element(doc, "button", "chat-button", "Light");
-	themeButton.type = "button";
-	themeButton.dataset.action = "theme";
-	const createButton = element(
+	railActions.setAttribute("role", "toolbar");
+	railActions.setAttribute("aria-label", "Sidebar actions");
+	const createButton = iconControl(
 		doc,
 		"button",
-		"chat-button chat-button--primary",
-		"+ New",
+		"create-chat",
+		"plus",
+		"New chat",
 	);
-	createButton.type = "button";
-	createButton.dataset.action = "create-chat";
-	const canvasButton = element(doc, "button", "chat-button", "Canvas");
-	canvasButton.type = "button";
-	canvasButton.dataset.action = "toggle-canvas";
+	createButton.classList.add("chat-icon-button--primary");
+	const canvasButton = iconControl(
+		doc,
+		"button",
+		"toggle-canvas",
+		"canvas",
+		"Canvas view",
+	);
 	canvasButton.setAttribute("aria-pressed", "false");
-	const vimToggle = element(doc, "button", "chat-button", "Vim");
-	vimToggle.type = "button";
-	vimToggle.dataset.action = "vim-toggle";
+	const vimToggle = iconControl(
+		doc,
+		"button",
+		"vim-toggle",
+		"vim",
+		"Vim navigation",
+	);
 	vimToggle.setAttribute("aria-pressed", "false");
-	const settingsLink = element(doc, "a", "", "Settings");
+	const themeButton = iconControl(doc, "button", "theme", "sun", "Theme");
+	const settingsLink = iconControl(
+		doc,
+		"a",
+		"settings",
+		"settings",
+		"Settings",
+	);
 	settingsLink.href = "/options.html#/settings";
 	railActions.append(
-		themeButton,
+		createButton,
 		canvasButton,
 		vimToggle,
-		createButton,
+		themeButton,
 		settingsLink,
 	);
-	railHeader.append(brand, railActions);
+	railHeader.append(brand, railActions, connectionStatus);
 	const vimFilterInput = element(doc, "input", "chat-vimfilter");
 	vimFilterInput.type = "text";
 	vimFilterInput.hidden = true;
@@ -441,13 +472,7 @@ export async function renderChatPage(
 	vimCheat.hidden = true;
 	const railSections = element(doc, "nav", "chat-rail__sections");
 	railSections.setAttribute("aria-label", "Sessions by workset");
-	rail.append(
-		railHeader,
-		connectionStatus,
-		vimFilterInput,
-		vimCheat,
-		railSections,
-	);
+	rail.append(railHeader, vimFilterInput, vimCheat, railSections);
 
 	const thread = element(doc, "main", "chat-thread");
 	const threadHeader = element(doc, "header", "chat-thread__header");
@@ -699,6 +724,10 @@ export async function renderChatPage(
 		connectionStatus.hidden = state === "connected";
 		const message = connectionStatusLabel(state);
 		connectionStatus.textContent = message;
+		for (const create of root.querySelectorAll<HTMLButtonElement>(
+			'button[data-action="create-chat"]',
+		))
+			create.disabled = state === "daemon-not-running";
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
 		);
@@ -1044,11 +1073,19 @@ export async function renderChatPage(
 		isTextInputFocused: () => isTextEntryFocused(doc),
 	});
 
-	themeButton.addEventListener("click", () => {
+	function syncThemeButton(): void {
 		const light = root.dataset.theme === "light";
-		root.dataset.theme = light ? "dark" : "light";
-		themeButton.textContent = light ? "Light" : "Dark";
+		const label = `Theme: ${light ? "light" : "dark"}`;
+		themeButton.setAttribute("aria-label", label);
+		themeButton.title = label;
+		themeButton.replaceChildren(createIcon(doc, light ? "sun" : "moon"));
+	}
+
+	themeButton.addEventListener("click", () => {
+		root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+		syncThemeButton();
 	});
+	syncThemeButton();
 
 	createButton.addEventListener("click", requestNewChatSession);
 

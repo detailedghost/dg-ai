@@ -607,7 +607,7 @@ test("the primary rail-and-thread surface is the default view, reachable in docu
 	expect(primary).toBe(root);
 	expect(
 		root.querySelector(
-			".chat-rail [aria-hidden='true'], .chat-thread [aria-hidden='true']",
+			".chat-rail [aria-hidden='true']:not(svg), .chat-thread [aria-hidden='true']",
 		),
 	).toBeNull();
 	expect(root.querySelector(".chat-thread")?.hasAttribute("hidden")).toBe(
@@ -1324,4 +1324,118 @@ test("vim: never swallows j while the message composer has focus", async () => {
 		root.querySelector<HTMLElement>("[data-vim-cursor='true']")?.dataset
 			.sessionId,
 	).toBe("session-a");
+});
+
+async function renderToolbarPage(
+	initialState: "connected" | "daemon-not-running" = "connected",
+) {
+	const root = newRoot();
+	const fake = makeFakeClient(initialState);
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	return root;
+}
+
+function toolbarControl(root: HTMLElement, action: string): HTMLElement {
+	return root.querySelector(
+		`.chat-rail__actions [data-action='${action}']`,
+	) as unknown as HTMLElement;
+}
+
+test("every sidebar toolbar control has an accessible name", async () => {
+	const root = await renderToolbarPage();
+
+	const labels = [
+		"create-chat",
+		"toggle-canvas",
+		"vim-toggle",
+		"theme",
+		"settings",
+	]
+		.map((action) => toolbarControl(root, action))
+		.map((control) => [
+			control.getAttribute("aria-label"),
+			control.getAttribute("title"),
+		]);
+
+	expect(labels.every(([label, title]) => label && label === title)).toBe(true);
+	expect(root.querySelector(".chat-rail__actions")?.getAttribute("role")).toBe(
+		"toolbar",
+	);
+});
+
+test("the canvas and vim toolbar toggles reflect their state in aria-pressed", async () => {
+	const root = await renderToolbarPage();
+	const canvas = toolbarControl(root, "toggle-canvas");
+	const vim = toolbarControl(root, "vim-toggle");
+
+	expect([canvas, vim].map((c) => c.getAttribute("aria-pressed"))).toEqual([
+		"false",
+		"false",
+	]);
+
+	click(canvas);
+	click(vim);
+	expect([canvas, vim].map((c) => c.getAttribute("aria-pressed"))).toEqual([
+		"true",
+		"true",
+	]);
+
+	click(canvas);
+	click(vim);
+	expect([canvas, vim].map((c) => c.getAttribute("aria-pressed"))).toEqual([
+		"false",
+		"false",
+	]);
+});
+
+test("the theme button label names the current theme and follows each switch", async () => {
+	const root = await renderToolbarPage();
+	const theme = toolbarControl(root, "theme");
+
+	expect(theme.getAttribute("aria-label")).toBe("Theme: dark");
+	expect(theme.getAttribute("title")).toBe("Theme: dark");
+
+	click(theme);
+	expect(root.dataset.theme).toBe("light");
+	expect(theme.getAttribute("aria-label")).toBe("Theme: light");
+	expect(theme.getAttribute("title")).toBe("Theme: light");
+
+	click(theme);
+	expect(theme.getAttribute("aria-label")).toBe("Theme: dark");
+});
+
+test("the daemon status pill is hidden when connected and names the state otherwise", async () => {
+	const connected = await renderToolbarPage("connected");
+	const connectedPill = connected.querySelector(
+		".chat-rail__header .chat-rail__connection",
+	) as unknown as HTMLElement;
+	expect(connectedPill.hidden).toBe(true);
+
+	const down = await renderToolbarPage("daemon-not-running");
+	const pill = down.querySelector(
+		".chat-rail__header .chat-rail__connection",
+	) as unknown as HTMLElement;
+	expect(pill.hidden).toBe(false);
+	expect(pill.getAttribute("role")).toBe("status");
+	expect(pill.dataset.connection).toBe("daemon-not-running");
+	expect(pill.textContent).toBe("Daemon unreachable");
+});
+
+test("the new chat button is enabled when connected and disabled while the daemon is unreachable", async () => {
+	const connected = await renderToolbarPage("connected");
+	expect(
+		(toolbarControl(connected, "create-chat") as HTMLButtonElement).disabled,
+	).toBe(false);
+
+	const down = await renderToolbarPage("daemon-not-running");
+	expect(
+		(toolbarControl(down, "create-chat") as HTMLButtonElement).disabled,
+	).toBe(true);
 });
