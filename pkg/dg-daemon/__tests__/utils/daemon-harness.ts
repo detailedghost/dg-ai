@@ -516,6 +516,7 @@ export function sendConnectHandshake(
 	ws: WebSocket,
 	credentials: Credentials,
 	protocolVersion: number,
+	extensionVersion?: string,
 ): void {
 	ws.send(
 		JSON.stringify({
@@ -523,6 +524,7 @@ export function sendConnectHandshake(
 			sessionId: credentials.sessionId,
 			token: credentials.token,
 			protocolVersion,
+			...(extensionVersion ? { extensionVersion } : {}),
 		}),
 	);
 }

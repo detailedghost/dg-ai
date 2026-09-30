@@ -49,6 +49,7 @@ export type ChatBrowserApi = {
 			): void;
 		};
 		getURL(path: string): string;
+		getManifest?(): { version: string };
 		sendMessage(message: unknown): Promise<unknown>;
 	};
 	tabs: {
@@ -246,6 +247,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
+		extensionVersion: api.runtime.getManifest?.().version,
 	});
 
 	client.onFrame((frame) => {

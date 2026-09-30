@@ -99,7 +99,7 @@ export async function cmdServe(): Promise<void> {
 	const statusDeps: HttpServerDeps["statusDeps"] = {
 		wslNetworkingMode,
 		getLastError: () => logger.getLastError(),
-		getExtensionVersion: () => null,
+		getExtensionVersion: () => connections.extensionVersion(),
 	};
 
 	let boundPort: number | undefined;

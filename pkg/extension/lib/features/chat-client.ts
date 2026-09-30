@@ -37,6 +37,7 @@ export type ChatClientOptions = {
 	backoffBaseMs?: number;
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
+	extensionVersion?: string;
 };
 
 export type ChatClient = {
@@ -66,12 +67,14 @@ function chatSocketUrl(port: number): string {
 function buildConnectFrame(
 	sessionId: string,
 	token: string,
+	extensionVersion?: string,
 ): Record<string, unknown> {
 	return {
 		type: "connect",
 		sessionId,
 		token,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
+		...(extensionVersion ? { extensionVersion } : {}),
 	};
 }
 
@@ -121,7 +124,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function sendConnectHandshake(sessionId: string, token: string): void {
-		send(buildConnectFrame(sessionId, token));
+		send(buildConnectFrame(sessionId, token, options.extensionVersion));
 	}
 
 	function sendHistoryRequest(sessionId: string, token: string): void {

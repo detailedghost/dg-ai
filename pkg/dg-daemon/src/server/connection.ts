@@ -12,6 +12,7 @@ export type SocketState = {
 	drainWaiters: Array<() => void>;
 	closeWaiters: Set<() => void>;
 	originHeader?: string;
+	extensionVersion?: string;
 };
 
 export function createSocketState(
@@ -86,6 +87,16 @@ export class ConnectionManager {
 
 	openCount(): number {
 		return this.sockets.size;
+	}
+
+	extensionVersion(): string | null {
+		let latest: string | null = null;
+		for (const ws of this.sockets) {
+			if (ws.data.kind === "ws" && ws.data.extensionVersion) {
+				latest = ws.data.extensionVersion;
+			}
+		}
+		return latest;
 	}
 
 	broadcastToPages(frame: Record<string, unknown>): void {
