@@ -50,8 +50,12 @@ export function tryOpen(url: string): Promise<boolean> {
 	});
 }
 
-export function run(command: string, args: string[]): string {
-	const r = spawnSync(command, args, { encoding: "utf8" });
+export function run(
+	command: string,
+	args: string[],
+	options: { cwd?: string } = {},
+): string {
+	const r = spawnSync(command, args, { encoding: "utf8", cwd: options.cwd });
 	if (r.error) {
 		throw new Error(
 			`${command} not found or failed to start: ${r.error.message}`,
