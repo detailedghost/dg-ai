@@ -1,12 +1,44 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { runCapture } from "@dg/common/node";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { type DgPaths, runCapture } from "@dg/common/node";
 import type { KeychainBackend, KeychainLookupResult } from "./key-resolution";
 
 const SERVICE = "dg-server";
 const ACCOUNT = "chat-store-kek";
+const SCOPE_HASH_CHARS = 12;
 
-export function secretToolBackend(): KeychainBackend {
+export class RealKeychainInTestError extends Error {
+	constructor(backend: string) {
+		super(
+			`refusing to use the real ${backend} keychain backend under test; inject a fake backend or set DG_KEY_SOURCE=file`,
+		);
+		this.name = "RealKeychainInTestError";
+	}
+}
+
+function assertNotUnderTest(backend: string): void {
+	if (process.env.NODE_ENV === "test") {
+		throw new RealKeychainInTestError(backend);
+	}
+}
+
+export function keychainAccountFor(
+	stateDir: string,
+	homeDir: string = homedir(),
+): string {
+	const resolved = resolve(stateDir);
+	if (resolved === resolve(homeDir, ".dg")) return ACCOUNT;
+	const scope = createHash("sha256")
+		.update(resolved)
+		.digest("hex")
+		.slice(0, SCOPE_HASH_CHARS);
+	return `${ACCOUNT}:${scope}`;
+}
+
+export function secretToolBackend(account: string): KeychainBackend {
+	assertNotUnderTest("secret-tool");
 	return {
 		async lookup(): Promise<KeychainLookupResult> {
 			let result: Awaited<ReturnType<typeof runCapture>>;
@@ -16,7 +48,7 @@ export function secretToolBackend(): KeychainBackend {
 					"service",
 					SERVICE,
 					"account",
-					ACCOUNT,
+					account,
 				]);
 			} catch {
 				return { status: "unreachable" };
@@ -38,7 +70,7 @@ export function secretToolBackend(): KeychainBackend {
 						"service",
 						SERVICE,
 						"account",
-						ACCOUNT,
+						account,
 					],
 					{ stdin: keyBase64 },
 				);
@@ -50,14 +82,15 @@ export function secretToolBackend(): KeychainBackend {
 	};
 }
 
-export function macKeychainBackend(): KeychainBackend {
+export function macKeychainBackend(account: string): KeychainBackend {
+	assertNotUnderTest("security");
 	return {
 		async lookup(): Promise<KeychainLookupResult> {
 			try {
 				const result = await runCapture("security", [
 					"find-generic-password",
 					"-a",
-					ACCOUNT,
+					account,
 					"-s",
 					SERVICE,
 					"-w",
@@ -77,12 +110,11 @@ export function macKeychainBackend(): KeychainBackend {
 				const result = await runCapture("security", [
 					"add-generic-password",
 					"-a",
-					ACCOUNT,
+					account,
 					"-s",
 					SERVICE,
 					"-w",
 					keyBase64,
-					"-U",
 				]);
 				return result.status === 0 ? "stored" : "unreachable";
 			} catch {
@@ -97,6 +129,7 @@ function powershellQuote(value: string): string {
 }
 
 export function dpapiBackend(dpapiPath: string): KeychainBackend {
+	assertNotUnderTest("powershell");
 	return {
 		sourceLabel: "dpapi-protected-file",
 		async lookup(): Promise<KeychainLookupResult> {
@@ -131,12 +164,16 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 }
 
 export function createKeychainBackendForPlatform(
-	stateDir: string,
+	paths: Pick<DgPaths, "stateDir" | "daemonDir">,
 ): KeychainBackend | undefined {
-	if (process.platform === "linux") return secretToolBackend();
-	if (process.platform === "darwin") return macKeychainBackend();
+	if (process.platform === "linux") {
+		return secretToolBackend(keychainAccountFor(paths.stateDir));
+	}
+	if (process.platform === "darwin") {
+		return macKeychainBackend(keychainAccountFor(paths.stateDir));
+	}
 	if (process.platform === "win32") {
-		return dpapiBackend(join(stateDir, "key.dpapi"));
+		return dpapiBackend(join(paths.daemonDir, "key.dpapi"));
 	}
 	return undefined;
 }
