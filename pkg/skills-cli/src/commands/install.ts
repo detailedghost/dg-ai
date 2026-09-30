@@ -17,7 +17,7 @@ import {
 	rmSync,
 	statSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { run } from "@dg/common/node";
 import type { Command } from "commander";
 import {
@@ -50,8 +50,33 @@ function copyDir(src: string, dest: string): void {
 	}
 }
 
-function localOutputDir(target: Target): string | undefined {
-	const outRoot = join(repoRoot(), "pkg", "extension", ".output");
+const hasExtensionSource = (root: string): boolean =>
+	existsSync(join(root, "pkg", "extension", "package.json"));
+
+function findUpward(dir: string): string | undefined {
+	if (hasExtensionSource(dir)) return dir;
+	const parent = dirname(dir);
+	return parent === dir ? undefined : findUpward(parent);
+}
+
+export function resolveLocalRepo(
+	repo: string | undefined,
+	cwd: string,
+	fallback: string = repoRoot(),
+): string {
+	const found = repo
+		? [resolve(repo)].find(hasExtensionSource)
+		: (findUpward(cwd) ?? [fallback].find(hasExtensionSource));
+	if (!found) {
+		throw new Error(
+			"no pkg/extension to build from: run this from inside the dg repo or pass --repo <path>",
+		);
+	}
+	return found;
+}
+
+function localOutputDir(root: string, target: Target): string | undefined {
+	const outRoot = join(root, "pkg", "extension", ".output");
 	if (!existsSync(outRoot)) return undefined;
 	const dir = readdirSync(outRoot).find((d) => d.startsWith(`${target}-`));
 	return dir ? join(outRoot, dir) : undefined;
@@ -67,14 +92,13 @@ export function localBuildScripts(
 	];
 }
 
-function buildLocally(target: Target): string {
-	const src = join(repoRoot(), "pkg", "extension");
-	if (!existsSync(src)) throw new Error("no pkg/extension to build from");
-	const wxtBin = join(repoRoot(), "node_modules", ".bin", "wxt");
+function buildLocally(root: string, target: Target): string {
+	const src = join(root, "pkg", "extension");
+	const wxtBin = join(root, "node_modules", ".bin", "wxt");
 	localBuildScripts(target, existsSync(wxtBin)).forEach((args) => {
 		run("bun", args, { cwd: src });
 	});
-	const out = localOutputDir(target);
+	const out = localOutputDir(root, target);
 	if (!out) throw new Error("local build produced no output directory");
 	return out;
 }
@@ -167,7 +191,11 @@ async function installCli(): Promise<void> {
 	removeRetiredBinaries();
 }
 
-async function install(target: Target, forceLocal: boolean): Promise<void> {
+async function install(
+	target: Target,
+	forceLocal: boolean,
+	repo?: string,
+): Promise<void> {
 	const dest = extensionDest(target);
 
 	// Resolve a source + version: CI release first, local build as dev fallback.
@@ -186,7 +214,8 @@ async function install(target: Target, forceLocal: boolean): Promise<void> {
 		version = release.version;
 		stage = () => extractZip(release.zip, dest.copyPath);
 	} else {
-		const out = localOutputDir(target) ?? buildLocally(target);
+		const root = resolveLocalRepo(repo, process.cwd());
+		const out = localOutputDir(root, target) ?? buildLocally(root, target);
 		version = manifestVersion(out);
 		stage = () => copyDir(out, dest.copyPath);
 	}
@@ -232,7 +261,17 @@ export function registerInstall(program: Command): void {
 			"chrome (default; serves Brave/Edge/Vivaldi) | firefox",
 		)
 		.option("--local", "build from pkg/extension instead of the GitHub release")
-		.action(async (target: string | undefined, opts: { local?: boolean }) => {
-			await install(target === "firefox" ? "firefox" : "chrome", !!opts.local);
-		});
+		.option("--repo <path>", "dg repo to build from (default: search up from cwd)")
+		.action(
+			async (
+				target: string | undefined,
+				opts: { local?: boolean; repo?: string },
+			) => {
+				await install(
+					target === "firefox" ? "firefox" : "chrome",
+					!!opts.local,
+					opts.repo,
+				);
+			},
+		);
 }
