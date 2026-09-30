@@ -384,6 +384,14 @@ async function readIdentity(req: Request): Promise<string | undefined> {
 	}
 }
 
+function decodeSegment(segment: string): string | undefined {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		return undefined;
+	}
+}
+
 const SERVICE_ACTION_STATUS = { unknown: 404, invalid: 400, conflict: 409 };
 
 async function handleServiceRoute(
@@ -396,11 +404,18 @@ async function handleServiceRoute(
 		refuseForeignOrigin(req, deps.paths);
 	if (refusal) return refusal;
 	const { supervisor } = deps;
-	const [label, verb, ...extra] = url.pathname
+	const segments = url.pathname
 		.slice(CHAT_SERVICES_PATH.length)
 		.split("/")
 		.filter((segment) => segment.length > 0)
-		.map((segment) => decodeURIComponent(segment));
+		.map(decodeSegment);
+	if (segments.includes(undefined)) {
+		return new Response("malformed service path", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const [label, verb, ...extra] = segments as string[];
 
 	if (label === undefined && req.method === "GET") {
 		return json({ services: supervisor.status() });

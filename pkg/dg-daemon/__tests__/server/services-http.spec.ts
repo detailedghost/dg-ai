@@ -108,6 +108,12 @@ describe("GET/POST /services", () => {
 		expect((await status.json()).services[0].state).toBe("stopped");
 	});
 
+	it("answers 400 for a malformed percent-encoded label", async () => {
+		const { port } = await boot(botDecl);
+		const resp = await fetchService(port, "%E0%A4%A/start", "POST");
+		expect(resp.status).toBe(400);
+	});
+
 	it("refuses a request whose Host is not the loopback authority", async () => {
 		const { port } = await boot(botDecl);
 		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`, {
