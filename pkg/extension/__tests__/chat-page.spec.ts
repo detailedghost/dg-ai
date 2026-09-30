@@ -49,6 +49,7 @@ function makeFakeClient(
 	return {
 		client: {
 			connect: mock(() => {}),
+			onConnectionChange: mock(() => {}),
 			onFrame(listener: FrameListener) {
 				listeners.add(listener);
 			},
@@ -876,6 +877,7 @@ test("regression: the daemon-unreachable zero-state does not flash when connect(
 			}, 0);
 		}),
 		onFrame: mock(() => {}),
+		onConnectionChange: mock(() => {}),
 		sendUserMessage: mock(() => "message-id"),
 		getConnectionState: () => state,
 		requestNewSession: mock(() => {}),
@@ -1438,4 +1440,77 @@ test("the new chat button is enabled when connected and disabled while the daemo
 	expect(
 		(toolbarControl(down, "create-chat") as HTMLButtonElement).disabled,
 	).toBe(true);
+});
+
+const NOT_PAIRED_HINT = "Not paired. Run `dg-agent start --open`";
+
+function statusPill(root: HTMLElement): HTMLElement {
+	return root.querySelector(
+		".chat-rail__header .chat-rail__connection",
+	) as unknown as HTMLElement;
+}
+
+test("the status pill tells an unpaired page to run dg-agent start when no session is stored", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient("daemon-not-running");
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => [],
+	});
+
+	const pill = statusPill(root);
+	expect(pill.hidden).toBe(false);
+	expect(pill.dataset.connection).toBe("not-paired");
+	expect(pill.textContent).toBe(NOT_PAIRED_HINT);
+});
+
+test("the status pill tells the page it is unpaired when the daemon rejects the stored token", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient("connected");
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	expect(statusPill(root).hidden).toBe(true);
+
+	fake.emit({
+		type: "error",
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		message: "connect handshake presented an invalid or closed session capability",
+		code: "invalid-session",
+	} as ChatFrame);
+
+	expect(statusPill(root).hidden).toBe(false);
+	expect(statusPill(root).textContent).toBe(NOT_PAIRED_HINT);
+});
+
+test("a paired page with an unreachable daemon keeps the daemon-unreachable pill, not the pairing hint", async () => {
+	const root = await renderToolbarPage("daemon-not-running");
+
+	expect(statusPill(root).dataset.connection).toBe("daemon-not-running");
+	expect(statusPill(root).textContent).toBe("Daemon unreachable");
+});
+
+test("a connection change relayed from the service worker updates the pill with its detail", async () => {
+	const root = newRoot();
+	await renderChatPage({ root, loadBootstraps: async () => bootstraps() });
+
+	relayMessageListener?.({
+		type: MSG.connection,
+		state: "reconnecting",
+		detail: "could not reach the daemon on port 47823",
+	});
+
+	const pill = statusPill(root);
+	expect(pill.hidden).toBe(false);
+	expect(pill.dataset.connection).toBe("reconnecting");
+	expect(pill.textContent).toBe(
+		"Reconnecting to daemon… could not reach the daemon on port 47823",
+	);
+
+	relayMessageListener?.({ type: MSG.connection, state: "connected" });
+	expect(pill.hidden).toBe(true);
 });

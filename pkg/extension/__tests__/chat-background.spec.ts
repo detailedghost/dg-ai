@@ -907,3 +907,34 @@ test("the background announces the manifest version in its connect handshake", a
 		.find((frame) => frame.type === "connect");
 	expect(connect).toMatchObject({ extensionVersion: "1.9.3" });
 });
+
+test("a socket error is relayed to the chat page as a connection change with its detail", async () => {
+	const { api, getOnMessage, sendMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+
+	socket.dispatch("error");
+	await settle();
+
+	expect(sendMessage).toHaveBeenCalledWith({
+		type: MSG.connection,
+		state: "reconnecting",
+		detail: `could not reach the daemon on port ${CHAT_DEFAULT_PORT}`,
+	});
+});
+
+test("a socket that opens is relayed to the chat page as connected", async () => {
+	const { api, getOnMessage, sendMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	await captureMarker(getOnMessage, makeBootstrap());
+
+	socket.dispatch("open");
+	await settle();
+
+	expect(sendMessage).toHaveBeenCalledWith({
+		type: MSG.connection,
+		state: "connected",
+	});
+});

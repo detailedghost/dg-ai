@@ -974,3 +974,33 @@ test("the connect handshake omits the extension version when none is configured"
 
 	expect(sentConnect(socket)).not.toHaveProperty("extensionVersion");
 });
+
+test("announces each connection change with a detail naming the port when the socket errors", () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const changes: Array<[string, string | undefined]> = [];
+	client.onConnectionChange((state, detail) => changes.push([state, detail]));
+
+	client.connect(makeBootstrap({ port: 47823 }));
+	socket.dispatch("error");
+	socket.dispatch("open");
+
+	expect(changes).toEqual([
+		["reconnecting", "could not reach the daemon on port 47823"],
+		["connected", undefined],
+	]);
+});
+
+test("announces daemon-not-running when the socket cannot be opened", () => {
+	const client = createChatClient({
+		openSocket: () => {
+			throw new Error("ECONNREFUSED");
+		},
+	});
+	const changes: string[] = [];
+	client.onConnectionChange((state) => changes.push(state));
+
+	client.connect(makeBootstrap());
+
+	expect(changes).toEqual(["daemon-not-running"]);
+});

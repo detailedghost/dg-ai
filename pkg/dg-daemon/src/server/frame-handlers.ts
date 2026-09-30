@@ -5,6 +5,7 @@ import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	type ChatErrorCode,
 	type ChatFrame,
 	type CliFrame,
 	describeError,
@@ -77,8 +78,13 @@ function sendError(
 	ws: ServerWebSocket<SocketState>,
 	sessionId: string,
 	message: string,
+	code?: ChatErrorCode,
 ): Promise<void> {
-	return sendFrame(ws, sessionId, { type: "error", message });
+	return sendFrame(ws, sessionId, {
+		type: "error",
+		message,
+		...(code ? { code } : {}),
+	});
 }
 
 function broadcastPageFrame(
@@ -413,6 +419,7 @@ async function handleConnectHandshake(
 			ws,
 			handshake.sessionId,
 			"connect handshake presented an invalid or closed session capability",
+			"invalid-session",
 		);
 		noteInvalid(ws);
 		return;

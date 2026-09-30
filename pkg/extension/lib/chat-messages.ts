@@ -7,6 +7,7 @@ export const MSG = {
 	sessionCreate: "dg-chat:session-create",
 	sessionClose: "dg-chat:session-close",
 	frame: "dg-chat:frame",
+	connection: "dg-chat:connection",
 	configRequest: "dg-chat:config-request",
 	commandInvocation: "dg-chat:command-invocation",
 } as const;

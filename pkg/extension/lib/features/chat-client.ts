@@ -25,6 +25,11 @@ export type ChatConnectionState =
 	| "reconnecting"
 	| "daemon-not-running";
 
+export type ConnectionListener = (
+	state: ChatConnectionState,
+	detail?: string,
+) => void;
+
 export type SendUserMessageOptions = {
 	messageId?: string;
 	subagentName?: string;
@@ -43,6 +48,7 @@ export type ChatClientOptions = {
 export type ChatClient = {
 	connect(bootstrap: SessionBootstrap): void;
 	onFrame(listener: (frame: ChatFrame) => void): void;
+	onConnectionChange(listener: ConnectionListener): void;
 	sendUserMessage(
 		sessionId: string,
 		body: string,
@@ -108,10 +114,19 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let knownInstanceId: string | undefined;
 	const capabilities = new Map<string, string>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
+	const connectionListeners = new Set<ConnectionListener>();
 	const outbox: QueuedMessage[] = [];
 	const enqueueSend = createSerialQueue((err) =>
 		console.error("[dg-chat] outbound send failed:", err),
 	);
+
+	function setConnectionState(
+		state: ChatConnectionState,
+		detail?: string,
+	): void {
+		connectionState = state;
+		for (const listener of connectionListeners) listener(state, detail);
+	}
 
 	function socketUrl(): string {
 		return chatSocketUrl(port as number);
@@ -162,7 +177,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function handleOpen(): void {
-		connectionState = "connected";
+		setConnectionState("connected");
 		reconnectAttempt = 0;
 		everConnected = true;
 		if (port !== undefined) {
@@ -196,12 +211,15 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function scheduleReconnect(): void {
-		connectionState = "reconnecting";
+		setConnectionState("reconnecting");
 		scheduleRetry();
 	}
 
 	function handleError(): void {
-		connectionState = "reconnecting";
+		setConnectionState(
+			"reconnecting",
+			`could not reach the daemon on port ${port}`,
+		);
 	}
 
 	function handleMessage(event: unknown): void {
@@ -252,7 +270,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		try {
 			opened = openSocket(socketUrl());
 		} catch {
-			connectionState = "daemon-not-running";
+			setConnectionState("daemon-not-running");
 			socket = null;
 			scheduleRetry();
 			return;
@@ -281,6 +299,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 		onFrame(listener: (frame: ChatFrame) => void): void {
 			frameListeners.add(listener);
+		},
+
+		onConnectionChange(listener: ConnectionListener): void {
+			connectionListeners.add(listener);
 		},
 
 		sendUserMessage(
