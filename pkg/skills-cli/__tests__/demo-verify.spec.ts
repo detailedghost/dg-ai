@@ -514,6 +514,15 @@ describe("browser sandbox flag", () => {
 		expect(args).toContain("--disable-extensions-except=/tmp/ext");
 		expect(args).toContain("--remote-debugging-port=0");
 	});
+
+	test("a fixture-page launch carries no extension flags", () => {
+		const args = browserArgs("/tmp/profile", undefined, false);
+
+		expect(args.some((arg) => arg.startsWith("--load-extension="))).toBe(false);
+		expect(
+			args.some((arg) => arg.startsWith("--disable-extensions-except=")),
+		).toBe(false);
+	});
 });
 
 describe("browser teardown always terminates", () => {
