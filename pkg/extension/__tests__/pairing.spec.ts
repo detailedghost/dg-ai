@@ -136,6 +136,73 @@ test("a correct code sends the bootstrap through the marker path and connects th
 	expect(root.querySelector("[role='status']")?.textContent).toBe("Paired");
 });
 
+test("reports a background setup failure instead of claiming pairing succeeded", async () => {
+	const root = newRoot();
+	const pairBootstrap = bootstrap();
+	const runtime = {
+		onMessage: { addListener: mock(() => undefined) },
+		sendMessage: mock((message: unknown) =>
+			Promise.resolve(
+				(message as Record<string, unknown>).type === MSG.connectionRequest
+					? { connected: false }
+					: { ok: false, error: "storage failed" },
+			),
+		),
+	};
+	const handle = mountPairing(root, {
+		variant: "options",
+		runtime,
+		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+		fetch: () => Promise.resolve(Response.json(pairBootstrap)),
+	});
+	await handle.ready;
+
+	await submit(root, "123456");
+
+	expect(root.querySelector("[role='status']")?.textContent).toBe(
+		"Could not finish pairing. Run dg-daemon pair again, then retry.",
+	);
+	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
+});
+
+test("ignores a second submission while pairing is pending", async () => {
+	const root = newRoot();
+	let resolvePair: ((response: Response) => void) | undefined;
+	const pendingPair = new Promise<Response>((resolve) => {
+		resolvePair = resolve;
+	});
+	const fetchPair = mock(() => pendingPair);
+	const runtime = {
+		onMessage: { addListener: mock(() => undefined) },
+		sendMessage: mock((message: unknown) =>
+			Promise.resolve(
+				(message as Record<string, unknown>).type === MSG.connectionRequest
+					? { connected: false }
+					: { ok: true },
+			),
+		),
+	};
+	const handle = mountPairing(root, {
+		variant: "options",
+		runtime,
+		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+		fetch: fetchPair,
+	});
+	await handle.ready;
+
+	await submit(root, "123456");
+	await submit(root, "123456");
+
+	expect(fetchPair).toHaveBeenCalledTimes(1);
+	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(true);
+	expect(root.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(
+		true,
+	);
+	resolvePair?.(Response.json(bootstrap()));
+	await settle();
+	expect(root.querySelector("[role='status']")?.textContent).toBe("Paired");
+});
+
 describe.each([
 	[401, { attemptsLeft: 3 }, "Wrong code. 3 tries left."],
 	[404, {}, "Code expired. Run dg-daemon pair again."],

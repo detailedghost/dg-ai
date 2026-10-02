@@ -27,7 +27,6 @@ export type PairingOptions = {
 
 export type PairingHandle = {
 	ready: Promise<void>;
-	refresh(): Promise<void>;
 	setConnected(connected: boolean): void;
 	destroy(): void;
 };
@@ -37,6 +36,8 @@ const ASK_FOR_CODE = "Run dg-daemon pair in a terminal, then enter the code";
 const CODE_EXPIRED = "Code expired. Run dg-daemon pair again.";
 const OTHER_EXTENSION =
 	"Paired to another extension. Run dg-daemon origin clear, then try again.";
+const CONNECTION_FAILED =
+	"Could not finish pairing. Run dg-daemon pair again, then retry.";
 
 function element<K extends keyof HTMLElementTagNameMap>(
 	doc: Document,
@@ -55,6 +56,14 @@ function isConnectedReply(value: unknown): boolean {
 		typeof value === "object" &&
 		value !== null &&
 		(value as Record<string, unknown>).connected === true
+	);
+}
+
+function isPairingSuccessReply(value: unknown): boolean {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		(value as Record<string, unknown>).ok === true
 	);
 }
 
@@ -92,6 +101,7 @@ export function mountPairing(
 	let port: number | undefined;
 	let connected = options.initialConnected ?? false;
 	let refreshVersion = 0;
+	let pending = false;
 
 	root.classList.add("pair-shell", `pair-shell--${options.variant}`);
 	root.hidden = true;
@@ -148,6 +158,7 @@ export function mountPairing(
 		copy.textContent = ASK_FOR_CODE;
 		status.textContent = "";
 		input.disabled = false;
+		submit.disabled = false;
 		if (options.variant === "entry") {
 			reveal.hidden = false;
 			form.hidden = true;
@@ -203,6 +214,7 @@ export function mountPairing(
 	});
 	form.addEventListener("submit", (event) => {
 		event.preventDefault();
+		if (pending) return;
 		void (async () => {
 			if (!/^\d{6}$/.test(input.value)) {
 				status.textContent = "Enter a 6 digit code.";
@@ -212,8 +224,12 @@ export function mountPairing(
 				showUnavailable();
 				return;
 			}
+			pending = true;
+			input.disabled = true;
 			submit.disabled = true;
+			form.setAttribute("aria-busy", "true");
 			status.textContent = "";
+			let paired = false;
 			try {
 				const response = await fetchPair(
 					`http://127.0.0.1:${port}${CHAT_PAIR_PATH}`,
@@ -230,16 +246,23 @@ export function mountPairing(
 				const bootstrap: PairResponse = validatePairResponse(
 					await response.json(),
 				);
-				await runtime.sendMessage?.({
+				const reply = await runtime.sendMessage?.({
 					type: MSG.markerCaptured,
 					bootstrap,
 				});
+				if (!isPairingSuccessReply(reply)) {
+					status.textContent = CONNECTION_FAILED;
+					return;
+				}
+				paired = true;
 				status.textContent = "Paired";
-				input.disabled = true;
 			} catch {
 				showUnavailable();
 			} finally {
-				submit.disabled = false;
+				pending = false;
+				form.removeAttribute("aria-busy");
+				input.disabled = paired;
+				submit.disabled = paired;
 			}
 		})();
 	});
@@ -248,7 +271,6 @@ export function mountPairing(
 	const ready = connected ? Promise.resolve(showConnected()) : refresh();
 	return {
 		ready,
-		refresh,
 		setConnected,
 		destroy() {
 			refreshVersion += 1;

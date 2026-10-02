@@ -56,21 +56,21 @@ function wrongCode(code: string): string {
 function pairRequest(
 	port: number,
 	code: string,
-	origin?: string,
+	origin: string | null = EXTENSION_ORIGIN,
 ): Promise<Response> {
 	return fetch(`http://127.0.0.1:${port}${CHAT_PAIR_PATH}`, {
 		method: "POST",
 		headers: {
 			Host: `127.0.0.1:${port}`,
 			"Content-Type": "application/json",
-			...(origin === undefined ? {} : { Origin: origin }),
+			...(origin === null ? {} : { Origin: origin }),
 		},
 		body: JSON.stringify({ code }),
 	});
 }
 
 describe("POST /pair", () => {
-	it("returns a paired extension bootstrap without an Origin and consumes the record", async () => {
+	it("returns a paired extension bootstrap and consumes the record", async () => {
 		const { code, paths, port } = await bootPairedServer();
 
 		const response = await pairRequest(port, code);
@@ -83,6 +83,16 @@ describe("POST /pair", () => {
 
 		const reused = await pairRequest(port, code);
 		expect(reused.status).toBe(404);
+	});
+
+	it("refuses a missing Origin without consuming the record", async () => {
+		const { code, paths, port } = await bootPairedServer();
+
+		const response = await pairRequest(port, code, null);
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain("extension-scheme Origin");
+		expect(existsSync(paths.pairingPath)).toBe(true);
 	});
 
 	it("decrements attempts after a wrong code", async () => {
