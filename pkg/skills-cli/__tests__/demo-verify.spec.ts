@@ -316,7 +316,7 @@ describe("demo --verify", () => {
 			{
 				step: 0,
 				kind: "plan-unreadable",
-				message: expect.stringContaining("ENOENT"),
+				message: expect.stringMatching(/ENOENT|No such file or directory/),
 			},
 		]);
 	}, 15000);

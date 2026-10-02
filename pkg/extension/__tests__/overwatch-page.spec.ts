@@ -1,5 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -16,13 +20,27 @@ import { captureGlobal } from "./utils/relay-harness";
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { renderOverwatchPage } = await import("../entrypoints/overwatch/main");
-const { handleOverwatchFrame } = await import("@/lib/background/chat");
-const { MSG } = await import("@/lib/chat-messages");
-const { createOverwatchApi, formatCountdown, needYouCount } = await import(
-	"@/lib/features/overwatch"
+const { handleOverwatchFrame, handleOverwatchFrameSafely } = await import(
+	"@/lib/background/chat"
 );
+const { MSG } = await import("@/lib/chat-messages");
+const {
+	connectOverwatchApi,
+	createOverwatchApi,
+	formatCountdown,
+	needYouCount,
+} = await import("@/lib/features/overwatch");
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
+const chromium = [
+	"brave-browser",
+	"brave",
+	"chromium",
+	"chromium-browser",
+	"google-chrome-for-testing",
+]
+	.map((candidate) => Bun.which(candidate))
+	.find((candidate): candidate is string => candidate !== null);
 
 function buildLane(overrides: Partial<OverwatchLane> = {}): OverwatchLane {
 	return {
@@ -120,6 +138,90 @@ async function mount(
 	return { root, relay, actions, handle };
 }
 
+async function inspectNarrowLayout(markup: string): Promise<{
+	documentWidth: number;
+	viewportWidth: number;
+	nodesFit: boolean;
+	hasProhibitedBorder: boolean;
+}> {
+	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-page-layout-"));
+	const path = join(directory, "overwatch.html");
+	const optionsCss = readFileSync(
+		new URL("../entrypoints/options/style.css", import.meta.url),
+		"utf8",
+	);
+	const overwatchCss = readFileSync(
+		new URL("../entrypoints/overwatch/style.css", import.meta.url),
+		"utf8",
+	);
+	await writeFile(
+		path,
+		`<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<style>${optionsCss}\n${overwatchCss}</style>
+</head>
+<body>
+	${markup}
+	<pre id="geometry"></pre>
+	<script>
+		const nodes = [...document.querySelectorAll(".overwatch__who small,.overwatch__next,.overwatch__background-lane p,.overwatch__asks")];
+		const all = [...document.querySelectorAll(".overwatch,.overwatch *")];
+		document.querySelector("#geometry").textContent = JSON.stringify({
+			documentWidth: document.documentElement.scrollWidth,
+			viewportWidth: document.documentElement.clientWidth,
+			nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
+			hasProhibitedBorder: all.some((node) => {
+				const style = getComputedStyle(node);
+				return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].some((value) => value === "dashed" || value === "dotted");
+			}),
+		});
+	</script>
+</body>
+</html>`,
+	);
+	try {
+		const result = await new Promise<{
+			code: number | null;
+			stdout: string;
+			stderr: string;
+		}>((resolve, reject) => {
+			const child = spawn(
+				chromium as string,
+				[
+					"--headless=new",
+					"--no-sandbox",
+					"--disable-gpu",
+					"--window-size=390,844",
+					"--dump-dom",
+					path,
+				],
+				{ stdio: ["ignore", "pipe", "pipe"] },
+			);
+			const stdout: Buffer[] = [];
+			const stderr: Buffer[] = [];
+			child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+			child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+			child.on("error", reject);
+			child.on("close", (code) =>
+				resolve({
+					code,
+					stdout: Buffer.concat(stdout).toString("utf8"),
+					stderr: Buffer.concat(stderr).toString("utf8"),
+				}),
+			);
+		});
+		if (result.code !== 0) throw new Error(result.stderr);
+		const match = /<pre id="geometry">([^<]+)<\/pre>/.exec(result.stdout);
+		if (!match) throw new Error("browser did not report board geometry");
+		return JSON.parse(match[1]);
+	} finally {
+		await rm(directory, { force: true, recursive: true });
+	}
+}
+
 describe("the overwatch page", () => {
 	test("renders one lane per chat with the current stage active", async () => {
 		const { root, handle } = await mount(
@@ -133,7 +235,7 @@ describe("the overwatch page", () => {
 
 		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(2);
 		const active = root.querySelector(
-			'[data-key="infra"] .overwatch__cell--now',
+			"[data-key=\"infra\"] .overwatch__cell--now",
 		) as HTMLElement;
 		expect(active.dataset.stage).toBe("CI");
 		expect(active.textContent).toBe("active");
@@ -155,7 +257,7 @@ describe("the overwatch page", () => {
 
 		expect(root.firstElementChild).toBe(shell);
 		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(1);
-		expect(root.querySelector('[data-key="print"]')).toBeNull();
+		expect(root.querySelector("[data-key=\"print\"]")).toBeNull();
 		handle.stop();
 	});
 
@@ -221,7 +323,7 @@ describe("the overwatch page", () => {
 		await Bun.sleep(0);
 
 		expect(actions).toEqual([]);
-		expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+		expect(root.querySelector("[role=\"alert\"]")?.textContent).toContain(
 			"note is required",
 		);
 		handle.stop();
@@ -500,20 +602,40 @@ describe("the overwatch page", () => {
 	});
 });
 
-test("the narrow layout constrains labels and facts without dashed or dotted borders", () => {
-	const css = readFileSync(
-		new URL("../entrypoints/overwatch/style.css", import.meta.url),
-		"utf8",
-	);
-
-	expect(css).toContain("grid-template-columns: minmax(0, 1fr)");
-	expect(css).toMatch(/\.overwatch__who strong\s*\{[^}]*text-overflow: ellipsis/s);
-	expect(css).toMatch(
-		/\.overwatch__background-lane > strong\s*\{[^}]*white-space: nowrap/s,
-	);
-	expect(css).toMatch(/\.overwatch__stats[^}]*min-width: 0/s);
-	expect(css).not.toMatch(/border[^;{}]*(dashed|dotted)/);
-});
+test.skipIf(!chromium)(
+	"keeps maximal prose visible at a 390 pixel viewport",
+	async () => {
+		const { root, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane({
+						chat: "c".repeat(40),
+						task: "t".repeat(80),
+						mr: "m".repeat(80),
+						eta: "e".repeat(80),
+						next: "n".repeat(200),
+					}),
+					buildLane({
+						chat: "b".repeat(40),
+						task: "q".repeat(80),
+						kind: "background",
+						eta: "r".repeat(80),
+						next: "s".repeat(200),
+					}),
+				],
+			}),
+		);
+		try {
+			const geometry = await inspectNarrowLayout(root.innerHTML);
+			expect(geometry.viewportWidth).toBe(390);
+			expect(geometry.documentWidth).toBeLessThanOrEqual(390);
+			expect(geometry.nodesFit).toBe(true);
+			expect(geometry.hasProhibitedBorder).toBe(false);
+		} finally {
+			handle.stop();
+		}
+	},
+);
 
 describe("overwatch frame handling", () => {
 	test("relays an overwatch state under the dedicated runtime message", async () => {
@@ -558,6 +680,7 @@ describe("overwatch frame handling", () => {
 				type: "overwatch-open",
 				sessionId: OVERWATCH_SESSION_ID,
 				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "open-request-0",
 			},
 			api,
 		);
@@ -587,6 +710,7 @@ describe("overwatch frame handling", () => {
 				type: "overwatch-open",
 				sessionId: OVERWATCH_SESSION_ID,
 				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "open-request-1",
 			},
 			api,
 		);
@@ -595,6 +719,80 @@ describe("overwatch frame handling", () => {
 			url: "chrome-extension://test/overwatch.html",
 		});
 	});
+
+	test("reports a tab creation failure through the correlated completion", async () => {
+		const completions: unknown[] = [];
+		const create = mock(() => Promise.reject(new Error("tab creation failed")));
+		const originalError = console.error;
+		console.error = mock(() => undefined);
+		try {
+			await handleOverwatchFrameSafely(
+				{
+					type: "overwatch-open",
+					sessionId: OVERWATCH_SESSION_ID,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+					requestId: "open-request-2",
+				},
+				{
+					runtime: {
+						getURL: (path: string) => `chrome-extension://test/${path}`,
+						sendMessage: mock(() => Promise.resolve()),
+					},
+					tabs: { query: mock(() => Promise.resolve([])), create },
+				},
+				(result) => completions.push(result),
+			);
+		} finally {
+			console.error = originalError;
+		}
+
+		expect(completions).toEqual([
+			{
+				requestId: "open-request-2",
+				ok: false,
+				error: "tab creation failed",
+			},
+		]);
+	});
+
+	test("treats an absent overwatch page listener as an expected state broadcast", async () => {
+		const frame = {
+			type: "overwatch-state" as const,
+			sessionId: OVERWATCH_SESSION_ID,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			board: buildBoard(),
+		} satisfies ChatFrame;
+
+		await expect(
+			handleOverwatchFrame(frame, {
+				runtime: {
+					getURL: (path: string) => `chrome-extension://test/${path}`,
+					sendMessage: () =>
+						Promise.reject(new Error("Receiving end does not exist")),
+				},
+				tabs: { create: mock(() => Promise.resolve()) },
+			}),
+		).resolves.toBeUndefined();
+	});
+});
+
+test("a pinned-origin HTTP error is surfaced instead of scanning fallback ports", async () => {
+	const restoreFetch = captureGlobal("fetch");
+	const fetchStub = mock(() =>
+		Promise.resolve(new Response("origin pin required", { status: 400 })),
+	);
+	Object.defineProperty(globalThis, "fetch", {
+		configurable: true,
+		value: fetchStub,
+	});
+	try {
+		await expect(connectOverwatchApi(47823)).rejects.toThrow(
+			"origin pin required",
+		);
+		expect(fetchStub).toHaveBeenCalledTimes(1);
+	} finally {
+		restoreFetch();
+	}
 });
 
 test("the countdown and need-you count derive from board data", () => {

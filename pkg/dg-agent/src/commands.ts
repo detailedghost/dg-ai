@@ -75,17 +75,20 @@ async function connectFor(command: Command): Promise<CliClient> {
 	return CliClient.connect(resolveCliSession(selectedSession(command)));
 }
 
-export function registerAgentCommands(program: Command): void {
-	program.option(
-		"-s, --session <id>",
-		"session id (otherwise resolve the sole realpath-matching cwd session)",
-	);
+export type RecvCommandClient = Pick<
+	CliClient,
+	"request" | "send" | "close"
+>;
 
-	registerOverwatchCommands(program.command("overwatch"), {
-		connect: connectFor,
-		write: writeStdout,
-	});
+export type RecvCommandDependencies = {
+	connect(command: Command): Promise<RecvCommandClient>;
+	write(value: string): Promise<void>;
+};
 
+export function registerRecvCommand(
+	program: Command,
+	dependencies: RecvCommandDependencies,
+): void {
 	program
 		.command("recv")
 		.description("receive the next queued human message")
@@ -101,7 +104,7 @@ export function registerAgentCommands(program: Command): void {
 				command: Command,
 			) => {
 				const timeoutMs = parseTimeout(options.timeout);
-				const client = await connectFor(command);
+				const client = await dependencies.connect(command);
 				try {
 					const result = await client.request(
 						{
@@ -112,7 +115,7 @@ export function registerAgentCommands(program: Command): void {
 						isRecvResult,
 						timeoutMs + 2_000,
 					);
-					await writeStdout(`${JSON.stringify(result)}\n`);
+					await dependencies.write(`${JSON.stringify(result)}\n`);
 					if (result.outcome === "delivered") {
 						const claimId = result.message.claimId;
 						if (typeof claimId !== "string") {
@@ -137,6 +140,20 @@ export function registerAgentCommands(program: Command): void {
 				}
 			},
 		);
+}
+
+export function registerAgentCommands(program: Command): void {
+	program.option(
+		"-s, --session <id>",
+		"session id (otherwise resolve the sole realpath-matching cwd session)",
+	);
+
+	registerOverwatchCommands(program.command("overwatch"), {
+		connect: connectFor,
+		write: writeStdout,
+	});
+
+	registerRecvCommand(program, { connect: connectFor, write: writeStdout });
 
 	program
 		.command("send")

@@ -76,15 +76,23 @@ export type OverwatchBrowserApi = {
 	windows?: ChatBrowserApi["windows"];
 };
 
+export type OverwatchOpenCompletion = {
+	requestId: string;
+	ok: boolean;
+	error?: string;
+};
+
 export async function handleOverwatchFrame(
 	frame: ChatFrame,
 	api: OverwatchBrowserApi,
-): Promise<void> {
+): Promise<OverwatchOpenCompletion | undefined> {
 	if (frame.type === "overwatch-state") {
-		await api.runtime.sendMessage({ type: MSG.overwatchState, frame });
-		return;
+		await api.runtime
+			.sendMessage({ type: MSG.overwatchState, frame })
+			.catch(() => undefined);
+		return undefined;
 	}
-	if (frame.type !== "overwatch-open") return;
+	if (frame.type !== "overwatch-open") return undefined;
 	const url = api.runtime.getURL(OVERWATCH_PAGE_PATH);
 	const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
 	const existing = matches[0];
@@ -93,18 +101,28 @@ export async function handleOverwatchFrame(
 		if (existing.windowId !== undefined && api.windows) {
 			await api.windows.update(existing.windowId, { focused: true });
 		}
-		return;
+		return { requestId: frame.requestId, ok: true };
 	}
 	await api.tabs.create({ url });
+	return { requestId: frame.requestId, ok: true };
 }
 
 export async function handleOverwatchFrameSafely(
 	frame: ChatFrame,
 	api: OverwatchBrowserApi,
+	complete: (result: OverwatchOpenCompletion) => void = () => undefined,
 ): Promise<void> {
 	try {
-		await handleOverwatchFrame(frame, api);
+		const result = await handleOverwatchFrame(frame, api);
+		if (result) complete(result);
 	} catch (error) {
+		if (frame.type === "overwatch-open") {
+			complete({
+				requestId: frame.requestId,
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 		console.error("[dg-ai-extension] overwatch frame failed:", error);
 	}
 }
@@ -308,7 +326,19 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
-		void handleOverwatchFrameSafely(frame, api);
+		void handleOverwatchFrameSafely(frame, api, (result) => {
+			const bootstrap = firstConfirmedBootstrap();
+			if (!bootstrap || !currentSocket) return;
+			currentSocket.send(
+				JSON.stringify({
+					type: "overwatch-open-result",
+					sessionId: bootstrap.sessionId,
+					token: bootstrap.token,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+					...result,
+				}),
+			);
+		});
 		if (frame.type === "config-result") {
 			configWaiters
 				.find((w) => w.key === frame.key)

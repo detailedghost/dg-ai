@@ -125,13 +125,15 @@ function requirePinnedExtensionOrigin(
 	paths: DgPaths,
 ): Response | undefined {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: requires an extension-scheme Origin", {
+	const pinnedOrigin = getPinnedOrigin(paths);
+	if (pinnedOrigin === undefined) {
+		return new Response("refused: no authenticated extension origin is pinned", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (getPinnedOrigin(paths) !== origin) {
+	if (origin === null) return undefined;
+	if (!isExtensionOrigin(origin) || origin !== pinnedOrigin) {
 		return new Response("refused: Origin does not match a pinned extension origin", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
@@ -189,6 +191,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		noteActivity,
 		store,
 		dispatchScheduler,
+		overwatchOpenRequests: new Map(),
 	};
 
 	const boundServer = Bun.serve<SocketState>({
@@ -329,12 +332,20 @@ async function handleOverwatchRoute(
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
 		requirePinnedExtensionOrigin(req, deps.paths);
-	if (refusal) return refusal;
+	if (refusal) {
+		refusal.headers.set("Cache-Control", "no-store");
+		return refusal;
+	}
 	if (url.pathname === "/overwatch" && req.method === "GET") {
-		return json(deps.store.getBoard());
+		return json(deps.store.getBoard(), {
+			headers: { "Cache-Control": "no-store" },
+		});
 	}
 	if (url.pathname !== "/overwatch/action" || req.method !== "POST") {
-		return new Response("not found", { status: 404, headers: NOSNIFF_HEADERS });
+		return new Response("not found", {
+			status: 404,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
+		});
 	}
 
 	let action: OverwatchAction;
@@ -343,7 +354,7 @@ async function handleOverwatchRoute(
 	} catch (err) {
 		return new Response(describeError(err), {
 			status: 400,
-			headers: NOSNIFF_HEADERS,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
 		});
 	}
 	const lane = deps.store
@@ -352,7 +363,7 @@ async function handleOverwatchRoute(
 	if (!lane?.publisher) {
 		return new Response("no such overwatch lane", {
 			status: 404,
-			headers: NOSNIFF_HEADERS,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
 		});
 	}
 	deps.store.insertAgentMessage({
@@ -368,7 +379,10 @@ async function handleOverwatchRoute(
 			},
 		}),
 	});
-	return json({ ok: true });
+	return json(
+		{ ok: true },
+		{ headers: { "Cache-Control": "no-store" } },
+	);
 }
 
 async function handleRegisterSession(

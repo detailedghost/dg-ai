@@ -47,19 +47,6 @@ export function loadScript(path: string): TourScript {
 type PlayOpts = { video?: boolean; print?: boolean; edit?: boolean };
 type VerifyOpts = { verify?: string };
 
-function describePlanError(error: unknown): string {
-	const message = error instanceof Error ? error.message : String(error);
-	if (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		typeof error.code === "string"
-	) {
-		return `${error.code}: ${message}`;
-	}
-	return message;
-}
-
 /**
  * Walk a plan in a real throwaway browser and print `{ok, findings[]}` as the sole
  * line of stdout — an unreadable plan or a harness failure is reported the same way,
@@ -77,7 +64,7 @@ export async function runVerify(planPath: string): Promise<void> {
 					{
 						step: 0,
 						kind: "plan-unreadable",
-						message: describePlanError(err),
+						message: err instanceof Error ? err.message : String(err),
 					},
 				],
 			} satisfies VerifyResult),

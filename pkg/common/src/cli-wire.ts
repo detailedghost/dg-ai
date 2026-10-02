@@ -58,6 +58,12 @@ export type CliOverwatchLaunchRequest = {
 	goNoGo?: string;
 };
 
+export type CliOverwatchMutationResult = {
+	type: "cli-overwatch-mutation-result";
+	operation: "set" | "remove" | "merged" | "launch";
+	board: OverwatchBoard;
+};
+
 export type CliOverwatchOpenRequest = { type: "cli-overwatch-open" };
 
 export type CliOverwatchOpenResult = {

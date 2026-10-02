@@ -144,8 +144,10 @@ body {
 
 .overwatch__who small {
 	display: block;
+	min-width: 0;
 	margin-top: 0.3125rem;
 	line-height: 1.4;
+	overflow-wrap: anywhere;
 }
 
 .overwatch__cell {
@@ -338,11 +340,13 @@ body {
 }
 
 .overwatch__asks {
+	min-width: 0;
 	margin-top: 1.625rem;
 	border: 0.1875rem solid var(--overwatch-magenta);
 	padding: 0.875rem;
 	font-weight: 900;
 	text-align: center;
+	overflow-wrap: anywhere;
 }
 
 .overwatch__footer {
@@ -370,6 +374,7 @@ body {
 
 .overwatch__background-lane {
 	display: grid;
+	min-width: 0;
 	gap: 0.5rem;
 	border: 0.125rem solid var(--overwatch-ink);
 	padding: 0.75rem;
@@ -378,7 +383,9 @@ body {
 
 .overwatch__background-lane p,
 .overwatch__foot-empty {
+	min-width: 0;
 	margin: 0;
+	overflow-wrap: anywhere;
 }
 
 .overwatch__background-lane > strong {

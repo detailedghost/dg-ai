@@ -516,6 +516,7 @@ test("reports an overwatch open failure from the browser API", async () => {
 				type: "overwatch-open",
 				sessionId: OVERWATCH_SESSION_ID,
 				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "open-request-1",
 			},
 			api,
 		);

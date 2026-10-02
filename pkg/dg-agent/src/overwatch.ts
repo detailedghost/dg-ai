@@ -1,4 +1,5 @@
 import {
+	type CliOverwatchMutationResult,
 	type CliOverwatchSetRequest,
 	type CliOverwatchOpenResult,
 	type CliOverwatchSnapshotResult,
@@ -65,7 +66,7 @@ function setRequest(chat: string, options: SetOptions): CliOverwatchSetRequest {
 			...(options.url === undefined ? {} : { url: options.url }),
 			kind: options.background ? "background" : "chat",
 			publisher: "dg-agent",
-		updatedAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
 		});
 		return {
 			type: "cli-overwatch-set",
@@ -126,22 +127,39 @@ function isSnapshotResult(
 	);
 }
 
+function isMutationResult(
+	value: unknown,
+	operation: CliOverwatchMutationResult["operation"],
+): value is CliOverwatchMutationResult | DaemonError {
+	if (isDaemonError(value)) return true;
+	return (
+		isRecord(value) &&
+		value.type === "cli-overwatch-mutation-result" &&
+		value.operation === operation &&
+		isRecord(value.board) &&
+		Array.isArray(value.board.lanes) &&
+		Array.isArray(value.board.merges)
+	);
+}
+
 function daemonResult<T>(result: T | DaemonError): T {
 	if (isDaemonError(result)) throw new DgCliError(result.message);
 	return result;
 }
 
-async function send(
+async function mutate(
 	dependencies: OverwatchCommandDependencies,
 	command: Command,
 	frame: CliRequest,
+	operation: CliOverwatchMutationResult["operation"],
 ): Promise<void> {
-	const client = await dependencies.connect(command);
-	try {
-		client.send(frame);
-	} finally {
-		client.close();
-	}
+	await request(
+		dependencies,
+		command,
+		frame,
+		(value): value is CliOverwatchMutationResult | DaemonError =>
+			isMutationResult(value, operation),
+	);
 }
 
 async function request<T>(
@@ -219,7 +237,12 @@ export function registerOverwatchCommands(
 		.option("--url <url>", "claude.ai chat URL")
 		.option("--background", "mark the lane as a background agent")
 		.action(async (chat: string, options: SetOptions, command: Command) => {
-			await send(dependencies, command, setRequest(chat, options));
+			await mutate(
+				dependencies,
+				command,
+				setRequest(chat, options),
+				"set",
+			);
 		});
 
 	overwatch
@@ -227,10 +250,15 @@ export function registerOverwatchCommands(
 		.description("remove a chat lane")
 		.argument("<chat>", "chat name")
 		.action(async (chat: string, _options: unknown, command: Command) => {
-			await send(dependencies, command, {
-				type: "cli-overwatch-remove",
-				chat: requireField("chat", chat),
-			});
+			await mutate(
+				dependencies,
+				command,
+				{
+					type: "cli-overwatch-remove",
+					chat: requireField("chat", chat),
+				},
+				"remove",
+			);
 		});
 
 	overwatch
@@ -245,11 +273,16 @@ export function registerOverwatchCommands(
 				_options: unknown,
 				command: Command,
 			) => {
-				await send(dependencies, command, {
-					type: "cli-overwatch-merged",
-					mr: requireField("mr", mr),
-					title: requireField("title", title),
-				});
+				await mutate(
+					dependencies,
+					command,
+					{
+						type: "cli-overwatch-merged",
+						mr: requireField("mr", mr),
+						title: requireField("title", title),
+					},
+					"merged",
+				);
 			},
 		);
 
@@ -263,13 +296,18 @@ export function registerOverwatchCommands(
 				options: { goLive: string; goNoGo?: string },
 				command: Command,
 			) => {
-				await send(dependencies, command, {
-					type: "cli-overwatch-launch",
-					goLive: requireIsoDate("go-live", options.goLive),
-					...(options.goNoGo === undefined
-						? {}
-						: { goNoGo: requireIsoDate("go-no-go", options.goNoGo) }),
-				});
+				await mutate(
+					dependencies,
+					command,
+					{
+						type: "cli-overwatch-launch",
+						goLive: requireIsoDate("go-live", options.goLive),
+						...(options.goNoGo === undefined
+							? {}
+							: { goNoGo: requireIsoDate("go-no-go", options.goNoGo) }),
+					},
+					"launch",
+				);
 			},
 		);
 

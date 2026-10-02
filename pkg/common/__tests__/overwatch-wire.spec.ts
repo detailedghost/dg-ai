@@ -4,6 +4,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	type CliFrame,
 	type CliOverwatchOpenResult,
+	type CliOverwatchMutationResult,
 	type CliOverwatchSnapshotResult,
 	OVERWATCH_ETA_MAX_LENGTH,
 	OVERWATCH_MAX_LANES,
@@ -67,6 +68,7 @@ function buildOpenFrame(overrides: Record<string, unknown> = {}) {
 		type: "overwatch-open",
 		sessionId: "__overwatch__",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "open-request-1",
 		...overrides,
 	};
 }
@@ -92,6 +94,20 @@ describe("Overwatch chat frames", () => {
 		expect(() =>
 			validateChatFrame(buildOpenFrame({ token: "not-allowed" })),
 		).toThrow("token");
+	});
+
+	it("accepts a correlated extension open result", () => {
+		expect(
+			validateChatFrame({
+				type: "overwatch-open-result",
+				sessionId: "session-1",
+				token: "secret",
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "open-request-1",
+				ok: false,
+				error: "tab creation failed",
+			}),
+		).toMatchObject({ requestId: "open-request-1", ok: false });
 	});
 });
 
@@ -139,6 +155,15 @@ describe("validateOverwatchLane", () => {
 			validateOverwatchLane(buildLane({ url: "https://example.com/chat" })),
 		).toThrow("overwatch lane.url");
 	});
+
+	it.each(["\ud800", "\ud801"])(
+		"rejects an ill-formed UTF-16 chat name %p",
+		(chat) => {
+			expect(() => validateOverwatchLane(buildLane({ chat }))).toThrow(
+				"overwatch lane.chat",
+			);
+		},
+	);
 });
 
 describe("Overwatch board bounds", () => {
@@ -200,24 +225,30 @@ describe("Overwatch board bounds", () => {
 
 	it("keeps a maximally populated board within the transport payload cap", () => {
 		const urlPrefix = "https://claude.ai/";
+		const widestUtf8CodeUnit = "\uffff";
 		const frame = buildStateFrame({
 			board: buildBoard({
 				lanes: Array.from({ length: OVERWATCH_MAX_LANES }, (_, index) =>
 					buildLane({
-						chat: `chat${index}`,
-						task: "😀".repeat(40),
-						mr: "😀".repeat(OVERWATCH_MR_MAX_LENGTH / 2),
-						eta: "😀".repeat(OVERWATCH_ETA_MAX_LENGTH / 2),
-						next: "😀".repeat(OVERWATCH_NEXT_MAX_LENGTH / 2),
-						url: `${urlPrefix}${"😀".repeat(
-							(OVERWATCH_URL_MAX_LENGTH - urlPrefix.length) / 2,
+						chat: `${index}`.padEnd(40, widestUtf8CodeUnit),
+						task: widestUtf8CodeUnit.repeat(80),
+						mr: widestUtf8CodeUnit.repeat(OVERWATCH_MR_MAX_LENGTH),
+						eta: widestUtf8CodeUnit.repeat(OVERWATCH_ETA_MAX_LENGTH),
+						next: widestUtf8CodeUnit.repeat(OVERWATCH_NEXT_MAX_LENGTH),
+						url: `${urlPrefix}${widestUtf8CodeUnit.repeat(
+							OVERWATCH_URL_MAX_LENGTH - urlPrefix.length,
 						)}`,
-						publisher: "😀".repeat(64),
+						publisher: widestUtf8CodeUnit.repeat(128),
 					}),
 				),
 				merges: Array.from({ length: OVERWATCH_MAX_MERGES }, (_, index) => ({
-					mr: `!${index}`,
-					title: "😀".repeat(OVERWATCH_MERGE_TITLE_MAX_LENGTH / 2),
+					mr: `${index}`.padEnd(
+						OVERWATCH_MR_MAX_LENGTH,
+						widestUtf8CodeUnit,
+					),
+					title: widestUtf8CodeUnit.repeat(
+						OVERWATCH_MERGE_TITLE_MAX_LENGTH,
+					),
 					at: "2026-10-02T14:00:00.000Z",
 				})),
 			}),
@@ -293,6 +324,11 @@ describe("Overwatch CLI frame types", () => {
 		const openResult = {
 			type: "cli-overwatch-open-result",
 		} satisfies CliOverwatchOpenResult;
+		const mutationResult = {
+			type: "cli-overwatch-mutation-result",
+			operation: "set",
+			board: buildBoard() as OverwatchBoard,
+		} satisfies CliOverwatchMutationResult;
 
 		expect(frames.map((frame) => frame.type)).toEqual([
 			"cli-overwatch-set",
@@ -304,5 +340,6 @@ describe("Overwatch CLI frame types", () => {
 		]);
 		expect(result.type).toBe("cli-overwatch-snapshot-result");
 		expect(openResult.type).toBe("cli-overwatch-open-result");
+		expect(mutationResult.operation).toBe("set");
 	});
 });

@@ -7,8 +7,9 @@ description: Keep the DeeGee Overwatch board current across parallel chats, rout
 
 Use Overwatch to maintain one launch lane per chat and a shared phone snapshot.
 One dedicated Overwatch chat is the authoritative publisher for the board and
-phone artifact. Other chats report status to that identity with `dg-agent send`
-and must not run board mutation commands themselves.
+phone artifact. Other chats may report status to that identity with
+`dg-agent send` or use the public board mutation commands directly. The daemon
+notifies the authoritative publisher whenever any chat changes the board.
 
 ## Start the chat session
 
@@ -41,9 +42,10 @@ dg-agent overwatch launch --go-live <iso> --go-no-go <iso>
 dg-agent overwatch remove <chat>
 ```
 
-After every successful `set`, `merged`, `launch`, or `remove` mutation, run the
-phone snapshot procedure below before processing the next report. This ordering
-is mandatory so no board change can leave the artifact stale.
+After every successful `set`, `merged`, `launch`, or `remove` mutation, mark the
+newest board state for phone publication. A direct mutation from another chat
+arrives with `overwatch.event` set to `board-changed` and marks the state the
+same way.
 
 Open or focus the live board with:
 
@@ -53,8 +55,26 @@ dg-agent overwatch open
 
 ## Handle board actions
 
-Run `dg-agent recv --block --timeout 30s` continuously. Parse its output as JSON, then parse the JSON in
-its `body` field. Board actions have this shape:
+Run the documented receive command in an explicit loop. Exit code 5 is the
+expected bounded timeout and starts the next iteration. Any other nonzero exit
+stops the loop as an error.
+
+```bash
+while true; do
+  if received="$(dg-agent recv --block --timeout 30000)"; then
+    process_overwatch_message "$received"
+  else
+    status=$?
+    if [ "$status" -ne 5 ]; then
+      exit "$status"
+    fi
+  fi
+  publish_newest_snapshot_if_due
+done
+```
+
+Parse successful output as JSON, then parse the JSON in its `body` field. Board
+actions have this shape:
 
 ```json
 {"overwatch":{"chat":"print","action":"reply|approve|reject","note":"optional text"}}
@@ -72,16 +92,20 @@ Render at most once every two minutes:
 dg-agent overwatch snapshot --json | dg-skills overwatch-snapshot --input - --throttle-key board
 ```
 
-If the command prints `throttled`, stop. Otherwise it prints an HTML path. Read
-that file and publish it from this Claude session with the Artifact tool. The
-CLI only renders HTML and must never publish the artifact.
+If the command prints `throttled`, record its reported retry time and continue
+the receive loop. Otherwise it prints an HTML path. Read that file and publish
+it from this Claude session with the Artifact tool. The CLI only renders HTML
+and must never publish the artifact.
 
-Keep `/tmp/ai/dg-overwatch/skill-state.json` as JSON with the returned
-`artifactUrl`. Create the artifact only when that URL is absent. On later
-renders, update the existing artifact at the stored URL so the phone link never
-changes.
+The snapshot CLI creates or repairs
+`/tmp/ai/dg-overwatch/skill-state.json` with mode 0600. Keep the returned
+`artifactUrl` in that JSON file without replacing the file. Create the artifact
+only when that URL is absent. On later renders, update the existing artifact at
+the stored URL so the phone link never changes.
 
-When a mutation is throttled, retain the newest board state and rerun the same
-snapshot command as soon as the reported wait expires. Do not process another
-mutation until that retry has either updated the artifact or returned a newer
-wait. This is the authoritative publisher's throttled update loop.
+Keep one pending-publication flag and one next-attempt time. Every mutation
+coalesces into that single pending item, so it always represents the newest
+board. Continue processing status reports and board actions while throttled.
+When the next-attempt time arrives, render the current board, publish it, and
+clear the flag only after publication succeeds. A newer mutation during render
+or publication leaves the flag set for another pass.

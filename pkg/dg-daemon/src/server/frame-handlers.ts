@@ -10,8 +10,10 @@ import {
 	type CliFrame,
 	describeError,
 	isRecord,
+	type OverwatchBoard,
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_LANES,
+	OVERWATCH_MAX_MERGES,
 	validateChatFrame,
 	validateCommandManifest,
 	validateOverwatchAction,
@@ -63,6 +65,14 @@ export type FrameHandlerDeps = {
 	noteActivity: () => void;
 	store: ChatStore;
 	dispatchScheduler: DispatchScheduler;
+	overwatchOpenRequests: Map<string, OverwatchOpenRequest>;
+};
+
+type OverwatchOpenOutcome = { ok: true } | { ok: false; error: string };
+
+type OverwatchOpenRequest = {
+	resolve(outcome: OverwatchOpenOutcome): void;
+	timer: ReturnType<typeof setTimeout>;
 };
 
 function sendFrame(
@@ -115,11 +125,13 @@ function sendOverwatchFrame(
 	frame: Record<string, unknown>,
 ): { count: number; sent: Promise<void> } {
 	const sends: Promise<void>[] = [];
-	const payload = JSON.stringify({
+	const candidate = {
 		sessionId: OVERWATCH_SESSION_ID,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...frame,
-	});
+	};
+	validateChatFrame(candidate);
+	const payload = JSON.stringify(candidate);
 	const count = deps.connections.forEachExtension((socket) => {
 		sends.push(sendViaQueue(socket, payload));
 	});
@@ -131,6 +143,116 @@ async function broadcastOverwatchState(deps: FrameHandlerDeps): Promise<void> {
 		type: "overwatch-state",
 		board: deps.store.getBoard(),
 	}).sent;
+}
+
+function prospectiveBoard(
+	board: OverwatchBoard,
+	frame: Extract<
+		CliFrame,
+		{
+			type:
+				| "cli-overwatch-set"
+				| "cli-overwatch-remove"
+				| "cli-overwatch-merged"
+				| "cli-overwatch-launch";
+		}
+	>,
+	publisher: string,
+): OverwatchBoard {
+	const now = new Date().toISOString();
+	switch (frame.type) {
+		case "cli-overwatch-set": {
+			const lane = {
+				chat: frame.chat,
+				task: frame.task,
+				stage: frame.stage,
+				mr: frame.mr,
+				eta: frame.eta,
+				next: frame.next,
+				url: frame.url,
+				kind: frame.kind,
+				publisher,
+				updatedAt: now,
+			};
+			return {
+				...board,
+				lanes: [lane, ...board.lanes.filter((item) => item.chat !== frame.chat)],
+			};
+		}
+		case "cli-overwatch-remove":
+			return {
+				...board,
+				lanes: board.lanes.filter((lane) => lane.chat !== frame.chat),
+			};
+		case "cli-overwatch-merged":
+			return {
+				...board,
+				merges: [
+					{ mr: frame.mr, title: frame.title, at: now },
+					...board.merges.filter((merge) => merge.mr !== frame.mr),
+				].slice(0, OVERWATCH_MAX_MERGES),
+			};
+		case "cli-overwatch-launch":
+			return {
+				...board,
+				goLive: frame.goLive,
+				...(frame.goNoGo === undefined
+					? { goNoGo: undefined }
+					: { goNoGo: frame.goNoGo }),
+			};
+	}
+}
+
+function validateProspectiveBoard(board: OverwatchBoard): void {
+	validateChatFrame({
+		type: "overwatch-state",
+		sessionId: OVERWATCH_SESSION_ID,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		board,
+	});
+}
+
+function notifyOverwatchPublisher(
+	deps: FrameHandlerDeps,
+	mutatedBySessionId: string,
+): void {
+	deps.store.insertAgentMessage({
+		senderSessionId: OVERWATCH_SESSION_ID,
+		senderIdentity: "dg-daemon",
+		recipientIdentity: "overwatch-board",
+		id: randomUUID(),
+		body: JSON.stringify({
+			overwatch: { event: "board-changed", mutatedBySessionId },
+		}),
+	});
+}
+
+async function sendMutationResult(
+	ws: ServerWebSocket<SocketState>,
+	operation: "set" | "remove" | "merged" | "launch",
+	board: OverwatchBoard,
+): Promise<void> {
+	await sendViaQueue(
+		ws,
+		JSON.stringify({
+			type: "cli-overwatch-mutation-result",
+			operation,
+			board,
+		}),
+	);
+}
+
+function awaitOverwatchOpen(
+	deps: FrameHandlerDeps,
+	requestId: string,
+): Promise<OverwatchOpenOutcome> {
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => {
+			deps.overwatchOpenRequests.delete(requestId);
+			resolve({ ok: false, error: "extension did not complete the open request" });
+		}, 4_000);
+		deps.overwatchOpenRequests.set(requestId, { resolve, timer });
+	});
 }
 
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
@@ -496,6 +618,14 @@ async function handleCliFrame(
 				);
 				return;
 			}
+			try {
+				validateProspectiveBoard(
+					prospectiveBoard(deps.store.getBoard(), frame, publisher),
+				);
+			} catch (error) {
+				await sendError(ws, sessionId, describeError(error));
+				return;
+			}
 			deps.store.upsertLane({
 				chat: frame.chat,
 				task: frame.task,
@@ -508,31 +638,79 @@ async function handleCliFrame(
 				publisher,
 			});
 			await broadcastOverwatchState(deps);
+			notifyOverwatchPublisher(deps, sessionId);
+			await sendMutationResult(ws, "set", deps.store.getBoard());
 			return;
 		}
-		case "cli-overwatch-remove":
+		case "cli-overwatch-remove": {
+			try {
+				validateProspectiveBoard(
+					prospectiveBoard(deps.store.getBoard(), frame, sessionId),
+				);
+			} catch (error) {
+				await sendError(ws, sessionId, describeError(error));
+				return;
+			}
 			if (deps.store.removeLane(frame.chat)) {
 				await broadcastOverwatchState(deps);
+				notifyOverwatchPublisher(deps, sessionId);
 			}
+			await sendMutationResult(ws, "remove", deps.store.getBoard());
 			return;
-		case "cli-overwatch-merged":
+		}
+		case "cli-overwatch-merged": {
+			try {
+				validateProspectiveBoard(
+					prospectiveBoard(deps.store.getBoard(), frame, sessionId),
+				);
+			} catch (error) {
+				await sendError(ws, sessionId, describeError(error));
+				return;
+			}
 			deps.store.addMerge({ mr: frame.mr, title: frame.title });
 			await broadcastOverwatchState(deps);
+			notifyOverwatchPublisher(deps, sessionId);
+			await sendMutationResult(ws, "merged", deps.store.getBoard());
 			return;
-		case "cli-overwatch-launch":
+		}
+		case "cli-overwatch-launch": {
+			try {
+				validateProspectiveBoard(
+					prospectiveBoard(deps.store.getBoard(), frame, sessionId),
+				);
+			} catch (error) {
+				await sendError(ws, sessionId, describeError(error));
+				return;
+			}
 			deps.store.setLaunch({
 				goLive: frame.goLive,
 				goNoGo: frame.goNoGo,
 			});
 			await broadcastOverwatchState(deps);
+			notifyOverwatchPublisher(deps, sessionId);
+			await sendMutationResult(ws, "launch", deps.store.getBoard());
 			return;
+		}
 		case "cli-overwatch-open": {
-			const delivery = sendOverwatchFrame(deps, { type: "overwatch-open" });
+			const requestId = randomUUID();
+			const outcome = awaitOverwatchOpen(deps, requestId);
+			const delivery = sendOverwatchFrame(deps, {
+				type: "overwatch-open",
+				requestId,
+			});
 			if (delivery.count === 0) {
+				const pending = deps.overwatchOpenRequests.get(requestId);
+				if (pending) clearTimeout(pending.timer);
+				deps.overwatchOpenRequests.delete(requestId);
 				await sendError(ws, sessionId, "extension not connected");
 				return;
 			}
 			await delivery.sent;
+			const completed = await outcome;
+			if (!completed.ok) {
+				await sendError(ws, sessionId, completed.error);
+				return;
+			}
 			await sendViaQueue(
 				ws,
 				JSON.stringify({ type: "cli-overwatch-open-result" }),
@@ -807,6 +985,26 @@ async function dispatchFrame(
 			return handleConfigFrame(ws, frame, deps);
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
+		case "overwatch-open-result": {
+			if (ws.data.kind !== "ws") {
+				await sendError(
+					ws,
+					frame.sessionId,
+					"overwatch-open-result is accepted only on the extension socket",
+				);
+				return;
+			}
+			const pending = deps.overwatchOpenRequests.get(frame.requestId);
+			if (!pending) return;
+			clearTimeout(pending.timer);
+			deps.overwatchOpenRequests.delete(frame.requestId);
+			pending.resolve(
+				frame.ok
+					? { ok: true }
+					: { ok: false, error: frame.error ?? "extension failed to open" },
+			);
+			return;
+		}
 		default:
 			await sendError(
 				ws,
