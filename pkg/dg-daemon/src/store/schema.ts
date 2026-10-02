@@ -298,7 +298,62 @@ function createV8CronJobs(db: Database): void {
 	);
 }
 
-function createV9Inbox(db: Database): void {
+function createV9OverwatchBoard(db: Database): void {
+	db.run(`CREATE TABLE IF NOT EXISTS overwatch_lanes (
+		chat_key TEXT PRIMARY KEY,
+		chat_ciphertext BLOB NOT NULL,
+		chat_iv BLOB NOT NULL,
+		chat_tag BLOB NOT NULL,
+		task_ciphertext BLOB NOT NULL,
+		task_iv BLOB NOT NULL,
+		task_tag BLOB NOT NULL,
+		stage TEXT NOT NULL CHECK (stage IN ('review', 'ci', 'e2e', 'merge', 'done')),
+		mr_ciphertext BLOB,
+		mr_iv BLOB,
+		mr_tag BLOB,
+		eta_ciphertext BLOB,
+		eta_iv BLOB,
+		eta_tag BLOB,
+		next_ciphertext BLOB,
+		next_iv BLOB,
+		next_tag BLOB,
+		url_ciphertext BLOB,
+		url_iv BLOB,
+		url_tag BLOB,
+		kind TEXT NOT NULL CHECK (kind IN ('chat', 'background')),
+		publisher_ciphertext BLOB NOT NULL,
+		publisher_iv BLOB NOT NULL,
+		publisher_tag BLOB NOT NULL,
+		updated_at TEXT NOT NULL
+	) STRICT`);
+
+	db.run(`CREATE TABLE IF NOT EXISTS overwatch_merges (
+		id TEXT PRIMARY KEY,
+		mr_ciphertext BLOB NOT NULL,
+		mr_iv BLOB NOT NULL,
+		mr_tag BLOB NOT NULL,
+		title_ciphertext BLOB NOT NULL,
+		title_iv BLOB NOT NULL,
+		title_tag BLOB NOT NULL,
+		at TEXT NOT NULL
+	) STRICT`);
+
+	db.run(`CREATE TABLE IF NOT EXISTS overwatch_settings (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		go_live_ciphertext BLOB,
+		go_live_iv BLOB,
+		go_live_tag BLOB,
+		go_no_go_ciphertext BLOB,
+		go_no_go_iv BLOB,
+		go_no_go_tag BLOB
+	) STRICT`);
+
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_overwatch_merges_at ON overwatch_merges(at)",
+	);
+}
+
+function createV10Inbox(db: Database): void {
 	db.run(`CREATE TABLE inbox_profiles (
 		name TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 128),
 		provider TEXT NOT NULL CHECK(provider IN ('protonmail', 'gmail', 'outlook')),
@@ -325,7 +380,8 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 6, run: createV6AgentMessages },
 	{ version: 7, run: createV7ScheduledJobs },
 	{ version: 8, run: createV8CronJobs },
-	{ version: 9, run: createV9Inbox },
+	{ version: 9, run: createV9OverwatchBoard },
+	{ version: 10, run: createV10Inbox },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

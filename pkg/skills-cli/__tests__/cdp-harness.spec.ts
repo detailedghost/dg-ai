@@ -87,13 +87,15 @@ describe("DemoVerifyHarness.launch failure cleanup", () => {
 		const leaked = () =>
 			readdirSync(tmpdir()).filter((f) => f.startsWith("dg-verify-profile-"));
 		const before = new Set(leaked());
+		const originalBrowser = process.env.DG_VERIFY_BROWSER;
 		process.env.DG_VERIFY_BROWSER = "/nonexistent/binary-xyz-zzz";
 		try {
 			await expect(
 				DemoVerifyHarness.launch("/tmp/dg-verify-fake-extension-dir"),
 			).rejects.toThrow();
 		} finally {
-			delete process.env.DG_VERIFY_BROWSER;
+			if (originalBrowser === undefined) delete process.env.DG_VERIFY_BROWSER;
+			else process.env.DG_VERIFY_BROWSER = originalBrowser;
 		}
 		expect(leaked().filter((d) => !before.has(d))).toEqual([]);
 	});

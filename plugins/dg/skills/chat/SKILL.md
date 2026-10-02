@@ -95,6 +95,8 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   another background chat session and print its bootstrap JSON.
 - `stage <path>` — stage an asset for later presentation and print its id. The
   bytes are encrypted at rest and served only to the owning session.
+- `overwatch <subcommand>` — manage the shared launch board; see the `overwatch`
+  skill for its workflow and commands.
 - `close` — close this chat session.
 - `manifest --commands <path> [--subagents <path>]` — publish the commands the
   human may run from the chat composer, and optionally the subagent names they
