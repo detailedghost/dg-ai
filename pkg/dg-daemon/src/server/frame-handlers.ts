@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
+	applyOverwatchLaneUpdate,
 	CHAT_MAX_MANIFEST_BYTES,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
@@ -18,6 +19,7 @@ import {
 	validateCommandManifest,
 	validateOverwatchAction,
 	validateOverwatchLane,
+	validateOverwatchLaneUpdate,
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoIdentifier,
@@ -162,18 +164,12 @@ function prospectiveBoard(
 	const now = new Date().toISOString();
 	switch (frame.type) {
 		case "cli-overwatch-set": {
-			const lane = {
-				chat: frame.chat,
-				task: frame.task,
-				stage: frame.stage,
-				mr: frame.mr,
-				eta: frame.eta,
-				next: frame.next,
-				url: frame.url,
-				kind: frame.kind,
+			const lane = applyOverwatchLaneUpdate(
+				board.lanes.find((item) => item.chat === frame.chat),
+				frame,
 				publisher,
-				updatedAt: now,
-			};
+				now,
+			);
 			return {
 				...board,
 				lanes: [lane, ...board.lanes.filter((item) => item.chat !== frame.chat)],
@@ -350,15 +346,12 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 						"next",
 						"url",
 						"kind",
+						"clearNext",
 					])
 				) {
 					return undefined;
 				}
-				validateOverwatchLane({
-					...value,
-					publisher: "cli",
-					updatedAt: new Date(0).toISOString(),
-				});
+				validateOverwatchLaneUpdate(value, "cli-overwatch-set");
 				return value as CliFrame;
 			} catch {
 				return undefined;
@@ -628,13 +621,16 @@ async function handleCliFrame(
 			}
 			deps.store.upsertLane({
 				chat: frame.chat,
-				task: frame.task,
-				stage: frame.stage,
-				mr: frame.mr,
-				eta: frame.eta,
-				next: frame.next,
-				url: frame.url,
-				kind: frame.kind,
+				...(frame.task === undefined ? {} : { task: frame.task }),
+				...(frame.stage === undefined ? {} : { stage: frame.stage }),
+				...(frame.mr === undefined ? {} : { mr: frame.mr }),
+				...(frame.eta === undefined ? {} : { eta: frame.eta }),
+				...(frame.next === undefined ? {} : { next: frame.next }),
+				...(frame.url === undefined ? {} : { url: frame.url }),
+				...(frame.kind === undefined ? {} : { kind: frame.kind }),
+				...(frame.clearNext === undefined
+					? {}
+					: { clearNext: frame.clearNext }),
 				publisher,
 			});
 			await broadcastOverwatchState(deps);

@@ -147,6 +147,27 @@ describe("dg-agent overwatch", () => {
 		expect(client.closeCount).toBe(1);
 	});
 
+	it("sends only explicitly provided fields for a partial lane update", async () => {
+		const { client } = await runOverwatch([
+			"set",
+			"print",
+			"--stage",
+			"merge",
+		]);
+
+		expect(client.frames).toEqual([
+			{ type: "cli-overwatch-set", chat: "print", stage: "merge" },
+		]);
+	});
+
+	it("sends an explicit clear-next lane update", async () => {
+		const { client } = await runOverwatch(["set", "print", "--clear-next"]);
+
+		expect(client.frames).toEqual([
+			{ type: "cli-overwatch-set", chat: "print", clearNext: true },
+		]);
+	});
+
 	it("sends one remove frame", async () => {
 		const { client } = await runOverwatch(["remove", "print"]);
 
@@ -308,7 +329,7 @@ describe("dg-agent overwatch", () => {
 		expect(error).toMatchObject({
 			exitCode: 2,
 			message:
-				"overwatch lane.stage must be \"review\", \"ci\", \"e2e\", \"merge\", or \"done\"",
+				"overwatch lane update.stage must be \"review\", \"ci\", \"e2e\", \"merge\", or \"done\"",
 		});
 		expect(connectCount).toBe(0);
 		expect(client.frames).toEqual([]);
@@ -342,7 +363,7 @@ describe("dg-agent overwatch", () => {
 
 		expect(error).toMatchObject({
 			exitCode: 2,
-			message: "overwatch lane.url must start with \"https://claude.ai/\"",
+			message: "overwatch lane update.url must start with \"https://claude.ai/\"",
 		});
 		expect(connectCount).toBe(0);
 		expect(client.frames).toEqual([]);

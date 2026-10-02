@@ -170,6 +170,13 @@ export type OverwatchLane = {
 	updatedAt: string;
 };
 
+export type OverwatchLaneUpdate = Pick<OverwatchLane, "chat"> &
+	Partial<
+		Pick<OverwatchLane, "task" | "stage" | "mr" | "eta" | "next" | "url" | "kind">
+	> & {
+		clearNext?: boolean;
+	};
+
 export type OverwatchMerge = {
 	mr: string;
 	title: string;
@@ -454,6 +461,61 @@ export function validateOverwatchLane(
 	});
 	validateIsoTimestamp(value.updatedAt, `${path}.updatedAt`);
 	return value as OverwatchLane;
+}
+
+export function validateOverwatchLaneUpdate(
+	value: unknown,
+	path = "overwatch lane update",
+): OverwatchLaneUpdate {
+	requireRecord(value, path);
+	validateOverwatchLane(
+		{
+			chat: value.chat,
+			task: value.task === undefined ? "placeholder" : value.task,
+			stage: value.stage === undefined ? "review" : value.stage,
+			mr: value.mr,
+			eta: value.eta,
+			next: value.next,
+			url: value.url,
+			kind: value.kind === undefined ? "chat" : value.kind,
+			publisher: "validator",
+			updatedAt: new Date(0).toISOString(),
+		},
+		path,
+	);
+	if (value.clearNext !== undefined && typeof value.clearNext !== "boolean") {
+		fail(`${path}.clearNext must be a boolean`);
+	}
+	if (value.next !== undefined && value.clearNext === true) {
+		fail(`${path}.next and ${path}.clearNext cannot be used together`);
+	}
+	return value as OverwatchLaneUpdate;
+}
+
+export function applyOverwatchLaneUpdate(
+	existing: OverwatchLane | undefined,
+	update: OverwatchLaneUpdate,
+	publisher: string,
+	updatedAt = new Date().toISOString(),
+): OverwatchLane {
+	const validated = validateOverwatchLaneUpdate(update);
+	if (!existing && validated.stage === undefined) {
+		fail("stage is required when creating a new overwatch lane");
+	}
+	return validateOverwatchLane({
+		chat: validated.chat,
+		task: validated.task ?? existing?.task ?? validated.chat,
+		stage: validated.stage ?? existing?.stage,
+		mr: validated.mr ?? existing?.mr,
+		eta: validated.eta ?? existing?.eta,
+		next: validated.clearNext
+			? undefined
+			: (validated.next ?? existing?.next),
+		url: validated.url ?? existing?.url,
+		kind: validated.kind ?? existing?.kind ?? "chat",
+		publisher,
+		updatedAt,
+	});
 }
 
 export function validateOverwatchMerge(

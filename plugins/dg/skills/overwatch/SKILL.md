@@ -33,7 +33,11 @@ dg-agent overwatch set <chat> --task "<task>" --stage <review|ci|e2e|merge|done>
 ```
 
 Leave out optional fields that do not apply. Use `--background` for a background
-agent. Update a lane whenever its status changes, and use these lifecycle
+agent. Later `set` calls merge only the fields provided, so a stage-only update
+keeps the task, merge request, ETA, next action, URL, and lane kind. `--stage` is
+required when creating a lane and optional when updating one; a new lane's task
+defaults to its chat name. Remove a resolved next action with `--clear-next`.
+Update a lane whenever its status changes, and use these lifecycle
 commands when appropriate:
 
 ```bash

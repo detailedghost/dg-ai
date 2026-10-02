@@ -8,7 +8,7 @@ import {
 	describeError,
 	isRecord,
 	type OverwatchBoard,
-	validateOverwatchLane,
+	validateOverwatchLaneUpdate,
 	validateIsoTimestamp,
 } from "@dg/common";
 import type { Command } from "commander";
@@ -39,6 +39,7 @@ type SetOptions = {
 	next?: string;
 	url?: string;
 	background?: boolean;
+	clearNext?: boolean;
 };
 
 type DaemonError = {
@@ -56,28 +57,20 @@ function invalidUsage(error: unknown): DgCliError {
 
 function setRequest(chat: string, options: SetOptions): CliOverwatchSetRequest {
 	try {
-		const lane = validateOverwatchLane({
+		const update = validateOverwatchLaneUpdate({
 			chat,
-			task: options.task ?? chat,
-			stage: options.stage ?? "review",
+			...(options.task === undefined ? {} : { task: options.task }),
+			...(options.stage === undefined ? {} : { stage: options.stage }),
 			...(options.mr === undefined ? {} : { mr: options.mr }),
 			...(options.eta === undefined ? {} : { eta: options.eta }),
 			...(options.next === undefined ? {} : { next: options.next }),
 			...(options.url === undefined ? {} : { url: options.url }),
-			kind: options.background ? "background" : "chat",
-			publisher: "dg-agent",
-			updatedAt: new Date(0).toISOString(),
+			...(options.background ? { kind: "background" as const } : {}),
+			...(options.clearNext ? { clearNext: true } : {}),
 		});
 		return {
 			type: "cli-overwatch-set",
-			chat: lane.chat,
-			task: lane.task,
-			stage: lane.stage,
-			...(lane.mr === undefined ? {} : { mr: lane.mr }),
-			...(lane.eta === undefined ? {} : { eta: lane.eta }),
-			...(lane.next === undefined ? {} : { next: lane.next }),
-			...(lane.url === undefined ? {} : { url: lane.url }),
-			kind: lane.kind,
+			...update,
 		};
 	} catch (error) {
 		throw invalidUsage(error);
@@ -227,15 +220,19 @@ export function registerOverwatchCommands(
 
 	overwatch
 		.command("set")
-		.description("create or update a chat lane")
+		.description("create a lane or update only the provided fields")
 		.argument("<chat>", "chat name")
-		.option("--task <task>", "short task summary")
-		.option("--stage <stage>", "review, ci, e2e, merge, or done")
+		.option("--task <task>", "short task summary; defaults to chat for a new lane")
+		.option(
+			"--stage <stage>",
+			"review, ci, e2e, merge, or done; required for a new lane",
+		)
 		.option("--mr <mr>", "merge request reference")
 		.option("--eta <eta>", "estimated completion")
 		.option("--next <next>", "next action needed")
+		.option("--clear-next", "remove the current next action")
 		.option("--url <url>", "claude.ai chat URL")
-		.option("--background", "mark the lane as a background agent")
+		.option("--background", "mark a new or existing lane as a background agent")
 		.action(async (chat: string, options: SetOptions, command: Command) => {
 			await mutate(
 				dependencies,
