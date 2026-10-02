@@ -189,6 +189,7 @@
 	.pair-form__label {
 		@apply flex min-w-0 flex-1 flex-col gap-1.5 text-sm uppercase;
 		letter-spacing: 0.06em;
+		white-space: nowrap;
 	}
 	.pair-form__input {
 		@apply w-full border-2 px-3 py-2 font-mono text-lg tracking-[0.3em];

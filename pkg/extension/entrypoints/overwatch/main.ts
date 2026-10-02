@@ -227,7 +227,16 @@ export function renderOverwatchPage(
 	async function ensureApi(): Promise<OverwatchApi | undefined> {
 		if (api) return api;
 		api = await connect(lastPort);
-		if (api) lastPort = overwatchPort(api);
+		if (api) {
+			lastPort = overwatchPort(api);
+			if (!pairing && runtime.sendMessage) {
+				pairing = mountPairing(pairHost, {
+					variant: "entry",
+					findPort: () => Promise.resolve(lastPort),
+					runtime: { sendMessage: runtime.sendMessage.bind(runtime) },
+				});
+			}
+		}
 		return api;
 	}
 
@@ -560,13 +569,6 @@ export function renderOverwatchPage(
 			retryTimer = undefined;
 		}
 		setOffline(false);
-		if (!pairing && runtime.sendMessage) {
-			pairing = mountPairing(pairHost, {
-				variant: "entry",
-				findPort: () => Promise.resolve(lastPort),
-				runtime: { sendMessage: runtime.sendMessage.bind(runtime) },
-			});
-		}
 		paint();
 	}
 

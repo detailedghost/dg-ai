@@ -413,14 +413,22 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			const bootstrap = asSessionBootstrap(message.bootstrap);
 			if (!bootstrap) return undefined;
 			void (async () => {
-				await api.storage.session.set({
-					[chatSessionKey(bootstrap.sessionId)]: bootstrap,
-				});
-				await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
-				bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
-				client.connect(bootstrap);
+				try {
+					await api.storage.session.set({
+						[chatSessionKey(bootstrap.sessionId)]: bootstrap,
+					});
+					await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
+					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+					client.connect(bootstrap);
+					sendResponse({ ok: true });
+				} catch (error) {
+					sendResponse({
+						ok: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
 			})();
-			return undefined;
+			return true;
 		}
 
 		if (typeof message !== "object" || message === null) return undefined;

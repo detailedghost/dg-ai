@@ -151,8 +151,7 @@ function requirePinnedExtensionOrigin(
 
 function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
 	const origin = req.headers.get("origin");
-	if (origin === null) return undefined;
-	if (!isExtensionOrigin(origin)) {
+	if (origin === null || !isExtensionOrigin(origin)) {
 		return new Response("refused: /pair requires an extension-scheme Origin", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
