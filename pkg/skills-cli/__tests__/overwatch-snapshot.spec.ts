@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { OverwatchBoard, OverwatchLane } from "@dg/common";
 import { Command } from "commander";
 import { registerRecvCommand } from "../../dg-agent/src/commands";
@@ -18,21 +19,24 @@ import {
 	renderOverwatchSnapshot,
 	writeOverwatchSnapshot,
 } from "../src/commands/overwatch-snapshot";
+import {
+	DemoVerifyHarness,
+	resolveBrowserBinary,
+} from "../src/utils/cdp-harness";
 
 const temporaryDirectories: string[] = [];
 const renderedAt = new Date("2026-10-02T15:00:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
 const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
 const skillsCliEntry = join(import.meta.dir, "..", "src", "index.ts");
-const chromium = [
-	"brave-browser",
-	"brave",
-	"chromium",
-	"chromium-browser",
-	"google-chrome-for-testing",
-]
-	.map((candidate) => Bun.which(candidate))
-	.find((candidate): candidate is string => candidate !== null);
+const browserAvailable = (() => {
+	try {
+		resolveBrowserBinary();
+		return true;
+	} catch {
+		return false;
+	}
+})();
 
 type CliResult = {
 	code: number | null;
@@ -68,69 +72,33 @@ async function inspectNarrowLayout(html: string): Promise<{
 	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-layout-"));
 	temporaryDirectories.push(directory);
 	const input = join(directory, "snapshot.html");
-	const instrumented = html.replace(
-		"</body>",
-		`<pre id="geometry"></pre>
-<script>
-const nodes = [...document.querySelectorAll(".who small,.next,.foot p span,.need,.merges span")];
-document.querySelector("#geometry").textContent = JSON.stringify({
-	documentWidth: document.documentElement.scrollWidth,
-	viewportWidth: document.documentElement.clientWidth,
-	nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
-});
-</script>
-</body>`,
+	await writeFile(input, html);
+	const harness = await DemoVerifyHarness.launch(
+		undefined,
+		GEOMETRY_BROWSER_TIMEOUT_MS,
 	);
-	await writeFile(input, instrumented);
-	const child = spawn(
-		chromium as string,
-		[
-			"--headless=new",
-			"--no-sandbox",
-			"--disable-gpu",
-			`--user-data-dir=${join(directory, "profile")}`,
-			"--window-size=390,844",
-			"--dump-dom",
-			input,
-		],
-		{
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: GEOMETRY_BROWSER_TIMEOUT_MS,
-			killSignal: "SIGKILL",
-		},
-	);
-	let result: CliResult;
 	try {
-		result = await new Promise<CliResult>((resolve, reject) => {
-			const stdout: Buffer[] = [];
-			const stderr: Buffer[] = [];
-			child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-			child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-			child.on("error", reject);
-			child.on("close", (code) =>
-				resolve({
-					code,
-					stdout: Buffer.concat(stdout).toString("utf8"),
-					stderr: Buffer.concat(stderr).toString("utf8"),
-				}),
-			);
-		});
-	} finally {
-		if (
-			child.pid !== undefined &&
-			child.exitCode === null &&
-			child.signalCode === null
-		) {
-			await new Promise<void>((resolve) => {
-				child.once("close", () => resolve());
-				if (!child.kill()) resolve();
-			});
+		const page = await harness.openPage(pathToFileURL(input).href);
+		try {
+			await page.setViewport(390, 844);
+			return await page.evaluate<{
+				documentWidth: number;
+				viewportWidth: number;
+				nodesFit: boolean;
+			}>(`(() => {
+				const nodes = [...document.querySelectorAll(".who small,.next,.foot p span,.need,.merges span")];
+				return {
+					documentWidth: document.documentElement.scrollWidth,
+					viewportWidth: document.documentElement.clientWidth,
+					nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
+				};
+			})()`);
+		} finally {
+			page.dispose();
 		}
+	} finally {
+		await harness.close();
 	}
-	if (result.code !== 0) throw new Error(result.stderr);
-	const match = /<pre id="geometry">([^<]+)<\/pre>/.exec(result.stdout);
-	if (!match) throw new Error("browser did not report snapshot geometry");
-	return JSON.parse(match[1]);
 }
 
 function lane(
@@ -245,7 +213,7 @@ describe("overwatch snapshot renderer", () => {
 		expect(html).not.toMatch(/border[^;{}]*(dashed|dotted)/);
 	});
 
-	it.skipIf(!chromium)(
+	it.skipIf(!browserAvailable)(
 		"keeps every maximal field visible at a 390 pixel viewport",
 		async () => {
 			const html = renderOverwatchSnapshot(

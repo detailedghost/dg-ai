@@ -1,9 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -16,6 +16,10 @@ import { Window } from "happy-dom";
 import type { OverwatchActionResult } from "@/lib/features/overwatch";
 import { click } from "./utils/dom-events";
 import { captureGlobal } from "./utils/relay-harness";
+import {
+	DemoVerifyHarness,
+	resolveBrowserBinary,
+} from "../../skills-cli/src/utils/cdp-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
@@ -34,15 +38,14 @@ const {
 const NOW = new Date("2026-10-02T10:30:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
 const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
-const chromium = [
-	"brave-browser",
-	"brave",
-	"chromium",
-	"chromium-browser",
-	"google-chrome-for-testing",
-]
-	.map((candidate) => Bun.which(candidate))
-	.find((candidate): candidate is string => candidate !== null);
+const browserAvailable = (() => {
+	try {
+		resolveBrowserBinary();
+		return true;
+	} catch {
+		return false;
+	}
+})();
 
 function buildLane(overrides: Partial<OverwatchLane> = {}): OverwatchLane {
 	return {
@@ -148,7 +151,6 @@ async function inspectNarrowLayout(markup: string): Promise<{
 }> {
 	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-page-layout-"));
 	const path = join(directory, "overwatch.html");
-	let child: ReturnType<typeof spawn> | undefined;
 	const optionsCss = readFileSync(
 		new URL("../entrypoints/options/style.css", import.meta.url),
 		"utf8",
@@ -168,76 +170,45 @@ async function inspectNarrowLayout(markup: string): Promise<{
 </head>
 <body>
 	${markup}
-	<pre id="geometry"></pre>
-	<script>
-		const nodes = [...document.querySelectorAll(".overwatch__who small,.overwatch__next,.overwatch__background-lane p,.overwatch__asks")];
-		const all = [...document.querySelectorAll(".overwatch,.overwatch *")];
-		document.querySelector("#geometry").textContent = JSON.stringify({
-			documentWidth: document.documentElement.scrollWidth,
-			viewportWidth: document.documentElement.clientWidth,
-			nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
-			hasProhibitedBorder: all.some((node) => {
-				const style = getComputedStyle(node);
-				return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].some((value) => value === "dashed" || value === "dotted");
-			}),
-		});
-	</script>
 </body>
 </html>`,
 	);
+	let harness: DemoVerifyHarness | undefined;
 	try {
-		const result = await new Promise<{
-			code: number | null;
-			stdout: string;
-			stderr: string;
-		}>((resolve, reject) => {
-			const browser = spawn(
-				chromium as string,
-				[
-					"--headless=new",
-					"--no-sandbox",
-					"--disable-gpu",
-					`--user-data-dir=${join(directory, "profile")}`,
-					"--window-size=390,844",
-					"--dump-dom",
-					path,
-				],
-				{
-					stdio: ["ignore", "pipe", "pipe"],
-					timeout: GEOMETRY_BROWSER_TIMEOUT_MS,
-					killSignal: "SIGKILL",
-				},
-			);
-			child = browser;
-			const stdout: Buffer[] = [];
-			const stderr: Buffer[] = [];
-			browser.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-			browser.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-			browser.on("error", reject);
-			browser.on("close", (code) =>
-				resolve({
-					code,
-					stdout: Buffer.concat(stdout).toString("utf8"),
-					stderr: Buffer.concat(stderr).toString("utf8"),
-				}),
-			);
-		});
-		if (result.code !== 0) throw new Error(result.stderr);
-		const match = /<pre id="geometry">([^<]+)<\/pre>/.exec(result.stdout);
-		if (!match) throw new Error("browser did not report board geometry");
-		return JSON.parse(match[1]);
-	} finally {
-		if (
-			child?.pid !== undefined &&
-			child.exitCode === null &&
-			child.signalCode === null
-		) {
-			await new Promise<void>((resolve) => {
-				child?.once("close", () => resolve());
-				if (!child?.kill()) resolve();
-			});
+		harness = await DemoVerifyHarness.launch(
+			undefined,
+			GEOMETRY_BROWSER_TIMEOUT_MS,
+		);
+		const page = await harness.openPage(pathToFileURL(path).href);
+		try {
+			await page.setViewport(390, 844);
+			return await page.evaluate<{
+				documentWidth: number;
+				viewportWidth: number;
+				nodesFit: boolean;
+				hasProhibitedBorder: boolean;
+			}>(`(() => {
+				const nodes = [...document.querySelectorAll(".overwatch__who small,.overwatch__next,.overwatch__background-lane p,.overwatch__asks")];
+				const all = [...document.querySelectorAll(".overwatch,.overwatch *")];
+				return {
+					documentWidth: document.documentElement.scrollWidth,
+					viewportWidth: document.documentElement.clientWidth,
+					nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
+					hasProhibitedBorder: all.some((node) => {
+						const style = getComputedStyle(node);
+						return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].some((value) => value === "dashed" || value === "dotted");
+					}),
+				};
+			})()`);
+		} finally {
+			page.dispose();
 		}
-		await rm(directory, { force: true, recursive: true });
+	} finally {
+		try {
+			await harness?.close();
+		} finally {
+			await rm(directory, { force: true, recursive: true });
+		}
 	}
 }
 
@@ -621,7 +592,7 @@ describe("the overwatch page", () => {
 	});
 });
 
-test.skipIf(!chromium)(
+test.skipIf(!browserAvailable)(
 	"keeps maximal prose visible at a 390 pixel viewport",
 	async () => {
 		const { root, handle } = await mount(
