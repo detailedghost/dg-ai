@@ -10,8 +10,11 @@ import {
 	type CliFrame,
 	describeError,
 	isRecord,
+	OVERWATCH_SESSION_ID,
 	validateChatFrame,
 	validateCommandManifest,
+	validateOverwatchAction,
+	validateOverwatchLane,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -104,6 +107,29 @@ function broadcastPageFrame(
 	return Promise.all(sends).then(() => undefined);
 }
 
+function sendOverwatchFrame(
+	deps: FrameHandlerDeps,
+	frame: Record<string, unknown>,
+): { count: number; sent: Promise<void> } {
+	const sends: Promise<void>[] = [];
+	const payload = JSON.stringify({
+		sessionId: OVERWATCH_SESSION_ID,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		...frame,
+	});
+	const count = deps.connections.forEachExtension((socket) => {
+		sends.push(sendViaQueue(socket, payload));
+	});
+	return { count, sent: Promise.all(sends).then(() => undefined) };
+}
+
+async function broadcastOverwatchState(deps: FrameHandlerDeps): Promise<void> {
+	await sendOverwatchFrame(deps, {
+		type: "overwatch-state",
+		board: deps.store.getBoard(),
+	}).sent;
+}
+
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
 
 const MIN_PEEKED_MESSAGE_BYTES =
@@ -182,6 +208,41 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			} catch {
 				return undefined;
 			}
+		case "cli-overwatch-set":
+			try {
+				validateOverwatchLane({
+					...value,
+					publisher: "cli",
+					updatedAt: new Date(0).toISOString(),
+				});
+				return value as CliFrame;
+			} catch {
+				return undefined;
+			}
+		case "cli-overwatch-remove":
+			try {
+				validateOverwatchAction({ chat: value.chat, action: "approve" });
+				return value as CliFrame;
+			} catch {
+				return undefined;
+			}
+		case "cli-overwatch-merged":
+			return typeof value.mr === "string" &&
+				value.mr.length > 0 &&
+				typeof value.title === "string" &&
+				value.title.length > 0
+				? (value as CliFrame)
+				: undefined;
+		case "cli-overwatch-launch":
+			return typeof value.goLive === "string" &&
+				value.goLive.length > 0 &&
+				(value.goNoGo === undefined ||
+					(typeof value.goNoGo === "string" && value.goNoGo.length > 0))
+				? (value as CliFrame)
+				: undefined;
+		case "cli-overwatch-open":
+		case "cli-overwatch-snapshot":
+			return value as CliFrame;
 		default:
 			return undefined;
 	}
@@ -384,6 +445,60 @@ async function handleCliFrame(
 			}, 25);
 			return;
 		}
+		case "cli-overwatch-set": {
+			const publisher = deps.registry.get(sessionId)?.agentIdentity;
+			if (!publisher) {
+				await sendError(ws, sessionId, "overwatch publisher session is not active");
+				return;
+			}
+			deps.store.upsertLane({
+				chat: frame.chat,
+				task: frame.task,
+				stage: frame.stage,
+				mr: frame.mr,
+				eta: frame.eta,
+				next: frame.next,
+				url: frame.url,
+				kind: frame.kind,
+				publisher,
+			});
+			await broadcastOverwatchState(deps);
+			return;
+		}
+		case "cli-overwatch-remove":
+			if (deps.store.removeLane(frame.chat)) {
+				await broadcastOverwatchState(deps);
+			}
+			return;
+		case "cli-overwatch-merged":
+			deps.store.addMerge({ mr: frame.mr, title: frame.title });
+			await broadcastOverwatchState(deps);
+			return;
+		case "cli-overwatch-launch":
+			deps.store.setLaunch({
+				goLive: frame.goLive,
+				goNoGo: frame.goNoGo,
+			});
+			await broadcastOverwatchState(deps);
+			return;
+		case "cli-overwatch-open": {
+			const delivery = sendOverwatchFrame(deps, { type: "overwatch-open" });
+			if (delivery.count === 0) {
+				await sendError(ws, sessionId, "extension not connected");
+				return;
+			}
+			await delivery.sent;
+			return;
+		}
+		case "cli-overwatch-snapshot":
+			await sendViaQueue(
+				ws,
+				JSON.stringify({
+					type: "cli-overwatch-snapshot-result",
+					board: deps.store.getBoard(),
+				}),
+			);
+			return;
 	}
 }
 
