@@ -18,7 +18,10 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
+	type OverwatchAction,
+	OVERWATCH_SESSION_ID,
 	type SessionRole,
+	validateOverwatchAction,
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
@@ -48,7 +51,7 @@ import { handleSocketMessage } from "./frame-handlers";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
-	checkPinnedOrigin,
+	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
 } from "./origin";
@@ -105,13 +108,36 @@ function requireExtensionOrigin(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (!checkPinnedOrigin(paths, origin as string)) {
+	const pinnedOrigin = getPinnedOrigin(paths);
+	if (pinnedOrigin !== undefined && pinnedOrigin !== origin) {
 		return new Response(
 			"refused: Origin does not match the pinned extension origin — if the " +
 				"extension moved (e.g. an unpacked reload from a new path), run " +
 				"`dg-daemon origin clear` and reconnect",
 			{ status: 400, headers: NOSNIFF_HEADERS },
 		);
+	}
+	return undefined;
+}
+
+function requirePinnedExtensionOrigin(
+	req: Request,
+	paths: DgPaths,
+): Response | undefined {
+	const origin = req.headers.get("origin");
+	const pinnedOrigin = getPinnedOrigin(paths);
+	if (pinnedOrigin === undefined) {
+		return new Response("refused: no authenticated extension origin is pinned", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (origin === null) return undefined;
+	if (!isExtensionOrigin(origin) || origin !== pinnedOrigin) {
+		return new Response("refused: Origin does not match a pinned extension origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
 	}
 	return undefined;
 }
@@ -165,6 +191,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		noteActivity,
 		store,
 		dispatchScheduler,
+		overwatchOpenRequests: new Map(),
 	};
 
 	const boundServer = Bun.serve<SocketState>({
@@ -276,6 +303,13 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (
+				url.pathname === "/overwatch" ||
+				url.pathname === "/overwatch/action"
+			) {
+				return handleOverwatchRoute(req, url, deps);
+			}
+
+			if (
 				url.pathname === CHAT_SERVICES_PATH ||
 				url.pathname.startsWith(`${CHAT_SERVICES_PATH}/`)
 			) {
@@ -288,6 +322,67 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 	installAssetLifecycle(paths, store, logger, port);
 	return boundServer;
+}
+
+async function handleOverwatchRoute(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const refusal =
+		requireLoopbackHost(req, deps.port) ??
+		requirePinnedExtensionOrigin(req, deps.paths);
+	if (refusal) {
+		refusal.headers.set("Cache-Control", "no-store");
+		return refusal;
+	}
+	if (url.pathname === "/overwatch" && req.method === "GET") {
+		return json(deps.store.getBoard(), {
+			headers: { "Cache-Control": "no-store" },
+		});
+	}
+	if (url.pathname !== "/overwatch/action" || req.method !== "POST") {
+		return new Response("not found", {
+			status: 404,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
+		});
+	}
+
+	let action: OverwatchAction;
+	try {
+		action = validateOverwatchAction(await req.json());
+	} catch (err) {
+		return new Response(describeError(err), {
+			status: 400,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
+		});
+	}
+	const lane = deps.store
+		.getBoard()
+		.lanes.find((candidate) => candidate.chat === action.chat);
+	if (!lane?.publisher) {
+		return new Response("no such overwatch lane", {
+			status: 404,
+			headers: { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" },
+		});
+	}
+	deps.store.insertAgentMessage({
+		senderSessionId: OVERWATCH_SESSION_ID,
+		senderIdentity: "overwatch-board",
+		recipientIdentity: lane.publisher,
+		id: randomUUID(),
+		body: JSON.stringify({
+			overwatch: {
+				chat: action.chat,
+				action: action.action,
+				note: action.note,
+			},
+		}),
+	});
+	return json(
+		{ ok: true },
+		{ headers: { "Cache-Control": "no-store" } },
+	);
 }
 
 async function handleRegisterSession(

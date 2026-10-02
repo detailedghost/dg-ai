@@ -2,6 +2,7 @@ import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
+	type ChatFrame,
 	type SessionBootstrap,
 	validateSessionBootstrap,
 } from "@dg/common";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/features/chat-client";
 
 export const CHAT_PAGE_PATH = "chat.html";
+export const OVERWATCH_PAGE_PATH = "overwatch.html";
 
 export { CHAT_SESSION_KEY_PREFIX } from "@/lib/chat-messages";
 
@@ -54,6 +56,11 @@ export type ChatBrowserApi = {
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
+		query?(queryInfo: { url: string }): Promise<{ id?: number; windowId?: number }[]>;
+		update?(tabId: number, props: { active: boolean }): unknown;
+	};
+	windows?: {
+		update(windowId: number, props: { focused: boolean }): unknown;
 	};
 	storage: {
 		session: {
@@ -62,6 +69,63 @@ export type ChatBrowserApi = {
 		};
 	};
 };
+
+export type OverwatchBrowserApi = {
+	runtime: Pick<ChatBrowserApi["runtime"], "getURL" | "sendMessage">;
+	tabs: ChatBrowserApi["tabs"];
+	windows?: ChatBrowserApi["windows"];
+};
+
+export type OverwatchOpenCompletion = {
+	requestId: string;
+	ok: boolean;
+	error?: string;
+};
+
+export async function handleOverwatchFrame(
+	frame: ChatFrame,
+	api: OverwatchBrowserApi,
+): Promise<OverwatchOpenCompletion | undefined> {
+	if (frame.type === "overwatch-state") {
+		await api.runtime
+			.sendMessage({ type: MSG.overwatchState, frame })
+			.catch(() => undefined);
+		return undefined;
+	}
+	if (frame.type !== "overwatch-open") return undefined;
+	const url = api.runtime.getURL(OVERWATCH_PAGE_PATH);
+	const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
+	const existing = matches[0];
+	if (existing?.id !== undefined && api.tabs.update) {
+		await api.tabs.update(existing.id, { active: true });
+		if (existing.windowId !== undefined && api.windows) {
+			await api.windows.update(existing.windowId, { focused: true });
+		}
+		return { requestId: frame.requestId, ok: true };
+	}
+	await api.tabs.create({ url });
+	return { requestId: frame.requestId, ok: true };
+}
+
+export async function handleOverwatchFrameSafely(
+	frame: ChatFrame,
+	api: OverwatchBrowserApi,
+	complete: (result: OverwatchOpenCompletion) => void = () => undefined,
+): Promise<void> {
+	try {
+		const result = await handleOverwatchFrame(frame, api);
+		if (result) complete(result);
+	} catch (error) {
+		if (frame.type === "overwatch-open") {
+			complete({
+				requestId: frame.requestId,
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+		console.error("[dg-ai-extension] overwatch frame failed:", error);
+	}
+}
 
 export type RegisterChatOptions = {
 	browserApi?: ChatBrowserApi;
@@ -130,6 +194,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	const keepaliveEligible = new Set<string>();
 	const configWaiters: ConfigWaiter[] = [];
+	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
 	let currentSocket: ChatClientSocket | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -172,6 +237,32 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (bootstrap) return bootstrap;
 		}
 		return undefined;
+	}
+
+	function sendOverwatchOpenCompletion(
+		result: OverwatchOpenCompletion,
+		socket = currentSocket,
+		bootstrap = firstConfirmedBootstrap(),
+	): boolean {
+		if (!socket || !bootstrap) return false;
+		socket.send(
+			JSON.stringify({
+				type: "overwatch-open-result",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				...result,
+			}),
+		);
+		return true;
+	}
+
+	function flushOverwatchOpenCompletions(): void {
+		while (pendingOverwatchOpenCompletions.length > 0) {
+			const result = pendingOverwatchOpenCompletions[0];
+			if (!result || !sendOverwatchOpenCompletion(result)) return;
+			pendingOverwatchOpenCompletions.shift();
+		}
 	}
 
 	function dispatchCommand(
@@ -262,6 +353,18 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
+		const requestSocket = currentSocket;
+		const requestBootstrap = firstConfirmedBootstrap();
+		void handleOverwatchFrameSafely(frame, api, (result) => {
+			if (
+				currentSocket === requestSocket &&
+				sendOverwatchOpenCompletion(result, requestSocket, requestBootstrap)
+			) {
+				return;
+			}
+			pendingOverwatchOpenCompletions.push(result);
+			flushOverwatchOpenCompletions();
+		});
 		if (frame.type === "config-result") {
 			configWaiters
 				.find((w) => w.key === frame.key)
@@ -292,6 +395,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
 		keepaliveEligible.add(sessionId);
 		currentSocket?.send(keepaliveFrame(bootstrap));
+		flushOverwatchOpenCompletions();
 		if (keepaliveTimer === undefined) {
 			keepaliveTimer = setInterval(sendKeepalives, keepaliveIntervalMs);
 		}

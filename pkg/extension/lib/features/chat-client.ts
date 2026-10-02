@@ -3,6 +3,7 @@ import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_WS_PATH,
+	OVERWATCH_SESSION_ID,
 	type ChatFrame,
 	createSerialQueue,
 	type SessionBootstrap,
@@ -243,7 +244,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			return;
 		}
 
-		if (!capabilities.has(frame.sessionId)) return;
+		const isOverwatchFrame =
+			frame.sessionId === OVERWATCH_SESSION_ID &&
+			(frame.type === "overwatch-state" || frame.type === "overwatch-open");
+		if (!isOverwatchFrame && !capabilities.has(frame.sessionId)) return;
 
 		if (frame.type === "session-pending") {
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);

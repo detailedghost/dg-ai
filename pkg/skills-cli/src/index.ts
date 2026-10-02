@@ -9,6 +9,7 @@ import { registerBatchOpen } from "./commands/batch-open";
 import { registerDemo } from "./commands/demo";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
+import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 
@@ -26,6 +27,7 @@ registerLaunch(program);
 registerDemo(program);
 registerRerun(program);
 registerProto(program);
+registerOverwatchSnapshot(program);
 
 program.parseAsync(process.argv).catch((err) => {
 	console.error(`dg-skills: ${err instanceof Error ? err.message : err}`);

@@ -1,13 +1,40 @@
-import { beforeEach, describe, expect, it, spyOn } from "bun:test";
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	spyOn,
+} from "bun:test";
 import { Window } from "happy-dom";
 import { cssSelectorFor, injectTheme, waitForEl } from "@/lib/picker";
 
 const window = new Window();
 const document = window.document as unknown as Document;
+const originalDocument = Object.getOwnPropertyDescriptor(
+	globalThis,
+	"document",
+);
 
-Object.defineProperty(globalThis, "document", {
-	configurable: true,
-	value: document,
+beforeEach(() => {
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: document,
+	});
+	document.body.replaceChildren();
+});
+
+afterEach(() => {
+	if (originalDocument) {
+		Object.defineProperty(globalThis, "document", originalDocument);
+	} else {
+		Reflect.deleteProperty(globalThis, "document");
+	}
+});
+
+afterAll(async () => {
+	await window.happyDOM.close();
 });
 
 function expectUniqueSelectorFor(target: Element): string {
@@ -22,10 +49,6 @@ function expectUniqueSelectorFor(target: Element): string {
 }
 
 describe("cssSelectorFor", () => {
-	beforeEach(() => {
-		document.body.replaceChildren();
-	});
-
 	it("returns a unique selector for an element with data-testid", () => {
 		document.body.innerHTML = `
 			<button type="button">Cancel</button>

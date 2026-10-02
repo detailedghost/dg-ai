@@ -487,6 +487,7 @@ describe("maybeStartRecording", () => {
 		selected: true,
 		discarded: false,
 		autoDiscardable: true,
+		lastAccessed: 0,
 	};
 	const tutorialActionVideo: TourScript = {
 		startUrl: "https://app.example",
