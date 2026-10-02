@@ -1,0 +1,547 @@
+@reference "../options/style.css";
+
+html,
+body {
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	max-width: none;
+	overflow-x: hidden;
+}
+
+.overwatch {
+	--overwatch-ink: #171717;
+	--overwatch-paper: #f7f6f1;
+	--overwatch-panel: #ffffff;
+	--overwatch-cyan: var(--accent-light);
+	--overwatch-magenta: var(--accent2-light);
+	--overwatch-soft: #dedbd1;
+	min-height: 100vh;
+	box-sizing: border-box;
+	padding: 1.5rem;
+	background: var(--overwatch-paper);
+	color: var(--overwatch-ink);
+	font-family: var(--mono);
+}
+
+.overwatch * {
+	box-sizing: border-box;
+}
+
+.overwatch__top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	border: 0.125rem solid var(--overwatch-ink);
+	padding: 0.8125rem 0.9375rem;
+	background: var(--overwatch-panel);
+	box-shadow: 0.3125rem 0.3125rem 0 var(--overwatch-ink);
+}
+
+.overwatch__countdown {
+	font-size: clamp(1rem, 2.4vw, 1.5rem);
+	white-space: nowrap;
+}
+
+.overwatch__need {
+	border: 0.125rem solid var(--overwatch-ink);
+	padding: 0.5625rem 0.75rem;
+	background: var(--overwatch-magenta);
+	color: #ffffff;
+	font-weight: 900;
+	white-space: nowrap;
+}
+
+.overwatch__dates {
+	margin-top: 0.875rem;
+	font-size: 0.75rem;
+	font-weight: 900;
+	text-align: right;
+}
+
+.overwatch__connection {
+	--chat-accent-secondary: var(--overwatch-magenta);
+	--chat-control-radius: 0.375rem;
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	width: fit-content;
+	margin-top: 1rem;
+	padding: 0.4rem 0.55rem;
+	background: color-mix(
+		in srgb,
+		var(--overwatch-magenta) 14%,
+		transparent
+	);
+	color: var(--overwatch-magenta);
+	font-size: 0.72rem;
+}
+
+.overwatch__connection::before {
+	content: "";
+	width: 0.5rem;
+	height: 0.5rem;
+	flex: none;
+	background: currentColor;
+	animation: overwatch-connection-pulse 1.6s ease-in-out infinite;
+}
+
+.overwatch__connection[hidden],
+.overwatch [hidden] {
+	display: none;
+}
+
+@keyframes overwatch-connection-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+.overwatch__axis,
+.overwatch__lane {
+	display: grid;
+	grid-template-columns: 10.625rem repeat(4, minmax(0, 1fr));
+	gap: 0.5rem;
+}
+
+.overwatch__axis {
+	margin: 2rem 0 0.625rem;
+}
+
+.overwatch__axis span {
+	padding: 0.5rem;
+	font-size: 0.6875rem;
+	font-weight: 900;
+	text-align: center;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.overwatch__axis span:not(:first-child) {
+	border-bottom: 0.25rem solid var(--overwatch-ink);
+}
+
+.overwatch__lane {
+	align-items: stretch;
+	margin-bottom: 1rem;
+}
+
+.overwatch__who {
+	min-width: 0;
+	border: 0.1875rem solid var(--overwatch-ink);
+	padding: 0.875rem;
+	background: var(--overwatch-panel);
+}
+
+.overwatch__who strong {
+	display: block;
+	overflow-wrap: anywhere;
+	font-size: 1.0625rem;
+}
+
+.overwatch__who small {
+	display: block;
+	margin-top: 0.3125rem;
+	line-height: 1.4;
+}
+
+.overwatch__cell {
+	display: flex;
+	min-width: 0;
+	min-height: 4.625rem;
+	align-items: center;
+	justify-content: center;
+	border: 0.125rem solid var(--overwatch-soft);
+	padding: 0.5rem;
+	background: var(--overwatch-panel);
+	font-size: 0.6875rem;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.overwatch__cell--done {
+	border-color: var(--overwatch-cyan);
+	background: #e7f9fc;
+	color: #05566a;
+	font-weight: 900;
+}
+
+.overwatch__cell--now {
+	border: 0.25rem solid var(--overwatch-ink);
+	background: var(--overwatch-cyan);
+	box-shadow: 0.25rem 0.25rem 0 var(--overwatch-ink);
+	color: #ffffff;
+	font-weight: 900;
+}
+
+.overwatch__lane--wait .overwatch__cell--now {
+	background: var(--overwatch-magenta);
+}
+
+.overwatch__detail {
+	display: flex;
+	grid-column: 2 / 6;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	border: 0.1875rem solid var(--overwatch-ink);
+	border-top: 0;
+	padding: 0.75rem;
+	background: var(--overwatch-panel);
+}
+
+.overwatch__stats,
+.overwatch__background-facts {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.overwatch__stats > span:not(.overwatch__updated),
+.overwatch__background-facts span,
+.overwatch__merges span {
+	border: 0.125rem solid var(--overwatch-ink);
+	padding: 0.4375rem;
+	font-size: 0.75rem;
+	font-weight: 900;
+	white-space: nowrap;
+}
+
+.overwatch__next {
+	border: 0.125rem solid var(--overwatch-ink);
+	padding: 0.5625rem;
+	background: var(--overwatch-magenta);
+	color: #ffffff;
+	font-size: 0.75rem;
+	font-weight: 900;
+}
+
+.overwatch__updated {
+	color: color-mix(in srgb, var(--overwatch-ink) 66%, transparent);
+	font-size: 0.6875rem;
+	white-space: nowrap;
+}
+
+.overwatch__actions {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.4375rem;
+	flex-wrap: wrap;
+}
+
+.overwatch__button,
+.overwatch__open,
+.overwatch__no-link {
+	display: inline-flex;
+	min-height: 2.75rem;
+	align-items: center;
+	justify-content: center;
+	border: 0.125rem solid var(--overwatch-ink);
+	border-radius: 0;
+	padding: 0.5rem 0.6875rem;
+	background: var(--overwatch-panel);
+	color: var(--overwatch-ink);
+	cursor: pointer;
+	font: 800 0.75rem var(--mono);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.overwatch__open {
+	background: var(--overwatch-ink);
+	color: var(--overwatch-panel);
+}
+
+.overwatch__no-link {
+	color: color-mix(in srgb, var(--overwatch-ink) 55%, transparent);
+	cursor: default;
+}
+
+.overwatch__menu {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 0.375rem);
+	z-index: 2;
+	display: grid;
+	min-width: 9rem;
+	border: 0.1875rem solid var(--overwatch-ink);
+	background: var(--overwatch-panel);
+	box-shadow: 0.25rem 0.25rem 0 var(--overwatch-magenta);
+}
+
+.overwatch__menu .overwatch__button {
+	width: 100%;
+	border: 0;
+	border-bottom: 0.125rem solid var(--overwatch-ink);
+}
+
+.overwatch__menu .overwatch__button:last-child {
+	border-bottom: 0;
+}
+
+.overwatch__action-form {
+	flex: 0 0 100%;
+	min-width: min(18rem, 100%);
+}
+
+.overwatch textarea {
+	width: 100%;
+	min-height: 4.25rem;
+	border: 0.125rem solid var(--overwatch-ink);
+	border-radius: 0;
+	padding: 0.5625rem;
+	background: var(--overwatch-panel);
+	color: var(--overwatch-ink);
+	font: 0.875rem var(--mono);
+	resize: vertical;
+}
+
+.overwatch__action-form .overwatch__button {
+	width: 100%;
+	margin-top: 0.3125rem;
+	background: var(--overwatch-cyan);
+	color: #ffffff;
+}
+
+.overwatch__action-status {
+	color: var(--overwatch-cyan);
+	font-size: 0.75rem;
+	font-weight: 900;
+}
+
+.overwatch__action-error {
+	flex: 0 0 100%;
+	color: var(--overwatch-magenta);
+	font-size: 0.75rem;
+	font-weight: 900;
+}
+
+.overwatch__empty {
+	border: 0.1875rem solid var(--overwatch-ink);
+	padding: 2rem;
+	background: var(--overwatch-panel);
+	font-weight: 900;
+	text-align: center;
+}
+
+.overwatch__asks {
+	margin-top: 1.625rem;
+	border: 0.1875rem solid var(--overwatch-magenta);
+	padding: 0.875rem;
+	font-weight: 900;
+	text-align: center;
+}
+
+.overwatch__footer {
+	display: grid;
+	grid-template-columns: 1fr 2fr;
+	gap: 1.125rem;
+	margin-top: 1.5rem;
+}
+
+.overwatch__foot {
+	border-top: 0.25rem solid var(--overwatch-ink);
+	padding: 0.875rem 0;
+}
+
+.overwatch__foot h2 {
+	margin: 0 0 0.625rem;
+	font-size: 0.75rem;
+	text-transform: uppercase;
+}
+
+.overwatch__background {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.overwatch__background-lane {
+	display: grid;
+	gap: 0.5rem;
+	border: 0.125rem solid var(--overwatch-ink);
+	padding: 0.75rem;
+	background: var(--overwatch-panel);
+}
+
+.overwatch__background-lane p,
+.overwatch__foot-empty {
+	margin: 0;
+}
+
+.overwatch__background-lane .overwatch__actions {
+	justify-content: flex-start;
+}
+
+.overwatch__merges {
+	display: flex;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.overwatch__toast {
+	position: fixed;
+	right: 1rem;
+	bottom: 1rem;
+	z-index: 4;
+	max-width: min(24rem, calc(100vw - 2rem));
+	border: 0.1875rem solid var(--overwatch-ink);
+	padding: 0.875rem;
+	background: var(--overwatch-magenta);
+	box-shadow: 0.25rem 0.25rem 0 var(--overwatch-ink);
+	color: #ffffff;
+	font-weight: 900;
+}
+
+.overwatch button:focus-visible,
+.overwatch a:focus-visible,
+.overwatch textarea:focus-visible {
+	outline: 0.25rem solid var(--overwatch-magenta);
+	outline-offset: 0.125rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	.overwatch {
+		--overwatch-ink: #f2f2ed;
+		--overwatch-paper: #090909;
+		--overwatch-panel: #121212;
+		--overwatch-cyan: var(--accent-dark);
+		--overwatch-magenta: var(--accent2-dark);
+		--overwatch-soft: #383838;
+	}
+
+	.overwatch__need,
+	.overwatch__lane--wait .overwatch__cell--now,
+	.overwatch__cell--now,
+	.overwatch__action-form .overwatch__button {
+		color: #050505;
+	}
+
+	.overwatch__cell--done {
+		background: #082b31;
+		color: #7df7ff;
+	}
+
+	.overwatch__open {
+		background: var(--overwatch-ink);
+		color: var(--overwatch-paper);
+	}
+}
+
+:root[data-theme="dark"] .overwatch {
+	--overwatch-ink: #f2f2ed;
+	--overwatch-paper: #090909;
+	--overwatch-panel: #121212;
+	--overwatch-cyan: var(--accent-dark);
+	--overwatch-magenta: var(--accent2-dark);
+	--overwatch-soft: #383838;
+}
+
+:root[data-theme="light"] .overwatch {
+	--overwatch-ink: #171717;
+	--overwatch-paper: #f7f6f1;
+	--overwatch-panel: #ffffff;
+	--overwatch-cyan: var(--accent-light);
+	--overwatch-magenta: var(--accent2-light);
+	--overwatch-soft: #dedbd1;
+}
+
+@media (max-width: 47.5rem) {
+	.overwatch {
+		padding: 0.875rem;
+	}
+
+	.overwatch__axis {
+		display: none;
+	}
+
+	.overwatch__lane {
+		grid-template-columns: 1fr 1fr;
+		margin: 1.5rem 0;
+		border: 0.1875rem solid var(--overwatch-ink);
+		padding: 0.75rem;
+		background: var(--overwatch-panel);
+	}
+
+	.overwatch__who {
+		grid-column: 1 / -1;
+	}
+
+	.overwatch__cell {
+		min-height: 4rem;
+		justify-content: flex-start;
+	}
+
+	.overwatch__cell::before {
+		content: attr(data-stage);
+		margin-right: 0.375rem;
+		font-weight: 900;
+		white-space: nowrap;
+	}
+
+	.overwatch__detail {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: 1fr;
+		border: 0;
+		padding: 0.625rem 0 0;
+	}
+
+	.overwatch__actions {
+		justify-content: stretch;
+	}
+
+	.overwatch__actions > * {
+		flex: 1 1 auto;
+	}
+
+	.overwatch__menu {
+		left: 0;
+		right: auto;
+	}
+
+	.overwatch__footer {
+		grid-template-columns: 1fr;
+	}
+
+	.overwatch__countdown {
+		font-size: 0.9375rem;
+	}
+
+	.overwatch__need {
+		padding: 0.5rem;
+		font-size: 0.75rem;
+	}
+}
+
+@media (max-width: 25.625rem) {
+	.overwatch__lane {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.overwatch__who,
+	.overwatch__detail {
+		grid-column: 1;
+	}
+
+	.overwatch__top {
+		padding: 0.625rem;
+	}
+
+	.overwatch__countdown {
+		font-size: 0.75rem;
+	}
+
+	.overwatch__need {
+		font-size: 0.6875rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.overwatch__connection::before {
+		animation: none;
+	}
+}

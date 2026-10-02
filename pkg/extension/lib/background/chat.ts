@@ -2,6 +2,7 @@ import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
+	type ChatFrame,
 	type SessionBootstrap,
 	validateSessionBootstrap,
 } from "@dg/common";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/features/chat-client";
 
 export const CHAT_PAGE_PATH = "chat.html";
+export const OVERWATCH_PAGE_PATH = "overwatch.html";
 
 export { CHAT_SESSION_KEY_PREFIX } from "@/lib/chat-messages";
 
@@ -54,6 +56,11 @@ export type ChatBrowserApi = {
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
+		query?(queryInfo: { url: string }): Promise<{ id?: number; windowId?: number }[]>;
+		update?(tabId: number, props: { active: boolean }): unknown;
+	};
+	windows?: {
+		update(windowId: number, props: { focused: boolean }): unknown;
 	};
 	storage: {
 		session: {
@@ -62,6 +69,34 @@ export type ChatBrowserApi = {
 		};
 	};
 };
+
+export type OverwatchBrowserApi = {
+	runtime: Pick<ChatBrowserApi["runtime"], "getURL" | "sendMessage">;
+	tabs: ChatBrowserApi["tabs"];
+	windows?: ChatBrowserApi["windows"];
+};
+
+export async function handleOverwatchFrame(
+	frame: ChatFrame,
+	api: OverwatchBrowserApi,
+): Promise<void> {
+	if (frame.type === "overwatch-state") {
+		await api.runtime.sendMessage({ type: MSG.overwatchState, frame });
+		return;
+	}
+	if (frame.type !== "overwatch-open") return;
+	const url = api.runtime.getURL(OVERWATCH_PAGE_PATH);
+	const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
+	const existing = matches[0];
+	if (existing?.id !== undefined && api.tabs.update) {
+		await api.tabs.update(existing.id, { active: true });
+		if (existing.windowId !== undefined && api.windows) {
+			await api.windows.update(existing.windowId, { focused: true });
+		}
+		return;
+	}
+	await api.tabs.create({ url });
+}
 
 export type RegisterChatOptions = {
 	browserApi?: ChatBrowserApi;
@@ -262,6 +297,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
+		void handleOverwatchFrame(frame, api).catch(() => {});
 		if (frame.type === "config-result") {
 			configWaiters
 				.find((w) => w.key === frame.key)
