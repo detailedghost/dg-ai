@@ -57,6 +57,47 @@ describe("ChatStore overwatch board", () => {
 		}
 	});
 
+	it("merges partial updates into an existing lane and clears next explicitly", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await ChatStore.open(
+				resolveDgPaths({ env: { DG_HOME: dgHome } }),
+				FILE_ONLY_SEAMS,
+			);
+			store.upsertLane(lane());
+			store.upsertLane({ chat: "print", stage: "merge", publisher: "lead" });
+
+			expect(store.getBoard().lanes[0]).toMatchObject({
+				...lane(),
+				stage: "merge",
+				publisher: "lead",
+			});
+
+			store.upsertLane({ chat: "print", clearNext: true, publisher: "lead" });
+			expect(store.getBoard().lanes[0]?.next).toBeUndefined();
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
+	it("requires a stage when creating a lane", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const store = await ChatStore.open(
+				resolveDgPaths({ env: { DG_HOME: dgHome } }),
+				FILE_ONLY_SEAMS,
+			);
+
+			expect(() =>
+				store.upsertLane({ chat: "print", publisher: "lead" }),
+			).toThrow("stage is required when creating a new overwatch lane");
+			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("returns only merges from the current local day", async () => {
 		const dgHome = freshDgHome();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });

@@ -2,7 +2,7 @@ import type {
 	ChatFrame,
 	CommandEntry,
 	OverwatchBoard,
-	OverwatchLane,
+	OverwatchLaneUpdate,
 	OverwatchMerge,
 } from "./chat-format";
 
@@ -41,7 +41,7 @@ export type CliManifestPublishRequest = {
 
 export type CliOverwatchSetRequest = {
 	type: "cli-overwatch-set";
-} & Omit<OverwatchLane, "publisher" | "updatedAt">;
+} & OverwatchLaneUpdate;
 
 export type CliOverwatchRemoveRequest = {
 	type: "cli-overwatch-remove";

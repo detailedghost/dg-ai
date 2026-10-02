@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
+	applyOverwatchLaneUpdate,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	type CommandEntry,
@@ -13,6 +14,7 @@ import {
 	OVERWATCH_MAX_MERGES,
 	type OverwatchBoard,
 	type OverwatchLane,
+	type OverwatchLaneUpdate,
 	type OverwatchMerge,
 	type ProgressState,
 } from "@dg/common";
@@ -272,7 +274,9 @@ export type ListFeedItemsOptions = {
 	limit?: number;
 };
 
-export type UpsertLaneInput = Omit<OverwatchLane, "updatedAt">;
+export type UpsertLaneInput = OverwatchLaneUpdate & {
+	publisher: string;
+};
 
 export type AddMergeInput = Omit<OverwatchMerge, "at">;
 
@@ -1161,25 +1165,29 @@ export class ChatStore extends EventEmitter {
 	}
 
 	upsertLane(input: UpsertLaneInput): void {
-		const rowId = this.#overwatchKey(AAD_OVERWATCH_CHAT, input.chat);
-		const chat = this.#encryptOverwatch(AAD_OVERWATCH_CHAT, rowId, input.chat);
-		const task = this.#encryptOverwatch(AAD_OVERWATCH_TASK, rowId, input.task);
-		const mr = input.mr
-			? this.#encryptOverwatch(AAD_OVERWATCH_MR, rowId, input.mr)
+		const existing = this.getBoard().lanes.find(
+			(lane) => lane.chat === input.chat,
+		);
+		const lane = applyOverwatchLaneUpdate(existing, input, input.publisher);
+		const rowId = this.#overwatchKey(AAD_OVERWATCH_CHAT, lane.chat);
+		const chat = this.#encryptOverwatch(AAD_OVERWATCH_CHAT, rowId, lane.chat);
+		const task = this.#encryptOverwatch(AAD_OVERWATCH_TASK, rowId, lane.task);
+		const mr = lane.mr
+			? this.#encryptOverwatch(AAD_OVERWATCH_MR, rowId, lane.mr)
 			: undefined;
-		const eta = input.eta
-			? this.#encryptOverwatch(AAD_OVERWATCH_ETA, rowId, input.eta)
+		const eta = lane.eta
+			? this.#encryptOverwatch(AAD_OVERWATCH_ETA, rowId, lane.eta)
 			: undefined;
-		const next = input.next
-			? this.#encryptOverwatch(AAD_OVERWATCH_NEXT, rowId, input.next)
+		const next = lane.next
+			? this.#encryptOverwatch(AAD_OVERWATCH_NEXT, rowId, lane.next)
 			: undefined;
-		const url = input.url
-			? this.#encryptOverwatch(AAD_OVERWATCH_URL, rowId, input.url)
+		const url = lane.url
+			? this.#encryptOverwatch(AAD_OVERWATCH_URL, rowId, lane.url)
 			: undefined;
 		const publisher = this.#encryptOverwatch(
 			AAD_OVERWATCH_PUBLISHER,
 			rowId,
-			input.publisher,
+			lane.publisher,
 		);
 		this.db.run(
 			`INSERT INTO overwatch_lanes (
@@ -1224,7 +1232,7 @@ export class ChatStore extends EventEmitter {
 				task.ciphertext,
 				task.iv,
 				task.tag,
-				input.stage,
+				lane.stage,
 				mr?.ciphertext ?? null,
 				mr?.iv ?? null,
 				mr?.tag ?? null,
@@ -1237,11 +1245,11 @@ export class ChatStore extends EventEmitter {
 				url?.ciphertext ?? null,
 				url?.iv ?? null,
 				url?.tag ?? null,
-				input.kind,
+				lane.kind,
 				publisher.ciphertext,
 				publisher.iv,
 				publisher.tag,
-				new Date().toISOString(),
+				lane.updatedAt,
 			],
 		);
 	}

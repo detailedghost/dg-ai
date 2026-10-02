@@ -19,6 +19,7 @@ import {
 	validateChatFrame,
 	validateOverwatchAction,
 	validateOverwatchLane,
+	validateOverwatchLaneUpdate,
 } from "../src/index";
 
 function buildLane(overrides: Record<string, unknown> = {}) {
@@ -162,6 +163,33 @@ describe("validateOverwatchLane", () => {
 			expect(() => validateOverwatchLane(buildLane({ chat }))).toThrow(
 				"overwatch lane.chat",
 			);
+		},
+	);
+});
+
+describe("validateOverwatchLaneUpdate", () => {
+	it("accepts a stage-only partial update", () => {
+		expect(
+			validateOverwatchLaneUpdate({ chat: "print", stage: "merge" }),
+		).toEqual({ chat: "print", stage: "merge" });
+	});
+
+	it("rejects setting and clearing next in the same update", () => {
+		expect(() =>
+			validateOverwatchLaneUpdate({
+				chat: "print",
+				next: "Approve copy",
+				clearNext: true,
+			}),
+		).toThrow("cannot be used together");
+	});
+
+	it.each(["task", "stage", "kind"])(
+		"rejects null for the optional %s field",
+		(field) => {
+			expect(() =>
+				validateOverwatchLaneUpdate({ chat: "print", [field]: null }),
+			).toThrow(`overwatch lane update.${field}`);
 		},
 	);
 });

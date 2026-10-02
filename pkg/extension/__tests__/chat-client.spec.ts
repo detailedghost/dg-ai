@@ -4,6 +4,7 @@ import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
+	OVERWATCH_SESSION_ID,
 	type ChatFrame,
 } from "@dg/common";
 import { buildAgentMessageFrame } from "./utils/frame-fixtures";
@@ -118,6 +119,49 @@ test("drops an inbound frame for a session outside the capability set rather tha
 		message(buildAgentMessageFrame({ sessionId: bootstrap.sessionId })),
 	);
 	expect(received).toHaveLength(1);
+});
+
+test("delivers an inbound overwatch-state frame without a chat-session capability", () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	const received: ChatFrame[] = [];
+	client.onFrame((frame) => received.push(frame));
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "overwatch-state",
+			sessionId: OVERWATCH_SESSION_ID,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			board: { lanes: [], merges: [] },
+		}),
+	);
+
+	expect(received).toHaveLength(1);
+	expect(received[0]?.type).toBe("overwatch-state");
+});
+
+test("drops a non-overwatch frame that uses the overwatch sentinel session id", () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	const received: ChatFrame[] = [];
+	client.onFrame((frame) => received.push(frame));
+
+	socket.dispatch(
+		"message",
+		message(
+			buildAgentMessageFrame({
+				sessionId: OVERWATCH_SESSION_ID,
+				body: "not an overwatch frame",
+			}),
+		),
+	);
+
+	expect(received).toHaveLength(0);
 });
 
 test("a malformed inbound payload is logged and dropped, never thrown past the demux", () => {
