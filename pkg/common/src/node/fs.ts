@@ -5,8 +5,12 @@ export function ensurePrivateDir(path: string): void {
 	mkdirSync(path, { recursive: true, mode: 0o700 });
 }
 
-export function writeFileAtomic(path: string, data: string | Buffer): void {
+export function writeFileAtomic(
+	path: string,
+	data: string | Buffer,
+	mode?: number,
+): void {
 	const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, data);
+	writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
 	renameSync(tmp, path);
 }
