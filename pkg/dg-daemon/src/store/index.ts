@@ -287,6 +287,26 @@ export type CryptoMetaInfo = {
 	wrappedDataKey: Buffer;
 };
 
+type ChatStoreDependencies = {
+	db: Database;
+	cipherBox: CipherBox;
+	blindIndexKey: Buffer;
+	meta: CryptoMetaInfo;
+	claimLeaseMs: number;
+};
+
+type EncryptedOverwatchValue = {
+	ciphertext: Uint8Array;
+	iv: Uint8Array;
+	tag: Uint8Array;
+};
+
+type OptionalEncryptedOverwatchValue = {
+	ciphertext: Uint8Array | null;
+	iv: Uint8Array | null;
+	tag: Uint8Array | null;
+};
+
 type RawMessageRow = {
 	seq: number;
 	id: string;
@@ -528,14 +548,19 @@ function ensureDaemonDir(daemonDir: string): void {
 export const CHAT_STORE_MESSAGE_EVENT = "message";
 
 export class ChatStore extends EventEmitter {
-	private constructor(
-		private readonly db: Database,
-		private readonly cipherBox: CipherBox,
-		private readonly blindIndexKey: Buffer,
-		private readonly meta: CryptoMetaInfo,
-		private readonly claimLeaseMs: number,
-	) {
+	private readonly db: Database;
+	private readonly cipherBox: CipherBox;
+	private readonly blindIndexKey: Buffer;
+	private readonly meta: CryptoMetaInfo;
+	private readonly claimLeaseMs: number;
+
+	private constructor(dependencies: ChatStoreDependencies) {
 		super();
+		this.db = dependencies.db;
+		this.cipherBox = dependencies.cipherBox;
+		this.blindIndexKey = dependencies.blindIndexKey;
+		this.meta = dependencies.meta;
+		this.claimLeaseMs = dependencies.claimLeaseMs;
 		this.setMaxListeners(SESSION_MAX_ACTIVE_DEFAULT);
 	}
 
@@ -608,15 +633,15 @@ export class ChatStore extends EventEmitter {
 				DEFAULT_CLAIM_LEASE_MS,
 			);
 
-			const store = new ChatStore(
+			const store = new ChatStore({
 				db,
-				createCipherBox(resolved.dataKey),
-				createHmac("sha256", resolved.dataKey)
+				cipherBox: createCipherBox(resolved.dataKey),
+				blindIndexKey: createHmac("sha256", resolved.dataKey)
 					.update("dg-overwatch-blind-index")
 					.digest(),
-				resolved.cryptoMeta,
+				meta: resolved.cryptoMeta,
 				claimLeaseMs,
-			);
+			});
 			store.ensureSessionRow(SCHEDULER_SESSION_ID);
 			store.ensureSessionRow(OVERWATCH_SESSION_ID);
 			return store;
@@ -1110,15 +1135,13 @@ export class ChatStore extends EventEmitter {
 	#decryptOverwatch(
 		domain: string,
 		rowId: string,
-		ciphertext: Uint8Array,
-		iv: Uint8Array,
-		tag: Uint8Array,
+		value: EncryptedOverwatchValue,
 	): string {
 		return this.cipherBox
 			.decryptRecord(
-				Buffer.from(ciphertext),
-				Buffer.from(iv),
-				Buffer.from(tag),
+				Buffer.from(value.ciphertext),
+				Buffer.from(value.iv),
+				Buffer.from(value.tag),
 				this.#overwatchAad(domain, rowId),
 			)
 			.toString("utf8");
@@ -1127,12 +1150,14 @@ export class ChatStore extends EventEmitter {
 	#decryptOptionalOverwatch(
 		domain: string,
 		rowId: string,
-		ciphertext: Uint8Array | null,
-		iv: Uint8Array | null,
-		tag: Uint8Array | null,
+		value: OptionalEncryptedOverwatchValue,
 	): string | undefined {
-		if (!ciphertext || !iv || !tag) return undefined;
-		return this.#decryptOverwatch(domain, rowId, ciphertext, iv, tag);
+		if (!value.ciphertext || !value.iv || !value.tag) return undefined;
+		return this.#decryptOverwatch(domain, rowId, {
+			ciphertext: value.ciphertext,
+			iv: value.iv,
+			tag: value.tag,
+		});
 	}
 
 	upsertLane(input: UpsertLaneInput): void {
@@ -1324,53 +1349,67 @@ export class ChatStore extends EventEmitter {
 			chat: this.#decryptOverwatch(
 				AAD_OVERWATCH_CHAT,
 				row.chat_key,
-				row.chat_ciphertext,
-				row.chat_iv,
-				row.chat_tag,
+				{
+					ciphertext: row.chat_ciphertext,
+					iv: row.chat_iv,
+					tag: row.chat_tag,
+				},
 			),
 			task: this.#decryptOverwatch(
 				AAD_OVERWATCH_TASK,
 				row.chat_key,
-				row.task_ciphertext,
-				row.task_iv,
-				row.task_tag,
+				{
+					ciphertext: row.task_ciphertext,
+					iv: row.task_iv,
+					tag: row.task_tag,
+				},
 			),
 			stage: row.stage,
 			mr: this.#decryptOptionalOverwatch(
 				AAD_OVERWATCH_MR,
 				row.chat_key,
-				row.mr_ciphertext,
-				row.mr_iv,
-				row.mr_tag,
+				{
+					ciphertext: row.mr_ciphertext,
+					iv: row.mr_iv,
+					tag: row.mr_tag,
+				},
 			),
 			eta: this.#decryptOptionalOverwatch(
 				AAD_OVERWATCH_ETA,
 				row.chat_key,
-				row.eta_ciphertext,
-				row.eta_iv,
-				row.eta_tag,
+				{
+					ciphertext: row.eta_ciphertext,
+					iv: row.eta_iv,
+					tag: row.eta_tag,
+				},
 			),
 			next: this.#decryptOptionalOverwatch(
 				AAD_OVERWATCH_NEXT,
 				row.chat_key,
-				row.next_ciphertext,
-				row.next_iv,
-				row.next_tag,
+				{
+					ciphertext: row.next_ciphertext,
+					iv: row.next_iv,
+					tag: row.next_tag,
+				},
 			),
 			url: this.#decryptOptionalOverwatch(
 				AAD_OVERWATCH_URL,
 				row.chat_key,
-				row.url_ciphertext,
-				row.url_iv,
-				row.url_tag,
+				{
+					ciphertext: row.url_ciphertext,
+					iv: row.url_iv,
+					tag: row.url_tag,
+				},
 			),
 			kind: row.kind,
 			publisher: this.#decryptOverwatch(
 				AAD_OVERWATCH_PUBLISHER,
 				row.chat_key,
-				row.publisher_ciphertext,
-				row.publisher_iv,
-				row.publisher_tag,
+				{
+					ciphertext: row.publisher_ciphertext,
+					iv: row.publisher_iv,
+					tag: row.publisher_tag,
+				},
 			),
 			updatedAt: row.updated_at,
 		}));
@@ -1395,16 +1434,20 @@ export class ChatStore extends EventEmitter {
 			mr: this.#decryptOverwatch(
 				AAD_OVERWATCH_MERGE_MR,
 				row.id,
-				row.mr_ciphertext,
-				row.mr_iv,
-				row.mr_tag,
+				{
+					ciphertext: row.mr_ciphertext,
+					iv: row.mr_iv,
+					tag: row.mr_tag,
+				},
 			),
 			title: this.#decryptOverwatch(
 				AAD_OVERWATCH_MERGE_TITLE,
 				row.id,
-				row.title_ciphertext,
-				row.title_iv,
-				row.title_tag,
+				{
+					ciphertext: row.title_ciphertext,
+					iv: row.title_iv,
+					tag: row.title_tag,
+				},
 			),
 			at: row.at,
 		}));
@@ -1416,18 +1459,22 @@ export class ChatStore extends EventEmitter {
 			? this.#decryptOptionalOverwatch(
 					AAD_OVERWATCH_GO_LIVE,
 					"launch",
-					settings.go_live_ciphertext,
-					settings.go_live_iv,
-					settings.go_live_tag,
+					{
+						ciphertext: settings.go_live_ciphertext,
+						iv: settings.go_live_iv,
+						tag: settings.go_live_tag,
+					},
 				)
 			: undefined;
 		const goNoGo = settings
 			? this.#decryptOptionalOverwatch(
 					AAD_OVERWATCH_GO_NO_GO,
 					"launch",
-					settings.go_no_go_ciphertext,
-					settings.go_no_go_iv,
-					settings.go_no_go_tag,
+					{
+						ciphertext: settings.go_no_go_ciphertext,
+						iv: settings.go_no_go_iv,
+						tag: settings.go_no_go_tag,
+					},
 				)
 			: undefined;
 

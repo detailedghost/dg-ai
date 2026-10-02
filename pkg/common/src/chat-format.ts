@@ -257,7 +257,17 @@ export type ChatFrame =
 			type: "overwatch-state";
 			board: OverwatchBoard;
 	  })
-	| (Envelope<typeof OVERWATCH_SESSION_ID> & { type: "overwatch-open" });
+	| (Envelope<typeof OVERWATCH_SESSION_ID> & {
+			type: "overwatch-open";
+			requestId: string;
+	  })
+	| (Envelope & {
+			type: "overwatch-open-result";
+			token: string;
+			requestId: string;
+			ok: boolean;
+			error?: string;
+	  });
 
 const CHAT_FRAME_TYPES = new Set([
 	"user-message",
@@ -281,6 +291,7 @@ const CHAT_FRAME_TYPES = new Set([
 	"config-result",
 	"overwatch-state",
 	"overwatch-open",
+	"overwatch-open-result",
 ]);
 
 const INBOUND_FRAME_TYPES = new Set([
@@ -292,6 +303,7 @@ const INBOUND_FRAME_TYPES = new Set([
 	"history-request",
 	"config-get",
 	"config-set",
+	"overwatch-open-result",
 ]);
 
 function requireProgressState(
@@ -414,12 +426,12 @@ export function validateOverwatchLane(
 	] as const);
 	for (const field of ["mr", "eta", "next"] as const) {
 		if (value[field] !== undefined) {
-			const maxLength =
-				field === "mr"
-					? OVERWATCH_MR_MAX_LENGTH
-					: field === "eta"
-						? OVERWATCH_ETA_MAX_LENGTH
-						: OVERWATCH_NEXT_MAX_LENGTH;
+			const limits = {
+				mr: OVERWATCH_MR_MAX_LENGTH,
+				eta: OVERWATCH_ETA_MAX_LENGTH,
+				next: OVERWATCH_NEXT_MAX_LENGTH,
+			} as const;
+			const maxLength = limits[field];
 			requireStringWithMaxLength(value[field], `${path}.${field}`, maxLength, {
 				nonEmpty: true,
 			});
@@ -630,6 +642,19 @@ function validateFrameBody(
 			return;
 		case "overwatch-open":
 			requireOverwatchSessionId(value.sessionId, `${path}.sessionId`);
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			return;
+		case "overwatch-open-result":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if (typeof value.ok !== "boolean") {
+				fail(`${path}.ok must be a boolean`);
+			}
+			if (value.error !== undefined) {
+				requireString(value.error, `${path}.error`, { nonEmpty: true });
+			}
+			if (!value.ok && value.error === undefined) {
+				fail(`${path}.error is required when ok is false`);
+			}
 			return;
 		default:
 			fail(`${path}.type "${type}" is not a ratified discriminant`);
@@ -641,7 +666,7 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	const { type } = value;
 	if (typeof type !== "string" || !CHAT_FRAME_TYPES.has(type)) {
 		fail(
-			`chat frame.type must be one of the 21 ratified discriminants, got ${String(type)}`,
+			`chat frame.type must be one of the 22 ratified discriminants, got ${String(type)}`,
 		);
 	}
 	requireString(value.sessionId, "chat frame.sessionId", { nonEmpty: true });

@@ -134,6 +134,13 @@ describe("overwatch CLI frames", () => {
 			"overwatch-open",
 		);
 		expect(open).toMatchObject({ sessionId: "__overwatch__" });
+		send(extension, {
+			type: "overwatch-open-result",
+			sessionId: credentials.sessionId,
+			token: credentials.token,
+			requestId: (open as { requestId: string }).requestId,
+			ok: true,
+		});
 		const result = await waitForValue(
 			() =>
 				cliFrames.find(
@@ -143,6 +150,92 @@ describe("overwatch CLI frames", () => {
 			"cli-overwatch-open-result",
 		);
 		expect(result).toEqual({ type: "cli-overwatch-open-result" });
+	});
+
+	it("returns the extension tab failure to the CLI", async () => {
+		const { port, credentials } = await bootWithSession();
+		const extension = await connectPage(port, credentials);
+		const cli = await connectCli(port, credentials);
+		sockets.push(extension, cli);
+		const extensionFrames = collectFrames(extension);
+		const cliFrames = collectFrames(cli);
+
+		send(cli, { type: "cli-overwatch-open" });
+		const open = await waitForValue(
+			() =>
+				extensionFrames.find(
+					(frame) => frameType(frame) === "overwatch-open",
+				),
+			3000,
+			"overwatch-open",
+		);
+		send(extension, {
+			type: "overwatch-open-result",
+			sessionId: credentials.sessionId,
+			token: credentials.token,
+			requestId: (open as { requestId: string }).requestId,
+			ok: false,
+			error: "tab creation failed",
+		});
+
+		const error = await waitForValue(
+			() => cliFrames.find((frame) => frameType(frame) === "error"),
+			3000,
+			"tab failure",
+		);
+		expect(error).toMatchObject({ message: "tab creation failed" });
+		expect(
+			cliFrames.some(
+				(frame) => frameType(frame) === "cli-overwatch-open-result",
+			),
+		).toBe(false);
+	});
+
+	it("notifies the authoritative publisher after a direct CLI mutation", async () => {
+		const { port, credentials } = await bootWithSession();
+		const publisher = await registerSession(port, {
+			agentIdentity: "overwatch-board",
+		});
+		const mutationCli = await connectCli(port, credentials);
+		const publisherCli = await connectCli(port, publisher);
+		sockets.push(mutationCli, publisherCli);
+		const mutationFrames = collectFrames(mutationCli);
+		const publisherFrames = collectFrames(publisherCli);
+
+		send(mutationCli, {
+			type: "cli-overwatch-set",
+			chat: "print",
+			task: "Prepare launch collateral",
+			stage: "review",
+			kind: "chat",
+		});
+		await waitForValue(
+			() =>
+				mutationFrames.find(
+					(frame) => frameType(frame) === "cli-overwatch-mutation-result",
+				),
+			3000,
+			"mutation result",
+		);
+		send(publisherCli, { type: "cli-recv", block: false });
+		const received = await waitForValue(
+			() =>
+				publisherFrames.find(
+					(frame) => frameType(frame) === "cli-recv-result",
+				),
+			3000,
+			"publisher notification",
+		);
+
+		expect(received).toMatchObject({
+			outcome: "delivered",
+			message: { from: "dg-daemon", to: "overwatch-board" },
+		});
+		expect(
+			JSON.parse(
+				(received as { message: { body: string } }).message.body,
+			),
+		).toMatchObject({ overwatch: { event: "board-changed" } });
 	});
 
 	it("does not deliver overwatch frames before the extension handshake", async () => {
@@ -232,7 +325,6 @@ describe("overwatch CLI frames", () => {
 		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
 			headers: {
 				Host: `127.0.0.1:${port}`,
-				Origin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			},
 		});
 		expect(await response.json()).toEqual({ lanes: [], merges: [] });

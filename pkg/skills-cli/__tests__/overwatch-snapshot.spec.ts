@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OverwatchBoard, OverwatchLane } from "@dg/common";
+import { Command } from "commander";
+import { registerRecvCommand } from "../../dg-agent/src/commands";
 import {
 	renderOverwatchSnapshot,
 	writeOverwatchSnapshot,
@@ -20,6 +22,15 @@ import {
 const temporaryDirectories: string[] = [];
 const renderedAt = new Date("2026-10-02T15:00:00.000Z");
 const skillsCliEntry = join(import.meta.dir, "..", "src", "index.ts");
+const chromium = [
+	"brave-browser",
+	"brave",
+	"chromium",
+	"chromium-browser",
+	"google-chrome-for-testing",
+]
+	.map((candidate) => Bun.which(candidate))
+	.find((candidate): candidate is string => candidate !== null);
 
 type CliResult = {
 	code: number | null;
@@ -45,6 +56,60 @@ async function runCli(args: string[]): Promise<CliResult> {
 			});
 		});
 	});
+}
+
+async function inspectNarrowLayout(html: string): Promise<{
+	documentWidth: number;
+	viewportWidth: number;
+	nodesFit: boolean;
+}> {
+	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-layout-"));
+	temporaryDirectories.push(directory);
+	const input = join(directory, "snapshot.html");
+	const instrumented = html.replace(
+		"</body>",
+		`<pre id="geometry"></pre>
+<script>
+const nodes = [...document.querySelectorAll(".who small,.next,.foot p span,.need,.merges span")];
+document.querySelector("#geometry").textContent = JSON.stringify({
+	documentWidth: document.documentElement.scrollWidth,
+	viewportWidth: document.documentElement.clientWidth,
+	nodesFit: nodes.every((node) => node.clientWidth > 0 && node.scrollWidth <= node.clientWidth),
+});
+</script>
+</body>`,
+	);
+	await writeFile(input, instrumented);
+	const result = await new Promise<CliResult>((resolve, reject) => {
+		const child = spawn(
+			chromium as string,
+			[
+				"--headless=new",
+				"--no-sandbox",
+				"--disable-gpu",
+				"--window-size=390,844",
+				"--dump-dom",
+				input,
+			],
+			{ stdio: ["ignore", "pipe", "pipe"] },
+		);
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
+		child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+		child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+		child.on("error", reject);
+		child.on("close", (code) =>
+			resolve({
+				code,
+				stdout: Buffer.concat(stdout).toString("utf8"),
+				stderr: Buffer.concat(stderr).toString("utf8"),
+			}),
+		);
+	});
+	if (result.code !== 0) throw new Error(result.stderr);
+	const match = /<pre id="geometry">([^<]+)<\/pre>/.exec(result.stdout);
+	if (!match) throw new Error("browser did not report snapshot geometry");
+	return JSON.parse(match[1]);
 }
 
 function lane(
@@ -117,7 +182,7 @@ describe("overwatch snapshot renderer", () => {
 
 		expect(html.match(/data-chat-tile/g)).toHaveLength(4);
 		expect(html).toContain(
-			'href="https://claude.ai/code/print?mode=focus&amp;owner=ada"',
+			"href=\"https://claude.ai/code/print?mode=focus&amp;owner=ada\"",
 		);
 		expect(html).toContain("Open chat");
 		expect(html).toContain("No link");
@@ -133,9 +198,9 @@ describe("overwatch snapshot renderer", () => {
 
 	it("escapes all board text and includes no external URLs beyond chat links", () => {
 		const fixture = board();
-		fixture.lanes[0] = lane('<script>alert("chat")</script>', "merge", {
-			task: '<img src=x onerror="alert(1)"> & ready',
-			mr: '"!9"',
+		fixture.lanes[0] = lane("<script>alert(\"chat\")</script>", "merge", {
+			task: "<img src=x onerror=\"alert(1)\"> & ready",
+			mr: "\"!9\"",
 			eta: "<5m",
 			next: "Review Tom's <copy>",
 			url: "https://claude.ai/code/session?name=%22Ada%22&mode=focus",
@@ -159,28 +224,36 @@ describe("overwatch snapshot renderer", () => {
 		expect(html).not.toMatch(/border[^;{}]*(dashed|dotted)/);
 	});
 
-	it("constrains every narrow layout column and ellipsizes chat labels", () => {
-		const html = renderOverwatchSnapshot(
+	it.skipIf(!chromium)(
+		"keeps every maximal field visible at a 390 pixel viewport",
+		async () => {
+			const html = renderOverwatchSnapshot(
 			{
 				...board(),
 				lanes: [
 					lane("x".repeat(40), "review", {
+						task: "t".repeat(80),
 						mr: "x".repeat(80),
 						eta: "x".repeat(80),
 						next: "x".repeat(200),
 					}),
-					lane("y".repeat(40), "ci", { kind: "background" }),
+					lane("y".repeat(40), "ci", {
+						kind: "background",
+						task: "b".repeat(80),
+						eta: "e".repeat(80),
+						next: "n".repeat(200),
+					}),
 				],
 			},
 			renderedAt,
 		);
+			const geometry = await inspectNarrowLayout(html);
 
-		expect(html).toContain("grid-template-columns:minmax(0,1fr)");
-		expect(html).toContain("text-overflow:ellipsis;white-space:nowrap");
-		expect(html).toContain(".stats{display:grid;width:100%");
-		expect(html).toContain(`aria-label="${"x".repeat(40)}"`);
-		expect(html).toContain(`aria-label="${"y".repeat(40)}"`);
-	});
+			expect(geometry.viewportWidth).toBe(390);
+			expect(geometry.documentWidth).toBeLessThanOrEqual(390);
+			expect(geometry.nodesFit).toBe(true);
+		},
+	);
 });
 
 describe("overwatch snapshot throttle", () => {
@@ -235,13 +308,40 @@ describe("overwatch snapshot throttle", () => {
 		).toHaveLength(1);
 	});
 
+	it("recovers an expired lock left by an interrupted writer", async () => {
+		const scratchRoot = await mkdtemp(join(tmpdir(), "dg-overwatch-stale-"));
+		temporaryDirectories.push(scratchRoot);
+		const lockPath = join(scratchRoot, "board.lock");
+		const output = join(scratchRoot, "snapshot.html");
+		await writeFile(
+			lockPath,
+			JSON.stringify({
+				owner: "interrupted-writer",
+				expiresAt: renderedAt.getTime() - 1,
+			}),
+		);
+
+		const result = await writeOverwatchSnapshot(board(), {
+			now: renderedAt,
+			outPath: output,
+			scratchRoot,
+			throttleKey: "board",
+		});
+
+		expect(result).toEqual({ status: "written", path: output });
+		expect(await readFile(output, "utf8")).toContain("<!doctype html>");
+		expect(access(lockPath)).rejects.toThrow();
+	});
+
 	it("repairs private directory and file modes", async () => {
 		const scratchRoot = await mkdtemp(join(tmpdir(), "dg-overwatch-mode-"));
 		temporaryDirectories.push(scratchRoot);
 		const output = join(scratchRoot, "snapshot.html");
 		const state = join(scratchRoot, "board.json");
+		const skillState = join(scratchRoot, "skill-state.json");
 		await chmod(scratchRoot, 0o755);
 		await writeFile(output, "old", { mode: 0o644 });
+		await writeFile(skillState, "{}", { mode: 0o644 });
 		await writeFile(
 			state,
 			JSON.stringify({ renderedAt: renderedAt.getTime() }),
@@ -259,6 +359,7 @@ describe("overwatch snapshot throttle", () => {
 		expect((await stat(scratchRoot)).mode & 0o777).toBe(0o700);
 		expect((await stat(output)).mode & 0o777).toBe(0o600);
 		expect((await stat(state)).mode & 0o777).toBe(0o600);
+		expect((await stat(skillState)).mode & 0o777).toBe(0o600);
 	});
 });
 
@@ -286,17 +387,56 @@ describe("overwatch snapshot command", () => {
 });
 
 describe("overwatch skill workflow", () => {
-	it("requires one authoritative publisher to republish after every mutation", async () => {
+	it("runs the documented receive arguments through the real Commander command", async () => {
 		const skill = await readFile(
 			join(import.meta.dir, "../../../plugins/dg/skills/overwatch/SKILL.md"),
 			"utf8",
 		);
+		const commandLine = skill.match(
+			/dg-agent recv --block --timeout \d+/,
+		)?.[0];
+		if (!commandLine) throw new Error("documented receive command not found");
+		const requests: Array<{ frame: unknown; timeoutMs: number }> = [];
+		const output: string[] = [];
+		let closeCount = 0;
+		const program = new Command();
+		program.exitOverride();
+		registerRecvCommand(program, {
+			connect: async () => ({
+				async request<T>(
+					frame: unknown,
+					accept: (value: unknown) => value is T,
+					timeoutMs: number,
+				) {
+					requests.push({ frame, timeoutMs });
+					const result = { type: "cli-recv-result", outcome: "timeout" };
+					if (!accept(result)) throw new Error("timeout result was not accepted");
+					return result;
+				},
+				send: () => undefined,
+				close: () => {
+					closeCount += 1;
+				},
+			}),
+			write: async (value) => {
+				output.push(value);
+			},
+		});
+		const error = await program
+			.parseAsync(["node", ...commandLine.split(/\s+/)])
+			.catch((caught: unknown) => caught);
 
-		expect(skill).toContain("authoritative publisher");
-		expect(skill).toContain(
-			"After every successful `set`, `merged`, `launch`, or `remove` mutation",
-		);
-		expect(skill).toContain("throttled update loop");
-		expect(skill).toContain("must not run board mutation commands themselves");
+		expect(requests).toEqual([
+			{
+				frame: { type: "cli-recv", block: true, timeoutMs: 30_000 },
+				timeoutMs: 32_000,
+			},
+		]);
+		expect(error).toMatchObject({ exitCode: 5, message: "recv timed out" });
+		expect(output).toEqual([
+			`${JSON.stringify({ type: "cli-recv-result", outcome: "timeout" })}\n`,
+		]);
+		expect(closeCount).toBe(1);
+		expect(skill).toContain("if [ \"$status\" -ne 5 ]");
 	});
 });

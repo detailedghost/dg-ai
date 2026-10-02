@@ -26,8 +26,11 @@ async function boot() {
 	return running;
 }
 
-function headers(port: number, origin = EXTENSION_ORIGIN) {
-	return { Host: `127.0.0.1:${port}`, Origin: origin };
+function headers(port: number, origin?: string) {
+	return {
+		Host: `127.0.0.1:${port}`,
+		...(origin === undefined ? {} : { Origin: origin }),
+	};
 }
 
 async function seedLane(dgHome: string): Promise<void> {
@@ -56,7 +59,7 @@ async function pinExtensionOrigin(port: number): Promise<void> {
 async function postAction(
 	port: number,
 	body: unknown,
-	origin = EXTENSION_ORIGIN,
+	origin?: string,
 ): Promise<Response> {
 	return fetch(`http://127.0.0.1:${port}/overwatch/action`, {
 		method: "POST",
@@ -78,6 +81,7 @@ describe("overwatch HTTP routes", () => {
 			headers: headers(port),
 		});
 		expect(boardResponse.status).toBe(200);
+		expect(boardResponse.headers.get("Cache-Control")).toBe("no-store");
 		expect(await boardResponse.json()).toMatchObject({
 			lanes: [{ chat: "print", publisher: "print-agent" }],
 		});
@@ -89,6 +93,7 @@ describe("overwatch HTTP routes", () => {
 		};
 		const actionResponse = await postAction(port, action);
 		expect(actionResponse.status).toBe(200);
+		expect(actionResponse.headers.get("Cache-Control")).toBe("no-store");
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
@@ -133,21 +138,45 @@ describe("overwatch HTTP routes", () => {
 		expect(action.status).toBe(400);
 	});
 
-	it("refuses an extension Origin until an authenticated handshake pins it", async () => {
+	it("refuses requests without an Origin until an authenticated handshake pins one", async () => {
 		const { port } = await boot();
-		const foreignExtension =
-			"chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
-			headers: headers(port, foreignExtension),
+			headers: headers(port),
 		});
-		const action = await postAction(
-			port,
-			{ chat: "print", action: "approve" },
-			foreignExtension,
-		);
+		const action = await postAction(port, {
+			chat: "print",
+			action: "approve",
+		});
 
 		expect(read.status).toBe(400);
 		expect(action.status).toBe(400);
+	});
+
+	it("accepts only the exact pinned extension Origin when Origin is present", async () => {
+		const { port } = await boot();
+		await pinExtensionOrigin(port);
+		const matching = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: headers(port, EXTENSION_ORIGIN),
+		});
+		const mismatched = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: headers(
+				port,
+				"chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			),
+		});
+
+		expect(matching.status).toBe(200);
+		expect(mismatched.status).toBe(400);
+	});
+
+	it("keeps the loopback Host guard when Origin is absent", async () => {
+		const { port } = await boot();
+		await pinExtensionOrigin(port);
+		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: { Host: "evil.example" },
+		});
+
+		expect(response.status).toBe(400);
 	});
 });

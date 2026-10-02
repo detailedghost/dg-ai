@@ -245,6 +245,21 @@ function buildOverwatchOpenFrame(overrides: Record<string, unknown> = {}) {
 		type: "overwatch-open" as const,
 		sessionId: "__overwatch__",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "open-request-1",
+		...overrides,
+	};
+}
+
+function buildOverwatchOpenResultFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "overwatch-open-result" as const,
+		sessionId: "session-a",
+		token: "token-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "open-request-1",
+		ok: true,
 		...overrides,
 	};
 }
@@ -271,6 +286,7 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-result", buildConfigResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
+	["overwatch-open-result", buildOverwatchOpenResultFrame],
 ];
 
 function ratifiedDiscriminants(): string[] {

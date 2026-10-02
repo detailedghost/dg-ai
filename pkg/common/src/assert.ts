@@ -20,6 +20,7 @@ export function requireString(
 ): asserts value is string {
 	if (
 		typeof value !== "string" ||
+		!value.isWellFormed() ||
 		(options.nonEmpty === true && value.trim().length === 0)
 	) {
 		fail(`${path} must be ${options.nonEmpty ? "a non-empty " : ""}string`);

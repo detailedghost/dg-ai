@@ -41,6 +41,7 @@ class StubClient implements OverwatchClient {
 	readonly frames: CliRequest[] = [];
 	closeCount = 0;
 	openResult: unknown = { type: "cli-overwatch-open-result" };
+	mutationResult: unknown;
 
 	constructor(
 		private readonly snapshot: CliOverwatchSnapshotResult = {
@@ -58,10 +59,28 @@ class StubClient implements OverwatchClient {
 		accept: (value: unknown) => value is T,
 	): Promise<T> {
 		this.frames.push(frame);
+		const operation =
+			frame.type === "cli-overwatch-set"
+				? "set"
+				: frame.type === "cli-overwatch-remove"
+					? "remove"
+					: frame.type === "cli-overwatch-merged"
+						? "merged"
+						: frame.type === "cli-overwatch-launch"
+							? "launch"
+							: undefined;
 		const response: unknown =
 			frame.type === "cli-overwatch-snapshot"
 				? this.snapshot
-				: this.openResult;
+				: frame.type === "cli-overwatch-open"
+					? this.openResult
+					: operation === undefined || this.mutationResult !== undefined
+						? this.mutationResult
+						: {
+								type: "cli-overwatch-mutation-result",
+								operation,
+								board: BOARD,
+							};
 		if (response instanceof Error) throw response;
 		if (!accept(response)) throw new Error("stub response was not accepted");
 		return response;
@@ -170,6 +189,25 @@ describe("dg-agent overwatch", () => {
 		]);
 	});
 
+	it("surfaces a rejected mutation instead of reporting success", async () => {
+		const client = new StubClient();
+		client.mutationResult = {
+			type: "error",
+			message: "overwatch board already has 100 lanes",
+		};
+
+		const error = await runOverwatchWithClient(
+			["set", "print"],
+			client,
+		).catch((caught: unknown) => caught);
+
+		expect(error).toMatchObject({
+			exitCode: 1,
+			message: "overwatch board already has 100 lanes",
+		});
+		expect(client.closeCount).toBe(1);
+	});
+
 	it("sends one open frame", async () => {
 		const { client } = await runOverwatch(["open"]);
 
@@ -270,7 +308,7 @@ describe("dg-agent overwatch", () => {
 		expect(error).toMatchObject({
 			exitCode: 2,
 			message:
-				'overwatch lane.stage must be "review", "ci", "e2e", "merge", or "done"',
+				"overwatch lane.stage must be \"review\", \"ci\", \"e2e\", \"merge\", or \"done\"",
 		});
 		expect(connectCount).toBe(0);
 		expect(client.frames).toEqual([]);
@@ -304,7 +342,7 @@ describe("dg-agent overwatch", () => {
 
 		expect(error).toMatchObject({
 			exitCode: 2,
-			message: 'overwatch lane.url must start with "https://claude.ai/"',
+			message: "overwatch lane.url must start with \"https://claude.ai/\"",
 		});
 		expect(connectCount).toBe(0);
 		expect(client.frames).toEqual([]);

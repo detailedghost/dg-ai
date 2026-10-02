@@ -33,6 +33,16 @@ export type StageCell = {
 
 const STAGES: StageCell["stage"][] = ["review", "ci", "e2e", "merge"];
 
+class OverwatchHttpError extends Error {
+	constructor(
+		readonly status: number,
+		message: string,
+	) {
+		super(message);
+		this.name = "OverwatchHttpError";
+	}
+}
+
 function parseBoard(value: unknown): OverwatchBoard {
 	const frame = validateChatFrame({
 		type: "overwatch-state",
@@ -49,7 +59,13 @@ export function createOverwatchApi(baseUrl: string): OverwatchApi {
 		baseUrl,
 		async getBoard(): Promise<OverwatchBoard> {
 			const response = await fetch(`${baseUrl}${OVERWATCH_PATH}`);
-			if (!response.ok) throw new Error("the daemon did not return the board");
+			if (!response.ok) {
+				const detail = (await response.text()).trim();
+				throw new OverwatchHttpError(
+					response.status,
+					detail || `the daemon returned ${response.status}`,
+				);
+			}
 			return parseBoard(await response.json());
 		},
 		async sendAction(
@@ -82,7 +98,9 @@ export async function connectOverwatchApi(
 		try {
 			await direct.getBoard();
 			return direct;
-		} catch {}
+		} catch (error) {
+			if (!(error instanceof TypeError)) throw error;
+		}
 	}
 	const port = await findDaemonPort();
 	return port === undefined
@@ -117,23 +135,19 @@ export function needYouCount(lanes: OverwatchLane[]): number {
 
 export function stageCells(stage: OverwatchStage): StageCell[] {
 	const activeIndex = stage === "done" ? STAGES.length : STAGES.indexOf(stage);
-	return STAGES.map((candidate, index) => ({
-		stage: candidate,
-		label:
-			stage === "done" || index < activeIndex
-				? "complete"
-				: index === activeIndex
-					? "active"
-					: index === activeIndex + 1
-						? "next"
-						: "later",
-		state:
-			stage === "done" || index < activeIndex
-				? "done"
-				: index === activeIndex
-					? "now"
-					: "pending",
-	}));
+	return STAGES.map((candidate, index) => {
+		if (stage === "done" || index < activeIndex) {
+			return { stage: candidate, label: "complete", state: "done" };
+		}
+		if (index === activeIndex) {
+			return { stage: candidate, label: "active", state: "now" };
+		}
+		return {
+			stage: candidate,
+			label: index === activeIndex + 1 ? "next" : "later",
+			state: "pending",
+		};
+	});
 }
 
 export function formatUpdatedAt(updatedAt: string, now: Date): string {
