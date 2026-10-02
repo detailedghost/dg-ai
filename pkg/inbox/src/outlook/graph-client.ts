@@ -273,18 +273,18 @@ export class GraphRestClient implements MailProviderClient {
 			throw new Error("Untrusted Microsoft Graph nextLink origin or path");
 		const token = await this.input.tokenProvider.getToken(scopes);
 		const fetchImpl = this.input.fetch ?? fetch;
+		const headers = new Headers(init.headers);
+		headers.set("content-type", "application/json");
+		headers.set("accept", "application/json");
+		headers.set("authorization", `Bearer ${token.accessToken}`);
+		headers.set("Prefer", 'IdType="ImmutableId"');
 		let attempt = 0;
 
 		while (true) {
 			const response = await fetchImpl(url.toString(), {
 				...init,
 				redirect: "error",
-				headers: {
-					"content-type": "application/json",
-					accept: "application/json",
-					authorization: `Bearer ${token.accessToken}`,
-					...init.headers,
-				},
+				headers,
 			});
 
 			if (response.ok) {
@@ -310,7 +310,7 @@ function graphFolderToMailFolder(folder: GraphFolder): MailFolder {
 	const alias = outlookFolderAlias(folder);
 	return {
 		id: folder.id,
-		name: redactText(folder.displayName),
+		name: folder.displayName,
 		type: alias ? "system" : "folder",
 		parentId: folder.parentFolderId,
 		total: folder.totalItemCount,
@@ -378,7 +378,7 @@ function folderPath(folder: MailFolder, byId: Map<string, MailFolder>): string {
 function graphRuleToMailRule(rule: GraphRule): MailRule {
 	return {
 		id: rule.id,
-		name: redactText(rule.displayName),
+		name: rule.displayName,
 		enabled: rule.isEnabled ?? true,
 		sequence: rule.sequence,
 		conditions: flattenRulePart(rule.conditions),
@@ -389,7 +389,7 @@ function graphRuleToMailRule(rule: GraphRule): MailRule {
 function graphCategoryToMailLabel(category: GraphCategory): MailLabel {
 	return {
 		id: category.id,
-		name: redactText(category.displayName),
+		name: category.displayName,
 		color: category.color,
 		type: "category",
 	};

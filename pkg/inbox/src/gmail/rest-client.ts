@@ -251,8 +251,8 @@ function gmailLabelToFolder(label: GmailApiLabel): MailFolder {
 	const alias = systemAlias(label.id, label.name);
 	return {
 		id: label.id,
-		name: redactText(label.name),
-		path: redactText(label.name),
+		name: label.name,
+		path: label.name,
 		type: label.type === "system" ? "system" : "label",
 		total: label.messagesTotal,
 		unread: label.messagesUnread,

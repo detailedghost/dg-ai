@@ -27,6 +27,7 @@ import {
 import { folderDisplayName, resolveFolder } from "./folders";
 import {
 	createWriterPool,
+	normalizeWriterCount,
 	type WriterPool,
 	type WriterPoolConfig,
 } from "./writer-pool";
@@ -322,7 +323,9 @@ async function runBatchWrite(input: {
 	await ensureWorkspace(input.paths);
 	await clearMessageWorkItems(input.paths);
 
-	const maxWorkers = Math.max(1, input.workers ?? defaultBatchWorkerCount());
+	const maxWorkers = normalizeWriterCount(
+		input.workers ?? defaultBatchWorkerCount(),
+	);
 	const chunkSize = input.chunkSize ?? DEFAULT_BATCH_CHUNK_SIZE;
 	const workerThreshold = input.workerThreshold ?? WORKER_MESSAGE_THRESHOLD;
 	const config: WriterPoolConfig = {
@@ -334,8 +337,6 @@ async function runBatchWrite(input: {
 		messagesDirAbs: resolve(input.paths.messagesDir),
 	};
 
-	// The inline pool always exists (main-thread transform+write); the worker pool
-	// is created lazily, only once the batch proves large enough to be worth it.
 	const inline = createWriterPool(1, config);
 	let pool: WriterPool | undefined;
 	const entries: MessageStatusEntry[] = [];

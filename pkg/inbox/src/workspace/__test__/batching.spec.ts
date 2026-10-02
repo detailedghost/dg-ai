@@ -158,3 +158,55 @@ describe("writeMessageBatchStream write failures", () => {
 		}
 	});
 });
+
+describe("writeMessageBatchStream writer concurrency", () => {
+	test("shares the configured write limit across overlapping chunks and provider pages", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-overlapping-writes-"));
+		const rows = messages(64);
+		const workers = 3;
+		let active = 0;
+		let maximum = 0;
+		let completed = 0;
+		const originalWrite = Bun.write;
+		const write = spyOn(Bun, "write").mockImplementation(
+			async (target, data) => {
+				if (typeof target !== "string" || typeof data !== "string")
+					throw new Error("Fixture writes require paths and string data");
+				maximum = Math.max(maximum, ++active);
+				try {
+					await new Promise((resolve) => setTimeout(resolve, 3));
+					const result = await originalWrite(target, data);
+					if (JSON.parse(data).kind === "message-work-item") completed++;
+					return result;
+				} finally {
+					active--;
+				}
+			},
+		);
+		async function* pages() {
+			yield rows.slice(0, 32);
+			yield rows.slice(32);
+		}
+		try {
+			const status = await writeMessageBatchStream({
+				paths: workspacePaths(root),
+				folders: [{ id: "inbox", name: "Inbox", type: "system" }],
+				pages: pages(),
+				snippetLength: 160,
+				workers,
+				chunkSize: 8,
+				workerThreshold: 0,
+			});
+			expect(maximum).toBeGreaterThan(1);
+			expect(maximum).toBeLessThanOrEqual(workers);
+			expect(completed).toBe(rows.length);
+			expect(status.total).toBe(rows.length);
+			expect(new Set(status.items.map((item) => item.id)).size).toBe(
+				rows.length,
+			);
+		} finally {
+			write.mockRestore();
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+});
