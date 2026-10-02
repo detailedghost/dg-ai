@@ -1350,26 +1350,56 @@ function toolbarControl(root: HTMLElement, action: string): HTMLElement {
 	) as unknown as HTMLElement;
 }
 
-test("every sidebar toolbar control has an accessible name", async () => {
+test("the sidebar toolbar keeps common actions visible and moves rare actions into one overflow", async () => {
 	const root = await renderToolbarPage();
+	const toolbar = root.querySelector(".chat-rail__actions");
+	const visibleActions = Array.from(
+		toolbar?.querySelectorAll(":scope > button") ?? [],
+	).map((control) => (control as HTMLElement).dataset.action);
+	const overflowActions = Array.from(
+		toolbar?.querySelectorAll(".chat-rail__overflow-menu [data-action]") ?? [],
+	).map((control) => (control as HTMLElement).dataset.action);
 
-	const labels = [
+	expect(visibleActions).toEqual([
 		"create-chat",
 		"toggle-canvas",
-		"vim-toggle",
-		"theme",
-		"settings",
-	]
-		.map((action) => toolbarControl(root, action))
+		"toggle-overflow",
+	]);
+	expect(overflowActions).toEqual(["vim-toggle", "theme", "settings"]);
+	expect(
+		root.querySelector<HTMLElement>(".chat-rail__overflow-menu")?.hidden,
+	).toBe(true);
+	expect(toolbar?.getAttribute("role")).toBe("toolbar");
+});
+
+test("every sidebar icon control has matching aria-label and title text", async () => {
+	const root = await renderToolbarPage();
+
+	const labels = Array.from(
+		root.querySelectorAll<HTMLElement>(".chat-rail__actions .chat-icon-button"),
+	)
 		.map((control) => [
 			control.getAttribute("aria-label"),
 			control.getAttribute("title"),
 		]);
 
+	expect(labels.length).toBe(6);
 	expect(labels.every(([label, title]) => label && label === title)).toBe(true);
-	expect(root.querySelector(".chat-rail__actions")?.getAttribute("role")).toBe(
-		"toolbar",
-	);
+});
+
+test("the overflow button exposes the rare actions and reports its state", async () => {
+	const root = await renderToolbarPage();
+	const toggle = toolbarControl(root, "toggle-overflow");
+	const menu = root.querySelector<HTMLElement>(".chat-rail__overflow-menu");
+
+	expect(toggle.getAttribute("aria-expanded")).toBe("false");
+	click(toggle);
+	expect(toggle.getAttribute("aria-expanded")).toBe("true");
+	expect(menu?.hidden).toBe(false);
+
+	click(toolbarControl(root, "theme"));
+	expect(toggle.getAttribute("aria-expanded")).toBe("false");
+	expect(menu?.hidden).toBe(true);
 });
 
 test("the canvas and vim toolbar toggles reflect their state in aria-pressed", async () => {
