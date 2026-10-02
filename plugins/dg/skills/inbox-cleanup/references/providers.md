@@ -12,6 +12,7 @@ directory differs from the registered session, or when several sessions exist.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 Proton also needs exactly one extension connected to that session. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
+Proton inbox operations require extension version 1.10.0 or newer.
 
 ## Profiles
 
@@ -60,7 +61,9 @@ x-pm-uid/appversion/locale headers only in page memory, uses same-origin fetch
 with cookies included, and returns bounded metadata through the daemon to stdout.
 No raw message body, cookies, headers, arbitrary script source, or arbitrary
 endpoint URL is returned to the model. Expired sessions give sign-in/reload
-guidance. Full Sieve policy is retained privately for reviewed consolidation.
+guidance. Folder-scoped message responses must include valid label IDs matching
+the selected folder; otherwise the operation fails before returning messages.
+Full Sieve policy is retained privately for reviewed consolidation.
 
 ## Gmail
 
@@ -74,8 +77,17 @@ or provider approval for sensitive/restricted scopes.
 Use --client-secret-env ENV_NAME when your client configuration needs a secret.
 Set that environment variable outside the CLI. For an externally supplied token,
 use --auth-mode env --access-token-env ENV_NAME. Expired encrypted cached tokens
-are refreshed automatically. Generic desktop clients do not support Google's
-TV/device-code flow; choose browser login for this integration.
+are refreshed automatically. A revoked cached refresh token is removed from
+encrypted storage; browser mode starts a new login. Temporary refresh failures
+and externally supplied credentials are preserved. Generic desktop clients do
+not support Google's TV/device-code flow; choose browser login for this integration.
+
+Set GOOGLE_BROWSER_OPEN_COMMAND or gmail.openBrowserCommand in your local
+--config file to select a browser command. Commands are split into executable
+arguments at whitespace, without shell expansion. Gmail always prints a login
+URL to stderr with the account hint removed, so you can continue if the opener
+does not show a browser. It keeps waiting for the loopback callback. Open the
+URL in a browser that can reach that local callback.
 
 Gmail scans one ID page at a time, fetches metadata with bounded concurrency,
 and applies labels/read-state changes in batches. A move adds the destination
@@ -116,6 +128,13 @@ read-only. Proton Sieve consolidation is Proton-specific.
 
 See Microsoft's [MSAL caching documentation](https://learn.microsoft.com/en-us/entra/msal/javascript/node/caching)
 and [token acquisition documentation](https://learn.microsoft.com/en-us/entra/msal/javascript/node/acquire-token-requests).
+
+## Paging
+
+Live providers skip overlapping message IDs and count unique messages toward
+the requested limit. Pages stay fixed in size and are fetched only as needed.
+Repeated cursors, a nonempty continuing page with no new IDs, or three
+consecutive empty continuing pages stop the scan with a paging error.
 
 ## Verification
 

@@ -106,6 +106,16 @@ function normalizeMessage(
 		raw.Sender && typeof raw.Sender === "object" ? record(raw.Sender) : {};
 	const from = str(sender.Address, raw.SenderAddress);
 	const fromDomain = /@([^\s>]+)$/.exec(from)?.[1]?.toLowerCase();
+	if (
+		requestedFolder &&
+		(!Array.isArray(raw.LabelIDs) ||
+			raw.LabelIDs.some((label) => typeof label !== "string") ||
+			!raw.LabelIDs.includes(requestedFolder))
+	) {
+		throw new ProtonOperationError(
+			"Proton returned messages outside the requested folder scope or without trustworthy membership. Refresh the mailbox and retry the scan.",
+		);
+	}
 	const labels = Array.isArray(raw.LabelIDs)
 		? raw.LabelIDs.filter((entry): entry is string => typeof entry === "string")
 		: [];

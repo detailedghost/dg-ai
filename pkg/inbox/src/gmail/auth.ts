@@ -30,6 +30,8 @@ type GoogleAuthServices = {
 	timeoutMs?: number;
 };
 
+class GoogleInvalidGrantError extends Error {}
+
 export class EnvironmentGoogleTokenProvider implements GoogleTokenProvider {
 	private pending = new Map<string, Promise<GoogleAccessToken>>();
 	constructor(
@@ -114,16 +116,26 @@ export class EnvironmentGoogleTokenProvider implements GoogleTokenProvider {
 				accountHint: settings.loginHint,
 			};
 		}
-		const refreshToken =
-			process.env[settings.refreshTokenEnv ?? "GOOGLE_REFRESH_TOKEN"] ??
-			cached?.refreshToken;
+		const environmentRefresh =
+			process.env[settings.refreshTokenEnv ?? "GOOGLE_REFRESH_TOKEN"];
+		const refreshToken = environmentRefresh ?? cached?.refreshToken;
 		if (refreshToken) {
-			return this.exchange(
-				{ grant_type: "refresh_token", refresh_token: refreshToken },
-				binding,
-				store,
-				refreshToken,
-			);
+			try {
+				return await this.exchange(
+					{ grant_type: "refresh_token", refresh_token: refreshToken },
+					binding,
+					store,
+					refreshToken,
+				);
+			} catch (error) {
+				if (
+					!(error instanceof GoogleInvalidGrantError) ||
+					environmentRefresh !== undefined
+				)
+					throw error;
+				await store?.set("");
+				if (settings.authMode !== "browser") throw error;
+			}
 		}
 		if (settings.authMode === "env") {
 			throw new Error(
@@ -163,7 +175,22 @@ export class EnvironmentGoogleTokenProvider implements GoogleTokenProvider {
 				prompt: "consent",
 				...(settings.loginHint ? { login_hint: settings.loginHint } : {}),
 			}).toString();
-			await (this.input.openBrowser ?? openOAuthBrowser)(url.toString());
+			try {
+				await (
+					this.input.openBrowser ??
+					((value) => openOAuthBrowser(value, settings.openBrowserCommand))
+				)(url.toString());
+			} catch {
+				console.error(
+					"Could not open the login browser. Continue with the login URL below.",
+				);
+			}
+			const manualUrl = new URL(url);
+			manualUrl.searchParams.delete("login_hint");
+			console.error(
+				"Open this URL in a browser to continue Gmail login:\n" +
+					manualUrl.toString(),
+			);
 			const code = await callback.code;
 			return await this.exchange(
 				{
@@ -212,6 +239,18 @@ export class EnvironmentGoogleTokenProvider implements GoogleTokenProvider {
 			);
 		}
 		if (!response.ok) {
+			if (response.status === 400) {
+				const rejected: unknown = await response.json().catch(() => undefined);
+				if (
+					typeof rejected === "object" &&
+					rejected !== null &&
+					"error" in rejected &&
+					rejected.error === "invalid_grant"
+				)
+					throw new GoogleInvalidGrantError(
+						"Google token exchange was rejected. Check the desktop OAuth client and sign in again.",
+					);
+			}
 			throw new Error(
 				"Google token exchange was rejected. Check the desktop OAuth client and sign in again.",
 			);

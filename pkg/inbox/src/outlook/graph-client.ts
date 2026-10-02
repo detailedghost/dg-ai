@@ -188,6 +188,7 @@ export class GraphRestClient implements MailProviderClient {
 		let emitted = 0;
 		const cursors = new Set<string>();
 		const messageIds = new Set<string>();
+		let emptyPages = 0;
 		while (next && emitted < limit) {
 			if (cursors.has(next))
 				throw new Error("Microsoft Graph paging stalled: repeated cursor");
@@ -198,26 +199,35 @@ export class GraphRestClient implements MailProviderClient {
 					"Microsoft Graph returned a malformed collection response.",
 				);
 			}
-			for (const row of page.value) {
+			const fresh = page.value.filter((row) => {
 				if (
 					typeof row === "object" &&
 					row !== null &&
 					"id" in row &&
 					typeof row.id === "string"
 				) {
-					if (messageIds.has(row.id))
-						throw new Error(
-							"Microsoft Graph paging stalled: duplicate message id",
-						);
+					if (messageIds.has(row.id)) return false;
 					messageIds.add(row.id);
 				}
-			}
-			const slice = page.value.slice(0, limit - emitted);
+				return true;
+			});
+			const slice = fresh.slice(0, limit - emitted);
 			if (slice.length > 0) {
 				emitted += slice.length;
 				yield slice;
 			}
 			next = page["@odata.nextLink"];
+			if (next) {
+				if (page.value.length && !fresh.length)
+					throw new Error(
+						"Microsoft Graph paging stalled: page added no new messages",
+					);
+				emptyPages = page.value.length ? 0 : emptyPages + 1;
+				if (emptyPages >= 3)
+					throw new Error(
+						"Microsoft Graph paging stalled: consecutive empty pages",
+					);
+			}
 		}
 	}
 

@@ -41,6 +41,7 @@ export type AppConfig = {
 		clientSecretEnv?: string;
 		accessTokenEnv?: string;
 		refreshTokenEnv?: string;
+		openBrowserCommand?: string;
 		redirectUri: string;
 		tokenCachePath: string;
 		allowPlaintextTokenCache: boolean;

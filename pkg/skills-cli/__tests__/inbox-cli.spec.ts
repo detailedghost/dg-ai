@@ -231,7 +231,7 @@ describe("dg-skills inbox daemon integration", () => {
 		let page: WebSocket | undefined;
 		try {
 			const bootstrap = await registerSession(daemon.port, { cwd: h.cwd });
-			page = await connectPage(daemon.port, bootstrap);
+			page = await connectPage(daemon.port, bootstrap, undefined, "1.10.0");
 			const fixture = mailboxFixture();
 			const requests: Record<string, unknown>[] = [];
 			page.addEventListener("message", (event) => {

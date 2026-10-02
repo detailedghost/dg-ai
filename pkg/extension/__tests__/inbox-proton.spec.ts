@@ -199,3 +199,46 @@ it.each([
 	})).rejects.toThrow(/Proton|policy|response/i);
 	expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+	{ LabelIDs: ["7", "5"] },
+	{ LabelIDs: ["6", "5"] },
+	{ LabelIDs: [] },
+	{ LabelIDs: undefined },
+	{ LabelIDs: ["0", 123] },
+	{ LabelIDs: "0" },
+])(
+	"rejects a scoped Proton page without trustworthy requested-folder membership %j",
+	async (membership) => {
+		const fetch = providerFetch({
+			Code: 1000,
+			Messages: [
+				{ ID: "inbox-message", LabelIDs: ["0", "5"] },
+				{ ID: "outside-message", ...membership },
+			],
+			Total: 2,
+		});
+		await expect(
+			executeProtonPage(
+				{ operation: "list-messages", folderId: "0", pageSize: 50 },
+				context(fetch),
+			),
+		).rejects.toThrow(/folder|scope|membership/i);
+	},
+);
+
+it("accepts exact custom-folder membership alongside other Proton labels", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Messages: [{ ID: "message", LabelIDs: ["5", "custom-folder", "label"] }],
+		Total: 1,
+	});
+	const result = await executeProtonPage(
+		{ operation: "list-messages", folderId: "custom-folder" },
+		context(fetch),
+	);
+	expect(result.messages?.[0]).toMatchObject({
+		folderId: "custom-folder",
+		labels: ["5", "custom-folder", "label"],
+	});
+});
