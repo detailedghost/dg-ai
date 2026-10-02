@@ -1,5 +1,11 @@
 import type { InboxCliRequest } from "./inbox-format";
-import type { ChatFrame, CommandEntry } from "./chat-format";
+import type {
+	ChatFrame,
+	CommandEntry,
+	OverwatchBoard,
+	OverwatchLaneUpdate,
+	OverwatchMerge,
+} from "./chat-format";
 
 export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
 export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
@@ -34,13 +40,57 @@ export type CliManifestPublishRequest = {
 	subagents?: string[];
 };
 
+export type CliOverwatchSetRequest = {
+	type: "cli-overwatch-set";
+} & OverwatchLaneUpdate;
+
+export type CliOverwatchRemoveRequest = {
+	type: "cli-overwatch-remove";
+	chat: string;
+};
+
+export type CliOverwatchMergedRequest = {
+	type: "cli-overwatch-merged";
+} & Omit<OverwatchMerge, "at">;
+
+export type CliOverwatchLaunchRequest = {
+	type: "cli-overwatch-launch";
+	goLive: string;
+	goNoGo?: string;
+};
+
+export type CliOverwatchMutationResult = {
+	type: "cli-overwatch-mutation-result";
+	operation: "set" | "remove" | "merged" | "launch";
+	board: OverwatchBoard;
+};
+
+export type CliOverwatchOpenRequest = { type: "cli-overwatch-open" };
+
+export type CliOverwatchOpenResult = {
+	type: "cli-overwatch-open-result";
+};
+
+export type CliOverwatchSnapshotRequest = { type: "cli-overwatch-snapshot" };
+
+export type CliOverwatchSnapshotResult = {
+	type: "cli-overwatch-snapshot-result";
+	board: OverwatchBoard;
+};
+
 export type CliFrame =
 	| InboxCliRequest
 	| CliRecvRequest
 	| CliAckRequest
 	| CliSendRequest
 	| CliProgressRequest
-	| CliManifestPublishRequest;
+	| CliManifestPublishRequest
+	| CliOverwatchSetRequest
+	| CliOverwatchRemoveRequest
+	| CliOverwatchMergedRequest
+	| CliOverwatchLaunchRequest
+	| CliOverwatchOpenRequest
+	| CliOverwatchSnapshotRequest;
 
 export type CliRequest =
 	| CliFrame

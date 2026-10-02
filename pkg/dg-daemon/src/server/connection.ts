@@ -108,6 +108,17 @@ export class ConnectionManager {
 		}
 	}
 
+	forEachExtension(fn: (ws: ServerWebSocket<SocketState>) => void): number {
+		let count = 0;
+		for (const ws of this.sockets) {
+			if (ws.data.kind !== "ws") continue;
+			if (ws.data.capabilities.size === 0) continue;
+			count++;
+			fn(ws);
+		}
+		return count;
+	}
+
 	forEachCapableOf(
 		sessionId: string,
 		fn: (ws: ServerWebSocket<SocketState>) => void,

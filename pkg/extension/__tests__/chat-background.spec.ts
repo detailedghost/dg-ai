@@ -4,10 +4,15 @@ import { fileURLToPath } from "node:url";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
+	OVERWATCH_SESSION_ID,
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import { CHAT_PAGE_PATH, CHAT_SESSION_KEY_PREFIX } from "@/lib/background/chat";
+import {
+	CHAT_PAGE_PATH,
+	CHAT_SESSION_KEY_PREFIX,
+	handleOverwatchFrameSafely,
+} from "@/lib/background/chat";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -54,6 +59,15 @@ function makeBrowserApi() {
 	);
 	const sessionRemove = mock((_keys: string | string[]) => Promise.resolve());
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
+	const tabsQuery = mock((_queryInfo: { url: string }) =>
+		Promise.resolve([] as { id?: number; windowId?: number }[]),
+	);
+	const tabsUpdate = mock((_tabId: number, _props: { active: boolean }) =>
+		Promise.resolve(),
+	);
+	const windowsUpdate = mock((_windowId: number, _props: { focused: boolean }) =>
+		Promise.resolve(),
+	);
 	const sendMessage = mock((_message: unknown) => Promise.resolve(undefined));
 	const api = {
 		action: {
@@ -73,7 +87,8 @@ function makeBrowserApi() {
 			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage,
 		},
-		tabs: { create: tabsCreate },
+		tabs: { create: tabsCreate, query: tabsQuery, update: tabsUpdate },
+		windows: { update: windowsUpdate },
 		storage: { session: { set: sessionSet, remove: sessionRemove } },
 	};
 	return {
@@ -81,6 +96,9 @@ function makeBrowserApi() {
 		sessionSet,
 		sessionRemove,
 		tabsCreate,
+		tabsQuery,
+		tabsUpdate,
+		windowsUpdate,
 		sendMessage,
 		getOnMessage: () => onMessageListener,
 		getOnClicked: () => onClickedListener,
@@ -498,6 +516,169 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	expect((received[0] as { body: string }).body).toBe(
 		"hello while the tab is closed",
 	);
+});
+
+test("reports an overwatch open failure from the browser API", async () => {
+	const { api, tabsCreate } = makeBrowserApi();
+	const error = spyOn(console, "error").mockImplementation(() => undefined);
+	tabsCreate.mockImplementation(() => Promise.reject(new Error("tab failed")));
+
+	try {
+		await handleOverwatchFrameSafely(
+			{
+				type: "overwatch-open",
+				sessionId: OVERWATCH_SESSION_ID,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "open-request-1",
+			},
+			api,
+		);
+
+		expect(error).toHaveBeenCalledWith(
+			"[dg-ai-extension] overwatch frame failed:",
+			expect.objectContaining({ message: "tab failed" }),
+		);
+	} finally {
+		error.mockRestore();
+	}
+});
+
+test("an inbound overwatch-open focuses the existing board tab and replies to the daemon", async () => {
+	const {
+		api,
+		getOnMessage,
+		tabsCreate,
+		tabsQuery,
+		tabsUpdate,
+		windowsUpdate,
+	} = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	tabsQuery.mockImplementation(() =>
+		Promise.resolve([{ id: 41, windowId: 7 }]),
+	);
+	const tabsCreatedBeforeOpen = tabsCreate.mock.calls.length;
+
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	socket.dispatch(
+		"message",
+		message({
+			type: "overwatch-open",
+			sessionId: OVERWATCH_SESSION_ID,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "open-request-1",
+		}),
+	);
+	await settle();
+
+	expect(tabsUpdate).toHaveBeenCalledWith(41, { active: true });
+	expect(windowsUpdate).toHaveBeenCalledWith(7, { focused: true });
+	expect(tabsCreate).toHaveBeenCalledTimes(tabsCreatedBeforeOpen);
+	expect(
+		socket.send.mock.calls
+			.map(([raw]) => JSON.parse(raw as string))
+			.find((frame) => frame.type === "overwatch-open-result"),
+	).toEqual({
+		type: "overwatch-open-result",
+		sessionId: bootstrap.sessionId,
+		token: bootstrap.token,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "open-request-1",
+		ok: true,
+	});
+});
+
+test("an overwatch-open completion waits for the replacement socket handshake after a disconnect", async () => {
+	const sockets: FakeSocket[] = [];
+	const openSocket = mock((_url: string) => {
+		const socket = makeFakeSocket();
+		sockets.push(socket);
+		return socket;
+	});
+	const { api, getOnMessage, tabsQuery } = makeBrowserApi();
+	let resolveQuery:
+		| ((matches: { id?: number; windowId?: number }[]) => void)
+		| undefined;
+	tabsQuery.mockImplementation(
+		() =>
+			new Promise((resolve) => {
+				resolveQuery = resolve;
+			}),
+	);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+
+	sockets[0]?.dispatch("open");
+	await settle();
+	sockets[0]?.dispatch(
+		"message",
+		message(buildSessionListFrame(bootstrap.sessionId)),
+	);
+	await settle();
+	sockets[0]?.dispatch(
+		"message",
+		message({
+			type: "overwatch-open",
+			sessionId: OVERWATCH_SESSION_ID,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "open-request-after-reconnect",
+		}),
+	);
+	await flushMicrotasks();
+	expect(resolveQuery).toBeDefined();
+
+	const scheduled: Array<() => void> = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((fn: () => void) => {
+		scheduled.push(fn);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+
+	try {
+		sockets[0]?.dispatch("close");
+		scheduled.shift()?.();
+		await flushMicrotasks();
+		sockets[1]?.dispatch("open");
+		resolveQuery?.([]);
+		await flushMicrotasks();
+
+		expect(
+			sockets[0]?.send.mock.calls.some(
+				([raw]) => JSON.parse(raw as string).type === "overwatch-open-result",
+			),
+		).toBe(false);
+		expect(
+			sockets[1]?.send.mock.calls.some(
+				([raw]) => JSON.parse(raw as string).type === "overwatch-open-result",
+			),
+		).toBe(false);
+
+		sockets[1]?.dispatch(
+			"message",
+			message(buildSessionListFrame(bootstrap.sessionId)),
+		);
+		await flushMicrotasks();
+
+		expect(
+			sockets[1]?.send.mock.calls
+				.map(([raw]) => JSON.parse(raw as string))
+				.find((frame) => frame.type === "overwatch-open-result"),
+		).toEqual({
+			type: "overwatch-open-result",
+			sessionId: bootstrap.sessionId,
+			token: bootstrap.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "open-request-after-reconnect",
+			ok: true,
+		});
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+	}
 });
 
 test("regression: the background's socket reopens automatically after the daemon connection drops", async () => {

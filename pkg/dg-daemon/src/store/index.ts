@@ -1,14 +1,21 @@
 import { Database } from "bun:sqlite";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
+	applyOverwatchLaneUpdate,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	type CommandEntry,
 	describeError,
 	historyItemCost,
+	OVERWATCH_SESSION_ID,
+	OVERWATCH_MAX_MERGES,
+	type OverwatchBoard,
+	type OverwatchLane,
+	type OverwatchLaneUpdate,
+	type OverwatchMerge,
 	type ProgressState,
 	type InboxProfile,
 	type InboxProfileSummary,
@@ -61,6 +68,17 @@ const AAD_JOB_STDERR = "job-stderr";
 const AAD_FEED_TITLE = "feed-title";
 const AAD_FEED_META = "feed-meta";
 const AAD_FEED_URL = "feed-url";
+const AAD_OVERWATCH_CHAT = "overwatch-chat";
+const AAD_OVERWATCH_TASK = "overwatch-task";
+const AAD_OVERWATCH_MR = "overwatch-mr";
+const AAD_OVERWATCH_ETA = "overwatch-eta";
+const AAD_OVERWATCH_NEXT = "overwatch-next";
+const AAD_OVERWATCH_URL = "overwatch-url";
+const AAD_OVERWATCH_PUBLISHER = "overwatch-publisher";
+const AAD_OVERWATCH_MERGE_MR = "overwatch-merge-mr";
+const AAD_OVERWATCH_MERGE_TITLE = "overwatch-merge-title";
+const AAD_OVERWATCH_GO_LIVE = "overwatch-go-live";
+const AAD_OVERWATCH_GO_NO_GO = "overwatch-go-no-go";
 const AAD_ASSET_BYTES_FORMAT_VERSION = 2;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -262,11 +280,41 @@ export type ListFeedItemsOptions = {
 	limit?: number;
 };
 
+export type UpsertLaneInput = OverwatchLaneUpdate & {
+	publisher: string;
+};
+
+export type AddMergeInput = Omit<OverwatchMerge, "at">;
+
+export type SetLaunchInput = Pick<OverwatchBoard, "goLive" | "goNoGo"> & {
+	goLive: string;
+};
+
 export type CryptoMetaInfo = {
 	formatVersion: number;
 	keyId: string;
 	keySource: string;
 	wrappedDataKey: Buffer;
+};
+
+type ChatStoreDependencies = {
+	db: Database;
+	cipherBox: CipherBox;
+	blindIndexKey: Buffer;
+	meta: CryptoMetaInfo;
+	claimLeaseMs: number;
+};
+
+type EncryptedOverwatchValue = {
+	ciphertext: Uint8Array;
+	iv: Uint8Array;
+	tag: Uint8Array;
+};
+
+type OptionalEncryptedOverwatchValue = {
+	ciphertext: Uint8Array | null;
+	iv: Uint8Array | null;
+	tag: Uint8Array | null;
 };
 
 type RawMessageRow = {
@@ -368,6 +416,54 @@ type RawFeedItemRow = {
 	read_at: string | null;
 };
 
+type RawOverwatchLaneRow = {
+	chat_key: string;
+	chat_ciphertext: Uint8Array;
+	chat_iv: Uint8Array;
+	chat_tag: Uint8Array;
+	task_ciphertext: Uint8Array;
+	task_iv: Uint8Array;
+	task_tag: Uint8Array;
+	stage: OverwatchLane["stage"];
+	mr_ciphertext: Uint8Array | null;
+	mr_iv: Uint8Array | null;
+	mr_tag: Uint8Array | null;
+	eta_ciphertext: Uint8Array | null;
+	eta_iv: Uint8Array | null;
+	eta_tag: Uint8Array | null;
+	next_ciphertext: Uint8Array | null;
+	next_iv: Uint8Array | null;
+	next_tag: Uint8Array | null;
+	url_ciphertext: Uint8Array | null;
+	url_iv: Uint8Array | null;
+	url_tag: Uint8Array | null;
+	kind: OverwatchLane["kind"];
+	publisher_ciphertext: Uint8Array;
+	publisher_iv: Uint8Array;
+	publisher_tag: Uint8Array;
+	updated_at: string;
+};
+
+type RawOverwatchMergeRow = {
+	id: string;
+	mr_ciphertext: Uint8Array;
+	mr_iv: Uint8Array;
+	mr_tag: Uint8Array;
+	title_ciphertext: Uint8Array;
+	title_iv: Uint8Array;
+	title_tag: Uint8Array;
+	at: string;
+};
+
+type RawOverwatchSettingsRow = {
+	go_live_ciphertext: Uint8Array | null;
+	go_live_iv: Uint8Array | null;
+	go_live_tag: Uint8Array | null;
+	go_no_go_ciphertext: Uint8Array | null;
+	go_no_go_iv: Uint8Array | null;
+	go_no_go_tag: Uint8Array | null;
+};
+
 type RawStatusEventRow = {
 	seq: number;
 	created_at: string;
@@ -462,13 +558,19 @@ function ensureDaemonDir(daemonDir: string): void {
 export const CHAT_STORE_MESSAGE_EVENT = "message";
 
 export class ChatStore extends EventEmitter {
-	private constructor(
-		private readonly db: Database,
-		private readonly cipherBox: CipherBox,
-		private readonly meta: CryptoMetaInfo,
-		private readonly claimLeaseMs: number,
-	) {
+	private readonly db: Database;
+	private readonly cipherBox: CipherBox;
+	private readonly blindIndexKey: Buffer;
+	private readonly meta: CryptoMetaInfo;
+	private readonly claimLeaseMs: number;
+
+	private constructor(dependencies: ChatStoreDependencies) {
 		super();
+		this.db = dependencies.db;
+		this.cipherBox = dependencies.cipherBox;
+		this.blindIndexKey = dependencies.blindIndexKey;
+		this.meta = dependencies.meta;
+		this.claimLeaseMs = dependencies.claimLeaseMs;
 		this.setMaxListeners(SESSION_MAX_ACTIVE_DEFAULT);
 	}
 
@@ -541,13 +643,17 @@ export class ChatStore extends EventEmitter {
 				DEFAULT_CLAIM_LEASE_MS,
 			);
 
-			const store = new ChatStore(
+			const store = new ChatStore({
 				db,
-				createCipherBox(resolved.dataKey),
-				resolved.cryptoMeta,
+				cipherBox: createCipherBox(resolved.dataKey),
+				blindIndexKey: createHmac("sha256", resolved.dataKey)
+					.update("dg-overwatch-blind-index")
+					.digest(),
+				meta: resolved.cryptoMeta,
 				claimLeaseMs,
-			);
+			});
 			store.ensureSessionRow(SCHEDULER_SESSION_ID);
+			store.ensureSessionRow(OVERWATCH_SESSION_ID);
 			return store;
 		} catch (err) {
 			db.close(false);
@@ -1094,6 +1200,383 @@ export class ChatStore extends EventEmitter {
 
 	#schedulerAad(domain: string, rowId: string): Buffer {
 		return this.#aad(domain, SCHEDULER_SESSION_ID, rowId);
+	}
+
+	#overwatchAad(domain: string, rowId: string): Buffer {
+		return this.#aad(domain, OVERWATCH_SESSION_ID, rowId);
+	}
+
+	#overwatchKey(domain: string, value: string): string {
+		return createHmac("sha256", this.blindIndexKey)
+			.update(domain)
+			.update("\0")
+			.update(value)
+			.digest("hex");
+	}
+
+	#encryptOverwatch(domain: string, rowId: string, value: string) {
+		return this.cipherBox.encryptRecord(
+			value,
+			this.#overwatchAad(domain, rowId),
+		);
+	}
+
+	#decryptOverwatch(
+		domain: string,
+		rowId: string,
+		value: EncryptedOverwatchValue,
+	): string {
+		return this.cipherBox
+			.decryptRecord(
+				Buffer.from(value.ciphertext),
+				Buffer.from(value.iv),
+				Buffer.from(value.tag),
+				this.#overwatchAad(domain, rowId),
+			)
+			.toString("utf8");
+	}
+
+	#decryptOptionalOverwatch(
+		domain: string,
+		rowId: string,
+		value: OptionalEncryptedOverwatchValue,
+	): string | undefined {
+		if (!value.ciphertext || !value.iv || !value.tag) return undefined;
+		return this.#decryptOverwatch(domain, rowId, {
+			ciphertext: value.ciphertext,
+			iv: value.iv,
+			tag: value.tag,
+		});
+	}
+
+	upsertLane(input: UpsertLaneInput): void {
+		const existing = this.getBoard().lanes.find(
+			(lane) => lane.chat === input.chat,
+		);
+		const lane = applyOverwatchLaneUpdate(existing, input, input.publisher);
+		const rowId = this.#overwatchKey(AAD_OVERWATCH_CHAT, lane.chat);
+		const chat = this.#encryptOverwatch(AAD_OVERWATCH_CHAT, rowId, lane.chat);
+		const task = this.#encryptOverwatch(AAD_OVERWATCH_TASK, rowId, lane.task);
+		const mr = lane.mr
+			? this.#encryptOverwatch(AAD_OVERWATCH_MR, rowId, lane.mr)
+			: undefined;
+		const eta = lane.eta
+			? this.#encryptOverwatch(AAD_OVERWATCH_ETA, rowId, lane.eta)
+			: undefined;
+		const next = lane.next
+			? this.#encryptOverwatch(AAD_OVERWATCH_NEXT, rowId, lane.next)
+			: undefined;
+		const url = lane.url
+			? this.#encryptOverwatch(AAD_OVERWATCH_URL, rowId, lane.url)
+			: undefined;
+		const publisher = this.#encryptOverwatch(
+			AAD_OVERWATCH_PUBLISHER,
+			rowId,
+			lane.publisher,
+		);
+		this.db.run(
+			`INSERT INTO overwatch_lanes (
+				chat_key, chat_ciphertext, chat_iv, chat_tag,
+				task_ciphertext, task_iv, task_tag, stage,
+				mr_ciphertext, mr_iv, mr_tag,
+				eta_ciphertext, eta_iv, eta_tag,
+				next_ciphertext, next_iv, next_tag,
+				url_ciphertext, url_iv, url_tag,
+				kind, publisher_ciphertext, publisher_iv, publisher_tag, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(chat_key) DO UPDATE SET
+				chat_ciphertext = excluded.chat_ciphertext,
+				chat_iv = excluded.chat_iv,
+				chat_tag = excluded.chat_tag,
+				task_ciphertext = excluded.task_ciphertext,
+				task_iv = excluded.task_iv,
+				task_tag = excluded.task_tag,
+				stage = excluded.stage,
+				mr_ciphertext = excluded.mr_ciphertext,
+				mr_iv = excluded.mr_iv,
+				mr_tag = excluded.mr_tag,
+				eta_ciphertext = excluded.eta_ciphertext,
+				eta_iv = excluded.eta_iv,
+				eta_tag = excluded.eta_tag,
+				next_ciphertext = excluded.next_ciphertext,
+				next_iv = excluded.next_iv,
+				next_tag = excluded.next_tag,
+				url_ciphertext = excluded.url_ciphertext,
+				url_iv = excluded.url_iv,
+				url_tag = excluded.url_tag,
+				kind = excluded.kind,
+				publisher_ciphertext = excluded.publisher_ciphertext,
+				publisher_iv = excluded.publisher_iv,
+				publisher_tag = excluded.publisher_tag,
+				updated_at = excluded.updated_at`,
+			[
+				rowId,
+				chat.ciphertext,
+				chat.iv,
+				chat.tag,
+				task.ciphertext,
+				task.iv,
+				task.tag,
+				lane.stage,
+				mr?.ciphertext ?? null,
+				mr?.iv ?? null,
+				mr?.tag ?? null,
+				eta?.ciphertext ?? null,
+				eta?.iv ?? null,
+				eta?.tag ?? null,
+				next?.ciphertext ?? null,
+				next?.iv ?? null,
+				next?.tag ?? null,
+				url?.ciphertext ?? null,
+				url?.iv ?? null,
+				url?.tag ?? null,
+				lane.kind,
+				publisher.ciphertext,
+				publisher.iv,
+				publisher.tag,
+				lane.updatedAt,
+			],
+		);
+	}
+
+	removeLane(chat: string): boolean {
+		return (
+			this.db.run("DELETE FROM overwatch_lanes WHERE chat_key = ?", [
+				this.#overwatchKey(AAD_OVERWATCH_CHAT, chat),
+			]).changes > 0
+		);
+	}
+
+	addMerge(input: AddMergeInput): void {
+		const id = this.#overwatchKey(AAD_OVERWATCH_MERGE_MR, input.mr);
+		const mr = this.#encryptOverwatch(AAD_OVERWATCH_MERGE_MR, id, input.mr);
+		const title = this.#encryptOverwatch(
+			AAD_OVERWATCH_MERGE_TITLE,
+			id,
+			input.title,
+		);
+		const now = new Date();
+		const start = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate(),
+		).toISOString();
+		this.#withImmediateTransaction(() => {
+			this.db.run("DELETE FROM overwatch_merges WHERE at < ?", [start]);
+			this.db.run(
+				`INSERT INTO overwatch_merges (
+					id, mr_ciphertext, mr_iv, mr_tag,
+					title_ciphertext, title_iv, title_tag, at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					mr_ciphertext = excluded.mr_ciphertext,
+					mr_iv = excluded.mr_iv,
+					mr_tag = excluded.mr_tag,
+					title_ciphertext = excluded.title_ciphertext,
+					title_iv = excluded.title_iv,
+					title_tag = excluded.title_tag,
+					at = excluded.at`,
+				[
+					id,
+					mr.ciphertext,
+					mr.iv,
+					mr.tag,
+					title.ciphertext,
+					title.iv,
+					title.tag,
+					now.toISOString(),
+				],
+			);
+			this.db.run(
+				`DELETE FROM overwatch_merges
+				 WHERE id NOT IN (
+					SELECT id FROM overwatch_merges ORDER BY at DESC LIMIT ?
+				 )`,
+				[OVERWATCH_MAX_MERGES],
+			);
+		});
+	}
+
+	setLaunch(input: SetLaunchInput): void {
+		const rowId = "launch";
+		const goLive = this.#encryptOverwatch(
+			AAD_OVERWATCH_GO_LIVE,
+			rowId,
+			input.goLive,
+		);
+		const goNoGo = input.goNoGo
+			? this.#encryptOverwatch(
+					AAD_OVERWATCH_GO_NO_GO,
+					rowId,
+					input.goNoGo,
+				)
+			: undefined;
+		this.db.run(
+			`INSERT INTO overwatch_settings (
+				id, go_live_ciphertext, go_live_iv, go_live_tag,
+				go_no_go_ciphertext, go_no_go_iv, go_no_go_tag
+			) VALUES (1, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				go_live_ciphertext = excluded.go_live_ciphertext,
+				go_live_iv = excluded.go_live_iv,
+				go_live_tag = excluded.go_live_tag,
+				go_no_go_ciphertext = excluded.go_no_go_ciphertext,
+				go_no_go_iv = excluded.go_no_go_iv,
+				go_no_go_tag = excluded.go_no_go_tag`,
+			[
+				goLive.ciphertext,
+				goLive.iv,
+				goLive.tag,
+				goNoGo?.ciphertext ?? null,
+				goNoGo?.iv ?? null,
+				goNoGo?.tag ?? null,
+			],
+		);
+	}
+
+	getBoard(): OverwatchBoard {
+		const laneRows = this.db
+			.query("SELECT * FROM overwatch_lanes ORDER BY updated_at DESC, chat_key")
+			.all() as RawOverwatchLaneRow[];
+		const lanes = laneRows.map((row): OverwatchLane => ({
+			chat: this.#decryptOverwatch(
+				AAD_OVERWATCH_CHAT,
+				row.chat_key,
+				{
+					ciphertext: row.chat_ciphertext,
+					iv: row.chat_iv,
+					tag: row.chat_tag,
+				},
+			),
+			task: this.#decryptOverwatch(
+				AAD_OVERWATCH_TASK,
+				row.chat_key,
+				{
+					ciphertext: row.task_ciphertext,
+					iv: row.task_iv,
+					tag: row.task_tag,
+				},
+			),
+			stage: row.stage,
+			mr: this.#decryptOptionalOverwatch(
+				AAD_OVERWATCH_MR,
+				row.chat_key,
+				{
+					ciphertext: row.mr_ciphertext,
+					iv: row.mr_iv,
+					tag: row.mr_tag,
+				},
+			),
+			eta: this.#decryptOptionalOverwatch(
+				AAD_OVERWATCH_ETA,
+				row.chat_key,
+				{
+					ciphertext: row.eta_ciphertext,
+					iv: row.eta_iv,
+					tag: row.eta_tag,
+				},
+			),
+			next: this.#decryptOptionalOverwatch(
+				AAD_OVERWATCH_NEXT,
+				row.chat_key,
+				{
+					ciphertext: row.next_ciphertext,
+					iv: row.next_iv,
+					tag: row.next_tag,
+				},
+			),
+			url: this.#decryptOptionalOverwatch(
+				AAD_OVERWATCH_URL,
+				row.chat_key,
+				{
+					ciphertext: row.url_ciphertext,
+					iv: row.url_iv,
+					tag: row.url_tag,
+				},
+			),
+			kind: row.kind,
+			publisher: this.#decryptOverwatch(
+				AAD_OVERWATCH_PUBLISHER,
+				row.chat_key,
+				{
+					ciphertext: row.publisher_ciphertext,
+					iv: row.publisher_iv,
+					tag: row.publisher_tag,
+				},
+			),
+			updatedAt: row.updated_at,
+		}));
+
+		const now = new Date();
+		const start = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate(),
+		).toISOString();
+		const end = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate() + 1,
+		).toISOString();
+		const mergeRows = this.db
+			.query(
+				"SELECT * FROM overwatch_merges WHERE at >= ? AND at < ? ORDER BY at DESC",
+			)
+			.all(start, end) as RawOverwatchMergeRow[];
+		const merges = mergeRows.map((row): OverwatchMerge => ({
+			mr: this.#decryptOverwatch(
+				AAD_OVERWATCH_MERGE_MR,
+				row.id,
+				{
+					ciphertext: row.mr_ciphertext,
+					iv: row.mr_iv,
+					tag: row.mr_tag,
+				},
+			),
+			title: this.#decryptOverwatch(
+				AAD_OVERWATCH_MERGE_TITLE,
+				row.id,
+				{
+					ciphertext: row.title_ciphertext,
+					iv: row.title_iv,
+					tag: row.title_tag,
+				},
+			),
+			at: row.at,
+		}));
+
+		const settings = this.db
+			.query("SELECT * FROM overwatch_settings WHERE id = 1")
+			.get() as RawOverwatchSettingsRow | null;
+		const goLive = settings
+			? this.#decryptOptionalOverwatch(
+					AAD_OVERWATCH_GO_LIVE,
+					"launch",
+					{
+						ciphertext: settings.go_live_ciphertext,
+						iv: settings.go_live_iv,
+						tag: settings.go_live_tag,
+					},
+				)
+			: undefined;
+		const goNoGo = settings
+			? this.#decryptOptionalOverwatch(
+					AAD_OVERWATCH_GO_NO_GO,
+					"launch",
+					{
+						ciphertext: settings.go_no_go_ciphertext,
+						iv: settings.go_no_go_iv,
+						tag: settings.go_no_go_tag,
+					},
+				)
+			: undefined;
+
+		return {
+			...(goLive ? { goLive } : {}),
+			...(goNoGo ? { goNoGo } : {}),
+			lanes,
+			merges,
+		};
 	}
 
 	#decryptOptional(

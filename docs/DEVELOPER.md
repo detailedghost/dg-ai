@@ -215,7 +215,7 @@ controls bounded asynchronous file writes, not thread workers; source-relative
 worker module URLs are unnecessary in compiled releases. Failed writes drain
 and prevent a successful incomplete status index.
 
-Profile/cache schema9 records use the daemon's existing encryption envelope/key.
+Profile/cache schema10 records use the daemon's existing encryption envelope/key.
 The raw conversation archive is ignored local context and must remain unpublished.
 Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
 integration suites. Smoke the compiled dg-skills binary from an unrelated cwd
