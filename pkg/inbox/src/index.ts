@@ -16,3 +16,4 @@ export type {
 export { ExtensionProtonMailClient } from "./protonmail/extension-client";
 export { GmailRestClient } from "./gmail/rest-client";
 export { GraphRestClient } from "./outlook/graph-client";
+export { redactPublicValue } from "./privacy/redact";

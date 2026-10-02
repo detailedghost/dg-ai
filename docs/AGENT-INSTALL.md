@@ -42,10 +42,10 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
-`browser`, `demo`, and `proto` skills into `$CODEX_HOME/skills` (default
+the shared browser, demo, proto, chat, and inbox-cleanup skills into `$CODEX_HOME/skills` (default
 `~/.codex/skills`). Start a new Codex thread after installation.
 
-______________________________________________________________________
+---
 
 ## Step 1 — Install the Claude plugin
 
@@ -153,20 +153,31 @@ directly rather than asking the daemon. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
 so nothing happens until it is loaded in that browser profile.
 
-______________________________________________________________________
+---
 
 ## What an agent can and cannot automate
 
-| Task | Agent-runnable? |
-| --- | --- |
-| `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
-| `bootstrap.sh` (install CLI + extension) | Yes |
-| `dg-skills install` (stage extension + refresh all three binaries) | Yes |
-| `dg-agent start` (register a chat session) | Yes |
-| `dg-agent start --open` (open the chat page) | Yes (default browser) |
-| Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
-| Switch WSL to mirrored networking mode | No — manual host config |
-| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
-| Load unpacked in the browser | No — manual browser UI |
-| `launch` cold-start with extension | Yes (browser fully closed) |
-| `batch-open` / `demo` / `rerun` | Yes (extension loaded) |
+| Task                                                               | Agent-runnable?              |
+| ------------------------------------------------------------------ | ---------------------------- |
+| `claude plugin marketplace add` / `install` / `update`             | Yes, with user authorization |
+| `bootstrap.sh` (install CLI + extension)                           | Yes                          |
+| `dg-skills install` (stage extension + refresh all three binaries) | Yes                          |
+| `dg-agent start` (register a chat session)                         | Yes                          |
+| `dg-agent start --open` (open the chat page)                       | Yes (default browser)        |
+| Read a human's chat reply (`dg-agent recv --block`)                | Yes — it waits for them      |
+| Switch WSL to mirrored networking mode                             | No — manual host config      |
+| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection        | No — repo admin              |
+| Load unpacked in the browser                                       | No — manual browser UI       |
+| `launch` cold-start with extension                                 | Yes (browser fully closed)   |
+| `batch-open` / `demo` / `rerun`                                    | Yes (extension loaded)       |
+
+## Inbox cleanup
+
+The shared inbox-cleanup skill runs the compiled dg-skills inbox command. Update
+dg-skills, dg-agent, dg-daemon, and the extension together with dg-skills install.
+Start a dg session before configuring encrypted inbox profiles; Proton also
+requires one connected extension and a signed-in Proton mail tab. Gmail and
+Outlook need a registered OAuth client and the provider's delegated permissions.
+Explicit --data-path fixtures work without those services. Read
+[provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
+[cleanup workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md).

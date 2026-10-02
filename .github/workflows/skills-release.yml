@@ -9,7 +9,10 @@ on:
       - master
     paths:
       - pkg/skills-cli/**
+      - pkg/inbox/**
+      - bun.lock
       - pkg/common/**
+      - pkg/dg-agent/**
       - .github/workflows/skills-release.yml
 
 # Queue, don't cancel: a cancelled run skips its failure-cleanup step (that only

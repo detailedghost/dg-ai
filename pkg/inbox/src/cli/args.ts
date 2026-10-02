@@ -61,7 +61,8 @@ const cliOptions = [
 	},
 	{
 		flags: "--workers [number]",
-		description: "Batch writer threads (0/unset = auto, scaled to CPU cores).",
+		description:
+			"Concurrent batch writers (0/unset = auto, scaled to CPU cores).",
 	},
 	{
 		flags: "--ids [list]",
@@ -121,27 +122,31 @@ const cliOptions = [
 	{ flags: "--hunt-name [name]", description: "Grouped hunt filter name." },
 	{
 		flags: "--live-browser [true|false]",
-		description: "Use live Proton browser access.",
+		description: "Use the extension's signed-in Proton Mail tab.",
 	},
 	{
 		flags: "--session-profile [path]",
-		description: "Browser session profile path.",
+		description:
+			"Legacy browser profile metadata; live access uses the extension.",
 	},
 	{
 		flags: "--browser-type [name]",
-		description: "Browser type for live access.",
+		description:
+			"Legacy browser type metadata; use an extension-enabled browser.",
 	},
 	{
 		flags: "--browser-executable-path [path]",
-		description: "Browser executable path.",
+		description: "Legacy browser executable metadata.",
 	},
 	{
 		flags: "--browser-headless [true|false]",
-		description: "Run live browser headlessly.",
+		description:
+			"Legacy headless metadata; Proton requires a signed-in browser tab.",
 	},
 	{
 		flags: "--login-timeout [seconds]",
-		description: "Seconds to wait for interactive Proton login.",
+		description:
+			"Legacy login timeout metadata; sign in to Proton in the browser.",
 	},
 	{
 		flags: "--dry-run",
@@ -381,7 +386,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 export function createCliProgram(): Command {
 	const program = new Command()
 		.name("dg-skills inbox")
-		.description("Review-first Proton Mail cleanup workflow.")
+		.description(
+			"Review Proton Mail, Gmail, and Outlook before applying inbox changes.",
+		)
 		.helpOption(false)
 		.allowUnknownOption(true)
 		.allowExcessArguments(true)
@@ -397,7 +404,9 @@ export function createCliProgram(): Command {
 export function createHelpProgram(): Command {
 	const program = new Command()
 		.name("dg-skills inbox")
-		.description("Review-first Proton Mail cleanup workflow.")
+		.description(
+			"Review Proton Mail, Gmail, and Outlook before applying inbox changes.",
+		)
 		.helpOption("-h, --help", "display help for command");
 
 	for (const option of cliOptions.filter(
@@ -419,8 +428,9 @@ export function commandHelpText(): string {
 		"AI output flags:",
 		"  --ai --ai-summary --ai-limit <n> --ai-fields id,name --ai-redacted",
 		"",
-		"Live browser flags:",
-		"  --live-browser true|false --session-profile <path> --browser-type <name> --browser-executable-path <path> --browser-headless true|false",
+		"Live Proton access:",
+		"  Use a signed-in extension-enabled mail tab and --account-profile NAME.",
+		"  Legacy browser options store metadata; they do not launch a browser.",
 	].join("\n");
 }
 
