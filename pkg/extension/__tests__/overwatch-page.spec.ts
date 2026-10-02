@@ -32,6 +32,8 @@ const {
 } = await import("@/lib/features/overwatch");
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
+const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
+const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
 const chromium = [
 	"brave-browser",
 	"brave",
@@ -146,6 +148,7 @@ async function inspectNarrowLayout(markup: string): Promise<{
 }> {
 	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-page-layout-"));
 	const path = join(directory, "overwatch.html");
+	let child: ReturnType<typeof spawn> | undefined;
 	const optionsCss = readFileSync(
 		new URL("../entrypoints/options/style.css", import.meta.url),
 		"utf8",
@@ -188,24 +191,30 @@ async function inspectNarrowLayout(markup: string): Promise<{
 			stdout: string;
 			stderr: string;
 		}>((resolve, reject) => {
-			const child = spawn(
+			const browser = spawn(
 				chromium as string,
 				[
 					"--headless=new",
 					"--no-sandbox",
 					"--disable-gpu",
+					`--user-data-dir=${join(directory, "profile")}`,
 					"--window-size=390,844",
 					"--dump-dom",
 					path,
 				],
-				{ stdio: ["ignore", "pipe", "pipe"] },
+				{
+					stdio: ["ignore", "pipe", "pipe"],
+					timeout: GEOMETRY_BROWSER_TIMEOUT_MS,
+					killSignal: "SIGKILL",
+				},
 			);
+			child = browser;
 			const stdout: Buffer[] = [];
 			const stderr: Buffer[] = [];
-			child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-			child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-			child.on("error", reject);
-			child.on("close", (code) =>
+			browser.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+			browser.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+			browser.on("error", reject);
+			browser.on("close", (code) =>
 				resolve({
 					code,
 					stdout: Buffer.concat(stdout).toString("utf8"),
@@ -218,6 +227,16 @@ async function inspectNarrowLayout(markup: string): Promise<{
 		if (!match) throw new Error("browser did not report board geometry");
 		return JSON.parse(match[1]);
 	} finally {
+		if (
+			child?.pid !== undefined &&
+			child.exitCode === null &&
+			child.signalCode === null
+		) {
+			await new Promise<void>((resolve) => {
+				child?.once("close", () => resolve());
+				if (!child?.kill()) resolve();
+			});
+		}
 		await rm(directory, { force: true, recursive: true });
 	}
 }
@@ -635,6 +654,7 @@ test.skipIf(!chromium)(
 			handle.stop();
 		}
 	},
+	GEOMETRY_TEST_TIMEOUT_MS,
 );
 
 describe("overwatch frame handling", () => {
