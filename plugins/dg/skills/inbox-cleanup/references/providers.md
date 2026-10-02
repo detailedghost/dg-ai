@@ -105,9 +105,8 @@ MSAL reuses and refreshes encrypted cached tokens before interactive login.
 Silent mode refuses missing cached accounts; account/profile configuration binds
 the cache. Environment access tokens are supported through accessTokenEnv.
 Graph nextLink paging remains on its trusted origin/path and refuses cycles.
-Every Graph request asks for immutable message IDs, so new live batches retain
-the same message selector after a move and can apply reviewed read-state intent.
-See Microsoft's [immutable ID guidance](https://learn.microsoft.com/en-us/graph/outlook-immutable-id).
+Live Outlook batches preserve message IDs across moves, so reviewed read-state
+changes still target the same messages.
 
 Live Graph supports inventory, moves, read state, and folder relocation. Outlook
 folder-tree/label/filter/route policy planning and apply commands currently use

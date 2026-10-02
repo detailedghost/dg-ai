@@ -70,6 +70,7 @@ function result(
 	);
 }
 
+/** Handles authenticated profile/cache requests or binds a browser relay to one requester and one authorized extension. */
 export async function handleInboxCli(
 	requester: Socket,
 	sessionId: string,
@@ -222,6 +223,7 @@ export async function handleInboxCli(
 	}
 }
 
+/** Settles only the pending session/request owned by this extension socket; late or duplicate replies are ignored. */
 export function handleInboxBrowserResult(
 	socket: Socket,
 	frame: Extract<ChatFrame, { type: "inbox-browser-result" }>,

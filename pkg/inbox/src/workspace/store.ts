@@ -247,8 +247,7 @@ export async function writeClassificationGuide(
 }
 
 const DEFAULT_BATCH_CHUNK_SIZE = 50;
-// Below this, worker startup + structured-clone overhead outweighs the parallel
-// CPU win, so small batches (and the whole test suite) stay on the main thread.
+// Small batches use serial writes; larger batches share a bounded async limiter.
 const WORKER_MESSAGE_THRESHOLD = 256;
 
 function defaultBatchWorkerCount(): number {
@@ -256,8 +255,7 @@ function defaultBatchWorkerCount(): number {
 		typeof navigator !== "undefined" && navigator.hardwareConcurrency
 			? navigator.hardwareConcurrency
 			: 4;
-	// Leave one core for the main thread's fetch/dispatch loop; cap so we don't
-	// spawn a dozen threads for a workload that is partly I/O-bound anyway.
+	// Use CPU count as a conservative concurrency hint for mixed transform/I/O work.
 	return Math.max(1, Math.min(cores - 1, 8));
 }
 
@@ -391,8 +389,7 @@ async function runBatchWrite(input: {
 		await Promise.all(inflight);
 		checkFailure();
 	} finally {
-		// allSettled first so a failed run's remaining writes don't surface as
-		// unhandled rejections, then tear down worker threads.
+		// Drain pending writes before propagating failure or releasing the pools.
 		await Promise.allSettled(inflight);
 		await Promise.all([inline.close(), pool?.close() ?? Promise.resolve()]);
 	}

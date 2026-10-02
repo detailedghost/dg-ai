@@ -19,9 +19,11 @@ import type {
 
 type FetchLike = typeof fetch;
 
+/** Microsoft Graph adapter with trusted cursor paging and immutable message IDs across mailbox moves. */
 export class GraphRestClient implements MailProviderClient {
 	readonly provider = "outlook" as const;
 
+	/** Uses configured Graph scopes, a host token provider, and an optional fetch boundary. */
 	constructor(
 		private readonly input: {
 			config: AppConfig;
@@ -30,11 +32,13 @@ export class GraphRestClient implements MailProviderClient {
 		},
 	) {}
 
+	/** Returns exact provider folder identities for private routing and inventory. */
 	async listFolders(): Promise<MailFolder[]> {
 		const folders = await this.fetchFoldersRecursive();
 		return buildFolderPaths(folders.map(graphFolderToMailFolder));
 	}
 
+	/** Lists private Outlook master categories with exact display names. */
 	async listLabels(): Promise<MailLabel[]> {
 		const page = await this.fetchCollection<GraphCategory>(
 			"/me/outlook/masterCategories",
@@ -43,6 +47,7 @@ export class GraphRestClient implements MailProviderClient {
 		return page.map(graphCategoryToMailLabel);
 	}
 
+	/** Lists Inbox rule metadata; this adapter does not apply local cleanup policies as Graph rules. */
 	async listFilters(): Promise<MailRule[]> {
 		const folders = await this.listFolders();
 		const inbox = folders.find(
@@ -58,6 +63,7 @@ export class GraphRestClient implements MailProviderClient {
 		return page.map(graphRuleToMailRule);
 	}
 
+	/** Collects the limited stream into memory; prefer listMessagesStream for large mailboxes. */
 	async listMessages(input: ListMessagesInput): Promise<MailMessageSummary[]> {
 		const messages: MailMessageSummary[] = [];
 		for await (const page of this.listMessagesStream(input)) {
@@ -66,6 +72,7 @@ export class GraphRestClient implements MailProviderClient {
 		return messages;
 	}
 
+	/** Fetches fixed-size pages only on demand, honors the total limit, and stops when the consumer returns. */
 	async *listMessagesStream(
 		input: ListMessagesInput,
 	): AsyncGenerator<MailMessageSummary[]> {
@@ -83,6 +90,7 @@ export class GraphRestClient implements MailProviderClient {
 		}
 	}
 
+	/** Moves immutable message IDs in bounded groups, preserving IDs for later read-state intent. */
 	async moveMessages(input: {
 		messageIds: string[];
 		targetFolderId: string;
@@ -103,6 +111,7 @@ export class GraphRestClient implements MailProviderClient {
 		}
 	}
 
+	/** Marks selected private message IDs read after explicit workflow read intent. */
 	async markMessagesRead(input: { messageIds: string[] }): Promise<void> {
 		for (const chunk of chunked(input.messageIds, 20)) {
 			await Promise.all(
@@ -120,6 +129,7 @@ export class GraphRestClient implements MailProviderClient {
 		}
 	}
 
+	/** Renames the exact folder ID using its reviewed display name. */
 	async renameFolder(input: {
 		id: string;
 		displayName: string;
@@ -135,6 +145,7 @@ export class GraphRestClient implements MailProviderClient {
 		return graphFolderToMailFolder(folder);
 	}
 
+	/** Moves a folder by ID; msgfolderroot promotes it to the mailbox root. */
 	async moveFolder(input: {
 		id: string;
 		destinationId: string;

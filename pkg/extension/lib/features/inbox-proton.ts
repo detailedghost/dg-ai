@@ -47,6 +47,7 @@ function items(response: RecordValue, key: string): RecordValue[] {
 	return response[key].map(record);
 }
 
+/** Redacts account addresses, phone numbers, and long identifiers in bounded model-facing message text. */
 export function redactInboxText(text: string, limit = 1000): string {
 	return text
 		.replace(
@@ -132,6 +133,7 @@ function normalizeMessage(
 	};
 }
 
+/** Validates bounded transport metadata and scrubs message text; folder selectors/full policy remain private. */
 export function sanitizeInboxBrowserResponse(
 	value: unknown,
 ): InboxBrowserResponse {
@@ -177,6 +179,7 @@ async function boundedJson(response: Response): Promise<RecordValue> {
 	}
 }
 
+/** Executes validated fixed operations on a trusted authenticated origin; preserves fresh policy fields and checks mutation acknowledgments. */
 export async function executeProtonPage(
 	input: InboxBrowserRequest,
 	context: ProtonPageContext,
@@ -405,7 +408,7 @@ export async function executeProtonPage(
 					Sieve: request.sieve ?? previous?.Sieve,
 					Status:
 						request.enabled === undefined
-							? previous?.Status ?? 1
+							? (previous?.Status ?? 1)
 							: request.enabled
 								? 1
 								: 0,

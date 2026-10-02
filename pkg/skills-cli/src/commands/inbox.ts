@@ -267,6 +267,7 @@ function output(value: unknown): void {
 	console.log(JSON.stringify(redactPublicValue(value)));
 }
 
+/** Forwards raw workflow arguments, injects private daemon hooks lazily, redacts public errors, and closes the connection. */
 export async function runInbox(rawArgs: string[]): Promise<void> {
 	const { args, session } = stripSession(rawArgs);
 	if (
@@ -333,6 +334,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 	}
 }
 
+/** Registers pass-through inbox/profile commands so Commander preserves provider-specific workflow flags. */
 export function registerInbox(program: Command): void {
 	program
 		.command("inbox")

@@ -19,9 +19,11 @@ import type {
 
 type FetchLike = typeof fetch;
 
+/** Gmail REST metadata adapter with lazy ID pages and bounded metadata concurrency. */
 export class GmailRestClient implements MailProviderClient {
 	readonly provider = "gmail" as const;
 
+	/** Uses configured delegated scopes, a host token provider, and an optional fetch boundary. */
 	constructor(
 		private readonly input: {
 			config: AppConfig;
@@ -30,6 +32,7 @@ export class GmailRestClient implements MailProviderClient {
 		},
 	) {}
 
+	/** Returns exact provider folder identities for private routing and inventory. */
 	async listFolders(): Promise<MailFolder[]> {
 		const response = (await this.fetchJson(
 			"/users/me/labels",
@@ -41,6 +44,7 @@ export class GmailRestClient implements MailProviderClient {
 		return response.labels.map(gmailLabelToFolder);
 	}
 
+	/** Creates a Gmail label while preserving its exact reviewed name. */
 	async createFolder(input: { name: string }): Promise<MailFolder> {
 		return gmailLabelToFolder(
 			(await this.fetchJson(
@@ -58,6 +62,7 @@ export class GmailRestClient implements MailProviderClient {
 		);
 	}
 
+	/** Lists Gmail filter criteria/actions as private review metadata. */
 	async listFilters(): Promise<MailRule[]> {
 		const response = (await this.fetchJson(
 			"/users/me/settings/filters",
@@ -66,6 +71,7 @@ export class GmailRestClient implements MailProviderClient {
 		return (response.filter ?? []).map(gmailFilterToRule);
 	}
 
+	/** Creates a Gmail settings filter from reviewed criteria and action objects. */
 	async createFilter(input: {
 		name: string;
 		criteria?: Record<string, unknown>;
@@ -90,12 +96,14 @@ export class GmailRestClient implements MailProviderClient {
 		};
 	}
 
+	/** Collects the limited stream into memory; prefer listMessagesStream for large mailboxes. */
 	async listMessages(input: ListMessagesInput): Promise<MailMessageSummary[]> {
 		const messages: MailMessageSummary[] = [];
 		for await (const page of this.listMessagesStream(input))
 			messages.push(...page);
 		return messages;
 	}
+	/** Fetches fixed-size pages only on demand, honors the total limit, and stops when the consumer returns. */
 	async *listMessagesStream(
 		input: ListMessagesInput,
 	): AsyncGenerator<MailMessageSummary[]> {
@@ -151,6 +159,7 @@ export class GmailRestClient implements MailProviderClient {
 		} while (cursor && emitted < input.limit);
 	}
 
+	/** Adds the destination label in bounded batches; remove the source separately with unlabelMessages. */
 	async moveMessages(input: {
 		messageIds: string[];
 		targetFolderId: string;
@@ -160,6 +169,7 @@ export class GmailRestClient implements MailProviderClient {
 		}
 	}
 
+	/** Removes a reviewed label/source folder from selected messages without deleting them. */
 	async unlabelMessages(input: {
 		messageIds: string[];
 		labelId: string;
@@ -169,6 +179,7 @@ export class GmailRestClient implements MailProviderClient {
 		}
 	}
 
+	/** Marks selected private message IDs read after explicit workflow read intent. */
 	async markMessagesRead(input: { messageIds: string[] }): Promise<void> {
 		for (const chunk of chunked(input.messageIds, 500)) {
 			await this.batchModify(chunk, [], ["UNREAD"]);

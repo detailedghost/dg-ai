@@ -5,6 +5,7 @@ import { commandRegistry } from "./commands";
 import { createCliContext } from "./context";
 import { dispatch, printHelp } from "./router";
 
+/** Runs inbox arguments with optional service hooks; help and explicit fixture datasets stay offline. */
 export async function main(
 	argv = Bun.argv.slice(2),
 	runtime: InboxRuntime = {},

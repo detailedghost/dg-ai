@@ -24,6 +24,7 @@ export function assertNoEmailAddress(input: string): void {
 	}
 }
 
+/** Redacts email addresses recursively in strings and object keys; preserves private originals and does not sanitize tokens. */
 export function redactPublicValue(value: unknown): unknown {
 	if (typeof value === "string")
 		return value.replace(emailPattern, "[email:$1]");

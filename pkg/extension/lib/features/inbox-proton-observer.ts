@@ -1,3 +1,4 @@
+/** Observed Proton headers are private page-memory state and must never enter relay responses. */
 export type ProtonSessionHeaders = {
 	uid: string;
 	appVersion?: string;
@@ -13,6 +14,7 @@ type ObserverHost = {
 	XMLHttpRequest: typeof XMLHttpRequest;
 };
 
+/** Accepts only the two supported HTTPS Proton Mail origins, without subdomain or suffix matching. */
 export function isProtonMailOrigin(origin: string): boolean {
 	return (
 		origin === "https://mail.proton.me" ||
@@ -20,6 +22,7 @@ export function isProtonMailOrigin(origin: string): boolean {
 	);
 }
 
+/** Observes trusted mail fetch/XHR headers in memory, invalidates account switches, and returns a restoration handle. */
 export function installProtonSessionObserver(host: ObserverHost): {
 	getHeaders(): ProtonSessionHeaders | undefined;
 	dispose(): void;

@@ -9,12 +9,7 @@ export type TransformedMessage = {
 	entry: MessageStatusEntry;
 };
 
-/**
- * Pure CPU work for one message: redact into a packet, build the work item,
- * and serialize it. No I/O — the caller (main thread or a writer worker) owns
- * the `Bun.write`. Sharing this between the inline and worker paths keeps the
- * redaction safety guarantee (`assertNoEmailAddress`) identical in both.
- */
+/** Builds and serializes a redacted work item; the caller owns its asynchronous file write. */
 export function transformMessage(
 	message: MailMessageSummary,
 	folderNames: string[],

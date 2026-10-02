@@ -1,12 +1,19 @@
 import { fail, requireRecord } from "./assert";
 
+/** Maximum metadata page size, independent of a workflow's total message limit. */
 export const INBOX_MAX_PAGE_SIZE = 200;
+/** Maximum identifiers accepted by one Proton mutation request. */
 export const INBOX_MAX_MESSAGE_IDS = 200;
+/** OAuth cache storage limit measured in UTF-8 bytes. */
 export const INBOX_MAX_CACHE_BYTES = 524_288;
+/** Maximum caller-selected daemon relay deadline in milliseconds. */
 export const INBOX_MAX_TIMEOUT_MS = 120_000;
+/** Daemon relay deadline used when the caller omits timeoutMs. */
 export const INBOX_DEFAULT_TIMEOUT_MS = 30_000;
+/** Supported provider discriminants shared by encrypted configuration and relay validation. */
 export type InboxProvider = "protonmail" | "gmail" | "outlook";
 
+/** OAuth configuration uses environment references for credentials; inline token/secret values are unsupported. */
 export type InboxProviderSettings = {
 	clientId?: string;
 	clientSecretEnv?: string;
@@ -20,6 +27,7 @@ export type InboxProviderSettings = {
 	authority?: string;
 	loginHint?: string;
 };
+/** Private account configuration; Proton accountHint is its /u/ index, while OAuth providers use a login hint. */
 export type InboxProfile = {
 	provider: InboxProvider;
 	accountHint?: string;
@@ -27,7 +35,9 @@ export type InboxProfile = {
 	gmail?: InboxProviderSettings;
 	outlook?: InboxProviderSettings;
 };
+/** Public inventory includes only profile name/provider, excluding account details and OAuth caches. */
 export type InboxProfileSummary = { name: string; provider: InboxProvider };
+/** Fixed Proton operations; the wire accepts neither executable source nor arbitrary endpoints. */
 export type InboxBrowserOperation =
 	| "list-folders"
 	| "list-filters"
@@ -39,6 +49,7 @@ export type InboxBrowserOperation =
 	| "move-messages"
 	| "mark-read"
 	| "unlabel-messages";
+/** Named Proton operation with exact private selectors, fixed page bounds, and optional explicit tab/account binding. */
 export type InboxBrowserRequest = {
 	operation: InboxBrowserOperation;
 	tabId?: number;
@@ -55,6 +66,7 @@ export type InboxBrowserRequest = {
 	enabled?: boolean;
 	type?: "folder" | "label";
 };
+/** Transport folder identity retains exact selectors; callers must redact copies at public boundaries. */
 export type InboxFolder = {
 	id: string;
 	name: string;
@@ -65,6 +77,7 @@ export type InboxFolder = {
 	unread?: number;
 	aliases?: string[];
 };
+/** Private full-policy metadata needed for reviewed Sieve consolidation; do not emit raw policy publicly. */
 export type InboxFilter = {
 	id: string;
 	name: string;
@@ -73,6 +86,7 @@ export type InboxFilter = {
 	actions: string[];
 	sequence?: number;
 };
+/** Bounded message metadata excludes full bodies and auth headers; packet redaction handles model-facing text. */
 export type InboxMessage = {
 	id: string;
 	from: string;
@@ -89,6 +103,7 @@ export type InboxMessage = {
 	labels?: string[];
 	threadId?: string;
 };
+/** Validated metadata or policy result for the private relay; page-size and sensitive-field bounds apply. */
 export type InboxBrowserResponse = {
 	folders?: InboxFolder[];
 	filters?: InboxFilter[];
@@ -97,6 +112,7 @@ export type InboxBrowserResponse = {
 	filter?: InboxFilter;
 	hasMore?: boolean;
 };
+/** Internal authenticated CLI operation; cache access is private and every request has a correlation ID. */
 export type InboxCliRequest = {
 	type: "cli-inbox-request";
 	requestId: string;
@@ -115,6 +131,7 @@ export type InboxCliRequest = {
 	request?: InboxBrowserRequest;
 	timeoutMs?: number;
 };
+/** Daemon reply matched to the session/request pair; internal cache values must never be printed. */
 export type InboxCliResult = {
 	type: "cli-inbox-result";
 	sessionId: string;
@@ -192,10 +209,12 @@ function optionalText(
 	for (const key of keys)
 		if (obj[key] !== undefined) text(obj[key], `${path}.${key}`, max);
 }
+/** Returns a supported provider discriminant or throws a validation error. */
 export function validateInboxProvider(value: unknown): InboxProvider {
 	choice(value, "inbox provider", ["protonmail", "gmail", "outlook"]);
 	return value as InboxProvider;
 }
+/** Validates bounded profile names before using them as encrypted storage selectors. */
 export function validateInboxProfileName(value: unknown): string {
 	text(value, "inbox profile name", 128);
 	if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value))
@@ -204,6 +223,7 @@ export function validateInboxProfileName(value: unknown): string {
 		);
 	return value;
 }
+/** Accepts bounded private serialized OAuth material; enforces its UTF-8 byte limit. */
 export function validateInboxAuthCache(value: unknown): string {
 	text(value, "inbox OAuth cache", INBOX_MAX_CACHE_BYTES, true);
 	return value;
@@ -250,6 +270,7 @@ function settings(value: unknown, provider: "gmail" | "outlook"): void {
 		);
 	if (v.scopes !== undefined) strings(v.scopes, `${path}.scopes`, 32, 2048);
 }
+/** Rejects unknown fields, inline credentials, and provider-incompatible settings before persistence. */
 export function validateInboxProfile(value: unknown): InboxProfile {
 	const v = object(value, "inbox profile", [
 		"provider",
@@ -266,6 +287,7 @@ export function validateInboxProfile(value: unknown): InboxProfile {
 	if (v.outlook !== undefined) settings(v.outlook, "outlook");
 	return value as InboxProfile;
 }
+/** Enforces named operation arguments and bounds before any page execution or relay. */
 export function validateInboxBrowserRequest(
 	value: unknown,
 ): InboxBrowserRequest {
@@ -404,6 +426,7 @@ function message(value: unknown): void {
 	for (const key of ["categories", "labels"])
 		if (v[key] !== undefined) strings(v[key], `inbox message.${key}`, 100);
 }
+/** Rejects oversized metadata and body/header/cookie fields before accepting a relay result. */
 export function validateInboxBrowserResponse(
 	value: unknown,
 ): InboxBrowserResponse {
@@ -435,6 +458,7 @@ export function validateInboxBrowserResponse(
 		fail("inbox browser response exceeds 786432 bytes");
 	return value as InboxBrowserResponse;
 }
+/** Validates correlation, operation-specific input, private cache bounds, and optional relay deadlines. */
 export function validateInboxCliRequest(value: unknown): InboxCliRequest {
 	requireRecord(value, "inbox CLI request");
 	choice(value.type, "inbox CLI request.type", ["cli-inbox-request"]);
