@@ -194,6 +194,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	const keepaliveEligible = new Set<string>();
 	const configWaiters: ConfigWaiter[] = [];
+	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
 	let currentSocket: ChatClientSocket | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -236,6 +237,32 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (bootstrap) return bootstrap;
 		}
 		return undefined;
+	}
+
+	function sendOverwatchOpenCompletion(
+		result: OverwatchOpenCompletion,
+		socket = currentSocket,
+		bootstrap = firstConfirmedBootstrap(),
+	): boolean {
+		if (!socket || !bootstrap) return false;
+		socket.send(
+			JSON.stringify({
+				type: "overwatch-open-result",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				...result,
+			}),
+		);
+		return true;
+	}
+
+	function flushOverwatchOpenCompletions(): void {
+		while (pendingOverwatchOpenCompletions.length > 0) {
+			const result = pendingOverwatchOpenCompletions[0];
+			if (!result || !sendOverwatchOpenCompletion(result)) return;
+			pendingOverwatchOpenCompletions.shift();
+		}
 	}
 
 	function dispatchCommand(
@@ -326,18 +353,17 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
+		const requestSocket = currentSocket;
+		const requestBootstrap = firstConfirmedBootstrap();
 		void handleOverwatchFrameSafely(frame, api, (result) => {
-			const bootstrap = firstConfirmedBootstrap();
-			if (!bootstrap || !currentSocket) return;
-			currentSocket.send(
-				JSON.stringify({
-					type: "overwatch-open-result",
-					sessionId: bootstrap.sessionId,
-					token: bootstrap.token,
-					protocolVersion: CHAT_PROTOCOL_VERSION,
-					...result,
-				}),
-			);
+			if (
+				currentSocket === requestSocket &&
+				sendOverwatchOpenCompletion(result, requestSocket, requestBootstrap)
+			) {
+				return;
+			}
+			pendingOverwatchOpenCompletions.push(result);
+			flushOverwatchOpenCompletions();
 		});
 		if (frame.type === "config-result") {
 			configWaiters
@@ -369,6 +395,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
 		keepaliveEligible.add(sessionId);
 		currentSocket?.send(keepaliveFrame(bootstrap));
+		flushOverwatchOpenCompletions();
 		if (keepaliveTimer === undefined) {
 			keepaliveTimer = setInterval(sendKeepalives, keepaliveIntervalMs);
 		}

@@ -191,6 +191,63 @@ describe("overwatch CLI frames", () => {
 		).toBe(false);
 	});
 
+	it("succeeds when one extension opens the board after another extension fails", async () => {
+		const { port, credentials } = await bootWithSession();
+		const failingExtension = await connectPage(port, credentials);
+		const successfulExtension = await connectPage(port, credentials);
+		const cli = await connectCli(port, credentials);
+		sockets.push(failingExtension, successfulExtension, cli);
+		const failingFrames = collectFrames(failingExtension);
+		const successfulFrames = collectFrames(successfulExtension);
+		const cliFrames = collectFrames(cli);
+
+		send(cli, { type: "cli-overwatch-open" });
+		const failingOpen = await waitForValue(
+			() =>
+				failingFrames.find((frame) => frameType(frame) === "overwatch-open"),
+			3000,
+			"overwatch-open for failing extension",
+		);
+		const successfulOpen = await waitForValue(
+			() =>
+				successfulFrames.find((frame) => frameType(frame) === "overwatch-open"),
+			3000,
+			"overwatch-open for successful extension",
+		);
+		expect((failingOpen as { requestId: string }).requestId).toBe(
+			(successfulOpen as { requestId: string }).requestId,
+		);
+
+		send(failingExtension, {
+			type: "overwatch-open-result",
+			sessionId: credentials.sessionId,
+			token: credentials.token,
+			requestId: (failingOpen as { requestId: string }).requestId,
+			ok: false,
+			error: "stale browser profile",
+		});
+		await Bun.sleep(50);
+		expect(cliFrames.some((frame) => frameType(frame) === "error")).toBe(false);
+
+		send(successfulExtension, {
+			type: "overwatch-open-result",
+			sessionId: credentials.sessionId,
+			token: credentials.token,
+			requestId: (successfulOpen as { requestId: string }).requestId,
+			ok: true,
+		});
+		const result = await waitForValue(
+			() =>
+				cliFrames.find(
+					(frame) => frameType(frame) === "cli-overwatch-open-result",
+				),
+			3000,
+			"cli-overwatch-open-result",
+		);
+
+		expect(result).toEqual({ type: "cli-overwatch-open-result" });
+	});
+
 	it("notifies the authoritative publisher after a direct CLI mutation", async () => {
 		const { port, credentials } = await bootWithSession();
 		const publisher = await registerSession(port, {
