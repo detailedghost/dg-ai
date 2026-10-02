@@ -1,7 +1,7 @@
 {
 	"name": "dg",
-	"description": "Browser workflows and live-page prototyping skills for Codex.",
-	"version": "1.0.1",
+	"description": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
+	"version": "1.1.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
@@ -11,11 +11,15 @@
 	"skills": "./skills/",
 	"interface": {
 		"displayName": "DeeGee",
-		"shortDescription": "Browser workflows and live-page prototypes",
-		"longDescription": "Browser automation and live-page prototyping skills for Codex.",
+		"shortDescription": "Browser workflows and reviewed inbox cleanup",
+		"longDescription": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
 		"developerName": "detailedghost",
 		"category": "Productivity",
 		"capabilities": ["Read", "Write"],
-		"defaultPrompt": ["Open a browser batch", "Run a live page prototype"]
+		"defaultPrompt": [
+			"Open a browser batch",
+			"Run a live page prototype",
+			"Review and clean my inbox"
+		]
 	}
 }

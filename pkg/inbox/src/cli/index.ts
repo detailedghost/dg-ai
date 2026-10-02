@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import type { InboxRuntime } from "../runtime";
-import { resolve } from "node:path";
 import { parseArgs } from "./args";
 import { commandRegistry } from "./commands";
 import { createCliContext } from "./context";
@@ -15,16 +14,11 @@ export async function main(
 		printHelp();
 		return;
 	}
-
 	const context = await createCliContext(args, runtime);
 	await dispatch(context, commandRegistry);
 }
 
-if (
-	import.meta.main ||
-	Bun.main === import.meta.path ||
-	resolve(Bun.argv[1] ?? "") === import.meta.path
-) {
+if (import.meta.main) {
 	try {
 		await main();
 	} catch (error) {

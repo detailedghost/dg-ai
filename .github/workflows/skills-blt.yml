@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - pkg/skills-cli/**
+      - pkg/inbox/**
+      - bun.lock
       - pkg/common/**
       - plugins/dg/skills/**
       - pkg/skills-test/**
@@ -42,6 +44,14 @@ jobs:
 
       - name: Test (common)
         working-directory: pkg/common
+        run: bun test
+
+      - name: Lint (inbox)
+        working-directory: pkg/inbox
+        run: bun run lint
+
+      - name: Test (inbox)
+        working-directory: pkg/inbox
         run: bun test
 
       - name: Lint (skills-cli)

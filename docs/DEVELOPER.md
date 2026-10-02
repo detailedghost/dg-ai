@@ -8,6 +8,7 @@ pkg/
   extension/   WXT MV3 browser extension (was extension-src/)
   dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
   dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
+  inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
@@ -147,16 +148,16 @@ bun test       # install logic + skill manifests + CLI smoke
 
 ## CI Overview
 
-| Workflow | Trigger (paths) | Result |
-| --- | --- | --- |
-| `ext-blt` | PR: extension, common | required on master |
-| `ext-release` | push master: extension | tags `ext-v*` |
-| `skills-blt` | PR: skills-cli, common, skills, skills-test | required |
-| `skills-release` | push master: skills-cli, common | `skills-v*`, 6 bins |
-| `dg-daemon-blt` | PR: dg-daemon, common | required |
-| `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*` + `server-v*` alias, 6 bins |
-| `dg-agent-release` | push master: dg-agent, common | `agent-v*`, 6 bins |
+| Workflow            | Trigger (paths)                             | Result                                  |
+| ------------------- | ------------------------------------------- | --------------------------------------- |
+| `ext-blt`           | PR: extension, common                       | required on master                      |
+| `ext-release`       | push master: extension                      | tags `ext-v*`                           |
+| `skills-blt`        | PR: skills-cli, inbox, dg-agent, common, skills, skills-test, bun.lock | required                                |
+| `skills-release`    | push master: skills-cli, inbox, dg-agent, common, bun.lock             | `skills-v*`, 6 bins                     |
+| `dg-daemon-blt`     | PR: dg-daemon, common                       | required                                |
+| `dg-agent-blt`      | PR: dg-agent, dg-daemon, common             | required                                |
+| `dg-daemon-release` | push master: dg-daemon, common              | `daemon-v*` + `server-v*` alias, 6 bins |
+| `dg-agent-release`  | push master: dg-agent, common               | `agent-v*`, 6 bins                      |
 
 ## Branch Protection
 
@@ -169,13 +170,13 @@ PRs to `master` require `ext-blt`, `skills-blt`, `dg-daemon-blt` and
 
 ## Four independently versioned artifacts
 
-| Artifact | Version source | Release tag |
-| --- | --- | --- |
-| `dg-ai-extension` zip | `pkg/extension/package.json` | `ext-v*` |
-| `dg-skills` binary | `pkg/skills-cli/package.json` | `skills-v*` |
-| `dg-daemon` binary | `pkg/dg-daemon/package.json` | `daemon-v*` |
-| `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
-| skill tree | the repository itself | tracked in `master` |
+| Artifact              | Version source                | Release tag         |
+| --------------------- | ----------------------------- | ------------------- |
+| `dg-ai-extension` zip | `pkg/extension/package.json`  | `ext-v*`            |
+| `dg-skills` binary    | `pkg/skills-cli/package.json` | `skills-v*`         |
+| `dg-daemon` binary    | `pkg/dg-daemon/package.json`  | `daemon-v*`         |
+| `dg-agent` binary     | `pkg/dg-agent/package.json`   | `agent-v*`          |
+| skill tree            | the repository itself         | tracked in `master` |
 
 They move independently on purpose. `dg-skills install` refreshes the extension
 zip, `dg-skills`, `dg-daemon` and `dg-agent` in one pass, skipping any that is already
@@ -189,13 +190,33 @@ browser and a real daemon at the same time. Run these by hand on WSL in
 mirrored mode, or through a browser harness:
 
 - [ ] With the daemon running and the extension loaded, a message typed in the
-  chat page reaches a blocked `recv`.
+      chat page reaches a blocked `recv`.
 - [ ] An agent reply from `send` renders in that session's node.
 - [ ] A `$` command published by `manifest` runs from the composer without
-  waking the agent.
+      waking the agent.
 - [ ] A file passed to `stage` renders in the transcript from a blob URL.
 - [ ] Killing the daemon mid-conversation leaves the page in a
-  `daemon-not-running` state, and restarting it recovers without a reload.
+      `daemon-not-running` state, and restarting it recovers without a reload.
 
 These are listed rather than faked as `depends_on` edges: an edge only sequences
 work, it does not make a criterion observable.
+
+## Inbox integration
+
+@dg/inbox exposes main(argv, runtime), provider types/classes, and public-output
+redaction. dg-skills inbox supplies encrypted profile/cache hooks and an
+authenticated request-ID/session-bound Proton relay through @dg/dg-agent/client.
+The extension retains session headers in a Proton-only MAIN observer and executes
+fixed operations; browser response metadata goes directly back to CLI JSON.
+
+Workspaces/config live under DG_HOME/inbox, with explicit overrides. Async page
+generators stop requesting pages when consumers return. The --workers option
+controls bounded asynchronous file writes, not thread workers; source-relative
+worker module URLs are unnecessary in compiled releases. Failed writes drain
+and prevent a successful incomplete status index.
+
+Profile/cache schema9 records use the daemon's existing encryption envelope/key.
+The raw conversation archive is ignored local context and must remain unpublished.
+Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
+integration suites. Smoke the compiled dg-skills binary from an unrelated cwd
+with fixture datasets. See [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md).
