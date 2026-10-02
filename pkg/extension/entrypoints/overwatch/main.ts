@@ -9,6 +9,10 @@ import { browser } from "wxt/browser";
 import { MSG } from "@/lib/chat-messages";
 import { patchKeyedList } from "@/lib/dom-keyed-list";
 import {
+	mountPairing,
+	type PairingHandle,
+} from "@/lib/features/pairing";
+import {
 	connectOverwatchApi,
 	formatCountdown,
 	formatLaunchDate,
@@ -28,6 +32,7 @@ type OverwatchRuntime = {
 		addListener(listener: RuntimeListener): void;
 		removeListener?(listener: RuntimeListener): void;
 	};
+	sendMessage?(message: unknown): Promise<unknown>;
 };
 
 export type RenderOverwatchOptions = {
@@ -128,6 +133,7 @@ export function renderOverwatchPage(
 	let retryTimer: number | undefined;
 	let stopped = false;
 	let actionControlId = 0;
+	let pairing: PairingHandle | undefined;
 
 	const laneRefs = new WeakMap<HTMLElement, LaneRefs>();
 	const backgroundRefs = new WeakMap<HTMLElement, BackgroundRefs>();
@@ -163,6 +169,7 @@ export function renderOverwatchPage(
 	connection.hidden = true;
 	top.append(countdown, need);
 	const dates = element("div", "overwatch__dates");
+	const pairHost = element("div", "overwatch__pair");
 	const axis = element("div", "overwatch__axis");
 	for (const label of ["Chat", "Review", "CI", "E2E", "Merge"]) {
 		axis.append(element("span", undefined, label));
@@ -201,6 +208,7 @@ export function renderOverwatchPage(
 	page.append(
 		top,
 		connection,
+		pairHost,
 		dates,
 		axis,
 		lanes,
@@ -552,10 +560,23 @@ export function renderOverwatchPage(
 			retryTimer = undefined;
 		}
 		setOffline(false);
+		if (!pairing && runtime.sendMessage) {
+			pairing = mountPairing(pairHost, {
+				variant: "entry",
+				findPort: () => Promise.resolve(lastPort),
+				runtime: { sendMessage: runtime.sendMessage.bind(runtime) },
+			});
+		}
 		paint();
 	}
 
 	function onMessage(message: unknown): void {
+		if (typeof message === "object" && message !== null) {
+			const payload = message as Record<string, unknown>;
+			if (payload.type === MSG.connection) {
+				pairing?.setConnected(payload.state === "connected");
+			}
+		}
 		const frame = relayFrame(message);
 		if (frame?.type === "overwatch-state") acceptBoard(frame.board);
 	}
@@ -604,6 +625,7 @@ export function renderOverwatchPage(
 			cancel(timer);
 			if (retryTimer !== undefined) cancelDeferred(retryTimer);
 			runtime.onMessage.removeListener?.(onMessage);
+			pairing?.destroy();
 		},
 	};
 }
