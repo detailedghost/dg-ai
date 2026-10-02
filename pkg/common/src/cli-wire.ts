@@ -1,3 +1,4 @@
+import type { InboxCliRequest } from "./inbox-format";
 import type { ChatFrame, CommandEntry } from "./chat-format";
 
 export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
@@ -34,6 +35,7 @@ export type CliManifestPublishRequest = {
 };
 
 export type CliFrame =
+	| InboxCliRequest
 	| CliRecvRequest
 	| CliAckRequest
 	| CliSendRequest

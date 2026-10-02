@@ -298,6 +298,24 @@ function createV8CronJobs(db: Database): void {
 	);
 }
 
+function createV9Inbox(db: Database): void {
+	db.run(`CREATE TABLE inbox_profiles (
+		name TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 128),
+		provider TEXT NOT NULL CHECK(provider IN ('protonmail', 'gmail', 'outlook')),
+		profile_ciphertext BLOB NOT NULL,
+		profile_iv BLOB NOT NULL CHECK(length(profile_iv) = 12),
+		profile_tag BLOB NOT NULL CHECK(length(profile_tag) = 16)
+	) STRICT`);
+	db.run(`CREATE TABLE inbox_auth_caches (
+		name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 128),
+		provider TEXT NOT NULL CHECK(provider IN ('protonmail', 'gmail', 'outlook')),
+		cache_ciphertext BLOB NOT NULL,
+		cache_iv BLOB NOT NULL CHECK(length(cache_iv) = 12),
+		cache_tag BLOB NOT NULL CHECK(length(cache_tag) = 16),
+		PRIMARY KEY(name, provider)
+	) STRICT`);
+}
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
@@ -307,6 +325,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 6, run: createV6AgentMessages },
 	{ version: 7, run: createV7ScheduledJobs },
 	{ version: 8, run: createV8CronJobs },
+	{ version: 9, run: createV9Inbox },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

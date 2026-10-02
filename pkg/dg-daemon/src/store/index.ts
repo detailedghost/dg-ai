@@ -10,6 +10,12 @@ import {
 	describeError,
 	historyItemCost,
 	type ProgressState,
+	type InboxProfile,
+	type InboxProfileSummary,
+	validateInboxProfile,
+	validateInboxProfileName,
+	validateInboxProvider,
+	validateInboxAuthCache,
 } from "@dg/common";
 import {
 	applyConnectionPragmas,
@@ -561,6 +567,85 @@ export class ChatStore extends EventEmitter {
 
 	cryptoMeta(): CryptoMetaInfo {
 		return { ...this.meta };
+	}
+
+	setInboxProfile(name: string, profile: unknown): void {
+		validateInboxProfileName(name);
+		const validated = validateInboxProfile(profile);
+		const enc = this.cipherBox.encryptRecord(
+			JSON.stringify(validated),
+			this.#aad("inbox-profile", "__inbox__", name),
+		);
+		this.db.run(
+			"INSERT INTO inbox_profiles (name, provider, profile_ciphertext, profile_iv, profile_tag) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET provider = excluded.provider, profile_ciphertext = excluded.profile_ciphertext, profile_iv = excluded.profile_iv, profile_tag = excluded.profile_tag",
+			[name, validated.provider, enc.ciphertext, enc.iv, enc.tag],
+		);
+	}
+
+	getInboxProfile(name: string): InboxProfile | null {
+		validateInboxProfileName(name);
+		const row = this.db
+			.query(
+				"SELECT profile_ciphertext, profile_iv, profile_tag FROM inbox_profiles WHERE name = ?",
+			)
+			.get(name) as {
+			profile_ciphertext: Uint8Array;
+			profile_iv: Uint8Array;
+			profile_tag: Uint8Array;
+		} | null;
+		if (!row) return null;
+		const json = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.profile_ciphertext),
+				Buffer.from(row.profile_iv),
+				Buffer.from(row.profile_tag),
+				this.#aad("inbox-profile", "__inbox__", name),
+			)
+			.toString("utf8");
+		return validateInboxProfile(JSON.parse(json));
+	}
+
+	listInboxProfiles(): InboxProfileSummary[] {
+		return this.db
+			.query("SELECT name, provider FROM inbox_profiles ORDER BY name")
+			.all() as InboxProfileSummary[];
+	}
+
+	setInboxAuthCache(name: string, provider: string, cache: unknown): void {
+		validateInboxProfileName(name);
+		validateInboxProvider(provider);
+		const validated = validateInboxAuthCache(cache);
+		const enc = this.cipherBox.encryptRecord(
+			validated,
+			this.#aad("inbox-auth-cache", provider, name),
+		);
+		this.db.run(
+			"INSERT INTO inbox_auth_caches (name, provider, cache_ciphertext, cache_iv, cache_tag) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name, provider) DO UPDATE SET cache_ciphertext = excluded.cache_ciphertext, cache_iv = excluded.cache_iv, cache_tag = excluded.cache_tag",
+			[name, provider, enc.ciphertext, enc.iv, enc.tag],
+		);
+	}
+
+	getInboxAuthCache(name: string, provider: string): string | null {
+		validateInboxProfileName(name);
+		validateInboxProvider(provider);
+		const row = this.db
+			.query(
+				"SELECT cache_ciphertext, cache_iv, cache_tag FROM inbox_auth_caches WHERE name = ? AND provider = ?",
+			)
+			.get(name, provider) as {
+			cache_ciphertext: Uint8Array;
+			cache_iv: Uint8Array;
+			cache_tag: Uint8Array;
+		} | null;
+		if (!row) return null;
+		return this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.cache_ciphertext),
+				Buffer.from(row.cache_iv),
+				Buffer.from(row.cache_tag),
+				this.#aad("inbox-auth-cache", provider, name),
+			)
+			.toString("utf8");
 	}
 
 	private ensureSessionRow(sessionId: string): void {

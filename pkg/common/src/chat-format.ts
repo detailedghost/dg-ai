@@ -1,4 +1,10 @@
 import {
+	validateInboxBrowserRequest,
+	validateInboxBrowserResponse,
+	type InboxBrowserRequest,
+	type InboxBrowserResponse,
+} from "./inbox-format";
+import {
 	fail,
 	requireFiniteNumber,
 	requireOneOf,
@@ -149,6 +155,19 @@ type Envelope = { sessionId: string; protocolVersion: number };
 
 export type ChatFrame =
 	| (Envelope & {
+			type: "inbox-browser-request";
+			requestId: string;
+			request: InboxBrowserRequest;
+	  })
+	| (Envelope & {
+			type: "inbox-browser-result";
+			token: string;
+			requestId: string;
+			ok: boolean;
+			data?: InboxBrowserResponse;
+			error?: string;
+	  })
+	| (Envelope & {
 			type: "user-message";
 			token: string;
 			messageId: string;
@@ -208,6 +227,8 @@ export type ChatFrame =
 	  });
 
 const CHAT_FRAME_TYPES = new Set([
+	"inbox-browser-request",
+	"inbox-browser-result",
 	"user-message",
 	"ack",
 	"agent-message",
@@ -230,6 +251,7 @@ const CHAT_FRAME_TYPES = new Set([
 ]);
 
 const INBOUND_FRAME_TYPES = new Set([
+	"inbox-browser-result",
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -359,6 +381,27 @@ function validateFrameBody(
 				fail(`${path}.messages must be an array`);
 			}
 			return;
+		case "inbox-browser-request":
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128) fail("inbox requestId exceeds 128 characters");
+			validateInboxBrowserRequest(value.request);
+			return;
+		case "inbox-browser-result":
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128) fail("inbox requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean") fail("inbox result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined) fail("successful inbox result must not contain an error");
+				validateInboxBrowserResponse(value.data);
+			} else {
+				if (value.data !== undefined) fail("failed inbox result must not contain data");
+				requireString(value.error, "inbox result.error", { nonEmpty: true });
+				if ((value.error as string).length > 2048) fail("inbox result.error exceeds 2048 characters");
+			}
+			for (const key of Object.keys(value)) {
+				if (!["type", "protocolVersion", "sessionId", "token", "requestId", "ok", "data", "error"].includes(key)) fail("unknown inbox result field");
+			}
+			return;
 		case "config-get":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });
 			return;
@@ -388,7 +431,7 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	const { type } = value;
 	if (typeof type !== "string" || !CHAT_FRAME_TYPES.has(type)) {
 		fail(
-			`chat frame.type must be one of the 19 ratified discriminants, got ${String(type)}`,
+			`chat frame.type must be one of the ratified discriminants, got ${String(type)}`,
 		);
 	}
 	requireString(value.sessionId, "chat frame.sessionId", { nonEmpty: true });
