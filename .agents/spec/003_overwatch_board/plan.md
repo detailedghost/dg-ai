@@ -49,8 +49,8 @@ slices:
       proxy: codex
 permissions:
   run_commands: true
-  git_push: false
-  gh_pr_create: false
+  git_push: true
+  gh_pr_create: true
   auto_cleanup_worktree: false
   slice_commits: true
   housekeeping_commit: true
