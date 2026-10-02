@@ -1,5 +1,6 @@
 import {
 	type CliOverwatchSetRequest,
+	type CliOverwatchOpenResult,
 	type CliOverwatchSnapshotResult,
 	type CliRequest,
 	DgCliError,
@@ -7,13 +8,12 @@ import {
 	isRecord,
 	type OverwatchBoard,
 	validateOverwatchLane,
+	validateIsoTimestamp,
 } from "@dg/common";
 import type { Command } from "commander";
 
 const COMMAND_TIMEOUT_MS = 5_000;
-const OPEN_ERROR_WINDOW_MS = 250;
 const EXIT_INVALID_USAGE = 2;
-const NO_DAEMON_ANSWER = "dg-daemon did not answer the CLI request";
 
 export type OverwatchClient = {
 	send(frame: CliRequest): void;
@@ -47,8 +47,7 @@ type DaemonError = {
 
 type OpenResult =
 	| DaemonError
-	| { type: "cli-overwatch-open-result" }
-	| { type: "overwatch-open" };
+	| CliOverwatchOpenResult;
 
 function invalidUsage(error: unknown): DgCliError {
 	return new DgCliError(describeError(error), EXIT_INVALID_USAGE);
@@ -66,7 +65,7 @@ function setRequest(chat: string, options: SetOptions): CliOverwatchSetRequest {
 			...(options.url === undefined ? {} : { url: options.url }),
 			kind: options.background ? "background" : "chat",
 			publisher: "dg-agent",
-			updatedAt: "pending",
+		updatedAt: new Date(0).toISOString(),
 		});
 		return {
 			type: "cli-overwatch-set",
@@ -92,11 +91,11 @@ function requireField(name: string, value: string): string {
 }
 
 function requireIsoDate(name: string, value: string): string {
-	requireField(name, value);
-	if (Number.isNaN(Date.parse(value))) {
-		throw invalidUsage(`${name} must be a valid ISO date`);
+	try {
+		return validateIsoTimestamp(value, name);
+	} catch (error) {
+		throw invalidUsage(error);
 	}
-	return value;
 }
 
 function isDaemonError(value: unknown): value is DaemonError {
@@ -110,9 +109,7 @@ function isDaemonError(value: unknown): value is DaemonError {
 function isOpenResult(value: unknown): value is OpenResult {
 	return (
 		isDaemonError(value) ||
-		(isRecord(value) &&
-			(value.type === "cli-overwatch-open-result" ||
-				value.type === "overwatch-open"))
+		(isRecord(value) && value.type === "cli-overwatch-open-result")
 	);
 }
 
@@ -166,34 +163,33 @@ async function openBoard(
 	dependencies: OverwatchCommandDependencies,
 	command: Command,
 ): Promise<void> {
-	const client = await dependencies.connect(command);
-	try {
-		try {
-			const result = await client.request(
-				{ type: "cli-overwatch-open" },
-				isOpenResult,
-				OPEN_ERROR_WINDOW_MS,
-			);
-			daemonResult(result);
-		} catch (error) {
-			if (!(error instanceof DgCliError && error.message === NO_DAEMON_ANSWER)) {
-				throw error;
-			}
-		}
-	} finally {
-		client.close();
-	}
+	await request(
+		dependencies,
+		command,
+		{ type: "cli-overwatch-open" },
+		isOpenResult,
+	);
+}
+
+function terminalText(value: string): string {
+	return value
+		.replace(
+			/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,
+			" ",
+		)
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function renderTable(board: OverwatchBoard): string {
 	if (board.lanes.length === 0) return "No overwatch lanes.\n";
 	const headings = ["CHAT", "STAGE", "MR", "ETA", "NEXT"];
 	const rows = board.lanes.map((lane) => [
-		lane.chat,
-		lane.stage,
-		lane.mr ?? "",
-		lane.eta ?? "",
-		lane.next ?? "",
+		terminalText(lane.chat),
+		terminalText(lane.stage),
+		terminalText(lane.mr ?? ""),
+		terminalText(lane.eta ?? ""),
+		terminalText(lane.next ?? ""),
 	]);
 	const widths = headings.map((heading, index) =>
 		Math.max(heading.length, ...rows.map((row) => row[index].length)),

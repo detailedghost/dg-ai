@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { chmod, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -54,7 +54,7 @@ function escapeHtml(value: string): string {
 }
 
 function escapeText(value: string): string {
-	return escapeHtml(value.replace(/[—–─]/g, "-"));
+	return escapeHtml(value.replace(/[\p{Dash_Punctuation}\u2212\u2500]/gu, " "));
 }
 
 function parseDate(value: string | undefined): Date | undefined {
@@ -109,8 +109,8 @@ function stageCells(lane: OverwatchLane): string {
 
 function chatTile(lane: OverwatchLane): string {
 	const stats = [
-		`<span>MR ${escapeText(lane.mr ?? "NONE")}</span>`,
-		`<span>ETA ${escapeText(lane.eta ?? "UNKNOWN")}</span>`,
+		`<span aria-label="MR ${escapeHtml(lane.mr ?? "NONE")}">MR ${escapeText(lane.mr ?? "NONE")}</span>`,
+		`<span aria-label="ETA ${escapeHtml(lane.eta ?? "UNKNOWN")}">ETA ${escapeText(lane.eta ?? "UNKNOWN")}</span>`,
 		lane.next
 			? `<strong class="next">NEXT: ${escapeText(lane.next)}</strong>`
 			: "",
@@ -118,7 +118,7 @@ function chatTile(lane: OverwatchLane): string {
 	const link = lane.url
 		? `<a class="open" href="${escapeHtml(lane.url)}" target="_blank" rel="noopener noreferrer">Open chat</a>`
 		: '<span class="nolink">No link</span>';
-	return `<article class="lane${lane.next ? " wait" : ""}" data-chat-tile><div class="who"><strong>${escapeText(lane.chat)}</strong><small>${escapeText(lane.task)}</small></div>${stageCells(lane)}<div class="detail"><div class="stats">${stats}</div>${link}</div></article>`;
+	return `<article class="lane${lane.next ? " wait" : ""}" data-chat-tile><div class="who"><strong aria-label="${escapeHtml(lane.chat)}">${escapeText(lane.chat)}</strong><small>${escapeText(lane.task)}</small></div>${stageCells(lane)}<div class="detail"><div class="stats">${stats}</div>${link}</div></article>`;
 }
 
 function backgroundLane(lane: OverwatchLane): string {
@@ -126,7 +126,7 @@ function backgroundLane(lane: OverwatchLane): string {
 		.filter(Boolean)
 		.map((value) => `<span>${escapeText(value)}</span>`)
 		.join("");
-	return `<p><strong>${escapeText(lane.chat)}</strong>${details}</p>`;
+	return `<p><strong aria-label="${escapeHtml(lane.chat)}">${escapeText(lane.chat)}</strong>${details}</p>`;
 }
 
 function mergeItem(merge: OverwatchBoard["merges"][number]): string {
@@ -159,10 +159,10 @@ export function renderOverwatchSnapshot(
 <meta name="color-scheme" content="light dark">
 <title>Overwatch snapshot</title>
 <style>
-:root{--ink:#171717;--paper:#f7f6f1;--panel:#fff;--cyan:#0891b2;--mag:#c026d3;--soft:#dedbd1;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.board{min-height:100vh;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;border:2px solid var(--ink);background:var(--panel);padding:13px 15px;box-shadow:5px 5px 0 var(--ink)}.top strong{font-size:clamp(16px,2.4vw,24px)}.need{background:var(--mag);color:#fff;padding:9px 12px;border:2px solid var(--ink);font-weight:900;white-space:nowrap}.dates,.asof{margin-top:14px;font-size:12px;font-weight:900;text-align:right}.asof{margin-top:6px;color:#555}.axis,.lane{display:grid;grid-template-columns:170px repeat(4,minmax(0,1fr));gap:8px}.axis{margin:32px 0 10px}.axis span{font-size:11px;text-transform:uppercase;font-weight:900;text-align:center;padding:8px}.axis span:not(:first-child){border-bottom:4px solid var(--ink)}.lane{align-items:stretch;margin-bottom:16px}.who{border:3px solid var(--ink);background:var(--panel);padding:14px}.who strong{display:block;font-size:17px;overflow-wrap:anywhere}.who small{display:block;line-height:1.4;margin-top:5px}.cell{min-height:74px;border:2px solid var(--soft);background:var(--panel);display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:11px}.cell span{display:none}.cell.done{border-color:var(--cyan);background:#e7f9fc;color:#05566a;font-weight:900}.cell.now{border:4px solid var(--ink);background:var(--cyan);color:#fff;font-weight:900;box-shadow:4px 4px 0 var(--ink)}.lane.wait .cell.now{background:var(--mag)}.detail{grid-column:2 / 6;border:3px solid var(--ink);border-top:0;background:var(--panel);padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.stats{display:flex;gap:8px;flex-wrap:wrap}.stats span,.merges span{border:2px solid var(--ink);padding:7px;font-size:12px;font-weight:900}.next{background:var(--mag);color:#fff;border:2px solid var(--ink);padding:9px;font-weight:900}.open,.nolink{min-height:44px;border:2px solid var(--ink);background:var(--panel);color:var(--ink);font:800 12px ui-monospace,SFMono-Regular,Consolas,monospace;display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;text-decoration:none;white-space:nowrap}.open{background:var(--ink);color:#fff}.nolink{color:#777}.open:focus-visible{outline:4px solid var(--mag);outline-offset:2px}.empty{border:3px solid var(--ink);background:var(--panel);padding:30px;text-align:center;font-weight:900}footer{display:grid;grid-template-columns:1fr 2fr;gap:18px;margin-top:24px}.foot{border-top:4px solid var(--ink);padding:14px 0}.foot h2{font-size:12px;text-transform:uppercase;margin:0 0 10px}.foot p{display:flex;flex-direction:column;gap:3px;margin:8px 0}.merges{display:flex;flex-wrap:wrap;gap:8px}
+:root{--ink:#171717;--paper:#f7f6f1;--panel:#fff;--cyan:#0891b2;--mag:#c026d3;--soft:#dedbd1;color-scheme:light dark}*{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{margin:0;background:var(--paper);color:var(--ink);font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.board{min-height:100vh;max-width:100%;padding:24px}.top{display:flex;min-width:0;justify-content:space-between;align-items:center;gap:12px;border:2px solid var(--ink);background:var(--panel);padding:13px 15px;box-shadow:5px 5px 0 var(--ink)}.top strong{min-width:0;font-size:clamp(16px,2.4vw,24px)}.need{background:var(--mag);color:#fff;padding:9px 12px;border:2px solid var(--ink);font-weight:900;white-space:nowrap}.dates,.asof{margin-top:14px;font-size:12px;font-weight:900;text-align:right}.asof{margin-top:6px;color:#555}.axis,.lane{display:grid;grid-template-columns:170px repeat(4,minmax(0,1fr));gap:8px}.axis{margin:32px 0 10px}.axis span{font-size:11px;text-transform:uppercase;font-weight:900;text-align:center;padding:8px}.axis span:not(:first-child){border-bottom:4px solid var(--ink)}.lane{min-width:0;max-width:100%;align-items:stretch;margin-bottom:16px}.who{min-width:0;border:3px solid var(--ink);background:var(--panel);padding:14px}.who strong,.foot p strong{display:block;min-width:0;overflow:hidden;font-size:17px;text-overflow:ellipsis;white-space:nowrap}.who small{display:block;line-height:1.4;margin-top:5px;overflow-wrap:anywhere}.cell{min-width:0;min-height:74px;border:2px solid var(--soft);background:var(--panel);display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:11px}.cell span{display:none}.cell.done{border-color:var(--cyan);background:#e7f9fc;color:#05566a;font-weight:900}.cell.now{border:4px solid var(--ink);background:var(--cyan);color:#fff;font-weight:900;box-shadow:4px 4px 0 var(--ink)}.lane.wait .cell.now{background:var(--mag)}.detail{min-width:0;grid-column:2 / 6;border:3px solid var(--ink);border-top:0;background:var(--panel);padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.stats{display:flex;min-width:0;max-width:100%;gap:8px;flex-wrap:wrap}.stats span,.merges span{min-width:0;max-width:100%;overflow:hidden;border:2px solid var(--ink);padding:7px;font-size:12px;font-weight:900;text-overflow:ellipsis}.stats span{white-space:nowrap}.merges span{overflow-wrap:anywhere}.next{min-width:0;max-width:100%;overflow-wrap:anywhere;background:var(--mag);color:#fff;border:2px solid var(--ink);padding:9px;font-weight:900}.open,.nolink{min-height:44px;max-width:100%;border:2px solid var(--ink);background:var(--panel);color:var(--ink);font:800 12px ui-monospace,SFMono-Regular,Consolas,monospace;display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;text-decoration:none;white-space:nowrap}.open{background:var(--ink);color:#fff}.nolink{color:#777}.open:focus-visible{outline:4px solid var(--mag);outline-offset:2px}.empty{border:3px solid var(--ink);background:var(--panel);padding:30px;text-align:center;font-weight:900}footer{display:grid;min-width:0;grid-template-columns:1fr 2fr;gap:18px;margin-top:24px}.foot{min-width:0;border-top:4px solid var(--ink);padding:14px 0}.foot h2{font-size:12px;text-transform:uppercase;margin:0 0 10px}.foot p{display:flex;min-width:0;flex-direction:column;gap:3px;margin:8px 0}.foot p span{overflow-wrap:anywhere}.merges{display:flex;min-width:0;flex-wrap:wrap;gap:8px}
 @media(prefers-color-scheme:dark){:root{--ink:#f2f2ed;--paper:#090909;--panel:#121212;--cyan:#00f0ff;--mag:#ff2bd6;--soft:#383838}.need,.lane.wait .cell.now{color:#050505}.cell.done{background:#082b31;color:#7df7ff}.cell.now{color:#050505}.open{background:#f2f2ed;color:#090909}.asof{color:#aaa}}
 @media(max-width:760px){.board{padding:14px}.axis{display:none}.lane{grid-template-columns:1fr 1fr;margin:24px 0;border:3px solid var(--ink);padding:12px;background:var(--panel)}.who{grid-column:1 / -1}.cell{min-height:64px;flex-direction:row}.cell span{display:block}.detail{grid-column:1 / -1;border:0;padding:10px 0 0;display:grid;grid-template-columns:1fr}.open,.nolink{width:100%}footer{grid-template-columns:1fr}.top strong{font-size:15px}.need{font-size:12px;padding:8px}.dates,.asof{text-align:left;line-height:1.5}}
-@media(max-width:410px){.board{padding:12px}.top{align-items:stretch;flex-direction:column}.need{text-align:center}.lane{grid-template-columns:1fr 1fr}.who,.detail{grid-column:1 / -1}.cell{justify-content:flex-start;min-width:0}.stats{display:grid;grid-template-columns:1fr}.stats span,.next{text-align:center}}
+@media(max-width:410px){.board{padding:12px}.top{align-items:stretch;flex-direction:column}.need{text-align:center}.lane{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.who,.detail{grid-column:1 / -1}.cell{justify-content:flex-start;min-width:0}.stats{display:grid;width:100%;grid-template-columns:minmax(0,1fr)}.stats span,.next{text-align:center}}
 </style>
 </head>
 <body>
@@ -190,6 +190,7 @@ function isMissingFile(error: unknown): boolean {
 
 async function lastRender(path: string): Promise<number | undefined> {
 	try {
+		await fixPrivateFileMode(path);
 		const value: unknown = JSON.parse(await readFile(path, "utf8"));
 		if (
 			typeof value === "object" &&
@@ -205,6 +206,36 @@ async function lastRender(path: string): Promise<number | undefined> {
 		if (isMissingFile(error) || error instanceof SyntaxError) return undefined;
 		throw error;
 	}
+}
+
+async function fixPrivateFileMode(path: string): Promise<void> {
+	try {
+		await chmod(path, 0o600);
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+	}
+}
+
+function isAlreadyExists(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "EEXIST"
+	);
+}
+
+async function ensurePrivateDirectory(path: string): Promise<void> {
+	await mkdir(path, { recursive: true, mode: 0o700 });
+	await chmod(path, 0o700);
+}
+
+function isWithin(root: string, path: string): boolean {
+	const fromRoot = relative(resolve(root), resolve(path));
+	return (
+		fromRoot === "" ||
+		(!fromRoot.startsWith("..") && !isAbsolute(fromRoot))
+	);
 }
 
 function validateThrottleKey(key: string): void {
@@ -226,29 +257,65 @@ export async function writeOverwatchSnapshot(
 		? requestedOutput
 		: resolve(requestedOutput);
 	let statePath: string | undefined;
+	let lockPath: string | undefined;
+	let lockAcquired = false;
+
+	await ensurePrivateDirectory(scratchRoot);
+	if (isWithin(scratchRoot, dirname(outPath))) {
+		await ensurePrivateDirectory(dirname(outPath));
+	}
+	await fixPrivateFileMode(outPath);
 
 	if (options.throttleKey) {
 		validateThrottleKey(options.throttleKey);
 		statePath = join(scratchRoot, `${options.throttleKey}.json`);
-		const renderedAt = await lastRender(statePath);
-		if (renderedAt !== undefined) {
-			const elapsed = Math.max(0, now.getTime() - renderedAt);
-			if (elapsed < THROTTLE_WINDOW_MS) {
-				return {
-					status: "throttled",
-					seconds: Math.ceil((THROTTLE_WINDOW_MS - elapsed) / 1000),
-				};
-			}
+		await fixPrivateFileMode(statePath);
+		lockPath = join(scratchRoot, `${options.throttleKey}.lock`);
+		try {
+			const handle = await open(lockPath, "wx", 0o600);
+			await handle.close();
+			await chmod(lockPath, 0o600);
+			lockAcquired = true;
+		} catch (error) {
+			if (!isAlreadyExists(error)) throw error;
+			await fixPrivateFileMode(lockPath);
+			return { status: "throttled", seconds: 120 };
 		}
 	}
 
-	await mkdir(dirname(outPath), { recursive: true });
-	await writeFile(outPath, renderOverwatchSnapshot(board, now), "utf8");
-	if (statePath) {
-		await mkdir(dirname(statePath), { recursive: true });
-		await writeFile(statePath, JSON.stringify({ renderedAt: now.getTime() }), "utf8");
+	try {
+		if (statePath) {
+			const renderedAt = await lastRender(statePath);
+			if (renderedAt !== undefined) {
+				const elapsed = Math.max(0, now.getTime() - renderedAt);
+				if (elapsed < THROTTLE_WINDOW_MS) {
+					return {
+						status: "throttled",
+						seconds: Math.ceil((THROTTLE_WINDOW_MS - elapsed) / 1000),
+					};
+				}
+			}
+		}
+
+		if (!isWithin(scratchRoot, dirname(outPath))) {
+			await mkdir(dirname(outPath), { recursive: true });
+		}
+		await writeFile(outPath, renderOverwatchSnapshot(board, now), {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		await chmod(outPath, 0o600);
+		if (statePath) {
+			await writeFile(statePath, JSON.stringify({ renderedAt: now.getTime() }), {
+				encoding: "utf8",
+				mode: 0o600,
+			});
+			await chmod(statePath, 0o600);
+		}
+		return { status: "written", path: outPath };
+	} finally {
+		if (lockAcquired && lockPath) await rm(lockPath, { force: true });
 	}
-	return { status: "written", path: outPath };
 }
 
 async function stdinText(): Promise<string> {

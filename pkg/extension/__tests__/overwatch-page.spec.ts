@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -226,6 +227,43 @@ describe("the overwatch page", () => {
 		handle.stop();
 	});
 
+	test("allows only one action request per lane while a request is pending", async () => {
+		let resolveAction: ((result: OverwatchActionResult) => void) | undefined;
+		const pending = new Promise<OverwatchActionResult>((resolve) => {
+			resolveAction = resolve;
+		});
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const sendAction = mock(() => pending);
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () =>
+				Promise.resolve({
+					baseUrl: "http://127.0.0.1:47823",
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction,
+				}),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+
+		click(button(root, "Actions"));
+		const approve = button(root, "Approve");
+		click(approve);
+		click(approve);
+		await Bun.sleep(0);
+
+		expect(sendAction).toHaveBeenCalledTimes(1);
+		expect(approve.disabled).toBe(true);
+		resolveAction?.({ ok: true });
+		await Bun.sleep(0);
+		expect(approve.disabled).toBe(false);
+		handle.stop();
+	});
+
 	test("shows an error toast when the daemon rejects an action", async () => {
 		const { root, handle } = await mount(buildBoard(), {
 			ok: false,
@@ -244,6 +282,18 @@ describe("the overwatch page", () => {
 
 	test("shows the empty state when no lanes are reporting", async () => {
 		const { root, handle } = await mount(buildBoard({ lanes: [] }));
+
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(0);
+		expect((root.querySelector(".overwatch__empty") as HTMLElement).hidden).toBe(
+			false,
+		);
+		handle.stop();
+	});
+
+	test("shows the launch-lane empty state when only background lanes exist", async () => {
+		const { root, handle } = await mount(
+			buildBoard({ lanes: [buildLane({ kind: "background" })] }),
+		);
 
 		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(0);
 		expect((root.querySelector(".overwatch__empty") as HTMLElement).hidden).toBe(
@@ -282,6 +332,52 @@ describe("the overwatch page", () => {
 		handle.stop();
 	});
 
+	test("removes every prohibited dash glyph from visible board data", async () => {
+		const dashes = "-‐‑‒–—―−─";
+		const { root, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane({
+						chat: `chat${dashes}`,
+						task: `task${dashes}`,
+						mr: `!1${dashes}`,
+						eta: `soon${dashes}`,
+						next: `approve${dashes}`,
+					}),
+					buildLane({
+						chat: `background${dashes}`,
+						kind: "background",
+					}),
+				],
+				merges: [
+					{
+						mr: `!2${dashes}`,
+						title: `merged${dashes}`,
+						at: NOW.toISOString(),
+					},
+				],
+			}),
+		);
+
+		expect(root.querySelector(".overwatch")?.textContent).not.toMatch(
+			/[-‐‑‒–—―−─]/,
+		);
+		handle.stop();
+	});
+
+	test("uses ordinary disclosure buttons with an explicit controlled region", async () => {
+		const { root, handle } = await mount();
+		const trigger = button(root, "Actions");
+		const controlled = root.querySelector(
+			`#${trigger.getAttribute("aria-controls")}`,
+		);
+
+		expect(controlled).not.toBeNull();
+		expect(controlled?.getAttribute("role")).toBeNull();
+		expect(button(root, "Approve").getAttribute("role")).toBeNull();
+		handle.stop();
+	});
+
 	test("shows the chat status pill when the daemon is unreachable", async () => {
 		const root = newRoot();
 		const relay = runtimeHarness();
@@ -302,6 +398,121 @@ describe("the overwatch page", () => {
 		expect(pill.textContent).toBe("Daemon unreachable");
 		handle.stop();
 	});
+
+	test("retries a failed initial load with a bounded reconciliation timer", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const retries: Array<() => void> = [];
+		const cancelDeferred = mock(() => undefined);
+		let connectCount = 0;
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => {
+				connectCount += 1;
+				return Promise.resolve(
+					connectCount === 1
+						? undefined
+						: {
+								baseUrl: "http://127.0.0.1:47823",
+								getBoard: () => Promise.resolve(buildBoard()),
+								sendAction: () => Promise.resolve({ ok: true as const }),
+							},
+				);
+			},
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+			defer: (callback) => {
+				retries.push(callback);
+				return retries.length;
+			},
+			cancelDeferred,
+		});
+		await handle.ready;
+		expect(retries).toHaveLength(1);
+
+		retries[0]?.();
+		await Bun.sleep(0);
+		await Bun.sleep(0);
+
+		expect(connectCount).toBe(2);
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(1);
+		handle.stop();
+		expect(cancelDeferred).not.toHaveBeenCalled();
+	});
+
+	test("cancels a pending reconciliation retry when the page stops", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const cancelDeferred = mock(() => undefined);
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => Promise.resolve(undefined),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+			defer: () => 42,
+			cancelDeferred,
+		});
+		await handle.ready;
+
+		handle.stop();
+
+		expect(cancelDeferred).toHaveBeenCalledWith(42);
+	});
+
+	test("invalidates an unreachable action API before the next action", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		let connectCount = 0;
+		const firstAction = mock(() =>
+			Promise.resolve({ ok: false as const, error: "Daemon unreachable" }),
+		);
+		const secondAction = mock(() => Promise.resolve({ ok: true as const }));
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => {
+				connectCount += 1;
+				return Promise.resolve({
+					baseUrl: `http://127.0.0.1:${47822 + connectCount}`,
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction: connectCount === 1 ? firstAction : secondAction,
+				});
+			},
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+		click(button(root, "Actions"));
+		click(button(root, "Approve"));
+		await Bun.sleep(0);
+		click(button(root, "Approve"));
+		await Bun.sleep(0);
+
+		expect(connectCount).toBe(2);
+		expect(firstAction).toHaveBeenCalledTimes(1);
+		expect(secondAction).toHaveBeenCalledTimes(1);
+		handle.stop();
+	});
+});
+
+test("the narrow layout constrains labels and facts without dashed or dotted borders", () => {
+	const css = readFileSync(
+		new URL("../entrypoints/overwatch/style.css", import.meta.url),
+		"utf8",
+	);
+
+	expect(css).toContain("grid-template-columns: minmax(0, 1fr)");
+	expect(css).toMatch(/\.overwatch__who strong\s*\{[^}]*text-overflow: ellipsis/s);
+	expect(css).toMatch(
+		/\.overwatch__background-lane > strong\s*\{[^}]*white-space: nowrap/s,
+	);
+	expect(css).toMatch(/\.overwatch__stats[^}]*min-width: 0/s);
+	expect(css).not.toMatch(/border[^;{}]*(dashed|dotted)/);
 });
 
 describe("overwatch frame handling", () => {

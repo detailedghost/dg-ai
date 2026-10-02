@@ -60,6 +60,10 @@ export type CliOverwatchLaunchRequest = {
 
 export type CliOverwatchOpenRequest = { type: "cli-overwatch-open" };
 
+export type CliOverwatchOpenResult = {
+	type: "cli-overwatch-open-result";
+};
+
 export type CliOverwatchSnapshotRequest = { type: "cli-overwatch-snapshot" };
 
 export type CliOverwatchSnapshotResult = {

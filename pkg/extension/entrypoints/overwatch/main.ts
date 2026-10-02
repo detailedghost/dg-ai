@@ -37,6 +37,8 @@ export type RenderOverwatchOptions = {
 	now?: () => Date;
 	schedule?: (callback: () => void, milliseconds: number) => number;
 	cancel?: (handle: number) => void;
+	defer?: (callback: () => void, milliseconds: number) => number;
+	cancelDeferred?: (handle: number) => void;
 };
 
 export type OverwatchPageHandle = {
@@ -55,6 +57,8 @@ type ActionRefs = {
 	rejectNote: HTMLTextAreaElement;
 	status: HTMLElement;
 	error: HTMLElement;
+	buttons: HTMLButtonElement[];
+	pending: boolean;
 };
 
 type LaneRefs = {
@@ -91,6 +95,14 @@ function relayFrame(message: unknown): ChatFrame | undefined {
 	}
 }
 
+const DASH_RE = /[\p{Dash_Punctuation}\u2212\u2500]/gu;
+
+function displayText(value: string): string {
+	return value.replace(DASH_RE, " ");
+}
+
+const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
+
 export function renderOverwatchPage(
 	options: RenderOverwatchOptions,
 ): OverwatchPageHandle {
@@ -101,6 +113,9 @@ export function renderOverwatchPage(
 		schedule = (callback, milliseconds) =>
 			setInterval(callback, milliseconds) as never,
 		cancel = (handle) => clearInterval(handle),
+		defer = (callback, milliseconds) =>
+			setTimeout(callback, milliseconds) as never,
+		cancelDeferred = (handle) => clearTimeout(handle),
 	} = options;
 	const runtime =
 		options.runtime ?? (browser.runtime as unknown as OverwatchRuntime);
@@ -109,6 +124,10 @@ export function renderOverwatchPage(
 	let api: OverwatchApi | undefined;
 	let lastPort: number | undefined;
 	let revision = 0;
+	let retryAttempt = 0;
+	let retryTimer: number | undefined;
+	let stopped = false;
+	let actionControlId = 0;
 
 	const laneRefs = new WeakMap<HTMLElement, LaneRefs>();
 	const backgroundRefs = new WeakMap<HTMLElement, BackgroundRefs>();
@@ -209,30 +228,45 @@ export function renderOverwatchPage(
 		action: OverwatchAction["action"],
 		note?: string,
 	): Promise<void> {
+		if (refs.pending) return;
+		refs.pending = true;
+		for (const button of refs.buttons) button.disabled = true;
 		refs.status.hidden = true;
 		refs.error.hidden = true;
 		toast.hidden = true;
-		const daemon = await ensureApi();
-		if (!daemon) {
-			showToast("Daemon unreachable");
-			return;
+		try {
+			const daemon = await ensureApi();
+			if (!daemon) {
+				setOffline(true);
+				scheduleRetry();
+				showToast("Daemon unreachable");
+				return;
+			}
+			const payload: OverwatchAction = {
+				chat: refs.chat,
+				action,
+				...(note ? { note } : {}),
+			};
+			const result = await daemon.sendAction(payload);
+			if (!result.ok) {
+				if (result.error === "Daemon unreachable") {
+					api = undefined;
+					setOffline(true);
+					scheduleRetry();
+				}
+				showToast(result.error);
+				return;
+			}
+			refs.status.textContent = "Sent";
+			refs.status.hidden = false;
+			refs.menu.hidden = true;
+			refs.trigger.setAttribute("aria-expanded", "false");
+			refs.replyForm.hidden = true;
+			refs.rejectForm.hidden = true;
+		} finally {
+			refs.pending = false;
+			for (const button of refs.buttons) button.disabled = false;
 		}
-		const payload: OverwatchAction = {
-			chat: refs.chat,
-			action,
-			...(note ? { note } : {}),
-		};
-		const result = await daemon.sendAction(payload);
-		if (!result.ok) {
-			showToast(result.error);
-			return;
-		}
-		refs.status.textContent = "Sent";
-		refs.status.hidden = false;
-		refs.menu.hidden = true;
-		refs.trigger.setAttribute("aria-expanded", "false");
-		refs.replyForm.hidden = true;
-		refs.rejectForm.hidden = true;
 	}
 
 	function buildActionControls(chat: string): {
@@ -243,15 +277,14 @@ export function renderOverwatchPage(
 		const trigger = actionButton("Actions");
 		trigger.setAttribute("aria-label", `Actions for ${chat}`);
 		trigger.setAttribute("aria-expanded", "false");
+		const disclosureId = `overwatch-actions-${actionControlId++}`;
+		trigger.setAttribute("aria-controls", disclosureId);
 		const menu = element("div", "overwatch__menu");
-		menu.setAttribute("role", "menu");
+		menu.id = disclosureId;
 		menu.hidden = true;
 		const reply = actionButton("Reply");
 		const approve = actionButton("Approve");
 		const reject = actionButton("Reject");
-		reply.setAttribute("role", "menuitem");
-		approve.setAttribute("role", "menuitem");
-		reject.setAttribute("role", "menuitem");
 		menu.append(reply, approve, reject);
 
 		const replyForm = element("div", "overwatch__action-form");
@@ -286,6 +319,8 @@ export function renderOverwatchPage(
 			rejectNote,
 			status,
 			error,
+			buttons: [trigger, reply, approve, reject, sendReply, sendReject],
+			pending: false,
 		};
 
 		trigger.addEventListener("click", () => {
@@ -375,8 +410,9 @@ export function renderOverwatchPage(
 		article.className = lane.next
 			? "overwatch__lane overwatch__lane--wait"
 			: "overwatch__lane";
-		refs.name.textContent = lane.chat;
-		refs.task.textContent = lane.task;
+		refs.name.textContent = displayText(lane.chat);
+		refs.name.setAttribute("aria-label", lane.chat);
+		refs.task.textContent = displayText(lane.task);
 		refs.actions.chat = lane.chat;
 		refs.actions.trigger.setAttribute("aria-label", `Actions for ${lane.chat}`);
 		stageCells(lane.stage).forEach((cell, index) => {
@@ -385,9 +421,18 @@ export function renderOverwatchPage(
 			target.className = `overwatch__cell overwatch__cell--${cell.state}`;
 			target.textContent = cell.label;
 		});
-		refs.mr.textContent = lane.mr ? `MR ${lane.mr}` : "NO MR";
-		refs.eta.textContent = lane.eta ? `ETA ${lane.eta}` : "ETA not set";
-		refs.next.textContent = lane.next ? `NEXT: YOU ${lane.next}` : "";
+		refs.mr.textContent = lane.mr ? `MR ${displayText(lane.mr)}` : "NO MR";
+		refs.mr.setAttribute("aria-label", lane.mr ? `MR ${lane.mr}` : "NO MR");
+		refs.eta.textContent = lane.eta
+			? `ETA ${displayText(lane.eta)}`
+			: "ETA not set";
+		refs.eta.setAttribute(
+			"aria-label",
+			lane.eta ? `ETA ${lane.eta}` : "ETA not set",
+		);
+		refs.next.textContent = lane.next
+			? `NEXT: YOU ${displayText(lane.next)}`
+			: "";
 		refs.next.hidden = !lane.next;
 		refs.updated.textContent = formatUpdatedAt(lane.updatedAt, now());
 		refs.link.hidden = !lane.url;
@@ -430,11 +475,20 @@ export function renderOverwatchPage(
 	function updateBackground(item: HTMLElement, lane: OverwatchLane): void {
 		const refs = backgroundRefs.get(item);
 		if (!refs) return;
-		refs.name.textContent = lane.chat;
-		refs.task.textContent = lane.task;
+		refs.name.textContent = displayText(lane.chat);
+		refs.name.setAttribute("aria-label", lane.chat);
+		refs.task.textContent = displayText(lane.task);
 		refs.stage.textContent = lane.stage.toUpperCase();
-		refs.eta.textContent = lane.eta ? `ETA ${lane.eta}` : "ETA not set";
-		refs.next.textContent = lane.next ? `NEXT: YOU ${lane.next}` : "";
+		refs.eta.textContent = lane.eta
+			? `ETA ${displayText(lane.eta)}`
+			: "ETA not set";
+		refs.eta.setAttribute(
+			"aria-label",
+			lane.eta ? `ETA ${lane.eta}` : "ETA not set",
+		);
+		refs.next.textContent = lane.next
+			? `NEXT: YOU ${displayText(lane.next)}`
+			: "";
 		refs.next.hidden = !lane.next;
 		refs.updated.textContent = formatUpdatedAt(lane.updatedAt, now());
 		refs.actions.chat = lane.chat;
@@ -463,18 +517,22 @@ export function renderOverwatchPage(
 			create: createBackground,
 			update: updateBackground,
 		});
-		empty.hidden = board.lanes.length > 0;
+		empty.hidden = chatLanes.length > 0;
 		backgroundEmpty.hidden = backgroundLanes.length > 0;
 
 		const backgroundAsks = backgroundLanes
 			.map((lane) => lane.next)
 			.filter((next): next is string => Boolean(next));
 		asks.hidden = backgroundAsks.length === 0;
-		asks.textContent = `ALSO NEED YOU: ${backgroundAsks.join(" + ")}`;
+		asks.textContent = `ALSO NEED YOU: ${backgroundAsks.map(displayText).join(" + ")}`;
 
 		merges.replaceChildren(
 			...board.merges.map((merge) =>
-				element("span", undefined, `${merge.mr} ${merge.title}`),
+				element(
+					"span",
+					undefined,
+					`${displayText(merge.mr)} ${displayText(merge.title)}`,
+				),
 			),
 		);
 		mergesEmpty.hidden = board.merges.length > 0;
@@ -488,6 +546,11 @@ export function renderOverwatchPage(
 	function acceptBoard(next: OverwatchBoard): void {
 		board = next;
 		revision += 1;
+		retryAttempt = 0;
+		if (retryTimer !== undefined) {
+			cancelDeferred(retryTimer);
+			retryTimer = undefined;
+		}
 		setOffline(false);
 		paint();
 	}
@@ -497,21 +560,34 @@ export function renderOverwatchPage(
 		if (frame?.type === "overwatch-state") acceptBoard(frame.board);
 	}
 
+	function scheduleRetry(): void {
+		if (stopped || retryTimer !== undefined) return;
+		const delay =
+			RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
+		retryAttempt += 1;
+		retryTimer = defer(() => {
+			retryTimer = undefined;
+			void refresh();
+		}, delay);
+	}
+
 	async function refresh(): Promise<void> {
 		const startedAt = revision;
-		const daemon = await ensureApi();
-		if (!daemon) {
-			setOffline(true);
-			paint();
-			return;
-		}
 		try {
+			const daemon = await ensureApi();
+			if (!daemon) {
+				setOffline(true);
+				paint();
+				scheduleRetry();
+				return;
+			}
 			const next = await daemon.getBoard();
 			if (revision === startedAt) acceptBoard(next);
 		} catch {
 			api = undefined;
 			setOffline(true);
 			paint();
+			scheduleRetry();
 		}
 	}
 
@@ -524,7 +600,9 @@ export function renderOverwatchPage(
 		ready,
 		refresh,
 		stop() {
+			stopped = true;
 			cancel(timer);
+			if (retryTimer !== undefined) cancelDeferred(retryTimer);
 			runtime.onMessage.removeListener?.(onMessage);
 		},
 	};

@@ -112,6 +112,7 @@ export class ConnectionManager {
 		let count = 0;
 		for (const ws of this.sockets) {
 			if (ws.data.kind !== "ws") continue;
+			if (ws.data.capabilities.size === 0) continue;
 			count++;
 			fn(ws);
 		}

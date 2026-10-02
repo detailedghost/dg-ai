@@ -147,6 +147,14 @@ export type ChatErrorCode = "invalid-session";
 
 export const OVERWATCH_SESSION_ID = "__overwatch__";
 
+export const OVERWATCH_MAX_LANES = 100;
+export const OVERWATCH_MAX_MERGES = 100;
+export const OVERWATCH_MR_MAX_LENGTH = 80;
+export const OVERWATCH_ETA_MAX_LENGTH = 80;
+export const OVERWATCH_NEXT_MAX_LENGTH = 200;
+export const OVERWATCH_URL_MAX_LENGTH = 2_048;
+export const OVERWATCH_MERGE_TITLE_MAX_LENGTH = 200;
+
 export type OverwatchStage = "review" | "ci" | "e2e" | "merge" | "done";
 
 export type OverwatchLane = {
@@ -338,6 +346,54 @@ function requireOverwatchSessionId(
 	}
 }
 
+const ISO_TIMESTAMP_RE =
+	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+
+export function validateIsoTimestamp(value: unknown, path: string): string {
+	requireString(value, path, { nonEmpty: true });
+	const match = ISO_TIMESTAMP_RE.exec(value);
+	if (!match || Number.isNaN(Date.parse(value))) {
+		fail(`${path} must be an ISO timestamp with a timezone`);
+	}
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const hour = Number(match[4]);
+	const minute = Number(match[5]);
+	const second = Number(match[6]);
+	const offsetHour = Number(match[8] ?? 0);
+	const offsetMinute = Number(match[9] ?? 0);
+	const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	const daysInMonth = [
+		31,
+		leapYear ? 29 : 28,
+		31,
+		30,
+		31,
+		30,
+		31,
+		31,
+		30,
+		31,
+		30,
+		31,
+	][month - 1];
+	if (
+		daysInMonth === undefined ||
+		day < 1 ||
+		day > daysInMonth ||
+		hour > 23 ||
+		minute > 59 ||
+		second > 59 ||
+		offsetHour > 14 ||
+		offsetMinute > 59 ||
+		(offsetHour === 14 && offsetMinute !== 0)
+	) {
+		fail(`${path} must be an ISO timestamp with a timezone`);
+	}
+	return value;
+}
+
 export function validateOverwatchLane(
 	value: unknown,
 	path = "overwatch lane",
@@ -358,29 +414,54 @@ export function validateOverwatchLane(
 	] as const);
 	for (const field of ["mr", "eta", "next"] as const) {
 		if (value[field] !== undefined) {
-			requireString(value[field], `${path}.${field}`, { nonEmpty: true });
+			const maxLength =
+				field === "mr"
+					? OVERWATCH_MR_MAX_LENGTH
+					: field === "eta"
+						? OVERWATCH_ETA_MAX_LENGTH
+						: OVERWATCH_NEXT_MAX_LENGTH;
+			requireStringWithMaxLength(value[field], `${path}.${field}`, maxLength, {
+				nonEmpty: true,
+			});
 		}
 	}
 	if (value.url !== undefined) {
-		requireString(value.url, `${path}.url`, { nonEmpty: true });
+		requireStringWithMaxLength(
+			value.url,
+			`${path}.url`,
+			OVERWATCH_URL_MAX_LENGTH,
+			{ nonEmpty: true },
+		);
 		if (!value.url.startsWith("https://claude.ai/")) {
 			fail(`${path}.url must start with "https://claude.ai/"`);
 		}
 	}
 	requireOneOf(value.kind, `${path}.kind`, ["chat", "background"] as const);
-	requireString(value.publisher, `${path}.publisher`, { nonEmpty: true });
-	requireString(value.updatedAt, `${path}.updatedAt`, { nonEmpty: true });
+	requireStringWithMaxLength(value.publisher, `${path}.publisher`, 128, {
+		nonEmpty: true,
+	});
+	validateIsoTimestamp(value.updatedAt, `${path}.updatedAt`);
 	return value as OverwatchLane;
 }
 
-function validateOverwatchMerge(
+export function validateOverwatchMerge(
 	value: unknown,
-	path: string,
+	path = "overwatch merge",
 ): OverwatchMerge {
 	requireRecord(value, path);
-	requireString(value.mr, `${path}.mr`, { nonEmpty: true });
-	requireString(value.title, `${path}.title`, { nonEmpty: true });
-	requireString(value.at, `${path}.at`, { nonEmpty: true });
+	requireStringWithMaxLength(
+		value.mr,
+		`${path}.mr`,
+		OVERWATCH_MR_MAX_LENGTH,
+		{ nonEmpty: true },
+	);
+	requireStringWithMaxLength(
+		value.title,
+		`${path}.title`,
+		OVERWATCH_MERGE_TITLE_MAX_LENGTH,
+		{ nonEmpty: true },
+	);
+	validateIsoTimestamp(value.at, `${path}.at`);
 	return value as OverwatchMerge;
 }
 
@@ -391,14 +472,20 @@ function validateOverwatchBoard(
 	requireRecord(value, path);
 	for (const field of ["goLive", "goNoGo"] as const) {
 		if (value[field] !== undefined) {
-			requireString(value[field], `${path}.${field}`, { nonEmpty: true });
+			validateIsoTimestamp(value[field], `${path}.${field}`);
 		}
 	}
 	if (!Array.isArray(value.lanes)) fail(`${path}.lanes must be an array`);
+	if (value.lanes.length > OVERWATCH_MAX_LANES) {
+		fail(`${path}.lanes must contain at most ${OVERWATCH_MAX_LANES} entries`);
+	}
 	value.lanes.forEach((lane, index) => {
 		validateOverwatchLane(lane, `${path}.lanes[${index}]`);
 	});
 	if (!Array.isArray(value.merges)) fail(`${path}.merges must be an array`);
+	if (value.merges.length > OVERWATCH_MAX_MERGES) {
+		fail(`${path}.merges must contain at most ${OVERWATCH_MAX_MERGES} entries`);
+	}
 	value.merges.forEach((merge, index) => {
 		validateOverwatchMerge(merge, `${path}.merges[${index}]`);
 	});

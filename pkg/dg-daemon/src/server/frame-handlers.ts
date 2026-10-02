@@ -11,10 +11,13 @@ import {
 	describeError,
 	isRecord,
 	OVERWATCH_SESSION_ID,
+	OVERWATCH_MAX_LANES,
 	validateChatFrame,
 	validateCommandManifest,
 	validateOverwatchAction,
 	validateOverwatchLane,
+	validateOverwatchMerge,
+	validateIsoTimestamp,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -168,6 +171,10 @@ type ConnectHandshake = {
 
 function parseCliFrame(value: unknown): CliFrame | undefined {
 	if (!isRecord(value)) return undefined;
+	const hasOnlyKeys = (allowed: readonly string[]) =>
+		Object.keys(value).every(
+			(key) => key === "protocolVersion" || allowed.includes(key),
+		);
 	switch (value.type) {
 		case "cli-recv":
 			if (
@@ -210,6 +217,21 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			}
 		case "cli-overwatch-set":
 			try {
+				if (
+					!hasOnlyKeys([
+						"type",
+						"chat",
+						"task",
+						"stage",
+						"mr",
+						"eta",
+						"next",
+						"url",
+						"kind",
+					])
+				) {
+					return undefined;
+				}
 				validateOverwatchLane({
 					...value,
 					publisher: "cli",
@@ -221,28 +243,39 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			}
 		case "cli-overwatch-remove":
 			try {
+				if (!hasOnlyKeys(["type", "chat"])) return undefined;
 				validateOverwatchAction({ chat: value.chat, action: "approve" });
 				return value as CliFrame;
 			} catch {
 				return undefined;
 			}
 		case "cli-overwatch-merged":
-			return typeof value.mr === "string" &&
-				value.mr.length > 0 &&
-				typeof value.title === "string" &&
-				value.title.length > 0
-				? (value as CliFrame)
-				: undefined;
+			try {
+				if (!hasOnlyKeys(["type", "mr", "title"])) return undefined;
+				validateOverwatchMerge({
+					mr: value.mr,
+					title: value.title,
+					at: new Date(0).toISOString(),
+				});
+				return value as CliFrame;
+			} catch {
+				return undefined;
+			}
 		case "cli-overwatch-launch":
-			return typeof value.goLive === "string" &&
-				value.goLive.length > 0 &&
-				(value.goNoGo === undefined ||
-					(typeof value.goNoGo === "string" && value.goNoGo.length > 0))
-				? (value as CliFrame)
-				: undefined;
+			try {
+				if (!hasOnlyKeys(["type", "goLive", "goNoGo"])) return undefined;
+				validateIsoTimestamp(value.goLive, "cli-overwatch-launch.goLive");
+				if (value.goNoGo !== undefined) {
+					validateIsoTimestamp(value.goNoGo, "cli-overwatch-launch.goNoGo");
+				}
+				return value as CliFrame;
+			} catch {
+				return undefined;
+			}
 		case "cli-overwatch-open":
+			return hasOnlyKeys(["type"]) ? (value as CliFrame) : undefined;
 		case "cli-overwatch-snapshot":
-			return value as CliFrame;
+			return hasOnlyKeys(["type"]) ? (value as CliFrame) : undefined;
 		default:
 			return undefined;
 	}
@@ -451,6 +484,18 @@ async function handleCliFrame(
 				await sendError(ws, sessionId, "overwatch publisher session is not active");
 				return;
 			}
+			const board = deps.store.getBoard();
+			if (
+				!board.lanes.some((lane) => lane.chat === frame.chat) &&
+				board.lanes.length >= OVERWATCH_MAX_LANES
+			) {
+				await sendError(
+					ws,
+					sessionId,
+					`overwatch board already has ${OVERWATCH_MAX_LANES} lanes`,
+				);
+				return;
+			}
 			deps.store.upsertLane({
 				chat: frame.chat,
 				task: frame.task,
@@ -488,6 +533,10 @@ async function handleCliFrame(
 				return;
 			}
 			await delivery.sent;
+			await sendViaQueue(
+				ws,
+				JSON.stringify({ type: "cli-overwatch-open-result" }),
+			);
 			return;
 		}
 		case "cli-overwatch-snapshot":

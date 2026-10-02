@@ -4,10 +4,15 @@ import { fileURLToPath } from "node:url";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
+	OVERWATCH_SESSION_ID,
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import { CHAT_PAGE_PATH, CHAT_SESSION_KEY_PREFIX } from "@/lib/background/chat";
+import {
+	CHAT_PAGE_PATH,
+	CHAT_SESSION_KEY_PREFIX,
+	handleOverwatchFrameSafely,
+} from "@/lib/background/chat";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -498,6 +503,30 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	expect((received[0] as { body: string }).body).toBe(
 		"hello while the tab is closed",
 	);
+});
+
+test("reports an overwatch open failure from the browser API", async () => {
+	const { api, tabsCreate } = makeBrowserApi();
+	const error = spyOn(console, "error").mockImplementation(() => undefined);
+	tabsCreate.mockImplementation(() => Promise.reject(new Error("tab failed")));
+
+	try {
+		await handleOverwatchFrameSafely(
+			{
+				type: "overwatch-open",
+				sessionId: OVERWATCH_SESSION_ID,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+			},
+			api,
+		);
+
+		expect(error).toHaveBeenCalledWith(
+			"[dg-ai-extension] overwatch frame failed:",
+			expect.objectContaining({ message: "tab failed" }),
+		);
+	} finally {
+		error.mockRestore();
+	}
 });
 
 test("regression: the background's socket reopens automatically after the daemon connection drops", async () => {

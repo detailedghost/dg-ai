@@ -98,6 +98,17 @@ export async function handleOverwatchFrame(
 	await api.tabs.create({ url });
 }
 
+export async function handleOverwatchFrameSafely(
+	frame: ChatFrame,
+	api: OverwatchBrowserApi,
+): Promise<void> {
+	try {
+		await handleOverwatchFrame(frame, api);
+	} catch (error) {
+		console.error("[dg-ai-extension] overwatch frame failed:", error);
+	}
+}
+
 export type RegisterChatOptions = {
 	browserApi?: ChatBrowserApi;
 	openSocket?: (url: string) => ChatClientSocket;
@@ -297,7 +308,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 
 	client.onFrame((frame) => {
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
-		void handleOverwatchFrame(frame, api).catch(() => {});
+		void handleOverwatchFrameSafely(frame, api);
 		if (frame.type === "config-result") {
 			configWaiters
 				.find((w) => w.key === frame.key)

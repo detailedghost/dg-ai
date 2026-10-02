@@ -11,7 +11,9 @@ import {
 	registerSession,
 	send,
 	stopServe,
+	waitForOpen,
 	waitForValue,
+	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
 const cleanupSlot = createCleanupSlot();
@@ -123,6 +125,7 @@ describe("overwatch CLI frames", () => {
 		const cli = await connectCli(port, credentials);
 		sockets.push(extension, cli);
 		const frames = collectFrames(extension);
+		const cliFrames = collectFrames(cli);
 
 		send(cli, { type: "cli-overwatch-open" });
 		const open = await waitForValue(
@@ -131,6 +134,43 @@ describe("overwatch CLI frames", () => {
 			"overwatch-open",
 		);
 		expect(open).toMatchObject({ sessionId: "__overwatch__" });
+		const result = await waitForValue(
+			() =>
+				cliFrames.find(
+					(frame) => frameType(frame) === "cli-overwatch-open-result",
+				),
+			3000,
+			"cli-overwatch-open-result",
+		);
+		expect(result).toEqual({ type: "cli-overwatch-open-result" });
+	});
+
+	it("does not deliver overwatch frames before the extension handshake", async () => {
+		const { port, credentials } = await bootWithSession();
+		const extension = wsExtensionSocket(port);
+		await waitForOpen(extension);
+		const cli = await connectCli(port, credentials);
+		sockets.push(extension, cli);
+		const extensionFrames = collectFrames(extension);
+		const cliFrames = collectFrames(cli);
+
+		send(cli, {
+			type: "cli-overwatch-set",
+			chat: "print",
+			task: "Prepare launch collateral",
+			stage: "review",
+			kind: "chat",
+		});
+		send(cli, { type: "cli-overwatch-open" });
+		const error = await waitForValue(
+			() => cliFrames.find((frame) => frameType(frame) === "error"),
+			3000,
+			"extension-not-connected error",
+		);
+		await Bun.sleep(100);
+
+		expect(error).toMatchObject({ message: "extension not connected" });
+		expect(extensionFrames).toEqual([]);
 	});
 
 	it("returns an error when opening without an extension connection", async () => {
@@ -146,5 +186,65 @@ describe("overwatch CLI frames", () => {
 			"extension-not-connected error",
 		);
 		expect(error).toMatchObject({ message: "extension not connected" });
+	});
+
+	it("rejects malformed overwatch CLI frames before mutation or broadcast", async () => {
+		const { port, credentials } = await bootWithSession();
+		const extension = await connectPage(port, credentials);
+		const cli = await connectCli(port, credentials);
+		sockets.push(extension, cli);
+		const extensionFrames = collectFrames(extension);
+		const cliFrames = collectFrames(cli);
+		const invalidFrames = [
+			{
+				type: "cli-overwatch-set",
+				chat: "print",
+				task: "Task",
+				stage: "deploying",
+				kind: "chat",
+			},
+			{ type: "cli-overwatch-remove", chat: "" },
+			{
+				type: "cli-overwatch-merged",
+				mr: "!298",
+				title: "x".repeat(201),
+			},
+			{
+				type: "cli-overwatch-launch",
+				goLive: "10/24/2026",
+			},
+			{ type: "cli-overwatch-open", unexpected: true },
+			{ type: "cli-overwatch-snapshot", unexpected: true },
+		];
+
+		for (const [index, frame] of invalidFrames.entries()) {
+			send(cli, frame);
+			await waitForValue(
+				() =>
+					cliFrames.filter((candidate) => frameType(candidate) === "error")[
+						index
+					],
+				3000,
+				`invalid overwatch frame ${index}`,
+			);
+		}
+
+		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				Origin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			},
+		});
+		expect(await response.json()).toEqual({ lanes: [], merges: [] });
+		expect(
+			extensionFrames.filter((frame) =>
+				["overwatch-state", "overwatch-open"].includes(frameType(frame) ?? ""),
+			),
+		).toEqual([]);
+		expect(
+			cliFrames.some(
+				(frame) => frameType(frame) === "cli-overwatch-snapshot-result",
+			),
+		).toBe(false);
 	});
 });
