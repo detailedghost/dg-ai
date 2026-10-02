@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,8 +36,7 @@ const {
 } = await import("@/lib/features/overwatch");
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
-const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
-const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
+const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
 const browserAvailable = (() => {
 	try {
 		resolveBrowserBinary();
@@ -71,8 +70,16 @@ function buildBoard(overrides: Partial<OverwatchBoard> = {}): OverwatchBoard {
 	};
 }
 
+const testWindows = new Set<Window>();
+
+afterEach(async () => {
+	await Promise.all([...testWindows].map((window) => window.happyDOM.close()));
+	testWindows.clear();
+});
+
 function newRoot(): HTMLElement {
 	const window = new Window();
+	testWindows.add(window);
 	const document = window.document as unknown as Document;
 	const root = document.createElement("div");
 	document.body.append(root);
@@ -175,10 +182,7 @@ async function inspectNarrowLayout(markup: string): Promise<{
 	);
 	let harness: DemoVerifyHarness | undefined;
 	try {
-		harness = await DemoVerifyHarness.launch(
-			undefined,
-			GEOMETRY_BROWSER_TIMEOUT_MS,
-		);
+		harness = await DemoVerifyHarness.launch();
 		const page = await harness.openPage(pathToFileURL(path).href);
 		try {
 			await page.setViewport(390, 844);

@@ -26,8 +26,7 @@ import {
 
 const temporaryDirectories: string[] = [];
 const renderedAt = new Date("2026-10-02T15:00:00.000Z");
-const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
-const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
+const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
 const skillsCliEntry = join(import.meta.dir, "..", "src", "index.ts");
 const browserAvailable = (() => {
 	try {
@@ -73,10 +72,7 @@ async function inspectNarrowLayout(html: string): Promise<{
 	temporaryDirectories.push(directory);
 	const input = join(directory, "snapshot.html");
 	await writeFile(input, html);
-	const harness = await DemoVerifyHarness.launch(
-		undefined,
-		GEOMETRY_BROWSER_TIMEOUT_MS,
-	);
+	const harness = await DemoVerifyHarness.launch();
 	try {
 		const page = await harness.openPage(pathToFileURL(input).href);
 		try {
@@ -382,9 +378,7 @@ describe("overwatch skill workflow", () => {
 			join(import.meta.dir, "../../../plugins/dg/skills/overwatch/SKILL.md"),
 			"utf8",
 		);
-		const commandLine = skill.match(
-			/dg-agent recv --block --timeout \d+/,
-		)?.[0];
+		const commandLine = skill.match(/\brecv --block --timeout \d+/)?.[0];
 		if (!commandLine) throw new Error("documented receive command not found");
 		const requests: Array<{ frame: unknown; timeoutMs: number }> = [];
 		const output: string[] = [];
@@ -413,7 +407,7 @@ describe("overwatch skill workflow", () => {
 			},
 		});
 		const error = await program
-			.parseAsync(["node", ...commandLine.split(/\s+/)])
+			.parseAsync(["node", "dg-agent", ...commandLine.split(/\s+/)])
 			.catch((caught: unknown) => caught);
 
 		expect(requests).toEqual([

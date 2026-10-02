@@ -457,7 +457,6 @@ export class DemoVerifyHarness {
 
 	static async launch(
 		extensionDir?: string,
-		devtoolsTimeoutMs = DEVTOOLS_URL_TIMEOUT_MS,
 	): Promise<DemoVerifyHarness> {
 		const bin = resolveBrowserBinary();
 		const profileDir = mkdtempSync(join(tmpdir(), "dg-verify-profile-"));
@@ -475,7 +474,7 @@ export class DemoVerifyHarness {
 			try {
 				const wsUrl = await waitForDevtoolsUrl(
 					proc.stderr,
-					devtoolsTimeoutMs,
+					DEVTOOLS_URL_TIMEOUT_MS,
 				);
 				const conn = await CdpConnection.connect(wsUrl);
 				return new DemoVerifyHarness(proc, conn, profileDir);
