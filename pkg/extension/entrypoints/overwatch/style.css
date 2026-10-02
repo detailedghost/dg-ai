@@ -78,6 +78,10 @@ body {
 	font-size: 0.72rem;
 }
 
+.overwatch__pair {
+	max-width: 32rem;
+}
+
 .overwatch__connection::before {
 	content: "";
 	width: 0.5rem;

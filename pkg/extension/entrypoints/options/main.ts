@@ -22,6 +22,7 @@ import {
 import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
 import { failStatus, flashStatus } from "@/lib/ui-helpers";
 import { loadKokoro } from "@/utils/kokoro";
+import { mountPairing } from "@/lib/features/pairing";
 import { mountAssetDirectoryPanel } from "./asset-directory";
 import "./style.css";
 
@@ -216,6 +217,7 @@ window.addEventListener("hashchange", () =>
 mountAssetDirectoryPanel($<HTMLElement>("assetDirectoryPanel"), {
 	transport: createLiveAssetDirectoryTransport(),
 });
+mountPairing($<HTMLElement>("pairPanel"), { variant: "options" });
 
 showPage(resolvePage(window.location.hash));
 void load();

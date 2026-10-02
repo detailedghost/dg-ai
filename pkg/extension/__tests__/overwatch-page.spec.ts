@@ -495,6 +495,47 @@ describe("the overwatch page", () => {
 		handle.stop();
 	});
 
+	test("shows Pair while reachable and unpaired, then hides it when connected", async () => {
+		const root = newRoot();
+		const listeners = new Set<RuntimeListener>();
+		const runtime = {
+			onMessage: {
+				addListener(listener: RuntimeListener) {
+					listeners.add(listener);
+				},
+				removeListener(listener: RuntimeListener) {
+					listeners.delete(listener);
+				},
+			},
+			sendMessage: mock(() => Promise.resolve({ connected: false })),
+		};
+		const handle = renderOverwatchPage({
+			root,
+			runtime,
+			connect: () =>
+				Promise.resolve({
+					baseUrl: "http://127.0.0.1:47823",
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction: () => Promise.resolve({ ok: true as const }),
+				}),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+		await Promise.resolve();
+
+		const pair = root.querySelector<HTMLElement>(".overwatch__pair");
+		expect(pair?.hidden).toBe(false);
+		expect(pair?.textContent).toContain("Not paired");
+
+		for (const listener of listeners) {
+			listener({ type: MSG.connection, state: "connected" });
+		}
+		expect(pair?.hidden).toBe(true);
+		handle.stop();
+	});
+
 	test("retries a failed initial load with a bounded reconciliation timer", async () => {
 		const root = newRoot();
 		const relay = runtimeHarness();

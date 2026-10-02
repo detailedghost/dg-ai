@@ -428,6 +428,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const payload = message as Record<string, unknown>;
 		try {
 			switch (payload.type) {
+				case MSG.connectionRequest:
+					sendResponse({ connected: client.getConnectionState() === "connected" });
+					return undefined;
 				case MSG.clientConnect: {
 					const bootstrap = asSessionBootstrap(payload.bootstrap);
 					if (!bootstrap) return undefined;
