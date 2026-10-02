@@ -230,6 +230,14 @@ function buildConfigResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildInboxBrowserRequestFrame(overrides: Record<string, unknown> = {}) {
+	return { type: "inbox-browser-request", sessionId: "session-a", requestId: "inbox-a", protocolVersion: CHAT_PROTOCOL_VERSION, request: { operation: "list-folders" }, ...overrides };
+}
+
+function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
+	return { type: "inbox-browser-result", sessionId: "session-a", requestId: "inbox-a", protocolVersion: CHAT_PROTOCOL_VERSION, token: "token-a", ok: true, data: { folders: [] }, ...overrides };
+}
+
 const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["user-message", buildUserMessageFrame],
 	["ack", buildAckFrame],
@@ -250,6 +258,8 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-set", buildConfigSetFrame],
 	["error", buildErrorFrame],
 	["config-result", buildConfigResultFrame],
+	["inbox-browser-request", buildInboxBrowserRequestFrame],
+	["inbox-browser-result", buildInboxBrowserResultFrame],
 ];
 
 function ratifiedDiscriminants(): string[] {
