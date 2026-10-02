@@ -1,0 +1,67 @@
+{
+	"folders": [
+		{
+			"id": "inbox",
+			"name": "Inbox",
+			"type": "system",
+			"path": "Inbox",
+			"total": 2,
+			"unread": 1,
+			"aliases": ["inbox"]
+		},
+		{
+			"id": "archive",
+			"name": "Archive",
+			"type": "system",
+			"path": "Archive",
+			"total": 0,
+			"unread": 0,
+			"aliases": ["archive"]
+		},
+		{
+			"id": "receipts",
+			"name": "Receipts",
+			"type": "folder",
+			"path": "Archive/Receipts",
+			"parentId": "archive",
+			"total": 1,
+			"unread": 0
+		}
+	],
+	"filters": [
+		{
+			"id": "rule-1",
+			"name": "Receipts from [email:contoso.com]",
+			"enabled": true,
+			"sequence": 1,
+			"conditions": ["from:[email:contoso.com]"],
+			"actions": ["moveToFolder:Receipts"]
+		}
+	],
+	"messages": [
+		{
+			"id": "graph-message-1",
+			"from": "Billing Desk <billing@contoso.com>",
+			"senderName": "Billing Desk",
+			"subject": "Invoice 123456789 for Jane Person",
+			"snippet": "Hello Jane, this is an invoice preview for account 987654321.",
+			"folderId": "inbox",
+			"folderName": "Inbox",
+			"receivedAt": "2026-06-29T10:00:00Z",
+			"categories": ["Finance", "Jane Person"],
+			"isRead": false
+		},
+		{
+			"id": "graph-message-2",
+			"from": "Alerts <alerts@contoso.com>",
+			"senderName": "Alerts",
+			"subject": "Security notice",
+			"snippet": "No action needed.",
+			"folderId": "inbox",
+			"folderName": "Inbox",
+			"receivedAt": "2026-06-29T11:00:00Z",
+			"categories": [],
+			"isRead": true
+		}
+	]
+}
