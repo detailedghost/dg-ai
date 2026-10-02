@@ -22,6 +22,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { CliClient, frameEnvelope, resolveCliSession } from "./client";
+import { registerOverwatchCommands } from "./overwatch";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 
@@ -79,6 +80,11 @@ export function registerAgentCommands(program: Command): void {
 		"-s, --session <id>",
 		"session id (otherwise resolve the sole realpath-matching cwd session)",
 	);
+
+	registerOverwatchCommands(program.command("overwatch"), {
+		connect: connectFor,
+		write: writeStdout,
+	});
 
 	program
 		.command("recv")
