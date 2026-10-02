@@ -55,14 +55,18 @@ export function sandboxDisabled(
 
 export function browserArgs(
 	profileDir: string,
-	extensionDir: string,
+	extensionDir: string | undefined,
 	noSandbox: boolean,
 ): string[] {
 	return [
 		"--remote-debugging-port=0",
 		`--user-data-dir=${profileDir}`,
-		`--load-extension=${extensionDir}`,
-		`--disable-extensions-except=${extensionDir}`,
+		...(extensionDir
+			? [
+					`--load-extension=${extensionDir}`,
+					`--disable-extensions-except=${extensionDir}`,
+				]
+			: []),
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-dev-shm-usage",
@@ -353,8 +357,21 @@ export class CdpPageHandle {
 		this.unsubscribeNav();
 	}
 
-	evaluate(expression: string): Promise<unknown> {
-		return evaluate(this.conn, this.sessionId, expression);
+	evaluate<T = unknown>(expression: string): Promise<T> {
+		return evaluate(this.conn, this.sessionId, expression) as Promise<T>;
+	}
+
+	async setViewport(width: number, height: number): Promise<void> {
+		await this.conn.send(
+			"Emulation.setScrollbarsHidden",
+			{ hidden: true },
+			this.sessionId,
+		);
+		await this.conn.send(
+			"Emulation.setDeviceMetricsOverride",
+			{ width, height, deviceScaleFactor: 1, mobile: false },
+			this.sessionId,
+		);
 	}
 
 	async locationHref(): Promise<string> {
@@ -438,7 +455,10 @@ export class DemoVerifyHarness {
 		private readonly profileDir: string,
 	) {}
 
-	static async launch(extensionDir: string): Promise<DemoVerifyHarness> {
+	static async launch(
+		extensionDir?: string,
+		devtoolsTimeoutMs = DEVTOOLS_URL_TIMEOUT_MS,
+	): Promise<DemoVerifyHarness> {
 		const bin = resolveBrowserBinary();
 		const profileDir = mkdtempSync(join(tmpdir(), "dg-verify-profile-"));
 		// Bun.spawn (a bad binary throws ENOENT synchronously) is inside this try too,
@@ -455,7 +475,7 @@ export class DemoVerifyHarness {
 			try {
 				const wsUrl = await waitForDevtoolsUrl(
 					proc.stderr,
-					DEVTOOLS_URL_TIMEOUT_MS,
+					devtoolsTimeoutMs,
 				);
 				const conn = await CdpConnection.connect(wsUrl);
 				return new DemoVerifyHarness(proc, conn, profileDir);
