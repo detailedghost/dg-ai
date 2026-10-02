@@ -36,6 +36,7 @@ export default defineConfig({
 				"tabs",
 				"tabGroups",
 				"storage",
+				"scripting",
 				"downloads",
 				// activeTab is what getMediaStreamId means by "invoked for the current page";
 				// <all_urls> does not satisfy it, so without this every record gesture throws.
@@ -45,7 +46,11 @@ export default defineConfig({
 			// Keep jsDelivr fallback access and permit local wasm compilation.
 			...(firefox
 				? {
-						host_permissions: ["http://127.0.0.1/*"],
+						host_permissions: [
+							"http://127.0.0.1/*",
+							"https://mail.proton.me/*",
+							"https://mail.protonmail.com/*",
+						],
 					}
 				: {
 						host_permissions: [
