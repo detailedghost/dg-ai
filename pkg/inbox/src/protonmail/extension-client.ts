@@ -116,6 +116,7 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 		);
 		let emitted = 0;
 		const seen = new Set<string>();
+		let emptyPages = 0;
 		for (let page = 0; emitted < input.limit; page++) {
 			const response = await this.request({
 				operation: "list-messages",
@@ -124,22 +125,26 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 				folderId: input.folderId ?? input.folderName,
 			});
 			const rows = response.messages ?? [];
-			for (const row of rows) {
-				if (seen.has(row.id))
-					throw new Error("Proton paging stalled: repeated message id");
+			const fresh = rows.filter((row) => {
+				if (seen.has(row.id)) return false;
 				seen.add(row.id);
-			}
-			const chunk = rows.slice(0, input.limit - emitted);
+				return true;
+			});
+			const chunk = fresh.slice(0, input.limit - emitted);
 			if (chunk.length) {
 				emitted += chunk.length;
 				yield chunk;
 			}
 			if (
-				!rows.length ||
 				response.hasMore === false ||
 				(response.hasMore === undefined && rows.length < pageSize)
 			)
 				return;
+			if (rows.length && !fresh.length)
+				throw new Error("Proton paging stalled: page added no new messages");
+			emptyPages = rows.length ? 0 : emptyPages + 1;
+			if (emptyPages >= 3)
+				throw new Error("Proton paging stalled: consecutive empty pages");
 		}
 	}
 	private async mutate(

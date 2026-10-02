@@ -168,6 +168,23 @@ export async function handleInboxCli(
 		return;
 	}
 	const extension = peers[0];
+	const version = extension.data.extensionVersion?.match(
+		/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+	);
+	if (
+		!version ||
+		!(
+			Number(version[1]) > 1 ||
+			(Number(version[1]) === 1 && Number(version[2]) >= 10)
+		)
+	) {
+		await result(requester, sessionId, frame.requestId, {
+			ok: false,
+			error:
+				"Inbox requires dg extension 1.10.0 or newer; update the extension, reload it, and reconnect this session.",
+		});
+		return;
+	}
 	let settled = false;
 	let offRequester = () => {};
 	let offExtension = () => {};

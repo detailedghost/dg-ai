@@ -117,6 +117,7 @@ export class GmailRestClient implements MailProviderClient {
 		let emitted = 0;
 		const cursors = new Set<string>();
 		const ids = new Set<string>();
+		let emptyPages = 0;
 		do {
 			const query = new URLSearchParams({
 				labelIds: labelId,
@@ -130,12 +131,12 @@ export class GmailRestClient implements MailProviderClient {
 			const rows = response.messages ?? [];
 			if (!Array.isArray(rows))
 				throw new Error("Gmail returned a malformed messages response");
-			for (const row of rows) {
-				if (ids.has(row.id))
-					throw new Error("Gmail paging stalled: repeated message id");
+			const fresh = rows.filter((row) => {
+				if (ids.has(row.id)) return false;
 				ids.add(row.id);
-			}
-			const slice = rows.slice(0, input.limit - emitted);
+				return true;
+			});
+			const slice = fresh.slice(0, input.limit - emitted);
 			const metadata = await pMap(
 				slice,
 				(row) => this.fetchMessageMetadata(row.id, labelId, input.folderName),
@@ -149,9 +150,15 @@ export class GmailRestClient implements MailProviderClient {
 			if (metadata.length) {
 				emitted += metadata.length;
 				yield metadata;
+				if (emitted >= input.limit) return;
 			}
 			cursor = response.nextPageToken;
 			if (cursor) {
+				if (rows.length && !fresh.length)
+					throw new Error("Gmail paging stalled: page added no new messages");
+				emptyPages = rows.length ? 0 : emptyPages + 1;
+				if (emptyPages >= 3)
+					throw new Error("Gmail paging stalled: consecutive empty pages");
 				if (cursors.has(cursor))
 					throw new Error("Gmail paging stalled: repeated cursor");
 				cursors.add(cursor);

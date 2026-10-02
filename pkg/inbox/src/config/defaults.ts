@@ -50,6 +50,7 @@ export const defaultConfig: AppConfig = {
 		clientSecretEnv: "GOOGLE_CLIENT_SECRET",
 		accessTokenEnv: "GOOGLE_ACCESS_TOKEN",
 		refreshTokenEnv: "GOOGLE_REFRESH_TOKEN",
+		openBrowserCommand: process.env.GOOGLE_BROWSER_OPEN_COMMAND,
 		redirectUri:
 			process.env.GOOGLE_REDIRECT_URI ?? "http://127.0.0.1:0/oauth2/callback",
 		tokenCachePath:

@@ -16,7 +16,17 @@ import type {
 
 const providers = ["gmail", "outlook", "protonmail"] as const;
 type Provider = (typeof providers)[number];
-type Behavior = "normal" | "empty" | "error" | "stalled" | "gap";
+type Behavior =
+	| "normal"
+	| "empty"
+	| "error"
+	| "stalled"
+	| "gap"
+	| "overlap"
+	| "mixed"
+	| "repeat"
+	| "repeat-terminal"
+	| "empty-streak";
 const secret = "synthetic-auth-token-never-output";
 
 function message(index: number): MailMessageSummary {
@@ -42,7 +52,34 @@ function liveClient(provider: Provider, behavior: Behavior = "normal") {
 	let active = 0;
 	let maximumActive = 0;
 	let metadataCalls = 0;
+	const pageCount = behavior === "overlap" ? 4 : behavior === "mixed" ? 3 : 2;
 	const rows = (page: number) => {
+		if (behavior === "empty-streak") {
+			if (page >= 5)
+				throw new Error("Provider page budget exceeded in test fixture");
+			return [];
+		}
+		const indexes =
+			behavior === "overlap"
+				? [
+						[0, 1],
+						[1, 2],
+						[2, 3],
+						[4, 5],
+					]
+				: behavior === "mixed"
+					? [
+							[0, 0],
+							[0, 1],
+							[1, 2],
+						]
+					: behavior === "repeat" || behavior === "repeat-terminal"
+						? [
+								[0, 1],
+								[0, 1],
+							]
+						: undefined;
+		if (indexes) return (indexes[page] ?? []).map(message);
 		if (behavior === "empty" && page > 0) return [];
 		if (behavior === "gap" && page === 0) return [];
 		return [message(page * 2), message(page * 2 + 1)];
@@ -74,7 +111,14 @@ function liveClient(provider: Provider, behavior: Behavior = "normal") {
 		if (behavior === "error" && page > 0)
 			return Response.json({ error: { message: secret } }, { status: 401 });
 		const items = rows(page);
-		const next = behavior === "stalled" ? "1" : page < 1 ? "1" : undefined;
+		const next =
+			behavior === "stalled"
+				? "1"
+				: behavior === "repeat" ||
+					  behavior === "empty-streak" ||
+					  page < pageCount - 1
+					? String(page + 1)
+					: undefined;
 		return provider === "gmail"
 			? Response.json({
 					messages: items.map((row) => ({ id: row.id })),
@@ -126,7 +170,13 @@ function liveClient(provider: Provider, behavior: Behavior = "normal") {
 					throw new Error("Proton extension session expired; sign in again.");
 				return {
 					messages: rows(behavior === "stalled" ? 0 : page),
-					hasMore: behavior === "stalled" || page < 1,
+					hasMore:
+						behavior === "mixed"
+							? undefined
+							: behavior === "stalled" ||
+								behavior === "repeat" ||
+								behavior === "empty-streak" ||
+								page < pageCount - 1,
 				};
 			},
 		});
@@ -188,6 +238,58 @@ for (const provider of providers)
 			expect(JSON.stringify(pages)).not.toContain("raw-body-never-output");
 		});
 
+		test("skips overlapping rows lazily and fills the limit with unique messages", async () => {
+			const harness = liveClient(provider, "overlap");
+			const iterator = harness.client.listMessagesStream!({
+				folderId: "inbox",
+				limit: 4,
+			})[Symbol.asyncIterator]();
+			expect(harness.calls).toEqual([]);
+			expect(
+				(await iterator.next()).value.map((row: MailMessageSummary) => row.id),
+			).toEqual([message(0).id, message(1).id]);
+			expect(harness.calls).toHaveLength(1);
+			expect(
+				(await iterator.next()).value.map((row: MailMessageSummary) => row.id),
+			).toEqual([message(2).id]);
+			expect(harness.calls).toHaveLength(2);
+			expect(
+				(await iterator.next()).value.map((row: MailMessageSummary) => row.id),
+			).toEqual([message(3).id]);
+			expect((await iterator.next()).done).toBe(true);
+			expect(harness.calls).toEqual(
+				[0, 1, 2].map((page) => ({ page, pageSize: 2 })),
+			);
+			if (provider === "gmail") expect(harness.metadataCalls).toBe(4);
+		});
+
+		test("skips duplicates within and across pages without treating a short unique page as terminal", async () => {
+			const harness = liveClient(provider, "mixed");
+			expect(
+				(await collect(harness.client, 3)).flat().map((row) => row.id),
+			).toEqual([0, 1, 2].map((index) => message(index).id));
+			expect(harness.calls).toEqual(
+				[0, 1, 2].map((page) => ({ page, pageSize: 2 })),
+			);
+			if (provider === "gmail") expect(harness.metadataCalls).toBe(3);
+		});
+
+		test("rejects a nonempty page with no new IDs and further pages available", async () => {
+			const harness = liveClient(provider, "repeat");
+			await expect(collect(harness.client, 20)).rejects.toThrow(
+				/stall|repeat|duplicate|progress/i,
+			);
+			expect(harness.calls).toHaveLength(2);
+		});
+
+		test("ends a terminal duplicate page without emitting the same messages again", async () => {
+			const harness = liveClient(provider, "repeat-terminal");
+			expect(
+				(await collect(harness.client, 20)).flat().map((row) => row.id),
+			).toEqual([message(0).id, message(1).id]);
+			expect(harness.calls).toHaveLength(2);
+		});
+
 		test("handles an empty subsequent page without emitting an empty work page", async () => {
 			const harness = liveClient(provider, "empty");
 			const pages = await collect(harness.client, 9);
@@ -226,6 +328,15 @@ for (const provider of providers)
 			expect(harness.calls.length).toBeLessThanOrEqual(3);
 		});
 
+		test("bounds consecutive empty pages even when each cursor or hasMore advances", async () => {
+			const harness = liveClient(provider, "empty-streak");
+			await expect(collect(harness.client, 20)).rejects.toThrow(
+				/stall|empty|progress/i,
+			);
+			expect(harness.calls.length).toBeLessThanOrEqual(4);
+			if (provider === "gmail") expect(harness.metadataCalls).toBe(0);
+		});
+
 		test("does not contact the provider for a zero total limit", async () => {
 			const harness = liveClient(provider);
 			expect(await collect(harness.client, 0)).toEqual([]);
@@ -233,7 +344,7 @@ for (const provider of providers)
 		});
 	});
 
-for (const provider of ["gmail", "outlook"] as const)
+for (const provider of providers)
 	test(
 		provider +
 			" listMessagesStream continues after an empty page with a valid cursor",
@@ -245,6 +356,15 @@ for (const provider of ["gmail", "outlook"] as const)
 			expect(harness.calls.map((call) => call.page)).toEqual([0, 1]);
 		},
 	);
+
+test("GmailRestClient finishes a satisfied unique limit without following an unused repeated cursor", async () => {
+	const harness = liveClient("gmail", "stalled");
+	expect(
+		(await collect(harness.client, 3)).flat().map((row) => row.id),
+	).toEqual([0, 1, 2].map((index) => message(index).id));
+	expect(harness.calls.map((call) => call.page)).toEqual([0, 1]);
+	expect(harness.metadataCalls).toBe(3);
+});
 
 describe("GmailRestClient metadata concurrency", () => {
 	test("caps concurrent metadata requests at configured maxConcurrency", async () => {
