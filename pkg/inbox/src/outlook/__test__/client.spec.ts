@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { printJson } from "../../cli/output";
+import { resolveFolder } from "../../workspace/folders";
+import { describe, expect, spyOn, test } from "bun:test";
 import { defaultConfig } from "../../config/defaults";
 import { StaticMicrosoftTokenProvider } from "../auth";
 import { GraphRestClient } from "../graph-client";
@@ -303,5 +305,139 @@ describe("Outlook Graph client", () => {
 				method: "PATCH",
 			},
 		]);
+	});
+});
+
+describe("GraphRestClient private mailbox metadata", () => {
+	function metadataFixture() {
+		const names = [
+			"first-private@example.test",
+			"second-private@example.test",
+			"Shared/" + "x".repeat(160) + "A",
+			"Shared/" + "x".repeat(160) + "B",
+		];
+		const values = names.map((displayName, index) => ({
+			id: "metadata-" + index,
+			displayName,
+		}));
+		const client = new GraphRestClient({
+			config: defaultConfig,
+			tokenProvider: new StaticMicrosoftTokenProvider("synthetic-token"),
+			fetch: (async (_input: RequestInfo | URL) =>
+				Response.json({ value: values })) as typeof fetch,
+		});
+		return { names, values, client };
+	}
+	test("preserves exact live folder names and paths that collide after redaction or truncation", async () => {
+		const { names, values, client } = metadataFixture();
+		const folders = await client.listFolders();
+		expect(folders.map((folder) => folder.name)).toEqual(names);
+		expect(folders.map((folder) => folder.path)).toEqual(names);
+		for (const row of values)
+			expect(
+				resolveFolder(folders, row.displayName, { purpose: "target" }).id,
+			).toBe(row.id);
+		const output = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			printJson({ folders });
+			const publicText = output.mock.calls
+				.map((args) => args.join(" "))
+				.join("\n");
+			for (const name of names.slice(0, 2))
+				expect(publicText).not.toContain(name);
+			expect(
+				JSON.parse(publicText).folders.map(
+					(folder: { id: string }) => folder.id,
+				),
+			).toEqual(values.map((row) => row.id));
+			expect(folders.map((folder) => folder.name)).toEqual(names);
+		} finally {
+			output.mockRestore();
+		}
+	});
+	test("preserves private category and rule names while scrubbing their public representation", async () => {
+		const { names, values, client } = metadataFixture();
+		const labels = await client.listLabels();
+		const filters = await client.listFilters();
+		expect(labels.map((label) => label.name)).toEqual(names);
+		expect(filters.map((filter) => filter.name)).toEqual(names);
+		const output = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			printJson({ labels, filters });
+			const publicText = output.mock.calls
+				.map((args) => args.join(" "))
+				.join("\n");
+			for (const name of names.slice(0, 2))
+				expect(publicText).not.toContain(name);
+			expect(
+				JSON.parse(publicText).labels.map((label: { id: string }) => label.id),
+			).toEqual(values.map((row) => row.id));
+			expect(labels.map((label) => label.name)).toEqual(names);
+			expect(filters.map((filter) => filter.name)).toEqual(names);
+		} finally {
+			output.mockRestore();
+		}
+	});
+});
+
+describe("GraphRestClient immutable message identity", () => {
+	test("keeps the listed message addressable for its read-state update after moving folders", async () => {
+		const mailbox = {
+			id: "original-message",
+			parentFolderId: "inbox",
+			isRead: false,
+		};
+		const requests: Array<{
+			method: string;
+			path: string;
+			prefer: string | null;
+		}> = [];
+		const client = new GraphRestClient({
+			config: defaultConfig,
+			tokenProvider: new StaticMicrosoftTokenProvider("synthetic-token"),
+			fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = new URL(String(input)).pathname;
+				const method = init?.method ?? "GET";
+				const prefer = new Headers(init?.headers).get("prefer");
+				requests.push({ method, path, prefer });
+				if (method === "GET" && path.endsWith("/mailFolders/inbox/messages"))
+					return Response.json({ value: [{ ...mailbox }] });
+				if (
+					method === "POST" &&
+					path === "/v1.0/me/messages/" + mailbox.id + "/move"
+				) {
+					mailbox.parentFolderId = JSON.parse(String(init?.body)).destinationId;
+					if (prefer !== 'IdType="ImmutableId"')
+						mailbox.id = "changed-after-move";
+					return Response.json({ ...mailbox });
+				}
+				if (method === "PATCH" && path === "/v1.0/me/messages/" + mailbox.id) {
+					mailbox.isRead = JSON.parse(String(init?.body)).isRead;
+					return new Response(null, { status: 204 });
+				}
+				return Response.json(
+					{ error: { code: "ErrorItemNotFound" } },
+					{ status: 404 },
+				);
+			}) as typeof fetch,
+		});
+		const listed = await client.listMessages({ folderId: "inbox", limit: 1 });
+		expect(listed).toHaveLength(1);
+		const messageIds = listed.map((message) => message.id);
+		await client.moveMessages({ messageIds, targetFolderId: "receipts" });
+		await client.markMessagesRead({ messageIds });
+		expect(mailbox).toMatchObject({
+			id: messageIds[0],
+			parentFolderId: "receipts",
+			isRead: true,
+		});
+		expect(requests.map((request) => request.method)).toEqual([
+			"GET",
+			"POST",
+			"PATCH",
+		]);
+		expect(requests.map((request) => request.prefer)).toEqual(
+			Array(3).fill('IdType="ImmutableId"'),
+		);
 	});
 });

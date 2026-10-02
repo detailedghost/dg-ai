@@ -13,11 +13,26 @@ export interface WriterPool {
 	process(messages: MailMessageSummary[]): Promise<MessageStatusEntry[]>;
 	close(): Promise<void>;
 }
+export function normalizeWriterCount(size: number): number {
+	return Math.max(1, Math.min(32, Math.floor(size) || 1));
+}
+
 export function createWriterPool(
 	size: number,
 	config: WriterPoolConfig,
 ): WriterPool {
-	const concurrency = Math.max(1, Math.min(32, Math.floor(size) || 1));
+	const concurrency = normalizeWriterCount(size);
+	let active = 0;
+	const waiting: Array<() => void> = [];
+	const acquire = async () => {
+		if (active < concurrency) active++;
+		else await new Promise<void>((resolve) => waiting.push(resolve));
+	};
+	const release = () => {
+		const next = waiting.shift();
+		if (next) next();
+		else active--;
+	};
 	return {
 		process: async (messages) => {
 			let failed = false;
@@ -25,6 +40,7 @@ export function createWriterPool(
 			const entries = await pMap(
 				messages,
 				async (message) => {
+					await acquire();
 					try {
 						const transformed = transformMessage(
 							message,
@@ -43,6 +59,8 @@ export function createWriterPool(
 							failure = error;
 						}
 						return null;
+					} finally {
+						release();
 					}
 				},
 				{ concurrency },
