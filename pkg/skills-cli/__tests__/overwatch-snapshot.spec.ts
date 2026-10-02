@@ -21,6 +21,8 @@ import {
 
 const temporaryDirectories: string[] = [];
 const renderedAt = new Date("2026-10-02T15:00:00.000Z");
+const GEOMETRY_TEST_TIMEOUT_MS = 30_000;
+const GEOMETRY_BROWSER_TIMEOUT_MS = GEOMETRY_TEST_TIMEOUT_MS - 5_000;
 const skillsCliEntry = join(import.meta.dir, "..", "src", "index.ts");
 const chromium = [
 	"brave-browser",
@@ -80,32 +82,51 @@ document.querySelector("#geometry").textContent = JSON.stringify({
 </body>`,
 	);
 	await writeFile(input, instrumented);
-	const result = await new Promise<CliResult>((resolve, reject) => {
-		const child = spawn(
-			chromium as string,
-			[
-				"--headless=new",
-				"--no-sandbox",
-				"--disable-gpu",
-				"--window-size=390,844",
-				"--dump-dom",
-				input,
-			],
-			{ stdio: ["ignore", "pipe", "pipe"] },
-		);
-		const stdout: Buffer[] = [];
-		const stderr: Buffer[] = [];
-		child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
-		child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-		child.on("error", reject);
-		child.on("close", (code) =>
-			resolve({
-				code,
-				stdout: Buffer.concat(stdout).toString("utf8"),
-				stderr: Buffer.concat(stderr).toString("utf8"),
-			}),
-		);
-	});
+	const child = spawn(
+		chromium as string,
+		[
+			"--headless=new",
+			"--no-sandbox",
+			"--disable-gpu",
+			`--user-data-dir=${join(directory, "profile")}`,
+			"--window-size=390,844",
+			"--dump-dom",
+			input,
+		],
+		{
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: GEOMETRY_BROWSER_TIMEOUT_MS,
+			killSignal: "SIGKILL",
+		},
+	);
+	let result: CliResult;
+	try {
+		result = await new Promise<CliResult>((resolve, reject) => {
+			const stdout: Buffer[] = [];
+			const stderr: Buffer[] = [];
+			child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+			child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+			child.on("error", reject);
+			child.on("close", (code) =>
+				resolve({
+					code,
+					stdout: Buffer.concat(stdout).toString("utf8"),
+					stderr: Buffer.concat(stderr).toString("utf8"),
+				}),
+			);
+		});
+	} finally {
+		if (
+			child.pid !== undefined &&
+			child.exitCode === null &&
+			child.signalCode === null
+		) {
+			await new Promise<void>((resolve) => {
+				child.once("close", () => resolve());
+				if (!child.kill()) resolve();
+			});
+		}
+	}
 	if (result.code !== 0) throw new Error(result.stderr);
 	const match = /<pre id="geometry">([^<]+)<\/pre>/.exec(result.stdout);
 	if (!match) throw new Error("browser did not report snapshot geometry");
@@ -253,6 +274,7 @@ describe("overwatch snapshot renderer", () => {
 			expect(geometry.documentWidth).toBeLessThanOrEqual(390);
 			expect(geometry.nodesFit).toBe(true);
 		},
+		GEOMETRY_TEST_TIMEOUT_MS,
 	);
 });
 
