@@ -18,7 +18,10 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
+	type OverwatchAction,
+	OVERWATCH_SESSION_ID,
 	type SessionRole,
+	validateOverwatchAction,
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
@@ -276,6 +279,13 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (
+				url.pathname === "/overwatch" ||
+				url.pathname === "/overwatch/action"
+			) {
+				return handleOverwatchRoute(req, url, deps);
+			}
+
+			if (
 				url.pathname === CHAT_SERVICES_PATH ||
 				url.pathname.startsWith(`${CHAT_SERVICES_PATH}/`)
 			) {
@@ -288,6 +298,56 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 	installAssetLifecycle(paths, store, logger, port);
 	return boundServer;
+}
+
+async function handleOverwatchRoute(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const refusal =
+		requireLoopbackHost(req, deps.port) ??
+		refuseForeignOrigin(req, deps.paths);
+	if (refusal) return refusal;
+	if (url.pathname === "/overwatch" && req.method === "GET") {
+		return json(deps.store.getBoard());
+	}
+	if (url.pathname !== "/overwatch/action" || req.method !== "POST") {
+		return new Response("not found", { status: 404, headers: NOSNIFF_HEADERS });
+	}
+
+	let action: OverwatchAction;
+	try {
+		action = validateOverwatchAction(await req.json());
+	} catch (err) {
+		return new Response(describeError(err), {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const lane = deps.store
+		.getBoard()
+		.lanes.find((candidate) => candidate.chat === action.chat);
+	if (!lane?.publisher) {
+		return new Response("no such overwatch lane", {
+			status: 404,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	deps.store.insertAgentMessage({
+		senderSessionId: OVERWATCH_SESSION_ID,
+		senderIdentity: "overwatch-board",
+		recipientIdentity: lane.publisher,
+		id: randomUUID(),
+		body: JSON.stringify({
+			overwatch: {
+				chat: action.chat,
+				action: action.action,
+				note: action.note,
+			},
+		}),
+	});
+	return json({ ok: true });
 }
 
 async function handleRegisterSession(
