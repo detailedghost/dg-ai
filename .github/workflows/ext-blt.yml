@@ -39,7 +39,7 @@ jobs:
         working-directory: pkg/extension
         env:
           DG_VERIFY_NO_SANDBOX: "1"
-        run: bun test
+        run: bun test --isolate
 
       - name: Build
         working-directory: pkg/extension

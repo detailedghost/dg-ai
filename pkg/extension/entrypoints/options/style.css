@@ -165,6 +165,66 @@
 	.status.err {
 		color: var(--accent2);
 	}
+	.pair-shell {
+		@apply mb-7;
+	}
+	.pair-panel {
+		@apply border-2 p-5;
+		border-color: var(--line);
+		background: var(--panel);
+		box-shadow: 0.375rem 0.375rem 0 var(--accent2);
+	}
+	.pair-panel__title {
+		@apply mb-2 text-sm font-semibold uppercase;
+		letter-spacing: 0.08em;
+		color: var(--accent2);
+	}
+	.pair-panel__copy {
+		@apply mb-3 text-sm;
+		color: var(--muted);
+	}
+	.pair-form {
+		@apply flex flex-wrap items-end gap-3;
+	}
+	.pair-form__label {
+		@apply flex min-w-0 flex-1 flex-col gap-1.5 text-sm uppercase;
+		letter-spacing: 0.06em;
+		white-space: nowrap;
+	}
+	.pair-form__input {
+		@apply w-full border-2 px-3 py-2 font-mono text-lg tracking-[0.3em];
+		min-height: 2.75rem;
+		border-color: var(--line);
+		background: var(--bg);
+		color: var(--ink);
+	}
+	.pair-form__input:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 0.125rem var(--accent);
+	}
+	.pair-button {
+		@apply cursor-pointer border-2 px-5 py-2 text-sm uppercase tracking-wide;
+		min-height: 2.75rem;
+		white-space: nowrap;
+		border-color: var(--line);
+		background: transparent;
+		color: var(--ink);
+	}
+	.pair-button:hover:not(:disabled) {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: #000;
+	}
+	.pair-button:disabled {
+		cursor: progress;
+		opacity: 0.5;
+	}
+	.pair-panel__status {
+		@apply mt-3 text-sm;
+		min-height: 1.25rem;
+		color: var(--accent2);
+	}
 	.klist {
 		@apply mt-1 space-y-2 text-sm;
 	}
@@ -174,5 +234,16 @@
 	}
 	.klist a:hover {
 		color: var(--accent2);
+	}
+}
+
+@media (max-width: 390px) {
+	.pair-form {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.pair-button {
+		width: 100%;
 	}
 }

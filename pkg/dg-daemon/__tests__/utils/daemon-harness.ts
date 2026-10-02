@@ -193,6 +193,23 @@ export function createCleanupSlot(): CleanupSlot {
 
 export type StartResult = { stdout: string; stderr: string; exitCode: number };
 
+export async function runDaemonCommand(
+	dgHome: string,
+	...args: string[]
+): Promise<StartResult> {
+	const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
+		env: subprocessEnv(dgHome, 0),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { stdout, stderr, exitCode };
+}
+
 export async function runStatus(
 	dgHome: string,
 	extraEnv: Record<string, string> = {},

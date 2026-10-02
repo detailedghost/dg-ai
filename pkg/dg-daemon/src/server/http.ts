@@ -10,6 +10,7 @@ import {
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
+	CHAT_PAIR_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
@@ -20,8 +21,10 @@ import {
 	describeError,
 	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
+	type PairRequest,
 	type SessionRole,
 	validateOverwatchAction,
+	validatePairRequest,
 } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import type { Server } from "bun";
@@ -35,9 +38,13 @@ import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
 import { runJobNow } from "../jobs/runner";
+import { consumePairingAttempt } from "../pairing";
 import type { Supervisor } from "../services/supervisor";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
-import type { SessionRegistry } from "../session/registry";
+import type {
+	CreateSessionInput,
+	SessionRegistry,
+} from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
 import { readEnvNumber } from "../utils/env";
 import {
@@ -138,6 +145,24 @@ function requirePinnedExtensionOrigin(
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
+	}
+	return undefined;
+}
+
+function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (origin === null || !isExtensionOrigin(origin)) {
+		return new Response("refused: /pair requires an extension-scheme Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const pinnedOrigin = getPinnedOrigin(paths);
+	if (pinnedOrigin !== undefined && pinnedOrigin !== origin) {
+		return new Response(
+			"refused: another extension origin is pinned; run `dg-daemon origin clear` and try again",
+			{ status: 409, headers: NOSNIFF_HEADERS },
+		);
 	}
 	return undefined;
 }
@@ -274,6 +299,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleRegisterSession(req, deps);
 			}
 
+			if (url.pathname === CHAT_PAIR_PATH && req.method === "POST") {
+				return handlePair(req, deps);
+			}
+
 			if (url.pathname === CHAT_WS_PATH) {
 				return handleWsUpgrade(req, server, deps);
 			}
@@ -394,17 +423,8 @@ async function handleRegisterSession(
 			status: 400,
 		});
 	}
-	const maxSessions = readEnvNumber(
-		process.env,
-		"DG_MAX_SESSIONS",
-		SESSION_MAX_ACTIVE_DEFAULT,
-	);
-	if (deps.registry.activeCount() >= maxSessions) {
-		return new Response(
-			`refused: daemon already holds the maximum of ${maxSessions} active sessions`,
-			{ status: 429 },
-		);
-	}
+	const capacityError = requireSessionCapacity(deps);
+	if (capacityError) return capacityError;
 	const contentType = (req.headers.get("content-type") ?? "")
 		.split(";")[0]
 		.trim();
@@ -439,14 +459,36 @@ async function handleRegisterSession(
 			? input.agentIdentity.trim()
 			: "agent";
 
+	return createSessionResponse(deps, {
+		cwd: input.cwd,
+		agentIdentity,
+		workset,
+		role,
+	});
+}
+
+function requireSessionCapacity(deps: HttpServerDeps): Response | undefined {
+	const maxSessions = readEnvNumber(
+		process.env,
+		"DG_MAX_SESSIONS",
+		SESSION_MAX_ACTIVE_DEFAULT,
+	);
+	if (deps.registry.activeCount() >= maxSessions) {
+		return new Response(
+			`refused: daemon already holds the maximum of ${maxSessions} active sessions`,
+			{ status: 429 },
+		);
+	}
+	return undefined;
+}
+
+function createSessionResponse(
+	deps: HttpServerDeps,
+	input: CreateSessionInput,
+): Response {
 	let record: ReturnType<typeof deps.registry.create>;
 	try {
-		record = deps.registry.create({
-			cwd: input.cwd,
-			agentIdentity,
-			workset,
-			role,
-		});
+		record = deps.registry.create(input);
 	} catch {
 		return new Response(`cwd does not resolve: ${input.cwd}`, { status: 400 });
 	}
@@ -457,6 +499,61 @@ async function handleRegisterSession(
 		sessionId: record.sessionId,
 		token: record.token,
 		agentIdentity: record.agentIdentity,
+	});
+}
+
+async function handlePair(
+	req: Request,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const originError = requirePairOrigin(req, deps.paths);
+	if (originError) return originError;
+	const capacityError = requireSessionCapacity(deps);
+	if (capacityError) return capacityError;
+	const contentType = (req.headers.get("content-type") ?? "")
+		.split(";")[0]
+		.trim();
+	if (contentType !== "application/json") {
+		return new Response("Content-Type must be application/json", {
+			status: 415,
+		});
+	}
+
+	let request: PairRequest;
+	try {
+		request = validatePairRequest(await req.json());
+	} catch (err) {
+		return new Response(describeError(err), {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+
+	const attempt = consumePairingAttempt(deps.paths, request.code);
+	if (attempt.outcome === "missing") {
+		return new Response("no pairing code is pending; run `dg-daemon pair`", {
+			status: 404,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (attempt.outcome === "expired") {
+		return new Response("pairing code expired; run `dg-daemon pair`", {
+			status: 410,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (attempt.outcome === "incorrect") {
+		return new Response(
+			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
+			{ status: 401, headers: NOSNIFF_HEADERS },
+		);
+	}
+
+	return createSessionResponse(deps, {
+		cwd: process.cwd(),
+		agentIdentity: "extension",
+		workset: "paired",
+		role: "agent",
 	});
 }
 
