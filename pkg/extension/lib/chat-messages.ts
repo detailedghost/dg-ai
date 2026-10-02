@@ -8,6 +8,7 @@ export const MSG = {
 	sessionClose: "dg-chat:session-close",
 	frame: "dg-chat:frame",
 	connection: "dg-chat:connection",
+	connectionRequest: "dg-chat:connection-request",
 	overwatchState: "dg-chat:overwatch-state",
 	configRequest: "dg-chat:config-request",
 	commandInvocation: "dg-chat:command-invocation",

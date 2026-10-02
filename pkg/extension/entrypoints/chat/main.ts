@@ -36,6 +36,10 @@ import {
 } from "@/lib/features/chat-node";
 import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
 import { createChatSessions } from "@/lib/features/chat-sessions";
+import {
+	mountPairing,
+	type PairingOptions,
+} from "@/lib/features/pairing";
 import type { ChatHistoryItem } from "@/lib/features/chat-transcript";
 import { createVimNav } from "@/lib/features/vim-nav";
 import { createIcon, type IconName } from "./icons";
@@ -63,6 +67,7 @@ export type ChatPageOptions = {
 	matchMedia?: (query: string) => MotionQuery;
 	createClient?: () => ChatClient;
 	loadBootstraps?: () => Promise<SessionBootstrap[]>;
+	pairing?: Omit<PairingOptions, "initialConnected" | "variant">;
 };
 
 function isConnectionState(value: unknown): value is ChatConnectionState {
@@ -75,7 +80,7 @@ function isConnectionState(value: unknown): value is ChatConnectionState {
 
 type PillState = ChatConnectionState | "not-paired";
 
-const NOT_PAIRED_HINT = "Not paired. Run `dg-agent start --open`";
+const NOT_PAIRED_HINT = "Not paired";
 
 function connectionStatusLabel(state: PillState, detail?: string): string {
 	const label = {
@@ -526,12 +531,23 @@ export async function renderChatPage(
 	threadError.setAttribute("role", "alert");
 	threadError.hidden = true;
 	const threadNodes = element(doc, "div", "chat-thread__nodes");
-	thread.append(threadHeader, threadError, threadNodes);
+	const pairHost = element(doc, "div", "chat-pair");
+	thread.append(threadHeader, threadError, pairHost, threadNodes);
 
 	const moveStatus = element(doc, "div", "chat-move-status");
 	moveStatus.setAttribute("role", "status");
 	root.append(rail, thread, moveStatus);
 	root.dataset.view = "rail";
+	const pairing = mountPairing(pairHost, {
+		variant: "entry",
+		initialConnected:
+			bootstraps.length > 0 && client.getConnectionState() === "connected",
+		runtime: {
+			sendMessage: (message) =>
+				(browser.runtime as unknown as ChatRuntime).sendMessage(message),
+		},
+		...options.pairing,
+	});
 
 	let canvas: ReturnType<typeof createChatCanvas> | undefined;
 	let canvasContainer: HTMLElement | undefined;
@@ -768,6 +784,7 @@ export async function renderChatPage(
 	function updateConnectionStatus(): void {
 		const connection = client.getConnectionState();
 		const state: PillState = isPaired() ? connection : "not-paired";
+		pairing.setConnected(state === "connected");
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
 		const message = connectionStatusLabel(state, connectionDetail);

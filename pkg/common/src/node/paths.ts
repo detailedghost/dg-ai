@@ -9,6 +9,7 @@ export type SystemSeams = {
 
 export type DgPaths = {
 	stateDir: string;
+	pairingPath: string;
 	daemonDir: string;
 	pidPath: string;
 	dbPath: string;
@@ -33,6 +34,7 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 
 	return {
 		stateDir,
+		pairingPath: path.join(stateDir, "pairing.json"),
 		daemonDir,
 		pidPath: path.join(daemonDir, "daemon.pid"),
 		dbPath: path.join(daemonDir, "daemon.db"),
