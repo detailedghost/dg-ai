@@ -1,0 +1,37 @@
+{
+	"provider": "protonmail",
+	"configHome": "/tmp/email-organizer-test-config-home",
+	"protonmail": {
+		"dataPath": "test/fixtures/proton-dataset.json",
+		"snippetLength": 160,
+		"batchSize": 200,
+		"liveBrowser": false
+	},
+	"outlook": {
+		"dataPath": "test/fixtures/outlook-dataset.json",
+		"clientId": "synthetic-client-id",
+		"allowPlaintextTokenCache": true,
+		"snippetLength": 160,
+		"batchSize": 200,
+		"pageSize": 2
+	},
+	"outlook": {
+		"dataPath": "test/fixtures/outlook-dataset.json",
+		"clientId": "synthetic-client-id",
+		"allowPlaintextTokenCache": true,
+		"snippetLength": 160,
+		"batchSize": 200,
+		"pageSize": 2
+	},
+	"classifier": {
+		"model": "gpt-4.1-nano"
+	},
+	"output": {
+		"reportsDir": "data/reports",
+		"codexDir": "data/codex",
+		"auditDir": "data/audit"
+	},
+	"security": {
+		"allowRawDebugPaths": []
+	}
+}
