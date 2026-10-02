@@ -208,6 +208,8 @@ redaction. dg-skills inbox supplies encrypted profile/cache hooks and an
 authenticated request-ID/session-bound Proton relay through @dg/dg-agent/client.
 The extension retains session headers in a Proton-only MAIN observer and executes
 fixed operations; browser response metadata goes directly back to CLI JSON.
+Graph requests use `Prefer: IdType="ImmutableId"` so moves preserve the IDs used
+by subsequent read-state updates. See [Microsoft's immutable ID guidance](https://learn.microsoft.com/en-us/graph/outlook-immutable-id).
 
 Workspaces/config live under DG_HOME/inbox, with explicit overrides. Async page
 generators stop requesting pages when consumers return. The --workers option

@@ -7,11 +7,13 @@ import { isProtonMailOrigin } from "../features/inbox-proton-observer";
 import { sanitizeInboxBrowserResponse } from "../features/inbox-proton";
 
 type RequestFrame = Extract<ChatFrame, { type: "inbox-browser-request" }>;
+/** Correlated result before the session transport attaches its private capability token. */
 export type InboxResultFrame = Omit<
 	Extract<ChatFrame, { type: "inbox-browser-result" }>,
 	"token"
 >;
 type MailTab = { id?: number; url?: string };
+/** Injectable tab/MAIN scripting boundary used to select and recheck an authenticated Proton account. */
 export type InboxBrowserApi = {
 	tabs: {
 		query(query: Record<string, unknown>): Promise<MailTab[]>;
@@ -46,6 +48,7 @@ function accountMatches(tab: MailTab, accountHint: string): boolean {
 	}
 }
 
+/** Selects and rechecks an exact Proton tab/account, runs a fixed MAIN operation, and returns sanitized correlated metadata. */
 export function createInboxHandler({
 	browserApi,
 }: {

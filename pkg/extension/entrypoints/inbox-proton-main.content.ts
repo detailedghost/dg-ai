@@ -2,6 +2,7 @@ import { executeProtonPage } from "@/lib/features/inbox-proton";
 import { installProtonSessionObserver } from "@/lib/features/inbox-proton-observer";
 import type { InboxBrowserRequest } from "@dg/common";
 
+/** Installs the account-bound MAIN observer and fixed operation entrypoint on supported Proton origins. */
 export default defineContentScript({
 	matches: ["https://mail.proton.me/*", "https://mail.protonmail.com/*"],
 	runAt: "document_start",

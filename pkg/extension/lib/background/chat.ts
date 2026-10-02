@@ -61,7 +61,9 @@ export type ChatBrowserApi = {
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
-		query?(queryInfo: { url: string }): Promise<{ id?: number; windowId?: number }[]>;
+		query?(queryInfo: {
+			url: string;
+		}): Promise<{ id?: number; windowId?: number }[]>;
 		update?(tabId: number, props: { active: boolean }): unknown;
 	};
 	windows?: {
@@ -191,6 +193,7 @@ type ConfigWaiter = { key: string; settle(reply: ConfigRelayReply): void };
 
 const CONFIG_ROUND_TRIP_TIMEOUT_MS = 5000;
 
+/** Registers authenticated session transports, including correlated inbox replies that bypass the chat message queue. */
 export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;

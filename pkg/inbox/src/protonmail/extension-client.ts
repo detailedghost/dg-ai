@@ -15,8 +15,10 @@ import type {
 	CreateMailFilterInput,
 	UpdateMailFilterInput,
 } from "../providers/types";
+/** Proton provider over an injected authenticated extension transport; no browser process or credentials are owned. */
 export class ExtensionProtonMailClient implements MailProviderClient {
 	readonly provider = "protonmail" as const;
+	/** Uses private Proton tab/account configuration and the host's validated browser-request callback. */
 	constructor(
 		private readonly input: {
 			config: AppConfig;
@@ -37,6 +39,7 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			await this.input.browserRequest(validateInboxBrowserRequest(target)),
 		);
 	}
+	/** Returns exact provider folder identities for private routing and inventory. */
 	async listFolders(): Promise<MailFolder[]> {
 		return (
 			(await this.request({ operation: "list-folders" })).folders?.map(
@@ -44,9 +47,11 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			) ?? []
 		);
 	}
+	/** Loads complete private Sieve policies for safe consolidation; public output must scrub policy text. */
 	async listFilters() {
 		return (await this.request({ operation: "list-filters" })).filters ?? [];
 	}
+	/** Creates a reviewed Proton folder or label using the extension's fixed operation. */
 	async createFolder(input: {
 		name: string;
 		type?: "folder" | "label";
@@ -58,6 +63,7 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			throw new Error("Proton extension did not return the created folder");
 		return { ...folder, type: folder.type ?? "label" };
 	}
+	/** Creates a reviewed non-empty Sieve policy through the selected Proton account. */
 	async createFilter(input: CreateMailFilterInput) {
 		const filter = (
 			await this.request({
@@ -71,6 +77,7 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			throw new Error("Proton extension did not return the created filter");
 		return filter;
 	}
+	/** Updates a private rule ID; the extension rereads its policy and preserves omitted fields. */
 	async updateFilter(input: UpdateMailFilterInput) {
 		const filter = (
 			await this.request({
@@ -85,16 +92,20 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			throw new Error("Proton extension did not return the updated filter");
 		return filter;
 	}
+	/** Completes without closing the user's browser or the host-owned relay. */
 	async close(): Promise<void> {}
+	/** Deletes the reviewed rule ID through the selected account. */
 	async deleteFilter(input: { id: string }) {
 		await this.request({ operation: "delete-filter", ...input });
 	}
+	/** Collects the limited stream into memory; prefer listMessagesStream for large mailboxes. */
 	async listMessages(input: ListMessagesInput): Promise<MailMessageSummary[]> {
 		const messages: MailMessageSummary[] = [];
 		for await (const page of this.listMessagesStream(input))
 			messages.push(...page);
 		return messages;
 	}
+	/** Fetches fixed-size pages only on demand, honors the total limit, and stops when the consumer returns. */
 	async *listMessagesStream(
 		input: ListMessagesInput,
 	): AsyncGenerator<MailMessageSummary[]> {
@@ -143,14 +154,17 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 				...extra,
 			});
 	}
+	/** Moves messages in bounded extension batches; partial item failures reject the operation. */
 	async moveMessages(input: { messageIds: string[]; targetFolderId: string }) {
 		await this.mutate("move-messages", input.messageIds, {
 			targetFolderId: input.targetFolderId,
 		});
 	}
+	/** Marks selected private message IDs read after explicit workflow read intent. */
 	async markMessagesRead(input: { messageIds: string[] }) {
 		await this.mutate("mark-read", input.messageIds);
 	}
+	/** Removes a reviewed label/source folder from selected messages without deleting them. */
 	async unlabelMessages(input: { messageIds: string[]; labelId: string }) {
 		await this.mutate("unlabel-messages", input.messageIds, {
 			labelId: input.labelId,

@@ -17,6 +17,7 @@ import {
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
 
+/** Loopback connection and private session capability; never print its token. */
 export type ResolvedSession = {
 	port: number;
 	sessionId: string;
@@ -29,6 +30,7 @@ type BunWebSocketCtor = new (
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
+/** Resolves an explicit session or the sole cwd match, requiring a live daemon and compatible protocol. */
 export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	const paths = resolveDgPaths();
 	const handle = readPidFile(paths);
@@ -49,12 +51,14 @@ export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
 	};
 }
 
+/** Authenticated loopback CLI transport; callers own response correlation and connection cleanup. */
 export class CliClient {
 	private constructor(
 		private readonly socket: WebSocket,
 		readonly session: ResolvedSession,
 	) {}
 
+	/** Authenticates the WebSocket with the session capability and rejects connection failures within a bound. */
 	static connect(
 		session: ResolvedSession,
 		timeoutMs = CLI_CONNECT_TIMEOUT_MS,
@@ -111,10 +115,12 @@ export class CliClient {
 		});
 	}
 
+	/** Sends a typed frame on the authenticated socket; response handling remains the caller's responsibility. */
 	send(frame: CliRequest): void {
 		this.socket.send(JSON.stringify(frame));
 	}
 
+	/** Waits only for replies accepted by the caller's type predicate; cleans listeners on timeout/disconnect. */
 	request<T>(
 		frame: CliRequest,
 		accept: (value: unknown) => value is T,
@@ -157,11 +163,13 @@ export class CliClient {
 		});
 	}
 
+	/** Closes the host-owned connection once all required requests have settled. */
 	close(): void {
 		this.socket.close();
 	}
 }
 
+/** Builds a private authenticated envelope for frame types that require the session token. */
 export function frameEnvelope(session: ResolvedSession) {
 	return {
 		sessionId: session.sessionId,
