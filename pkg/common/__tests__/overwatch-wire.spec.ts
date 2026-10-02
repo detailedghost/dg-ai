@@ -184,7 +184,7 @@ describe("validateOverwatchLaneUpdate", () => {
 		).toThrow("cannot be used together");
 	});
 
-	it.each(["task", "stage", "kind"])(
+	it.each(["task", "stage", "mr", "eta", "next", "url", "kind", "clearNext"])(
 		"rejects null for the optional %s field",
 		(field) => {
 			expect(() =>

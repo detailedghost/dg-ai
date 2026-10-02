@@ -112,7 +112,45 @@ describe("dg-agent overwatch integration", () => {
 		]);
 
 		expect(clear.exitCode).toBe(0);
-		expect(JSON.parse(afterClear.stdout).lanes[0]).not.toHaveProperty("next");
+		expect(JSON.parse(afterClear.stdout).lanes[0]).toEqual({
+			chat: "print",
+			task: "Prepare launch collateral",
+			stage: "merge",
+			mr: "!298",
+			eta: "20m",
+			url: "https://claude.ai/code/session-123",
+			kind: "chat",
+			publisher: "agent",
+			updatedAt: expect.any(String),
+		});
+	});
+
+	it("defaults a stage-only new lane task to its chat name", async () => {
+		const started = await startWithSession();
+		dgHome = started.dgHome;
+		const session = ["--session", started.bootstrap.sessionId];
+
+		const create = await runCli(dgHome, started.port, [
+			"overwatch",
+			...session,
+			"set",
+			"new-chat",
+			"--stage",
+			"review",
+		]);
+		const snapshot = await runCli(dgHome, started.port, [
+			"overwatch",
+			...session,
+			"snapshot",
+			"--json",
+		]);
+
+		expect(create.exitCode).toBe(0);
+		expect(JSON.parse(snapshot.stdout).lanes[0]).toMatchObject({
+			chat: "new-chat",
+			task: "new-chat",
+			stage: "review",
+		});
 	});
 
 	it("rejects a new lane without a stage", async () => {

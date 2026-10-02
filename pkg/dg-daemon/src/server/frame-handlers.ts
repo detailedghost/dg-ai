@@ -18,7 +18,6 @@ import {
 	validateChatFrame,
 	validateCommandManifest,
 	validateOverwatchAction,
-	validateOverwatchLane,
 	validateOverwatchLaneUpdate,
 	validateOverwatchMerge,
 	validateIsoTimestamp,
@@ -75,6 +74,7 @@ type OverwatchOpenOutcome = { ok: true } | { ok: false; error: string };
 type OverwatchOpenRequest = {
 	resolve(outcome: OverwatchOpenOutcome): void;
 	timer: ReturnType<typeof setTimeout>;
+	remaining: Set<ServerWebSocket<SocketState>>;
 };
 
 function sendFrame(
@@ -125,8 +125,12 @@ function broadcastPageFrame(
 function sendOverwatchFrame(
 	deps: FrameHandlerDeps,
 	frame: Record<string, unknown>,
-): { count: number; sent: Promise<void> } {
+): {
+	targets: Set<ServerWebSocket<SocketState>>;
+	sent: Promise<void>;
+} {
 	const sends: Promise<void>[] = [];
+	const targets = new Set<ServerWebSocket<SocketState>>();
 	const candidate = {
 		sessionId: OVERWATCH_SESSION_ID,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
@@ -134,10 +138,11 @@ function sendOverwatchFrame(
 	};
 	validateChatFrame(candidate);
 	const payload = JSON.stringify(candidate);
-	const count = deps.connections.forEachExtension((socket) => {
+	deps.connections.forEachExtension((socket) => {
+		targets.add(socket);
 		sends.push(sendViaQueue(socket, payload));
 	});
-	return { count, sent: Promise.all(sends).then(() => undefined) };
+	return { targets, sent: Promise.all(sends).then(() => undefined) };
 }
 
 async function broadcastOverwatchState(deps: FrameHandlerDeps): Promise<void> {
@@ -241,13 +246,14 @@ async function sendMutationResult(
 function awaitOverwatchOpen(
 	deps: FrameHandlerDeps,
 	requestId: string,
+	targets: Set<ServerWebSocket<SocketState>>,
 ): Promise<OverwatchOpenOutcome> {
 	return new Promise((resolve) => {
 		const timer = setTimeout(() => {
 			deps.overwatchOpenRequests.delete(requestId);
 			resolve({ ok: false, error: "extension did not complete the open request" });
 		}, 4_000);
-		deps.overwatchOpenRequests.set(requestId, { resolve, timer });
+		deps.overwatchOpenRequests.set(requestId, { resolve, timer, remaining: targets });
 	});
 }
 
@@ -689,18 +695,15 @@ async function handleCliFrame(
 		}
 		case "cli-overwatch-open": {
 			const requestId = randomUUID();
-			const outcome = awaitOverwatchOpen(deps, requestId);
 			const delivery = sendOverwatchFrame(deps, {
 				type: "overwatch-open",
 				requestId,
 			});
-			if (delivery.count === 0) {
-				const pending = deps.overwatchOpenRequests.get(requestId);
-				if (pending) clearTimeout(pending.timer);
-				deps.overwatchOpenRequests.delete(requestId);
+			if (delivery.targets.size === 0) {
 				await sendError(ws, sessionId, "extension not connected");
 				return;
 			}
+			const outcome = awaitOverwatchOpen(deps, requestId, delivery.targets);
 			await delivery.sent;
 			const completed = await outcome;
 			if (!completed.ok) {
@@ -992,6 +995,8 @@ async function dispatchFrame(
 			}
 			const pending = deps.overwatchOpenRequests.get(frame.requestId);
 			if (!pending) return;
+			if (!pending.remaining.delete(ws)) return;
+			if (!frame.ok && pending.remaining.size > 0) return;
 			clearTimeout(pending.timer);
 			deps.overwatchOpenRequests.delete(frame.requestId);
 			pending.resolve(

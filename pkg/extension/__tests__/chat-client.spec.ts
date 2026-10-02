@@ -16,6 +16,7 @@ import {
 	makeFakeSocket,
 	frameEvent as message,
 } from "./utils/relay-harness";
+import { buildSessionListFrame } from "./utils/frame-fixtures";
 
 const { createChatClient } = await import("@/lib/features/chat-client");
 
@@ -143,7 +144,7 @@ test("delivers an inbound overwatch-state frame without a chat-session capabilit
 	expect(received[0]?.type).toBe("overwatch-state");
 });
 
-test("drops a non-overwatch frame that uses the overwatch sentinel session id", () => {
+test("drops an agent-message frame that uses the overwatch sentinel session id", () => {
 	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });
 	client.connect(makeBootstrap());
@@ -162,6 +163,23 @@ test("drops a non-overwatch frame that uses the overwatch sentinel session id", 
 	);
 
 	expect(received).toHaveLength(0);
+});
+
+test("delivers a session-list frame that uses the overwatch sentinel session id", () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	const received: ChatFrame[] = [];
+	client.onFrame((frame) => received.push(frame));
+
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame([], { sessionId: OVERWATCH_SESSION_ID })),
+	);
+
+	expect(received).toHaveLength(1);
+	expect(received[0]?.type).toBe("session-list");
 });
 
 test("a malformed inbound payload is logged and dropped, never thrown past the demux", () => {
