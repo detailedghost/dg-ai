@@ -176,13 +176,15 @@ describe("dg-agent overwatch", () => {
 		expect(client.frames).toEqual([{ type: "cli-overwatch-open" }]);
 	});
 
-	it("treats a quiet daemon as a successful open", async () => {
+	it("requires an explicit successful open response", async () => {
 		const client = new StubClient();
 		client.openResult = new DgCliError(
 			"dg-daemon did not answer the CLI request",
 		);
 
-		await expect(runOverwatchWithClient(["open"], client)).resolves.toBeDefined();
+		await expect(runOverwatchWithClient(["open"], client)).rejects.toThrow(
+			"dg-daemon did not answer the CLI request",
+		);
 		expect(client.frames).toEqual([{ type: "cli-overwatch-open" }]);
 	});
 
@@ -218,6 +220,25 @@ describe("dg-agent overwatch", () => {
 		expect(stdout).toContain("print");
 		expect(stdout).toContain("e2e");
 		expect(stdout).toContain("!298");
+	});
+
+	it("removes terminal control and bidi sequences from the human snapshot", async () => {
+		const malicious = structuredClone(BOARD);
+		malicious.lanes[0].mr = "!298\u001b]52;c;clipboard\u0007";
+		malicious.lanes[0].eta = "now\nFORGED";
+		malicious.lanes[0].next = "approve\u202ereversed";
+		const client = new StubClient({
+			type: "cli-overwatch-snapshot-result",
+			board: malicious,
+		});
+
+		const { stdout } = await runOverwatchWithClient(["snapshot"], client);
+
+		expect(stdout).not.toContain("\u001b");
+		expect(stdout).not.toContain("\u0007");
+		expect(stdout).not.toContain("\u202e");
+		expect(stdout).not.toContain("\nFORGED");
+		expect(stdout).toContain("now FORGED");
 	});
 
 	it("rejects an invalid stage with exit code 2 before connecting", async () => {
@@ -287,5 +308,37 @@ describe("dg-agent overwatch", () => {
 		});
 		expect(connectCount).toBe(0);
 		expect(client.frames).toEqual([]);
+	});
+
+	it("rejects a launch timestamp without a timezone before connecting", async () => {
+		const client = new StubClient();
+		let connectCount = 0;
+		const program = new Command();
+		program.exitOverride();
+		const overwatch = program.command("overwatch");
+		registerOverwatchCommands(overwatch, {
+			connect: async () => {
+				connectCount += 1;
+				return client;
+			},
+			write: async () => undefined,
+		});
+
+		const error = await program
+			.parseAsync([
+				"node",
+				"dg-agent",
+				"overwatch",
+				"launch",
+				"--go-live",
+				"2026-10-24T14:00:00",
+			])
+			.catch((caught: unknown) => caught);
+
+		expect(error).toMatchObject({
+			exitCode: 2,
+			message: "go-live must be an ISO timestamp with a timezone",
+		});
+		expect(connectCount).toBe(0);
 	});
 });

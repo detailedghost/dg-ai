@@ -1,8 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import {
 	CHAT_PROTOCOL_VERSION,
+	CHAT_MAX_PAYLOAD_BYTES,
 	type CliFrame,
+	type CliOverwatchOpenResult,
 	type CliOverwatchSnapshotResult,
+	OVERWATCH_ETA_MAX_LENGTH,
+	OVERWATCH_MAX_LANES,
+	OVERWATCH_MAX_MERGES,
+	OVERWATCH_MERGE_TITLE_MAX_LENGTH,
+	OVERWATCH_MR_MAX_LENGTH,
+	OVERWATCH_NEXT_MAX_LENGTH,
+	OVERWATCH_URL_MAX_LENGTH,
+	jsonByteLength,
 	type OverwatchBoard,
 	type OverwatchStage,
 	validateChatFrame,
@@ -108,16 +118,113 @@ describe("validateOverwatchLane", () => {
 	it.each([
 		["chat", "x".repeat(41)],
 		["task", "x".repeat(81)],
+		["mr", "x".repeat(OVERWATCH_MR_MAX_LENGTH + 1)],
+		["eta", "x".repeat(OVERWATCH_ETA_MAX_LENGTH + 1)],
+		["next", "x".repeat(OVERWATCH_NEXT_MAX_LENGTH + 1)],
+		["url", `https://claude.ai/${"x".repeat(OVERWATCH_URL_MAX_LENGTH)}`],
 	])("rejects an oversized %s and names the field", (field, value) => {
 		expect(() =>
 			validateOverwatchLane(buildLane({ [field]: value })),
 		).toThrow(`overwatch lane.${field}`);
 	});
 
+	it("rejects malformed timestamps", () => {
+		expect(() =>
+			validateOverwatchLane(buildLane({ updatedAt: "10/02/2026" })),
+		).toThrow("overwatch lane.updatedAt");
+	});
+
 	it("rejects a non-Claude URL and names the field", () => {
 		expect(() =>
 			validateOverwatchLane(buildLane({ url: "https://example.com/chat" })),
 		).toThrow("overwatch lane.url");
+	});
+});
+
+describe("Overwatch board bounds", () => {
+	it("rejects lane and merge collections above their limits", () => {
+		expect(() =>
+			validateChatFrame(
+				buildStateFrame({
+					board: buildBoard({
+						lanes: Array.from({ length: OVERWATCH_MAX_LANES + 1 }, (_, index) =>
+							buildLane({ chat: `chat${index}` }),
+						),
+					}),
+				}),
+			),
+		).toThrow("board.lanes");
+
+		expect(() =>
+			validateChatFrame(
+				buildStateFrame({
+					board: buildBoard({
+						merges: Array.from(
+							{ length: OVERWATCH_MAX_MERGES + 1 },
+							(_, index) => ({
+								mr: `!${index}`,
+								title: "merged",
+								at: "2026-10-02T14:00:00.000Z",
+							}),
+						),
+					}),
+				}),
+			),
+		).toThrow("board.merges");
+	});
+
+	it("rejects oversized merge text and launch timestamps without timezones", () => {
+		expect(() =>
+			validateChatFrame(
+				buildStateFrame({
+					board: buildBoard({
+						merges: [
+							{
+								mr: "!297",
+								title: "x".repeat(OVERWATCH_MERGE_TITLE_MAX_LENGTH + 1),
+								at: "2026-10-02T14:00:00.000Z",
+							},
+						],
+					}),
+				}),
+			),
+		).toThrow("board.merges[0].title");
+		expect(() =>
+			validateChatFrame(
+				buildStateFrame({
+					board: buildBoard({ goLive: "2026-10-24T14:00:00" }),
+				}),
+			),
+		).toThrow("board.goLive");
+	});
+
+	it("keeps a maximally populated board within the transport payload cap", () => {
+		const urlPrefix = "https://claude.ai/";
+		const frame = buildStateFrame({
+			board: buildBoard({
+				lanes: Array.from({ length: OVERWATCH_MAX_LANES }, (_, index) =>
+					buildLane({
+						chat: `chat${index}`,
+						task: "😀".repeat(40),
+						mr: "😀".repeat(OVERWATCH_MR_MAX_LENGTH / 2),
+						eta: "😀".repeat(OVERWATCH_ETA_MAX_LENGTH / 2),
+						next: "😀".repeat(OVERWATCH_NEXT_MAX_LENGTH / 2),
+						url: `${urlPrefix}${"😀".repeat(
+							(OVERWATCH_URL_MAX_LENGTH - urlPrefix.length) / 2,
+						)}`,
+						publisher: "😀".repeat(64),
+					}),
+				),
+				merges: Array.from({ length: OVERWATCH_MAX_MERGES }, (_, index) => ({
+					mr: `!${index}`,
+					title: "😀".repeat(OVERWATCH_MERGE_TITLE_MAX_LENGTH / 2),
+					at: "2026-10-02T14:00:00.000Z",
+				})),
+			}),
+		});
+
+		expect(() => validateChatFrame(frame)).not.toThrow();
+		expect(jsonByteLength(frame)).toBeLessThanOrEqual(CHAT_MAX_PAYLOAD_BYTES);
 	});
 });
 
@@ -183,6 +290,9 @@ describe("Overwatch CLI frame types", () => {
 			type: "cli-overwatch-snapshot-result",
 			board: buildBoard() as OverwatchBoard,
 		} satisfies CliOverwatchSnapshotResult;
+		const openResult = {
+			type: "cli-overwatch-open-result",
+		} satisfies CliOverwatchOpenResult;
 
 		expect(frames.map((frame) => frame.type)).toEqual([
 			"cli-overwatch-set",
@@ -193,5 +303,6 @@ describe("Overwatch CLI frame types", () => {
 			"cli-overwatch-snapshot",
 		]);
 		expect(result.type).toBe("cli-overwatch-snapshot-result");
+		expect(openResult.type).toBe("cli-overwatch-open-result");
 	});
 });

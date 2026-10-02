@@ -5,9 +5,11 @@ import {
 	bootServe,
 	ChatStore,
 	cleanupDgHome,
+	connectPage,
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
 	FILE_ONLY_SEAMS,
+	registerSession,
 	stopServe,
 } from "../utils/daemon-harness";
 
@@ -43,6 +45,14 @@ async function seedLane(dgHome: string): Promise<void> {
 	store.close();
 }
 
+async function pinExtensionOrigin(port: number): Promise<void> {
+	const credentials = await registerSession(port, {
+		agentIdentity: "http-test-agent",
+	});
+	const page = await connectPage(port, credentials);
+	page.close();
+}
+
 async function postAction(
 	port: number,
 	body: unknown,
@@ -61,6 +71,7 @@ async function postAction(
 describe("overwatch HTTP routes", () => {
 	it("returns the board and routes one action to the lane publisher", async () => {
 		const { port, dgHome } = await boot();
+		await pinExtensionOrigin(port);
 		await seedLane(dgHome);
 
 		const boardResponse = await fetch(`http://127.0.0.1:${port}/overwatch`, {
@@ -99,6 +110,7 @@ describe("overwatch HTTP routes", () => {
 
 	it("returns 404 for an action on an unknown lane", async () => {
 		const { port } = await boot();
+		await pinExtensionOrigin(port);
 		const response = await postAction(port, {
 			chat: "missing",
 			action: "approve",
@@ -108,6 +120,7 @@ describe("overwatch HTTP routes", () => {
 
 	it("refuses foreign Origins for reads and actions", async () => {
 		const { port } = await boot();
+		await pinExtensionOrigin(port);
 		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
 			headers: headers(port, "https://evil.example"),
 		});
@@ -116,6 +129,24 @@ describe("overwatch HTTP routes", () => {
 			{ chat: "print", action: "approve" },
 			"https://evil.example",
 		);
+		expect(read.status).toBe(400);
+		expect(action.status).toBe(400);
+	});
+
+	it("refuses an extension Origin until an authenticated handshake pins it", async () => {
+		const { port } = await boot();
+		const foreignExtension =
+			"chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: headers(port, foreignExtension),
+		});
+		const action = await postAction(
+			port,
+			{ chat: "print", action: "approve" },
+			foreignExtension,
+		);
+
 		expect(read.status).toBe(400);
 		expect(action.status).toBe(400);
 	});

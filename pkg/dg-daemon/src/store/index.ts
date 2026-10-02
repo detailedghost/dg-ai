@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { createHash, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
@@ -10,6 +10,7 @@ import {
 	describeError,
 	historyItemCost,
 	OVERWATCH_SESSION_ID,
+	OVERWATCH_MAX_MERGES,
 	type OverwatchBoard,
 	type OverwatchLane,
 	type OverwatchMerge,
@@ -530,6 +531,7 @@ export class ChatStore extends EventEmitter {
 	private constructor(
 		private readonly db: Database,
 		private readonly cipherBox: CipherBox,
+		private readonly blindIndexKey: Buffer,
 		private readonly meta: CryptoMetaInfo,
 		private readonly claimLeaseMs: number,
 	) {
@@ -609,6 +611,9 @@ export class ChatStore extends EventEmitter {
 			const store = new ChatStore(
 				db,
 				createCipherBox(resolved.dataKey),
+				createHmac("sha256", resolved.dataKey)
+					.update("dg-overwatch-blind-index")
+					.digest(),
 				resolved.cryptoMeta,
 				claimLeaseMs,
 			);
@@ -1087,8 +1092,12 @@ export class ChatStore extends EventEmitter {
 		return this.#aad(domain, OVERWATCH_SESSION_ID, rowId);
 	}
 
-	#overwatchKey(chat: string): string {
-		return createHash("sha256").update(chat).digest("hex");
+	#overwatchKey(domain: string, value: string): string {
+		return createHmac("sha256", this.blindIndexKey)
+			.update(domain)
+			.update("\0")
+			.update(value)
+			.digest("hex");
 	}
 
 	#encryptOverwatch(domain: string, rowId: string, value: string) {
@@ -1127,7 +1136,7 @@ export class ChatStore extends EventEmitter {
 	}
 
 	upsertLane(input: UpsertLaneInput): void {
-		const rowId = this.#overwatchKey(input.chat);
+		const rowId = this.#overwatchKey(AAD_OVERWATCH_CHAT, input.chat);
 		const chat = this.#encryptOverwatch(AAD_OVERWATCH_CHAT, rowId, input.chat);
 		const task = this.#encryptOverwatch(AAD_OVERWATCH_TASK, rowId, input.task);
 		const mr = input.mr
@@ -1215,35 +1224,59 @@ export class ChatStore extends EventEmitter {
 	removeLane(chat: string): boolean {
 		return (
 			this.db.run("DELETE FROM overwatch_lanes WHERE chat_key = ?", [
-				this.#overwatchKey(chat),
+				this.#overwatchKey(AAD_OVERWATCH_CHAT, chat),
 			]).changes > 0
 		);
 	}
 
 	addMerge(input: AddMergeInput): void {
-		const id = randomUUID();
+		const id = this.#overwatchKey(AAD_OVERWATCH_MERGE_MR, input.mr);
 		const mr = this.#encryptOverwatch(AAD_OVERWATCH_MERGE_MR, id, input.mr);
 		const title = this.#encryptOverwatch(
 			AAD_OVERWATCH_MERGE_TITLE,
 			id,
 			input.title,
 		);
-		this.db.run(
-			`INSERT INTO overwatch_merges (
-				id, mr_ciphertext, mr_iv, mr_tag,
-				title_ciphertext, title_iv, title_tag, at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			[
-				id,
-				mr.ciphertext,
-				mr.iv,
-				mr.tag,
-				title.ciphertext,
-				title.iv,
-				title.tag,
-				new Date().toISOString(),
-			],
-		);
+		const now = new Date();
+		const start = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate(),
+		).toISOString();
+		this.#withImmediateTransaction(() => {
+			this.db.run("DELETE FROM overwatch_merges WHERE at < ?", [start]);
+			this.db.run(
+				`INSERT INTO overwatch_merges (
+					id, mr_ciphertext, mr_iv, mr_tag,
+					title_ciphertext, title_iv, title_tag, at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					mr_ciphertext = excluded.mr_ciphertext,
+					mr_iv = excluded.mr_iv,
+					mr_tag = excluded.mr_tag,
+					title_ciphertext = excluded.title_ciphertext,
+					title_iv = excluded.title_iv,
+					title_tag = excluded.title_tag,
+					at = excluded.at`,
+				[
+					id,
+					mr.ciphertext,
+					mr.iv,
+					mr.tag,
+					title.ciphertext,
+					title.iv,
+					title.tag,
+					now.toISOString(),
+				],
+			);
+			this.db.run(
+				`DELETE FROM overwatch_merges
+				 WHERE id NOT IN (
+					SELECT id FROM overwatch_merges ORDER BY at DESC LIMIT ?
+				 )`,
+				[OVERWATCH_MAX_MERGES],
+			);
+		});
 	}
 
 	setLaunch(input: SetLaunchInput): void {

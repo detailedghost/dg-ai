@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	access,
+	chmod,
+	mkdtemp,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OverwatchBoard, OverwatchLane } from "@dg/common";
@@ -142,10 +150,36 @@ describe("overwatch snapshot renderer", () => {
 		expect(html).not.toContain("<img src=x");
 		expect(html).toContain("&lt;script&gt;alert(&quot;chat&quot;)&lt;/script&gt;");
 		expect(html).toContain("Tom&#39;s &lt;copy&gt;");
-		expect(html).toContain("Fix &lt;unsafe&gt; &amp; ship - now - next - done");
+		expect(html).toContain("Fix &lt;unsafe&gt; &amp; ship   now   next   done");
 		expect(withoutChatLinks).not.toMatch(/https?:\/\//);
-		expect(html).not.toMatch(/[—–─]/);
+		const visible = html
+			.replaceAll(/<style>[\s\S]*?<\/style>/g, "")
+			.replaceAll(/<[^>]+>/g, "");
+		expect(visible).not.toMatch(/[-‐‑‒–—―−─]/);
 		expect(html).not.toMatch(/border[^;{}]*(dashed|dotted)/);
+	});
+
+	it("constrains every narrow layout column and ellipsizes chat labels", () => {
+		const html = renderOverwatchSnapshot(
+			{
+				...board(),
+				lanes: [
+					lane("x".repeat(40), "review", {
+						mr: "x".repeat(80),
+						eta: "x".repeat(80),
+						next: "x".repeat(200),
+					}),
+					lane("y".repeat(40), "ci", { kind: "background" }),
+				],
+			},
+			renderedAt,
+		);
+
+		expect(html).toContain("grid-template-columns:minmax(0,1fr)");
+		expect(html).toContain("text-overflow:ellipsis;white-space:nowrap");
+		expect(html).toContain(".stats{display:grid;width:100%");
+		expect(html).toContain(`aria-label="${"x".repeat(40)}"`);
+		expect(html).toContain(`aria-label="${"y".repeat(40)}"`);
 	});
 });
 
@@ -174,6 +208,58 @@ describe("overwatch snapshot throttle", () => {
 		expect(await readFile(firstOutput, "utf8")).toContain("<!doctype html>");
 		expect(access(skippedOutput)).rejects.toThrow();
 	});
+
+	it("allows exactly one concurrent writer for a throttle key", async () => {
+		const scratchRoot = await mkdtemp(join(tmpdir(), "dg-overwatch-race-"));
+		temporaryDirectories.push(scratchRoot);
+		const results = await Promise.all([
+			writeOverwatchSnapshot(board(), {
+				now: renderedAt,
+				outPath: join(scratchRoot, "first.html"),
+				scratchRoot,
+				throttleKey: "board",
+			}),
+			writeOverwatchSnapshot(board(), {
+				now: renderedAt,
+				outPath: join(scratchRoot, "second.html"),
+				scratchRoot,
+				throttleKey: "board",
+			}),
+		]);
+
+		expect(results.filter((result) => result.status === "written")).toHaveLength(
+			1,
+		);
+		expect(
+			results.filter((result) => result.status === "throttled"),
+		).toHaveLength(1);
+	});
+
+	it("repairs private directory and file modes", async () => {
+		const scratchRoot = await mkdtemp(join(tmpdir(), "dg-overwatch-mode-"));
+		temporaryDirectories.push(scratchRoot);
+		const output = join(scratchRoot, "snapshot.html");
+		const state = join(scratchRoot, "board.json");
+		await chmod(scratchRoot, 0o755);
+		await writeFile(output, "old", { mode: 0o644 });
+		await writeFile(
+			state,
+			JSON.stringify({ renderedAt: renderedAt.getTime() }),
+			{ mode: 0o644 },
+		);
+
+		const result = await writeOverwatchSnapshot(board(), {
+			now: renderedAt,
+			outPath: output,
+			scratchRoot,
+			throttleKey: "board",
+		});
+
+		expect(result.status).toBe("throttled");
+		expect((await stat(scratchRoot)).mode & 0o777).toBe(0o700);
+		expect((await stat(output)).mode & 0o777).toBe(0o600);
+		expect((await stat(state)).mode & 0o777).toBe(0o600);
+	});
 });
 
 describe("overwatch snapshot command", () => {
@@ -196,5 +282,21 @@ describe("overwatch snapshot command", () => {
 		expect((await readFile(output, "utf8")).match(/data-chat-tile/g)).toHaveLength(
 			4,
 		);
+	});
+});
+
+describe("overwatch skill workflow", () => {
+	it("requires one authoritative publisher to republish after every mutation", async () => {
+		const skill = await readFile(
+			join(import.meta.dir, "../../../plugins/dg/skills/overwatch/SKILL.md"),
+			"utf8",
+		);
+
+		expect(skill).toContain("authoritative publisher");
+		expect(skill).toContain(
+			"After every successful `set`, `merged`, `launch`, or `remove` mutation",
+		);
+		expect(skill).toContain("throttled update loop");
+		expect(skill).toContain("must not run board mutation commands themselves");
 	});
 });

@@ -51,7 +51,7 @@ import { handleSocketMessage } from "./frame-handlers";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
-	checkPinnedOrigin,
+	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
 } from "./origin";
@@ -108,13 +108,34 @@ function requireExtensionOrigin(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (!checkPinnedOrigin(paths, origin as string)) {
+	const pinnedOrigin = getPinnedOrigin(paths);
+	if (pinnedOrigin !== undefined && pinnedOrigin !== origin) {
 		return new Response(
 			"refused: Origin does not match the pinned extension origin — if the " +
 				"extension moved (e.g. an unpacked reload from a new path), run " +
 				"`dg-daemon origin clear` and reconnect",
 			{ status: 400, headers: NOSNIFF_HEADERS },
 		);
+	}
+	return undefined;
+}
+
+function requirePinnedExtensionOrigin(
+	req: Request,
+	paths: DgPaths,
+): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (!isExtensionOrigin(origin)) {
+		return new Response("refused: requires an extension-scheme Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (getPinnedOrigin(paths) !== origin) {
+		return new Response("refused: Origin does not match a pinned extension origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
 	}
 	return undefined;
 }
@@ -307,7 +328,7 @@ async function handleOverwatchRoute(
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
-		refuseForeignOrigin(req, deps.paths);
+		requirePinnedExtensionOrigin(req, deps.paths);
 	if (refusal) return refusal;
 	if (url.pathname === "/overwatch" && req.method === "GET") {
 		return json(deps.store.getBoard());

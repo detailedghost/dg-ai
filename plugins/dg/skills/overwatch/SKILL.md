@@ -6,6 +6,9 @@ description: Keep the DeeGee Overwatch board current across parallel chats, rout
 # Overwatch
 
 Use Overwatch to maintain one launch lane per chat and a shared phone snapshot.
+One dedicated Overwatch chat is the authoritative publisher for the board and
+phone artifact. Other chats report status to that identity with `dg-agent send`
+and must not run board mutation commands themselves.
 
 ## Start the chat session
 
@@ -16,13 +19,13 @@ does not, run this first from the chat's working directory:
 dg-agent start --agent-identity <name>
 ```
 
-Use a stable, unique identity. A chat that owns its lane should normally use the
-same short name for its identity and lane.
+Use `overwatch-board` as the stable identity for the authoritative publisher.
 
 ## Keep the board current
 
-Publish one lane per chat. A dedicated Overwatch chat may publish every lane, or
-each chat may publish its own lane.
+Publish every lane from the authoritative Overwatch chat. Keep `dg-agent recv`
+running with a bounded blocking timeout so status reports and board actions are
+processed continuously.
 
 ```bash
 dg-agent overwatch set <chat> --task "<task>" --stage <review|ci|e2e|merge|done> --mr "<!number>" --eta "<eta>" --next "<what you need>" --url "<claude session url>"
@@ -38,6 +41,10 @@ dg-agent overwatch launch --go-live <iso> --go-no-go <iso>
 dg-agent overwatch remove <chat>
 ```
 
+After every successful `set`, `merged`, `launch`, or `remove` mutation, run the
+phone snapshot procedure below before processing the next report. This ordering
+is mandatory so no board change can leave the artifact stale.
+
 Open or focus the live board with:
 
 ```bash
@@ -46,7 +53,7 @@ dg-agent overwatch open
 
 ## Handle board actions
 
-Run `dg-agent recv` regularly. Parse its output as JSON, then parse the JSON in
+Run `dg-agent recv --block --timeout 30s` continuously. Parse its output as JSON, then parse the JSON in
 its `body` field. Board actions have this shape:
 
 ```json
@@ -73,3 +80,8 @@ Keep `/tmp/ai/dg-overwatch/skill-state.json` as JSON with the returned
 `artifactUrl`. Create the artifact only when that URL is absent. On later
 renders, update the existing artifact at the stored URL so the phone link never
 changes.
+
+When a mutation is throttled, retain the newest board state and rerun the same
+snapshot command as soon as the reported wait expires. Do not process another
+mutation until that retry has either updated the artifact or returned a newer
+wait. This is the authoritative publisher's throttled update loop.

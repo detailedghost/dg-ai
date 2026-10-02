@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import type { OverwatchLane } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { ChatStore } from "../../src/store";
@@ -81,6 +82,41 @@ describe("ChatStore overwatch board", () => {
 		}
 	});
 
+	it("keeps merge reports idempotent and prunes expired rows", async () => {
+		const dgHome = freshDgHome();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		try {
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			store.addMerge({ mr: "!298", title: "First title" });
+			store.close();
+
+			const raw = new Database(paths.dbPath);
+			raw.run("UPDATE overwatch_merges SET at = ?", [
+				"2000-01-01T12:00:00.000Z",
+			]);
+			raw.close(true);
+
+			const reopened = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			reopened.addMerge({ mr: "!299", title: "Current title" });
+			reopened.addMerge({ mr: "!299", title: "Updated title" });
+			expect(reopened.getBoard().merges).toHaveLength(1);
+			expect(reopened.getBoard().merges[0]).toMatchObject({
+				mr: "!299",
+				title: "Updated title",
+			});
+			reopened.close();
+
+			const probe = new Database(paths.dbPath, { readonly: true });
+			const count = probe
+				.query("SELECT COUNT(*) AS count FROM overwatch_merges")
+				.get() as { count: number };
+			expect(count.count).toBe(1);
+			probe.close(true);
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+
 	it("keeps board free text encrypted at rest", async () => {
 		const dgHome = freshDgHome();
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -92,8 +128,16 @@ describe("ChatStore overwatch board", () => {
 
 			const bytes = await Bun.file(paths.dbPath).arrayBuffer();
 			const text = Buffer.from(bytes).toString("utf8");
+			const raw = new Database(paths.dbPath, { readonly: true });
+			const row = raw
+				.query("SELECT chat_key FROM overwatch_lanes")
+				.get() as { chat_key: string };
+			raw.close(true);
 			expect(text).not.toContain("Prepare launch collateral");
 			expect(text).not.toContain("Private merge title");
+			expect(row.chat_key).not.toBe(
+				createHash("sha256").update("print").digest("hex"),
+			);
 		} finally {
 			cleanupDgHome(dgHome);
 		}
