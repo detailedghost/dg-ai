@@ -1,0 +1,761 @@
+import { randomUUID } from "node:crypto";
+import {
+	chmod,
+	mkdir,
+	open,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+	CHAT_PROTOCOL_VERSION,
+	OVERWATCH_SESSION_ID,
+	type OverwatchBoard,
+	type OverwatchLane,
+	type OverwatchStage,
+	validateChatFrame,
+} from "@dg/common";
+import type { Command } from "commander";
+
+const SNAPSHOT_DIRECTORY = "/tmp/ai/dg-overwatch";
+const THROTTLE_WINDOW_MS = 120_000;
+const LOCK_LEASE_MS = 30_000;
+const SKILL_STATE_FILENAME = "skill-state.json";
+const STAGES = ["review", "ci", "e2e", "merge"] as const;
+const MONTHS = [
+	"Jan",
+	"Feb",
+	"Mar",
+	"Apr",
+	"May",
+	"Jun",
+	"Jul",
+	"Aug",
+	"Sep",
+	"Oct",
+	"Nov",
+	"Dec",
+] as const;
+
+type SnapshotOptions = {
+	now?: Date;
+	outPath?: string;
+	scratchRoot?: string;
+	throttleKey?: string;
+};
+
+export type SnapshotWriteResult =
+	| { status: "written"; path: string }
+	| { status: "throttled"; seconds: number };
+
+function escapeHtml(value: string): string {
+	return value.replace(
+		/[&<>"']/g,
+		(character) =>
+			({
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				"\"": "&quot;",
+				"'": "&#39;",
+			})[character] ?? character,
+	);
+}
+
+function escapeText(value: string): string {
+	return escapeHtml(value.replace(/[\p{Dash_Punctuation}\u2212\u2500]/gu, " "));
+}
+
+function parseDate(value: string | undefined): Date | undefined {
+	if (!value) return undefined;
+	const date = new Date(value);
+	return Number.isFinite(date.getTime()) ? date : undefined;
+}
+
+function clockTime(date: Date): string {
+	const hour = date.getUTCHours();
+	const displayHour = hour % 12 || 12;
+	const minute = String(date.getUTCMinutes()).padStart(2, "0");
+	return `${displayHour}:${minute} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+function dateTime(date: Date): string {
+	return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}, ${clockTime(date)} UTC`;
+}
+
+function launchDate(label: string, value: string | undefined): string {
+	const date = parseDate(value);
+	return date ? `${label} ${dateTime(date)}` : `${label} NOT SET`;
+}
+
+function countdown(goLive: string | undefined, now: Date): string {
+	const target = parseDate(goLive);
+	if (!target) return "GO LIVE NOT SET";
+	const remaining = target.getTime() - now.getTime();
+	if (remaining <= 0) return "GO LIVE TIME REACHED";
+	const days = Math.floor(remaining / 86_400_000);
+	const hours = Math.floor((remaining % 86_400_000) / 3_600_000);
+	return `${days}D ${hours}H TO GO LIVE`;
+}
+
+function stageState(
+	current: OverwatchStage,
+	stage: (typeof STAGES)[number],
+): "done" | "now" | "pending" {
+	if (current === "done") return "done";
+	const currentIndex = STAGES.indexOf(current);
+	const stageIndex = STAGES.indexOf(stage);
+	if (stageIndex < currentIndex) return "done";
+	return stageIndex === currentIndex ? "now" : "pending";
+}
+
+function stageCells(lane: OverwatchLane): string {
+	return STAGES.map((stage) => {
+		const state = stageState(lane.stage, stage);
+		return `
+<div class="cell ${state}" data-stage="${stage}" data-state="${state}">
+	<span>${stage.toUpperCase()}</span>
+	<strong>${state}</strong>
+</div>`;
+	}).join("");
+}
+
+function chatTile(lane: OverwatchLane): string {
+	const stats = [
+		`<span aria-label="MR ${escapeHtml(lane.mr ?? "NONE")}">
+	MR ${escapeText(lane.mr ?? "NONE")}
+</span>`,
+		`<span aria-label="ETA ${escapeHtml(lane.eta ?? "UNKNOWN")}">
+	ETA ${escapeText(lane.eta ?? "UNKNOWN")}
+</span>`,
+		lane.next
+			? `<strong class="next">NEXT: ${escapeText(lane.next)}</strong>`
+			: "",
+	].join("");
+	const link = lane.url
+		? `<a class="open" href="${escapeHtml(lane.url)}" target="_blank" rel="noopener noreferrer">Open chat</a>`
+		: "<span class=\"nolink\">No link</span>";
+	return `
+<article class="lane${lane.next ? " wait" : ""}" data-chat-tile>
+	<div class="who">
+		<strong aria-label="${escapeHtml(lane.chat)}">${escapeText(lane.chat)}</strong>
+		<small>${escapeText(lane.task)}</small>
+	</div>
+	${stageCells(lane)}
+	<div class="detail">
+		<div class="stats">${stats}</div>
+		${link}
+	</div>
+</article>`;
+}
+
+function backgroundLane(lane: OverwatchLane): string {
+	const details = [
+		lane.task,
+		lane.eta ? `ETA ${lane.eta}` : "",
+		lane.next ? `NEXT: ${lane.next}` : "",
+	]
+		.filter(Boolean)
+		.map((value) => `<span>${escapeText(value)}</span>`)
+		.join("");
+	return `
+<p>
+	<strong aria-label="${escapeHtml(lane.chat)}">${escapeText(lane.chat)}</strong>
+	${details}
+</p>`;
+}
+
+function mergeItem(merge: OverwatchBoard["merges"][number]): string {
+	return `<span>${escapeText(merge.mr)} ${escapeText(merge.title)}</span>`;
+}
+
+export function renderOverwatchSnapshot(
+	board: OverwatchBoard,
+	now = new Date(),
+): string {
+	const chats = board.lanes.filter((lane) => lane.kind === "chat");
+	const background = board.lanes.filter((lane) => lane.kind === "background");
+	const needYou = board.lanes.filter((lane) => Boolean(lane.next)).length;
+	const tiles = chats.length
+		? chats.map(chatTile).join("")
+		: "<div class=\"empty\">No active chats</div>";
+	const backgroundItems = background.length
+		? background.map(backgroundLane).join("")
+		: "<p>None active</p>";
+	const merges = board.merges.length
+		? board.merges.map(mergeItem).join("")
+		: "<span>None today</span>";
+	const dates = `${launchDate("GO OR NO GO", board.goNoGo)} | ${launchDate("GO LIVE", board.goLive)}`;
+
+	return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Overwatch snapshot</title>
+<style>
+:root {
+	--ink: #171717;
+	--paper: #f7f6f1;
+	--panel: #fff;
+	--cyan: #0891b2;
+	--mag: #c026d3;
+	--soft: #dedbd1;
+	color-scheme: light dark;
+}
+* { box-sizing: border-box; }
+html, body { max-width: 100%; overflow-x: hidden; }
+body {
+	margin: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.board { min-height: 100vh; max-width: 100%; padding: 24px; }
+.top {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	border: 2px solid var(--ink);
+	padding: 13px 15px;
+	background: var(--panel);
+	box-shadow: 5px 5px 0 var(--ink);
+}
+.top strong { min-width: 0; font-size: clamp(16px, 2.4vw, 24px); }
+.need {
+	border: 2px solid var(--ink);
+	padding: 9px 12px;
+	background: var(--mag);
+	color: #fff;
+	font-weight: 900;
+	white-space: nowrap;
+}
+.dates, .asof {
+	margin-top: 14px;
+	font-size: 12px;
+	font-weight: 900;
+	text-align: right;
+}
+.asof { margin-top: 6px; color: #555; }
+.axis, .lane {
+	display: grid;
+	grid-template-columns: 170px repeat(4, minmax(0, 1fr));
+	gap: 8px;
+}
+.axis { margin: 32px 0 10px; }
+.axis span {
+	padding: 8px;
+	font-size: 11px;
+	font-weight: 900;
+	text-align: center;
+	text-transform: uppercase;
+}
+.axis span:not(:first-child) { border-bottom: 4px solid var(--ink); }
+.lane {
+	min-width: 0;
+	max-width: 100%;
+	align-items: stretch;
+	margin-bottom: 16px;
+}
+.who {
+	min-width: 0;
+	border: 3px solid var(--ink);
+	padding: 14px;
+	background: var(--panel);
+}
+.who strong, .foot p strong {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	font-size: 17px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.who small {
+	display: block;
+	margin-top: 5px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+.cell {
+	display: flex;
+	min-width: 0;
+	min-height: 74px;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	border: 2px solid var(--soft);
+	padding: 8px;
+	background: var(--panel);
+	font-size: 11px;
+	text-align: center;
+}
+.cell span { display: none; }
+.cell.done {
+	border-color: var(--cyan);
+	background: #e7f9fc;
+	color: #05566a;
+	font-weight: 900;
+}
+.cell.now {
+	border: 4px solid var(--ink);
+	background: var(--cyan);
+	box-shadow: 4px 4px 0 var(--ink);
+	color: #fff;
+	font-weight: 900;
+}
+.lane.wait .cell.now { background: var(--mag); }
+.detail {
+	display: flex;
+	min-width: 0;
+	grid-column: 2 / 6;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	border: 3px solid var(--ink);
+	border-top: 0;
+	padding: 12px;
+	background: var(--panel);
+}
+.stats {
+	display: flex;
+	min-width: 0;
+	max-width: 100%;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.stats span, .merges span {
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	border: 2px solid var(--ink);
+	padding: 7px;
+	font-size: 12px;
+	font-weight: 900;
+	text-overflow: ellipsis;
+}
+.stats span { white-space: nowrap; }
+.merges span { overflow-wrap: anywhere; }
+.next {
+	min-width: 0;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+	border: 2px solid var(--ink);
+	padding: 9px;
+	background: var(--mag);
+	color: #fff;
+	font-weight: 900;
+}
+.open, .nolink {
+	display: inline-flex;
+	min-height: 44px;
+	max-width: 100%;
+	align-items: center;
+	justify-content: center;
+	border: 2px solid var(--ink);
+	padding: 8px 11px;
+	background: var(--panel);
+	color: var(--ink);
+	font: 800 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+	text-decoration: none;
+	white-space: nowrap;
+}
+.open { background: var(--ink); color: #fff; }
+.nolink { color: #777; }
+.open:focus-visible { outline: 4px solid var(--mag); outline-offset: 2px; }
+.empty {
+	border: 3px solid var(--ink);
+	padding: 30px;
+	background: var(--panel);
+	font-weight: 900;
+	text-align: center;
+}
+footer {
+	display: grid;
+	min-width: 0;
+	grid-template-columns: 1fr 2fr;
+	gap: 18px;
+	margin-top: 24px;
+}
+.foot { min-width: 0; border-top: 4px solid var(--ink); padding: 14px 0; }
+.foot h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; }
+.foot p {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 3px;
+	margin: 8px 0;
+}
+.foot p span { overflow-wrap: anywhere; }
+.merges { display: flex; min-width: 0; gap: 8px; flex-wrap: wrap; }
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #f2f2ed;
+		--paper: #090909;
+		--panel: #121212;
+		--cyan: #00f0ff;
+		--mag: #ff2bd6;
+		--soft: #383838;
+	}
+	.need, .lane.wait .cell.now, .cell.now { color: #050505; }
+	.cell.done { background: #082b31; color: #7df7ff; }
+	.open { background: #f2f2ed; color: #090909; }
+	.asof { color: #aaa; }
+}
+@media (max-width: 760px) {
+	.board { padding: 14px; }
+	.axis { display: none; }
+	.lane {
+		grid-template-columns: 1fr 1fr;
+		margin: 24px 0;
+		border: 3px solid var(--ink);
+		padding: 12px;
+		background: var(--panel);
+	}
+	.who { grid-column: 1 / -1; }
+	.cell { min-height: 64px; flex-direction: row; }
+	.cell span { display: block; }
+	.detail {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: 1fr;
+		border: 0;
+		padding: 10px 0 0;
+	}
+	.open, .nolink { width: 100%; }
+	footer { grid-template-columns: 1fr; }
+	.top strong { font-size: 15px; }
+	.need { padding: 8px; font-size: 12px; }
+	.dates, .asof { line-height: 1.5; text-align: left; }
+}
+@media (max-width: 410px) {
+	.board { padding: 12px; }
+	.top { align-items: stretch; flex-direction: column; }
+	.need { text-align: center; }
+	.lane { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+	.who, .detail { grid-column: 1 / -1; }
+	.cell { min-width: 0; justify-content: flex-start; }
+	.stats {
+		display: grid;
+		width: 100%;
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.stats span, .next { text-align: center; }
+}
+</style>
+</head>
+<body>
+<div class="board">
+	<header class="top">
+		<strong>${escapeText(countdown(board.goLive, now))}</strong>
+		<span class="need">${needYou} NEED YOU</span>
+	</header>
+<div class="dates">${escapeText(dates)}</div>
+<div class="asof">as of ${escapeText(dateTime(now))}</div>
+	<div class="axis">
+		<span>Chat</span>
+		<span>Review</span>
+		<span>CI</span>
+		<span>E2E</span>
+		<span>Merge</span>
+	</div>
+<main>${tiles}</main>
+	<footer>
+		<section class="foot">
+			<h2>Background</h2>
+			${backgroundItems}
+		</section>
+		<section class="foot">
+			<h2>Merged today</h2>
+			<div class="merges">${merges}</div>
+		</section>
+	</footer>
+</div>
+</body>
+</html>
+`;
+}
+
+function isMissingFile(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "ENOENT"
+	);
+}
+
+async function lastRender(path: string): Promise<number | undefined> {
+	try {
+		await fixPrivateFileMode(path);
+		const value: unknown = JSON.parse(await readFile(path, "utf8"));
+		if (
+			typeof value === "object" &&
+			value !== null &&
+			"renderedAt" in value &&
+			typeof value.renderedAt === "number" &&
+			Number.isFinite(value.renderedAt)
+		) {
+			return value.renderedAt;
+		}
+		return undefined;
+	} catch (error) {
+		if (isMissingFile(error) || error instanceof SyntaxError) return undefined;
+		throw error;
+	}
+}
+
+async function fixPrivateFileMode(path: string): Promise<void> {
+	try {
+		await chmod(path, 0o600);
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+	}
+}
+
+function isAlreadyExists(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "EEXIST"
+	);
+}
+
+type SnapshotLock = {
+	owner: string;
+	expiresAt: number;
+};
+
+function parseSnapshotLock(value: string): SnapshotLock | undefined {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"owner" in parsed &&
+			typeof parsed.owner === "string" &&
+			"expiresAt" in parsed &&
+			typeof parsed.expiresAt === "number" &&
+			Number.isFinite(parsed.expiresAt)
+		) {
+			return { owner: parsed.owner, expiresAt: parsed.expiresAt };
+		}
+		return undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function lockExpiresAt(path: string): Promise<number | undefined> {
+	try {
+		const parsed = parseSnapshotLock(await readFile(path, "utf8"));
+		if (parsed) return parsed.expiresAt;
+		return (await stat(path)).mtimeMs + LOCK_LEASE_MS;
+	} catch (error) {
+		if (isMissingFile(error)) return undefined;
+		throw error;
+	}
+}
+
+async function acquireSnapshotLock(
+	path: string,
+	now: number,
+): Promise<{ owner?: string; seconds?: number }> {
+	const owner = randomUUID();
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const handle = await open(path, "wx", 0o600);
+			try {
+				await handle.writeFile(
+					JSON.stringify({ owner, expiresAt: now + LOCK_LEASE_MS }),
+					"utf8",
+				);
+			} finally {
+				await handle.close();
+			}
+			await chmod(path, 0o600);
+			return { owner };
+		} catch (error) {
+			if (!isAlreadyExists(error)) throw error;
+			await fixPrivateFileMode(path);
+			const expiresAt = await lockExpiresAt(path);
+			if (expiresAt !== undefined && expiresAt > now) {
+				return { seconds: Math.max(1, Math.ceil((expiresAt - now) / 1_000)) };
+			}
+			await rm(path, { force: true });
+		}
+	}
+	return { seconds: Math.ceil(LOCK_LEASE_MS / 1_000) };
+}
+
+async function releaseSnapshotLock(path: string, owner: string): Promise<void> {
+	try {
+		const current = parseSnapshotLock(await readFile(path, "utf8"));
+		if (current?.owner === owner) await rm(path, { force: true });
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+	}
+}
+
+async function ensureSkillState(path: string): Promise<void> {
+	try {
+		const handle = await open(path, "wx", 0o600);
+		try {
+			await handle.writeFile("{}", "utf8");
+		} finally {
+			await handle.close();
+		}
+	} catch (error) {
+		if (!isAlreadyExists(error)) throw error;
+	}
+	await chmod(path, 0o600);
+}
+
+async function ensurePrivateDirectory(path: string): Promise<void> {
+	await mkdir(path, { recursive: true, mode: 0o700 });
+	await chmod(path, 0o700);
+}
+
+function isWithin(root: string, path: string): boolean {
+	const fromRoot = relative(resolve(root), resolve(path));
+	return (
+		fromRoot === "" ||
+		(!fromRoot.startsWith("..") && !isAbsolute(fromRoot))
+	);
+}
+
+function validateThrottleKey(key: string): void {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(key)) {
+		throw new Error(
+			"--throttle-key must start with a letter or number and contain only " +
+				"letters, numbers, periods, underscores, or hyphens",
+		);
+	}
+}
+
+export async function writeOverwatchSnapshot(
+	board: OverwatchBoard,
+	options: SnapshotOptions = {},
+): Promise<SnapshotWriteResult> {
+	const now = options.now ?? new Date();
+	const scratchRoot = options.scratchRoot ?? SNAPSHOT_DIRECTORY;
+	const requestedOutput = options.outPath ?? join(scratchRoot, "snapshot.html");
+	const outPath = isAbsolute(requestedOutput)
+		? requestedOutput
+		: resolve(requestedOutput);
+	let statePath: string | undefined;
+	let lockPath: string | undefined;
+	let lockOwner: string | undefined;
+
+	await ensurePrivateDirectory(scratchRoot);
+	await ensureSkillState(join(scratchRoot, SKILL_STATE_FILENAME));
+	if (isWithin(scratchRoot, dirname(outPath))) {
+		await ensurePrivateDirectory(dirname(outPath));
+	}
+	await fixPrivateFileMode(outPath);
+
+	if (options.throttleKey) {
+		validateThrottleKey(options.throttleKey);
+		statePath = join(scratchRoot, `${options.throttleKey}.json`);
+		await fixPrivateFileMode(statePath);
+		lockPath = join(scratchRoot, `${options.throttleKey}.lock`);
+		const lock = await acquireSnapshotLock(lockPath, now.getTime());
+		if (!lock.owner) {
+			return { status: "throttled", seconds: lock.seconds ?? 1 };
+		}
+		lockOwner = lock.owner;
+	}
+
+	try {
+		if (statePath) {
+			const renderedAt = await lastRender(statePath);
+			if (renderedAt !== undefined) {
+				const elapsed = Math.max(0, now.getTime() - renderedAt);
+				if (elapsed < THROTTLE_WINDOW_MS) {
+					return {
+						status: "throttled",
+						seconds: Math.ceil((THROTTLE_WINDOW_MS - elapsed) / 1000),
+					};
+				}
+			}
+		}
+
+		if (!isWithin(scratchRoot, dirname(outPath))) {
+			await mkdir(dirname(outPath), { recursive: true });
+		}
+		await writeFile(outPath, renderOverwatchSnapshot(board, now), {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		await chmod(outPath, 0o600);
+		if (statePath) {
+			await writeFile(statePath, JSON.stringify({ renderedAt: now.getTime() }), {
+				encoding: "utf8",
+				mode: 0o600,
+			});
+			await chmod(statePath, 0o600);
+		}
+		return { status: "written", path: outPath };
+	} finally {
+		if (lockOwner && lockPath) await releaseSnapshotLock(lockPath, lockOwner);
+	}
+}
+
+async function stdinText(): Promise<string> {
+	const chunks: Buffer[] = [];
+	for await (const chunk of process.stdin) {
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readBoard(input: string): Promise<OverwatchBoard> {
+	const source = input === "-" ? await stdinText() : await readFile(input, "utf8");
+	const board: unknown = JSON.parse(source);
+	const frame = validateChatFrame({
+		type: "overwatch-state",
+		sessionId: OVERWATCH_SESSION_ID,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		board,
+	});
+	if (frame.type !== "overwatch-state") {
+		throw new Error("input is not an overwatch board");
+	}
+	return frame.board;
+}
+
+export function registerOverwatchSnapshot(program: Command): void {
+	program
+		.command("overwatch-snapshot")
+		.description("render an Overwatch board JSON snapshot as read-only HTML")
+		.option("--input <file>", "board JSON file, or - for stdin", "-")
+		.option("--out <file>", "HTML output path")
+		.option("--throttle-key <name>", "skip renders within 120 seconds for this key")
+		.action(
+			async (options: {
+				input: string;
+				out?: string;
+				throttleKey?: string;
+			}) => {
+				const result = await writeOverwatchSnapshot(
+					await readBoard(options.input),
+					{
+						outPath: options.out,
+						throttleKey: options.throttleKey,
+					},
+				);
+				console.log(
+					result.status === "written"
+						? result.path
+						: `throttled: next publish in ${result.seconds}s`,
+				);
+			},
+		);
+}

@@ -461,6 +461,20 @@ export async function renderChatPage(
 		"Canvas view",
 	);
 	canvasButton.setAttribute("aria-pressed", "false");
+	const overflowButton = iconControl(
+		doc,
+		"button",
+		"toggle-overflow",
+		"more",
+		"More actions",
+	);
+	overflowButton.setAttribute("aria-expanded", "false");
+	overflowButton.setAttribute("aria-controls", "chat-rail-overflow-menu");
+	const overflowMenu = element(doc, "div", "chat-rail__overflow-menu");
+	overflowMenu.id = "chat-rail-overflow-menu";
+	overflowMenu.hidden = true;
+	overflowMenu.setAttribute("role", "group");
+	overflowMenu.setAttribute("aria-label", "More actions");
 	const vimToggle = iconControl(
 		doc,
 		"button",
@@ -478,13 +492,16 @@ export async function renderChatPage(
 		"Settings",
 	);
 	settingsLink.href = "/options.html#/settings";
-	railActions.append(
-		createButton,
-		canvasButton,
-		vimToggle,
-		themeButton,
-		settingsLink,
-	);
+	for (const [control, label] of [
+		[vimToggle, "Vim navigation"],
+		[themeButton, "Theme"],
+		[settingsLink, "Settings"],
+	] as const) {
+		control.classList.add("chat-rail__overflow-item");
+		control.append(element(doc, "span", "chat-rail__overflow-label", label));
+	}
+	overflowMenu.append(vimToggle, themeButton, settingsLink);
+	railActions.append(createButton, canvasButton, overflowButton, overflowMenu);
 	railHeader.append(brand, railActions, connectionStatus);
 	const vimFilterInput = element(doc, "input", "chat-vimfilter");
 	vimFilterInput.type = "text";
@@ -1109,12 +1126,30 @@ export async function renderChatPage(
 		const label = `Theme: ${light ? "light" : "dark"}`;
 		themeButton.setAttribute("aria-label", label);
 		themeButton.title = label;
-		themeButton.replaceChildren(createIcon(doc, light ? "sun" : "moon"));
+		themeButton.replaceChildren(
+			createIcon(doc, light ? "sun" : "moon"),
+			element(doc, "span", "chat-rail__overflow-label", label),
+		);
 	}
+
+	function setOverflowOpen(open: boolean): void {
+		overflowMenu.hidden = !open;
+		overflowButton.setAttribute("aria-expanded", String(open));
+	}
+
+	overflowButton.addEventListener("click", () => {
+		setOverflowOpen(overflowMenu.hidden);
+	});
+	overflowMenu.addEventListener("keydown", (event) => {
+		if (event.key !== "Escape") return;
+		setOverflowOpen(false);
+		overflowButton.focus();
+	});
 
 	themeButton.addEventListener("click", () => {
 		root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
 		syncThemeButton();
+		setOverflowOpen(false);
 	});
 	syncThemeButton();
 
@@ -1123,6 +1158,7 @@ export async function renderChatPage(
 	vimToggle.addEventListener("click", () => {
 		if (vim.isActive()) vim.disable();
 		else vim.enable();
+		setOverflowOpen(false);
 	});
 
 	vimFilterInput.addEventListener("input", () => {
