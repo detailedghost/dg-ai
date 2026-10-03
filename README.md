@@ -1,7 +1,7 @@
 # 👻 DeeGee
 
-Browser workflow plugin for Codex and Claude Code. Skills: **browser**, **demo**,
-and **live-page prototype**. The companion extension is `dg-ai-extension`.
+Browser and inbox workflow plugin for Codex and Claude Code. Skills: **browser**, **demo**,
+**live-page prototype**, **chat**, and **inbox cleanup**. The companion extension is `dg-ai-extension`.
 
 ## 📦 Install
 
@@ -13,7 +13,7 @@ and **live-page prototype**. The companion extension is `dg-ai-extension`.
 ```
 
 **Standalone — one command installs the `dg-skills`, `dg-daemon` and `dg-agent` binaries
-*and* the browser extension** (compiled binaries, no Bun needed):
+_and_ the browser extension** (compiled binaries, no Bun needed):
 
 macOS / Linux (x64 or arm64):
 
@@ -152,14 +152,14 @@ by declaring it under `services` in `~/.dg/daemon/config.json`:
 
 ```json
 {
-  "services": {
-    "teams-bot": {
-      "argv": ["bun", "run", "bot.ts"],
-      "cwd": "/home/me/bots/teams",
-      "envFile": "/home/me/.config/teams-bot.env",
-      "autostart": true
-    }
-  }
+	"services": {
+		"teams-bot": {
+			"argv": ["bun", "run", "bot.ts"],
+			"cwd": "/home/me/bots/teams",
+			"envFile": "/home/me/.config/teams-bot.env",
+			"autostart": true
+		}
+	}
 }
 ```
 
@@ -215,6 +215,18 @@ extension. For authenticated or private pages, review the privacy warning
 before allowing the style scrape. The CLI writes approved answers under
 `.agents/prototype/<slug>/` and removes temporary Downloads and scratch files
 after export.
+
+### Inbox cleanup
+
+Review Proton Mail, Gmail, or Outlook with /dg:inbox-cleanup in Claude Code or
+$dg:inbox-cleanup in Codex. The compiled dg-skills inbox CLI prepares redacted
+samples, supports bounded generator paging, and requires review/dry-run before
+confirmed mailbox changes. Proton uses extension JavaScript in a signed-in mail
+tab; Gmail/Outlook use OAuth and profiles in dg-ai's encrypted database.
+
+Read [provider setup](plugins/dg/skills/inbox-cleanup/references/providers.md) and
+[the workflow](plugins/dg/skills/inbox-cleanup/references/workflow.md). Live-account
+authentication and mutations need validation in your provider/browser setup.
 
 ### 🔗 Ref formats
 

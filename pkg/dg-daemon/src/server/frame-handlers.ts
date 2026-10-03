@@ -1,3 +1,4 @@
+import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
@@ -16,6 +17,7 @@ import {
 	OVERWATCH_MAX_LANES,
 	OVERWATCH_MAX_MERGES,
 	validateChatFrame,
+	validateInboxCliRequest,
 	validateCommandManifest,
 	validateOverwatchAction,
 	validateOverwatchLaneUpdate,
@@ -300,6 +302,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			(key) => key === "protocolVersion" || allowed.includes(key),
 		);
 	switch (value.type) {
+		case "cli-inbox-request":
+			try { return validateInboxCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -503,6 +507,8 @@ async function handleCliFrame(
 	}
 	deps.registry.touch(sessionId);
 	switch (frame.type) {
+		case "cli-inbox-request":
+			return handleInboxCli(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -968,6 +974,8 @@ async function dispatchFrame(
 ): Promise<void> {
 	deps.registry.touch(frame.sessionId);
 	switch (frame.type) {
+		case "inbox-browser-result":
+			return handleInboxBrowserResult(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1043,6 +1051,17 @@ export async function handleSocketMessage(
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
 		return;
+	}
+
+	if (isRecord(parsed) && parsed.type === "cli-inbox-request" && ws.data.kind === "cli") {
+		try { validateInboxCliRequest(parsed); }
+		catch (err) {
+			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
+			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
+			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
+			noteInvalid(ws);
+			return;
+		}
 	}
 
 	const cliFrame = parseCliFrame(parsed);

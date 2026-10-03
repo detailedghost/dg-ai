@@ -1,10 +1,21 @@
 {
 	"name": "dg",
-	"version": "1.10.0",
-	"description": "DeeGee — detailedghost's personal Claude Code utilities.",
-	"author": { "name": "Dante Burgos" },
+	"version": "1.11.0",
+	"description": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
+	"author": {
+		"name": "Dante Burgos"
+	},
 	"repository": "https://github.com/detailedghost/dg-ai",
 	"license": "MIT",
-	"keywords": ["utilities", "browser", "tabs", "demo"],
-	"skills": ["./plugins/dg/skills"]
+	"keywords": [
+		"utilities",
+		"browser",
+		"tabs",
+		"demo",
+		"inbox",
+		"mail"
+	],
+	"skills": [
+		"./plugins/dg/skills"
+	]
 }

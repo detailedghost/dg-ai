@@ -1,3 +1,4 @@
+import type { InboxCliRequest } from "./inbox-format";
 import type {
 	ChatFrame,
 	CommandEntry,
@@ -78,6 +79,7 @@ export type CliOverwatchSnapshotResult = {
 };
 
 export type CliFrame =
+	| InboxCliRequest
 	| CliRecvRequest
 	| CliAckRequest
 	| CliSendRequest

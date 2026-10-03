@@ -691,6 +691,8 @@ function downgradeToV7Shape(dbPath: string): void {
 
 		raw.run("DROP TABLE feed_items_v8_tmp");
 		raw.run("DROP TABLE scheduled_jobs_v8_tmp");
+		raw.run("DROP TABLE inbox_auth_caches");
+		raw.run("DROP TABLE inbox_profiles");
 		raw.run("PRAGMA user_version = 7");
 		raw.run("COMMIT");
 	} catch (err) {

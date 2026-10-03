@@ -558,10 +558,11 @@ export async function connectPage(
 	port: number,
 	credentials: Credentials,
 	protocolVersion: number = CHAT_PROTOCOL_VERSION,
+	extensionVersion?: string,
 ): Promise<WebSocket> {
 	const page = wsExtensionSocket(port);
 	await waitForOpen(page);
-	sendConnectHandshake(page, credentials, protocolVersion);
+	sendConnectHandshake(page, credentials, protocolVersion, extensionVersion);
 	await new Promise((r) => setTimeout(r, 100));
 	return page;
 }

@@ -7,6 +7,7 @@
 import { Command } from "commander";
 import { registerBatchOpen } from "./commands/batch-open";
 import { registerDemo } from "./commands/demo";
+import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
@@ -17,10 +18,12 @@ const program = new Command();
 program
 	.name("dg-skills")
 	.description(
-		"Group marked tabs, play guided tours, and compare live-page prototypes via the dg-ai-extension.",
+		"Review inboxes, group marked tabs, play guided tours, and compare live-page prototypes.",
 	)
 	.showHelpAfterError();
 
+program.enablePositionalOptions();
+registerInbox(program);
 registerInstall(program);
 registerBatchOpen(program);
 registerLaunch(program);
