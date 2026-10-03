@@ -4,6 +4,7 @@ export * from "./chat-format";
 export * from "./cli-wire";
 export * from "./errors";
 export * from "./markers";
+export * from "./pairing";
 export * from "./plan-format";
 export * from "./proto-format";
 export * from "./serial-queue";

@@ -1,7 +1,7 @@
 {
 	"name": "dg",
 	"description": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
-	"version": "1.1.0",
+	"version": "1.11.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
@@ -15,7 +15,10 @@
 		"longDescription": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
 		"developerName": "detailedghost",
 		"category": "Productivity",
-		"capabilities": ["Read", "Write"],
+		"capabilities": [
+			"Read",
+			"Write"
+		],
 		"defaultPrompt": [
 			"Open a browser batch",
 			"Run a live page prototype",

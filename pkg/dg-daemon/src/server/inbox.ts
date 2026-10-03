@@ -175,13 +175,13 @@ export async function handleInboxCli(
 		!version ||
 		!(
 			Number(version[1]) > 1 ||
-			(Number(version[1]) === 1 && Number(version[2]) >= 10)
+			(Number(version[1]) === 1 && Number(version[2]) >= 11)
 		)
 	) {
 		await result(requester, sessionId, frame.requestId, {
 			ok: false,
 			error:
-				"Inbox requires dg extension 1.10.0 or newer; update the extension, reload it, and reconnect this session.",
+				"Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
 		});
 		return;
 	}

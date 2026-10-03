@@ -1472,7 +1472,7 @@ test("the new chat button is enabled when connected and disabled while the daemo
 	).toBe(true);
 });
 
-const NOT_PAIRED_HINT = "Not paired. Run `dg-agent start --open`";
+const NOT_PAIRED_HINT = "Not paired";
 
 function statusPill(root: HTMLElement): HTMLElement {
 	return root.querySelector(
@@ -1480,7 +1480,7 @@ function statusPill(root: HTMLElement): HTMLElement {
 	) as unknown as HTMLElement;
 }
 
-test("the status pill tells an unpaired page to run dg-agent start when no session is stored", async () => {
+test("the status pill labels an unpaired page when no session is stored", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient("daemon-not-running");
 	await renderChatPage({
@@ -1493,6 +1493,48 @@ test("the status pill tells an unpaired page to run dg-agent start when no sessi
 	expect(pill.hidden).toBe(false);
 	expect(pill.dataset.connection).toBe("not-paired");
 	expect(pill.textContent).toBe(NOT_PAIRED_HINT);
+});
+
+test("an unpaired chat page shows Pair when its daemon is reachable", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient("daemon-not-running");
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => [],
+		pairing: {
+			runtime: {
+				sendMessage: mock(() => Promise.resolve({ connected: false })),
+			},
+			findPort: () => Promise.resolve(47823),
+		},
+	});
+	await Promise.resolve();
+
+	const pair = root.querySelector<HTMLElement>(".chat-pair");
+	expect(pair?.hidden).toBe(false);
+	expect(pair?.textContent).toContain("Not paired");
+	expect(pair?.querySelector<HTMLButtonElement>("button")?.textContent).toBe(
+		"Pair",
+	);
+});
+
+test("a connected chat page hides its Pair entry", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient("connected");
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: {
+			runtime: {
+				sendMessage: mock(() => Promise.resolve({ connected: false })),
+			},
+			findPort: () => Promise.resolve(47823),
+		},
+	});
+
+	expect(root.querySelector<HTMLElement>(".chat-pair")?.hidden).toBe(true);
 });
 
 test("the status pill tells the page it is unpaired when the daemon rejects the stored token", async () => {

@@ -58,7 +58,7 @@ async function boot() {
 async function extension(
 	port: number,
 	credentials: { sessionId: string; token: string },
-	options: { version?: string } = { version: "1.10.0" },
+	options: { version?: string } = { version: "1.11.0" },
 ) {
 	const socket = wsExtensionSocket(port);
 	sockets.push(socket);
@@ -188,6 +188,9 @@ describe("daemon inbox browser relay", () => {
 		undefined,
 		"1.9.0",
 		"1.9.99",
+		"1.10.0",
+		"1.10.1",
+		"1.10.99",
 		"not-a-version",
 		"1.10",
 		"1.10.0-rc.1",
@@ -207,7 +210,7 @@ describe("daemon inbox browser relay", () => {
 			});
 			expect(answer.error).toMatch(/updat(e|ing)|upgrade/i);
 			expect(answer.error).toMatch(/extension/i);
-			expect(answer.error).toContain("1.10.0");
+			expect(answer.error).toContain("1.11.0");
 			expect(
 				page.frames.some(
 					(frame) => frameType(frame) === "inbox-browser-request",
@@ -216,7 +219,7 @@ describe("daemon inbox browser relay", () => {
 		},
 	);
 
-	it.each(["1.10.0", "1.10.1", "1.11.0", "1.10.0+local.1", "2.0.0"])(
+	it.each(["1.11.0", "1.11.1", "1.12.0", "1.11.0+local.1", "2.0.0"])(
 		"routes browser work through authenticated supported extension version %s",
 		async (version) => {
 			const { cli, results, port, bootstrap } = await boot();
