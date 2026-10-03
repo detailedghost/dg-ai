@@ -230,6 +230,32 @@ function buildConfigResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildInboxBrowserRequestFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "inbox-browser-request",
+		sessionId: "session-a",
+		requestId: "inbox-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		request: { operation: "list-folders" },
+		...overrides,
+	};
+}
+
+function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "inbox-browser-result",
+		sessionId: "session-a",
+		requestId: "inbox-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		ok: true,
+		data: { folders: [] },
+		...overrides,
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -284,6 +310,8 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-set", buildConfigSetFrame],
 	["error", buildErrorFrame],
 	["config-result", buildConfigResultFrame],
+	["inbox-browser-request", buildInboxBrowserRequestFrame],
+	["inbox-browser-result", buildInboxBrowserResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],
@@ -505,15 +533,13 @@ describe("validateChatFrame — session-pending still refuses an envelope-level 
 });
 
 describe("validateChatFrame — config-set distinguishes absent value from falsy value", () => {
-	it.each([
-		false,
-		null,
-		0,
-		"",
-	])("accepts a config-set frame whose value is the falsy literal %p", (value) => {
-		const frame = buildConfigSetFrame({ value });
-		expect(() => validateChatFrame(frame)).not.toThrow();
-	});
+	it.each([false, null, 0, ""])(
+		"accepts a config-set frame whose value is the falsy literal %p",
+		(value) => {
+			const frame = buildConfigSetFrame({ value });
+			expect(() => validateChatFrame(frame)).not.toThrow();
+		},
+	);
 
 	it("rejects a config-set frame with no value field at all", () => {
 		const frame = buildConfigSetFrame();
@@ -595,6 +621,8 @@ describe("validateChatFrame — error frame code", () => {
 	});
 
 	it("rejects an error frame with an unknown code", () => {
-		expect(() => validateChatFrame(buildErrorFrame({ code: "nope" }))).toThrow();
+		expect(() =>
+			validateChatFrame(buildErrorFrame({ code: "nope" })),
+		).toThrow();
 	});
 });

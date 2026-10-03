@@ -1,0 +1,73 @@
+{
+	"folders": [
+		{
+			"id": "inbox",
+			"name": "Inbox",
+			"type": "system",
+			"total": 3,
+			"unread": 1
+		},
+		{
+			"id": "receipts",
+			"name": "Receipts",
+			"type": "folder",
+			"total": 0,
+			"unread": 0
+		},
+		{
+			"id": "finance",
+			"name": "Finance",
+			"type": "folder",
+			"total": 0,
+			"unread": 0
+		},
+		{
+			"id": "work",
+			"name": "Work",
+			"type": "folder",
+			"total": 0,
+			"unread": 0
+		}
+	],
+	"filters": [
+		{
+			"id": "filter-1",
+			"name": "Receipts for jane@example.com",
+			"enabled": true,
+			"conditions": ["from contains jane@example.com"],
+			"actions": ["move Receipts"]
+		}
+	],
+	"messages": [
+		{
+			"id": "msg-1",
+			"from": "billing@stripe.com",
+			"senderName": "Stripe Billing",
+			"subject": "Receipt for payment 123456",
+			"snippet": "Payment received for invoice 987654 from jane@example.com.",
+			"folderId": "inbox",
+			"folderName": "Inbox",
+			"receivedAt": "2026-06-01T12:00:00Z"
+		},
+		{
+			"id": "msg-2",
+			"from": "alerts@bank.example",
+			"senderName": "Bank Alerts",
+			"subject": "Monthly statement",
+			"snippet": "Your account statement is ready.",
+			"folderId": "inbox",
+			"folderName": "Inbox",
+			"receivedAt": "2026-06-02T12:00:00Z"
+		},
+		{
+			"id": "msg-3",
+			"from": "teammate@company.example",
+			"senderName": "Teammate",
+			"subject": "Project follow up",
+			"snippet": "Following up on the project notes.",
+			"folderId": "inbox",
+			"folderName": "Inbox",
+			"receivedAt": "2026-06-03T12:00:00Z"
+		}
+	]
+}

@@ -170,9 +170,9 @@ describe("ChatStore overwatch board", () => {
 			const bytes = await Bun.file(paths.dbPath).arrayBuffer();
 			const text = Buffer.from(bytes).toString("utf8");
 			const raw = new Database(paths.dbPath, { readonly: true });
-			const row = raw
-				.query("SELECT chat_key FROM overwatch_lanes")
-				.get() as { chat_key: string };
+			const row = raw.query("SELECT chat_key FROM overwatch_lanes").get() as {
+				chat_key: string;
+			};
 			raw.close(true);
 			expect(text).not.toContain("Prepare launch collateral");
 			expect(text).not.toContain("Private merge title");
@@ -194,6 +194,8 @@ describe("ChatStore migration to schema v9", () => {
 			initialized.close();
 
 			const raw = new Database(paths.dbPath);
+			raw.run("DROP TABLE inbox_auth_caches");
+			raw.run("DROP TABLE inbox_profiles");
 			raw.run("DROP TABLE overwatch_lanes");
 			raw.run("DROP TABLE overwatch_merges");
 			raw.run("DROP TABLE overwatch_settings");

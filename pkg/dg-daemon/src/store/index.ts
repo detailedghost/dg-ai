@@ -17,6 +17,12 @@ import {
 	type OverwatchLaneUpdate,
 	type OverwatchMerge,
 	type ProgressState,
+	type InboxProfile,
+	type InboxProfileSummary,
+	validateInboxProfile,
+	validateInboxProfileName,
+	validateInboxProvider,
+	validateInboxAuthCache,
 } from "@dg/common";
 import {
 	applyConnectionPragmas,
@@ -667,6 +673,90 @@ export class ChatStore extends EventEmitter {
 
 	cryptoMeta(): CryptoMetaInfo {
 		return { ...this.meta };
+	}
+
+	/** Validates and encrypts private account settings under the profile-name AAD before replacement. */
+	setInboxProfile(name: string, profile: unknown): void {
+		validateInboxProfileName(name);
+		const validated = validateInboxProfile(profile);
+		const enc = this.cipherBox.encryptRecord(
+			JSON.stringify(validated),
+			this.#aad("inbox-profile", "__inbox__", name),
+		);
+		this.db.run(
+			"INSERT INTO inbox_profiles (name, provider, profile_ciphertext, profile_iv, profile_tag) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET provider = excluded.provider, profile_ciphertext = excluded.profile_ciphertext, profile_iv = excluded.profile_iv, profile_tag = excluded.profile_tag",
+			[name, validated.provider, enc.ciphertext, enc.iv, enc.tag],
+		);
+	}
+
+	/** Decrypts and validates a named private profile, returning null when it is absent. */
+	getInboxProfile(name: string): InboxProfile | null {
+		validateInboxProfileName(name);
+		const row = this.db
+			.query(
+				"SELECT profile_ciphertext, profile_iv, profile_tag FROM inbox_profiles WHERE name = ?",
+			)
+			.get(name) as {
+			profile_ciphertext: Uint8Array;
+			profile_iv: Uint8Array;
+			profile_tag: Uint8Array;
+		} | null;
+		if (!row) return null;
+		const json = this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.profile_ciphertext),
+				Buffer.from(row.profile_iv),
+				Buffer.from(row.profile_tag),
+				this.#aad("inbox-profile", "__inbox__", name),
+			)
+			.toString("utf8");
+		return validateInboxProfile(JSON.parse(json));
+	}
+
+	/** Lists sorted names/providers without decrypting account details or exposing caches. */
+	listInboxProfiles(): InboxProfileSummary[] {
+		return this.db
+			.query("SELECT name, provider FROM inbox_profiles ORDER BY name")
+			.all() as InboxProfileSummary[];
+	}
+
+	/** Encrypts bounded OAuth material with AAD bound to both provider and profile name. */
+	setInboxAuthCache(name: string, provider: string, cache: unknown): void {
+		validateInboxProfileName(name);
+		validateInboxProvider(provider);
+		const validated = validateInboxAuthCache(cache);
+		const enc = this.cipherBox.encryptRecord(
+			validated,
+			this.#aad("inbox-auth-cache", provider, name),
+		);
+		this.db.run(
+			"INSERT INTO inbox_auth_caches (name, provider, cache_ciphertext, cache_iv, cache_tag) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name, provider) DO UPDATE SET cache_ciphertext = excluded.cache_ciphertext, cache_iv = excluded.cache_iv, cache_tag = excluded.cache_tag",
+			[name, provider, enc.ciphertext, enc.iv, enc.tag],
+		);
+	}
+
+	/** Returns private decrypted OAuth material for the exact provider/profile pair, or null. */
+	getInboxAuthCache(name: string, provider: string): string | null {
+		validateInboxProfileName(name);
+		validateInboxProvider(provider);
+		const row = this.db
+			.query(
+				"SELECT cache_ciphertext, cache_iv, cache_tag FROM inbox_auth_caches WHERE name = ? AND provider = ?",
+			)
+			.get(name, provider) as {
+			cache_ciphertext: Uint8Array;
+			cache_iv: Uint8Array;
+			cache_tag: Uint8Array;
+		} | null;
+		if (!row) return null;
+		return this.cipherBox
+			.decryptRecord(
+				Buffer.from(row.cache_ciphertext),
+				Buffer.from(row.cache_iv),
+				Buffer.from(row.cache_tag),
+				this.#aad("inbox-auth-cache", provider, name),
+			)
+			.toString("utf8");
 	}
 
 	private ensureSessionRow(sessionId: string): void {
@@ -1320,11 +1410,7 @@ export class ChatStore extends EventEmitter {
 			input.goLive,
 		);
 		const goNoGo = input.goNoGo
-			? this.#encryptOverwatch(
-					AAD_OVERWATCH_GO_NO_GO,
-					rowId,
-					input.goNoGo,
-				)
+			? this.#encryptOverwatch(AAD_OVERWATCH_GO_NO_GO, rowId, input.goNoGo)
 			: undefined;
 		this.db.run(
 			`INSERT INTO overwatch_settings (
@@ -1353,74 +1439,52 @@ export class ChatStore extends EventEmitter {
 		const laneRows = this.db
 			.query("SELECT * FROM overwatch_lanes ORDER BY updated_at DESC, chat_key")
 			.all() as RawOverwatchLaneRow[];
-		const lanes = laneRows.map((row): OverwatchLane => ({
-			chat: this.#decryptOverwatch(
-				AAD_OVERWATCH_CHAT,
-				row.chat_key,
-				{
+		const lanes = laneRows.map(
+			(row): OverwatchLane => ({
+				chat: this.#decryptOverwatch(AAD_OVERWATCH_CHAT, row.chat_key, {
 					ciphertext: row.chat_ciphertext,
 					iv: row.chat_iv,
 					tag: row.chat_tag,
-				},
-			),
-			task: this.#decryptOverwatch(
-				AAD_OVERWATCH_TASK,
-				row.chat_key,
-				{
+				}),
+				task: this.#decryptOverwatch(AAD_OVERWATCH_TASK, row.chat_key, {
 					ciphertext: row.task_ciphertext,
 					iv: row.task_iv,
 					tag: row.task_tag,
-				},
-			),
-			stage: row.stage,
-			mr: this.#decryptOptionalOverwatch(
-				AAD_OVERWATCH_MR,
-				row.chat_key,
-				{
+				}),
+				stage: row.stage,
+				mr: this.#decryptOptionalOverwatch(AAD_OVERWATCH_MR, row.chat_key, {
 					ciphertext: row.mr_ciphertext,
 					iv: row.mr_iv,
 					tag: row.mr_tag,
-				},
-			),
-			eta: this.#decryptOptionalOverwatch(
-				AAD_OVERWATCH_ETA,
-				row.chat_key,
-				{
+				}),
+				eta: this.#decryptOptionalOverwatch(AAD_OVERWATCH_ETA, row.chat_key, {
 					ciphertext: row.eta_ciphertext,
 					iv: row.eta_iv,
 					tag: row.eta_tag,
-				},
-			),
-			next: this.#decryptOptionalOverwatch(
-				AAD_OVERWATCH_NEXT,
-				row.chat_key,
-				{
+				}),
+				next: this.#decryptOptionalOverwatch(AAD_OVERWATCH_NEXT, row.chat_key, {
 					ciphertext: row.next_ciphertext,
 					iv: row.next_iv,
 					tag: row.next_tag,
-				},
-			),
-			url: this.#decryptOptionalOverwatch(
-				AAD_OVERWATCH_URL,
-				row.chat_key,
-				{
+				}),
+				url: this.#decryptOptionalOverwatch(AAD_OVERWATCH_URL, row.chat_key, {
 					ciphertext: row.url_ciphertext,
 					iv: row.url_iv,
 					tag: row.url_tag,
-				},
-			),
-			kind: row.kind,
-			publisher: this.#decryptOverwatch(
-				AAD_OVERWATCH_PUBLISHER,
-				row.chat_key,
-				{
-					ciphertext: row.publisher_ciphertext,
-					iv: row.publisher_iv,
-					tag: row.publisher_tag,
-				},
-			),
-			updatedAt: row.updated_at,
-		}));
+				}),
+				kind: row.kind,
+				publisher: this.#decryptOverwatch(
+					AAD_OVERWATCH_PUBLISHER,
+					row.chat_key,
+					{
+						ciphertext: row.publisher_ciphertext,
+						iv: row.publisher_iv,
+						tag: row.publisher_tag,
+					},
+				),
+				updatedAt: row.updated_at,
+			}),
+		);
 
 		const now = new Date();
 		const start = new Date(
@@ -1438,52 +1502,38 @@ export class ChatStore extends EventEmitter {
 				"SELECT * FROM overwatch_merges WHERE at >= ? AND at < ? ORDER BY at DESC",
 			)
 			.all(start, end) as RawOverwatchMergeRow[];
-		const merges = mergeRows.map((row): OverwatchMerge => ({
-			mr: this.#decryptOverwatch(
-				AAD_OVERWATCH_MERGE_MR,
-				row.id,
-				{
+		const merges = mergeRows.map(
+			(row): OverwatchMerge => ({
+				mr: this.#decryptOverwatch(AAD_OVERWATCH_MERGE_MR, row.id, {
 					ciphertext: row.mr_ciphertext,
 					iv: row.mr_iv,
 					tag: row.mr_tag,
-				},
-			),
-			title: this.#decryptOverwatch(
-				AAD_OVERWATCH_MERGE_TITLE,
-				row.id,
-				{
+				}),
+				title: this.#decryptOverwatch(AAD_OVERWATCH_MERGE_TITLE, row.id, {
 					ciphertext: row.title_ciphertext,
 					iv: row.title_iv,
 					tag: row.title_tag,
-				},
-			),
-			at: row.at,
-		}));
+				}),
+				at: row.at,
+			}),
+		);
 
 		const settings = this.db
 			.query("SELECT * FROM overwatch_settings WHERE id = 1")
 			.get() as RawOverwatchSettingsRow | null;
 		const goLive = settings
-			? this.#decryptOptionalOverwatch(
-					AAD_OVERWATCH_GO_LIVE,
-					"launch",
-					{
-						ciphertext: settings.go_live_ciphertext,
-						iv: settings.go_live_iv,
-						tag: settings.go_live_tag,
-					},
-				)
+			? this.#decryptOptionalOverwatch(AAD_OVERWATCH_GO_LIVE, "launch", {
+					ciphertext: settings.go_live_ciphertext,
+					iv: settings.go_live_iv,
+					tag: settings.go_live_tag,
+				})
 			: undefined;
 		const goNoGo = settings
-			? this.#decryptOptionalOverwatch(
-					AAD_OVERWATCH_GO_NO_GO,
-					"launch",
-					{
-						ciphertext: settings.go_no_go_ciphertext,
-						iv: settings.go_no_go_iv,
-						tag: settings.go_no_go_tag,
-					},
-				)
+			? this.#decryptOptionalOverwatch(AAD_OVERWATCH_GO_NO_GO, "launch", {
+					ciphertext: settings.go_no_go_ciphertext,
+					iv: settings.go_no_go_iv,
+					tag: settings.go_no_go_tag,
+				})
 			: undefined;
 
 		return {

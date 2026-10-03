@@ -18,6 +18,25 @@ exchange local files through the browser's Downloads directory and block until
 the extension responds. Run `plant` and `cleanup` from the target project root;
 an approved answer is preserved under `.agents/prototype/<slug>/`.
 
+## Inbox cleanup
+
+The installed `dg-skills inbox` command supports Proton Mail through the
+extension and Gmail/Outlook through OAuth. Configure encrypted database profiles
+with `inbox profile set`, then use `--account-profile NAME` for workflows.
+`--session ID` selects a daemon session; explicit `--data-path` fixture commands
+work without a daemon. Paging uses lazy async generators and bounded batch writes.
+
+```sh
+dg-skills inbox --help
+dg-skills inbox profile --help
+dg-skills inbox load folders --account-profile personal --session SESSION_ID
+dg-skills inbox probe --folder Inbox --limit 3000 --account-profile personal
+```
+
+Review decisions and run `apply --dry-run` before `apply --confirm`. Read
+[provider setup](../../plugins/dg/skills/inbox-cleanup/references/providers.md) and
+[the workflow](../../plugins/dg/skills/inbox-cleanup/references/workflow.md).
+
 ## Demo plans
 
 Demo plans use YAML frontmatter and a required `## Steps` list. They may also

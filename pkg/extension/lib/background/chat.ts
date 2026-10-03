@@ -7,6 +7,11 @@ import {
 	validateSessionBootstrap,
 } from "@dg/common";
 import { browser } from "wxt/browser";
+import {
+	createInboxHandler,
+	type InboxBrowserApi,
+	type InboxResultFrame,
+} from "./inbox";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
 	CHAT_SESSION_KEY_PREFIX,
@@ -56,7 +61,9 @@ export type ChatBrowserApi = {
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
-		query?(queryInfo: { url: string }): Promise<{ id?: number; windowId?: number }[]>;
+		query?(queryInfo: {
+			url: string;
+		}): Promise<{ id?: number; windowId?: number }[]>;
 		update?(tabId: number, props: { active: boolean }): unknown;
 	};
 	windows?: {
@@ -132,6 +139,9 @@ export type RegisterChatOptions = {
 	openSocket?: (url: string) => ChatClientSocket;
 	keepaliveIntervalMs?: number;
 	maybeStartRecording?: (tab?: chrome.tabs.Tab) => Promise<boolean>;
+	inboxHandler?: (
+		frame: Extract<ChatFrame, { type: "inbox-browser-request" }>,
+	) => Promise<InboxResultFrame>;
 };
 
 function isMarkerCapturedMessage(
@@ -183,6 +193,7 @@ type ConfigWaiter = { key: string; settle(reply: ConfigRelayReply): void };
 
 const CONFIG_ROUND_TRIP_TIMEOUT_MS = 5000;
 
+/** Registers authenticated session transports, including correlated inbox replies that bypass the chat message queue. */
 export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
@@ -191,6 +202,10 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const maybeStartRecording =
 		options.maybeStartRecording ?? defaultMaybeStartRecording;
 
+	const inboxHandler =
+		options.inboxHandler ??
+		createInboxHandler({ browserApi: api as unknown as InboxBrowserApi });
+	const pendingInbox = new Set<string>();
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	const keepaliveEligible = new Set<string>();
 	const configWaiters: ConfigWaiter[] = [];
@@ -352,6 +367,62 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	});
 
 	client.onFrame((frame) => {
+		if (frame.type === "inbox-browser-request") {
+			const bootstrap = bootstrapsBySession.get(frame.sessionId);
+			const socket = currentSocket;
+			const key = JSON.stringify([frame.sessionId, frame.requestId]);
+			if (
+				!bootstrap ||
+				!socket ||
+				!keepaliveEligible.has(frame.sessionId) ||
+				pendingInbox.has(key)
+			)
+				return;
+			pendingInbox.add(key);
+			void inboxHandler(frame)
+				.then((result) => {
+					if (
+						currentSocket !== socket ||
+						bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
+						!keepaliveEligible.has(frame.sessionId)
+					)
+						return;
+					socket.send(
+						JSON.stringify({
+							...result,
+							sessionId: frame.sessionId,
+							requestId: frame.requestId,
+							token: bootstrap.token,
+						}),
+					);
+				})
+				.catch(() => {
+					if (
+						currentSocket === socket &&
+						bootstrapsBySession.get(frame.sessionId) === bootstrap &&
+						keepaliveEligible.has(frame.sessionId)
+					) {
+						try {
+							socket.send(
+								JSON.stringify({
+									type: "inbox-browser-result",
+									sessionId: frame.sessionId,
+									requestId: frame.requestId,
+									protocolVersion: CHAT_PROTOCOL_VERSION,
+									token: bootstrap.token,
+									ok: false,
+									error:
+										"Proton extension request failed. Open or reload the mail tab and retry.",
+								}),
+							);
+						} catch {
+							// A closed socket cannot carry its pending result.
+						}
+					}
+				})
+				.finally(() => pendingInbox.delete(key));
+			return;
+		}
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		const requestSocket = currentSocket;
 		const requestBootstrap = firstConfirmedBootstrap();
