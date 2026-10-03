@@ -4,6 +4,7 @@ import { DgCliError, describeError, EXIT_GENERAL_FAILURE } from "@dg/common";
 import { Command } from "commander";
 import { registerJobCommands } from "./commands/jobs";
 import { registerOriginCommands } from "./commands/origin";
+import { registerPairCommand } from "./commands/pair";
 import { registerServiceCommands } from "./commands/service";
 import { cmdServe, cmdStatus } from "./server/bootstrap";
 
@@ -33,6 +34,7 @@ program
 
 registerJobCommands(program);
 registerOriginCommands(program);
+registerPairCommand(program);
 registerServiceCommands(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {

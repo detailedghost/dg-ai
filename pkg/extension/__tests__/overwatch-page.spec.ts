@@ -24,6 +24,7 @@ import {
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { renderOverwatchPage } = await import("../entrypoints/overwatch/main");
+const { mountPairing } = await import("@/lib/features/pairing");
 const { handleOverwatchFrame, handleOverwatchFrameSafely } = await import(
 	"@/lib/background/chat"
 );
@@ -155,11 +156,18 @@ async function inspectNarrowLayout(markup: string): Promise<{
 	viewportWidth: number;
 	nodesFit: boolean;
 	hasProhibitedBorder: boolean;
+	pairVariantCount: number;
+	pairVariantsFit: boolean;
+	pairLabelsNowrap: boolean;
 }> {
 	const directory = await mkdtemp(join(tmpdir(), "dg-overwatch-page-layout-"));
 	const path = join(directory, "overwatch.html");
 	const optionsCss = readFileSync(
 		new URL("../entrypoints/options/style.css", import.meta.url),
+		"utf8",
+	);
+	const chatCss = readFileSync(
+		new URL("../entrypoints/chat/style.css", import.meta.url),
 		"utf8",
 	);
 	const overwatchCss = readFileSync(
@@ -173,7 +181,7 @@ async function inspectNarrowLayout(markup: string): Promise<{
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<style>${optionsCss}\n${overwatchCss}</style>
+	<style>${optionsCss}\n${chatCss}\n${overwatchCss}</style>
 </head>
 <body>
 	${markup}
@@ -191,9 +199,15 @@ async function inspectNarrowLayout(markup: string): Promise<{
 				viewportWidth: number;
 				nodesFit: boolean;
 				hasProhibitedBorder: boolean;
+				pairVariantCount: number;
+				pairVariantsFit: boolean;
+				pairLabelsNowrap: boolean;
 			}>(`(() => {
 				const nodes = [...document.querySelectorAll(".overwatch__who small,.overwatch__next,.overwatch__background-lane p,.overwatch__asks")];
-				const all = [...document.querySelectorAll(".overwatch,.overwatch *")];
+				const all = [...document.querySelectorAll("*")];
+				const pairVariants = [...document.querySelectorAll("[data-pair-variant]")];
+				const pairNodes = pairVariants.flatMap((variant) => [variant, ...variant.querySelectorAll("*")]).filter((node) => getComputedStyle(node).display !== "none");
+				const pairLabels = pairVariants.flatMap((variant) => [...variant.querySelectorAll(".pair-form__label")]);
 				return {
 					documentWidth: document.documentElement.scrollWidth,
 					viewportWidth: document.documentElement.clientWidth,
@@ -202,6 +216,12 @@ async function inspectNarrowLayout(markup: string): Promise<{
 						const style = getComputedStyle(node);
 						return [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle].some((value) => value === "dashed" || value === "dotted");
 					}),
+					pairVariantCount: pairVariants.length,
+					pairVariantsFit: pairNodes.every((node) => {
+						const rect = node.getBoundingClientRect();
+						return rect.left >= 0 && rect.right <= document.documentElement.clientWidth && node.scrollWidth <= node.clientWidth;
+					}),
+					pairLabelsNowrap: pairLabels.every((node) => getComputedStyle(node).whiteSpace === "nowrap"),
 				};
 			})()`);
 		} finally {
@@ -214,6 +234,42 @@ async function inspectNarrowLayout(markup: string): Promise<{
 			await rm(directory, { force: true, recursive: true });
 		}
 	}
+}
+
+async function renderPairingVariant(
+	name: "options" | "chat" | "overwatch",
+): Promise<string> {
+	const root = newRoot();
+	root.dataset.pairVariant = name;
+	if (name === "chat") root.className = "chat-pair";
+	if (name === "overwatch") root.className = "overwatch__pair";
+	const handle = mountPairing(root, {
+		variant: name === "options" ? "options" : "entry",
+		runtime: {
+			sendMessage: mock(() => Promise.resolve({ connected: false })),
+		},
+		findPort: () => Promise.resolve(47823),
+		fetch: () => Promise.resolve(new Response("", { status: 409 })),
+	});
+	await handle.ready;
+	if (name !== "options") click(button(root, "Pair"));
+	const input = root.querySelector<HTMLInputElement>("input");
+	if (!input) throw new Error("pairing input not found");
+	input.value = "123456";
+	const EventConstructor = root.ownerDocument.defaultView?.Event;
+	if (!EventConstructor) throw new Error("event constructor not found");
+	root.querySelector("form")?.dispatchEvent(
+		new EventConstructor("submit", { bubbles: true, cancelable: true }),
+	);
+	await Bun.sleep(0);
+	if (!root.textContent?.includes("Paired to another extension")) {
+		throw new Error("pairing status did not render");
+	}
+	const markup = root.outerHTML;
+	handle.destroy();
+	return name === "overwatch"
+		? `<section class="overwatch">${markup}</section>`
+		: markup;
 }
 
 describe("the overwatch page", () => {
@@ -495,6 +551,94 @@ describe("the overwatch page", () => {
 		handle.stop();
 	});
 
+	test("shows Pair while reachable and unpaired, then hides it when connected", async () => {
+		const root = newRoot();
+		const listeners = new Set<RuntimeListener>();
+		const runtime = {
+			onMessage: {
+				addListener(listener: RuntimeListener) {
+					listeners.add(listener);
+				},
+				removeListener(listener: RuntimeListener) {
+					listeners.delete(listener);
+				},
+			},
+			sendMessage: mock(() => Promise.resolve({ connected: false })),
+		};
+		const handle = renderOverwatchPage({
+			root,
+			runtime,
+			connect: () =>
+				Promise.resolve({
+					baseUrl: "http://127.0.0.1:47823",
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction: () => Promise.resolve({ ok: true as const }),
+				}),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+		await Promise.resolve();
+
+		const pair = root.querySelector<HTMLElement>(".overwatch__pair");
+		expect(pair?.hidden).toBe(false);
+		expect(pair?.textContent).toContain("Not paired");
+
+		for (const listener of listeners) {
+			listener({ type: MSG.connection, state: "connected" });
+		}
+		expect(pair?.hidden).toBe(true);
+		handle.stop();
+	});
+
+	test("shows Pair when board loading returns the unpaired 400 response", async () => {
+		const restoreFetch = captureGlobal("fetch");
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: mock(() =>
+				Promise.resolve(
+					new Response("refused: no authenticated extension origin is pinned", {
+						status: 400,
+					}),
+				),
+			),
+		});
+		const root = newRoot();
+		const listeners = new Set<RuntimeListener>();
+		const runtime = {
+			onMessage: {
+				addListener(listener: RuntimeListener) {
+					listeners.add(listener);
+				},
+				removeListener(listener: RuntimeListener) {
+					listeners.delete(listener);
+				},
+			},
+			sendMessage: mock(() => Promise.resolve({ connected: false })),
+		};
+		const handle = renderOverwatchPage({
+			root,
+			runtime,
+			connect: () =>
+				Promise.resolve(createOverwatchApi("http://127.0.0.1:47823")),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		try {
+			await handle.ready;
+			await Promise.resolve();
+
+			const pair = root.querySelector<HTMLElement>(".overwatch__pair");
+			expect(pair?.hidden).toBe(false);
+			expect(pair?.textContent).toContain("Not paired");
+		} finally {
+			handle.stop();
+			restoreFetch();
+		}
+	});
+
 	test("retries a failed initial load with a bounded reconciliation timer", async () => {
 		const root = newRoot();
 		const relay = runtimeHarness();
@@ -597,7 +741,7 @@ describe("the overwatch page", () => {
 });
 
 test.skipIf(!browserAvailable)(
-	"keeps maximal prose visible at a 390 pixel viewport",
+	"keeps maximal board and Pair prose visible at a 390 pixel viewport",
 	async () => {
 		const { root, handle } = await mount(
 			buildBoard({
@@ -620,11 +764,23 @@ test.skipIf(!browserAvailable)(
 			}),
 		);
 		try {
-			const geometry = await inspectNarrowLayout(root.innerHTML);
+			const pairingMarkup = (
+				await Promise.all([
+					renderPairingVariant("options"),
+					renderPairingVariant("chat"),
+					renderPairingVariant("overwatch"),
+				])
+			).join("");
+			const geometry = await inspectNarrowLayout(
+				`${root.innerHTML}${pairingMarkup}`,
+			);
 			expect(geometry.viewportWidth).toBe(390);
 			expect(geometry.documentWidth).toBeLessThanOrEqual(390);
 			expect(geometry.nodesFit).toBe(true);
 			expect(geometry.hasProhibitedBorder).toBe(false);
+			expect(geometry.pairVariantCount).toBe(3);
+			expect(geometry.pairVariantsFit).toBe(true);
+			expect(geometry.pairLabelsNowrap).toBe(true);
 		} finally {
 			handle.stop();
 		}

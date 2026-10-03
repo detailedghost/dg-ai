@@ -12,7 +12,7 @@ directory differs from the registered session, or when several sessions exist.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 Proton also needs exactly one extension connected to that session. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
-Proton inbox operations require extension version 1.10.0 or newer.
+Proton inbox operations require extension version 1.11.0 or newer.
 
 ## Profiles
 

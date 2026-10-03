@@ -124,20 +124,23 @@ test("the background entrypoint imports registerChat from the barrel and invokes
 	expect(source).toMatch(/registerChat\s*\(/);
 });
 
-test("a captured marker writes its bootstrap to storage.session and opens the chat page exactly once", async () => {
+test("a captured marker acknowledges storage and connection setup", async () => {
 	const { api, sessionSet, tabsCreate, getOnMessage } = makeBrowserApi();
 	registerChat({ browserApi: api });
 	const listener = getOnMessage();
 	expect(typeof listener).toBe("function");
 	const bootstrap = makeBootstrap();
+	const sendResponse = mock(() => undefined);
 
-	listener?.(
+	const keepChannel = listener?.(
 		{ type: MSG.markerCaptured, bootstrap },
 		{},
-		mock(() => undefined),
+		sendResponse,
 	);
 	await settle();
 
+	expect(keepChannel).toBe(true);
+	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
 	expect(sessionSet).toHaveBeenCalledTimes(1);
 	const [[written]] = sessionSet.mock.calls;
 	expect(Object.values(written)).toContainEqual(bootstrap);
@@ -145,6 +148,28 @@ test("a captured marker writes its bootstrap to storage.session and opens the ch
 	expect(tabsCreate).toHaveBeenCalledWith({
 		url: api.runtime.getURL(CHAT_PAGE_PATH),
 	});
+});
+
+test("a captured marker reports persistence failure without opening chat", async () => {
+	const { api, sessionSet, tabsCreate, getOnMessage } = makeBrowserApi();
+	sessionSet.mockImplementation(() => Promise.reject(new Error("storage failed")));
+	registerChat({ browserApi: api });
+	const listener = getOnMessage();
+	const sendResponse = mock(() => undefined);
+
+	const keepChannel = listener?.(
+		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
+		{},
+		sendResponse,
+	);
+	await settle();
+
+	expect(keepChannel).toBe(true);
+	expect(sendResponse).toHaveBeenCalledWith({
+		ok: false,
+		error: "storage failed",
+	});
+	expect(tabsCreate).not.toHaveBeenCalled();
 });
 
 test("ignores a marker-captured message carrying a malformed bootstrap rather than partially storing it", async () => {

@@ -82,7 +82,7 @@ jobs:
           - asset: dg-agent-linux-arm64
             os: ubuntu-24.04-arm
           - asset: dg-agent-macos-x64
-            os: macos-13
+            os: macos-15-intel
           - asset: dg-agent-macos-arm64
             os: macos-14
           - asset: dg-agent-windows-x64.exe

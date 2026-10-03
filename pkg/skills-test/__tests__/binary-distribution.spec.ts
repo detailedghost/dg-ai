@@ -63,7 +63,7 @@ const RELEASED_BINARIES: ReleasedBinary[] = [
 const NATIVE_RUNNERS: Record<string, string[]> = {
 	"linux-x64": ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"],
 	"linux-arm64": ["ubuntu-24.04-arm", "ubuntu-22.04-arm", "ubuntu-latest-arm"],
-	"darwin-x64": ["macos-13", "macos-12"],
+	"darwin-x64": ["macos-15-intel"],
 	"darwin-arm64": ["macos-14", "macos-15", "macos-latest"],
 	"win32-x64": ["windows-latest", "windows-2022", "windows-2025"],
 	"win32-arm64": ["windows-11-arm"],
