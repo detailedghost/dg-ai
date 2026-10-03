@@ -10,3 +10,5 @@ export * from "./proto-format";
 export * from "./serial-queue";
 export * from "./slug";
 export * from "./types";
+
+export * from "./inbox-format";

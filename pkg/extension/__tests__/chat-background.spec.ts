@@ -1144,3 +1144,80 @@ test("a socket that opens is relayed to the chat page as connected", async () =>
 		state: "connected",
 	});
 });
+
+async function inboxRelay({ confirm = true, deferred = false } = {}) {
+	const { api, getOnMessage, sendMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	let release: (() => void) | undefined;
+	const pending = deferred ? new Promise<void>((resolve) => { release = resolve; }) : Promise.resolve();
+	const handler = mock(async (frame: Extract<import("@dg/common").ChatFrame, { type: "inbox-browser-request" }>) => {
+		await pending;
+		return { type: "inbox-browser-result" as const, sessionId: frame.sessionId, requestId: frame.requestId,
+			protocolVersion: CHAT_PROTOCOL_VERSION, ok: true, data: { messages: [], hasMore: false } };
+	});
+	registerChat({ browserApi: api, openSocket: () => socket, inboxHandler: handler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	if (confirm) socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	const request = { type: "inbox-browser-request", sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION, requestId: "inbox-correlated-request",
+		request: { operation: "list-messages", page: 0, pageSize: 50 } };
+	const results = () => socket.send.mock.calls.map(([raw]) => JSON.parse(raw)).filter((frame) => frame.type === "inbox-browser-result");
+	return { socket, bootstrap, request, handler, sendMessage, release: () => release?.(), results };
+}
+
+test("registerChat sends a correlated authenticated inbox result directly to the daemon socket", async () => {
+	const relay = await inboxRelay();
+	relay.socket.dispatch("message", message(relay.request));
+	await settle();
+	expect(relay.handler).toHaveBeenCalledTimes(1);
+	expect(relay.results()).toEqual([{ type: "inbox-browser-result", sessionId: relay.bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION, requestId: relay.request.requestId, token: relay.bootstrap.token,
+		ok: true, data: { messages: [], hasMore: false } }]);
+	expect(() => validateChatFrame(relay.results()[0])).not.toThrow();
+	expect(relay.sendMessage.mock.calls.some(([event]) => (event as { frame?: { type: string } }).frame?.type === "inbox-browser-request")).toBe(false);
+	expect(sentTypes(relay.socket)).not.toContain("user-message");
+});
+
+test("registerChat suppresses duplicate inbox requests while their provider operation is pending", async () => {
+	const relay = await inboxRelay({ deferred: true });
+	relay.socket.dispatch("message", message(relay.request));
+	relay.socket.dispatch("message", message(relay.request));
+	await settle();
+	expect(relay.handler).toHaveBeenCalledTimes(1);
+	expect(relay.results()).toEqual([]);
+	relay.release();
+	await settle();
+	expect(relay.results()).toHaveLength(1);
+});
+
+test("registerChat rejects inbox execution before the authenticated session handshake is confirmed", async () => {
+	const relay = await inboxRelay({ confirm: false });
+	relay.socket.dispatch("message", message(relay.request));
+	await settle();
+	expect(relay.handler).not.toHaveBeenCalled();
+	expect(relay.results()).toEqual([]);
+});
+
+test("registerChat rejects inbox requests for an uncaptured session", async () => {
+	const relay = await inboxRelay();
+	relay.socket.dispatch("message", message({ ...relay.request, sessionId: "uncaptured-session" }));
+	await settle();
+	expect(relay.handler).not.toHaveBeenCalled();
+	expect(relay.results()).toEqual([]);
+});
+
+test.each(["session-closed", "close", "error"])("registerChat discards a pending inbox result after %s", async (ending) => {
+	const relay = await inboxRelay({ deferred: true });
+	relay.socket.dispatch("message", message(relay.request));
+	await settle();
+	expect(relay.handler).toHaveBeenCalledTimes(1);
+	if (ending === "session-closed") relay.socket.dispatch("message", message({ type: ending,
+		sessionId: relay.bootstrap.sessionId, protocolVersion: CHAT_PROTOCOL_VERSION }));
+	else relay.socket.dispatch(ending);
+	relay.release();
+	await settle();
+	expect(relay.results()).toEqual([]);
+});
