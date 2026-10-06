@@ -15,6 +15,7 @@ const UTF8_ENCODER = new TextEncoder();
 
 export type ChatClientSocket = {
 	send(data: string): void;
+	close?(): void;
 	addEventListener(
 		type: "open" | "close" | "message" | "error",
 		listener: (event?: unknown) => void,
@@ -62,6 +63,7 @@ export type ChatClient = {
 		workset?: string,
 	): void;
 	closeSession(sessionId: string): void;
+	disconnectSession(sessionId: string): Promise<void>;
 };
 
 const DEFAULT_BACKOFF_BASE_MS = 500;
@@ -114,6 +116,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let everConnected = false;
 	let knownInstanceId: string | undefined;
 	const capabilities = new Map<string, string>();
+	const disconnectWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
 	const connectionListeners = new Set<ConnectionListener>();
 	const outbox: QueuedMessage[] = [];
@@ -134,7 +137,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function send(frame: OutboundFrame): void {
+		const generation = socketGeneration;
 		void enqueueSend(async () => {
+			if (generation !== socketGeneration) return;
 			socket?.send(JSON.stringify(frame));
 		});
 	}
@@ -204,7 +209,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				openAndBind();
 				return;
 			}
+			const generation = socketGeneration;
 			void findDaemonPort(knownInstanceId).then((rediscovered) => {
+				if (generation !== socketGeneration || capabilities.size === 0) return;
 				if (rediscovered !== undefined) port = rediscovered;
 				openAndBind();
 			});
@@ -212,6 +219,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function scheduleReconnect(): void {
+		for (const waiter of disconnectWaiters.values()) waiter.reject(new Error("The connection closed before disconnect was confirmed."));
+		disconnectWaiters.clear();
 		setConnectionState("reconnecting");
 		scheduleRetry();
 	}
@@ -249,6 +258,31 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			(frame.type === "overwatch-state" || frame.type === "overwatch-open");
 		if (!isOverwatchFrame && !capabilities.has(frame.sessionId)) return;
 
+		if (frame.type === "session-disconnected") {
+			const waiter = disconnectWaiters.get(frame.sessionId);
+			if (!waiter) return;
+			capabilities.delete(frame.sessionId);
+			for (let i = outbox.length - 1; i >= 0; i--) {
+				if (outbox[i]?.sessionId === frame.sessionId) outbox.splice(i, 1);
+			}
+			disconnectWaiters.delete(frame.sessionId);
+			waiter.resolve();
+			if (capabilities.size === 0) {
+				if (retryTimer !== undefined) clearTimeout(retryTimer);
+				retryTimer = undefined;
+				const previous = socket;
+				socket = null;
+				socketGeneration += 1;
+				hasAttemptInFlight = false;
+				previous?.close?.();
+				setConnectionState("daemon-not-running");
+			}
+		}
+		if (frame.type === "error") {
+			disconnectWaiters.get(frame.sessionId)?.reject(new Error("The daemon did not confirm disconnect. Update dg-daemon and retry."));
+			disconnectWaiters.delete(frame.sessionId);
+		}
+
 		if (frame.type === "session-pending") {
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);
 		}
@@ -280,10 +314,18 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			return;
 		}
 		socket = opened;
-		opened.addEventListener("open", handleOpen);
-		opened.addEventListener("close", scheduleReconnect);
-		opened.addEventListener("message", handleMessage);
-		opened.addEventListener("error", handleError);
+		opened.addEventListener("open", () => {
+			if (socket === opened) handleOpen();
+		});
+		opened.addEventListener("close", () => {
+			if (socket === opened) scheduleReconnect();
+		});
+		opened.addEventListener("message", (event) => {
+			if (socket === opened) handleMessage(event);
+		});
+		opened.addEventListener("error", () => {
+			if (socket === opened) handleError();
+		});
 	}
 
 	return {
@@ -314,7 +356,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			body: string,
 			opts: SendUserMessageOptions = {},
 		): string {
-			if (!capabilities.has(sessionId)) {
+			if (!capabilities.has(sessionId) || disconnectWaiters.has(sessionId)) {
 				throw new Error(
 					`sendUserMessage: session ${sessionId} is not captured by this client`,
 				);
@@ -362,6 +404,24 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				protocolVersion: CHAT_PROTOCOL_VERSION,
 				role,
 				...(workset ? { workset } : {}),
+			});
+		},
+
+		disconnectSession(sessionId: string): Promise<void> {
+			const token = capabilities.get(sessionId);
+			if (!token || connectionState !== "connected" || disconnectWaiters.has(sessionId)) {
+				return Promise.reject(new Error("Session is not connected or disconnect is pending."));
+			}
+			return new Promise((resolve, reject) => {
+				const timer = setTimeout(() => {
+					disconnectWaiters.delete(sessionId);
+					reject(new Error("Disconnect was not confirmed. Update dg-daemon and retry."));
+				}, 5000);
+				disconnectWaiters.set(sessionId, {
+					resolve() { clearTimeout(timer); resolve(); },
+					reject(error) { clearTimeout(timer); reject(error); },
+				});
+				send({ type: "session-disconnect", sessionId, token, protocolVersion: CHAT_PROTOCOL_VERSION });
 			});
 		},
 

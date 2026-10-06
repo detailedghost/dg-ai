@@ -220,6 +220,21 @@
 		cursor: progress;
 		opacity: 0.5;
 	}
+	.pair-sessions {
+		@apply mt-3 space-y-2;
+	}
+	.pair-session {
+		@apply flex flex-wrap items-center justify-between gap-2 border-2 p-3 text-sm;
+		border-color: var(--line);
+		box-shadow: 0.2rem 0.2rem 0 var(--accent2);
+	}
+	.pair-session--current {
+		border-color: var(--accent);
+		box-shadow: 0.2rem 0.2rem 0 var(--accent);
+	}
+	.pair-session__label {
+		overflow-wrap: anywhere;
+	}
 	.pair-panel__status {
 		@apply mt-3 text-sm;
 		min-height: 1.25rem;

@@ -1066,3 +1066,70 @@ test("announces daemon-not-running when the socket cannot be opened", () => {
 
 	expect(changes).toEqual(["daemon-not-running"]);
 });
+
+
+
+test("disconnectSession removes only the selected capability after daemon confirmation and keeps the shared connection open", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const close = mockFn(() => socket.dispatch("close"));
+	Object.assign(socket, { close });
+	const openSocket = mockFn(() => socket);
+	const client = createChatClient({ openSocket });
+	const older = makeBootstrap();
+	const newer = makeBootstrap({ sessionId: "session-b", token: "token-b" });
+	client.connect(older);
+	client.connect(newer);
+	socket.dispatch("open");
+	await flushMicrotasks();
+	const disconnected = client.disconnectSession(older.sessionId);
+	await flushMicrotasks();
+	expect(sentFrames(socket).filter((frame) => frame.type === "session-disconnect")).toEqual([expect.objectContaining({ sessionId: older.sessionId, token: older.token })]);
+	socket.dispatch("message", message({ type: "session-disconnected", sessionId: older.sessionId, protocolVersion: CHAT_PROTOCOL_VERSION }));
+	await disconnected;
+	expect(close.mock.calls).toHaveLength(0);
+	expect(openSocket.mock.calls).toHaveLength(1);
+	expect(client.getConnectionState()).toBe("connected");
+	expect(() => client.sendUserMessage(older.sessionId, "blocked")).toThrow();
+	client.sendUserMessage(newer.sessionId, "still connected");
+	await flushMicrotasks();
+	expect(sentFrames(socket).some((frame) => frame.type === "user-message" && frame.sessionId === newer.sessionId)).toBe(true);
+});
+
+test("disconnecting the last capability closes only after confirmation and can be paired again", async () => {
+	const first = makeFakeSocket(mockFn);
+	const close = mockFn(() => first.dispatch("close"));
+	Object.assign(first, { close });
+	const second = makeFakeSocket(mockFn);
+	const openSocket = mockFn((): FakeSocket => openSocket.mock.calls.length === 1 ? first : second);
+	const client = createChatClient({ openSocket });
+	const session = makeBootstrap();
+	client.connect(session);
+	first.dispatch("open");
+	const pending = client.disconnectSession(session.sessionId);
+	expect(close.mock.calls).toHaveLength(0);
+	await flushMicrotasks();
+	first.dispatch("message", message({ type: "session-disconnected", sessionId: session.sessionId, protocolVersion: CHAT_PROTOCOL_VERSION }));
+	await pending;
+	first.dispatch("error");
+	first.dispatch("close");
+	expect(client.getConnectionState()).not.toBe("connected");
+	expect(openSocket.mock.calls).toHaveLength(1);
+	expect(close.mock.calls).toHaveLength(1);
+	client.connect(session);
+	second.dispatch("open");
+	await flushMicrotasks();
+	expect(openSocket.mock.calls).toHaveLength(2);
+});
+
+test("an unsupported or refused disconnect preserves the session and rejects the operation", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const session = makeBootstrap();
+	client.connect(session);
+	socket.dispatch("open");
+	const pending = client.disconnectSession(session.sessionId);
+	socket.dispatch("message", message({ type: "error", sessionId: session.sessionId, protocolVersion: CHAT_PROTOCOL_VERSION, message: "unknown frame" }));
+	await expect(pending).rejects.toThrow("did not confirm disconnect");
+	expect(client.getConnectionState()).toBe("connected");
+	expect(() => client.sendUserMessage(session.sessionId, "still available")).not.toThrow();
+});

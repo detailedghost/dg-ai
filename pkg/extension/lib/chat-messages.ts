@@ -6,6 +6,7 @@ export const MSG = {
 	userMessage: "dg-chat:user-message",
 	sessionCreate: "dg-chat:session-create",
 	sessionClose: "dg-chat:session-close",
+	sessionDisconnect: "dg-chat:session-disconnect",
 	frame: "dg-chat:frame",
 	connection: "dg-chat:connection",
 	connectionRequest: "dg-chat:connection-request",
@@ -18,4 +19,11 @@ export type ConfigRelayReply = {
 	key: string;
 	value?: unknown;
 	error?: string;
+};
+
+export type PairingSession = {
+	sessionId: string;
+	agentIdentity: string;
+	connected: boolean;
+	current?: boolean;
 };

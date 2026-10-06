@@ -11,19 +11,16 @@ import {
 	isProtonMailOrigin,
 	type ProtonSessionHeaders,
 } from "./inbox-proton-observer";
+import { ProtonOperationError } from "./inbox-proton-errors";
 
 type RecordValue = Record<string, unknown>;
-class ProtonOperationError extends Error {}
 type ProtonPageContext = {
 	origin: string;
 	headers?: ProtonSessionHeaders;
 	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 	timeoutMs?: number;
 };
-const malformed = () =>
-	new Error(
-		"Proton API returned an unsupported response. Reload Proton Mail and retry.",
-	);
+const malformed = () => new ProtonOperationError("unsupported-response");
 function record(value: unknown): RecordValue {
 	if (!value || typeof value !== "object" || Array.isArray(value))
 		throw malformed();
@@ -112,9 +109,7 @@ function normalizeMessage(
 			raw.LabelIDs.some((label) => typeof label !== "string") ||
 			!raw.LabelIDs.includes(requestedFolder))
 	) {
-		throw new ProtonOperationError(
-			"Proton returned messages outside the requested folder scope or without trustworthy membership. Refresh the mailbox and retry the scan.",
-		);
+		throw new ProtonOperationError("folder-membership");
 	}
 	const labels = Array.isArray(raw.LabelIDs)
 		? raw.LabelIDs.filter((entry): entry is string => typeof entry === "string")
@@ -196,17 +191,11 @@ export async function executeProtonPage(
 ): Promise<InboxBrowserResponse> {
 	const request = validateInboxBrowserRequest(input);
 	if (!isProtonMailOrigin(context.origin))
-		throw new ProtonOperationError(
-			"Open an authenticated HTTPS Proton Mail origin to use inbox cleanup.",
-		);
+		throw new ProtonOperationError("invalid-origin");
 	if (request.operation === "create-filter" && !request.sieve?.trim())
-		throw new ProtonOperationError(
-			"Proton filter creation requires a reviewed non-empty Sieve policy.",
-		);
+		throw new ProtonOperationError("empty-sieve");
 	if (!context.headers?.uid)
-		throw new ProtonOperationError(
-			"Sign in to Proton Mail, reload the mail tab, then retry so the extension observes its session.",
-		);
+		throw new ProtonOperationError("session-unobserved");
 	const controller = new AbortController();
 	const timeoutMs = Math.min(Math.max(context.timeoutMs ?? 25_000, 1), 120_000);
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -235,22 +224,16 @@ export async function executeProtonPage(
 				...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 			});
 			if (response.status === 401 || response.status === 403)
-				throw new ProtonOperationError(
-					"Sign in to Proton Mail and reload its tab to restore the authenticated session.",
-				);
+				throw new ProtonOperationError("auth-expired", response.status);
 			if (!response.ok)
-				throw new ProtonOperationError(
-					"Proton API request failed. Check the mail tab and retry after any rate limit clears.",
-				);
+				throw new ProtonOperationError("http-failure", response.status);
 			const json = await boundedJson(response);
 			if (
 				(method !== "GET" || json.Code !== undefined) &&
 				json.Code !== 1000 &&
 				json.Code !== 1001
 			)
-				throw new ProtonOperationError(
-					"Proton API rejected the operation. Check the mail tab and reviewed settings before retrying.",
-				);
+				throw new ProtonOperationError("api-rejected");
 			if (json.Code === 1001 || json.Responses !== undefined) {
 				const responses = items(json, "Responses");
 				const expected =
@@ -267,21 +250,15 @@ export async function executeProtonPage(
 					expected.some((id) => !actual.has(id)) ||
 					responses.some((entry) => record(entry.Response).Code !== 1000)
 				) {
-					throw new ProtonOperationError(
-						"Proton API did not complete every reviewed message action. Refresh the mailbox state before retrying.",
-					);
+					throw new ProtonOperationError("incomplete-action");
 				}
 			}
 			return json;
 		} catch (error) {
 			if (controller.signal.aborted)
-				throw new ProtonOperationError(
-					"Proton request timed out. Check the mail tab and retry.",
-				);
+				throw new ProtonOperationError("timeout");
 			if (error instanceof ProtonOperationError) throw error;
-			throw new ProtonOperationError(
-				"Proton API could not complete the operation. Reload its mail tab and retry.",
-			);
+			throw new ProtonOperationError("network");
 		}
 	}
 	try {
@@ -355,12 +332,10 @@ export async function executeProtonPage(
 					PageSize: String(size),
 					Limit: String(size),
 				});
-				if (request.folderId) params.set("LabelID[]", request.folderId);
+				if (request.folderId) params.set("LabelID", request.folderId);
 				const json = await api(`mail/v4/messages?${params}`);
 				if (json.Stale === true || json.Stale === 1)
-					throw new ProtonOperationError(
-						"Proton message page is stale. Refresh the mail tab and retry the scan.",
-					);
+					throw new ProtonOperationError("stale-page");
 				const messages = items(json, "Messages");
 				if (messages.length > size) throw malformed();
 				result = {
@@ -409,9 +384,7 @@ export async function executeProtonPage(
 							previous.Status !== 0 &&
 							previous.Status !== 1))
 				) {
-					throw new ProtonOperationError(
-						"Proton returned an incomplete filter policy. Refresh the filter snapshot before retrying the reviewed update.",
-					);
+					throw new ProtonOperationError("incomplete-filter");
 				}
 				const body = {
 					Name: request.name ?? previous?.Name,
@@ -458,7 +431,11 @@ export async function executeProtonPage(
 				result = {};
 				break;
 		}
-		return sanitizeInboxBrowserResponse(result);
+		try {
+			return sanitizeInboxBrowserResponse(result);
+		} catch {
+			throw malformed();
+		}
 	} finally {
 		clearTimeout(timer);
 	}

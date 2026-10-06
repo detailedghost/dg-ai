@@ -466,3 +466,50 @@ describe("keepalive", () => {
 		ws.close();
 	});
 });
+
+
+describe("session-disconnect removes only the requesting extension's selected capability", () => {
+	it("keeps the shared socket, other sessions, and agent session alive while refusing further actions for the disconnected capability", async () => {
+		const older = await registerSession(port);
+		const current = await registerSession(port);
+		const ws = wsExtensionSocket(port);
+		await waitForOpen(ws);
+		const frames = collectFrames(ws);
+		sendConnectHandshake(ws, older, CHAT_PROTOCOL_VERSION);
+		sendConnectHandshake(ws, current, CHAT_PROTOCOL_VERSION);
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "session-list" && (frame as { sessionId?: string }).sessionId === current.sessionId));
+		frames.length = 0;
+		send(ws, { type: "session-disconnect", sessionId: older.sessionId, token: older.token });
+		const disconnected = await waitForValue(() => frames.find((frame) => frameType(frame) === "session-disconnected"));
+		expect((disconnected as { sessionId: string }).sessionId).toBe(older.sessionId);
+		expect(ws.readyState).toBe(WebSocket.OPEN);
+		frames.length = 0;
+		send(ws, { type: "history-request", sessionId: current.sessionId, token: current.token });
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "history-response"));
+		expect(frames.some((frame) => frameType(frame) === "error")).toBe(false);
+		frames.length = 0;
+		send(ws, { type: "history-request", sessionId: older.sessionId, token: older.token });
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "error"));
+		const agent = await connectCli(port, older);
+		expect(agent.readyState).toBe(WebSocket.OPEN);
+		agent.close();
+		ws.close();
+	});
+
+	it("refuses disconnect over a socket that never captured the selected capability", async () => {
+		const owned = await registerSession(port);
+		const foreign = await registerSession(port);
+		const ws = wsExtensionSocket(port);
+		await waitForOpen(ws);
+		const frames = collectFrames(ws);
+		sendConnectHandshake(ws, owned, CHAT_PROTOCOL_VERSION);
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "session-list"));
+		frames.length = 0;
+		send(ws, { type: "session-disconnect", sessionId: foreign.sessionId, token: foreign.token });
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "error"));
+		frames.length = 0;
+		send(ws, { type: "history-request", sessionId: owned.sessionId, token: owned.token });
+		await waitForValue(() => frames.find((frame) => frameType(frame) === "history-response"));
+		ws.close();
+	});
+});

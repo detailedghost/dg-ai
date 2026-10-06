@@ -1519,7 +1519,7 @@ test("an unpaired chat page shows Pair when its daemon is reachable", async () =
 	);
 });
 
-test("a connected chat page hides its Pair entry", async () => {
+test("a connected chat page keeps its confirmed Pair status visible", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient("connected");
 	await renderChatPage({
@@ -1528,13 +1528,14 @@ test("a connected chat page hides its Pair entry", async () => {
 		loadBootstraps: async () => bootstraps(),
 		pairing: {
 			runtime: {
-				sendMessage: mock(() => Promise.resolve({ connected: false })),
+				sendMessage: mock(() => Promise.resolve({ connected: true })),
 			},
 			findPort: () => Promise.resolve(47823),
 		},
 	});
 
-	expect(root.querySelector<HTMLElement>(".chat-pair")?.hidden).toBe(true);
+	expect(root.querySelector<HTMLElement>(".chat-pair")?.hidden).toBe(false);
+	expect(root.querySelector(".chat-pair")?.textContent).toContain("connection confirmed");
 });
 
 test("the status pill tells the page it is unpaired when the daemon rejects the stored token", async () => {
