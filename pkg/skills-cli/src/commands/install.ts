@@ -215,13 +215,16 @@ async function install(
 		stage = () => extractZip(release.zip, dest.copyPath);
 	} else {
 		const root = resolveLocalRepo(repo, process.cwd());
-		const out = localOutputDir(root, target) ?? buildLocally(root, target);
+		const out = forceLocal
+			? buildLocally(root, target)
+			: (localOutputDir(root, target) ?? buildLocally(root, target));
 		version = manifestVersion(out);
 		stage = () => copyDir(out, dest.copyPath);
 	}
 
 	const markerVersion = readMarker()[target];
 	if (
+		!forceLocal &&
 		markerVersion &&
 		versionGte(markerVersion, version) &&
 		existsSync(dest.copyPath)

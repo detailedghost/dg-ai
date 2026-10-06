@@ -304,6 +304,8 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["keepalive", buildKeepaliveFrame],
 	["session-close", buildSessionCloseFrame],
 	["session-closed", buildSessionClosedFrame],
+	["session-disconnect", () => buildSessionCloseFrame({ type: "session-disconnect" })],
+	["session-disconnected", () => buildSessionClosedFrame({ type: "session-disconnected" })],
 	["history-request", buildHistoryRequestFrame],
 	["history-response", buildHistoryResponseFrame],
 	["config-get", buildConfigGetFrame],

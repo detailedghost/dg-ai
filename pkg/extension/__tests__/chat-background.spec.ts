@@ -1126,6 +1126,8 @@ test("a socket error is relayed to the chat page as a connection change with its
 	expect(sendMessage).toHaveBeenCalledWith({
 		type: MSG.connection,
 		state: "reconnecting",
+		connected: false,
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false }],
 		detail: `could not reach the daemon on port ${CHAT_DEFAULT_PORT}`,
 	});
 });
@@ -1142,6 +1144,8 @@ test("a socket that opens is relayed to the chat page as connected", async () =>
 	expect(sendMessage).toHaveBeenCalledWith({
 		type: MSG.connection,
 		state: "connected",
+		connected: false,
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false }],
 	});
 });
 

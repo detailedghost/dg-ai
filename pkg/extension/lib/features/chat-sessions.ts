@@ -58,6 +58,7 @@ export function createChatSessions(): ChatSessions {
 					return;
 				}
 				case "session-closed":
+				case "session-disconnected":
 					roster.delete(frame.sessionId);
 					return;
 				default:

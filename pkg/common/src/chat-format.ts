@@ -262,6 +262,8 @@ export type ChatFrame =
 	| (Envelope & { type: "keepalive"; token: string })
 	| (Envelope & { type: "session-close"; token: string })
 	| (Envelope & { type: "session-closed" })
+	| (Envelope & { type: "session-disconnect"; token: string })
+	| (Envelope & { type: "session-disconnected" })
 	| (Envelope & { type: "history-request"; token: string })
 	| (Envelope & { type: "history-response"; messages: unknown[] })
 	| (Envelope & { type: "config-get"; token: string; key: string })
@@ -313,7 +315,9 @@ const CHAT_FRAME_TYPES = new Set([
 	"session-pending",
 	"keepalive",
 	"session-close",
+	"session-disconnect",
 	"session-closed",
+	"session-disconnected",
 	"history-request",
 	"history-response",
 	"config-get",
@@ -331,6 +335,7 @@ const INBOUND_FRAME_TYPES = new Set([
 	"command-invocation",
 	"session-create",
 	"session-close",
+	"session-disconnect",
 	"keepalive",
 	"history-request",
 	"config-get",
@@ -686,8 +691,10 @@ function validateFrameBody(
 		case "keepalive":
 			return;
 		case "session-close":
+		case "session-disconnect":
 			return;
 		case "session-closed":
+		case "session-disconnected":
 			return;
 		case "history-request":
 			return;

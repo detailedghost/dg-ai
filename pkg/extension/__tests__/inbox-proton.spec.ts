@@ -36,7 +36,8 @@ it("fetches a fixed message page and normalizes summaries without bodies or sess
 	expect(endpoint.pathname).toBe("/api/mail/v4/messages");
 	expect(endpoint.searchParams.get("Page")).toBe("1");
 	expect(endpoint.searchParams.get("PageSize")).toBe("50");
-	expect(endpoint.searchParams.get("LabelID[]")).toBe("0");
+	expect(endpoint.searchParams.get("LabelID")).toBe("0");
+	expect(endpoint.searchParams.has("LabelID[]")).toBe(false);
 	expect(init.credentials).toBe("include");
 	expect(new Headers(init.headers).get("x-pm-uid")).toBe(headers.uid);
 	expect(result.messages).toHaveLength(1);

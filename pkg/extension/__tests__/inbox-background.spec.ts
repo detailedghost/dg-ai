@@ -105,7 +105,7 @@ it("refuses mutation batches above the provider bound before page execution", as
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
 
-async function runSerializedMain(input: { func: Function; args: unknown[] }, options: { install: boolean; pageUrl?: string }) {
+async function runSerializedMain(input: { func: Function; args: unknown[] }, options: { install: boolean; pageUrl?: string; response?: { body: unknown; status: number } }) {
 	const child = Bun.spawn([process.execPath, new URL("./utils/proton-main-execution.ts", import.meta.url).pathname], {
 		cwd: new URL("..", import.meta.url).pathname,
 		stdin: new Blob([JSON.stringify({ func: input.func.toString(), request: input.args[0], ...options })]),
@@ -136,6 +136,37 @@ it.each([true, false])("serialized MAIN function uses only the installed bundled
 	} else {
 		expect(execution!.calls).toEqual([]);
 		expect(result.error).toMatch(/reload|sign in/i);
+	}
+});
+
+it("relays safe provider diagnostics from the installed MAIN API without provider error text", async () => {
+	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
+	api.scripting.executeScript.mockImplementation(async (details) => {
+		const executed = await runSerializedMain(details as { func: Function; args: unknown[] }, {
+			install: true,
+			response: { status: 403, body: { Error: "person@example.test token=private-secret" } },
+		});
+		return [{ frameId: 0, result: executed.result }];
+	});
+	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	expect(result.ok).toBe(false);
+	expect(result.error).toContain("auth-expired");
+	expect(result.error).toContain("HTTP 403");
+	for (const secret of ["person@example.test", "private-secret", "page-memory-secret"]) {
+		expect(JSON.stringify(result)).not.toContain(secret);
+	}
+});
+
+it.each([
+	{ code: "private-secret", message: "person@example.test", status: "secret-status" },
+	{ code: "constructor", message: "person@example.test", status: 200 },
+	{ code: "http-failure", message: "person@example.test", status: "secret-status" },
+])("rejects arbitrary page diagnostics and relays only fixed messages %j", async (failure) => {
+	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }], { __dgInboxFailure: true, ...failure });
+	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	expect(result.ok).toBe(false);
+	for (const secret of ["private-secret", "person@example.test", "secret-status", "constructor"]) {
+		expect(JSON.stringify(result)).not.toContain(secret);
 	}
 });
 

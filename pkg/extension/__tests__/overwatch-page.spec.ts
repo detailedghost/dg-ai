@@ -551,7 +551,7 @@ describe("the overwatch page", () => {
 		handle.stop();
 	});
 
-	test("shows Pair while reachable and unpaired, then hides it when connected", async () => {
+	test("shows Pair while unpaired and keeps confirmation visible when connected", async () => {
 		const root = newRoot();
 		const listeners = new Set<RuntimeListener>();
 		const runtime = {
@@ -585,10 +585,13 @@ describe("the overwatch page", () => {
 		expect(pair?.hidden).toBe(false);
 		expect(pair?.textContent).toContain("Not paired");
 
+		runtime.sendMessage.mockImplementation(() => Promise.resolve({ connected: true }));
 		for (const listener of listeners) {
-			listener({ type: MSG.connection, state: "connected" });
+			listener({ type: MSG.connection, state: "connected", connected: true, sessions: [] });
 		}
-		expect(pair?.hidden).toBe(true);
+		await Promise.resolve();
+		expect(pair?.hidden).toBe(false);
+		expect(pair?.textContent).toContain("connection confirmed");
 		handle.stop();
 	});
 

@@ -982,6 +982,14 @@ async function dispatchFrame(
 			return handleSessionCreate(ws, frame, deps);
 		case "session-close":
 			return handleSessionClose(ws, frame, deps);
+		case "session-disconnect":
+			if (ws.data.kind !== "ws") {
+				await sendError(ws, frame.sessionId, "session-disconnect is accepted only on the extension socket");
+				return;
+			}
+			ws.data.capabilities.delete(frame.sessionId);
+			await sendFrame(ws, frame.sessionId, { type: "session-disconnected" });
+			return;
 		case "keepalive":
 			deps.noteActivity();
 			return;

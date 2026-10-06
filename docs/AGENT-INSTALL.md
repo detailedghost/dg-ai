@@ -181,3 +181,28 @@ Outlook need a registered OAuth client and the provider's delegated permissions.
 Explicit --data-path fixtures work without those services. Read
 [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [cleanup workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md).
+
+### Checking and disconnecting paired sessions
+
+DeeGee's Pairing panel stays visible in Chat, Overwatch, and extension options.
+A successful code submission initially says **Code accepted**. **Paired — connection
+confirmed** appears only after the daemon authenticates a session; an open socket
+alone does not count as paired. If confirmation takes longer than ten seconds,
+the panel reports the missing confirmation and allows another attempt.
+
+The current session has a **Current** label and a distinct accent-colored shadow.
+In Chat, selecting a connected session updates that highlight.
+The panel lists sessions captured by this extension, with each session's connection
+status and a **Disconnect** button. Disconnect removes that session's saved browser
+credentials and closes its connection without ending the agent session. The daemon confirms each disconnect before the
+extension reports success. Other
+captured sessions keep their existing connection without interruption. **Pair another session** adds a session
+without replacing existing ones. Tokens remain in browser session storage and are
+never displayed by the pairing panel.
+
+For local extension changes, run `dg-skills install --local --repo <checkout>`.
+This rebuilds and replaces the installed extension even when its version is unchanged.
+Reload DeeGee in `brave://extensions` and refresh any connected application tabs.
+
+Selective session disconnect requires dg-daemon 1.11.2 or newer. Update both the
+daemon and extension before using the Disconnect controls.

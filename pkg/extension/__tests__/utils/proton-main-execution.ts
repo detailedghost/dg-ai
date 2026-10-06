@@ -10,6 +10,7 @@ const payload = JSON.parse(await Bun.stdin.text()) as {
 	request: InboxBrowserRequest;
 	install: boolean;
 	pageUrl?: string;
+	response?: { body: unknown; status: number };
 };
 const calls: string[] = [];
 const location = new URL(payload.pageUrl ?? "https://mail.proton.me/u/0/inbox");
@@ -23,6 +24,7 @@ const page = {
 	XMLHttpRequest: PageXhr,
 	fetch: async (url: RequestInfo | URL, _init?: RequestInit) => {
 		calls.push(String(url));
+		if (payload.response) return new Response(JSON.stringify(payload.response.body), { status: payload.response.status });
 		return new Response(JSON.stringify({ Code: 1000, Total: 1, Messages: [{
 			ID: "serialized-main-message", Sender: { Address: "person@example.test" },
 			Subject: "Private person@example.test", Body: "secret-body", LabelIDs: ["0"],

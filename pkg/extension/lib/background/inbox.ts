@@ -5,6 +5,7 @@ import {
 } from "@dg/common";
 import { isProtonMailOrigin } from "../features/inbox-proton-observer";
 import { sanitizeInboxBrowserResponse } from "../features/inbox-proton";
+import { protonOperationDiagnostic } from "../features/inbox-proton-errors";
 
 type RequestFrame = Extract<ChatFrame, { type: "inbox-browser-request" }>;
 /** Correlated result before the session transport attaches its private capability token. */
@@ -153,19 +154,32 @@ export function createInboxHandler({
 					if (!api) return { __dgInboxFailure: true };
 					try {
 						return await api(input);
-					} catch {
-						return { __dgInboxFailure: true };
+					} catch (error) {
+						const failure = error as {
+							code?: unknown;
+							status?: unknown;
+						} | null;
+						return {
+							__dgInboxFailure: true,
+							code: failure?.code,
+							status: failure?.status,
+						};
 					}
 				},
 			});
 			const result = results.find((entry) => entry.frameId === 0)?.result;
-			if (!result || typeof result !== "object" || "__dgInboxFailure" in result)
+			if (!result || typeof result !== "object" || "__dgInboxFailure" in result) {
+				const diagnostic = result && typeof result === "object"
+					? protonOperationDiagnostic(result as Record<string, unknown>)
+					: undefined;
 				return {
 					...envelope,
 					ok: false,
 					error:
+						diagnostic ??
 						"Proton page execution failed. Sign in and reload the mail tab so the extension can observe its session; check reviewed settings before retrying.",
 				};
+			}
 			let data;
 			try {
 				data = sanitizeInboxBrowserResponse(result);

@@ -161,10 +161,12 @@ function createRelayChatClient(): PageChatClient {
 				knownSessions.add(summary.sessionId);
 		} else if (frame.type === "session-pending") {
 			knownSessions.add(frame.newSession.sessionId);
-		} else if (frame.type === "session-closed") {
+		} else if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			knownSessions.delete(frame.sessionId);
 		}
-		connectionState = "connected";
+		if (frame.type !== "session-closed" && frame.type !== "session-disconnected") {
+			connectionState = "connected";
+		}
 		for (const listener of listeners) listener(frame);
 	});
 
@@ -289,6 +291,13 @@ function createRelayChatClient(): PageChatClient {
 				sessionId: requestingSessionId,
 				role,
 				...(workset ? { workset } : {}),
+			});
+		},
+
+		disconnectSession(sessionId: string): Promise<void> {
+			return sendAndWait({ type: MSG.sessionDisconnect, sessionId }).then((reply) => {
+				if (!reply.ok) throw new Error(reply.error);
+				knownSessions.delete(sessionId);
 			});
 		},
 
@@ -805,6 +814,7 @@ export async function renderChatPage(
 
 	function setSelected(sessionId: string): void {
 		selectedSessionId = sessionId;
+		pairing.setCurrentSession(sessionId);
 		sessions.markSessionRead(sessionId);
 		syncPage();
 	}
@@ -1039,6 +1049,7 @@ export async function renderChatPage(
 			}
 		}
 
+		pairing.setCurrentSession(selectedSessionId);
 		const selected = selectedSessionId
 			? sessions.get(selectedSessionId)
 			: undefined;
@@ -1264,6 +1275,7 @@ export async function renderChatPage(
 		if (
 			frame.type === "session-list" ||
 			frame.type === "session-closed" ||
+			frame.type === "session-disconnected" ||
 			frame.type === "progress" ||
 			frame.type === "agent-message"
 		) {

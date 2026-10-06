@@ -16,6 +16,7 @@ import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/backgro
 import {
 	CHAT_SESSION_KEY_PREFIX,
 	type ConfigRelayReply,
+	type PairingSession,
 	MSG,
 } from "@/lib/chat-messages";
 import {
@@ -211,6 +212,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const configWaiters: ConfigWaiter[] = [];
 	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
 	let currentSocket: ChatClientSocket | undefined;
+	let currentPairingId: string | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
 
 	function stopKeepalive(): void {
@@ -237,7 +239,8 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const socket = openSocket(url);
 		currentSocket = socket;
 		const cleanup = () => {
-			if (currentSocket === socket) currentSocket = undefined;
+			if (currentSocket !== socket) return;
+			currentSocket = undefined;
 			stopKeepalive();
 			failPendingConfigRequests("the daemon connection closed");
 		};
@@ -356,15 +359,34 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		extensionVersion: api.runtime.getManifest?.().version,
 	});
 
-	client.onConnectionChange((state, detail) => {
+	function pairingStatus() {
+		const state = client.getConnectionState();
+		const sessions: PairingSession[] = [...bootstrapsBySession.values()].map(
+			({ sessionId, agentIdentity }) => ({
+				sessionId,
+				agentIdentity,
+				current: sessionId === currentPairingId,
+				connected: state === "connected" && keepaliveEligible.has(sessionId),
+			}),
+		);
+		return {
+			state,
+			connected: sessions.some((session) => session.connected),
+			sessions,
+		};
+	}
+
+	function broadcastPairingStatus(detail?: string): void {
 		void api.runtime
 			.sendMessage({
 				type: MSG.connection,
-				state,
+				...pairingStatus(),
 				...(detail ? { detail } : {}),
 			})
 			.catch(() => {});
-	});
+	}
+
+	client.onConnectionChange((_state, detail) => broadcastPairingStatus(detail));
 
 	client.onFrame((frame) => {
 		if (frame.type === "inbox-browser-request") {
@@ -442,11 +464,12 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				?.settle({ key: frame.key, value: frame.value, error: frame.error });
 			return;
 		}
-		if (frame.type === "session-closed") {
+		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			void api.storage.session.remove(chatSessionKey(frame.sessionId));
 			if (keepaliveEligible.size === 0) stopKeepalive();
+			broadcastPairingStatus();
 			return;
 		}
 		if (frame.type === "session-pending") {
@@ -465,6 +488,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const bootstrap = bootstrapsBySession.get(sessionId);
 		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
 		keepaliveEligible.add(sessionId);
+		broadcastPairingStatus();
 		currentSocket?.send(keepaliveFrame(bootstrap));
 		flushOverwatchOpenCompletions();
 		if (keepaliveTimer === undefined) {
@@ -489,8 +513,10 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						[chatSessionKey(bootstrap.sessionId)]: bootstrap,
 					});
 					await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
+					currentPairingId = bootstrap.sessionId;
 					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
 					client.connect(bootstrap);
+					broadcastPairingStatus();
 					sendResponse({ ok: true });
 				} catch (error) {
 					sendResponse({
@@ -508,13 +534,15 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		try {
 			switch (payload.type) {
 				case MSG.connectionRequest:
-					sendResponse({ connected: client.getConnectionState() === "connected" });
+					sendResponse(pairingStatus());
 					return undefined;
 				case MSG.clientConnect: {
 					const bootstrap = asSessionBootstrap(payload.bootstrap);
 					if (!bootstrap) return undefined;
+					currentPairingId ??= bootstrap.sessionId;
 					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
 					client.connect(bootstrap);
+					broadcastPairingStatus();
 					sendResponse({ ok: true, state: client.getConnectionState() });
 					return undefined;
 				}
@@ -549,6 +577,30 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					);
 					sendResponse({ ok: true });
 					return undefined;
+				case MSG.sessionDisconnect: {
+					if (
+						typeof payload.sessionId !== "string" ||
+						!bootstrapsBySession.has(payload.sessionId)
+					) {
+						sendResponse({ ok: false });
+						return undefined;
+					}
+					const sessionId = payload.sessionId;
+					void (async () => {
+						try {
+							await client.disconnectSession(sessionId);
+							await api.storage.session.remove(chatSessionKey(sessionId));
+							bootstrapsBySession.delete(sessionId);
+							keepaliveEligible.delete(sessionId);
+							if (keepaliveEligible.size === 0) stopKeepalive();
+							broadcastPairingStatus();
+							sendResponse({ ok: true });
+						} catch {
+							sendResponse({ ok: false });
+						}
+					})();
+					return true;
+				}
 				case MSG.sessionClose:
 					if (typeof payload.sessionId !== "string") return undefined;
 					client.closeSession(payload.sessionId);
