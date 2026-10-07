@@ -6,9 +6,9 @@
  * it is a same-document change (no reload).
  */
 
-import { MARKER_KEY, MARKER_POS_KEY } from "@dg/common";
+import { MARKER_BATCH_KEY, MARKER_KEY, MARKER_POS_KEY } from "@dg/common";
 
-export { MARKER_KEY, MARKER_POS_KEY };
+export { MARKER_BATCH_KEY, MARKER_KEY, MARKER_POS_KEY };
 
 function fragParts(url: string): string[] {
 	const hash = url.split("#")[1];
@@ -36,13 +36,22 @@ export function readGroupPos(url: string): number | undefined {
 	return undefined;
 }
 
-/** URL with both group markers removed (any other fragment preserved). */
+/** Batch id shared by every tab one `batch-open` call opened, or undefined. */
+export function readGroupBatch(url: string): string | undefined {
+	for (const part of fragParts(url)) {
+		const [k, v] = part.split("=");
+		if (k === MARKER_BATCH_KEY && v) return decodeURIComponent(v);
+	}
+	return undefined;
+}
+
+/** URL with all group group markers removed (any other fragment preserved). */
 export function stripGroupMarker(url: string): string {
 	const [base, hash] = url.split("#");
 	if (!hash) return url;
 	const kept = hash.split("&").filter((p) => {
 		const k = p.split("=")[0];
-		return k !== MARKER_KEY && k !== MARKER_POS_KEY;
+		return k !== MARKER_KEY && k !== MARKER_POS_KEY && k !== MARKER_BATCH_KEY;
 	});
 	return kept.length ? `${base}#${kept.join("&")}` : base;
 }

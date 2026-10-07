@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser";
 import {
+	forgetTab,
 	onTabComplete,
 	tabGroupingSupported,
 } from "@/lib/features/tab-grouping";
@@ -17,4 +18,5 @@ export function registerTabGrouping(): void {
 		if (changeInfo.status !== "complete") return;
 		void onTabComplete(tabId);
 	});
+	browser.tabs.onRemoved.addListener(forgetTab);
 }
