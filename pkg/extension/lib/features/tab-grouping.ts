@@ -1,6 +1,7 @@
 import { createSerialQueue } from "@dg/common";
 import { browser } from "wxt/browser";
 import {
+	readGroupBatch,
 	readGroupMarker,
 	readGroupPos,
 	stripGroupMarker,
@@ -23,10 +24,40 @@ export function tabGroupingSupported(): boolean {
 
 const TAB_GROUP_ID_NONE = browser.tabGroups?.TAB_GROUP_ID_NONE ?? -1;
 
-// Serialize group ops so a batch opened together lands in ONE group, no race.
-const enqueue = createSerialQueue((err) =>
-	console.error("[dg-ai-extension]", err),
-);
+const queues = new Map<string, ReturnType<typeof createSerialQueue>>();
+
+function queueFor(title: string) {
+	let enqueue = queues.get(title);
+	if (!enqueue) {
+		enqueue = createSerialQueue((err) =>
+			console.error("[dg-ai-extension]", err),
+		);
+		queues.set(title, enqueue);
+	}
+	return enqueue;
+}
+
+type BatchSlot = { batch: string; pos: number };
+
+const batchSlots = new Map<number, BatchSlot>();
+
+export function forgetTab(tabId: number): void {
+	batchSlots.delete(tabId);
+}
+
+async function findGroup(
+	windowId: number,
+	title: string,
+): Promise<{ id: number; windowId: number } | undefined> {
+	const found = (await browser.tabGroups.query({ title })).filter(
+		(g): g is typeof g & { id: number } => g.id !== undefined,
+	);
+	const local = found.filter((g) => g.windowId === windowId);
+	const pool = local.length ? local : found;
+	if (!pool.length) return undefined;
+	const newest = pool.reduce((a, b) => (b.id > a.id ? b : a));
+	return { id: newest.id, windowId: newest.windowId };
+}
 
 async function addToGroup(
 	tabId: number,
@@ -34,59 +65,78 @@ async function addToGroup(
 	title: string,
 	color: GroupColor,
 ): Promise<number> {
-	const existing = await browser.tabGroups.query({ windowId, title });
-	if (existing.length > 0 && existing[0].id !== undefined) {
-		await browser.tabs.group({ tabIds: [tabId], groupId: existing[0].id });
-		return existing[0].id;
+	const existing = await findGroup(windowId, title);
+	if (existing) {
+		if (existing.windowId !== windowId) {
+			await browser.tabs.move(tabId, {
+				windowId: existing.windowId,
+				index: -1,
+			});
+		}
+		await browser.tabs.group({ tabIds: [tabId], groupId: existing.id });
+		return existing.id;
 	}
 	const groupId = await browser.tabs.group({ tabIds: [tabId] });
 	await browser.tabGroups.update(groupId, { title, color });
 	return groupId;
 }
 
-/**
- * Move a freshly-grouped tab to `pos` within its group (0-based). Ops are
- * serialized, so ordering by the group's current left edge + pos is stable enough
- * for a batch opened together; a no-op when no position was requested.
- */
-async function positionInGroup(
+async function positionInBatch(
 	tabId: number,
 	groupId: number,
-	pos: number | undefined,
+	slot: BatchSlot,
 ): Promise<void> {
-	if (pos === undefined) return;
 	const groupTabs = await browser.tabs.query({ groupId } as never);
-	const indices = groupTabs
-		.map((t) => t.index)
-		.filter((i): i is number => typeof i === "number");
-	if (!indices.length) return;
-	const target = Math.min(...indices) + pos;
+	let lowerEnd = -1;
+	let higherStart = Number.POSITIVE_INFINITY;
+	for (const t of groupTabs) {
+		if (t.id === undefined || t.id === tabId || t.index === undefined) continue;
+		const other = batchSlots.get(t.id);
+		if (other?.batch !== slot.batch) continue;
+		if (other.pos < slot.pos) lowerEnd = Math.max(lowerEnd, t.index);
+		else higherStart = Math.min(higherStart, t.index);
+	}
+	const target =
+		lowerEnd >= 0
+			? lowerEnd + 1
+			: Number.isFinite(higherStart)
+				? higherStart
+				: undefined;
+	if (target === undefined) return;
 	await browser.tabs.move(tabId, { index: target }).catch(() => {});
 }
 
 /** Group a marked tab into its named group, then strip the marker from its URL. */
-export function onTabComplete(tabId: number): Promise<void> {
-	return enqueue(async () => {
-		const tab = await browser.tabs.get(tabId).catch(() => undefined);
-		if (!tab?.url || tab.windowId === undefined) return;
+export async function onTabComplete(tabId: number): Promise<void> {
+	const tab = await browser.tabs.get(tabId).catch(() => undefined);
+	if (!tab?.url || tab.windowId === undefined) return;
+	const name = readGroupMarker(tab.url);
+	if (!name) return;
 
-		const name = readGroupMarker(tab.url);
-		if (!name) return; // only tabs the CLI marked
-
+	return queueFor(name)(async () => {
+		const current = await browser.tabs.get(tabId).catch(() => undefined);
+		if (!current?.url || current.windowId === undefined) return;
+		const { url, windowId } = current;
 		const alreadyGrouped =
-			typeof tab.groupId === "number" && tab.groupId !== TAB_GROUP_ID_NONE;
+			typeof current.groupId === "number" &&
+			current.groupId !== TAB_GROUP_ID_NONE;
 		if (!alreadyGrouped) {
 			const { color } = await getConfig();
 			const groupId = await addToGroup(
 				tabId,
-				tab.windowId,
+				windowId,
 				name,
 				resolveColor(color),
 			);
-			await positionInGroup(tabId, groupId, readGroupPos(tab.url));
+			const pos = readGroupPos(url);
+			if (pos !== undefined) {
+				const slot = { batch: readGroupBatch(url) ?? name, pos };
+				batchSlots.set(tabId, slot);
+				await positionInBatch(tabId, groupId, slot);
+			}
 		}
 
-		const clean = stripGroupMarker(tab.url);
-		if (clean !== tab.url) await browser.tabs.update(tabId, { url: clean });
+		const clean = stripGroupMarker(url);
+		if (clean !== url) await browser.tabs.update(tabId, { url: clean });
 	});
 }

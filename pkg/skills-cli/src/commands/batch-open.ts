@@ -21,8 +21,9 @@ export function registerBatchOpen(program: Command): void {
 		.action(async (refs: string[], opts: Opts) => {
 			const cfg = loadConfig();
 			// Marker groups these tabs into `group`; the index sets their order in it.
+			const batch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 			const urls = refs.map((r, i) =>
-				addGroupMarker(resolveRef(r, cfg, opts.repo), opts.group, i),
+				addGroupMarker(resolveRef(r, cfg, opts.repo), opts.group, i, batch),
 			);
 			if (opts.print) {
 				for (const u of urls) console.log(u);
