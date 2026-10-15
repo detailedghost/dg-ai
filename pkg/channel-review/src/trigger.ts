@@ -13,7 +13,7 @@ export type TriggerResult =
 			code: Extract<CrCode, "CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105">;
 	  }
 	| { kind: "emoji"; slot?: string }
-	| { kind: "address"; url: string; number: number; host: PrHost; noCi: boolean; fun: boolean }
+	| { kind: "address"; url: string; number: number; host: PrHost; noCi: boolean }
 	| {
 			kind: "run";
 			url: string;
@@ -27,8 +27,8 @@ export type TriggerResult =
 	  };
 
 export type ReadinessResult =
-	| { kind: "ignore" }
-	| { kind: "rereview"; url: string };
+	| { kind: "ignore"; reason: "no-phrase" | "no-link" }
+	| { kind: "rereview"; url: string; quote?: string };
 
 const ENTITIES: Record<string, string> = {
 	"&nbsp;": " ",
@@ -111,7 +111,7 @@ export function parseTrigger(
 	html: string,
 	{ ownerToken, hosts }: { ownerToken: string; hosts: PrHosts },
 ): TriggerResult {
-	const text = plainText(html);
+	const text = plainText(html.replace(QUOTE, " "));
 	const tokens = text.toLowerCase().split(/\s+/).filter(Boolean);
 	if (!tokens.includes(ownerToken.toLowerCase())) return { kind: "ignore" };
 	const review = tokens.includes("$review") || tokens.includes("$thrash");
@@ -138,7 +138,6 @@ export function parseTrigger(
 			kind: "address",
 			...target,
 			noCi: tokens.includes("~no-ci"),
-			fun: tokens.includes("~fun"),
 		};
 	}
 
@@ -175,13 +174,15 @@ function escapeRegExp(value: string): string {
 
 const QUOTE = /<blockquote\b([^>]*)>.*?<\/blockquote>/gis;
 
-function quotedMessageId(html: string): string | undefined {
-	for (const [, attributes = ""] of html.matchAll(QUOTE)) {
+type ReplyQuote = { html: string; messageId?: string };
+
+function replyQuote(html: string): ReplyQuote | undefined {
+	for (const [quote = "", attributes = ""] of html.matchAll(QUOTE)) {
 		if (!/\bitemtype=(["'])http:\/\/schema\.skype\.com\/Reply\1/i.test(attributes)) {
 			continue;
 		}
-		const id = attributes.match(/\bitemid=(["'])(.*?)\1/is)?.[2];
-		if (id) return id;
+		const messageId = attributes.match(/\bitemid=(["'])(.*?)\1/is)?.[2];
+		return messageId ? { html: quote, messageId } : { html: quote };
 	}
 	return undefined;
 }
@@ -190,26 +191,26 @@ export function parseReadiness(
 	html: string,
 	{
 		phrases,
-		blockedKeys,
 		blockedMessages,
 		hosts,
 	}: {
 		phrases: string[];
-		blockedKeys: string[];
 		blockedMessages: Record<string, string>;
 		hosts: PrHosts;
 	},
 ): ReadinessResult {
 	const text = plainText(html.replace(QUOTE, " "));
-	const quoted = quotedMessageId(html);
-	const url =
-		prUrls(text, hosts).find((target) => blockedKeys.includes(target.url))?.url ??
-		(quoted === undefined ? undefined : blockedMessages[quoted]);
-	if (!url) return { kind: "ignore" };
-
 	const prose = text.replace(URL_PATTERN, " ");
 	const matches = phrases.some((phrase) =>
 		new RegExp(`(?<!\\w)${escapeRegExp(phrase)}(?!\\w)`, "i").test(prose),
 	);
-	return matches ? { kind: "rereview", url } : { kind: "ignore" };
+	if (!matches) return { kind: "ignore", reason: "no-phrase" };
+
+	const quote = replyQuote(html);
+	const url =
+		prUrls(text, hosts)[0]?.url ??
+		(quote?.messageId === undefined ? undefined : blockedMessages[quote.messageId]) ??
+		(quote === undefined ? undefined : prUrls(plainText(quote.html), hosts)[0]?.url);
+	if (!url) return { kind: "ignore", reason: "no-link" };
+	return quote ? { kind: "rereview", url, quote: quote.html } : { kind: "rereview", url };
 }

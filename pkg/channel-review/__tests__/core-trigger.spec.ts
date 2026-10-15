@@ -105,7 +105,6 @@ describe("parseTrigger", () => {
 			number: 12,
 			host: "github",
 			noCi: true,
-			fun: true,
 		});
 	});
 
@@ -121,7 +120,6 @@ describe("parseTrigger", () => {
 			number: 5,
 			host: "gitlab",
 			noCi: false,
-			fun: false,
 		});
 	});
 
@@ -312,182 +310,153 @@ describe("parsePrUrl canonical paths", () => {
 	});
 });
 
-describe("parseReadiness", () => {
-	const blocked = [prKey(GITHUB_URL)];
+describe("parseTrigger with a quoted request", () => {
+	const quote = (inner: string) =>
+		`<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="m1"><p itemprop="copy">${inner}</p></blockquote>`;
 
-	test("returns rereview for a phrase plus a blocked url with no mention", () => {
+	test("ignores a command that appears only inside the quote", () => {
+		expect(
+			parseTrigger(`${quote(`!owner $review ${GITHUB_URL}`)}<p>thanks</p>`, OPTIONS),
+		).toEqual({ kind: "ignore" });
+	});
+
+	test("runs a command written outside the quote", () => {
+		expect(
+			parseTrigger(`${quote("old note")}<p>!owner $review ${GITHUB_URL}</p>`, OPTIONS),
+		).toMatchObject({ kind: "run", url: GITHUB_URL });
+	});
+});
+
+describe("parseReadiness", () => {
+	const options = { phrases: PHRASES, blockedMessages: {}, hosts: HOSTS };
+	const NO_PHRASE = { kind: "ignore", reason: "no-phrase" } as const;
+	const NO_LINK = { kind: "ignore", reason: "no-link" } as const;
+
+	const quoteHtml = (id: string, copy: string) =>
+		`<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${id}"><strong itemprop="mri" itemid="8:orgid:abc">Dana</strong><span itemprop="time" itemid="${id}"></span><p itemprop="copy">${copy}</p></blockquote>`;
+	const quotedReply = (id: string, url: string) =>
+		`${quoteHtml(id, `$review ${url}`)}<p><at id="0">Review Bot</at> ready</p>`;
+
+	test("returns rereview for a phrase plus a url with no mention", () => {
+		expect(parseReadiness(`ptal ${GITHUB_URL}`, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+		});
+	});
+
+	test("returns rereview for a url that is not blocked", () => {
 		expect(
 			parseReadiness(`ptal ${GITHUB_URL}`, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
+				...options,
+				blockedMessages: { m1: GITLAB_URL },
 			}),
 		).toEqual({ kind: "rereview", url: GITHUB_URL });
 	});
 
-	test("ignores the same text when the url is not blocked", () => {
-		expect(
-			parseReadiness(`ptal ${GITHUB_URL}`, {
-				phrases: PHRASES,
-				blockedKeys: [],
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
-	});
-
-	test("ignores a blocked url with no readiness phrase", () => {
-		expect(
-			parseReadiness(GITHUB_URL, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+	test("ignores a url with no readiness phrase", () => {
+		expect(parseReadiness(GITHUB_URL, options)).toEqual(NO_PHRASE);
 	});
 
 	test("ignores 'already' because ready must match on a word boundary", () => {
-		expect(
-			parseReadiness(`already ${GITHUB_URL}`, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+		expect(parseReadiness(`already ${GITHUB_URL}`, options)).toEqual(NO_PHRASE);
 	});
 
 	test("matches the multi-word phrase 'good to go'", () => {
-		expect(
-			parseReadiness(`good to go ${GITHUB_URL}`, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "rereview", url: GITHUB_URL });
+		expect(parseReadiness(`good to go ${GITHUB_URL}`, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+		});
 	});
 
 	test("matches phrases case-insensitively", () => {
-		expect(
-			parseReadiness(`READY ${GITHUB_URL}`, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toMatchObject({ kind: "rereview" });
+		expect(parseReadiness(`READY ${GITHUB_URL}`, options)).toMatchObject({
+			kind: "rereview",
+		});
 	});
 
 	test("ignores 'ready' that appears only inside a URL path", () => {
-		const readyUrl = "https://github.com/o/ready-app/pull/12";
 		expect(
-			parseReadiness(`look at ${readyUrl}`, {
-				phrases: PHRASES,
-				blockedKeys: [prKey(readyUrl)],
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+			parseReadiness("look at https://github.com/o/ready-app/pull/12", options),
+		).toEqual(NO_PHRASE);
 	});
 
-	test("matches a /files suffix against the blocked canonical url", () => {
-		expect(
-			parseReadiness(`ptal ${GITHUB_URL}/files`, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "rereview", url: GITHUB_URL });
+	test("canonicalizes a /files suffix", () => {
+		expect(parseReadiness(`ptal ${GITHUB_URL}/files`, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+		});
 	});
 
-	test("returns the first url whose key is blocked", () => {
-		const text = `ptal https://github.com/o/r/pull/5 ${GITHUB_URL}`;
+	test("returns the first allowed pull request link", () => {
 		expect(
-			parseReadiness(text, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "rereview", url: GITHUB_URL });
+			parseReadiness(`ptal https://github.com/o/r/pull/5 ${GITHUB_URL}`, options),
+		).toEqual({ kind: "rereview", url: "https://github.com/o/r/pull/5" });
 	});
 
 	test("strips Teams HTML and keeps href values", () => {
 		const html = `<p>fixed&nbsp;<a href="${GITHUB_URL}">here</a></p>`;
-		expect(
-			parseReadiness(html, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "rereview", url: GITHUB_URL });
+		expect(parseReadiness(html, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+		});
 	});
-
-	const quotedReply = (id: string, url: string) =>
-		`<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="%s"><strong itemprop="mri" itemid="8:orgid:abc">Dana</strong><span itemprop="time" itemid="%s"></span><p itemprop="copy">$review ${url}</p></blockquote><p><at id="0">Review Bot</at> ready</p>`.replaceAll(
-			"%s",
-			id,
-		);
 
 	test("returns rereview for a quoted reply to the blocked message with no link", () => {
+		const html = quotedReply("m1", GITLAB_URL);
 		expect(
-			parseReadiness(quotedReply("m1", GITHUB_URL), {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: { m1: GITHUB_URL },
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "rereview", url: GITHUB_URL });
+			parseReadiness(html, { ...options, blockedMessages: { m1: GITHUB_URL } }),
+		).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+			quote: quoteHtml("m1", `$review ${GITLAB_URL}`),
+		});
 	});
 
-	test("ignores a quoted reply to a message that is not blocked", () => {
-		expect(
-			parseReadiness(quotedReply("m9", GITHUB_URL), {
-				phrases: PHRASES,
-				blockedKeys: [],
-				blockedMessages: { m1: GITHUB_URL },
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+	test("takes the link from a quoted request that has no blocked entry", () => {
+		expect(parseReadiness(quotedReply("m9", GITHUB_URL), options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+			quote: quoteHtml("m9", `$review ${GITHUB_URL}`),
+		});
+	});
+
+	test("takes the link from a quote of the bot's re-review reply", () => {
+		const copy = `Addressed #12 ${GITHUB_URL}. Ready for re-review.`;
+		const html = `${quoteHtml("b1", copy)}<p>ptal</p>`;
+		expect(parseReadiness(html, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+			quote: quoteHtml("b1", copy),
+		});
+	});
+
+	test("prefers a link outside the quote over the quote", () => {
+		const html = `${quoteHtml("m9", `$review ${GITLAB_URL}`)}<p>ptal ${GITHUB_URL}</p>`;
+		expect(parseReadiness(html, options)).toMatchObject({
+			kind: "rereview",
+			url: GITHUB_URL,
+			quote: quoteHtml("m9", `$review ${GITLAB_URL}`),
+		});
 	});
 
 	test("ignores a quoted reply whose phrase appears only inside the quote", () => {
-		const html = `<blockquote itemtype="http://schema.skype.com/Reply" itemid="m1"><p>ready</p></blockquote><p>thanks</p>`;
+		const html = `${quoteHtml("m1", `ready ${GITHUB_URL}`)}<p>thanks</p>`;
 		expect(
-			parseReadiness(html, {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: { m1: GITHUB_URL },
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+			parseReadiness(html, { ...options, blockedMessages: { m1: GITHUB_URL } }),
+		).toEqual(NO_PHRASE);
 	});
 
-	test("does not count a blocked url that appears only inside the quote", () => {
+	test("ignores a phrase with no link anywhere", () => {
+		expect(parseReadiness("ptal", options)).toEqual(NO_LINK);
 		expect(
-			parseReadiness(quotedReply("m9", GITHUB_URL), {
-				phrases: PHRASES,
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+			parseReadiness(`${quoteHtml("m9", "$review please")}<p>ready</p>`, options),
+		).toEqual(NO_LINK);
 	});
 
 	test("honors the phrase list it is given", () => {
 		expect(
-			parseReadiness(`ptal ${GITHUB_URL}`, {
-				phrases: ["shipit"],
-				blockedKeys: blocked,
-				blockedMessages: {},
-				hosts: HOSTS,
-			}),
-		).toEqual({ kind: "ignore" });
+			parseReadiness(`ptal ${GITHUB_URL}`, { ...options, phrases: ["shipit"] }),
+		).toEqual(NO_PHRASE);
 	});
 });
 
@@ -578,19 +547,17 @@ describe("host allowlist", () => {
 		});
 	});
 
-	test("parseReadiness ignores a blocked key on a host that is not allowlisted", () => {
+	test("parseReadiness ignores a link on a host that is not allowlisted", () => {
 		expect(
 			parseReadiness(`ready ${GHE_URL}`, {
 				phrases: PHRASES,
-				blockedKeys: [prKey(GHE_URL)],
 				blockedMessages: {},
 				hosts: HOSTS,
 			}),
-		).toEqual({ kind: "ignore" });
+		).toEqual({ kind: "ignore", reason: "no-link" });
 		expect(
 			parseReadiness(`ready ${GHE_URL}`, {
 				phrases: PHRASES,
-				blockedKeys: [prKey(GHE_URL)],
 				blockedMessages: {},
 				hosts: ENTERPRISE,
 			}),

@@ -47,7 +47,7 @@ function reaction(overrides: Partial<ChatReaction> = {}): ChatReaction {
 const texts = (h: EngineHarness) => h.replies().map((reply) => reply.text);
 
 describe("$emoji", () => {
-	test("prompts, then saves and applies a custom reaction on the prompt", async () => {
+	test("prompts, then saves and applies a custom reaction with no reaction on its own reply", async () => {
 		const h = setup();
 		await h.engine.handle(emojiMessage("m1", "approved"));
 		expect(texts(h)).toEqual([
@@ -59,12 +59,7 @@ describe("$emoji", () => {
 		expect(h.persisted).toEqual([{ slot: "approved", id: CUSTOM_ID }]);
 		expect(h.config.reactions.approved).toBe(CUSTOM_ID);
 		expect(texts(h).at(-1)).toBe("Saved :party: for approved.");
-		expect(h.provider.calls.at(-1)).toEqual({
-			op: "react",
-			chatId: CHAT_ID,
-			messageId: "sent-2",
-			reactionId: CUSTOM_ID,
-		});
+		expect(h.provider.calls.filter((call) => call.op === "react")).toEqual([]);
 		expect(h.timers[0]?.canceled).toBe(true);
 	});
 

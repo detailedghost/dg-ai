@@ -38,7 +38,7 @@ Run the first live test on dev in a test chat with the dev bot.
 
 Teams commands are `$review` (or `$thrash`), `$address`, `$emoji`, and `$help`.
 `$address` runs Claude's `/address` on a fresh clone of the PR branch, pushes the
-fixes, and replies that the PR is ready for re-review. Only senders in
+fixes, and puts the approved reaction on your message. Only senders in
 `owner.senderIds` can run it. `$emoji <slot>` sets a custom reaction from the chat.
 Send `$help $review`, `$help $address`, or `$help $emoji` for details.
 
