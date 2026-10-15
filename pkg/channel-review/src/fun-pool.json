@@ -1,0 +1,302 @@
+[
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/26tOZ42Mg6pbTUPHW/giphy.gif",
+		"alt": "Celebration reaction 1"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/03IoP34ByFpdRvT0wb/giphy.gif",
+		"alt": "Celebration reaction 2"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/3FXHMCthFKGGMwDbJv/giphy.gif",
+		"alt": "Celebration reaction 3"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/4T1loAS6xZo90CWtyA/giphy.gif",
+		"alt": "Celebration reaction 4"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/2xIOiAPXonois/giphy.gif",
+		"alt": "Celebration reaction 5"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/0MHgWp8xxjdd0TW0n6/giphy.gif",
+		"alt": "Celebration reaction 6"
+	},
+	{
+		"verdict": "approved",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/13JipyoTNNvM2c/giphy.gif",
+		"alt": "Celebration reaction 7"
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f389_partypopper",
+		"text": "🎉 Ship it!"
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f680_rocket",
+		"text": "🚀 Clean launch."
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f44f_clapping",
+		"text": "👏 Nicely done."
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f525_fire",
+		"text": "🔥 This one is solid."
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f64c_raisinghands",
+		"text": "🙌 Looks good to me."
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "1f3c6_trophy",
+		"text": "🏆 Review passed."
+	},
+	{
+		"verdict": "approved",
+		"kind": "emoji",
+		"reactionId": "2728_sparkles",
+		"text": "✨ Sparkling clean."
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/25JgMcsSndyuBkoaV2/giphy.gif",
+		"alt": "Work in progress reaction 1"
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/2YOp8WqFDRHhe/giphy.gif",
+		"alt": "Work in progress reaction 2"
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/EG4rzVkuc42WpD69ZV/giphy.gif",
+		"alt": "Work in progress reaction 3"
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/3o6wNGz5IgfyeEXrnq/giphy.gif",
+		"alt": "Work in progress reaction 4"
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/H3NTA56mIsPppnp0hx/giphy.gif",
+		"alt": "Work in progress reaction 5"
+	},
+	{
+		"verdict": "changes",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/17onPWvvq8oCeZzUK9/giphy.gif",
+		"alt": "Work in progress reaction 6"
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f6a7_constructionsign",
+		"text": "🚧 Almost there. A few fixes first."
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f527_wrench",
+		"text": "🔧 Needs a tune-up."
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f6e0_hammerandwrench",
+		"text": "🛠️ Some work left to do."
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f9f1_brick",
+		"text": "🧱 A few bricks to move."
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f9d0_facewithmonocle",
+		"text": "🧐 A closer look found a few things."
+	},
+	{
+		"verdict": "changes",
+		"kind": "emoji",
+		"reactionId": "1f4dd_memo",
+		"text": "📝 Notes are waiting for you."
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/14mgxYFJHXGmoo/giphy.gif",
+		"alt": "Thinking reaction 1"
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/2H67VmB5UEBmU/giphy.gif",
+		"alt": "Thinking reaction 2"
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/1hXY6iNdTFpTW4je85/giphy.gif",
+		"alt": "Thinking reaction 3"
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/11BDDJSlJZ2uha/giphy.gif",
+		"alt": "Thinking reaction 4"
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/10YpWPBU7GAYwM/giphy.gif",
+		"alt": "Thinking reaction 5"
+	},
+	{
+		"verdict": "comment",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/2TsWJ6YrglkthfS0ru/giphy.gif",
+		"alt": "Thinking reaction 6"
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f4ac_speechballoon",
+		"text": "💬 A few thoughts to read."
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f914_thinkingface",
+		"text": "🤔 Something to think about."
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f4ad_thoughtballoon",
+		"text": "💭 Some food for thought."
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f4d6_openbook",
+		"text": "📖 Worth a read."
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f440_eyes",
+		"text": "👀 Eyes were here."
+	},
+	{
+		"verdict": "comment",
+		"kind": "emoji",
+		"reactionId": "1f4a1_lightbulb",
+		"text": "💡 An idea or two inside."
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/10VJ2YDMoNEBl6/giphy.gif",
+		"alt": "Oops reaction 1"
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/1Y7ChRtbWnYONjDidg/giphy.gif",
+		"alt": "Oops reaction 2"
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/3og0INyCmHlNylks9O/giphy.gif",
+		"alt": "Oops reaction 3"
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/12J1QXPeD10z9m/giphy.gif",
+		"alt": "Oops reaction 4"
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/13ywPzPJdfhmBG/giphy.gif",
+		"alt": "Oops reaction 5"
+	},
+	{
+		"verdict": "failed",
+		"kind": "gif",
+		"url": "https://media.giphy.com/media/1RkDDoIVs3ntm/giphy.gif",
+		"alt": "Oops reaction 6"
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "26a0_warningsign",
+		"text": "⚠️ That did not go as planned."
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "1f648_seenoevil",
+		"text": "🙈 Oops."
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "1f62c_grimacingface",
+		"text": "😬 Awkward."
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "1f4a5_collision",
+		"text": "💥 Something broke."
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "1f9ef_compass",
+		"text": "🧭 Lost the way. Try again."
+	},
+	{
+		"verdict": "failed",
+		"kind": "emoji",
+		"reactionId": "1f6d1_stopsign",
+		"text": "🛑 Stopped before the finish."
+	}
+]

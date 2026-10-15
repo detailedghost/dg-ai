@@ -6,8 +6,8 @@ Standalone CLI for dg AI skills. One entry point registers all skill commands.
 
 ```bash
 bun pkg/skills-cli/src/index.ts --help
-bun pkg/skills-cli/src/index.ts browser install
-bun pkg/skills-cli/src/index.ts browser demo my-feature.demo.md --video
+bun pkg/skills-cli/src/index.ts install
+bun pkg/skills-cli/src/index.ts demo --edit my-feature.demo.md
 bun pkg/skills-cli/src/index.ts proto scrape https://app.example.test/page
 bun pkg/skills-cli/src/index.ts proto plant /tmp/ai/proto/example/plan.json
 bun pkg/skills-cli/src/index.ts proto cleanup example
@@ -36,6 +36,31 @@ dg-skills inbox probe --folder Inbox --limit 3000 --account-profile personal
 Review decisions and run `apply --dry-run` before `apply --confirm`. Read
 [provider setup](../../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [the workflow](../../plugins/dg/skills/inbox-cleanup/references/workflow.md).
+
+## Channel review
+
+The installed `dg-skills channel-review` command runs local thrash reviews for
+Teams requests through a Teams bot relay. Install thrash separately for each runner. Claude
+is the supported default; Codex and Copilot runners are experimental.
+
+```sh
+dg-skills channel-review status --env dev
+dg-skills channel-review start --env dev
+dg-skills channel-review stop --env dev
+dg-skills channel-review run --env dev
+dg-skills channel-review env dev
+dg-skills channel-review emojis show
+```
+
+`start` runs in the background; `run` stays in the foreground. `status` prints
+JSON with daemon state, runner probes, and preflight when stopped. `env` without
+a name prints the saved default, base URL, and AWS profile. `emojis capture`
+saves a human's custom reaction on its own prompt; `emojis set` saves a known ID.
+Apply saved reaction IDs after stop and start.
+
+Read [setup](../../plugins/dg/skills/channel-review/references/setup.md) and
+[commands](../../plugins/dg/skills/channel-review/references/commands.md) for
+prerequisites, flags, request tokens, and the exact error catalog.
 
 ## Demo plans
 
@@ -71,7 +96,7 @@ cd pkg/skills-cli
 bun run build       # produces dist/dg-skills (current platform)
 ```
 
-Pre-built binaries for Linux x64, macOS arm64, and Windows x64 appear in
+Pre-built binaries for Linux, macOS, and Windows (x64 and arm64) appear in
 [GitHub Releases](https://github.com/detailedghost/dg-ai/releases) as
 `skills-vX.X.X`.
 

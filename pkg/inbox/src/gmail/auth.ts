@@ -6,7 +6,7 @@ import {
 	oauthState,
 	openOAuthBrowser,
 	type EncryptedAuthCache,
-} from "./oauth-loopback";
+} from "@dg/common/node";
 
 export type GoogleAccessToken = {
 	accessToken: string;

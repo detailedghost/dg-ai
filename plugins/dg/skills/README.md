@@ -9,8 +9,8 @@ folder holds one skill:
 | `demo/` | Guided in-browser feature demos with video recording |
 | `proto/` | Live-page UI comparisons, explicit verdicts, and answer export |
 | `chat/` | Live browser chat with a human through the dg-agent CLI and dg-daemon daemon |
-
 | `inbox-cleanup/` | Reviewed Proton Mail, Gmail, and Outlook cleanup with redacted model feedback |
+| `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 
 ## Structure
 
@@ -30,6 +30,9 @@ skills/
   inbox-cleanup/
     SKILL.md          AI instruction file (how the agent reviews inbox changes)
     references/       Provider configuration and cleanup workflow
+  channel-review/
+    SKILL.md          AI instruction file (how the agent runs channel reviews)
+    references/       Setup, commands, reactions, and error catalog
 ```
 
 The CLI implementation lives in

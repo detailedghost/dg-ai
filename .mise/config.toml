@@ -1,0 +1,43 @@
+[tools]
+bun = "1.4"
+
+[env]
+_.file = { path = ".env", redact = false }
+
+[tasks."remote:install"]
+description = "Build dg-skills and install it into DG_HOME/bin for local channel-review runs"
+run = """
+bun run --cwd pkg/skills-cli build
+mkdir -p "${DG_HOME:-$HOME/.dg}/bin"
+cp pkg/skills-cli/dist/dg-skills "${DG_HOME:-$HOME/.dg}/bin/dg-skills.new"
+mv -f "${DG_HOME:-$HOME/.dg}/bin/dg-skills.new" "${DG_HOME:-$HOME/.dg}/bin/dg-skills"
+"""
+
+[tasks."remote:status"]
+description = "Print the channel-review daemon state and preflight check"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review status'
+
+[tasks."remote:start"]
+description = "Start the channel-review daemon in the background"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review start'
+
+[tasks."remote:stop"]
+description = "Stop the channel-review daemon"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review stop'
+
+[tasks."remote:run"]
+description = "Run the channel-review daemon in the foreground"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review run'
+
+[tasks."remote:logs"]
+description = "Show the last 40 lines of the channel-review daemon log"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}"'
+
+[tasks."remote:follow"]
+description = "Follow the channel-review daemon log live"
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+
+[tasks."remote:up"]
+description = "Start the channel-review daemon and follow its log"
+depends = ["remote:start"]
+run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'

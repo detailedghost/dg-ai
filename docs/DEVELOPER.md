@@ -9,12 +9,14 @@ pkg/
   dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
   dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
+  channel-review/ Teams review daemon, runners, reactions, and verdict readers
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
                (the canonical tree; both .claude-plugin/plugin.json and
                plugins/dg/.codex-plugin/plugin.json point here)
+    channel-review/ SKILL.md and setup/command references
 docs/          Documentation
 .github/       CI workflows
 ```
@@ -148,37 +150,39 @@ bun test       # install logic + skill manifests + CLI smoke
 
 ## CI Overview
 
-| Workflow            | Trigger (paths)                             | Result                                  |
+| Workflow | Trigger (paths) | Result |
 | ------------------- | ------------------------------------------- | --------------------------------------- |
-| `ext-blt`           | PR: extension, common                       | required on master                      |
-| `ext-release`       | push master: extension                      | tags `ext-v*`                           |
-| `skills-blt`        | PR: skills-cli, inbox, dg-agent, common, skills, skills-test, bun.lock | required                                |
-| `skills-release`    | push master: skills-cli, inbox, dg-agent, common, bun.lock             | `skills-v*`, 6 bins                     |
-| `dg-daemon-blt`     | PR: dg-daemon, common                       | required                                |
-| `dg-agent-blt`      | PR: dg-agent, dg-daemon, common             | required                                |
-| `dg-daemon-release` | push master: dg-daemon, common              | `daemon-v*` + `server-v*` alias, 6 bins |
-| `dg-agent-release`  | push master: dg-agent, common               | `agent-v*`, 6 bins                      |
+| `ext-blt` | PR: extension, common | required on master |
+| `ext-release` | push master: extension | tags `ext-v*` |
+| `skills-blt` | PR: skills-cli, inbox, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
+| `skills-release` | push master: skills-cli, inbox, channel-review, dg-agent, common, bun.lock | `skills-v*`, 6 bins |
+| `dg-daemon-blt` | PR: dg-daemon, common | required |
+| `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
+| `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*`, 6 bins |
+| `dg-agent-release` | push master: dg-agent, common | `agent-v*`, 6 bins |
 
 ## Branch Protection
 
-PRs to `master` require `ext-blt`, `skills-blt`, `dg-daemon-blt` and
+PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-daemon-blt` and
 `dg-agent-blt` to pass.
 
 > **Manual step, post-merge.** A repository admin must add the `dg-daemon-blt`
 > check to branch protection. Until that is done the workflow runs but cannot
 > block a merge, so a broken daemon build would land silently.
 
-## Four independently versioned artifacts
+## Matched release versions
 
-| Artifact              | Version source                | Release tag         |
+| Artifact | Version source | Release tag |
 | --------------------- | ----------------------------- | ------------------- |
-| `dg-ai-extension` zip | `pkg/extension/package.json`  | `ext-v*`            |
-| `dg-skills` binary    | `pkg/skills-cli/package.json` | `skills-v*`         |
-| `dg-daemon` binary    | `pkg/dg-daemon/package.json`  | `daemon-v*`         |
-| `dg-agent` binary     | `pkg/dg-agent/package.json`   | `agent-v*`          |
-| skill tree            | the repository itself         | tracked in `master` |
+| `dg-ai-extension` zip | `pkg/extension/package.json` | `ext-v*` |
+| `dg-skills` binary | `pkg/skills-cli/package.json` | `skills-v*` |
+| `dg-daemon` binary | `pkg/dg-daemon/package.json` | `daemon-v*` |
+| `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
+| skill tree | the repository itself | tracked in `master` |
 
-They move independently on purpose. `dg-skills install` refreshes the extension
+The four released packages and both plugin manifests share version 1.12.0.
+Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
+Each workflow publishes its own tag. `dg-skills install` refreshes the extension
 zip, `dg-skills`, `dg-daemon` and `dg-agent` in one pass, skipping any that is already
 current. A platform with no published binary warns and continues rather than
 failing the whole install.
@@ -190,13 +194,13 @@ browser and a real daemon at the same time. Run these by hand on WSL in
 mirrored mode, or through a browser harness:
 
 - [ ] With the daemon running and the extension loaded, a message typed in the
-      chat page reaches a blocked `recv`.
+  chat page reaches a blocked `recv`.
 - [ ] An agent reply from `send` renders in that session's node.
 - [ ] A `$` command published by `manifest` runs from the composer without
-      waking the agent.
+  waking the agent.
 - [ ] A file passed to `stage` renders in the transcript from a blob URL.
 - [ ] Killing the daemon mid-conversation leaves the page in a
-      `daemon-not-running` state, and restarting it recovers without a reload.
+  `daemon-not-running` state, and restarting it recovers without a reload.
 
 These are listed rather than faked as `depends_on` edges: an edge only sequences
 work, it does not make a criterion observable.
@@ -222,3 +226,35 @@ The raw conversation archive is ignored local context and must remain unpublishe
 Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
 integration suites. Smoke the compiled dg-skills binary from an unrelated cwd
 with fixture datasets. See [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md).
+
+## Channel review integration
+
+`@dg/channel-review` supplies the Teams relay provider, local daemon, runner
+probes, persistent state, reactions, and GitHub/GitLab verdict readers.
+`pkg/skills-cli` registers `channel-review` and depends on the workspace package.
+Both plugin hosts discover its skill through `plugins/dg/skills/channel-review/`.
+Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
+[commands](../plugins/dg/skills/channel-review/references/commands.md) for the
+config contract and error templates.
+
+The daemon runs separately from the loopback chat daemon. It fetches its secret
+into memory and keeps per-environment state under `DG_HOME/channel-review`.
+Every review machine needs a signed-in runner and thrash installed in that
+runner's skill roots. `status` reports each runner probe, including CR-206 for
+missing thrash after executable and login checks pass.
+
+The [relay contract](../pkg/channel-review/README.md) lists every relay call.
+A relay deploy can drop SSE streams and the relay's replay buffer. The daemon
+reconnects and may report a gap; commands posted during the deploy cannot
+replay. Test first on dev in a test chat. Emoji capture also needs relay
+reaction events and a human reaction on the capture prompt.
+
+Run `bun test` and `bun run lint` in `pkg/skills-test`, including release trigger
+and binary distribution contracts. Run `bun run test:all` at the root. Refresh
+`bun.lock` with `bun install`, then verify `bun install --frozen-lockfile`.
+
+The live `/dg:channel-review` bootstrap check in Claude Code is human-only and
+remains pending. Check that the installed skill runs the compiled binary and
+prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
+stopped; named errors with remedies also pass the bootstrap check. Record the
+exact Claude scratch write rule and WSL restart result during live validation.
