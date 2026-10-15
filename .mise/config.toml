@@ -2,7 +2,7 @@
 bun = "1.4"
 
 [env]
-_.file = { path = ".env", redact = false }
+_.file = { path = ".env", redact = true }
 
 [tasks."remote:install"]
 description = "Build dg-skills and install it into DG_HOME/bin for local channel-review runs"

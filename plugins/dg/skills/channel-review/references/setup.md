@@ -201,6 +201,9 @@ but keep separate state, pidfiles, daemon logs, and job logs.
 | `work/` | Runner working directory for reviews. `$address` clones live under `address.cloneRoot` instead. |
 
 The daemon fetches the secret into memory. The secret is never written to disk.
+When `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` is set, such as
+`CHANNEL_REVIEW_RELAY_SECRET_DEV`, the daemon uses that value and skips AWS. The
+mise tasks load it from the git-ignored `.env`.
 The daemon runs on Linux, macOS, WSL, and Windows. In WSL, it lives only while
 the VM runs. Start it again after the VM restarts. Recovery marks interrupted
 reviews failed and posts CR-205; a human must verify this behavior in WSL.

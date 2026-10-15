@@ -228,6 +228,7 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 	const stack = createFakeStackReader();
 
 	const seams: DaemonSeams = {
+		env: {},
 		fetchSecret: async (params) => {
 			fetchSecretCalls.push(params);
 			const secret = `secret-${secrets.length + 1}`;

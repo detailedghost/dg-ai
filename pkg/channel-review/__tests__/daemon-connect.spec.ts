@@ -29,6 +29,29 @@ describe("connect", () => {
 		]);
 	});
 
+	test("uses the env's local secret variable and skips the fetch", async () => {
+		const h = setup({ envName: "prod" });
+		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_PROD: " local-secret " };
+		const result = await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
+		expect(h.fetchSecretCalls).toEqual([]);
+		expect(h.providerSecrets).toEqual(["local-secret"]);
+		expect(result.secret).toBe("local-secret");
+	});
+
+	test("fetches the secret when only another env's local variable is set", async () => {
+		const h = setup({ envName: "prod" });
+		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_DEV: "dev-secret" };
+		await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
+		expect(h.fetchSecretCalls).toHaveLength(1);
+	});
+
+	test("fetches the secret when the local variable is blank", async () => {
+		const h = setup({ envName: "prod" });
+		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_PROD: "  " };
+		await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
+		expect(h.fetchSecretCalls).toHaveLength(1);
+	});
+
 	test("builds the provider with the fetched secret and returns secret, provider, and chats", async () => {
 		const h = setup();
 		const result = await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });

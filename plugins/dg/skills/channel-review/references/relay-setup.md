@@ -46,8 +46,12 @@ that the relay registered for this client, and the secret.
    secret, such as `example-dev` and `example-prod`.
 1. Config names only where the secret lives: `relay.secret.id`,
    `relay.secret.key`, `relay.secret.region`, and `envs.<name>.awsProfile`.
-   Never put the secret value in config, `.env`, or a chat. The daemon reads it
-   into memory at start and never writes it to disk.
+   Never put the secret value in config or a chat. The daemon reads it into
+   memory at start and never writes it to disk.
+1. Optional: to start without an AWS SSO session, put the value in the
+   git-ignored `.env` as `CHANNEL_REVIEW_RELAY_SECRET_<ENV>`, such as
+   `CHANNEL_REVIEW_RELAY_SECRET_DEV`. The daemon then uses it and skips AWS.
+   Keep `.env` at mode 600, and never commit it.
 
 ## 4. Local setup
 

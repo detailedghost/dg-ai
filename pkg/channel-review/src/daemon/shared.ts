@@ -24,6 +24,7 @@ export type DaemonSeams = {
 		key: string;
 	}) => Promise<string>;
 	createProvider?: typeof createTeamsRelayProvider;
+	env?: Record<string, string | undefined>;
 	runners?: Record<RunnerName, Runner>;
 	verdict?: VerdictReader;
 	stack?: StackReader;

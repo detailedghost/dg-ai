@@ -16,6 +16,10 @@ export function authRemedy(config: ChannelConfig, env: ResolvedEnv): string {
 	].join(" ");
 }
 
+export function localSecretName(envName: string): string {
+	return `CHANNEL_REVIEW_RELAY_SECRET_${envName.toUpperCase()}`;
+}
+
 export async function connect({
 	config,
 	env,
@@ -32,12 +36,15 @@ export async function connect({
 	const fetchSecret =
 		seams.fetchSecret ?? ((params) => fetchRelaySecret(params));
 	const { region, id, key } = config.relay.secret;
-	const secret = await fetchSecret({
-		profile: env.awsProfile,
-		region,
-		id,
-		key,
-	});
+	const local = (seams.env ?? process.env)[localSecretName(env.name)]?.trim();
+	const secret =
+		local ||
+		(await fetchSecret({
+			profile: env.awsProfile,
+			region,
+			id,
+			key,
+		}));
 	const createProvider = seams.createProvider ?? createTeamsRelayProvider;
 	const provider = createProvider(config, env, {
 		fetch: globalThis.fetch,
