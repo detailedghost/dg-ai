@@ -2,6 +2,7 @@ export * from "./assets";
 export * from "./fs";
 export * from "./manifest-load";
 export * from "./marker";
+export * from "./oauth-loopback";
 export * from "./paths";
 export * from "./pidfile";
 export * from "./process";

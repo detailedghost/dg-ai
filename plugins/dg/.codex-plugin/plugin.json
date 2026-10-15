@@ -1,7 +1,7 @@
 {
 	"name": "dg",
-	"description": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
-	"version": "1.11.0",
+	"description": "Browser, live chat, prototypes, channel review, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
+	"version": "1.12.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
@@ -11,8 +11,8 @@
 	"skills": "./skills/",
 	"interface": {
 		"displayName": "DeeGee",
-		"shortDescription": "Browser workflows and reviewed inbox cleanup",
-		"longDescription": "Browser, live chat, prototypes, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
+		"shortDescription": "Browser, channel review, and inbox cleanup",
+		"longDescription": "Browser, live chat, prototypes, channel review, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
 		"developerName": "detailedghost",
 		"category": "Productivity",
 		"capabilities": [
@@ -22,7 +22,8 @@
 		"defaultPrompt": [
 			"Open a browser batch",
 			"Run a live page prototype",
-			"Review and clean my inbox"
+			"Review and clean my inbox",
+			"Start the channel review daemon"
 		]
 	}
 }

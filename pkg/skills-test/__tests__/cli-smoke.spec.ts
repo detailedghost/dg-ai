@@ -29,7 +29,7 @@ describe("dg-skills CLI", () => {
 	test("--help exits 0 and lists every command the skills use", async () => {
 		const { code, out } = await runCli(["--help"]);
 		expect(code).toBe(0);
-		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun"]) {
+		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review"]) {
 			expect(out).toContain(cmd);
 		}
 	});
@@ -38,5 +38,29 @@ describe("dg-skills CLI", () => {
 		const { code, out } = await runCli(["install", "--help"]);
 		expect(code).toBe(0);
 		expect(out.toLowerCase()).toContain("extension");
+	});
+
+	test("channel-review --help lists its subcommands", async () => {
+		const { code, out } = await runCli(["channel-review", "--help"]);
+		expect(code).toBe(0);
+		for (const cmd of ["start", "stop", "status", "logs", "run", "env", "emojis"]) {
+			expect(out).toContain(cmd);
+		}
+	});
+
+	test("channel-review logs --help lists --env, --lines, and --follow", async () => {
+		const { code, out } = await runCli(["channel-review", "logs", "--help"]);
+		expect(code).toBe(0);
+		for (const flag of ["--env", "--lines", "--follow"]) {
+			expect(out).toContain(flag);
+		}
+	});
+
+	test("channel-review emojis --help lists capture, set, and show", async () => {
+		const { code, out } = await runCli(["channel-review", "emojis", "--help"]);
+		expect(code).toBe(0);
+		for (const cmd of ["capture", "set", "show"]) {
+			expect(out).toContain(cmd);
+		}
 	});
 });

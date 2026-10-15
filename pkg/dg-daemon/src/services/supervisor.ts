@@ -1,12 +1,10 @@
 import {
 	closeSync,
-	copyFileSync,
 	existsSync,
 	openSync,
 	readFileSync,
 	rmSync,
 	statSync,
-	truncateSync,
 } from "node:fs";
 import { join } from "node:path";
 import { describeError } from "@dg/common";
@@ -14,6 +12,8 @@ import {
 	checkExecutableResolves,
 	type DgPaths,
 	ensurePrivateDir,
+	isAlive,
+	rotateLogIfLarge,
 	writeFileAtomic,
 } from "@dg/common/node";
 import type { Subprocess } from "bun";
@@ -95,25 +95,10 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
-function isAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (err) {
-		return (err as NodeJS.ErrnoException).code === "EPERM";
-	}
-}
-
 function describeExit(proc: Subprocess): string {
 	return proc.signalCode
 		? `killed by ${proc.signalCode}`
 		: `exit ${proc.exitCode}`;
-}
-
-export function rotateLogIfLarge(logFile: string, maxBytes: number): void {
-	if (!existsSync(logFile) || statSync(logFile).size <= maxBytes) return;
-	copyFileSync(logFile, `${logFile}.1`);
-	truncateSync(logFile, 0);
 }
 
 function openLog(logDir: string, logFile: string, maxBytes: number): number {

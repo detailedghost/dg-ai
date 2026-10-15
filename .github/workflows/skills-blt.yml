@@ -8,6 +8,7 @@ on:
       - pkg/inbox/**
       - bun.lock
       - pkg/common/**
+      - pkg/channel-review/**
       - plugins/dg/skills/**
       - pkg/skills-test/**
       - pkg/dg-daemon/**
@@ -52,6 +53,14 @@ jobs:
 
       - name: Test (inbox)
         working-directory: pkg/inbox
+        run: bun test
+
+      - name: Lint (channel-review)
+        working-directory: pkg/channel-review
+        run: bun run lint
+
+      - name: Test (channel-review)
+        working-directory: pkg/channel-review
         run: bun test
 
       - name: Lint (skills-cli)

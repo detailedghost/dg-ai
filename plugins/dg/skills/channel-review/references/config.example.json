@@ -1,0 +1,31 @@
+{
+	"env": { "default": "dev" },
+	"envs": {
+		"dev": {
+			"baseUrl": "https://relay.example.test/api",
+			"awsProfile": "example-dev",
+			"botName": "Review Bot (Dev)"
+		},
+		"prod": {
+			"baseUrl": "https://relay.example.test/prod/api",
+			"awsProfile": "example-prod",
+			"botName": "Review Bot"
+		}
+	},
+	"chats": [{ "topic": "Team Reviews" }, { "id": "19:aaa@thread.v2" }],
+	"owner": {
+		"token": "!owner",
+		"email": "owner@example.com",
+		"senderIds": []
+	},
+	"relay": {
+		"appName": "review-bot",
+		"secret": {
+			"id": "relay/chat",
+			"key": "RELAY__CHAT__SECRET",
+			"region": "us-east-1"
+		}
+	},
+	"runner": { "default": "claude" },
+	"hosts": { "github": [], "gitlab": [] }
+}
