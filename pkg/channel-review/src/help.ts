@@ -39,7 +39,6 @@ const REVIEW_FLAGS: readonly Row[] = [
 
 const ADDRESS_FLAGS: readonly Row[] = [
 	["~no-ci", "fix review comments only, skip failing CI checks"],
-	["~fun", "add a GIF or emoji to the result"],
 ];
 
 const REVIEW_REACTIONS: readonly [ReactionState, string][] = [
@@ -92,7 +91,7 @@ function reactionList(
 	const items = meanings.map(
 		([state, meaning]) => `<li>${glyph(reactions[state])} ${meaning}</li>`,
 	);
-	return `<p><b>Reactions</b> on your message and on ${bot}'s reply</p><ul>${items.join("")}</ul>`;
+	return `<p><b>Reactions</b> on your message</p><ul>${items.join("")}</ul>`;
 }
 
 export function helpText(
@@ -116,7 +115,7 @@ export function helpText(
 			"<p><b>$review</b> and <b>$thrash</b> run a review of the PR.</p>",
 			example("$review &lt;PR link&gt; ~spice 3"),
 			`<p><b>Flags</b></p>${list(REVIEW_FLAGS)}`,
-			`<p><b>Re-review:</b> after changes are requested, mention @${bot} with a ready word (${words}) and the PR link, or quote-reply to the first request.</p>`,
+			`<p><b>Re-review:</b> mention @${bot} with a ready word (${words}) and the PR link, or quote-reply to a request. This re-runs the review for any PR, not only blocked ones.</p>`,
 			reactionList(bot, REVIEW_REACTIONS, reactions),
 			LINKS,
 		].join("");
@@ -125,7 +124,7 @@ export function helpText(
 	if (topic === "address") {
 		return [
 			"<p><b>$address</b> runs /address on a fresh clone of the PR branch. It fixes the review comments and failing CI, commits, pushes, and replies to the review threads.",
-			` Then ${bot} replies <i>Addressed #&lt;n&gt; &lt;PR link&gt;. Ready for re-review.</i> PRs from a fork do not work. Do not put $review or $thrash in the same message.${allowAnySender ? "" : " Only allowed senders can run it."}</p>`,
+			` When it is done, your message gets the addressed reaction, and the PR is ready for re-review. PRs from a fork do not work. Do not put $review or $thrash in the same message.${allowAnySender ? "" : " Only allowed senders can run it."}</p>`,
 			example("$address &lt;PR link&gt; ~no-ci"),
 			`<p><b>Flags</b></p>${list(ADDRESS_FLAGS)}`,
 			reactionList(bot, ADDRESS_REACTIONS, reactions),

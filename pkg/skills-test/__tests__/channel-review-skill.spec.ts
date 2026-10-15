@@ -174,7 +174,6 @@ describe("channel-review skill distribution", () => {
 			"$emoji",
 			"$help $emoji",
 			"CR-107",
-			"Ready for re-review.",
 			"owner.senderIds",
 			"address.allowAnySender",
 			"address.cloneRoot",
@@ -304,7 +303,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 	test.each([
 		["overview", "### Commands", 5],
 		["review", "### Review flags", 7],
-		["address", "### Address flags", 5],
+		["address", "### Address flags", 4],
 	] as const)("the $help %s section and the commands.md %s table list the same tokens", (topic, heading, size) => {
 		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, topic);
 		const helpTokens = new Set(help.match(TOKEN) ?? []);

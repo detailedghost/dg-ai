@@ -58,7 +58,7 @@ in [setup](setup.md#configuration).
 | `!owner` | Owner gate set by `owner.token`; the examples use `!owner`. | Without the gate, ignore the message. |
 | `$review` | Request a review. | Without a command, ignore the message. |
 | `$thrash` | Same as `$review`. | Without a command, ignore the message. |
-| `$address` | Run `/address` on the PR, then reply that it is ready for re-review. | With `$review` or `$thrash` in the same message: CR-105. Sender not allowed: CR-106. |
+| `$address` | Run `/address` on the PR, then react approved on your message. | With `$review` or `$thrash` in the same message: CR-105. Sender not allowed: CR-106. |
 | `$emoji <slot>` | Set the custom emoji for a reaction slot from a reaction in the chat. | No slot or an unknown slot: reply with the slot list. Sender not allowed: CR-107. |
 | `$help` | Reply with usage text and run nothing; needs the owner gate and no link. | Without the gate, ignore the message. |
 
@@ -84,16 +84,15 @@ the Claude `/address` skill on a fresh clone of the PR head branch. The skill
 fixes review comments and failing CI, commits, pushes, and replies to the
 review threads. Any PR on an allowed host works, except a PR from a fork.
 Claude always runs it; review-only flags such as `~spice` are ignored. On
-success the bot replies `✅ Addressed #<n> <url>. Ready for re-review.` and
-puts the approved reaction on your message and on that reply. The bot never
-starts a re-review from its own reply; post a ready word to request one.
+success the bot sends no reply; your message ends with the approved reaction.
+A failure replies with the error text and puts the failure reaction on your
+message. Post a ready word to request a re-review.
 
 | Token | Meaning | Missing or invalid input |
 | --- | --- | --- |
 | `$address` | Fix review comments and failing CI on the PR, then push. | Sender not allowed: CR-106. |
 | PR or MR URL | HTTPS GitHub PR or GitLab MR link on an allowed host. | No PR link: CR-101. Host outside the allowlist: CR-104. Fork: CR-305. |
 | `~no-ci` | Pass `--no-ci` to `/address`: fix review comments only. | Optional. |
-| `~fun` | Add a GIF card or emoji text to the reply. | Optional. |
 | `$review` or `$thrash` | Not allowed in an `$address` message. | CR-105, and nothing runs. |
 
 GitHub defaults to github.com; GitLab defaults to gitlab.com. `hosts.github` and
@@ -123,20 +122,22 @@ puts the worst verdict on the trigger message.
 
 ### Re-review
 
-Anyone may post a blocked PR URL with a phrase from `rereview.phrases`, such as
-`ptal`. Omit the owner and review tokens if desired. The daemon reuses the blocked
-review's options. Re-review reactions land on the readiness message; the
-original message keeps its construction sign. Mention the bot, because it sees
-only messages that mention it.
+Anyone may post a PR URL with a phrase from `rereview.phrases`, such as
+`ptal`. The PR does not need to be blocked: a ready word re-runs the review for
+any PR. Omit the owner and review tokens if desired. A blocked PR reuses the
+blocked review's options. Any other PR reuses the options of the quoted request
+when there is one, and the defaults otherwise. Re-review reactions land on the
+readiness message; the original message keeps its construction sign. Mention
+the bot, because it sees only messages that mention it.
 
 ```text
 @Review Bot https://github.com/example/project/pull/42 fixed, ptal
 ```
 
-A quoted reply also works. Quote the original review request and add a phrase.
-No PR link is needed. The message must still mention the bot, because the bot
-sees only messages that mention it. A link or phrase inside the quoted
-text does not count.
+A quoted reply also works. Quote a review request and add a phrase. No PR link
+is needed. The message must still mention the bot, because the bot sees only
+messages that mention it. A link outside the quote wins over the quote. A phrase
+inside the quoted text does not count.
 
 ```text
 (quoting the original review request) @Review Bot ready
@@ -197,13 +198,13 @@ pass preflight against the service's reaction list.
 | Warning sign | Failure | `reactions.failure` | `26a0_warningsign` |
 
 An `$address` job uses the same flow: eyes when seen, stopwatch while
-`/address` runs, check mark when it is addressed and ready for re-review, and
+`/address` runs, check mark when it is addressed, and
 the warning sign on failure. The help reply shows a captured custom reaction
 as its name in colons, such as `:loading:` for `loading;0-cus-d20-<32hex>`,
 because Teams strips emoji elements from bot messages.
 
-When the bot posts a reply, such as a `~fun` reply, a stack summary, or an error,
-it also puts the final reaction on that reply. A `$help` reply gets no reaction.
+Reactions go only on the message that triggered the bot. Replies, such as a
+`~fun` reply, a stack summary, an error, or a `$help` reply, get no reaction.
 
 The emojis commands replace two slots: `progress` changes
 `reactions.inProgress`; `approved` changes `reactions.approved`.

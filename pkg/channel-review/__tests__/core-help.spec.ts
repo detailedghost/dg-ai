@@ -137,12 +137,13 @@ describe("helpText review", () => {
 });
 
 describe("helpText address", () => {
-	test("says what $address does, its flags, and the re-review reply", () => {
+	test("says what $address does and lists only the no-ci flag", () => {
 		const html = address();
 		expect(html).toContain(
 			"<b>$address</b> runs /address on a fresh clone of the PR branch",
 		);
-		expect(html).toContain("Ready for re-review.");
+		expect(html).toContain("your message gets the addressed reaction");
+		expect(html).not.toContain("~fun");
 		expect(html).toContain(
 			"<li><code>~no-ci</code>: fix review comments only, skip failing CI checks</li>",
 		);

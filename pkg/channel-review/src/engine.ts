@@ -81,7 +81,6 @@ type JobBase = {
 	url: string;
 	number: number;
 	host: PrHost;
-	fun: boolean;
 };
 
 type AddressJob = JobBase & { kind: "address"; noCi: boolean };
@@ -90,6 +89,7 @@ type ReviewJob = JobBase & {
 	kind: "review";
 	spice?: number;
 	comment: boolean;
+	fun: boolean;
 	stacked: boolean;
 	agent?: RunnerName;
 };
@@ -173,16 +173,7 @@ export function createEngine(deps: EngineDeps): Engine {
 	): Promise<void> {
 		const entry = fun ? pickFun(funPool, funVerdictFor(outcome), random) : undefined;
 		const body = entry ? decorateReply({ text, entry }) : { text };
-		let sent: string[] = [];
-		await attempt("reply", async () => {
-			({ messageIds: sent } = await provider.reply({ chatId, ...body }));
-		});
-		const messageId = sent.at(-1);
-		if (messageId === undefined) return;
-		const reactionId = reactionIds[outcome];
-		await attempt(`put reaction ${reactionId}`, () =>
-			provider.react({ chatId, messageId, reactionId }),
-		);
+		await attempt("reply", () => provider.reply({ chatId, ...body }));
 	}
 
 	async function fail(job: Job, code: CrCode, agent: string): Promise<void> {
@@ -200,7 +191,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				owner,
 			}),
 			"failure",
-			job.fun,
+			job.kind === "review" && job.fun,
 		);
 	}
 
@@ -386,12 +377,6 @@ export function createEngine(deps: EngineDeps): Engine {
 		log.info(`message ${job.messageId} addressed: ${job.url}`);
 		state.markHandled(job.messageId, "done", job.chatId);
 		await move(job.chatId, job.messageId, "approved");
-		await post(
-			job.chatId,
-			`${VERDICT_LABELS.approved.emoji} Addressed #${job.number} ${job.url}. Ready for re-review.`,
-			"approved",
-			job.fun,
-		);
 	}
 
 	async function runJob(job: Job): Promise<void> {
@@ -490,11 +475,19 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 		reactionIds[slot] = id;
 		log.info(`$emoji ${slot}: saved ${id}`);
-		const replyId = (await send(chatId, `Saved :${id.split(";")[0]}: for ${slot}.`)).at(-1);
-		if (replyId === undefined) return;
-		await attempt(`put reaction ${id}`, () =>
-			provider.react({ chatId, messageId: replyId, reactionId: id }),
-		);
+		await send(chatId, `Saved :${id.split(";")[0]}: for ${slot}.`);
+	}
+
+	function quotedOptions(quote: string | undefined): BlockedOptions {
+		const quoted = quote
+			? parseTrigger(quote.replace(/^<blockquote\b[^>]*>|<\/blockquote>$/gi, ""), {
+					ownerToken: config.owner.token,
+					hosts: config.hosts,
+				})
+			: undefined;
+		return quoted?.kind === "run"
+			? { spice: quoted.spice, comment: quoted.comment, fun: quoted.fun, agent: quoted.agent }
+			: { comment: false, fun: false };
 	}
 
 	function toJob(
@@ -519,7 +512,6 @@ export function createEngine(deps: EngineDeps): Engine {
 				number: trigger.number,
 				host: trigger.host,
 				noCi: trigger.noCi,
-				fun: trigger.fun,
 			};
 		}
 		if (trigger.kind === "run") {
@@ -541,27 +533,39 @@ export function createEngine(deps: EngineDeps): Engine {
 		const blocked = state.get().blocked;
 		const readiness = parseReadiness(message.text, {
 			phrases: config.rereview.phrases,
-			blockedKeys: Object.keys(blocked),
 			blockedMessages: Object.fromEntries(
 				Object.values(blocked).map((entry) => [entry.messageId, entry.url]),
 			),
 			hosts: config.hosts,
 		});
-		const entry = readiness.kind === "rereview" ? blocked[readiness.url] : undefined;
-		const target = entry ? parsePrUrl(entry.url, config.hosts) : undefined;
-		if (!entry || !target) return null;
+		if (readiness.kind === "ignore") {
+			log.info(
+				`message ${message.id} ignored: ${
+					readiness.reason === "no-phrase"
+						? "no owner token and no readiness phrase"
+						: "readiness phrase but no PR link"
+				}`,
+			);
+			return null;
+		}
+		const target = parsePrUrl(readiness.url, config.hosts);
+		if (!target) return null;
 		return {
 			kind: "review",
 			messageId: message.id,
 			chatId: message.chatId,
 			...target,
-			...entry.options,
+			...(blocked[prKey(target.url)]?.options ?? quotedOptions(readiness.quote)),
 			stacked: false,
 		};
 	}
 
 	async function handle(message: ChatMessage): Promise<void> {
-		if (message.from.isBot || state.get().handled[message.id]) return;
+		if (message.from.isBot) {
+			log.info(`message ${message.id} ignored: bot message`);
+			return;
+		}
+		if (state.get().handled[message.id]) return;
 
 		const job = toJob(message);
 		if (!job) return;

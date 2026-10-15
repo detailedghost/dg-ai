@@ -311,13 +311,13 @@ describe("engine queueing", () => {
 });
 
 describe("engine error mapping", () => {
-	test("maps a timed-out run to the failure reaction on the trigger and on a CR-204 reply", async () => {
+	test("maps a timed-out run to the failure reaction on the trigger and a CR-204 reply without a reaction", async () => {
 		const h = setup({ runnerScript: () => ({ ...OK_RESULT, status: null, timedOut: true }) });
 		await h.engine.handle(reviewMessage("m1"));
 		await h.engine.idle();
 		expect(h.trail("m1")).toEqual([...FULL_TRAIL, "+failure"]);
 		expect(h.replies().map((r) => r.text)).toEqual([crText(h, "CR-204")]);
-		expect(h.trail("sent-1")).toEqual(["+failure"]);
+		expect(h.trail("sent-1")).toEqual([]);
 		expect(h.state.get().handled.m1?.status).toBe("failed");
 	});
 
@@ -757,7 +757,7 @@ describe("engine stacked review", () => {
 		expect(h.trail("m1").at(-1)).toBe("+failure");
 	});
 
-	test("ends with the changesRequested reaction and summary lines when the runs end approved, changes_requested, approved", async () => {
+	test("ends with the changesRequested reaction on the trigger only and summary lines when the runs end approved, changes_requested, approved", async () => {
 		const h = setup({
 			descendants,
 			verdictScript: verdictsByUrl({ [pr(11)]: "changes_requested" }),
@@ -767,7 +767,7 @@ describe("engine stacked review", () => {
 		const reply = h.replies()[0]?.text ?? "";
 		expect(h.replies()).toHaveLength(1);
 		expect(h.trail("m1").at(-1)).toBe("+changesRequested");
-		expect(h.trail("sent-1")).toEqual(["+changesRequested"]);
+		expect(h.trail("sent-1")).toEqual([]);
 		const lines = reply.split("\n").slice(1);
 		expect(lines).toEqual([
 			`${VERDICT_LABELS.approved.emoji} #10 ${pr(10)}`,
@@ -937,12 +937,48 @@ describe("engine re-review", () => {
 		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL, spice: 3 });
 	});
 
-	test("ignores a readiness message for a PR with no registry entry", async () => {
+	test("re-runs a readiness message for a PR with no registry entry using default options", async () => {
 		const h = setup();
 		await h.engine.handle(buildMessage("m2", `fixed, ${PR_URL}`));
 		await h.engine.idle();
+		expect(h.runner.runs).toHaveLength(1);
+		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL });
+		expect(h.runner.runs[0]).not.toHaveProperty("spice", expect.anything());
+		expect(h.trail("m2")).toEqual([...FULL_TRAIL, "+approved"]);
+	});
+
+	test("re-runs a ready reply on an approved PR with the options of the quoted request", async () => {
+		const h = setup({ verdictScript: () => "approved" });
+		await h.engine.handle(reviewMessage("m1", PR_URL, "~spice 4 ~comment"));
+		await h.engine.idle();
+		const quoted = `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="m1"><strong itemprop="mri" itemid="8:orgid:abc">Dana</strong><p itemprop="copy">${h.config.owner.token} $review ${PR_URL} ~spice 4 ~comment</p></blockquote><p><at id="0">Review Bot</at> ready</p>`;
+		await h.engine.handle(buildMessage("m2", quoted));
+		await h.engine.idle();
+		expect(h.runner.runs).toHaveLength(2);
+		expect(h.runner.runs[1]).toMatchObject({ url: PR_URL, spice: 4, comment: true });
+	});
+
+	test("uses the stored options for a blocked PR when the quote carries a link", async () => {
+		const h = setup({ verdictScript: () => "approved" });
+		h.state.markBlocked(PR_URL, "m1", { spice: 2, comment: false, fun: false }, CHAT_ID);
+		const quoted = `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="m0"><p itemprop="copy">Addressed #12 ${PR_URL}. Ready for re-review.</p></blockquote><p>ready</p>`;
+		await h.engine.handle(buildMessage("m2", quoted));
+		await h.engine.idle();
+		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL, spice: 2, comment: false });
+	});
+
+	test("logs why a message that mentions nothing the engine acts on is ignored", async () => {
+		const h = setup();
+		await h.engine.handle(buildMessage("m2", "hello there"));
+		await h.engine.handle(buildMessage("m3", "ptal"));
+		await h.engine.handle(
+			buildMessage("m4", `ptal ${PR_URL}`, { from: { id: "b", name: "Bot", isBot: true } }),
+		);
 		expect(h.runner.runs).toEqual([]);
-		expect(h.provider.calls).toEqual([]);
+		const lines = h.log.lines.filter((l) => l.level === "info").map((l) => l.message);
+		expect(lines).toContain("message m2 ignored: no owner token and no readiness phrase");
+		expect(lines).toContain("message m3 ignored: readiness phrase but no PR link");
+		expect(lines).toContain("message m4 ignored: bot message");
 	});
 
 	test("produces one run for two readiness messages while the job is pending", async () => {
@@ -987,11 +1023,11 @@ describe("engine fun", () => {
 		expect(reply?.card?.body).toHaveLength(1);
 	});
 
-	test("puts the verdict reaction on the bot's fun reply", async () => {
+	test("puts no reaction on the bot's fun reply", async () => {
 		const h = setup({ funPool: [gif] });
 		await h.engine.handle(reviewMessage("m1", PR_URL, "~fun"));
 		await h.engine.idle();
-		expect(h.trail("sent-1")).toEqual(["+approved"]);
+		expect(h.trail("sent-1")).toEqual([]);
 	});
 
 	test("skips the reply reaction when the reply fails", async () => {

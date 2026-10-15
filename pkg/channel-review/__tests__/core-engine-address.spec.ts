@@ -39,7 +39,6 @@ const FAILURE_TRAIL = [
 	"-inProgress",
 	"+failure",
 ];
-const READY = `✅ Addressed #12 ${PR_URL}. Ready for re-review.`;
 
 const crText = (h: EngineHarness, code: CrCode): string =>
 	replyText(code, {
@@ -51,13 +50,13 @@ const crText = (h: EngineHarness, code: CrCode): string =>
 const cloneRoot = (h: EngineHarness): string => h.config.address.cloneRoot;
 
 describe("engine $address", () => {
-	test("reacts pending, inProgress, approved and replies ready for re-review", async () => {
+	test("reacts pending, inProgress and approved on the trigger and sends no reply", async () => {
 		const h = setup();
 		await h.engine.handle(addressMessage("m1"));
 		await h.engine.idle();
 		expect(h.trail("m1")).toEqual(SUCCESS_TRAIL);
-		expect(h.replies().map((reply) => reply.text)).toEqual([READY]);
-		expect(h.trail("sent-1")).toEqual(["+approved"]);
+		expect(h.replies()).toEqual([]);
+		expect(h.provider.calls.filter((c) => c.op === "react" && c.messageId !== "m1")).toEqual([]);
 		expect(h.state.get().handled.m1?.status).toBe("done");
 	});
 
@@ -96,7 +95,7 @@ describe("engine $address", () => {
 		expect(readdirSync(cloneRoot(h))).toEqual([]);
 	});
 
-	test("reacts failure on the trigger and the reply when /address fails", async () => {
+	test("reacts failure on the trigger only and replies with the error when /address fails", async () => {
 		const h = setup({ runnerScript: () => ({ ...OK_RESULT, status: 1 }) });
 		await h.engine.handle(addressMessage("m1"));
 		await h.engine.idle();
@@ -104,7 +103,7 @@ describe("engine $address", () => {
 		expect(h.replies().map((reply) => reply.text)).toEqual([
 			crText(h, "CR-203"),
 		]);
-		expect(h.trail("sent-1")).toEqual(["+failure"]);
+		expect(h.trail("sent-1")).toEqual([]);
 		expect(h.state.get().handled.m1?.status).toBe("failed");
 	});
 
@@ -163,11 +162,11 @@ describe("engine $address", () => {
 		expect(Object.keys(h.state.get().blocked)).toEqual([PR_URL]);
 	});
 
-	test("never treats the bot's ready for re-review reply as a readiness message", async () => {
+	test("ignores a bot message that carries a PR link and a readiness phrase", async () => {
 		const h = setup();
 		h.state.markBlocked(PR_URL, "m0", { comment: false, fun: false }, "chat-1");
 		await h.engine.handle(
-			buildMessage("bot-1", `<p>${READY}</p>`, {
+			buildMessage("bot-1", `<p>${PR_URL} ready</p>`, {
 				from: { id: "bot", name: BOT_NAME, isBot: true },
 			}),
 		);
