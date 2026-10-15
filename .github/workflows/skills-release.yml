@@ -12,6 +12,7 @@ on:
       - pkg/inbox/**
       - bun.lock
       - pkg/common/**
+      - pkg/channel-review/**
       - pkg/dg-agent/**
       - .github/workflows/skills-release.yml
 

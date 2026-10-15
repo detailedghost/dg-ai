@@ -384,7 +384,7 @@ function escapeAttribute(value: string): string {
 		.replaceAll(">", "&gt;");
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
 	return escapeAttribute(value).replaceAll("'", "&#39;");
 }
 

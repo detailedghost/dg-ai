@@ -3,7 +3,7 @@
 How an AI agent (Codex or Claude Code) sets up this repository end-to-end,
 across **two components**:
 
-1. **The DeeGee plugin** (`dg`) — provides browser, demo, and prototype skills.
+1. **The DeeGee plugin** (`dg`) — provides browser, demo, prototype, chat, inbox cleanup, and channel review skills.
 1. **The `dg-ai-extension` browser extension** — the companion that groups tabs
    and drives in-browser demo tours.
 
@@ -42,10 +42,10 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
-the shared browser, demo, proto, chat, and inbox-cleanup skills into `$CODEX_HOME/skills` (default
+shared browser, demo, proto, chat, inbox-cleanup, and channel-review skills into `$CODEX_HOME/skills` (default
 `~/.codex/skills`). Start a new Codex thread after installation.
 
----
+______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin
 
@@ -137,7 +137,7 @@ first:
 "$DG" --help
 ```
 
-Should list `install`, `batch-open`, `launch`, `demo`, and `rerun`. Then confirm
+Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-review`. Then confirm
 grouping/tours work with the browser or demo skill. For the chat harness:
 
 ```bash
@@ -153,23 +153,23 @@ directly rather than asking the daemon. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
 so nothing happens until it is loaded in that browser profile.
 
----
+______________________________________________________________________
 
 ## What an agent can and cannot automate
 
-| Task                                                               | Agent-runnable?              |
+| Task | Agent-runnable? |
 | ------------------------------------------------------------------ | ---------------------------- |
-| `claude plugin marketplace add` / `install` / `update`             | Yes, with user authorization |
-| `bootstrap.sh` (install CLI + extension)                           | Yes                          |
-| `dg-skills install` (stage extension + refresh all three binaries) | Yes                          |
-| `dg-agent start` (register a chat session)                         | Yes                          |
-| `dg-agent start --open` (open the chat page)                       | Yes (default browser)        |
-| Read a human's chat reply (`dg-agent recv --block`)                | Yes — it waits for them      |
-| Switch WSL to mirrored networking mode                             | No — manual host config      |
-| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection        | No — repo admin              |
-| Load unpacked in the browser                                       | No — manual browser UI       |
-| `launch` cold-start with extension                                 | Yes (browser fully closed)   |
-| `batch-open` / `demo` / `rerun`                                    | Yes (extension loaded)       |
+| `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
+| `bootstrap.sh` (install CLI + extension) | Yes |
+| `dg-skills install` (stage extension + refresh all three binaries) | Yes |
+| `dg-agent start` (register a chat session) | Yes |
+| `dg-agent start --open` (open the chat page) | Yes (default browser) |
+| Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
+| Switch WSL to mirrored networking mode | No — manual host config |
+| Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
+| Load unpacked in the browser | No — manual browser UI |
+| `launch` cold-start with extension | Yes (browser fully closed) |
+| `batch-open` / `demo` / `rerun` | Yes (extension loaded) |
 
 ## Inbox cleanup
 
@@ -181,6 +181,33 @@ Outlook need a registered OAuth client and the provider's delegated permissions.
 Explicit --data-path fixtures work without those services. Read
 [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [cleanup workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md).
+
+## Channel review
+
+The shared channel-review skill runs the compiled `dg-skills channel-review`
+command. It needs no browser extension. Install thrash separately for each
+runner on every machine; dg does not ship it. Claude is the supported default.
+Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
+[commands](../plugins/dg/skills/channel-review/references/commands.md) before
+changing config.
+
+| Task | Who runs it |
+| --- | --- |
+| `aws sso login --profile <profile>` | Human: complete AWS SSO sign-in for the profile in `envs.<name>.awsProfile`. |
+| Add the bot (`envs.<name>.botName`, such as Review Bot) to each review chat | Human: select the bot from the org catalog. |
+| Register the bot and run the relay | Human: follow [relay setup](../plugins/dg/skills/channel-review/references/relay-setup.md). |
+| React during `emojis capture` | Human: add the custom reaction to the capture prompt. An agent may start capture. |
+| Approve the fun-pool GIF list | Human: review the list before each release. |
+| `status`, `env`, `start`, `stop`, `run` | Agent: run the requested operation and report its output. |
+| `emojis show`, `emojis set` | Agent: inspect slots or save the supplied custom ID. |
+| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the compiled binary. |
+
+Start with `status --env dev` in a test chat. If the service mailbox is
+absent from the chat, set `chat.id` from the Teams **Copy link** URL. Status
+reports runner probes and, while stopped, secret, chat, and reaction preflight.
+The live bootstrap check passes with exit 0 when those services are reachable,
+or with a JSON failure report that names the problem and remedy. This guide
+does not record a completed live check.
 
 ### Checking and disconnecting paired sessions
 

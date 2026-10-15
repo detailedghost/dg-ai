@@ -1,6 +1,6 @@
 {
 	"name": "@dg/skills-cli",
-	"version": "1.11.2",
+	"version": "1.12.0",
 	"private": true,
 	"type": "module",
 	"description": "CLI framework for dg AI skills (browser, demo, and future skills).",
@@ -13,6 +13,7 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@dg/channel-review": "workspace:*",
 		"@dg/common": "workspace:*",
 		"commander": "^14.0.0",
 		"marked": "^16.0.0",

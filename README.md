@@ -1,7 +1,7 @@
 # 👻 DeeGee
 
-Browser and inbox workflow plugin for Codex and Claude Code. Skills: **browser**, **demo**,
-**live-page prototype**, **chat**, and **inbox cleanup**. The companion extension is `dg-ai-extension`.
+Browser, inbox, and channel review plugin for Codex and Claude Code. Skills: **browser**, **demo**,
+**live-page prototype**, **chat**, **inbox cleanup**, and **channel review**. The companion extension is `dg-ai-extension`.
 
 ## 📦 Install
 
@@ -227,6 +227,23 @@ tab; Gmail/Outlook use OAuth and profiles in dg-ai's encrypted database.
 Read [provider setup](plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [the workflow](plugins/dg/skills/inbox-cleanup/references/workflow.md). Live-account
 authentication and mutations need validation in your provider/browser setup.
+
+### Channel review
+
+Run /dg:channel-review in Claude Code or $dg:channel-review in Codex to inspect
+or manage a local daemon that reviews GitHub PRs and GitLab MRs posted in Teams.
+Mention the bot with the owner token, `$review`, and a PR link. Claude runs the thrash skill;
+Codex and Copilot runners are experimental. Install thrash separately on every
+machine that runs reviews.
+
+It needs a Teams bot relay that streams each chat's messages over Server-Sent
+Events; see the [relay contract](pkg/channel-review/README.md) and
+[relay setup](plugins/dg/skills/channel-review/references/relay-setup.md). Start
+on dev in a test chat. A human signs in to AWS SSO and adds the bot to the chat. Run `dg-skills channel-review status --env dev` before
+`dg-skills channel-review start --env dev`. Read
+[setup](plugins/dg/skills/channel-review/references/setup.md) and
+[commands](plugins/dg/skills/channel-review/references/commands.md) for production
+rollout, custom emojis, request tokens, and recovery.
 
 ### 🔗 Ref formats
 

@@ -8,7 +8,7 @@ import {
 	listenForOAuthCode,
 	openOAuthBrowser,
 	validateLoopbackRedirect,
-} from "../oauth-loopback";
+} from "@dg/common/node";
 
 const scope = "https://www.googleapis.com/auth/gmail.readonly";
 const originalAccess = process.env.GOOGLE_ACCESS_TOKEN;

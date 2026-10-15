@@ -69,7 +69,7 @@ export function run(
 	return r.stdout.trim();
 }
 
-type RunCaptureOptions = { stdin?: string };
+type RunCaptureOptions = { stdin?: string; cwd?: string; timeoutMs?: number };
 
 type RunCaptureResult = {
 	status: number;
@@ -84,7 +84,12 @@ export function runCapture(
 	options: RunCaptureOptions = {},
 ): Promise<RunCaptureResult> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { stdio: "pipe" });
+		const child = spawn(command, args, {
+			stdio: "pipe",
+			cwd: options.cwd,
+			timeout: options.timeoutMs,
+			killSignal: "SIGKILL",
+		});
 		let stdout = "";
 		let stderr = "";
 		child.stdout.on("data", (chunk: Buffer) => {
@@ -119,10 +124,64 @@ export async function readCappedStdin(
 ): Promise<string | undefined> {
 	const chunks: Uint8Array[] = [];
 	let total = 0;
-	for await (const chunk of Bun.stdin.stream()) {
-		total += chunk.byteLength;
-		if (total > capBytes) return undefined;
-		chunks.push(chunk);
+	const reader = Bun.stdin.stream().getReader();
+	try {
+		for (
+			let next = await reader.read();
+			!next.done;
+			next = await reader.read()
+		) {
+			total += next.value.byteLength;
+			if (total > capBytes) return undefined;
+			chunks.push(next.value);
+		}
+	} finally {
+		reader.releaseLock();
 	}
 	return Buffer.concat(chunks).toString("utf8");
+}
+
+type KillSeams = {
+	platform?: NodeJS.Platform;
+	kill?: (pid: number, signal: NodeJS.Signals) => void;
+	exec?: (command: string, args: string[]) => void;
+};
+
+/** True when the pid exists; EPERM counts because the process is alive but not ours. */
+export function isAlive(
+	pid: number,
+	signal: (pid: number, signal: 0) => void = process.kill.bind(process),
+): boolean {
+	try {
+		signal(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+/** Kills a process and its children; on POSIX tries the group (-pid) before the pid. */
+export function killProcessTree(
+	pid: number,
+	{
+		platform = process.platform,
+		kill = process.kill.bind(process),
+		exec = (command, args) => {
+			spawnSync(command, args, { stdio: "ignore", windowsHide: true });
+		},
+	}: KillSeams = {},
+): void {
+	if (platform === "win32") {
+		exec("taskkill", ["/T", "/F", "/PID", String(Math.trunc(pid))]);
+		return;
+	}
+	try {
+		kill(-pid, "SIGKILL");
+	} catch {
+		try {
+			kill(pid, "SIGKILL");
+		} catch {
+			return;
+		}
+	}
 }
