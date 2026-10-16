@@ -14,7 +14,7 @@ type CliOption = {
 	description: string;
 };
 
-const cliOptions = [
+export const cliOptions = [
 	{ flags: "--config [path]", description: "Path to organizer config JSON." },
 	{
 		flags: "--provider [name]",
@@ -92,6 +92,18 @@ const cliOptions = [
 	{
 		flags: "--proposal-limit [number]",
 		description: "Maximum proposals to print.",
+	},
+	{
+		flags: "--offset [number]",
+		description: "Skip this many matching rows before --limit.",
+	},
+	{
+		flags: "--filter-id [id]",
+		description: "Existing provider filter id.",
+	},
+	{
+		flags: "--add-domains [list]",
+		description: "Comma-separated sender domains to add to a live filter.",
 	},
 	{
 		flags: "--sample-limit [number]",
@@ -183,7 +195,7 @@ const cliOptions = [
 		flags: "--review-timeout [seconds]",
 		description: "Seconds to wait for cleanup visualize review submission.",
 	},
-	{ flags: "--ai", description: "Enable Codex-friendly output mode." },
+	{ flags: "--ai", description: "Enable compact model-oriented output." },
 	{ flags: "--ai-summary", description: "Print compact AI summary output." },
 	{ flags: "--ai-limit [number]", description: "Limit AI output rows." },
 	{
@@ -262,22 +274,33 @@ export const cliCommandSpecs = [
 		nameAndArgs: "sample",
 		description: "Print redacted local message samples.",
 	},
-	{ nameAndArgs: "suggest", description: "Suggest local cleanup decisions." },
+	{
+		nameAndArgs: "suggest",
+		description:
+			"Suggest local cleanup decisions without changing read state.",
+	},
 	{
 		nameAndArgs: "decide",
 		description: "Write local decisions for selected messages.",
 	},
 	{
 		nameAndArgs: "recommend filters",
-		description: "Recommend provider filters from routed messages.",
+		description:
+			"Recommend filters from local move decisions, including ones not yet applied.",
 	},
 	{
 		nameAndArgs: "filters plan",
-		description: "Plan subject-aware provider rules.",
+		description:
+			"Dry-run filter changes from plans/cleanup-policy.json. Dry-run is the default.",
 	},
 	{
 		nameAndArgs: "filters apply",
 		description: "Dry-run or create recommended Proton filters.",
+	},
+	{
+		nameAndArgs: "filters extend",
+		description:
+			"Dry-run adding sender domains to one live filter and print the diff.",
 	},
 	{
 		nameAndArgs: "filters consolidate",
@@ -331,7 +354,8 @@ export const cliCommandSpecs = [
 	},
 	{
 		nameAndArgs: "status",
-		description: "Print local message pipeline status.",
+		description:
+			"Print local message counts and the live Proton session check.",
 	},
 	{ nameAndArgs: "summary", description: "Print mailbox workspace summary." },
 	{ nameAndArgs: "review", description: "Create a mailbox review plan." },
@@ -346,6 +370,134 @@ export const cliCommandSpecs = [
 	},
 ] satisfies CliCommandSpec[];
 
+const workspaceHelpFlags = [
+	"--config",
+	"--provider",
+	"--data-path",
+	"--gmail-data-path",
+	"--dir",
+	"--account-profile",
+] as const;
+
+const browserHelpFlags = [
+	"--live-browser",
+	"--session-profile",
+	"--browser-type",
+	"--browser-executable-path",
+	"--browser-headless",
+	"--login-timeout",
+] as const;
+
+const selectorHelpFlags = [
+	"--domain",
+	"--domain-contains",
+	"--status",
+	"--folder",
+	"--decision-action",
+] as const;
+
+/** Flags that belong to one command, in addition to the shared workspace flags. */
+export const commandHelpFlags: Record<string, readonly string[]> = {
+	init: ["--username", ...browserHelpFlags],
+	login: [...browserHelpFlags],
+	"load <folders|labels|filters>": [],
+	"classify-doc": [],
+	"folders plan-tree": ["--dry-run", "--plan-path"],
+	"folders apply-tree": ["--confirm", "--plan-path"],
+	"folders inventory": [],
+	"folders relocate": ["--folder", "--to", "--rename"],
+	"labels plan": ["--dry-run", "--plan-path"],
+	"labels apply": ["--confirm", "--plan-path"],
+	"labels inventory": [],
+	probe: ["--folder", "--limit", "--group-limit"],
+	batch: ["--folder", "--limit", "--workers", "--concurrency"],
+	analyze: ["--by", "--limit", ...selectorHelpFlags],
+	sample: ["--limit", ...selectorHelpFlags],
+	suggest: [
+		"--limit",
+		"--offset",
+		"--proposal-limit",
+		"--write",
+		...selectorHelpFlags,
+	],
+	decide: [
+		"--action",
+		"--target-folder",
+		"--reason",
+		"--mark-read",
+		"--only-target-mismatch",
+		"--ids",
+		"--ids-file",
+		...selectorHelpFlags,
+	],
+	"recommend filters": ["--sample-limit", "--write-archive-decisions"],
+	"filters plan": ["--dry-run", "--plan-path"],
+	"filters apply": [
+		"--dry-run",
+		"--confirm",
+		"--min-count",
+		"--domain",
+		"--target-folder",
+	],
+	"filters extend": ["--filter-id", "--add-domains", "--dry-run", "--confirm"],
+	"filters consolidate": ["--confirm", "--min-domains", "--target-folder"],
+	"filters group": [
+		"--dry-run",
+		"--confirm",
+		"--invoice-name",
+		"--spam-name",
+		"--hunt-name",
+	],
+	"filters route": ["--profile", "--dry-run", "--confirm"],
+	"inbox projects": [
+		"--limit",
+		"--min-count",
+		"--sample-limit",
+		"--domain",
+		"--domain-contains",
+	],
+	"cleanup verify": ["--plan-path"],
+	"cleanup validate": ["--plan-path"],
+	"cleanup visualize": [
+		"--plan-path",
+		"--no-open",
+		"--no-wait",
+		"--review-timeout",
+	],
+	"cleanup plan-patch": ["--patch-path", "--confirm", "--plan-path", "--limit"],
+	"validate spec": ["--spec-path"],
+	"inbox review-queue": ["--plan-path"],
+	"inbox route-plan": ["--dry-run", "--limit", "--plan-path"],
+	"inbox route-apply": ["--confirm", "--limit", "--plan-path"],
+	status: ["--full"],
+	summary: [],
+	review: [],
+	apply: ["--dry-run", "--confirm"],
+	cleanup: ["--confirm"],
+};
+
+export const sharedHelpFlags = workspaceHelpFlags;
+
+export function matchCliCommand(
+	group: string,
+	action: string,
+): CliCommandSpec | undefined {
+	return cliCommandSpecs.find((spec) => {
+		const [specGroup, specAction = ""] = spec.nameAndArgs.split(" ");
+		if (specGroup !== group) return false;
+		if (specAction.startsWith("<") && specAction.endsWith(">")) {
+			if (!action) return true;
+			return specAction.slice(1, -1).split("|").includes(action);
+		}
+		return specAction === action;
+	});
+}
+
+export function helpFlagsFor(spec: CliCommandSpec): string[] {
+	const specific = commandHelpFlags[spec.nameAndArgs] ?? [];
+	return [...new Set([...workspaceHelpFlags, ...specific])];
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
 	const commanderFlags = parseCommanderFlags(argv);
 	const positional: string[] = [];
@@ -353,6 +505,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const token = argv[index];
+		if (token === "-h") {
+			flags.help = true;
+			continue;
+		}
 		if (!token.startsWith("--")) {
 			positional.push(token);
 			continue;

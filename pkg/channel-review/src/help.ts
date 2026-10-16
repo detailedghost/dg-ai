@@ -30,8 +30,8 @@ const REVIEW_FLAGS: readonly Row[] = [
 	["~spice 1-5", "how strict the review is"],
 	["~comment", "post comments only, never approve or request changes"],
 	[
-		"~agent claude|codex|copilot",
-		"pick the reviewer (codex and copilot are experimental)",
+		"~agent claude|codex|copilot|grok",
+		"pick the reviewer (codex, copilot, and grok are experimental)",
 	],
 	["~stacked", "also review the PRs stacked on this one"],
 	["~fun", "add a GIF or emoji to the result"],

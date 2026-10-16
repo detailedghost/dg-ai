@@ -10,3 +10,4 @@ dist/
 .stryker-tmp/
 reports/
 mutation.json
+**/reports/mutation/

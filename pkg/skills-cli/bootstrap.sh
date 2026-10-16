@@ -6,6 +6,11 @@
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
 # Windows: use bootstrap.ps1 instead.
+#
+# Checksums: when the skills-v* release publishes a SHA256SUMS asset (GNU
+# sha256sum lines, "<hash>  <filename>"), the download is verified before it
+# is installed. Releases that do not include SHA256SUMS still install. The
+# skills release workflow writes that file next to the platform binaries.
 set -eu
 
 CLI_ONLY="${DG_CLI_ONLY:-0}"
@@ -71,8 +76,78 @@ if [ -z "${url}" ]; then
   exit 1
 fi
 
+# Verify DEST against SHA256SUMS when that asset is on this same release.
+# A missing checksum file is not an error: older skills-v* releases predate it.
+verify_sha256() {
+  sums_url=$(printf '%s' "${releases}" |
+    grep -oE "https://[^\"]+/download/${tag}/SHA256SUMS" |
+    head -1)
+  if [ -z "${sums_url}" ]; then
+    return 0
+  fi
+  sums_file=$(mktemp)
+  if ! curl -fsSL -H "User-Agent: dg-ai" -o "${sums_file}" "${sums_url}"; then
+    rm -f "${DEST}" "${sums_file}"
+    echo "dg-skills: failed to download SHA256SUMS for ${tag}" >&2
+    exit 1
+  fi
+  expected=$(awk -v asset="${asset}" '
+    $1 ~ /^[0-9A-Fa-f]{64}$/ {
+      name = $2
+      sub(/^\*/, "", name)
+      if (name == asset) { print $1; exit }
+    }
+  ' "${sums_file}" | tr 'A-F' 'a-f')
+  if [ -z "${expected}" ]; then
+    rm -f "${DEST}" "${sums_file}"
+    echo "dg-skills: SHA256SUMS in ${tag} has no entry for ${asset}" >&2
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "${DEST}" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 "${DEST}" | awk '{print $1}')
+  else
+    rm -f "${DEST}" "${sums_file}"
+    echo "dg-skills: SHA256SUMS was published for ${tag} but sha256sum and shasum are missing" >&2
+    exit 1
+  fi
+  actual=$(printf '%s' "${actual}" | tr 'A-F' 'a-f')
+  rm -f "${sums_file}"
+  if [ "${actual}" != "${expected}" ]; then
+    rm -f "${DEST}"
+    echo "dg-skills: checksum mismatch for ${asset} in ${tag}" >&2
+    exit 1
+  fi
+}
+
+# The binary this script just installed is current, so `dg-skills install`
+# would otherwise say "already current" right after "installed".
+run_install() {
+  log=$(mktemp)
+  set +e
+  "$@" >"${log}" 2>&1
+  status=$?
+  set -e
+  while IFS= read -r line || [ -n "${line}" ]; do
+    case "${line}" in
+      "dg-skills already current (v"*)
+        ver=${line#"dg-skills already current (v"}
+        ver=${ver%")."}
+        echo "dg-skills verified (v${ver})."
+        ;;
+      *)
+        printf '%s\n' "${line}"
+        ;;
+    esac
+  done <"${log}"
+  rm -f "${log}"
+  return "${status}"
+}
+
 mkdir -p "${BIN_DIR}"
 curl -fsSL -H "User-Agent: dg-ai" -o "${DEST}" "${url}"
+verify_sha256
 chmod +x "${DEST}"
 
 # Stamp the installed version so `dg-skills install` won't re-download the binary.
@@ -86,11 +161,11 @@ case ":${PATH}:" in
 esac
 
 if [ "${CLI_ONLY}" = "1" ]; then
-  "${DEST}" install --cli-only
+  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
 else
   # Set up the browser extension too, so one command installs everything.
   echo "Setting up the dg-ai-extension…"
-  "${DEST}" install
+  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install
 fi
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the

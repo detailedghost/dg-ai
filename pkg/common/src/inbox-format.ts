@@ -39,6 +39,7 @@ export type InboxProfile = {
 export type InboxProfileSummary = { name: string; provider: InboxProvider };
 /** Fixed Proton operations; the wire accepts neither executable source nor arbitrary endpoints. */
 export type InboxBrowserOperation =
+	| "session-status"
 	| "list-folders"
 	| "list-filters"
 	| "list-messages"
@@ -293,6 +294,7 @@ export function validateInboxBrowserRequest(
 ): InboxBrowserRequest {
 	requireRecord(value, "inbox browser request");
 	const operations: Record<InboxBrowserOperation, string[]> = {
+		"session-status": [],
 		"list-folders": [],
 		"list-filters": [],
 		"list-messages": ["page", "pageSize", "folderId"],

@@ -80,6 +80,42 @@ describe("writeMessageBatch", () => {
 		expect(await readdir(paths.messagesDir)).toEqual(["_status.json"]);
 		expect((await readMessageStatus(paths)).total).toBe(0);
 	});
+
+	test("a failed re-batch keeps the previous messages and decisions", async () => {
+		const paths = workspacePaths(tmpDir("batch-keeps-decisions"));
+		await writeMessageBatch({
+			paths,
+			folders,
+			messages: messagesFor(["m1"]),
+			snippetLength: 160,
+		});
+		const status = await readMessageStatus(paths);
+		const file = join(paths.dir, status.items[0]!.file);
+		const item = await Bun.file(file).json();
+		item.decision = { action: "move", targetFolder: "Receipts", reason: "keep me" };
+		await Bun.write(file, `${JSON.stringify(item, null, 2)}\n`);
+
+		async function* fail(): AsyncGenerator<MailMessageSummary[]> {
+			throw new Error("Open Proton Mail and sign in");
+		}
+		await expect(
+			writeMessageBatchStream({
+				paths,
+				folders,
+				pages: fail(),
+				snippetLength: 160,
+			}),
+		).rejects.toThrow(/sign in/);
+
+		const kept = await readMessageStatus(paths);
+		expect(kept.total).toBe(1);
+		expect(kept.items[0]?.fromDomain).toBe("example.com");
+		expect((await Bun.file(file).json()).decision.reason).toBe("keep me");
+		const leftovers = (await readdir(paths.dir)).filter((name) =>
+			name.startsWith(".messages-"),
+		);
+		expect(leftovers).toEqual([]);
+	});
 });
 
 async function* pagesOf(

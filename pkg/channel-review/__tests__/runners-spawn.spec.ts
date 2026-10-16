@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	existsSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
@@ -183,9 +184,20 @@ describe("runProcess", () => {
 			`process.stderr.write("A".repeat(20000) + "END");`,
 		);
 		const result = await runProcess(request([process.execPath, child]));
-		expect(result.stderrTail.length).toBeLessThanOrEqual(TAIL_BYTES);
+		expect(result.stderrTail.length).toBe(TAIL_BYTES);
 		expect(result.stderrTail.endsWith("END")).toBe(true);
 		expect(result.stderrTail.startsWith("A")).toBe(true);
+	});
+
+	test("keeps the last 8 KB of stdout as stdoutTail", async () => {
+		const child = script(
+			`process.stdout.write("B".repeat(20000) + "END");`,
+		);
+		const result = await runProcess(request([process.execPath, child]));
+		expect(result.stdoutTail?.length).toBe(TAIL_BYTES);
+		expect(result.stdoutTail?.endsWith("END")).toBe(true);
+		expect(result.stdoutTail?.startsWith("B")).toBe(true);
+		expect(result.stderrTail).toBe("");
 	});
 
 	test("keeps stderr and leaves stdout out of stderrTail", async () => {
@@ -195,6 +207,8 @@ describe("runProcess", () => {
 		const result = await runProcess(request([process.execPath, child]));
 		expect(result.stderrTail).toContain("stderr-line");
 		expect(result.stderrTail).not.toContain("auth says log in");
+		expect(result.stdoutTail).toContain("auth says log in");
+		expect(result.stdoutTail).not.toContain("stderr-line");
 	});
 
 	test.skipIf(process.platform !== "linux")("keeps draining and resolves when a log write fails (linux only: /dev/full)", async () => {
@@ -236,7 +250,13 @@ process.exit(0);
 			"AI_AGENT",
 		];
 		const saved = new Map<string, string | undefined>();
-		for (const key of [...removed, "CHANNEL_REVIEW_KEEP", "CLAUDE_CODE_OAUTH_TOKEN"]) {
+		for (const key of [
+			...removed,
+			"CHANNEL_REVIEW_KEEP",
+			"CLAUDE_CODE_OAUTH_TOKEN",
+			"NOT_CLAUDECODE",
+			"CLAUDECODE_EXTRA",
+		]) {
 			saved.set(key, process.env[key]);
 			process.env[key] = "set";
 		}
@@ -252,6 +272,8 @@ process.exit(0);
 			for (const key of removed) expect(keys).not.toContain(key);
 			expect(keys).toContain("CHANNEL_REVIEW_KEEP");
 			expect(keys).toContain("PATH");
+			expect(keys).toContain("NOT_CLAUDECODE");
+			expect(keys).toContain("CLAUDECODE_EXTRA");
 		} finally {
 			for (const [key, value] of saved) {
 				if (value === undefined) delete process.env[key];
@@ -300,8 +322,70 @@ process.exit(0);
 		const result = await runProcess(
 			request([join(dir, "no-such-binary")]),
 		);
-		expect(result.code).toBe("CR-201");
-		expect(result.status).toBeNull();
+		expect(result).toEqual({
+			status: null,
+			signal: null,
+			timedOut: false,
+			aborted: false,
+			stderrTail: "",
+			stdoutTail: "",
+			code: "CR-201",
+		});
+	});
+
+	test("rethrows a spawn error that is not a missing binary", async () => {
+		await expect(runProcess(request([]))).rejects.toThrow(/empty/);
+	});
+
+	test("closes the log fd when the binary is missing and when the child exits", async () => {
+		const openFds = () => readdirSync("/proc/self/fd").length;
+		const before = openFds();
+		for (let i = 0; i < 20; i++) {
+			await runProcess(request([join(dir, `missing-${i}`)]));
+			await runProcess(request([process.execPath, "-e", "process.exit(0)"]));
+		}
+		expect(openFds() - before).toBeLessThan(8);
+	});
+
+	test("does not mark a run timed out when the timer fires after an abort", async () => {
+		const child = script("await Bun.sleep(200);");
+		const controller = new AbortController();
+		controller.abort();
+		const result = await runProcess(
+			request([process.execPath, child], {
+				signal: controller.signal,
+				timeoutMs: 20,
+				kill: () => {},
+			}),
+		);
+		expect(result.aborted).toBe(true);
+		expect(result.timedOut).toBe(false);
+	});
+
+	test("kills the tree once after a normal exit", async () => {
+		const child = script("process.exit(0);");
+		let calls = 0;
+		const result = await runProcess(
+			request([process.execPath, child], {
+				kill: () => {
+					calls += 1;
+				},
+			}),
+		);
+		expect(result.status).toBe(0);
+		expect(calls).toBe(1);
+	});
+
+	test("aborts a child whose signal is already aborted and does not also time out", async () => {
+		const child = script("setInterval(() => {}, 1000);");
+		const controller = new AbortController();
+		controller.abort();
+		const req = request([process.execPath, child], {
+			signal: controller.signal,
+			timeoutMs: 0,
+		});
+		const result = await runProcess(req);
+		expect(result.aborted).toBe(true);
 		expect(result.timedOut).toBe(false);
 	});
 });

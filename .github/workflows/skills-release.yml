@@ -162,10 +162,14 @@ jobs:
             echo "Release $tag already exists — nothing to publish."
             exit 0
           fi
+          # bootstrap.sh / bootstrap.ps1 verify this asset when it is present.
+          # Each line is GNU sha256sum output: "<hash>  <filename>".
+          # The shell expands the binary names before the redirect creates the file.
+          (cd dist && sha256sum -- * > SHA256SUMS)
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Skills CLI $tag" \
-            --notes "Standalone dg-skills CLI binaries ($tag)." \
+            --notes "Standalone dg-skills CLI binaries ($tag). SHA256SUMS covers each platform binary." \
             dist/*
 
       - name: Clean up on failure

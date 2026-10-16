@@ -1,0 +1,45 @@
+# Weekly dependency updates.
+#
+# JavaScript dependencies are Bun workspaces with one text bun.lock at the repo
+# root (lockfileVersion 1). Dependabot's bun ecosystem is the one that reads
+# that file: package-ecosystem "npm" looks for an npm lockfile and would not
+# update bun.lock. bun is supported for Bun >= 1.1.39 and the text bun.lock
+# format (not the legacy binary bun.lockb). This repo's lockfile is v1, which
+# is inside the versions Dependabot accepts (v0 through v3, including the v2/v3
+# files Bun 1.4 writes). CI installs with Bun 1.4.1.
+#
+# One directory covers every workspace package, including pkg/extension. There
+# is no second lockfile to point at.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    # Workspace packages are not registry dependencies. Leave them alone.
+    ignore:
+      - dependency-name: "@dg/*"
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # Routine bumps share one PR. Majors stay individual so a breaking
+      # upgrade is not buried in the weekly patch set.
+      bun-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"

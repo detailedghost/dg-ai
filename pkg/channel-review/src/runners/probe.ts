@@ -39,6 +39,10 @@ const SKILL_ROOTS: Record<RunnerName, { dir: string; nested: boolean }[]> = {
 		{ dir: ".copilot/skills", nested: false },
 		{ dir: ".claude/skills", nested: false },
 	],
+	grok: [
+		{ dir: ".grok/skills", nested: false },
+		{ dir: ".claude/skills", nested: false },
+	],
 };
 
 function hasThrash(fs: SkillFs, skillsDir: string): boolean {

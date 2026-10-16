@@ -87,6 +87,8 @@ export type StartOptions = {
 	open?: boolean;
 	fresh?: boolean;
 	sessionId?: string;
+	printSessionId?: boolean;
+	json?: boolean;
 };
 
 async function fetchStatus(port: number) {
@@ -168,7 +170,14 @@ export async function cmdStart(
 		agentIdentity: options.agentIdentity,
 	});
 	const url = buildBootstrapUrl(targetPort, bootstrap);
-	console.log(url);
+	if (options.json) {
+		console.log(
+			JSON.stringify({ sessionId: bootstrap.sessionId, port: targetPort, url }),
+		);
+	} else {
+		if (options.printSessionId) console.log(bootstrap.sessionId);
+		console.log(url);
+	}
 	if (options.open) {
 		await tryOpen(url);
 	}

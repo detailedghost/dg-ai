@@ -5,20 +5,31 @@ Use `dg-skills inbox` for every command. Select the account with
 Default workspaces live below `${DG_HOME:-~/.dg}/inbox`; switching project
 directories does not switch mailboxes. `--data-path <fixture.json>` runs offline.
 
+Set `S` to the session id from `dg-agent start` (`--print-session-id` or
+`--json` prints it without decoding the bootstrap URL). Pass `--session "$S"`
+on each command. That is required when the working directory differs from the
+registered session or several sessions exist, which is the usual case for an
+agent.
+
 ## Inspect and prepare
 
 ```sh
-"$DG" inbox load folders --account-profile work
-"$DG" inbox load filters --account-profile work
-"$DG" inbox probe --folder Inbox --limit 3000 --account-profile work
-"$DG" inbox batch --folder Inbox --limit 3000 --account-profile work
-"$DG" inbox analyze --by domain --account-profile work
-"$DG" inbox sample --limit 10 --account-profile work
+"$DG" inbox load folders --account-profile work --session "$S"
+"$DG" inbox load filters --account-profile work --session "$S"
+"$DG" inbox probe --folder Inbox --limit 3000 --account-profile work --session "$S"
+"$DG" inbox batch --folder Inbox --limit 3000 --account-profile work --session "$S"
+"$DG" inbox analyze --by domain --account-profile work --session "$S"
+"$DG" inbox sample --limit 10 --account-profile work --session "$S"
 ```
 
 The collector consumes async generators one page at a time and writes bounded
 batches. --workers selects bounded asynchronous writer concurrency (the legacy
-name does not mean worker threads); --concurrency is its alias. Message packets redact addresses, phone numbers, and long identifiers;
+name does not mean worker threads); --concurrency is its alias. `probe` refreshes
+folder totals from the provider when it can. `total` and `unread` are those live
+counts. `snapshotTotal` and `snapshotUnread` are the previous `load folders`
+counts, with `snapshotAt`. `snapshotStale` is true when they differ or the
+refresh failed. `readState` counts only the messages this probe fetched
+(`--limit`), so it can disagree with the folder total. Message packets redact addresses, phone numbers, and long identifiers;
 message IDs are hashed for model-facing decisions. Provider IDs stay private for
 the subsequent reviewed operation. Use CLI output and classification.json as model context;
 login.json, folder snapshots, and private work-item selector fields can contain
@@ -38,13 +49,22 @@ Use the current model to classify redacted groups, then write decisions with
 `decide` or the appropriate route-plan commands. Use `suggest` as local decision
 support. Optional API classification must be explicitly configured.
 
+`suggest` does not mark messages read. It considers `--limit` matching work
+items (default 100) starting at `--offset` (default 0) and reports `matched`,
+`returned` (`total`), and `remaining`. Raise `--limit` or advance `--offset` to
+cover the rest. `--proposal-limit` only caps how many proposals are printed.
+Use `decide --mark-read true` when a route should mark messages read. `review`
+reports `omitted` decisions it did not count as ready, and `replacedDecisions`
+when a later `decide` overwrote an earlier one, so a sum of `written` can be
+higher than `readyToMove`.
+
 ```sh
 "$DG" inbox decide --domain example.test --action move \
   --target-folder "Finance/Receipts" --mark-read true \
-  --reason "Reviewed receipt route" --account-profile work
-"$DG" inbox review --account-profile work
-"$DG" inbox apply --dry-run --account-profile work
-"$DG" inbox apply --confirm --account-profile work
+  --reason "Reviewed receipt route" --account-profile work --session "$S"
+"$DG" inbox review --account-profile work --session "$S"
+"$DG" inbox apply --dry-run --account-profile work --session "$S"
+"$DG" inbox apply --confirm --account-profile work --session "$S"
 ```
 
 Inspect the review and dry-run result, and confirm mutations under the user's
@@ -54,9 +74,31 @@ previously applied message should not be mutated again on a repeat run.
 
 ## Filters and reports
 
-Run `recommend filters`, inspect suggested names, destinations, and conditions,
-then use the provider-supported filter plan/apply workflow. Consolidation must
-use the full fresh policy internally; redacted or truncated policy text is
+`recommend filters` reads local move decisions, including ones not yet applied,
+and writes `plans/filter-recommendations.json`. It does not require `apply`
+first. `review` counts every move target; `recommend filters` lists one row per
+domain and folder, keeps Archive informational, and marks folders outside the
+automatic set as preview-only. `filters apply` reads that recommendations file.
+
+`filters plan` dry-runs by default. It reads `plans/cleanup-policy.json`, or
+`--plan-path`. `folders plan-tree`, `labels plan`, `inbox route-plan`,
+`cleanup validate`, and `cleanup visualize` read that same policy file. They do
+not read `filter-recommendations.json`.
+
+`load filters` stores redacted snippets in `filters.json` (the provider snippet
+length, 160 by default), so `conditions` and `actions` can end mid-rule. Each
+filter also has `destinations`, the `fileinto` folder paths parsed from the full
+rule before that cutoff.
+`filters extend --filter-id ID --add-domains domain.example --dry-run` reads the
+live Proton Sieve and prints the before/after diff. It refuses any other provider
+and any script that is not a full Sieve (`require` and `fileinto`) with an
+`address :domain :is "From"` test. `--confirm` writes that full script back,
+refreshes `filters.json`, and writes an audit file with the filter id, added
+domains, and before/after hashes.
+
+`filters consolidate` and `filters group` read the live filter list and only
+merge filters whose names were generated by this CLI. Consolidation must use
+the full fresh policy internally; redacted or truncated policy text is
 insufficient to rewrite a rule safely. Reuse a compatible existing rule and
 preserve unrelated conditions. Subject-aware rules can narrow broad sender
 domains; review mailbox-specific suggestions before applying them.

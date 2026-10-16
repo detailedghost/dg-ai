@@ -63,15 +63,23 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--fresh] [-s <id>]` — start or
-  reuse the daemon and register a new session. `--open` opens the bootstrap
-  URL in the default browser. `-w` attaches a workset label, which is how
-  the chat page groups sessions in its rail. If the extension side panel is
-  already waiting on a session for this directory, `start` claims that session
-  instead of registering another one. `--fresh` always registers a new session.
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--fresh] [-s <id>] [--print-session-id] [--json]` —
+  start or reuse the daemon and register a new session. Prints the bootstrap
+  URL `http://127.0.0.1:<port>/start#_chat=<base64url>`. The fragment is
+  base64url JSON `{ port, sessionId, token, agentIdentity }`. `--open` opens
+  that URL in the default browser. When the agent is headless or remote, open
+  the URL in the browser where the extension is loaded instead.
+  `--print-session-id` prints the session id before the URL. `--json` prints
+  `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
+  attaches a workset label, which is how the chat page groups sessions in its
+  rail. If the extension is waiting on exactly one session, `start` claims it
+  instead of registering another one, including when a service-installed daemon
+  recorded a different directory. When several sessions are waiting, pass `-s`.
+  `--fresh` always registers a new session.
 - `attach [-s <id>] [--open]` — claim a session the extension created and is
   waiting on. Use this when Claude is already running and the side panel says
-  it is waiting for an agent.
+  it is waiting for an agent. A single waiting session is claimed even if the
+  daemon recorded a different directory.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message

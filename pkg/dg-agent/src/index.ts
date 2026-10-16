@@ -40,6 +40,14 @@ program
 	.option("--open", "open the bootstrap URL in the default browser")
 	.option("--fresh", "register a new session even if the extension is waiting")
 	.option("-s, --session <id>", "claim this waiting session instead of creating one")
+	.option(
+		"--print-session-id",
+		"print the session id, then the bootstrap URL",
+	)
+	.option(
+		"--json",
+		"print sessionId, port, and the bootstrap URL as one JSON object",
+	)
 	.action(
 		async (opts: {
 			workset?: string;
@@ -48,6 +56,8 @@ program
 			open?: boolean;
 			fresh?: boolean;
 			session?: string;
+			printSessionId?: boolean;
+			json?: boolean;
 		}) => {
 			const role: SessionRole = opts.orchestrator ? "orchestrator" : "agent";
 			await cmdStart({
@@ -57,6 +67,8 @@ program
 				open: opts.open,
 				fresh: opts.fresh,
 				sessionId: opts.session,
+				printSessionId: opts.printSessionId,
+				json: opts.json,
 			});
 		},
 	);
