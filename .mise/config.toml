@@ -43,3 +43,9 @@ run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs -
 description = "Start the channel-review daemon and follow its log"
 depends = ["remote:start"]
 run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+
+# Optional: gitleaks is installed for this task only, not for `mise install`.
+[tasks."security:scan"]
+description = "Scan git history for secrets with gitleaks"
+tools = { gitleaks = "8.30.1" }
+run = "gitleaks detect --source . --config .gitleaks.toml --redact --verbose"

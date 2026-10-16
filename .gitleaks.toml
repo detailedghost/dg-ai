@@ -1,0 +1,41 @@
+title = "dg"
+
+[extend]
+useDefault = true
+
+# History still contains these fixtures, so the allowlists name both the
+# current paths and the paths gitleaks recorded when the secret was introduced.
+# A finding is ignored only when the path and the secret both match.
+
+[[allowlists]]
+description = "RFC 6455 sample WebSocket nonce"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/dg-daemon/__tests__/server/http-polish\.spec\.ts$''',
+  '''(?:^|/)pkg/dg-daemon/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
+  '''(?:^|/)pkg/dg-server/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
+]
+regexes = ['''^dGhlIHNhbXBsZSBub25jZQ==$''']
+
+[[allowlists]]
+description = "Sequential hex fixtures in mailbox specs and the conformance harness"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/extension/__tests__/mailbox-.*\.spec\.ts$''',
+  '''(?:^|/)pkg/extension/__tests__/mailbox-.*harness\.ts$''',
+]
+regexes = ['''0123456789abcdef''']
+
+[[allowlists]]
+description = "Patterned token in the mailbox plans CLI monitor spec"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/extension/__tests__/mailbox-plans-cli-monitor\.spec\.ts$''',
+]
+regexes = [
+  '''^2031425364758697a8b9cadbecfd0e1f$''',
+  '''^30415263748596a7b8c9daebfc0d1e2f$''',
+]

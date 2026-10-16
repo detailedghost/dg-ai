@@ -1236,8 +1236,8 @@ describe("CLI", () => {
 			filters: [],
 			messages: [
 				{
-					id: "capitalone-wrong",
-					from: "alerts@notification.capitalone.com",
+					id: "bank-wrong",
+					from: "alerts@bank.example",
 					subject: "Statement",
 					snippet: "Your invoice is ready.",
 					folderId: "inbox",
@@ -1245,8 +1245,8 @@ describe("CLI", () => {
 					read: true,
 				},
 				{
-					id: "capitalone-right",
-					from: "alerts@message.capitalone.com",
+					id: "bank-right",
+					from: "alerts@bank.example",
 					subject: "Card notice",
 					snippet: "Your card message is ready.",
 					folderId: "inbox",
@@ -1282,9 +1282,7 @@ describe("CLI", () => {
 			item.decision = {
 				action: "move",
 				targetFolder:
-					item.sourceMessageId === "capitalone-wrong"
-						? "invoice"
-						: "credit-card",
+					item.sourceMessageId === "bank-wrong" ? "invoice" : "credit-card",
 				markRead: true,
 			};
 			await Bun.write(path, `${JSON.stringify(item, null, 2)}\n`);
@@ -1295,14 +1293,14 @@ describe("CLI", () => {
 			"--dir",
 			dir,
 			"--domain-contains",
-			"capitalone",
+			"bank.example",
 			"--action",
 			"move",
 			"--target-folder",
 			"credit-card",
 			"--only-target-mismatch",
 			"--reason",
-			"Capital One policy.",
+			"Bank policy.",
 		]);
 		expect(policy.code, policy.stderr).toBe(0);
 		expect(JSON.parse(policy.stdout)).toMatchObject({
@@ -1316,13 +1314,13 @@ describe("CLI", () => {
 			),
 		);
 		expect(
-			after.find((item) => item.sourceMessageId === "capitalone-wrong"),
+			after.find((item) => item.sourceMessageId === "bank-wrong"),
 		).toMatchObject({
 			status: "classified",
 			decision: { targetFolder: "credit-card" },
 		});
 		expect(
-			after.find((item) => item.sourceMessageId === "capitalone-right"),
+			after.find((item) => item.sourceMessageId === "bank-right"),
 		).toMatchObject({
 			status: "applied",
 			decision: { targetFolder: "credit-card" },
@@ -1347,9 +1345,9 @@ describe("CLI", () => {
 			filters: [
 				{
 					id: "existing-filter",
-					name: "Email Organizer: message.capitalone.com -> Receipts",
+					name: "Email Organizer: message.bank.example -> Receipts",
 					enabled: true,
-					conditions: ["message.capitalone.com"],
+					conditions: ["message.bank.example"],
 					actions: ["fileinto Receipts"],
 				},
 			],
@@ -1377,7 +1375,7 @@ describe("CLI", () => {
 							safeForDomainFilter: true,
 						},
 						{
-							domain: "message.capitalone.com",
+							domain: "message.bank.example",
 							targetFolder: "Receipts",
 							count: 5,
 							safeForDomainFilter: true,

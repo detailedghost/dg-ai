@@ -32,6 +32,9 @@ updates:
           - minor
           - patch
 
+  # Workflows pin actions to full commit SHAs and keep a `# vX.Y.Z`
+  # comment on the same line. This ecosystem updates that SHA and comment
+  # together; a pin without the comment is left frozen.
   - package-ecosystem: github-actions
     directory: /
     schedule:
