@@ -16,7 +16,7 @@
 		"@dg/channel-review": "workspace:*",
 		"@dg/common": "workspace:*",
 		"commander": "^14.0.0",
-		"marked": "^16.0.0",
+		"marked": "^18.1.1",
 		"@dg/inbox": "workspace:*",
 		"@dg/dg-agent": "workspace:*"
 	},
