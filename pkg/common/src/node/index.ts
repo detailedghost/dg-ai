@@ -3,6 +3,7 @@ export * from "./cli-client";
 export * from "./credential-grants";
 export * from "./credentials-client";
 export * from "./fs";
+export * from "./install-skills";
 export * from "./manifest-load";
 export * from "./marker";
 export * from "./oauth-loopback";

@@ -3,13 +3,81 @@
 #   irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
+# Skills-only (instruction files, no release binaries, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
+# Skills-only copies plugins/dg/skills into $env:DG_SKILLS_DEST
+# (default: $env:DG_HOME\skills or ~/.dg/skills).
 #
 # When the skills-v* release publishes SHA256SUMS (GNU sha256sum lines), the
 # download is verified before it is installed. Releases without that asset
 # still install. The skills release workflow writes the file beside the binaries.
 $ErrorActionPreference = "Stop"
+
+# Copy skill directories as data, matching @dg/common filesToInstall.
+# A skill is an immediate child directory that contains SKILL.md.
+# Symlinks are refused. Files are copied and never invoked.
+function Copy-DgSkillTree {
+	param($Source, $Destination)
+	if (-not (Test-Path -LiteralPath $Source)) {
+		throw "dg-skills: no skills directory at $Source"
+	}
+	$links = Get-ChildItem -LiteralPath $Source -Recurse -Force | Where-Object {
+		$_.Attributes -band [IO.FileAttributes]::ReparsePoint
+	}
+	if ($links) { throw "dg-skills: refusing to copy a symlink from $Source" }
+	New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+	$manifest = @()
+	$found = $false
+	foreach ($skill in Get-ChildItem -LiteralPath $Source -Directory) {
+		$manifestPath = Join-Path $skill.FullName "SKILL.md"
+		if (-not (Test-Path -LiteralPath $manifestPath)) { continue }
+		$found = $true
+		$target = Join-Path $Destination $skill.Name
+		if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+		New-Item -ItemType Directory -Force -Path $target | Out-Null
+		foreach ($file in Get-ChildItem -LiteralPath $skill.FullName -Recurse -File -Force) {
+			$rel = $file.FullName.Substring($skill.FullName.Length).TrimStart('\', '/')
+			if ($rel -match '(^|[\\/])\.\.([\\/]|$)') { throw "dg-skills: refusing $rel" }
+			$out = Join-Path $target $rel
+			New-Item -ItemType Directory -Force -Path (Split-Path -Parent $out) | Out-Null
+			Copy-Item -LiteralPath $file.FullName -Destination $out -Force
+			$manifest += ($skill.Name + "/" + ($rel -replace '\\', '/'))
+		}
+	}
+	if (-not $found) { throw "dg-skills: $Source has no skill directories" }
+	$manifest | Sort-Object | ForEach-Object { Write-Host $_ }
+	Write-Host "Installed $($manifest.Count) skill files at $Destination."
+	Write-Host "Skills-only install: no binaries were fetched and no skill content was executed."
+}
+
+function Get-DgSkillsSource {
+	if ($env:DG_SKILLS_SOURCE) { return $env:DG_SKILLS_SOURCE }
+	if ($PSScriptRoot) {
+		$local = Join-Path $PSScriptRoot "..\..\plugins\dg\skills"
+		if (Test-Path -LiteralPath (Join-Path $local "browser\SKILL.md")) {
+			return (Resolve-Path -LiteralPath $local).Path
+		}
+	}
+	$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-skills-" + [guid]::NewGuid())
+	New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+	$archive = Join-Path $tmp "dg-ai.zip"
+	$headers = @{ "User-Agent" = "dg-ai" }
+	Invoke-WebRequest -Headers $headers -Uri "https://github.com/detailedghost/dg-ai/archive/refs/heads/master.zip" -OutFile $archive
+	Expand-Archive -Path $archive -DestinationPath $tmp -Force
+	return (Join-Path $tmp "dg-ai-master\plugins\dg\skills")
+}
+
+if ($env:DG_SKILLS_ONLY -eq "1") {
+	if ($env:DG_CLI_ONLY -eq "1") {
+		throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_CLI_ONLY"
+	}
+	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST }
+		elseif ($env:DG_HOME) { Join-Path $env:DG_HOME "skills" }
+		else { Join-Path $env:USERPROFILE ".dg\skills" }
+	Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
+	exit 0
+}
 
 $repo = "detailedghost/dg-ai"
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }

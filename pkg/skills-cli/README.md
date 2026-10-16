@@ -7,6 +7,7 @@ Standalone CLI for dg AI skills. One entry point registers all skill commands.
 ```bash
 bun pkg/skills-cli/src/index.ts --help
 bun pkg/skills-cli/src/index.ts install
+bun pkg/skills-cli/src/index.ts install --skills-only --dest "$HOME/.dg/skills"
 bun pkg/skills-cli/src/index.ts demo --edit my-feature.demo.md
 bun pkg/skills-cli/src/index.ts proto scrape https://app.example.test/page
 bun pkg/skills-cli/src/index.ts proto plant /tmp/ai/proto/example/plan.json
@@ -88,6 +89,16 @@ Excluded setup runs first and user-paced, but is not narrated or recorded.
 Change `includeSetup` to `true` to make setup lead the tutorial and video.
 Plans persist fill text, so credentials, tokens, and MFA codes must be entered
 manually rather than authored as actions.
+
+## Skills-only install
+
+`install --skills-only` copies `plugins/dg/skills` into `--dest` (default
+`$DG_SKILLS_DEST`, else `$DG_HOME/skills` or `~/.dg/skills`). Each immediate
+child directory that contains `SKILL.md` is included, references and all. The
+copy is data: the command does not fetch `dg-skills`, `dg-daemon`, `dg-agent`,
+or the extension, and it does not execute skill content. From the repo root,
+`mise run install:skills` is the same command. `bootstrap.sh --skills-only`
+and `DG_SKILLS_ONLY=1` do that copy on a machine without Bun.
 
 ## Build standalone binary
 

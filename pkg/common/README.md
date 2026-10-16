@@ -4,6 +4,7 @@ Shared TypeScript types and pure utility functions used by both the browser exte
 
 ## Contents
 
+- **`src/skill-files.ts`** — `filesToInstall`, the skills-only install file list
 - **`src/types.ts`** — `TourScript`, `TourSetup`, `TourStep`, `TourMode`, `StepAdvance`
 - **`src/plan-format.ts`** — `toPlanMarkdown`, `validate`, `partitionTourSteps`, `extractScriptFromMarkdown`
 
