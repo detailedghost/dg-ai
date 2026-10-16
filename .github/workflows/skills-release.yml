@@ -35,7 +35,6 @@ jobs:
     needs: blt
     permissions:
       contents: read
-      actions: write # upload the compiled binaries
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -80,8 +79,6 @@ jobs:
 
   smoke:
     needs: build
-    permissions:
-      actions: read
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -123,7 +120,6 @@ jobs:
     needs: smoke
     permissions:
       contents: write # create release + tag
-      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

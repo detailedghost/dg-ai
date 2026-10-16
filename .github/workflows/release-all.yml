@@ -26,17 +26,14 @@ jobs:
   skills:
     permissions:
       contents: write
-      actions: write
     uses: ./.github/workflows/skills-release.yml
 
   daemon:
     permissions:
       contents: write
-      actions: write
     uses: ./.github/workflows/dg-daemon-release.yml
 
   agent:
     permissions:
       contents: write
-      actions: write
     uses: ./.github/workflows/dg-agent-release.yml
