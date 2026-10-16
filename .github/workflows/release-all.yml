@@ -15,17 +15,25 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   ext:
+    permissions:
+      contents: write
     uses: ./.github/workflows/ext-release.yml
 
   skills:
+    permissions:
+      contents: write
     uses: ./.github/workflows/skills-release.yml
 
   daemon:
+    permissions:
+      contents: write
     uses: ./.github/workflows/dg-daemon-release.yml
 
   agent:
+    permissions:
+      contents: write
     uses: ./.github/workflows/dg-agent-release.yml

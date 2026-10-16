@@ -7,6 +7,14 @@ node_modules/
 dist/
 .output/
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.db
+*.sqlite*
+*.log
+*.har
 .stryker-tmp/
 reports/
 mutation.json

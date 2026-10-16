@@ -1,7 +1,8 @@
 # 👻 DeeGee
 
 Browser, inbox, and channel review plugin for Codex and Claude Code. Skills: **browser**, **demo**,
-**live-page prototype**, **chat**, **inbox cleanup**, and **channel review**. The companion extension is `dg-ai-extension`.
+**live-page prototype**, **chat**, **inbox cleanup**, **channel review**, and **Google SMS cleanup**.
+The companion extension is `dg-ai-extension`.
 
 ## 📦 Install
 
@@ -70,6 +71,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | Skill | CLI-only |
 | --- | --- |
 | `channel-review` | Yes |
+| `google-sms-cleanup` | Yes — instruction-only; it drives Messages for Web and does not declare `requires: [extension]` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
 
@@ -291,6 +293,16 @@ on dev in a test chat. A human signs in to AWS SSO and adds the bot to the chat.
 [setup](plugins/dg/skills/channel-review/references/setup.md) and
 [commands](plugins/dg/skills/channel-review/references/commands.md) for production
 rollout, custom emojis, request tokens, and recovery.
+
+### Google SMS cleanup
+
+Sort, archive, and spam-block a Google Messages inbox with
+`/dg:google-sms-cleanup` in Claude Code or `$dg:google-sms-cleanup` in Codex.
+The skill drives Messages for Web in the browser. It never deletes a
+conversation or message, never sends without explicit per-message approval, and
+lists ambiguous threads instead of acting on them. Messages for Web has no
+starring, renaming, labels, or folders; those stay on the phone. The skill is
+instruction-only and does not call `dg-skills`.
 
 ### 🔗 Ref formats
 
