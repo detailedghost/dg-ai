@@ -12,6 +12,7 @@ export * from "./plan-format";
 export * from "./proto-format";
 export * from "./serial-queue";
 export * from "./session-connect";
+export * from "./skill-files";
 export * from "./slug";
 export * from "./types";
 

@@ -80,6 +80,48 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
 
+## Skills-only install
+
+Use this when the user wants the skill instruction files and none of the
+binaries. The installer copies each directory under `plugins/dg/skills` that
+contains a `SKILL.md` — the instruction file and its references, including
+`google-sms-cleanup` — and does not execute that text. It does not download
+`dg-skills`, `dg-daemon`, `dg-agent`, or the extension.
+
+From a checkout of this repository:
+
+```bash
+mise run install:skills
+```
+
+The same copy from source:
+
+```bash
+bun pkg/skills-cli/src/index.ts install --skills-only --dest "${DG_SKILLS_DEST:-$HOME/.dg/skills}"
+```
+
+`dg-skills install --skills-only` is the flag on an already installed binary.
+Pass `--repo <checkout>` so it can read `plugins/dg/skills`. `--dest` overrides
+the default directory, which is `$DG_SKILLS_DEST`, otherwise `$DG_HOME/skills`,
+otherwise `~/.dg/skills`.
+
+Without a checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DG_SKILLS_ONLY = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+`DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
+from `--cli-only`: that path still installs the `dg-skills` binary and writes
+`~/.dg/cli-only`. Skills-only leaves `~/.dg/bin` and that marker untouched.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

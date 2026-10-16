@@ -55,6 +55,12 @@ bun test                         # unit tests
 bun run build                    # compile binary to dist/
 ```
 
+Skills-only install copies `plugins/dg/skills` and does not fetch release
+binaries. From the repo root, `mise run install:skills` runs
+`bun pkg/skills-cli/src/index.ts install --skills-only`. The file list is
+`filesToInstall` in `@dg/common`; the copy is `installSkillTree` in
+`@dg/common/node`. See [ADR 0001](adr/0001-skills-only-install.md).
+
 ### pkg/dg-daemon (chat daemon)
 
 ```bash

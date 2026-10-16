@@ -1,6 +1,8 @@
 # DeeGee skills
 
-This is the shared skill tree used by the Codex and Claude Code plugins. Each
+This is the shared skill tree used by the Codex and Claude Code plugins.
+`mise run install:skills` (or `dg-skills install --skills-only`) copies each
+folder that contains a `SKILL.md` and does not install binaries. Each
 folder holds one skill:
 
 | Skill | Description |

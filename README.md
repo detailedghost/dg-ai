@@ -80,6 +80,51 @@ the extension later, run `dg-skills install` (or the full bootstrap command
 above). That also fetches `dg-daemon` and `dg-agent` and removes the CLI-only
 marker at `~/.dg/cli-only`.
 
+### Skills-only install
+
+Copy the skill instruction files and nothing else. This path writes
+`plugins/dg/skills` (each `SKILL.md` plus the reference files next to it,
+including `google-sms-cleanup`) into a directory you choose. It does not
+download `dg-skills`, `dg-daemon`, `dg-agent`, or the extension, and it does
+not run the text inside a skill.
+
+From a checkout:
+
+```bash
+mise run install:skills
+```
+
+Or, with Bun:
+
+```bash
+bun pkg/skills-cli/src/index.ts install --skills-only --dest "$HOME/.dg/skills"
+```
+
+An installed `dg-skills` binary accepts the same flag. Pass `--repo <checkout>`
+when the binary is not running inside this repository.
+
+<!-- markdownlint-disable MD013 -->
+
+macOS / Linux, without a local checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+```
+
+Windows, in PowerShell:
+
+```powershell
+$env:DG_SKILLS_ONLY = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+<!-- markdownlint-enable MD013 -->
+
+`DG_SKILLS_ONLY=1` works in place of `--skills-only` for the shell form.
+`DG_SKILLS_DEST` chooses the directory (default: `$DG_HOME/skills` or
+`~/.dg/skills`). Point it at `$CODEX_HOME/skills` when the files should land
+where Codex reads skills. The skills root `README.md` is not installed.
+
 ### Codex plugin
 
 Install from this repository's Codex marketplace:

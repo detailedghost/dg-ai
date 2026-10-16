@@ -64,6 +64,12 @@ run = "bun pkg/dg-agent/src/index.ts"
 description = "Start dg-daemon and open the extension in the internal test Chrome"
 run = "bun scripts/test-chrome.ts --with-daemon"
 
+[tasks."install:skills"]
+description = "Copy plugins/dg/skills instruction files into DG_SKILLS_DEST (no release binaries)"
+run = """
+bun pkg/skills-cli/src/index.ts install --skills-only --repo "${DG_SKILLS_REPO:-$PWD}" --dest "${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
+"""
+
 [tasks."test:extension"]
 description = "Run the browser extension unit tests"
 dir = "pkg/extension"

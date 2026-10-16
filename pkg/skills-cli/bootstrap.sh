@@ -3,8 +3,12 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
+#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files only.
+#       No release binaries are downloaded and no skill content is executed.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
+# --skills-only instead copies plugins/dg/skills into $DG_SKILLS_DEST
+# (default: $DG_HOME/skills or ~/.dg/skills).
 # Windows: use bootstrap.ps1 instead.
 #
 # Checksums: when the skills-v* release publishes a SHA256SUMS asset (GNU
@@ -14,9 +18,98 @@
 set -eu
 
 CLI_ONLY="${DG_CLI_ONLY:-0}"
+SKILLS_ONLY="${DG_SKILLS_ONLY:-0}"
 for arg in "$@"; do
   [ "${arg}" = "--cli-only" ] && CLI_ONLY=1
+  [ "${arg}" = "--skills-only" ] && SKILLS_ONLY=1
 done
+
+# Copy skill directories as data. A skill is an immediate child that contains
+# SKILL.md. The same rule lives in @dg/common filesToInstall. Symlinks are
+# refused. Files are written mode 0644 and never executed.
+copy_skill_tree() {
+  src=$1
+  dest=$2
+  manifest=$(mktemp)
+  if [ ! -d "$src" ]; then
+    echo "dg-skills: no skills directory at ${src}" >&2
+    exit 1
+  fi
+  if find "$src" -type l | grep -q .; then
+    echo "dg-skills: refusing to copy a symlink from ${src}" >&2
+    exit 1
+  fi
+  mkdir -p "$dest"
+  found=0
+  for skill in "$src"/*/; do
+    [ -d "$skill" ] || continue
+    [ -f "${skill}SKILL.md" ] || continue
+    found=1
+    name=$(basename "$skill")
+    rm -rf "${dest}/${name}"
+    filelist=$(mktemp)
+    find "$skill" -type f >"$filelist"
+    while IFS= read -r file || [ -n "$file" ]; do
+      [ -n "$file" ] || continue
+      rel=${file#"$skill"}
+      rel=${rel#/}
+      case "$rel" in
+        ""|..|../*|*/..|*/../*)
+          echo "dg-skills: refusing ${rel}" >&2
+          exit 1
+          ;;
+      esac
+      out="${dest}/${name}/${rel}"
+      mkdir -p "$(dirname "$out")"
+      cp "$file" "$out"
+      chmod 644 "$out"
+      printf '%s\n' "${name}/${rel}" >>"$manifest"
+    done <"$filelist"
+    rm -f "$filelist"
+  done
+  if [ "$found" -ne 1 ]; then
+    echo "dg-skills: ${src} has no skill directories" >&2
+    exit 1
+  fi
+  sort "$manifest"
+  count=$(wc -l <"$manifest" | tr -d " ")
+  echo "Installed ${count} skill files at ${dest}."
+  echo "Skills-only install: no binaries were fetched and no skill content was executed."
+  rm -f "$manifest"
+}
+
+skills_tree_source() {
+  if [ -n "${DG_SKILLS_SOURCE:-}" ]; then
+    printf '%s\n' "$DG_SKILLS_SOURCE"
+    return
+  fi
+  script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+  repo=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+  if [ -d "$repo/plugins/dg/skills" ]; then
+    printf '%s\n' "$repo/plugins/dg/skills"
+    return
+  fi
+  if [ -d "plugins/dg/skills" ]; then
+    printf '%s\n' "$(pwd)/plugins/dg/skills"
+    return
+  fi
+  tmp=$(mktemp -d)
+  archive="${tmp}/dg-ai.tar.gz"
+  curl -fsSL -H "User-Agent: dg-ai" \
+    "https://github.com/detailedghost/dg-ai/archive/refs/heads/master.tar.gz" -o "$archive"
+  tar -xzf "$archive" -C "$tmp"
+  printf '%s\n' "${tmp}/dg-ai-master/plugins/dg/skills"
+}
+
+if [ "$SKILLS_ONLY" = "1" ]; then
+  if [ "$CLI_ONLY" = "1" ]; then
+    echo "dg-skills: pass only one of --skills-only and --cli-only" >&2
+    exit 1
+  fi
+  dest="${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
+  copy_skill_tree "$(skills_tree_source)" "$dest"
+  exit 0
+fi
 
 REPO="detailedghost/dg-ai"
 BIN_DIR="${HOME}/.dg/bin"

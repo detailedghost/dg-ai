@@ -19,6 +19,11 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { run } from "@dg/common/node";
+import {
+	assertSkillsOnlyFlags,
+	runSkillsOnlyInstall,
+	skillsOnlyReport,
+} from "./skills-only";
 import type { Command } from "commander";
 import {
 	type BinarySpec,
@@ -280,7 +285,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + refresh the compiled dg-skills, dg-daemon and dg-agent binaries",
+			"stage the dg-ai-extension for loading + refresh the compiled dg-skills, dg-daemon and dg-agent binaries, or copy skill instruction files with --skills-only",
 		)
 		.argument(
 			"[target]",
@@ -292,11 +297,39 @@ export function registerInstall(program: Command): void {
 			"--cli-only",
 			"install only the dg-skills binary; skip the extension, dg-daemon and dg-agent",
 		)
+		.option(
+			"--skills-only",
+			"copy plugins/dg/skills instruction files only; fetch no binaries and run no skill content",
+		)
+		.option(
+			"--dest <path>",
+			"directory for --skills-only (default: $DG_SKILLS_DEST, else $DG_HOME/skills or ~/.dg/skills)",
+		)
 		.action(
 			async (
 				target: string | undefined,
-				opts: { local?: boolean; repo?: string; cliOnly?: boolean },
+				opts: {
+					local?: boolean;
+					repo?: string;
+					cliOnly?: boolean;
+					skillsOnly?: boolean;
+					dest?: string;
+				},
 			) => {
+				if (opts.skillsOnly) {
+					assertSkillsOnlyFlags({
+						cliOnly: !!opts.cliOnly,
+						local: !!opts.local,
+						target,
+					});
+					const result = runSkillsOnlyInstall({
+						repo: opts.repo,
+						dest: opts.dest,
+						repoRoot: repoRoot(),
+					});
+					console.log(skillsOnlyReport(result));
+					return;
+				}
 				if (opts.cliOnly) return installCliOnly();
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
