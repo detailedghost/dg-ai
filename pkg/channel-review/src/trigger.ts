@@ -58,7 +58,7 @@ type PrLink = { kind: "pr"; target: PrTarget } | { kind: "rejected" };
 function plainText(html: string): string {
 	return html
 		.replace(/<at\b[^>]*>.*?<\/at>/gis, " ")
-		.replace(/<a\b[^>]*?\bhref=(["'])(.*?)\1[^>]*>/gis, " $2 ")
+		.replace(/<a\b[^>]*?\shref\s*=\s*(["'])(.*?)\1[^>]*>/gis, " $2 ")
 		.replace(/<[^>]*>/g, " ")
 		.replace(/&(?:nbsp|lt|gt|quot|#39|amp);/g, (entity) => ENTITIES[entity] ?? entity);
 }

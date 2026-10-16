@@ -46,6 +46,37 @@ describe("parseTrigger", () => {
 		expect((result as { agent?: string }).agent).toBeUndefined();
 	});
 
+	test.each(['href = "', "href\t=\n'"])(
+		"extracts a descriptive title's target with whitespace around %s",
+		(attribute) => {
+			const delimiter = attribute.at(-1);
+			const html = `!owner $review <a ${attribute}${GITHUB_URL}?a=1&amp;b=2${delimiter}>Fix the linked records (owner's follow-up)…</a>`;
+			expect(parseTrigger(html, OPTIONS)).toMatchObject({
+				kind: "run",
+				url: GITHUB_URL,
+				number: 12,
+				host: "github",
+			});
+		},
+	);
+
+	test("uses href rather than data-href or the displayed URL", () => {
+		const html = `!owner $review <a data-href="${GITLAB_URL}" href = "${GITHUB_URL}">${GITLAB_URL}</a>`;
+		expect(parseTrigger(html, OPTIONS)).toMatchObject({ kind: "run", url: GITHUB_URL });
+	});
+
+	test("does not treat data-href as a link target", () => {
+		expect(
+			parseTrigger(`!owner $review <a data-href="${GITHUB_URL}">Fix records…</a>`, OPTIONS),
+		).toEqual({ kind: "error", code: "CR-101" });
+	});
+
+	test("does not infer a target from a descriptive title without a URL", () => {
+		expect(
+			parseTrigger("!owner $review Fix the linked records (owner's follow-up)…", OPTIONS),
+		).toEqual({ kind: "error", code: "CR-101" });
+	});
+
 	test("returns the same result when the at-mention is absent", () => {
 		const withMention = `<at>Review Bot</at> !owner $review ${GITHUB_URL} ~spice 3 ~comment`;
 		const without = `!owner $review ${GITHUB_URL} ~spice 3 ~comment`;
@@ -333,6 +364,11 @@ describe("parseTrigger with a quoted request", () => {
 		).toEqual({ kind: "ignore" });
 	});
 
+	test("does not take a linked target from a quoted request for an outside command", () => {
+		const html = `${quote(`<a href = "${GITHUB_URL}">Fix records…</a>`)}<p>!owner $review</p>`;
+		expect(parseTrigger(html, OPTIONS)).toEqual({ kind: "error", code: "CR-101" });
+	});
+
 	test("runs a command written outside the quote", () => {
 		expect(
 			parseTrigger(`${quote("old note")}<p>!owner $review ${GITHUB_URL}</p>`, OPTIONS),
@@ -412,6 +448,22 @@ describe("parseReadiness", () => {
 			kind: "rereview",
 			url: GITHUB_URL,
 		});
+	});
+
+	test("extracts a titled href with attribute whitespace on a readiness reply", () => {
+		const html = `<p>fixed <a href = '${GITHUB_URL}?a=1&amp;b=2'>Fix records (owner's follow-up)…</a></p>`;
+		expect(parseReadiness(html, options)).toEqual({ kind: "rereview", url: GITHUB_URL });
+	});
+
+	test("extracts a titled href from a reply quote without replaying its command", () => {
+		const quote = quoteHtml("m9", `!owner $review <a href = "${GITHUB_URL}">Fix records…</a> ~agent codex`);
+		expect(parseTrigger(`${quote}<p>ready</p>`, OPTIONS)).toEqual({ kind: "ignore" });
+		expect(parseReadiness(`${quote}<p>ready</p>`, options)).toEqual({
+			kind: "rereview",
+			url: GITHUB_URL,
+			quote,
+		});
+		expect(parseReadiness(`${quote}<p>thanks</p>`, options)).toEqual(NO_PHRASE);
 	});
 
 	test("returns rereview for a quoted reply to the blocked message with no link", () => {
@@ -525,6 +577,16 @@ describe("host allowlist", () => {
 			kind: "error",
 			code: "CR-104",
 		});
+		expect(
+			parseTrigger(`!owner $review <a href = "${url}">Fix records…</a>`, OPTIONS),
+		).toEqual({ kind: "error", code: "CR-104" });
+		expect(
+			parseReadiness(`ready <a href = "${url}">Fix records…</a>`, {
+				phrases: PHRASES,
+				blockedMessages: {},
+				hosts: HOSTS,
+			}),
+		).toEqual({ kind: "ignore", reason: "no-link" });
 		expect(parsePrUrl(url, HOSTS)).toBeUndefined();
 	});
 
