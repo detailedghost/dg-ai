@@ -62,21 +62,61 @@ function recv(
 	return runCli(dgHome, port, ["recv", "--session", as.sessionId, ...args]);
 }
 
-function tamperDb(sql: string): void {
+const TAMPER_BUSY_TIMEOUT_MS = 5_000;
+const TAMPER_ATTEMPTS = 4;
+
+function isDatabaseBusy(error: unknown): boolean {
+	if (typeof error === "object" && error !== null && "code" in error) {
+		const code = (error as { code?: unknown }).code;
+		if (code === "SQLITE_BUSY" || code === "SQLITE_LOCKED") return true;
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes("SQLITE_BUSY") || message.includes("database is locked");
+}
+
+function openDaemonDb(readonly: boolean): Database {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const raw = new Database(paths.dbPath, { strict: true });
-	raw.run(sql);
-	raw.close(true);
+	const raw = new Database(paths.dbPath, { strict: true, readonly });
+	raw.run(`PRAGMA busy_timeout = ${TAMPER_BUSY_TIMEOUT_MS}`);
+	return raw;
+}
+
+/** Waits out the daemon's session-row writes instead of failing the moment the file is locked. */
+async function tamperDb(sql: string): Promise<void> {
+	let last: unknown;
+	for (let attempt = 0; attempt < TAMPER_ATTEMPTS; attempt++) {
+		const raw = openDaemonDb(false);
+		try {
+			raw.run("BEGIN IMMEDIATE");
+			raw.run(sql);
+			raw.run("COMMIT");
+			return;
+		} catch (error) {
+			try {
+				raw.run("ROLLBACK");
+			} catch (rollbackError) {
+				void rollbackError;
+			}
+			last = error;
+			if (!isDatabaseBusy(error)) throw error;
+			await Bun.sleep(40 * (attempt + 1));
+		} finally {
+			raw.close(true);
+		}
+	}
+	throw last;
 }
 
 function queuedRecipients(): string[] {
-	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const raw = new Database(paths.dbPath, { strict: true, readonly: true });
-	const rows = raw
-		.query("SELECT recipient_identity FROM agent_messages ORDER BY seq")
-		.all() as { recipient_identity: string }[];
-	raw.close(true);
-	return rows.map((row) => row.recipient_identity);
+	const raw = openDaemonDb(true);
+	try {
+		const rows = raw
+			.query("SELECT recipient_identity FROM agent_messages ORDER BY seq")
+			.all() as { recipient_identity: string }[];
+		return rows.map((row) => row.recipient_identity);
+	} finally {
+		raw.close(true);
+	}
 }
 
 function outcomeOf(result: CliResult): {
@@ -193,7 +233,7 @@ describe("one agent addressing another by identity", () => {
 			() => (queuedRecipients().length > 0 ? true : undefined),
 			3000,
 		);
-		tamperDb("UPDATE agent_messages SET sender_identity = 'forged'");
+		await tamperDb("UPDATE agent_messages SET sender_identity = 'forged'");
 
 		expect(outcomeOf(await recv(port, beta)).outcome).toBe("empty");
 
