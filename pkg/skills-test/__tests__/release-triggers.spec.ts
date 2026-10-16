@@ -35,6 +35,77 @@ function workspaceDeps(pkg: string, field: string): string[] {
 		.map(([name]) => name.replace("@dg/", ""));
 }
 
+/** Job id → the jobs it lists under `needs`. Walks only the `jobs:` block. */
+function jobNeeds(text: string): Map<string, string[]> {
+	const needs = new Map<string, string[]>();
+	let inJobs = false;
+	let current: string | null = null;
+	let readingNeeds = false;
+
+	for (const line of text.split("\n")) {
+		if (line === "jobs:") {
+			inJobs = true;
+			continue;
+		}
+		if (!inJobs) continue;
+
+		const job = /^  ([a-z0-9-]+):\s*$/.exec(line);
+		if (job) {
+			current = job[1];
+			needs.set(current, []);
+			readingNeeds = false;
+			continue;
+		}
+		if (!current) continue;
+
+		if (/^    needs:\s*$/.test(line)) {
+			readingNeeds = true;
+			continue;
+		}
+
+		const inline = /^    needs:\s*(.+)$/.exec(line);
+		if (inline) {
+			const value = inline[1].trim();
+			const listed = value.startsWith("[")
+				? value
+						.slice(1, value.endsWith("]") ? -1 : undefined)
+						.split(",")
+						.map((name) => name.trim())
+						.filter(Boolean)
+				: [value];
+			needs.get(current)!.push(...listed);
+			readingNeeds = value.startsWith("[") && !value.endsWith("]");
+			continue;
+		}
+
+		const item = /^      - (\S+)\s*$/.exec(line);
+		if (readingNeeds && item) {
+			needs.get(current)!.push(item[1]);
+			continue;
+		}
+		readingNeeds = false;
+	}
+
+	return needs;
+}
+
+function reaches(
+	needs: Map<string, string[]>,
+	from: string,
+	target: string,
+): boolean {
+	const seen = new Set<string>();
+	const stack = [from];
+	while (stack.length > 0) {
+		const job = stack.pop()!;
+		if (job === target) return true;
+		if (seen.has(job)) continue;
+		seen.add(job);
+		for (const dep of needs.get(job) ?? []) stack.push(dep);
+	}
+	return false;
+}
+
 describe("a release fires for exactly the source its artifact is built from", () => {
 	for (const { pkg, release } of RELEASED) {
 		test(`${release} watches ${pkg} and every package it ships`, () => {
@@ -88,4 +159,22 @@ describe("one dispatch cuts the whole matched set", () => {
 		expect(all).toContain("workflow_dispatch:");
 		expect(all).not.toContain("push:");
 	});
+});
+
+describe("a release publishes only after its own build workflow passes", () => {
+	for (const { release, blt } of RELEASED) {
+		test(`${release} calls ${blt} and the publish job waits on that call`, () => {
+			const text = workflow(release);
+			const needs = jobNeeds(text);
+			const bltJob = [...needs.keys()].find((job) =>
+				new RegExp(
+					`^  ${job}:\\n    uses: \\./\\.github/workflows/${blt}\\s*$`,
+					"m",
+				).test(text),
+			);
+
+			expect(bltJob).toBe("blt");
+			expect(reaches(needs, "release", "blt")).toBe(true);
+		});
+	}
 });
