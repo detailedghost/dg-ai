@@ -370,17 +370,33 @@ has `enabled`, `repos` (the count), `lastRun` (per repo: `at` and `result`), and
 
 ## State and recovery
 
-All paths below live under `DG_HOME/channel-review`. Dev and prod share config
-but keep separate state, pidfiles, daemon logs, and job logs.
+The service saves state in the existing `DG_HOME/daemon/daemon.db`, in
+`channel_review_state`, keyed separately by `dev` and `prod`. Dev and prod share
+config but keep separate state, pidfiles, daemon logs, and job logs. All paths
+in the table below are relative to `DG_HOME/channel-review`.
 
 | File or directory | Contents |
 | --- | --- |
 | `config.json` | Configuration and saved environment/reaction choices. |
-| `state.<env>.json` | Event cursor per chat, handled messages, blocked PRs, current job, error-watch issues and sink cursors, deps runs, and watched PRs. |
+| `state.<env>.json` | Legacy state source; imported automatically once per environment and retained unchanged for recovery. New state is written to daemon.db. |
 | `daemon.<env>.pid` | Daemon process record, including the watched chats. |
 | `daemon.<env>.log` | Background daemon output. |
 | `jobs/<env>/*.log` | Runner output for each job. |
 | `work/` | Runner working directory for reviews. `$address` clones live under `address.cloneRoot` instead. |
+
+The database snapshot includes event cursors per chat, handled message statuses,
+blocked PR options, current process details, error-watch issues and sink cursors,
+fix timestamps, deps runs, and watched PRs. SQL views `channel_review_requests`
+and `channel_review_current` support local inspection. `status` reads this state
+without creating a database or consuming an import. Malformed state fails
+visibly; repair the retained source and retry if import has not succeeded.
+After import, database state takes precedence over the retained JSON.
+
+Upgrade `dg-daemon` and `dg-skills` together to builds supporting schema 12,
+stopping the old processes before first import. Older daemon binaries refuse
+schema 12 on restart. The review service can initialize the shared schema before
+the main daemon starts; no GUI or browser extension attachment is required.
+This does not change secret handling or the daemon's encrypted data.
 
 The daemon reads the relay secret into memory. The plaintext secret is never written
 to disk. It uses `channel-review/relay/<env>` from the credential store first, then
@@ -388,7 +404,10 @@ to disk. It uses `channel-review/relay/<env>` from the credential store first, t
 and fetches it from AWS only when neither is set.
 The daemon runs on Linux, macOS, WSL, and Windows. In WSL, it lives only while
 the VM runs. Start it again after the VM restarts. Recovery marks interrupted
-reviews failed and posts CR-205; a human must verify this behavior in WSL.
+reviews failed and posts CR-205; pending work is not rerun automatically.
+Per-chat replay cursors survive restart. Cursor-only writes coalesce for up to
+one second and flush on job writes or orderly shutdown. A human must verify
+this behavior in WSL.
 On Windows, stop kills the process tree and posts CR-205 for an interrupted
 review. If it cannot reach the service, the next start retries that report.
 

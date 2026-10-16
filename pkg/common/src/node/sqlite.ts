@@ -8,9 +8,21 @@ export function applyConnectionPragmas(
 	db: Database,
 	busyTimeoutMs: number = DEFAULT_BUSY_TIMEOUT_MS,
 ): void {
-	db.run("PRAGMA journal_mode = WAL");
-	db.run("PRAGMA foreign_keys = ON");
 	db.run(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
+	// A first-open WAL lock upgrade can return SQLITE_BUSY without invoking SQLite's
+	// busy handler. Retry that upgrade within the same bounded connection timeout.
+	const deadline = Date.now() + busyTimeoutMs;
+	for (;;) {
+		try {
+			db.run("PRAGMA journal_mode = WAL");
+			break;
+		} catch (error) {
+			if (!(error instanceof Error) || !("code" in error) ||
+				error.code !== "SQLITE_BUSY" || Date.now() >= deadline) throw error;
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+		}
+	}
+	db.run("PRAGMA foreign_keys = ON");
 }
 
 export type MigrationStep = { version: number; run: (db: Database) => void };

@@ -43,7 +43,7 @@ async function recoverAfterKill(
 			seams,
 			log,
 		});
-		const { engine, process: processes } = buildEngine({
+		const { engine, state, process: processes } = buildEngine({
 			config,
 			provider,
 			defaultChatId: chats[0].id,
@@ -54,7 +54,11 @@ async function recoverAfterKill(
 			funPool: [],
 			platform,
 		});
-		await engine.recover(processes);
+		try {
+			await engine.recover(processes);
+		} finally {
+			state.close();
+		}
 	} catch (error) {
 		io.err(
 			[

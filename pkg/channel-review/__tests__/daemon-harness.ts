@@ -14,7 +14,7 @@ import { loadFunPool } from "../src/fun";
 import { type ChannelReviewPaths, channelReviewPaths } from "../src/paths";
 import type { ChatEvent, ChatProvider } from "../src/providers/types";
 import type { RunnerName } from "../src/runners/types";
-import { createStateStore } from "../src/state";
+import { createStateStore, readStateSnapshot } from "../src/state";
 import {
 	CHAT_ID,
 	type FakeProvider,
@@ -286,11 +286,11 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 		seams,
 		readJson,
 		readPidfile: () => readJson(paths.pidPath),
-		readState: () => readJson(paths.statePath),
+		readState: () => readStateSnapshot(paths),
 		seedState(mutate: (store: ReturnType<typeof createStateStore>) => void) {
-			const store = createStateStore(paths.statePath);
+			const store = createStateStore(paths);
 			mutate(store);
-			store.flush();
+			store.close();
 		},
 		writePidfile(pid: number, name: "dev" | "prod" = envName) {
 			const path = pathsFor(name).pidPath;

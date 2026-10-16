@@ -56,6 +56,10 @@ flowchart LR
 - [0016 — Run dependency work in bounded windows with a cooldown](0016-scheduled-dependencies.md)
 - [0017 — Isolate automation clones and guard recursive deletion](0017-clone-lifecycle.md)
 
+## Proposed changes
+
+- [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

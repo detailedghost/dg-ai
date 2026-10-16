@@ -71,8 +71,8 @@ bun test                  # daemon, store, dispatch and asset tests
 bun run build             # compile binary to dist/dg-daemon
 ```
 
-The daemon is loopback-only and capability-gated. Its store is encrypted at
-rest: the data key comes from the OS keychain when one is available and from a
+The daemon is loopback-only and capability-gated. Its private record fields
+are encrypted at rest: the data key comes from the OS keychain when one is available and from a
 file-backed key otherwise, so a machine with no keychain still works. On WSL it
 needs **mirrored** networking mode — under NAT the Windows-side browser cannot
 reach the loopback port, and the daemon exits with code 3 rather than pretending
@@ -87,7 +87,8 @@ extension can pin again. `/start` also caps how many sessions can be active
 at once (`DG_MAX_SESSIONS`, default 256), so a runaway local caller cannot
 grow the session directory or the in-memory registry without limit.
 
-`~/.dg` is two independent trees. `daemon/` holds that encrypted `daemon.db`.
+`~/.dg` separates daemon and agent data. `daemon/` holds `daemon.db`, with
+encrypted private fields and plaintext operational metadata.
 `agents/` holds session files, staged assets, and a second database,
 `memory.db`, that keeps its records in plain text **on purpose**: FTS5
 cannot index ciphertext, which is why an agent's memory lives in a separate
@@ -326,7 +327,30 @@ Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
 config contract and error templates.
 
 The daemon runs separately from the loopback chat daemon. It fetches its secret
-into memory and keeps per-environment state under `DG_HOME/channel-review`.
+into memory. Per-environment operational state lives in the existing
+`DG_HOME/daemon/daemon.db`, in `channel_review_state`; configuration, PID files,
+and logs remain under `DG_HOME/channel-review`. The schema-only opener and
+single migration list live in `@dg/common/daemon-db`; `ChatStore` retains
+ownership of crypto/key initialization. Both processes can start independently.
+The service imports its legacy `state.<env>.json` once in a transaction and
+retains the source. Status only reads; malformed state reports an error.
+See [ADR 0018](adr/0018-channel-review-state-in-daemon-db.md) for schema,
+restart behavior, migration guarantees, and integration with the ADR branch.
+
+Review operational state retains its prior plaintext boundary; the shared opener
+does not read keys or credentials. For local inspection of the shared database:
+
+```sql
+SELECT env, status, count(*) FROM channel_review_requests GROUP BY env, status;
+SELECT * FROM channel_review_current WHERE env = 'dev';
+```
+
+Build and deploy **both `dg-daemon` and `dg-skills`** with schema 12 support
+before allowing the new service to migrate the shared file. Older daemon
+binaries refuse schema 12 on restart. Never run an old JSON writer alongside
+the database-backed service. Retained legacy JSON is a recovery source rather
+than a live mirror. Pending/running requests become failed on restart with
+CR-205; the service does not reconstruct or rerun the queue.
 
 `resolveSecrets` (`pkg/channel-review/src/credentials.ts`) reads the
 `channel-review/` entries once at daemon start through the `channel-review`

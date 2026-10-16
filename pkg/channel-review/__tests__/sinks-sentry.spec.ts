@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { loadConfig } from "../src/config";
+import { channelReviewPaths } from "../src/paths";
 import { AuthError, ConfigError, RateLimitError } from "../src/sinks/errors";
 import { createSinks } from "../src/sinks";
 import { createErrorPoller } from "../src/sinks/poller";
@@ -393,7 +394,7 @@ describe("sentry with the error poller", () => {
 		]);
 		const sink = createSentrySink({ config, env: ENV, fetch: fetchFn, clock, log: createRecordedLog() });
 		const handed: [string, string][] = [];
-		const state = createStateStore(join(home.dir, "state.json"), clock);
+		const state = home.track(createStateStore(channelReviewPaths("dev", { env: home.env }), clock));
 		const poller = createErrorPoller({
 			config,
 			sinks: [sink],

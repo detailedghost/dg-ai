@@ -17,7 +17,7 @@ import { type PreflightReport, preflight } from "../providers/teams-relay";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
 import { missingEnvByProvider } from "../sinks";
-import { type ChannelState, createStateStore } from "../state";
+import { type ChannelState, readStateSnapshot } from "../state";
 import { isOurDaemon, readPidRecord } from "./pid";
 import type { PlatformSeam } from "./platform";
 import {
@@ -146,12 +146,13 @@ export async function status(
 	let lastEventIds: Record<string, string> = {};
 	let current: unknown = null;
 	let snapshot: ChannelState | undefined;
+	let stateError: string | undefined;
 	try {
-		snapshot = createStateStore(paths.statePath).get();
+		snapshot = readStateSnapshot(paths);
 		lastEventIds = snapshot.lastEventIds;
 		current = snapshot.current;
-	} catch {
-		lastEventIds = {};
+	} catch (error) {
+		stateError = describeError(error);
 	}
 
 	const body: Record<string, unknown> = {
@@ -164,6 +165,8 @@ export async function status(
 		current,
 		logPath: paths.logPath,
 	};
+
+	if (stateError) body.state = { error: stateError };
 
 	if (config === undefined || env === undefined) {
 		body.preflight = { config: { error: configError } };
@@ -207,5 +210,5 @@ export async function status(
 		}
 	}
 	io.out(JSON.stringify(body, null, 2));
-	return failed ? 1 : 0;
+	return failed || stateError ? 1 : 0;
 }

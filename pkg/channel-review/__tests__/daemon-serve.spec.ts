@@ -69,7 +69,7 @@ function reactionEvent(eventId: string): ChatEvent {
 }
 
 function lastEventId(h: DaemonHarness, chatId = CHAT_ID): string | undefined {
-	if (!existsSync(h.paths.statePath)) return undefined;
+	if (!existsSync(h.paths.dbPath)) return undefined;
 	return (h.readState().lastEventIds as Record<string, string>)[chatId];
 }
 
@@ -251,7 +251,7 @@ describe("serve event loop", () => {
 			scripts: [holdOpen(messageEvent("e1", "m1", "hi"), { type: "message", eventId: "e2", message: reviewMessage("m2") })],
 		});
 		const { controller, done } = h.startServe();
-		await waitUntil(() => existsSync(h.paths.statePath) && lastEventId(h) === "e2");
+		await waitUntil(() => existsSync(h.paths.dbPath) && lastEventId(h) === "e2");
 		await waitUntil(() => h.runners.claude.runs.length === 1);
 		controller.abort();
 		await done;
@@ -261,7 +261,7 @@ describe("serve event loop", () => {
 		const unknown = { type: "mystery", eventId: "e2" } as unknown as ChatEvent;
 		const h = setup({ scripts: [holdOpen(reactionEvent("e1"), unknown)] });
 		const { controller, done } = h.startServe();
-		await waitUntil(() => existsSync(h.paths.statePath) && lastEventId(h) === "e2");
+		await waitUntil(() => existsSync(h.paths.dbPath) && lastEventId(h) === "e2");
 		const provider = h.provider();
 		expect(provider.calls.filter((c) => c.op === "reply")).toHaveLength(0);
 		expect(Object.keys(h.readState().handled as object)).toHaveLength(0);
@@ -304,13 +304,13 @@ describe("serve event loop", () => {
 		await waitUntil(() => h.log.lines.some((l) => l.level === "error" && l.message.includes("m-e1")));
 		controller.abort();
 		await done;
-		expect(existsSync(h.paths.statePath) ? lastEventId(h) : undefined).toBeUndefined();
+		expect(existsSync(h.paths.dbPath) ? lastEventId(h) : undefined).toBeUndefined();
 	});
 
 	test("a gap event logs exactly one warning", async () => {
 		const h = setup({ scripts: [holdOpen({ type: "gap" }, messageEvent("e1"))] });
 		const { controller, done } = h.startServe();
-		await waitUntil(() => existsSync(h.paths.statePath) && lastEventId(h) === "e1");
+		await waitUntil(() => existsSync(h.paths.dbPath) && lastEventId(h) === "e1");
 		const gapWarnings = h.log.lines.filter((l) => l.level === "warn" && /gap/i.test(l.message));
 		expect(gapWarnings).toHaveLength(1);
 		controller.abort();
@@ -320,7 +320,7 @@ describe("serve event loop", () => {
 	test("an ignored message still advances the last event id and is not run", async () => {
 		const h = setup({ scripts: [holdOpen(messageEvent("e1", "m1", "just chatting"))] });
 		const { controller, done } = h.startServe();
-		await waitUntil(() => existsSync(h.paths.statePath) && lastEventId(h) === "e1");
+		await waitUntil(() => existsSync(h.paths.dbPath) && lastEventId(h) === "e1");
 		expect(h.runners.claude.runs).toHaveLength(0);
 		controller.abort();
 		await done;
@@ -540,6 +540,59 @@ describe("serve auth recovery", () => {
 	});
 });
 
+describe("serve database restart", () => {
+	test("imports and recovers interrupted work once, keeps replay cursors and never reruns queued requests", async () => {
+		const h = setup();
+		const at = new Date().toISOString();
+		writeFileSync(h.paths.statePath, JSON.stringify({
+			lastEventIds: { [CHAT_ID]: "resume-after-restart" },
+			current: { messageId: "running", chatId: CHAT_ID, url: "https://github.com/o/r/pull/12", number: 12, startedAt: at, pid: 4444, pidStart: "start-4444" },
+			handled: {
+				pending: { status: "pending", at, chatId: CHAT_ID },
+				running: { status: "running", at, chatId: CHAT_ID },
+				done: { status: "done", at, chatId: CHAT_ID },
+				failed: { status: "failed", at, chatId: CHAT_ID },
+			},
+		}));
+		h.platform.alive.add(4444);
+		h.platform.argsByPid.set(4444, "codex exec review");
+		const first = h.startServe();
+		await started(h);
+		await waitUntil(() => h.provider().subscribeRequests.length > 0);
+		expect(h.provider().subscribeRequests[0]?.resumeId).toBe("resume-after-restart");
+		expect(h.platform.killed).toEqual([4444]);
+		expect(h.readState().current).toBeNull();
+		expect(h.readState().handled).toMatchObject({ pending: { status: "failed" }, running: { status: "failed" }, done: { status: "done" }, failed: { status: "failed" } });
+		expect(h.provider().calls.filter(call => call.op === "reply")).toHaveLength(2);
+		expect(h.runners.claude.runs).toHaveLength(0);
+		first.controller.abort();
+		expect(await first.done).toBe(0);
+		const second = h.startServe();
+		await started(h);
+		await waitUntil(() => h.provider().subscribeRequests.length > 0);
+		expect(h.provider().subscribeRequests[0]?.resumeId).toBe("resume-after-restart");
+		expect(h.provider().calls.filter(call => call.op === "reply")).toHaveLength(0);
+		expect(h.platform.killed).toEqual([4444]);
+		second.controller.abort();
+		expect(await second.done).toBe(0);
+	});
+
+	test("refuses a malformed import before pid publication, then starts after repair", async () => {
+		const h = setup();
+		writeFileSync(h.paths.statePath, "{broken");
+		expect(await h.startServe().done).toBe(1);
+		expect(existsSync(h.paths.pidPath)).toBe(false);
+		expect(h.log.lines.some(line => line.message.includes("state initialization failed"))).toBe(true);
+		writeFileSync(h.paths.statePath, JSON.stringify({ lastEventIds: { [CHAT_ID]: "repaired" } }));
+		const retry = h.startServe();
+		await started(h);
+		await waitUntil(() => h.provider().subscribeRequests.length > 0);
+		expect(h.provider().subscribeRequests[0]?.resumeId).toBe("repaired");
+		retry.controller.abort();
+		expect(await retry.done).toBe(0);
+	});
+});
+
 describe("serve maintenance", () => {
 	const DAY_MS = 24 * 3_600_000;
 
@@ -586,10 +639,10 @@ describe("serve maintenance", () => {
 		await done;
 	});
 
-	test("flushes a held last event id to state.json on shutdown", async () => {
+	test("flushes a held last event id to SQLite on shutdown", async () => {
 		const h = setup({ scripts: [holdOpen(reactionEvent("e1"), reactionEvent("e2"), reactionEvent("e3"))] });
 		const { controller, done } = h.startServe();
-		await waitUntil(() => existsSync(h.paths.statePath));
+		await waitUntil(() => existsSync(h.paths.dbPath));
 		await waitUntil(() => h.provider().subscribeRequests.length === 1);
 		await Bun.sleep(50);
 		controller.abort();

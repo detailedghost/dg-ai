@@ -430,7 +430,7 @@ describe("fix start persistence", () => {
 	test("keeps fixStarts across a state reload", () => {
 		const { h } = setup();
 		h.state.recordFixStart();
-		const reloaded = createStateStore(h.paths.statePath, h.clock);
+		const reloaded = h.home.track(createStateStore(h.paths, h.clock));
 		expect(reloaded.get().fixStarts).toEqual([h.clock().toISOString()]);
 	});
 });

@@ -1,19 +1,27 @@
+import { channelReviewPaths, type ChannelReviewPaths } from "../src/paths";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { createStateStore, prKey } from "../src/state";
+import { createStateStore as openStateStore, readStateSnapshot, prKey } from "../src/state";
 import { type TempHome, createTempHome } from "./support/fakes";
 
 let home: TempHome;
 let path: string;
+let paths: ChannelReviewPaths;
 beforeEach(() => {
 	home = createTempHome();
-	path = join(home.dir, "state.dev.json");
+	paths = channelReviewPaths("dev", { env: home.env });
+	path = paths.statePath;
+	mkdirSync(join(home.dir, "channel-review"), { recursive: true });
 });
 afterEach(() => {
 	home.cleanup();
 });
+
+function createStateStore(...args: Parameters<typeof openStateStore>) {
+	return home.track(openStateStore(...args));
+}
 
 const HOUR_MS = 3_600_000;
 const GITHUB_URL = "https://github.com/o/r/pull/12";
@@ -21,7 +29,7 @@ const OPTIONS = { spice: 4, comment: true, fun: false };
 
 describe("createStateStore", () => {
 	test("starts empty when the file does not exist", () => {
-		expect(createStateStore(path).get()).toEqual({
+		expect(createStateStore(paths).get()).toEqual({
 			lastEventIds: {},
 			current: null,
 			handled: {},
@@ -39,7 +47,7 @@ describe("createStateStore", () => {
 			path,
 			JSON.stringify({ lastEventIds: { c1: "e1" }, current: null, handled: {}, blocked: {} }),
 		);
-		const state = createStateStore(path).get();
+		const state = createStateStore(paths).get();
 		expect(state.lastEventIds).toEqual({ c1: "e1" });
 		expect(state.issues).toEqual({});
 		expect(state.sinks).toEqual({});
@@ -49,14 +57,14 @@ describe("createStateStore", () => {
 	});
 
 	test("round-trips issues, sinks, fix starts, deps runs and PR watches", () => {
-		const store = createStateStore(path, () => new Date("2026-10-14T12:00:00.000Z"));
+		const store = createStateStore(paths, () => new Date("2026-10-14T12:00:00.000Z"));
 		store.setIssue("dd:1", { status: "pr-open", firstSeen: "2026-10-14T11:00:00.000Z", prUrl: GITHUB_URL });
 		store.updateSink("datadog", { cursor: "c9", lastPollAt: "2026-10-14T12:00:00.000Z", counts: { polled: 3 } });
 		store.updateSink("datadog", { lastError: "boom" });
 		store.recordFixStart();
 		store.recordDepsRun("github.com/example-org/app", { windowStart: "2026-10-14T02:00:00.000Z", result: "pr-open" });
 		store.watchPr(GITHUB_URL, { repo: "github.com/example-org/app", kind: "deps" });
-		const reloaded = createStateStore(path).get();
+		const reloaded = createStateStore(paths).get();
 		expect(reloaded.issues["dd:1"]).toEqual({
 			status: "pr-open",
 			firstSeen: "2026-10-14T11:00:00.000Z",
@@ -76,13 +84,13 @@ describe("createStateStore", () => {
 			kind: "deps",
 			startedAt: "2026-10-14T12:00:00.000Z",
 		});
-		createStateStore(path).unwatchPr(GITHUB_URL);
-		expect(createStateStore(path).get().prWatch).toEqual({});
+		createStateStore(paths).unwatchPr(GITHUB_URL);
+		expect(createStateStore(paths).get().prWatch).toEqual({});
 	});
 
 	test("drops fix starts older than an hour when it records a new one", () => {
 		let now = new Date("2026-10-14T12:00:00.000Z");
-		const store = createStateStore(path, () => now);
+		const store = createStateStore(paths, () => now);
 		store.recordFixStart();
 		now = new Date("2026-10-14T13:30:00.000Z");
 		store.recordFixStart();
@@ -97,11 +105,11 @@ describe("createStateStore", () => {
 		["prWatch", { prWatch: { a: { repo: "r", kind: "other", startedAt: "t" } } }],
 	])("rejects a malformed %s field", (_name, body) => {
 		writeFileSync(path, JSON.stringify(body));
-		expect(() => createStateStore(path)).toThrow(DgCliError);
+		expect(() => createStateStore(paths)).toThrow(DgCliError);
 	});
 
 	test("round-trips lastEventIds, current and handled through disk", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		const current = {
 			messageId: "m1",
 			url: GITHUB_URL,
@@ -112,7 +120,7 @@ describe("createStateStore", () => {
 		store.setLastEventId("c1", "evt-9");
 		store.setCurrent(current);
 		store.markHandled("m1", "running");
-		const reloaded = createStateStore(path).get();
+		const reloaded = createStateStore(paths).get();
 		expect(reloaded.lastEventIds).toEqual({ c1: "evt-9" });
 		expect(reloaded.current).toEqual(current);
 		expect(reloaded.handled.m1?.status).toBe("running");
@@ -122,7 +130,7 @@ describe("createStateStore", () => {
 	});
 
 	test("clears current with setCurrent(null)", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.setCurrent({
 			messageId: "m1",
 			url: GITHUB_URL,
@@ -130,41 +138,38 @@ describe("createStateStore", () => {
 			startedAt: "2026-10-14T12:00:00.000Z",
 		});
 		store.setCurrent(null);
-		expect(createStateStore(path).get().current).toBeNull();
+		expect(createStateStore(paths).get().current).toBeNull();
 	});
 
 	test("overwrites the status of a handled message", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.markHandled("m1", "pending");
 		store.markHandled("m1", "done");
-		expect(createStateStore(path).get().handled.m1?.status).toBe("done");
+		expect(createStateStore(paths).get().handled.m1?.status).toBe("done");
 	});
 
 	test("keeps earlier fields when a later mutator runs", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.setLastEventId("c1", "evt-1");
 		store.markHandled("m1", "done");
-		const reloaded = createStateStore(path).get();
+		const reloaded = createStateStore(paths).get();
 		expect(reloaded.lastEventIds.c1).toBe("evt-1");
 		expect(reloaded.handled.m1?.status).toBe("done");
 	});
 
-	test("leaves no temp file behind and writes valid JSON", () => {
-		const store = createStateStore(path);
+	test("persists in the shared database without creating a JSON state file", () => {
+		const store = createStateStore(paths);
 		store.setLastEventId("c1", "a");
 		store.markHandled("m1", "done");
 		store.setLastEventId("c1", "b");
-		store.flush();
-		expect(readdirSync(home.dir)).toEqual(["state.dev.json"]);
-		expect(JSON.parse(readFileSync(path, "utf8")).lastEventIds).toEqual({ c1: "b" });
+		store.close();
+		expect(existsSync(path)).toBe(false);
+		expect(readStateSnapshot(paths).lastEventIds).toEqual({ c1: "b" });
 	});
 
-	test("creates its directory with mode 0700", () => {
-		const nested = join(home.dir, "channel-review", "state.dev.json");
-		createStateStore(nested).setLastEventId("c1", "a");
-		expect(statSync(join(home.dir, "channel-review")).mode & 0o777).toBe(
-			0o700,
-		);
+	test("creates the shared daemon directory with mode 0700", () => {
+		createStateStore(paths).close();
+		expect(statSync(join(home.dir, "daemon")).mode & 0o777).toBe(0o700);
 	});
 
 	test("prunes handled entries older than 24 hours and keeps newer ones", () => {
@@ -183,9 +188,9 @@ describe("createStateStore", () => {
 				blocked: {},
 			}),
 		);
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.pruneHandled(now);
-		const reloaded = createStateStore(path).get();
+		const reloaded = createStateStore(paths).get();
 		expect(Object.keys(reloaded.handled)).toEqual(["fresh"]);
 		expect(reloaded.lastEventIds.c1).toBe("evt");
 	});
@@ -201,12 +206,14 @@ describe("malformed state file", () => {
 			current: { messageId: "m1", url: GITHUB_URL, number: 12 },
 		},
 		"a malformed blocked entry": { blocked: { k: "nope" } },
+		"a malformed blocked model": { blocked: { k: { url: GITHUB_URL, messageId: "m1", verdict: "changes_requested", options: { comment: true, fun: false, model: 12 }, at: "t" } } },
+		"a malformed blocked agent": { blocked: { k: { url: GITHUB_URL, messageId: "m1", verdict: "changes_requested", options: { comment: true, fun: false, agent: "unknown" }, at: "t" } } },
 	};
 	for (const [name, content] of Object.entries(cases)) {
 		test(`throws DgCliError naming the path for ${name}`, () => {
 			writeFileSync(path, JSON.stringify(content));
-			expect(() => createStateStore(path)).toThrow(path);
-			expect(() => createStateStore(path)).toThrow(DgCliError);
+			expect(() => createStateStore(paths)).toThrow(path);
+			expect(() => createStateStore(paths)).toThrow(DgCliError);
 		});
 	}
 });
@@ -214,7 +221,7 @@ describe("malformed state file", () => {
 describe("injected clock", () => {
 	test("stamps handled and blocked entries with the clock time", () => {
 		const fixed = new Date("2026-10-14T12:00:00.000Z");
-		const store = createStateStore(path, () => fixed);
+		const store = createStateStore(paths, () => fixed);
 		store.markHandled("m1", "done");
 		store.markBlocked(GITHUB_URL, "m1", OPTIONS, "c1");
 		expect(store.get().handled.m1?.at).toBe(fixed.toISOString());
@@ -229,9 +236,9 @@ describe("blocked-PR registry", () => {
 		expect(createStateStore(path).get().blocked[prKey(GITHUB_URL)]?.options).toEqual(options);
 	});
 	test("markBlocked keys the entry by the normalized url", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.markBlocked(`${GITHUB_URL}/files?x=1#frag`, "m1", OPTIONS, "c1");
-		const blocked = createStateStore(path).get().blocked;
+		const blocked = createStateStore(paths).get().blocked;
 		expect(Object.keys(blocked)).toEqual([prKey(GITHUB_URL)]);
 		expect(blocked[prKey(GITHUB_URL)]).toMatchObject({
 			url: GITHUB_URL,
@@ -242,17 +249,17 @@ describe("blocked-PR registry", () => {
 	});
 
 	test("clearBlocked removes the entry given a different spelling of the url", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.markBlocked(GITHUB_URL, "m1", OPTIONS, "c1");
 		store.clearBlocked(`${GITHUB_URL}/commits`);
-		expect(createStateStore(path).get().blocked).toEqual({});
+		expect(createStateStore(paths).get().blocked).toEqual({});
 	});
 
 	test("markBlocked replaces the entry for the same PR", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.markBlocked(GITHUB_URL, "m1", OPTIONS, "c1");
 		store.markBlocked(GITHUB_URL, "m2", { ...OPTIONS, spice: 2 }, "c1");
-		const blocked = createStateStore(path).get().blocked;
+		const blocked = createStateStore(paths).get().blocked;
 		expect(Object.keys(blocked)).toHaveLength(1);
 		expect(blocked[prKey(GITHUB_URL)]).toMatchObject({
 			messageId: "m2",
@@ -295,10 +302,10 @@ describe("prKey", () => {
 
 describe("lastEventIds coalescing", () => {
 	const onDisk = (chatId = "c1") =>
-		JSON.parse(readFileSync(path, "utf8")).lastEventIds[chatId];
+		readStateSnapshot(paths).lastEventIds[chatId];
 
 	test("writes the first id at once and holds later ids until the interval passes", async () => {
-		const store = createStateStore(path, undefined, 60);
+		const store = createStateStore(paths, undefined, 60);
 		store.setLastEventId("c1", "e1");
 		store.setLastEventId("c1", "e2");
 		store.setLastEventId("c1", "e3");
@@ -308,7 +315,7 @@ describe("lastEventIds coalescing", () => {
 	});
 
 	test("flush writes the held id immediately", () => {
-		const store = createStateStore(path, undefined, 60_000);
+		const store = createStateStore(paths, undefined, 60_000);
 		store.setLastEventId("c1", "e1");
 		store.setLastEventId("c1", "e2");
 		store.flush();
@@ -316,7 +323,7 @@ describe("lastEventIds coalescing", () => {
 	});
 
 	test("a job-state write carries the held id", () => {
-		const store = createStateStore(path, undefined, 60_000);
+		const store = createStateStore(paths, undefined, 60_000);
 		store.setLastEventId("c1", "e1");
 		store.setLastEventId("c1", "e2");
 		store.markHandled("m1", "done");
@@ -324,7 +331,7 @@ describe("lastEventIds coalescing", () => {
 	});
 
 	test("keeps a separate id per chat in one coalesced write", () => {
-		const store = createStateStore(path, undefined, 60_000);
+		const store = createStateStore(paths, undefined, 60_000);
 		store.setLastEventId("c1", "a1");
 		store.setLastEventId("c2", "b1");
 		store.setLastEventId("c2", "b2");
@@ -343,28 +350,30 @@ describe("legacy lastEventId migration", () => {
 
 	test("moves the old id to the given chat", () => {
 		legacy();
-		const store = createStateStore(path, undefined, undefined, "c1");
+		const store = createStateStore(paths, undefined, undefined, "c1");
 		expect(store.get().lastEventIds).toEqual({ c1: "old" });
 		store.markHandled("m1", "done");
-		expect(JSON.parse(readFileSync(path, "utf8")).lastEventId).toBeUndefined();
+		expect(readStateSnapshot(paths)).not.toHaveProperty("lastEventId");
+		expect(JSON.parse(readFileSync(path, "utf8")).lastEventId).toBe("old");
 	});
 
-	test("drops the old id when no chat is given", () => {
+	test("requires the chat id before consuming a scalar cursor", () => {
 		legacy();
-		expect(createStateStore(path).get().lastEventIds).toEqual({});
+		expect(() => createStateStore(paths)).toThrow("requires a chat id");
+		expect(createStateStore(paths, undefined, undefined, "c1").get().lastEventIds).toEqual({ c1: "old" });
 	});
 
 	test("prefers a stored per-chat id over the old one", () => {
 		legacy({ lastEventIds: { c1: "new" } });
 		expect(
-			createStateStore(path, undefined, undefined, "c1").get().lastEventIds,
+			createStateStore(paths, undefined, undefined, "c1").get().lastEventIds,
 		).toEqual({ c1: "new" });
 	});
 });
 
 describe("chat ids on records", () => {
 	test("round-trips the chat id on handled, current and blocked entries", () => {
-		const store = createStateStore(path);
+		const store = createStateStore(paths);
 		store.markHandled("m1", "pending", "c2");
 		store.setCurrent({
 			messageId: "m1",
@@ -374,7 +383,7 @@ describe("chat ids on records", () => {
 			startedAt: "2026-10-14T12:00:00.000Z",
 		});
 		store.markBlocked(GITHUB_URL, "m1", OPTIONS, "c2");
-		const reloaded = createStateStore(path).get();
+		const reloaded = createStateStore(paths).get();
 		expect(reloaded.handled.m1?.chatId).toBe("c2");
 		expect(reloaded.current?.chatId).toBe("c2");
 		expect(Object.values(reloaded.blocked)[0]?.chatId).toBe("c2");

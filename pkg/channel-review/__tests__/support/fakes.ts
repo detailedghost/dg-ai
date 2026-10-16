@@ -53,15 +53,21 @@ export type ProbeResult = Awaited<ReturnType<Runner["probe"]>>;
 export type TempHome = {
 	dir: string;
 	env: Record<string, string>;
+	track<T extends { close(): void }>(resource: T): T;
 	cleanup(): void;
 };
 
 export function createTempHome(): TempHome {
 	const dir = mkdtempSync(join(tmpdir(), "channel-review-"));
+	const resources: { close(): void }[] = [];
 	return {
 		dir,
 		env: { DG_HOME: dir },
-		cleanup: () => rmSync(dir, { recursive: true, force: true }),
+		track(resource) { resources.push(resource); return resource; },
+		cleanup() {
+			for (const resource of resources.splice(0)) resource.close();
+			rmSync(dir, { recursive: true, force: true });
+		},
 	};
 }
 
@@ -533,7 +539,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 	const stack = createFakeStackReader(options.descendants);
 	const workspace = createFakeWorkspace();
 	const clock = createFixedClock();
-	const state: StateStore = createStateStore(paths.statePath, clock);
+	const state: StateStore = createStateStore(paths, clock);
 	const log = createRecordedLog();
 	const persisted: { slot: string; id: string }[] = [];
 	const timers: { ms: number; task: () => Promise<void>; canceled: boolean }[] = [];
@@ -596,7 +602,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 		timers,
 		trail,
 		replies: () => provider.replies(),
-		cleanup: () => home.cleanup(),
+		cleanup: () => { state.close(); home.cleanup(); },
 	};
 }
 

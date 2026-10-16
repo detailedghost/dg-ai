@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { status } from "../src/daemon";
 import type { PreflightReport } from "../src/providers/teams-relay";
 import {
@@ -177,7 +177,7 @@ describe("status", () => {
 		expect(printed(h).running).toBe(false);
 	});
 
-	test("reports the current job from the state file", async () => {
+	test("reports the current job from SQLite", async () => {
 		const h = setup();
 		const current = {
 			messageId: "m1",
@@ -189,6 +189,23 @@ describe("status", () => {
 		const { result } = run(h);
 		await result;
 		expect(printed(h).current).toEqual(current);
+	});
+
+	test("reads legacy state without creating a database or consuming its scalar cursor", async () => {
+		const h = setup();
+		const source = JSON.stringify({ lastEventId: "legacy-cursor" });
+		writeFileSync(h.paths.statePath, source);
+		expect(await run(h).result).toBe(0);
+		expect(existsSync(h.paths.dbPath)).toBe(false);
+		expect(readFileSync(h.paths.statePath, "utf8")).toBe(source);
+	});
+
+	test("reports malformed state as an error and exits 1", async () => {
+		const h = setup();
+		writeFileSync(h.paths.statePath, "{broken");
+		expect(await run(h).result).toBe(1);
+		expect(printed(h).state.error).toContain("cannot read state file");
+		expect(existsSync(h.paths.dbPath)).toBe(false);
 	});
 
 	test("reports every runner probe as ok or its CR code", async () => {
