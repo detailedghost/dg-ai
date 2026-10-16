@@ -63,10 +63,16 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open]` — start or
-  reuse the daemon and register a new session. `--open` opens the bootstrap
-  URL in the default browser. `-w` attaches a workset label, which is how
-  the chat page groups sessions in its rail.
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--print-session-id] [--json]` —
+  start or reuse the daemon and register a new session. Prints the bootstrap
+  URL `http://127.0.0.1:<port>/start#_chat=<base64url>`. The fragment is
+  base64url JSON `{ port, sessionId, token, agentIdentity }`. `--open` opens
+  that URL in the default browser. When the agent is headless or remote, open
+  the URL in the browser where the extension is loaded instead.
+  `--print-session-id` prints the session id before the URL. `--json` prints
+  `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
+  attaches a workset label, which is how the chat page groups sessions in its
+  rail.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message

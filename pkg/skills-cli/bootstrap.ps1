@@ -5,6 +5,10 @@
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
+#
+# When the skills-v* release publishes SHA256SUMS (GNU sha256sum lines), the
+# download is verified before it is installed. Releases without that asset
+# still install. The skills release workflow writes the file beside the binaries.
 $ErrorActionPreference = "Stop"
 
 $repo = "detailedghost/dg-ai"
@@ -35,6 +39,32 @@ if (-not $url) { throw "dg-skills: no $asset asset in $($rel.tag_name)" }
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 Invoke-WebRequest -Headers $headers -Uri $url -OutFile $dest
 
+$sums = $rel.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
+if ($sums) {
+	$sumsPath = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-SHA256SUMS-" + [guid]::NewGuid())
+	try {
+		Invoke-WebRequest -Headers $headers -Uri $sums.browser_download_url -OutFile $sumsPath
+		$expected = $null
+		foreach ($line in Get-Content $sumsPath) {
+			if ($line -match '^([0-9A-Fa-f]{64})\s+\*?(.+)$' -and $Matches[2] -eq $asset) {
+				$expected = $Matches[1].ToLowerInvariant()
+				break
+			}
+		}
+		if (-not $expected) {
+			Remove-Item $dest -Force
+			throw "dg-skills: SHA256SUMS in $($rel.tag_name) has no entry for $asset"
+		}
+		$actual = (Get-FileHash -Algorithm SHA256 -Path $dest).Hash.ToLowerInvariant()
+		if ($actual -ne $expected) {
+			Remove-Item $dest -Force
+			throw "dg-skills: checksum mismatch for $asset in $($rel.tag_name)"
+		}
+	} finally {
+		Remove-Item $sumsPath -Force -ErrorAction SilentlyContinue
+	}
+}
+
 # Stamp the installed version so `dg-skills install` won't re-download the binary.
 Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 Write-Host "dg-skills installed at $dest"
@@ -43,13 +73,25 @@ if ($env:PATH -notlike "*$binDir*") {
 	Write-Host "Add to PATH:  `$env:PATH = `"$binDir;`$env:PATH`""
 }
 
+function Convert-DgInstallLine {
+	param([string]$Line)
+	if ($Line -match '^dg-skills already current \(v(.+)\)\.$') {
+		return "dg-skills verified (v$($Matches[1]))."
+	}
+	return $Line
+}
+
+$env:DG_SKILLS_BOOTSTRAP = "1"
 if ($env:DG_CLI_ONLY -eq "1") {
-	& $dest install --cli-only
+	$installOutput = & $dest install --cli-only 2>&1
 } else {
 	# Set up the browser extension too, so one command installs everything.
 	Write-Host "Setting up the dg-ai-extension…"
-	& $dest install
+	$installOutput = & $dest install 2>&1
 }
+$installCode = $LASTEXITCODE
+$installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }
+if ($installCode -ne 0) { exit $installCode }
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
 # repository's skills into CODEX_HOME (default: $HOME\.codex\skills).

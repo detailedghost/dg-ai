@@ -152,5 +152,11 @@ export function inboxDaemonFixture(
 		cwd: harness.cwd,
 		agentIdentity: "fixture-model",
 	});
-	return { sessionId, token, requests, stop: () => server.stop(true) };
+	return {
+		sessionId,
+		token,
+		port: server.port ?? 0,
+		requests,
+		stop: () => server.stop(true),
+	};
 }

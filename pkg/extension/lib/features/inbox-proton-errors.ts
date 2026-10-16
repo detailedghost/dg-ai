@@ -2,9 +2,11 @@
 export const PROTON_OPERATION_ERRORS = {
 	"unsupported-response": "Proton API returned an unsupported response. Reload Proton Mail and retry.",
 	"folder-membership": "Proton returned messages outside the requested folder scope or without trustworthy membership. Refresh the mailbox and retry the scan.",
-	"invalid-origin": "Open an authenticated HTTPS Proton Mail origin to use inbox cleanup.",
+	"invalid-origin": "Open an authenticated HTTPS Proton Mail tab on the mail origin to use inbox cleanup.",
 	"empty-sieve": "Proton filter creation requires a reviewed non-empty Sieve policy.",
-	"session-unobserved": "Sign in to Proton Mail, reload the mail tab, then retry so the extension observes its session.",
+	"session-unobserved": "Missing x-pm-uid. Sign in and reload the mail.proton.me tab so the extension observes session headers.",
+	"mail-tab-navigated": "Mail tab navigated away from the Proton Mail origin. Keep a https://mail.proton.me/u/N tab open and do account settings in a separate tab.",
+	"account-mismatch": "No Proton mail tab matching the requested /u/ account. The open mail tab is a different account.",
 	"auth-expired": "Sign in to Proton Mail and reload its tab to restore the authenticated session.",
 	"http-failure": "Proton API request failed. Check the mail tab and retry after any rate limit clears.",
 	"api-rejected": "Proton API rejected the operation. Check the mail tab and reviewed settings before retrying.",

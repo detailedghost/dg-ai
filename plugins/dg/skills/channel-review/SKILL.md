@@ -11,8 +11,9 @@ Bootstrap the compiled CLI once; it needs no Bun at runtime:
 ```sh
 DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
 if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+  PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+  LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
@@ -21,8 +22,7 @@ fi
 "$DG" channel-review --help
 ```
 
-For PowerShell, run the bundled bootstrap.ps1 through CLAUDE_PLUGIN_ROOT or
-[the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1).
+For PowerShell, run the bundled bootstrap.ps1 through `DG_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT`, or [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1).
 Read [setup](references/setup.md) and [commands](references/commands.md) before
 changing config or choosing custom reactions. To set this up for a new person,
 follow [relay setup](references/relay-setup.md); start config.json from

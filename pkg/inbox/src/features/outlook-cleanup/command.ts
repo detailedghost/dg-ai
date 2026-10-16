@@ -386,7 +386,7 @@ export async function applyOutlookLabels(context: CliContext): Promise<void> {
 }
 
 export async function planOutlookFilters(context: CliContext): Promise<void> {
-	assertMode(context, "filters plan", "dry-run");
+	assertMode(context, "filters plan", "dry-run", { defaultDryRun: true });
 	const paths = workspacePaths(getWorkspaceDir(context));
 	const cleanupPlan = await loadCleanupPlan(context, paths);
 	const dataset = await readOutlookDataset(context);
@@ -1476,7 +1476,7 @@ async function loadCleanupPlan(
 	const plan = await readJsonFileIfExists<OutlookCleanupPlan>(planPath);
 	if (!plan) {
 		throw new Error(
-			`No cleanup policy plan found at ${planPath}. cleanup validate/visualize check a provider cleanup-policy plan — create one with the folders/labels/filters plan commands or pass --plan-path <file>. The redacted move workflow (batch -> suggest -> review -> apply) does not require one.`,
+			`No cleanup policy plan found at ${planPath}. filters plan, folders plan-tree, labels plan, inbox route-plan, cleanup validate, and cleanup visualize read this cleanup-policy file; pass --plan-path to use another. recommend filters writes plans/filter-recommendations.json from local move decisions, including ones not yet applied, and filters apply reads that file. filters extend reads the live provider filter by id, not filters.json.`,
 		);
 	}
 	validateCleanupPlan(plan, planPath);
@@ -1694,6 +1694,7 @@ function assertMode(
 	context: CliContext,
 	commandName: string,
 	expected: "dry-run" | "confirm",
+	options: { defaultDryRun?: boolean } = {},
 ): void {
 	const dryRun = getBooleanFlag(context.args.flags, "dry-run");
 	const confirm = getBooleanFlag(context.args.flags, "confirm");
@@ -1703,6 +1704,7 @@ function assertMode(
 		);
 	}
 	if (expected === "dry-run" && !dryRun) {
+		if (options.defaultDryRun && !confirm) return;
 		throw new Error(`${commandName} requires --dry-run`);
 	}
 	if (expected === "confirm" && !confirm) {

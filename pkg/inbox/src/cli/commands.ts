@@ -24,6 +24,7 @@ import {
 	suggestWorkspace,
 } from "../commands/decision-support";
 import { applyRecommendedFilters } from "../commands/filter-apply";
+import { extendFilter } from "../commands/filter-extend";
 import { consolidateFilters } from "../commands/filter-consolidate";
 import { groupGeneratedFilters } from "../commands/filter-group";
 import { routeProfileFilter } from "../features/filter-routing/command";
@@ -73,6 +74,7 @@ export const commandRegistry: CommandRegistry = {
 		await applyRecommendedFilters(context);
 	},
 	"filters:consolidate": consolidateFilters,
+	"filters:extend": extendFilter,
 	"filters:group": groupGeneratedFilters,
 	"filters:plan": planOutlookFilters,
 	"filters:route": routeProfileFilter,

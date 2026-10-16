@@ -190,6 +190,11 @@ export async function executeProtonPage(
 	context: ProtonPageContext,
 ): Promise<InboxBrowserResponse> {
 	const request = validateInboxBrowserRequest(input);
+	if (
+		context.origin === "https://account.proton.me" ||
+		context.origin === "https://account.protonmail.com"
+	)
+		throw new ProtonOperationError("mail-tab-navigated");
 	if (!isProtonMailOrigin(context.origin))
 		throw new ProtonOperationError("invalid-origin");
 	if (request.operation === "create-filter" && !request.sieve?.trim())
@@ -264,6 +269,9 @@ export async function executeProtonPage(
 	try {
 		let result: InboxBrowserResponse;
 		switch (request.operation) {
+			case "session-status":
+				result = { hasMore: false };
+				break;
 			case "list-folders": {
 				const [labels, folders, counts] = await Promise.all([
 					api("core/v4/labels?Type=1"),

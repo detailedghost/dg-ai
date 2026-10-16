@@ -98,7 +98,10 @@ bun run build       # produces dist/dg-skills (current platform)
 
 Pre-built binaries for Linux, macOS, and Windows (x64 and arm64) appear in
 [GitHub Releases](https://github.com/detailedghost/dg-ai/releases) as
-`skills-vX.X.X`.
+`skills-vX.X.X`. The release workflow also publishes `SHA256SUMS` (GNU
+`sha256sum` lines, `<hash>  <filename>`) beside those binaries. `bootstrap.sh`
+and `bootstrap.ps1` verify the download when that asset exists and still
+install older releases that do not include it.
 
 ## Development commands
 

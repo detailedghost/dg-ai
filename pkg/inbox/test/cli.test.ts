@@ -2,7 +2,13 @@ import { fixturePath, fixtureConfigPath } from "./fixture-paths";
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { parseArgs } from "../src/cli/args";
+import {
+	cliCommandSpecs,
+	cliOptions,
+	commandHelpFlags,
+	parseArgs,
+	sharedHelpFlags,
+} from "../src/cli/args";
 import { createCliContext } from "../src/cli/context";
 import { main } from "../src/cli/index";
 import type { MailProviderClient } from "../src/providers/types";
@@ -63,6 +69,40 @@ async function writeDataset(path: string, dataset: unknown): Promise<void> {
 	await Bun.$`mkdir -p ${dirname(path)}`.quiet();
 	await Bun.write(path, `${JSON.stringify(dataset, null, 2)}\n`);
 }
+
+describe("CLI help", () => {
+	test("every command lists only flags that exist", () => {
+		const known = new Set(cliOptions.map((option) => option.flags.split(" ")[0]));
+		for (const flag of sharedHelpFlags) expect(known.has(flag)).toBe(true);
+		for (const spec of cliCommandSpecs) {
+			const flags = commandHelpFlags[spec.nameAndArgs];
+			expect(flags, spec.nameAndArgs).toBeDefined();
+			for (const flag of flags) expect(known.has(flag), flag).toBe(true);
+		}
+	});
+
+	test("recommend filters --help lists its flags and omits unrelated ones", async () => {
+		const help = await runCli(["recommend", "filters", "--help"], {
+			config: false,
+		});
+		expect(help.code, help.stderr).toBe(0);
+		expect(help.stdout).toContain("dg-skills inbox recommend filters");
+		expect(help.stdout).toContain("--sample-limit");
+		expect(help.stdout).toContain("--write-archive-decisions");
+		expect(help.stdout).toContain("--account-profile");
+		expect(help.stdout).not.toContain("--username");
+		expect(help.stdout).not.toContain("--invoice-name");
+		expect(help.stdout).not.toContain("validate spec");
+	});
+
+	test("top-level --help still lists the command catalog", async () => {
+		const help = await runCli(["--help"], { config: false });
+		expect(help.code, help.stderr).toBe(0);
+		expect(help.stdout).toContain("--username");
+		expect(help.stdout).toContain("recommend filters");
+		expect(help.stdout).toContain("validate spec");
+	});
+});
 
 describe("CLI", () => {
 	test("runs local workspace cleanup workflow with redacted per-message files", async () => {
@@ -189,6 +229,8 @@ describe("CLI", () => {
 			kind: "workspace-batch",
 			total: 3,
 			concurrency: 2,
+			warning:
+				"Created one redacted file per message for model-assisted cleanup.",
 		});
 
 		const status = await Bun.file(`${dir}/messages/_status.json`).json();
@@ -228,7 +270,11 @@ describe("CLI", () => {
 		]);
 		expect(statusProc.code, statusProc.stderr).toBe(0);
 		const statusSummary = JSON.parse(statusProc.stdout);
-		expect(statusSummary).toMatchObject({ total: 3, full: false });
+		expect(statusSummary).toMatchObject({
+			total: 3,
+			full: false,
+			session: { checked: false },
+		});
 		expect(statusSummary.items).toBeUndefined();
 
 		const fullStatusProc = await runCli([
@@ -568,8 +614,8 @@ describe("CLI", () => {
 		expect(firstMessage.decision).toMatchObject({
 			action: "move",
 			targetFolder: "Receipts",
-			markRead: true,
 		});
+		expect(firstMessage.decision.markRead).toBeUndefined();
 
 		const decideReview = await runCli([
 			"decide",
@@ -1990,5 +2036,445 @@ describe("CLI", () => {
 		expect(unlabels).toEqual([
 			{ messageIds: ["source-unlabel-message"], labelId: "6" },
 		]);
+	});
+
+	test("recommend filters previews pending moves outside the automatic folder set", async () => {
+		const dir = tmpPath("pending-filter-preview");
+		const dataPath = tmpPath("pending-filter-dataset.json");
+		await copyFixtureDataset(dataPath);
+		expect(
+			(await runCli(["load", "folders", "--dir", dir, "--data-path", dataPath]))
+				.code,
+		).toBe(0);
+		expect(
+			(
+				await runCli([
+					"batch",
+					"--dir",
+					dir,
+					"--folder",
+					"inbox",
+					"--limit",
+					"3",
+					"--data-path",
+					dataPath,
+				])
+			).code,
+		).toBe(0);
+		const decided = await runCli([
+			"decide",
+			"--dir",
+			dir,
+			"--domain",
+			"stripe.com",
+			"--action",
+			"move",
+			"--target-folder",
+			"Work",
+			"--reason",
+			"Pending work route",
+		]);
+		expect(decided.code, decided.stderr).toBe(0);
+		const recommend = await runCli(["recommend", "filters", "--dir", dir]);
+		expect(recommend.code, recommend.stderr).toBe(0);
+		const output = JSON.parse(recommend.stdout);
+		expect(output.requiresAppliedMoves).toBe(false);
+		expect(output.pendingMoves).toBeGreaterThan(0);
+		expect(output.appliedMoves).toBe(0);
+		expect(output.filterRecommendations).toContainEqual(
+			expect.objectContaining({
+				domain: "stripe.com",
+				targetFolder: "Work",
+				automaticFilterEligible: false,
+				safeForDomainFilter: false,
+			}),
+		);
+	});
+
+	test("review reports a replaced decision when decide overwrites one", async () => {
+		const dir = tmpPath("replaced-decision");
+		const dataPath = tmpPath("replaced-decision-dataset.json");
+		await copyFixtureDataset(dataPath);
+		expect(
+			(await runCli(["load", "folders", "--dir", dir, "--data-path", dataPath]))
+				.code,
+		).toBe(0);
+		expect(
+			(
+				await runCli([
+					"batch",
+					"--dir",
+					dir,
+					"--folder",
+					"inbox",
+					"--limit",
+					"3",
+					"--data-path",
+					dataPath,
+				])
+			).code,
+		).toBe(0);
+		expect(
+			(
+				await runCli([
+					"decide",
+					"--dir",
+					dir,
+					"--domain",
+					"stripe.com",
+					"--action",
+					"move",
+					"--target-folder",
+					"Work",
+					"--reason",
+					"First route",
+				])
+			).code,
+		).toBe(0);
+		const second = await runCli([
+			"decide",
+			"--dir",
+			dir,
+			"--domain",
+			"stripe.com",
+			"--action",
+			"move",
+			"--target-folder",
+			"Receipts",
+			"--reason",
+			"Second route",
+		]);
+		expect(second.code, second.stderr).toBe(0);
+		expect(JSON.parse(second.stdout).replaced).toBe(1);
+		const review = await runCli(["review", "--dir", dir]);
+		expect(review.code, review.stderr).toBe(0);
+		const body = JSON.parse(review.stdout).review;
+		expect(body.replacedCount).toBe(1);
+		expect(body.replacedDecisions[0]).toMatchObject({
+			previousAction: "move",
+			previousTargetFolder: "Work",
+			action: "move",
+			targetFolder: "Receipts",
+		});
+		expect(body.replacedDecisions[0].reason).toContain("replaced");
+	});
+
+	test("suggest keeps read state and reports how many messages remain", async () => {
+		const dir = tmpPath("suggest-paging");
+		const dataPath = tmpPath("suggest-paging-dataset.json");
+		await copyFixtureDataset(dataPath);
+		expect(
+			(await runCli(["load", "folders", "--dir", dir, "--data-path", dataPath]))
+				.code,
+		).toBe(0);
+		expect(
+			(
+				await runCli([
+					"batch",
+					"--dir",
+					dir,
+					"--folder",
+					"inbox",
+					"--limit",
+					"3",
+					"--data-path",
+					dataPath,
+				])
+			).code,
+		).toBe(0);
+		const suggest = await runCli([
+			"suggest",
+			"--dir",
+			dir,
+			"--limit",
+			"1",
+			"--offset",
+			"0",
+		]);
+		expect(suggest.code, suggest.stderr).toBe(0);
+		const output = JSON.parse(suggest.stdout);
+		expect(output).toMatchObject({
+			matched: 3,
+			offset: 0,
+			limit: 1,
+			total: 1,
+			remaining: 2,
+			markReadDefault: false,
+		});
+		expect(
+			output.proposals.every(
+				(proposal: { markRead?: boolean }) => proposal.markRead === undefined,
+			),
+		).toBe(true);
+	});
+
+	test("probe labels a stale folder snapshot and refreshes live totals", async () => {
+		const dir = tmpPath("stale-probe");
+		const dataPath = tmpPath("stale-probe-dataset.json");
+		await copyFixtureDataset(dataPath);
+		expect(
+			(await runCli(["load", "folders", "--dir", dir, "--data-path", dataPath]))
+				.code,
+		).toBe(0);
+		const foldersPath = `${dir}/folders.json`;
+		const saved = await Bun.file(foldersPath).json();
+		saved.folders = saved.folders.map(
+			(folder: { id: string; total?: number; unread?: number }) =>
+				folder.id === "inbox"
+					? { ...folder, total: 646, unread: 384 }
+					: folder,
+		);
+		await Bun.write(foldersPath, `${JSON.stringify(saved, null, 2)}\n`);
+		const probe = await runCli([
+			"probe",
+			"--dir",
+			dir,
+			"--folder",
+			"inbox",
+			"--limit",
+			"3",
+			"--data-path",
+			dataPath,
+		]);
+		expect(probe.code, probe.stderr).toBe(0);
+		const output = JSON.parse(probe.stdout);
+		expect(output.folder).toMatchObject({
+			countsFrom: "live",
+			total: 3,
+			unread: 1,
+			snapshotTotal: 646,
+			snapshotUnread: 384,
+			snapshotStale: true,
+		});
+		expect(output.folder.snapshotAt).toBe(saved.createdAt);
+		expect(output.warning).toContain("stale");
+		const refreshed = await Bun.file(foldersPath).json();
+		expect(
+			refreshed.folders.find((folder: { id: string }) => folder.id === "inbox"),
+		).toMatchObject({ total: 3, unread: 1 });
+	});
+
+	test("filters plan dry-runs by default and names the policy file", async () => {
+		const dir = tmpPath("filters-plan-default");
+		const planned = await runCli(["filters", "plan", "--dir", dir]);
+		expect(planned.code).toBe(1);
+		expect(planned.stderr).toContain("cleanup-policy.json");
+		expect(planned.stderr).toContain("filter-recommendations.json");
+		expect(planned.stderr).not.toContain("requires --dry-run");
+	});
+
+	test("filters extend dry-runs a live sieve diff when filters.json is truncated", async () => {
+		const dir = tmpPath("filter-extend");
+		const dataPath = tmpPath("filter-extend-dataset.json");
+		const domains = Array.from(
+			{ length: 12 },
+			(_, index) => `sender${index}.example`,
+		);
+		const sieve = [
+			'require ["fileinto", "imap4flags"];',
+			`if address :domain :is "From" [${domains.map((domain) => `"${domain}"`).join(", ")}] {`,
+			'  fileinto "Newsletters";',
+			"  stop;",
+			"}",
+		].join("\n");
+		expect(sieve.length).toBeGreaterThan(160);
+		await writeDataset(dataPath, {
+			folders: [
+				{
+					id: "newsletters",
+					name: "Newsletters",
+					type: "folder",
+					total: 0,
+					unread: 0,
+				},
+			],
+			filters: [
+				{
+					id: "manual-news",
+					name: "Newsletters",
+					enabled: true,
+					conditions: [sieve],
+					actions: [sieve],
+				},
+			],
+			messages: [],
+		});
+		expect(
+			(await runCli(["load", "filters", "--dir", dir, "--data-path", dataPath]))
+				.code,
+		).toBe(0);
+		const loaded = await Bun.file(`${dir}/filters.json`).json();
+		expect(loaded.filters[0].conditions[0].length).toBeLessThanOrEqual(160);
+		expect(loaded.filters[0].conditions[0]).not.toBe(sieve);
+		expect(loaded.filters[0].conditions[0]).not.toContain("Newsletters");
+		expect(loaded.filters[0].destinations).toEqual(["Newsletters"]);
+
+		const dryRun = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"manual-news",
+			"--add-domains",
+			"extra.example",
+		]);
+		expect(dryRun.code, dryRun.stderr).toBe(0);
+		const preview = JSON.parse(dryRun.stdout);
+		expect(preview).toMatchObject({
+			kind: "workspace-filter-extend",
+			dryRun: true,
+			mutated: false,
+			addedDomains: ["extra.example"],
+			filtersJsonTruncated: true,
+			source: "live-filter",
+		});
+		expect(preview.before).toContain("sender0.example");
+		expect(preview.before).toContain("sender11.example");
+		expect(preview.after).toContain("extra.example");
+		expect(preview.before.length).toBeGreaterThan(160);
+		const unchanged = await Bun.file(dataPath).json();
+		expect(unchanged.filters[0].conditions[0]).toBe(sieve);
+
+		await Bun.write(`${dir}/filters.json`, "{}\n");
+		const confirmed = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"manual-news",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const confirmedBody = JSON.parse(confirmed.stdout);
+		expect(confirmedBody.mutated).toBe(true);
+		expect(confirmedBody.auditPath).toBeString();
+		const expected = sieve.replace(
+			`"${domains.at(-1)}"`,
+			`"${domains.at(-1)}", "extra.example"`,
+		);
+		const updated = await Bun.file(dataPath).json();
+		expect(updated.filters[0].conditions[0]).toBe(expected);
+		expect(updated.filters[0].actions[0]).toBe(expected);
+		expect(expected).toContain('fileinto "Newsletters"');
+		expect(expected).toContain('require ["fileinto", "imap4flags"]');
+		const audit = await Bun.file(confirmedBody.auditPath).json();
+		expect(audit).toMatchObject({
+			kind: "workspace-filter-extend-audit",
+			mutated: true,
+			filterId: "manual-news",
+			addedDomains: ["extra.example"],
+		});
+		expect(audit.beforeHash).toHaveLength(64);
+		expect(audit.afterHash).toHaveLength(64);
+		expect(audit.afterHash).not.toBe(audit.beforeHash);
+		const refreshed = await Bun.file(`${dir}/filters.json`).json();
+		expect(refreshed.kind).toBe("filters");
+		expect(refreshed.filters[0].id).toBe("manual-news");
+		expect(refreshed.filters[0].destinations).toEqual(["Newsletters"]);
+	});
+
+	test("filters extend refuses a script with no From-domain check", async () => {
+		const dir = tmpPath("filter-extend-no-from");
+		const dataPath = tmpPath("filter-extend-no-from.json");
+		const sieve = [
+			'require ["fileinto", "imap4flags"];',
+			'if header :contains "Subject" "hello" {',
+			'  fileinto "Newsletters";',
+			"}",
+		].join("\n");
+		await writeDataset(dataPath, {
+			folders: [],
+			filters: [
+				{
+					id: "subject-only",
+					name: "Subject only",
+					enabled: true,
+					conditions: [sieve],
+					actions: [sieve],
+				},
+			],
+			messages: [],
+		});
+		const refused = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"subject-only",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(refused.code).toBe(1);
+		expect(refused.stderr).toContain('address :domain :is "From"');
+		const unchanged = await Bun.file(dataPath).json();
+		expect(unchanged.filters[0].conditions[0]).toBe(sieve);
+		expect(unchanged.filters[0].actions[0]).toBe(sieve);
+		expect(existsSync(`${dir}/filters.json`)).toBe(false);
+	});
+
+	test("filters extend refuses a conditions fragment and a non-Proton provider", async () => {
+		const dir = tmpPath("filter-extend-fragment");
+		const dataPath = tmpPath("filter-extend-fragment.json");
+		const conditions = ['address :domain :is "From" "news.example"'];
+		const actions = ['fileinto "Newsletters";'];
+		await writeDataset(dataPath, {
+			folders: [],
+			filters: [
+				{
+					id: "fragment",
+					name: "Fragment",
+					enabled: true,
+					conditions,
+					actions,
+				},
+			],
+			messages: [],
+		});
+		const fragment = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"fragment",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(fragment.code).toBe(1);
+		expect(fragment.stderr).toContain("require and fileinto");
+		const unchanged = await Bun.file(dataPath).json();
+		expect(unchanged.filters[0].conditions).toEqual(conditions);
+		expect(unchanged.filters[0].actions).toEqual(actions);
+
+		const otherProvider = await runCli([
+			"filters",
+			"extend",
+			"--provider",
+			"gmail",
+			"--dir",
+			dir,
+			"--filter-id",
+			"fragment",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(otherProvider.code).toBe(1);
+		expect(otherProvider.stderr).toContain("Proton Mail Sieve");
 	});
 });

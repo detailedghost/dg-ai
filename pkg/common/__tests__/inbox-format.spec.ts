@@ -26,6 +26,7 @@ describe("validateInboxProfile", () => {
 
 describe("validateInboxBrowserRequest", () => {
 	it.each([
+		{ operation: "session-status" },
 		{ operation: "list-folders" },
 		{ operation: "list-filters" },
 		{ operation: "list-messages", page: 0, pageSize: 1 },
