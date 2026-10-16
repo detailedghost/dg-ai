@@ -2,7 +2,13 @@ import { fixturePath, fixtureConfigPath } from "./fixture-paths";
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { parseArgs } from "../src/cli/args";
+import {
+	cliCommandSpecs,
+	cliOptions,
+	commandHelpFlags,
+	parseArgs,
+	sharedHelpFlags,
+} from "../src/cli/args";
 import { createCliContext } from "../src/cli/context";
 import { main } from "../src/cli/index";
 import type { MailProviderClient } from "../src/providers/types";
@@ -63,6 +69,40 @@ async function writeDataset(path: string, dataset: unknown): Promise<void> {
 	await Bun.$`mkdir -p ${dirname(path)}`.quiet();
 	await Bun.write(path, `${JSON.stringify(dataset, null, 2)}\n`);
 }
+
+describe("CLI help", () => {
+	test("every command lists only flags that exist", () => {
+		const known = new Set(cliOptions.map((option) => option.flags.split(" ")[0]));
+		for (const flag of sharedHelpFlags) expect(known.has(flag)).toBe(true);
+		for (const spec of cliCommandSpecs) {
+			const flags = commandHelpFlags[spec.nameAndArgs];
+			expect(flags, spec.nameAndArgs).toBeDefined();
+			for (const flag of flags) expect(known.has(flag), flag).toBe(true);
+		}
+	});
+
+	test("recommend filters --help lists its flags and omits unrelated ones", async () => {
+		const help = await runCli(["recommend", "filters", "--help"], {
+			config: false,
+		});
+		expect(help.code, help.stderr).toBe(0);
+		expect(help.stdout).toContain("dg-skills inbox recommend filters");
+		expect(help.stdout).toContain("--sample-limit");
+		expect(help.stdout).toContain("--write-archive-decisions");
+		expect(help.stdout).toContain("--account-profile");
+		expect(help.stdout).not.toContain("--username");
+		expect(help.stdout).not.toContain("--invoice-name");
+		expect(help.stdout).not.toContain("validate spec");
+	});
+
+	test("top-level --help still lists the command catalog", async () => {
+		const help = await runCli(["--help"], { config: false });
+		expect(help.code, help.stderr).toBe(0);
+		expect(help.stdout).toContain("--username");
+		expect(help.stdout).toContain("recommend filters");
+		expect(help.stdout).toContain("validate spec");
+	});
+});
 
 describe("CLI", () => {
 	test("runs local workspace cleanup workflow with redacted per-message files", async () => {

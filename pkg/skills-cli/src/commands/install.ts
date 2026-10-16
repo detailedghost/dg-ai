@@ -127,6 +127,18 @@ function printSteps(target: Target, path: string): void {
 	console.log("5. Done.");
 }
 
+/** "already current" on a later install; "verified" for the binary bootstrap just wrote. */
+export function currentBinaryLine(
+	binaryName: string,
+	version: string,
+	bootstrapped = process.env.DG_SKILLS_BOOTSTRAP === "1",
+): string {
+	if (bootstrapped && binaryName === "dg-skills") {
+		return `${binaryName} verified (v${version}).`;
+	}
+	return `${binaryName} already current (v${version}).`;
+}
+
 async function installBinary(
 	spec: BinarySpec,
 	releases: Release[],
@@ -152,7 +164,7 @@ async function installBinary(
 			existsSync(cliDest(binaryName)) &&
 			versionGte(installed, asset.version)
 		) {
-			console.log(`${binaryName} already current (v${installed}).`);
+			console.log(currentBinaryLine(binaryName, installed));
 			return;
 		}
 		const path = await fetchCliBinary(binaryName, asset);

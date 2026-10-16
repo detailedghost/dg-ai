@@ -279,6 +279,12 @@ describe("daemon inbox browser relay", () => {
 			expect(answer.error).toMatch(
 				count ? /ambiguous|multiple|more than one/i : /extension|connect/i,
 			);
+			if (count === 0) {
+				expect(answer.error).toContain(bootstrap.sessionId);
+				expect(answer.error).toContain("/start#_chat=");
+				expect(answer.error).toMatch(/reload/i);
+				expect(answer.error).toContain("1.11.0");
+			}
 			for (const page of pages)
 				expect(
 					page.frames.some(

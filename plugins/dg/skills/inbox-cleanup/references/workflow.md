@@ -5,15 +5,21 @@ Use `dg-skills inbox` for every command. Select the account with
 Default workspaces live below `${DG_HOME:-~/.dg}/inbox`; switching project
 directories does not switch mailboxes. `--data-path <fixture.json>` runs offline.
 
+Set `S` to the session id from `dg-agent start` (`--print-session-id` or
+`--json` prints it without decoding the bootstrap URL). Pass `--session "$S"`
+on each command. That is required when the working directory differs from the
+registered session or several sessions exist, which is the usual case for an
+agent.
+
 ## Inspect and prepare
 
 ```sh
-"$DG" inbox load folders --account-profile work
-"$DG" inbox load filters --account-profile work
-"$DG" inbox probe --folder Inbox --limit 3000 --account-profile work
-"$DG" inbox batch --folder Inbox --limit 3000 --account-profile work
-"$DG" inbox analyze --by domain --account-profile work
-"$DG" inbox sample --limit 10 --account-profile work
+"$DG" inbox load folders --account-profile work --session "$S"
+"$DG" inbox load filters --account-profile work --session "$S"
+"$DG" inbox probe --folder Inbox --limit 3000 --account-profile work --session "$S"
+"$DG" inbox batch --folder Inbox --limit 3000 --account-profile work --session "$S"
+"$DG" inbox analyze --by domain --account-profile work --session "$S"
+"$DG" inbox sample --limit 10 --account-profile work --session "$S"
 ```
 
 The collector consumes async generators one page at a time and writes bounded
@@ -41,10 +47,10 @@ support. Optional API classification must be explicitly configured.
 ```sh
 "$DG" inbox decide --domain example.test --action move \
   --target-folder "Finance/Receipts" --mark-read true \
-  --reason "Reviewed receipt route" --account-profile work
-"$DG" inbox review --account-profile work
-"$DG" inbox apply --dry-run --account-profile work
-"$DG" inbox apply --confirm --account-profile work
+  --reason "Reviewed receipt route" --account-profile work --session "$S"
+"$DG" inbox review --account-profile work --session "$S"
+"$DG" inbox apply --dry-run --account-profile work --session "$S"
+"$DG" inbox apply --confirm --account-profile work --session "$S"
 ```
 
 Inspect the review and dry-run result, and confirm mutations under the user's

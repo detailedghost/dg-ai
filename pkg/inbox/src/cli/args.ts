@@ -14,7 +14,7 @@ type CliOption = {
 	description: string;
 };
 
-const cliOptions = [
+export const cliOptions = [
 	{ flags: "--config [path]", description: "Path to organizer config JSON." },
 	{
 		flags: "--provider [name]",
@@ -346,6 +346,127 @@ export const cliCommandSpecs = [
 	},
 ] satisfies CliCommandSpec[];
 
+const workspaceHelpFlags = [
+	"--config",
+	"--provider",
+	"--data-path",
+	"--gmail-data-path",
+	"--dir",
+	"--account-profile",
+] as const;
+
+const browserHelpFlags = [
+	"--live-browser",
+	"--session-profile",
+	"--browser-type",
+	"--browser-executable-path",
+	"--browser-headless",
+	"--login-timeout",
+] as const;
+
+const selectorHelpFlags = [
+	"--domain",
+	"--domain-contains",
+	"--status",
+	"--folder",
+	"--decision-action",
+] as const;
+
+/** Flags that belong to one command, in addition to the shared workspace flags. */
+export const commandHelpFlags: Record<string, readonly string[]> = {
+	init: ["--username", ...browserHelpFlags],
+	login: [...browserHelpFlags],
+	"load <folders|labels|filters>": [],
+	"classify-doc": [],
+	"folders plan-tree": ["--dry-run", "--plan-path"],
+	"folders apply-tree": ["--confirm", "--plan-path"],
+	"folders inventory": [],
+	"folders relocate": ["--folder", "--to", "--rename"],
+	"labels plan": ["--dry-run", "--plan-path"],
+	"labels apply": ["--confirm", "--plan-path"],
+	"labels inventory": [],
+	probe: ["--folder", "--limit", "--group-limit"],
+	batch: ["--folder", "--limit", "--workers", "--concurrency"],
+	analyze: ["--by", "--limit", ...selectorHelpFlags],
+	sample: ["--limit", ...selectorHelpFlags],
+	suggest: ["--limit", "--proposal-limit", "--write", ...selectorHelpFlags],
+	decide: [
+		"--action",
+		"--target-folder",
+		"--reason",
+		"--mark-read",
+		"--only-target-mismatch",
+		"--ids",
+		"--ids-file",
+		...selectorHelpFlags,
+	],
+	"recommend filters": ["--sample-limit", "--write-archive-decisions"],
+	"filters plan": ["--dry-run", "--plan-path"],
+	"filters apply": [
+		"--dry-run",
+		"--confirm",
+		"--min-count",
+		"--domain",
+		"--target-folder",
+	],
+	"filters consolidate": ["--confirm", "--min-domains", "--target-folder"],
+	"filters group": [
+		"--dry-run",
+		"--confirm",
+		"--invoice-name",
+		"--spam-name",
+		"--hunt-name",
+	],
+	"filters route": ["--profile", "--dry-run", "--confirm"],
+	"inbox projects": [
+		"--limit",
+		"--min-count",
+		"--sample-limit",
+		"--domain",
+		"--domain-contains",
+	],
+	"cleanup verify": ["--plan-path"],
+	"cleanup validate": ["--plan-path"],
+	"cleanup visualize": [
+		"--plan-path",
+		"--no-open",
+		"--no-wait",
+		"--review-timeout",
+	],
+	"cleanup plan-patch": ["--patch-path", "--confirm", "--plan-path", "--limit"],
+	"validate spec": ["--spec-path"],
+	"inbox review-queue": ["--plan-path"],
+	"inbox route-plan": ["--dry-run", "--limit", "--plan-path"],
+	"inbox route-apply": ["--confirm", "--limit", "--plan-path"],
+	status: ["--full"],
+	summary: [],
+	review: [],
+	apply: ["--dry-run", "--confirm"],
+	cleanup: ["--confirm"],
+};
+
+export const sharedHelpFlags = workspaceHelpFlags;
+
+export function matchCliCommand(
+	group: string,
+	action: string,
+): CliCommandSpec | undefined {
+	return cliCommandSpecs.find((spec) => {
+		const [specGroup, specAction = ""] = spec.nameAndArgs.split(" ");
+		if (specGroup !== group) return false;
+		if (specAction.startsWith("<") && specAction.endsWith(">")) {
+			if (!action) return true;
+			return specAction.slice(1, -1).split("|").includes(action);
+		}
+		return specAction === action;
+	});
+}
+
+export function helpFlagsFor(spec: CliCommandSpec): string[] {
+	const specific = commandHelpFlags[spec.nameAndArgs] ?? [];
+	return [...new Set([...workspaceHelpFlags, ...specific])];
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
 	const commanderFlags = parseCommanderFlags(argv);
 	const positional: string[] = [];
@@ -353,6 +474,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 	for (let index = 0; index < argv.length; index += 1) {
 		const token = argv[index];
+		if (token === "-h") {
+			flags.help = true;
+			continue;
+		}
 		if (!token.startsWith("--")) {
 			positional.push(token);
 			continue;

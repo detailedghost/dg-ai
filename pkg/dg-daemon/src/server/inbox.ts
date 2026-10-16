@@ -7,6 +7,7 @@ import {
 } from "@dg/common";
 import type { ServerWebSocket } from "bun";
 import type { FrameHandlerDeps } from "./frame-handlers";
+import { readPidFile } from "@dg/common/node";
 import {
 	onSocketClose,
 	sendViaQueue,
@@ -67,6 +68,21 @@ function result(
 			requestId,
 			...answer,
 		}),
+	);
+}
+
+function missingExtensionError(
+	sessionId: string,
+	deps: FrameHandlerDeps,
+): string {
+	const port = readPidFile(deps.paths)?.port;
+	const hint = port
+		? `http://127.0.0.1:${port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`
+		: "http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>";
+	return (
+		`Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. ` +
+		`Open ${hint} in the browser where the extension is loaded, then reload the Proton Mail tab. ` +
+		"Inbox requires dg extension 1.11.0 or newer."
 	);
 }
 
@@ -163,7 +179,7 @@ export async function handleInboxCli(
 			ok: false,
 			error: peers.length
 				? "Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session."
-				: "Connect the dg extension to this session and open an authenticated Proton Mail tab.",
+				: missingExtensionError(sessionId, deps),
 		});
 		return;
 	}
