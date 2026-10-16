@@ -578,15 +578,17 @@ describe("channel-review catalog entries", () => {
 		);
 	});
 
-	test("the root README names channel review in its intro and has its own section after inbox cleanup", () => {
+	test("the root README names channel review and links its topic guide after inbox cleanup", () => {
 		const readme = readRepoFile("README.md");
 		const intro = readme.split("\n").slice(0, 5).join("\n");
 		expect(intro).toMatch(/channel review/i);
-		const inbox = readme.indexOf("### Inbox cleanup");
-		const channel = readme.indexOf("### Channel review");
+		const inbox = readme.indexOf("[Inbox cleanup](docs/inbox-cleanup.md)");
+		const channel = readme.indexOf("[Channel review](docs/channel-review.md)");
 		expect(inbox).toBeGreaterThan(-1);
 		expect(channel).toBeGreaterThan(inbox);
-		expect(readme.slice(channel)).toContain("channel-review");
+		const guide = readRepoFile("docs/channel-review.md");
+		expect(guide).toContain("$dg:channel-review");
+		expect(guide).toContain("../pkg/channel-review/README.md");
 	});
 
 	test("AGENT-INSTALL lists the skill, the human-only steps, and the agent-safe commands", () => {

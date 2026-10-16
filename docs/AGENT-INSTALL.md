@@ -30,8 +30,7 @@ Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
 
 ```bash
-DG_INSTALL_CODEX=1 \
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 On Windows PowerShell:
