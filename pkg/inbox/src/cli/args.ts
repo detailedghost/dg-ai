@@ -94,6 +94,18 @@ export const cliOptions = [
 		description: "Maximum proposals to print.",
 	},
 	{
+		flags: "--offset [number]",
+		description: "Skip this many matching rows before --limit.",
+	},
+	{
+		flags: "--filter-id [id]",
+		description: "Existing provider filter id.",
+	},
+	{
+		flags: "--add-domains [list]",
+		description: "Comma-separated sender domains to add to a live filter.",
+	},
+	{
 		flags: "--sample-limit [number]",
 		description: "Maximum samples per recommendation.",
 	},
@@ -183,7 +195,7 @@ export const cliOptions = [
 		flags: "--review-timeout [seconds]",
 		description: "Seconds to wait for cleanup visualize review submission.",
 	},
-	{ flags: "--ai", description: "Enable Codex-friendly output mode." },
+	{ flags: "--ai", description: "Enable compact model-oriented output." },
 	{ flags: "--ai-summary", description: "Print compact AI summary output." },
 	{ flags: "--ai-limit [number]", description: "Limit AI output rows." },
 	{
@@ -262,22 +274,33 @@ export const cliCommandSpecs = [
 		nameAndArgs: "sample",
 		description: "Print redacted local message samples.",
 	},
-	{ nameAndArgs: "suggest", description: "Suggest local cleanup decisions." },
+	{
+		nameAndArgs: "suggest",
+		description:
+			"Suggest local cleanup decisions without changing read state.",
+	},
 	{
 		nameAndArgs: "decide",
 		description: "Write local decisions for selected messages.",
 	},
 	{
 		nameAndArgs: "recommend filters",
-		description: "Recommend provider filters from routed messages.",
+		description:
+			"Recommend filters from local move decisions, including ones not yet applied.",
 	},
 	{
 		nameAndArgs: "filters plan",
-		description: "Plan subject-aware provider rules.",
+		description:
+			"Dry-run filter changes from plans/cleanup-policy.json. Dry-run is the default.",
 	},
 	{
 		nameAndArgs: "filters apply",
 		description: "Dry-run or create recommended Proton filters.",
+	},
+	{
+		nameAndArgs: "filters extend",
+		description:
+			"Dry-run adding sender domains to one live filter and print the diff.",
 	},
 	{
 		nameAndArgs: "filters consolidate",
@@ -389,7 +412,13 @@ export const commandHelpFlags: Record<string, readonly string[]> = {
 	batch: ["--folder", "--limit", "--workers", "--concurrency"],
 	analyze: ["--by", "--limit", ...selectorHelpFlags],
 	sample: ["--limit", ...selectorHelpFlags],
-	suggest: ["--limit", "--proposal-limit", "--write", ...selectorHelpFlags],
+	suggest: [
+		"--limit",
+		"--offset",
+		"--proposal-limit",
+		"--write",
+		...selectorHelpFlags,
+	],
 	decide: [
 		"--action",
 		"--target-folder",
@@ -409,6 +438,7 @@ export const commandHelpFlags: Record<string, readonly string[]> = {
 		"--domain",
 		"--target-folder",
 	],
+	"filters extend": ["--filter-id", "--add-domains", "--dry-run", "--confirm"],
 	"filters consolidate": ["--confirm", "--min-domains", "--target-folder"],
 	"filters group": [
 		"--dry-run",

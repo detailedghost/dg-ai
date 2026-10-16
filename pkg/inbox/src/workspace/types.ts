@@ -52,6 +52,10 @@ export type MessageWorkItem = {
 	currentFolder: string;
 	packet: CodexPacket;
 	decision?: MessageDecision;
+	/** Earlier decision replaced by a later decide on this same message. */
+	decisionReplaced?: MessageDecision & { replacedAt: string };
+	/** How many later decide calls replaced a decision already stored here. */
+	decisionReplacementCount?: number;
 	error?: string;
 };
 

@@ -226,13 +226,13 @@ export async function writeClassificationGuide(
 		kind: "classification-guide",
 		createdAt: new Date().toISOString(),
 		modelGuidance:
-			"Use the fastest/cheapest adequate model for sorting and summaries. Prefer Codex-local review; this CLI prepares redacted files and does not need to live as an autonomous classifier.",
+			"Use the fastest/cheapest adequate model for sorting and summaries. Prefer local model review; this CLI prepares redacted files and does not need to live as an autonomous classifier.",
 		instructions: [
 			"Read messages/_status.json to find pending message files.",
 			"Open individual messages/*.json files as needed.",
 			"Update each message file's decision field and move status from fetched/exported to classified, skipped, or failed.",
 			"Use existing folders when possible. If no folder fits, mark action review and explain the folder gap.",
-			"Set decision.markRead to true for handled inbox items so the review and dry-run plan records read-state intent.",
+			"Leave decision.markRead unset to keep the current read state. Set it to true only when the message should be marked read.",
 			"Explain why an existing filter did not already handle the message in decision.filterGap when relevant.",
 			"Do not add raw email addresses, phone numbers, or full message bodies to decisions.",
 		],
@@ -464,14 +464,25 @@ export async function writeMessageWorkItems(
 export async function updateMessageDecisions(
 	paths: WorkspacePaths,
 	updates: Map<string, MessageDecision>,
-): Promise<{ matched: number; written: number; status: MessageStatusIndex }> {
+): Promise<{
+	matched: number;
+	written: number;
+	replaced: number;
+	status: MessageStatusIndex;
+}> {
 	const items = await readMessageWorkItems(paths);
 	const now = new Date().toISOString();
 	let written = 0;
+	let replaced = 0;
 	for (const item of items) {
 		const decision = updates.get(item.id);
 		if (!decision) {
 			continue;
+		}
+		if (item.decision && !sameDecision(item.decision, decision)) {
+			item.decisionReplaced = { ...item.decision, replacedAt: now };
+			item.decisionReplacementCount = (item.decisionReplacementCount ?? 0) + 1;
+			replaced += 1;
 		}
 		item.decision = decision;
 		item.status = "classified";
@@ -479,7 +490,7 @@ export async function updateMessageDecisions(
 		written += 1;
 	}
 	const status = await writeMessageWorkItems(paths, items);
-	return { matched: updates.size, written, status };
+	return { matched: updates.size, written, replaced, status };
 }
 
 export async function writeReviewPlan(paths: WorkspacePaths): Promise<unknown> {
@@ -520,6 +531,25 @@ export async function writeReviewPlan(paths: WorkspacePaths): Promise<unknown> {
 				automaticApply: false,
 			}),
 		),
+		omittedCount: omittedDecisions(items).length,
+		omitted: omittedDecisions(items).slice(0, 50),
+		replacedCount: items.reduce(
+			(sum, item) => sum + (item.decisionReplacementCount ?? 0),
+			0,
+		),
+		replacedDecisions: items
+			.filter((item) => (item.decisionReplacementCount ?? 0) > 0)
+			.slice(0, 50)
+			.map((item) => ({
+				file: item.file,
+				replacements: item.decisionReplacementCount ?? 0,
+				previousAction: item.decisionReplaced?.action,
+				previousTargetFolder: item.decisionReplaced?.targetFolder,
+				action: item.decision?.action,
+				targetFolder: item.decision?.targetFolder,
+				reason:
+					"A later decide replaced an earlier decision on this message. Summing decide written counts double-counts it.",
+			})),
 	};
 	await writeJsonFile(join(paths.plansDir, "review.json"), review);
 	return review;
@@ -794,6 +824,57 @@ async function assertDryRunMatches(
 
 function mutationEligibleItems(items: MessageWorkItem[]): MessageWorkItem[] {
 	return items.filter((item) => item.status !== "applied");
+}
+
+function sameDecision(left: MessageDecision, right: MessageDecision): boolean {
+	return (
+		left.action === right.action &&
+		left.targetFolder === right.targetFolder &&
+		left.markRead === right.markRead &&
+		left.reason === right.reason
+	);
+}
+
+function omittedDecisions(items: MessageWorkItem[]): {
+	file: string;
+	action?: string;
+	targetFolder?: string;
+	reason: string;
+}[] {
+	const omitted: {
+		file: string;
+		action?: string;
+		targetFolder?: string;
+		reason: string;
+	}[] = [];
+	for (const item of items) {
+		const reason = omissionReason(item);
+		if (!reason) continue;
+		omitted.push({
+			file: item.file,
+			action: item.decision?.action,
+			targetFolder: item.decision?.targetFolder,
+			reason,
+		});
+	}
+	return omitted;
+}
+
+function omissionReason(item: MessageWorkItem): string | undefined {
+	if (!item.decision) return undefined;
+	if (item.status === "applied") {
+		return "Already applied, so review excludes it from readyToMove.";
+	}
+	if (item.decision.action === "move" && item.decision.targetFolder) {
+		return undefined;
+	}
+	if (item.decision.action === "review") {
+		return "Action is review, so it is counted in needsReview instead of readyToMove.";
+	}
+	if (item.decision.action === "move") {
+		return "Move decision has no target folder, so it is not ready.";
+	}
+	return `Action is ${item.decision.action}, so it is not counted in readyToMove.`;
 }
 
 function applyPlanFingerprint(items: MessageWorkItem[]): string {
