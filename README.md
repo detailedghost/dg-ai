@@ -317,3 +317,4 @@ compressed `#_proto=` marker for its local CLI/extension handoff.
 - [Developer Guide](docs/DEVELOPER.md)
 - [Agent Install Guide](docs/AGENT-INSTALL.md)
 - [Contributing](docs/contributing.md)
+- [Security](SECURITY.md)
