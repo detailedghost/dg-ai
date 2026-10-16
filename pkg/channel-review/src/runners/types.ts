@@ -14,7 +14,13 @@ type RunnerCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-207">;
 type ProbeCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-203" | "CR-206">;
 
 export type RunTask =
-	| { task: "thrash"; url: string; spice?: number; comment: boolean }
+	| {
+			task: "thrash";
+			url: string;
+			spice?: number;
+			comment: boolean;
+			origin?: "daemon" | "manual";
+		}
 	| { task: "address"; noCi: boolean }
 	| { task: "fix"; reportPath: string }
 	| { task: "deps"; cooldownDays: number };

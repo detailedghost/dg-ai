@@ -184,6 +184,7 @@ describe("status", () => {
 			url: "https://github.com/o/r/pull/12",
 			number: 12,
 			startedAt: "2026-10-14T12:00:00.000Z",
+			execution: { origin: "daemon" as const, backend: "codex", modelSource: "default" as const },
 		};
 		h.seedState((store) => store.setCurrent(current));
 		const { result } = run(h);

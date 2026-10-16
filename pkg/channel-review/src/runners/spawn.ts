@@ -8,10 +8,11 @@ const OUTPUT_CAP_BYTES = 5 * 1024 * 1024;
 const OAUTH_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN";
 const TAIL_BYTES = 8 * 1024;
 const DRAIN_GRACE_MS = 2000;
-const STRIPPED_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT)$/;
+const STRIPPED_ENV = /^(THRASH_.*|CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT)$/;
 
 export type ProcessRequest = {
 	argv: string[];
+	env?: Record<string, string>;
 	cwd: string;
 	timeoutMs: number;
 	logPath: string;
@@ -70,7 +71,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 	try {
 		proc = Bun.spawn(argv, {
 			cwd,
-			env: childEnv(keepOauthToken),
+			env: { ...childEnv(keepOauthToken), ...request.env },
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",

@@ -201,6 +201,7 @@ describe("engine single review", () => {
 			number: 12,
 			pid: 4242,
 			pidStart: "start-4242",
+			execution: { origin: "daemon", backend: "claude", modelSource: "default" },
 		});
 		expect(typeof (snapshot as { startedAt: string }).startedAt).toBe("string");
 	});
@@ -942,7 +943,7 @@ describe("engine re-review", () => {
 		await h.engine.handle(buildMessage("m2", `fixed, ${PR_URL}`));
 		await h.engine.idle();
 		expect(h.runner.runs).toHaveLength(1);
-		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL });
+		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL, origin: "daemon" });
 		expect(h.runner.runs[0]).not.toHaveProperty("spice", expect.anything());
 		expect(h.trail("m2")).toEqual([...FULL_TRAIL, "+approved"]);
 	});

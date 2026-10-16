@@ -951,3 +951,27 @@ describe("runner run result", () => {
 		},
 	);
 });
+
+describe("runner attribution", () => {
+	test.each([
+		...RUNNER_NAMES,
+	])("%s defaults to manual and passes fresh orchestration evidence only", async (name) => {
+		const { runners, processes } = harness();
+		await runners[name].run(runRequest({ origin: "daemon", model: "opus" }));
+		await runners[name].run(runRequest());
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+			origin: "daemon",
+			backend: name,
+			model: "opus",
+			modelSource: "requested",
+		});
+		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+			origin: "manual",
+			backend: name,
+			modelSource: "default",
+		});
+		expect(processes[0]!.env!.THRASH_EXECUTION_CONTEXT).not.toContain(
+			"reviewers",
+		);
+	});
+});

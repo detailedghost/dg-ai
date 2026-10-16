@@ -524,3 +524,30 @@ grandchild.unref();
 		expect(existsSync(req.logPath)).toBe(true);
 	});
 });
+
+test("runProcess removes inherited review metadata and uses only this attempt's context", async () => {
+	const saved = process.env.THRASH_EXECUTION_CONTEXT;
+	process.env.THRASH_EXECUTION_CONTEXT = "stale-claude-job";
+	try {
+		const child = script(
+			'console.log("context=" + (process.env.THRASH_EXECUTION_CONTEXT ?? "absent"));',
+		);
+		const fresh = request([process.execPath, child], {
+			env: {
+				THRASH_EXECUTION_CONTEXT: '{"origin":"daemon","backend":"codex"}',
+			},
+		});
+		await runProcess(fresh);
+		expect(readFileSync(fresh.logPath, "utf8")).toContain(
+			'context={"origin":"daemon","backend":"codex"}',
+		);
+		const manual = request([process.execPath, child], {
+			logPath: join(dir, "manual.log"),
+		});
+		await runProcess(manual);
+		expect(readFileSync(manual.logPath, "utf8")).toContain("context=absent");
+	} finally {
+		if (saved === undefined) delete process.env.THRASH_EXECUTION_CONTEXT;
+		else process.env.THRASH_EXECUTION_CONTEXT = saved;
+	}
+});

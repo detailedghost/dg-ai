@@ -312,3 +312,11 @@ addresses, and long tokens from the text and caps it at 400 characters.
 | `CI did not finish within <n> minutes on <url>.` | `deps.ciTimeoutMinutes` passed. |
 | `Deps upgrade failed for <repo>. <CR text> Job log: <path>` | The upgrade job failed, timed out (CR-204), or stopped (CR-205). |
 | `Deps upgrade for <repo> was interrupted. <CR-205 text>` | The daemon restarted during an upgrade job. |
+
+Review attribution is recorded in the compiled and published review. Jobs run by this
+daemon, including explicit Teams requests and readiness events, say `Automatic (daemon)`.
+A direct user CLI `/thrash` defaults to `Manual (CLI)`. Both show the reviewing backend
+and model evidence for each distinct worker model. The daemon's `~model` selects the
+orchestrator; native thrash workers can use a different configured model. CLI defaults
+and unresolved aliases are labeled as such. Current-job status carries `execution` with
+origin and orchestration evidence; compiled review artifacts carry actual worker evidence.

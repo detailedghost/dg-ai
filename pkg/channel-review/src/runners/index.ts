@@ -196,6 +196,16 @@ export function createRunners(
 				const { stderrTail, stdoutTail, outputTail, code, ...outcome } = await spawn({
 					argv: spec.argv(path, request, config),
 					cwd: request.cwd,
+					env: request.task === "thrash"
+						? {
+							THRASH_EXECUTION_CONTEXT: JSON.stringify({
+								origin: request.origin ?? "manual",
+								backend: name,
+								model: request.model,
+								modelSource: request.model ? "requested" : "default",
+							}),
+						}
+						: {},
 					timeoutMs: request.timeoutMs,
 					logPath: request.logPath,
 					keepOauthToken: name === "claude",

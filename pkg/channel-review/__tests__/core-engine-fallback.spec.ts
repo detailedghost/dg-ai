@@ -28,6 +28,7 @@ test("Claude exhaustion retries with Codex by default and reads only its verdict
 	const h = setup();
 	h.runners.codex.run = async (request) => {
 		h.runners.codex.runs.push(request);
+		expect(h.state.get().current?.execution).toEqual({ origin: "daemon", backend: "codex", model: undefined, modelSource: "default" });
 		return OK_RESULT;
 	};
 	await h.engine.handle(

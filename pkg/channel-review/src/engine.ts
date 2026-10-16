@@ -264,7 +264,22 @@ export function createEngine(deps: EngineDeps): Engine {
 			url: target.url,
 			number: target.number,
 			startedAt: clock().toISOString(),
+			...(run.task.task === "thrash"
+				? {
+					execution: {
+						origin: run.task.origin ?? "manual",
+						backend: runner.name,
+						model: run.model,
+						modelSource: run.model ? "requested" : "default",
+					} as const,
+				}
+				: {}),
 		});
+		if (run.task.task === "thrash") {
+			log.info(
+				`Review execution: Automatic (daemon); orchestrator: ${runner.name} (${run.model ? "requested model" : "CLI default; model unresolved"}); reviewer models are recorded per chunk.`,
+			);
+		}
 		let result: Awaited<ReturnType<Runner["run"]>>;
 		try {
 			result = await runner.run({
@@ -319,6 +334,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				{
 					task: {
 						task: "thrash",
+						origin: "daemon",
 						url: target.url,
 						spice: job.spice,
 						comment: job.comment,

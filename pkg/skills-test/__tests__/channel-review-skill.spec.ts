@@ -646,3 +646,23 @@ describe("channel-review catalog entries", () => {
 			expect(section).toContain(word);
 	});
 });
+
+test("review attribution docs distinguish execution origin from worker models", () => {
+	const commands = readRepoFile(
+		"plugins/dg/skills/channel-review/references/commands.md",
+	);
+	for (const label of [
+		"Automatic (daemon)",
+		"Manual (CLI)",
+		"orchestrator",
+		"worker",
+	])
+		expect(commands).toContain(label);
+	const developer = readRepoFile("docs/DEVELOPER.md");
+	for (const field of [
+		"THRASH_EXECUTION_CONTEXT",
+		"modelSource",
+		"attribution.md",
+	])
+		expect(developer).toContain(field);
+});

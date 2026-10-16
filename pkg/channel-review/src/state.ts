@@ -19,6 +19,12 @@ export type BlockedOptions = {
 };
 
 export type CurrentJob = {
+	execution?: {
+		origin: "daemon" | "manual";
+		backend: string;
+		model?: string;
+		modelSource: "requested" | "default";
+	};
 	messageId: string;
 	chatId?: string;
 	url: string;
@@ -136,7 +142,13 @@ function isCurrentJob(value: unknown): value is CurrentJob {
 		typeof value.startedAt === "string" &&
 		(value.chatId === undefined || typeof value.chatId === "string") &&
 		(value.pid === undefined || typeof value.pid === "number") &&
-		(value.pidStart === undefined || typeof value.pidStart === "string")
+		(value.pidStart === undefined || typeof value.pidStart === "string") &&
+		(value.execution === undefined ||
+			(isRecord(value.execution) &&
+				(value.execution.origin === "daemon" || value.execution.origin === "manual") &&
+				typeof value.execution.backend === "string" &&
+				(value.execution.model === undefined || typeof value.execution.model === "string") &&
+				(value.execution.modelSource === "requested" || value.execution.modelSource === "default")))
 	);
 }
 

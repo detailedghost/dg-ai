@@ -396,3 +396,30 @@ remains pending. Check that the installed skill runs the compiled binary and
 prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
 stopped; named errors with remedies also pass the bootstrap check. Record the
 exact Claude scratch write rule and WSL restart result during live validation.
+
+### Review attribution
+
+Review tasks pass `origin: "daemon"` explicitly to the runner, including Teams requests
+and readiness events. Other direct runner callers default to `manual`. The runner puts
+fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
+`modelSource` (`requested` or `default`). These model fields describe the orchestrator,
+not the reviewer. Child spawning strips inherited `THRASH_*` variables before applying
+this attempt's context. Fallback rebuilds it for the successful backend with no stale
+Claude model. Current-job status includes `execution`; local logs identify origin and
+orchestrator model evidence. These fields can be retained by a future persistence layer.
+
+The user-owned `scripts/ai/skills/thrash-core.ts` and `thrash-helper.ts` own the compiled
+review contract. The canonical user skill is `~/.claude/skills/thrash`, imported by copy
+into Codex. Its `references/attribution.md` describes the helper `attribute` command.
+Each successful chunk gets its own backend/model evidence. Native worker configuration,
+requested aliases, resolved runtime IDs, CLI defaults, and unknown models stay distinct.
+A proxy persona does not select a model. Distinct worker backends/models remain in the
+compiled artifact and public label; the parent model is not substituted.
+
+Public bodies, previews, tallies, and compile/post JSON show `Automatic (daemon)` or
+`Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
+The helper freezes origin in a unique diff plan and does not trust review contents for
+attribution. It preserves verdicts, dedupe, partial coverage, gates, and provider fallback.
+Deploy the helper bundle and canonical/imported skill instructions with the runner change;
+old helpers do not consume the new context. Build helpers to a staged path until activation
+is coordinated. Do not replace a live helper or restart a daemon during implementation.
