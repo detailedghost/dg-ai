@@ -14,6 +14,7 @@ import {
 	CHAT_PAIR_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
+	CHAT_SESSIONS_LOCAL_PATH,
 	CHAT_SESSIONS_PATH,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
@@ -54,6 +55,11 @@ import type {
 } from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
 import type { CredentialStore } from "../store/credentials-store";
+import {
+	DEFAULT_ARCHIVE_MAX_ROWS,
+	DEFAULT_ARCHIVE_TTL_MS,
+	WAL_CHECKPOINT_PAGE_THRESHOLD,
+} from "../session/archive";
 import { readEnvNumber } from "../utils/env";
 import {
 	abortPendingWork,
@@ -333,6 +339,9 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleSessionClear(req, deps);
 			}
 
+			if (url.pathname === CHAT_SESSIONS_LOCAL_PATH && req.method === "GET") {
+				return handleLocalSessions(req, deps);
+			}
 			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
 				return handleSessionCatalog(req, url, deps);
 			}
@@ -786,13 +795,53 @@ async function handleExtensionSessionCreate(
 	});
 }
 
+function handleLocalSessions(req: Request, deps: HttpServerDeps): Response {
+	if (req.headers.get("origin") !== null) {
+		return new Response("refused: /sessions/local is loopback-only", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const sessions = deps.registry.list().flatMap((summary) => {
+		const record = deps.registry.get(summary.sessionId);
+		if (!record || record.state !== "active" || record.token.length === 0) return [];
+		return [
+			{
+				sessionId: record.sessionId,
+				token: record.token,
+				cwd: record.cwd,
+				agentIdentity: record.agentIdentity,
+			},
+		];
+	});
+	return json({ sessions });
+}
+
 function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
 	const origin = req.headers.get("origin");
 	if (origin !== null) {
 		const originError = requirePinnedExtensionOrigin(req, deps.paths);
 		if (originError) return originError;
 	}
-	return json({ closed: deps.registry.clearDisconnected() });
+	const closed = deps.registry.clearDisconnected();
+	deps.store.maintainArchive(
+		Date.now(),
+		{
+			maxRows: readEnvNumber(
+				process.env,
+				"DG_ARCHIVE_MAX_ROWS",
+				DEFAULT_ARCHIVE_MAX_ROWS,
+			),
+			ttlMs: readEnvNumber(
+				process.env,
+				"DG_ARCHIVE_TTL_MS",
+				DEFAULT_ARCHIVE_TTL_MS,
+			),
+		},
+		deps.store.walPageCount(),
+		WAL_CHECKPOINT_PAGE_THRESHOLD,
+	);
+	return json({ closed });
 }
 
 function parseLimit(raw: string | null): number | undefined | "invalid" {

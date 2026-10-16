@@ -353,6 +353,51 @@ function createV9OverwatchBoard(db: Database): void {
 	);
 }
 
+function addColumn(
+	db: Database,
+	table: string,
+	column: string,
+	definition: string,
+): void {
+	const columns = db.query(`PRAGMA table_info(${table})`).all() as {
+		name: string;
+	}[];
+	if (columns.some((entry) => entry.name === column)) return;
+	db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function createV11ChatSessions(db: Database): void {
+	addColumn(db, "sessions", "cwd", "TEXT");
+	addColumn(db, "sessions", "agent_identity", "TEXT");
+	addColumn(db, "sessions", "state", "TEXT NOT NULL DEFAULT 'active'");
+	addColumn(db, "sessions", "awaiting_agent", "INTEGER NOT NULL DEFAULT 0");
+	addColumn(db, "sessions", "cli_attached", "INTEGER NOT NULL DEFAULT 0");
+	addColumn(db, "sessions", "created_at_ms", "INTEGER");
+	addColumn(db, "sessions", "last_activity_at", "INTEGER");
+	addColumn(db, "sessions", "cli_quiet_since", "INTEGER");
+	addColumn(db, "sessions", "cli_detached_at", "INTEGER");
+	addColumn(db, "sessions", "closed_at", "INTEGER");
+	addColumn(db, "sessions", "token_ciphertext", "BLOB");
+	addColumn(db, "sessions", "token_iv", "BLOB");
+	addColumn(db, "sessions", "token_tag", "BLOB");
+	db.run(`CREATE TABLE IF NOT EXISTS archived_sessions (
+		id TEXT PRIMARY KEY,
+		workset TEXT,
+		role TEXT,
+		cwd TEXT,
+		agent_identity TEXT,
+		reason TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		archived_at INTEGER NOT NULL,
+		last_activity_at INTEGER,
+		closed_at INTEGER
+	) STRICT`);
+	db.run("CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state)");
+	db.run(
+		"CREATE INDEX IF NOT EXISTS idx_archived_sessions_at ON archived_sessions(archived_at)",
+	);
+}
+
 function createV10Inbox(db: Database): void {
 	db.run(`CREATE TABLE inbox_profiles (
 		name TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 128),
@@ -382,6 +427,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 8, run: createV8CronJobs },
 	{ version: 9, run: createV9OverwatchBoard },
 	{ version: 10, run: createV10Inbox },
+	{ version: 11, run: createV11ChatSessions },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

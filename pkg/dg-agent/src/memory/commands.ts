@@ -6,8 +6,9 @@ import {
 import {
 	readCappedStdin,
 	readSessionFiles,
+	readSessionIdentities,
 	resolveDgPaths,
-	soleSessionForCwd,
+	selectSoleSession,
 	writeStdout,
 } from "@dg/common/node";
 import type { Command } from "commander";
@@ -22,23 +23,36 @@ type SearchOptions = ScopeOptions & {
 	full?: boolean;
 };
 
+function knownSessions(sessionsDir: string): {
+	sessionId: string;
+	cwd: string;
+	agentIdentity: string;
+}[] {
+	const files = readSessionFiles(sessionsDir);
+	const fromDb = readSessionIdentities(resolveDgPaths().dbPath).filter(
+		(row) => !files.some((file) => file.sessionId === row.sessionId),
+	);
+	return [...files, ...fromDb];
+}
+
 function resolveIdentity(
 	sessionsDir: string,
 	options: ScopeOptions,
 	command: Command,
 ): string {
 	if (options.identity) return options.identity;
+	const records = knownSessions(sessionsDir);
 	const sessionId = selectedSession(command);
 	if (sessionId) {
-		const record = readSessionFiles(sessionsDir).find(
-			(candidate) => candidate.sessionId === sessionId,
-		);
+		const record = records.find((candidate) => candidate.sessionId === sessionId);
 		if (!record) {
-			throw new DgCliError(`no usable session file for ${sessionId}`);
+			throw new DgCliError(`no usable session for ${sessionId}`);
 		}
 		return record.agentIdentity;
 	}
-	return soleSessionForCwd(sessionsDir).agentIdentity;
+	return selectSoleSession(
+		records.map((record) => ({ ...record, token: "" })),
+	).agentIdentity;
 }
 
 function requireTitle(value: string): string {

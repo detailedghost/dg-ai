@@ -275,7 +275,7 @@ describe("ChatStore schema v9 to v10", () => {
 			}
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 			try {
-				expect(store.userVersion()).toBe(10);
+				expect(store.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 				expect(store.cryptoMeta().keyId).toBe(cryptoMeta.keyId);
 				expect(store.getBoard().merges).toEqual([merged]);
 				store.setInboxProfile("personal", inboxProfile());

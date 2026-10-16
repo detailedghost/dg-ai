@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	CHAT_ATTACH_PATH,
 	CHAT_SESSIONS_CLEAR_PATH,
+	CHAT_SESSIONS_LOCAL_PATH,
 	CHAT_SESSIONS_PATH,
 	decideAttach,
 	selectWaitingSession,
@@ -9,6 +10,15 @@ import {
 } from "../src/session-connect";
 
 const TOKEN = "session-token-must-not-leak-into-errors";
+
+describe("session routes", () => {
+	it("keeps the loopback session lookup off the public catalog path", () => {
+		expect(CHAT_SESSIONS_PATH).toBe("/sessions");
+		expect(CHAT_SESSIONS_CLEAR_PATH).toBe("/sessions/clear");
+		expect(CHAT_SESSIONS_LOCAL_PATH).toBe("/sessions/local");
+		expect(CHAT_ATTACH_PATH).toBe("/attach");
+	});
+});
 
 describe("validateAttachRequest", () => {
 	it("defaults a missing intent to attach and keeps a six digit code", () => {

@@ -11,6 +11,7 @@ import { Command } from "commander";
 import { registerAgentCommands } from "./commands";
 import { registerMemoryCommands } from "./memory/commands";
 import { claimWaitingSession } from "./attach";
+import { cliNextStep } from "./next-step";
 import { cmdStart } from "./start";
 import {
 	buildBootstrapUrl,
@@ -102,6 +103,7 @@ program
 			);
 		}
 		const url = buildBootstrapUrl(handle.port, claimed);
+		console.error(cliNextStep("attached", claimed.sessionId));
 		console.log(url);
 		if (opts.open) await tryOpen(url);
 	});

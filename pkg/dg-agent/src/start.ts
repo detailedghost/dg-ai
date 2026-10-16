@@ -24,6 +24,7 @@ import {
 	tryOpen,
 } from "@dg/common/node";
 import { claimWaitingSession } from "./attach";
+import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
 	const name = process.platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
@@ -154,9 +155,7 @@ export async function cmdStart(
 			options.sessionId,
 		);
 		if (claimed) {
-			console.error(
-				`dg-agent: attached to the session the extension is waiting on (${claimed.sessionId})`,
-			);
+			console.error(cliNextStep("claimed", claimed.sessionId));
 			const url = buildBootstrapUrl(targetPort, claimed);
 			printSession(targetPort, claimed.sessionId, url, options);
 			if (options.open) await tryOpen(url);
@@ -171,6 +170,7 @@ export async function cmdStart(
 		agentIdentity: options.agentIdentity,
 	});
 	const url = buildBootstrapUrl(targetPort, bootstrap);
+	console.error(cliNextStep("registered", bootstrap.sessionId));
 	printSession(targetPort, bootstrap.sessionId, url, options);
 	if (options.open) {
 		await tryOpen(url);

@@ -76,6 +76,30 @@ export function staleSessionIds(controls: SessionControl[]): string[] {
 	return controls.filter((control) => control.stale).map((control) => control.sessionId);
 }
 
+/** What the side panel should tell the human to do next. Exact strings are part of the panel contract. */
+export function connectionGuidance(input: {
+	daemonUp: boolean;
+	paired: boolean;
+	presences: readonly SessionPresence[];
+	heldDisconnected?: boolean;
+}): string {
+	if (!input.daemonUp) return "Start the daemon: run dg-agent start";
+	if (input.presences.includes("waiting")) {
+		return "A session is waiting for the CLI. Run dg-agent attach in the terminal.";
+	}
+	if (input.presences.includes("cli") && !input.paired) {
+		return "The CLI is connected. Choose Connect on that session.";
+	}
+	if (input.paired) return "Paired — connection confirmed";
+	if (input.heldDisconnected) {
+		return "Disconnected — waiting for the daemon to confirm the connection.";
+	}
+	if (input.presences.length === 0) {
+		return "No session yet. Choose New session for CLI, then run dg-agent attach.";
+	}
+	return "Choose Connect on a session, or run dg-agent start.";
+}
+
 /** Strips known session tokens, and every other credential the shared redactor knows. */
 export function redactSecrets(message: string, secrets: readonly string[]): string {
 	return redactText(message, secrets);

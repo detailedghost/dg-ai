@@ -36,6 +36,11 @@ import { ConnectionManager, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
+	DEFAULT_ARCHIVE_MAX_ROWS,
+	DEFAULT_ARCHIVE_TTL_MS,
+	WAL_CHECKPOINT_PAGE_THRESHOLD,
+} from "../session/archive";
+import {
 	DEFAULT_AGENT_GONE_MS,
 	DEFAULT_CLI_REATTACH_GRACE_MS,
 	DEFAULT_UNCLAIMED_TTL_MS,
@@ -90,7 +95,7 @@ export async function cmdServe(): Promise<void> {
 	store.recoverStaleClaims();
 	setKeySourceProvider(() => store.cryptoMeta().keySource);
 	setUserVersionProvider(() => store.userVersion());
-	const registry = new SessionRegistry(paths);
+	const registry = new SessionRegistry(paths, { store });
 	const connections = new ConnectionManager();
 	const dispatchScheduler = new DispatchScheduler();
 	const supervisor = createSupervisor({
@@ -198,6 +203,16 @@ export async function cmdServe(): Promise<void> {
 		"DG_CLI_REATTACH_GRACE_MS",
 		DEFAULT_CLI_REATTACH_GRACE_MS,
 	);
+	const archiveMaxRows = readEnvNumber(
+		process.env,
+		"DG_ARCHIVE_MAX_ROWS",
+		DEFAULT_ARCHIVE_MAX_ROWS,
+	);
+	const archiveTtlMs = readEnvNumber(
+		process.env,
+		"DG_ARCHIVE_TTL_MS",
+		DEFAULT_ARCHIVE_TTL_MS,
+	);
 	const hasLiveCliSocket = (sessionId: string): boolean => {
 		let live = false;
 		connections.forEachCapableOf(sessionId, (ws) => {
@@ -213,6 +228,17 @@ export async function cmdServe(): Promise<void> {
 				unclaimedTtlMs,
 				reattachGraceMs,
 			});
+			const pruned = store.maintainArchive(
+				Date.now(),
+				{ maxRows: archiveMaxRows, ttlMs: archiveTtlMs },
+				store.walPageCount(),
+				WAL_CHECKPOINT_PAGE_THRESHOLD,
+			);
+			if (pruned.sessions > 0) {
+				logger.info(
+					`pruned ${pruned.sessions} archived session(s) and ${pruned.messages} message row(s)`,
+				);
+			}
 			const prunedAgentMessages = store.pruneAgentMessages(new Date());
 			if (prunedAgentMessages > 0) {
 				logger.info(

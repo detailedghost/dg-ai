@@ -3,6 +3,7 @@ import {
 	buildBootstrapUrl,
 	CliClient,
 	readSessionFiles,
+	readSessionIdentities,
 	resolveCliSession,
 	resolveDgPaths,
 	type ResolvedSession,
@@ -90,7 +91,7 @@ function daemonRuntime(session?: string) {
 	const connect = () =>
 		(connection ??= (async () => {
 			try {
-				client = await CliClient.connect(resolveCliSession(session));
+				client = await CliClient.connect(await resolveCliSession(session));
 				return client;
 			} catch {
 				throw new Error(
@@ -300,22 +301,22 @@ function extensionConnectError(session: ResolvedSession): string {
 }
 
 /** Prints the real start URL. Callers must opt in; connect errors use a placeholder instead. */
-function printBootstrapUrl(sessionId: string | undefined): void {
-	const resolved = resolveCliSession(sessionId);
-	const record = readSessionFiles(resolveDgPaths().sessionsDir).find(
-		(item) => item.sessionId === resolved.sessionId,
-	);
-	if (!record) {
-		throw new Error(
-			`No session file for ${resolved.sessionId}. Start the session with dg-agent start.`,
+async function printBootstrapUrl(sessionId: string | undefined): Promise<void> {
+	const resolved = await resolveCliSession(sessionId);
+	const paths = resolveDgPaths();
+	const record =
+		readSessionFiles(paths.sessionsDir).find(
+			(item) => item.sessionId === resolved.sessionId,
+		) ??
+		readSessionIdentities(paths.dbPath).find(
+			(item) => item.sessionId === resolved.sessionId,
 		);
-	}
 	console.log(
 		buildBootstrapUrl(resolved.port, {
 			port: resolved.port,
 			sessionId: resolved.sessionId,
 			token: resolved.token,
-			agentIdentity: record.agentIdentity,
+			agentIdentity: record?.agentIdentity ?? "agent",
 		}),
 	);
 }
@@ -334,7 +335,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		}
 		if (args.length !== 1)
 			throw new Error("bootstrap-url accepts only --session ID.");
-		printBootstrapUrl(session);
+		await printBootstrapUrl(session);
 		return;
 	}
 	if (args[0] === "profile" && (helpRequested(args) || args.length <= 1)) {

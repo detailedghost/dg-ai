@@ -127,11 +127,11 @@ describe("SessionRegistry#reapExpired", () => {
 		expect(registry.get(session.sessionId)?.state).toBe("active");
 	});
 
-	it("removes the on-disk session token file for a reaped session, exactly like an explicit close", () => {
+	it("does not write a session file; the daemon database is the session record", () => {
 		const clock = { at: 0 };
 		const { paths, registry } = makeRegistry(() => clock.at);
 		const session = createSession(registry);
-		expect(existsSync(tokenFilePath(paths, session.sessionId))).toBe(true);
+		expect(existsSync(tokenFilePath(paths, session.sessionId))).toBe(false);
 		clock.at = 10_000;
 
 		registry.reapExpired(1_000, () => false);

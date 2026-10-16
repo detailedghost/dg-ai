@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHmac, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { chmodSync, existsSync, statSync } from "node:fs";
+import { chmodSync, existsSync, rmSync, statSync } from "node:fs";
 import {
 	AssetTooLargeError,
 	applyOverwatchLaneUpdate,
@@ -9,6 +9,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	type CommandEntry,
 	describeError,
+	noteSecret,
 	historyItemCost,
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_MERGES,
@@ -30,6 +31,7 @@ import {
 	type DgPaths,
 	ensurePrivateDir,
 	readSchemaVersion,
+	readSessionFiles,
 	runMigrations,
 } from "@dg/common/node";
 import {
@@ -46,12 +48,19 @@ import {
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
 import { nextCronRun } from "../jobs/cron";
+import { pruneArchiveIds, shouldCheckpointWal } from "../session/archive";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
+import type {
+	ArchivePruneCounts,
+	PersistedSession,
+	SessionPersistence,
+} from "../session/persistence";
 import { readEnvNumber } from "../utils/env";
 import { SCHEMA_STEPS } from "./schema";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const HISTORY_TAIL_BATCH_ROWS = 200;
+const AAD_SESSION_TOKEN = "session-token";
 const AAD_MESSAGE_BODY = "message-body";
 const AAD_COMMAND_ARGV = "command-argv";
 const AAD_COMMAND_STDOUT = "command-stdout";
@@ -553,7 +562,7 @@ function ensureDaemonDir(daemonDir: string): void {
 /** Emitted after a message lands in `messages` or `agent_messages`, so a blocked `cli-recv` can wake without polling. */
 export const CHAT_STORE_MESSAGE_EVENT = "message";
 
-export class ChatStore extends EventEmitter {
+export class ChatStore extends EventEmitter implements SessionPersistence {
 	private readonly db: Database;
 	private readonly cipherBox: CipherBox;
 	private readonly blindIndexKey: Buffer;
@@ -650,6 +659,7 @@ export class ChatStore extends EventEmitter {
 			});
 			store.ensureSessionRow(SCHEDULER_SESSION_ID);
 			store.ensureSessionRow(OVERWATCH_SESSION_ID);
+			store.importLegacySessionFiles(paths.sessionsDir);
 			return store;
 		} catch (err) {
 			db.close(false);
@@ -2146,5 +2156,270 @@ export class ChatStore extends EventEmitter {
 			envelope.tag,
 			this.#assetBytesAad(sessionId, id),
 		);
+	}
+
+	saveSession(record: PersistedSession): void {
+		const enc = this.cipherBox.encryptRecord(
+			record.token,
+			this.#aad(AAD_SESSION_TOKEN, record.sessionId, record.sessionId),
+		);
+		noteSecret(record.token);
+		const createdAt = new Date(record.createdAt).toISOString();
+		this.#withImmediateTransaction(() => {
+			this.db.run(
+				`INSERT INTO sessions (
+					id, workset, role, created_at, cwd, agent_identity, state,
+					awaiting_agent, cli_attached, created_at_ms, last_activity_at,
+					cli_quiet_since, cli_detached_at, closed_at,
+					token_ciphertext, token_iv, token_tag
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					workset = excluded.workset,
+					role = excluded.role,
+					cwd = excluded.cwd,
+					agent_identity = excluded.agent_identity,
+					state = excluded.state,
+					awaiting_agent = excluded.awaiting_agent,
+					cli_attached = excluded.cli_attached,
+					created_at_ms = excluded.created_at_ms,
+					last_activity_at = excluded.last_activity_at,
+					cli_quiet_since = excluded.cli_quiet_since,
+					cli_detached_at = excluded.cli_detached_at,
+					closed_at = excluded.closed_at,
+					token_ciphertext = excluded.token_ciphertext,
+					token_iv = excluded.token_iv,
+					token_tag = excluded.token_tag`,
+				[
+					record.sessionId,
+					record.workset ?? null,
+					record.role,
+					createdAt,
+					record.cwd,
+					record.agentIdentity,
+					record.state,
+					record.awaitingAgent ? 1 : 0,
+					record.cliAttached ? 1 : 0,
+					record.createdAt,
+					record.lastActivityAt,
+					record.cliQuietSince ?? null,
+					record.cliDetachedAt ?? null,
+					record.closedAt ?? null,
+					enc.ciphertext,
+					enc.iv,
+					enc.tag,
+				],
+			);
+		});
+	}
+
+	loadSessions(): PersistedSession[] {
+		const rows = this.db
+			.query(
+				`SELECT id, workset, role, cwd, agent_identity, state,
+					awaiting_agent, cli_attached, created_at_ms, last_activity_at,
+					cli_quiet_since, cli_detached_at, closed_at,
+					token_ciphertext, token_iv, token_tag
+				 FROM sessions
+				 WHERE state = 'active' AND token_ciphertext IS NOT NULL`,
+			)
+			.all() as {
+			id: string;
+			workset: string | null;
+			role: string | null;
+			cwd: string | null;
+			agent_identity: string | null;
+			state: string;
+			awaiting_agent: number;
+			cli_attached: number;
+			created_at_ms: number | null;
+			last_activity_at: number | null;
+			cli_quiet_since: number | null;
+			cli_detached_at: number | null;
+			closed_at: number | null;
+			token_ciphertext: Uint8Array;
+			token_iv: Uint8Array;
+			token_tag: Uint8Array;
+		}[];
+		const loaded: PersistedSession[] = [];
+		for (const row of rows) {
+			if (!row.cwd || !row.agent_identity) continue;
+			if (row.role !== "agent" && row.role !== "orchestrator") continue;
+			try {
+				const token = this.cipherBox
+					.decryptRecord(
+						Buffer.from(row.token_ciphertext),
+						Buffer.from(row.token_iv),
+						Buffer.from(row.token_tag),
+						this.#aad(AAD_SESSION_TOKEN, row.id, row.id),
+					)
+					.toString("utf8");
+				noteSecret(token);
+				loaded.push({
+					sessionId: row.id,
+					token,
+					cwd: row.cwd,
+					agentIdentity: row.agent_identity,
+					...(row.workset ? { workset: row.workset } : {}),
+					role: row.role,
+					state: "active",
+					awaitingAgent: row.awaiting_agent === 1,
+					cliAttached: row.cli_attached === 1,
+					createdAt: row.created_at_ms ?? Date.now(),
+					lastActivityAt: row.last_activity_at ?? row.created_at_ms ?? Date.now(),
+					...(row.cli_quiet_since !== null
+						? { cliQuietSince: row.cli_quiet_since }
+						: {}),
+					...(row.cli_detached_at !== null
+						? { cliDetachedAt: row.cli_detached_at }
+						: {}),
+					...(row.closed_at !== null ? { closedAt: row.closed_at } : {}),
+				});
+			} catch {
+				continue;
+			}
+		}
+		return loaded;
+	}
+
+	archiveSession(record: PersistedSession, reason: string): void {
+		const archivedAt = record.closedAt ?? Date.now();
+		this.#withImmediateTransaction(() => {
+			this.db.run(
+				`INSERT INTO archived_sessions (
+					id, workset, role, cwd, agent_identity, reason, created_at,
+					archived_at, last_activity_at, closed_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					reason = excluded.reason,
+					archived_at = excluded.archived_at,
+					last_activity_at = excluded.last_activity_at,
+					closed_at = excluded.closed_at`,
+				[
+					record.sessionId,
+					record.workset ?? null,
+					record.role,
+					record.cwd,
+					record.agentIdentity,
+					reason,
+					new Date(record.createdAt).toISOString(),
+					archivedAt,
+					record.lastActivityAt,
+					record.closedAt ?? archivedAt,
+				],
+			);
+			this.db.run(
+				`UPDATE sessions SET
+					state = 'archived',
+					cli_attached = 0,
+					token_ciphertext = NULL,
+					token_iv = NULL,
+					token_tag = NULL,
+					closed_at = ?
+				 WHERE id = ?`,
+				[record.closedAt ?? archivedAt, record.sessionId],
+			);
+		});
+	}
+
+	pruneArchive(
+		now: number,
+		limits: { maxRows: number; ttlMs: number },
+	): ArchivePruneCounts {
+		const rows = this.db
+			.query("SELECT id, archived_at FROM archived_sessions")
+			.all() as { id: string; archived_at: number }[];
+		const ids = pruneArchiveIds(
+			rows.map((row) => ({ id: row.id, archivedAt: row.archived_at })),
+			now,
+			limits,
+		);
+		if (ids.length === 0) return { sessions: 0, messages: 0 };
+		return this.#withImmediateTransaction(() => {
+			const messages = this.#deleteSessionRows("messages", "session_id", ids);
+			this.#deleteSessionRows("agent_messages", "sender_session_id", ids);
+			this.#deleteSessionRows("status_events", "session_id", ids);
+			this.#deleteSessionRows("assets", "session_id", ids);
+			this.#deleteSessionRows("command_invocations", "session_id", ids);
+			this.#deleteSessionRows("command_manifests", "session_id", ids);
+			const sessions = this.#deleteSessionRows("sessions", "id", ids);
+			this.#deleteSessionRows("archived_sessions", "id", ids);
+			return { sessions, messages };
+		});
+	}
+
+	walPageCount(): number {
+		try {
+			const filename = this.db.filename;
+			if (!filename || filename === ":memory:" || !existsSync(`${filename}-wal`)) {
+				return 0;
+			}
+			const page = (
+				this.db.query("PRAGMA page_size").get() as { page_size: number }
+			).page_size;
+			if (page <= 0) return 0;
+			return Math.floor(statSync(`${filename}-wal`).size / page);
+		} catch {
+			return 0;
+		}
+	}
+
+	checkpointPassive(): void {
+		this.db.run("PRAGMA wal_checkpoint(PASSIVE)");
+	}
+
+	maintainArchive(
+		now: number,
+		limits: { maxRows: number; ttlMs: number },
+		walPages: number,
+		walThreshold: number,
+	): ArchivePruneCounts {
+		const pruned = this.pruneArchive(now, limits);
+		if (pruned.sessions > 0 || shouldCheckpointWal(walPages, walThreshold)) {
+			this.checkpointPassive();
+		}
+		return pruned;
+	}
+
+	importLegacySessionFiles(sessionsDir: string): void {
+		const records = readSessionFiles(sessionsDir);
+		for (const record of records) {
+			const existing = this.db
+				.query(
+					"SELECT state, token_ciphertext FROM sessions WHERE id = ?",
+				)
+				.get(record.sessionId) as {
+				state: string | null;
+				token_ciphertext: Uint8Array | null;
+			} | null;
+			if (existing?.state === "archived") {
+				rmSync(`${sessionsDir}/${record.sessionId}.json`, { force: true });
+				continue;
+			}
+			if (existing?.token_ciphertext == null) {
+				const now = Date.now();
+				this.saveSession({
+					sessionId: record.sessionId,
+					token: record.token,
+					cwd: record.cwd,
+					agentIdentity: record.agentIdentity,
+					role: "agent",
+					state: "active",
+					awaitingAgent: false,
+					cliAttached: false,
+					createdAt: now,
+					lastActivityAt: now,
+				});
+			}
+			rmSync(`${sessionsDir}/${record.sessionId}.json`, { force: true });
+		}
+	}
+
+	#deleteSessionRows(table: string, column: string, ids: string[]): number {
+		const placeholders = ids.map(() => "?").join(", ");
+		const result = this.db.run(
+			`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`,
+			ids,
+		);
+		return result.changes;
 	}
 }

@@ -4,6 +4,7 @@ import type { SessionRole } from "./chat-format";
 export const CHAT_ATTACH_PATH = "/attach";
 export const CHAT_SESSIONS_PATH = "/sessions";
 export const CHAT_SESSIONS_CLEAR_PATH = "/sessions/clear";
+export const CHAT_SESSIONS_LOCAL_PATH = "/sessions/local";
 
 export type AttachIntent = "attach" | "create";
 

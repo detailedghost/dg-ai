@@ -7,8 +7,8 @@ import {
 	mintToken,
 	removeSessionToken,
 	tokensEqual,
-	writeSessionToken,
 } from "@dg/common/node";
+import type { SessionPersistence } from "./persistence";
 import { triggerAssetCleanup } from "../utils/asset-cleanup";
 import {
 	DEFAULT_AGENT_GONE_MS,
@@ -51,6 +51,7 @@ export type CloseReason = "cli" | "canvas" | "daemon-shutdown" | "expired";
 
 export type SessionRegistrySeams = {
 	now?: () => number;
+	store?: SessionPersistence;
 };
 
 /** Bounds how long a closed record lingers for `get()`/asset-serving distinctions before eviction. */
@@ -59,6 +60,7 @@ const CLOSED_RECORD_RETENTION_MS = 10 * 60 * 1000;
 export class SessionRegistry extends EventEmitter {
 	private readonly sessions = new Map<string, SessionRecord>();
 	private readonly now: () => number;
+	private readonly store: SessionPersistence | undefined;
 
 	constructor(
 		private readonly paths: DgPaths,
@@ -66,6 +68,14 @@ export class SessionRegistry extends EventEmitter {
 	) {
 		super();
 		this.now = seams.now ?? Date.now;
+		this.store = seams.store;
+		for (const record of this.store?.loadSessions() ?? []) {
+			this.sessions.set(record.sessionId, record);
+		}
+	}
+
+	private persist(record: SessionRecord): void {
+		this.store?.saveSession(record);
 	}
 
 	create(input: CreateSessionInput): SessionRecord {
@@ -84,12 +94,7 @@ export class SessionRegistry extends EventEmitter {
 			lastActivityAt: createdAt,
 		};
 		this.sessions.set(record.sessionId, record);
-		writeSessionToken(this.paths, record.sessionId, {
-			sessionId: record.sessionId,
-			token: record.token,
-			cwd: record.cwd,
-			agentIdentity: record.agentIdentity,
-		});
+		this.persist(record);
 		this.emit("changed", { sessionId: record.sessionId });
 		return record;
 	}
@@ -102,6 +107,7 @@ export class SessionRegistry extends EventEmitter {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state !== "active") return;
 		record.lastActivityAt = this.now();
+		this.persist(record);
 	}
 
 	noteCliAttached(sessionId: string): void {
@@ -112,6 +118,7 @@ export class SessionRegistry extends EventEmitter {
 		record.cliQuietSince = undefined;
 		record.cliDetachedAt = undefined;
 		record.lastActivityAt = this.now();
+		this.persist(record);
 	}
 
 	/** The last CLI socket for this claim closed. The claim itself stays held. */
@@ -120,6 +127,7 @@ export class SessionRegistry extends EventEmitter {
 		if (!record || record.state !== "active" || !record.cliAttached) return;
 		if (record.cliQuietSince !== undefined) return;
 		record.cliQuietSince = this.now();
+		this.persist(record);
 	}
 
 	noteCliDetached(sessionId: string): void {
@@ -127,6 +135,7 @@ export class SessionRegistry extends EventEmitter {
 		if (!record || record.state !== "active" || !record.cliAttached) return;
 		record.cliAttached = false;
 		record.cliDetachedAt = this.now();
+		this.persist(record);
 		this.emit("agent-gone", { sessionId });
 	}
 
@@ -144,8 +153,13 @@ export class SessionRegistry extends EventEmitter {
 		if (!record || record.state === "closed") return false;
 		record.state = "closed";
 		record.closedAt = this.now();
-		removeSessionToken(this.paths, sessionId);
-		triggerAssetCleanup(sessionId);
+		if (reason === "daemon-shutdown") {
+			this.store?.saveSession({ ...record, state: "active", cliAttached: false });
+		} else {
+			this.store?.archiveSession(record, reason);
+			removeSessionToken(this.paths, sessionId);
+			triggerAssetCleanup(sessionId);
+		}
 		this.emit("closed", { sessionId, reason });
 		this.emit("changed", { sessionId });
 		return true;

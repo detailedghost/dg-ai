@@ -4,10 +4,16 @@ import {
 	CLI_SESSION_TOKEN_HEADER,
 	type CliRequest,
 } from "../cli-wire";
+import { CHAT_SESSIONS_LOCAL_PATH } from "../session-connect";
 import { DgCliError, describeError } from "../errors";
+import { noteSecret } from "../redact";
 import { type DgPaths, resolveDgPaths } from "./paths";
-import { readPidFile, requireMatchingProtocol } from "./pidfile";
-import { readSessionToken, soleSessionForCwd } from "./session-tokens";
+import { loopbackHostHeader, readPidFile, requireMatchingProtocol } from "./pidfile";
+import {
+	readSessionFiles,
+	selectSoleSession,
+	type SessionTokenRecord,
+} from "./session-tokens";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
 
@@ -24,11 +30,46 @@ type BunWebSocketCtor = new (
 ) => WebSocket;
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
+const LOCAL_SESSION_LOOKUP_MS = 1_000;
+
+async function fetchLocalSessions(port: number): Promise<SessionTokenRecord[]> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), LOCAL_SESSION_LOOKUP_MS);
+	let response: Response;
+	try {
+		response = await fetch(`http://127.0.0.1:${port}${CHAT_SESSIONS_LOCAL_PATH}`, {
+			headers: loopbackHostHeader(port),
+			signal: controller.signal,
+		});
+	} catch {
+		return [];
+	} finally {
+		clearTimeout(timer);
+	}
+	if (!response.ok) return [];
+	const body = (await response.json()) as { sessions?: unknown };
+	if (!Array.isArray(body.sessions)) return [];
+	return body.sessions.flatMap((value) => {
+		if (typeof value !== "object" || value === null) return [];
+		const record = value as Partial<SessionTokenRecord>;
+		if (
+			typeof record.sessionId !== "string" ||
+			typeof record.token !== "string" ||
+			typeof record.cwd !== "string" ||
+			typeof record.agentIdentity !== "string"
+		) {
+			return [];
+		}
+		noteSecret(record.token);
+		return [record as SessionTokenRecord];
+	});
+}
+
 /** Resolves an explicit session or the sole cwd match, requiring a live daemon and compatible protocol. */
-export function resolveCliSession(
+export async function resolveCliSession(
 	explicitSessionId?: string,
 	paths: DgPaths = resolveDgPaths(),
-): ResolvedSession {
+): Promise<ResolvedSession> {
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
 	requireMatchingProtocol(
@@ -37,13 +78,27 @@ export function resolveCliSession(
 			`then stop the daemon (pid ${handle.pid}) once nothing depends on it.`,
 	);
 
-	const sessionId =
-		explicitSessionId ?? soleSessionForCwd(paths.sessionsDir).sessionId;
-
+	let records: SessionTokenRecord[] = [];
+	try {
+		records = await fetchLocalSessions(handle.port);
+	} catch {
+		records = [];
+	}
+	if (records.length === 0) records = readSessionFiles(paths.sessionsDir);
+	const chosen =
+		explicitSessionId === undefined
+			? selectSoleSession(records)
+			: records.find((record) => record.sessionId === explicitSessionId);
+	if (!chosen) {
+		throw new DgCliError(
+			`no usable session ${explicitSessionId} is registered on the daemon.`,
+		);
+	}
+	noteSecret(chosen.token);
 	return {
 		port: handle.port,
-		sessionId,
-		token: readSessionToken(paths, sessionId),
+		sessionId: chosen.sessionId,
+		token: chosen.token,
 	};
 }
 

@@ -8,6 +8,7 @@ import { MSG, type PairingSession } from "@/lib/chat-messages";
 import { findDaemonPort } from "@/lib/daemon-port";
 import {
 	type PublicSession,
+	connectionGuidance,
 	sessionControls,
 	staleSessionIds,
 } from "@/lib/features/chat-connection";
@@ -147,7 +148,7 @@ export function mountPairing(
 		doc,
 		"p",
 		"pair-panel__copy",
-		"Attach a CLI session that is already open, or create one here and run dg-agent attach.",
+		"Attach CLI session connects one that is already open. New session for CLI creates one here; then run dg-agent attach in the terminal.",
 	);
 	const attachButton = element(doc, "button", "pair-button", "Attach CLI session");
 	attachButton.type = "button";
@@ -388,6 +389,15 @@ export function mountPairing(
 		await catalogTask;
 		if (version !== refreshVersion || destroyed) return;
 		renderSessions();
+		const presences = catalog.flatMap((session) =>
+			session.presence ? [session.presence] : [],
+		);
+		status.textContent = connectionGuidance({
+			daemonUp: port !== undefined || connected,
+			paired: connected,
+			presences,
+			heldDisconnected: sessions.some((session) => !session.connected),
+		});
 	}
 
 	async function loadCatalog(): Promise<void> {
