@@ -45,6 +45,7 @@ function switchable(initial: ChatProvider) {
 		react: (request) => current.react(request),
 		unreact: (request) => current.unreact(request),
 		reply: (request) => current.reply(request),
+		dm: (request) => current.dm(request),
 		listReactions: () => current.listReactions(),
 	};
 	return {

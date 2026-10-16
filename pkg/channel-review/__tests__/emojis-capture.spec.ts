@@ -108,6 +108,7 @@ function setup(
 			replied.resolve();
 			return { messageIds: options.messageIds ?? ["m1"] };
 		},
+		dm: async () => ({ messageIds: [] }),
 		listReactions: async () => [],
 	};
 

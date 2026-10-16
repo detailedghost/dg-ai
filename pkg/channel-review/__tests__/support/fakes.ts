@@ -18,6 +18,8 @@ import type {
 import type { Runner, RunnerName } from "../../src/runners/types";
 import { createStateStore } from "../../src/state";
 import type { StateStore } from "../../src/state";
+import type { ErrorSink, SinkIssue } from "../../src/sinks/types";
+import type { CaptureFn } from "../../src/verdict/cli";
 import { VerdictError } from "../../src/verdict/types";
 import type {
 	StackReader,
@@ -133,8 +135,11 @@ export type ProviderCall =
 	| { op: "unreact"; chatId: string; messageId: string; reactionId: string }
 	| { op: "reply"; chatId: string; text: string; html?: boolean; card?: AdaptiveCard };
 
+export type DmCall = { text: string; html?: boolean };
+
 export type FakeProvider = ChatProvider & {
 	calls: ProviderCall[];
+	dms: DmCall[];
 	failReplies: boolean;
 	failReactions: boolean;
 	onCall?: (call: ProviderCall) => void;
@@ -147,6 +152,7 @@ export function createFakeProvider(
 	let sent = 0;
 	const provider: FakeProvider = {
 		calls: [],
+		dms: [],
 		failReplies: false,
 		failReactions: false,
 		replies: () =>
@@ -183,10 +189,17 @@ export function createFakeProvider(
 			sent += 1;
 			return { messageIds: [`sent-${sent}`] };
 		},
+		dm: async ({ text, html }) => {
+			provider.dms.push({ text, ...(html && { html }) });
+			if (provider.failReplies) throw new Error("dm failed");
+			sent += 1;
+			return { messageIds: [`sent-${sent}`] };
+		},
 		listReactions: async () => options.reactionIds ?? [],
 	};
 	return provider;
 }
+
 
 export const OK_RESULT: RunnerResult = {
 	status: 0,
@@ -333,6 +346,66 @@ export function createFakeWorkspace(): FakeWorkspace {
 		},
 	};
 	return workspace;
+}
+
+export type CaptureCall = { command: string; args: string[] };
+export type CaptureReply = { status: number; stdout?: string; stderr?: string };
+
+export type FakeCapture = { calls: CaptureCall[]; runner: CaptureFn };
+
+export function createFakeCapture(
+	reply: (call: CaptureCall) => CaptureReply | Promise<CaptureReply> = () => ({ status: 0 }),
+): FakeCapture {
+	const calls: CaptureCall[] = [];
+	const runner = (async (command: string, args: string[]) => {
+		const call = { command, args };
+		calls.push(call);
+		const { status, stdout = "", stderr = "" } = await reply(call);
+		return { status, signal: null, stdout, stderr };
+	}) as CaptureFn;
+	return { calls, runner };
+}
+
+export type FakeSink = ErrorSink & {
+	polls: Parameters<ErrorSink["poll"]>[0][];
+	details: SinkIssue[];
+	issues: SinkIssue[];
+	cursor?: string;
+	failPoll?: Error;
+};
+
+export function createFakeSink(name = "fake"): FakeSink {
+	const sink: FakeSink = {
+		name,
+		polls: [],
+		details: [],
+		issues: [],
+		poll: async (request) => {
+			sink.polls.push(request);
+			if (sink.failPoll) throw sink.failPoll;
+			return { issues: sink.issues, cursor: sink.cursor };
+		},
+		detail: async (issue) => {
+			sink.details.push(issue);
+			return { ...issue, message: `${issue.title} message` };
+		},
+	};
+	return sink;
+}
+
+export function buildIssue(id: string, overrides: Partial<SinkIssue> = {}): SinkIssue {
+	return {
+		id,
+		title: `Error ${id}`,
+		service: "example-api",
+		env: "prod",
+		level: "error",
+		firstSeen: "2026-10-14T11:00:00.000Z",
+		lastSeen: "2026-10-14T11:30:00.000Z",
+		link: `https://errors.example.com/issues/${id}`,
+		regressed: false,
+		...overrides,
+	};
 }
 
 export type RecordedLog = Log & {

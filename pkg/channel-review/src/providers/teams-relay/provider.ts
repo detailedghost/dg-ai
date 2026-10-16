@@ -3,7 +3,7 @@ import type { ChatProvider } from "../types";
 import { resolveChat } from "./chats";
 import { createRelayClient } from "./client";
 import { createReactions } from "./reactions";
-import { reply } from "./reply";
+import { dm, reply } from "./reply";
 import { abortableSleep } from "./sleep";
 import { createSubscribe } from "./subscribe";
 import type { ProviderSeams } from "./types";
@@ -39,6 +39,7 @@ export function createTeamsRelayProvider(
 		react: reactions.react,
 		unreact: reactions.unreact,
 		reply: (request) => reply(client, config.owner.email, request),
+		dm: (request) => dm(client, config.owner.email, request),
 		listReactions: reactions.list,
 	};
 }

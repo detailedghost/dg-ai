@@ -33,11 +33,47 @@ export type BlockedEntry = {
 	at: string;
 };
 
+export const ISSUE_STATUSES = [
+	"seen",
+	"notified",
+	"deferred",
+	"fixing",
+	"pr-open",
+	"failed",
+] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+
+export type IssueEntry = {
+	status: IssueStatus;
+	firstSeen: string;
+	prUrl?: string;
+	at: string;
+};
+
+export type SinkEntry = {
+	cursor?: string;
+	lastPollAt?: string;
+	lastError?: string;
+	counts: Record<string, number>;
+};
+
+export type DepsRun = { windowStart: string; at: string; result: string };
+
+export const PR_WATCH_KINDS = ["fix", "deps"] as const;
+export type PrWatchKind = (typeof PR_WATCH_KINDS)[number];
+
+export type PrWatchEntry = { repo: string; kind: PrWatchKind; startedAt: string };
+
 export type ChannelState = {
 	lastEventIds: Record<string, string>;
 	current: CurrentJob | null;
 	handled: Record<string, { status: HandledStatus; at: string; chatId?: string }>;
 	blocked: Record<string, BlockedEntry>;
+	issues: Record<string, IssueEntry>;
+	sinks: Record<string, SinkEntry>;
+	fixStarts: string[];
+	deps: { lastRun: Record<string, DepsRun> };
+	prWatch: Record<string, PrWatchEntry>;
 };
 
 export type StateStore = {
@@ -54,11 +90,18 @@ export type StateStore = {
 	): void;
 	clearBlocked(url: string): void;
 	pruneHandled(now: Date): void;
+	setIssue(id: string, entry: Omit<IssueEntry, "at">): void;
+	updateSink(name: string, patch: Partial<SinkEntry>): void;
+	recordFixStart(): void;
+	recordDepsRun(repo: string, run: Omit<DepsRun, "at">): void;
+	watchPr(url: string, entry: Omit<PrWatchEntry, "startedAt">): void;
+	unwatchPr(url: string): void;
 };
 
 const HANDLED_STATUSES: readonly string[] = ["pending", "running", "done", "failed"];
 const EVENT_SAVE_INTERVAL_MS = 1000;
 const HANDLED_TTL_MS = 24 * 3_600_000;
+const FIX_START_TTL_MS = 3_600_000;
 const SEGMENT = "[A-Za-z0-9._-]+";
 const PR_PATHS: Record<PrHost, RegExp> = {
 	github: new RegExp(`^(/${SEGMENT}/${SEGMENT}/pull/\\d+)(?:/|$)`),
@@ -116,6 +159,60 @@ function isBlockedEntry(value: unknown): value is BlockedEntry {
 	);
 }
 
+function isIssueEntry(value: unknown): value is IssueEntry {
+	return (
+		isRecord(value) &&
+		typeof value.status === "string" &&
+		ISSUE_STATUSES.includes(value.status as IssueStatus) &&
+		typeof value.firstSeen === "string" &&
+		(value.prUrl === undefined || typeof value.prUrl === "string") &&
+		typeof value.at === "string"
+	);
+}
+
+function isSinkEntry(value: unknown): value is SinkEntry {
+	return (
+		isRecord(value) &&
+		(value.cursor === undefined || typeof value.cursor === "string") &&
+		(value.lastPollAt === undefined || typeof value.lastPollAt === "string") &&
+		(value.lastError === undefined || typeof value.lastError === "string") &&
+		isRecord(value.counts) &&
+		Object.values(value.counts).every((count) => typeof count === "number")
+	);
+}
+
+function isDepsRun(value: unknown): value is DepsRun {
+	return (
+		isRecord(value) &&
+		typeof value.windowStart === "string" &&
+		typeof value.at === "string" &&
+		typeof value.result === "string"
+	);
+}
+
+function isPrWatchEntry(value: unknown): value is PrWatchEntry {
+	return (
+		isRecord(value) &&
+		typeof value.repo === "string" &&
+		PR_WATCH_KINDS.includes(value.kind as PrWatchKind) &&
+		typeof value.startedAt === "string"
+	);
+}
+
+function parseFixStarts(value: unknown): string[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+		throw new TypeError("fixStarts must be an array of strings");
+	}
+	return value;
+}
+
+function parseDeps(value: unknown): ChannelState["deps"] {
+	if (value === undefined) return { lastRun: {} };
+	if (!isRecord(value)) throw new TypeError("deps must be an object");
+	return { lastRun: validEntries(value.lastRun, "deps.lastRun", isDepsRun) };
+}
+
 function validEntries<T>(
 	value: unknown,
 	field: string,
@@ -157,6 +254,11 @@ function load(path: string, legacyChatId: string | undefined): ChannelState {
 		current: null,
 		handled: {},
 		blocked: {},
+		issues: {},
+		sinks: {},
+		fixStarts: [],
+		deps: { lastRun: {} },
+		prWatch: {},
 	};
 	if (!existsSync(path)) return empty;
 	try {
@@ -167,6 +269,11 @@ function load(path: string, legacyChatId: string | undefined): ChannelState {
 			current: parseCurrent(raw.current),
 			handled: validEntries(raw.handled, "handled", isHandledEntry),
 			blocked: validEntries(raw.blocked, "blocked", isBlockedEntry),
+			issues: validEntries(raw.issues, "issues", isIssueEntry),
+			sinks: validEntries(raw.sinks, "sinks", isSinkEntry),
+			fixStarts: parseFixStarts(raw.fixStarts),
+			deps: parseDeps(raw.deps),
+			prWatch: validEntries(raw.prWatch, "prWatch", isPrWatchEntry),
 		};
 	} catch (err) {
 		throw new DgCliError(`cannot read state file ${path}: ${describeError(err)}`);
@@ -237,6 +344,34 @@ export function createStateStore(
 					delete state.handled[id];
 				}
 			}
+			save();
+		},
+		setIssue(id, entry) {
+			state.issues[id] = { ...entry, at: clock().toISOString() };
+			save();
+		},
+		updateSink(name, patch) {
+			state.sinks[name] = { ...(state.sinks[name] ?? { counts: {} }), ...patch };
+			save();
+		},
+		recordFixStart() {
+			const now = clock();
+			state.fixStarts = state.fixStarts.filter(
+				(at) => now.getTime() - Date.parse(at) < FIX_START_TTL_MS,
+			);
+			state.fixStarts.push(now.toISOString());
+			save();
+		},
+		recordDepsRun(repo, run) {
+			state.deps.lastRun[repo] = { ...run, at: clock().toISOString() };
+			save();
+		},
+		watchPr(url, entry) {
+			state.prWatch[url] = { ...entry, startedAt: clock().toISOString() };
+			save();
+		},
+		unwatchPr(url) {
+			delete state.prWatch[url];
 			save();
 		},
 	};

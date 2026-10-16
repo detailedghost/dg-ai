@@ -26,7 +26,78 @@ describe("createStateStore", () => {
 			current: null,
 			handled: {},
 			blocked: {},
+			issues: {},
+			sinks: {},
+			fixStarts: [],
+			deps: { lastRun: {} },
+			prWatch: {},
 		});
+	});
+
+	test("loads an old state file and fills the automation fields", () => {
+		writeFileSync(
+			path,
+			JSON.stringify({ lastEventIds: { c1: "e1" }, current: null, handled: {}, blocked: {} }),
+		);
+		const state = createStateStore(path).get();
+		expect(state.lastEventIds).toEqual({ c1: "e1" });
+		expect(state.issues).toEqual({});
+		expect(state.sinks).toEqual({});
+		expect(state.fixStarts).toEqual([]);
+		expect(state.deps).toEqual({ lastRun: {} });
+		expect(state.prWatch).toEqual({});
+	});
+
+	test("round-trips issues, sinks, fix starts, deps runs and PR watches", () => {
+		const store = createStateStore(path, () => new Date("2026-10-14T12:00:00.000Z"));
+		store.setIssue("dd:1", { status: "pr-open", firstSeen: "2026-10-14T11:00:00.000Z", prUrl: GITHUB_URL });
+		store.updateSink("datadog", { cursor: "c9", lastPollAt: "2026-10-14T12:00:00.000Z", counts: { polled: 3 } });
+		store.updateSink("datadog", { lastError: "boom" });
+		store.recordFixStart();
+		store.recordDepsRun("github.com/example-org/app", { windowStart: "2026-10-14T02:00:00.000Z", result: "pr-open" });
+		store.watchPr(GITHUB_URL, { repo: "github.com/example-org/app", kind: "deps" });
+		const reloaded = createStateStore(path).get();
+		expect(reloaded.issues["dd:1"]).toEqual({
+			status: "pr-open",
+			firstSeen: "2026-10-14T11:00:00.000Z",
+			prUrl: GITHUB_URL,
+			at: "2026-10-14T12:00:00.000Z",
+		});
+		expect(reloaded.sinks.datadog).toEqual({
+			cursor: "c9",
+			lastPollAt: "2026-10-14T12:00:00.000Z",
+			lastError: "boom",
+			counts: { polled: 3 },
+		});
+		expect(reloaded.fixStarts).toEqual(["2026-10-14T12:00:00.000Z"]);
+		expect(reloaded.deps.lastRun["github.com/example-org/app"]?.result).toBe("pr-open");
+		expect(reloaded.prWatch[GITHUB_URL]).toEqual({
+			repo: "github.com/example-org/app",
+			kind: "deps",
+			startedAt: "2026-10-14T12:00:00.000Z",
+		});
+		createStateStore(path).unwatchPr(GITHUB_URL);
+		expect(createStateStore(path).get().prWatch).toEqual({});
+	});
+
+	test("drops fix starts older than an hour when it records a new one", () => {
+		let now = new Date("2026-10-14T12:00:00.000Z");
+		const store = createStateStore(path, () => now);
+		store.recordFixStart();
+		now = new Date("2026-10-14T13:30:00.000Z");
+		store.recordFixStart();
+		expect(store.get().fixStarts).toEqual(["2026-10-14T13:30:00.000Z"]);
+	});
+
+	test.each([
+		["issues", { issues: { a: { status: "bogus" } } }],
+		["sinks", { sinks: { a: { counts: { x: "1" } } } }],
+		["fixStarts", { fixStarts: [1] }],
+		["deps", { deps: { lastRun: { a: {} } } }],
+		["prWatch", { prWatch: { a: { repo: "r", kind: "other", startedAt: "t" } } }],
+	])("rejects a malformed %s field", (_name, body) => {
+		writeFileSync(path, JSON.stringify(body));
+		expect(() => createStateStore(path)).toThrow(DgCliError);
 	});
 
 	test("round-trips lastEventIds, current and handled through disk", () => {
