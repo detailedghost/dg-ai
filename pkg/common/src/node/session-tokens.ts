@@ -7,11 +7,14 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { DgCliError } from "../errors";
+import { noteSecret } from "../redact";
 import { ensurePrivateDir } from "./fs";
 import type { DgPaths } from "./paths";
 
 export function mintToken(): string {
-	return randomBytes(32).toString("base64url");
+	const token = randomBytes(32).toString("base64url");
+	noteSecret(token);
+	return token;
 }
 
 export function tokensEqual(a: string, b: string): boolean {
@@ -46,6 +49,7 @@ export function writeSessionToken(
 ): void {
 	ensurePrivateDir(paths.sessionsDir);
 	const file = sessionFilePath(paths, sessionId);
+	noteSecret(record.token);
 	writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
 }
 
@@ -55,9 +59,14 @@ export function removeSessionToken(paths: DgPaths, sessionId: string): void {
 
 export function readSessionToken(paths: DgPaths, sessionId: string): string {
 	const override = process.env.DG_SESSION_TOKEN;
-	if (override !== undefined) return override;
+	if (override !== undefined) {
+		noteSecret(override);
+		return override;
+	}
 	const raw = readFileSync(sessionFilePath(paths, sessionId), "utf8");
-	return (JSON.parse(raw) as { token: string }).token;
+	const token = (JSON.parse(raw) as { token: string }).token;
+	noteSecret(token);
+	return token;
 }
 
 export function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {

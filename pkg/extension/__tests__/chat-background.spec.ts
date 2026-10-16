@@ -560,8 +560,7 @@ test("reports an overwatch open failure from the browser API", async () => {
 		);
 
 		expect(error).toHaveBeenCalledWith(
-			"[dg-ai-extension] overwatch frame failed:",
-			expect.objectContaining({ message: "tab failed" }),
+			"[dg-ai-extension] overwatch frame failed: tab failed",
 		);
 	} finally {
 		error.mockRestore();
@@ -628,11 +627,17 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 	let resolveQuery:
 		| ((matches: { id?: number; windowId?: number }[]) => void)
 		| undefined;
-	tabsQuery.mockImplementation(
-		() =>
-			new Promise((resolve) => {
+	tabsQuery.mockImplementation((queryInfo: { url?: string }) => {
+		if (queryInfo.url?.includes("overwatch.html")) {
+			return new Promise((resolve) => {
 				resolveQuery = resolve;
-			}),
+			});
+		}
+		return Promise.resolve([]);
+	});
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+		(async () =>
+			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
 	);
 	registerChat({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
@@ -703,6 +708,7 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 		});
 	} finally {
 		globalThis.setTimeout = realSetTimeout;
+		fetchSpy.mockRestore();
 	}
 });
 

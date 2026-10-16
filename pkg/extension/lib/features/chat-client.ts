@@ -1,11 +1,17 @@
 import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
+import { handshakeOutcome, reconnectDelayMs } from "@/lib/features/chat-connection";
 import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_WS_PATH,
 	OVERWATCH_SESSION_ID,
 	type ChatFrame,
+	type ConnectionDropInput,
+	type DropMessage,
 	createSerialQueue,
+	emitRedacted,
+	formatConnectionDrop,
+	noteSecret,
 	type SessionBootstrap,
 	type SessionRole,
 	validateChatFrame,
@@ -45,6 +51,7 @@ export type ChatClientOptions = {
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
 	extensionVersion?: string;
+	keepaliveIntervalMs?: number;
 };
 
 export type ChatClient = {
@@ -64,6 +71,8 @@ export type ChatClient = {
 	): void;
 	closeSession(sessionId: string): void;
 	disconnectSession(sessionId: string): Promise<void>;
+	forgetSession(sessionId: string): void;
+	retryNow(): void;
 };
 
 const DEFAULT_BACKOFF_BASE_MS = 500;
@@ -120,9 +129,59 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
 	const connectionListeners = new Set<ConnectionListener>();
 	const outbox: QueuedMessage[] = [];
+	const recent: DropMessage[] = [];
 	const enqueueSend = createSerialQueue((err) =>
-		console.error("[dg-chat] outbound send failed:", err),
+		emitRedacted(
+			(line) => console.error(line),
+			`[dg-chat] outbound send failed: ${err instanceof Error ? err.message : String(err)}`,
+			[...capabilities.values()],
+		),
 	);
+
+	function noteMessage(direction: "in" | "out", type: string): void {
+		recent.push({ direction, type, at: new Date().toISOString() });
+		if (recent.length > 8) recent.shift();
+	}
+
+	function logDrop(phase: ConnectionDropInput["phase"], reason: string): void {
+		emitRedacted(
+			(line) => console.warn(line),
+			formatConnectionDrop({
+				phase,
+				reason,
+				sessionIds: [...capabilities.keys()],
+				port,
+				socket: {
+					readyState: phase === "dropped" ? "closed" : connectionState,
+					url: port === undefined ? undefined : socketUrl(),
+				},
+				sidePanel: { lifecycle: "unknown" },
+				serviceWorker: { lifecycle: "active", active: true },
+				lastMessages: recent,
+				timers: {
+					keepaliveMs: options.keepaliveIntervalMs,
+					reconnectAttempt,
+					nextDelayMs: reconnectDelayMs(
+						reconnectAttempt,
+						backoffBaseMs,
+						backoffMaxMs,
+						0,
+					),
+					heartbeat:
+						options.keepaliveIntervalMs === undefined ? "unknown" : "armed",
+				},
+				daemon: {
+					reachable: connectionState !== "daemon-not-running",
+					port,
+				},
+				agent: {
+					attached: capabilities.size > 0,
+					presence: connectionState,
+				},
+				secrets: [...capabilities.values()],
+			}),
+		);
+	}
 
 	function setConnectionState(
 		state: ChatConnectionState,
@@ -137,6 +196,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function send(frame: OutboundFrame): void {
+		if (typeof frame.type === "string") noteMessage("out", frame.type);
 		const generation = socketGeneration;
 		void enqueueSend(async () => {
 			if (generation !== socketGeneration) return;
@@ -199,8 +259,12 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function scheduleRetry(): void {
-		const raw = Math.min(backoffBaseMs * 2 ** reconnectAttempt, backoffMaxMs);
-		const delay = Math.min(raw * (1 + randomJitter()), backoffMaxMs);
+		const delay = reconnectDelayMs(
+			reconnectAttempt,
+			backoffBaseMs,
+			backoffMaxMs,
+			randomJitter(),
+		);
 		reconnectAttempt += 1;
 		if (retryTimer !== undefined) clearTimeout(retryTimer);
 		retryTimer = setTimeout(() => {
@@ -219,6 +283,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function scheduleReconnect(): void {
+		logDrop("dropped", "socket closed");
 		for (const waiter of disconnectWaiters.values()) waiter.reject(new Error("The connection closed before disconnect was confirmed."));
 		disconnectWaiters.clear();
 		setConnectionState("reconnecting");
@@ -238,15 +303,27 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		try {
 			parsed = JSON.parse(raw as string);
 		} catch (err) {
-			console.warn("[dg-chat] dropping unparseable frame:", err);
+			emitRedacted(
+				(line) => console.warn(line),
+				`[dg-chat] dropping unparseable frame: ${err instanceof Error ? err.message : String(err)}`,
+				[...capabilities.values()],
+			);
 			return;
 		}
 		let frame: ChatFrame;
 		try {
 			frame = validateChatFrame(parsed);
 		} catch (err) {
-			console.warn("[dg-chat] dropping invalid frame:", err);
+			emitRedacted(
+				(line) => console.warn(line),
+				`[dg-chat] dropping invalid frame: ${err instanceof Error ? err.message : String(err)}`,
+				[...capabilities.values()],
+			);
 			return;
+		}
+		noteMessage("in", frame.type);
+		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
+			logDrop("handshake", frame.message ?? frame.code ?? "handshake rejected");
 		}
 		if (frame.type === "session-list") {
 			for (const listener of frameListeners) listener(frame);
@@ -285,6 +362,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 		if (frame.type === "session-pending") {
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);
+			noteSecret(frame.newSession.token);
 		}
 
 		if (frame.type === "ack") {
@@ -331,6 +409,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	return {
 		connect(bootstrap: SessionBootstrap): void {
 			capabilities.set(bootstrap.sessionId, bootstrap.token);
+			noteSecret(bootstrap.token);
 			if (hasAttemptInFlight) {
 				if (connectionState === "connected") {
 					sendConnectHandshake(bootstrap.sessionId, bootstrap.token);
@@ -441,6 +520,39 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				token,
 				protocolVersion: CHAT_PROTOCOL_VERSION,
 			});
+		},
+
+		forgetSession(sessionId: string): void {
+			capabilities.delete(sessionId);
+			disconnectWaiters.delete(sessionId);
+			for (let i = outbox.length - 1; i >= 0; i--) {
+				if (outbox[i]?.sessionId === sessionId) outbox.splice(i, 1);
+			}
+			if (capabilities.size === 0) {
+				if (retryTimer !== undefined) clearTimeout(retryTimer);
+				retryTimer = undefined;
+				const previous = socket;
+				socket = null;
+				socketGeneration += 1;
+				hasAttemptInFlight = false;
+				previous?.close?.();
+				setConnectionState("daemon-not-running");
+			}
+		},
+
+		retryNow(): void {
+			if (capabilities.size === 0) {
+				setConnectionState("daemon-not-running");
+				return;
+			}
+			if (retryTimer !== undefined) clearTimeout(retryTimer);
+			retryTimer = undefined;
+			const previous = socket;
+			socket = null;
+			socketGeneration += 1;
+			hasAttemptInFlight = true;
+			previous?.close?.();
+			openAndBind();
 		},
 	};
 }

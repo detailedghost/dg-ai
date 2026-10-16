@@ -43,3 +43,23 @@ run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs -
 description = "Start the channel-review daemon and follow its log"
 depends = ["remote:start"]
 run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+
+[tasks.ext]
+description = "Build the extension and open it in the internal test Chrome"
+run = "bun scripts/test-chrome.ts"
+
+[tasks.daemon]
+description = "Run dg-daemon in the foreground for local harness testing"
+run = "bun pkg/dg-daemon/src/index.ts __serve"
+
+[tasks.api]
+description = "Run dg-agent, the chat harness CLI. Extra args follow --, for example: mise run api -- start"
+run = "bun pkg/dg-agent/src/index.ts"
+
+[tasks.agent]
+description = "Run dg-agent, the chat harness CLI (alias of api)"
+run = "bun pkg/dg-agent/src/index.ts"
+
+[tasks.harness]
+description = "Start dg-daemon and open the extension in the internal test Chrome"
+run = "bun scripts/test-chrome.ts --with-daemon"

@@ -35,6 +35,10 @@ import { readConfig } from "./config-store";
 import { ConnectionManager, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
+import {
+	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_UNCLAIMED_TTL_MS,
+} from "../session/liveness";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
@@ -178,17 +182,30 @@ export async function cmdServe(): Promise<void> {
 		"DG_SESSION_TTL_MS",
 		DEFAULT_IDLE_TTL_MS,
 	);
-	const hasLivePageSocket = (sessionId: string): boolean => {
+	const agentGoneMs = readEnvNumber(
+		process.env,
+		"DG_AGENT_GONE_MS",
+		DEFAULT_AGENT_GONE_MS,
+	);
+	const unclaimedTtlMs = readEnvNumber(
+		process.env,
+		"DG_UNCLAIMED_TTL_MS",
+		DEFAULT_UNCLAIMED_TTL_MS,
+	);
+	const hasLiveCliSocket = (sessionId: string): boolean => {
 		let live = false;
 		connections.forEachCapableOf(sessionId, (ws) => {
-			if (ws.data.kind === "ws") live = true;
+			if (ws.data.kind === "cli") live = true;
 		});
 		return live;
 	};
 	let lastRowPruneAt = Date.now();
 	const reapTimer = setInterval(
 		() => {
-			registry.reapExpired(sessionTtlMs, hasLivePageSocket);
+			registry.reapExpired(sessionTtlMs, hasLiveCliSocket, {
+				agentGoneMs,
+				unclaimedTtlMs,
+			});
 			const prunedAgentMessages = store.pruneAgentMessages(new Date());
 			if (prunedAgentMessages > 0) {
 				logger.info(
@@ -236,6 +253,20 @@ export async function cmdServe(): Promise<void> {
 			});
 		},
 	);
+	registry.on("agent-gone", ({ sessionId }: { sessionId: string }) => {
+		store.insertStatusEvent({ sessionId, state: "agent-gone" });
+		// manifest-publish is itself delayed 25ms. Delivering agent-gone later
+		// keeps that frame, and any command frame already in flight, first.
+		const broadcast = setTimeout(() => {
+			connections.broadcastToPages({
+				sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				type: "progress",
+				state: "agent-gone",
+			});
+		}, 100);
+		broadcast.unref?.();
+	});
 	registry.on("changed", ({ sessionId }: { sessionId: string }) => {
 		connections.broadcastToPages({
 			sessionId,

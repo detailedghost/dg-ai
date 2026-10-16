@@ -1,4 +1,6 @@
 export * from "./assert";
+export * from "./connection-drop";
+export * from "./redact";
 export * from "./async";
 export * from "./chat-format";
 export * from "./cli-wire";
@@ -9,6 +11,7 @@ export * from "./pairing";
 export * from "./plan-format";
 export * from "./proto-format";
 export * from "./serial-queue";
+export * from "./session-connect";
 export * from "./slug";
 export * from "./types";
 

@@ -23,6 +23,7 @@ import {
 	resolveDgPaths,
 	tryOpen,
 } from "@dg/common/node";
+import { claimWaitingSession } from "./attach";
 
 function siblingDaemonArgv(): string[] {
 	const name = process.platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
@@ -84,6 +85,8 @@ export type StartOptions = {
 	role?: SessionRole;
 	agentIdentity?: string;
 	open?: boolean;
+	fresh?: boolean;
+	sessionId?: string;
 };
 
 async function fetchStatus(port: number) {
@@ -140,6 +143,23 @@ export async function cmdStart(
 		existing && existingLive
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
+
+	if (!options.fresh) {
+		const claimed = await claimWaitingSession(
+			targetPort,
+			process.cwd(),
+			"start",
+			options.sessionId,
+		);
+		if (claimed) {
+			console.error(
+				`dg-agent: attached to the session the extension is waiting on (${claimed.sessionId})`,
+			);
+			console.log(buildBootstrapUrl(targetPort, claimed));
+			if (options.open) await tryOpen(buildBootstrapUrl(targetPort, claimed));
+			return;
+		}
+	}
 
 	const bootstrap = await registerSession(targetPort, {
 		cwd: process.cwd(),

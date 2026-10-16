@@ -1,0 +1,19 @@
+name: Mask secrets
+description: Register secret-shaped environment values so later logs, screenshots, and artifacts cannot print them.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # Debug step logs dump the environment. Keep them off for this job.
+        echo "ACTIONS_STEP_DEBUG=false" >> "$GITHUB_ENV"
+        while IFS= read -r name; do
+          case "$name" in
+            *SECRET*|*TOKEN*|*PASSWORD*|*API_KEY*|*COOKIE*|*CREDENTIAL*|*PRIVATE*)
+              value="${!name-}"
+              if [ -n "$value" ]; then
+                echo "::add-mask::$value"
+              fi
+              ;;
+          esac
+        done < <(env | cut -d= -f1)

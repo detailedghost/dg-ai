@@ -63,10 +63,15 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open]` — start or
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--fresh] [-s <id>]` — start or
   reuse the daemon and register a new session. `--open` opens the bootstrap
   URL in the default browser. `-w` attaches a workset label, which is how
-  the chat page groups sessions in its rail.
+  the chat page groups sessions in its rail. If the extension side panel is
+  already waiting on a session for this directory, `start` claims that session
+  instead of registering another one. `--fresh` always registers a new session.
+- `attach [-s <id>] [--open]` — claim a session the extension created and is
+  waiting on. Use this when Claude is already running and the side panel says
+  it is waiting for an agent.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
@@ -204,6 +209,8 @@ point of publishing it.
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
+- The extension side panel connects in both directions. From the panel, **Attach CLI session** (after `dg-daemon pair`) links an already-open CLI session, and **New session for CLI** creates one that `dg-agent attach` or the next `dg-agent start` claims. From the CLI, `dg-agent start --open` still hands the session to the extension.
+- Sessions whose agent has disconnected are reaped after a short grace even if the side panel is still open. Extension keepalives do not keep a dead agent alive. `dg-daemon sessions clear`, or **Clear disconnected** in the panel, drops sessions no CLI is attached to. Sessions still waiting for an agent are left alone.
 - On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach
   the loopback port from the Windows-side browser, and the daemon exits with
   code 3 rather than pretending to be reachable.

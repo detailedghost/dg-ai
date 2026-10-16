@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { realpathSync } from "node:fs";
-import type { SessionRole, SessionSummary } from "@dg/common";
+import type { SessionPresence, SessionRole, SessionSummary } from "@dg/common";
 import {
 	type DgPaths,
 	mintToken,
@@ -10,6 +10,12 @@ import {
 	writeSessionToken,
 } from "@dg/common/node";
 import { triggerAssetCleanup } from "../utils/asset-cleanup";
+import {
+	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_UNCLAIMED_TTL_MS,
+	isManuallyClearable,
+	shouldReapSession,
+} from "./liveness";
 
 export type SessionState = "active" | "closed";
 
@@ -21,8 +27,11 @@ export type SessionRecord = {
 	workset?: string;
 	role: SessionRole;
 	state: SessionState;
+	awaitingAgent: boolean;
+	cliAttached: boolean;
 	createdAt: number;
 	lastActivityAt: number;
+	cliDetachedAt?: number;
 	closedAt?: number;
 };
 
@@ -31,6 +40,7 @@ export type CreateSessionInput = {
 	agentIdentity: string;
 	workset?: string;
 	role: SessionRole;
+	awaitingAgent?: boolean;
 };
 
 export type CloseReason = "cli" | "canvas" | "daemon-shutdown" | "expired";
@@ -64,6 +74,8 @@ export class SessionRegistry extends EventEmitter {
 			workset: input.workset,
 			role: input.role,
 			state: "active",
+			awaitingAgent: input.awaitingAgent === true,
+			cliAttached: false,
 			createdAt,
 			lastActivityAt: createdAt,
 		};
@@ -86,6 +98,23 @@ export class SessionRegistry extends EventEmitter {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state !== "active") return;
 		record.lastActivityAt = this.now();
+	}
+
+	noteCliAttached(sessionId: string): void {
+		const record = this.sessions.get(sessionId);
+		if (!record || record.state !== "active") return;
+		record.cliAttached = true;
+		record.awaitingAgent = false;
+		record.cliDetachedAt = undefined;
+		record.lastActivityAt = this.now();
+	}
+
+	noteCliDetached(sessionId: string): void {
+		const record = this.sessions.get(sessionId);
+		if (!record || record.state !== "active" || !record.cliAttached) return;
+		record.cliAttached = false;
+		record.cliDetachedAt = this.now();
+		this.emit("agent-gone", { sessionId });
 	}
 
 	validate(sessionId: string, token: string): boolean {
@@ -117,13 +146,33 @@ export class SessionRegistry extends EventEmitter {
 	reapExpired(
 		ttlMs: number,
 		isExempt: (sessionId: string) => boolean,
+		limits: { agentGoneMs?: number; unclaimedTtlMs?: number } = {},
 	): string[] {
 		const now = this.now();
+		const reapLimits = {
+			sessionTtlMs: ttlMs,
+			agentGoneMs: limits.agentGoneMs ?? DEFAULT_AGENT_GONE_MS,
+			unclaimedTtlMs: limits.unclaimedTtlMs ?? DEFAULT_UNCLAIMED_TTL_MS,
+		};
 		const expired: string[] = [];
 		for (const record of [...this.sessions.values()]) {
-			if (record.state !== "active") continue;
-			if (now - record.lastActivityAt < ttlMs) continue;
-			if (isExempt(record.sessionId)) continue;
+			if (
+				!shouldReapSession(
+					{
+						state: record.state,
+						createdAt: record.createdAt,
+						lastActivityAt: record.lastActivityAt,
+						awaitingAgent: record.awaitingAgent,
+						cliAttached: record.cliAttached,
+						cliDetachedAt: record.cliDetachedAt,
+						exempt: isExempt(record.sessionId),
+					},
+					now,
+					reapLimits,
+				)
+			) {
+				continue;
+			}
 			this.close(record.sessionId, "expired");
 			expired.push(record.sessionId);
 		}
@@ -135,6 +184,13 @@ export class SessionRegistry extends EventEmitter {
 		return expired;
 	}
 
+	presence(record: SessionRecord): SessionPresence {
+		if (record.cliAttached) return "cli";
+		if (record.awaitingAgent) return "waiting";
+		if (record.cliDetachedAt !== undefined) return "gone";
+		return "idle";
+	}
+
 	list(): SessionSummary[] {
 		return [...this.sessions.values()]
 			.filter((record) => record.state === "active")
@@ -142,8 +198,19 @@ export class SessionRegistry extends EventEmitter {
 				sessionId: record.sessionId,
 				agentIdentity: record.agentIdentity,
 				role: record.role,
+				presence: this.presence(record),
 				...(record.workset !== undefined ? { workset: record.workset } : {}),
 			}));
+	}
+
+	clearDisconnected(): string[] {
+		const closed: string[] = [];
+		for (const record of [...this.sessions.values()]) {
+			if (!isManuallyClearable(record)) continue;
+			this.close(record.sessionId, "expired");
+			closed.push(record.sessionId);
+		}
+		return closed;
 	}
 
 	activeCount(): number {

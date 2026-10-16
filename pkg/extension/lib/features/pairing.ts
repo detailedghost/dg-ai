@@ -6,6 +6,11 @@ import {
 import { browser } from "wxt/browser";
 import { MSG, type PairingSession } from "@/lib/chat-messages";
 import { findDaemonPort } from "@/lib/daemon-port";
+import {
+	type PublicSession,
+	sessionControls,
+	staleSessionIds,
+} from "@/lib/features/chat-connection";
 
 type PairRuntimeListener = (message: unknown) => void;
 
@@ -23,6 +28,7 @@ export type PairingOptions = {
 	runtime?: PairRuntime;
 	findPort?: () => Promise<number | undefined>;
 	fetch?: (input: string, init: RequestInit) => Promise<Response>;
+	onDaemon?(reachable: boolean): void;
 };
 
 export type PairingHandle = {
@@ -108,6 +114,7 @@ export function mountPairing(
 	let destroyed = false;
 	let awaitingSessionId: string | undefined;
 	let selectedSessionId: string | undefined;
+	let catalog: PublicSession[] = [];
 
 	root.classList.add("pair-shell", `pair-shell--${options.variant}`);
 	root.hidden = true;
@@ -136,8 +143,24 @@ export function mountPairing(
 	const status = element(doc, "p", "pair-panel__status");
 	status.setAttribute("role", "status");
 	form.append(label, submit);
+	const directions = element(
+		doc,
+		"p",
+		"pair-panel__copy",
+		"Attach a CLI session that is already open, or create one here and run dg-agent attach.",
+	);
+	const attachButton = element(doc, "button", "pair-button", "Attach CLI session");
+	attachButton.type = "button";
+	const launchButton = element(doc, "button", "pair-button", "New session for CLI");
+	launchButton.type = "button";
+	const clearButton = element(doc, "button", "pair-button", "Clear disconnected");
+	clearButton.type = "button";
+	const retryButton = element(doc, "button", "pair-button", "Retry");
+	retryButton.type = "button";
+	const actions = element(doc, "div", "pair-actions");
+	actions.append(attachButton, launchButton, clearButton, retryButton);
 	const sessionList = element(doc, "ul", "pair-sessions");
-	panel.append(heading, copy, reveal, form, status, sessionList);
+	panel.append(heading, copy, reveal, form, directions, actions, status, sessionList);
 	root.replaceChildren(panel);
 
 	function clearConfirmationTimer(): void {
@@ -146,18 +169,57 @@ export function mountPairing(
 		confirmationTimer = undefined;
 	}
 
+	function controls() {
+		const held = sessions.map((session) => ({
+			sessionId: session.sessionId,
+			connected: session.connected,
+		}));
+		const listed =
+			catalog.length > 0
+				? catalog
+				: sessions.map((session) => ({
+						sessionId: session.sessionId,
+						agentIdentity: session.agentIdentity,
+						presence: session.connected
+							? ("cli" as const)
+							: ("idle" as const),
+					}));
+		return sessionControls(listed, held);
+	}
+
 	function renderSessions(): void {
 		sessionList.replaceChildren();
+		const rows = controls();
+		clearButton.hidden = staleSessionIds(rows).length === 0;
 		for (const session of sessions) {
 			const hasSelection = sessions.some((item) => item.sessionId === selectedSessionId);
 			const isCurrent = hasSelection ? session.sessionId === selectedSessionId : session.current === true;
 			const row = element(doc, "li", isCurrent ? "pair-session pair-session--current" : "pair-session");
+			const control = rows.find((item) => item.sessionId === session.sessionId);
 			const label = element(
 				doc,
 				"span",
 				"pair-session__label",
 				`${isCurrent ? "Current · " : ""}${session.agentIdentity} · ${session.sessionId.slice(0, 8)} · ${session.connected ? "Connected" : "Disconnected"}`,
 			);
+			if (control?.canConnect) {
+				const connect = element(doc, "button", "pair-button", "Connect");
+				connect.type = "button";
+				connect.setAttribute(
+					"aria-label",
+					`Connect ${session.agentIdentity} ${session.sessionId.slice(0, 8)}`,
+				);
+				connect.addEventListener("click", () => {
+					void runCommand({
+						type: MSG.sessionAttach,
+						sessionId: session.sessionId,
+						...codePayload(),
+					});
+				});
+				row.append(label, connect);
+				sessionList.append(row);
+				continue;
+			}
 			const disconnect = element(doc, "button", "pair-button", "Disconnect");
 			disconnect.type = "button";
 			disconnect.setAttribute(
@@ -181,12 +243,70 @@ export function mountPairing(
 				})();
 			});
 			row.append(label, disconnect);
+			if (control?.canStop) {
+				const stop = element(doc, "button", "pair-button", "Stop");
+				stop.type = "button";
+				stop.setAttribute(
+					"aria-label",
+					`Stop ${session.agentIdentity} ${session.sessionId.slice(0, 8)}`,
+				);
+				stop.addEventListener("click", () => {
+					stop.disabled = true;
+					void runCommand({ type: MSG.sessionClose, sessionId: session.sessionId });
+				});
+				row.append(stop);
+			}
 			sessionList.append(row);
 		}
-		sessionList.hidden = sessions.length === 0;
+		for (const control of rows) {
+			if (sessions.some((session) => session.sessionId === control.sessionId)) continue;
+			const row = element(doc, "li", "pair-session");
+			const label = element(
+				doc,
+				"span",
+				"pair-session__label",
+				`${control.agentIdentity} · ${control.sessionId.slice(0, 8)} · ${control.presence}`,
+			);
+			const connect = element(doc, "button", "pair-button", "Connect");
+			connect.type = "button";
+			connect.addEventListener("click", () => {
+				void runCommand({
+					type: MSG.sessionAttach,
+					sessionId: control.sessionId,
+					...codePayload(),
+				});
+			});
+			row.append(label, connect);
+			sessionList.append(row);
+		}
+		sessionList.hidden = sessionList.childElementCount === 0;
+	}
+
+	function codePayload(): { code?: string } {
+		return /^\d{6}$/.test(input.value) ? { code: input.value } : {};
+	}
+
+	async function runCommand(message: unknown): Promise<void> {
+		try {
+			const reply = await runtime.sendMessage?.(message);
+			if (!isPairingSuccessReply(reply)) {
+				const error =
+					typeof reply === "object" &&
+					reply !== null &&
+					typeof (reply as { error?: unknown }).error === "string"
+						? (reply as { error: string }).error
+						: "Could not update the session. Retry, or check that the daemon is running.";
+				status.textContent = error;
+				return;
+			}
+			await refresh();
+		} catch {
+			status.textContent = "Could not reach the extension background. Retry.";
+		}
 	}
 
 	function showConnected(): void {
+		options.onDaemon?.(true);
 		if (
 			sessions.some(
 				(session) => session.sessionId === awaitingSessionId && session.connected,
@@ -212,6 +332,7 @@ export function mountPairing(
 	}
 
 	function showUnavailable(): void {
+		options.onDaemon?.(false);
 		root.hidden = false;
 		heading.textContent = "Not paired";
 		copy.textContent = START_DAEMON;
@@ -222,6 +343,7 @@ export function mountPairing(
 	}
 
 	function showReady(): void {
+		options.onDaemon?.(true);
 		root.hidden = false;
 		heading.textContent = "Not paired";
 		reveal.textContent = "Pair";
@@ -249,17 +371,40 @@ export function mountPairing(
 		} catch {}
 		if (version !== refreshVersion || destroyed) return;
 		applySessions(connectionReply);
+		const catalogTask = loadCatalog();
 		connected = isConnectedReply(connectionReply);
 		if (connected) {
 			showConnected();
-			return;
+		} else {
+			port = await findPort();
+			if (version !== refreshVersion || destroyed) return;
+			if (port === undefined) showUnavailable();
+			else showReady();
+			if (sessions.length > 0) {
+				status.textContent =
+					"Disconnected — waiting for the daemon to confirm the connection.";
+			}
 		}
-		port = await findPort();
-		if (version !== refreshVersion) return;
-		if (port === undefined) showUnavailable();
-		else showReady();
-		if (sessions.length > 0) {
-			status.textContent = "Disconnected — waiting for the daemon to confirm the connection.";
+		await catalogTask;
+		if (version !== refreshVersion || destroyed) return;
+		renderSessions();
+	}
+
+	async function loadCatalog(): Promise<void> {
+		try {
+			const reply = await runtime.sendMessage?.({ type: MSG.sessionCatalog });
+			if (typeof reply !== "object" || reply === null) return;
+			const items = (reply as { sessions?: unknown }).sessions;
+			if (!Array.isArray(items)) return;
+			catalog = items.filter(
+				(item): item is PublicSession =>
+					typeof item === "object" &&
+					item !== null &&
+					typeof (item as { sessionId?: unknown }).sessionId === "string" &&
+					typeof (item as { agentIdentity?: unknown }).agentIdentity === "string",
+			);
+		} catch {
+			catalog = [];
 		}
 	}
 
@@ -376,6 +521,26 @@ export function mountPairing(
 				submit.disabled = paired;
 			}
 		})();
+	});
+
+	attachButton.addEventListener("click", () => {
+		void runCommand({
+			type: MSG.sessionAttach,
+			all: true,
+			...codePayload(),
+		});
+	});
+	launchButton.addEventListener("click", () => {
+		void runCommand({
+			type: MSG.sessionLaunch,
+			...codePayload(),
+		});
+	});
+	clearButton.addEventListener("click", () => {
+		void runCommand({ type: MSG.sessionClear });
+	});
+	retryButton.addEventListener("click", () => {
+		void runCommand({ type: MSG.connectionRetry });
 	});
 
 	runtime.onMessage?.addListener(onRuntimeMessage);

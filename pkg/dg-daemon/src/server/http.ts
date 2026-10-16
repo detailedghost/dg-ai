@@ -3,6 +3,7 @@ import {
 	ASSET_FILENAME_HEADER,
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
+	CHAT_ATTACH_PATH,
 	CHAT_CLI_PATH,
 	CHAT_FEED_PATH,
 	CHAT_HEALTH_PATH,
@@ -12,6 +13,8 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PAIR_PATH,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SESSIONS_CLEAR_PATH,
+	CHAT_SESSIONS_PATH,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
@@ -25,6 +28,8 @@ import {
 	OVERWATCH_SESSION_ID,
 	type PairRequest,
 	type SessionRole,
+	decideAttach,
+	validateAttachRequest,
 	validateOverwatchAction,
 	validatePairRequest,
 } from "@dg/common";
@@ -259,10 +264,19 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				});
 			},
 			close(ws) {
+				const cliSessions =
+					ws.data.kind === "cli" ? [...ws.data.capabilities.keys()] : [];
 				resolveDrainWaiters(ws);
 				abortPendingWork(ws);
 				connections.remove(ws);
 				noteActivity();
+				for (const sessionId of cliSessions) {
+					let stillAttached = false;
+					connections.forEachCapableOf(sessionId, (other) => {
+						if (other.data.kind === "cli") stillAttached = true;
+					});
+					if (!stillAttached) registry.noteCliDetached(sessionId);
+				}
 			},
 			drain(ws) {
 				resolveDrainWaiters(ws);
@@ -307,6 +321,22 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_PAIR_PATH && req.method === "POST") {
 				return handlePair(req, deps);
+			}
+
+			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
+				return handleAttach(req, deps);
+			}
+
+			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
+				return handleSessionClear(req, deps);
+			}
+
+			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
+				return handleSessionCatalog(req, url, deps);
+			}
+
+			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "POST") {
+				return handleExtensionSessionCreate(req, deps);
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
@@ -470,6 +500,7 @@ async function handleRegisterSession(
 		agentIdentity,
 		workset,
 		role,
+		awaitingAgent: input.awaitingAgent === true,
 	});
 }
 
@@ -561,6 +592,205 @@ async function handlePair(
 		workset: "paired",
 		role: "agent",
 	});
+}
+
+function pairingAttemptResponse(
+	attempt: ReturnType<typeof consumePairingAttempt>,
+): Response {
+	if (attempt.outcome === "missing") {
+		return new Response("no pairing code is pending; run `dg-daemon pair`", {
+			status: 404,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (attempt.outcome === "expired") {
+		return new Response("pairing code expired; run `dg-daemon pair`", {
+			status: 410,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (attempt.outcome === "incorrect") {
+		return new Response(
+			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
+			{ status: 401, headers: NOSNIFF_HEADERS },
+		);
+	}
+	return new Response("pairing code was not accepted", {
+		status: 401,
+		headers: NOSNIFF_HEADERS,
+	});
+}
+
+async function handleAttach(
+	req: Request,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const originError = requirePairOrigin(req, deps.paths);
+	if (originError) return originError;
+	let body: unknown;
+	try {
+		body = await req.json();
+	} catch {
+		return new Response("invalid JSON body", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	let request: ReturnType<typeof validateAttachRequest>;
+	try {
+		request = validateAttachRequest(body);
+	} catch (err) {
+		return new Response(describeError(err), {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const origin = req.headers.get("origin");
+	const pinned = getPinnedOrigin(deps.paths) === origin;
+	let codeAccepted = false;
+	if (request.code !== undefined) {
+		const attempt = consumePairingAttempt(deps.paths, request.code);
+		if (attempt.outcome !== "accepted") return pairingAttemptResponse(attempt);
+		codeAccepted = true;
+	}
+	const candidates = activeCandidates(deps);
+	const decision = decideAttach({
+		intent: request.intent,
+		sessionId: request.sessionId,
+		all: request.all,
+		pinned,
+		codeAccepted,
+		sessions: candidates,
+	});
+	if (decision.action === "reject") {
+		return new Response(decision.message, {
+			status: decision.status,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (decision.action === "create") {
+		const capacityError = requireSessionCapacity(deps);
+		if (capacityError) return capacityError;
+		return createSessionResponse(deps, {
+			cwd: process.cwd(),
+			agentIdentity: request.agentIdentity ?? "agent",
+			workset: request.workset,
+			role: request.role ?? "agent",
+			awaitingAgent: true,
+		});
+	}
+	return json({
+		sessions: candidates
+			.filter((session) => decision.sessionIds.includes(session.sessionId))
+			.map((session) => ({
+				port: deps.port,
+				sessionId: session.sessionId,
+				token: session.token,
+				agentIdentity: session.agentIdentity,
+			})),
+	});
+}
+
+function activeCandidates(deps: HttpServerDeps): {
+	sessionId: string;
+	token: string;
+	agentIdentity: string;
+	state: "active" | "closed";
+}[] {
+	const listed = deps.registry.list();
+	return listed.flatMap((summary) => {
+		const record = deps.registry.get(summary.sessionId);
+		if (!record || record.state !== "active") return [];
+		return [
+			{
+				sessionId: record.sessionId,
+				token: record.token,
+				agentIdentity: record.agentIdentity,
+				state: record.state,
+			},
+		];
+	});
+}
+
+function handleSessionCatalog(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Response {
+	const origin = req.headers.get("origin");
+	if (isBrowserOrigin(origin)) {
+		return new Response("refused: /sessions rejects a browser Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (origin !== null) {
+		const originError = requirePairOrigin(req, deps.paths);
+		if (originError) return originError;
+	}
+	const waitingOnly = url.searchParams.get("waiting") === "1";
+	const includeCwd = origin === null;
+	const sessions = deps.registry
+		.list()
+		.flatMap((summary) => {
+			const record = deps.registry.get(summary.sessionId);
+			if (!record || record.state !== "active") return [];
+			if (waitingOnly && !record.awaitingAgent) return [];
+			return [
+				{
+					sessionId: record.sessionId,
+					agentIdentity: record.agentIdentity,
+					role: record.role,
+					presence: summary.presence,
+					awaitingAgent: record.awaitingAgent,
+					...(record.workset !== undefined ? { workset: record.workset } : {}),
+					...(includeCwd ? { cwd: record.cwd } : {}),
+				},
+			];
+		});
+	return json({ sessions });
+}
+
+async function handleExtensionSessionCreate(
+	req: Request,
+	deps: HttpServerDeps,
+): Promise<Response> {
+	const originError = requirePinnedExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
+	const capacityError = requireSessionCapacity(deps);
+	if (capacityError) return capacityError;
+	let body: Record<string, unknown> = {};
+	try {
+		const parsed = await req.json();
+		if (typeof parsed === "object" && parsed !== null) {
+			body = parsed as Record<string, unknown>;
+		}
+	} catch {
+		body = {};
+	}
+	const role: SessionRole = body.role === "orchestrator" ? "orchestrator" : "agent";
+	const workset =
+		typeof body.workset === "string" ? body.workset.trim() || undefined : undefined;
+	const agentIdentity =
+		typeof body.agentIdentity === "string" && body.agentIdentity.trim().length > 0
+			? body.agentIdentity.trim()
+			: "agent";
+	return createSessionResponse(deps, {
+		cwd: process.cwd(),
+		agentIdentity,
+		workset,
+		role,
+		awaitingAgent: true,
+	});
+}
+
+function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
+	const origin = req.headers.get("origin");
+	if (origin !== null) {
+		const originError = requirePinnedExtensionOrigin(req, deps.paths);
+		if (originError) return originError;
+	}
+	return json({ closed: deps.registry.clearDisconnected() });
 }
 
 function parseLimit(raw: string | null): number | undefined | "invalid" {
@@ -820,6 +1050,7 @@ function handleCliUpgrade(
 		const credentials = requireSessionCredentials(req, deps.registry);
 		if (credentials instanceof Response) return credentials;
 		data.capabilities.set(credentials.sessionId, credentials.token);
+		deps.registry.noteCliAttached(credentials.sessionId);
 	}
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });

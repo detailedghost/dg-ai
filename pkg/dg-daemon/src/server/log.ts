@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { redactText } from "@dg/common";
 import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
 
 const MAX_LOG_BYTES = 5_000_000;
@@ -83,7 +84,7 @@ export function createLogger(paths: DgPaths, seams: LoggerSeams = {}): Logger {
 		} catch {}
 		const pending = appendFile(
 			file,
-			`${at.toISOString()} [${level}] ${message}\n`,
+			`${at.toISOString()} [${level}] ${redactText(message)}\n`,
 		).catch(() => {});
 		pendingWrites.add(pending);
 		void pending.finally(() => pendingWrites.delete(pending));

@@ -1,11 +1,22 @@
 import {
+	CHAT_ATTACH_PATH,
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SESSIONS_CLEAR_PATH,
+	CHAT_SESSIONS_PATH,
 	type ChatFrame,
 	type SessionBootstrap,
+	emitRedacted,
+	noteSecret,
+	validateAttachRequest,
 	validateSessionBootstrap,
 } from "@dg/common";
+import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
+import {
+	handshakeOutcome,
+	redactSecrets,
+} from "@/lib/features/chat-connection";
 import { browser } from "wxt/browser";
 import {
 	createInboxHandler,
@@ -70,8 +81,12 @@ export type ChatBrowserApi = {
 	windows?: {
 		update(windowId: number, props: { focused: boolean }): unknown;
 	};
+	sidePanel?: {
+		open(options: { tabId?: number }): Promise<void>;
+	};
 	storage: {
 		session: {
+			get?(): Promise<Record<string, unknown>>;
 			set(items: Record<string, unknown>): Promise<void>;
 			remove(keys: string | string[]): Promise<void>;
 		};
@@ -131,7 +146,10 @@ export async function handleOverwatchFrameSafely(
 				error: error instanceof Error ? error.message : String(error),
 			});
 		}
-		console.error("[dg-ai-extension] overwatch frame failed:", error);
+		emitRedacted(
+			(line) => console.error(line),
+			`[dg-ai-extension] overwatch frame failed: ${error instanceof Error ? error.message : String(error)}`,
+		);
 	}
 }
 
@@ -208,6 +226,10 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		createInboxHandler({ browserApi: api as unknown as InboxBrowserApi });
 	const pendingInbox = new Set<string>();
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
+	function holdBootstrap(bootstrap: SessionBootstrap): void {
+		noteSecret(bootstrap.token);
+		bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+	}
 	const keepaliveEligible = new Set<string>();
 	const configWaiters: ConfigWaiter[] = [];
 	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
@@ -357,7 +379,107 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
 		extensionVersion: api.runtime.getManifest?.().version,
+		keepaliveIntervalMs,
 	});
+
+	function knownTokens(): string[] {
+		return [...bootstrapsBySession.values()].map((bootstrap) => bootstrap.token);
+	}
+
+	function safeError(error: unknown): string {
+		const message = error instanceof Error ? error.message : String(error);
+		return redactSecrets(message, knownTokens());
+	}
+
+	async function daemonPort(): Promise<number | undefined> {
+		const hinted =
+			firstConfirmedBootstrap()?.port ??
+			[...bootstrapsBySession.values()][0]?.port;
+		if (hinted !== undefined && (await fetchDaemonHealth(hinted))) return hinted;
+		return findDaemonPort();
+	}
+
+	async function postDaemon(
+		path: string,
+		body: unknown,
+	): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+		const port = await daemonPort();
+		if (port === undefined) {
+			return {
+				ok: false,
+				error: "Daemon unreachable. Start it with dg-agent start, then retry.",
+			};
+		}
+		try {
+			const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			const text = await response.text();
+			if (!response.ok) {
+				return { ok: false, error: redactSecrets(text, knownTokens()) };
+			}
+			try {
+				return { ok: true, value: text.length === 0 ? {} : JSON.parse(text) };
+			} catch {
+				return {
+					ok: false,
+					error: "The daemon returned a response the extension could not read.",
+				};
+			}
+		} catch (error) {
+			return { ok: false, error: safeError(error) };
+		}
+	}
+
+	async function adoptBootstraps(value: unknown): Promise<number> {
+		const list = Array.isArray(value)
+			? value
+			: typeof value === "object" &&
+					value !== null &&
+					Array.isArray((value as { sessions?: unknown }).sessions)
+				? (value as { sessions: unknown[] }).sessions
+				: [value];
+		let adopted = 0;
+		for (const item of list) {
+			const bootstrap = asSessionBootstrap(item);
+			if (!bootstrap) continue;
+			await api.storage.session.set({
+				[chatSessionKey(bootstrap.sessionId)]: bootstrap,
+			});
+			currentPairingId ??= bootstrap.sessionId;
+			holdBootstrap(bootstrap);
+			client.connect(bootstrap);
+			adopted += 1;
+		}
+		if (adopted > 0) broadcastPairingStatus();
+		return adopted;
+	}
+
+	async function presentChat(tab?: { id?: number }): Promise<void> {
+		if (api.sidePanel) {
+			try {
+				await api.sidePanel.open(
+					tab?.id !== undefined ? { tabId: tab.id } : {},
+				);
+				return;
+			} catch {
+				// Opening the side panel needs a user gesture Chrome will accept.
+			}
+		}
+		const url = api.runtime.getURL(CHAT_PAGE_PATH);
+		const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
+		const existing = matches[0];
+		if (existing?.id !== undefined && api.tabs.update) {
+			await api.tabs.update(existing.id, { active: true });
+			if (existing.windowId !== undefined && api.windows) {
+				await api.windows.update(existing.windowId, { focused: true });
+			}
+			return;
+		}
+		await api.tabs.create({ url });
+	}
 
 	function pairingStatus() {
 		const state = client.getConnectionState();
@@ -445,6 +567,14 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				.finally(() => pendingInbox.delete(key));
 			return;
 		}
+		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
+			client.forgetSession(frame.sessionId);
+			bootstrapsBySession.delete(frame.sessionId);
+			keepaliveEligible.delete(frame.sessionId);
+			void api.storage.session.remove(chatSessionKey(frame.sessionId));
+			if (keepaliveEligible.size === 0) stopKeepalive();
+			broadcastPairingStatus();
+		}
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		const requestSocket = currentSocket;
 		const requestBootstrap = firstConfirmedBootstrap();
@@ -475,7 +605,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (frame.type === "session-pending") {
 			const requester = bootstrapsBySession.get(frame.sessionId);
 			if (requester) {
-				bootstrapsBySession.set(frame.newSession.sessionId, {
+				holdBootstrap({
 					...requester,
 					sessionId: frame.newSession.sessionId,
 					token: frame.newSession.token,
@@ -499,7 +629,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	resolveActionApi(api).onClicked.addListener((tab) => {
 		void (async () => {
 			if (await maybeStartRecording(tab)) return;
-			await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
+			await presentChat(tab);
 		})();
 	});
 
@@ -512,16 +642,16 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					await api.storage.session.set({
 						[chatSessionKey(bootstrap.sessionId)]: bootstrap,
 					});
-					await api.tabs.create({ url: api.runtime.getURL(CHAT_PAGE_PATH) });
+					await presentChat();
 					currentPairingId = bootstrap.sessionId;
-					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+					holdBootstrap(bootstrap);
 					client.connect(bootstrap);
 					broadcastPairingStatus();
 					sendResponse({ ok: true });
 				} catch (error) {
 					sendResponse({
 						ok: false,
-						error: error instanceof Error ? error.message : String(error),
+						error: safeError(error),
 					});
 				}
 			})();
@@ -536,11 +666,156 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				case MSG.connectionRequest:
 					sendResponse(pairingStatus());
 					return undefined;
+				case MSG.bootstrapsRequest:
+					sendResponse({ bootstraps: [...bootstrapsBySession.values()] });
+					return undefined;
+				case MSG.connectionRetry: {
+					void (async () => {
+						const port = await daemonPort();
+						if (port === undefined) {
+							sendResponse({
+								ok: false,
+								error:
+									"Daemon unreachable. Start it with dg-agent start, then retry.",
+							});
+							return;
+						}
+						for (const bootstrap of bootstrapsBySession.values()) {
+							const next = { ...bootstrap, port };
+							holdBootstrap(next);
+							client.connect(next);
+						}
+						client.retryNow();
+						broadcastPairingStatus();
+						sendResponse({ ok: true, state: client.getConnectionState() });
+					})();
+					return true;
+				}
+				case MSG.sessionCatalog: {
+					void (async () => {
+						const port = await daemonPort();
+						if (port === undefined) {
+							sendResponse({ sessions: [] });
+							return;
+						}
+						try {
+							const response = await fetch(
+								`http://127.0.0.1:${port}${CHAT_SESSIONS_PATH}`,
+							);
+							const text = await response.text();
+							if (!response.ok) {
+								sendResponse({
+									sessions: [],
+									error: redactSecrets(text, knownTokens()),
+								});
+								return;
+							}
+							const body = JSON.parse(text) as { sessions?: unknown };
+							sendResponse({
+								sessions: Array.isArray(body.sessions) ? body.sessions : [],
+							});
+						} catch (error) {
+							sendResponse({ sessions: [], error: safeError(error) });
+						}
+					})();
+					return true;
+				}
+				case MSG.sessionAttach: {
+					void (async () => {
+						try {
+							const request = validateAttachRequest({
+								intent: "attach",
+								...(typeof payload.code === "string" ? { code: payload.code } : {}),
+								...(typeof payload.sessionId === "string"
+									? { sessionId: payload.sessionId }
+									: {}),
+								...(payload.all === true ? { all: true } : {}),
+							});
+							const result = await postDaemon(CHAT_ATTACH_PATH, request);
+							if (!result.ok) {
+								sendResponse({ ok: false, error: result.error });
+								return;
+							}
+							const adopted = await adoptBootstraps(result.value);
+							sendResponse(
+								adopted > 0
+									? { ok: true }
+									: {
+											ok: false,
+											error: "The daemon did not return a session.",
+										},
+							);
+						} catch (error) {
+							sendResponse({ ok: false, error: safeError(error) });
+						}
+					})();
+					return true;
+				}
+				case MSG.sessionLaunch: {
+					void (async () => {
+						try {
+							const workset =
+								typeof payload.workset === "string" ? payload.workset : undefined;
+							const result =
+								typeof payload.code === "string"
+									? await postDaemon(CHAT_ATTACH_PATH, {
+											intent: "create",
+											code: payload.code,
+											...(workset ? { workset } : {}),
+										})
+									: await postDaemon(CHAT_SESSIONS_PATH, {
+											...(workset ? { workset } : {}),
+										});
+							if (!result.ok) {
+								sendResponse({ ok: false, error: result.error });
+								return;
+							}
+							const adopted = await adoptBootstraps(result.value);
+							sendResponse(
+								adopted > 0
+									? { ok: true }
+									: {
+											ok: false,
+											error: "The daemon did not create a session.",
+										},
+							);
+						} catch (error) {
+							sendResponse({ ok: false, error: safeError(error) });
+						}
+					})();
+					return true;
+				}
+				case MSG.sessionClear: {
+					void (async () => {
+						const result = await postDaemon(CHAT_SESSIONS_CLEAR_PATH, {});
+						if (!result.ok) {
+							sendResponse({ ok: false, error: result.error });
+							return;
+						}
+						const closedIds = Array.isArray(
+							(result.value as { closed?: unknown }).closed,
+						)
+							? ((result.value as { closed: unknown[] }).closed.filter(
+									(id): id is string => typeof id === "string",
+								))
+							: [];
+						for (const sessionId of closedIds) {
+							client.forgetSession(sessionId);
+							bootstrapsBySession.delete(sessionId);
+							keepaliveEligible.delete(sessionId);
+							await api.storage.session.remove(chatSessionKey(sessionId));
+						}
+						if (keepaliveEligible.size === 0) stopKeepalive();
+						broadcastPairingStatus();
+						sendResponse({ ok: true, closed: closedIds });
+					})();
+					return true;
+				}
 				case MSG.clientConnect: {
 					const bootstrap = asSessionBootstrap(payload.bootstrap);
 					if (!bootstrap) return undefined;
 					currentPairingId ??= bootstrap.sessionId;
-					bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
+					holdBootstrap(bootstrap);
 					client.connect(bootstrap);
 					broadcastPairingStatus();
 					sendResponse({ ok: true, state: client.getConnectionState() });
@@ -647,11 +922,26 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		} catch (error) {
 			sendResponse({
 				ok: false,
-				error: error instanceof Error ? error.message : String(error),
+				error: safeError(error),
 			});
 		}
 		return undefined;
 	});
+
+	if (api.storage?.session?.get) {
+		void api.storage.session
+			.get()
+			.then((stored) => {
+				for (const [key, value] of Object.entries(stored ?? {})) {
+					if (!key.startsWith(CHAT_SESSION_KEY_PREFIX)) continue;
+					const bootstrap = asSessionBootstrap(value);
+					if (!bootstrap || bootstrapsBySession.has(bootstrap.sessionId)) continue;
+					holdBootstrap(bootstrap);
+					client.connect(bootstrap);
+				}
+			})
+			.catch(() => undefined);
+	}
 
 	return client;
 }
