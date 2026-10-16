@@ -3,10 +3,12 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	type CliRequest,
+	OWNER_TOKEN_HEADER,
 } from "../cli-wire";
 import { CHAT_SESSIONS_LOCAL_PATH } from "../session-connect";
 import { DgCliError, describeError } from "../errors";
 import { noteSecret } from "../redact";
+import { readOwnerToken } from "./owner-token";
 import { type DgPaths, resolveDgPaths } from "./paths";
 import { loopbackHostHeader, readPidFile, requireMatchingProtocol } from "./pidfile";
 import {
@@ -32,15 +34,29 @@ const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
 const LOCAL_SESSION_LOOKUP_MS = 1_000;
 
-async function fetchLocalSessions(port: number): Promise<SessionTokenRecord[]> {
+async function fetchLocalSessions(
+	port: number,
+	paths: DgPaths,
+	sessionId?: string,
+): Promise<SessionTokenRecord[]> {
+	const owner = readOwnerToken(paths);
+	if (owner === undefined) return [];
+	const query =
+		sessionId === undefined ? "" : `?session=${encodeURIComponent(sessionId)}`;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), LOCAL_SESSION_LOOKUP_MS);
 	let response: Response;
 	try {
-		response = await fetch(`http://127.0.0.1:${port}${CHAT_SESSIONS_LOCAL_PATH}`, {
-			headers: loopbackHostHeader(port),
-			signal: controller.signal,
-		});
+		response = await fetch(
+			`http://127.0.0.1:${port}${CHAT_SESSIONS_LOCAL_PATH}${query}`,
+			{
+				headers: {
+					...loopbackHostHeader(port),
+					[OWNER_TOKEN_HEADER]: owner,
+				},
+				signal: controller.signal,
+			},
+		);
 	} catch {
 		return [];
 	} finally {
@@ -54,14 +70,21 @@ async function fetchLocalSessions(port: number): Promise<SessionTokenRecord[]> {
 		const record = value as Partial<SessionTokenRecord>;
 		if (
 			typeof record.sessionId !== "string" ||
-			typeof record.token !== "string" ||
 			typeof record.cwd !== "string" ||
 			typeof record.agentIdentity !== "string"
 		) {
 			return [];
 		}
-		noteSecret(record.token);
-		return [record as SessionTokenRecord];
+		const token = typeof record.token === "string" ? record.token : "";
+		if (token.length > 0) noteSecret(token);
+		return [
+			{
+				sessionId: record.sessionId,
+				token,
+				cwd: record.cwd,
+				agentIdentity: record.agentIdentity,
+			},
+		];
 	});
 }
 
@@ -80,7 +103,7 @@ export async function resolveCliSession(
 
 	let records: SessionTokenRecord[] = [];
 	try {
-		records = await fetchLocalSessions(handle.port);
+		records = await fetchLocalSessions(handle.port, paths);
 	} catch {
 		records = [];
 	}
@@ -94,11 +117,21 @@ export async function resolveCliSession(
 			`no usable session ${explicitSessionId} is registered on the daemon.`,
 		);
 	}
-	noteSecret(chosen.token);
+	let token = chosen.token;
+	if (token.length === 0) {
+		const detailed = await fetchLocalSessions(handle.port, paths, chosen.sessionId);
+		token = detailed[0]?.token ?? "";
+	}
+	if (token.length === 0) {
+		throw new DgCliError(
+			`no usable session ${chosen.sessionId} is registered on the daemon.`,
+		);
+	}
+	noteSecret(token);
 	return {
 		port: handle.port,
 		sessionId: chosen.sessionId,
-		token: chosen.token,
+		token,
 	};
 }
 

@@ -1,5 +1,10 @@
-import { CHAT_SESSIONS_CLEAR_PATH, redactText } from "@dg/common";
-import { loopbackHostHeader, readPidFile, resolveDgPaths } from "@dg/common/node";
+import { CHAT_SESSIONS_CLEAR_PATH, OWNER_TOKEN_HEADER, redactText } from "@dg/common";
+import {
+	loopbackHostHeader,
+	readOwnerToken,
+	readPidFile,
+	resolveDgPaths,
+} from "@dg/common/node";
 import type { Command } from "commander";
 
 export function registerSessionCommands(program: Command): void {
@@ -20,11 +25,15 @@ export function registerSessionCommands(program: Command): void {
 				process.exitCode = 1;
 				return;
 			}
+			const owner = readOwnerToken(paths);
 			const response = await fetch(
 				`http://127.0.0.1:${handle.port}${CHAT_SESSIONS_CLEAR_PATH}`,
 				{
 					method: "POST",
-					headers: loopbackHostHeader(handle.port),
+					headers: {
+						...loopbackHostHeader(handle.port),
+						...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
+					},
 				},
 			);
 			if (!response.ok) {

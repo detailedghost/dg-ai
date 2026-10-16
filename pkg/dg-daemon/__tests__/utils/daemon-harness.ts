@@ -16,6 +16,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	OWNER_TOKEN_HEADER,
 	type DaemonHandle,
 	type SessionBootstrap,
 	type SessionRole,
@@ -24,6 +25,7 @@ import {
 } from "@dg/common";
 import {
 	readAssetSourceFile,
+	readOwnerToken,
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Subprocess } from "bun";
@@ -417,9 +419,16 @@ export async function sessionCredentials(
 	sessionId: string,
 ): Promise<Credentials> {
 	const handle = readPidFile(dgHome);
+	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	const owner = readOwnerToken(paths);
 	const response = await fetch(
-		`http://127.0.0.1:${handle.port}/sessions/local`,
-		{ headers: { Host: `127.0.0.1:${handle.port}` } },
+		`http://127.0.0.1:${handle.port}/sessions/local?session=${encodeURIComponent(sessionId)}`,
+		{
+			headers: {
+				Host: `127.0.0.1:${handle.port}`,
+				...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
+			},
+		},
 	);
 	if (!response.ok) {
 		throw new Error(`session lookup failed: ${response.status}`);

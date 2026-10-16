@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { CHAT_PROTOCOL_VERSION } from "@dg/common";
-import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
+import { CHAT_PROTOCOL_VERSION, OWNER_TOKEN_HEADER } from "@dg/common";
+import { readOwnerToken, resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
+import { statSync } from "node:fs";
 import { writeConfig } from "../../src/server/config-store";
 import {
 	allocatePort,
@@ -43,6 +44,12 @@ async function boot() {
 		await stopServe(proc);
 	};
 	return { port, paths: resolveDgPaths({ env: { DG_HOME: dgHome } }) };
+}
+
+function ownerHeaders(port: number): Record<string, string> {
+	const token = readOwnerToken(resolveDgPaths({ env: { DG_HOME: dgHome } }));
+	if (token === undefined) throw new Error("owner token was not written");
+	return { Host: `127.0.0.1:${port}`, [OWNER_TOKEN_HEADER]: token };
 }
 
 function extensionPost(port: number, path: string, body: unknown) {
@@ -149,7 +156,7 @@ describe("extension to CLI and CLI to extension", () => {
 
 		const cleared = await fetch(`http://127.0.0.1:${port}/sessions/clear`, {
 			method: "POST",
-			headers: { Host: `127.0.0.1:${port}` },
+			headers: ownerHeaders(port),
 		});
 		expect(((await cleared.json()) as { closed: string[] }).closed).toEqual([]);
 
@@ -172,7 +179,7 @@ describe("manual cleanup", () => {
 
 		const cleared = await fetch(`http://127.0.0.1:${port}/sessions/clear`, {
 			method: "POST",
-			headers: { Host: `127.0.0.1:${port}` },
+			headers: ownerHeaders(port),
 		});
 		expect(((await cleared.json()) as { closed: string[] }).closed).toEqual([
 			idle.sessionId,
@@ -186,6 +193,62 @@ describe("manual cleanup", () => {
 			waitingBody.sessionId,
 		]);
 		expect(JSON.stringify(body)).not.toContain(idle.token);
+	});
+
+	it("refuses a local token read and a clear that omit the owner credential", async () => {
+		const { port, paths } = await boot();
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+		expect(statSync(`${paths.daemonDir}/owner.token`).mode & 0o777).toBe(0o600);
+
+		const listed = await fetch(`http://127.0.0.1:${port}/sessions/local`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+		const listedBody = await listed.text();
+		expect(listed.status).toBe(401);
+		expect(listedBody).not.toContain(bootstrap.token);
+
+		const wrong = await fetch(
+			`http://127.0.0.1:${port}/sessions/local?session=${bootstrap.sessionId}`,
+			{
+				headers: {
+					Host: `127.0.0.1:${port}`,
+					[OWNER_TOKEN_HEADER]: "not-the-owner-credential",
+				},
+			},
+		);
+		expect(wrong.status).toBe(401);
+		expect(await wrong.text()).not.toContain(bootstrap.token);
+
+		const cleared = await fetch(`http://127.0.0.1:${port}/sessions/clear`, {
+			method: "POST",
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+		expect(cleared.status).toBe(401);
+		expect(await cleared.text()).not.toContain(bootstrap.token);
+
+		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+		const body = (await catalog.json()) as { sessions: { sessionId: string }[] };
+		expect(body.sessions.map((session) => session.sessionId)).toContain(
+			bootstrap.sessionId,
+		);
+
+		const named = await fetch(
+			`http://127.0.0.1:${port}/sessions/local?session=${bootstrap.sessionId}`,
+			{ headers: ownerHeaders(port) },
+		);
+		const namedBody = (await named.json()) as {
+			sessions: { token?: string }[];
+		};
+		expect(named.status).toBe(200);
+		expect(namedBody.sessions).toHaveLength(1);
+		expect(namedBody.sessions[0]?.token).toBe(bootstrap.token);
+
+		const all = await fetch(`http://127.0.0.1:${port}/sessions/local`, {
+			headers: ownerHeaders(port),
+		});
+		expect(JSON.stringify(await all.json())).not.toContain(bootstrap.token);
 	});
 
 	it("prints the clear status and redacts the body when the daemon refuses", async () => {

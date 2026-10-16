@@ -22,6 +22,7 @@ import {
 	CHAT_WS_PATH,
 	CLI_GRANT_PREFIX_HEADER,
 	CLI_GRANT_TOKEN_HEADER,
+	OWNER_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
@@ -34,7 +35,11 @@ import {
 	validateOverwatchAction,
 	validatePairRequest,
 } from "@dg/common";
-import type { DgPaths } from "@dg/common/node";
+import {
+	type DgPaths,
+	readOwnerToken,
+	tokensEqual,
+} from "@dg/common/node";
 import type { Server } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
 import {
@@ -60,6 +65,7 @@ import {
 	DEFAULT_ARCHIVE_TTL_MS,
 	WAL_CHECKPOINT_PAGE_THRESHOLD,
 } from "../session/archive";
+import { projectLocalSessions } from "../session/local-sessions";
 import { readEnvNumber } from "../utils/env";
 import {
 	abortPendingWork,
@@ -340,7 +346,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_SESSIONS_LOCAL_PATH && req.method === "GET") {
-				return handleLocalSessions(req, deps);
+				return handleLocalSessions(req, url, deps);
 			}
 			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
 				return handleSessionCatalog(req, url, deps);
@@ -795,13 +801,35 @@ async function handleExtensionSessionCreate(
 	});
 }
 
-function handleLocalSessions(req: Request, deps: HttpServerDeps): Response {
+function requireOwnerCredential(
+	req: Request,
+	paths: DgPaths,
+): Response | undefined {
+	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
+	const expected = readOwnerToken(paths) ?? "";
+	if (
+		presented.length === 0 ||
+		expected.length === 0 ||
+		!tokensEqual(presented, expected)
+	) {
+		return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
+	}
+	return undefined;
+}
+
+function handleLocalSessions(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Response {
 	if (req.headers.get("origin") !== null) {
 		return new Response("refused: /sessions/local is loopback-only", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
 	}
+	const refused = requireOwnerCredential(req, deps.paths);
+	if (refused) return refused;
 	const sessions = deps.registry.list().flatMap((summary) => {
 		const record = deps.registry.get(summary.sessionId);
 		if (!record || record.state !== "active" || record.token.length === 0) return [];
@@ -814,7 +842,11 @@ function handleLocalSessions(req: Request, deps: HttpServerDeps): Response {
 			},
 		];
 	});
-	return json({ sessions });
+	const projected = projectLocalSessions(sessions, url.searchParams.get("session"));
+	if (projected.status === 404) {
+		return new Response("refused", { status: 404, headers: NOSNIFF_HEADERS });
+	}
+	return json({ sessions: projected.sessions });
 }
 
 function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
@@ -822,6 +854,9 @@ function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
 	if (origin !== null) {
 		const originError = requirePinnedExtensionOrigin(req, deps.paths);
 		if (originError) return originError;
+	} else {
+		const refused = requireOwnerCredential(req, deps.paths);
+		if (refused) return refused;
 	}
 	const closed = deps.registry.clearDisconnected();
 	deps.store.maintainArchive(

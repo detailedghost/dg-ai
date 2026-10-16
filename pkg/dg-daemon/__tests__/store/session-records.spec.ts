@@ -38,6 +38,7 @@ describe("chat sessions in the daemon database", () => {
 				expect(loaded.map((session) => session.sessionId)).toEqual(["legacy-1"]);
 				expect(loaded[0]?.token).toBe(TOKEN);
 				expect(loaded[0]?.agentIdentity).toBe("claude");
+				expect(loaded[0]?.role).toBe("agent");
 				const raw = new Database(paths.dbPath, { readonly: true, strict: true });
 				try {
 					const row = raw
@@ -51,6 +52,105 @@ describe("chat sessions in the daemon database", () => {
 				}
 			} finally {
 				store.close();
+			}
+		});
+	});
+
+	it("keeps an orchestrator role written on a legacy session file", async () => {
+		await withHome(async (paths) => {
+			writeSessionToken(paths, "orch-1", {
+				sessionId: "orch-1",
+				token: TOKEN,
+				cwd: "/work/app",
+				agentIdentity: "claude",
+				role: "orchestrator",
+			});
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			try {
+				expect(store.loadSessions()[0]?.role).toBe("orchestrator");
+			} finally {
+				store.close();
+			}
+		});
+	});
+
+	it("two stores pruning the same database delete each archived row once", async () => {
+		await withHome(async (paths) => {
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			const now = 5_000;
+			try {
+				for (const id of ["a", "b", "c"]) {
+					store.saveSession({
+						sessionId: id,
+						token: TOKEN,
+						cwd: "/work/app",
+						agentIdentity: "claude",
+						role: "agent",
+						state: "active",
+						awaitingAgent: false,
+						cliAttached: false,
+						createdAt: now,
+						lastActivityAt: now,
+					});
+					store.insertMessage({
+						id: `msg-${id}`,
+						sessionId: id,
+						role: "user",
+						body: `body ${id}`,
+					});
+					store.archiveSession(
+						{
+							sessionId: id,
+							token: TOKEN,
+							cwd: "/work/app",
+							agentIdentity: "claude",
+							role: "agent",
+							state: "closed",
+							awaitingAgent: false,
+							cliAttached: false,
+							createdAt: now,
+							lastActivityAt: now,
+							closedAt: now,
+						},
+						"expired",
+					);
+				}
+			} finally {
+				store.close();
+			}
+
+			const dgHome = paths.stateDir;
+			const worker = new URL("./prune-worker.ts", import.meta.url).pathname;
+			const run = () =>
+				Bun.spawn([process.execPath, worker], {
+					env: { ...process.env, DG_HOME: dgHome, DG_KEY_SOURCE: "file" },
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+			const [left, right] = await Promise.all([run(), run()]);
+			const [leftOut, rightOut, leftErr, rightErr, leftCode, rightCode] =
+				await Promise.all([
+					new Response(left.stdout).text(),
+					new Response(right.stdout).text(),
+					new Response(left.stderr).text(),
+					new Response(right.stderr).text(),
+					left.exited,
+					right.exited,
+				]);
+			expect(leftCode, leftErr).toBe(0);
+			expect(rightCode, rightErr).toBe(0);
+			const counts = [leftOut, rightOut].map(
+				(text) => JSON.parse(text) as { sessions: number; messages: number },
+			);
+			expect(counts.reduce((sum, count) => sum + count.sessions, 0)).toBe(3);
+			expect(counts.reduce((sum, count) => sum + count.messages, 0)).toBe(3);
+
+			const check = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			try {
+				expect(check.loadSessions()).toEqual([]);
+				expect(check.peekAll("a")).toEqual([]);
+			} finally {
+				check.close();
 			}
 		});
 	});

@@ -42,6 +42,7 @@ export type SessionTokenRecord = {
 	token: string;
 	cwd: string;
 	agentIdentity: string;
+	role?: "agent" | "orchestrator";
 };
 
 export function writeSessionToken(
@@ -126,7 +127,19 @@ export function readSessionFiles(sessionsDir: string): SessionTokenRecord[] {
 				typeof value.cwd === "string" &&
 				typeof value.agentIdentity === "string"
 			) {
-				return [value as SessionTokenRecord];
+				const role =
+					value.role === "orchestrator" || value.role === "agent"
+						? value.role
+						: undefined;
+				return [
+					{
+						sessionId: value.sessionId,
+						token: value.token,
+						cwd: value.cwd,
+						agentIdentity: value.agentIdentity,
+						...(role === undefined ? {} : { role }),
+					},
+				];
 			}
 		} catch {
 			return [];

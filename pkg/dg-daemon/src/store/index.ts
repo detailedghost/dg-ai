@@ -2325,16 +2325,16 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		now: number,
 		limits: { maxRows: number; ttlMs: number },
 	): ArchivePruneCounts {
-		const rows = this.db
-			.query("SELECT id, archived_at FROM archived_sessions")
-			.all() as { id: string; archived_at: number }[];
-		const ids = pruneArchiveIds(
-			rows.map((row) => ({ id: row.id, archivedAt: row.archived_at })),
-			now,
-			limits,
-		);
-		if (ids.length === 0) return { sessions: 0, messages: 0 };
 		return this.#withImmediateTransaction(() => {
+			const rows = this.db
+				.query("SELECT id, archived_at FROM archived_sessions")
+				.all() as { id: string; archived_at: number }[];
+			const ids = pruneArchiveIds(
+				rows.map((row) => ({ id: row.id, archivedAt: row.archived_at })),
+				now,
+				limits,
+			);
+			if (ids.length === 0) return { sessions: 0, messages: 0 };
 			const messages = this.#deleteSessionRows("messages", "session_id", ids);
 			this.#deleteSessionRows("agent_messages", "sender_session_id", ids);
 			this.#deleteSessionRows("status_events", "session_id", ids);
@@ -2402,7 +2402,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 					token: record.token,
 					cwd: record.cwd,
 					agentIdentity: record.agentIdentity,
-					role: "agent",
+					role: record.role === "orchestrator" ? "orchestrator" : "agent",
 					state: "active",
 					awaitingAgent: false,
 					cliAttached: false,

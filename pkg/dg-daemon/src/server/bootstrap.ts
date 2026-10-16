@@ -7,6 +7,7 @@ import {
 import {
 	checkWslNetworking,
 	type DgPaths,
+	ensureOwnerToken,
 	isDaemonLive,
 	loopbackHostHeader,
 	readPidFile,
@@ -90,6 +91,7 @@ export async function cmdServe(): Promise<void> {
 	const wslNetworkingMode = await checkWslNetworking();
 
 	const logger = createLogger(paths);
+	ensureOwnerToken(paths);
 	const store = await ChatStore.open(paths);
 	const credentials = await CredentialStore.open(paths, store.cryptoMeta());
 	store.recoverStaleClaims();
