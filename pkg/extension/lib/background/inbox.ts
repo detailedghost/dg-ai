@@ -48,6 +48,26 @@ function accountMatches(tab: MailTab, accountHint: string): boolean {
 		return false;
 	}
 }
+function accountSettingsTab(tab: MailTab): boolean {
+	try {
+		const origin = new URL(tab.url ?? "").origin;
+		return (
+			origin === "https://account.proton.me" ||
+			origin === "https://account.protonmail.com"
+		);
+	} catch {
+		return false;
+	}
+}
+function missingMailTabError(hint: string | undefined, sawAccountSettings: boolean): string {
+	const path = hint ? `/u/${hint}` : "/u/N";
+	if (sawAccountSettings) {
+		return `Mail tab navigated away. No Proton mail tab matching ${path}. An account.proton.me tab is open; keep a mail.proton.me${path} tab open and do settings in a separate tab.`;
+	}
+	return hint
+		? `No Proton mail tab matching /u/${hint}. Open https://mail.proton.me/u/${hint} and sign in.`
+		: "No Proton mail tab. Open https://mail.proton.me/u/N and sign in.";
+}
 
 /** Selects and rechecks an exact Proton tab/account, runs a fixed MAIN operation, and returns sanitized correlated metadata. */
 export function createInboxHandler({
@@ -91,11 +111,15 @@ export function createInboxHandler({
 					return {
 						...envelope,
 						ok: false,
-						error:
-							"The selected tab must be an HTTPS Proton Mail tab matching the configured account index.",
+						error: accountSettingsTab(tab)
+							? missingMailTabError(request.accountHint, true)
+							: request.accountHint && protonTab(tab)
+								? `No Proton mail tab matching /u/${request.accountHint}. The selected tab is a different account.`
+								: "The selected tab must be an HTTPS Proton Mail tab matching the configured account index.",
 					};
 			} else {
-				const tabs = (await browserApi.tabs.query({}))
+				const allTabs = await browserApi.tabs.query({});
+				const tabs = allTabs
 					.filter(protonTab)
 					.filter(
 						(candidate) =>
@@ -110,13 +134,21 @@ export function createInboxHandler({
 							"Multiple Proton Mail tabs match. Choose an explicit tabId or accountHint (the /u/ account index) in the inbox profile.",
 					};
 				tab = tabs[0];
+				if (!tab || tab.id === undefined)
+					return {
+						...envelope,
+						ok: false,
+						error: missingMailTabError(
+							request.accountHint,
+							allTabs.some(accountSettingsTab),
+						),
+					};
 			}
 			if (!tab || tab.id === undefined)
 				return {
 					...envelope,
 					ok: false,
-					error:
-						"Open Proton Mail and sign in. Reload its tab after installing the extension, then retry.",
+					error: missingMailTabError(request.accountHint, false),
 				};
 			const selectedAccount = /^\/u\/([^/]+)(?:\/|$)/.exec(
 				new URL(tab.url!).pathname,
@@ -138,11 +170,19 @@ export function createInboxHandler({
 						globalThis.location?.pathname ?? "",
 					)?.[1];
 					if (
-						(origin !== "https://mail.proton.me" &&
-							origin !== "https://mail.protonmail.com") ||
-						(input.accountHint !== undefined && account !== input.accountHint)
+						origin === "https://account.proton.me" ||
+						origin === "https://account.protonmail.com"
 					) {
-						return { __dgInboxFailure: true };
+						return { __dgInboxFailure: true, code: "mail-tab-navigated" };
+					}
+					if (
+						origin !== "https://mail.proton.me" &&
+						origin !== "https://mail.protonmail.com"
+					) {
+						return { __dgInboxFailure: true, code: "invalid-origin" };
+					}
+					if (input.accountHint !== undefined && account !== input.accountHint) {
+						return { __dgInboxFailure: true, code: "account-mismatch" };
 					}
 					const api = (
 						globalThis as typeof globalThis & {
@@ -151,7 +191,7 @@ export function createInboxHandler({
 							) => Promise<unknown>;
 						}
 					).__dgInboxProtonV1;
-					if (!api) return { __dgInboxFailure: true };
+					if (!api) return { __dgInboxFailure: true, code: "session-unobserved" };
 					try {
 						return await api(input);
 					} catch (error) {

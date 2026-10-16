@@ -1,7 +1,7 @@
 import { redactPublicValue, redactText } from "../privacy/redact";
 import { workspaceDirForProfile } from "./profile";
-import { basename, join, relative, resolve } from "node:path";
-import { rm } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import pMap from "p-map";
@@ -165,9 +165,10 @@ export async function writeFilters(
 	const folders = await readJsonFileIfExists<{ folders: MailFolder[] }>(
 		paths.folders,
 	);
-	const redactedFilters = filters.map(
-		(filter) => redactInventoryRow(filter, snippetLength) as MailRule,
-	);
+	const redactedFilters = filters.map((filter) => ({
+		...(redactInventoryRow(filter, snippetLength) as MailRule),
+		destinations: sieveDestinations(filter),
+	}));
 	await writeJsonFile(paths.filters, {
 		kind: "filters",
 		provider,
@@ -319,7 +320,13 @@ async function runBatchWrite(input: {
 	workerThreshold?: number;
 }): Promise<MessageStatusIndex> {
 	await ensureWorkspace(input.paths);
-	await clearMessageWorkItems(input.paths);
+	// Fetch into a sibling directory and swap it in only after every page succeeds.
+	// A dead Proton session must not wipe messages/ or the decisions already stored there.
+	const stagingDir = join(
+		input.paths.dir,
+		`.messages-staging-${crypto.randomUUID()}`,
+	);
+	await mkdir(stagingDir, { recursive: true });
 
 	const maxWorkers = normalizeWriterCount(
 		input.workers ?? defaultBatchWorkerCount(),
@@ -332,7 +339,7 @@ async function runBatchWrite(input: {
 		// One timestamp for the whole batch: cheaper than a syscall per message and
 		// keeps the fetched-at marker consistent across the run.
 		nowIso: new Date().toISOString(),
-		messagesDirAbs: resolve(input.paths.messagesDir),
+		messagesDirAbs: resolve(stagingDir),
 	};
 
 	const inline = createWriterPool(1, config);
@@ -348,55 +355,61 @@ async function runBatchWrite(input: {
 	let seen = 0;
 
 	try {
-		for await (const page of input.pages) {
-			checkFailure();
-			for (let offset = 0; offset < page.length; offset += chunkSize) {
+		try {
+			for await (const page of input.pages) {
 				checkFailure();
-				const chunk = page.slice(offset, offset + chunkSize);
-				seen += chunk.length;
-				if (!pool && maxWorkers > 1 && seen > workerThreshold) {
-					pool = createWriterPool(maxWorkers, config);
-				}
-				if (pool) {
-					const settled = pool.process(chunk).then(
-						(chunkEntries) => {
-							for (const entry of chunkEntries) entries.push(entry);
-						},
-						(error) => {
-							if (!failed) {
-								failed = true;
-								failure = error;
-							}
-						},
-					);
-					const tracked = settled.finally(() => {
-						inflight.delete(tracked);
-					});
-					inflight.add(tracked);
-					// Backpressure: never let more than a bounded window of chunks be in
-					// flight, so peak memory is O(workers × chunk), not O(mailbox).
-					if (inflight.size >= maxInflight) {
-						await Promise.race(inflight);
-						checkFailure();
+				for (let offset = 0; offset < page.length; offset += chunkSize) {
+					checkFailure();
+					const chunk = page.slice(offset, offset + chunkSize);
+					seen += chunk.length;
+					if (!pool && maxWorkers > 1 && seen > workerThreshold) {
+						pool = createWriterPool(maxWorkers, config);
 					}
-				} else {
-					for (const entry of await inline.process(chunk)) {
-						entries.push(entry);
+					if (pool) {
+						const settled = pool.process(chunk).then(
+							(chunkEntries) => {
+								for (const entry of chunkEntries) entries.push(entry);
+							},
+							(error) => {
+								if (!failed) {
+									failed = true;
+									failure = error;
+								}
+							},
+						);
+						const tracked = settled.finally(() => {
+							inflight.delete(tracked);
+						});
+						inflight.add(tracked);
+						// Backpressure: never let more than a bounded window of chunks be in
+						// flight, so peak memory is O(workers × chunk), not O(mailbox).
+						if (inflight.size >= maxInflight) {
+							await Promise.race(inflight);
+							checkFailure();
+						}
+					} else {
+						for (const entry of await inline.process(chunk)) {
+							entries.push(entry);
+						}
 					}
 				}
 			}
+			await Promise.all(inflight);
+			checkFailure();
+		} finally {
+			// Drain pending writes before propagating failure or releasing the pools.
+			await Promise.allSettled(inflight);
+			await Promise.all([inline.close(), pool?.close() ?? Promise.resolve()]);
 		}
-		await Promise.all(inflight);
-		checkFailure();
-	} finally {
-		// Drain pending writes before propagating failure or releasing the pools.
-		await Promise.allSettled(inflight);
-		await Promise.all([inline.close(), pool?.close() ?? Promise.resolve()]);
-	}
 
-	const status = statusIndexFromEntries(entries, input.provider);
-	await writeJsonFile(input.paths.status, status);
-	return status;
+		const status = statusIndexFromEntries(entries, input.provider);
+		await writeJsonFile(join(stagingDir, "_status.json"), status);
+		await commitStagedMessages(input.paths.messagesDir, stagingDir);
+		return status;
+	} catch (error) {
+		await rm(stagingDir, { recursive: true, force: true });
+		throw error;
+	}
 }
 
 function statusIndexFromEntries(
@@ -421,13 +434,46 @@ function statusIndexFromEntries(
 	};
 }
 
-async function clearMessageWorkItems(paths: WorkspacePaths): Promise<void> {
-	// A fresh batch reflects only the current fetch; otherwise message files
-	// from prior batches (renamed folders, re-fetched ranges) pile up forever.
-	if (existsSync(paths.messagesDir)) {
-		await rm(paths.messagesDir, { recursive: true, force: true });
+async function commitStagedMessages(
+	messagesDir: string,
+	stagingDir: string,
+): Promise<void> {
+	const previous = join(
+		dirname(messagesDir),
+		`.messages-previous-${crypto.randomUUID()}`,
+	);
+	let movedAside = false;
+	try {
+		if (existsSync(messagesDir)) {
+			await rename(messagesDir, previous);
+			movedAside = true;
+		}
+		await rename(stagingDir, messagesDir);
+	} catch (error) {
+		if (movedAside && !existsSync(messagesDir) && existsSync(previous)) {
+			await rename(previous, messagesDir);
+		}
+		throw error;
 	}
-	await Bun.$`mkdir -p ${paths.messagesDir}`.quiet();
+	if (existsSync(previous)) {
+		await rm(previous, { recursive: true, force: true });
+	}
+}
+
+function sieveDestinations(filter: MailRule): string[] {
+	const text = [...filter.conditions, ...filter.actions].join("\n");
+	const found: string[] = [];
+	const pattern = /\bfileinto\s+(?:"((?:\\.|[^"\\])*)"|([^;\n{]+))/gi;
+	for (const match of text.matchAll(pattern)) {
+		const raw = (match[1] ?? match[2] ?? "")
+			.replace(/\\"/g, '"')
+			.replace(/\\\\/g, "\\")
+			.trim();
+		if (!raw || found.includes(raw)) continue;
+		const redacted = redactPublicValue(raw);
+		found.push(typeof redacted === "string" ? redacted : raw);
+	}
+	return found;
 }
 
 export async function readMessageStatus(

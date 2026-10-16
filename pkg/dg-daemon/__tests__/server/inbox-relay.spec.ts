@@ -280,6 +280,9 @@ describe("daemon inbox browser relay", () => {
 				count ? /ambiguous|multiple|more than one/i : /extension|connect/i,
 			);
 			if (count === 0) {
+				expect(answer.error).toContain(
+					`No extension peer on session ${bootstrap.sessionId}`,
+				);
 				expect(answer.error).toContain(bootstrap.sessionId);
 				expect(answer.error).toContain("/start#_chat=");
 				expect(answer.error).toMatch(/reload/i);

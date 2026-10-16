@@ -348,6 +348,9 @@ describe("dg-skills inbox daemon response boundary", () => {
 				{ timeoutMs: 4000 },
 			);
 			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain(
+				`No extension peer on session ${server.sessionId}`,
+			);
 			expect(result.stderr).toContain(server.sessionId);
 			expect(result.stderr).toContain(
 				`http://127.0.0.1:${server.port}/start#_chat=`,

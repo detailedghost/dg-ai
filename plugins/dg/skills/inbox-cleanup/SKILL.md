@@ -38,7 +38,12 @@ under DG_HOME/inbox and remains stable when the working directory changes.
 For Proton, use the extension in a signed-in mail tab. Its fixed JavaScript
 operations return metadata through the daemon as CLI JSON for the current model.
 Reload the tab when asked to observe session headers. Tab/account hints resolve
-multiple tabs; cookies and headers stay in page memory.
+multiple tabs; cookies and headers stay in page memory. Keep a
+`mail.proton.me/u/N` tab open. Do filter and account settings in a separate tab:
+if the only mail tab goes to `account.proton.me`, the extension drops the session
+and the next inbox call reports that the mail tab navigated away. `inbox status`
+names the failed check (no peer, no `/u/N` tab, or missing `x-pm-uid`) without
+clearing local decisions.
 
 Inspect existing folders and filters before suggesting routes. Use full paths
 or IDs for ambiguous names. Classify redacted groups with the current model;

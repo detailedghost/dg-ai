@@ -59,6 +59,13 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 
 Sign in to HTTPS mail.proton.me or mail.protonmail.com, then reload the tab after
 installing the extension so its MAIN observer sees real fetch/XHR API headers.
+Keep that `mail.proton.me/u/N` tab open while cleaning mail. Do filter and
+account settings in a separate tab. If the only mail tab navigates to
+`account.proton.me`, the extension loses the page session; the next inbox call
+says the mail tab navigated away instead of a generic sign-in error. `dg-skills
+inbox status` reports local message counts and, with `--session`, which check
+failed: no extension peer on that session, no mail tab matching `/u/N`, or
+missing `x-pm-uid`.
 Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
 plugin's broader Firefox features may require a newer Firefox. Bootstrap
 (`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at

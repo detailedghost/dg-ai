@@ -86,6 +86,18 @@ it.each(["https://account.proton.me", "https://mail.proton.me.attacker.test", "h
 	},
 );
 
+it("session-status confirms observed headers without calling the API", async () => {
+	const fetch = providerFetch({});
+	await expect(executeProtonPage({ operation: "session-status" }, context(fetch))).resolves.toEqual({ hasMore: false });
+	expect(fetch).not.toHaveBeenCalled();
+});
+
+it("session-status names a missing x-pm-uid before making a request", async () => {
+	const fetch = providerFetch({});
+	await expect(executeProtonPage({ operation: "session-status" }, context(fetch, { headers: undefined }))).rejects.toThrow(/Missing x-pm-uid/);
+	expect(fetch).not.toHaveBeenCalled();
+});
+
 it("reports missing observed headers with a reload or login instruction before making a request", async () => {
 	const fetch = providerFetch({ Messages: [] });
 	await expect(executeProtonPage({ operation: "list-messages", page: 0, pageSize: 50 }, context(fetch, { headers: undefined }))).rejects.toThrow(/reload|sign in|login/i);

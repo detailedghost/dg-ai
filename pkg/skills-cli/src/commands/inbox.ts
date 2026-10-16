@@ -297,7 +297,7 @@ function extensionConnectError(session: ResolvedSession): string {
 			})
 		: `http://127.0.0.1:${session.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
 	return [
-		`Connect the dg extension to session ${session.sessionId} and open an authenticated Proton Mail tab.`,
+		`No extension peer on session ${session.sessionId}. Connect the dg extension to session ${session.sessionId} and open an authenticated Proton Mail tab.`,
 		`Open ${url} in the browser where the extension is loaded.`,
 		"The #_chat= fragment is base64url JSON containing sessionId and token.",
 		"Then reload the Proton Mail tab so the extension observes session headers.",

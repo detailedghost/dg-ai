@@ -6,6 +6,7 @@ import type { CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 
 import { packetForMessage } from "../classifier/packets";
+import { inboxRuntimeFor } from "../runtime";
 import { ensureConfigHome } from "../config/home";
 import {
 	createMailProviderClient,
@@ -386,8 +387,9 @@ export async function cleanupWorkspaceCommand(
 export async function statusWorkspace(context: CliContext): Promise<void> {
 	const paths = workspacePaths(getWorkspaceDir(context));
 	const status = await readMessageStatus(paths);
+	const session = await protonSessionStatus(context);
 	if (getBooleanFlag(context.args.flags, "full")) {
-		printJson(status);
+		printJson({ ...status, session });
 		return;
 	}
 	printJson({
@@ -399,7 +401,45 @@ export async function statusWorkspace(context: CliContext): Promise<void> {
 		statusPath: paths.status,
 		messageFilesGlob: "messages/*.json",
 		full: false,
+		session,
 	});
+}
+
+async function protonSessionStatus(context: CliContext): Promise<{
+	checked: boolean;
+	ok?: boolean;
+	check?: string;
+	detail?: string;
+}> {
+	const request = inboxRuntimeFor(context.config).runtime.browserRequest;
+	if (!request) {
+		return {
+			checked: false,
+			detail:
+				"Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported.",
+		};
+	}
+	try {
+		await request({ operation: "session-status" });
+		return { checked: true, ok: true, check: "x-pm-uid-observed" };
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		return {
+			checked: true,
+			ok: false,
+			check: sessionCheckName(detail),
+			detail,
+		};
+	}
+}
+
+function sessionCheckName(detail: string): string {
+	if (/no extension peer/i.test(detail)) return "no-peer";
+	if (/mail tab navigated away/i.test(detail)) return "mail-tab-navigated";
+	if (/missing x-pm-uid/i.test(detail)) return "missing-x-pm-uid";
+	if (/no proton mail tab matching/i.test(detail)) return "no-tab";
+	if (/no proton mail tab/i.test(detail)) return "no-tab";
+	return "session-error";
 }
 
 export async function summarizeWorkspace(context: CliContext): Promise<void> {

@@ -86,7 +86,9 @@ automatic set as preview-only. `filters apply` reads that recommendations file.
 not read `filter-recommendations.json`.
 
 `load filters` stores redacted snippets in `filters.json` (the provider snippet
-length, 160 by default), so `conditions` and `actions` can end mid-rule.
+length, 160 by default), so `conditions` and `actions` can end mid-rule. Each
+filter also has `destinations`, the `fileinto` folder paths parsed from the full
+rule before that cutoff.
 `filters extend --filter-id ID --add-domains domain.example --dry-run` reads the
 live rule and prints the before/after diff. `--confirm` writes it. The command
 only inserts domains into an existing `address :domain :is "From"` test.

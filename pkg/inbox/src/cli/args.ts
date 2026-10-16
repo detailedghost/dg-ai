@@ -354,7 +354,8 @@ export const cliCommandSpecs = [
 	},
 	{
 		nameAndArgs: "status",
-		description: "Print local message pipeline status.",
+		description:
+			"Print local message counts and the live Proton session check.",
 	},
 	{ nameAndArgs: "summary", description: "Print mailbox workspace summary." },
 	{ nameAndArgs: "review", description: "Create a mailbox review plan." },

@@ -270,7 +270,11 @@ describe("CLI", () => {
 		]);
 		expect(statusProc.code, statusProc.stderr).toBe(0);
 		const statusSummary = JSON.parse(statusProc.stdout);
-		expect(statusSummary).toMatchObject({ total: 3, full: false });
+		expect(statusSummary).toMatchObject({
+			total: 3,
+			full: false,
+			session: { checked: false },
+		});
 		expect(statusSummary.items).toBeUndefined();
 
 		const fullStatusProc = await runCli([
@@ -2302,6 +2306,8 @@ describe("CLI", () => {
 		const loaded = await Bun.file(`${dir}/filters.json`).json();
 		expect(loaded.filters[0].conditions[0].length).toBeLessThanOrEqual(160);
 		expect(loaded.filters[0].conditions[0]).not.toBe(sieve);
+		expect(loaded.filters[0].conditions[0]).not.toContain("Newsletters");
+		expect(loaded.filters[0].destinations).toEqual(["Newsletters"]);
 
 		const dryRun = await runCli([
 			"filters",
