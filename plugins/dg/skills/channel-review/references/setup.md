@@ -186,6 +186,78 @@ Host entries contain a host only, including its port when present. The loader
 trims entries and converts them to lowercase. URLs must use HTTPS without embedded
 credentials. A review link outside the allowlist reports CR-104.
 
+## Error watch and dependency upgrades
+
+Both workflows are off by default. Enable each with its own `enabled` key. The
+shipped defaults are safe: fix PRs are drafts, and the daemon owns every push
+to a `bot/fix/*` branch.
+
+### Automation keys
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `automation.cloneRoot` | absolute path | `DG_HOME/channel-review/clones` | Folder for the fresh clone of each error-fix or deps job. It must not be under `~/code`, because the worktree tooling relocates folders there. The daemon sweeps it at startup and after each deps job. |
+| `automation.notify.target` | string | `owner` | Where notifications go: `owner` sends a direct message to `owner.email`, or a chat ID posts there. |
+
+### Error watch keys
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `errorWatch.enabled` | boolean | `false` | Poll the enabled sinks. |
+| `errorWatch.pollMinutes` | number | `5` | Minutes between polls. |
+| `errorWatch.lookbackMinutes` | number | `60` | Longest look-back window for a poll. |
+| `errorWatch.minLevel` | string | `error` | Lowest level to report: `warning`, `error`, or `fatal`. |
+| `errorWatch.providers.datadog.enabled` | boolean | `false` | Poll Datadog error tracking. |
+| `errorWatch.providers.datadog.tracks` | string array | `["trace"]` | Datadog error tracking tracks to search. |
+| `errorWatch.providers.datadog.services` | object | no filter | `include` and `exclude` lists of service names. |
+| `errorWatch.providers.datadog.envs` | object | no filter | `include` and `exclude` lists of environment names. |
+| `errorWatch.providers.sentry.enabled` | boolean | `false` | Poll Sentry. |
+| `errorWatch.providers.sentry.projects` | object | no filter | `include` and `exclude` lists of project slugs. |
+| `errorWatch.providers.sentry.envs` | object | no filter | `include` and `exclude` lists of environment names. |
+| `errorWatch.repos.<service>` | object | none | The fix allowlist. A service without an entry gets a notification only (CR-401). Fields: `repo` (`host/owner/repo`, required), `branch` (base branch; default is the repo's default branch), and `autoFix` (boolean; `false` turns fixes off for this service). |
+| `errorWatch.autoFix.enabled` | boolean | `true` | Open draft fix PRs. With `false`, the daemon sends direct messages only. |
+| `errorWatch.autoFix.maxPerHour` | number | `2` | Fix jobs started per hour. Extra issues wait (CR-402). |
+| `errorWatch.autoFix.timeoutMinutes` | number | `45` | Time limit for one fix job. |
+| `errorWatch.autoFix.allowedTools` | string array | Edit, Read, Grep, and Glob inside the clone root; read-only `git`; build and test tools | Tools the fix agent may use. Keep it narrow: the error report is untrusted data. |
+
+### Dependency upgrade keys
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `deps.enabled` | boolean | `false` | Run scheduled upgrades. |
+| `deps.timeoutMinutes` | number | `90` | Time limit for one upgrade job. |
+| `deps.ciTimeoutMinutes` | number | `60` | How long the daemon waits for CI on a draft PR before it reports a timeout. |
+| `deps.cooldownDays` | whole number | `7` | The skill only upgrades to versions published at least this many days ago. |
+| `deps.branchPrefix` | string | `chore/deps-update-` | Branch prefix of upgrade PRs. A repo with an open PR on this prefix is skipped. |
+| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, and the deps-upgrade skill and helper | Tools the upgrade agent may use. |
+| `deps.schedule.every` | string | `week` | Default cadence: `day` or `week`. |
+| `deps.schedule.day` | string | `mon` | Default weekday for `week`: `mon` to `sun`. |
+| `deps.schedule.window` | string | `02:00-05:00` | Default local-time window, `HH:MM-HH:MM`. It may cross midnight. |
+| `deps.repos` | object array | `[]` | Repos to upgrade. Each entry has `repo` (`host/owner/repo`), and optional `branch` and `schedule` (the same three fields as `deps.schedule`). Duplicate repos are an error. |
+
+Only GitHub repos are supported. Clone roots must not be under `~/code`.
+
+### Environment variables
+
+The daemon reads credentials from its process environment. The mise tasks load
+them from the git-ignored `.env`. A missing variable never stops the daemon.
+`status` lists the missing names under `errorWatch.missingEnv`, and the sink
+is skipped until you set them and restart.
+
+| Variable | Needed for | Meaning |
+| --- | --- | --- |
+| `DATADOG_API_KEY` | Datadog | API key. |
+| `DATADOG_APP_KEY` | Datadog | Application key that can read error tracking. |
+| `DATADOG_SITE` | Datadog | Optional. Datadog site, such as `datadoghq.eu`. Default `datadoghq.com`. |
+| `SENTRY_AUTH_TOKEN` | Sentry | Auth token that can read issues and events. |
+| `SENTRY_ORG` | Sentry | Organization slug. |
+| `SENTRY_BASE_URL` | Sentry | Optional. Base URL of a self-hosted Sentry. Default `https://sentry.io`. |
+
+Status adds two blocks. `errorWatch` has `enabled`, `providers.<name>` (with
+`enabled`, `lastPollAt`, `lastError`, and `counts`), and `missingEnv`. `deps`
+has `enabled`, `repos` (the count), `lastRun` (per repo: `at` and `result`), and
+`watchingPrs` (the count).
+
 ## State and recovery
 
 All paths below live under `DG_HOME/channel-review`. Dev and prod share config
@@ -194,7 +266,7 @@ but keep separate state, pidfiles, daemon logs, and job logs.
 | File or directory | Contents |
 | --- | --- |
 | `config.json` | Configuration and saved environment/reaction choices. |
-| `state.<env>.json` | Event cursor per chat, handled messages, blocked PRs, and current job. |
+| `state.<env>.json` | Event cursor per chat, handled messages, blocked PRs, current job, error-watch issues and sink cursors, deps runs, and watched PRs. |
 | `daemon.<env>.pid` | Daemon process record, including the watched chats. |
 | `daemon.<env>.log` | Background daemon output. |
 | `jobs/<env>/*.log` | Runner output for each job. |

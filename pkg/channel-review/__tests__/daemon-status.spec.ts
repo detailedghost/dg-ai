@@ -258,4 +258,51 @@ describe("status", () => {
 		);
 		expect(await result).toBe(1);
 	});
+
+	test("reports error watch and deps state with env names only", async () => {
+		const h = setup({
+			configExtra: {
+				errorWatch: { enabled: true, providers: { datadog: { enabled: true } } },
+				deps: { enabled: true, repos: [{ repo: "github.com/example-org/app" }] },
+			},
+		});
+		h.seedState((store) => {
+			store.updateSink("datadog", { lastPollAt: "2026-10-14T12:00:00.000Z", counts: { polled: 3 } });
+			store.recordDepsRun("github.com/example-org/app", { windowStart: "w", result: "ready" });
+			store.watchPr("https://github.com/example-org/app/pull/1", {
+				repo: "github.com/example-org/app",
+				kind: "deps",
+			});
+		});
+		const result = status(
+			{},
+			{
+				system: h.system,
+				platform: h.platform,
+				io: h.io,
+				runners: h.runners,
+				probeTimeoutMs: 50,
+				env: { DATADOG_API_KEY: "secret-value" },
+				preflight: async (call: PreflightCall) => okReport(call.env.name),
+			},
+		);
+		expect(await result).toBe(0);
+		const body = printed(h);
+		expect(body.errorWatch).toEqual({
+			enabled: true,
+			providers: {
+				datadog: {
+					enabled: true,
+					lastPollAt: "2026-10-14T12:00:00.000Z",
+					lastError: null,
+					counts: { polled: 3 },
+				},
+				sentry: { enabled: false, lastPollAt: null, lastError: null, counts: {} },
+			},
+			missingEnv: ["DATADOG_APP_KEY"],
+		});
+		expect(body.deps).toMatchObject({ enabled: true, repos: 1, watchingPrs: 1 });
+		expect(body.deps.lastRun["github.com/example-org/app"].result).toBe("ready");
+		expect(h.io.all()).not.toContain("secret-value");
+	});
 });

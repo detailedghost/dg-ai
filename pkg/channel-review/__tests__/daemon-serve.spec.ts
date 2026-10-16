@@ -18,11 +18,14 @@ import {
 	failWith,
 	holdOpen,
 	termSignals,
+	untilAbort,
 } from "./daemon-harness";
 import {
 	CHAT_ID,
 	abortable,
+	buildIssue,
 	buildMessage,
+	createFakeSink,
 	deferred,
 	reviewMessage,
 	waitUntil,
@@ -592,5 +595,102 @@ describe("serve maintenance", () => {
 		controller.abort();
 		await done;
 		expect(lastEventId(h)).toBe("e3");
+	});
+});
+
+describe("serve automation", () => {
+	const ERROR_WATCH = {
+		errorWatch: { enabled: true, pollMinutes: 7, providers: { datadog: { enabled: true } } },
+	};
+	const DEPS = { deps: { enabled: true, repos: [{ repo: "github.com/example-org/app" }] } };
+
+	function gate(h: DaemonHarness) {
+		const sleeps: number[] = [];
+		h.seams.sleep = async (ms, signal) => {
+			sleeps.push(ms);
+			if (signal) await untilAbort(signal);
+		};
+		return sleeps;
+	}
+
+	function seedCursor(h: DaemonHarness) {
+		h.seedState((store) => store.updateSink("datadog", { cursor: "2026-10-14T11:00:00.000Z" }));
+	}
+
+	test("starts every ticker when the workflows are on and stops them on shutdown", async () => {
+		const h = setup({ configExtra: { ...ERROR_WATCH, ...DEPS } });
+		const sleeps = gate(h);
+		h.seams.sinks = [createFakeSink("datadog")];
+		h.seams.capture = async () => ({ status: 0, signal: null, stdout: "[]", stderr: "" });
+		const { controller, done } = h.startServe();
+		await waitUntil(() => sleeps.length === 3);
+
+		expect([...sleeps].sort((a, b) => a - b)).toEqual([60_000, 120_000, 7 * 60_000]);
+		controller.abort();
+		expect(await done).toBe(0);
+	});
+
+	test("starts no ticker when the workflows are off", async () => {
+		const h = setup();
+		const sleeps = gate(h);
+		const sink = createFakeSink("datadog");
+		h.seams.sinks = [sink];
+		const { controller, done } = h.startServe();
+		await started(h);
+		controller.abort();
+		await done;
+
+		expect(sleeps).toEqual([]);
+		expect(sink.polls).toEqual([]);
+	});
+
+	test("skips a provider with missing env and records the names", async () => {
+		const h = setup({ configExtra: ERROR_WATCH });
+		const sleeps = gate(h);
+		h.seams.env = { DATADOG_API_KEY: "secret-value" };
+		const { controller, done } = h.startServe();
+		await started(h);
+		controller.abort();
+		await done;
+
+		expect(sleeps).toEqual([]);
+		const sinks = h.readState().sinks as Record<string, { lastError: string }>;
+		expect(sinks.datadog?.lastError).toBe("missing environment variables: DATADOG_APP_KEY");
+		expect(JSON.stringify(h.readState())).not.toContain("secret-value");
+	});
+
+	test("hands the sink detail report to the fix flow", async () => {
+		const h = setup({ configExtra: ERROR_WATCH });
+		gate(h);
+		const sink = createFakeSink("datadog");
+		sink.issues = [buildIssue("i-1")];
+		h.seams.sinks = [sink];
+		seedCursor(h);
+		const { controller, done } = h.startServe();
+		await waitUntil(() => (h.provider()?.dms.length ?? 0) > 0);
+
+		expect(sink.details.map((issue) => issue.id)).toEqual(["i-1"]);
+		expect(h.provider().dms[0]?.text).toContain("Error i-1");
+		controller.abort();
+		await done;
+	});
+
+	test("hands a minimal report to the fix flow when the detail call fails", async () => {
+		const h = setup({ configExtra: ERROR_WATCH });
+		gate(h);
+		const sink = createFakeSink("datadog");
+		sink.issues = [buildIssue("i-2")];
+		sink.detail = async () => {
+			throw new Error("detail unavailable");
+		};
+		h.seams.sinks = [sink];
+		seedCursor(h);
+		const { controller, done } = h.startServe();
+		await waitUntil(() => (h.provider()?.dms.length ?? 0) > 0);
+
+		expect(h.provider().dms[0]?.text).toContain("Error i-2");
+		expect(h.log.lines.some((line) => line.message.includes("detail failed"))).toBe(true);
+		controller.abort();
+		await done;
 	});
 });

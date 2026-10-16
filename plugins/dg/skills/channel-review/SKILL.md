@@ -62,6 +62,12 @@ Capture requires a human to react on its own prompt. Apply saved IDs after
 stop and start. Ask a human to approve the fun-pool GIF list before release.
 The daemon runs on Linux, macOS, WSL, and Windows; on Windows stop kills the process tree and posts CR-205 for the interrupted review.
 
+## Error watch and dependency upgrades
+
+Both are optional and off by default: draft fix PRs for new Datadog or Sentry issues, and
+scheduled deps-upgrade runs. Keys and variables: [setup](references/setup.md); steps:
+[relay setup](references/relay-setup.md). `status` shows `errorWatch` and `deps`.
+
 ## Go to production
 
 1. Add the prod bot (`envs.prod.botName`) to each review chat.

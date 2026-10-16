@@ -87,6 +87,26 @@ that the relay registered for this client, and the secret.
 1. In a test chat, send `@<bot> <owner.token> $help`. The bot replies with the
    command list.
 
+## Optional: error watch and dependency upgrades
+
+Skip this step unless the person wants the daemon to watch an error tracker or
+to upgrade dependencies on a schedule. Both stay off until enabled.
+
+1. Add the credentials for each sink to the git-ignored `.env`:
+   `DATADOG_API_KEY`, `DATADOG_APP_KEY`, and optionally `DATADOG_SITE`; or
+   `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and optionally `SENTRY_BASE_URL`.
+1. Keep `automation.cloneRoot` at its default, or set an absolute path that is
+   not under `~/code`.
+1. Add `errorWatch` and `deps` to config.json, starting from
+   [config.example.json](config.example.json). Set each `enabled` to `true`,
+   list the services under `errorWatch.repos`, and list the repos under
+   `deps.repos`. Each key is in [setup](setup.md#error-watch-and-dependency-upgrades).
+1. Sign in `gh` with push and PR access to those repos.
+1. Run `mise run remote:status`. Require `errorWatch.missingEnv` to be empty
+   and each enabled provider to show no `lastError`.
+1. Restart the daemon. After the first poll, the daemon only marks open issues
+   as seen. It messages the owner about issues that appear later.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

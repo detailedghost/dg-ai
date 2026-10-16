@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createDepsFlow } from "../src/automation/deps-flow";
 import { createNotifier } from "../src/automation/notify";
@@ -128,6 +128,21 @@ describe("deps flow", () => {
 		expect(s.dms()).toEqual([`Deps upgrade ready for ${REPO}:\n${PR_URL}`]);
 		expect(s.h.state.get().prWatch).toEqual({});
 		expect(s.h.state.get().deps.lastRun[REPO]?.result).toBe("ready");
+	});
+
+	test("sweeps the sibling worktree the skill leaves in the clone root", async () => {
+		const leftover = (root: string) => join(root, "repo-upgrade-worktree");
+		let root = "";
+		const s = setup({
+			script: () => {
+				mkdirSync(leftover(root), { recursive: true });
+				return OK_RESULT;
+			},
+		});
+		root = s.h.config.automation.cloneRoot;
+		await s.tick();
+
+		expect(existsSync(leftover(root))).toBe(false);
 	});
 
 	test("DMs that nothing changed when the run opens no PR", async () => {
