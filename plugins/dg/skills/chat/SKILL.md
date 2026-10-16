@@ -63,7 +63,7 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--print-session-id] [--json]` —
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--fresh] [-s <id>] [--print-session-id] [--json]` —
   start or reuse the daemon and register a new session. Prints the bootstrap
   URL `http://127.0.0.1:<port>/start#_chat=<base64url>`. The fragment is
   base64url JSON `{ port, sessionId, token, agentIdentity }`. `--open` opens
@@ -72,7 +72,14 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   `--print-session-id` prints the session id before the URL. `--json` prints
   `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
   attaches a workset label, which is how the chat page groups sessions in its
-  rail.
+  rail. If the extension is waiting on exactly one session, `start` claims it
+  instead of registering another one, including when a service-installed daemon
+  recorded a different directory. When several sessions are waiting, pass `-s`.
+  `--fresh` always registers a new session.
+- `attach [-s <id>] [--open]` — claim a session the extension created and is
+  waiting on. Use this when Claude is already running and the side panel says
+  it is waiting for an agent. A single waiting session is claimed even if the
+  daemon recorded a different directory.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
@@ -210,6 +217,8 @@ point of publishing it.
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
+- The extension side panel connects in both directions. From the panel, **Attach CLI session** (after `dg-daemon pair`) links an already-open CLI session, and **New session for CLI** creates one that `dg-agent attach` or the next `dg-agent start` claims. From the CLI, `dg-agent start --open` still hands the session to the extension.
+- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the side panel is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear`, or **Clear disconnected** in the panel, archives sessions whose claim has been released. Sessions still waiting for an agent, and sessions whose claim is held between commands, are left alone.
 - On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach
   the loopback port from the Windows-side browser, and the daemon exits with
   code 3 rather than pretending to be reachable.

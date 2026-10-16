@@ -980,6 +980,10 @@ async function dispatchFrame(
 	frame: ChatFrame,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
+	if (frame.type === "keepalive") {
+		deps.noteActivity();
+		return;
+	}
 	deps.registry.touch(frame.sessionId);
 	switch (frame.type) {
 		case "inbox-browser-result":
@@ -997,9 +1001,6 @@ async function dispatchFrame(
 			}
 			ws.data.capabilities.delete(frame.sessionId);
 			await sendFrame(ws, frame.sessionId, { type: "session-disconnected" });
-			return;
-		case "keepalive":
-			deps.noteActivity();
 			return;
 		case "history-request":
 			return handleHistoryRequest(ws, frame, deps);

@@ -41,7 +41,7 @@ export async function publishManifest(
 ): Promise<void> {
 	const path = writeJsonFile(scratchDir, `commands-${sessionId}.json`, entries);
 	const commands = resolveManifestForPublish(loadManifestFile(path));
-	const ws = await connectCli(port, sessionCredentials(dgHome, sessionId));
+	const ws = await connectCli(port, await sessionCredentials(dgHome, sessionId));
 	send(ws, { type: "cli-manifest-publish", commands });
 	await new Promise((r) => setTimeout(r, 100));
 	ws.close();
@@ -66,7 +66,7 @@ export async function publishSubagents(
 	);
 	const commands = resolveManifestForPublish(loadManifestFile(commandsPath));
 	const subagents = loadSubagentManifestFile(subagentsPath);
-	const ws = await connectCli(port, sessionCredentials(dgHome, sessionId));
+	const ws = await connectCli(port, await sessionCredentials(dgHome, sessionId));
 	send(ws, { type: "cli-manifest-publish", commands, subagents });
 	await new Promise((r) => setTimeout(r, 100));
 	ws.close();

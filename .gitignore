@@ -16,4 +16,6 @@ dist/
 *.log
 *.har
 .stryker-tmp/
+reports/
+mutation.json
 **/reports/mutation/

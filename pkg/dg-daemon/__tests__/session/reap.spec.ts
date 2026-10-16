@@ -127,11 +127,11 @@ describe("SessionRegistry#reapExpired", () => {
 		expect(registry.get(session.sessionId)?.state).toBe("active");
 	});
 
-	it("removes the on-disk session token file for a reaped session, exactly like an explicit close", () => {
+	it("does not write a session file; the daemon database is the session record", () => {
 		const clock = { at: 0 };
 		const { paths, registry } = makeRegistry(() => clock.at);
 		const session = createSession(registry);
-		expect(existsSync(tokenFilePath(paths, session.sessionId))).toBe(true);
+		expect(existsSync(tokenFilePath(paths, session.sessionId))).toBe(false);
 		clock.at = 10_000;
 
 		registry.reapExpired(1_000, () => false);
@@ -184,6 +184,92 @@ describe("SessionRegistry#reapExpired", () => {
 		registry.reapExpired(24 * 60 * 60 * 1000, () => false);
 
 		expect(registry.get(session.sessionId)).toBeDefined();
+	});
+
+	it("keeps a claimed session through a quiet gap and releases the claim once", () => {
+		const clock = { at: 0 };
+		const { registry } = makeRegistry(() => clock.at);
+		const session = createSession(registry);
+		const gone: string[] = [];
+		registry.on("agent-gone", (event: { sessionId: string }) => {
+			gone.push(event.sessionId);
+		});
+		registry.noteCliAttached(session.sessionId);
+		registry.noteCliQuiet(session.sessionId);
+		clock.at = 999;
+
+		expect(
+			registry.reapExpired(60_000, () => false, {
+				reattachGraceMs: 1_000,
+				agentGoneMs: 400,
+			}),
+		).toEqual([]);
+		expect(registry.get(session.sessionId)?.cliAttached).toBe(true);
+		expect(gone).toEqual([]);
+
+		clock.at = 1_000;
+		expect(
+			registry.reapExpired(60_000, () => false, {
+				reattachGraceMs: 1_000,
+				agentGoneMs: 400,
+			}),
+		).toEqual([]);
+		expect(registry.get(session.sessionId)?.cliAttached).toBe(false);
+		expect(registry.get(session.sessionId)?.state).toBe("active");
+		expect(gone).toEqual([session.sessionId]);
+
+		clock.at = 1_399;
+		registry.reapExpired(60_000, () => false, {
+			reattachGraceMs: 1_000,
+			agentGoneMs: 400,
+		});
+		expect(registry.get(session.sessionId)?.state).toBe("active");
+		expect(gone).toEqual([session.sessionId]);
+
+		clock.at = 1_400;
+		expect(
+			registry.reapExpired(60_000, () => false, {
+				reattachGraceMs: 1_000,
+				agentGoneMs: 400,
+			}),
+		).toEqual([session.sessionId]);
+		expect(gone).toEqual([session.sessionId]);
+	});
+
+	it("clears the quiet clock when the CLI reattaches, so the gap does not accumulate", () => {
+		const clock = { at: 0 };
+		const { registry } = makeRegistry(() => clock.at);
+		const session = createSession(registry);
+		registry.noteCliAttached(session.sessionId);
+		registry.noteCliQuiet(session.sessionId);
+		clock.at = 900;
+		registry.noteCliAttached(session.sessionId);
+		clock.at = 5_000;
+
+		registry.reapExpired(60_000, () => false, {
+			reattachGraceMs: 1_000,
+			agentGoneMs: 0,
+		});
+
+		expect(registry.get(session.sessionId)?.state).toBe("active");
+		expect(registry.get(session.sessionId)?.cliAttached).toBe(true);
+		expect(registry.get(session.sessionId)?.cliQuietSince).toBeUndefined();
+	});
+
+	it("does not release a claim while a CLI socket is still open", () => {
+		const clock = { at: 0 };
+		const { registry } = makeRegistry(() => clock.at);
+		const session = createSession(registry);
+		registry.noteCliAttached(session.sessionId);
+		registry.noteCliQuiet(session.sessionId);
+		clock.at = 5_000;
+
+		registry.reapExpired(60_000, () => true, {
+			reattachGraceMs: 1_000,
+			agentGoneMs: 0,
+		});
+
+		expect(registry.get(session.sessionId)?.cliAttached).toBe(true);
 	});
 
 	it("evicts a closed record once a later sweep finds it past the retention window", () => {

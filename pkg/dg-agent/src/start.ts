@@ -23,6 +23,8 @@ import {
 	resolveDgPaths,
 	tryOpen,
 } from "@dg/common/node";
+import { claimWaitingSession } from "./attach";
+import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
 	const name = process.platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
@@ -84,6 +86,8 @@ export type StartOptions = {
 	role?: SessionRole;
 	agentIdentity?: string;
 	open?: boolean;
+	fresh?: boolean;
+	sessionId?: string;
 	printSessionId?: boolean;
 	json?: boolean;
 };
@@ -143,6 +147,22 @@ export async function cmdStart(
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
 
+	if (!options.fresh) {
+		const claimed = await claimWaitingSession(
+			targetPort,
+			process.cwd(),
+			"start",
+			options.sessionId,
+		);
+		if (claimed) {
+			console.error(cliNextStep("claimed", claimed.sessionId));
+			const url = buildBootstrapUrl(targetPort, claimed);
+			printSession(targetPort, claimed.sessionId, url, options);
+			if (options.open) await tryOpen(url);
+			return;
+		}
+	}
+
 	const bootstrap = await registerSession(targetPort, {
 		cwd: process.cwd(),
 		role: options.role ?? "agent",
@@ -150,15 +170,23 @@ export async function cmdStart(
 		agentIdentity: options.agentIdentity,
 	});
 	const url = buildBootstrapUrl(targetPort, bootstrap);
-	if (options.json) {
-		console.log(
-			JSON.stringify({ sessionId: bootstrap.sessionId, port: targetPort, url }),
-		);
-	} else {
-		if (options.printSessionId) console.log(bootstrap.sessionId);
-		console.log(url);
-	}
+	console.error(cliNextStep("registered", bootstrap.sessionId));
+	printSession(targetPort, bootstrap.sessionId, url, options);
 	if (options.open) {
 		await tryOpen(url);
 	}
+}
+
+function printSession(
+	port: number,
+	sessionId: string,
+	url: string,
+	options: StartOptions,
+): void {
+	if (options.json) {
+		console.log(JSON.stringify({ sessionId, port, url }));
+		return;
+	}
+	if (options.printSessionId) console.log(sessionId);
+	console.log(url);
 }

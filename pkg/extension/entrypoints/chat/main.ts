@@ -3,6 +3,7 @@ import {
 	type CommandEntry,
 	type SessionBootstrap,
 	type SessionRole,
+	emitRedacted,
 	validateChatFrame,
 	validateSessionBootstrap,
 } from "@dg/common";
@@ -41,6 +42,7 @@ import {
 	type PairingOptions,
 } from "@/lib/features/pairing";
 import type { ChatHistoryItem } from "@/lib/features/chat-transcript";
+import { redactSecrets } from "@/lib/features/chat-connection";
 import { createVimNav } from "@/lib/features/vim-nav";
 import { createIcon, type IconName } from "./icons";
 import "../options/style.css";
@@ -310,6 +312,14 @@ function createRelayChatClient(): PageChatClient {
 			send({ type: MSG.sessionClose, sessionId });
 		},
 
+		forgetSession(sessionId: string): void {
+			knownSessions.delete(sessionId);
+		},
+
+		retryNow(): void {
+			send({ type: MSG.connectionRetry });
+		},
+
 		sendCommandInvocation(
 			sessionId: string,
 			commandLabel: string,
@@ -440,6 +450,7 @@ export async function renderChatPage(
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
 	let selectedSessionId = order[0];
 	let tokenRejected = false;
+	let daemonReachable = bootstraps.length > 0;
 	let connectionDetail: string | undefined;
 	let moving: { sessionId: string; originalOrder: string[] } | undefined;
 	let activeDrag: { sessionId: string; cancel(): void } | undefined;
@@ -556,6 +567,15 @@ export async function renderChatPage(
 				(browser.runtime as unknown as ChatRuntime).sendMessage(message),
 		},
 		...options.pairing,
+		onDaemon(reachable) {
+			daemonReachable = reachable;
+			for (const create of root.querySelectorAll<HTMLButtonElement>(
+				'button[data-action="create-chat"]',
+			)) {
+				create.disabled =
+					client.getConnectionState() === "daemon-not-running" && !reachable;
+			}
+		},
 	});
 
 	let canvas: ReturnType<typeof createChatCanvas> | undefined;
@@ -770,19 +790,49 @@ export async function renderChatPage(
 	}
 
 	function requestNewChatSession(): void {
-		const requestingSessionId = selectedSessionId ?? bootstraps[0]?.sessionId;
-		if (!requestingSessionId) return;
-		const selected = sessions.get(requestingSessionId);
-		try {
-			client.requestNewSession(requestingSessionId, "agent", selected?.workset);
-		} catch (error) {
-			showError(error);
+		const requestingSessionId =
+			(selectedSessionId && bootstrapBySession.has(selectedSessionId)
+				? selectedSessionId
+				: undefined) ??
+			[...bootstrapBySession.keys()][0];
+		if (requestingSessionId) {
+			const selected = sessions.get(requestingSessionId);
+			try {
+				client.requestNewSession(
+					requestingSessionId,
+					"agent",
+					selected?.workset,
+				);
+				return;
+			} catch (error) {
+				showError(error);
+				return;
+			}
 		}
+		void (browser.runtime as unknown as ChatRuntime)
+			.sendMessage({ type: MSG.sessionLaunch })
+			.then((reply) => {
+				if (
+					typeof reply === "object" &&
+					reply !== null &&
+					(reply as { ok?: unknown }).ok === false
+				) {
+					const error = (reply as { error?: unknown }).error;
+					showError(
+						typeof error === "string"
+							? error
+							: "Could not create a session. Pair with the daemon, then retry.",
+					);
+				}
+			})
+			.catch((error: unknown) => showError(error));
 	}
 
 	function showError(error: unknown): void {
-		threadError.textContent =
-			error instanceof Error ? error.message : String(error);
+		const message = error instanceof Error ? error.message : String(error);
+		threadError.textContent = redactSecrets(message, [
+			...bootstrapBySession.values(),
+		].map((bootstrap) => bootstrap.token));
 		threadError.hidden = false;
 	}
 
@@ -801,7 +851,7 @@ export async function renderChatPage(
 		for (const create of root.querySelectorAll<HTMLButtonElement>(
 			'button[data-action="create-chat"]',
 		))
-			create.disabled = connection === "daemon-not-running";
+			create.disabled = connection === "daemon-not-running" && !daemonReachable;
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
 		);
@@ -1267,7 +1317,8 @@ export async function renderChatPage(
 			case "error":
 				showError(frame.message);
 				if (frame.code === "invalid-session") {
-					tokenRejected = true;
+					bootstrapBySession.delete(frame.sessionId);
+					if (bootstrapBySession.size === 0) tokenRejected = true;
 					updateConnectionStatus();
 				}
 				break;
@@ -1312,7 +1363,10 @@ if (typeof document !== "undefined") {
 	const autoRoot = document.getElementById("app");
 	if (autoRoot) {
 		void renderChatPage({ root: autoRoot }).catch((error) => {
-			console.error("[dg-chat] could not render the chat page:", error);
+			emitRedacted(
+				(line) => console.error(line),
+				`[dg-chat] could not render the chat page: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		});
 	}
 }

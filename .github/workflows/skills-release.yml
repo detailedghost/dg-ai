@@ -56,6 +56,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.1
@@ -102,6 +105,21 @@ jobs:
         with:
           name: ${{ matrix.asset }}
 
+      - name: Mask secrets in later log output
+        shell: bash
+        run: |
+          echo "ACTIONS_STEP_DEBUG=false" >> "$GITHUB_ENV"
+          while IFS= read -r name; do
+            case "$name" in
+              *SECRET*|*TOKEN*|*PASSWORD*|*API_KEY*|*COOKIE*|*CREDENTIAL*|*PRIVATE*)
+                value="${!name-}"
+                if [ -n "$value" ]; then
+                  echo "::add-mask::$value"
+                fi
+                ;;
+            esac
+          done < <(env | cut -d= -f1)
+
       - name: Run ${{ matrix.asset }} --help
         shell: bash
         run: |
@@ -124,6 +142,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
 
       - name: Read version
         id: ver

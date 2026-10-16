@@ -16,6 +16,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	OWNER_TOKEN_HEADER,
 	type DaemonHandle,
 	type SessionBootstrap,
 	type SessionRole,
@@ -24,7 +25,7 @@ import {
 } from "@dg/common";
 import {
 	readAssetSourceFile,
-	readSessionToken,
+	readOwnerToken,
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Subprocess } from "bun";
@@ -413,12 +414,33 @@ export async function startWithSession(
 	return { dgHome, port, bootstrap };
 }
 
-export function sessionCredentials(
+export async function sessionCredentials(
 	dgHome: string,
 	sessionId: string,
-): Credentials {
+): Promise<Credentials> {
+	const handle = readPidFile(dgHome);
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	return { sessionId, token: readSessionToken(paths, sessionId) };
+	const owner = readOwnerToken(paths);
+	const response = await fetch(
+		`http://127.0.0.1:${handle.port}/sessions/local?session=${encodeURIComponent(sessionId)}`,
+		{
+			headers: {
+				Host: `127.0.0.1:${handle.port}`,
+				...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
+			},
+		},
+	);
+	if (!response.ok) {
+		throw new Error(`session lookup failed: ${response.status}`);
+	}
+	const body = (await response.json()) as {
+		sessions?: { sessionId?: string; token?: string }[];
+	};
+	const match = body.sessions?.find((session) => session.sessionId === sessionId);
+	if (!match || typeof match.token !== "string") {
+		throw new Error(`session ${sessionId} is not in the daemon database`);
+	}
+	return { sessionId, token: match.token };
 }
 
 export async function spawnSession(
@@ -431,7 +453,7 @@ export async function spawnSession(
 		orchestrator?: boolean;
 	} = {},
 ): Promise<Credentials> {
-	const credentials = sessionCredentials(dgHome, sessionId);
+	const credentials = await sessionCredentials(dgHome, sessionId);
 	const ws = await connectCli(port, credentials);
 	const frames = collectFrames(ws);
 	send(ws, {
@@ -456,7 +478,7 @@ export async function closeSession(
 	port: number,
 	sessionId: string,
 ): Promise<void> {
-	const credentials = sessionCredentials(dgHome, sessionId);
+	const credentials = await sessionCredentials(dgHome, sessionId);
 	const ws = await connectCli(port, credentials);
 	const frames = collectFrames(ws);
 	send(ws, {
@@ -483,7 +505,7 @@ export async function recvMessage(
 	sessionId: string,
 	opts: { block?: boolean; timeoutMs?: number } = {},
 ): Promise<RecvOutcome> {
-	const credentials = sessionCredentials(dgHome, sessionId);
+	const credentials = await sessionCredentials(dgHome, sessionId);
 	const timeoutMs = opts.timeoutMs ?? 30_000;
 	const ws = await connectCli(port, credentials);
 	const frames = collectFrames(ws);
@@ -510,7 +532,7 @@ export async function stageAsset(
 	sessionId: string,
 	sourcePath: string,
 ): Promise<string> {
-	const credentials = sessionCredentials(dgHome, sessionId);
+	const credentials = await sessionCredentials(dgHome, sessionId);
 	const filename = basename(sourcePath);
 	const bytes = readAssetSourceFile(sourcePath);
 	const resp = await fetch(`http://127.0.0.1:${port}/assets`, {
