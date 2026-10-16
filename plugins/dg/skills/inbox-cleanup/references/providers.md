@@ -81,9 +81,12 @@ plugin's broader Firefox features may require a newer Firefox. Bootstrap
 
 accountHint is the /u/ account index, such as 0 or 1, for Proton. It is an email
 login hint for Gmail/Outlook. An optional --tab-id fixes a particular mail tab.
-Several matching mail tabs require an explicit selection; several extension
-peers on the same session require disconnecting all but one peer. A selected
-account is checked again inside the page before execution.
+When several Proton mail tabs are open, accountHint selects the one whose path
+is /u/N. That /u/N tab wins over /u/N/inbox and over a deeper page on the same
+account. If more than one tab still matches, the error lists those tab ids and
+/u/N paths. Several
+extension peers on the same session require disconnecting all but one peer. A
+selected account is checked again inside the page before execution.
 
 The extension runs named fixed JavaScript operations. It retains observed
 x-pm-uid/appversion/locale headers only in page memory, uses same-origin fetch

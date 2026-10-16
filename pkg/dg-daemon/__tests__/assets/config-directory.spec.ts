@@ -29,6 +29,7 @@ import {
 	registerSession,
 	spawnServe,
 	startWithSession,
+	waitForDaemonExit,
 	waitForHealth,
 	waitForValue,
 } from "../utils/daemon-harness";
@@ -294,10 +295,11 @@ describe("config-get/config-set wire round trip", () => {
 		await awaitConfigResult(frames, "the config-set to complete");
 		ws.close();
 		killDaemonByPidFile(home);
+		await waitForDaemonExit(home);
 
 		const port2 = allocatePort();
 		spawnServe(home, port2);
-		await waitForHealth(port2);
+		await waitForHealth(port2, 8000);
 		const bootstrap2 = await registerSession(port2);
 		const ws2 = await connectPage(port2, bootstrap2);
 		const frames2 = collectFrames(ws2);
