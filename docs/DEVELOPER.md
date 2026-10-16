@@ -342,6 +342,12 @@ which removes the dependency's source before starting the binary.
 Every review machine needs a signed-in runner and thrash installed in that
 runner's skill roots. `status` reports each runner probe, including CR-206 for
 missing thrash after executable and login checks pass.
+Grok Build is available through `~agent grok`, `--runner grok`, or
+`runner.default`; `~model` passes its model ID unchanged. Its probe uses
+`grok models` for the resolved auth source and `grok inspect --json` for an
+enabled, invocable `/thrash`. These utilities do not generate model output.
+The review runs headlessly with `--always-approve`. `runner.fallback: "grok"`
+opts into Grok after a Claude limit; the automatic default stays Codex.
 
 AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
 bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,

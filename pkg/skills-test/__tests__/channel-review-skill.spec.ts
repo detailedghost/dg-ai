@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { loadConfig, REACTION_DEFAULTS, resolveEnv } from "../../channel-review/src/config";
 import { ERROR_CATALOG } from "../../channel-review/src/errors";
 import { helpText } from "../../channel-review/src/help";
+import { RUNNER_NAMES } from "../../channel-review/src/runners/types";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const TARGET_VERSION = "1.14.0";
@@ -254,6 +255,18 @@ describe("channel-review skill distribution", () => {
 });
 
 describe("channel-review docs do not drift from the shipped CLI", () => {
+	test("help and runner documentation list every selectable backend", () => {
+		const reviewHelp = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "review");
+		const commands = readRef("commands.md");
+		const setup = readRef("setup.md");
+		for (const name of RUNNER_NAMES) {
+			expect(reviewHelp).toContain(name);
+			expect(commands).toContain(name);
+			expect(setup).toContain(`| ${name} |`);
+			expect(ERROR_CATALOG["CR-103"]).toContain(name);
+		}
+	});
+
 	const content = () => allContent();
 
 	test("every subcommand and flag the CLI registers is documented", () => {

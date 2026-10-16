@@ -152,11 +152,11 @@ describe("engine single review", () => {
 		expect(h.runner.runs[0]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	test("uses the runner named by ~agent", async () => {
+	test.each(["codex", "grok"] as const)("uses the runner named by ~agent %s", async (name) => {
 		const h = setup();
-		await h.engine.handle(reviewMessage("m1", PR_URL, "~agent codex"));
+		await h.engine.handle(reviewMessage("m1", PR_URL, `~agent ${name}`));
 		await h.engine.idle();
-		expect(h.runners.codex.runs).toHaveLength(1);
+		expect(h.runners[name].runs).toHaveLength(1);
 		expect(h.runners.claude.runs).toHaveLength(0);
 	});
 

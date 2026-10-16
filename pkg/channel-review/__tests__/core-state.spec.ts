@@ -223,6 +223,11 @@ describe("injected clock", () => {
 });
 
 describe("blocked-PR registry", () => {
+	test("persists Grok selection and model for a later rereview", () => {
+		const options = { ...OPTIONS, agent: "grok" as const, model: "grok-4.6" };
+		createStateStore(path).markBlocked(GITHUB_URL, "m1", options, "c1");
+		expect(createStateStore(path).get().blocked[prKey(GITHUB_URL)]?.options).toEqual(options);
+	});
 	test("markBlocked keys the entry by the normalized url", () => {
 		const store = createStateStore(path);
 		store.markBlocked(`${GITHUB_URL}/files?x=1#frag`, "m1", OPTIONS, "c1");

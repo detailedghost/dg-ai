@@ -11,7 +11,7 @@ export type GrokOutputFormat = (typeof GROK_OUTPUT_FORMATS)[number];
 
 type RunnerCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-207">;
 
-type ProbeCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-206">;
+type ProbeCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-203" | "CR-206">;
 
 export type RunTask =
 	| { task: "thrash"; url: string; spice?: number; comment: boolean }
@@ -21,7 +21,9 @@ export type RunTask =
 
 export type Runner = {
 	name: RunnerName;
-	probe(): Promise<{ ok: true } | { ok: false; code: ProbeCode }>;
+	probe(options?: {
+		cwd: string;
+	}): Promise<{ ok: true } | { ok: false; code: ProbeCode }>;
 	run(
 		request: RunTask & {
 			model?: string;

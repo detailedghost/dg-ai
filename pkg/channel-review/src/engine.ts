@@ -342,7 +342,7 @@ export function createEngine(deps: EngineDeps): Engine {
 			const fallback = runners[config.runner.fallback];
 			let available = false;
 			try {
-				available = (await fallback.probe()).ok;
+				available = (await fallback.probe({ cwd: paths.workDir })).ok;
 			} catch (error) {
 				log.warn(`fallback probe failed: ${describeError(error)}`);
 			}
@@ -353,7 +353,7 @@ export function createEngine(deps: EngineDeps): Engine {
 					provider.reply({
 						chatId: job.chatId,
 						html: true,
-						text: `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${escapeHtml(job.messageId)}"><p>$review ${escapeHtml(job.url)}</p></blockquote><p>Claude is out of tokens, so I'm using ${fallback.name === "codex" ? "Codex" : "Copilot"} for this review.</p>`,
+						text: `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${escapeHtml(job.messageId)}"><p>$review ${escapeHtml(job.url)}</p></blockquote><p>Claude is out of tokens, so I'm using ${fallback.name === "codex" ? "Codex" : fallback.name === "grok" ? "Grok" : "Copilot"} for this review.</p>`,
 					}),
 				);
 				selection.runner = fallback;
@@ -375,7 +375,7 @@ export function createEngine(deps: EngineDeps): Engine {
 	}
 
 	async function preflight(runner: Runner, job: Job): Promise<CrCode | null> {
-		const runnerProbe = await runner.probe();
+		const runnerProbe = await runner.probe({ cwd: paths.workDir });
 		if (!runnerProbe.ok) return runnerProbe.code;
 		const verdictProbe = await verdict.probe({ host: job.host, url: job.url });
 		return verdictProbe.ok ? null : verdictProbe.code;

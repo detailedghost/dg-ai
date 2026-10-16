@@ -1,11 +1,11 @@
 # Channel review commands
 
 Run the installed `dg-skills` binary. Claude is the supported default runner.
-Codex and Copilot are experimental. Codex runs with
-`--dangerously-bypass-approvals-and-sandbox`; Copilot runs with `--allow-all-tools`.
-Both run on content that PR authors write, so a prompt injection in a PR can run
+Codex, Copilot, and Grok Build are experimental. Codex runs with
+`--dangerously-bypass-approvals-and-sandbox`; Copilot runs with `--allow-all-tools`;
+Grok runs with `--always-approve`. They run on content that PR authors write, so a prompt injection in a PR can run
 any command as you. Claude with the default allowlist is the safe choice.
-Both report CR-203 for execution failures without a more specific error code.
+All report CR-203 for execution failures without a more specific error code.
 `$address` always runs on Claude and reports runner failures with the same
 codes: CR-203 for a failed run and CR-204 after `runner.addressTimeoutMinutes`.
 Runner availability, login, missing thrash, and timeouts have separate codes.
@@ -87,6 +87,10 @@ default when Codex passes its readiness check. It replies to the original reques
 “Claude is out of tokens, so I'm using Codex for this review.” The retry uses
 Codex's default model and the time remaining for that PR. The rest of a stacked
 review stays on Codex. Set `runner.fallback` to null to disable this behavior.
+Set `runner.fallback` to `"grok"` to use Grok Build instead. Explicit
+`~agent grok` reviews use Grok directly and do not switch backends on a limit.
+Use `~model <id>` to select a Grok model, or omit it to use Grok’s configured
+default. For example: `$review https://github.com/example/project/pull/42 ~agent grok ~model grok-build`.
 
 ### Address flags
 

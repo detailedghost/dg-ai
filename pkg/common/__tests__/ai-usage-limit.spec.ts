@@ -3,6 +3,20 @@ import { isAiUsageLimit } from "../src";
 
 describe("isAiUsageLimit", () => {
 	test.each([
+		"You’ve hit the rate limit for your plan.",
+		"You've hit your team's API rate limit.",
+		"You’ve reached your free Grok Build usage limit for now.",
+		"subscription:free-usage-exhausted: quota hit",
+		"resource-exhausted: Too many requests for team example",
+		"Some resource has been exhausted: You are sending requests too quickly.",
+		"API error (status 429 Too Many Requests): slow down",
+	])("recognizes Grok limits in plain and native streaming output: %s", (message) => {
+		expect(isAiUsageLimit(message)).toBe(true);
+		expect(isAiUsageLimit(JSON.stringify({ type: "error", message }))).toBe(true);
+		expect(isAiUsageLimit(JSON.stringify({ type: "text", data: message }))).toBe(false);
+		expect(isAiUsageLimit(`+ ${message}`)).toBe(false);
+	});
+	test.each([
 		"You've hit your limit · resets 8pm (America/Chicago)",
 		"ERROR: You’ve hit your usage limit. Try again later.",
 		"You have reached your token limit",

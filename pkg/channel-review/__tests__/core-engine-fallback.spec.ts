@@ -202,3 +202,27 @@ test("explicit Codex reviews do not switch back to Claude", async () => {
 		replyText("CR-207", { agent: "codex" }),
 	);
 });
+
+test("Grok is an explicitly configured fallback and uses its own model", async () => {
+	const h = setup({ configExtra: { runner: { fallback: "grok" } } });
+	h.runners.grok.run = async (request) => { h.runners.grok.runs.push(request); return OK_RESULT; };
+	await h.engine.handle(reviewMessage("m1", PR_URL, "~model claude-model"));
+	await h.engine.idle();
+	expect(h.runners.codex.probeCalls).toBe(0);
+	expect(h.runners.grok.probeCalls).toBe(1);
+	expect(h.runners.grok.runs).toHaveLength(1);
+	expect(h.runners.grok.runs[0]?.model).toBeUndefined();
+	expect(basename(h.runners.grok.runs[0]!.logPath)).toBe("m1-fallback-grok.log");
+	expect(h.replies()[0]?.text).toContain("using Grok for this review");
+	expect(h.state.get().handled.m1?.status).toBe("done");
+});
+
+test("explicit Grok exhaustion does not retry with another runner", async () => {
+	const h = setup();
+	await h.engine.handle(reviewMessage("m1", PR_URL, "~agent grok ~model grok-4.6"));
+	await h.engine.idle();
+	expect(h.runners.grok.runs[0]?.model).toBe("grok-4.6");
+	expect(h.runners.claude.runs).toHaveLength(0);
+	expect(h.runners.codex.runs).toHaveLength(0);
+	expect(h.replies().at(-1)?.text).toBe(replyText("CR-207", { agent: "grok" }));
+});

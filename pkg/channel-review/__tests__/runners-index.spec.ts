@@ -57,7 +57,7 @@ function fakeFs(files: string[]) {
 	};
 }
 
-const SKILL_ROOTS: Record<RunnerName, string[]> = {
+const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 	claude: [
 		`${HOME}/.claude/skills/thrash/SKILL.md`,
 		`${HOME}/.claude/plugins/dg/skills/thrash/SKILL.md`,
@@ -110,7 +110,10 @@ function harness(
 				(await options.capture?.(command, args)) ?? {
 					status: 0,
 					signal: null,
-					stdout: "",
+					stdout: command !== PATHS.grok ? "" : args[0] === "models"
+						? "You are logged in with example.com.\nAvailable models:"
+						: JSON.stringify({ skills: options.files === undefined
+							? [{ name: "thrash", userInvocable: true }] : [] }),
 					stderr: "",
 				}
 			);
@@ -154,6 +157,24 @@ describe("createRunners", () => {
 });
 
 describe("runner probe", () => {
+	test("Grok probes its configured executable in the review's scratch directory", async () => {
+		const h = harness({
+			config: configWith({ grok: { path: "/opt/grok" } }),
+			which: () => undefined,
+			capture: (_command, args) => ({
+				status: 0, signal: null, stderr: "",
+				stdout: args[0] === "models" ? "You are logged in with example.com."
+					: JSON.stringify({ skills: [{ name: "thrash", userInvocable: true }] }),
+			}),
+		});
+		expect(await h.runners.grok.probe({ cwd: "/scratch" })).toEqual({ ok: true });
+		expect(h.whichCalls).toEqual([]);
+		expect(h.captures.map(call => [call.command, call.args, call.options])).toEqual([
+			["/opt/grok", ["models"], { cwd: "/scratch", timeoutMs: 60_000 }],
+			["/opt/grok", ["inspect", "--json"], { cwd: "/scratch", timeoutMs: 60_000 }],
+		]);
+	});
+
 	test.each([...RUNNER_NAMES])("%s returns ok when found, signed in, and thrash is installed", async (name) => {
 		const { runners } = harness();
 		expect(await runners[name].probe()).toEqual({ ok: true });
@@ -253,7 +274,7 @@ describe("runner probe", () => {
 	});
 
 	test.each(
-		RUNNER_NAMES.flatMap((name) =>
+		(["claude", "codex", "copilot"] as const).flatMap((name) =>
 			SKILL_ROOTS[name].map((file) => [name, file] as const),
 		),
 	)("%s finds thrash at %s", async (name, file) => {
@@ -284,7 +305,16 @@ describe("runner probe", () => {
 });
 
 describe("runner run argv", () => {
-	test.each(["claude", "codex", "copilot"] as const)(
+	test("Grok uses installed headless flags and one slash prompt argument", async () => {
+		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
+		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
+		expect(h.processes[0]?.argv).toEqual([
+			"/opt/grok", "-p", `/thrash ${URL} -s 4 -c`, "--model", "grok-4.6",
+			"--cwd", "/work", "--output-format", "streaming-json", "--always-approve",
+		]);
+	});
+
+	test.each([...RUNNER_NAMES])(
 		"%s passes the requested model as a separate argument",
 		async (name) => {
 			const h = harness();
@@ -493,6 +523,19 @@ describe("runner run argv", () => {
 });
 
 describe("runner run result", () => {
+	test.each([
+		["CR-202", "Not signed in. Run `grok login` to authenticate."],
+		["CR-207", "You’ve hit the rate limit for your plan."],
+	] as const)("Grok classifies streamed error messages as %s", async (code, message) => {
+		const h = harness({
+			process: () => ({
+				status: 1, signal: null, timedOut: false, aborted: false,
+				stderrTail: "", outputTail: JSON.stringify({ type: "error", message }),
+			}),
+		});
+		expect((await h.runners.grok.run(runRequest())).code).toBe(code);
+	});
+
 	test.each([0, 1])(
 		"recognizes a limit on stdout even with exit status %i",
 		async (status) => {
@@ -510,7 +553,7 @@ describe("runner run result", () => {
 		},
 	);
 
-	test.each(["claude", "codex", "copilot"] as const)(
+	test.each([...RUNNER_NAMES])(
 		"%s detects limits after a long run",
 		async (name) => {
 			const h = harness({

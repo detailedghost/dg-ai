@@ -33,7 +33,7 @@ Install these on every machine that runs the daemon:
 - The AWS CLI with SSO access to the environment's profile and permission to read
   the configured Secrets Manager secret.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
-- At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or `grok`.
+- At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
 - The thrash skill where that runner finds it. dg does not ship thrash.
 - For `$address`: the address skill at `~/.claude/skills/address` with its
   `address-helper`, and `gh` or `glab` signed in with push access.
@@ -49,7 +49,27 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 | claude | `.claude/skills/thrash/SKILL.md` or a nested `skills/thrash/SKILL.md` under `.claude/plugins` |
 | codex | `.codex/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
 | copilot | `.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
-| grok | `.grok/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
+| grok | An enabled, user-invocable, unambiguous `thrash` reported by `grok inspect --json` |
+
+Grok Build uses `grok -p "/thrash …" --output-format streaming-json
+--always-approve`, with `--cwd` and optional `--model`. These flags were checked
+against Grok Build 1.0.60. Install and authenticate using the
+[official Grok Build instructions](https://docs.x.ai/build/overview).
+`grok login` (or `grok login --device-auth`) signs in interactively;
+headless API-key authentication uses the CLI's supported environment or model
+configuration. Do not put credentials in channel-review config.
+
+Grok has no `login status` command. Its probe runs `grok models` and requires a
+recognized authenticated banner plus a successful catalog command, then runs
+`grok inspect --json`. These utility commands submit no model prompt. The probe
+checks the CLI's resolved credential source, not remote token validity or every
+model's entitlement. Sign in again if a later job reports CR-202.
+`status` inspects user-level skills from the home directory; each review rechecks
+from its actual scratch working directory. Disabled, non-user-invocable, or
+colliding `/thrash` skills report CR-206. Failed utility commands or malformed
+inspection output report CR-203. Use `grok inspect --json` to check compatibility
+skills and plugin discovery; the probe does not assume another host's skill roots.
+See [Grok's skill guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md).
 
 The default `runner.claude.allowedTools` is narrow on purpose. A PR author
 writes the text the runner reads, so a prompt injection must not reach a shell
@@ -126,12 +146,12 @@ headless flags; a few of them are not spelled out as a stable contract, so
 they are config when the CLI allows it.
 
 - The command is `grok --no-auto-update -p <prompt> --output-format <format> --always-approve --cwd <job dir>`. `--no-auto-update` skips the background updater. `--cwd` is the job directory, and the process working directory is that same path.
-- The prompt is `/thrash ...`. Grok runs a skill when the prompt names it as `/skill-name`, and it loads skills from `~/.grok/skills` and `~/.claude/skills`.
+- The prompt is `/thrash ...`. The readiness probe verifies skill discovery with `grok inspect --json`.
 - `runner.grok.outputFormat` is `streaming-json` (the default), `json`, or `plain`. `streaming-json` is one JSON object per line: `text` (answer chunk, field `data`), `thought` (ignored), `error` (field `message`), and `end` (field `stopReason`). The daemon appends the stream to the job log. A fast nonzero exit whose stderr, or whose `error` event, says the CLI is not signed in is CR-202. The review text itself is not parsed; thrash posts the review.
 - `runner.grok.tools` is an optional list of Grok tool ids such as `read_file` and `grep`. They are joined with commas into one `--tools` value, which replaces Grok's default tool set. Leave it unset, or set an empty list, to keep that default. A tool id must not contain a comma. This is not Claude's `Bash(git:*)` syntax.
 - `runner.grok.model` is optional and becomes `--model`.
-- There is no `grok auth status`. The probe runs `grok models`. A nonzero exit is CR-202, which also covers a network failure during the probe. Grok 1.0 prints `You are not authenticated.` and still exits 0 when signed out, so that text is CR-202 too. Sign in with `grok login`, or set `XAI_API_KEY` for a headless key. The child process inherits `XAI_API_KEY`. It does not inherit `CLAUDE_CODE_OAUTH_TOKEN`. A headless run that is signed out prints `Not signed in` on stderr and as a `streaming-json` error event; a fast nonzero exit with that text is CR-202.
-- The probe looks for thrash under the home directory only, same as the other runners. A checkout-local `.grok/skills/thrash` does not satisfy it.
+- There is no `grok auth status`. The probe runs `grok models` to check the resolved auth source, then `grok inspect --json` to check the skill. These utility checks submit no model prompt. Sign in with `grok login`, or use the CLI-supported API-key setup. A runtime sign-in failure reports CR-202.
+- The review probe inspects the actual scratch working directory; general status inspects user-level skills from the home directory.
 - `$address`, automatic fixes, and dependency upgrades stay on Claude.
 
 Opt-in tests in `pkg/channel-review` spawn the real CLIs. They stay skipped unless the variable is `1` and the binary is on `PATH`. From `pkg/channel-review`:
@@ -177,7 +197,7 @@ every required key with placeholder values.
 | `owner.email` | string | Required | Owner email that the relay uses when sending chat replies. |
 | `owner.senderIds` | string array | `[]` | Chat sender IDs (Teams Azure AD object IDs) that may run `$address`. Entries are trimmed and must not be empty. Reviews and help do not check it. |
 | `runner.default` | string | `claude` | Default runner: claude, codex, copilot, or grok. |
-| `runner.fallback` | string or null | `codex` | Retry a Claude review once after a usage limit. Choose codex or copilot; null disables fallback. The fallback must pass its runner probe. |
+| `runner.fallback` | string or null | `codex` | Retry a Claude review once after a usage limit. Choose codex, copilot, or grok; null disables fallback. The fallback must pass its runner probe. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
 | `runner.claude.allowedTools` | string array | `Bash(<home>/scripts/bin/thrash-helper:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |

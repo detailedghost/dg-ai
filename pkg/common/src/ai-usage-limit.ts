@@ -4,8 +4,15 @@ import { isRecord } from "./assert";
 const LIMIT_LINE =
 	/^(?:(?:API )?error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached) your (?:usage |rate |token )?limit\b|you(?:['’]re| are) out of (?:extra )?usage\b|(?:usage|token|rate) limit (?:reached|exceeded)\b|rate_limit_error\b|(?:429\b.*(?:rate_limit_error|rate.?limit|quota)|(?:insufficient_quota|quota exceeded)\b))/i;
 
+// Grok Build diagnostics: xai-org/grok-build, sampling/error.rs.
+const GROK_LIMIT_LINE =
+	/^(?:error:\s*)?(?:you['’]ve hit (?:the rate limit for your plan|your team['’]s API rate limit)\b|you['’]ve reached your free Grok Build usage limit\b|subscription:free-usage-exhausted\b|resource-exhausted:\s*Too many requests\b|Some resource has been exhausted:\s*You are sending requests too quickly\b|API error \(status 429\b|Rate limited\b)/i;
+
 function limitMessage(value: unknown): boolean {
-	return typeof value === "string" && LIMIT_LINE.test(value.trimEnd());
+	return (
+		typeof value === "string" &&
+		(LIMIT_LINE.test(value.trimEnd()) || GROK_LIMIT_LINE.test(value.trimEnd()))
+	);
 }
 
 /** Recognize usage/quota exhaustion in Claude, Codex and other AI CLI output. */
@@ -17,11 +24,14 @@ export function isAiUsageLimit(output: string): boolean {
 		try {
 			const event: unknown = JSON.parse(line);
 			if (!isRecord(event)) return false;
-			if (event.type === "error" && isRecord(event.error)) {
+			if (event.type === "error") {
+				if (limitMessage(event.message)) return true;
 				return (
-					event.error.type === "rate_limit_error" ||
-					event.error.type === "insufficient_quota" ||
-					limitMessage(event.error.message)
+					isRecord(event.error) && (
+						event.error.type === "rate_limit_error" ||
+						event.error.type === "insufficient_quota" ||
+						limitMessage(event.error.message)
+					)
 				);
 			}
 			return (

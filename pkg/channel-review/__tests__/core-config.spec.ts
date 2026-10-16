@@ -60,6 +60,10 @@ describe("loadConfig defaults", () => {
 			"copilot",
 		);
 	});
+	test("accepts Grok defaults, fallback and executable override", () => {
+		const config = load({ runner: { default: "grok", fallback: "grok", grok: { path: "/opt/grok" } } });
+		expect(config.runner).toMatchObject({ default: "grok", fallback: "grok", grok: { path: "/opt/grok" } });
+	});
 	test.each(["claude", "gemini", false])(
 		"rejects an unsupported fallback %p",
 		(fallback) => {
