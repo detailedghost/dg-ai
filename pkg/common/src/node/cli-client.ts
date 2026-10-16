@@ -1,19 +1,13 @@
+import { CHAT_CLI_PATH, CHAT_PROTOCOL_VERSION } from "../chat-format";
 import {
-	CHAT_CLI_PATH,
-	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	type CliRequest,
-	DgCliError,
-	describeError,
-} from "@dg/common";
-import {
-	readPidFile,
-	readSessionToken,
-	requireMatchingProtocol,
-	resolveDgPaths,
-	soleSessionForCwd,
-} from "@dg/common/node";
+} from "../cli-wire";
+import { DgCliError, describeError } from "../errors";
+import { type DgPaths, resolveDgPaths } from "./paths";
+import { readPidFile, requireMatchingProtocol } from "./pidfile";
+import { readSessionToken, soleSessionForCwd } from "./session-tokens";
 
 const CLI_CONNECT_TIMEOUT_MS = 2_000;
 
@@ -31,8 +25,10 @@ type BunWebSocketCtor = new (
 const BunWebSocket = WebSocket as unknown as BunWebSocketCtor;
 
 /** Resolves an explicit session or the sole cwd match, requiring a live daemon and compatible protocol. */
-export function resolveCliSession(explicitSessionId?: string): ResolvedSession {
-	const paths = resolveDgPaths();
+export function resolveCliSession(
+	explicitSessionId?: string,
+	paths: DgPaths = resolveDgPaths(),
+): ResolvedSession {
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
 	requireMatchingProtocol(
@@ -58,22 +54,21 @@ export class CliClient {
 		readonly session: ResolvedSession,
 	) {}
 
-	/** Authenticates the WebSocket with the session capability and rejects connection failures within a bound. */
+	/** Authenticates the WebSocket with the session capability, or the given headers, and rejects connection failures within a bound. */
 	static connect(
 		session: ResolvedSession,
 		timeoutMs = CLI_CONNECT_TIMEOUT_MS,
+		headers: Record<string, string> = {
+			[CLI_SESSION_ID_HEADER]: session.sessionId,
+			[CLI_SESSION_TOKEN_HEADER]: session.token,
+		},
 	): Promise<CliClient> {
 		return new Promise((resolve, reject) => {
 			let socket: WebSocket;
 			try {
 				socket = new BunWebSocket(
 					`ws://127.0.0.1:${session.port}${CHAT_CLI_PATH}`,
-					{
-						headers: {
-							[CLI_SESSION_ID_HEADER]: session.sessionId,
-							[CLI_SESSION_TOKEN_HEADER]: session.token,
-						},
-					},
+					{ headers },
 				);
 			} catch (error) {
 				reject(

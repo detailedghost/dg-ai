@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { CliClient, resolveCliSession } from "@dg/dg-agent/client";
+import { CliClient, resolveCliSession } from "@dg/common/node";
 import { main, redactPublicValue, type InboxRuntime } from "@dg/inbox";
 import {
 	INBOX_DEFAULT_TIMEOUT_MS,

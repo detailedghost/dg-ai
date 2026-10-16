@@ -41,8 +41,8 @@ import {
 import {
 	type CryptoMetaRow,
 	type KeychainBackend,
-	type KeyMode,
 	resolveDataKey,
+	resolveKeyMode,
 } from "../crypto/key-resolution";
 import { createKeychainBackendForPlatform } from "../crypto/keychain-backends";
 import { nextCronRun } from "../jobs/cron";
@@ -525,10 +525,6 @@ export const AGENT_MESSAGE_ACK_SQL = ackSql(
 	"agent_messages",
 	"recipient_identity = $identity",
 );
-
-function resolveKeyMode(raw: string | undefined): KeyMode {
-	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
-}
 
 function computeNextRunAt(job: ScheduledJob, ranAt: Date): Date {
 	if (job.cronExpr) return nextCronRun(job.cronExpr, ranAt);

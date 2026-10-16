@@ -1,3 +1,4 @@
+import type { CredentialsCliRequest } from "./credentials-format";
 import type { InboxCliRequest } from "./inbox-format";
 import type {
 	ChatFrame,
@@ -9,6 +10,8 @@ import type {
 
 export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
 export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
+export const CLI_GRANT_PREFIX_HEADER = "X-Dg-Grant-Prefix";
+export const CLI_GRANT_TOKEN_HEADER = "X-Dg-Grant-Token";
 export const ASSET_FILENAME_HEADER = "X-Dg-Filename";
 
 export type CliRecvRequest = {
@@ -80,6 +83,7 @@ export type CliOverwatchSnapshotResult = {
 
 export type CliFrame =
 	| InboxCliRequest
+	| CredentialsCliRequest
 	| CliRecvRequest
 	| CliAckRequest
 	| CliSendRequest

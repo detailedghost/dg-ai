@@ -60,7 +60,6 @@ describe("the CLI wire contract lives in @dg/common, where both packages can rea
 
 		const consumers = [
 			["pkg", "dg-agent", "src", "commands.ts"],
-			["pkg", "dg-agent", "src", "client.ts"],
 			["pkg", "dg-daemon", "src", "server", "frame-handlers.ts"],
 		];
 		for (const rel of consumers) {
