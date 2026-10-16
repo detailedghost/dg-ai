@@ -1,6 +1,7 @@
 ---
 name: demo
 description: Produce a guided in-browser demo of a feature or PR — optionally preparing authenticated, configured, or seeded setup state first — then use the dg-ai-extension to spotlight each element and inject explanatory text boxes in the user's real browser. Write a plan, open it in the extension, and the user picks review / walkthrough / video there. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
+requires: [extension]
 ---
 
 # Guided-tour demo

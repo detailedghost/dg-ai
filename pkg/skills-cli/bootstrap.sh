@@ -2,10 +2,16 @@
 # Install the compiled dg-skills CLI for the current platform into ~/.dg/bin.
 #
 #   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+#   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
 # Windows: use bootstrap.ps1 instead.
 set -eu
+
+CLI_ONLY="${DG_CLI_ONLY:-0}"
+for arg in "$@"; do
+  [ "${arg}" = "--cli-only" ] && CLI_ONLY=1
+done
 
 REPO="detailedghost/dg-ai"
 BIN_DIR="${HOME}/.dg/bin"
@@ -79,9 +85,13 @@ case ":${PATH}:" in
 *) echo "Add to PATH:  export PATH=\"${BIN_DIR}:\$PATH\"" ;;
 esac
 
-# Set up the browser extension too, so one command installs everything.
-echo "Setting up the dg-ai-extension…"
-"${DEST}" install
+if [ "${CLI_ONLY}" = "1" ]; then
+  "${DEST}" install --cli-only
+else
+  # Set up the browser extension too, so one command installs everything.
+  echo "Setting up the dg-ai-extension…"
+  "${DEST}" install
+fi
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
 # repository's skills into CODEX_HOME (default: ~/.codex/skills).
@@ -94,6 +104,11 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
     "https://github.com/${REPO}/archive/refs/heads/master.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   tar -xzf "${archive}" -C "${tmpdir}"
-  cp -R "${tmpdir}/dg-ai-master/plugins/dg/skills/." "${CODEX_ROOT}/skills/"
+  for skill in "${tmpdir}/dg-ai-master/plugins/dg/skills"/*/; do
+    if [ "${CLI_ONLY}" = "1" ] && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
+      continue
+    fi
+    cp -R "${skill}" "${CODEX_ROOT}/skills/"
+  done
   echo "Codex skills installed in ${CODEX_ROOT}/skills"
 fi

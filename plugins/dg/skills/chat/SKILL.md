@@ -1,6 +1,7 @@
 ---
 name: chat
 description: Talk to a human through a live browser chat window while you work, using the companion dg-ai-extension, the dg-agent CLI and the dg-daemon daemon. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
+requires: [extension]
 ---
 
 # Chat
@@ -18,6 +19,8 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 `skills-v*`):
 
 ```bash
+DG_SKILLS="$HOME/.dg/bin/dg-skills"
+if [ -x "$DG_SKILLS" ]; then "$DG_SKILLS" require-extension chat || exit 1; fi
 DG_AGENT="$HOME/.dg/bin/dg-agent"
 if [ ! -x "$DG_AGENT" ]; then
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"

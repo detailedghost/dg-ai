@@ -1,6 +1,7 @@
 ---
 name: proto
 description: Prototype and compare structurally distinct, app-native variations inside a live application page with the dg-ai-extension. Use when a user wants to explore, review, approve, or rework UI alternatives against a real page before implementing one.
+requires: [extension]
 ---
 
 # Live-page prototype
