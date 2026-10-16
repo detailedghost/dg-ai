@@ -22,7 +22,7 @@ export const ERROR_CATALOG = {
 	"CR-204":
 		"The review took longer than {minutes} minutes, so I stopped it. Try again with a lower ~spice.",
 	"CR-205":
-		"The review service stopped before the review finished. Post the request again to restart it.",
+		"The service stopped before the job finished. If you sent a request, post it again to restart it.",
 	"CR-206":
 		"The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.",
 	"CR-301":
@@ -37,6 +37,16 @@ export const ERROR_CATALOG = {
 		"That pull request comes from a fork, and I can't push to a fork, so I didn't address it.",
 	"CR-306":
 		"I couldn't clone the pull request branch on {owner}'s computer, so I didn't address it. Check that the branch still exists, then try again.",
+	"CR-401":
+		"I found no allowed repository for this error, so I didn't try a fix. Ask {owner} to add the service under errorWatch.repos.",
+	"CR-402":
+		"The hourly limit for automatic fixes is reached, so this fix waits. I try again on the next poll.",
+	"CR-403":
+		"A fix pull request for this error is already open, so I didn't start another.",
+	"CR-404":
+		"The fix agent changed nothing, so I opened no pull request. Check this error by hand.",
+	"CR-405":
+		"A git or GitHub step failed on {owner}'s computer, so I opened no pull request. Check that git and gh are signed in there.",
 } satisfies Record<string, string>;
 
 export type CrCode = keyof typeof ERROR_CATALOG;

@@ -9,6 +9,8 @@ import {
 } from "./address";
 import { ensurePrivateDir } from "@dg/common/node";
 import { type ChannelConfig, resolveReactionSlot } from "./config";
+import { createNotifier } from "./automation/notify";
+import { sweepCloneRoot } from "./automation/repo-job";
 import { type CrCode, ownerName, replyText } from "./errors";
 import { type FunEntry, decorateReply, funVerdictFor, pickFun } from "./fun";
 import { EMOJI_WAIT_MINUTES, helpText } from "./help";
@@ -66,10 +68,29 @@ export type EngineDeps = {
 	schedule?: (ms: number, task: () => Promise<void>) => () => void;
 };
 
+export type RepoJobHost = {
+	signal: AbortSignal;
+	runAgent(request: {
+		task: Extract<RunTask, { task: "fix" }>;
+		cwd: string;
+		timeoutMs: number;
+		logName: string;
+		signal: AbortSignal;
+	}): Promise<CrCode | null>;
+};
+
+export type RepoJob = {
+	kind: "repo";
+	id: string;
+	url: string;
+	work(host: RepoJobHost): Promise<void>;
+};
+
 export type Engine = {
 	handle(message: ChatMessage): Promise<void>;
 	handleReaction(reaction: ChatReaction): Promise<void>;
 	recover(seam: ProcessSeam): Promise<void>;
+	enqueueRepo(job: Omit<RepoJob, "kind">): boolean;
 	maintain(): void;
 	stop(): Promise<void>;
 	idle(): Promise<void>;
@@ -124,6 +145,14 @@ export function createEngine(deps: EngineDeps): Engine {
 	const timeoutMs = config.runner.timeoutMinutes * 60_000;
 	const addressTimeoutMs = config.runner.addressTimeoutMinutes * 60_000;
 	const owner = ownerName(config.owner.token);
+	const notify = createNotifier({ provider, config, log });
+	const longestTimeoutMs =
+		Math.max(
+			config.runner.timeoutMinutes,
+			config.runner.addressTimeoutMinutes,
+			config.errorWatch.autoFix.timeoutMinutes,
+			config.deps.timeoutMinutes,
+		) * 60_000;
 	const reactionState = new Map<string, ReactionState>();
 	const inFlight = new Set<string>();
 	const enqueue = createSerialQueue((err) =>
@@ -211,7 +240,7 @@ export function createEngine(deps: EngineDeps): Engine {
 	}
 
 	async function execute(
-		job: Job,
+		job: Pick<JobBase, "messageId" | "chatId">,
 		target: Target,
 		run: { task: RunTask; cwd: string; timeoutMs: number; logName: string },
 		runner: Runner,
@@ -405,6 +434,35 @@ export function createEngine(deps: EngineDeps): Engine {
 			state.setCurrent(null);
 			reactionState.delete(job.messageId);
 			inFlight.delete(prKey(job.url));
+			active = null;
+		}
+	}
+
+	async function runRepoJob(job: RepoJob): Promise<void> {
+		if (stopped) {
+			inFlight.delete(job.id);
+			return;
+		}
+		const controller = new AbortController();
+		active = controller;
+		try {
+			ensurePrivateDir(paths.jobsDir);
+			await job.work({
+				signal: controller.signal,
+				runAgent: ({ task, cwd, timeoutMs: agentTimeoutMs, logName, signal }) =>
+					execute(
+						{ messageId: job.id, chatId: defaultChatId },
+						{ number: 0, url: job.url },
+						{ task, cwd, timeoutMs: agentTimeoutMs, logName },
+						runners.claude,
+						signal,
+					),
+			});
+		} catch (err) {
+			log.error(`repo job ${job.id} failed unexpectedly: ${describeError(err)}`);
+		} finally {
+			state.setCurrent(null);
+			inFlight.delete(job.id);
 			active = null;
 		}
 	}
@@ -639,11 +697,20 @@ export function createEngine(deps: EngineDeps): Engine {
 				seam.isAlive(current.pid) &&
 				seam.startTime(current.pid) === current.pidStart &&
 				RUNNER_PROCESS.test(seam.listArgs(current.pid)) &&
-				clock().getTime() - Date.parse(current.startedAt) < Math.max(timeoutMs, addressTimeoutMs)
+				clock().getTime() - Date.parse(current.startedAt) < longestTimeoutMs
 			) {
 				await seam.killTree(current.pid);
 			}
 			state.setCurrent(null);
+
+			const fixing = Object.entries(state.get().issues).filter(
+				([, entry]) => entry.status === "fixing",
+			);
+			sweepCloneRoot(config.automation.cloneRoot, [], log);
+			for (const [key, entry] of fixing) {
+				state.setIssue(key, { status: "failed", firstSeen: entry.firstSeen });
+				await notify(replyText("CR-205", { owner }));
+			}
 
 			const interrupted = Object.entries(handled).filter(
 				([, entry]) => entry.status === "pending" || entry.status === "running",
@@ -660,6 +727,12 @@ export function createEngine(deps: EngineDeps): Engine {
 				reactionState.delete(messageId);
 				await post(chatId, replyText("CR-205", { owner }), "failure", false);
 			}
+		},
+		enqueueRepo(job) {
+			if (stopped || inFlight.has(job.id)) return false;
+			inFlight.add(job.id);
+			tail = enqueue(() => runRepoJob({ kind: "repo", ...job }));
+			return true;
 		},
 		async stop() {
 			stopped = true;
