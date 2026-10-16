@@ -8,5 +8,9 @@
 		"lint:all": "bun run --filter='./pkg/*' lint",
 		"install:extension": "bun run --filter='./pkg/extension' install",
 		"test": "bun test"
+	},
+	"devDependencies": {
+		"@hughescr/stryker-bun-runner": "^1.6.0",
+		"@stryker-mutator/core": "^10.0.0"
 	}
 }

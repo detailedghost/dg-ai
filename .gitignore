@@ -7,3 +7,6 @@ node_modules/
 dist/
 .output/
 .env
+.stryker-tmp/
+reports/
+mutation.json
