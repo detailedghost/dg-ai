@@ -1,4 +1,4 @@
-import { CliClient } from "@dg/dg-agent/client";
+import { CliClient } from "@dg/common/node";
 import type { InboxCliResult } from "@dg/common";
 import { redactPublicValue } from "@dg/inbox";
 import { describe, expect, test } from "bun:test";

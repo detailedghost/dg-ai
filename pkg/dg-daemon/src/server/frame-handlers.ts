@@ -1,3 +1,7 @@
+import {
+	handleCredentialsRequest,
+	sendCredentialsResult,
+} from "./credentials";
 import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
 import { randomUUID } from "node:crypto";
 import {
@@ -10,6 +14,7 @@ import {
 	type ChatErrorCode,
 	type ChatFrame,
 	type CliFrame,
+	type CredentialsCliRequest,
 	describeError,
 	isRecord,
 	type OverwatchBoard,
@@ -17,6 +22,7 @@ import {
 	OVERWATCH_MAX_LANES,
 	OVERWATCH_MAX_MERGES,
 	validateChatFrame,
+	validateCredentialsCliRequest,
 	validateInboxCliRequest,
 	validateCommandManifest,
 	validateOverwatchAction,
@@ -50,6 +56,7 @@ import {
 	type ClaimedMessage,
 	type PeekedMessage,
 } from "../store";
+import type { CredentialStore } from "../store/credentials-store";
 import type { ConnectionManager } from "./connection";
 import {
 	onSocketClose,
@@ -67,6 +74,7 @@ export type FrameHandlerDeps = {
 	paths: DgPaths;
 	noteActivity: () => void;
 	store: ChatStore;
+	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
 	overwatchOpenRequests: Map<string, OverwatchOpenRequest>;
 };
@@ -1070,6 +1078,19 @@ export async function handleSocketMessage(
 			noteInvalid(ws);
 			return;
 		}
+	}
+
+	if (isRecord(parsed) && parsed.type === "cli-credentials-request") {
+		let request: CredentialsCliRequest;
+		try { request = validateCredentialsCliRequest(parsed); }
+		catch (err) {
+			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
+			await sendCredentialsResult(ws, requestId, { ok: false, error: describeError(err).slice(0, 2048) });
+			noteInvalid(ws);
+			return;
+		}
+		await handleCredentialsRequest(ws, request, deps);
+		return;
 	}
 
 	const cliFrame = parseCliFrame(parsed);

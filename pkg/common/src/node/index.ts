@@ -1,4 +1,7 @@
 export * from "./assets";
+export * from "./cli-client";
+export * from "./credential-grants";
+export * from "./credentials-client";
 export * from "./fs";
 export * from "./manifest-load";
 export * from "./marker";

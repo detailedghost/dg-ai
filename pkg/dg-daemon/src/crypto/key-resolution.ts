@@ -35,6 +35,10 @@ export type CryptoMetaRow = {
 
 export type KeyMode = "file" | "keychain" | "auto";
 
+export function resolveKeyMode(raw: string | undefined): KeyMode {
+	return raw === "file" || raw === "keychain" || raw === "auto" ? raw : "auto";
+}
+
 export type ResolveDataKeyInput = {
 	existing?: CryptoMetaRow;
 	keyPath: string;
@@ -151,10 +155,10 @@ async function probeKeychain(
 const KEYCHAIN_MODE_WITHOUT_BACKEND =
 	"DG_KEY_SOURCE=keychain requires a keychain backend";
 
-async function resolveExisting(
-	existing: CryptoMetaRow,
+async function findKek(
+	existing: Pick<CryptoMetaRow, "keyId" | "keySource">,
 	input: ResolveDataKeyInput,
-): Promise<ResolveDataKeyResult> {
+): Promise<Buffer> {
 	if (input.mode === "keychain" && !input.keychain) {
 		throw new Error(KEYCHAIN_MODE_WITHOUT_BACKEND);
 	}
@@ -192,10 +196,19 @@ async function resolveExisting(
 			candidates,
 		);
 	}
+	return matchedKek;
+}
 
+async function resolveExisting(
+	existing: CryptoMetaRow,
+	input: ResolveDataKeyInput,
+): Promise<ResolveDataKeyResult> {
 	return {
 		minted: false,
-		dataKey: unwrapDataKey(matchedKek, existing.wrappedDataKey),
+		dataKey: unwrapDataKey(
+			await findKek(existing, input),
+			existing.wrappedDataKey,
+		),
 		cryptoMeta: existing,
 		warnings: [],
 	};
@@ -291,4 +304,25 @@ export async function resolveDataKey(
 ): Promise<ResolveDataKeyResult> {
 	if (input.existing) return resolveExisting(input.existing, input);
 	return mintFresh(input);
+}
+
+/** Resolves a store's own data key, minting one under the KEK another store already recorded. */
+export async function resolveSiblingDataKey(
+	input: ResolveDataKeyInput & {
+		kek: Pick<CryptoMetaRow, "keyId" | "keySource">;
+	},
+): Promise<ResolveDataKeyResult> {
+	if (input.existing) return resolveExisting(input.existing, input);
+	const dataKey = randomBytes(32);
+	return {
+		minted: true,
+		dataKey,
+		cryptoMeta: {
+			formatVersion: CRYPTO_META_FORMAT_VERSION,
+			keyId: input.kek.keyId,
+			keySource: input.kek.keySource,
+			wrappedDataKey: wrapDataKey(await findKek(input.kek, input), dataKey),
+		},
+		warnings: [],
+	};
 }

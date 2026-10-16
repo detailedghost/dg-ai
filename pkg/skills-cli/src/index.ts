@@ -7,6 +7,7 @@
 import { Command } from "commander";
 import { registerBatchOpen } from "./commands/batch-open";
 import { registerChannelReview } from "./commands/channel-review";
+import { registerCredentials } from "./commands/credentials";
 import { registerDemo } from "./commands/demo";
 import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
@@ -26,6 +27,7 @@ program
 program.enablePositionalOptions();
 registerInbox(program);
 registerChannelReview(program);
+registerCredentials(program);
 registerInstall(program);
 registerBatchOpen(program);
 registerLaunch(program);

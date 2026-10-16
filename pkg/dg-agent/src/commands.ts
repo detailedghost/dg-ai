@@ -13,15 +13,17 @@ import {
 	parseNonNegativeInteger,
 } from "@dg/common";
 import {
+	CliClient,
+	frameEnvelope,
 	loadManifestFile,
 	loadSubagentManifestFile,
 	loopbackHostHeader,
 	readAssetSourceFile,
+	resolveCliSession,
 	resolveManifestForPublish,
 	writeStdout,
 } from "@dg/common/node";
 import type { Command } from "commander";
-import { CliClient, frameEnvelope, resolveCliSession } from "./client";
 import { registerOverwatchCommands } from "./overwatch";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;

@@ -209,7 +209,7 @@ work, it does not make a criterion observable.
 
 @dg/inbox exposes main(argv, runtime), provider types/classes, and public-output
 redaction. dg-skills inbox supplies encrypted profile/cache hooks and an
-authenticated request-ID/session-bound Proton relay through @dg/dg-agent/client.
+authenticated request-ID/session-bound Proton relay through the CliClient in @dg/common/node.
 The extension retains session headers in a Proton-only MAIN observer and executes
 fixed operations; browser response metadata goes directly back to CLI JSON.
 Graph requests use `Prefer: IdType="ImmutableId"` so moves preserve the IDs used
@@ -226,6 +226,87 @@ The raw conversation archive is ignored local context and must remain unpublishe
 Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
 integration suites. Smoke the compiled dg-skills binary from an unrelated cwd
 with fixture datasets. See [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md).
+
+## Credential store
+
+dg-daemon keeps secrets in their own SQLite file,
+`<dg home>/daemon/credentials.db` (mode 0600, in the 0700 `daemon/` directory).
+`CredentialStore` (`pkg/dg-daemon/src/store/credentials-store.ts`) owns it with
+its own schema steps. The file has its own data key in its own `crypto_meta`
+table. The same key-encryption key as `daemon.db` (OS keychain or key file)
+wraps it. A copied `daemon.db` alone never unlocks a credential, and
+`daemon.db`'s schema stays unchanged.
+
+The value goes only into the encrypted columns. Its AAD binds the table, the
+column and the name, so a ciphertext copied to another name does not decrypt.
+`meta_json` holds non-secret metadata in plain text. The store rejects meta
+with a key named like `value`, `secret`, `token` or `password`.
+
+Name credentials `<consumer>/<provider>[/<qualifier>]`, for example
+`channel-review/datadog` or `channel-review/relay/dev`. The store checks only
+the character set (`[a-z0-9][a-z0-9._/-]{0,127}`), so each package picks its
+own consumer prefix. `CredentialMeta` types the reserved optional fields
+`provider`, `site`, `scopes`, `expiresAt`, `createdBy` and `note`; other keys
+take any non-secret JSON.
+
+Only dg-daemon opens `credentials.db`. Callers send the
+`cli-credentials-request` frame over the loopback daemon, and three callers
+may read:
+
+| Caller | Authenticates with | May do |
+| --- | --- | --- |
+| A dg session (`dg-skills`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list` |
+| A background service | Service grant token | `get` and `list` under `<prefix>/` |
+| The paired extension | Its chat socket handshake | `get` and `list` under `extension/` |
+
+A scoped caller gets the same "not allowed" error for any other operation or
+name, so it cannot learn whether a name exists. Only a `get` reply carries a
+value. The daemon never logs a value or a token.
+
+```bash
+printf %s "$SECRET" | dg-skills credentials set consumer/provider --meta provider=example --meta expiresAt=2030-01-01T00:00:00Z
+dg-skills credentials list
+dg-skills credentials delete consumer/provider
+dg-skills credentials grant consumer
+dg-skills credentials revoke consumer
+```
+
+`set` reads the value from stdin, or from a hidden prompt on a TTY. `list`
+prints names, metadata and grants, and flags entries that expired or expire
+within 14 days. No command prints a value or a token.
+
+`grant <prefix>` makes a random 32-byte service token. The daemon keeps only
+its SHA-256 in `credential_grants` and writes the token to
+`<dg home>/grants/<prefix>.token` (mode 0600, directory 0700). Running `grant`
+again rotates the token. `revoke` deletes the grant and the file. The daemon
+compares token hashes in constant time and records `last_used_at`.
+
+The extension client is `pkg/extension/lib/background/credentials.ts`
+(`getExtensionCredential`, `listExtensionCredentials`). It takes the chat
+socket after its handshake. No extension UI uses it yet.
+
+### Using the credential store from another package
+
+`createCredentialClient` in `@dg/common/node` wraps the frame.
+`resolveCredential` returns the stored value, else the first non-empty
+environment variable you name, and reports its `source`. A package can move
+from `.env` to the store one secret at a time. A background service without
+a dg session runs `dg-skills credentials grant <consumer>` once, then passes
+`grant`:
+
+```ts
+import { createCredentialClient, resolveDgPaths } from "@dg/common/node";
+
+const credentials = createCredentialClient({ paths: resolveDgPaths(), grant: { prefix: "consumer" } });
+const apiKey = await credentials.resolveCredential("consumer/provider", { env: ["PROVIDER_API_KEY"] });
+credentials.close();
+```
+
+Leave out `grant` to authenticate with the dg session for the working
+directory (or pass `session`). If dg-daemon is not running, the client fails
+with `dg-daemon is not running; start it with dg-agent start`.
+`resolveCredential` uses an environment variable in that case when one is
+set.
 
 ## Channel review integration
 

@@ -13,6 +13,7 @@ export type DgPaths = {
 	daemonDir: string;
 	pidPath: string;
 	dbPath: string;
+	credentialsDbPath: string;
 	keyPath: string;
 	configPath: string;
 	logDir: string;
@@ -20,6 +21,7 @@ export type DgPaths = {
 	sessionsDir: string;
 	assetsDir: string;
 	memoryDbPath: string;
+	grantsDir: string;
 };
 
 export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
@@ -38,6 +40,7 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		daemonDir,
 		pidPath: path.join(daemonDir, "daemon.pid"),
 		dbPath: path.join(daemonDir, "daemon.db"),
+		credentialsDbPath: path.join(daemonDir, "credentials.db"),
 		keyPath: path.join(daemonDir, "key"),
 		configPath: path.join(daemonDir, "config.json"),
 		logDir: path.join(daemonDir, "logs"),
@@ -45,5 +48,6 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		sessionsDir: path.join(agentsDir, "sessions"),
 		assetsDir: path.join(agentsDir, "assets"),
 		memoryDbPath: path.join(agentsDir, "memory.db"),
+		grantsDir: path.join(stateDir, "grants"),
 	};
 }

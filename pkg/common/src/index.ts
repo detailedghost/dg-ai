@@ -2,6 +2,7 @@ export * from "./assert";
 export * from "./async";
 export * from "./chat-format";
 export * from "./cli-wire";
+export * from "./credentials-format";
 export * from "./errors";
 export * from "./markers";
 export * from "./pairing";

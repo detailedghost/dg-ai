@@ -16,6 +16,8 @@ import {
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
 	CHAT_WS_PATH,
+	CLI_GRANT_PREFIX_HEADER,
+	CLI_GRANT_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
@@ -46,6 +48,7 @@ import type {
 	SessionRegistry,
 } from "../session/registry";
 import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
+import type { CredentialStore } from "../store/credentials-store";
 import { readEnvNumber } from "../utils/env";
 import {
 	abortPendingWork,
@@ -76,6 +79,7 @@ export type HttpServerDeps = {
 	noteActivity: () => void;
 	statusDeps: Omit<StatusDeps, "instanceId" | "boundPort" | "registry">;
 	store: ChatStore;
+	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
 	supervisor: Supervisor;
 };
@@ -205,6 +209,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		logger,
 		noteActivity,
 		store,
+		credentials,
 		dispatchScheduler,
 	} = deps;
 
@@ -215,6 +220,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		paths,
 		noteActivity,
 		store,
+		credentials,
 		dispatchScheduler,
 		overwatchOpenRequests: new Map(),
 	};
@@ -787,6 +793,17 @@ function requireSessionCredentials(
 	return { sessionId, token };
 }
 
+function hasCredentialGrant(req: Request, store: CredentialStore): boolean {
+	const prefix = req.headers.get(CLI_GRANT_PREFIX_HEADER);
+	const token = req.headers.get(CLI_GRANT_TOKEN_HEADER);
+	return (
+		prefix !== null &&
+		token !== null &&
+		!req.headers.has(CLI_SESSION_ID_HEADER) &&
+		store.verifyCredentialGrant(prefix, token)
+	);
+}
+
 function handleCliUpgrade(
 	req: Request,
 	server: Server<SocketState>,
@@ -798,10 +815,12 @@ function handleCliUpgrade(
 			status: 400,
 		});
 	}
-	const credentials = requireSessionCredentials(req, deps.registry);
-	if (credentials instanceof Response) return credentials;
 	const data = createSocketState("cli", deps.logger);
-	data.capabilities.set(credentials.sessionId, credentials.token);
+	if (!hasCredentialGrant(req, deps.credentials)) {
+		const credentials = requireSessionCredentials(req, deps.registry);
+		if (credentials instanceof Response) return credentials;
+		data.capabilities.set(credentials.sessionId, credentials.token);
+	}
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

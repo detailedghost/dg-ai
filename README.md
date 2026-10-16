@@ -228,6 +228,14 @@ Read [provider setup](plugins/dg/skills/inbox-cleanup/references/providers.md) a
 [the workflow](plugins/dg/skills/inbox-cleanup/references/workflow.md). Live-account
 authentication and mutations need validation in your provider/browser setup.
 
+### Credential store
+
+`dg-skills credentials set|list|delete` keeps secrets encrypted in
+dg-daemon's `credentials.db`. `set` reads the value from stdin or a hidden
+prompt, and no command prints it. `grant|revoke` manage read-only service
+tokens. Start a session with `dg-agent start` first. See the
+[developer guide](docs/DEVELOPER.md#credential-store).
+
 ### Channel review
 
 Run /dg:channel-review in Claude Code or $dg:channel-review in Codex to inspect

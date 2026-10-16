@@ -25,6 +25,7 @@ import {
 	FEED_ITEM_RETENTION_ROW_LIMIT,
 	MESSAGE_RETENTION_ROW_LIMIT,
 } from "../store";
+import { CredentialStore } from "../store/credentials-store";
 import { readEnvNumber } from "../utils/env";
 import {
 	setKeySourceProvider,
@@ -80,6 +81,7 @@ export async function cmdServe(): Promise<void> {
 
 	const logger = createLogger(paths);
 	const store = await ChatStore.open(paths);
+	const credentials = await CredentialStore.open(paths, store.cryptoMeta());
 	store.recoverStaleClaims();
 	setKeySourceProvider(() => store.cryptoMeta().keySource);
 	setUserVersionProvider(() => store.userVersion());
@@ -117,6 +119,7 @@ export async function cmdServe(): Promise<void> {
 				noteActivity,
 				statusDeps,
 				store,
+				credentials,
 				dispatchScheduler,
 				supervisor,
 			});
@@ -130,12 +133,14 @@ export async function cmdServe(): Promise<void> {
 					`port ${candidate} bind conflict: deferring to daemon instance ${liveHandle.instanceId} already live on ${liveHandle.port}`,
 				);
 				store.close();
+				credentials.close();
 				process.exit(0);
 			}
 		}
 	}
 	if (!server || boundPort === undefined) {
 		store.close();
+		credentials.close();
 		throw new DgCliError(
 			`no available port in the configured range (${String(lastBindError)})`,
 			EXIT_NO_PORT_AVAILABLE,
@@ -264,6 +269,7 @@ export async function cmdServe(): Promise<void> {
 		removePidFile(paths);
 		boundServer.stop(true);
 		store.close();
+		credentials.close();
 		await logger.flush();
 		process.exit(0);
 	}

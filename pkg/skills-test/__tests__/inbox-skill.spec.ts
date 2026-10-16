@@ -56,8 +56,9 @@ describe("inbox-cleanup skill distribution", () => {
 		const cli = JSON.parse(readRepoFile("pkg/skills-cli/package.json"));
 		expect(cli.dependencies["@dg/inbox"]).toMatch(/^workspace:/);
 		expect(cli.dependencies["@dg/dg-agent"]).toMatch(/^workspace:/);
-		const agent = JSON.parse(readRepoFile("pkg/dg-agent/package.json"));
-		expect(agent.exports["./client"]).toBeDefined();
+		expect(cli.dependencies["@dg/common"]).toMatch(/^workspace:/);
+		const common = JSON.parse(readRepoFile("pkg/common/package.json"));
+		expect(common.exports["./node"]).toBeDefined();
 		const inbox = JSON.parse(readRepoFile("pkg/inbox/package.json"));
 		expect(Object.keys(inbox.dependencies ?? {})).not.toContain("playwright");
 	});
