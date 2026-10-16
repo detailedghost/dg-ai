@@ -27,7 +27,7 @@ const receiptSignals = [
 ];
 const invoiceSignals = ["invoice", "statement", "bill"];
 const creditCardSignals = [
-	"bank",
+	"capitalone",
 	"americanexpress",
 	"synchrony",
 	"cardmessage",
@@ -194,14 +194,7 @@ export function inferTargetFolder(
 			"receipts",
 		]);
 	}
-	// "bank" is the neutral stand-in and is also a bankSignal. That later
-	// check owns the word, so it still files to the bank folder.
-	if (
-		hasAny(
-			normalizedText,
-			creditCardSignals.filter((signal) => !bankSignals.includes(signal)),
-		)
-	) {
+	if (hasAny(normalizedText, creditCardSignals)) {
 		return firstExistingFolder(candidates, [
 			"credit-card",
 			"credit card",
