@@ -27,5 +27,23 @@
 		}
 	},
 	"runner": { "default": "claude" },
-	"hosts": { "github": [], "gitlab": [] }
+	"hosts": { "github": [], "gitlab": [] },
+	"errorWatch": {
+		"enabled": false,
+		"pollMinutes": 5,
+		"providers": {
+			"datadog": { "enabled": false, "services": { "include": ["example-api"] } },
+			"sentry": { "enabled": false, "projects": { "include": ["example-project"] } }
+		},
+		"repos": {
+			"example-api": { "repo": "github.com/example-org/example-api" }
+		},
+		"autoFix": { "enabled": true, "maxPerHour": 2 }
+	},
+	"deps": {
+		"enabled": false,
+		"cooldownDays": 7,
+		"schedule": { "every": "week", "day": "mon", "window": "02:00-05:00" },
+		"repos": [{ "repo": "github.com/example-org/example-api" }]
+	}
 }

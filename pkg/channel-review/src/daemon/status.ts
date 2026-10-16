@@ -5,7 +5,8 @@ import { channelReviewPaths } from "../paths";
 import { type PreflightReport, preflight } from "../providers/teams-relay";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
-import { createStateStore } from "../state";
+import { missingEnvByProvider } from "../sinks";
+import { type ChannelState, createStateStore } from "../state";
 import { isOurDaemon, readPidRecord } from "./pid";
 import type { PlatformSeam } from "./platform";
 import {
@@ -24,7 +25,48 @@ type StatusSeams = {
 	runners?: Record<RunnerName, Runner>;
 	probeTimeoutMs?: number;
 	preflight?: (call: PreflightCall) => Promise<PreflightReport>;
+	env?: Record<string, string | undefined>;
 };
+
+function automationReport(
+	config: ChannelConfig,
+	state: ChannelState | undefined,
+	env: Record<string, string | undefined>,
+) {
+	const { errorWatch, deps } = config;
+	const providers = Object.fromEntries(
+		Object.entries(errorWatch.providers).map(([name, provider]) => {
+			const entry = state?.sinks[name];
+			return [
+				name,
+				{
+					enabled: provider.enabled,
+					lastPollAt: entry?.lastPollAt ?? null,
+					lastError: entry?.lastError ?? null,
+					counts: entry?.counts ?? {},
+				},
+			];
+		}),
+	);
+	return {
+		errorWatch: {
+			enabled: errorWatch.enabled,
+			providers,
+			missingEnv: Object.values(missingEnvByProvider(config, env)).flat(),
+		},
+		deps: {
+			enabled: deps.enabled,
+			repos: deps.repos.length,
+			lastRun: Object.fromEntries(
+				Object.entries(state?.deps.lastRun ?? {}).map(([repo, run]) => [
+					repo,
+					{ at: run.at, result: run.result },
+				]),
+			),
+			watchingPrs: Object.keys(state?.prWatch ?? {}).length,
+		},
+	};
+}
 
 function hasError(report: Record<string, unknown>): boolean {
 	const failed = (value: unknown): boolean =>
@@ -87,10 +129,11 @@ export async function status(
 
 	let lastEventIds: Record<string, string> = {};
 	let current: unknown = null;
+	let snapshot: ChannelState | undefined;
 	try {
-		const state = createStateStore(paths.statePath).get();
-		lastEventIds = state.lastEventIds;
-		current = state.current;
+		snapshot = createStateStore(paths.statePath).get();
+		lastEventIds = snapshot.lastEventIds;
+		current = snapshot.current;
 	} catch {
 		lastEventIds = {};
 	}
@@ -113,6 +156,7 @@ export async function status(
 	}
 
 	body.address = `allowAnySender ${config.address.allowAnySender}, senderIds ${config.owner.senderIds.length}`;
+	Object.assign(body, automationReport(config, snapshot, seams.env ?? process.env));
 	body.runners = await runnerProbes(
 		seams.runners ?? createRunners(config),
 		seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,

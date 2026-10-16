@@ -17,6 +17,7 @@ import {
 } from "../providers/teams-relay";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
+import { startAutomation } from "../automation/start";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
 import { createStateStore } from "../state";
@@ -296,6 +297,16 @@ export async function serve({
 		seams,
 		log,
 	});
+	const automation = startAutomation({
+		config: effective,
+		engine,
+		state,
+		provider: switcher.provider,
+		jobsDir: paths.jobsDir,
+		seams,
+		log,
+		signal,
+	});
 
 	async function dispatch(chatId: string, event: ChatEvent): Promise<void> {
 		if (event.type === "gap") {
@@ -380,6 +391,7 @@ export async function serve({
 		code = codes.includes(0) ? 0 : 1;
 	} finally {
 		stopMaintenance();
+		await automation.stop();
 		await withTimeout(
 			engine.stop(),
 			seams.stopTimeoutMs ?? SERVE_STOP_TIMEOUT_MS,

@@ -274,3 +274,24 @@ the shipped catalog exactly.
 | `CR-403` | `A fix pull request for this error is already open, so I didn't start another.` | Review the open bot PR. |
 | `CR-404` | `The fix agent changed nothing, so I opened no pull request. Check this error by hand.` | Inspect the job log and fix the error by hand. |
 | `CR-405` | `A git or GitHub step failed on {owner}'s computer, so I opened no pull request. Check that git and gh are signed in there.` | Check `git` and `gh` sign-in, then inspect the daemon log. |
+
+## Direct messages
+
+Error watch and scheduled upgrades message the owner directly (or the chat in
+`automation.notify.target`). Each message has no reply thread. A link, when
+present, follows on its own line. The daemon strips URL queries, email
+addresses, and long tokens from the text and caps it at 400 characters.
+`CR-401` to `CR-405` above reach the owner this way, with the issue link.
+
+| Message | When |
+| --- | --- |
+| `New <level> error in <service> (<env>): <title>` | A new or regressed issue. Sent once per issue; a retry after a deferral does not repeat it. |
+| `Draft fix pull request opened for <title>.` | The fix job opened a draft PR. The link follows. |
+| `Deps upgrade PR opened as draft for <repo>, waiting for CI:` | The upgrade job opened a draft PR. The link follows. |
+| `Deps upgrade ready for <repo>:` | The PR was already ready when the job ended. The link follows. |
+| `Deps upgrade ready:` | CI passed and the daemon marked the draft PR ready. The link follows. |
+| `No dependency upgrades for <repo>.` | The job ran and opened no PR. |
+| `CI failed on <url>: <check names>` | A check failed on a watched upgrade PR. |
+| `CI did not finish within <n> minutes on <url>.` | `deps.ciTimeoutMinutes` passed. |
+| `Deps upgrade failed for <repo>. <CR text> Job log: <path>` | The upgrade job failed, timed out (CR-204), or stopped (CR-205). |
+| `Deps upgrade for <repo> was interrupted. <CR-205 text>` | The daemon restarted during an upgrade job. |

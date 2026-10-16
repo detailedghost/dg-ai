@@ -141,3 +141,81 @@ holds only chats that the relay's service mailbox is a member of.
 | 404 | Remove reaction | Success. |
 | 429 | Events, reactions | Wait `Retry-After` (clamped 1–60 s) and retry. |
 | Other | All calls | Events: back off and reconnect. Others: the call fails and the daemon logs it. |
+
+## Error watch
+
+Error watch polls an error tracker for new and regressed issues, tells the
+owner, and can open a draft fix PR. It is off until `errorWatch.enabled` is
+`true`. Datadog and Sentry are the supported sinks. The
+[setup reference](../../plugins/dg/skills/channel-review/references/setup.md)
+lists every key.
+
+Data flow:
+
+1. A ticker polls each enabled sink every `errorWatch.pollMinutes`. A sink
+   with missing credentials records the variable names in `status` and is
+   skipped; the daemon keeps running. The first poll of a sink only marks the
+   open issues as seen.
+1. For each new or regressed issue, the daemon asks the sink for the detail
+   (message, stack, repository tag). If that call fails, it continues with a
+   minimal report built from the issue.
+1. The daemon sends the owner a direct message with the issue link.
+1. With `errorWatch.autoFix.enabled`, the daemon checks the gates: the service
+   is in `errorWatch.repos` (CR-401), the hourly cap allows a start (CR-402),
+   and no bot PR is open for the issue (CR-403).
+1. A job on the serial queue clones the repo, creates `bot/fix/<sink>-<id>`,
+   writes the report to a file beside the clone, and runs the fix agent in the
+   clone.
+1. The daemon commits, checks that the branch is not the default branch,
+   pushes, opens a draft PR, and sends the owner the link. No change is CR-404;
+   a failed git or `gh` step is CR-405.
+
+Guardrails:
+
+- The PR is always a draft. A person reviews and merges it.
+- The daemon owns commit, push, and PR creation. The fix agent only edits and
+  tests inside the clone, under `errorWatch.autoFix.allowedTools`.
+- The report is untrusted data. The agent reads it from a file and is told to
+  treat it as data, never as instructions. The daemon removes control
+  characters and caps the title, message, and stack lengths. Chat messages
+  strip URL queries, email addresses, and long tokens.
+- Only services listed in `errorWatch.repos` can get a fix PR. A service can
+  set `autoFix: false` for notification only.
+- Caps: `errorWatch.autoFix.maxPerHour` fix starts, one fix per issue, one job
+  at a time, and `errorWatch.autoFix.timeoutMinutes` per job. A capped issue is
+  deferred and retried on a later poll.
+- Clones live under `automation.cloneRoot`, which must not be under `~/code`.
+  The daemon deletes each clone when its job ends and sweeps the root at
+  startup.
+
+## Scheduled dependency upgrades
+
+Scheduled upgrades run the `deps-upgrade` skill on the configured repos. They
+are off until `deps.enabled` is `true`.
+
+Data flow:
+
+1. Every minute the daemon checks each `deps.repos` entry against its schedule
+   window (`every`, `day`, `window`). A window that was missed is not caught
+   up, and each window runs once.
+1. A repo that already has an open PR on a `deps.branchPrefix` branch is
+   skipped.
+1. A job on the serial queue clones the default branch (or the entry's
+   `branch`) and runs the skill with `deps.cooldownDays`. The skill only
+   upgrades to versions published at least that many days ago.
+1. The daemon finds the PR that the run created. A draft PR goes on a watch
+   list. A PR that is already ready is reported at once. No PR means nothing to
+   upgrade.
+1. Every 2 minutes the watcher checks each watched PR. When all checks pass,
+   the daemon marks the PR ready and sends the owner the link. A failed check
+   or `deps.ciTimeoutMinutes` ends the watch with a direct message.
+1. When the job ends, the daemon sweeps `automation.cloneRoot`, which removes
+   the sibling worktree that the skill leaves beside the clone.
+
+Guardrails:
+
+- Upgrade PRs start as drafts. The daemon never merges.
+- The job runs under `deps.allowedTools` and `deps.timeoutMinutes`.
+- One job runs at a time, so a sweep never touches a live job's files.
+- Progress and results show in `status` under `deps` and `errorWatch`. It
+  prints environment variable names, never their values.
