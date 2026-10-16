@@ -283,26 +283,41 @@ function isExtensionConnectError(error: string): boolean {
 	return /connect the dg extension/i.test(error);
 }
 
-/** Session id, a real bootstrap URL, the reload step, and the extension version. */
+const bootstrapUrlHelp = `inbox bootstrap-url [--session ID]
+Prints this session's start URL to stdout. The URL contains the session token.
+Connect errors keep a placeholder URL and do not include the token.`;
+
+/** Session id, a placeholder start URL, the reload step, and the extension version. The token stays out of this text. */
 function extensionConnectError(session: ResolvedSession): string {
-	const record = readSessionFiles(resolveDgPaths().sessionsDir).find(
-		(item) => item.sessionId === session.sessionId,
-	);
-	const url = record
-		? buildBootstrapUrl(session.port, {
-				port: session.port,
-				sessionId: session.sessionId,
-				token: session.token,
-				agentIdentity: record.agentIdentity,
-			})
-		: `http://127.0.0.1:${session.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
+	const url = `http://127.0.0.1:${session.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
 	return [
 		`No extension peer on session ${session.sessionId}. Connect the dg extension to session ${session.sessionId} and open an authenticated Proton Mail tab.`,
 		`Open ${url} in the browser where the extension is loaded.`,
-		"The #_chat= fragment is base64url JSON containing sessionId and token.",
+		`Run dg-skills inbox bootstrap-url --session ${session.sessionId} to print the real URL.`,
 		"Then reload the Proton Mail tab so the extension observes session headers.",
 		"Inbox requires dg extension 1.11.0 or newer.",
 	].join(" ");
+}
+
+/** Prints the real start URL. Callers must opt in; connect errors use a placeholder instead. */
+function printBootstrapUrl(sessionId: string | undefined): void {
+	const resolved = resolveCliSession(sessionId);
+	const record = readSessionFiles(resolveDgPaths().sessionsDir).find(
+		(item) => item.sessionId === resolved.sessionId,
+	);
+	if (!record) {
+		throw new Error(
+			`No session file for ${resolved.sessionId}. Start the session with dg-agent start.`,
+		);
+	}
+	console.log(
+		buildBootstrapUrl(resolved.port, {
+			port: resolved.port,
+			sessionId: resolved.sessionId,
+			token: resolved.token,
+			agentIdentity: record.agentIdentity,
+		}),
+	);
 }
 
 function helpRequested(args: string[]): boolean {
@@ -312,6 +327,16 @@ function helpRequested(args: string[]): boolean {
 /** Forwards raw workflow arguments, injects private daemon hooks lazily, redacts public errors, and closes the connection. */
 export async function runInbox(rawArgs: string[]): Promise<void> {
 	const { args, session } = stripSession(rawArgs);
+	if (args[0] === "bootstrap-url") {
+		if (helpRequested(args)) {
+			console.log(bootstrapUrlHelp);
+			return;
+		}
+		if (args.length !== 1)
+			throw new Error("bootstrap-url accepts only --session ID.");
+		printBootstrapUrl(session);
+		return;
+	}
 	if (args[0] === "profile" && (helpRequested(args) || args.length <= 1)) {
 		console.log(profileHelp);
 		return;
@@ -324,7 +349,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		console.log(
 			"\n" +
 				(topLevel
-					? profileHelp
+					? `${profileHelp}\n${bootstrapUrlHelp}`
 					: "--session ID selects the dg daemon session when the working directory differs or several sessions exist."),
 		);
 		return;

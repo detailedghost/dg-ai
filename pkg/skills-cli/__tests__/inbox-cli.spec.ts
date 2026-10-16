@@ -353,11 +353,49 @@ describe("dg-skills inbox daemon response boundary", () => {
 			);
 			expect(result.stderr).toContain(server.sessionId);
 			expect(result.stderr).toContain(
-				`http://127.0.0.1:${server.port}/start#_chat=`,
+				`http://127.0.0.1:${server.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`,
 			);
+			expect(result.stderr).toContain(
+				`dg-skills inbox bootstrap-url --session ${server.sessionId}`,
+			);
+			expect(result.stderr).not.toContain(server.token);
+			expect(result.stdout).not.toContain(server.token);
 			expect(result.stderr).toMatch(/reload/i);
 			expect(result.stderr).toContain("1.11.0");
-			expect(result.stderr).toMatch(/base64/i);
+		} finally {
+			server.stop();
+			h.cleanup();
+		}
+	}, 6000);
+
+	test("bootstrap-url prints the real start URL only when asked", async () => {
+		const h = inboxCliHarness();
+		const server = inboxDaemonFixture(h, () => {});
+		try {
+			const help = await h.run(["bootstrap-url", "--help"]);
+			expect(help.code, help.stderr).toBe(0);
+			expect(help.stdout).toContain("bootstrap-url");
+			expect(help.stdout).not.toContain(server.token);
+			const printed = await h.run([
+				"bootstrap-url",
+				"--session",
+				server.sessionId,
+			]);
+			expect(printed.code, printed.stderr).toBe(0);
+			expect(printed.stdout).toContain(
+				`http://127.0.0.1:${server.port}/start#_chat=`,
+			);
+			expect(printed.stderr).not.toContain(server.token);
+			const fragment = printed.stdout.trim().split("#_chat=")[1] ?? "";
+			const decoded = JSON.parse(
+				Buffer.from(fragment, "base64url").toString("utf8"),
+			);
+			expect(decoded).toMatchObject({
+				port: server.port,
+				sessionId: server.sessionId,
+				token: server.token,
+				agentIdentity: "fixture-model",
+			});
 		} finally {
 			server.stop();
 			h.cleanup();

@@ -65,7 +65,9 @@ account settings in a separate tab. If the only mail tab navigates to
 says the mail tab navigated away instead of a generic sign-in error. `dg-skills
 inbox status` reports local message counts and, with `--session`, which check
 failed: no extension peer on that session, no mail tab matching `/u/N`, or
-missing `x-pm-uid`.
+missing `x-pm-uid`. A missing extension peer names the session and a placeholder
+start URL. The session token stays out of that error. `dg-skills inbox
+bootstrap-url --session ID` prints the real URL when you ask for it.
 Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
 plugin's broader Firefox features may require a newer Firefox. Bootstrap
 (`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at

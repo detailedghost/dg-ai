@@ -1,12 +1,17 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { getBooleanFlag, getListFlag, getStringFlag } from "../cli/args";
 import { workspaceDirForContext, type CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 import { redactPublicValue } from "../privacy/redact";
 import {
 	createMailProviderClient,
+	providerSnippetLength,
 	resolveProvider,
 } from "../providers/factory";
-import { readFilters, workspacePaths } from "../workspace/store";
+import type { MailRule } from "../providers/types";
+import { writeJsonFile } from "../utils/json";
+import { readFilters, writeFilters, workspacePaths } from "../workspace/store";
 
 const domainPattern =
 	/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
@@ -92,6 +97,11 @@ export async function extendFilter(context: CliContext): Promise<void> {
 		context.config,
 		getStringFlag(context.args.flags, "provider"),
 	);
+	if (provider !== "protonmail") {
+		throw new Error(
+			"filters extend only rewrites a Proton Mail Sieve script.",
+		);
+	}
 	const client = createMailProviderClient(context.config, provider);
 	try {
 		if (!client.updateFilter) {
@@ -104,12 +114,14 @@ export async function extendFilter(context: CliContext): Promise<void> {
 		if (!filter) {
 			throw new Error(`filter not found: ${filterId}`);
 		}
-		const sieve = filter.conditions[0] ?? filter.actions[0] ?? "";
-		if (!sieve.trim()) {
-			throw new Error(`filter ${filterId} has no Sieve body to extend`);
-		}
+		// Proton puts the full Sieve in conditions[0] when the API returned Sieve.
+		// Do not fall back to actions[0]: a raw Conditions/Actions pair is only a
+		// fragment, and writing one half back would drop the other.
+		const sieve = fullProtonSieve(filter);
 		const extended = extendSieveDomains(sieve, domains);
 		let mutated = false;
+		let auditPath: string | undefined;
+		const paths = workspacePaths(workspaceDirForContext(context));
 		if (!dryRun && extended.added.length > 0) {
 			await client.updateFilter({
 				id: filter.id,
@@ -118,11 +130,22 @@ export async function extendFilter(context: CliContext): Promise<void> {
 				enabled: filter.enabled,
 			});
 			mutated = true;
+			auditPath = await writeExtendAudit(paths.auditDir, {
+				filterId: filter.id,
+				name: publicText(filter.name),
+				addedDomains: extended.added,
+				beforeHash: sieveHash(sieve),
+				afterHash: sieveHash(extended.sieve),
+			});
+			const refreshed = await client.listFilters();
+			await writeFilters(
+				paths,
+				refreshed,
+				providerSnippetLength(context.config, provider),
+				provider,
+			);
 		}
-		const saved = await readSavedSieve(
-			workspaceDirForContext(context),
-			filterId,
-		);
+		const saved = await readSavedSieve(paths.dir, filterId);
 		printJson({
 			kind: "workspace-filter-extend",
 			dryRun,
@@ -135,11 +158,53 @@ export async function extendFilter(context: CliContext): Promise<void> {
 			filtersJsonTruncated: saved !== undefined && saved !== sieve,
 			before: publicText(sieve),
 			after: publicText(extended.sieve),
-			note: "The diff uses the live provider rule. filters.json keeps a redacted snippet and is not the source of this rewrite.",
+			...(auditPath ? { auditPath } : {}),
+			note: mutated
+				? "The live Proton Sieve was updated. filters.json was refreshed from the provider, and the audit file records the filter id, added domains, and before/after hashes."
+				: "The diff uses the live provider rule. filters.json keeps a redacted snippet and is not the source of this rewrite.",
 		});
 	} finally {
 		await client.close?.();
 	}
+}
+
+/** Accepts only a complete Proton script, never a conditions or actions fragment. */
+function fullProtonSieve(filter: MailRule): string {
+	const sieve = filter.conditions[0] ?? "";
+	if (!/\brequire\b/i.test(sieve) || !/\bfileinto\b/i.test(sieve)) {
+		throw new Error(
+			"filters extend only rewrites a full Proton Sieve script that contains require and fileinto. Refusing a conditions or actions fragment so the write-back cannot drop the rest of the rule.",
+		);
+	}
+	return sieve;
+}
+
+function sieveHash(value: string): string {
+	return createHash("sha256").update(value).digest("hex");
+}
+
+async function writeExtendAudit(
+	auditDir: string,
+	input: {
+		filterId: string;
+		name: string;
+		addedDomains: string[];
+		beforeHash: string;
+		afterHash: string;
+	},
+): Promise<string> {
+	const createdAt = new Date().toISOString();
+	const auditPath = join(
+		auditDir,
+		`filter-extend-${createdAt.replace(/[:.]/g, "-")}.json`,
+	);
+	await writeJsonFile(auditPath, {
+		kind: "workspace-filter-extend-audit",
+		createdAt,
+		mutated: true,
+		...input,
+	});
+	return auditPath;
 }
 
 function parseSieveStrings(raw: string): string[] {

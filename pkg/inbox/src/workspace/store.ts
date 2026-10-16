@@ -557,6 +557,7 @@ export async function writeReviewPlan(paths: WorkspacePaths): Promise<unknown> {
 		countsByFolder.set(target, (countsByFolder.get(target) ?? 0) + 1);
 	}
 
+	const omitted = omittedDecisions(items);
 	const review = {
 		kind: "workspace-review",
 		createdAt: new Date().toISOString(),
@@ -577,8 +578,8 @@ export async function writeReviewPlan(paths: WorkspacePaths): Promise<unknown> {
 				automaticApply: false,
 			}),
 		),
-		omittedCount: omittedDecisions(items).length,
-		omitted: omittedDecisions(items).slice(0, 50),
+		omittedCount: omitted.length,
+		omitted: omitted.slice(0, 50),
 		replacedCount: items.reduce(
 			(sum, item) => sum + (item.decisionReplacementCount ?? 0),
 			0,
@@ -872,6 +873,9 @@ function mutationEligibleItems(items: MessageWorkItem[]): MessageWorkItem[] {
 	return items.filter((item) => item.status !== "applied");
 }
 
+// filterGap and confidence are advisory. They do not change the move, read
+// state, or reason that apply and review act on, so a decide that only changes
+// those fields is not counted as a replacement.
 function sameDecision(left: MessageDecision, right: MessageDecision): boolean {
 	return (
 		left.action === right.action &&

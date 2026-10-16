@@ -2338,6 +2338,7 @@ describe("CLI", () => {
 		const unchanged = await Bun.file(dataPath).json();
 		expect(unchanged.filters[0].conditions[0]).toBe(sieve);
 
+		await Bun.write(`${dir}/filters.json`, "{}\n");
 		const confirmed = await runCli([
 			"filters",
 			"extend",
@@ -2352,9 +2353,128 @@ describe("CLI", () => {
 			"--confirm",
 		]);
 		expect(confirmed.code, confirmed.stderr).toBe(0);
-		expect(JSON.parse(confirmed.stdout).mutated).toBe(true);
+		const confirmedBody = JSON.parse(confirmed.stdout);
+		expect(confirmedBody.mutated).toBe(true);
+		expect(confirmedBody.auditPath).toBeString();
+		const expected = sieve.replace(
+			`"${domains.at(-1)}"`,
+			`"${domains.at(-1)}", "extra.example"`,
+		);
 		const updated = await Bun.file(dataPath).json();
-		expect(updated.filters[0].conditions[0]).toContain("extra.example");
-		expect(updated.filters[0].conditions[0]).toContain("sender11.example");
+		expect(updated.filters[0].conditions[0]).toBe(expected);
+		expect(updated.filters[0].actions[0]).toBe(expected);
+		expect(expected).toContain('fileinto "Newsletters"');
+		expect(expected).toContain('require ["fileinto", "imap4flags"]');
+		const audit = await Bun.file(confirmedBody.auditPath).json();
+		expect(audit).toMatchObject({
+			kind: "workspace-filter-extend-audit",
+			mutated: true,
+			filterId: "manual-news",
+			addedDomains: ["extra.example"],
+		});
+		expect(audit.beforeHash).toHaveLength(64);
+		expect(audit.afterHash).toHaveLength(64);
+		expect(audit.afterHash).not.toBe(audit.beforeHash);
+		const refreshed = await Bun.file(`${dir}/filters.json`).json();
+		expect(refreshed.kind).toBe("filters");
+		expect(refreshed.filters[0].id).toBe("manual-news");
+		expect(refreshed.filters[0].destinations).toEqual(["Newsletters"]);
+	});
+
+	test("filters extend refuses a script with no From-domain check", async () => {
+		const dir = tmpPath("filter-extend-no-from");
+		const dataPath = tmpPath("filter-extend-no-from.json");
+		const sieve = [
+			'require ["fileinto", "imap4flags"];',
+			'if header :contains "Subject" "hello" {',
+			'  fileinto "Newsletters";',
+			"}",
+		].join("\n");
+		await writeDataset(dataPath, {
+			folders: [],
+			filters: [
+				{
+					id: "subject-only",
+					name: "Subject only",
+					enabled: true,
+					conditions: [sieve],
+					actions: [sieve],
+				},
+			],
+			messages: [],
+		});
+		const refused = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"subject-only",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(refused.code).toBe(1);
+		expect(refused.stderr).toContain('address :domain :is "From"');
+		const unchanged = await Bun.file(dataPath).json();
+		expect(unchanged.filters[0].conditions[0]).toBe(sieve);
+		expect(unchanged.filters[0].actions[0]).toBe(sieve);
+		expect(existsSync(`${dir}/filters.json`)).toBe(false);
+	});
+
+	test("filters extend refuses a conditions fragment and a non-Proton provider", async () => {
+		const dir = tmpPath("filter-extend-fragment");
+		const dataPath = tmpPath("filter-extend-fragment.json");
+		const conditions = ['address :domain :is "From" "news.example"'];
+		const actions = ['fileinto "Newsletters";'];
+		await writeDataset(dataPath, {
+			folders: [],
+			filters: [
+				{
+					id: "fragment",
+					name: "Fragment",
+					enabled: true,
+					conditions,
+					actions,
+				},
+			],
+			messages: [],
+		});
+		const fragment = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"fragment",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(fragment.code).toBe(1);
+		expect(fragment.stderr).toContain("require and fileinto");
+		const unchanged = await Bun.file(dataPath).json();
+		expect(unchanged.filters[0].conditions).toEqual(conditions);
+		expect(unchanged.filters[0].actions).toEqual(actions);
+
+		const otherProvider = await runCli([
+			"filters",
+			"extend",
+			"--provider",
+			"gmail",
+			"--dir",
+			dir,
+			"--filter-id",
+			"fragment",
+			"--add-domains",
+			"extra.example",
+			"--confirm",
+		]);
+		expect(otherProvider.code).toBe(1);
+		expect(otherProvider.stderr).toContain("Proton Mail Sieve");
 	});
 });
