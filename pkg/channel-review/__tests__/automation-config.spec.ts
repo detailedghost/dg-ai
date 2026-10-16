@@ -167,9 +167,19 @@ describe("loadConfig deps", () => {
 			enabled: false,
 			timeoutMinutes: 90,
 			ciTimeoutMinutes: 60,
+			cooldownDays: 7,
+			branchPrefix: "chore/deps-update-",
 			schedule: { every: "week", day: "mon", window: "02:00-05:00" },
 			repos: [],
 		});
+	});
+
+	test("takes a custom deps branch prefix", () => {
+		expect(load({ deps: { branchPrefix: "me/chore/deps-" } }).deps.branchPrefix).toBe("me/chore/deps-");
+	});
+
+	test("accepts a zero cooldown to turn it off", () => {
+		expect(load({ deps: { cooldownDays: 0 } }).deps.cooldownDays).toBe(0);
 	});
 
 	test("adds the deps-upgrade tools to the fix allowlist base", () => {
@@ -208,6 +218,8 @@ describe("loadConfig deps", () => {
 	test.each([
 		["a zero timeout", { timeoutMinutes: 0 }, "deps.timeoutMinutes"],
 		["a zero CI timeout", { ciTimeoutMinutes: 0 }, "deps.ciTimeoutMinutes"],
+		["a negative cooldown", { cooldownDays: -1 }, "deps.cooldownDays"],
+		["a fractional cooldown", { cooldownDays: 1.5 }, "deps.cooldownDays"],
 		["a non-boolean enabled", { enabled: 1 }, "deps.enabled"],
 		["an unknown key", { quiet: true }, "deps.quiet"],
 		["an unknown cadence", { schedule: { every: "year" } }, "deps.schedule.every"],

@@ -120,6 +120,8 @@ function setup(
 					isDraft: true,
 					createdAt: "2026-10-14T00:00:00Z",
 				})),
+			prStatus: async () => ({ state: "OPEN", isDraft: true, checks: [] }),
+			markReady: async () => {},
 		},
 		runRepoJob: createRepoJobRunner({
 			capture: run,

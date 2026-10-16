@@ -11,6 +11,7 @@ import { ensurePrivateDir } from "@dg/common/node";
 import { type ChannelConfig, resolveReactionSlot } from "./config";
 import { createNotifier } from "./automation/notify";
 import { sweepCloneRoot } from "./automation/repo-job";
+import { DEPS_RUNNING } from "./automation/types";
 import { type CrCode, ownerName, replyText } from "./errors";
 import { type FunEntry, decorateReply, funVerdictFor, pickFun } from "./fun";
 import { EMOJI_WAIT_MINUTES, helpText } from "./help";
@@ -71,7 +72,7 @@ export type EngineDeps = {
 export type RepoJobHost = {
 	signal: AbortSignal;
 	runAgent(request: {
-		task: Extract<RunTask, { task: "fix" }>;
+		task: Extract<RunTask, { task: "fix" | "deps" }>;
 		cwd: string;
 		timeoutMs: number;
 		logName: string;
@@ -710,6 +711,13 @@ export function createEngine(deps: EngineDeps): Engine {
 			for (const [key, entry] of fixing) {
 				state.setIssue(key, { status: "failed", firstSeen: entry.firstSeen });
 				await notify(replyText("CR-205", { owner }));
+			}
+			const upgrading = Object.entries(state.get().deps.lastRun).filter(
+				([, run]) => run.result === DEPS_RUNNING,
+			);
+			for (const [repo, run] of upgrading) {
+				state.recordDepsRun(repo, { windowStart: run.windowStart, result: "failed" });
+				await notify(`Deps upgrade for ${repo} was interrupted. ${replyText("CR-205", { owner })}`);
 			}
 
 			const interrupted = Object.entries(handled).filter(

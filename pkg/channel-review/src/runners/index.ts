@@ -49,6 +49,9 @@ function claudePrompt(request: RunRequest): string {
 	if (request.task === "fix") {
 		return `Fix the error described in the JSON file at ${request.reportPath}. Make the smallest change that fixes the root cause and add a regression test. Do not commit or push.`;
 	}
+	if (request.task === "deps") {
+		return `/deps-upgrade --cooldown-days ${request.cooldownDays}`;
+	}
 	return `/address${request.noCi ? " --no-ci" : ""}`;
 }
 
@@ -60,6 +63,7 @@ const SPECS: Record<RunnerName, Spec> = {
 			"-p",
 			claudePrompt(request),
 			...(request.task === "fix" ? ["--append-system-prompt", UNTRUSTED_REPORT_NOTE] : []),
+			...(request.task === "deps" ? ["--add-dir", config.automation.cloneRoot] : []),
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -95,6 +99,7 @@ const SPECS: Record<RunnerName, Spec> = {
 function claudeTools(request: RunRequest, config: ChannelConfig): string[] {
 	if (request.task === "thrash") return config.runner.claude.allowedTools;
 	if (request.task === "fix") return config.errorWatch.autoFix.allowedTools;
+	if (request.task === "deps") return config.deps.allowedTools;
 	return config.runner.claude.addressAllowedTools;
 }
 

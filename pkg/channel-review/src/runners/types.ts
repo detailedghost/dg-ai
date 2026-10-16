@@ -11,7 +11,8 @@ type ProbeCode = RunnerCode | Extract<CrCode, "CR-206">;
 export type RunTask =
 	| { task: "thrash"; url: string; spice?: number; comment: boolean }
 	| { task: "address"; noCi: boolean }
-	| { task: "fix"; reportPath: string };
+	| { task: "fix"; reportPath: string }
+	| { task: "deps"; cooldownDays: number };
 
 export type Runner = {
 	name: RunnerName;

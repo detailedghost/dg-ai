@@ -98,6 +98,8 @@ export type DepsConfig = {
 	enabled: boolean;
 	timeoutMinutes: number;
 	ciTimeoutMinutes: number;
+	cooldownDays: number;
+	branchPrefix: string;
 	allowedTools: string[];
 	schedule: Schedule;
 	repos: { repo: string; branch?: string; schedule: Partial<Schedule> }[];
@@ -224,6 +226,14 @@ function parseChats(raw: Rec): ChatTarget[] {
 function minutes(value: unknown, path: string): number {
 	requireFiniteNumber(value, path);
 	if (value <= 0) fail(`${path} must be greater than 0`);
+	return value;
+}
+
+function wholeDays(value: unknown, path: string): number {
+	requireFiniteNumber(value, path);
+	if (!Number.isInteger(value) || value < 0) {
+		fail(`${path} must be a whole number of 0 or more`);
+	}
 	return value;
 }
 
@@ -499,6 +509,8 @@ function parseDeps(
 		"enabled",
 		"timeoutMinutes",
 		"ciTimeoutMinutes",
+		"cooldownDays",
+		"branchPrefix",
 		"allowedTools",
 		"schedule",
 		"repos",
@@ -532,6 +544,8 @@ function parseDeps(
 		enabled: flag(rec, "enabled", "deps", false),
 		timeoutMinutes: minutes(rec.timeoutMinutes ?? 90, "deps.timeoutMinutes"),
 		ciTimeoutMinutes: minutes(rec.ciTimeoutMinutes ?? 60, "deps.ciTimeoutMinutes"),
+		cooldownDays: wholeDays(rec.cooldownDays ?? 7, "deps.cooldownDays"),
+		branchPrefix: optionalText(rec, "branchPrefix", "deps") ?? "chore/deps-update-",
 		allowedTools: toolList(rec, "deps", [...cloneTools(automation.cloneRoot), ...deps]),
 		schedule: {
 			every: base.every ?? "week",

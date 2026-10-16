@@ -12,3 +12,13 @@ export type RepoJobOutcome<T> =
 	| { kind: "timeout" }
 	| { kind: "aborted" }
 	| { kind: "error"; error: unknown };
+
+export const DEPS_RUNNING = "running";
+
+export type PrCheck = { name: string; done: boolean; ok: boolean };
+
+export type PrStatus = {
+	state: "OPEN" | "MERGED" | "CLOSED";
+	isDraft: boolean;
+	checks: PrCheck[];
+};
