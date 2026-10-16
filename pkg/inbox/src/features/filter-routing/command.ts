@@ -105,14 +105,14 @@ export async function routeProfileFilter(context: CliContext): Promise<void> {
 			client.listFolders(),
 			client.listFilters(),
 		]);
-		await Promise.all([
-			writeFolders(paths, refreshedFolders),
-			writeFilters(
-				paths,
-				refreshedFilters,
-				context.config.protonmail.snippetLength,
-			),
-		]);
+		// Filter naming reads folders.json. Save that snapshot before filters so
+		// the reader cannot observe a partial replacement of the folder file.
+		await writeFolders(paths, refreshedFolders);
+		await writeFilters(
+			paths,
+			refreshedFilters,
+			context.config.protonmail.snippetLength,
+		);
 		const summary = summarizeRoutePlan({ ...plan, mutated: true, auditPath });
 		await writeJsonFile(join(paths.reportsDir, "filter-route.json"), summary);
 		printJson(summary);
