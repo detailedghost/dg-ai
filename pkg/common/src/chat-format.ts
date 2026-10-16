@@ -132,11 +132,15 @@ export function parseEvery(raw: string): number {
 
 export type SessionRole = "orchestrator" | "agent";
 
+/** How a live session relates to a CLI agent. Omitted on older frames. */
+export type SessionPresence = "cli" | "waiting" | "gone" | "idle";
+
 export type SessionSummary = {
 	sessionId: string;
 	agentIdentity: string;
 	role: SessionRole;
 	workset?: string;
+	presence?: SessionPresence;
 };
 
 export type CommandParam = { name: string; type: string };
@@ -370,6 +374,14 @@ function validateSessionSummary(value: unknown, path: string): SessionSummary {
 	requireRole(value.role, `${path}.role`);
 	if (value.workset !== undefined) {
 		requireString(value.workset, `${path}.workset`, { nonEmpty: true });
+	}
+	if (value.presence !== undefined) {
+		requireOneOf(value.presence, `${path}.presence`, [
+			"cli",
+			"waiting",
+			"gone",
+			"idle",
+		] as const);
 	}
 	return value as SessionSummary;
 }

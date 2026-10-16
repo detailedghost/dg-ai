@@ -31,7 +31,12 @@ export function createChatSessions(): ChatSessions {
 				agentIdentity: summary.agentIdentity,
 				role: summary.role,
 				workset: summary.workset,
-				status: existing?.status ?? "unknown",
+				status:
+					existing?.status && existing.status !== "unknown"
+						? existing.status
+						: summary.presence === "gone"
+							? "agent-gone"
+							: (existing?.status ?? "unknown"),
 				unreadCount: existing?.unreadCount ?? 0,
 			});
 		}

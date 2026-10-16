@@ -106,7 +106,7 @@ export function createCredentialClient(
 			const grant = loadGrant();
 			const session = grant
 				? { port: handle.port, sessionId: "", token: "" }
-				: resolveCliSession(options.session, options.paths);
+				: await resolveCliSession(options.session, options.paths);
 			try {
 				client = await CliClient.connect(
 					session,

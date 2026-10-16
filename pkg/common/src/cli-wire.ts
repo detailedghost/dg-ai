@@ -12,6 +12,7 @@ export const CLI_SESSION_ID_HEADER = "X-Dg-Session-Id";
 export const CLI_SESSION_TOKEN_HEADER = "X-Dg-Session-Token";
 export const CLI_GRANT_PREFIX_HEADER = "X-Dg-Grant-Prefix";
 export const CLI_GRANT_TOKEN_HEADER = "X-Dg-Grant-Token";
+export const OWNER_TOKEN_HEADER = "X-Dg-Owner-Token";
 export const ASSET_FILENAME_HEADER = "X-Dg-Filename";
 
 export type CliRecvRequest = {

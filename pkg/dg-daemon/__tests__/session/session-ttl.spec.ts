@@ -4,11 +4,13 @@ import {
 	allocatePort,
 	cleanupDgHome,
 	cliSocket,
+	collectFrames,
 	connectPage,
 	freshDgHome,
 	killDaemonByPidFile,
 	registerSession,
 	runStatus,
+	send,
 	spawnServe,
 	waitForHealth,
 	waitForOpen,
@@ -89,26 +91,124 @@ describe("a session left active with no CLI or page ever attached to it", () => 
 });
 
 describe("a session with a live page socket holding its capability", () => {
-	it("is never reaped, staying active well past DG_SESSION_TTL_MS", async () => {
+	it("is still reaped past DG_SESSION_TTL_MS when the only traffic is extension keepalives", async () => {
 		dgHome = freshDgHome();
 		const port = allocatePort();
 		spawnServe(dgHome, port, {
 			DG_SESSION_TTL_MS: String(SESSION_TTL_MS),
+			DG_IDLE_TTL_MS: String(SESSION_TTL_MS * 200),
 		});
 		await waitForHealth(port);
 		const bootstrap = await registerSession(port);
 		const page = await connectPage(port, bootstrap);
 
-		await new Promise((r) => setTimeout(r, SESSION_TTL_MS * 8));
+		for (let beat = 0; beat < 8; beat++) {
+			send(page, {
+				type: "keepalive",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+			});
+			await new Promise((r) => setTimeout(r, SESSION_TTL_MS / 2));
+		}
 
 		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
 			sessionCount: number;
 		};
-		expect(status.sessionCount).toBe(1);
+		expect(status.sessionCount).toBe(0);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(() => readSessionToken(paths, bootstrap.sessionId)).not.toThrow();
+		expect(() => readSessionToken(paths, bootstrap.sessionId)).toThrow();
 
+		page.close();
+	}, WALL_CLOCK_BUDGET_MS);
+});
+
+describe("a session whose CLI has disconnected", () => {
+	it("is reaped after DG_AGENT_GONE_MS even while the page keeps sending keepalives", async () => {
+		dgHome = freshDgHome();
+		const port = allocatePort();
+		const goneMs = SESSION_TTL_MS;
+		spawnServe(dgHome, port, {
+			DG_SESSION_TTL_MS: String(SESSION_TTL_MS),
+			DG_AGENT_GONE_MS: String(goneMs),
+			DG_CLI_REATTACH_GRACE_MS: "0",
+			DG_IDLE_TTL_MS: String(SESSION_TTL_MS * 200),
+		});
+		await waitForHealth(port);
+		const bootstrap = await registerSession(port);
+		const cli = cliSocket(port, bootstrap);
+		await waitForOpen(cli);
+		cli.close();
+		const page = await connectPage(port, bootstrap);
+
+		for (let beat = 0; beat < 8; beat++) {
+			send(page, {
+				type: "keepalive",
+				sessionId: bootstrap.sessionId,
+				token: bootstrap.token,
+			});
+			await new Promise((r) => setTimeout(r, goneMs / 2));
+		}
+
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(0);
+		page.close();
+	}, WALL_CLOCK_BUDGET_MS);
+});
+
+describe("a claimed session between short-lived CLI commands", () => {
+	it("stays alive across a gap longer than DG_AGENT_GONE_MS and does not broadcast agent-gone", async () => {
+		dgHome = freshDgHome();
+		const port = allocatePort();
+		const goneMs = 250;
+		const gapMs = goneMs * 3;
+		spawnServe(dgHome, port, {
+			DG_SESSION_TTL_MS: String(SESSION_TTL_MS),
+			DG_AGENT_GONE_MS: String(goneMs),
+			DG_CLI_REATTACH_GRACE_MS: String(gapMs * 4),
+			DG_IDLE_TTL_MS: String(SESSION_TTL_MS * 200),
+		});
+		await waitForHealth(port);
+		const bootstrap = await registerSession(port);
+		const page = await connectPage(port, bootstrap);
+		const frames = collectFrames(page);
+
+		const first = cliSocket(port, bootstrap);
+		await waitForOpen(first);
+		first.close();
+		await Bun.sleep(gapMs);
+
+		const during = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(during.sessionCount).toBe(1);
+		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			headers: { Host: `127.0.0.1:${port}` },
+		});
+		const listed = (await catalog.json()) as {
+			sessions: { presence: string }[];
+		};
+		expect(listed.sessions[0]?.presence).toBe("cli");
+
+		const second = cliSocket(port, bootstrap);
+		await waitForOpen(second);
+		second.close();
+		await Bun.sleep(200);
+
+		const after = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(after.sessionCount).toBe(1);
+		const gone = frames.filter(
+			(frame) =>
+				typeof frame === "object" &&
+				frame !== null &&
+				(frame as { type?: string }).type === "progress" &&
+				(frame as { state?: string }).state === "agent-gone",
+		);
+		expect(gone).toEqual([]);
 		page.close();
 	}, WALL_CLOCK_BUDGET_MS);
 });

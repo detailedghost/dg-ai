@@ -74,7 +74,7 @@ function isAssetUploadResult(value: unknown): value is { assetId: string } {
 }
 
 async function connectFor(command: Command): Promise<CliClient> {
-	return CliClient.connect(resolveCliSession(selectedSession(command)));
+	return CliClient.connect(await resolveCliSession(selectedSession(command)));
 }
 
 export type RecvCommandClient = Pick<
@@ -236,7 +236,7 @@ export function registerAgentCommands(program: Command): void {
 		.argument("<path>", "asset file path")
 		.action(async (path: string, _options: unknown, command: Command) => {
 			const source = realpathSync(resolve(path));
-			const session = resolveCliSession(selectedSession(command));
+			const session = await resolveCliSession(selectedSession(command));
 			const filename = basename(source);
 			const bytes = readAssetSourceFile(source);
 

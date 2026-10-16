@@ -5,6 +5,7 @@ type RelevantManifest = {
 	host_permissions?: string[];
 	permissions?: string[];
 	minimum_chrome_version?: string;
+	side_panel?: { default_path?: string };
 };
 
 const manifestFor = config.manifest as unknown as (environment: {
@@ -23,10 +24,14 @@ it("grants capture host access without dropping browser-specific permissions", (
 	expect(chromeManifest.permissions).toContain("tabCapture");
 	expect(chromeManifest.permissions).toContain("offscreen");
 	expect(chromeManifest.permissions).toContain("downloads");
+	expect(chromeManifest.permissions).toContain("sidePanel");
+	expect(chromeManifest.side_panel?.default_path).toBe("chat.html");
 
 	expect(firefoxManifest.host_permissions ?? []).not.toContain("<all_urls>");
 	expect(firefoxManifest.permissions).not.toContain("tabCapture");
 	expect(firefoxManifest.permissions).not.toContain("offscreen");
+	expect(firefoxManifest.permissions).not.toContain("sidePanel");
+	expect(firefoxManifest.side_panel).toBeUndefined();
 	expect(firefoxManifest.permissions).toContain("downloads");
 });
 

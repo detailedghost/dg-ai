@@ -83,6 +83,19 @@
 	background: var(--chat-panel);
 }
 
+@media (max-width: 760px) {
+	.chat-page {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+
+	.chat-rail {
+		border-right: 0;
+		border-bottom: 0.125rem solid var(--chat-line);
+		max-height: 46vh;
+	}
+}
+
 .chat-rail__header,
 .chat-thread__header {
 	display: flex;
