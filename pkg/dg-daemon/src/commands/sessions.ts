@@ -1,4 +1,4 @@
-import { CHAT_SESSIONS_CLEAR_PATH } from "@dg/common";
+import { CHAT_SESSIONS_CLEAR_PATH, redactText } from "@dg/common";
 import { loopbackHostHeader, readPidFile, resolveDgPaths } from "@dg/common/node";
 import type { Command } from "commander";
 
@@ -28,8 +28,9 @@ export function registerSessionCommands(program: Command): void {
 				},
 			);
 			if (!response.ok) {
+				const body = await response.text();
 				console.error(
-					"dg-daemon: could not clear sessions. Pair the extension once so an origin is pinned, then clear from the side panel.",
+					`dg-daemon: could not clear sessions: ${response.status} ${redactText(body)}`,
 				);
 				process.exitCode = 1;
 				return;

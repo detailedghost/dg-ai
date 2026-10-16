@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
 	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_CLI_REATTACH_GRACE_MS,
 	DEFAULT_UNCLAIMED_TTL_MS,
 	isManuallyClearable,
 	shouldReapSession,
+	shouldReleaseClaim,
+	type ClaimSnapshot,
 	type ReapSnapshot,
 } from "../../src/session/liveness";
 
@@ -36,6 +39,7 @@ describe("shouldReapSession", () => {
 	it("uses a five minute unclaimed ttl and a one minute agent-gone grace", () => {
 		expect(DEFAULT_UNCLAIMED_TTL_MS).toBe(5 * 60_000);
 		expect(DEFAULT_AGENT_GONE_MS).toBe(60_000);
+		expect(DEFAULT_CLI_REATTACH_GRACE_MS).toBe(24 * 60 * 60 * 1000);
 	});
 
 	it("does not reap a closed session", () => {
@@ -94,6 +98,39 @@ describe("shouldReapSession", () => {
 				limits,
 			),
 		).toBe(false);
+	});
+});
+
+function claim(overrides: Partial<ClaimSnapshot> = {}): ClaimSnapshot {
+	return {
+		cliAttached: true,
+		cliQuietSince: 500,
+		socketOpen: false,
+		...overrides,
+	};
+}
+
+describe("shouldReleaseClaim", () => {
+	const graceMs = 1_000;
+
+	it("keeps a claim that still has an open socket or was never quiet", () => {
+		expect(shouldReleaseClaim(claim({ socketOpen: true }), 10_000, graceMs)).toBe(
+			false,
+		);
+		expect(shouldReleaseClaim(claim({ cliAttached: false }), 10_000, graceMs)).toBe(
+			false,
+		);
+		expect(
+			shouldReleaseClaim(claim({ cliQuietSince: undefined }), 10_000, graceMs),
+		).toBe(false);
+	});
+
+	it("releases at the grace boundary measured from the quiet clock", () => {
+		expect(shouldReleaseClaim(claim(), 1_499, graceMs)).toBe(false);
+		expect(shouldReleaseClaim(claim(), 1_500, graceMs)).toBe(true);
+		expect(
+			shouldReleaseClaim(claim({ cliQuietSince: 10 }), 10, 0),
+		).toBe(true);
 	});
 });
 

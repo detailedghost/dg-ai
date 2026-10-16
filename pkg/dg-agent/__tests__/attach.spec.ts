@@ -22,19 +22,33 @@ describe("interpretWaitingChoice", () => {
 	};
 
 	it("lets start create a session when nothing is waiting", () => {
-		expect(interpretWaitingChoice([waiting], "/other", "start")).toBeUndefined();
+		expect(interpretWaitingChoice([], "/other", "start")).toBeUndefined();
 	});
 
 	it("makes attach fail when nothing is waiting, without the token", () => {
-		expect(() => interpretWaitingChoice([waiting], "/other", "attach")).toThrow(
+		expect(() => interpretWaitingChoice([], "/other", "attach")).toThrow(
 			DgCliError,
 		);
 		try {
-			interpretWaitingChoice([waiting], "/other", "attach");
+			interpretWaitingChoice([], "/other", "attach");
 		} catch (error) {
 			expect(error).toBeInstanceOf(DgCliError);
+			expect((error as Error).message).toBe(
+				"No session is waiting for an agent in this directory.",
+			);
 			expect((error as Error).message).not.toContain(TOKEN);
 		}
+	});
+
+	it("claims the only waiting session from another directory", () => {
+		expect(interpretWaitingChoice([waiting], "/other", "start")).toEqual({
+			sessionId: "wait-1",
+			agentIdentity: "claude",
+		});
+		expect(interpretWaitingChoice([waiting], "/other", "attach")).toEqual({
+			sessionId: "wait-1",
+			agentIdentity: "claude",
+		});
 	});
 
 	it("claims the waiting session for start and for attach", () => {
@@ -122,6 +136,24 @@ describe("interpretWaitingChoice", () => {
 			).toEqual({ sessionId: "wait-1", agentIdentity: "claude" });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses several waiting sessions in other directories for both modes", () => {
+		const sessions = [
+			waiting,
+			{ ...waiting, sessionId: "wait-2", cwd: "/elsewhere" },
+		];
+		expect(() => interpretWaitingChoice(sessions, "/other", "start")).toThrow(
+			/wait-1/,
+		);
+		try {
+			interpretWaitingChoice(sessions, "/other", "attach");
+		} catch (error) {
+			expect((error as Error).message).toBe(
+				"Several sessions are waiting for an agent. Pass --session. wait-1, wait-2",
+			);
+			expect((error as Error).message).not.toContain(TOKEN);
 		}
 	});
 
@@ -237,7 +269,7 @@ describe("claimWaitingSession", () => {
 					},
 				],
 			})) as unknown as typeof fetch;
-		const claimed = await claimWaitingSession(47823, "/work/app", "start");
+		const claimed = await claimWaitingSession(47823, "/not/the/daemon/cwd", "attach");
 		expect(claimed).toEqual({
 			port: 47823,
 			sessionId: "wait-1",

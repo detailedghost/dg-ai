@@ -220,14 +220,78 @@ describe("selectWaitingSession", () => {
 		).toEqual({ ok: true, sessionId: "wait-1" });
 	});
 
-	it("reports none without echoing a token", () => {
-		const choice = selectWaitingSession([waiting], "/elsewhere");
+	it("claims the only waiting session even when its directory differs", () => {
+		expect(selectWaitingSession([waiting], "/elsewhere")).toEqual({
+			ok: true,
+			sessionId: "wait-1",
+		});
+		expect(selectWaitingSession([], "/work/app").ok).toBe(false);
+		const empty = selectWaitingSession([], "/work/app");
+		if (!empty.ok) {
+			expect(empty.reason).toBe("none");
+			expect(empty.message).toBe(
+				"No session is waiting for an agent in this directory.",
+			);
+		}
+	});
+
+	it("reports none without echoing a token when nothing is waiting", () => {
+		const choice = selectWaitingSession(
+			[{ ...waiting, awaitingAgent: false, token: TOKEN }],
+			"/elsewhere",
+		);
 		expect(choice.ok).toBe(false);
 		if (!choice.ok) {
 			expect(choice.reason).toBe("none");
 			expect(choice.message).toBe(
 				"No session is waiting for an agent in this directory.",
 			);
+			expect(choice.message).not.toContain(TOKEN);
+		}
+	});
+
+	it("claims the waiting session whose directory matches when several are waiting", () => {
+		expect(
+			selectWaitingSession(
+				[waiting, { ...waiting, sessionId: "wait-2", cwd: "/other" }],
+				"/work/app",
+			),
+		).toEqual({ ok: true, sessionId: "wait-1" });
+	});
+
+	it("lists every waiting id when none of them match this directory", () => {
+		const choice = selectWaitingSession(
+			[
+				waiting,
+				{ ...waiting, sessionId: "wait-2", cwd: "/other", token: TOKEN },
+			],
+			"/elsewhere",
+		);
+		expect(choice.ok).toBe(false);
+		if (!choice.ok) {
+			expect(choice.reason).toBe("ambiguous");
+			expect(choice.message).toBe(
+				"Several sessions are waiting for an agent. Pass --session. wait-1, wait-2",
+			);
+			expect(choice.message).not.toContain(TOKEN);
+		}
+	});
+
+	it("names only the sessions in this directory when another is waiting elsewhere", () => {
+		const choice = selectWaitingSession(
+			[
+				waiting,
+				{ ...waiting, sessionId: "wait-2" },
+				{ ...waiting, sessionId: "wait-3", cwd: "/other", token: TOKEN },
+			],
+			"/work/app",
+		);
+		expect(choice.ok).toBe(false);
+		if (!choice.ok) {
+			expect(choice.message).toBe(
+				"Several sessions are waiting in this directory. Pass --session. wait-1, wait-2",
+			);
+			expect(choice.message).not.toContain("wait-3");
 			expect(choice.message).not.toContain(TOKEN);
 		}
 	});

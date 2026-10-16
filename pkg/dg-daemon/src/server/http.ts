@@ -275,7 +275,9 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 					connections.forEachCapableOf(sessionId, (other) => {
 						if (other.data.kind === "cli") stillAttached = true;
 					});
-					if (!stillAttached) registry.noteCliDetached(sessionId);
+					// send/progress/recv each open a socket and close it. That close
+					// starts the reattach grace; it does not drop the claim.
+					if (!stillAttached) registry.noteCliQuiet(sessionId);
 				}
 			},
 			drain(ws) {

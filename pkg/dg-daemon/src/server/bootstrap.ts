@@ -37,6 +37,7 @@ import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
 	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_CLI_REATTACH_GRACE_MS,
 	DEFAULT_UNCLAIMED_TTL_MS,
 } from "../session/liveness";
 import { createLogger } from "./log";
@@ -192,6 +193,11 @@ export async function cmdServe(): Promise<void> {
 		"DG_UNCLAIMED_TTL_MS",
 		DEFAULT_UNCLAIMED_TTL_MS,
 	);
+	const reattachGraceMs = readEnvNumber(
+		process.env,
+		"DG_CLI_REATTACH_GRACE_MS",
+		DEFAULT_CLI_REATTACH_GRACE_MS,
+	);
 	const hasLiveCliSocket = (sessionId: string): boolean => {
 		let live = false;
 		connections.forEachCapableOf(sessionId, (ws) => {
@@ -205,6 +211,7 @@ export async function cmdServe(): Promise<void> {
 			registry.reapExpired(sessionTtlMs, hasLiveCliSocket, {
 				agentGoneMs,
 				unclaimedTtlMs,
+				reattachGraceMs,
 			});
 			const prunedAgentMessages = store.pruneAgentMessages(new Date());
 			if (prunedAgentMessages > 0) {

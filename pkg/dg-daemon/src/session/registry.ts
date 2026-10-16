@@ -12,9 +12,11 @@ import {
 import { triggerAssetCleanup } from "../utils/asset-cleanup";
 import {
 	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_CLI_REATTACH_GRACE_MS,
 	DEFAULT_UNCLAIMED_TTL_MS,
 	isManuallyClearable,
 	shouldReapSession,
+	shouldReleaseClaim,
 } from "./liveness";
 
 export type SessionState = "active" | "closed";
@@ -31,6 +33,8 @@ export type SessionRecord = {
 	cliAttached: boolean;
 	createdAt: number;
 	lastActivityAt: number;
+	/** Set when the last CLI socket closed while the claim is still held. */
+	cliQuietSince?: number;
 	cliDetachedAt?: number;
 	closedAt?: number;
 };
@@ -105,8 +109,17 @@ export class SessionRegistry extends EventEmitter {
 		if (!record || record.state !== "active") return;
 		record.cliAttached = true;
 		record.awaitingAgent = false;
+		record.cliQuietSince = undefined;
 		record.cliDetachedAt = undefined;
 		record.lastActivityAt = this.now();
+	}
+
+	/** The last CLI socket for this claim closed. The claim itself stays held. */
+	noteCliQuiet(sessionId: string): void {
+		const record = this.sessions.get(sessionId);
+		if (!record || record.state !== "active" || !record.cliAttached) return;
+		if (record.cliQuietSince !== undefined) return;
+		record.cliQuietSince = this.now();
 	}
 
 	noteCliDetached(sessionId: string): void {
@@ -146,9 +159,30 @@ export class SessionRegistry extends EventEmitter {
 	reapExpired(
 		ttlMs: number,
 		isExempt: (sessionId: string) => boolean,
-		limits: { agentGoneMs?: number; unclaimedTtlMs?: number } = {},
+		limits: {
+			agentGoneMs?: number;
+			unclaimedTtlMs?: number;
+			reattachGraceMs?: number;
+		} = {},
 	): string[] {
 		const now = this.now();
+		const graceMs = limits.reattachGraceMs ?? DEFAULT_CLI_REATTACH_GRACE_MS;
+		for (const record of [...this.sessions.values()]) {
+			if (
+				!shouldReleaseClaim(
+					{
+						cliAttached: record.cliAttached,
+						cliQuietSince: record.cliQuietSince,
+						socketOpen: isExempt(record.sessionId),
+					},
+					now,
+					graceMs,
+				)
+			) {
+				continue;
+			}
+			this.noteCliDetached(record.sessionId);
+		}
 		const reapLimits = {
 			sessionTtlMs: ttlMs,
 			agentGoneMs: limits.agentGoneMs ?? DEFAULT_AGENT_GONE_MS,

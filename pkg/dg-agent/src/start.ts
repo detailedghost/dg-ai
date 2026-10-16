@@ -157,8 +157,9 @@ export async function cmdStart(
 			console.error(
 				`dg-agent: attached to the session the extension is waiting on (${claimed.sessionId})`,
 			);
-			console.log(buildBootstrapUrl(targetPort, claimed));
-			if (options.open) await tryOpen(buildBootstrapUrl(targetPort, claimed));
+			const url = buildBootstrapUrl(targetPort, claimed);
+			printSession(targetPort, claimed.sessionId, url, options);
+			if (options.open) await tryOpen(url);
 			return;
 		}
 	}
@@ -170,15 +171,22 @@ export async function cmdStart(
 		agentIdentity: options.agentIdentity,
 	});
 	const url = buildBootstrapUrl(targetPort, bootstrap);
-	if (options.json) {
-		console.log(
-			JSON.stringify({ sessionId: bootstrap.sessionId, port: targetPort, url }),
-		);
-	} else {
-		if (options.printSessionId) console.log(bootstrap.sessionId);
-		console.log(url);
-	}
+	printSession(targetPort, bootstrap.sessionId, url, options);
 	if (options.open) {
 		await tryOpen(url);
 	}
+}
+
+function printSession(
+	port: number,
+	sessionId: string,
+	url: string,
+	options: StartOptions,
+): void {
+	if (options.json) {
+		console.log(JSON.stringify({ sessionId, port, url }));
+		return;
+	}
+	if (options.printSessionId) console.log(sessionId);
+	console.log(url);
 }

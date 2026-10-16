@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import { writeConfig } from "../../src/server/config-store";
 import {
 	allocatePort,
@@ -186,5 +186,32 @@ describe("manual cleanup", () => {
 			waitingBody.sessionId,
 		]);
 		expect(JSON.stringify(body)).not.toContain(idle.token);
+	});
+
+	it("prints the clear status and redacts the body when the daemon refuses", async () => {
+		dgHome = freshDgHome();
+		const secret = "sk-clearerr-should-not-leak";
+		const server = Bun.serve({
+			port: 0,
+			fetch() {
+				return new Response(secret, { status: 503 });
+			},
+		});
+		try {
+			writePidFileAtomic(resolveDgPaths({ env: { DG_HOME: dgHome } }), {
+				pid: process.pid,
+				port: server.port,
+				instanceId: "clear-error",
+				versions: { package: "0.0.0", protocol: CHAT_PROTOCOL_VERSION },
+			});
+			const result = await runDaemonCommand(dgHome, "sessions", "clear");
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("503");
+			expect(result.stderr).not.toContain("Pair the extension");
+			expect(result.stderr).not.toContain(secret);
+			expect(result.stderr).toContain("[redacted]");
+		} finally {
+			server.stop(true);
+		}
 	});
 });

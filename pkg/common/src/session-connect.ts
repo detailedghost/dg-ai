@@ -144,21 +144,28 @@ export function selectWaitingSession(
 		}
 		return { ok: true, sessionId: match.sessionId };
 	}
-	const matches = waiting.filter((session) => session.cwd === cwd);
-	if (matches.length === 1) {
-		return { ok: true, sessionId: matches[0].sessionId };
-	}
-	if (matches.length === 0) {
+	if (waiting.length === 0) {
 		return {
 			ok: false,
 			reason: "none",
 			message: "No session is waiting for an agent in this directory.",
 		};
 	}
-	const ids = matches.map((session) => session.sessionId).join(", ");
+	if (waiting.length === 1) {
+		const only = waiting[0];
+		return { ok: true, sessionId: only.sessionId };
+	}
+	const matches = waiting.filter((session) => session.cwd === cwd);
+	if (matches.length === 1) {
+		const match = matches[0];
+		return { ok: true, sessionId: match.sessionId };
+	}
+	const listed = matches.length > 1 ? matches : waiting;
+	const ids = listed.map((session) => session.sessionId).join(", ");
+	const where = matches.length > 1 ? "in this directory" : "for an agent";
 	return {
 		ok: false,
 		reason: "ambiguous",
-		message: `Several sessions are waiting in this directory. Pass --session. ${ids}`,
+		message: `Several sessions are waiting ${where}. Pass --session. ${ids}`,
 	};
 }
