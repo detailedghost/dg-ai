@@ -31,7 +31,7 @@
     },
     "pkg/dg-agent": {
       "name": "@dg/dg-agent",
-      "version": "1.12.0",
+      "version": "1.13.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "commander": "^14.0.0",
@@ -44,7 +44,7 @@
     },
     "pkg/dg-daemon": {
       "name": "@dg/dg-daemon",
-      "version": "1.12.0",
+      "version": "1.13.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "commander": "^14.0.0",
@@ -57,7 +57,7 @@
     },
     "pkg/extension": {
       "name": "@dg/extension",
-      "version": "1.12.0",
+      "version": "1.13.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "kokoro-js": "^1.2.1",
@@ -94,7 +94,7 @@
     },
     "pkg/skills-cli": {
       "name": "@dg/skills-cli",
-      "version": "1.12.0",
+      "version": "1.13.0",
       "dependencies": {
         "@dg/channel-review": "workspace:*",
         "@dg/common": "workspace:*",

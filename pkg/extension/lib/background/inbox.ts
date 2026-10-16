@@ -38,15 +38,43 @@ function protonTab(tab: MailTab): boolean {
 		return false;
 	}
 }
-function accountMatches(tab: MailTab, accountHint: string): boolean {
+function accountPath(tab: MailTab): string | undefined {
 	try {
-		return (
-			/^\/u\/([^/]+)(?:\/|$)/.exec(new URL(tab.url ?? "").pathname)?.[1] ===
-			accountHint
-		);
+		return /^\/u\/([^/]+)(?:\/|$)/.exec(new URL(tab.url ?? "").pathname)?.[1];
 	} catch {
-		return false;
+		return undefined;
 	}
+}
+function accountMatches(tab: MailTab, accountHint: string): boolean {
+	return accountPath(tab) === accountHint;
+}
+function tabPath(tab: MailTab): string | undefined {
+	try {
+		return new URL(tab.url ?? "").pathname.replace(/\/+$/, "") || "/";
+	} catch {
+		return undefined;
+	}
+}
+/**
+ * Prefer one /u/N tab over other pages on that account. /u/N wins over
+ * /u/N/inbox; a single inbox tab wins only when no /u/N tab is open.
+ * Several tabs at the preferred path stay so the error can name them.
+ */
+function preferAccountTab(tabs: MailTab[], accountHint: string): MailTab[] {
+	const exact = tabs.filter((tab) => tabPath(tab) === `/u/${accountHint}`);
+	if (exact.length > 0) return exact;
+	const inboxes = tabs.filter(
+		(tab) => tabPath(tab) === `/u/${accountHint}/inbox`,
+	);
+	if (inboxes.length > 0) return inboxes;
+	return tabs;
+}
+function describeTabs(tabs: MailTab[]): string {
+	return tabs.map((tab) => `${tab.id ?? "?"} ${tab.url ?? ""}`).join("; ");
+}
+function multipleTabsError(tabs: MailTab[], hint?: string): string {
+	const scope = hint ? ` /u/${hint}` : "";
+	return `Multiple Proton Mail tabs match${scope}. Choose an explicit tabId or accountHint (the /u/ account index) in the inbox profile. Matching tabs: ${describeTabs(tabs)}.`;
 }
 function accountSettingsTab(tab: MailTab): boolean {
 	try {
@@ -119,19 +147,20 @@ export function createInboxHandler({
 					};
 			} else {
 				const allTabs = await browserApi.tabs.query({});
-				const tabs = allTabs
-					.filter(protonTab)
-					.filter(
-						(candidate) =>
-							!request.accountHint ||
-							accountMatches(candidate, request.accountHint),
-					);
+				const hint = request.accountHint;
+				const protonTabs = allTabs.filter(protonTab);
+				const hinted = hint
+					? protonTabs.filter((candidate) => accountMatches(candidate, hint))
+					: protonTabs;
+				// Several Proton tabs can be open. accountHint keeps /u/N, then
+				// prefers that account's /u/N path over /u/N/inbox and deeper pages.
+				let tabs = hinted;
+				if (hint && tabs.length > 1) tabs = preferAccountTab(tabs, hint);
 				if (tabs.length > 1)
 					return {
 						...envelope,
 						ok: false,
-						error:
-							"Multiple Proton Mail tabs match. Choose an explicit tabId or accountHint (the /u/ account index) in the inbox profile.",
+						error: multipleTabsError(tabs, hint),
 					};
 				tab = tabs[0];
 				if (!tab || tab.id === undefined)
