@@ -112,8 +112,9 @@ unpacked** path:
 ```bash
 DG="$HOME/.dg/bin/dg-skills"
 if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+  PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+  LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
@@ -122,6 +123,10 @@ fi
 # Windows PowerShell:
 # irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 ```
+
+Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set
+`DG_PLUGIN_ROOT` to the same checkout. When neither variable points at the
+bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
 - No Bun needed at runtime — the binary is self-contained. Bun is only required
   for the `--local` source build.
@@ -210,7 +215,13 @@ ______________________________________________________________________
 The shared inbox-cleanup skill runs the compiled dg-skills inbox command. Update
 dg-skills, dg-agent, dg-daemon, and the extension together with dg-skills install.
 Start a dg session before configuring encrypted inbox profiles; Proton also
-requires one connected extension and a signed-in Proton mail tab. Gmail and
+requires one connected extension and a signed-in Proton mail tab. A headless
+agent cannot rely on `dg-agent start --open`. The command prints
+`http://127.0.0.1:<port>/start#_chat=<base64url>`, whose fragment is base64url
+JSON of the session id and token. Open that URL in the browser where the
+extension is loaded, then reload the Proton Mail tab. `dg-agent start
+--print-session-id` or `--json` prints the session id without decoding the
+fragment; pass it as `--session` on inbox commands. Gmail and
 Outlook need a registered OAuth client and the provider's delegated permissions.
 Explicit --data-path fixtures work without those services. Read
 [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and

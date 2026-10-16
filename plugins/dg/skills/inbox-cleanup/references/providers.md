@@ -7,8 +7,25 @@ daemon session with the installed companion binary:
 "${DG_HOME:-$HOME/.dg}/bin/dg-agent" start --open
 ```
 
-Keep the returned session ID and pass --session ID when your command's working
+`dg-agent start` prints one bootstrap URL:
+
+```text
+http://127.0.0.1:<port>/start#_chat=<base64url>
+```
+
+The `#_chat=` fragment is base64url-encoded JSON
+`{ port, sessionId, token, agentIdentity }`. `--open` asks the default browser
+to open that URL. On a headless or remote agent, `--open` cannot reach the
+browser where the extension is loaded, so open the printed URL in that browser
+yourself. The extension reads the fragment and joins the session. Reload the
+Proton Mail tab after it connects.
+
+Keep the session id and pass `--session ID` when your command's working
 directory differs from the registered session, or when several sessions exist.
+`dg-agent start --print-session-id` prints the session id on its own line and
+then the bootstrap URL, so an agent does not have to decode the fragment.
+`dg-agent start --json` prints one object `{"sessionId","port","url"}` instead
+of those lines. The token stays inside the URL fragment.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 Proton also needs exactly one extension connected to that session. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
@@ -42,8 +59,20 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 
 Sign in to HTTPS mail.proton.me or mail.protonmail.com, then reload the tab after
 installing the extension so its MAIN observer sees real fetch/XHR API headers.
-Use a modern browser with MAIN scripting support (Firefox 128+; the plugin's
-broader Firefox features may require a newer version).
+Keep that `mail.proton.me/u/N` tab open while cleaning mail. Do filter and
+account settings in a separate tab. If the only mail tab navigates to
+`account.proton.me`, the extension loses the page session; the next inbox call
+says the mail tab navigated away instead of a generic sign-in error. `dg-skills
+inbox status` reports local message counts and, with `--session`, which check
+failed: no extension peer on that session, no mail tab matching `/u/N`, or
+missing `x-pm-uid`. A missing extension peer names the session and a placeholder
+start URL. The session token stays out of that error. `dg-skills inbox
+bootstrap-url --session ID` prints the real URL when you ask for it.
+Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
+plugin's broader Firefox features may require a newer Firefox. Bootstrap
+(`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at
+`~/.dg/dg-ai-extension-chrome` (`minimum_chrome_version` 116). Use
+`dg-skills install firefox` for the Firefox build.
 
 ```sh
 "$DG" inbox profile set proton --provider protonmail --account-hint 0 \

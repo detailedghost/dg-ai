@@ -6,6 +6,7 @@ import type { CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 
 import { packetForMessage } from "../classifier/packets";
+import { inboxRuntimeFor } from "../runtime";
 import { ensureConfigHome } from "../config/home";
 import {
 	createMailProviderClient,
@@ -151,18 +152,19 @@ export async function loadFilters(context: CliContext): Promise<void> {
 	const client = createMailProviderClient(context.config, provider);
 	try {
 		const filters = await client.listFilters();
-		await writeFilters(
-			paths,
-			filters,
-			providerSnippetLength(context.config, client.provider),
+		const snippetLength = providerSnippetLength(
+			context.config,
 			client.provider,
 		);
+		await writeFilters(paths, filters, snippetLength, client.provider);
 		printJson({
 			kind: "workspace-load-filters",
 			provider: client.provider,
 			out: paths.filters,
 			count: filters.length,
 			redacted: true,
+			snippetLength,
+			note: "conditions and actions in filters.json are redacted snippets and can cut a rule off mid-string. filters extend reads the live rule for a full before/after diff.",
 		});
 	} finally {
 		await client.close?.();
@@ -179,7 +181,7 @@ export async function createClassificationDoc(
 		out: paths.classificationGuide,
 		folders: Array.isArray(guide.folders) ? guide.folders.length : 0,
 		filters: Array.isArray(guide.filters) ? guide.filters.length : 0,
-		modelHint: `Use the fastest/cheapest adequate model for sorting and summaries. Default configured model: ${context.config.classifier.model}. Prefer Codex-local review for this CLI.`,
+		modelHint: `Use the fastest/cheapest adequate model for sorting and summaries. Default configured model: ${context.config.classifier.model}. Prefer local model review for this CLI.`,
 	});
 }
 
@@ -225,7 +227,7 @@ export async function batchMessages(context: CliContext): Promise<void> {
 			total: status.total,
 			concurrency: workers > 0 ? workers : "auto",
 			warning:
-				"Created one redacted file per message for Codex-assisted cleanup.",
+				"Created one redacted file per message for model-assisted cleanup.",
 		});
 	} finally {
 		await client.close?.();
@@ -311,6 +313,10 @@ export async function reviewWorkspace(context: CliContext): Promise<void> {
 		needsReview?: number;
 		filterRecommendations?: unknown[];
 		folderRecommendations?: unknown[];
+		omittedCount?: number;
+		omitted?: unknown[];
+		replacedCount?: number;
+		replacedDecisions?: unknown[];
 	};
 	printJson({
 		kind: "workspace-review-created",
@@ -321,6 +327,10 @@ export async function reviewWorkspace(context: CliContext): Promise<void> {
 			readyToMarkRead: review.readyToMarkRead,
 			needsReview: review.needsReview,
 			filterRecommendations: review.filterRecommendations,
+			omittedCount: review.omittedCount,
+			omitted: review.omitted,
+			replacedCount: review.replacedCount,
+			replacedDecisions: review.replacedDecisions,
 			folderRecommendationsShown: Math.min(
 				review.folderRecommendations?.length ?? 0,
 				25,
@@ -377,8 +387,9 @@ export async function cleanupWorkspaceCommand(
 export async function statusWorkspace(context: CliContext): Promise<void> {
 	const paths = workspacePaths(getWorkspaceDir(context));
 	const status = await readMessageStatus(paths);
+	const session = await protonSessionStatus(context);
 	if (getBooleanFlag(context.args.flags, "full")) {
-		printJson(status);
+		printJson({ ...status, session });
 		return;
 	}
 	printJson({
@@ -390,7 +401,45 @@ export async function statusWorkspace(context: CliContext): Promise<void> {
 		statusPath: paths.status,
 		messageFilesGlob: "messages/*.json",
 		full: false,
+		session,
 	});
+}
+
+async function protonSessionStatus(context: CliContext): Promise<{
+	checked: boolean;
+	ok?: boolean;
+	check?: string;
+	detail?: string;
+}> {
+	const request = inboxRuntimeFor(context.config).runtime.browserRequest;
+	if (!request) {
+		return {
+			checked: false,
+			detail:
+				"Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported.",
+		};
+	}
+	try {
+		await request({ operation: "session-status" });
+		return { checked: true, ok: true, check: "x-pm-uid-observed" };
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		return {
+			checked: true,
+			ok: false,
+			check: sessionCheckName(detail),
+			detail,
+		};
+	}
+}
+
+function sessionCheckName(detail: string): string {
+	if (/no extension peer/i.test(detail)) return "no-peer";
+	if (/mail tab navigated away/i.test(detail)) return "mail-tab-navigated";
+	if (/missing x-pm-uid/i.test(detail)) return "missing-x-pm-uid";
+	if (/no proton mail tab matching/i.test(detail)) return "no-tab";
+	if (/no proton mail tab/i.test(detail)) return "no-tab";
+	return "session-error";
 }
 
 export async function summarizeWorkspace(context: CliContext): Promise<void> {
@@ -475,6 +524,28 @@ export async function probeFolder(context: CliContext): Promise<void> {
 		const resolvedFolder = resolveFolder(folders, folder, {
 			purpose: "source",
 		});
+		const snapshotFile = await readJsonIfExists<{ createdAt?: string }>(
+			paths.folders,
+		);
+		let countsFrom: "live" | "snapshot" = "snapshot";
+		let liveTotal = resolvedFolder.total;
+		let liveUnread = resolvedFolder.unread;
+		try {
+			const liveFolders = await client.listFolders();
+			const live = liveFolders.find((item) => item.id === resolvedFolder.id);
+			if (live) {
+				countsFrom = "live";
+				liveTotal = live.total;
+				liveUnread = live.unread;
+				await writeFolders(paths, liveFolders, client.provider);
+			}
+		} catch {
+			countsFrom = "snapshot";
+		}
+		const snapshotStale =
+			countsFrom !== "live" ||
+			resolvedFolder.total !== liveTotal ||
+			resolvedFolder.unread !== liveUnread;
 		const messages = await client.listMessages({
 			folderId: resolvedFolder.id,
 			folderName: resolvedFolder.name,
@@ -499,16 +570,22 @@ export async function probeFolder(context: CliContext): Promise<void> {
 				id: resolvedFolder.id,
 				name: resolvedFolder.name,
 				path: resolvedFolder.path,
+				total: liveTotal,
+				unread: liveUnread,
+				countsFrom,
 				snapshotTotal: resolvedFolder.total,
 				snapshotUnread: resolvedFolder.unread,
+				snapshotAt: snapshotFile?.createdAt,
+				snapshotStale,
 			},
 			limit,
 			fetched: messages.length,
 			reachedLimit: messages.length >= limit,
 			readState: countReadState(messages),
 			topDomains: groupByDomain(packets, groupLimit),
-			warning:
-				"Read-only folder probe. No mailbox or local message files were changed.",
+			warning: snapshotStale
+				? "Read-only folder probe. snapshotTotal and snapshotUnread are the saved load-folders counts and are stale. total and unread are live when countsFrom is live. readState counts only the messages fetched for this probe. No messages were changed."
+				: "Read-only folder probe. Folder totals were refreshed from the provider and match the saved snapshot. readState counts only the messages fetched for this probe. No messages were changed.",
 		});
 	} finally {
 		await client.close?.();

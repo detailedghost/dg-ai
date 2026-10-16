@@ -1,7 +1,20 @@
 import { expect, test } from "bun:test";
+import { currentBinaryLine } from "../src/commands/install";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+test("a bootstrap install says verified for dg-skills and already current for the others", () => {
+	expect(currentBinaryLine("dg-skills", "1.12.0", true)).toBe(
+		"dg-skills verified (v1.12.0).",
+	);
+	expect(currentBinaryLine("dg-daemon", "1.12.0", true)).toBe(
+		"dg-daemon already current (v1.12.0).",
+	);
+	expect(currentBinaryLine("dg-skills", "1.12.0", false)).toBe(
+		"dg-skills already current (v1.12.0).",
+	);
+});
 
 test("install --local rebuilds stale output and replaces an installed extension of the same version", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "dg-local-install-"));

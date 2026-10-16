@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
 	chmodSync,
@@ -49,22 +50,40 @@ case "$url" in
   f="$STUBDIR/page$n.json"
   if [ -f "$f" ]; then cat "$f"; else printf '[]'; fi
   ;;
+*SHA256SUMS)
+  if [ -f "$STUBDIR/SHA256SUMS" ]; then
+    cat "$STUBDIR/SHA256SUMS" > "\${outfile:-/dev/stdout}"
+  else
+    echo "stub missing SHA256SUMS" >&2
+    exit 1
+  fi
+  ;;
 *)
-  printf '#!/bin/sh\\n# %s\\nexit 0\\n' "$url" > "\${outfile:-/dev/stdout}"
+  if [ -n "\${INSTALL_BODY:-}" ]; then
+    printf '%s\\n' "$INSTALL_BODY" > "\${outfile:-/dev/stdout}"
+  else
+    printf '#!/bin/sh\\n# %s\\nexit 0\\n' "$url" > "\${outfile:-/dev/stdout}"
+  fi
   ;;
 esac
 `;
 
 type BootstrapRun = {
 	code: number;
+	stdout: string;
 	stderr: string;
 	destUrl: string | undefined;
 	versionContent: string | undefined;
 	pageRequests: number;
 };
 
+function fakeBinary(url: string): string {
+	return `#!/bin/sh\n# ${url}\nexit 0\n`;
+}
+
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
+	options: { sums?: string; installBody?: string } = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
 	const binDir = join(dir, "stubbin");
@@ -72,6 +91,9 @@ async function runBootstrap(
 	pages.forEach((pageReleases, i) => {
 		writeFileSync(join(dir, `page${i + 1}.json`), JSON.stringify(pageReleases));
 	});
+	if (options.sums !== undefined) {
+		writeFileSync(join(dir, "SHA256SUMS"), options.sums);
+	}
 	const counterFile = join(dir, "counter");
 	writeFileSync(counterFile, "0");
 	writeFileSync(join(binDir, "curl"), CURL_STUB);
@@ -87,10 +109,12 @@ async function runBootstrap(
 			HOME: home,
 			STUBDIR: dir,
 			COUNTER: counterFile,
+			...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
 		},
 		stdout: "pipe",
 		stderr: "pipe",
 	});
+	const stdout = await new Response(proc.stdout).text();
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
 
@@ -102,6 +126,7 @@ async function runBootstrap(
 
 	return {
 		code,
+		stdout,
 		stderr,
 		destUrl: destContent?.split("\n")[1]?.replace(/^#\s*/, ""),
 		versionContent: existsSync(versionPath)
@@ -197,5 +222,67 @@ describe("bootstrap.sh pages past the first release listing", () => {
 		expect(run.pageRequests).toBe(10);
 		expect(run.code).not.toBe(0);
 		expect(run.stderr).toContain("1000 releases scanned");
+	});
+});
+
+describe("bootstrap.sh checksums and the fresh-install message", () => {
+	const tag = "skills-v1.0.0";
+	const assetUrl = `https://github.com/o/r/releases/download/${tag}/${SKILLS_ASSET}`;
+
+	test("verifies SHA256SUMS when the release publishes it", async () => {
+		const hash = createHash("sha256").update(fakeBinary(assetUrl)).digest("hex");
+		const run = await runBootstrap([[release(tag, [SKILLS_ASSET, "SHA256SUMS"])]], {
+			sums: `${hash}  ${SKILLS_ASSET}\n`,
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.destUrl).toBe(assetUrl);
+		expect(run.stdout).toContain("dg-skills installed");
+	});
+
+	test("refuses a checksum mismatch and does not keep the binary", async () => {
+		const run = await runBootstrap([[release(tag, [SKILLS_ASSET, "SHA256SUMS"])]], {
+			sums: `${"0".repeat(64)}  ${SKILLS_ASSET}\n`,
+		});
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("checksum mismatch");
+		expect(run.destUrl).toBeUndefined();
+		expect(run.versionContent).toBeUndefined();
+		expect(run.stdout).not.toContain("dg-skills installed");
+	});
+
+	test("refuses a SHA256SUMS file that omits this asset", async () => {
+		const run = await runBootstrap([[release(tag, [SKILLS_ASSET, "SHA256SUMS"])]], {
+			sums: `${"ab".repeat(32)}  other-binary\n`,
+		});
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("no entry");
+		expect(run.destUrl).toBeUndefined();
+	});
+
+	test("says verified instead of already current after a fresh install", async () => {
+		const run = await runBootstrap([[release("skills-v1.12.0", [SKILLS_ASSET])]], {
+			installBody: [
+				"#!/bin/sh",
+				"printf '%s\\n' 'dg-skills already current (v1.12.0).'",
+				"printf '%s\\n' 'dg-daemon already current (v1.12.0).'",
+				"exit 0",
+			].join("\n"),
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("dg-skills verified (v1.12.0).");
+		expect(run.stdout).toContain("dg-daemon already current (v1.12.0).");
+		expect(run.stdout).not.toContain("dg-skills already current");
+	});
+
+	test("the release workflow publishes SHA256SUMS and both bootstraps honor it", () => {
+		const workflow = readRepoFile(".github", "workflows", "skills-release.yml");
+		const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		expect(workflow).toContain("sha256sum");
+		expect(workflow).toContain("SHA256SUMS");
+		expect(sh).toContain("SHA256SUMS");
+		expect(sh).toContain("dg-skills verified");
+		expect(ps1).toContain("SHA256SUMS");
+		expect(ps1).toContain("dg-skills verified");
 	});
 });

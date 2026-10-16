@@ -60,6 +60,23 @@ it.each([
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
 
+it("names a mail tab that navigated to account settings", async () => {
+	const api = browser([{ id: 8, url: "https://account.proton.me/u/0/mail/filters" }]);
+	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "0" }));
+	expect(result.ok).toBe(false);
+	expect(result.error).toContain("Mail tab navigated away");
+	expect(result.error).toContain("/u/0");
+	expect(api.scripting.executeScript).not.toHaveBeenCalled();
+});
+
+it("names a missing /u/ account when other mail tabs are open", async () => {
+	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
+	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	expect(result.ok).toBe(false);
+	expect(result.error).toContain("No Proton mail tab matching /u/1");
+	expect(api.scripting.executeScript).not.toHaveBeenCalled();
+});
+
 it("rejects an explicitly selected non-Proton tab before page execution", async () => {
 	const api = browser([{ id: 8, url: "https://other.test" }, { id: 9, url: "https://mail.proton.me/u/0/inbox" }]);
 	const result = await createInboxHandler({ browserApi: api as never })(frame({ tabId: 8 }));

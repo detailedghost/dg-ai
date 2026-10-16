@@ -153,6 +153,48 @@ describe("cmdStart — pid file reclaim", () => {
 	}, 20_000);
 });
 
+describe("dg-agent start session id output", () => {
+	let dgHome: string;
+	let port: number;
+
+	afterAll(() => {
+		killDaemonByPidFile(dgHome);
+		cleanupDgHome(dgHome);
+	});
+
+	beforeAll(async () => {
+		dgHome = freshDgHome();
+		port = allocatePort();
+		spawnServe(dgHome, port);
+		await waitForHealth(port);
+	}, 20_000);
+
+	it("prints the session id before the bootstrap URL", async () => {
+		const result = await runCli(dgHome, port, ["start", "--print-session-id"]);
+		expect(result.exitCode).toBe(0);
+		const [sessionId, url] = result.stdout.trim().split("\n");
+		const bootstrap = validateSessionBootstrap(decodeChatMarker(url));
+		expect(sessionId).toBe(bootstrap.sessionId);
+		expect(bootstrap.port).toBe(port);
+	});
+
+	it("prints JSON with the session id, port, and url", async () => {
+		const result = await runCli(dgHome, port, ["start", "--json"]);
+		expect(result.exitCode).toBe(0);
+		const parsed = JSON.parse(result.stdout) as {
+			sessionId: string;
+			port: number;
+			url: string;
+			token?: string;
+		};
+		const bootstrap = validateSessionBootstrap(decodeChatMarker(parsed.url));
+		expect(parsed.sessionId).toBe(bootstrap.sessionId);
+		expect(parsed.port).toBe(port);
+		expect(parsed.token).toBeUndefined();
+		expect(result.stdout.trim().split("\n")).toHaveLength(1);
+	});
+});
+
 describe("a second dg-agent start on a live daemon", () => {
 	let dgHome: string;
 	let port: number;

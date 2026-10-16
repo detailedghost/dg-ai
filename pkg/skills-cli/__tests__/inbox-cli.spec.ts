@@ -23,6 +23,21 @@ import {
 const providers = ["protonmail", "gmail", "outlook"] as const;
 
 describe("dg-skills inbox", () => {
+	test("recommend filters --help lists that command's flags", async () => {
+		const h = inboxCliHarness();
+		try {
+			const result = await h.run(["recommend", "filters", "--help"]);
+			expect(result.code, result.stderr).toBe(0);
+			expect(result.stdout).toContain("--sample-limit");
+			expect(result.stdout).toContain("--write-archive-decisions");
+			expect(result.stdout).toContain("--session ID");
+			expect(result.stdout).not.toContain("--username");
+			expect(result.stdout).not.toContain("Profile configuration:");
+		} finally {
+			h.cleanup();
+		}
+	});
+
 	test("shows inbox workflow help without requiring a daemon or account", async () => {
 		const h = inboxCliHarness();
 		try {
@@ -313,6 +328,80 @@ describe("dg-skills inbox daemon integration", () => {
 });
 
 describe("dg-skills inbox daemon response boundary", () => {
+	test("a missing extension names the session, bootstrap URL, reload step, and version", async () => {
+		const h = inboxCliHarness();
+		const server = inboxDaemonFixture(h, (request, reply) => {
+			reply({
+				type: "cli-inbox-result",
+				sessionId: "fixture-cli-session",
+				protocolVersion: 1,
+				requestId: request.requestId,
+				ok: false,
+				error:
+					"Connect the dg extension to this session and open an authenticated Proton Mail tab.",
+			});
+		});
+		try {
+			const result = await h.run(
+				["profile", "get", "personal", "--session", server.sessionId],
+				{},
+				{ timeoutMs: 4000 },
+			);
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain(
+				`No extension peer on session ${server.sessionId}`,
+			);
+			expect(result.stderr).toContain(server.sessionId);
+			expect(result.stderr).toContain(
+				`http://127.0.0.1:${server.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`,
+			);
+			expect(result.stderr).toContain(
+				`dg-skills inbox bootstrap-url --session ${server.sessionId}`,
+			);
+			expect(result.stderr).not.toContain(server.token);
+			expect(result.stdout).not.toContain(server.token);
+			expect(result.stderr).toMatch(/reload/i);
+			expect(result.stderr).toContain("1.11.0");
+		} finally {
+			server.stop();
+			h.cleanup();
+		}
+	}, 6000);
+
+	test("bootstrap-url prints the real start URL only when asked", async () => {
+		const h = inboxCliHarness();
+		const server = inboxDaemonFixture(h, () => {});
+		try {
+			const help = await h.run(["bootstrap-url", "--help"]);
+			expect(help.code, help.stderr).toBe(0);
+			expect(help.stdout).toContain("bootstrap-url");
+			expect(help.stdout).not.toContain(server.token);
+			const printed = await h.run([
+				"bootstrap-url",
+				"--session",
+				server.sessionId,
+			]);
+			expect(printed.code, printed.stderr).toBe(0);
+			expect(printed.stdout).toContain(
+				`http://127.0.0.1:${server.port}/start#_chat=`,
+			);
+			expect(printed.stderr).not.toContain(server.token);
+			const fragment = printed.stdout.trim().split("#_chat=")[1] ?? "";
+			const decoded = JSON.parse(
+				Buffer.from(fragment, "base64url").toString("utf8"),
+			);
+			expect(decoded).toMatchObject({
+				port: server.port,
+				sessionId: server.sessionId,
+				token: server.token,
+				agentIdentity: "fixture-model",
+			});
+		} finally {
+			server.stop();
+			h.cleanup();
+		}
+	}, 6000);
+
 	test("fails immediately with install and restart guidance when an older daemon rejects the inbox protocol", async () => {
 		const h = inboxCliHarness();
 		const server = inboxDaemonFixture(h, (_request, reply) =>

@@ -89,16 +89,15 @@ export async function sampleWorkspace(context: CliContext): Promise<void> {
 export async function suggestWorkspace(context: CliContext): Promise<void> {
 	const paths = workspacePaths(getWorkspaceDir(context));
 	const limit = getNumberFlag(context.args.flags, "limit", 100);
+	const offset = Math.max(0, getNumberFlag(context.args.flags, "offset", 0));
 	const proposalLimit = getNumberFlag(context.args.flags, "proposal-limit", 25);
 	const write = getBooleanFlag(context.args.flags, "write");
 	const [folders, items] = await Promise.all([
 		readFolders(paths),
 		readMessageWorkItems(paths),
 	]);
-	const selected = filterWorkItems(items, selectorFromContext(context)).slice(
-		0,
-		limit,
-	);
+	const matchedItems = filterWorkItems(items, selectorFromContext(context));
+	const selected = matchedItems.slice(offset, offset + limit);
 	const proposals = selected.map((item) => suggestDecision(item, folders));
 	let written = 0;
 	if (write) {
@@ -112,13 +111,19 @@ export async function suggestWorkspace(context: CliContext): Promise<void> {
 	}
 	printJson({
 		kind: "workspace-suggestions",
+		matched: matchedItems.length,
+		offset,
+		limit,
 		total: proposals.length,
+		remaining: Math.max(0, matchedItems.length - offset - proposals.length),
+		markReadDefault: false,
 		write,
 		written,
 		counts: countProposals(proposals),
 		targetFolders: countTargetFolders(proposals),
 		proposals: proposals.slice(0, proposalLimit),
 		proposalsShown: Math.min(proposals.length, proposalLimit),
+		note: "Suggestions keep the current read state. Use decide --mark-read true to mark messages read. --limit (default 100) and --offset page through local work items; --proposal-limit only caps how many proposals are printed.",
 	});
 }
 
@@ -190,6 +195,7 @@ export async function decideWorkspace(context: CliContext): Promise<void> {
 		kind: "workspace-decisions-written",
 		matched: result.matched,
 		written: result.written,
+		replaced: result.replaced,
 		action,
 		targetFolder: resolvedTarget,
 		statusPath: paths.status,
@@ -268,15 +274,29 @@ export async function recommendFilters(context: CliContext): Promise<void> {
 			.written;
 	}
 
+	const moveDecisions = items.filter(
+		(item) => item.decision?.action === "move" && item.decision.targetFolder,
+	);
 	const output = {
 		kind: "workspace-filter-recommendations",
 		createdAt: new Date().toISOString(),
 		dir: paths.dir,
 		liveMutation: false,
 		automaticApply: false,
+		includesPendingDecisions: true,
+		requiresAppliedMoves: false,
+		pendingMoves: moveDecisions.filter((item) => item.status !== "applied")
+			.length,
+		appliedMoves: moveDecisions.filter((item) => item.status === "applied")
+			.length,
 		writeArchiveDecisions,
 		archiveDecisionUpdates,
 		out: join(paths.plansDir, "filter-recommendations.json"),
+		note: "Rows come from local move decisions, including decisions that have not been applied. Review lists every move target; this command lists one row per domain and folder. Archive stays informational. Folders outside the automatic set are preview-only.",
+		emptyReason:
+			recommendations.filterRecommendations.length === 0
+				? "No non-archive local move decisions were found. Pending and applied decisions are both included."
+				: undefined,
 		...recommendations,
 	};
 	await Bun.write(output.out, `${JSON.stringify(output, null, 2)}\n`);
@@ -457,7 +477,6 @@ function suggestDecision(
 		subject: item.packet.subject,
 		action: "move",
 		targetFolder: target,
-		markRead: true,
 		confidence: 0.85,
 		reason: `Matched existing ${target} folder from redacted domain/subject signals.`,
 		filterGap: `Consider a Proton filter for ${item.packet.fromDomain} to ${target}.`,
@@ -604,11 +623,7 @@ function recommendationRows(
 	>();
 	for (const item of items) {
 		const target = item.decision?.targetFolder ?? "";
-		if (
-			!target ||
-			isArchiveFolderName(target) ||
-			!isFilterRecommendationTarget(target)
-		) {
+		if (!target || isArchiveFolderName(target)) {
 			continue;
 		}
 		const domain = item.packet.fromDomain || "unknown";
@@ -626,19 +641,29 @@ function recommendationRows(
 		groups.set(key, group);
 	}
 	return [...groups.values()]
-		.map((group) => ({
-			...group,
-			safeForDomainFilter: (domainTargets.get(group.domain)?.size ?? 0) === 1,
-			automaticApply: false,
-			warning:
-				(domainTargets.get(group.domain)?.size ?? 0) === 1
-					? undefined
-					: "Mixed target domain; do not create a domain-only filter.",
-			recommendation:
-				(domainTargets.get(group.domain)?.size ?? 0) === 1
-					? `Create or update a Proton filter for ${group.domain} to ${group.targetFolder}.`
-					: `Use narrower Proton filter conditions for ${group.domain} before moving to ${group.targetFolder}.`,
-		}))
+		.map((group) => {
+			const unique = (domainTargets.get(group.domain)?.size ?? 0) === 1;
+			const automaticFilterEligible = isFilterRecommendationTarget(
+				group.targetFolder,
+			);
+			const safeForDomainFilter = unique && automaticFilterEligible;
+			return {
+				...group,
+				safeForDomainFilter,
+				automaticFilterEligible,
+				automaticApply: false,
+				warning: automaticFilterEligible
+					? unique
+						? undefined
+						: "Mixed target domain; do not create a domain-only filter."
+					: "Folder is outside the automatic filter set. This previews the pending route; filters apply will not create it.",
+				recommendation: !automaticFilterEligible
+					? `Preview a filter for ${group.domain} to ${group.targetFolder} before apply. This folder is not created automatically.`
+					: unique
+						? `Create or update a Proton filter for ${group.domain} to ${group.targetFolder}.`
+						: `Use narrower Proton filter conditions for ${group.domain} before moving to ${group.targetFolder}.`,
+			};
+		})
 		.sort(
 			(left, right) =>
 				right.count - left.count ||
