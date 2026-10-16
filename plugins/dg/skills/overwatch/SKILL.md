@@ -1,6 +1,7 @@
 ---
 name: overwatch
 description: Keep the DeeGee Overwatch board current across parallel chats, route board actions, open the live board, and publish its read-only phone snapshot.
+requires: [extension]
 ---
 
 # Overwatch
@@ -19,6 +20,8 @@ Bootstrap once if needed; the installer pulls `dg-agent` from `agent-v*` and
 `dg-daemon` from `daemon-v*`:
 
 ```bash
+DG_SKILLS="$HOME/.dg/bin/dg-skills"
+if [ -x "$DG_SKILLS" ]; then "$DG_SKILLS" require-extension overwatch || exit 1; fi
 DG_AGENT="$HOME/.dg/bin/dg-agent"
 if [ ! -x "$DG_AGENT" ]; then
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"

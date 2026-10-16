@@ -15,6 +15,10 @@ import { registerLaunch } from "./commands/launch";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
+import {
+	guardExtensionCommands,
+	registerRequireExtension,
+} from "./utils/cli-only";
 
 const program = new Command();
 program
@@ -25,6 +29,7 @@ program
 	.showHelpAfterError();
 
 program.enablePositionalOptions();
+guardExtensionCommands(program);
 registerInbox(program);
 registerChannelReview(program);
 registerCredentials(program);
@@ -35,6 +40,7 @@ registerDemo(program);
 registerRerun(program);
 registerProto(program);
 registerOverwatchSnapshot(program);
+registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {
 	console.error(`dg-skills: ${err instanceof Error ? err.message : err}`);

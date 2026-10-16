@@ -39,6 +39,45 @@ is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from
 source with `--local` needs [Bun](https://bun.sh).)
 
+### CLI-only install
+
+Install only the `dg-skills` binary and the skills that run without the browser
+extension. This skips the extension, the extension pairing, `dg-daemon` and
+`dg-agent`. Run it before using the plugin so its skills find `dg-skills` and do
+not start a full install.
+
+<!-- markdownlint-disable MD013 -->
+
+macOS / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+```
+
+Windows, in PowerShell:
+
+```powershell
+$env:DG_CLI_ONLY = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+<!-- markdownlint-enable MD013 -->
+
+`DG_CLI_ONLY=1` works in place of `--cli-only` for the shell form, and an
+installed binary accepts `dg-skills install --cli-only`. Add `DG_INSTALL_CODEX=1`
+to copy only the CLI skills into `$CODEX_HOME/skills`.
+
+| Skill | CLI-only |
+| --- | --- |
+| `channel-review` | Yes |
+| `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
+| `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
+
+A skill that needs the extension stops with a message that names the fix. To add
+the extension later, run `dg-skills install` (or the full bootstrap command
+above). That also fetches `dg-daemon` and `dg-agent` and removes the CLI-only
+marker at `~/.dg/cli-only`.
+
 ### Codex plugin
 
 Install from this repository's Codex marketplace:

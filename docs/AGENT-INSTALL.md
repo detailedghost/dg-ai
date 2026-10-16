@@ -45,6 +45,40 @@ These alternative commands install the CLI, stage the browser extension, and cop
 shared browser, demo, proto, chat, inbox-cleanup, and channel-review skills into `$CODEX_HOME/skills` (default
 `~/.codex/skills`). Start a new Codex thread after installation.
 
+## CLI-only install
+
+Use this when the user wants the CLI skills without the browser extension, the
+extension pairing, `dg-daemon` or `dg-agent`. It installs `dg-skills` and writes
+the marker `~/.dg/cli-only`. Run it before the plugin skills, so their
+bootstrap gate sees `dg-skills` and skips the full install.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DG_CLI_ONLY = "1"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+`DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
+does the same from an installed binary. Combined with `DG_INSTALL_CODEX=1`, only
+the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
+
+- CLI-only skills: `channel-review`, and `inbox-cleanup` with explicit
+  `--data-path` fixtures.
+- Extension skills: `browser`, `demo`, `proto`, `chat` and `overwatch`. Each
+  declares `requires: [extension]` in its SKILL.md. In a CLI-only install,
+  `dg-skills batch-open`, `launch`, `demo`, `rerun` and `proto`, and the
+  `dg-skills require-extension <skill>` check at the top of `chat` and
+  `overwatch`, stop with: the command needs the dg-ai-extension, and
+  `dg-skills install` adds it.
+- To add the extension later, run `"$DG" install`. It installs the extension,
+  `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
+  for the manual **Load unpacked** step.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

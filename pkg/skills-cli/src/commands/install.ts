@@ -38,6 +38,7 @@ import {
 	versionGte,
 	writeMarkerEntry,
 } from "../utils/lib";
+import { setCliOnly } from "../utils/cli-only";
 
 function copyDir(src: string, dest: string): void {
 	rmSync(dest, { recursive: true, force: true });
@@ -191,11 +192,21 @@ async function installCli(): Promise<void> {
 	removeRetiredBinaries();
 }
 
+async function installCliOnly(): Promise<void> {
+	const releases = await listReleases();
+	await installBinary(BINARIES[0], releases);
+	setCliOnly(true);
+	console.log(
+		'CLI-only install: the extension, dg-daemon and dg-agent were skipped. Run "dg-skills install" to add them.',
+	);
+}
+
 async function install(
 	target: Target,
 	forceLocal: boolean,
 	repo?: string,
 ): Promise<void> {
+	setCliOnly(false);
 	const dest = extensionDest(target);
 
 	// Resolve a source + version: CI release first, local build as dev fallback.
@@ -265,11 +276,16 @@ export function registerInstall(program: Command): void {
 		)
 		.option("--local", "build from pkg/extension instead of the GitHub release")
 		.option("--repo <path>", "dg repo to build from (default: search up from cwd)")
+		.option(
+			"--cli-only",
+			"install only the dg-skills binary; skip the extension, dg-daemon and dg-agent",
+		)
 		.action(
 			async (
 				target: string | undefined,
-				opts: { local?: boolean; repo?: string },
+				opts: { local?: boolean; repo?: string; cliOnly?: boolean },
 			) => {
+				if (opts.cliOnly) return installCliOnly();
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
 					!!opts.local,

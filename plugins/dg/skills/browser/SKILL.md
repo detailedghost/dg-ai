@@ -1,6 +1,7 @@
 ---
 name: browser
 description: Open and group GitHub PR or URL tabs and play guided in-browser demo tours with the companion dg-ai-extension. Use install to set up the extension, batch-open to open grouped tabs in the default browser, launch to cold-start Chromium with the extension, and demo to play a tour. Grouping and tours are opt-in through URL markers, so hand-opened tabs are never touched.
+requires: [extension]
 ---
 
 # Browser

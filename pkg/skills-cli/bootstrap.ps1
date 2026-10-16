@@ -2,6 +2,8 @@
 #
 #   irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 #
+# CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
+#
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
 $ErrorActionPreference = "Stop"
 
@@ -41,9 +43,13 @@ if ($env:PATH -notlike "*$binDir*") {
 	Write-Host "Add to PATH:  `$env:PATH = `"$binDir;`$env:PATH`""
 }
 
-# Set up the browser extension too, so one command installs everything.
-Write-Host "Setting up the dg-ai-extension…"
-& $dest install
+if ($env:DG_CLI_ONLY -eq "1") {
+	& $dest install --cli-only
+} else {
+	# Set up the browser extension too, so one command installs everything.
+	Write-Host "Setting up the dg-ai-extension…"
+	& $dest install
+}
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
 # repository's skills into CODEX_HOME (default: $HOME\.codex\skills).
@@ -56,7 +62,10 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 	Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
 	$skillsDir = Join-Path $codexRoot "skills"
 	New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-	Copy-Item -Recurse -Force (Join-Path $tmpDir "dg-ai-master\plugins\dg\skills\*") $skillsDir
+	foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-master\plugins\dg\skills")) {
+		if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
+		Copy-Item -Recurse -Force $skill.FullName $skillsDir
+	}
 	Remove-Item -Recurse -Force $tmpDir
 	Write-Host "Codex skills installed in $skillsDir"
 }
