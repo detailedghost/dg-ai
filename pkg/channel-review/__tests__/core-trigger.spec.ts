@@ -198,7 +198,7 @@ describe("parseTrigger", () => {
 		).toEqual({ kind: "error", code: "CR-103" });
 	});
 
-	test.each(["claude", "codex", "copilot"])("accepts ~agent %s", (agent) => {
+	test.each(["claude", "codex", "copilot", "grok"])("accepts ~agent %s", (agent) => {
 		expect(
 			parseTrigger(`!owner $review ${GITHUB_URL} ~agent ${agent}`, OPTIONS),
 		).toMatchObject({ kind: "run", agent });
