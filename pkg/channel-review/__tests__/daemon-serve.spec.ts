@@ -655,7 +655,7 @@ describe("serve automation", () => {
 
 		expect(sleeps).toEqual([]);
 		const sinks = h.readState().sinks as Record<string, { lastError: string }>;
-		expect(sinks.datadog?.lastError).toBe("missing environment variables: DATADOG_APP_KEY");
+		expect(sinks.datadog?.lastError).toBe("missing environment variables: DATADOG_ACCESS_TOKEN, DATADOG_APP_KEY");
 		expect(JSON.stringify(h.readState())).not.toContain("secret-value");
 	});
 

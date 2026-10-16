@@ -246,7 +246,8 @@ is skipped until you set them and restart.
 
 | Variable | Needed for | Meaning |
 | --- | --- | --- |
-| `DATADOG_API_KEY` | Datadog | API key. |
+| `DATADOG_ACCESS_TOKEN` | Datadog | Personal access token, sent as `Authorization: Bearer`. It replaces the API and application keys. Scopes: `error_tracking_read`, plus `apm_read` and `logs_read_data` for stack and repo lookups. It expires; renew it before then. |
+| `DATADOG_API_KEY` | Datadog | API key. Used only when `DATADOG_ACCESS_TOKEN` is not set. |
 | `DATADOG_APP_KEY` | Datadog | Application key that can read error tracking. |
 | `DATADOG_SITE` | Datadog | Optional. Datadog site, such as `datadoghq.eu`. Default `datadoghq.com`. |
 | `SENTRY_AUTH_TOKEN` | Sentry | Auth token that can read issues and events. |

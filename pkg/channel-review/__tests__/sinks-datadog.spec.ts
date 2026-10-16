@@ -324,10 +324,19 @@ describe("datadog errors", () => {
 		expect(run.calls).toEqual([]);
 	});
 
-	test("lists both variables when both are missing", async () => {
+	test("lists the token and both keys when nothing is set", async () => {
 		const run = setup([], {}, {});
 		const error = (await poll(run.sink).catch((e: unknown) => e)) as ConfigError;
-		expect(error.missing).toEqual(["DATADOG_API_KEY", "DATADOG_APP_KEY"]);
+		expect(error.missing).toEqual(["DATADOG_ACCESS_TOKEN", "DATADOG_API_KEY", "DATADOG_APP_KEY"]);
+	});
+
+	test("sends an access token as a Bearer header and no key headers", async () => {
+		const run = setup([], {}, { DATADOG_ACCESS_TOKEN: "ddpat_example" });
+		await poll(run.sink).catch(() => undefined);
+		const headers = run.calls[0]?.headers as Record<string, string> | undefined;
+		expect(headers?.Authorization).toBe("Bearer ddpat_example");
+		expect(headers?.["DD-API-KEY"]).toBeUndefined();
+		expect(headers?.["DD-APPLICATION-KEY"]).toBeUndefined();
 	});
 });
 

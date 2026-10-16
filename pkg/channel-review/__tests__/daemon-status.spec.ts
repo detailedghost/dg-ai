@@ -299,7 +299,7 @@ describe("status", () => {
 				},
 				sentry: { enabled: false, lastPollAt: null, lastError: null, counts: {} },
 			},
-			missingEnv: ["DATADOG_APP_KEY"],
+			missingEnv: ["DATADOG_ACCESS_TOKEN", "DATADOG_APP_KEY"],
 		});
 		expect(body.deps).toMatchObject({ enabled: true, repos: 1, watchingPrs: 1 });
 		expect(body.deps.lastRun["github.com/example-org/app"].result).toBe("ready");
