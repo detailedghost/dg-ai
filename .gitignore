@@ -15,3 +15,5 @@ dist/
 *.sqlite*
 *.log
 *.har
+.stryker-tmp/
+**/reports/mutation/

@@ -14,10 +14,10 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 
 | Command | Flags or arguments | Result |
 | --- | --- | --- |
-| `dg-skills channel-review start` | `--env dev\|prod`, `--runner claude\|codex\|copilot`, `--chat-id <id>` | Start the background daemon. |
+| `dg-skills channel-review start` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Start the background daemon. |
 | `dg-skills channel-review stop` | `--env dev\|prod` | Stop the selected environment's daemon. |
 | `dg-skills channel-review status` | `--env dev\|prod` | Print daemon state, watched chats, last event IDs per chat, runner probes, and preflight as JSON; preflight checks each chat when stopped and exits 1 if any check errors. |
-| `dg-skills channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot`, `--chat-id <id>` | Run the foreground daemon. |
+| `dg-skills channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Run the foreground daemon. |
 | `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
 
@@ -73,7 +73,7 @@ the review reactions.
 | PR or MR URL | HTTPS GitHub PR or GitLab MR link on an allowed host. | No PR link: CR-101. Host outside the allowlist: CR-104. |
 | `~spice 1-5` | Pass a whole-number review level to thrash. | Missing value or a value outside 1–5: CR-102. |
 | `~comment` | Pass thrash's comment option. | Optional. |
-| `~agent claude\|codex\|copilot` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
+| `~agent claude\|codex\|copilot\|grok` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
 
@@ -252,7 +252,7 @@ the shipped catalog exactly.
 | --- | --- | --- |
 | `CR-101` | `I couldn't find a pull request link in your message, so I didn't review anything. Add the PR link and try again.` | Add a PR or MR URL. |
 | `CR-102` | `The ~spice level must be a whole number from 1 to 5, so I didn't review this. Fix the number and try again.` | Use a whole number from 1 to 5. |
-| `CR-103` | `I don't know that ~agent. Pick claude, codex, or copilot and try again.` | Choose a supported runner name. |
+| `CR-103` | `I don't know that ~agent. Pick claude, codex, copilot, or grok and try again.` | Choose a supported runner name. |
 | `CR-104` | `That link is not on a GitHub or GitLab server I review, so I didn't review it.` | Check the link and configured host allowlists. |
 | `CR-105` | `Send $address and $review in separate messages, so I didn't run anything. Pick one and try again.` | Send one command per message. |
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |

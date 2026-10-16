@@ -291,6 +291,49 @@ export function killDaemonByPidFile(dgHome: string): void {
 	} catch {}
 }
 
+function pidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		const code =
+			typeof err === "object" && err !== null && "code" in err
+				? err.code
+				: undefined;
+		return code !== "ESRCH";
+	}
+}
+
+/**
+ * SIGTERM starts shutdown, which still holds the sqlite lock until the process
+ * exits. A replacement daemon's open can block for the 5s busy timeout, longer
+ * than the default health wait, so callers that restart must wait for exit.
+ */
+export async function waitForDaemonExit(
+	dgHome: string,
+	timeoutMs = 5000,
+): Promise<void> {
+	let pid: number | undefined;
+	try {
+		pid = readPidFile(dgHome).pid;
+	} catch {
+		return;
+	}
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (!pidAlive(pid)) return;
+		try {
+			if (readPidFile(dgHome).pid !== pid) return;
+		} catch {
+			return;
+		}
+		await new Promise((r) => setTimeout(r, 50));
+	}
+	throw new Error(
+		`daemon pid ${pid} under ${dgHome} did not exit within ${timeoutMs}ms`,
+	);
+}
+
 export async function stopServe(proc: Subprocess): Promise<void> {
 	proc.kill();
 	await proc.exited;

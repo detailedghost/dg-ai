@@ -22,7 +22,7 @@ import { parseRepo } from "./automation/repos";
 import { type FunEntry, loadFunPool } from "./fun";
 import { isCustomReactionId } from "./providers/teams-relay";
 import { REACTION_STATES, type ReactionState } from "./reactions";
-import { RUNNER_NAMES, type RunnerName } from "./runners/types";
+import { GROK_OUTPUT_FORMATS, RUNNER_NAMES, type GrokOutputFormat, type RunnerName } from "./runners/types";
 
 export const ENV_NAMES = ["dev", "prod"] as const;
 
@@ -120,6 +120,12 @@ export type ChannelConfig = {
 		claude: { path?: string; allowedTools: string[]; addressAllowedTools: string[] };
 		codex?: { path?: string };
 		copilot?: { path?: string };
+		grok?: {
+			path?: string;
+			model?: string;
+			tools?: string[];
+			outputFormat: GrokOutputFormat;
+		};
 	};
 	reactions: typeof REACTION_DEFAULTS;
 	relay: {
@@ -298,6 +304,29 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		},
 		codex: binary("codex"),
 		copilot: binary("copilot"),
+		grok: parseGrok(rec),
+	};
+}
+
+function parseGrok(rec: Rec): ChannelConfig["runner"]["grok"] {
+	if (rec.grok === undefined) return undefined;
+	const grok = section(rec, "grok", "runner", ["path", "model", "tools", "outputFormat"]);
+	const outputFormat = grok.outputFormat ?? "streaming-json";
+	requireOneOf(outputFormat, "runner.grok.outputFormat", GROK_OUTPUT_FORMATS);
+	let tools: string[] | undefined;
+	if (grok.tools !== undefined) {
+		requireStringArray(grok.tools, "runner.grok.tools");
+		tools = grok.tools;
+		for (const [index, tool] of tools.entries()) {
+			if (tool.trim() === "") fail(`runner.grok.tools[${index}] must not be empty`);
+			if (tool.includes(",")) fail(`runner.grok.tools[${index}] must not contain a comma`);
+		}
+	}
+	return {
+		path: optionalText(grok, "path", "runner.grok"),
+		model: optionalText(grok, "model", "runner.grok"),
+		tools,
+		outputFormat,
 	};
 }
 

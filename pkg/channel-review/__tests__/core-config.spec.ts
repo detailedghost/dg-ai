@@ -141,6 +141,46 @@ describe("loadConfig defaults", () => {
 		const config = load();
 		expect(config.chats[0]?.id).toBeUndefined();
 		expect(config.runner.codex?.path).toBeUndefined();
+		expect(config.runner.grok).toBeUndefined();
+	});
+
+	test("reads a grok path, model, tool list, and output format", () => {
+		const config = load({
+			runner: {
+				default: "grok",
+				grok: {
+					path: "/opt/grok",
+					model: "grok-build",
+					tools: ["read_file", "grep"],
+					outputFormat: "json",
+				},
+			},
+		});
+		expect(config.runner.default).toBe("grok");
+		expect(config.runner.grok).toEqual({
+			path: "/opt/grok",
+			model: "grok-build",
+			tools: ["read_file", "grep"],
+			outputFormat: "json",
+		});
+	});
+
+	test("defaults grok output format when the section sets only a path", () => {
+		expect(load({ runner: { grok: { path: "/opt/grok" } } }).runner.grok).toEqual({
+			path: "/opt/grok",
+			model: undefined,
+			tools: undefined,
+			outputFormat: "streaming-json",
+		});
+	});
+
+	test.each([
+		["an unknown grok key", { runner: { grok: { yolo: true } } }, "runner.grok.yolo"],
+		["a bad grok output format", { runner: { grok: { outputFormat: "yaml" } } }, "runner.grok.outputFormat"],
+		["a grok tool that contains a comma", { runner: { grok: { tools: ["read_file,grep"] } } }, "runner.grok.tools[0]"],
+		["an empty grok tool id", { runner: { grok: { tools: [" "] } } }, "runner.grok.tools[0]"],
+	])("rejects %s", (_name, extra, key) => {
+		expect(loadFailure(minimalConfigJson(extra)).message).toContain(key);
 	});
 
 	test("keeps explicit values over defaults", () => {
