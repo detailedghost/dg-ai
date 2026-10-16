@@ -93,7 +93,9 @@ Skip this step unless the person wants the daemon to watch an error tracker or
 to upgrade dependencies on a schedule. Both stay off until enabled.
 
 1. Add the credentials for each sink to the git-ignored `.env`:
-   `DATADOG_API_KEY`, `DATADOG_APP_KEY`, and optionally `DATADOG_SITE`; or
+   `DATADOG_ACCESS_TOKEN` (a personal access token with `error_tracking_read`,
+   `apm_read` and `logs_read_data`), or `DATADOG_API_KEY` and `DATADOG_APP_KEY`,
+   plus `DATADOG_SITE` when the org is not on `datadoghq.com`; or
    `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and optionally `SENTRY_BASE_URL`.
 1. Keep `automation.cloneRoot` at its default, or set an absolute path that is
    not under `~/code`.

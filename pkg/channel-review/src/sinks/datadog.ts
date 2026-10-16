@@ -105,6 +105,25 @@ function extractEvent(event: unknown): { stack?: string; message?: string; repoT
 	};
 }
 
+export function datadogAuthHeaders(
+	env: Record<string, string | undefined>,
+): { headers: Record<string, string> } | { missing: string[] } {
+	const token = text(env.DATADOG_ACCESS_TOKEN);
+	if (token !== undefined) return { headers: { Authorization: `Bearer ${token}` } };
+	const apiKey = text(env.DATADOG_API_KEY);
+	const appKey = text(env.DATADOG_APP_KEY);
+	if (apiKey !== undefined && appKey !== undefined) {
+		return { headers: { "DD-API-KEY": apiKey, "DD-APPLICATION-KEY": appKey } };
+	}
+	return {
+		missing: [
+			"DATADOG_ACCESS_TOKEN",
+			...(apiKey === undefined ? ["DATADOG_API_KEY"] : []),
+			...(appKey === undefined ? ["DATADOG_APP_KEY"] : []),
+		],
+	};
+}
+
 export function createDatadogSink({ config, env, fetch: doFetch, clock, log }: DatadogDeps): ErrorSink {
 	const { tracks, services, envs } = config.errorWatch.providers.datadog;
 	const minRank = MIN_LEVELS.indexOf(config.errorWatch.minLevel);
@@ -120,19 +139,13 @@ export function createDatadogSink({ config, env, fetch: doFetch, clock, log }: D
 		body: unknown,
 		signal?: AbortSignal,
 	): Promise<Json> {
-		const apiKey = text(env.DATADOG_API_KEY);
-		const appKey = text(env.DATADOG_APP_KEY);
-		const missing = [
-			...(apiKey === undefined ? ["DATADOG_API_KEY"] : []),
-			...(appKey === undefined ? ["DATADOG_APP_KEY"] : []),
-		];
-		if (apiKey === undefined || appKey === undefined) throw new ConfigError(missing);
+		const auth = datadogAuthHeaders(env);
+		if ("missing" in auth) throw new ConfigError(auth.missing);
 		const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 		const response = await doFetch(`https://api.${site()}${path}`, {
 			method,
 			headers: {
-				"DD-API-KEY": apiKey,
-				"DD-APPLICATION-KEY": appKey,
+				...auth.headers,
 				Accept: "application/json",
 				...(body === undefined ? {} : { "Content-Type": "application/json" }),
 			},

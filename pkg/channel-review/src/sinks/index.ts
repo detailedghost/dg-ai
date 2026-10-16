@@ -1,5 +1,5 @@
 import type { ChannelConfig } from "../config";
-import { createDatadogSink, type DatadogDeps } from "./datadog";
+import { createDatadogSink, type DatadogDeps, datadogAuthHeaders } from "./datadog";
 import { createSentrySink } from "./sentry";
 import type { ErrorSink } from "./types";
 
@@ -19,9 +19,13 @@ export function createSinks(
 }
 
 const REQUIRED_ENV = {
-	datadog: ["DATADOG_API_KEY", "DATADOG_APP_KEY"],
-	sentry: ["SENTRY_AUTH_TOKEN", "SENTRY_ORG"],
-} as const;
+	datadog: (env: Record<string, string | undefined>) => {
+		const auth = datadogAuthHeaders(env);
+		return "missing" in auth ? auth.missing : [];
+	},
+	sentry: (env: Record<string, string | undefined>) =>
+		["SENTRY_AUTH_TOKEN", "SENTRY_ORG"].filter((key) => !env[key]),
+};
 
 export function missingEnvByProvider(
 	config: ChannelConfig,
@@ -30,9 +34,9 @@ export function missingEnvByProvider(
 	const { enabled, providers } = config.errorWatch;
 	if (!enabled) return {};
 	const missing: Record<string, string[]> = {};
-	for (const [name, names] of Object.entries(REQUIRED_ENV)) {
+	for (const [name, check] of Object.entries(REQUIRED_ENV)) {
 		if (!providers[name as keyof typeof REQUIRED_ENV].enabled) continue;
-		const absent = names.filter((key) => !env[key]);
+		const absent = check(env);
 		if (absent.length > 0) missing[name] = absent;
 	}
 	return missing;
