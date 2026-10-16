@@ -70,7 +70,8 @@ export class SessionRegistry extends EventEmitter {
 		this.now = seams.now ?? Date.now;
 		this.store = seams.store;
 		for (const record of this.store?.loadSessions() ?? []) {
-			this.sessions.set(record.sessionId, record);
+			if (record.state !== "active") continue;
+			this.sessions.set(record.sessionId, { ...record, state: "active" });
 		}
 	}
 

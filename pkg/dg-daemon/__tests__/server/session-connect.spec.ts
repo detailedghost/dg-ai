@@ -198,9 +198,11 @@ describe("manual cleanup", () => {
 			},
 		});
 		try {
+			const port = server.port;
+			if (port === undefined) throw new Error("clear server did not bind");
 			writePidFileAtomic(resolveDgPaths({ env: { DG_HOME: dgHome } }), {
 				pid: process.pid,
-				port: server.port,
+				port,
 				instanceId: "clear-error",
 				versions: { package: "0.0.0", protocol: CHAT_PROTOCOL_VERSION },
 			});
