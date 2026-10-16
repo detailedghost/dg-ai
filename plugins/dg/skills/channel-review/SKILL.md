@@ -31,8 +31,8 @@ follow [relay setup](references/relay-setup.md); start config.json from
 Require the dg plugin, AWS CLI with SSO access, `gh` (`glab` for GitLab), a signed-in
 runner CLI, and the thrash skill on every machine. dg does not ship thrash.
 Claude with the default allowlist is the supported, safe default. The
-experimental codex runner runs with `--dangerously-bypass-approvals-and-sandbox`
-and copilot with `--allow-all-tools`, on content that PR authors write. A prompt
+experimental codex runner runs with `--dangerously-bypass-approvals-and-sandbox`,
+copilot with `--allow-all-tools`, and grok with `--always-approve`. A prompt
 injection in a PR can run any command as you, so use them only on trusted PRs.
 Run the first live test on dev in a test chat with the dev bot.
 

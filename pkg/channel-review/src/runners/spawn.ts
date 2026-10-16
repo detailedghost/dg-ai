@@ -29,6 +29,7 @@ export type ProcessResult = {
 	timedOut: boolean;
 	aborted: boolean;
 	stderrTail: string;
+	stdoutTail?: string;
 	code?: Extract<CrCode, "CR-201">;
 };
 
@@ -83,6 +84,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 			timedOut: false,
 			aborted: false,
 			stderrTail: "",
+			stdoutTail: "",
 			code: "CR-201",
 		};
 	}
@@ -104,6 +106,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 	let written = 0;
 	let logging = true;
 	let stderrTail = Buffer.alloc(0);
+	let stdoutTail = Buffer.alloc(0);
 	let exited = false;
 	try {
 		const readers = [proc.stdout, proc.stderr].map((stream) => stream.getReader());
@@ -119,6 +122,9 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 					} catch {
 						logging = false;
 					}
+				}
+				if (index === 0) {
+					stdoutTail = Buffer.concat([stdoutTail, chunk]).subarray(-TAIL_BYTES);
 				}
 				if (index === 1) {
 					stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TAIL_BYTES);
@@ -154,5 +160,6 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 		timedOut,
 		aborted,
 		stderrTail: stderrTail.toString("utf8"),
+		stdoutTail: stdoutTail.toString("utf8"),
 	};
 }

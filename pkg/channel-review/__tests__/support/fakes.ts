@@ -525,6 +525,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 		claude: createFakeRunner("claude", options.runnerScript),
 		codex: createFakeRunner("codex", options.runnerScript),
 		copilot: createFakeRunner("copilot", options.runnerScript),
+		grok: createFakeRunner("grok", options.runnerScript),
 	};
 	const verdict = createFakeVerdictReader(options.verdictScript);
 	const stack = createFakeStackReader(options.descendants);

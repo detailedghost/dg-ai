@@ -4,7 +4,7 @@ export const ERROR_CATALOG = {
 	"CR-102":
 		"The ~spice level must be a whole number from 1 to 5, so I didn't review this. Fix the number and try again.",
 	"CR-103":
-		"I don't know that ~agent. Pick claude, codex, or copilot and try again.",
+		"I don't know that ~agent. Pick claude, codex, copilot, or grok and try again.",
 	"CR-104":
 		"That link is not on a GitHub or GitLab server I review, so I didn't review it.",
 	"CR-105":

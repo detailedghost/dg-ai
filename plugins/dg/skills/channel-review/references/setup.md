@@ -33,13 +33,15 @@ Install these on every machine that runs the daemon:
 - The AWS CLI with SSO access to the environment's profile and permission to read
   the configured Secrets Manager secret.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
-- At least one runner CLI, signed in: `claude`, `codex`, or `copilot`.
+- At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or `grok`.
 - The thrash skill where that runner finds it. dg does not ship thrash.
 - For `$address`: the address skill at `~/.claude/skills/address` with its
   `address-helper`, and `gh` or `glab` signed in with push access.
 
-`status` reports probes for all three runners. A missing CLI reports CR-201;
-a failed login probe reports CR-202. Once those checks pass, missing thrash
+`status` reports probes for all four runners. A missing CLI reports CR-201;
+a failed login probe reports CR-202. Claude's print mode writes
+`Not logged in · Please run /login` to stdout when it is signed out, and a fast
+nonzero exit with that text is CR-202 too. Once those checks pass, missing thrash
 reports CR-206 for that runner. Unused runners may fail their probes.
 
 | Runner | Thrash locations relative to the user's home |
@@ -47,6 +49,7 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 | claude | `.claude/skills/thrash/SKILL.md` or a nested `skills/thrash/SKILL.md` under `.claude/plugins` |
 | codex | `.codex/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
 | copilot | `.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
+| grok | `.grok/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
 
 The default `runner.claude.allowedTools` is narrow on purpose. A PR author
 writes the text the runner reads, so a prompt injection must not reach a shell
@@ -110,9 +113,35 @@ the IDs.
 ### Runner safety
 
 Claude with the default allowlist is the safe choice. The experimental codex
-runner runs with `--dangerously-bypass-approvals-and-sandbox`, and copilot runs
-with `--allow-all-tools`. Both run on content that PR authors write, so a prompt
-injection in a PR can run any command as you. Use them only on PRs you trust.
+runner runs with `--dangerously-bypass-approvals-and-sandbox`, copilot runs
+with `--allow-all-tools`, and grok runs with `--always-approve`. They run on
+content that PR authors write, so a prompt injection in a PR can run any
+command as you. Use them only on PRs you trust.
+
+### Grok runner
+
+`grok` is the xAI Grok Build CLI (`https://x.ai/cli`), not a third-party npm
+package. The daemon drives it headless. These choices follow that CLI's
+headless flags; a few of them are not spelled out as a stable contract, so
+they are config when the CLI allows it.
+
+- The command is `grok --no-auto-update -p <prompt> --output-format <format> --always-approve --cwd <job dir>`. `--no-auto-update` skips the background updater. `--cwd` is the job directory, and the process working directory is that same path.
+- The prompt is `/thrash ...`. Grok runs a skill when the prompt names it as `/skill-name`, and it loads skills from `~/.grok/skills` and `~/.claude/skills`.
+- `runner.grok.outputFormat` is `streaming-json` (the default), `json`, or `plain`. `streaming-json` is one JSON object per line: `text` (answer chunk, field `data`), `thought` (ignored), `error` (field `message`), and `end` (field `stopReason`). The daemon appends the stream to the job log. A fast nonzero exit whose stderr, or whose `error` event, says the CLI is not signed in is CR-202. The review text itself is not parsed; thrash posts the review.
+- `runner.grok.tools` is an optional list of Grok tool ids such as `read_file` and `grep`. They are joined with commas into one `--tools` value, which replaces Grok's default tool set. Leave it unset, or set an empty list, to keep that default. A tool id must not contain a comma. This is not Claude's `Bash(git:*)` syntax.
+- `runner.grok.model` is optional and becomes `--model`.
+- There is no `grok auth status`. The probe runs `grok models`. A nonzero exit is CR-202, which also covers a network failure during the probe. Grok 1.0 prints `You are not authenticated.` and still exits 0 when signed out, so that text is CR-202 too. Sign in with `grok login`, or set `XAI_API_KEY` for a headless key. The child process inherits `XAI_API_KEY`. It does not inherit `CLAUDE_CODE_OAUTH_TOKEN`. A headless run that is signed out prints `Not signed in` on stderr and as a `streaming-json` error event; a fast nonzero exit with that text is CR-202.
+- The probe looks for thrash under the home directory only, same as the other runners. A checkout-local `.grok/skills/thrash` does not satisfy it.
+- `$address`, automatic fixes, and dependency upgrades stay on Claude.
+
+Opt-in tests in `pkg/channel-review` spawn the real CLIs. They stay skipped unless the variable is `1` and the binary is on `PATH`. From `pkg/channel-review`:
+
+```sh
+DG_TEST_CLAUDE_CLI=1 bun test runners-cli-live
+DG_TEST_GROK_CLI=1 bun test runners-cli-live
+```
+
+Each one checks sign-in (`claude auth status`, or `grok models`) and then sends a one-line prompt through the same flags and spawn path the runner uses. It does not post a pull-request review. Claude needs an existing login. Grok needs `grok login` or `XAI_API_KEY`. The fixture tests in `runners-cli-fixture.spec.ts` always run and do not need credentials.
 
 Add the bot for the env (`envs.<name>.botName`) to every review chat. The
 `topic` lookup needs the relay's service mailbox in the chat too. If the mailbox
@@ -145,12 +174,15 @@ every required key with placeholder values.
 | `owner.token` | string | Required | Gate for new reviews; also supplies the owner name in errors (`!owner` gives Owner). |
 | `owner.email` | string | Required | Owner email that the relay uses when sending chat replies. |
 | `owner.senderIds` | string array | `[]` | Chat sender IDs (Teams Azure AD object IDs) that may run `$address`. Entries are trimmed and must not be empty. Reviews and help do not check it. |
-| `runner.default` | string | `claude` | Default runner: claude, codex, or copilot. |
+| `runner.default` | string | `claude` | Default runner: claude, codex, copilot, or grok. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
 | `runner.claude.allowedTools` | string array | `Bash(<home>/scripts/bin/thrash-helper:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |
 | `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `<home>/scripts/bin/address-helper`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
-| `runner.<name>.path` | string | Unset | Optional executable path for claude, codex, or copilot; otherwise uses PATH. |
+| `runner.grok.model` | string | Unset | Optional `--model` for the Grok CLI. |
+| `runner.grok.tools` | string array | Unset | Optional Grok tool ids, comma-joined into `--tools`. Empty leaves the CLI default. See Grok runner. |
+| `runner.grok.outputFormat` | string | `streaming-json` | `plain`, `json`, or `streaming-json`. |
+| `runner.<name>.path` | string | Unset | Optional executable path for claude, codex, copilot, or grok; otherwise uses PATH. |
 | `reactions.*` | strings | See [reaction defaults](commands.md#reactions) | Override `pending`, `inProgress`, `changesRequested`, `approved`, `comment`, or `failure`. |
 | `relay.*` | `appName` string; `secret` object | Required: `appName`, `secret.id`, `secret.key`, `secret.region` | Application name registered with the relay, and where the relay secret lives: the AWS Secrets Manager secret `id`, the JSON `key` inside it, and its `region`. Config never holds the secret value. |
 | `fun.pool` | entry array | Shipped pool | Optional pool override with at least eight entries; see [pool rules](commands.md~fun). |

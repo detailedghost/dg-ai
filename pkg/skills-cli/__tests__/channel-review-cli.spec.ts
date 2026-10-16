@@ -167,7 +167,7 @@ describe("channel-review status", () => {
 		expect(body).toMatchObject({
 			env: "dev",
 			running: false,
-			runners: { claude: "CR-201", codex: "CR-201", copilot: "CR-201" },
+			runners: { claude: "CR-201", codex: "CR-201", copilot: "CR-201", grok: "CR-201" },
 		});
 		expect(body.logPath).toBe(join(dgHome, "channel-review", "daemon.dev.log"));
 		expect(body.preflight.secret.error).toContain("aws");
