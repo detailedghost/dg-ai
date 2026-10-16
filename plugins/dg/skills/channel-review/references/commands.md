@@ -20,6 +20,8 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Run the foreground daemon. |
 | `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
+| `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
+| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Prints variable names only. |
 
 Flags are optional. Commands use the saved environment unless `--env` overrides
 it. Start and run accept runner and chat overrides for that invocation.
@@ -33,6 +35,8 @@ dg-skills channel-review stop --env dev
 dg-skills channel-review run --env dev
 dg-skills channel-review logs --env dev -n 100 -f
 dg-skills channel-review env
+dg-skills channel-review connect datadog
+dg-skills channel-review migrate-env --dry-run
 ```
 
 ## Teams requests

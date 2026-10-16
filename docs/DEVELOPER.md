@@ -327,6 +327,18 @@ config contract and error templates.
 
 The daemon runs separately from the loopback chat daemon. It fetches its secret
 into memory and keeps per-environment state under `DG_HOME/channel-review`.
+
+`resolveSecrets` (`pkg/channel-review/src/credentials.ts`) reads the
+`channel-review/` entries once at daemon start through the `channel-review`
+grant and builds an env-like map for the relay connect and the sinks: the store
+first, then the process environment. `status` reports each source.
+`dg-skills channel-review connect` drives Chrome through `playwright-core`. It
+imports the package lazily, so other commands never load it, and the compiled
+build (`pkg/skills-cli/build.ts`) marks `chromium-bidi` external because the
+CDP flow does not use it. The build also rewrites Playwright's two computed
+metadata imports to static imports, embedding `package.json` and `browsers.json`.
+Playwright is pinned; when upgrading it, run the compiled connect regression,
+which removes the dependency's source before starting the binary.
 Every review machine needs a signed-in runner and thrash installed in that
 runner's skill roots. `status` reports each runner probe, including CR-206 for
 missing thrash after executable and login checks pass.

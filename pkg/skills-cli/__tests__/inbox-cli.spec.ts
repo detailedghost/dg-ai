@@ -1,9 +1,8 @@
-import { CliClient } from "@dg/common/node";
-import type { InboxCliResult } from "@dg/common";
-import { redactPublicValue } from "@dg/inbox";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { InboxCliResult } from "@dg/common";
+import { CliClient } from "@dg/common/node";
 import {
 	bootServe,
 	cleanupDgHome,
@@ -13,6 +12,7 @@ import {
 	send,
 	stopServe,
 } from "@dg/dg-daemon/test-harness";
+import { redactPublicValue } from "@dg/inbox";
 import {
 	inboxCliHarness,
 	inboxDaemonFixture,
@@ -552,9 +552,7 @@ describe("compiled dg-skills inbox", () => {
 			const compile = Bun.spawn(
 				[
 					process.execPath,
-					"build",
-					skillsEntry,
-					"--compile",
+					join(skillsEntry, "../../build.ts"),
 					"--outfile",
 					executable,
 				],

@@ -23,6 +23,7 @@ import {
 	createFakeProvider,
 	createFakeRunner,
 	createFakeStackReader,
+	createFakeCredentialSource,
 	createFakeVerdictReader,
 	createRecordedLog,
 	createTempHome,
@@ -230,6 +231,7 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 
 	const seams: DaemonSeams = {
 		env: {},
+		credentials: createFakeCredentialSource(),
 		fetchSecret: async (params) => {
 			fetchSecretCalls.push(params);
 			const secret = `secret-${secrets.length + 1}`;

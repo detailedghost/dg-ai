@@ -272,22 +272,76 @@ to a `bot/fix/*` branch.
 
 Only GitHub repos are supported. Clone roots must not be under `~/code`.
 
-### Environment variables
+### Credentials
 
-The daemon reads credentials from its process environment. The mise tasks load
-them from the git-ignored `.env`. A missing variable never stops the daemon.
-`status` lists the missing names under `errorWatch.missingEnv`, and the sink
-is skipped until you set them and restart.
+The daemon reads its secrets from the dg credential store when it starts. It
+reads them through the `channel-review` grant, a read-only service token for
+names under `channel-review/`. Environment variables are fallbacks.
 
-| Variable | Needed for | Meaning |
-| --- | --- | --- |
-| `DATADOG_ACCESS_TOKEN` | Datadog | Personal access token, sent as `Authorization: Bearer`. It replaces the API and application keys. Scopes: `error_tracking_read`, plus `apm_read` and `logs_read_data` for stack and repo lookups. It expires; renew it before then. |
-| `DATADOG_API_KEY` | Datadog | API key. Used only when `DATADOG_ACCESS_TOKEN` is not set. |
-| `DATADOG_APP_KEY` | Datadog | Application key that can read error tracking. |
-| `DATADOG_SITE` | Datadog | Optional. Datadog site, such as `datadoghq.eu`. Default `datadoghq.com`. |
-| `SENTRY_AUTH_TOKEN` | Sentry | Auth token that can read issues and events. |
-| `SENTRY_ORG` | Sentry | Organization slug. |
-| `SENTRY_BASE_URL` | Sentry | Optional. Base URL of a self-hosted Sentry. Default `https://sentry.io`. |
+| Store name | Holds | Meta | Env fallback |
+| --- | --- | --- | --- |
+| `channel-review/relay/<env>` | Relay secret for dev or prod | `provider` | `CHANNEL_REVIEW_RELAY_SECRET_<ENV>`, then AWS Secrets Manager |
+| `channel-review/datadog` | Datadog personal access token | `site` (such as `us5.datadoghq.com`), `scopes`, `expiresAt` | `DATADOG_ACCESS_TOKEN`, or `DATADOG_API_KEY` and `DATADOG_APP_KEY`; `DATADOG_SITE` |
+| `channel-review/sentry` | Sentry user auth token | `site` (base URL), `org`, `scopes` | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_BASE_URL` |
+
+A stored entry wins over its environment variables. When dg-daemon is not
+running, or the grant is missing, the daemon logs a warning that names the fix
+(start dg-daemon, then run `dg-skills credentials grant channel-review`) and
+uses the environment. A missing secret never stops the daemon. `status` lists the
+missing names under `errorWatch.missingEnv`, and the sink is skipped until you
+add the secret and restart.
+
+Store each secret with `connect`. It never prints a value:
+
+```sh
+dg-skills channel-review connect datadog
+dg-skills channel-review connect sentry --org example-org
+dg-skills channel-review connect relay --env dev
+```
+
+- `connect datadog` opens Chrome with a dg profile under
+  `DG_HOME/browser-profiles/connect`, so a login persists. Sign in when asked;
+  it waits up to 10 minutes. It revokes an older `channel-review-daemon` token
+  when it can, creates a new one that expires in 1 year with the scopes
+  `error_tracking_read`, `apm_read` and `logs_read_data`, copies it, and
+  clears the clipboard. Without `--site`, it reads the site from the address
+  after login. It then calls error tracking once and prints
+  `verified (HTTP 200)` or the status.
+- `connect sentry` does the same on the user auth tokens page, with the scopes
+  `event:read`, `project:read` and `org:read`. Pass `--site` for a self-hosted
+  Sentry and `--org` when the address does not show the organization. It
+  verifies with one organization request.
+- `connect relay` fetches the relay secret once through AWS (the env's AWS
+  profile) and stores it.
+- `--paste` skips the automated browser: it opens the token page in your
+  default browser and reads the token from a hidden prompt. The browser flows
+  fall back to this mode when a page step fails.
+
+After it stores a secret, `connect` creates the `channel-review` grant when it
+is missing and says so. Restart the daemon to use a new secret.
+
+To move secrets that are already in `.env`, run
+`dg-skills channel-review migrate-env --dry-run` to list them, then run it
+without `--dry-run`. It stores `CHANNEL_REVIEW_RELAY_SECRET_DEV` and `_PROD`,
+`DATADOG_ACCESS_TOKEN` (with `DATADOG_SITE`), and `SENTRY_AUTH_TOKEN` (with
+`SENTRY_ORG` and `SENTRY_BASE_URL`). Then it deletes only those lines. It
+keeps the file mode, writes a backup to `.env.bak-<timestamp>` (mode 0600),
+and prints variable names only. `DATADOG_API_KEY` and `DATADOG_APP_KEY` stay
+in `.env`; replace them with `connect datadog`. The default file is the `.env`
+next to the mise config in the current folder; `--file` picks another.
+Quoted values and inline comments are supported. When a moved variable is
+assigned more than once, the last assignment wins and all its assignments are
+removed. A final empty secret stays in `.env`. If a store or grant request fails,
+or the file changes during migration, its lines stay intact.
+
+Renew a token before its `expiresAt`: run `connect` again, then restart the
+daemon. `dg-skills credentials list` flags entries that expired or expire
+within 14 days.
+
+Status adds a `credentials` block. It has `relay`, `datadog` and `sentry`,
+each with the store `name`, its `source` (`store`, `env`, `aws` or `missing`),
+and `expiresAt` for a stored entry. It has `warning` when the store is not
+available. It never prints a value.
 
 Status adds two blocks. `errorWatch` has `enabled`, `providers.<name>` (with
 `enabled`, `lastPollAt`, `lastError`, and `counts`), and `missingEnv`. `deps`
@@ -308,10 +362,10 @@ but keep separate state, pidfiles, daemon logs, and job logs.
 | `jobs/<env>/*.log` | Runner output for each job. |
 | `work/` | Runner working directory for reviews. `$address` clones live under `address.cloneRoot` instead. |
 
-The daemon fetches the secret into memory. The secret is never written to disk.
-When `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` is set, such as
-`CHANNEL_REVIEW_RELAY_SECRET_DEV`, the daemon uses that value and skips AWS. The
-mise tasks load it from the git-ignored `.env`.
+The daemon reads the relay secret into memory. The plaintext secret is never written
+to disk. It uses `channel-review/relay/<env>` from the credential store first, then
+`CHANNEL_REVIEW_RELAY_SECRET_<ENV>` (such as `CHANNEL_REVIEW_RELAY_SECRET_DEV`),
+and fetches it from AWS only when neither is set.
 The daemon runs on Linux, macOS, WSL, and Windows. In WSL, it lives only while
 the VM runs. Start it again after the VM restarts. Recovery marks interrupted
 reviews failed and posts CR-205; a human must verify this behavior in WSL.

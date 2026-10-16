@@ -261,7 +261,16 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		const top = declaredCommands(cliSource).filter(
 			(n) => n !== "channel-review",
 		);
-		expect(top).toEqual(["start", "stop", "status", "logs", "run", "env"]);
+		expect(top).toEqual([
+			"start",
+			"stop",
+			"status",
+			"logs",
+			"run",
+			"connect",
+			"migrate-env",
+			"env",
+		]);
 		const emojis = declaredCommands(emojisSource);
 		expect(emojis).toEqual(["capture", "set", "show"]);
 		for (const name of top)
@@ -270,7 +279,21 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			expect(content()).toMatch(new RegExp(`emojis ${name}\\b`));
 		const flags = declaredFlags(cliSource, emojisSource);
 		expect([...flags].sort()).toEqual(
-			["--chat-id", "--env", "--follow", "--lines", "--runner", "--slot", "--timeout"].sort(),
+			[
+				"--chat-id",
+				"--dry-run",
+				"--env",
+				"--file",
+				"--follow",
+				"--lines",
+				"--org",
+				"--paste",
+				"--runner",
+				"--session",
+				"--site",
+				"--slot",
+				"--timeout",
+			].sort(),
 		);
 		for (const flag of flags) expect(commands).toContain(flag);
 	});

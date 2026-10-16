@@ -53,6 +53,7 @@ function createRig(
 	options: {
 		envName?: "dev" | "prod";
 		aws?: Partial<Capture>;
+		secret?: string;
 		listed?: string[];
 		eventsStatus?: number;
 		chats?: unknown[];
@@ -130,6 +131,7 @@ function createRig(
 				fetch: fetchFake,
 				runCapture,
 				which: () => "/usr/bin/aws",
+				secret: options.secret,
 			}),
 		eventsWasClosed: () => {
 			const events = fetched.find((entry) => entry.url.endsWith("/events"));
@@ -139,6 +141,18 @@ function createRig(
 }
 
 describe("preflight", () => {
+	test("uses a resolved relay secret without calling AWS", async () => {
+		const rig = createRig(buildConfig({ chat: { id: CHAT_ID } }), {
+			secret: SECRET,
+			aws: { status: 255, stderr: "AWS must not run" },
+		});
+		const report = await rig.run();
+		expect(report.secret).toBe("ok");
+		expect(report.chats).toMatchObject([{ id: CHAT_ID }]);
+		expect(rig.awsCalls).toEqual([]);
+		expect(JSON.stringify(report)).not.toContain(SECRET);
+	});
+
 	test("reports every check ok for a healthy dev env with a topic lookup", async () => {
 		const config = buildConfig();
 		const rig = createRig(config, {
@@ -217,7 +231,9 @@ describe("preflight", () => {
 		const config = buildConfig({ chat: { id: CHAT_ID } });
 		const rig = createRig(config, { eventsStatus: 404 });
 		const report = await rig.run();
-		expect(report.chats).toEqual([{ error: expect.stringContaining(BOT_NAME) }]);
+		expect(report.chats).toEqual([
+			{ error: expect.stringContaining(BOT_NAME) },
+		]);
 		expect(rig.fetched.some((entry) => entry.url.endsWith("/chat/list"))).toBe(
 			false,
 		);
@@ -236,7 +252,9 @@ describe("preflight", () => {
 			{ id: other },
 			{ error: expect.stringContaining("Missing") },
 		]);
-		const checked = rig.fetched.filter((entry) => entry.url.endsWith("/events"));
+		const checked = rig.fetched.filter((entry) =>
+			entry.url.endsWith("/events"),
+		);
 		expect(checked.map((entry) => entry.url)).toEqual([
 			`${rig.env.baseUrl}/chat/${encodeURIComponent(CHAT_ID)}/events`,
 			`${rig.env.baseUrl}/chat/${encodeURIComponent(other)}/events`,
@@ -281,7 +299,9 @@ describe("preflight", () => {
 			chats: [{ id: CHAT_ID, topic: "Team Reviews" }],
 		});
 		const report = await rig.run();
-		const index = completeFunPool().findIndex((entry) => entry.kind === "emoji");
+		const index = completeFunPool().findIndex(
+			(entry) => entry.kind === "emoji",
+		);
 		expect(report.reactions).toBe("ok");
 		expect(report.funPool).toEqual({
 			dropped: [expect.stringContaining(`fun.pool[${index}].reactionId`)],

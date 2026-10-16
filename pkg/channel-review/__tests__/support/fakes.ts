@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressWorkspace, PrHead } from "../../src/address";
+import type { CredentialMeta, CredentialRecord } from "@dg/common";
 import { loadConfig } from "../../src/config";
+import type { CredentialSource } from "../../src/credentials";
 import { createEngine } from "../../src/engine";
 import { channelReviewPaths } from "../../src/paths";
 import type { Log } from "../../src/engine";
@@ -596,4 +598,39 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 		replies: () => provider.replies(),
 		cleanup: () => home.cleanup(),
 	};
+}
+
+export type FakeCredentialSource = CredentialSource & {
+	gets: string[];
+	closed: number;
+};
+
+export function createFakeCredentialSource(
+	entries: Record<string, { value: string; meta?: CredentialMeta }> = {},
+	failure?: Error,
+): FakeCredentialSource {
+	const updatedAt = "2026-10-01T00:00:00.000Z";
+	const source: FakeCredentialSource = {
+		gets: [],
+		closed: 0,
+		list: async () => {
+			if (failure) throw failure;
+			return Object.entries(entries).map(([name, entry]) => ({
+				name,
+				meta: entry.meta ?? {},
+				updatedAt,
+			}));
+		},
+		get: async (name) => {
+			source.gets.push(name);
+			const entry = entries[name];
+			return entry
+				? ({ value: entry.value, meta: entry.meta ?? {}, updatedAt } satisfies CredentialRecord)
+				: undefined;
+		},
+		close: () => {
+			source.closed += 1;
+		},
+	};
+	return source;
 }

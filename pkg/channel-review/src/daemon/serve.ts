@@ -17,6 +17,7 @@ import {
 } from "../providers/teams-relay";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
+import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { startAutomation } from "../automation/start";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
@@ -218,6 +219,14 @@ export async function serve({
 	const effective: ChannelConfig = overrides.runner
 		? { ...config, runner: { ...config.runner, default: overrides.runner } }
 		: config;
+
+	const secrets = await resolveSecrets({
+		envName: env.name,
+		env: seams.env ?? process.env,
+		source: seams.credentials ?? createGrantCredentialSource(),
+	});
+	if (secrets.warning) log.warn(secrets.warning);
+	seams = { ...seams, env: secrets.env };
 
 	let connection: Connection;
 	let funPool: FunEntry[];

@@ -1,6 +1,17 @@
 import { describeError, isRecord, withTimeout } from "@dg/common";
 import type { SystemSeams } from "@dg/common/node";
-import { type ChannelConfig, type EnvName, loadConfig, resolveEnv } from "../config";
+import {
+	type ChannelConfig,
+	type EnvName,
+	loadConfig,
+	resolveEnv,
+} from "../config";
+import {
+	type CredentialSource,
+	createGrantCredentialSource,
+	localSecretName,
+	resolveSecrets,
+} from "../credentials";
 import { channelReviewPaths } from "../paths";
 import { type PreflightReport, preflight } from "../providers/teams-relay";
 import { createRunners } from "../runners";
@@ -16,7 +27,11 @@ import {
 	SERVE_PROBE_TIMEOUT_MS,
 } from "./shared";
 
-type PreflightCall = { config: ChannelConfig; env: ResolvedEnv };
+type PreflightCall = {
+	config: ChannelConfig;
+	env: ResolvedEnv;
+	secret?: string;
+};
 
 type StatusSeams = {
 	platform: PlatformSeam;
@@ -26,6 +41,7 @@ type StatusSeams = {
 	probeTimeoutMs?: number;
 	preflight?: (call: PreflightCall) => Promise<PreflightReport>;
 	env?: Record<string, string | undefined>;
+	credentials?: CredentialSource;
 };
 
 function automationReport(
@@ -156,7 +172,16 @@ export async function status(
 	}
 
 	body.address = `allowAnySender ${config.address.allowAnySender}, senderIds ${config.owner.senderIds.length}`;
-	Object.assign(body, automationReport(config, snapshot, seams.env ?? process.env));
+	const secrets = await resolveSecrets({
+		envName: name,
+		env: seams.env ?? process.env,
+		source: seams.credentials ?? createGrantCredentialSource(system),
+	});
+	body.credentials = {
+		...secrets.secrets,
+		...(secrets.warning ? { warning: secrets.warning } : {}),
+	};
+	Object.assign(body, automationReport(config, snapshot, secrets.env));
 	body.runners = await runnerProbes(
 		seams.runners ?? createRunners(config),
 		seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,
@@ -168,7 +193,11 @@ export async function status(
 			((call: PreflightCall) =>
 				preflight({ ...call, fetch: globalThis.fetch }));
 		try {
-			const report = await check({ config, env });
+			const report = await check({
+				config,
+				env,
+				secret: secrets.env[localSecretName(name)],
+			});
 			const { env: _env, ...checks } = report;
 			body.preflight = checks;
 			failed = hasError(checks);
