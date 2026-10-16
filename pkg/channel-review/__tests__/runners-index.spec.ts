@@ -308,6 +308,25 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv[2]).toBe("/address --no-ci");
 	});
 
+	test("claude runs the deps upgrade with the cooldown, the clone root and the deps tools", async () => {
+		const config = configWith();
+		const h = harness({ config });
+		await h.runners.claude.run({ ...runRequest(), task: "deps", cooldownDays: 3 });
+		expect(h.processes[0]?.argv).toEqual([
+			"/bin/claude",
+			"-p",
+			"/deps-upgrade --cooldown-days 3",
+			"--add-dir",
+			config.automation.cloneRoot,
+			"--permission-prompts",
+			"none",
+			"--permission-mode",
+			"dontAsk",
+			"--allowedTools",
+			...config.deps.allowedTools,
+		]);
+	});
+
 	test("codex builds the exec argv with the thrash skill prompt", async () => {
 		const h = harness();
 		await h.runners.codex.run(runRequest({ spice: 2 }));

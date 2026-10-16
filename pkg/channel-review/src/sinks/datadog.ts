@@ -30,11 +30,11 @@ export function normalizeRepoUrl(url: string): string | undefined {
 	return `${host?.toLowerCase()}/${path}`;
 }
 
-function text(value: unknown): string | undefined {
+export function text(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function toIso(value: unknown): string | undefined {
+export function toIso(value: unknown): string | undefined {
 	const date =
 		typeof value === "number"
 			? new Date(value)
@@ -44,11 +44,11 @@ function toIso(value: unknown): string | undefined {
 	return date !== undefined && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
 }
 
-function records(value: unknown): Json[] {
+export function records(value: unknown): Json[] {
 	return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-function nested(value: unknown, ...path: string[]): unknown {
+export function nested(value: unknown, ...path: string[]): unknown {
 	let current = value;
 	for (const key of path) {
 		if (!isRecord(current)) return undefined;
@@ -73,7 +73,7 @@ export function buildQuery(
 	].join(" ");
 }
 
-function retryAfterMs(header: string | null): number {
+export function retryAfterMs(header: string | null): number {
 	const seconds = header === null || header.trim() === "" ? Number.NaN : Number(header);
 	const value = Number.isFinite(seconds) ? seconds : DEFAULT_RETRY_SECONDS;
 	return Math.min(Math.max(value, MIN_RETRY_SECONDS), MAX_RETRY_SECONDS) * 1000;
