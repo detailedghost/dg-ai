@@ -81,18 +81,20 @@ it("prefers /u/1/ over /u/1/inbox when accountHint is 1", async () => {
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 12 } }));
 });
 
-it("prints matching tab ids and URLs when several /u/1 tabs remain", async () => {
+it("prints matching tab ids and /u/N paths when several /u/1 tabs remain", async () => {
 	const api = browser([
 		{ id: 8, url: "https://mail.proton.me/u/0/inbox" },
-		{ id: 11, url: "https://mail.proton.me/u/1/" },
-		{ id: 12, url: "https://mail.proton.me/u/1" },
+		{ id: 11, url: "https://mail.proton.me/u/1/inbox/conversation/secret-msg-11" },
+		{ id: 12, url: "https://mail.proton.me/u/1/inbox/conversation/secret-msg-12" },
 	]);
 	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
 	expect(result.ok).toBe(false);
 	expect(result.error).toContain("Multiple Proton Mail tabs match /u/1");
-	expect(result.error).toContain("11 https://mail.proton.me/u/1/");
-	expect(result.error).toContain("12 https://mail.proton.me/u/1");
-	expect(result.error).not.toContain("/u/0/inbox");
+	expect(result.error).toContain("11 /u/1");
+	expect(result.error).toContain("12 /u/1");
+	expect(result.error).not.toContain("secret-msg");
+	expect(result.error).not.toContain("https://");
+	expect(result.error).not.toContain("/u/0");
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
 

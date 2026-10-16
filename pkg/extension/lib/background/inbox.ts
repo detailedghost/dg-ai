@@ -69,8 +69,14 @@ function preferAccountTab(tabs: MailTab[], accountHint: string): MailTab[] {
 	if (inboxes.length > 0) return inboxes;
 	return tabs;
 }
+/** Tab id and account path only. Full URLs can carry message or conversation ids. */
 function describeTabs(tabs: MailTab[]): string {
-	return tabs.map((tab) => `${tab.id ?? "?"} ${tab.url ?? ""}`).join("; ");
+	return tabs
+		.map((tab) => {
+			const account = accountPath(tab);
+			return `${tab.id ?? "?"} ${account ? `/u/${account}` : "/u/?"}`;
+		})
+		.join("; ");
 }
 function multipleTabsError(tabs: MailTab[], hint?: string): string {
 	const scope = hint ? ` /u/${hint}` : "";

@@ -84,7 +84,7 @@ login hint for Gmail/Outlook. An optional --tab-id fixes a particular mail tab.
 When several Proton mail tabs are open, accountHint selects the one whose path
 is /u/N. That /u/N tab wins over /u/N/inbox and over a deeper page on the same
 account. If more than one tab still matches, the error lists those tab ids and
-URLs. Several
+/u/N paths. Several
 extension peers on the same session require disconnecting all but one peer. A
 selected account is checked again inside the page before execution.
 
