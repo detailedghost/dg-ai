@@ -1141,6 +1141,31 @@ describe("createTeamsRelayProvider reply", () => {
 		});
 	});
 
+	test("posts a direct message to the owner without a ChatId", async () => {
+		const harness = createHarness({ handlers: [created(["dm-1"])] });
+		await expect(harness.provider.dm({ text: "heads up" })).resolves.toEqual({ messageIds: ["dm-1"] });
+		const [request] = harness.requests;
+		expect(request?.method).toBe("POST");
+		expect(request?.url).toBe(harness.url("/message/teams"));
+		expect(JSON.parse(request?.body ?? "null")).toEqual({
+			To: [SENDER_EMAIL],
+			Body: "heads up",
+			Mode: "direct",
+			TextFormat: "plain",
+		});
+	});
+
+	test("posts TextFormat xml for an html direct message", async () => {
+		const harness = createHarness({ handlers: [created(["dm-1"])] });
+		await harness.provider.dm({ text: "<p>hi</p>", html: true });
+		expect(JSON.parse(harness.requests[0]?.body ?? "null")).toMatchObject({ TextFormat: "xml" });
+	});
+
+	test("fails a direct message on a non-201 status", async () => {
+		const harness = createHarness({ handlers: [json(500, {})] });
+		await expect(harness.provider.dm({ text: "x" })).rejects.toThrow("dm failed with HTTP 500");
+	});
+
 	test("posts TextFormat xml for an html reply", async () => {
 		const harness = createHarness({ handlers: [created(["sent-1"])] });
 		await harness.provider.reply({ chatId: CHAT_ID, text: "<p>hi</p>", html: true });

@@ -33,7 +33,7 @@ type GitlabMerge = {
 	target_project_id: number;
 };
 
-function slug(...parts: string[]): string {
+export function slug(...parts: string[]): string {
 	return parts.join("-").replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 

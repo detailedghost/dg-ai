@@ -49,5 +49,6 @@ export type ChatProvider = {
 		html?: boolean;
 		card?: AdaptiveCard;
 	}): Promise<{ messageIds: string[] }>;
+	dm(request: { text: string; html?: boolean }): Promise<{ messageIds: string[] }>;
 	listReactions(): Promise<string[]>;
 };

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join as joinPath } from "node:path";
+import { dirname, isAbsolute, join as joinPath, resolve, sep } from "node:path";
 import {
 	DgCliError,
 	describeError,
@@ -12,7 +12,13 @@ import {
 	requireString,
 	requireStringArray,
 } from "@dg/common";
-import { ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
+import {
+	ensurePrivateDir,
+	resolveDgPaths,
+	type SystemSeams,
+	writeFileAtomic,
+} from "@dg/common/node";
+import { parseRepo } from "./automation/repos";
 import { type FunEntry, loadFunPool } from "./fun";
 import { isCustomReactionId } from "./providers/teams-relay";
 import { REACTION_STATES, type ReactionState } from "./reactions";
@@ -55,6 +61,48 @@ const REREVIEW_PHRASES = [
 	"good to go",
 ];
 
+export const MIN_LEVELS = ["warning", "error", "fatal"] as const;
+export type MinLevel = (typeof MIN_LEVELS)[number];
+
+export const SCHEDULE_EVERY = ["day", "week"] as const;
+export const SCHEDULE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+const WINDOW_PATTERN = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
+
+export type Schedule = {
+	every: (typeof SCHEDULE_EVERY)[number];
+	day: (typeof SCHEDULE_DAYS)[number];
+	window: string;
+};
+
+export type NameFilter = { include: string[]; exclude: string[] };
+
+export type ErrorWatchConfig = {
+	enabled: boolean;
+	pollMinutes: number;
+	lookbackMinutes: number;
+	minLevel: MinLevel;
+	providers: {
+		datadog: { enabled: boolean; tracks: string[]; services: NameFilter; envs: NameFilter };
+		sentry: { enabled: boolean; projects: NameFilter; envs: NameFilter };
+	};
+	repos: Record<string, { repo: string; branch?: string; autoFix?: boolean }>;
+	autoFix: {
+		enabled: boolean;
+		maxPerHour: number;
+		timeoutMinutes: number;
+		allowedTools: string[];
+	};
+};
+
+export type DepsConfig = {
+	enabled: boolean;
+	timeoutMinutes: number;
+	ciTimeoutMinutes: number;
+	allowedTools: string[];
+	schedule: Schedule;
+	repos: { repo: string; branch?: string; schedule: Partial<Schedule> }[];
+};
+
 export type ChatTarget = { topic?: string; id?: string };
 
 export type ChannelConfig = {
@@ -80,6 +128,9 @@ export type ChannelConfig = {
 	rereview: { phrases: string[] };
 	hosts: { github: string[]; gitlab: string[] };
 	address: { cloneRoot: string; allowAnySender: boolean };
+	automation: { cloneRoot: string; notify: { target: string } };
+	errorWatch: ErrorWatchConfig;
+	deps: DepsConfig;
 };
 
 type Rec = Record<string, unknown>;
@@ -249,7 +300,249 @@ function parseAddress(raw: Rec): ChannelConfig["address"] {
 	return { cloneRoot, allowAnySender };
 }
 
-function parseConfig(raw: unknown): ChannelConfig {
+function flag(rec: Rec, key: string, path: string, fallback: boolean): boolean {
+	const value = rec[key] ?? fallback;
+	if (typeof value !== "boolean") fail(`${join(path, key)} must be a boolean`);
+	return value;
+}
+
+function count(rec: Rec, key: string, path: string, fallback: number): number {
+	const value = rec[key] ?? fallback;
+	requireFiniteNumber(value, join(path, key));
+	if (!Number.isInteger(value) || value <= 0) {
+		fail(`${join(path, key)} must be a whole number greater than 0`);
+	}
+	return value;
+}
+
+function nameList(value: unknown, path: string): string[] {
+	const list = value ?? [];
+	requireStringArray(list, path);
+	for (const [index, name] of list.entries()) {
+		if (name.trim() === "") fail(`${path}[${index}] must not be empty`);
+	}
+	return list.map((name) => name.trim());
+}
+
+function nameFilter(parent: Rec, key: string, parentPath: string): NameFilter {
+	const path = join(parentPath, key);
+	const rec = section(parent, key, parentPath, ["include", "exclude"]);
+	return {
+		include: nameList(rec.include, join(path, "include")),
+		exclude: nameList(rec.exclude, join(path, "exclude")),
+	};
+}
+
+function schedule(rec: Rec, path: string): Partial<Schedule> {
+	rejectUnknown(rec, ["every", "day", "window"], path);
+	if (rec.every !== undefined) requireOneOf(rec.every, join(path, "every"), SCHEDULE_EVERY);
+	if (rec.day !== undefined) requireOneOf(rec.day, join(path, "day"), SCHEDULE_DAYS);
+	if (rec.window !== undefined) {
+		requireString(rec.window, join(path, "window"), { nonEmpty: true });
+		if (!WINDOW_PATTERN.test(rec.window)) {
+			fail(`${join(path, "window")} must look like 02:00-05:00`);
+		}
+	}
+	return {
+		every: rec.every as Schedule["every"] | undefined,
+		day: rec.day as Schedule["day"] | undefined,
+		window: rec.window as string | undefined,
+	};
+}
+
+function githubHostsOf(hosts: ChannelConfig["hosts"]): string[] {
+	return ["github.com", ...hosts.github];
+}
+
+function repoRef(rec: Rec, path: string, hosts: ChannelConfig["hosts"]): string {
+	const value = required(rec, "repo", path);
+	try {
+		parseRepo(value, githubHostsOf(hosts));
+	} catch (err) {
+		fail(`${join(path, "repo")} is invalid: ${describeError(err)}`);
+	}
+	return value;
+}
+
+function parseAutomation(
+	raw: Rec,
+	seams: SystemSeams,
+): ChannelConfig["automation"] {
+	const rec = section(raw, "automation", "", ["cloneRoot", "notify"]);
+	const fallback = joinPath(resolveDgPaths(seams).stateDir, "channel-review", "clones");
+	const cloneRoot = text(rec, "cloneRoot", "automation", fallback);
+	if (!isAbsolute(cloneRoot)) fail("automation.cloneRoot must be an absolute path");
+	const reserved = joinPath(seams.homeDir ?? homedir(), "code");
+	const resolved = resolve(cloneRoot);
+	if (resolved === reserved || resolved.startsWith(`${reserved}${sep}`)) {
+		fail(`automation.cloneRoot must not be under ${reserved}${sep}`);
+	}
+	const notify = section(rec, "notify", "automation", ["target"]);
+	return { cloneRoot, notify: { target: text(notify, "target", "automation.notify", "owner") } };
+}
+
+function cloneTools(cloneRoot: string): string[] {
+	const clones = `/${cloneRoot}/**`;
+	return [
+		"Agent",
+		`Edit(${clones})`,
+		`Read(${clones})`,
+		`Grep(${clones})`,
+		`Glob(${clones})`,
+		"Bash(git status:*)",
+		"Bash(git diff:*)",
+		"Bash(git log:*)",
+		"Bash(bun:*)",
+		"Bash(npm:*)",
+		"Bash(npx:*)",
+		"Bash(dotnet:*)",
+		"Bash(pytest:*)",
+	];
+}
+
+function toolList(rec: Rec, path: string, fallback: string[]): string[] {
+	const tools = rec.allowedTools ?? fallback;
+	requireStringArray(tools, join(path, "allowedTools"));
+	return tools;
+}
+
+function parseErrorWatch(
+	raw: Rec,
+	automation: ChannelConfig["automation"],
+	hosts: ChannelConfig["hosts"],
+): ErrorWatchConfig {
+	const rec = section(raw, "errorWatch", "", [
+		"enabled",
+		"pollMinutes",
+		"lookbackMinutes",
+		"minLevel",
+		"providers",
+		"repos",
+		"autoFix",
+	]);
+	const path = "errorWatch";
+	const minLevel = rec.minLevel ?? "error";
+	requireOneOf(minLevel, "errorWatch.minLevel", MIN_LEVELS);
+
+	const providers = section(rec, "providers", path, ["datadog", "sentry"]);
+	const datadog = section(providers, "datadog", "errorWatch.providers", [
+		"enabled",
+		"tracks",
+		"services",
+		"envs",
+	]);
+	const sentry = section(providers, "sentry", "errorWatch.providers", [
+		"enabled",
+		"projects",
+		"envs",
+	]);
+	const tracks = datadog.tracks ?? ["trace"];
+	requireStringArray(tracks, "errorWatch.providers.datadog.tracks");
+	if (tracks.length === 0) fail("errorWatch.providers.datadog.tracks must not be empty");
+
+	const reposRaw = section(rec, "repos", path, Object.keys(rec.repos ?? {}));
+	const repos: ErrorWatchConfig["repos"] = {};
+	for (const service of Object.keys(reposRaw)) {
+		const entryPath = `errorWatch.repos.${service}`;
+		const entry = section(reposRaw, service, "errorWatch.repos", ["repo", "branch", "autoFix"]);
+		const autoFix = entry.autoFix;
+		if (autoFix !== undefined && typeof autoFix !== "boolean") {
+			fail(`${entryPath}.autoFix must be a boolean`);
+		}
+		repos[service] = {
+			repo: repoRef(entry, entryPath, hosts),
+			branch: optionalText(entry, "branch", entryPath),
+			autoFix,
+		};
+	}
+
+	const autoFix = section(rec, "autoFix", path, [
+		"enabled",
+		"maxPerHour",
+		"timeoutMinutes",
+		"allowedTools",
+	]);
+	return {
+		enabled: flag(rec, "enabled", path, false),
+		pollMinutes: minutes(rec.pollMinutes ?? 5, "errorWatch.pollMinutes"),
+		lookbackMinutes: minutes(rec.lookbackMinutes ?? 60, "errorWatch.lookbackMinutes"),
+		minLevel,
+		providers: {
+			datadog: {
+				enabled: flag(datadog, "enabled", "errorWatch.providers.datadog", false),
+				tracks,
+				services: nameFilter(datadog, "services", "errorWatch.providers.datadog"),
+				envs: nameFilter(datadog, "envs", "errorWatch.providers.datadog"),
+			},
+			sentry: {
+				enabled: flag(sentry, "enabled", "errorWatch.providers.sentry", false),
+				projects: nameFilter(sentry, "projects", "errorWatch.providers.sentry"),
+				envs: nameFilter(sentry, "envs", "errorWatch.providers.sentry"),
+			},
+		},
+		repos,
+		autoFix: {
+			enabled: flag(autoFix, "enabled", "errorWatch.autoFix", true),
+			maxPerHour: count(autoFix, "maxPerHour", "errorWatch.autoFix", 2),
+			timeoutMinutes: minutes(autoFix.timeoutMinutes ?? 45, "errorWatch.autoFix.timeoutMinutes"),
+			allowedTools: toolList(autoFix, "errorWatch.autoFix", cloneTools(automation.cloneRoot)),
+		},
+	};
+}
+
+function parseDeps(
+	raw: Rec,
+	automation: ChannelConfig["automation"],
+	hosts: ChannelConfig["hosts"],
+): DepsConfig {
+	const rec = section(raw, "deps", "", [
+		"enabled",
+		"timeoutMinutes",
+		"ciTimeoutMinutes",
+		"allowedTools",
+		"schedule",
+		"repos",
+	]);
+	const base = schedule(section(rec, "schedule", "deps", ["every", "day", "window"]), "deps.schedule");
+	const list = rec.repos ?? [];
+	if (!Array.isArray(list)) fail("deps.repos must be an array");
+	const repos = list.map((entry, index) => {
+		const path = `deps.repos[${index}]`;
+		requireRecord(entry, path);
+		rejectUnknown(entry, ["repo", "branch", "schedule"], path);
+		const own = section(entry, "schedule", path, ["every", "day", "window"]);
+		return {
+			repo: repoRef(entry, path, hosts),
+			branch: optionalText(entry, "branch", path),
+			schedule: schedule(own, `${path}.schedule`),
+		};
+	});
+	const seen = new Set<string>();
+	for (const { repo } of repos) {
+		if (seen.has(repo)) fail(`deps.repos has a duplicate repo ${repo}`);
+		seen.add(repo);
+	}
+	const deps = [
+		"Read(~/.claude/skills/deps-upgrade/**)",
+		`Bash(${homedir()}/scripts/bin/deps-upgrade-helper:*)`,
+		"Bash(git:*)",
+		"Bash(gh:*)",
+	];
+	return {
+		enabled: flag(rec, "enabled", "deps", false),
+		timeoutMinutes: minutes(rec.timeoutMinutes ?? 90, "deps.timeoutMinutes"),
+		ciTimeoutMinutes: minutes(rec.ciTimeoutMinutes ?? 60, "deps.ciTimeoutMinutes"),
+		allowedTools: toolList(rec, "deps", [...cloneTools(automation.cloneRoot), ...deps]),
+		schedule: {
+			every: base.every ?? "week",
+			day: base.day ?? "mon",
+			window: base.window ?? "02:00-05:00",
+		},
+		repos,
+	};
+}
+
+function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 	requireRecord(raw, "config");
 	rejectUnknown(
 		raw,
@@ -267,6 +560,9 @@ function parseConfig(raw: unknown): ChannelConfig {
 			"rereview",
 			"hosts",
 			"address",
+			"automation",
+			"errorWatch",
+			"deps",
 		],
 		"",
 	);
@@ -335,6 +631,7 @@ function parseConfig(raw: unknown): ChannelConfig {
 	const hostsRaw = section(raw, "hosts", "", ["github", "gitlab"]);
 	const address = parseAddress(raw);
 	const hosts = { github: hostList(hostsRaw, "github"), gitlab: hostList(hostsRaw, "gitlab") };
+	const automation = parseAutomation(raw, seams);
 
 	return {
 		provider,
@@ -360,6 +657,9 @@ function parseConfig(raw: unknown): ChannelConfig {
 		rereview: { phrases },
 		hosts,
 		address,
+		automation,
+		errorWatch: parseErrorWatch(raw, automation, hosts),
+		deps: parseDeps(raw, automation, hosts),
 	};
 }
 
@@ -376,10 +676,10 @@ function parseJson(path: string, source: string): unknown {
 	}
 }
 
-export function loadConfig(path: string): ChannelConfig {
+export function loadConfig(path: string, seams: SystemSeams = {}): ChannelConfig {
 	const raw = parseJson(path, readText(path));
 	try {
-		return parseConfig(raw);
+		return parseConfig(raw, seams);
 	} catch (err) {
 		if (err instanceof TypeError) {
 			throw new DgCliError(`invalid config ${path}: ${err.message}`);

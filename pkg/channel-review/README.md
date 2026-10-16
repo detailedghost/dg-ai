@@ -98,8 +98,8 @@ timeout, and closes it. A 404 there reports that the bot is not in the chat.
 | --- | --- |
 | `To` | `[owner.email]` |
 | `Body` | Message text. |
-| `ChatId` | Target chat id. |
-| `Mode` | `group` |
+| `ChatId` | Target chat id. Omit for a direct message to the owner. |
+| `Mode` | `group`, or `direct` for a direct message to the owner (`To` is `[owner.email]`, no `ChatId`). |
 | `TextFormat` | `plain`, or `xml` for an HTML body (help replies) |
 | `AdaptiveCard` | Optional: `{ "ContentType": "application/vnd.microsoft.card.adaptive", "Content": <card> }`. The card is version 1.4 with `Image` elements (fun GIFs). |
 
