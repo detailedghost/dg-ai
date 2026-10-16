@@ -124,6 +124,13 @@ describe("filter routing feature", () => {
 		expect(dataset.folders).toContainEqual(
 			expect.objectContaining({ name: "Updates", path: "Updates" }),
 		);
+		const savedFilters = await Bun.file(`${dir}/filters.json`).json();
+		expect(savedFilters.namingConventions).toContainEqual(
+			expect.objectContaining({
+				targetFolder: "Updates",
+				sourceFilterName: "Updates - Projects",
+			}),
+		);
 		const filter = dataset.filters.find(
 			(row: { name: string }) => row.name === "Updates - Projects",
 		);
