@@ -1,8 +1,13 @@
 import type { CrCode } from "../errors";
 
-export const RUNNER_NAMES = ["claude", "codex", "copilot"] as const;
+export const RUNNER_NAMES = ["claude", "codex", "copilot", "grok"] as const;
 
 export type RunnerName = (typeof RUNNER_NAMES)[number];
+
+/** Headless stdout formats of the xAI Grok Build CLI (`grok --output-format`). */
+export const GROK_OUTPUT_FORMATS = ["plain", "json", "streaming-json"] as const;
+
+export type GrokOutputFormat = (typeof GROK_OUTPUT_FORMATS)[number];
 
 type RunnerCode = Extract<CrCode, "CR-201" | "CR-202">;
 

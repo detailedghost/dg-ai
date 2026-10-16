@@ -43,3 +43,52 @@ run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs -
 description = "Start the channel-review daemon and follow its log"
 depends = ["remote:start"]
 run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+
+[tasks."test:extension"]
+description = "Run the browser extension unit tests"
+dir = "pkg/extension"
+run = "bun test"
+
+[tasks."test:agent"]
+description = "Run the dg-agent unit tests"
+dir = "pkg/dg-agent"
+run = "bun test"
+
+[tasks."test:daemon"]
+description = "Run the dg-daemon unit tests"
+dir = "pkg/dg-daemon"
+run = "bun test"
+
+[tasks."test:runners"]
+description = "Run the channel-review runner tests, including a live CLI check when that binary is on PATH"
+dir = "pkg/channel-review"
+run = """
+if [ "${DG_TEST_CLAUDE_CLI:-}" != "1" ] && command -v claude >/dev/null 2>&1; then
+  DG_TEST_CLAUDE_CLI=1
+  export DG_TEST_CLAUDE_CLI
+fi
+if [ "${DG_TEST_GROK_CLI:-}" != "1" ] && command -v grok >/dev/null 2>&1; then
+  DG_TEST_GROK_CLI=1
+  export DG_TEST_GROK_CLI
+fi
+bun test \
+  __tests__/runners-capture.spec.ts \
+  __tests__/runners-cli-fixture.spec.ts \
+  __tests__/runners-cli-live.spec.ts \
+  __tests__/runners-grok-stream.spec.ts \
+  __tests__/runners-index.spec.ts \
+  __tests__/runners-probe.spec.ts \
+  __tests__/runners-spawn.spec.ts
+"""
+
+[tasks."test:runners:live"]
+description = "Run the opt-in Claude and Grok CLI runner tests (requires both binaries on PATH and a signed-in session)"
+dir = "pkg/channel-review"
+run = """
+DG_TEST_CLAUDE_CLI=1 DG_TEST_GROK_CLI=1 bun test __tests__/runners-cli-live.spec.ts
+"""
+
+[tasks."test:runners:mutate"]
+description = "Mutation-test the channel-review runners against the runner suite"
+dir = "pkg/channel-review"
+run = "bunx stryker run"

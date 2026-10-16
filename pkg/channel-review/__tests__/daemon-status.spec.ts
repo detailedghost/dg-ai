@@ -197,7 +197,12 @@ describe("status", () => {
 		h.runners.copilot.probeResult = { ok: false, code: "CR-206" };
 		const { result } = run(h);
 		await result;
-		expect(printed(h).runners).toEqual({ claude: "ok", codex: "CR-201", copilot: "CR-206" });
+		expect(printed(h).runners).toEqual({
+			claude: "ok",
+			codex: "CR-201",
+			copilot: "CR-206",
+			grok: "ok",
+		});
 	});
 
 	test("exits 0 when the only finding is a dropped fun pool emoji", async () => {
