@@ -141,6 +141,8 @@ DG_TEST_CLAUDE_CLI=1 bun test runners-cli-live
 DG_TEST_GROK_CLI=1 bun test runners-cli-live
 ```
 
+From the repository root, `mise run test:runners:live` runs both.
+
 Each one checks sign-in (`claude auth status`, or `grok models`) and then sends a one-line prompt through the same flags and spawn path the runner uses. It does not post a pull-request review. Claude needs an existing login. Grok needs `grok login` or `XAI_API_KEY`. The fixture tests in `runners-cli-fixture.spec.ts` always run and do not need credentials.
 
 Add the bot for the env (`envs.<name>.botName`) to every review chat. The
@@ -326,3 +328,9 @@ The repository's mise config has `remote:*` tasks for local runs:
 `remote:stop`, `remote:run`, and `remote:status` wrap those commands,
 `remote:logs` prints the log, `remote:follow` follows it, and `remote:up`
 starts the daemon and follows the log. Set `CR_ENV=prod` to read the prod log.
+
+`test:*` tasks run one component. `test:extension`, `test:agent`, and
+`test:daemon` run that component's unit tests. `test:runners` runs the
+channel-review runner tests, and also the live Claude or Grok check when
+that binary is already on `PATH`. `test:runners:live` always runs both
+opt-in CLI checks. `test:runners:mutate` mutation-tests the runners.
