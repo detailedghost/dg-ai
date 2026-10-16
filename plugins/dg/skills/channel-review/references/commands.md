@@ -261,7 +261,7 @@ the shipped catalog exactly.
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |
 | `CR-204` | `The review took longer than {minutes} minutes, so I stopped it. Try again with a lower ~spice.` | Lower the spice or inspect the timeout. |
-| `CR-205` | `The review service stopped before the review finished. Post the request again to restart it.` | Post the request again after the daemon starts. |
+| `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
@@ -269,3 +269,8 @@ the shipped catalog exactly.
 | `CR-304` | `I couldn't read which pull requests are stacked on this one, so I didn't review anything. Try again without ~stacked.` | Retry without ~stacked or repair stack metadata. |
 | `CR-305` | `That pull request comes from a fork, and I can't push to a fork, so I didn't address it.` | Run `/address` by hand, or move the branch into the main repository. |
 | `CR-306` | `I couldn't clone the pull request branch on {owner}'s computer, so I didn't address it. Check that the branch still exists, then try again.` | Check the branch, the clone root, and the daemon log. |
+| `CR-401` | `I found no allowed repository for this error, so I didn't try a fix. Ask {owner} to add the service under errorWatch.repos.` | Add the service under `errorWatch.repos`. |
+| `CR-402` | `The hourly limit for automatic fixes is reached, so this fix waits. I try again on the next poll.` | Wait for the next poll, or raise `errorWatch.autoFix.maxPerHour`. |
+| `CR-403` | `A fix pull request for this error is already open, so I didn't start another.` | Review the open bot PR. |
+| `CR-404` | `The fix agent changed nothing, so I opened no pull request. Check this error by hand.` | Inspect the job log and fix the error by hand. |
+| `CR-405` | `A git or GitHub step failed on {owner}'s computer, so I opened no pull request. Check that git and gh are signed in there.` | Check `git` and `gh` sign-in, then inspect the daemon log. |

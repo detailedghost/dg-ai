@@ -23,6 +23,11 @@ const CODES: CrCode[] = [
 	"CR-304",
 	"CR-305",
 	"CR-306",
+	"CR-401",
+	"CR-402",
+	"CR-403",
+	"CR-404",
+	"CR-405",
 ];
 
 describe("ERROR_CATALOG", () => {

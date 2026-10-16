@@ -25,6 +25,24 @@ export function parseRepo(value: string, githubHosts: readonly string[] = [GITHU
 	return { host: lowered, owner, repo };
 }
 
+export function normalizeRepoTag(
+	tag: string,
+	githubHosts: readonly string[] = [GITHUB_COM],
+): string | undefined {
+	const path = tag
+		.trim()
+		.replace(/^[A-Za-z][\w+.-]*:\/\//, "")
+		.replace(/^[^/@]+@/, "")
+		.replace(/^([^/:]+):/, "$1/")
+		.replace(/\/+$/, "")
+		.replace(/\.git$/, "");
+	try {
+		return repoKey(parseRepo(path, githubHosts)).toLowerCase();
+	} catch {
+		return undefined;
+	}
+}
+
 export function repoKey({ host, owner, repo }: RepoRef): string {
 	return `${host}/${owner}/${repo}`;
 }

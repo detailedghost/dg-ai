@@ -350,7 +350,7 @@ function schedule(rec: Rec, path: string): Partial<Schedule> {
 	};
 }
 
-function githubHostsOf(hosts: ChannelConfig["hosts"]): string[] {
+export function githubHostsOf(hosts: ChannelConfig["hosts"]): string[] {
 	return ["github.com", ...hosts.github];
 }
 

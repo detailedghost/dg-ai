@@ -510,6 +510,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 			minimalConfigJson({
 				owner: { token: OWNER_TOKEN, email: SENDER_EMAIL, senderIds: [OWNER_ID] },
 				address: { cloneRoot: join(home.dir, "clones") },
+				automation: { cloneRoot: join(home.dir, "auto-clones") },
 				...options.configExtra,
 			}),
 		),

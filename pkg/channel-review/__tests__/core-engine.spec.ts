@@ -641,7 +641,7 @@ describe("engine stop and recover", () => {
 
 	test("recover skips a tree older than the longest job timeout", async () => {
 		const h = setup();
-		staleCurrent(h, 61);
+		staleCurrent(h, 91);
 		const killed: number[] = [];
 		await h.engine.recover({
 			isAlive: () => true,
