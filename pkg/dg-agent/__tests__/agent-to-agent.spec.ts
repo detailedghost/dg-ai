@@ -1,7 +1,13 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type SessionBootstrap } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import {
+	applyConnectionPragmas,
+	DEFAULT_BUSY_TIMEOUT_MS,
+	resolveDgPaths,
+} from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -62,21 +68,67 @@ function recv(
 	return runCli(dgHome, port, ["recv", "--session", as.sessionId, ...args]);
 }
 
-function tamperDb(sql: string): void {
+/**
+ * Opens the daemon's live database. `busy_timeout` is per connection and
+ * defaults to 0, so a statement issued while the daemon is writing the session
+ * row fails immediately with SQLITE_BUSY unless this connection waits.
+ */
+function openDaemonDb(readonly = false): Database {
 	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const raw = new Database(paths.dbPath, { strict: true });
+	const raw = new Database(paths.dbPath, {
+		strict: true,
+		...(readonly ? { readonly: true } : {}),
+	});
+	applyConnectionPragmas(raw);
+	return raw;
+}
+
+function tamperDb(sql: string): void {
+	const raw = openDaemonDb();
 	raw.run(sql);
 	raw.close(true);
 }
 
 function queuedRecipients(): string[] {
-	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	const raw = new Database(paths.dbPath, { strict: true, readonly: true });
+	const raw = openDaemonDb(true);
 	const rows = raw
 		.query("SELECT recipient_identity FROM agent_messages ORDER BY seq")
 		.all() as { recipient_identity: string }[];
 	raw.close(true);
 	return rows.map((row) => row.recipient_identity);
+}
+
+/** How long the extra writer keeps the reserved lock. Long enough that the tamper cannot sneak in after COMMIT. */
+const LOCK_HELD_MS = 800;
+/** Floor for the tamper call. Below this, the UPDATE did not wait on the lock. */
+const LOCK_WAIT_FLOOR_MS = 200;
+
+function writeLockScript(): string {
+	return `
+import { writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+const db = new Database(process.env.DG_LOCK_DB, { strict: true });
+db.run("PRAGMA busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}");
+db.run("BEGIN IMMEDIATE");
+writeFileSync(process.env.DG_LOCK_SIGNAL, "locked");
+await Bun.sleep(${LOCK_HELD_MS});
+db.run("COMMIT");
+db.close(true);
+`;
+}
+
+function spawnWriteLock(dbPath: string, signalPath: string) {
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value !== undefined) env[key] = value;
+	}
+	env.DG_LOCK_DB = dbPath;
+	env.DG_LOCK_SIGNAL = signalPath;
+	return Bun.spawn([process.execPath, "-e", writeLockScript()], {
+		env,
+		stdout: "ignore",
+		stderr: "pipe",
+	});
 }
 
 function outcomeOf(result: CliResult): {
@@ -193,7 +245,29 @@ describe("one agent addressing another by identity", () => {
 			() => (queuedRecipients().length > 0 ? true : undefined),
 			3000,
 		);
-		tamperDb("UPDATE agent_messages SET sender_identity = 'forged'");
+
+		// Session persistence writes on CLI attach, touch, and socket close, so
+		// this UPDATE overlaps a live writer. Hold one explicitly: a connection
+		// with no busy timeout throws SQLITE_BUSY here and never forges the row.
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const signal = join(dgHome, "write-lock-signal");
+		const holder = spawnWriteLock(paths.dbPath, signal);
+		try {
+			await waitForValue(
+				() => (existsSync(signal) ? true : undefined),
+				3000,
+				"write lock",
+			);
+			const started = Date.now();
+			tamperDb("UPDATE agent_messages SET sender_identity = 'forged'");
+			expect(Date.now() - started).toBeGreaterThanOrEqual(LOCK_WAIT_FLOOR_MS);
+		} finally {
+			const code = await holder.exited;
+			if (code !== 0) {
+				const stderr = await new Response(holder.stderr).text();
+				throw new Error(`write-lock holder exited ${code}: ${stderr}`);
+			}
+		}
 
 		expect(outcomeOf(await recv(port, beta)).outcome).toBe("empty");
 
@@ -201,7 +275,7 @@ describe("one agent addressing another by identity", () => {
 		expect(delivered(await recv(port, beta)).body).toBe(
 			"and this one still arrives",
 		);
-	});
+	}, 20_000);
 
 	it("trims the identity it was handed, so a padded --to still reaches its agent", async () => {
 		const { port, alpha, beta } = await bootFleet();
