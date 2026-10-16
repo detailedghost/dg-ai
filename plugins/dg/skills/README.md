@@ -11,6 +11,7 @@ folder holds one skill:
 | `chat/` | Live browser chat with a human through the dg-agent CLI and dg-daemon daemon |
 | `inbox-cleanup/` | Reviewed Proton Mail, Gmail, and Outlook cleanup with redacted model feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
+| `google-sms-cleanup/` | Messages for Web cleanup that never deletes, never sends without per-message approval, and flags ambiguous threads |
 
 ## Structure
 
@@ -33,10 +34,12 @@ skills/
   channel-review/
     SKILL.md          AI instruction file (how the agent runs channel reviews)
     references/       Setup, commands, reactions, and error catalog
+  google-sms-cleanup/
+    SKILL.md          AI instruction file (how the agent cleans a Google Messages inbox)
 ```
 
 The CLI implementation lives in
-[`pkg/skills-cli/`](../../../pkg/skills-cli/README.md). `chat/` is the one skill
-that does not run `dg-skills`: it runs the `dg-agent` CLI binary, released
-separately under `agent-v*`, which in turn launches the `dg-daemon` binary
-(`daemon-v*`) sitting beside it.
+[`pkg/skills-cli/`](../../../pkg/skills-cli/README.md). `chat/` does not run
+`dg-skills`: it runs the `dg-agent` CLI binary, released separately under
+`agent-v*`, which in turn launches the `dg-daemon` binary (`daemon-v*`) sitting
+beside it. `google-sms-cleanup/` is instruction-only and does not run a CLI.
