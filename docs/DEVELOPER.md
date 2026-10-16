@@ -17,6 +17,7 @@ plugins/dg/
                (the canonical tree; both .claude-plugin/plugin.json and
                plugins/dg/.codex-plugin/plugin.json point here)
     channel-review/ SKILL.md and setup/command references
+    google-sms-cleanup/ SKILL.md for Messages for Web cleanup
 docs/          Documentation
 .github/       CI workflows
 ```

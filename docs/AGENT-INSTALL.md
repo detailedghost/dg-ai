@@ -3,7 +3,7 @@
 How an AI agent (Codex or Claude Code) sets up this repository end-to-end,
 across **two components**:
 
-1. **The DeeGee plugin** (`dg`) — provides browser, demo, prototype, chat, inbox cleanup, and channel review skills.
+1. **The DeeGee plugin** (`dg`) — provides browser, demo, prototype, chat, inbox cleanup, channel review, and Google SMS cleanup skills.
 1. **The `dg-ai-extension` browser extension** — the companion that groups tabs
    and drives in-browser demo tours.
 
@@ -42,7 +42,7 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
-shared browser, demo, proto, chat, inbox-cleanup, and channel-review skills into `$CODEX_HOME/skills` (default
+shared browser, demo, proto, chat, inbox-cleanup, channel-review, and google-sms-cleanup skills into `$CODEX_HOME/skills` (default
 `~/.codex/skills`). Start a new Codex thread after installation.
 
 ## CLI-only install
@@ -67,7 +67,8 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 does the same from an installed binary. Combined with `DG_INSTALL_CODEX=1`, only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
-- CLI-only skills: `channel-review`, and `inbox-cleanup` with explicit
+- CLI-only skills: `channel-review`, `google-sms-cleanup` (instruction-only;
+  it drives Messages for Web), and `inbox-cleanup` with explicit
   `--data-path` fixtures.
 - Extension skills: `browser`, `demo`, `proto`, `chat` and `overwatch`. Each
   declares `requires: [extension]` in its SKILL.md. In a CLI-only install,
@@ -209,6 +210,15 @@ ______________________________________________________________________
 | Load unpacked in the browser | No — manual browser UI |
 | `launch` cold-start with extension | Yes (browser fully closed) |
 | `batch-open` / `demo` / `rerun` | Yes (extension loaded) |
+
+## Google SMS cleanup
+
+The shared google-sms-cleanup skill is instruction-only. It does not call
+`dg-skills`, `dg-agent`, or the extension. Open Messages for Web in the browser.
+The defaults never delete a conversation or message, never send without
+explicit per-message approval, and list ambiguous threads instead of acting.
+Messages for Web cannot star, rename, or file conversations; give the user the
+phone steps for those.
 
 ## Inbox cleanup
 

@@ -136,6 +136,14 @@ describe("skill metadata", () => {
 			"rerun",
 		]);
 	});
+
+	test("google-sms-cleanup ships with the CLI skills and does not require the extension", () => {
+		const names = readdirSync(skillsDir).filter((entry) =>
+			existsSync(join(skillsDir, entry, "SKILL.md")),
+		);
+		expect(names).toContain("google-sms-cleanup");
+		expect(requiresExtension("google-sms-cleanup")).toBe(false);
+	});
 });
 
 describe.skipIf(process.platform === "win32")("bootstrap.sh flag", () => {
