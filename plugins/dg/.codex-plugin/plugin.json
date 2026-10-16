@@ -1,7 +1,7 @@
 {
 	"name": "dg",
 	"description": "Browser, live chat, prototypes, channel review, and reviewed Proton Mail, Gmail, and Outlook cleanup.",
-	"version": "1.12.0",
+	"version": "1.13.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
