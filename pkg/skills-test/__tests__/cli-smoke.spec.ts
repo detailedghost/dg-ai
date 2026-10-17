@@ -29,7 +29,25 @@ describe("dg-skills CLI", () => {
 	test("--help exits 0 and lists every command the skills use", async () => {
 		const { code, out } = await runCli(["--help"]);
 		expect(code).toBe(0);
-		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review", "stash", "clipboard-image", "vcs-provider", "proxy"]) {
+		for (const cmd of [
+			"install",
+			"batch-open",
+			"launch",
+			"demo",
+			"rerun",
+			"channel-review",
+			"stash",
+			"clipboard-image",
+			"vcs-provider",
+			"proxy",
+			"address",
+			"thrash",
+			"chain",
+			"file",
+			"deps-upgrade",
+			"meaningful",
+			"catchup",
+		]) {
 			expect(out).toContain(cmd);
 		}
 	});
@@ -37,7 +55,16 @@ describe("dg-skills CLI", () => {
 	test("stash --help documents all storage scopes without starting a service", async () => {
 		const { code, out } = await runCli(["stash", "--help"]);
 		expect(code).toBe(0);
-		for (const flag of ["--scratch", "--state", "--agents", "--main", "--global", "--unique", "--root", "--dir"]) {
+		for (const flag of [
+			"--scratch",
+			"--state",
+			"--agents",
+			"--main",
+			"--global",
+			"--unique",
+			"--root",
+			"--dir",
+		]) {
 			expect(out).toContain(flag);
 		}
 	});
@@ -51,9 +78,94 @@ describe("dg-skills CLI", () => {
 	test("vcs-provider --help lists the complete provider command inventory", async () => {
 		const { code, out } = await runCli(["vcs-provider", "--help"]);
 		expect(code).toBe(0);
-		for (const command of ["detect", "capabilities", "auth", "list-prs", "list-issues", "view-issue", "view-pr", "list-threads", "create-pr", "merged-pr-for-branch"]) {
+		for (const command of [
+			"detect",
+			"capabilities",
+			"auth",
+			"list-prs",
+			"list-issues",
+			"view-issue",
+			"view-pr",
+			"list-threads",
+			"create-pr",
+			"merged-pr-for-branch",
+		]) {
 			expect(out).toContain(command);
 		}
+	});
+
+	test("address --help lists every verb without accessing a provider", async () => {
+		const { code, out } = await runCli(["address", "--help"]);
+		expect(code).toBe(0);
+		for (const command of [
+			"probe",
+			"view-pr",
+			"gather",
+			"gather-unresolved",
+			"check-bot-review",
+			"gather-ci-failures",
+			"reply",
+			"resolve",
+			"resolve-silent",
+			"resolve-with-reply",
+			"commit-push",
+			"batch-close",
+			"check-copilot",
+			"request-copilot",
+			"fetch-copilot-review",
+			"count-copilot-reviews",
+			"verify-copilot-engaged",
+			"check-no-findings",
+			"await-copilot-review",
+		]) {
+			expect(out).toContain(command);
+		}
+	});
+
+	test("thrash --help lists review operations without accessing a provider", async () => {
+		const { code, out } = await runCli(["thrash", "--help"]);
+		expect(code).toBe(0);
+		for (const command of ["diff", "compile", "post", "stack", "tally"]) {
+			expect(out).toContain(command);
+		}
+	});
+
+	test("deps-upgrade --help lists its complete operation inventory", async () => {
+		const { code, out } = await runCli(["deps-upgrade", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"prepare",
+			"list-prs",
+			"pr-body",
+			"audit",
+			"install",
+			"audit-fix",
+			"bump-dep",
+			"bump-action",
+			"commit",
+			"status",
+			"reset-deps",
+			"close-prs",
+			"cooldown",
+			"push-pr",
+			"ready-when-green",
+			"summary",
+		]) {
+			expect(out).toContain(verb);
+		}
+	});
+
+	test("meaningful --help lists history reshaping operations", async () => {
+		const { code, out } = await runCli(["meaningful", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["info", "apply", "apply-json", "abort"])
+			expect(out).toContain(verb);
+	});
+
+	test("catchup --help documents default and disabled pushing", async () => {
+		const { code, out } = await runCli(["catchup", "--help"]);
+		expect(code).toBe(0);
+		for (const flag of ["--push", "--no-push"]) expect(out).toContain(flag);
 	});
 
 	test("proxy --help documents backend selection without starting a backend", async () => {
@@ -71,7 +183,15 @@ describe("dg-skills CLI", () => {
 	test("channel-review --help lists its subcommands", async () => {
 		const { code, out } = await runCli(["channel-review", "--help"]);
 		expect(code).toBe(0);
-		for (const cmd of ["start", "stop", "status", "logs", "run", "env", "emojis"]) {
+		for (const cmd of [
+			"start",
+			"stop",
+			"status",
+			"logs",
+			"run",
+			"env",
+			"emojis",
+		]) {
 			expect(out).toContain(cmd);
 		}
 	});

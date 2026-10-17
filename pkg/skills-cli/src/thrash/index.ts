@@ -1,0 +1,420 @@
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { defineCommand, EXIT } from "../utils/legacy-command";
+import { scratchPath } from "@dg/common/node";
+import { git, resolveBaseSha } from "../utils/git";
+import { detectProvider } from "../provider/detect";
+import { getProviderForUrl } from "../provider/index";
+import {
+	type ProviderKind,
+	type PrRef,
+	parsePrNumberArg,
+	parseRepoRef,
+	type RepoRef,
+	type ReviewThread,
+} from "../provider/types";
+import {
+	addressFileName,
+	annotateDiff,
+	type ChunkPlan,
+	type CompiledReview,
+	type Coverage,
+	chunkSummary,
+	compileReview,
+	diffStats,
+	mergeOutputs,
+	parseAgentOutput,
+	parseSpice,
+	parseTier,
+	parseUnifiedDiff,
+	planChunks,
+	renderAddressFile,
+	renderPreview,
+	renderTallyTable,
+	stackFor,
+	type TallyRow,
+	toPostReviewInput,
+} from "./core";
+
+const TOOL = "thrash";
+const REVIEW_DIR = path.join(".agents", "code-review");
+const PR_SUFFIX_RE = /\/(?:pull|-\/merge_requests|merge_requests)\/\d+.*$/;
+
+interface RemoteTarget {
+	mode: "remote";
+	url: string;
+	provider: ProviderKind;
+	repo: RepoRef;
+	number: number;
+}
+
+interface LocalTarget {
+	mode: "local";
+	root: string;
+	relPath: string;
+	base: string;
+}
+
+type Target = RemoteTarget | LocalTarget;
+
+interface PlanFile extends Coverage {
+	contextPath: string;
+	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
+}
+
+interface ReviewFile {
+	target: string;
+	review: CompiledReview;
+}
+
+function isUrl(arg: string): boolean {
+	return /^https?:\/\//.test(arg);
+}
+
+function optionalOption(args: string[], name: string): string | undefined {
+	const index = args.indexOf(name);
+	if (index === -1) return undefined;
+	const value = args[index + 1];
+	if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+	return value;
+}
+
+function requireOption(args: string[], name: string): string {
+	const value = optionalOption(args, name);
+	if (!value) throw new Error(`${name} is required`);
+	return value;
+}
+
+function positional(args: string[], commandName: string): string {
+	const consumed = new Set<number>();
+	for (const flag of ["--base", "--diff", "--spice", "--min-tier", "--review"]) {
+		const index = args.indexOf(flag);
+		if (index !== -1) {
+			consumed.add(index);
+			consumed.add(index + 1);
+		}
+	}
+	const value = args.find((a, i) => !consumed.has(i) && !a.startsWith("--"));
+	if (!value) throw new Error(`${commandName} requires a target: a PR/MR URL, ".", or a path`);
+	return value;
+}
+
+function printJson(value: unknown): void {
+	process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function gitToplevel(dir: string): string {
+	const result = Bun.spawnSync(["git", "-C", dir, "rev-parse", "--show-toplevel"]);
+	if (result.exitCode !== 0) {
+		throw new Error(`${dir} is not inside a git repository: ${result.stderr.toString().trim()}`);
+	}
+	return result.stdout.toString().trim();
+}
+
+async function resolveTarget(arg: string, baseOverride?: string): Promise<Target> {
+	if (isUrl(arg)) {
+		const { kind } = await detectProvider(arg);
+		return {
+			mode: "remote",
+			url: arg,
+			provider: kind,
+			repo: parseRepoRef(arg.replace(PR_SUFFIX_RE, "")),
+			number: parsePrNumberArg(arg),
+		};
+	}
+	const abs = path.resolve(arg);
+	if (!existsSync(abs)) throw new Error(`path not found: ${arg}`);
+	const root = gitToplevel(statSync(abs).isDirectory() ? abs : path.dirname(abs));
+	process.chdir(root);
+	const relPath = path.relative(root, abs) || ".";
+	const base = await resolveBaseSha(baseOverride);
+	return { mode: "local", root, relPath, base };
+}
+
+function targetSlug(target: Target): string {
+	if (target.mode === "remote") {
+		return `${target.provider}-${target.repo.owner.replace(/\//g, "-")}-${target.repo.repo}-${target.number}`;
+	}
+	const label = target.relPath === "." ? "root" : target.relPath.replace(/[^A-Za-z0-9_-]+/g, "_");
+	return `local-${label}`;
+}
+
+function prRef(target: RemoteTarget): PrRef {
+	return { number: target.number, repo: target.repo };
+}
+
+async function fetchDiffText(target: Target): Promise<string> {
+	if (target.mode === "remote") {
+		const provider = await getProviderForUrl(target.url);
+		return provider.fetchDiff(prRef(target));
+	}
+	const result = await git`diff ${target.base} -- ${target.relPath}`;
+	return result.stdout.toString();
+}
+
+async function listUntracked(target: LocalTarget): Promise<string[]> {
+	const result = await git`ls-files --others --exclude-standard -- ${target.relPath}`;
+	return result.stdout.toString().split("\n").filter(Boolean);
+}
+
+function planPathFor(diffPath: string): string {
+	return diffPath.replace(/\.diff$/, ".plan.json");
+}
+
+const BODY_LIMIT = 4000;
+
+async function renderContext(
+	target: Target,
+	files: ReturnType<typeof parseUnifiedDiff>,
+	plan: ChunkPlan,
+): Promise<string> {
+	const lines: string[] = ["# Change context", ""];
+	if (target.mode === "remote") {
+		try {
+			const provider = await getProviderForUrl(target.url);
+			const pr = await provider.viewPullRequest(prRef(target));
+			lines.push(
+				`Title: ${pr.title}`,
+				`Head: ${pr.headRefName}`,
+				`Base: ${pr.baseRefName}`,
+				"",
+				"Description:",
+				pr.body.slice(0, BODY_LIMIT) || "(none)",
+				"",
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			process.stderr.write(`thrash diff: could not read PR details, context has files only: ${message}\n`);
+		}
+	} else {
+		lines.push(`Local review of ${target.relPath} against ${target.base}`, "");
+	}
+	lines.push("Files in the full change:");
+	for (const file of files) {
+		const { added, deleted } = diffStats([file]);
+		lines.push(`- ${file.path} [${file.status}] +${added} -${deleted}`);
+	}
+	if (plan.chunks.length > 1) {
+		lines.push("", "The change is reviewed in chunks. Each reviewer sees one chunk:");
+		for (const chunk of plan.chunks) {
+			lines.push(`- chunk ${chunk.id}: ${chunk.label} (${chunk.files.length} files, ${chunk.changed} changed lines)`);
+		}
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+async function writeDiff(target: Target) {
+	const text = await fetchDiffText(target);
+	const files = parseUnifiedDiff(text);
+	const slug = targetSlug(target);
+	const diffPath = scratchPath(TOOL, `${slug}.diff`);
+	const plan = planChunks(files);
+	const contextPath = scratchPath(TOOL, `${slug}.context.md`);
+	const chunks = plan.chunks.map((chunk) => ({
+		...chunkSummary(chunk),
+		annotatedPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.annotated.diff`),
+		findingsPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.findings.md`),
+	}));
+	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
+	writeFileSync(diffPath, text);
+	writeFileSync(contextPath, await renderContext(target, files, plan));
+	const planFile: PlanFile = { contextPath, chunks, skipped: plan.skipped };
+	writeFileSync(planPathFor(diffPath), JSON.stringify(planFile, null, 2));
+	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats: diffStats(files) };
+}
+
+async function cmdDiff(args: string[]): Promise<number> {
+	const arg = positional(args, "diff");
+	const target = await resolveTarget(arg, optionalOption(args, "--base"));
+	const written = await writeDiff(target);
+	const untracked = target.mode === "local" ? await listUntracked(target) : [];
+	printJson({
+		target: arg,
+		mode: target.mode,
+		...(target.mode === "local" ? { root: target.root, base: target.base } : { provider: target.provider }),
+		...written,
+		untracked,
+	});
+	return EXIT.OK;
+}
+
+async function existingThreads(target: Target): Promise<ReviewThread[]> {
+	if (target.mode === "local") return [];
+	try {
+		const provider = await getProviderForUrl(target.url);
+		return await provider.listUnresolvedThreads({}, prRef(target));
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`thrash compile: could not list existing threads, skipping dedupe: ${message}\n`);
+		return [];
+	}
+}
+
+function nextAddressFile(root: string): string {
+	const dir = path.join(root, REVIEW_DIR);
+	mkdirSync(dir, { recursive: true });
+	const now = new Date();
+	for (let sequence = 1; sequence < 1000; sequence++) {
+		const candidate = path.join(dir, addressFileName(now, sequence));
+		if (!existsSync(candidate)) return candidate;
+	}
+	throw new Error(`no free code-review file name under ${dir}`);
+}
+
+async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
+	const arg = positional(args, "compile");
+	const target = await resolveTarget(arg);
+	const diffPath = requireOption(args, "--diff");
+	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
+	const plan = JSON.parse(readFileSync(planPathFor(diffPath), "utf8")) as PlanFile;
+	const output = mergeOutputs(
+		plan.chunks.map((chunk) => {
+			if (!existsSync(chunk.findingsPath)) {
+				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${chunk.findingsPath}`);
+			}
+			return parseAgentOutput(readFileSync(chunk.findingsPath, "utf8"));
+		}),
+	);
+	const splitReview = plan.chunks.length > 1 || plan.skipped.length > 0;
+	const minTierRaw = optionalOption(args, "--min-tier");
+	const review = compileReview(files, output, {
+		spice: parseSpice(optionalOption(args, "--spice")),
+		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
+		commentOnly: args.includes("--comment"),
+		existing: await existingThreads(target),
+		coverage: splitReview ? { chunks: plan.chunks, skipped: plan.skipped } : undefined,
+	});
+	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
+	writeFileSync(reviewPath, JSON.stringify({ target: arg, review } satisfies ReviewFile, null, 2));
+
+	let addressFile: string | undefined;
+	if (target.mode === "local") {
+		addressFile = nextAddressFile(target.root);
+		writeFileSync(addressFile, renderAddressFile(review));
+	}
+
+	if (opts.json) {
+		printJson({ reviewPath, addressFile, verdict: review.verdict, reason: review.reason, tally: review.tally });
+		return EXIT.OK;
+	}
+	process.stdout.write(renderPreview(review, arg));
+	if (addressFile) process.stdout.write(`ADDRESS_FILE=${addressFile}\n`);
+	process.stdout.write(`REVIEW_JSON=${reviewPath}\nVERDICT=${review.verdict}\n`);
+	return EXIT.OK;
+}
+
+async function cmdPost(args: string[]): Promise<number> {
+	const arg = positional(args, "post");
+	const target = await resolveTarget(arg);
+	if (target.mode === "local") {
+		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
+	}
+	const stored = JSON.parse(readFileSync(requireOption(args, "--review"), "utf8")) as ReviewFile;
+	if (stored.target !== arg) {
+		throw new Error(`review file was compiled for ${stored.target}, not ${arg}`);
+	}
+	const provider = await getProviderForUrl(target.url);
+	const posted = await provider.postReview(prRef(target), toPostReviewInput(stored.review));
+	writeFileSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), JSON.stringify(posted, null, 2));
+	printJson({ ...posted, requestedVerdict: stored.review.verdict });
+	return EXIT.OK;
+}
+
+async function cmdStack(args: string[]): Promise<number> {
+	const arg = positional(args, "stack");
+	const target = await resolveTarget(arg);
+	if (target.mode === "local") throw new Error("stack needs a PR or MR URL");
+	const provider = await getProviderForUrl(target.url);
+	const open = await provider.listPullRequests({ state: "open" }, target.repo);
+	const stack = stackFor(open, target.number);
+	if (!args.includes("--diff")) {
+		printJson(
+			stack.map(({ number, title, url, headRefName, baseRefName }) => ({
+				number,
+				title,
+				url,
+				headRefName,
+				baseRefName,
+			})),
+		);
+		return EXIT.OK;
+	}
+	const rows = await Promise.all(
+		stack.map(async (pr) => {
+			const { diffPath, contextPath, chunks, skipped, stats } = await writeDiff({
+				...target,
+				url: pr.url,
+				number: pr.number,
+			});
+			return {
+				number: pr.number,
+				url: pr.url,
+				diffPath,
+				contextPath,
+				chunks,
+				skipped: skipped.length,
+				changed: stats.changed,
+			};
+		}),
+	);
+	printJson(rows);
+	return EXIT.OK;
+}
+
+function cmdTally(args: string[]): number {
+	const reviewPaths = args.filter((a) => !a.startsWith("--"));
+	if (reviewPaths.length === 0) throw new Error("tally requires one or more review JSON files");
+	const rows: TallyRow[] = reviewPaths.map((reviewPath) => {
+		const stored = JSON.parse(readFileSync(reviewPath, "utf8")) as ReviewFile;
+		const postedPath = reviewPath.replace(/\.review\.json$/, ".posted.json");
+		const posted = postedPath !== reviewPath && existsSync(postedPath);
+		return {
+			target: stored.target,
+			review: stored.review,
+			posted: posted ? JSON.parse(readFileSync(postedPath, "utf8")) : undefined,
+		};
+	});
+	process.stdout.write(renderTallyTable(rows));
+	return EXIT.OK;
+}
+
+const command = defineCommand({
+	name: "thrash",
+	description: "Diff, compile, and post a /thrash review against a GitHub PR, a GitLab MR, or a local path.",
+	subcommands: {
+		diff: {
+			description:
+				"Fetch the diff for a URL or path, split it into review chunks, write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local",
+			args: ["target"],
+			run: cmdDiff,
+		},
+		compile: {
+			description:
+				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment]",
+			args: ["target"],
+			run: (args, opts) => cmdCompile(args, opts),
+		},
+		post: {
+			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file>",
+			args: ["target"],
+			run: cmdPost,
+		},
+		stack: {
+			description:
+				"List every open PR or MR in the target's stack, root first, as JSON; --diff also writes each diff and prints its paths",
+			args: ["target"],
+			run: cmdStack,
+		},
+		tally: {
+			description:
+				"Print a markdown table of PR, link, findings per tier, inline count and verdict for review JSON files",
+			args: ["review..."],
+			run: (args) => Promise.resolve(cmdTally(args)),
+		},
+	},
+});
+
+/** Dispatch explicit review arguments with the legacy streams and exit statuses. */
+export async function main(argv: string[]): Promise<void> {
+	await command.run(argv);
+}
