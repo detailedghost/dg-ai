@@ -197,6 +197,7 @@ export function registerChannelReview(program: Command): void {
 		)
 		.option("--file <path>", "env file (default: .env next to the mise config in the current folder)")
 		.option("--dry-run", "list the variables that would move")
+		.option("--keep-backup", "keep a 0600 .env.bak-<timestamp> copy with the original values")
 		.option("--session <id>", "dg session to authenticate with")
 		.action(async (flags: MigrateFlags) => {
 			await runMigrateEnv(flags, {

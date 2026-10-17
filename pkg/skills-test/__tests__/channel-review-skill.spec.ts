@@ -298,6 +298,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				"--env",
 				"--file",
 				"--follow",
+				"--keep-backup",
 				"--lines",
 				"--org",
 				"--paste",
