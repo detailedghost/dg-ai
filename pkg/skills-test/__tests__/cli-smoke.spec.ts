@@ -29,9 +29,23 @@ describe("dg-skills CLI", () => {
 	test("--help exits 0 and lists every command the skills use", async () => {
 		const { code, out } = await runCli(["--help"]);
 		expect(code).toBe(0);
-		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review"]) {
+		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review", "stash", "clipboard-image"]) {
 			expect(out).toContain(cmd);
 		}
+	});
+
+	test("stash --help documents all storage scopes without starting a service", async () => {
+		const { code, out } = await runCli(["stash", "--help"]);
+		expect(code).toBe(0);
+		for (const flag of ["--scratch", "--state", "--agents", "--main", "--global", "--unique", "--root", "--dir"]) {
+			expect(out).toContain(flag);
+		}
+	});
+
+	test("clipboard-image --help documents native capture without reading the clipboard", async () => {
+		const { code, out } = await runCli(["clipboard-image", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("--scratch");
 	});
 
 	test("install --help documents extension + CLI setup", async () => {
