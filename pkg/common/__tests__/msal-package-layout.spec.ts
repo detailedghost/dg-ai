@@ -118,18 +118,18 @@ describe("@dg/common/msal entry", () => {
 });
 
 describe("package manifests", () => {
-	test("common exposes ./msal and depends on @azure/msal-node ^5.3.0", () => {
+	test("common exposes ./msal and depends on @azure/msal-node ^7.0.1", () => {
 		const manifest = readJson(join(commonDir, "package.json"));
 		expect(manifest.exports?.["./msal"]).toBe("./src/msal/index.ts");
 		expect(manifest.exports?.["./node"]).toBe("./src/node/index.ts");
 		expect(manifest.exports?.["."]).toBe("./src/index.ts");
-		expect(manifest.dependencies?.["@azure/msal-node"]).toBe("^5.3.0");
+		expect(manifest.dependencies?.["@azure/msal-node"]).toBe("^7.0.1");
 	});
 
 	test("inbox keeps @azure/msal-node only as a dev dependency", () => {
 		const manifest = readJson(join(inboxDir, "package.json"));
 		expect(manifest.dependencies?.["@azure/msal-node"]).toBeUndefined();
-		expect(manifest.devDependencies?.["@azure/msal-node"]).toBe("^5.3.0");
+		expect(manifest.devDependencies?.["@azure/msal-node"]).toBe("^7.0.1");
 	});
 
 	test("inbox no longer ships its own oauth-loopback module", () => {
