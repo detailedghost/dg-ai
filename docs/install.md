@@ -64,10 +64,17 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 
 | Skill | CLI-only |
 | --- | --- |
+| `stash`, `proxy` | Yes — proxy needs the selected external backend installed and authenticated |
+| `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
 | `channel-review` | Yes |
 | `google-sms-cleanup` | Yes — instruction-only |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
+
+`vcs-provider` is also available as a CLI command; it needs Git and authenticated
+`gh` (GitHub) or `glab` (GitLab). It has no separate skill. Other workflow skills
+without an extension dependency also install; their own tools and referenced
+skills still need to be available.
 
 A skill that needs the extension stops with a message that names the fix. To add
 the extension later, run `dg-skills install` (or the full bootstrap command

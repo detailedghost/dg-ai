@@ -7,7 +7,7 @@ import { helpText } from "../../channel-review/src/help";
 import { RUNNER_NAMES } from "../../channel-review/src/runners/types";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
-const TARGET_VERSION = "1.14.0";
+const TARGET_VERSION = "1.15.0";
 const skillRoot = join(REPO_ROOT, "plugins/dg/skills/channel-review");
 const inboxSkillPath = join(
 	REPO_ROOT,
