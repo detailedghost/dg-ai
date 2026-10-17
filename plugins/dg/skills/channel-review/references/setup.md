@@ -35,8 +35,8 @@ Install these on every machine that runs the daemon:
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
 - At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
 - The thrash skill where that runner finds it. dg does not ship thrash.
-- For `$address`: the address skill at `~/.claude/skills/address` with its
-  `address-helper`, and `gh` or `glab` signed in with push access.
+- For `$address`: the address skill available to the selected runner,
+  `dg-skills address`, and `gh` or `glab` signed in with push access.
 
 `status` reports probes for all four runners. A missing CLI reports CR-201;
 a failed login probe reports CR-202. Claude's print mode writes

@@ -21,5 +21,24 @@
 	],
 	"skills": [
 		"./plugins/dg/skills"
+	],
+	"agents": [
+		"./plugins/dg/agents/checkpoint.md",
+		"./plugins/dg/agents/copilot-antagonist.md",
+		"./plugins/dg/agents/csharp.md",
+		"./plugins/dg/agents/dba.md",
+		"./plugins/dg/agents/devops.md",
+		"./plugins/dg/agents/foreman.md",
+		"./plugins/dg/agents/js.md",
+		"./plugins/dg/agents/lore.md",
+		"./plugins/dg/agents/python.md",
+		"./plugins/dg/agents/qa-devops.md",
+		"./plugins/dg/agents/qa-perf.md",
+		"./plugins/dg/agents/qa-writer.md",
+		"./plugins/dg/agents/reviewer.md",
+		"./plugins/dg/agents/security.md",
+		"./plugins/dg/agents/shell.md",
+		"./plugins/dg/agents/thrash.md",
+		"./plugins/dg/agents/wave.md"
 	]
 }
