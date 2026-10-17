@@ -24,17 +24,17 @@ ______________________________________________________________________
 
 ## §5 — Hand-off
 
-Compute slug: `spec-cli slugify "<header>"`.
+Compute the slug from the header: lowercase it, replace each run of characters outside `a-z` and `0-9` with `_`, then trim leading and trailing underscores.
 
-Write design summary to `$(stash -s refactor <slug>.md)`, then ask via `AskUserQuestion`:
+Write design summary to `$("$DG" stash -s refactor <slug>.md)`, then ask via `AskUserQuestion`:
 
 | Option | Effect |
 |---|---|
-| **Build now via `/spec` (Recommended)** | Hand off to `/spec "<slug>"` — the refactor design seeds the planning conversation. Print: `"Refactor design at $(stash -s refactor <slug>.md). Run /spec to build the feature."` |
+| **Build now via `/spec` (Recommended)** | Hand off to `/spec "<slug>"` — the refactor design seeds the planning conversation. Print: `"Refactor design at $("$DG" stash -s refactor <slug>.md). Run /spec to build the feature."` |
 | **Park via `/kick`** | Hand off to `/kick <slug>` — write the spec, defer engineering. |
 | **Just print the design** | Echo the summary path. No spec, no commit. User picks up later manually. |
 
-**GATE:** Hand-off path printed; design summary file exists at `$(stash -s refactor <slug>.md)`.
+**GATE:** Hand-off path printed; design summary file exists at `$("$DG" stash -s refactor <slug>.md)`.
 
 ______________________________________________________________________
 

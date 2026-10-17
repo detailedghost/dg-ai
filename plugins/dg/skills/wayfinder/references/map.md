@@ -4,7 +4,7 @@
 
 1. **Name the destination.** Run a `/grill-me` pass in the main loop. Pin down what the map reaches: a spec, a decision to lock, or a change made in place. Scope is fixed here.
 2. **Map the frontier.** Grill again, breadth first. Surface open decisions and first takeable steps. Self-serve from the code and docs. If no fog appears and one session can hold it, write no map. Ask the user to choose `/spec` or `/grill-me`.
-3. **Create the map.** `stash -m wayfinder <slug>/map.md`. Fill Destination and Notes. Leave Decisions empty. Sketch fog.
+3. **Create the map.** `"$DG" stash -m wayfinder <slug>/map.md`. Fill Destination and Notes. Leave Decisions empty. Sketch fog.
 4. **Create sharp tickets** in `tickets/`. Number them `NNN-<slug>.md`. Set `blocked_by` in a second pass, after all files exist.
 5. **Research tickets.** Show the cost estimate when there are 3 or more. Then run one `sonnet` subagent per `research` ticket (see work.md). Each writes findings to its own ticket file.
 6. **Stop.** Charting is one session. It resolves no ticket except research.
