@@ -116,6 +116,33 @@ describe("createWorktree", () => {
   expect(readFileSync(join(target, "keep.txt"), "utf8")).toBe("owned data");
  });
 
+ test("refuses an existing path when the branch is not checked out there", async () => {
+  const { repo } = trackedRepo();
+  const first = await createWorktree({ slug: "deps", cwd: repo });
+  runGit(["worktree", "remove", first.path], repo);
+  mkdirSync(first.path);
+  write(first.path, "keep.txt", "owned data");
+  await expect(createWorktree({ slug: "deps", cwd: repo })).rejects.toThrow(/not checked out/i);
+  expect(readFileSync(join(first.path, "keep.txt"), "utf8")).toBe("owned data");
+ });
+
+ test("reports an unreadable configuration file as a warning", async () => {
+  const { repo } = trackedRepo();
+  write(repo, ".gitignore", ".env\n");
+  runGit(["add", ".gitignore"], repo);
+  runGit(["commit", "-q", "-m", "chore: ignore env"], repo);
+  runGit(["push", "-q", "origin", "main"], repo);
+  write(repo, ".env", "secret");
+  chmodSync(join(repo, ".env"), 0o000);
+  const diagnostics: string[] = [];
+  try {
+   await createWorktree({ slug: "deps", cwd: repo }, (text) => { diagnostics.push(text); });
+  } finally {
+   chmodSync(join(repo, ".env"), 0o600);
+  }
+  expect(diagnostics.join("")).toMatch(/worktree-cli: could not seed \.env/);
+ });
+
  test.each(["branch", "path", "both"] as const)("resume:false refuses existing %s state", async (state) => {
   const { repo } = trackedRepo();
   const target = expectedPath(repo, "deps");

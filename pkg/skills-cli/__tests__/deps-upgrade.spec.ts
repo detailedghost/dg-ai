@@ -952,7 +952,7 @@ describe("deps-upgrade ready-when-green", () => {
 		);
 
 		const result = await runCli(
-			["ready-when-green", "90", "--interval-seconds", "0"],
+			["ready-when-green", "90", "--interval-seconds", "1"],
 			{ env },
 		);
 
@@ -973,7 +973,7 @@ describe("deps-upgrade ready-when-green", () => {
 		);
 
 		const result = await runCli(
-			["ready-when-green", "90", "--interval-seconds", "0"],
+			["ready-when-green", "90", "--interval-seconds", "1"],
 			{ env },
 		);
 
@@ -997,7 +997,7 @@ describe("deps-upgrade ready-when-green", () => {
 				"--timeout-minutes",
 				"0",
 				"--interval-seconds",
-				"0",
+				"1",
 			],
 			{
 				env,
@@ -1477,27 +1477,6 @@ describe("ecosystem table", () => {
 	});
 
 	test.each([
-		["bun", [], ["package.json"]],
-		["pnpm", [], ["package.json"]],
-		["yarn", [], ["package.json"]],
-		["npm", [], ["package.json"]],
-		["go", [], ["go.mod"]],
-		["rust", [], ["Cargo.toml"]],
-		[
-			"dotnet",
-			["a.csproj", "b.csproj", "x.sln", "notes.txt"],
-			["a.csproj", "b.csproj"],
-		],
-		["dotnet", ["x.sln"], []],
-		["ruby", [], ["Gemfile"]],
-		["python", ["pyproject.toml", "requirements.txt"], ["pyproject.toml"]],
-		["python", ["requirements.txt"], ["requirements.txt"]],
-		["python", [], ["requirements.txt"]],
-	] as const)("%s manifests for %j are %j", (eco, entries, expected) => {
-		expect(helper.ECOSYSTEMS[eco].manifests(entries)).toEqual([...expected]);
-	});
-
-	test.each([
 		["bun", [], ["bun", "install"]],
 		["pnpm", [], ["pnpm", "install"]],
 		["yarn", [], ["yarn", "install"]],
@@ -1684,13 +1663,29 @@ describe("nodeManifests", () => {
 		]);
 	});
 
-	test("ignores a workspaces object that is not an array", () => {
+	test("reads the object form of workspaces", () => {
 		const files = {
 			"package.json": json({ workspaces: { packages: ["packages/a"] } }),
 			"packages/a/package.json": "{}",
 		};
 		expect(inTempDir(files, () => helper.nodeManifests())).toEqual([
 			"package.json",
+			join("packages/a", "package.json"),
+		]);
+	});
+
+	test("expands glob workspaces and skips negations", () => {
+		const files = {
+			"package.json": json({ workspaces: ["pkg/*", "!pkg/skip"] }),
+			"pkg/a/package.json": "{}",
+			"pkg/b/package.json": "{}",
+			"pkg/skip/package.json": "{}",
+			"pkg/readme.md": "",
+		};
+		expect(inTempDir(files, () => helper.nodeManifests())).toEqual([
+			"package.json",
+			join("pkg/a", "package.json"),
+			join("pkg/b", "package.json"),
 		]);
 	});
 });
@@ -2199,17 +2194,6 @@ describe("prepare helpers and environment", () => {
 		);
 	});
 
-	test("parseWorktreeOutput extracts WORKTREE_ key-value lines and ignores the rest", () => {
-		const out =
-			"creating...\nWORKTREE_PATH=/tmp/wt\nWORKTREE_BRANCH=drb/chore/deps_update_1\nnoise=1\nWORKTREE_X=a=b\n";
-		expect(helper.parseWorktreeOutput(out)).toEqual({
-			WORKTREE_PATH: "/tmp/wt",
-			WORKTREE_BRANCH: "drb/chore/deps_update_1",
-			WORKTREE_X: "a=b",
-		});
-		expect(helper.parseWorktreeOutput("")).toEqual({});
-	});
-
 	test("renovateLogin defaults to renovate-bot and honors AI_RENOVATE_BOT_LOGIN", () => {
 		const previous = process.env.AI_RENOVATE_BOT_LOGIN;
 		try {
@@ -2266,6 +2250,7 @@ function gitRepo(files: Record<string, string>): string {
 	}
 	cliFixtures.runGit(["add", "."], dir);
 	cliFixtures.runGit(["commit", "-q", "-m", "chore: seed"], dir);
+	cliFixtures.runGit(["checkout", "-q", "-b", "drb/chore/deps_update_test"], dir);
 	return realpathSync(dir);
 }
 
@@ -3052,7 +3037,7 @@ describe("cooldown registry boundaries", () => {
 		[
 			"go",
 			"example.com/Upper/Lib",
-			"https://proxy.golang.org/example.com/!upper/!lib/@v/2.0.0.info",
+			"https://proxy.golang.org/example.com/!upper/!lib/@v/v2.0.0.info",
 			{ Time: OLD },
 		],
 	] as const)(
@@ -3278,5 +3263,140 @@ describe("deps-upgrade command errors", () => {
 		});
 		expect(proc.exitCode).toBe(0);
 		expect(proc.stdout.toString()).toMatch(/^ {2}deps-upgrade\s/m);
+	});
+});
+
+describe("thrash review hardening", () => {
+	test("summarizeGovulncheck decodes a stream of indented JSON objects", () => {
+		const raw = [
+			JSON.stringify({ config: { protocol_version: "v1.0.0" } }, null, 2),
+			JSON.stringify({ finding: { osv: "GO-1", trace: [{ module: "a" }] } }, null, 2),
+			JSON.stringify({ finding: { osv: "GO-1" } }, null, 2),
+			JSON.stringify({ finding: { osv: "GO-2", note: "}{ \"x\"" } }, null, 2),
+		].join("\n");
+		expect(helper.summarizeGovulncheck(raw)).toBe(
+			"=== govulncheck ===\n  vulnerabilities: 2\n  GO-1\n  GO-2",
+		);
+	});
+
+	test("bumpNodePackage keeps tab indentation", () => {
+		const source = JSON.stringify({ dependencies: { lodash: "1.0.0" } }, null, "\t");
+		inTempDir({ "package.json": source }, () => {
+			helper.bumpNodePackage("lodash", "1.0.0", "2.0.0");
+			expect(readFileSync("package.json", "utf8")).toBe(
+				`${JSON.stringify({ dependencies: { lodash: "2.0.0" } }, null, "\t")}\n`,
+			);
+		});
+	});
+
+	test("bumpGemfile leaves git and option values alone", () => {
+		const src = 'gem "rails", git: "https://example.com/rails.git"\ngem "rails"\n';
+		expect(helper.bumpGemfile(src, "rails", "7.1.0")).toBe(src);
+		expect(helper.bumpGemfile('gem "rails", "~> 7.0"\n', "rails", "7.1.0")).toBe(
+			'gem "rails", "~> 7.1.0"\n',
+		);
+	});
+
+	test("bumpPythonSource does not match a longer version", () => {
+		const src = "requests==1.2.3\nrequests==1.2\n";
+		expect(helper.bumpPythonSource(src, "requests", "1.2", "1.3")).toBe(
+			"requests==1.2.3\nrequests==1.3\n",
+		);
+	});
+
+	test("bumpActionRefs ignores an action with a longer owner", () => {
+		const src = "uses: my-actions/checkout@v3\nuses: actions/checkout@v3\n";
+		expect(helper.bumpActionRefs(src, "actions/checkout", "v3", "v4")).toBe(
+			"uses: my-actions/checkout@v3\nuses: actions/checkout@v4\n",
+		);
+	});
+
+	test("a backport published after the current release is not a fallback", async () => {
+		const NOW = Date.parse("2026-10-16T00:00:00Z");
+		const verdict = await helper.evaluateCooldown({
+			eco: "npm",
+			pkg: "left-pad",
+			oldVersion: "2.0.0",
+			version: "3.0.0",
+			days: 7,
+			now: () => NOW,
+			fetchJson: async () => ({
+				time: {
+					"2.0.0": "2026-01-01T00:00:00Z",
+					"1.9.9": "2026-02-01T00:00:00Z",
+					"3.0.0": "2026-10-15T00:00:00Z",
+				},
+			}),
+		});
+		expect(verdict.status).toBe("held");
+	});
+
+	test("the branch prefix reads DG_DEPS_BRANCH_PREFIX", () => {
+		const previous = process.env.DG_DEPS_BRANCH_PREFIX;
+		try {
+			delete process.env.DG_DEPS_BRANCH_PREFIX;
+			expect(helper.branchPrefix()).toBe("drb/chore/");
+			process.env.DG_DEPS_BRANCH_PREFIX = "me/deps/";
+			expect(helper.branchPrefix()).toBe("me/deps/");
+		} finally {
+			if (previous === undefined) delete process.env.DG_DEPS_BRANCH_PREFIX;
+			else process.env.DG_DEPS_BRANCH_PREFIX = previous;
+		}
+	});
+
+	test("ready-when-green rejects a zero polling interval", async () => {
+		const result = await runCli(["ready-when-green", "1", "--interval-seconds", "0"]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("--interval-seconds must be a number >= 1");
+	});
+
+	test("pr-body and close-prs reject a non-numeric number", async () => {
+		const body = await runCli(["pr-body", "abc"]);
+		expect(body.exitCode).toBe(1);
+		expect(body.stderr).toContain("pull request number must be a positive integer");
+		const close = await runCli(["close-prs", "12", "abc"], {
+			cwd: gitRepo({ "a.txt": "a\n" }),
+		});
+		expect(close.exitCode).toBe(1);
+		expect(close.stderr).toContain("pull request number must be a positive integer");
+	});
+
+	test("bump-action stages only the files it changed", async () => {
+		const cwd = gitRepo({
+			".github/workflows/ci.yml": "steps:\n  - uses: actions/checkout@v3\n",
+			".github/workflows/other.yml": "steps:\n  - uses: actions/cache@v3\n",
+		});
+		writeFileSync(join(cwd, ".github/workflows/other.yml"), "steps:\n  - uses: actions/cache@v2\n");
+		const result = await runCli(
+			[
+				"bump-action",
+				"actions/checkout",
+				"v3",
+				"v4",
+				".github/workflows/ci.yml",
+				".github/workflows/other.yml",
+			],
+			{ cwd },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(lastCommit(cwd).files).toEqual([".github/workflows/ci.yml"]);
+	});
+
+	test.each([
+		["bump-dep", ["lodash", "1.0.0", "2.0.0"]],
+		["bump-action", ["actions/checkout", "v3", "v4"]],
+		["commit", ["chore", "deps", "message"]],
+		["push-pr", []],
+	])("%s refuses to run on the default branch", async (command, args) => {
+		const cwd = gitRepo({
+			"package.json": json({ dependencies: { lodash: "1.0.0" } }),
+			"package-lock.json": "{}",
+			".github/workflows/ci.yml": "steps:\n  - uses: actions/checkout@v3\n",
+		});
+		cliFixtures.runGit(["checkout", "-q", "main"], cwd);
+		const result = await runCli([command, ...args], { cwd, stdin: "body" });
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("protected branch 'main'");
+		expect(lastCommit(cwd).subject).toBe("chore: seed");
 	});
 });
