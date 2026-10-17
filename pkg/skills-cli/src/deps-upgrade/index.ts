@@ -370,11 +370,10 @@ export function bumpCargoToml(src: string, pkg: string, newV: string): string {
 	const name = escapeRegex(pkg);
 	// Match simple `name = "x.y.z"` or `name = { version = "x.y.z", ... }` entries.
 	const patterns = [
-		new RegExp(`(^${name}\\s*=\\s*")[^"]+(")`, "m"),
-		new RegExp(`(^${name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")[^"]+(")`, "m"),
+		new RegExp(`(^${name}\\s*=\\s*")[^"]+(")`, "gm"),
+		new RegExp(`(^${name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")[^"]+(")`, "gm"),
 	];
-	const match = patterns.find((re) => re.test(src));
-	return match ? src.replace(match, `$1${newV}$2`) : src;
+	return patterns.reduce((out, re) => out.replace(re, `$1${newV}$2`), src);
 }
 
 /** Replace the named gem version while retaining its version operator. */

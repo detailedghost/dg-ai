@@ -24,7 +24,6 @@ import {
 	wrapManaged,
 } from "../src/chain/index";
 
-// ── formatRef ────────────────────────────────────────────────────────────────
 
 describe("formatRef", () => {
 	test("prefixes a bare PR number with #", () => {
@@ -45,7 +44,6 @@ describe("formatRef", () => {
 	});
 });
 
-// ── parseLayerArg ────────────────────────────────────────────────────────────
 
 describe("parseLayerArg", () => {
 	test("splits a comma-separated layer and trims whitespace", () => {
@@ -61,7 +59,6 @@ describe("parseLayerArg", () => {
 	});
 });
 
-// ── renderChainLine ──────────────────────────────────────────────────────────
 
 describe("renderChainLine", () => {
 	test("renders a linear chain base-first, ending at the target", () => {
@@ -77,7 +74,6 @@ describe("renderChainLine", () => {
 	});
 });
 
-// ── renderStack ──────────────────────────────────────────────────────────────
 
 describe("renderStack", () => {
 	test("renders only the Stack section for a pure linear chain", () => {
@@ -124,7 +120,6 @@ describe("renderStack", () => {
 	});
 });
 
-// ── upsertManagedBlock ───────────────────────────────────────────────────────
 
 describe("upsertManagedBlock", () => {
 	test("appends a managed block to a body with no existing block", () => {
@@ -143,7 +138,7 @@ describe("upsertManagedBlock", () => {
 		expect(result).toContain("Intro text.");
 		expect(result).toContain("Outro text.");
 		expect(result).toContain("#101 → #102 → main");
-		expect(result).not.toContain("#101 → main\n");
+		expect(result).not.toContain("#101 → main");
 	});
 
 	test("is idempotent — applying twice yields the same result as once", () => {
@@ -154,7 +149,6 @@ describe("upsertManagedBlock", () => {
 	});
 });
 
-// ── planBaseActions ──────────────────────────────────────────────────────────
 
 describe("planBaseActions", () => {
 	test("retargets a true one-parent chain link", () => {
@@ -189,7 +183,6 @@ describe("planBaseActions", () => {
 	});
 });
 
-// ── renderPlan ────────────────────────────────────────────────────────────────
 
 describe("renderPlan", () => {
 	test("includes the stack block and a base-retarget summary", () => {
@@ -226,7 +219,6 @@ describe("renderPlan", () => {
 	});
 });
 
-// ── planNativeStack ────────────────────────────────────────────────────────
 
 describe("planNativeStack", () => {
 	test("is eligible for a linear, single-repo, multi-layer chain", () => {
@@ -265,7 +257,6 @@ describe("planNativeStack", () => {
 	});
 });
 
-// ── provider-backed write path + CLI end-to-end (real fake gh/glab binaries) ──
 
 const UNROUTABLE_HOST = "chain-cli-test.invalid";
 const CHAIN_CLI = join(import.meta.dir, "../src/index.ts");
@@ -752,7 +743,7 @@ describe("chain --native eligibility on a provider without nativeStacking (GitLa
 });
 
 describe("applyChain body-upsert failure handling", () => {
-	test("stops at the first ref whose body fetch fails, never reaching a later ref's body", async () => {
+	test("a failed retarget lookup is logged and the body fetch then aborts the batch before a later ref", async () => {
 		process.env.AI_VCS_PROVIDER = "github";
 		const log = callLogPath();
 		fakeGh(
@@ -990,8 +981,6 @@ describe.each(["github", "gitlab"] as const)("chain apply managed bodies on %s",
 	});
 });
 
-// Capture approved bootstrap utilities before per-test PATH isolation. No network
-// utility or retired command is installed in the relocated fixture.
 const bootstrapTools = ["sh", "mktemp", "find", "grep", "mkdir", "basename", "rm", "dirname", "cp", "chmod", "sort", "wc", "tr"].map((name) => {
 	const path = Bun.which(name);
 	if (!path) throw new Error(`Missing bootstrap test utility: ${name}`);

@@ -368,7 +368,7 @@ async function cmdCheckCopilot(): Promise<void> {
 	let isGithub = false;
 	try {
 		const data = JSON.parse(r.stdout.toString()) as { url: string };
-		isGithub = data.url.includes("github.com");
+		isGithub = new URL(data.url).hostname === "github.com";
 	} catch {}
 
 	if (isGithub) {

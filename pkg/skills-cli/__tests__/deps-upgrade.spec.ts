@@ -26,7 +26,6 @@ let ORIGINAL_PATH: string;
 beforeEach(() => {
 	createdDirs = [];
 	ORIGINAL_PATH = process.env.PATH ?? "";
-	// The ecosystem fixture uses the platform text tool, never a real package manager.
 	if (REAL_SED) {
 		const bin = cliFixtures.tmp(createdDirs, "deps-text-tools-");
 		symlinkSync(REAL_SED, join(bin, "sed"));
@@ -1783,6 +1782,14 @@ describe("text transforms", () => {
 		const src = '[dependencies]\nserde = "1.0.100"\nserde_json = "1.0.0"\n';
 		expect(helper.bumpCargoToml(src, "serde", "1.0.200")).toBe(
 			'[dependencies]\nserde = "1.0.200"\nserde_json = "1.0.0"\n',
+		);
+	});
+
+	test("bumpCargoToml rewrites every entry of the crate", () => {
+		const src =
+			'[dependencies]\nserde = "1.0.100"\n[dev-dependencies]\nserde = "1.0.100"\n[build-dependencies]\nserde = { version = "1.0.100" }\n';
+		expect(helper.bumpCargoToml(src, "serde", "1.0.200")).toBe(
+			'[dependencies]\nserde = "1.0.200"\n[dev-dependencies]\nserde = "1.0.200"\n[build-dependencies]\nserde = { version = "1.0.200" }\n',
 		);
 	});
 

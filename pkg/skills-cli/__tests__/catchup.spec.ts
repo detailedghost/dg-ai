@@ -38,7 +38,6 @@ let log: string;
 beforeEach(() => {
 	tools = fixtures.tmp("dg catchup tools ");
 	log = join(tools, "calls.jsonl");
-	// These are local OS utilities only. No host build tool or service CLI is reachable.
 	for (const name of ["bash", "dirname", "sed", "wc", "tr", "find"]) {
 		const path = Bun.which(name, { PATH: "/usr/bin:/bin" });
 		if (!path) throw new Error(`Missing fixture utility ${name}`);
@@ -460,7 +459,7 @@ console.log("loaded");
 		},
 	);
 
-	test.each([[], ["--push"]].map((args) => [args]))(
+	test.each([[[]], [["--push"]]])(
 		"rebases, restores tracked changes and untracked files, verifies, then pushes by default with %j",
 		(args) => {
 			const repo = makeRepo();

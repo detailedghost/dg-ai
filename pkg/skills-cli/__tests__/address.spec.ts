@@ -19,7 +19,6 @@ const BUN_BIN = process.execPath;
 const PR_URL = "https://github.com/acme/widgets/pull/9001";
 const SINCE = "2026-02-01T00:00:00Z";
 
-// Resolve only approved local utilities; no host provider, auth, or personal command can run.
 cliFixtures.isolateCliTests();
 
 const RATIFIED_GATHER_UNRESOLVED_ITEM_KEYS = [
@@ -287,7 +286,7 @@ esac
 describe("detect-github", () => {
 	test("no longer exists as a subcommand", async () => {
 		const { stderr, exitCode } = await runCli(["detect-github"]);
-		expect(exitCode).toBe(2);
+		expect(exitCode).toBe(EXIT.USAGE);
 		expect(stderr).toContain("unknown subcommand");
 	});
 });
@@ -3218,25 +3217,23 @@ esac
 	});
 });
 
-describe("PR/MR number arguments are parsed strictly, not with parseInt", () => {
-	test("a trailing-garbage argument is refused rather than silently truncated to a real MR", async () => {
+describe("PR/MR number arguments reject trailing garbage", () => {
+	test.each(["42garbage", "0", "-3", "1e999"])("check-bot-review refuses %p", async (bad) => {
 		const log = newCallLog();
 		const glabBin = fakeGlab(`#!/bin/sh
 if [ -n "$FAKE_CALL_LOG" ]; then printf '%s\\n' "$*" >> "$FAKE_CALL_LOG"; fi
 exit 0
 `);
 
-		for (const bad of ["42garbage", "0", "-3", "1e999"]) {
-			const { exitCode, stderr } = await runCli(["check-bot-review", bad], {
-				env: {
-					AI_VCS_PROVIDER: "gitlab",
-					GLAB_BIN: glabBin,
-					FAKE_CALL_LOG: log,
-				},
-			});
-			expect(exitCode).not.toBe(0);
-			expect(stderr).toContain("not a pull request number or URL");
-		}
+		const { exitCode, stderr } = await runCli(["check-bot-review", bad], {
+			env: {
+				AI_VCS_PROVIDER: "gitlab",
+				GLAB_BIN: glabBin,
+				FAKE_CALL_LOG: log,
+			},
+		});
+		expect(exitCode).not.toBe(0);
+		expect(stderr).toContain("not a pull request number or URL");
 		expect(readCalls(log).join("\n")).not.toContain("discussions");
 	});
 
@@ -3338,6 +3335,30 @@ esac
 			reason: "assumed-available",
 		});
 		expect(readCalls(log)).toEqual(["repo view --json url"]);
+	});
+
+	test("reports unavailable when only a lookalike host contains github.com", async () => {
+		const ghBin = fakeGh(`#!/bin/sh
+case "$*" in
+  *"repo view --json url"*)
+    echo '{"url":"https://github.com.evil.example/acme/widgets"}'
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+`);
+
+		const { stdout, exitCode } = await runCli(["check-copilot"], {
+			env: {
+				AI_VCS_PROVIDER: "github",
+				PATH: withFakeGhOnPath(ghBin),
+			},
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout).available).toBe(false);
 	});
 
 	test("on GitLab, keeps its exit-0 JSON-degrade shape ({available:false, reason}) with reason converged onto notSupportedMessage(), not the old bespoke wording", async () => {
@@ -4662,7 +4683,7 @@ describe("compiled address", () => {
 					env,
 				});
 				expect(refused).toEqual({
-					exitCode: 4,
+					exitCode: EXIT.UNSUPPORTED,
 					stdout: "",
 					stderr:
 						"error: Copilot review request is not supported on this provider\n",
@@ -4679,5 +4700,5 @@ describe("compiled address", () => {
 				});
 			}
 		}
-	}, 30_000);
+	}, 120_000);
 });

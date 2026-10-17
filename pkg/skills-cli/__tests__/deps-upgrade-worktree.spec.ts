@@ -35,7 +35,7 @@ function write(repo: string, file: string, content: string) {
 }
 
 function prepare(cwd: string, preload?: string) {
- const proc = Bun.spawnSync([process.execPath, "run", ...(preload ? ["--preload", preload] : []), CLI, "deps-upgrade", "prepare"], { cwd, env: process.env });
+ const proc = Bun.spawnSync([process.execPath, "run", ...(preload ? ["--preload", preload] : []), CLI, "deps-upgrade", "prepare"], { cwd, env: { ...process.env, LC_ALL: "C" } });
  return { stdout: proc.stdout.toString(), stderr: proc.stderr.toString(), exitCode: proc.exitCode };
 }
 
@@ -101,7 +101,6 @@ describe("createWorktree", () => {
   const first = await createWorktree({ slug: "deps", cwd: repo });
   const moved = join(root, "moved worktree");
   runGit(["worktree", "move", first.path, moved], repo);
-  // Legacy resume detects both branch and target before choosing the registered path.
   mkdirSync(first.path);
   const resumed = await createWorktree({ slug: "deps", cwd: repo });
   expect(resumed.path).toBe(moved);
@@ -122,7 +121,7 @@ describe("createWorktree", () => {
   const target = expectedPath(repo, "deps");
   if (state !== "path") runGit(["branch", "feature/deps"], repo);
   if (state !== "branch") mkdirSync(target);
-  await expect(createWorktree({ slug: "deps", cwd: repo, resume: false })).rejects.toThrow(/state exists|no-resume/i);
+  await expect(createWorktree({ slug: "deps", cwd: repo, resume: false })).rejects.toThrow(/state exists/);
   expect(existsSync(target)).toBe(state !== "branch");
  });
 
@@ -296,9 +295,7 @@ describe("deps-upgrade prepare", () => {
   const elsewhere = join(root, "elsewhere checkout");
   runGit(["worktree", "add", elsewhere, "-b", branch, "origin/main"], repo);
   expect(existsSync(target)).toBe(false);
-  // Derive the native diagnostic from the installed Git rather than duplicating
-  // version-specific failure wording. Both attempts reject this existing checkout.
-  const native = Bun.spawnSync(["git", "worktree", "add", target, branch], { cwd: repo, env: process.env });
+  const native = Bun.spawnSync(["git", "worktree", "add", target, branch], { cwd: repo, env: { ...process.env, LC_ALL: "C" } });
   expect(native.exitCode).not.toBe(0);
   const nativeStderr = native.stderr.toString();
   expect(nativeStderr).toContain("Preparing worktree");
