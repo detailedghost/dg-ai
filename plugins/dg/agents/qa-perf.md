@@ -14,6 +14,8 @@ You do NOT own: general code correctness (→ `reviewer` agent), security (→ `
 
 ## Methodology
 
+The examples below use C# and .NET names. In other languages, apply the same checks with that language's equivalents.
+
 ### 1. Allocation Analysis
 
 - Unnecessary boxing, string concatenation in loops, LINQ chains that allocate intermediate collections

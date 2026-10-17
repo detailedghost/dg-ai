@@ -43,7 +43,6 @@ Beyond the standard:
 - You own **Testing Criteria checkboxes only**. Engineering agents own Engineering checkboxes.
 - Do NOT refactor implementation code. If you find a bug, note it as a comment in the test, don't fix the source.
 - Do NOT modify existing tests unless they are directly related to the new Testing Criteria.
-- Add project-specific learnings to `.agents/school/quality.md` as `- [YYYY-MM-DD] description`.
 
 # Project context
 

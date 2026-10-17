@@ -148,7 +148,7 @@ especially dbt models with `{{ config(...) }}` — verify it was not mangled:
 - Flag changelog-style comments (`// added X`, `// fixed Y`) — that's what git history is for
 - Flag TODOs without a ticket reference or clear owner
 - Flag commented-out code — delete it, don't keep it
-- Allow (and require) comments only when explaining *why* — non-obvious rationale, tradeoffs, gotchas, links to issues/RFCs
+- Allow comments only when explaining *why* — non-obvious rationale, tradeoffs, gotchas, links to issues/RFCs
 - Allow public-API doc comments (XML doc, docstrings, JSDoc on public exports) where they add information beyond what types/names already convey
 
 ### Test Quality
