@@ -1269,7 +1269,7 @@ export async function renderChatPage(
 	}
 
 	overflowButton.addEventListener("click", () => {
-		setOverflowOpen(Boolean(overflowMenu.hidden));
+		setOverflowOpen(overflowMenu.hidden === true);
 	});
 	overflowMenu.addEventListener("keydown", (event) => {
 		if (event.key !== "Escape") return;

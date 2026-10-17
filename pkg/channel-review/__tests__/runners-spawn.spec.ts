@@ -434,6 +434,7 @@ setInterval(() => {}, 1000);
 		});
 		const result = await runProcess(req);
 		expect(result.timedOut).toBe(true);
+		expect(result.signal).toBe("SIGKILL");
 		expect(kills).toContainEqual([-pid, "SIGKILL"]);
 	});
 
