@@ -95,38 +95,29 @@ export const gh = makeShellTag("gh");
 /** Read the current branch name; a detached checkout retains Git's HEAD result. */
 export async function currentBranch(): Promise<string> {
 	const result = await git`rev-parse --abbrev-ref HEAD`;
-	return result.stdout.toString().trim();
+	return result.text().trim();
 }
 
 /** Return the shared ancestor of HEAD and the supplied ref; unresolved refs reject. */
 export async function mergeBase(ref: string): Promise<string> {
 	const result = await git`merge-base HEAD ${ref}`;
-	return result.stdout.toString().trim();
+	return result.text().trim();
 }
 
 /** Include both tracked changes and untracked files when checking working-tree status. */
 export async function isDirty(): Promise<boolean> {
 	const result = await git`status --porcelain`;
-	return result.stdout.toString().trim().length > 0;
+	return result.text().trim().length > 0;
 }
 
 /** Prefer local main/master, then origin/HEAD, falling back to main when no default resolves. */
 export async function baseBranch(): Promise<string> {
-	const checkRef = async (ref: string): Promise<boolean> => {
-		try {
-			await git`show-ref --verify --quiet ${ref}`;
-			return true;
-		} catch {
-			return false;
-		}
-	};
-
-	if (await checkRef("refs/heads/main")) return "main";
-	if (await checkRef("refs/heads/master")) return "master";
+	if (await refExists("refs/heads/main")) return "main";
+	if (await refExists("refs/heads/master")) return "master";
 
 	try {
 		const result = await git`symbolic-ref --short refs/remotes/origin/HEAD`;
-		const remote = result.stdout.toString().trim();
+		const remote = result.text().trim();
 		if (remote.startsWith("origin/")) return remote.slice("origin/".length);
 	} catch {
 		// no remote HEAD configured
@@ -135,91 +126,62 @@ export async function baseBranch(): Promise<string> {
 	return "main";
 }
 
-/** Remote default branch when origin/HEAD exists, otherwise the local fallback. */
-export async function remoteDefaultBranch(): Promise<string> {
+async function refExists(ref: string): Promise<boolean> {
 	try {
-		const result = await git`symbolic-ref --short refs/remotes/origin/HEAD`;
-		const remote = result.stdout.toString().trim();
-		if (remote.startsWith("origin/")) return remote.slice("origin/".length);
+		await git`show-ref --verify --quiet ${ref}`;
+		return true;
 	} catch {
-		// no origin/HEAD
+		return false;
 	}
-	return baseBranch();
 }
 
-/** Resolve the base SHA for reshape operations.
- *
- * When overrideRef is given, resolve it via `git rev-parse` — but if the result is not an
- * ancestor of HEAD, fall back to its merge-base with HEAD. A base HEAD does not descend from is
- * never what a reshape wants: `apply` soft-resets to the base, so recommitting against a moved
- * branch tip silently reverts whatever landed on it in the meantime. This needs nothing unusual
- * to hit — pass `--base origin/main`, have someone push to main between gather and apply, and the
- * literal reading changes meaning underneath you. The file-set check catches it after the fact;
- * merge-basing stops it being a near-miss at all.
- *
- * Otherwise, compute merge-base with the remote-tracking default branch so a
- * stale local main never silently widens the reshape range.  Falls back to
- * the local branch merge-base only when no origin remote is present.
- *
- * Emits a one-line stderr warning if the local default branch and its
- * remote-tracking ref have diverged. */
+export async function remoteDefaultBranch(): Promise<string> {
+	try {
+		const ref = (await git`symbolic-ref --short refs/remotes/origin/HEAD`).text().trim();
+		if (ref.startsWith("origin/")) return ref.slice("origin/".length);
+	} catch {}
+	if (await refExists("refs/remotes/origin/main")) return "main";
+	if (await refExists("refs/remotes/origin/master")) return "master";
+	return "main";
+}
+
+async function hasOriginRemote(): Promise<boolean> {
+	try {
+		await git`remote get-url origin`;
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Resolve the reshape base: the override ref or the remote default branch, never a commit HEAD does not descend from. */
 export async function resolveBaseSha(overrideRef?: string): Promise<string> {
 	if (overrideRef) {
-		const result = await git`rev-parse ${overrideRef}`;
-		const sha = result.stdout.toString().trim();
+		const sha = (await git`rev-parse --verify --end-of-options ${overrideRef}^{commit}`).text().trim();
 		try {
 			await git`merge-base --is-ancestor ${sha} HEAD`;
 			return sha;
-		} catch {
-			// Not an ancestor of HEAD -- the ref moved on, or never was a fork point.
-		}
+		} catch {}
 		const forkPoint = await mergeBase(sha);
 		process.stderr.write(
-			`meaningful: warning: --base ${overrideRef} (${sha.slice(0, 8)}) is not an ancestor of HEAD; ` +
+			`warning: --base ${overrideRef} (${sha.slice(0, 8)}) is not an ancestor of HEAD; ` +
 				`using merge-base ${forkPoint.slice(0, 8)} instead\n`,
 		);
 		return forkPoint;
 	}
 
-	// Determine remote default branch name.
-	let defaultBranch = "main";
-	try {
-		const r = await git`symbolic-ref --short refs/remotes/origin/HEAD`;
-		const ref = r.stdout.toString().trim();
-		if (ref.startsWith("origin/")) defaultBranch = ref.slice("origin/".length);
-	} catch {
-		// fall through — will try origin/main then origin/master
-	}
+	if (!(await hasOriginRemote())) return mergeBase(await baseBranch());
 
-	// Check whether origin remote exists at all.
-	let hasOrigin = false;
-	try {
-		await git`ls-remote --exit-code --heads origin`;
-		hasOrigin = true;
-	} catch {
-		// no origin remote
-	}
-
-	if (!hasOrigin) {
-		// No remote — fall back to local merge-base.
-		const local = await baseBranch();
-		return mergeBase(local);
-	}
-
+	const defaultBranch = await remoteDefaultBranch();
 	const remoteRef = `origin/${defaultBranch}`;
 
-	// Warn if local branch lags remote.
 	try {
-		const localSha = (await git`rev-parse refs/heads/${defaultBranch}`).stdout.toString().trim();
-		const remoteSha = (await git`rev-parse ${remoteRef}`).stdout.toString().trim();
+		const localSha = (await git`rev-parse refs/heads/${defaultBranch}`).text().trim();
+		const remoteSha = (await git`rev-parse ${remoteRef}`).text().trim();
 		if (localSha !== remoteSha) {
-			process.stderr.write(
-				`meaningful: warning: local ${defaultBranch} differs from ${remoteRef}; using remote ref for base\n`,
-			);
+			process.stderr.write(`warning: local ${defaultBranch} differs from ${remoteRef}; using remote ref for base\n`);
 		}
-	} catch {
-		// local branch may not exist — that's fine, we use the remote ref
-	}
+	} catch {}
 
 	return mergeBase(remoteRef);
 }

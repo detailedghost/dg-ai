@@ -1,16 +1,13 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isVirtualBunPath } from "./bun-path";
 
 /** Select explicit/configured/source skill roots; a selected root suppresses default fallback discovery. */
 export interface SkillAssetOptions {
 	skillsRoot?: string;
 	configuredSkillsRoot?: string;
 	sourceSkillsRoot?: string;
-}
-
-function virtual(path: string): boolean {
-	return /(?:^|\/)(?:\$bunfs|~BUN)(?:\/|$)/i.test(path.replaceAll("\\", "/"));
 }
 
 function inside(child: string, parent: string): boolean {
@@ -23,7 +20,7 @@ function inside(child: string, parent: string): boolean {
 
 function sourceRoots(): string[] {
 	const entry = Bun.main || process.argv[1];
-	if (!entry || virtual(entry)) return [];
+	if (!entry || isVirtualBunPath(entry)) return [];
 	const roots: string[] = [];
 	if (!existsSync(entry)) return [];
 	let directory = dirname(realpathSync(entry));
@@ -81,7 +78,7 @@ export function resolveSkillAsset(
 				...sourceRoots(),
 			];
 	for (const root of roots) {
-		if (virtual(root))
+		if (isVirtualBunPath(root))
 			throw new Error(
 				`Installed skill assets need a real filesystem path, received ${root}`,
 			);
@@ -92,7 +89,7 @@ export function resolveSkillAsset(
 		if (!existsSync(candidate)) continue;
 		const realDirectory = realpathSync(directory);
 		const realCandidate = realpathSync(candidate);
-		if (virtual(realCandidate) || !inside(realCandidate, realDirectory))
+		if (isVirtualBunPath(realCandidate) || !inside(realCandidate, realDirectory))
 			throw new Error(`Skill asset escapes ${skill}: ${relativePath}`);
 		return realCandidate;
 	}

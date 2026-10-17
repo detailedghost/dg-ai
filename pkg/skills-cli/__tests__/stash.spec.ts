@@ -60,6 +60,9 @@ describe("parseArgs", () => {
 		expect(parseArgs(["-h"]).help).toBe(true);
 		expect(parseArgs(["--help"]).help).toBe(true);
 		expect(parseArgs(["-C", "/x", "t"]).dir).toBe("/x");
+		expect(parseArgs(["-Cfoo", "tool"])).toMatchObject({ dir: "foo", tool: "tool" });
+		expect(parseArgs(["-sCfoo", "tool"])).toMatchObject({ kind: "state", dir: "foo", tool: "tool" });
+		expect(() => parseArgs(["--dir=", "tool"])).toThrow("--dir requires a directory");
 		expect(parseArgs(["--dir", "/x", "t"]).dir).toBe("/x");
 	});
 

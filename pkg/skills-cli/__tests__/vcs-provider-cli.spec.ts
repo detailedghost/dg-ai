@@ -803,6 +803,32 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
 		});
 		expect(readCalls(log).join("\n")).toContain("mr create --draft");
 	});
+
+	test("create-pr accepts an empty body", () => {
+		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
+		const { env: logEnv } = callLogPath();
+		const mrPath = writeJson("gitlab-empty-body-mr.json", cliFixtures.glMr(78, "feature/empty"));
+		const glabBin = fakeBin(
+			"glab",
+			shScript(`
+  *"mr create"*)
+    printf '%s\n' 'https://gitlab.com/acme/widgets/-/merge_requests/78'
+    exit 0
+    ;;
+  *"mr view 78"*)
+    cat "$FAKE_MR_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const { stdout, exitCode } = runCli(
+			["create-pr", "--title", "Empty", "--base", "main", "--head", "feature/empty", "--body", ""],
+			{ cwd: repo, env: { GLAB_BIN: glabBin, FAKE_MR_JSON: mrPath, ...logEnv } },
+		);
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout.trim())).toMatchObject({ number: 78 });
+	});
 });
 
 describe("vcs-provider-cli list-prs — given an unresolvable provider", () => {
@@ -1435,7 +1461,7 @@ describe("vcs-provider view-pr and list-threads", () => {
 		});
 	}
 	for (const command of ["view-issue", "view-pr", "list-threads"]) {
-		for (const number of [undefined, "0", "-1", "1.5", "many"]) {
+		for (const number of [undefined, "0", "-1", "1.5", "many", "0x10", "1e2", "010"]) {
 			test(`${command} rejects invalid request number ${number ?? "<missing>"} without invoking a provider CLI`, () => {
 				const repo = makeGitRepoWithOrigin(
 					"https://github.com/acme/widgets.git",

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { isVirtualBunPath } from "./bun-path";
 
 /** Override source/compiled invocation detection, mainly for embedding and isolated tests. */
 export interface SelfCommandOptions {
@@ -15,14 +16,10 @@ export function selfCommand(
 ): string[] {
 	const execPath = opts.execPath ?? process.execPath;
 	const entrypoint = opts.entrypoint ?? (Bun.main || process.argv[1]);
-	const virtual = (value: string | undefined) =>
-		/(?:^|\/)(?:\$bunfs|~BUN)(?:\/|$)/i.test(
-			value?.replaceAll("\\", "/") ?? "",
-		);
-	if (virtual(execPath))
+	if (isVirtualBunPath(execPath))
 		throw new Error("Cannot execute a virtual Bun filesystem path");
-	if (opts.compiled ?? virtual(entrypoint)) return [execPath, ...args];
-	if (!entrypoint || virtual(entrypoint))
+	if (opts.compiled ?? isVirtualBunPath(entrypoint)) return [execPath, ...args];
+	if (!entrypoint || isVirtualBunPath(entrypoint))
 		throw new Error("A real source entrypoint is required for self invocation");
 	const source = isAbsolute(entrypoint) ? entrypoint : resolve(entrypoint);
 	if (!existsSync(source))
