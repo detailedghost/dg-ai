@@ -358,7 +358,6 @@ describe("local mode", () => {
 			join(repo, ".agents", "code-review"),
 		);
 		expect(addressFile).toMatch(/\/\d{4}-\d{2}-\d{2}-\d{6}-\d{3}\.md$/);
-		// Local ingestion belongs to the packaged host workflow; address has no --local CLI verb.
 		const workflow = readFileSync(ADDRESS_WORKFLOW, "utf8");
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
@@ -404,9 +403,10 @@ describe("remote mode via the GitHub adapter", () => {
     exit 0
     ;;`),
 		);
-		const diffFixture = join(createdDirs[0], "pr.diff");
+		const inputs = cliFixtures.tmp(createdDirs, "thrash-inputs-");
+		const diffFixture = join(inputs, "pr.diff");
 		writeFileSync(diffFixture, GH_DIFF);
-		const threadsFixture = join(createdDirs[0], "threads.json");
+		const threadsFixture = join(inputs, "threads.json");
 		writeFileSync(threadsFixture, EMPTY_THREADS);
 		const env = {
 			GH_BIN: gh.bin,
@@ -489,7 +489,6 @@ describe("remote mode via the GitHub adapter", () => {
 			"**Verdict:** Request changes. 1 critical finding found.",
 		);
 
-		// The fake provider exposes the exact body sent by thrash, as a persisted review thread.
 		writeFileSync(
 			threadsFixture,
 			JSON.stringify({
@@ -1253,8 +1252,11 @@ describe("compiled thrash workflow", () => {
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
 		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/address -l`");
+		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
+			basename(String(entry)),
+		);
 		for (const legacy of ["thrash-helper", "proxy-helper", "address-helper"]) {
-			expect(Bun.which(legacy, { PATH: fixture.bin })).toBeNull();
+			expect(installed).not.toContain(legacy);
 		}
 	});
 

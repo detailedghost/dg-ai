@@ -192,8 +192,6 @@ describe("file create — GitLab", () => {
 
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout.trim())).toMatchObject({ number: 55 });
-		// The regression this guards: a dropped empty argv element would leave "--description" glued
-		// to "--label" as its value, silently eating the label flag instead of failing loud.
 		expect(readCalls(log)[0]).toBe("issue create --title Fix widget --description= --label bug,triage --yes");
 	});
 
@@ -247,8 +245,6 @@ describe("file create — GitLab", () => {
 			env: { GLAB_BIN: glabBin, FAKE_ISSUE_JSON: issuePath },
 		});
 
-		// Reaching `issue view 65` at all is the assertion: a stale /-/issues/-only pattern
-		// reported PARSE_ERROR here even though the issue had been created.
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout.trim())).toMatchObject({
 			number: 65,
@@ -322,6 +318,7 @@ describe("file list", () => {
 		const call = readCalls(log)[0];
 		expect(call).toContain("--state all");
 		expect(call).toContain("--label bug");
+		expect(call).toContain("--limit 2");
 	});
 
 	test("--group-by-label buckets issues by shared label, fanning a multi-labeled issue into every bucket it belongs to", () => {
@@ -377,6 +374,7 @@ describe("file list — GitLab", () => {
 		const call = readCalls(log)[0];
 		expect(call).toContain("--all");
 		expect(call).toContain("--label bug");
+		expect(call).toContain("--per-page 2");
 	});
 });
 
@@ -467,7 +465,9 @@ describe("file bucket", () => {
 		const calls = readCalls(log);
 		expect(calls[0]).toBe("label create flaky-tests");
 		expect(calls[1]).toBe("issue edit 1 --add-label flaky-tests");
-		expect(calls[3]).toBe("issue edit 2 --add-label flaky-tests");
+		expect(calls.find((call) => call.startsWith("issue edit 2"))).toBe(
+			"issue edit 2 --add-label flaky-tests",
+		);
 	});
 
 	test("without --create, skips label creation and only attaches the (assumed-existing) label", () => {
@@ -591,7 +591,7 @@ describe("file — no resolvable provider", () => {
 
 		expect(exitCode).toBe(1);
 		expect(stdout.trim()).toBe("");
-		expect(stderr.length).toBeGreaterThan(0);
+		expect(stderr).toContain(`no "origin" remote configured`);
 	});
 });
 
@@ -603,9 +603,9 @@ describe("file dispatch and validation", () => {
 		{ args: ["bogus"], status: 2, stdout: false },
 	])("preserves usage status and streams for $args", ({ args, status, stdout }) => {
 		const { path, env } = callLogPath();
-		fakeBin("gh", shScript(""));
-		fakeBin("glab", shScript(""));
-		const result = runCli(args, { env });
+		const ghBin = fakeBin("gh", shScript(""));
+		const glabBin = fakeBin("glab", shScript(""));
+		const result = runCli(args, { env: { ...env, GH_BIN: ghBin, GLAB_BIN: glabBin } });
 		expect(result.exitCode).toBe(status);
 		expect(stdout ? result.stdout : result.stderr).toContain("Usage:");
 		expect(stdout ? result.stderr : result.stdout).toBe("");

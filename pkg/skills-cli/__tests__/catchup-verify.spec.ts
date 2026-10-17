@@ -116,6 +116,34 @@ console.log("loaded");
 		expect(calls()).toEqual([]);
 	});
 
+	test("ignores project markers inside vendored directories", () => {
+		const root = project({
+			"node_modules/dep/dbt_project.yml": "",
+			"node_modules/dep/App.csproj": "",
+			".venv/lib/test_vendored.py": "",
+		});
+		const result = runVerify(root);
+		expect(result.stdout).toContain("No recognized project type found");
+		expect(calls()).toEqual([]);
+	});
+
+	test("runs node scripts only when package.json defines them", () => {
+		const root = project({
+			"package.json":
+				'{"description":"build and test","dependencies":{"test":"1"},"scripts":{"test:unit":"x"}}\n',
+		});
+		const result = runVerify(root);
+		expect(result.exitCode).toBe(0);
+		expect(calls()).toEqual([]);
+	});
+
+	test("does not run node scripts when package.json is not valid JSON", () => {
+		const root = project({ "package.json": '{"scripts":{"build":' });
+		const result = runVerify(root);
+		expect(result.exitCode).toBe(0);
+		expect(calls()).toEqual([]);
+	});
+
 	test("falls back to caller cwd outside Git and still verifies detected projects", () => {
 		const root = fixtures.tmp("dg verifier outside git ");
 		put(root, "go.mod", "module example.invalid/fixture\n");
@@ -203,12 +231,12 @@ console.log("loaded");
 
 	test.each([
 		['{"description":"build and test"}', []],
-		['{"build":false,"test":false}', [["run", "build"], ["test"]]],
+		['{"build":false,"test":false}', []],
 		['{"scripts":{"prebuild":"ignored","testing":"ignored"}}', []],
 		['{"scripts":{"test":"ignored"}}', [["test"]]],
 		['{"scripts":{"build":"ignored"}}', [["run", "build"]]],
 	] as [string, string[][]][])(
-		"uses literal quoted Node names in %s",
+		"uses only the scripts object for Node names in %s",
 		(manifest, expectedArgs) => {
 			const root = project({ "package.json": manifest });
 			const result = runVerify(root);

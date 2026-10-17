@@ -749,28 +749,17 @@ describe("meaningful preflight, backup and rollback", () => {
 		},
 	);
 
-	test("rejects empty text plans and malformed AUTHOR lines before changing history", () => {
+	test.each([
+		["", 1, "no groups parsed from plan"],
+		["MSG: feat: a\nAUTHOR: invalid\nFILES:\na.ts\n", 2, "malformed AUTHOR line"],
+	] as const)("rejects the text plan %j before changing history", (text, status, message) => {
 		const repo = makeRepo();
 		commit(repo, { "a.ts": "a\n" });
 		const before = snapshot(repo);
-		for (const [text, status, message] of [
-			["", 1, "no groups parsed from plan"],
-			[
-				"MSG: feat: a\nAUTHOR: invalid\nFILES:\na.ts\n",
-				2,
-				"malformed AUTHOR line",
-			],
-		] as const) {
-			const result = runMeaningful(repo, [
-				"apply",
-				"--base",
-				repo.base,
-				rawPlan(text),
-			]);
-			expect(result.exitCode).toBe(status);
-			expect(result.stderr).toContain(message);
-			expect(snapshot(repo)).toEqual(before);
-		}
+		const result = runMeaningful(repo, ["apply", "--base", repo.base, rawPlan(text)]);
+		expect(result.exitCode).toBe(status);
+		expect(result.stderr).toContain(message);
+		expect(snapshot(repo)).toEqual(before);
 	});
 
 	test("restores the backup when a post-commit hook makes the reshaped tree dirty", () => {
@@ -874,7 +863,6 @@ describe("meaningful preflight, backup and rollback", () => {
 					: "no upstream; setting and pushing.",
 			);
 			const remote = git(repo, ["ls-remote", "origin"]);
-			// A named backup ref is accepted too; abort remains deliberately local.
 			git(repo, ["update-ref", "refs/meaningful/backups/original", backup]);
 			write(repo, "a.ts", "discard this dirty edit\n");
 			const aborted = runMeaningful(repo, [
@@ -916,14 +904,13 @@ describe("meaningful preflight, backup and rollback", () => {
 	});
 });
 
-
-// Bootstrap is copied into an owned synthetic checkout. No download utility or
-// legacy helper is installed in this suite's PATH.
-const compiledBootstrapTools = ["sh", "mktemp", "find", "grep", "mkdir", "basename", "rm", "dirname", "cp", "chmod", "sort", "wc", "tr"].map((name) => {
- const path = Bun.which(name);
- if (!path) throw new Error(`Missing bootstrap fixture utility: ${name}`);
- return { name, path };
-});
+function resolveBootstrapTools() {
+ return ["sh", "mktemp", "find", "grep", "mkdir", "basename", "rm", "dirname", "cp", "chmod", "sort", "wc", "tr"].map((name) => {
+  const path = Bun.which(name);
+  if (!path) throw new Error(`Missing bootstrap fixture utility: ${name}`);
+  return { name, path };
+ });
+}
 
 const INSTALLED_FILES = [
  "deps-upgrade/SKILL.md",
@@ -965,7 +952,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   const cwd = join(stage, "external install cwd");
   const home = join(stage, "bootstrap home");
   for (const dir of [tools, cwd, home]) mkdirSync(dir, { recursive: true });
-  for (const tool of compiledBootstrapTools) symlinkSync(tool.path, join(tools, tool.name));
+  for (const tool of resolveBootstrapTools()) symlinkSync(tool.path, join(tools, tool.name));
   const installResult = Bun.spawnSync([join(tools, "sh"), bootstrap, "--skills-only"], { cwd, env: { HOME: home, PATH: tools, TMPDIR: stage, DG_SKILLS_DEST: skills, DG_SKILLS_NO_CLI: "1" } });
   if (installResult.exitCode !== 0) throw new Error(`Skills-only fixture install failed: ${installResult.stderr.toString()}`);
   rmSync(stage, { recursive: true, force: true });

@@ -409,9 +409,7 @@ JSON
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("0");
-		expect(result.stderr).toContain("renovate-bot");
-		expect(result.stderr).toMatch(/renovate/i);
+		expect(result.stderr).toContain("found 0 open MRs authored by renovate-bot");
 		expect(JSON.parse(result.stdout.trim())).toEqual([]);
 	});
 
@@ -641,7 +639,7 @@ describe("deps-upgrade close-prs", () => {
 		});
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("22");
+		expect(result.stderr).toContain("warning: failed to close PR #22");
 		expect(readClosedLog(result.stateDir, result.cwd)).toEqual(["21"]);
 	});
 
@@ -1200,7 +1198,12 @@ describe("package cooldown", () => {
 			},
 		);
 
-		expect(verdict.status).toBe("held");
+		expect(verdict).toEqual({
+			status: "held",
+			requested: "2.0.0",
+			published: "2026-10-15T00:00:00.000000Z",
+			eligible: "2026-10-22T00:00:00.000Z",
+		});
 	});
 
 	test("reads NuGet registration pages, fetching pages that are not inlined", async () => {
@@ -1305,6 +1308,11 @@ describe("package cooldown", () => {
 			status: "ok",
 			version: "2.0.0",
 		});
+		expect(
+			existsSync(
+				stateFile(result.stateDir, result.cwd, "held-by-cooldown.jsonl"),
+			),
+		).toBe(false);
 	});
 
 	test("the cooldown subcommand rejects a negative day count", async () => {
@@ -2279,6 +2287,18 @@ function lastCommit(cwd: string): { subject: string; files: string[] } {
 	};
 }
 
+function addDefaultOrigin(cwd: string): void {
+	cliFixtures.runGit(
+		["remote", "add", "origin", "https://example.invalid/widgets.git"],
+		cwd,
+	);
+	cliFixtures.runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], cwd);
+	cliFixtures.runGit(
+		["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+		cwd,
+	);
+}
+
 function stateFile(stateDir: string, cwd: string, name: string): string {
 	const hash = projectHash(cwd);
 	return join(stateDir, "deps-upgrade", hash, name);
@@ -2492,7 +2512,12 @@ describe("integration: bump-dep", () => {
 	});
 
 	test("--ecosystem overrides detection", async () => {
-		const cwd = gitRepo({ "go.mod": "module x\n", "go.sum": "sum1\n" });
+		const cwd = gitRepo({
+			"go.mod": "module x\n",
+			"go.sum": "sum1\n",
+			"package-lock.json": "{}",
+			"package.json": "{}",
+		});
 		const log = newCallLog();
 		const fakeGo = shScript(`
   *"get"*)
@@ -2510,6 +2535,7 @@ describe("integration: bump-dep", () => {
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toContain("ecosystem: go");
+		expect(readCalls(log).some((call) => call.startsWith("get"))).toBe(true);
 	});
 
 	test("rejects an unknown --ecosystem", async () => {
@@ -2969,11 +2995,19 @@ describe("integration: CLI surface", () => {
 describe("deps-upgrade state ownership", () => {
 	test("rejects a managed state symlink without touching its destination", () => {
 		const target = cliFixtures.tmp(createdDirs, "deps-external-state-");
+		const state = cliFixtures.tmp(createdDirs, "deps-owned-state-");
+		const previous = process.env.AI_STATE_DIR;
+		process.env.AI_STATE_DIR = state;
 		writeFileSync(join(target, "keep.txt"), "existing data");
-		symlinkSync(target, join(process.env.AI_STATE_DIR!, "deps-upgrade"), "dir");
-		expect(() => helper.scratchPaths()).toThrow(
-			/unsafe scratch\/state directory/,
-		);
+		symlinkSync(target, join(state, "deps-upgrade"), "dir");
+		try {
+			expect(() => helper.scratchPaths()).toThrow(
+				/unsafe scratch\/state directory/,
+			);
+		} finally {
+			if (previous === undefined) delete process.env.AI_STATE_DIR;
+			else process.env.AI_STATE_DIR = previous;
+		}
 		expect(readFileSync(join(target, "keep.txt"), "utf8")).toBe(
 			"existing data",
 		);
@@ -3098,15 +3132,7 @@ describe("cooldown registry boundaries", () => {
 
 	test("the cooldown CLI records held versions and includes them in summary", async () => {
 		const cwd = gitRepo({ "package-lock.json": "{}" });
-		cliFixtures.runGit(
-			["remote", "add", "origin", "https://example.invalid/widgets.git"],
-			cwd,
-		);
-		cliFixtures.runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], cwd);
-		cliFixtures.runGit(
-			["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
-			cwd,
-		);
+		addDefaultOrigin(cwd);
 		const preload = join(
 			cliFixtures.tmp(createdDirs, "deps-registry-preload-"),
 			"registry.ts",
@@ -3161,15 +3187,7 @@ describe("deps-upgrade status and reset-deps", () => {
 
 	test("reset-deps previews by default and confirmed reset preserves the working files", async () => {
 		const cwd = gitRepo({ "a.txt": "initial" });
-		cliFixtures.runGit(
-			["remote", "add", "origin", "https://example.invalid/widgets.git"],
-			cwd,
-		);
-		cliFixtures.runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], cwd);
-		cliFixtures.runGit(
-			["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
-			cwd,
-		);
+		addDefaultOrigin(cwd);
 		const original = cliFixtures.runGit(["rev-parse", "HEAD"], cwd);
 		cliFixtures.commitFile(
 			cwd,

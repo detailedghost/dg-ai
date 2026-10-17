@@ -399,15 +399,15 @@ console.log("loaded");
 	});
 
 	test.each(["--unknown", "operand", "--"])(
-		"rejects %s on stdout before touching Git",
+		"rejects %s on stderr before touching Git",
 		(flag) => {
 			const result = runCatchup(fixtures.tmp("dg catchup bad argument "), [
 				flag,
 			]);
 			expect(result).toEqual({
 				exitCode: 1,
-				stdout: `Unknown flag: ${flag}\n`,
-				stderr: "",
+				stdout: "",
+				stderr: `Unknown flag: ${flag}\n`,
 			});
 			expect(calls()).toEqual([]);
 		},
@@ -499,6 +499,8 @@ console.log("loaded");
 			expect(calls().find((call) => call.args[0] === "push")?.args).toEqual([
 				"push",
 				"--force-with-lease",
+				"origin",
+				"HEAD:refs/heads/feature",
 			]);
 			expect(calls().find((call) => call.args[0] === "rebase")?.args).toEqual([
 				"rebase",
@@ -593,6 +595,7 @@ console.log("loaded");
 		expect(result.exitCode).toBe(128);
 		expect(result.stdout).toContain("Fetching origin/main");
 		expect(result.stderr).toContain("does not appear to be a git repository");
+		expect(result.stderr).toContain("git stash pop");
 		expect(result.stdout).not.toContain("Restoring stash");
 		expect(git(repo.dir, ["rev-parse", "HEAD"])).toBe(repo.head);
 		expect(git(repo.dir, ["stash", "list"])).toContain("catchup-auto-stash");
@@ -601,6 +604,22 @@ console.log("loaded");
 		);
 		expect(
 			calls().some((call) => ["rebase", "push"].includes(call.args[0])),
+		).toBe(false);
+	});
+
+	test("fails early on a detached HEAD without stashing or rebasing", () => {
+		const repo = makeRepo();
+		git(repo.dir, ["checkout", "-q", "--detach"]);
+		put(repo.dir, "work.txt", "dirty detached\n");
+		const result = runCatchup(repo.dir);
+		const recorded = calls();
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("HEAD is detached");
+		expect(git(repo.dir, ["stash", "list"])).toBe("");
+		expect(
+			recorded.some((call) =>
+				["stash", "rebase", "push"].includes(call.args[0]),
+			),
 		).toBe(false);
 	});
 
@@ -738,7 +757,9 @@ console.log("loaded");
 			calls()
 				.filter((call) => call.args[0] === "push")
 				.map((call) => call.args),
-		).toEqual([["push", "--force-with-lease"]]);
+		).toEqual([
+			["push", "--force-with-lease", "origin", "HEAD:refs/heads/feature"],
+		]);
 		expect(result.stdout).not.toContain("Catchup complete!");
 	});
 });

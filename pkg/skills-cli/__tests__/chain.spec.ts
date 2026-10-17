@@ -405,7 +405,7 @@ describe("applyBaseActions", () => {
 			{ ref: "103", action: "retarget", newBase: "102" },
 		];
 
-		await expect(applyBaseActions(actions)).resolves.toBeUndefined();
+		await expect(applyBaseActions(actions)).resolves.toBe(1);
 		expect(readCalls(log)).toEqual([
 			PR_VIEW_101,
 			"pr edit 102 --base feature-101",
@@ -563,6 +563,14 @@ function runCli(
 function freshCwd(): string {
 	return tmp("chain-cli-cwd-");
 }
+
+describe("chain flag values", () => {
+	test.each(["--repo", "--mark"])("%s without a value is rejected", (flag) => {
+		const result = runCli(["render", "101", flag], {}, freshCwd());
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain(`Missing value for ${flag}`);
+	});
+});
 
 describe("chain apply --native (GitHub)", () => {
 	test("runs gh stack link after the retargets and before the body upserts, and chain plan --native agrees it's eligible", () => {
@@ -973,8 +981,9 @@ describe.each(["github", "gitlab"] as const)("chain apply managed bodies on %s",
 	test("continues retargets and body updates after a retarget fails", () => {
 		const fixture = statefulProvider(provider, { failRetarget: "102" });
 		const result = runCli(["apply", "101", "102", "103"], fixture.env, freshCwd());
-		expect(result.exitCode).toBe(0);
+		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toContain("failed to retarget 102");
+		expect(result.stderr).toContain("1 retarget(s) failed");
 		const calls = fixture.calls();
 		expect(calls.some((call) => call.args[2] === "103" && call.args.includes("feature-102"))).toBe(true);
 		expect(Object.keys(fixture.bodies()).sort()).toEqual(["101", "102", "103"]);

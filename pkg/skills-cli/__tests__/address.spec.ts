@@ -4521,6 +4521,136 @@ describe("address commit-push", () => {
 	});
 });
 
+describe("address commit-push sensitive files", () => {
+	test("skips nested and secret-named untracked files and stages the rest", async () => {
+		const log = newCallLog();
+		const bin = cliFixtures.tmp(createdDirs, "address-fake-git-");
+		writeFakeCli(
+			bin,
+			"git",
+			cliFixtures.shScript(`
+  "ls-files --others --exclude-standard") printf '%s\\n' app/.env config/.env.local id_rsa .npmrc certs/server.pem keys/api.key src/app.ts ;;
+  "add -u"|"add -- src/app.ts"|"commit -m msg"|"push") exit 0 ;;
+  *) exit 99 ;;
+`),
+		);
+		const result = await runCli(["commit-push", "msg"], {
+			env: { PATH: `${bin}:${process.env.PATH ?? ""}`, FAKE_CALL_LOG: log },
+		});
+		expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+		expect(readCalls(log)).toEqual([
+			"add -u",
+			"ls-files --others --exclude-standard",
+			"add -- src/app.ts",
+			"commit -m msg",
+			"push",
+		]);
+	});
+});
+
+describe("Copilot polling input and data guards", () => {
+	for (const verb of ["verify-copilot-engaged", "await-copilot-review"]) {
+		test.each(["--timeout=abc", "--timeout=-1", "--interval=x"])(
+			`${verb} rejects %s`,
+			async (flag) => {
+				const result = await runCli([verb, PR_URL, SINCE, flag], {
+					env: { AI_VCS_PROVIDER: "github" },
+				});
+				expect(result.exitCode).not.toBe(0);
+				expect(result.stderr).toContain("must be a non-negative integer");
+			},
+		);
+
+		test(`${verb} survives a comment whose author is null`, async () => {
+			const response = writeJson("poll-ghost.json", {
+				data: {
+					repository: {
+						pullRequest: {
+							reviews: { nodes: [{ submittedAt: SINCE, author: null }] },
+							comments: {
+								nodes: [
+									{
+										databaseId: 1,
+										body: "x",
+										createdAt: SINCE,
+										author: null,
+									},
+								],
+							},
+						},
+					},
+				},
+			});
+			const ghBin = fakeGh(
+				cliFixtures.shScript(`
+  "api graphql "*) cat "${response}" ;;
+  *) exit 99 ;;
+`),
+			);
+			const result = await runCli(
+				[verb, PR_URL, SINCE, "--timeout=1", "--interval=1"],
+				{
+					env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+				},
+			);
+			expect(result).toEqual({ exitCode: 124, stdout: "", stderr: "" });
+		});
+
+		test(`${verb} compares timestamps by instant, not by string`, async () => {
+			const response = writeJson("poll-offset.json", {
+				data: {
+					repository: {
+						pullRequest: {
+							reviews: {
+								nodes: [
+									{
+										submittedAt: "2026-02-01T00:30:00+05:00",
+										author: { login: "copilot-pull-request-reviewer" },
+									},
+								],
+							},
+							comments: {
+								nodes: [
+									{
+										databaseId: 1,
+										body: "x",
+										createdAt: "2026-02-01T00:30:00+05:00",
+										author: { login: "copilot-swe-agent" },
+									},
+								],
+							},
+						},
+					},
+				},
+			});
+			const ghBin = fakeGh(
+				cliFixtures.shScript(`
+  "api graphql "*) cat "${response}" ;;
+  *) exit 99 ;;
+`),
+			);
+			const result = await runCli(
+				[verb, PR_URL, "2026-02-01T00:00:00Z", "--timeout=0", "--interval=0"],
+				{
+					env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+				},
+			);
+			expect(result).toEqual({ exitCode: 124, stdout: "", stderr: "" });
+		});
+	}
+
+	test("check-copilot reports the gh failure instead of rejecting", async () => {
+		const ghBin = fakeGh(cliFixtures.shScript("  *) echo nope 1>&2; exit 1 ;;"));
+		const { stdout, exitCode } = await runCli(["check-copilot"], {
+			env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+		});
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as { available: boolean; reason: string };
+		expect(parsed.available).toBe(false);
+		expect(parsed.reason).toContain("could not read the repository URL");
+	});
+});
+
 describe("compiled address", () => {
 	test("runs both providers after relocation, preserving batch stdin, reply ordering, exact bodies and status streams", async () => {
 		const buildDir = cliFixtures.tmp(createdDirs, "address build ");

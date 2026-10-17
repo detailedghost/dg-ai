@@ -33,6 +33,8 @@ copy_skill_tree() {
   src=$1
   dest=$2
   manifest=$(mktemp)
+  filelist=""
+  trap 'rm -f "$manifest" "$filelist"' EXIT
   if [ ! -d "$src" ]; then
     echo "dg-skills: no skills directory at ${src}" >&2
     exit 1

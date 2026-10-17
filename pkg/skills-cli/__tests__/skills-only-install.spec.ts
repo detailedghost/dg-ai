@@ -614,6 +614,8 @@ describe("bootstrap.sh --skills-only", () => {
 		writeFileSync(outside, "#!/bin/sh\necho executed > \"" + join(directory, "sentinel.txt") + "\"\n");
 		chmodSync(outside, 0o755);
 		symlinkSync(outside, join(skills, "probe-exec", "linked.sh"));
+		const scratch = join(directory, "tmp");
+		mkdirSync(scratch);
 		try {
 			const result = await run(
 				["sh", BOOTSTRAP],
@@ -621,10 +623,12 @@ describe("bootstrap.sh --skills-only", () => {
 					DG_SKILLS_ONLY: "1",
 					DG_SKILLS_SOURCE: skills,
 					DG_SKILLS_DEST: join(directory, "out"),
+					TMPDIR: scratch,
 				}),
 			);
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("refusing to copy a symlink");
+			expect(readdirSync(scratch)).toEqual([]);
 			expect(existsSync(join(directory, "sentinel.txt"))).toBe(false);
 			expect(filesUnder(join(directory, "out"))).toEqual([]);
 		} finally {

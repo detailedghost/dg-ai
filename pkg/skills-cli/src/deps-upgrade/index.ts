@@ -29,6 +29,7 @@ USAGE (run any subcommand with --help for details):
   deps-upgrade bump-action <action-ref> <from> <to> [workflow-files...]
   deps-upgrade commit <type> <scope> "<msg>" [--files a,b]
   deps-upgrade status
+  deps-upgrade summary
   deps-upgrade reset-deps --confirm
   deps-upgrade close-prs <n>...
   deps-upgrade cooldown <pkg> <old> <new> [--cooldown-days N] [--ecosystem <name>]

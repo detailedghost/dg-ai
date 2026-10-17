@@ -240,6 +240,19 @@ describe("decideVerdict", () => {
 		}
 	});
 
+	test.each([
+		[1, tally(0, 4), "approve"],
+		[1, tally(0, 5), "request_changes"],
+		[3, tally(0, 0, 4), "approve"],
+		[3, tally(0, 1), "request_changes"],
+		[4, tally(0, 0, 2), "approve"],
+		[4, tally(0, 0, 3), "request_changes"],
+		[5, tally(0, 0, 0, 4), "approve"],
+		[5, tally(0, 0, 1), "request_changes"],
+	] as const)("spice %i pins the literal limits for %j", (spice, counts, verdict) => {
+		expect(decideVerdict(counts, spice, false).verdict).toBe(verdict);
+	});
+
 	test("a higher spice fails a diff that a lower spice passes", () => {
 		const diff = tally(0, 1, 4);
 		expect(decideVerdict(diff, 2, false).verdict).toBe("approve");
