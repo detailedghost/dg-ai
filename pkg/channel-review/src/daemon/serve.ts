@@ -351,23 +351,29 @@ export async function serve({
 			}
 		}
 
+		const streams = new AbortController();
+		const stopStreams = () => streams.abort();
+		signal.addEventListener("abort", stopStreams, { once: true });
+		if (signal.aborted) streams.abort();
+
 		async function pump(chatId: string): Promise<number> {
+			const streamSignal = streams.signal;
 			let refetched = false;
 			for (;;) {
 				try {
 					for await (const event of switcher.provider.subscribe({
 						chatId,
 						resumeId: state.get().lastEventIds[chatId],
-						signal,
+						signal: streamSignal,
 					})) {
 						refetched = false;
 						await dispatch(chatId, event);
 					}
-					if (signal.aborted) return 0;
+					if (streamSignal.aborted) return 0;
 					log.error(`chat ${chatId}: the event stream ended unexpectedly`);
 					return 1;
 				} catch (error) {
-					if (signal.aborted) return 0;
+					if (streamSignal.aborted) return 0;
 					if (!(error instanceof RelayAuthError)) {
 						log.error(`chat ${chatId}: ${describeError(error)}`);
 						return 1;
@@ -399,9 +405,21 @@ export async function serve({
 
 		let code: number;
 		try {
-			const codes = await Promise.all(chats.map(({ id }) => pump(id)));
-			code = codes.includes(0) ? 0 : 1;
+			const codes = await Promise.all(
+				chats.map(async ({ id }) => {
+					const status = await pump(id);
+					if (status !== 0) {
+						log.error(
+							`chat ${id}: event stream failed; stopping the daemon`,
+						);
+						streams.abort();
+					}
+					return status;
+				}),
+			);
+			code = codes.some((status) => status !== 0) ? 1 : 0;
 		} finally {
+			signal.removeEventListener("abort", stopStreams);
 			stopMaintenance();
 			await automation.stop();
 			await withTimeout(

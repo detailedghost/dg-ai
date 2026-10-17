@@ -450,7 +450,7 @@ describe("serve multiple chats", () => {
 		await done;
 	});
 
-	test("keeps serving the other chat when one stream fails and logs the chat id", async () => {
+	test("exits 1 when any chat stream fails instead of reporting success", async () => {
 		const h = setup({
 			configExtra: twoChats,
 			scripts: [
@@ -460,8 +460,8 @@ describe("serve multiple chats", () => {
 				}),
 			],
 		});
-		const { controller, done } = h.startServe();
-		await waitUntil(() => lastEventId(h, SECOND_CHAT) === "b1");
+		const { done } = h.startServe();
+		expect(await done).toBe(1);
 		expect(
 			h.log.lines.some(
 				(line) =>
@@ -470,9 +470,40 @@ describe("serve multiple chats", () => {
 					line.message.includes("stream broke"),
 			),
 		).toBe(true);
-		expect(existsSync(h.paths.pidPath)).toBe(true);
-		controller.abort();
-		expect(await done).toBe(0);
+		expect(
+			h.log.lines.some(
+				(line) =>
+					line.level === "error" &&
+					line.message.includes(`chat ${CHAT_ID}`) &&
+					line.message.includes("stopping the daemon"),
+			),
+		).toBe(true);
+		expect(existsSync(h.paths.pidPath)).toBe(false);
+	});
+
+	test("exits 1 when any chat stream ends while another stays open", async () => {
+		const h = setup({
+			configExtra: twoChats,
+			scripts: [
+				byChat({
+					[CHAT_ID]: async function* () {
+						yield messageEvent("a1");
+					},
+					[SECOND_CHAT]: holdOpen(secondMessage("b1", "m-b1")),
+				}),
+			],
+		});
+		const { done } = h.startServe();
+		expect(await done).toBe(1);
+		expect(
+			h.log.lines.some(
+				(line) =>
+					line.level === "error" &&
+					line.message.includes(`chat ${CHAT_ID}`) &&
+					line.message.includes("event stream ended unexpectedly"),
+			),
+		).toBe(true);
+		expect(existsSync(h.paths.pidPath)).toBe(false);
 	});
 
 	test("exits 1 when every chat stream fails", async () => {
