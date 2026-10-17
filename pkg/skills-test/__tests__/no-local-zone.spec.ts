@@ -50,6 +50,8 @@ const retiredHelpers = legacyInvocation([
 	"stash-cli",
 	"clipboard-image",
 	"vcs-provider-cli",
+	"proxy-helper",
+	"bg-helper",
 ]);
 const consumerFiles = skillFiles.filter((file) =>
 	[
@@ -74,7 +76,7 @@ describe("public skill distribution", () => {
 		).toEqual([]);
 	});
 
-	test("does not invoke removed storage or clipboard helpers in code or skill references", () => {
+	test("does not invoke removed helpers in code or skill references", () => {
 		expect(matches(publicFiles, retiredHelpers)).toEqual([]);
 	});
 
@@ -100,6 +102,9 @@ describe("legacy executable detection", () => {
 		"Use `clipboard-image -`.",
 		"$(clipboard-image -s)",
 		"vcs-provider-cli detect",
+		"proxy-helper codex --prompt-file task.md",
+		"bg-helper run command",
+		'Bun.spawn(["proxy-helper", "codex"])',
 		'Bun.spawn(["stash", "tool"])',
 		'runCapture("clipboard-image", ["-"])',
 		'const command = "stash -G viz";',
@@ -112,6 +117,9 @@ describe("legacy executable detection", () => {
 		'$("$DG" stash -s tool)',
 		'"$DG" clipboard-image photo.png',
 		'"$DG" vcs-provider detect',
+		'"$DG" proxy codex --prompt-file task.md',
+		'"$DG" proxy background run command',
+		"const legacyName = /^proxy-helper(?:\\.sh)?$/;",
 		'Bun.spawn([binary, "stash", "tool"])',
 		'const name = "clipboard-image";',
 		"git stash pop",
