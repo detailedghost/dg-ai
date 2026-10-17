@@ -1,8 +1,6 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { defineCommand, EXIT } from "../utils/legacy-command";
 import { scratchPath } from "@dg/common/node";
-import { git, resolveBaseSha } from "../utils/git";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
 import {
@@ -14,6 +12,9 @@ import {
 	type RepoRef,
 	type ReviewThread,
 } from "../provider/types";
+import { git, resolveBaseSha } from "../utils/git";
+import { defineCommand, EXIT } from "../utils/legacy-command";
+import { optionalOption, requireOption } from "../utils/options";
 import {
 	addressFileName,
 	annotateDiff,
@@ -56,10 +57,10 @@ interface LocalTarget {
 	mode: "local";
 	root: string;
 	relPath: string;
-	base: string;
 }
 
 type Target = RemoteTarget | LocalTarget;
+type DiffTarget = RemoteTarget | (LocalTarget & { base: string });
 
 interface PlanFile extends Coverage {
 	contextPath: string;
@@ -75,23 +76,9 @@ function isUrl(arg: string): boolean {
 	return /^https?:\/\//.test(arg);
 }
 
-function optionalOption(args: string[], name: string): string | undefined {
-	const index = args.indexOf(name);
-	if (index === -1) return undefined;
-	const value = args[index + 1];
-	if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
-	return value;
-}
-
-function requireOption(args: string[], name: string): string {
-	const value = optionalOption(args, name);
-	if (!value) throw new Error(`${name} is required`);
-	return value;
-}
-
-function positional(args: string[], commandName: string): string {
+function positional(args: string[], commandName: string, valueFlags: string[] = []): string {
 	const consumed = new Set<number>();
-	for (const flag of ["--base", "--diff", "--spice", "--min-tier", "--review"]) {
+	for (const flag of valueFlags) {
 		const index = args.indexOf(flag);
 		if (index !== -1) {
 			consumed.add(index);
@@ -115,7 +102,7 @@ function gitToplevel(dir: string): string {
 	return result.stdout.toString().trim();
 }
 
-async function resolveTarget(arg: string, baseOverride?: string): Promise<Target> {
+async function resolveTarget(arg: string): Promise<Target> {
 	if (isUrl(arg)) {
 		const { kind } = await detectProvider(arg);
 		return {
@@ -131,8 +118,7 @@ async function resolveTarget(arg: string, baseOverride?: string): Promise<Target
 	const root = gitToplevel(statSync(abs).isDirectory() ? abs : path.dirname(abs));
 	process.chdir(root);
 	const relPath = path.relative(root, abs) || ".";
-	const base = await resolveBaseSha(baseOverride);
-	return { mode: "local", root, relPath, base };
+	return { mode: "local", root, relPath };
 }
 
 function targetSlug(target: Target): string {
@@ -147,12 +133,12 @@ function prRef(target: RemoteTarget): PrRef {
 	return { number: target.number, repo: target.repo };
 }
 
-async function fetchDiffText(target: Target): Promise<string> {
+async function fetchDiffText(target: DiffTarget): Promise<string> {
 	if (target.mode === "remote") {
 		const provider = await getProviderForUrl(target.url);
 		return provider.fetchDiff(prRef(target));
 	}
-	const result = await git`diff ${target.base} -- ${target.relPath}`;
+	const result = await git`-c diff.renames=true diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ ${target.base} -- ${target.relPath}`;
 	return result.stdout.toString();
 }
 
@@ -168,7 +154,7 @@ function planPathFor(diffPath: string): string {
 const BODY_LIMIT = 4000;
 
 async function renderContext(
-	target: Target,
+	target: DiffTarget,
 	files: ReturnType<typeof parseUnifiedDiff>,
 	plan: ChunkPlan,
 ): Promise<string> {
@@ -207,7 +193,7 @@ async function renderContext(
 	return `${lines.join("\n")}\n`;
 }
 
-async function writeDiff(target: Target) {
+async function writeDiff(target: DiffTarget) {
 	const text = await fetchDiffText(target);
 	const files = parseUnifiedDiff(text);
 	const slug = targetSlug(target);
@@ -219,6 +205,7 @@ async function writeDiff(target: Target) {
 		annotatedPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.annotated.diff`),
 		findingsPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.findings.md`),
 	}));
+	for (const { findingsPath } of chunks) rmSync(findingsPath, { force: true });
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
 	writeFileSync(contextPath, await renderContext(target, files, plan));
@@ -238,8 +225,12 @@ async function writeDiff(target: Target) {
 }
 
 async function cmdDiff(args: string[]): Promise<number> {
-	const arg = positional(args, "diff");
-	const target = await resolveTarget(arg, optionalOption(args, "--base"));
+	const arg = positional(args, "diff", ["--base"]);
+	const resolved = await resolveTarget(arg);
+	const target: DiffTarget =
+		resolved.mode === "local"
+			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base")) }
+			: resolved;
 	const written = await writeDiff(target);
 	const untracked = target.mode === "local" ? await listUntracked(target) : [];
 	printJson({
@@ -276,7 +267,7 @@ function nextAddressFile(root: string): string {
 }
 
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
-	const arg = positional(args, "compile");
+	const arg = positional(args, "compile", ["--diff", "--spice", "--min-tier"]);
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
@@ -302,6 +293,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		coverage: splitReview ? { chunks: plan.chunks, skipped: plan.skipped } : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
+	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
 	writeFileSync(reviewPath, JSON.stringify({ target: arg, review } satisfies ReviewFile, null, 2));
 
 	let addressFile: string | undefined;
@@ -326,7 +318,7 @@ export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = p
 }
 
 async function cmdPost(args: string[]): Promise<number> {
-	const arg = positional(args, "post");
+	const arg = positional(args, "post", ["--review"]);
 	if (!isUrl(arg)) {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
 	}

@@ -171,11 +171,35 @@ export function parseTier(raw: string): Tier {
 	return value;
 }
 
-const DIFF_HEADER_RE = /^diff --git a\/(.+?) b\/(.+)$/;
+const QUOTED_PATH = '"(?:[^"\\\\]|\\\\.)*"';
+const DIFF_HEADER_RE = new RegExp(`^diff --git (${QUOTED_PATH}|a/.+?) (${QUOTED_PATH}|b/.+)$`);
+const GIT_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+
+function unquoteGitPath(raw: string): string {
+	if (!raw.startsWith('"') || !raw.endsWith('"') || raw.length < 2) return raw;
+	const bytes: number[] = [];
+	const body = raw.slice(1, -1);
+	for (let i = 0; i < body.length; i++) {
+		const ch = body[i];
+		if (ch !== "\\") {
+			bytes.push(...new TextEncoder().encode(ch));
+			continue;
+		}
+		const octal = /^[0-7]{1,3}/.exec(body.slice(i + 1))?.[0];
+		if (octal) {
+			bytes.push(Number.parseInt(octal, 8));
+			i += octal.length;
+		} else {
+			bytes.push(GIT_ESCAPES[body[i + 1]] ?? body.charCodeAt(i + 1));
+			i += 1;
+		}
+	}
+	return new TextDecoder().decode(new Uint8Array(bytes));
+}
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 function stripPathPrefix(raw: string): string {
-	const trimmed = raw.replace(/\t.*$/, "").trim();
+	const trimmed = unquoteGitPath(raw.replace(/\t.*$/, "").trim());
 	if (trimmed === "/dev/null") return trimmed;
 	return trimmed.replace(/^[ab]\//, "");
 }
@@ -194,7 +218,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
 	for (const rawLine of text.replace(/\n$/, "").split("\n")) {
 		const header = DIFF_HEADER_RE.exec(rawLine);
 		if (header) {
-			current = newDiffFile(header[2], header[1]);
+			current = newDiffFile(stripPathPrefix(header[2]), stripPathPrefix(header[1]));
 			files.push(current);
 			inHunk = false;
 			continue;
@@ -465,7 +489,7 @@ function byPath(a: DiffFile, b: DiffFile): number {
 	return a.path < b.path ? -1 : 1;
 }
 
-function sourceChunks(files: DiffFile[], limit: number): DiffFile[][] {
+function splitIntoChunks(files: DiffFile[], limit: number): DiffFile[][] {
 	const units = groupUnits(files, limit).flatMap((unit) =>
 		unit.length === 1 && fileChanged(unit[0]) > limit ? splitFileByHunks(unit[0], limit).map((part) => [part]) : [unit],
 	);
@@ -518,7 +542,7 @@ export function planChunks(files: DiffFile[], limit = LARGE_DIFF_LINES, cap = MA
 			}
 			groups = kept.length > 0 ? [kept] : [];
 		} else {
-			groups = sourceChunks(members, limit);
+			groups = splitIntoChunks(members, limit);
 		}
 		for (const group of groups) ordered.push({ category, files: group });
 	}
@@ -538,7 +562,7 @@ function normalizeBody(body: string): string {
 	return body.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/** Joins chunk outputs into one, dropping a finding another chunk already reported on the same path, line, and side. */
+/** Joins chunk outputs into one, dropping a finding another chunk already reported on the same path, line, side, and body. */
 export function mergeOutputs(outputs: AgentOutput[]): AgentOutput {
 	const seen = new Map<string, Finding>();
 	for (const output of outputs) {
@@ -705,6 +729,11 @@ function sortKey(f: Finding): string {
 	return `${f.path}\u0000${String(f.line ?? 0).padStart(8, "0")}`;
 }
 
+function ordinal(a: string, b: string): number {
+	if (a === b) return 0;
+	return a < b ? -1 : 1;
+}
+
 /** Peppers for the spice level, hollow circles for the levels above it. */
 export function spiceLabel(spice: number): string {
 	return "🌶️".repeat(spice) + "○".repeat(SPICE_MAX - spice);
@@ -801,7 +830,7 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 }
 
 export function compileReview(files: DiffFile[], output: AgentOutput, opts: CompileOptions): CompiledReview {
-	const findings = [...output.findings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+	const findings = [...output.findings].sort((a, b) => ordinal(sortKey(a), sortKey(b)));
 	const tally = tallyFindings(findings);
 	const { verdict, reason } = decideVerdict(tally, opts.spice, opts.commentOnly);
 
@@ -816,12 +845,9 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 			dropped.push({ finding, reason: "below-min-tier" });
 			continue;
 		}
-		if (finding.tier === "nit") {
-			if (nitsKept >= nitCap) {
-				dropped.push({ finding, reason: "nit-ladder" });
-				continue;
-			}
-			nitsKept += 1;
+		if (finding.tier === "nit" && nitsKept >= nitCap) {
+			dropped.push({ finding, reason: "nit-ladder" });
+			continue;
 		}
 		const anchor = resolveAnchor(files, finding);
 		if (!anchor) {
@@ -832,6 +858,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 			dropped.push({ finding, reason: "duplicate" });
 			continue;
 		}
+		if (finding.tier === "nit") nitsKept += 1;
 		comments.push({ ...anchor, tier: finding.tier, title: finding.title, body: renderComment(finding) });
 	}
 
@@ -855,7 +882,13 @@ export function toPostReviewInput(review: CompiledReview): PostReviewInput {
 	return {
 		verdict: review.verdict,
 		body: review.body,
-		comments: review.comments.map(({ tier: _tier, title: _title, ...comment }) => comment),
+		comments: review.comments.map(({ path, oldPath, newLine, oldLine, body }) => ({
+			path,
+			oldPath,
+			newLine,
+			oldLine,
+			body,
+		})),
 	};
 }
 
@@ -867,8 +900,10 @@ export function renderPreview(review: CompiledReview, target: string): string {
 	const lines: string[] = [
 		`Thrash preview · ${spiceLabel(review.spice)} (${review.spice}/${SPICE_MAX}) · ${target}`,
 		`Verdict: ${verdictLabel(review.verdict).toUpperCase()} (${review.reason})`,
-		`${TIER_EMOJI.critical} ${t.critical}  ${TIER_EMOJI.high} ${t.high}  ${TIER_EMOJI.medium} ${t.medium}  ${TIER_EMOJI.low} ${t.low}  ${TIER_EMOJI.nit} ${t.nit}`,
-		`Posting ${plural(review.comments.length, "inline comment")}; ${folded} folded, ${duplicates} duplicate, ${belowMin} below min tier, ${review.unanchored.length} unanchored.`,
+		TIERS.map((tier) => `${TIER_EMOJI[tier]} ${t[tier]}`).join("  "),
+		`Posting ${plural(review.comments.length, "inline comment")}; ` +
+			`${folded} folded, ${duplicates} duplicate, ${belowMin} below min tier, ` +
+			`${review.unanchored.length} unanchored.`,
 		"",
 	];
 	for (const c of review.comments) {

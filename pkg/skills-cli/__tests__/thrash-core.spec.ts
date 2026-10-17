@@ -730,3 +730,48 @@ describe("plan paths", () => {
 		expect(() => relativePlanPath("/scratch/a", "/scratch/b/x.md")).toThrow("escapes the plan folder");
 	});
 });
+
+describe("thrash review hardening", () => {
+	test("parseUnifiedDiff reads git-quoted non-ASCII paths", () => {
+		const diff = [
+			'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"',
+			"index 1111111..2222222 100644",
+			'--- "a/caf\\303\\251.ts"',
+			'+++ "b/caf\\303\\251.ts"',
+			"@@ -1,2 +1,2 @@",
+			" const x = 1;",
+			"-const y = 2;",
+			"+const y = 3;",
+			"diff --git a/plain.ts b/plain.ts",
+			"--- a/plain.ts",
+			"+++ b/plain.ts",
+			"@@ -1 +1 @@",
+			"-a",
+			"+b",
+			"",
+		].join("\n");
+		const files = parseUnifiedDiff(diff);
+		expect(files.map((f) => f.path)).toEqual(["café.ts", "plain.ts"]);
+		expect(files[0].lines.filter((l) => l.kind === "add")).toMatchObject([
+			{ newLine: 2, text: "const y = 3;" },
+		]);
+		expect(files[1].lines.filter((l) => l.kind === "add")).toMatchObject([{ newLine: 1, text: "b" }]);
+	});
+
+	test("nits that are unanchored do not use up the nit ladder", () => {
+		const findings = [
+			...Array.from({ length: 5 }, (_, i) => finding(`nowhere/${i}.ts`, 1, "nit", `lost ${i}`)),
+			finding("src/a.ts", 3, "nit", "kept"),
+		];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 2 });
+		expect(review.comments.map((c) => c.body)).toEqual([`${TIER_EMOJI.nit} **Nit** kept`]);
+		expect(review.unanchored).toHaveLength(5);
+		expect(review.dropped).toEqual([]);
+	});
+
+	test("findings sort by code point, not locale", () => {
+		const findings = [finding("a_b.ts", 1, "low"), finding("a-b.ts", 1, "low")];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, NO_OPTS);
+		expect(review.unanchored.map((f) => f.path)).toEqual(["a-b.ts", "a_b.ts"]);
+	});
+});

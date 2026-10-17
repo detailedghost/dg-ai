@@ -717,3 +717,81 @@ describe.each(["github", "gitlab"] as const)("file native argument boundaries on
 			: ["issue", "update", "71", "--label", "needs triage", "-R", "acme/widgets"]);
 	});
 });
+
+describe("file review hardening", () => {
+	test("--group-by-label keeps labels named like object members", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issuesPath = writeJson("gh-list-issues-proto.json", [
+			ghIssue(1, { labels: [{ name: "constructor" }, { name: "__proto__" }, { name: "toString" }] }),
+		]);
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue list"*)
+    cat "$FAKE_ISSUES_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const { stdout, exitCode } = runCli(["list", "--group-by-label"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUES_JSON: issuesPath },
+		});
+
+		expect(exitCode).toBe(0);
+		const buckets = JSON.parse(stdout.trim());
+		expect(Object.keys(buckets).sort()).toEqual(["__proto__", "constructor", "toString"]);
+		expect(buckets.constructor.map((i: { number: number }) => i.number)).toEqual([1]);
+	});
+
+	test("view finds the issue number after its flags", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issuePath = writeJson("gh-view-flags.json", ghIssue(5));
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue view 5"*)
+    cat "$FAKE_ISSUE_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const { stdout, exitCode } = runCli(["view", "--repo", "acme/widgets", "5"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUE_JSON: issuePath },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout.trim())).toMatchObject({ number: 5 });
+	});
+
+	test("bucket reports the issues it labeled when a later issue fails", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issue1 = writeJson("gh-bucket-partial-1.json", ghIssue(1, { labels: [{ name: "triage" }] }));
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue edit 1"*)
+    exit 0
+    ;;
+  *"issue view 1"*)
+    cat "$FAKE_ISSUE_1"
+    exit 0
+    ;;
+  *"issue edit 2"*)
+    echo "gh: issue locked" >&2
+    exit 1
+    ;;`),
+		);
+
+		const { stdout, stderr, exitCode } = runCli(["bucket", "triage", "1", "2"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUE_1: issue1 },
+		});
+
+		expect(exitCode).toBe(1);
+		expect(JSON.parse(stdout.trim()).map((r: { number: number }) => r.number)).toEqual([1]);
+		expect(stderr).toContain("#2");
+		expect(stderr).toContain("issue locked");
+	});
+});

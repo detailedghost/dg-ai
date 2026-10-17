@@ -1471,3 +1471,75 @@ console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_messag
 		expect(existsSync(join(fixture.scratch, "proxy"))).toBe(false);
 	});
 });
+
+describe("thrash review hardening", () => {
+	test("diff clears findings left by an earlier run of the same target", () => {
+		const repo = fixtureRepo();
+		const first = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		const stale = findingsFile(first, [
+			{ path: "src/a.ts", line: 2, tier: "critical", body: "Old finding." },
+		]);
+		expect(existsSync(stale)).toBe(true);
+		const second = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		expect(second.chunks[0].findingsPath).toBe(stale);
+		expect(existsSync(stale)).toBe(false);
+		const compiled = run(["compile", ".", "--diff", second.diffPath], { cwd: repo });
+		expect(compiled.exitCode).toBe(EXIT.ERR);
+		expect(compiled.stderr).toContain("has no findings file");
+	});
+
+	test("compile removes a posted file left by an earlier review of the same target", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 2, tier: "low", body: "Rename." }]);
+		const output = JSON.parse(
+			run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo }).stdout,
+		);
+		const posted = output.reviewPath.replace(/\.review\.json$/, ".posted.json");
+		writeFileSync(posted, "{}");
+		const again = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(again.exitCode).toBe(EXIT.OK);
+		expect(existsSync(posted)).toBe(false);
+	});
+
+	test("local diff ignores diff.noprefix and diff.mnemonicPrefix settings", () => {
+		const repo = fixtureRepo();
+		cliFixtures.runGit(["config", "diff.noprefix", "true"], repo);
+		cliFixtures.runGit(["config", "diff.mnemonicPrefix", "true"], repo);
+		const out = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		expect(out.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
+	});
+
+	test("stack accepts --diff before the target", () => {
+		const pulls = [
+			{
+				number: 12,
+				title: "one",
+				html_url: PR_URL,
+				state: "open",
+				head: { ref: "a" },
+				base: { ref: "main" },
+			},
+		];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*)
+    echo '${JSON.stringify(pulls)}'
+    exit 0
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    exit 0
+    ;;`),
+		);
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const diffFixture = join(cwd, "pr.diff");
+		writeFileSync(diffFixture, GH_DIFF);
+		const result = run(["stack", "--diff", PR_URL], {
+			cwd,
+			env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture },
+		});
+		expect(result.exitCode).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout)[0]).toMatchObject({ number: 12, changed: 3 });
+	});
+});
