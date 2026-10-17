@@ -26,7 +26,7 @@ import { selfCommand, shellCommand } from "../utils/self-command";
 
 type JobKind = "shell" | "proxy";
 
-interface JobMeta {
+export interface JobMeta {
 	id: string;
 	command: string;
 	cwd: string;
@@ -560,7 +560,7 @@ function deriveState(meta: JobMeta): JobState {
 }
 
 // Durable launcherPid is deliberately never a fallback: rebooted pids can be reused.
-function readPid(meta: JobMeta): number | null {
+export function readPid(meta: JobMeta): number | null {
 	try {
 		const raw = readFileSync(meta.pidFile, "utf8").trim();
 		if (!/^[0-9]+$/.test(raw)) return null;
@@ -584,10 +584,7 @@ function readPid(meta: JobMeta): number | null {
 				!/^[0-9]+$/.test(recorded.started))
 		)
 			return null;
-		if (
-			process.platform === "linux" &&
-			(!recorded.started || recorded.started !== processIdentity(pid)?.started)
-		)
+		if (!recorded.started || recorded.started !== processIdentity(pid)?.started)
 			return null;
 		return pid;
 	} catch {
@@ -626,16 +623,15 @@ function isAlive(pid: number): boolean {
 	}
 }
 
-function terminateGroup(pid: number): string {
+export function terminateGroup(pid: number): string {
 	const identity = processIdentity(pid);
 	if (
 		pid <= 1 ||
 		pid === process.pid ||
 		pid === process.ppid ||
-		(process.platform === "linux" &&
-			(!identity ||
-				identity.group !== pid ||
-				identity.group === processIdentity(process.pid)?.group))
+		!identity ||
+		identity.group !== pid ||
+		identity.group === processIdentity(process.pid)?.group
 	) {
 		throw new Error(
 			"Refusing to signal a process without its own detached process group",
