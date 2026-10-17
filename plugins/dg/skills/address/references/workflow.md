@@ -13,7 +13,7 @@ OUT: `agents`, `extraContext`, `roundNumber`, `verdictsPath`, `includeCi` (defau
 
 ## Phase 0.25 — Worktree Cleanup
 
-Search `.agents/spec/*/*.md` (and legacy `.agents/create-specs/*.md`) and the durable spec/sdlc dirs for a spec whose `worktree.path == pwd` or `worktree.pr_url` matches the PR:
+Search `.agents/spec/*/plan.md` (and legacy `.agents/create-specs/*.md`) and the durable spec/sdlc dirs for a spec whose `worktree.path == pwd` or `worktree.pr_url` matches the PR:
 
 ```sh
 ls "$("$DG" stash -s spec)"/*.md "$("$DG" stash -s sdlc)"/*.md 2>/dev/null
@@ -44,7 +44,7 @@ IN: `localOnly`.
 Run in parallel:
 
 1. `"$DG" address probe` — provider auth failure non-fatal when `localOnly=true`; warn and continue.
-1. `dba` agent: `"Return OK"` (probes the host's configured delegation facility). Honor existing session authorization; do not add permissions.
+1. `checkpoint` agent: `"Return OK"` (probes the host's configured delegation facility). Honor existing session authorization; do not add permissions.
 
 GATE: probe fails AND `localOnly=false` → stop.
 
@@ -87,7 +87,7 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 
 Wiz posts as `wiz-<id>[bot]`: a "Wiz Scan Summary" PR comment, optional inline threads, and checks named `Wiz *`.
 
-1. Detect: comment items whose `author` matches `^wiz-.*\[bot\]$`; ci items whose `name` starts with `Wiz`; and the latest summary comment: `gh api repos/{owner}/{repo}/issues/<pr>/comments --jq '[.[]|select(.user.login|test("^wiz-.*\\[bot\\]$"))]|last|.body'`. None → skip 1d. This single native `gh` read requires the external GitHub CLI and the host's existing approval for that read. The supported DG operations do not expose issue-summary comments; keep this summary-only discovery without adding an invented DG command.
+1. Detect: comment items whose `author` matches `^wiz-.*\[bot\]$`; ci items whose `name` starts with `Wiz`; and, on GitHub only (skip the summary read on GitLab), the latest summary comment: `gh api repos/{owner}/{repo}/issues/<pr>/comments --jq '[.[]|select(.user.login|test("^wiz-.*\\[bot\\]$"))]|last|.body'`. None → skip 1d. This single native `gh` read requires the external GitHub CLI and the host's existing approval for that read. The supported DG operations do not expose issue-summary comments; keep this summary-only discovery without adding an invented DG command.
 2. Use the Wiz MCP from the main loop (subagents may lack it). Load `mcp__claude_ai_Wiz__discover` / `mcp__claude_ai_Wiz__execute` via ToolSearch. Not connected → print `[wiz] MCP not connected; run /mcp → claude.ai Wiz` and handle the items from their text only.
 3. For each finding, fetch details with `execute`: SAST → `codesec` `list_sast_findings` (`file_path`, `status:["OPEN"]`) or `get_sast_finding`; CVE / dependency → `vulnerabilities` domain; secret → `secrets` domain; IaC misconfiguration → `cspm` domain; failed Wiz CLI scan → `codesec` `list_cicd_scans` + `get_cicd_scan`. `discover <domain>` shows parameters.
 4. Tag items `source:"wiz"` (summary-only findings) or keep `source:"comment"`/`"ci"` with `wiz:true`. Attach `{findingId, rule, severity, path, line, remediation}` from Wiz to each item.
@@ -98,7 +98,7 @@ Wiz posts as `wiz-<id>[bot]`: a "Wiz Scan Summary" PR comment, optional inline t
 
 GATE: `workList` empty → stop.
 
-## Phase 1.55 — Apply Explanations
+## Phase 1.45 — Apply Explanations
 
 Skip when no comment items have `mode="explain"`.
 
@@ -112,11 +112,11 @@ Skip when `verdictsPath` set. CI and Wiz items bypass (pass through unchanged). 
 
 Input: `source=="comment" && mode=="fix"` + all `source=="local-review"` items.
 
-1. Normalize: `{id: commentId|localId, body, path, line}[]`.
+1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`.
 1. Launch `copilot-antagonist`:
-   > Evaluate these review findings. Return ONLY:
-   > `[{"id":"<id>","verdict":"accept|reject-illogical|reject-other|strange","reason":"<why>"}]`
-1. Validate all ids present + verdicts valid. Merge back by `commentId`/`localId`. Reconstitute with CI items.
+   > Evaluate these review findings. Return ONLY the array your persona defines:
+   > `[{"commentId":<commentId>,"threadId":<threadId>,"verdict":"accept|reject-illogical|reject-other|strange","reason":"<why>"}]`
+1. Validate all `commentId` values present + verdicts valid. Merge back by `commentId` (a `local-N` value is a `localId`). Reconstitute with CI items.
 
 GATE: every triaged item has a verdict.
 
@@ -140,7 +140,7 @@ Skip if `agents` is 1–2 items. Run when null or 3+.
 
 Launch `foreman` with `model: sonnet` (a routing pick, not a planning call):
 
-> Return ONLY a JSON array of agent names from: `js csharp python dba security shell devops jira qa-writer lore`.
+> Return ONLY a JSON array of agent names from: `js csharp python dba security shell devops qa-writer lore`.
 > Items: `{workList JSON}`. Route `ci` items by `workflowFile` (→ devops for `.yml`) or `logExcerpt` extension. Include `devops` when CI items exist.
 
 Append `extraContext` if set. Parse → `agents`.
@@ -156,7 +156,7 @@ Sub-pass A (CI) then B (comments + local-review). CI first so QA has a green bas
 
 ### 2a.5 — Strange Escalation
 
-Runs when any item has `verdict="strange"`. the host's question facility per item (batch ≤4): show `path:line`, body, reason.
+Runs when any item has `verdict="strange"`. Ask through the host's question facility, one item at a time (batch up to 4): show `path:line`, body, reason.
 
 - **Accept** — keep in workList.
 - **Skip** — drop, leave thread open.
@@ -188,7 +188,7 @@ Route items per `agents.md`. Per-agent prompts:
 
 > Fix these failing CI checks. Read `workflowFile`+`logExcerpt`, fix root cause. Do NOT disable checks.
 > Items: `{JSON}`
-> Return ONLY: `[{"ciId":"<id>","status":"fixed"|"blocked","summary":"<what/why>"}]`
+> Return ONLY: `[{"id":"<ciId>","status":"fixed"|"blocked","summary":"<what/why>"}]`
 
 **Wiz (`source=="wiz"` or `wiz:true`):** route by path per `agents.md`, plus `security` for secrets and CVEs.
 
@@ -200,7 +200,9 @@ Append `extraContext` if set. Merge all into `fixResults` as `{itemId, source, s
 
 ## Phase 3 — QA (max 3 cycles)
 
-Parallel: `reviewer` (quality/logic), `qa-devops` (build/tests), `qa-perf` (perf/allocs). Pass `git diff --name-only HEAD~1`; respond per `agents.md` JSON format.
+Parallel: `reviewer` (quality/logic), `qa-devops` (build/tests), `qa-perf` (perf/allocs). Fixes are uncommitted here, so pass the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard`.
+
+> Review these files. This prompt overrides your persona's report format. Return ONLY the JSON array defined in `agents.md` (Response Format, Phase 3), or `[]` if clean. Map your own severity labels to `critical|high|medium|low`.
 
 `critical`/`high` items → re-route to Phase 2c. Increment cycle counter.
 
@@ -214,14 +216,22 @@ Skip unless `docs/**`, `*.md`, or public API signatures changed. Launch `lore` o
 
 Commit subject:
 
-- PR comments only → `address pr review feedback`
-- CI only → `fix failing ci checks`
-- Both → `address pr review feedback + ci fixes`
-- Local only → `address local code review findings`
-- Local + PR → `address local + pr review feedback`
+Use `fix(<scope>): <description>` with a scope from the repo's recent commits:
+
+- PR comments only → `fix(<scope>): address pr review feedback`
+- CI only → `fix(<scope>): fix failing ci checks`
+- Both → `fix(<scope>): address pr review feedback + ci fixes`
+- Local only → `fix(<scope>): address local code review findings`
+- Local + PR → `fix(<scope>): address local + pr review feedback`
 - Append `(review-loop round N)` if `roundNumber` set.
 
-`"$DG" address commit-push "<subject>\n\nCo-Authored-By: Claude <noreply@anthropic.com>"`
+Pass the message as one quoted argument with real newlines (the helper joins its arguments and does not expand `\n`). Add the attribution trailer only when the host's instructions require one.
+
+```sh
+"$DG" address commit-push "<subject>
+
+<trailer, if the host requires one>"
+```
 
 GATE: non-zero → stop.
 

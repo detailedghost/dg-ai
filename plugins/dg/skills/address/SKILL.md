@@ -7,7 +7,7 @@ description: Address PR review comments AND failing CI/CD checks — route fixes
 
 Fix PR review comments, CI/CD failures, and local code-review findings. Test-first for code changes, QA, commit, push, reply+resolve threads.
 
-**Scope:** `/address` = review + CI + local. `/catchup` = merge conflicts only.
+**Scope:** `/address` = review + CI + local. `/catchup` = merge conflicts and rebasing.
 
 **Usage:** `/address [-l] [-a <agent>[,agent2,...]] [-m "<context>"] [--round N] [--verdicts <path>] [--no-ci]`
 
@@ -46,20 +46,20 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 
 ## Phases
 
-1. Parse args
-2. Worktree merge-detection + cleanup
-3. Permissions probe
-4. Gather: local code-review file (resolved to PR's worktree dir, always) + PR threads + CI checks + Wiz findings (via the Wiz MCP, when a Wiz bot comment or `Wiz *` check exists)
-5. Apply `#explain` threads (reply + resolve, no fix)
-6. Antagonist triage (skip if `--verdicts` supplied)
-7. Apply rejections
-8. Auto-detect agents
-9. Fix: CI first, then comments (test-first → apply)
-10. QA (max 3 cycles)
-11. Document
-12. Commit + push
-13. Reply + resolve (PR/MR comment items only — GitHub or GitLab, CI and local skip this)
-14. Local review cleanup — delete each local code-review file once all its findings are accomplished (fixed+committed or rejected); keep files with blocked/skipped findings
+- Phase 0: parse args
+- Phase 0.25: worktree merge-detection + cleanup
+- Phase 0.5: permissions probe
+- Phase 1: gather: local code-review file (resolved to PR's worktree dir, always) + PR threads + CI checks + Wiz findings (via the Wiz MCP, when a Wiz bot comment or `Wiz *` check exists)
+- Phase 1.45: apply `#explain` threads (reply + resolve, no fix)
+- Phase 1.5: antagonist triage (skip if `--verdicts` supplied)
+- Phase 1.6: apply rejections
+- Phase 1b: auto-detect agents
+- Phase 2: fix: CI first, then comments (test-first → apply)
+- Phase 3: QA (max 3 cycles)
+- Phase 4: document
+- Phase 5: commit + push
+- Phase 6: reply + resolve (PR/MR comment items only — GitHub or GitLab, CI and local skip this)
+- Phase 7: local review cleanup — delete each local code-review file once all its findings are accomplished (fixed+committed or rejected); keep files with blocked/skipped findings
 
 **Review reply invariant:** reply inline to the gathered review comment, then resolve that same thread. Never use a
 top-level PR/MR comment as the response. A reply must be confirmed published before resolution; if replying fails,

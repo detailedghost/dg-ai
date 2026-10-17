@@ -102,7 +102,10 @@ OUT: `roundsUsed`.
 
 Round accounting, so this path is capped like the others: a round is
 consumed each time step 3 hands work to `/address`, and only then.
-Waiting in step 5 consumes nothing. Stop when `roundsUsed` reaches
+Waiting in step 5 consumes nothing. Derive `roundsUsed` from git, as proxy
+mode does, so a re-run or `--single` keeps the cap:
+`git log "$(git merge-base HEAD "$(git rev-parse --abbrev-ref origin/HEAD)")..HEAD" --format=%s | grep -c '(review-loop round ' || true`.
+Pass `--round <roundsUsed + 1>` to `/address` so it writes the marker. Stop when `roundsUsed` reaches
 `maxRounds` and print `review-loop: <maxRounds> round(s) used; re-run
 to continue.`. Under `--single` / `--no-retrigger`, run one round and
 exit.
@@ -124,8 +127,10 @@ exit.
    `review-loop: <bots> review present, all threads resolved; nothing
    to address.` and exit 0.
 1. `present == false` → the reviewer has not posted yet. Poll
-   `check-bot-review` every 60 s up to `--wait-timeout` (default 1800;
-   this flow honours that flag, the same as default mode). Still absent
+   `check-bot-review` every 180 s up to `--wait-timeout` (default 1800;
+   this flow honours that flag, the same as default mode). Each poll is
+   one model-driven call, about 10 at the default cap, so pass a lower
+   `--wait-timeout` to spend fewer. Still absent
    at the cap → print `review-loop: <bots> has not posted on this MR
    within <timeout>s; re-run once it has.` and exit 0. Use `latestAt`
    to tell a fresh review from the one already addressed: a `latestAt`
@@ -140,7 +145,7 @@ would report a clean "nothing to do" while findings sit unread.
 GATE: `/address` ran, or the flow exited with a message naming the
 reviewer and its state.
 
-______________________________________________________________________
+---
 
 ## Round Step (Phases 2–7)
 
@@ -152,7 +157,7 @@ IN: `maxRounds`, `noRetrigger`, `auto`, `waitTimeout`, `prUrl`.
 OUT: terminal (exits) OR `sinceIso` when `auto == true` and a
 re-trigger fired successfully.
 
-______________________________________________________________________
+---
 
 ## Phase 2 — Round Counter
 
@@ -175,7 +180,7 @@ OUT: next action: `close-no-findings` | `trigger` | `act` | `wait`.
 
 1. **No-findings close-out check** — Run
    `"$DG" address check-no-findings <prUrl> <lastCommitTs>` where
-   `lastCommitTs = git log -1 --format=%cI HEAD`. The helper owns the
+   `lastCommitTs` is the ISO time from `git log -1 --format=%cI HEAD`. The helper owns the
    graphql scan, the pattern match, and the `REVIEW_LOOP_NO_FINDINGS_PATTERN`
    override (jq Oniguruma syntax). A `noFindings:true` result → action
    `close-no-findings`.
@@ -185,10 +190,12 @@ OUT: next action: `close-no-findings` | `trigger` | `act` | `wait`.
 1. Otherwise run `"$DG" address fetch-copilot-review`.
 
    - `submittedAt == null` → `wait`.
-   - Let `latestReviewTs = submittedAt` and
-     `lastCommitTs = git log -1 --format=%cI origin/<branch>` (fall
-     back to local `HEAD` when the remote ref lags behind).
-   - `latestReviewTs > lastCommitTs` → action `act`.
+   - Let `latestReviewEpoch` be `submittedAt` in epoch seconds
+     (`date -d "<submittedAt>" +%s`) and `lastPushEpoch =
+     git log -1 --format=%ct origin/<branch>` (fall back to local
+     `HEAD` when the remote ref lags behind). Compare epoch seconds,
+     never the ISO text, which carries different UTC offsets.
+   - `latestReviewEpoch > lastPushEpoch` → action `act`.
    - Otherwise → action `wait`.
 
 Branches below execute based on this decision.
@@ -266,14 +273,9 @@ OUT: verdict file path `$("$DG" stash review-loop <prNumber>.verdicts.json)`.
      `.agents/spec/<NNN>_<slug>/plan.md`. Skip when not found.
    - Otherwise skip spec context.
 
-1. Launch the `copilot-antagonist` agent. Prompt:
-
-   ```text
-   Read <absolute path to this skill's references/antagonist-prompt.md> for rules and output format.
-   Comments JSON: <absolute comments JSON path resolved by the caller>
-   Spec (optional): <path or "none">
-   Return ONLY the verdict JSON array — no prose, no code fences.
-   ```
+1. Launch the `copilot-antagonist` agent with the Prompt Template in
+   [antagonist-prompt.md](antagonist-prompt.md), filling its comments
+   JSON and spec paths.
 
 1. Parse the returned JSON. Schema: array of
    `{commentId, threadId, verdict, reason}`.
@@ -291,8 +293,8 @@ OUT: filtered verdict array (`accept` + `strange` only).
 For each verdict:
 
 - `reject-illogical` →
-  `"$DG" address resolve-with-reply <commentId> <threadId> "#rejected-by-antagonist: <reason>"`
-  (the helper adds the `🤖` prefix automatically).
+  `"$DG" address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
+  (the helper adds the `🤖` prefix automatically; the text matches `/address` Phase 1.6).
 - `reject-other` → `"$DG" address resolve-silent <threadId>`.
 - `accept` / `strange` → keep in filtered array.
 
@@ -363,7 +365,7 @@ OUT: terminal (exits) OR `sinceIso` returned to Auto Driver.
 
 GATE: printed summary and exited, or returned `sinceIso` to Auto Driver.
 
-______________________________________________________________________
+---
 
 ## Auto Driver
 
@@ -390,29 +392,29 @@ zero LLM tokens.
 
 ## Trigger retry ladder
 
-Used by Phase 3a and Phase 7 immediately after `request-copilot`. The
+Let `ENGAGE_TIMEOUT_SEC = 300`. Used by Phase 3a and Phase 7 immediately after `request-copilot`. The
 goal is to fail loud when Copilot didn't accept the trigger, instead
 of waiting silently for a review that's never coming.
 
 1. **Tier 1 — comment**: `"$DG" address request-copilot` (default, posts
    `@copilot review`). Then
-   `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=300`.
+   `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
 
    - exit 0 → engaged. Done.
-   - exit 124 → no swe-agent ack within 300s. Continue to Tier 2.
+   - exit 124 → no swe-agent ack within `ENGAGE_TIMEOUT_SEC`. Continue to Tier 2.
    - exit 1 → persistent gh failure. Surface the `trigger-error` line
      and exit 1.
 
 1. **Tier 2 — perturbed comment**: GitHub may have deduped Tier 1's
    identical body on the same head SHA.
-   `"$DG" address request-copilot --method=retry-comment` (posts `@copilot please review the latest changes`). Then `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=300`. Same exit handling as Tier 1.
+   `"$DG" address request-copilot --method=retry-comment` (posts `@copilot please review the latest changes`). Then `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`. Same exit handling as Tier 1.
 
 1. **Tier 3 — reviewer API**: comment-based triggers might be
    silently dropped if the Copilot App isn't installed for review
    requests on this repo. `"$DG" address request-copilot --method=reviewer`. If `gh`
    returns non-zero, surface the body verbatim — that's almost
    certainly an HTTP 422 telling the user Copilot isn't a valid
-   reviewer here. Otherwise `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=300`.
+   reviewer here. Otherwise `"$DG" address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
 
 1. **Final failure**: if all three tiers run without engagement, print:
 

@@ -58,8 +58,10 @@ OUT: `base` (git ref).
 
 1. `baseOverride` set → `base = baseOverride`. Skip to Phase 2.
 2. Otherwise resolve the fork point in this checkout:
-   `base = git merge-base HEAD "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || git rev-parse --abbrev-ref origin/HEAD | sed 's#^origin/##')"`.
-   Fall back to `origin/HEAD` if that fails.
+   `base = git merge-base HEAD "$(git rev-parse --abbrev-ref origin/HEAD)"`.
+   This is the fork point from the remote default branch, so it stays
+   fixed after `/address` pushes round commits. Never use `@{u}` or a
+   local default branch, which can be the branch's own tip or stale.
 3. When the branch was cut from an integration branch, prefer that
    integration branch as `base`, so the review covers exactly what the
    branch added.
@@ -73,7 +75,7 @@ and exit 1.
 IN: `base`.
 OUT: `roundsDone` (int), `maxRounds` (possibly clamped).
 
-1. `roundsDone = $(git log <base>..HEAD --format=%s | grep -c '(review-loop round ')`.
+1. `roundsDone = $(git log <base>..HEAD --format=%s | grep -c '(review-loop round ' || true)`.
    This is the proxy-mode equivalent of default mode's
    `count-copilot-reviews` — round count derived from external state
    (here, git history) rather than tracked separately. The marker is
@@ -100,12 +102,14 @@ OUT: terminal (exits), or loops back to Phase 3 for the next round.
 IN: `base`, `backend`.
 OUT: review file path (may be absent/empty on a dry round).
 
-1. `diff = git diff <base>`. Empty diff → print
+1. `diff = git diff <base> HEAD` (committed work only; uncommitted edits and untracked files are not reviewed). Empty diff → print
    `review-loop: no diff against <base>; nothing to review.` and exit 0
    (nothing was ever committed to review — not a round, not a
    dry-round close-out).
 2. `reviewFile = .agents/code-review/<YYYY-MM-DD-HHMMSS>-<NNN>.md`
-   (same naming convention `/address` Phase 1c already globs for).
+   (same naming convention `/address` Phase 1c already globs for;
+   `<NNN>` is a three-digit sequence that starts at `001` for each
+   timestamp second).
 3. Read [../../proxy/SKILL.md](../../proxy/SKILL.md), then invoke
    `"$DG" proxy <backend> --prompt-file <absolutePromptPath>` using its
    background and result-handling contract. Prompt: see
@@ -149,9 +153,8 @@ OUT: action `close-out` | `act`.
    review-loop: proxy backend found nothing to flag — closing loop.
    ```
 
-2. Delete `reviewFile` if it exists but is empty (avoid leaving a
-   stray empty file for `/address`'s next unrelated `-l` run to trip
-   over).
+2. Delete `reviewFile` if it exists, empty or not (avoid leaving a
+   stray file for `/address`'s next unrelated `-l` run to pick up).
 3. Exit 0. The round counter is not consumed (mirrors default mode's
    no-findings close-out — no `(review-loop round N)` marker gets
    written because `/address` never runs).

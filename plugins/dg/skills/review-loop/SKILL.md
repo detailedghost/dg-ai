@@ -169,10 +169,10 @@ Default mode never reaches the Copilot-bot subcommands on GitLab —
 Phase 1's `capabilities` check routes to the bot-review flow, or to
 proxy mode when no reviewer is configured, first (see
 [references/workflow.md](references/workflow.md) Phase 1 and 1b).
-**Proxy
-mode never calls `"$DG" address`** — round counting and diff-base
+**The
+proxy-mode steps of this skill never call `"$DG" address`** — round counting and diff-base
 resolution there are plain `git`
-(see [references/proxy-workflow.md](references/proxy-workflow.md)).
+(see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/address -l` runs its own helper calls.
 
 ## General Rules
 
