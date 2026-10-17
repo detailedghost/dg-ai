@@ -49,6 +49,7 @@ const retiredHelpers = legacyInvocation([
 	"stash",
 	"stash-cli",
 	"clipboard-image",
+	"vcs-provider-cli",
 ]);
 const consumerFiles = skillFiles.filter((file) =>
 	[
@@ -98,6 +99,7 @@ describe("legacy executable detection", () => {
 		"clipboard-image photo.png",
 		"Use `clipboard-image -`.",
 		"$(clipboard-image -s)",
+		"vcs-provider-cli detect",
 		'Bun.spawn(["stash", "tool"])',
 		'runCapture("clipboard-image", ["-"])',
 		'const command = "stash -G viz";',
@@ -109,6 +111,7 @@ describe("legacy executable detection", () => {
 		'"$DG" stash -G viz',
 		'$("$DG" stash -s tool)',
 		'"$DG" clipboard-image photo.png',
+		'"$DG" vcs-provider detect',
 		'Bun.spawn([binary, "stash", "tool"])',
 		'const name = "clipboard-image";',
 		"git stash pop",

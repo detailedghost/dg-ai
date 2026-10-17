@@ -17,6 +17,7 @@ import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 import { registerStash } from "./commands/stash";
+import { registerVcsProvider } from "./commands/vcs-provider";
 import {
 	guardExtensionCommands,
 	registerRequireExtension,
@@ -41,6 +42,7 @@ registerLaunch(program);
 registerDemo(program);
 registerRerun(program);
 registerStash(program);
+registerVcsProvider(program);
 registerClipboardImage(program);
 registerProto(program);
 registerOverwatchSnapshot(program);

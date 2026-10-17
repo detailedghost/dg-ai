@@ -69,43 +69,82 @@ export function run(
 	return r.stdout.trim();
 }
 
-type RunCaptureOptions = { stdin?: string; cwd?: string; timeoutMs?: number };
-
-type RunCaptureResult = {
-	status: number;
-	signal: NodeJS.Signals | null;
-	stdout: string;
-	stderr: string;
+type RunCaptureOptions = {
+	/** Null ignores stdin; undefined retains the default closed pipe. */
+	stdin?: string | null;
+	cwd?: string;
+	timeoutMs?: number;
 };
 
-export function runCapture(
+type RunCaptureResult<Output = string> = {
+	status: number;
+	signal: NodeJS.Signals | null;
+	stdout: Output;
+	stderr: Output;
+};
+
+export async function runCapture(
 	command: string,
 	args: string[],
 	options: RunCaptureOptions = {},
 ): Promise<RunCaptureResult> {
+	const result = await runCaptureBytes(command, args, options);
+	return {
+		...result,
+		stdout: result.stdout.toString("utf8"),
+		stderr: result.stderr.toString("utf8"),
+	};
+}
+
+/** Capture exact process bytes when an adapter needs to preserve a binary stream. */
+export function runCaptureBytes(
+	command: string,
+	args: string[],
+	options: RunCaptureOptions = {},
+): Promise<RunCaptureResult<Buffer>> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, {
-			stdio: "pipe",
+		const captureOptions = {
 			cwd: options.cwd,
 			timeout: options.timeoutMs,
-			killSignal: "SIGKILL",
-		});
-		let stdout = "";
-		let stderr = "";
+			killSignal: "SIGKILL" as const,
+		};
+		const child =
+			options.stdin === null
+				? spawn(command, args, {
+						...captureOptions,
+						stdio: ["ignore", "pipe", "pipe"],
+					})
+				: spawn(command, args, { ...captureOptions, stdio: "pipe" });
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
 		child.stdout.on("data", (chunk: Buffer) => {
-			stdout += chunk.toString("utf8");
+			stdout.push(chunk);
 		});
 		child.stderr.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString("utf8");
+			stderr.push(chunk);
 		});
 		child.on("error", reject);
-		child.on("close", (code, signal) => {
+		child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
 			const status =
 				code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0);
-			resolve({ status, signal, stdout, stderr });
+			const out = Buffer.concat(stdout);
+			const err = Buffer.concat(stderr);
+			resolve({
+				status,
+				signal,
+				stdout: out,
+				stderr: err,
+			});
 		});
-		if (options.stdin !== undefined) child.stdin.write(options.stdin);
-		child.stdin.end();
+		child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+			if (error.code !== "EPIPE") reject(error);
+		});
+		try {
+			if (typeof options.stdin === "string") child.stdin?.write(options.stdin);
+			child.stdin?.end();
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EPIPE") reject(error);
+		}
 	});
 }
 
