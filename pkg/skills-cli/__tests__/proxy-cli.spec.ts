@@ -50,6 +50,37 @@ describe("cli.ts unknown backend", () => {
 	});
 });
 
+describe("cli.ts flag parsing", () => {
+	test("a flag followed by another flag is rejected instead of consuming it", async () => {
+		const { stdout, stderr, exitCode } = await runCli(["codex", "--prompt", "--plan"]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("--prompt requires a value");
+		expect(stdout).toBe("");
+	});
+
+	test("a trailing flag without a value is rejected", async () => {
+		const { stderr, exitCode } = await runCli(["codex", "--prompt", "hi", "--model"]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("--model requires a value");
+	});
+
+	test("an unknown flag is rejected", async () => {
+		const { stderr, exitCode } = await runCli(["codex", "--prompt", "hi", "--bogus", "x"]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("unknown flag --bogus");
+	});
+
+	test("an inherited object key is an unknown backend", async () => {
+		const { stderr, exitCode } = await runCli(["constructor", "--prompt", "hi"]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain('unknown backend "constructor"');
+	});
+});
+
 describe("cli.ts --list-backends", () => {
 	test("prints exactly the BACKENDS registry keys, one per line, with no other output", async () => {
 		const { stdout, stderr, exitCode } = await runCli(["--list-backends"]);

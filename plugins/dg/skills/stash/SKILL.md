@@ -1,6 +1,6 @@
 ---
 name: stash
-description: "Print where to store a file."
+description: "Print an absolute path for a scratch, state, or worktree-local file. Use when a skill or task needs somewhere to write drafts, run state, handoffs, or per-repo agent artifacts."
 ---
 
 Resolve the CLI before using the commands below:

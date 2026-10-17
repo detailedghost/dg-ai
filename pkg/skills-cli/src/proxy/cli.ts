@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { selfCommand, shellCommand } from "../utils/self-command";
 import { main as backgroundMain } from "./background";
-import type { Backend } from "./index";
+import type { Backend, ProxyOptions } from "./index";
 import {
 	BACKENDS,
 	checkPreflight,
@@ -13,6 +13,19 @@ import {
 	runBackend,
 	withPersona,
 } from "./index";
+
+const VALUE_FLAGS = new Set([
+	"model",
+	"effort",
+	"subagent",
+	"spec",
+	"slice",
+	"cwd",
+	"resume",
+	"prompt",
+	"prompt-file",
+]);
+const SWITCHES = new Set(["--help", "-h", "--list-backends", "--plan", "-p"]);
 
 function parseArgs(argv: string[]) {
 	const flags: Record<string, string> = {};
@@ -37,7 +50,12 @@ function parseArgs(argv: string[]) {
 		}
 		if (arg.startsWith("--")) {
 			const name = arg.slice(2);
-			flags[name] = argv[++i];
+			if (!VALUE_FLAGS.has(name)) throw new Error(`unknown flag ${arg}`);
+			const value = argv[i + 1];
+			if (value === undefined || SWITCHES.has(value) || (value.startsWith("--") && VALUE_FLAGS.has(value.slice(2))))
+				throw new Error(`${arg} requires a value`);
+			flags[name] = value;
+			i++;
 			continue;
 		}
 		positionals.push(arg);
@@ -49,17 +67,24 @@ function parseArgs(argv: string[]) {
 /** Dispatch proxy argv explicitly; emit result JSON and preserve backend failures as process exit statuses. */
 export async function main(argv: string[]): Promise<number | void> {
 	if (argv[0] === "background") return backgroundMain(argv.slice(1));
-	const { positionals, flags, listBackends, plan, help } = parseArgs(argv);
+	let parsed: ReturnType<typeof parseArgs>;
+	try {
+		parsed = parseArgs(argv);
+	} catch (err) {
+		console.error(err instanceof Error ? err.message : String(err));
+		return 1;
+	}
+	const { positionals, flags, listBackends, plan, help } = parsed;
 	if (help) {
 		console.log(
-			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nInternal background commands: run, list, status, update, drain, cancel",
+			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nInternal background commands: run, list, prune, status, cancel, kill, update, drain",
 		);
 		return 0;
 	}
 
 	if (listBackends) {
 		console.log(Object.keys(BACKENDS).join("\n"));
-		process.exit(0);
+		return 0;
 	}
 
 	const backendName = positionals[0];
@@ -124,18 +149,8 @@ export async function main(argv: string[]): Promise<number | void> {
 		process.exit(1);
 	}
 
-	/**
-	 * Persona resolution and the spawn itself can both throw (missing agent
-	 * file, invalid spec frontmatter, a binary vanishing after
-	 * checkPreflight). None of that may escape as an unhandled rejection.
-	 * A backgrounded run has nobody watching stderr live, so this must also
-	 * leave one parseable JSON line on stdout — same as the two expected
-	 * failure shapes below — not just a plain stderr message.
-	 */
 	let result: Awaited<ReturnType<typeof runBackend>>;
 	try {
-		// A resumed session already has its persona context; re-injecting it
-		// would just re-brief a role the model already committed to.
 		let finalPrompt = prompt;
 		if (!resume) {
 			const persona = await resolvePersona({ subagent, spec, slice });
@@ -182,29 +197,14 @@ export async function main(argv: string[]): Promise<number | void> {
 	process.exit(result.exitCode);
 }
 
-/**
- * `--plan`/`-p`: build the same persona-injected prompt a real run would send,
- * but stop short of spawning the backend. Writes the prompt to a scratch file
- * (it's too large to shell-quote inline) and prints the exact background
- * command to launch it later — the Change-1 background convention, just not
- * launched yet. A missing backend binary is a note, not a block: the plan is
- * still useful so the human can install the backend before running it.
- */
+/** Write the persona-briefed prompt to a plan file and print the background launch command without running the backend. */
 async function runPlan(
 	backendName: string,
 	backend: Backend,
-	opts: {
-		prompt: string;
-		subagent?: string;
-		spec?: string;
-		slice?: string;
-		model?: string;
-		effort?: string;
-		cwd?: string;
-	},
+	opts: ProxyOptions,
 ): Promise<void> {
 	const preflight = checkPreflight(backendName, backend);
-	if (!preflight.available && preflight.missing) {
+	if (preflight.missing) {
 		console.error(
 			`proxy: note - ${preflight.missing.bin} not found on PATH yet (${preflight.missing.installHint}); the plan is still written.`,
 		);
@@ -228,8 +228,6 @@ async function runPlan(
 	const planFile = `${proxyDir()}/${Date.now()}-${randomUUID()}-${backendName}.plan.md`;
 	writeFileSync(planFile, finalPrompt, { flag: "wx", mode: 0o600 });
 
-	// Persona is already baked into planFile — passing --subagent/--spec/--slice
-	// again on launch would re-resolve and double-wrap it.
 	const backendArgs = ["proxy", backendName, "--prompt-file", planFile];
 	if (opts.model) backendArgs.push("--model", opts.model);
 	if (opts.effort) backendArgs.push("--effort", opts.effort);

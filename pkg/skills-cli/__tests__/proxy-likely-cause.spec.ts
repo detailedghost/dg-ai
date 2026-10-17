@@ -23,6 +23,10 @@ describe("classifyFailure", () => {
 		expect(classifyFailure("invalid model: reasoning effort not supported")).toBe("model");
 	});
 
+	test("returns 'effort' when the rejected term is the effort and the message also names the model", () => {
+		expect(classifyFailure("unsupported reasoning effort for model gpt-5")).toBe("effort");
+	});
+
 	test("matches case-insensitively", () => {
 		expect(classifyFailure("UNKNOWN MODEL requested")).toBe("model");
 	});

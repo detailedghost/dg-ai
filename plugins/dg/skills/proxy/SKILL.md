@@ -22,8 +22,10 @@ fi
 Run the backend in the caller's native background task when that facility exists:
 
 ```bash
-"$DG" proxy <backend> --prompt "<task>" [flags]
+"$DG" proxy <backend> --prompt-file "<task-file>" [flags]
 ```
+
+Write the task to the file first, so quotes, `$`, and backticks in it never reach the shell.
 
 For a terminal or caller without native background tasks, prepare a plan:
 

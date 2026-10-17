@@ -70,6 +70,19 @@ afterEach(() => {
 
 
 describe("runBackend", () => {
+	test("rejects an oversized argument before spawning or writing a log", async () => {
+		const { fn } = stubSpawn({});
+		const backend = makeBackend({
+			buildArgs: mock(() => ["--prompt", "x".repeat(128 * 1024)]),
+		});
+
+		await expect(runBackend("codex", backend, { prompt: "hi" })).rejects.toThrow(
+			/over the \d+ byte limit/,
+		);
+		expect(fn).not.toHaveBeenCalled();
+		expect(existsSync(join(scratchDir, "proxy"))).toBe(false);
+	});
+
 	test("returns exitCode and parsed session/message from the backend", async () => {
 		stubSpawn({ stdout: "line1\n", exitCode: 0 });
 		const backend = makeBackend({

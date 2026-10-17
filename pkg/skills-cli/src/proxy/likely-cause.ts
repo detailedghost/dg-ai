@@ -9,6 +9,10 @@ const REJECTION_WORDS = [
 ];
 const EFFORT_WORDS = ["effort", "thinking", "variant", "reasoning"];
 
+const REJECTED_EFFORT = new RegExp(
+	`(?:${REJECTION_WORDS.join("|")})\\s+(?:\\w+\\s+){0,2}(?:${EFFORT_WORDS.join("|")})`,
+);
+
 /**
  * Narrow heuristic for classifying a failed backend invocation as a
  * model-rejection or effort/reasoning-level-rejection error, based on
@@ -20,6 +24,7 @@ export function classifyFailure(combinedOutput: string): "model" | "effort" | "o
 	const text = combinedOutput.toLowerCase();
 	const hasRejection = REJECTION_WORDS.some((word) => text.includes(word));
 
+	if (REJECTED_EFFORT.test(text)) return "effort";
 	if (hasRejection && text.includes("model")) return "model";
 	if (hasRejection && EFFORT_WORDS.some((word) => text.includes(word))) {
 		return "effort";

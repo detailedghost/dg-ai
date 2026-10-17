@@ -27,6 +27,7 @@ import { selfCommand, shellCommand } from "../utils/self-command";
 import { BACKENDS } from "./backends";
 
 const LOCK_ABANDONED_MS = 60_000;
+const JOB_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 type JobKind = "shell" | "proxy";
 
@@ -102,11 +103,16 @@ export async function main(argv: string[]): Promise<void | number> {
 	await cmd.run(argv);
 }
 
+function assertJobId(id: string): void {
+	if (!JOB_ID_PATTERN.test(id)) die(`invalid job id: ${id}`, EXIT.USAGE);
+}
+
 async function withJobLock(
 	id: string | undefined,
 	run: () => Promise<void>,
 ): Promise<void> {
 	if (!id) return run();
+	assertJobId(id);
 	const file = scratchPath("bg", `${id}.lock`, { cwdScope: false });
 	const owner: LockOwner = {
 		pid: process.pid,
@@ -259,7 +265,8 @@ async function cmdPrune(args: string[]): Promise<void> {
 	const running: JobState[] = [];
 	for (const f of files) {
 		const meta = readMetaFile(path.join(dir, f));
-		if (!meta || !isPathInside(meta.cwd, target)) continue;
+		if (!meta || !JOB_ID_PATTERN.test(meta.id) || !isPathInside(meta.cwd, target))
+			continue;
 		const state = deriveState(meta);
 		if (state.state === "running") {
 			running.push(state);
@@ -474,10 +481,10 @@ function buildInner(
 	kind: JobKind,
 	id: string,
 ): string {
-	const base = `( ${command} ) > ${sq(paths.logFile)} 2>&1; printf '%s' "$?" > ${sq(paths.statusFile)}`;
+	const base = `( ${command} ) > ${shellCommand([paths.logFile])} 2>&1; printf '%s' "$?" > ${shellCommand([paths.statusFile])}`;
 	if (kind !== "proxy") return base;
 	const drain = shellCommand(selfCommand(["proxy", "background", "drain", id]));
-	return `${base}; ${drain} > ${sq(paths.drainFile)} 2>&1 || true`;
+	return `${base}; ${drain} > ${shellCommand([paths.drainFile])} 2>&1 || true`;
 }
 
 
@@ -776,6 +783,7 @@ function jobPaths(id: string): JobPaths {
 
 function loadMeta(id: string | undefined): JobMeta | null {
 	if (!id) return null;
+	assertJobId(id);
 	return readMetaFile(jobPaths(id).metaFile);
 }
 
@@ -806,8 +814,4 @@ function extractCwd(args: string[]): [string | undefined, string[]] {
 	if (!dir || dir.startsWith("-"))
 		die("--cwd requires a directory argument", EXIT.USAGE);
 	return [dir, args.filter((_, i) => i !== idx && i !== idx + 1)];
-}
-
-function sq(s: string): string {
-	return `'${s.replace(/'/g, `'\\''`)}'`;
 }

@@ -421,6 +421,40 @@ describe("compiled proxy background", () => {
 		});
 	});
 
+	test.each(["status", "cancel", "update", "drain"])(
+		"%s rejects a job id that escapes the job directory",
+		async (subcommand) => {
+			const args =
+				subcommand === "update"
+					? ["background", subcommand, "../escape", "context"]
+					: ["background", subcommand, "../escape"];
+			const result = await run(args);
+			expect(result.exitCode).toBe(2);
+			expect(result.stderr).toContain("invalid job id");
+		},
+	);
+
+	test("prune skips a meta file whose id is not a safe job name", async () => {
+		const victim = join(fixture.root, "victim.log");
+		writeFileSync(victim, "keep");
+		const dir = join(fixture.state, "bg");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			join(dir, "evil.meta.json"),
+			JSON.stringify({
+				id: "../../victim",
+				command: ":",
+				cwd: fixture.root,
+				startedAt: new Date().toISOString(),
+				kind: "shell",
+			}),
+		);
+		expect(
+			await json(["background", "prune", "--cwd", fixture.root]),
+		).toMatchObject({ removed: [] });
+		expect(existsSync(victim)).toBe(true);
+	});
+
 	test("run rejects a command split across several arguments", async () => {
 		const result = await run(["background", "run", "sh", "-c", "echo hi"]);
 		expect(result.exitCode).not.toBe(0);
