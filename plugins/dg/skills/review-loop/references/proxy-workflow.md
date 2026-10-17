@@ -57,16 +57,12 @@ IN: none.
 OUT: `base` (git ref).
 
 1. `baseOverride` set → `base = baseOverride`. Skip to Phase 2.
-2. Otherwise reuse the fork-point formula already used by `/review`
-   ([../../review/SKILL.md](../../review/SKILL.md), "Ref + repo resolution";
-   if not packaged yet, resolve it from the explicitly configured personal skill root):
+2. Otherwise resolve the fork point in this checkout:
    `base = git merge-base HEAD "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || git rev-parse --abbrev-ref origin/HEAD | sed 's#^origin/##')"`.
    Fall back to `origin/HEAD` if that fails.
-3. **In a `/spec` worktree** (spec frontmatter has a `worktree:` block,
-   or the branch is `feature/*` cut from an integration branch):
-   prefer `base =` that integration/base branch — same override
-   `/review` applies, for the same reason (review exactly what the
-   branch added).
+3. When the branch was cut from an integration branch, prefer that
+   integration branch as `base`, so the review covers exactly what the
+   branch added.
 
 GATE: `base` resolves to a valid ref reachable from `HEAD`. If not,
 print `review-loop: could not resolve a diff base; pass --base <ref>.`
