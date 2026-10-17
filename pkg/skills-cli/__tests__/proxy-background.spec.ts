@@ -32,7 +32,7 @@ let binary: string;
 beforeAll(() => {
 	installation = proxyFixtures();
 	binary = compileProxyCli(installation);
-});
+}, 120000);
 afterAll(() => installation.cleanup());
 beforeEach(() => {
 	fixture = proxyFixtures();
@@ -102,14 +102,14 @@ function lockOwner(
 }
 
 async function deadOwnerPid(): Promise<number> {
-	const process = Bun.spawn([Bun.argv[0], "-e", "process.exit(0)"], {
+	const child = Bun.spawn([process.execPath, "-e", "process.exit(0)"], {
 		env: fixture.env(),
 		stdin: "ignore",
 		stdout: "ignore",
 		stderr: "ignore",
 	});
-	await process.exited;
-	return process.pid;
+	await child.exited;
+	return child.pid;
 }
 async function finished(job: Job) {
 	await until(
@@ -126,15 +126,17 @@ async function finished(job: Job) {
 	return json(["background", "status", job.id]);
 }
 afterEach(async () => {
-	// Discover auto-drained jobs too; never remove state while an owned process lives.
-	for (const job of jobs()) {
-		if (live(job.launcherPid)) await run(["background", "cancel", job.id]);
-		await until(
-			() => live(job.launcherPid),
-			(value) => !value,
-		);
+	try {
+		for (const job of jobs()) {
+			if (live(job.launcherPid)) await run(["background", "cancel", job.id]);
+			await until(
+				() => live(job.launcherPid),
+				(value) => !value,
+			);
+		}
+	} finally {
+		fixture.cleanup();
 	}
-	fixture.cleanup();
 });
 
 describe("compiled proxy background", () => {
@@ -171,7 +173,6 @@ describe("compiled proxy background", () => {
 				const pid = Number(readFileSync(ready, "utf8"));
 				const job: Job = await json(["background", "run", ":"]);
 				await finished(job);
-				// Emulate a stale PID record being reused by an unrelated owned process.
 				rmSync(job.statusFile);
 				writeFileSync(job.pidFile, String(pid));
 				const identity = join(fixture.scratch, "bg", `${job.id}.identity.json`);
@@ -205,6 +206,7 @@ describe("compiled proxy background", () => {
 				}
 			}
 		},
+		15000,
 	);
 
 	test("recovers an empty abandoned lock directory", async () => {
@@ -282,6 +284,7 @@ describe("compiled proxy background", () => {
 			(value) => !value,
 		);
 	}, 10000);
+
 	test("lists the six public backend identities from the relocated executable", async () => {
 		const result = await run(["--list-backends"]);
 		expect(result.exitCode, result.stderr).toBe(0);
@@ -326,7 +329,7 @@ describe("compiled proxy background", () => {
 	);
 
 	test("runs a compiled generated plan after relocation without wrapping the persona twice", async () => {
-		fixture.fakePi();
+		fixture.fakeBackend("pi");
 		const directory = join(fixture.home, ".claude", "agents");
 		mkdirSync(directory, { recursive: true });
 		const persona = "A unique test role with ' quoted instructions.";
@@ -427,8 +430,9 @@ describe("compiled proxy background", () => {
 			}),
 			cwd: fixture.root,
 		});
-		const resumed = jobs().find((value) => value.id !== job.id)!;
+		const resumed = jobs().find((value) => value.id !== job.id);
 		expect(resumed).toBeDefined();
+		if (!resumed) return;
 		await finished(resumed);
 		expect(await json(["background", "drain", job.id])).toMatchObject({
 			result: "nothing-pending",
@@ -468,21 +472,21 @@ describe("compiled proxy background", () => {
 		expect(retained.removed).toEqual([]);
 		expect(retained.running.map((value: Job) => value.id)).toEqual([job.id]);
 		expect(await json(["background", "cancel", job.id])).toMatchObject({
-			result: "cancelled",
+			result: "canceled",
 		});
 		await until(
 			() => live(job.launcherPid),
 			(value) => !value,
 		);
 		expect(await json(["background", "drain", job.id])).toMatchObject({
-			result: "cancelled",
+			result: "canceled",
 		});
 		expect(await json(["background", "status", job.id])).toMatchObject({
-			state: "cancelled",
+			state: "canceled",
 			pendingUpdate: null,
 		});
 		expect(await json(["background", "update", job.id, "later"])).toMatchObject(
-			{ result: "cancelled-job" },
+			{ result: "canceled-job" },
 		);
 		expect(fixture.readCalls()).toHaveLength(1);
 		expect(

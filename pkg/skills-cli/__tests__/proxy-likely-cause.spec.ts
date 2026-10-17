@@ -19,7 +19,6 @@ describe("classifyFailure", () => {
 		expect(classifyFailure("file not found: config.json")).toBe("other");
 	});
 
-	// model check is ordered before effort check, so text hitting both keys as "model"
 	test("prioritizes 'model' over 'effort' when both keywords are present", () => {
 		expect(classifyFailure("invalid model: reasoning effort not supported")).toBe("model");
 	});
@@ -28,25 +27,24 @@ describe("classifyFailure", () => {
 		expect(classifyFailure("UNKNOWN MODEL requested")).toBe("model");
 	});
 
-	test("matches each rejection word individually", () => {
-		for (const word of [
-			"unknown",
-			"invalid",
-			"unsupported",
-			"not found",
-			"not available",
-			"unrecognized",
-			"not support",
-		]) {
-			expect(classifyFailure(`${word} model type`)).toBe("model");
-		}
+	test.each([
+		"unknown",
+		"invalid",
+		"unsupported",
+		"not found",
+		"not available",
+		"unrecognized",
+		"not support",
+	])("treats %s as a rejection word", (word) => {
+		expect(classifyFailure(`${word} model type`)).toBe("model");
 	});
 
-	test("matches each effort word individually", () => {
-		for (const word of ["effort", "thinking", "variant", "reasoning"]) {
+	test.each(["effort", "thinking", "variant", "reasoning"])(
+		"treats %s as an effort word",
+		(word) => {
 			expect(classifyFailure(`unsupported ${word} setting`)).toBe("effort");
-		}
-	});
+		},
+	);
 
 	test("returns 'other' for empty input", () => {
 		expect(classifyFailure("")).toBe("other");

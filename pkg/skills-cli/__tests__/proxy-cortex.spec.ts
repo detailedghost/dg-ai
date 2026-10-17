@@ -1,34 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { cortex } from "../src/proxy/backends/cortex";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-// ── Factories ────────────────────────────────────────────────────────────────
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "do the thing", ...overrides };
-}
-
-function jsonl(...events: unknown[]): string {
-	return events.map((e) => JSON.stringify(e)).join("\n");
-}
-
-// ── cortex.bin / cortex.install ────────────────────────────────────────────────
-
-describe("cortex.bin", () => {
-	test("is the cortex-code binary name", () => {
-		expect(cortex.bin).toBe("cortex");
-	});
-});
-
-describe("cortex.install", () => {
-	test("points at the Snowflake Cortex Code CLI", () => {
-		expect(cortex.install.hint).toContain("Cortex Code");
-		expect(cortex.install.url).toContain("docs.snowflake.com");
-	});
-});
-
-// ── cortex.buildArgs ────────────────────────────────────────────────────────────
+import { jsonl, makeInput } from "./proxy-fixtures";
 
 describe("cortex.buildArgs", () => {
 	test("builds a fresh-turn print invocation with stream-json and auto-approve", () => {
@@ -81,7 +54,7 @@ describe("cortex.buildArgs", () => {
 		);
 		expect(args).toEqual([
 			"--print",
-			"do the thing",
+			"hello world",
 			"--output-format",
 			"stream-json",
 			"--no-auto-update",
@@ -94,8 +67,6 @@ describe("cortex.buildArgs", () => {
 		]);
 	});
 });
-
-// ── cortex.parseEvents ──────────────────────────────────────────────────────────
 
 describe("cortex.parseEvents", () => {
 	test("extracts sessionId from the init event and message from the result event", () => {

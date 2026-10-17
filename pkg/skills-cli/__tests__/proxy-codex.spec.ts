@@ -1,34 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { codex } from "../src/proxy/backends/codex";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-// ── Factories ────────────────────────────────────────────────────────────────
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "do the thing", ...overrides };
-}
-
-function jsonl(...events: unknown[]): string {
-	return events.map((e) => JSON.stringify(e)).join("\n");
-}
-
-// ── codex.bin / codex.install ─────────────────────────────────────────────────
-
-describe("codex.bin", () => {
-	test("is the codex-cli binary name", () => {
-		expect(codex.bin).toBe("codex");
-	});
-});
-
-describe("codex.install", () => {
-	test("points at the @openai/codex npm package", () => {
-		expect(codex.install.hint).toContain("@openai/codex");
-		expect(codex.install.command).toBe("npm install -g @openai/codex");
-	});
-});
-
-// ── codex.buildArgs ────────────────────────────────────────────────────────────
+import { jsonl, makeInput } from "./proxy-fixtures";
 
 describe("codex.buildArgs", () => {
 	test("builds a fresh-turn invocation with sandbox flags", () => {
@@ -63,7 +36,7 @@ describe("codex.buildArgs", () => {
 			"exec",
 			"resume",
 			"sess-1",
-			"do the thing",
+			"hello world",
 			"--json",
 			"-m",
 			"gpt-5",
@@ -72,8 +45,6 @@ describe("codex.buildArgs", () => {
 		]);
 	});
 });
-
-// ── codex.parseEvents ──────────────────────────────────────────────────────────
 
 describe("codex.parseEvents", () => {
 	test("extracts sessionId from thread.started and message from agent_message", () => {

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import * as cliFixtures from "./cli-fixtures";
-import { glMr, restPr } from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import {
 	makeGitRepo as createGitRepo,
@@ -66,14 +65,7 @@ function baseEnv(): Record<string, string | undefined> {
 	return env;
 }
 
-async function runCli(
-	args: string[],
-	opts: { cwd?: string; env?: Record<string, string | undefined> } = {},
-): Promise<RunResult> {
-	return runCliSync(args, opts);
-}
-
-function runCliSync(
+function runCli(
 	args: string[],
 	opts: { cwd?: string; env?: Record<string, string | undefined> } = {},
 ): RunResult {
@@ -199,7 +191,7 @@ function expectUnresolved(json: Record<string, unknown>): void {
 describe("vcs-provider-cli detect — kind resolution is independent of any provider binary", () => {
 	test("resolves kind from the git remote alone when gh is unreachable", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: NONEXISTENT_BIN },
 		});
@@ -211,7 +203,7 @@ describe("vcs-provider-cli detect — kind resolution is independent of any prov
 
 	test("resolves kind from the git remote alone when glab is unreachable", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GLAB_BIN: NONEXISTENT_BIN },
 		});
@@ -225,7 +217,7 @@ describe("vcs-provider-cli detect — kind resolution is independent of any prov
 describe("vcs-provider-cli detect — owner/repo/url degrade instead of crashing when the binary is absent", () => {
 	test("a missing gh binary: resolved stays true, kind stays populated, owner/repo/url become null, reason is set", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const { stdout, stderr, exitCode } = await runCli(["detect"], {
+		const { stdout, stderr, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: NONEXISTENT_BIN },
 		});
@@ -238,7 +230,7 @@ describe("vcs-provider-cli detect — owner/repo/url degrade instead of crashing
 
 	test("a missing glab binary: resolved stays true, kind stays populated, owner/repo/url become null, reason is set", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, stderr, exitCode } = await runCli(["detect"], {
+		const { stdout, stderr, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GLAB_BIN: NONEXISTENT_BIN },
 		});
@@ -262,7 +254,7 @@ describe("vcs-provider-cli detect — repo view fails even though the binary is 
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -283,7 +275,7 @@ describe("vcs-provider-cli detect — repo view fails even though the binary is 
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -308,7 +300,7 @@ JSON
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -336,11 +328,11 @@ JSON
     ;;`),
 		);
 
-		const plain = await runCli(["detect"], {
+		const plain = runCli(["detect"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
-		const withFlag = await runCli(["detect", "--json"], {
+		const withFlag = runCli(["detect", "--json"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -366,7 +358,7 @@ JSON
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { GLAB_BIN: glabBin, AI_VCS_GITLAB_HOSTS: "git.example.internal" },
 		});
@@ -387,7 +379,7 @@ describe("vcs-provider-cli detect — given an unresolvable provider", () => {
 		const repo = makeGitRepoWithOrigin(
 			"https://example-vcs.internal/acme/widgets.git",
 		);
-		const { stdout, exitCode } = await runCli(["detect"], { cwd: repo });
+		const { stdout, exitCode } = runCli(["detect"], { cwd: repo });
 
 		expect(exitCode).toBe(0);
 		const json = JSON.parse(stdout.trim());
@@ -396,7 +388,7 @@ describe("vcs-provider-cli detect — given an unresolvable provider", () => {
 
 	test("no origin remote configured still exits 0 and reports the failure with all five keys, kind included, null", async () => {
 		const repo = makeGitRepo();
-		const { stdout, exitCode } = await runCli(["detect"], { cwd: repo });
+		const { stdout, exitCode } = runCli(["detect"], { cwd: repo });
 
 		expect(exitCode).toBe(0);
 		const json = JSON.parse(stdout.trim());
@@ -405,7 +397,7 @@ describe("vcs-provider-cli detect — given an unresolvable provider", () => {
 
 	test("no git repository at all still exits 0 and reports the failure with all five keys, kind included, null", async () => {
 		const dir = tmp("no-git-repo-");
-		const { stdout, exitCode } = await runCli(["detect"], { cwd: dir });
+		const { stdout, exitCode } = runCli(["detect"], { cwd: dir });
 
 		expect(exitCode).toBe(0);
 		const json = JSON.parse(stdout.trim());
@@ -414,7 +406,7 @@ describe("vcs-provider-cli detect — given an unresolvable provider", () => {
 
 	test("an invalid AI_VCS_PROVIDER value still exits 0 and reports the failure with all five keys, kind included, null", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["detect"], {
+		const { stdout, exitCode } = runCli(["detect"], {
 			cwd: repo,
 			env: { AI_VCS_PROVIDER: "bitbucket" },
 		});
@@ -428,7 +420,7 @@ describe("vcs-provider-cli detect — given an unresolvable provider", () => {
 describe("vcs-provider-cli capabilities — reflects the calling repo's actual detected provider", () => {
 	test("a GitHub-origin repo prints {kind, aiReviewBot, aiReviewBotNames, nativeStacking} verbatim, no wrapper", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["capabilities"], { cwd: repo });
+		const { stdout, exitCode } = runCli(["capabilities"], { cwd: repo });
 
 		expect(exitCode).toBe(0);
 		const json = JSON.parse(stdout.trim());
@@ -442,7 +434,7 @@ describe("vcs-provider-cli capabilities — reflects the calling repo's actual d
 
 	test("a GitLab-origin repo prints {kind, aiReviewBot, aiReviewBotNames, nativeStacking} verbatim, no wrapper", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["capabilities"], { cwd: repo });
+		const { stdout, exitCode } = runCli(["capabilities"], { cwd: repo });
 
 		expect(exitCode).toBe(0);
 		const json = JSON.parse(stdout.trim());
@@ -458,7 +450,7 @@ describe("vcs-provider-cli capabilities — reflects the calling repo's actual d
 describe("vcs-provider-cli capabilities — the GitLab AI reviewer is configurable", () => {
 	test("VCS_GITLAB_AI_REVIEW_BOT names the reviewer the review loop should consume", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["capabilities"], {
+		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 			env: { VCS_GITLAB_AI_REVIEW_BOT: "some_other_bot,gitlab_duo" },
 		});
@@ -474,7 +466,7 @@ describe("vcs-provider-cli capabilities — the GitLab AI reviewer is configurab
 
 	test("VCS_GITLAB_AI_REVIEW_BOT=none reports no reviewer, which is what routes the loop to proxy mode", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["capabilities"], {
+		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 			env: { VCS_GITLAB_AI_REVIEW_BOT: "none" },
 		});
@@ -496,7 +488,7 @@ describe("vcs-provider-cli capabilities — requires no CLI binary", () => {
 		const ghBin = fakeBin("gh", shScript(""));
 		const glabBin = fakeBin("glab", shScript(""));
 
-		const { stdout, exitCode } = await runCli(["capabilities"], {
+		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, GLAB_BIN: glabBin, ...logEnv },
 		});
@@ -517,7 +509,7 @@ describe("vcs-provider-cli capabilities — requires no CLI binary", () => {
 		const ghBin = fakeBin("gh", shScript(""));
 		const glabBin = fakeBin("glab", shScript(""));
 
-		const { stdout, exitCode } = await runCli(["capabilities"], {
+		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, GLAB_BIN: glabBin, ...logEnv },
 		});
@@ -534,7 +526,7 @@ describe("vcs-provider-cli capabilities — requires no CLI binary", () => {
 
 	test("still resolves capabilities correctly when both binaries are entirely absent from the filesystem", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
-		const { stdout, exitCode } = await runCli(["capabilities"], {
+		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 			env: { GH_BIN: NONEXISTENT_BIN, GLAB_BIN: NONEXISTENT_BIN },
 		});
@@ -552,7 +544,7 @@ describe("vcs-provider-cli capabilities — requires no CLI binary", () => {
 describe("vcs-provider-cli capabilities — given an unresolvable provider", () => {
 	test("fails loud through defineCommand's error path — exit 1 with the reason on stderr, unlike detect", async () => {
 		const repo = makeGitRepo();
-		const { stdout, stderr, exitCode } = await runCli(["capabilities"], {
+		const { stdout, stderr, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
 		});
 
@@ -567,8 +559,8 @@ describe("vcs-provider-cli list-prs", () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const { path: log, env: logEnv } = callLogPath();
 		const all = [
-			restPr(21, "feature-a", { state: "open", merged_at: null }),
-			restPr(22, "feature-b", {
+			cliFixtures.restPr(21, "feature-a", { state: "open", merged_at: null }),
+			cliFixtures.restPr(22, "feature-b", {
 				state: "closed",
 				merged_at: "2026-03-01T00:00:00Z",
 			}),
@@ -583,7 +575,7 @@ describe("vcs-provider-cli list-prs", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["list-prs"], {
+		const { stdout, exitCode } = runCli(["list-prs"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, FAKE_ALL_JSON: allJsonPath, ...logEnv },
 		});
@@ -622,7 +614,7 @@ describe("vcs-provider-cli list-prs", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["list-prs"], {
+		const { stdout, exitCode } = runCli(["list-prs"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, FAKE_ALL_JSON: allJsonPath },
 		});
@@ -637,8 +629,8 @@ describe("vcs-provider-cli list-prs — against a GitLab-origin repo", () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
 		const { path: log, env: logEnv } = callLogPath();
 		const all = [
-			glMr(21, "feature-a", { state: "opened", merged_at: null }),
-			glMr(22, "feature-b", {
+			cliFixtures.glMr(21, "feature-a", { state: "opened", merged_at: null }),
+			cliFixtures.glMr(22, "feature-b", {
 				state: "merged",
 				merged_at: "2026-03-01T00:00:00Z",
 			}),
@@ -653,7 +645,7 @@ describe("vcs-provider-cli list-prs — against a GitLab-origin repo", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["list-prs"], {
+		const { stdout, exitCode } = runCli(["list-prs"], {
 			cwd: repo,
 			env: { GLAB_BIN: glabBin, FAKE_ALL_JSON: allJsonPath, ...logEnv },
 		});
@@ -693,7 +685,7 @@ test("vcs-provider-cli list-issues preserves GitHub support through the same nor
     ;;`),
 	);
 
-	const { stdout, exitCode } = runCliSync(["list-issues", "--limit", "20"], {
+	const { stdout, exitCode } = runCli(["list-issues", "--limit", "20"], {
 		cwd: repo,
 		env: { GH_BIN: ghBin, FAKE_ISSUES_JSON: issuesPath },
 	});
@@ -726,7 +718,7 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
     ;;`),
 		);
 
-		const { stdout, exitCode } = runCliSync(["list-issues", "--limit", "1"], {
+		const { stdout, exitCode } = runCli(["list-issues", "--limit", "1"], {
 			cwd: repo,
 			env: { GLAB_BIN: glabBin, FAKE_ISSUES_JSON: issuesPath, ...logEnv },
 		});
@@ -755,7 +747,7 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
     ;;`),
 		);
 
-		const { stdout, exitCode } = runCliSync(["view-issue", "42"], {
+		const { stdout, exitCode } = runCli(["view-issue", "42"], {
 			cwd: repo,
 			env: { GLAB_BIN: glabBin, FAKE_ISSUE_JSON: issuePath },
 		});
@@ -771,7 +763,7 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
 	test("create-pr delegates draft MR creation to glab and prints the normalized MR", () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
 		const { path: log, env: logEnv } = callLogPath();
-		const mrPath = writeJson("gitlab-created-mr.json", glMr(77, "feature/fix"));
+		const mrPath = writeJson("gitlab-created-mr.json", cliFixtures.glMr(77, "feature/fix"));
 		const glabBin = fakeBin(
 			"glab",
 			shScript(`
@@ -785,7 +777,7 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
     ;;`),
 		);
 
-		const { stdout, exitCode } = runCliSync(
+		const { stdout, exitCode } = runCli(
 			[
 				"create-pr",
 				"--draft",
@@ -816,7 +808,7 @@ describe("vcs-provider-cli issue commands — against a GitLab-origin repo", () 
 describe("vcs-provider-cli list-prs — given an unresolvable provider", () => {
 	test("fails loud through defineCommand's error path — exit 1 with the reason on stderr, unlike detect's degrade", async () => {
 		const repo = makeGitRepo();
-		const { stdout, stderr, exitCode } = await runCli(["list-prs"], {
+		const { stdout, stderr, exitCode } = runCli(["list-prs"], {
 			cwd: repo,
 		});
 
@@ -838,7 +830,7 @@ describe("vcs-provider-cli list-prs — the underlying provider call itself fail
     ;;`),
 		);
 
-		const { stdout, stderr, exitCode } = await runCli(["list-prs"], {
+		const { stdout, stderr, exitCode } = runCli(["list-prs"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -858,8 +850,8 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
 			ghRepoViewJson("acme", "widgets"),
 		);
 		const all = [
-			restPr(31, "feature-x", { state: "open", merged_at: null }),
-			restPr(32, "feature-x", {
+			cliFixtures.restPr(31, "feature-x", { state: "open", merged_at: null }),
+			cliFixtures.restPr(32, "feature-x", {
 				state: "closed",
 				merged_at: "2026-02-01T00:00:00Z",
 			}),
@@ -878,7 +870,7 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-x"],
 			{
 				cwd: repo,
@@ -911,11 +903,11 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
 			ghRepoViewJson("acme", "widgets"),
 		);
 		const all = [
-			restPr(60, "feature-multi", {
+			cliFixtures.restPr(60, "feature-multi", {
 				state: "closed",
 				merged_at: "2026-01-01T00:00:00Z",
 			}),
-			restPr(61, "feature-multi", {
+			cliFixtures.restPr(61, "feature-multi", {
 				state: "closed",
 				merged_at: "2026-02-01T00:00:00Z",
 			}),
@@ -934,7 +926,7 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-multi"],
 			{
 				cwd: repo,
@@ -958,7 +950,7 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
 			ghRepoViewJson("acme", "widgets"),
 		);
 		const allJsonPath = writeJson("merged-branch-empty.json", [
-			restPr(41, "feature-y", { state: "open", merged_at: null }),
+			cliFixtures.restPr(41, "feature-y", { state: "open", merged_at: null }),
 		]);
 		const ghBin = fakeBin(
 			"gh",
@@ -973,7 +965,7 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-y"],
 			{
 				cwd: repo,
@@ -991,7 +983,7 @@ describe("vcs-provider-cli merged-pr-for-branch <branch>", () => {
 
 	test("a missing branch argument fails rather than silently querying an undefined branch", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const { exitCode } = await runCli(["merged-pr-for-branch"], { cwd: repo });
+		const { exitCode } = runCli(["merged-pr-for-branch"], { cwd: repo });
 
 		expect(exitCode).not.toBe(0);
 	});
@@ -1002,7 +994,7 @@ describe("vcs-provider-cli merged-pr-for-branch — against a GitLab-origin repo
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
 		const { path: log, env: logEnv } = callLogPath();
 		const all = [
-			glMr(70, "feature-multi", {
+			cliFixtures.glMr(70, "feature-multi", {
 				state: "merged",
 				merged_at: "2026-01-01T00:00:00Z",
 			}),
@@ -1017,7 +1009,7 @@ describe("vcs-provider-cli merged-pr-for-branch — against a GitLab-origin repo
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-multi"],
 			{
 				cwd: repo,
@@ -1040,7 +1032,7 @@ describe("vcs-provider-cli merged-pr-for-branch — against a GitLab-origin repo
 describe("vcs-provider-cli merged-pr-for-branch — given an unresolvable provider", () => {
 	test("fails loud rather than printing the JSON literal null, so a caller can tell 'unknown' from 'not merged'", async () => {
 		const repo = makeGitRepo();
-		const { stdout, stderr, exitCode } = await runCli(
+		const { stdout, stderr, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-x"],
 			{ cwd: repo },
 		);
@@ -1071,7 +1063,7 @@ describe("vcs-provider-cli merged-pr-for-branch — the underlying provider call
     ;;`),
 		);
 
-		const { stdout, stderr, exitCode } = await runCli(
+		const { stdout, stderr, exitCode } = runCli(
 			["merged-pr-for-branch", "feature-x"],
 			{
 				cwd: repo,
@@ -1096,7 +1088,7 @@ describe("vcs-provider-cli auth", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["auth"], {
+		const { stdout, exitCode } = runCli(["auth"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -1116,7 +1108,7 @@ describe("vcs-provider-cli auth", () => {
     ;;`),
 		);
 
-		const { stdout, stderr, exitCode } = await runCli(["auth"], {
+		const { stdout, stderr, exitCode } = runCli(["auth"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -1136,7 +1128,7 @@ describe("vcs-provider-cli auth", () => {
     ;;`),
 		);
 
-		const { exitCode } = await runCli(["auth"], {
+		const { exitCode } = runCli(["auth"], {
 			cwd: repo,
 			env: { GLAB_BIN: glabBin },
 		});
@@ -1147,7 +1139,7 @@ describe("vcs-provider-cli auth", () => {
 	test("exits non-zero when no provider resolves at all, rather than reporting authenticated", async () => {
 		const repo = makeGitRepo();
 
-		const { exitCode } = await runCli(["auth"], {
+		const { exitCode } = runCli(["auth"], {
 			cwd: repo,
 			env: { GH_BIN: NONEXISTENT_BIN },
 		});
@@ -1160,10 +1152,10 @@ describe("vcs-provider-cli list-prs --limit", () => {
 	test("caps the returned array at the requested count", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const all = [
-			restPr(1, "a"),
-			restPr(2, "b"),
-			restPr(3, "c"),
-			restPr(4, "d"),
+			cliFixtures.restPr(1, "a"),
+			cliFixtures.restPr(2, "b"),
+			cliFixtures.restPr(3, "c"),
+			cliFixtures.restPr(4, "d"),
 		];
 		const allJsonPath = writeJson("limit-all.json", all);
 		const ghBin = fakeBin(
@@ -1175,7 +1167,7 @@ describe("vcs-provider-cli list-prs --limit", () => {
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(["list-prs", "--limit", "2"], {
+		const { stdout, exitCode } = runCli(["list-prs", "--limit", "2"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, FAKE_ALL_JSON: allJsonPath },
 		});
@@ -1189,9 +1181,9 @@ describe("vcs-provider-cli list-prs --limit", () => {
 	test("returns the whole list when no limit is given", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const allJsonPath = writeJson("nolimit-all.json", [
-			restPr(1, "a"),
-			restPr(2, "b"),
-			restPr(3, "c"),
+			cliFixtures.restPr(1, "a"),
+			cliFixtures.restPr(2, "b"),
+			cliFixtures.restPr(3, "c"),
 		]);
 		const ghBin = fakeBin(
 			"gh",
@@ -1202,7 +1194,7 @@ describe("vcs-provider-cli list-prs --limit", () => {
     ;;`),
 		);
 
-		const { stdout } = await runCli(["list-prs"], {
+		const { stdout } = runCli(["list-prs"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin, FAKE_ALL_JSON: allJsonPath },
 		});
@@ -1214,7 +1206,7 @@ describe("vcs-provider-cli list-prs --limit", () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const ghBin = fakeBin("gh", shScript(""));
 
-		const { exitCode, stderr } = await runCli(["list-prs", "--limit", "many"], {
+		const { exitCode, stderr } = runCli(["list-prs", "--limit", "many"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -1227,7 +1219,7 @@ describe("vcs-provider-cli list-prs --limit", () => {
 describe("vcs-provider-cli list-prs --head", () => {
 	test("pushes the branch filter down to the provider call instead of fetching every PR and filtering after", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
-		const allJsonPath = writeJson("head-all.json", [restPr(7, "feature/auth")]);
+		const allJsonPath = writeJson("head-all.json", [cliFixtures.restPr(7, "feature/auth")]);
 		const log = callLogPath();
 		const ghBin = fakeBin(
 			"gh",
@@ -1244,7 +1236,7 @@ JSON
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["list-prs", "--head", "feature/auth"],
 			{
 				cwd: repo,
@@ -1262,8 +1254,8 @@ JSON
 	test("composes with --limit rather than one flag shadowing the other", async () => {
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const allJsonPath = writeJson("head-limit-all.json", [
-			restPr(7, "feature/auth"),
-			restPr(8, "feature/auth"),
+			cliFixtures.restPr(7, "feature/auth"),
+			cliFixtures.restPr(8, "feature/auth"),
 		]);
 		const log = callLogPath();
 		const ghBin = fakeBin(
@@ -1281,7 +1273,7 @@ JSON
     ;;`),
 		);
 
-		const { stdout, exitCode } = await runCli(
+		const { stdout, exitCode } = runCli(
 			["list-prs", "--head", "feature/auth", "--limit", "1"],
 			{
 				cwd: repo,
@@ -1298,7 +1290,7 @@ JSON
 		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
 		const ghBin = fakeBin("gh", shScript(""));
 
-		const { exitCode, stderr } = await runCli(["list-prs", "--head"], {
+		const { exitCode, stderr } = runCli(["list-prs", "--head"], {
 			cwd: repo,
 			env: { GH_BIN: ghBin },
 		});
@@ -1326,7 +1318,7 @@ describe("vcs-provider view-pr and list-threads", () => {
 							body: "body",
 							mergedAt: null,
 						}
-					: glMr(83, "feature/view");
+					: cliFixtures.glMr(83, "feature/view");
 			const fixture = writeJson("view-pr.json", raw);
 			const { path: log, env } = callLogPath();
 			const bin = fakeBin(
@@ -1337,7 +1329,7 @@ describe("vcs-provider view-pr and list-threads", () => {
     exit 0
     ;;`),
 			);
-			const result = runCliSync(["view-pr", "83"], {
+			const result = runCli(["view-pr", "83"], {
 				cwd: repo,
 				env: {
 					...env,
@@ -1413,7 +1405,7 @@ describe("vcs-provider view-pr and list-threads", () => {
     exit 0
     ;;`),
 			);
-			const result = runCliSync(["list-threads", "83"], {
+			const result = runCli(["list-threads", "83"], {
 				cwd: repo,
 				env: {
 					...env,
@@ -1450,7 +1442,7 @@ describe("vcs-provider view-pr and list-threads", () => {
 				);
 				const { path: log, env } = callLogPath();
 				const gh = fakeBin("gh", shScript(""));
-				const result = runCliSync(
+				const result = runCli(
 					[command, ...(number === undefined ? [] : [number])],
 					{ cwd: repo, env: { ...env, GH_BIN: gh } },
 				);
@@ -1544,7 +1536,7 @@ describe("compiled vcs-provider", () => {
 						body,
 						mergedAt: null,
 					}
-				: glMr(83, "feature/compiled", { title, description: body });
+				: cliFixtures.glMr(83, "feature/compiled", { title, description: body });
 			const prFixture = writeJson("compiled-pr.json", raw);
 			const repoFixture = writeJson(
 				"compiled-repo.json",

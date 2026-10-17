@@ -7,9 +7,7 @@ import { LOG_EXCERPT_MAX_CHARS, ProviderError, truncateLogExcerpt } from "../src
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 
-import { isolateCliTests } from "./cli-fixtures";
-
-isolateCliTests();
+cliFixtures.isolateCliTests();
 
 const ENV_KEYS = [
 	"GLAB_BIN",
@@ -21,6 +19,8 @@ const ENV_KEYS = [
 	"FAKE_ALL_JSON",
 	"FAKE_PAGE1_JSON",
 	"FAKE_PAGE2_JSON",
+	"FAKE_PIPELINES_JSON",
+	"FAKE_JOBS_JSON",
 	"VCS_GITLAB_AI_REVIEW_BOT",
 ] as const;
 
@@ -50,20 +50,40 @@ function tmp(prefix: string): string {
 	return cliFixtures.tmp(createdDirs, prefix);
 }
 
-/** Writes a fake `glab` on PATH via writeFakeCli — the primary seam, since glab isn't intercepted in this sandbox. */
+/** Writes a fake `glab` onto PATH. */
 function fakeGlab(script: string): string {
 	const dir = tmp("fake-glab-bin-");
 	writeFakeCli(dir, "glab", script);
 	return join(dir, "glab");
 }
 
-/** Writes a fake `glab` and points GLAB_BIN at its absolute path instead of relying on PATH. */
+/** Writes a fake `glab` and points GLAB_BIN at it. */
 function fakeGlabViaBin(script: string): string {
 	const dir = tmp("fake-glab-bin-");
 	writeFakeCli(dir, "glab", script);
 	const path = join(dir, "glab");
 	process.env.GLAB_BIN = path;
 	return path;
+}
+
+function fakeGlabDiscussions(): string {
+	return fakeGlab(
+		glabScript(`
+  *"mr view"*)
+    echo '{"iid":1}'
+    exit 0
+    ;;
+  *"api projects/:id/merge_requests/"*"/discussions"*)
+    cat "$FAKE_MR_JSON"
+    exit 0
+    ;;`),
+	);
+}
+
+const HEAD_SHA = "4798a313e8e39f8067fe3b4bd6c094f20221bb57";
+
+function headPipeline(id: number, iid = 1, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return { id, sha: HEAD_SHA, ref: `refs/merge-requests/${iid}/head`, status: "failed", ...overrides };
 }
 
 function writeJson(name: string, data: unknown): string {
@@ -253,9 +273,7 @@ describe("currentPullRequest", () => {
 			baseRefName: "main",
 			merged: false,
 		});
-		const calls = readCalls(log).join("\n");
-		expect(calls).toContain("mr");
-		expect(calls).toContain("view");
+		expect(readCalls(log)).toEqual(["mr view --output json"]);
 	});
 
 	test("returns null, not a throw, when glab reports no open MR for the current branch", async () => {
@@ -295,8 +313,7 @@ describe("viewPullRequest", () => {
 		expect(pr.mergedAt).toBe("2026-01-01T00:00:00Z");
 		expect(pr.headRefName).toBe("feature-42");
 		expect(pr.baseRefName).toBe("main");
-		const calls = readCalls(log).join("\n");
-		expect(calls).toContain("42");
+		expect(readCalls(log)).toEqual(["mr view 42 --output json"]);
 	});
 
 	test("maps GitLab's `locked` state onto the normalized CLOSED, not left unmapped", async () => {
@@ -373,12 +390,7 @@ describe("createPullRequest", () => {
 		);
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.createPullRequest({ title: "x", body: "y", base: "main", head: "feature" });
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(() => provider.createPullRequest({ title: "x", body: "y", base: "main", head: "feature" }));
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("PARSE_ERROR");
@@ -435,17 +447,7 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 
 	test("defaults to resolvable && !resolved, excluding both the resolved discussion and the non-resolvable comment", async () => {
 		process.env.FAKE_MR_JSON = writeJson("discussions.json", discussionsFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -459,17 +461,7 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 
 	test("includeResolved:true returns every discussion unfiltered, including the non-resolvable plain comment", async () => {
 		process.env.FAKE_MR_JSON = writeJson("discussions.json", discussionsFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads({ includeResolved: true });
@@ -511,17 +503,7 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 			},
 		];
 		process.env.FAKE_MR_JSON = writeJson("multi-note-discussion.json", multiNoteFixture);
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -534,7 +516,7 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 		expect(threads[0].comments[0].author).toBe("alice");
 	});
 
-	test("rejects with a coded NO_CURRENT_MR ProviderError, not a malformed merge_requests//discussions call, when there is no current MR for cwd", async () => {
+	test("rejects with NO_CURRENT_MR when there is no current MR for cwd", async () => {
 		const log = callLogPath();
 		fakeGlab(
 			glabScript(`
@@ -549,12 +531,7 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 		);
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.listUnresolvedThreads();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(() => provider.listUnresolvedThreads());
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_CURRENT_MR");
@@ -586,7 +563,7 @@ describe("resolveThread — PUT .../discussions/{id} with resolved=true", () => 
 		expect(calls).toContain("resolved=true");
 	});
 
-	test("rejects with a coded NO_CURRENT_MR ProviderError, not a malformed merge_requests//discussions call, when there is no current MR for cwd", async () => {
+	test("rejects with NO_CURRENT_MR when there is no current MR for cwd", async () => {
 		const log = callLogPath();
 		fakeGlab(
 			glabScript(`
@@ -601,12 +578,7 @@ describe("resolveThread — PUT .../discussions/{id} with resolved=true", () => 
 		);
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.resolveThread("disc-1");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(() => provider.resolveThread("disc-1"));
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_CURRENT_MR");
@@ -644,7 +616,7 @@ describe("replyToThread — POST .../discussions/{id}/notes", () => {
 		expect(calls).toContain("discussions/disc-1/notes -f body=");
 	});
 
-	test("rejects with a coded NO_CURRENT_MR ProviderError, not a malformed merge_requests//discussions/{id}/notes call, when there is no current MR for cwd", async () => {
+	test("rejects a reply with NO_CURRENT_MR when there is no current MR for cwd", async () => {
 		const log = callLogPath();
 		fakeGlab(
 			glabScript(`
@@ -659,12 +631,7 @@ describe("replyToThread — POST .../discussions/{id}/notes", () => {
 		);
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.replyToThread("disc-1", "5001", "thanks");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(() => provider.replyToThread("disc-1", "5001", "thanks"));
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_CURRENT_MR");
@@ -674,13 +641,6 @@ describe("replyToThread — POST .../discussions/{id}/notes", () => {
 });
 
 describe("listCiFailures — pipeline -> pipeline jobs -> job trace chain", () => {
-	const HEAD_SHA = "4798a313e8e39f8067fe3b4bd6c094f20221bb57";
-
-	/** A pipeline row shaped like GitLab's own: the sha and ref are what prove it is this MR's head. */
-	function headPipeline(id: number, iid: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-		return { id, sha: HEAD_SHA, ref: `refs/merge-requests/${iid}/head`, status: "failed", ...overrides };
-	}
-
 	function mockPipelineChain(pipelinesJson: string, jobsJson: string, caseBody: string, headSha = HEAD_SHA): void {
 		fakeGlab(`#!/bin/sh
 ARGS="$*"
@@ -852,7 +812,7 @@ esac
 	test("returns an empty array without fetching jobs when the MR has no pipelines", async () => {
 		const log = callLogPath();
 		const pipelinesJson = writeJson("pipelines6.json", []);
-		mockPipelineChain(pipelinesJson, pipelinesJson, "");
+		mockPipelineChain(pipelinesJson, writeJson("jobs6.json", []), "");
 
 		const provider = createGitlabProvider();
 		const failures = await provider.listCiFailures({ number: 6 });
@@ -864,13 +824,9 @@ esac
 });
 
 describe("listCiFailures — pipeline identity guard", () => {
-	const HEAD_SHA = "4798a313e8e39f8067fe3b4bd6c094f20221bb57";
 	const OTHER_SHA = "0f74980934b1a2c3d4e5f60718293a4b5c6d7e8f";
 
-	/**
-	 * Answers the MR-detail, pipelines, jobs and trace routes independently, so a test can hand the
-	 * pipeline list a row that does not belong to the merge request under test.
-	 */
+	/** Answers the MR, pipelines, jobs and trace routes independently. */
 	function mockChain(mrJson: string, pipelinesJson: string, jobsJson: string): string {
 		const log = callLogPath();
 		fakeGlab(`#!/bin/sh
@@ -906,12 +862,7 @@ esac
 	}
 
 	async function captureError(run: () => Promise<unknown>): Promise<ProviderError> {
-		let caught: unknown;
-		try {
-			await run();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(run);
 		expect(caught).toBeInstanceOf(ProviderError);
 		return caught as ProviderError;
 	}
@@ -941,14 +892,12 @@ esac
 		]);
 		const log = mockChain(mrJson, pipelinesJson, failingJobs(91002));
 
-		const provider = createGitlabProvider();
 		const err = await captureError(() => createGitlabProvider().listCiFailures({ number: 7 }));
 
 		expect(err.code).toBe("PIPELINE_SHA_MISMATCH");
 		expect(err.message).toContain(HEAD_SHA);
 		expect(err.message).toContain("refs/merge-requests/7/head");
 		expect(readCalls(log).some((c) => c.includes("/jobs"))).toBe(false);
-		expect(provider).toBeDefined();
 	});
 
 	test("a pipeline carrying the head sha on a different ref is not accepted as the head pipeline", async () => {
@@ -1241,7 +1190,7 @@ describe("listPullRequests", () => {
 });
 
 describe("listUnresolvedThreads — pagination", () => {
-	test("a --paginate response merged into one flat JSON array (per docs.gitlab.com/cli/api, glab merges array-shaped pages under --paginate) spanning more than one 20-item GitLab discussions page is fully collected", async () => {
+	test("collects a --paginate response that spans more than one 20-item discussions page", async () => {
 		const page1 = Array.from({ length: 20 }, (_, i) => ({
 			id: `disc-${i + 1}`,
 			individual_note: false,
@@ -1297,7 +1246,7 @@ describe("listUnresolvedThreads — pagination", () => {
 });
 
 describe("listPullRequests — explicit page-walking pagination", () => {
-	test("collects a fake MR listing spanning more than one 100-item page via --page/--per-page, not relying on glab --paginate", async () => {
+	test("collects an MR listing that spans more than one 100-item page", async () => {
 		const page1 = Array.from({ length: 100 }, (_, i) => rawMr(i + 1, i === 99 ? "merged" : "opened"));
 		const page2 = Array.from({ length: 30 }, (_, i) => rawMr(i + 101, "opened"));
 		process.env.FAKE_PAGE1_JSON = writeJson("page1.json", page1);
@@ -1364,7 +1313,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		expect(result.map((r) => r.number)).toEqual([1, 2]);
 	});
 
-	test("opts.author and opts.label are forwarded to `glab mr list` as flags (real glab flags, verified against gitlab-org/cli docs)", async () => {
+	test("forwards opts.author and opts.label to `glab mr list` as flags", async () => {
 		const log = callLogPath();
 		process.env.FAKE_MR_JSON = writeJson("filter-mrs.json", []);
 		fakeGlab(
@@ -1383,7 +1332,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		expect(calls).toContain("--label dependencies");
 	});
 
-	test("opts.state 'OPEN' (the normalized vocabulary) needs no extra flag since open-only is glab's default; 'CLOSED'/'MERGED'/omitted map to --closed/--merged/--all", async () => {
+	test("maps opts.state to glab flags, with OPEN needing none", async () => {
 		const log = callLogPath();
 		process.env.FAKE_MR_JSON = writeJson("filter-mrs-state.json", []);
 		fakeGlab(
@@ -1454,38 +1403,20 @@ describe("checkAuth", () => {
 });
 
 describe("preflight — missing glab binary", () => {
-	test("a GLAB_BIN pointing at a nonexistent absolute path fails with a readable message, not a raw ENOENT", async () => {
+	test("a missing glab binary raises a readable ProviderError with the GLAB_NOT_FOUND code", async () => {
 		process.env.GLAB_BIN = "/nonexistent/definitely-missing-glab-binary";
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.repoInfo();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await cliFixtures.catchError(() => provider.repoInfo());
 
-		expect(caught).toBeInstanceOf(Error);
+		expect(caught).toBeInstanceOf(ProviderError);
+		expect((caught as ProviderError).code).toBe("GLAB_NOT_FOUND");
 		const message = (caught as Error).message;
 		expect(message).not.toMatch(/ENOENT/i);
 		expect(message).toMatch(/glab/i);
 		expect(message).toMatch(/not found|missing|install/i);
 	});
 
-	test("a missing glab binary raises a ProviderError with a machine-readable GLAB_NOT_FOUND code", async () => {
-		process.env.GLAB_BIN = "/nonexistent/definitely-missing-glab-binary";
-
-		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.repoInfo();
-		} catch (e) {
-			caught = e;
-		}
-
-		expect(caught).toBeInstanceOf(ProviderError);
-		expect((caught as ProviderError).code).toBe("GLAB_NOT_FOUND");
-	});
 
 	test("GLAB_BIN, when set to a working fake binary, is honored in place of a bare 'glab' on PATH", async () => {
 		process.env.FAKE_REPO_JSON = writeJson("repo.json", {
@@ -1517,12 +1448,7 @@ describe("listPullRequests — cross-provider state vocabulary", () => {
 		fakeGlab(glabScript(""));
 
 		const provider = createGitlabProvider();
-		let caught: unknown;
-		try {
-			await provider.listPullRequests({ state: "banana" });
-		} catch (err) {
-			caught = err;
-		}
+		const caught = await cliFixtures.catchError(() => provider.listPullRequests({ state: "banana" }));
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("INVALID_PR_STATE");
@@ -1584,17 +1510,7 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 
 	test("maps position.new_path and new_line onto the thread's path and line", async () => {
 		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -1606,17 +1522,7 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 
 	test("falls back to old_path and old_line for a comment on a deleted line", async () => {
 		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -1628,17 +1534,7 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 
 	test("reports an overview discussion with no position as an empty path and a null line", async () => {
 		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -1650,17 +1546,7 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 
 	test("leaves diffHunk empty on every thread, since the discussions API carries a position but no hunk text", async () => {
 		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
-		fakeGlab(
-			glabScript(`
-  *"mr view"*)
-    echo '{"iid":1}'
-    exit 0
-    ;;
-  *"api projects/:id/merge_requests/"*"/discussions"*)
-    cat "$FAKE_MR_JSON"
-    exit 0
-    ;;`),
-		);
+		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads();
@@ -1693,12 +1579,6 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 });
 
 describe("listCiFailures — link to the failing job", () => {
-	const JOB_LINK_SHA = "4798a313e8e39f8067fe3b4bd6c094f20221bb57";
-
-	function headPipeline(id: number): Record<string, unknown> {
-		return { id, sha: JOB_LINK_SHA, ref: "refs/merge-requests/1/head", status: "failed" };
-	}
-
 	function pipelineChain(pipelinesJson: string, jobsJson: string): void {
 		process.env.FAKE_PIPELINES_JSON = pipelinesJson;
 		process.env.FAKE_JOBS_JSON = jobsJson;
@@ -1717,7 +1597,7 @@ describe("listCiFailures — link to the failing job", () => {
     exit 0
     ;;
   *"/merge_requests/"*)
-    printf '{"iid":1,"sha":"%s"}' "${JOB_LINK_SHA}"
+    printf '{"iid":1,"sha":"%s"}' "${HEAD_SHA}"
     exit 0
     ;;`),
 		);
@@ -1827,10 +1707,15 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 		{ path: "new/name.ts", oldPath: "old/name.ts", newLine: 2, body: "renamed" },
 	];
 
-	function reviewScript(opts: { approveFails?: boolean; mrJson?: string } = {}): string {
+	function reviewScript(opts: { approveFails?: boolean; mrJson?: string; failDraftContaining?: string } = {}): string {
+		const failDraft = opts.failDraftContaining
+			? `case "$BODY" in *${opts.failDraftContaining}*) echo 'HTTP 500 Internal Server Error' 1>&2; exit 1 ;; esac`
+			: "";
 		return glabScript(`
   *"draft_notes -X POST"*)
-    cat >> "$FAKE_STDIN_CAPTURE"; printf '\\n' >> "$FAKE_STDIN_CAPTURE"
+    BODY=$(cat)
+    ${failDraft}
+    printf '%s\\n' "$BODY" >> "$FAKE_STDIN_CAPTURE"
     echo '{"id":1}'
     exit 0
     ;;
@@ -1896,6 +1781,26 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 		).toHaveLength(1);
 		expect(calls.filter((c) => c.endsWith("merge_requests/7/approve -X POST"))).toHaveLength(1);
 		expect(calls[0]).toBe("api projects/acme%2Fwidgets/merge_requests/7");
+	});
+
+	test("a failing second draft rejects without publishing the drafts already created", async () => {
+		const log = callLogPath();
+		const stdinCapture = join(tmp("fake-glab-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
+		fakeGlab(reviewScript({ failDraftContaining: "renamed" }));
+
+		const provider = createGitlabProvider();
+		const caught = await cliFixtures.catchError(() =>
+			provider.postReview(ref, { verdict: "approve", body: "summary", comments }),
+		);
+
+		expect(caught).toBeInstanceOf(Error);
+		expect((caught as Error).message).toContain("500");
+		expect(stdinLines(stdinCapture)).toHaveLength(1);
+		const calls = readCalls(log);
+		expect(calls.filter((c) => c.includes("draft_notes -X POST"))).toHaveLength(2);
+		expect(calls.some((c) => c.includes("bulk_publish"))).toBe(false);
+		expect(calls.some((c) => c.endsWith("/approve -X POST"))).toBe(false);
 	});
 
 	test("request_changes publishes with requested_changes and never calls approve", async () => {

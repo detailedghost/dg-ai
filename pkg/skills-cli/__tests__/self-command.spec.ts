@@ -52,6 +52,7 @@ describe("selfCommand", () => {
 			}),
 		).toThrow(/does not exist/);
 	});
+
 	test("source mode executes the real entrypoint with intact argument boundaries", () => {
 		const entrypoint = join(fixture.root, "source entry ' main.ts");
 		writeFileSync(

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildArgs } from "../src/utils/shell-args";
 
-// Helper to invoke buildArgs in the same shape Bun's tagged-template does.
 function tag(strings: TemplateStringsArray, ...values: unknown[]): string[] {
 	return buildArgs(strings, values);
 }
@@ -28,7 +27,6 @@ describe("buildArgs", () => {
 
 	test("concatenated token with internal whitespace in value stays one arg (value never split)", () => {
 		const value = " x";
-		// addValue glues the raw string onto cur without splitting — result is one arg.
 		expect(tag`prefix-${value}`).toEqual(["prefix- x"]);
 	});
 

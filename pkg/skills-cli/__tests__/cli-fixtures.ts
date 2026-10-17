@@ -39,6 +39,15 @@ export function readCalls(path: string): string[] {
 	}
 }
 
+export async function catchError(run: () => Promise<unknown>): Promise<unknown> {
+	try {
+		await run();
+	} catch (error) {
+		return error;
+	}
+	throw new Error("expected the call to throw");
+}
+
 export function shScript(caseBody: string): string {
 	return `#!/bin/sh
 ARGS="$*"

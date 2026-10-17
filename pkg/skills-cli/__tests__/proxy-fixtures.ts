@@ -6,8 +6,19 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { BuildArgsInput } from "../src/proxy/backends/types";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { mergeEnv } from "./module-call";
+
+export function makeInput(
+	overrides: Partial<BuildArgsInput> = {},
+): BuildArgsInput {
+	return { prompt: "hello world", ...overrides };
+}
+
+export function jsonl(...events: unknown[]): string {
+	return events.map((event) => JSON.stringify(event)).join("\n");
+}
 
 /** Every fake backend, state record and generated command stays in owned roots. */
 export function proxyFixtures() {
@@ -50,15 +61,6 @@ export function proxyFixtures() {
 				FAKE_PROXY_CALLS: calls,
 				...overrides,
 			});
-		},
-		fakePi() {
-			const executable = join(bin, "pi");
-			writeFileSync(
-				executable,
-				`#!${process.execPath}\nimport { appendFileSync } from 'node:fs';\nappendFileSync(process.env.FAKE_PROXY_CALLS, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }) + '\\n');\nconsole.log(JSON.stringify({ type: 'session', id: 'fixture-session' }));\nconsole.log(JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'fixture done' }] } }));\n`,
-			);
-			chmodSync(executable, 0o755);
-			return executable;
 		},
 		fakeBackend(
 			name: string,
@@ -125,8 +127,9 @@ export function proxyFixtures() {
 					.split("\n")
 					.filter(Boolean)
 					.map((line) => JSON.parse(line));
-			} catch {
-				return [];
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+				throw error;
 			}
 		},
 	};

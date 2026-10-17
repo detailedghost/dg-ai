@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { getProvider, getProviderForUrl, resetProviderCache } from "../src/provider/index";
@@ -318,13 +317,15 @@ describe("getProvider — a stale in-flight rejection does not evict a newer, al
 		process.chdir(dir);
 
 		const failing = getProvider();
+		const settled = Promise.allSettled([failing]);
 		resetProviderCache();
 
 		process.env.AI_VCS_PROVIDER = "github";
 		const good = await getProvider();
 		expect(good.capabilities.aiReviewBotNames).toEqual(["copilot"]);
 
-		await expect(failing).rejects.toThrow();
+		const [outcome] = await settled;
+		expect(outcome.status).toBe("rejected");
 
 		const stillCached = await getProvider();
 		expect(stillCached).toBe(good);
@@ -369,14 +370,14 @@ esac
 	}
 
 	function fakeGhViaBin(): void {
-		const dir = mkdtempSync(join(tmpdir(), "provider-index-fakegh-"));
+		const dir = makeTempDir("provider-index-fakegh-");
 		binDirs.push(dir);
 		writeFakeCli(dir, "gh", authOkScript());
 		process.env.GH_BIN = join(dir, "gh");
 	}
 
 	function fakeGlabOnPath(): void {
-		const dir = mkdtempSync(join(tmpdir(), "provider-index-fakeglab-"));
+		const dir = makeTempDir("provider-index-fakeglab-");
 		binDirs.push(dir);
 		writeFakeCli(dir, "glab", authOkScript());
 	}

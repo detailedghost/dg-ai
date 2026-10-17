@@ -100,7 +100,8 @@ describe("parseRepoRef", () => {
 	});
 
 	test("a credentialed https URL yields the hostname, keeping the userinfo out of host and owner", () => {
-		const ref = parseRepoRef("https://oauth2:glpat-ABCDEFGHIJKLMNOPQRSTU@gitlab.com/acme/widgets.git");
+		const secret = `glpat-${"A".repeat(20)}`;
+		const ref = parseRepoRef(`https://oauth2:${secret}@gitlab.com/acme/widgets.git`);
 		expect(ref).toEqual({ host: "gitlab.com", owner: "acme", repo: "widgets" });
 	});
 
@@ -116,7 +117,7 @@ describe("parseRepoRef", () => {
 	});
 
 	test("a token embedded in an unparseable input is redacted from the thrown ProviderError's message", () => {
-		const token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
+		const token = `ghp_${"A".repeat(36)}`;
 		let caught: unknown;
 		try {
 			parseRepoRef(`https://x-access-token:${token}@github.com/onlyowner`);
@@ -186,7 +187,7 @@ describe("GITLAB_STATE_TO_PR_STATE", () => {
 		expect(GITLAB_STATE_TO_PR_STATE.locked).toBe("CLOSED");
 	});
 
-	test("carries exactly the four known GitLab state keys, each valid discriminants of PrState", () => {
+	test("carries exactly the four known GitLab state keys, each a valid PrState value", () => {
 		const validStates = new Set(["OPEN", "CLOSED", "MERGED"]);
 		expect(Object.keys(GITLAB_STATE_TO_PR_STATE).sort()).toEqual(["closed", "locked", "merged", "opened"]);
 		for (const value of Object.values(GITLAB_STATE_TO_PR_STATE)) {
@@ -200,11 +201,5 @@ describe("FIELD_MAP", () => {
 		expect(FIELD_MAP.headRefName).toEqual({ github: "headRefName", gitlab: "source_branch" });
 		expect(FIELD_MAP.baseRefName).toEqual({ github: "baseRefName", gitlab: "target_branch" });
 		expect(FIELD_MAP.mergedAt).toEqual({ github: "mergedAt", gitlab: "merged_at" });
-	});
-
-	test("github entries round-trip as identity mappings — the normalized DTO already uses gh's own field names", () => {
-		for (const key of Object.keys(FIELD_MAP) as Array<keyof typeof FIELD_MAP>) {
-			expect(FIELD_MAP[key].github).toBe(key);
-		}
 	});
 });

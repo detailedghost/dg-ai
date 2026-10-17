@@ -5,24 +5,18 @@ import { join } from "node:path";
 
 import { resolvePersona, withPersona } from "../src/proxy/persona";
 
-// resolvePersona's subagent path reads real files off $HOME/.claude/agents,
-// so each test gets its own scratch HOME instead of touching the real one.
 let scratchHome: string;
 let originalHome: string | undefined;
-let originalPath: string | undefined;
 
 beforeEach(() => {
 	scratchHome = mkdtempSync(join(tmpdir(), "persona-test-"));
 	originalHome = process.env.HOME;
-	originalPath = process.env.PATH;
 	process.env.HOME = scratchHome;
 });
 
 afterEach(() => {
 	if (originalHome === undefined) delete process.env.HOME;
 	else process.env.HOME = originalHome;
-	if (originalPath === undefined) delete process.env.PATH;
-	else process.env.PATH = originalPath;
 	rmSync(scratchHome, { recursive: true, force: true });
 });
 
@@ -45,7 +39,6 @@ describe("withPersona", () => {
 		);
 	});
 
-	// empty string is falsy but !== null, so it must still be treated as a real persona
 	test("treats an empty-string persona as present, not absent", () => {
 		const result = withPersona("", "fix the bug");
 		expect(result).toContain("---\nTask:\nfix the bug");

@@ -6,7 +6,7 @@ import { ProviderError } from "../src/provider/types";
 import { writeFakeCli } from "./fake-cli";
 import { makeGitRepo, makeGitRepoWithOrigin, makeTempDir } from "./git-repo-fixtures";
 
-import { isolateCliTests } from "./cli-fixtures";
+import { catchError, isolateCliTests } from "./cli-fixtures";
 
 isolateCliTests();
 
@@ -111,7 +111,9 @@ describe("detectProvider — GitLab recognition on a non-gitlab.com host", () =>
 
 	test("a host NOT listed in AI_VCS_GITLAB_HOSTS is unaffected by an unrelated allowlist entry", async () => {
 		process.env.AI_VCS_GITLAB_HOSTS = "some-other-gitlab-host.internal";
-		await expect(detectProvider("https://git.selfhosted-example.internal/acme/widgets")).rejects.toThrow();
+		await expect(detectProvider("https://git.selfhosted-example.internal/acme/widgets")).rejects.toMatchObject({
+			code: "HOST_NOT_RECOGNIZED",
+		});
 	});
 
 	test("AI_VCS_GITLAB_HOSTS entries with surrounding whitespace around commas still match after trimming", async () => {
@@ -160,25 +162,15 @@ describe("detectProvider — malformed or non-URL remotes fail with a ProviderEr
 
 	for (const remote of malformed) {
 		test(`"${remote}" throws a ProviderError with a .code, not an uncoded parse error`, async () => {
-			let caught: unknown;
-			try {
-				await detectProvider(remote);
-			} catch (e) {
-				caught = e;
-			}
+			const caught = await catchError(() => detectProvider(remote));
 			expect(caught).toBeInstanceOf(ProviderError);
 			expect((caught as ProviderError).code).toBeDefined();
 		});
 	}
 
 	test("a credential embedded in an unparseable remote is redacted from the thrown message", async () => {
-		const token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
-		let caught: unknown;
-		try {
-			await detectProvider(`not-a-url-${token}`);
-		} catch (e) {
-			caught = e;
-		}
+		const token = `ghp_${"A".repeat(36)}`;
+		const caught = await catchError(() => detectProvider(`not-a-url-${token}`));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).message).not.toContain(token);
 	});
@@ -200,7 +192,9 @@ describe("detectProvider — AI_VCS_PROVIDER env override", () => {
 	});
 
 	test("an unrecognized passed host with no env override still throws rather than guessing", async () => {
-		await expect(detectProvider("https://vcs.unrecognized-host.test/team/proj")).rejects.toThrow();
+		await expect(detectProvider("https://vcs.unrecognized-host.test/team/proj")).rejects.toMatchObject({
+			code: "HOST_NOT_RECOGNIZED",
+		});
 	});
 
 	test("env override resolves without ever needing an ambient git remote (no URL given, non-git cwd)", async () => {
@@ -213,7 +207,9 @@ describe("detectProvider — AI_VCS_PROVIDER env override", () => {
 
 	test("an unrecognized AI_VCS_PROVIDER value throws rather than falling through to host detection", async () => {
 		process.env.AI_VCS_PROVIDER = "bitbucket";
-		await expect(detectProvider("https://github.com/acme/widgets")).rejects.toThrow();
+		await expect(detectProvider("https://github.com/acme/widgets")).rejects.toMatchObject({
+			code: "INVALID_PROVIDER_ENV",
+		});
 	});
 
 	test("the merge_requests path rule places an unrecognized host even when the env override says otherwise", async () => {
@@ -225,101 +221,26 @@ describe("detectProvider — AI_VCS_PROVIDER env override", () => {
 });
 
 describe("detectProvider — distinct error shapes for detection failures", () => {
-	test("no git repo here, no remote configured, and host not recognized each throw", async () => {
-		process.chdir(nonGitDir());
-		let noRepoErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			noRepoErr = e;
-		}
-		expect(noRepoErr).toBeInstanceOf(Error);
-
-		process.chdir(repo());
-		let noRemoteErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			noRemoteErr = e;
-		}
-		expect(noRemoteErr).toBeInstanceOf(Error);
-
-		process.chdir(repoWithOrigin("https://totally-unknown-vcs-host.test/acme/widgets.git"));
-		let unrecognizedHostErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			unrecognizedHostErr = e;
-		}
-		expect(unrecognizedHostErr).toBeInstanceOf(Error);
-
-		const codeOf = (e: unknown): unknown => (e as { code?: unknown } | undefined)?.code;
-		expect(codeOf(noRepoErr)).toBeDefined();
-		expect(codeOf(noRemoteErr)).toBeDefined();
-		expect(codeOf(unrecognizedHostErr)).toBeDefined();
-
-		const codes = new Set([codeOf(noRepoErr), codeOf(noRemoteErr), codeOf(unrecognizedHostErr)]);
-		expect(codes.size).toBe(3);
-	});
-
 	test("each failure scenario pins its exact discriminant code, so callers can branch on a stable string", async () => {
 		process.chdir(nonGitDir());
-		let noRepoErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			noRepoErr = e;
-		}
+		const noRepoErr = await catchError(() => detectProvider());
 		expect(noRepoErr).toBeInstanceOf(ProviderError);
 		expect((noRepoErr as ProviderError).code).toBe("NO_GIT_REPO");
 
 		process.chdir(repo());
-		let noRemoteErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			noRemoteErr = e;
-		}
+		const noRemoteErr = await catchError(() => detectProvider());
 		expect(noRemoteErr).toBeInstanceOf(ProviderError);
 		expect((noRemoteErr as ProviderError).code).toBe("NO_REMOTE");
 
 		process.chdir(repoWithOrigin("https://totally-unknown-vcs-host.test/acme/widgets.git"));
-		let hostErr: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			hostErr = e;
-		}
+		const hostErr = await catchError(() => detectProvider());
 		expect(hostErr).toBeInstanceOf(ProviderError);
 		expect((hostErr as ProviderError).code).toBe("HOST_NOT_RECOGNIZED");
 	});
 
-	test("the same failure scenario reports the same discriminant code across repeated calls (deterministic, not incidental)", async () => {
-		process.chdir(repoWithOrigin("https://totally-unknown-vcs-host.test/acme/widgets.git"));
-		let first: unknown;
-		let second: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			first = (e as { code?: unknown }).code;
-		}
-		try {
-			await detectProvider();
-		} catch (e) {
-			second = (e as { code?: unknown }).code;
-		}
-		expect(first).toBeDefined();
-		expect(first).toBe(second);
-	});
-
 	test("host-not-recognized error message names the offending host (actionable, not a guess)", async () => {
 		process.chdir(repoWithOrigin("https://totally-unknown-vcs-host.test/acme/widgets.git"));
-		let caught: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider());
 		expect(caught).toBeInstanceOf(Error);
 		expect((caught as Error).message).toContain("totally-unknown-vcs-host.test");
 	});
@@ -350,24 +271,14 @@ describe("detectProvider — AI_VCS_PROVIDER edge values", () => {
 
 	test("a wrong-case AI_VCS_PROVIDER value throws INVALID_PROVIDER_ENV rather than being silently accepted", async () => {
 		process.env.AI_VCS_PROVIDER = "GitHub";
-		let caught: unknown;
-		try {
-			await detectProvider("https://gitlab.com/acme/widgets");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://gitlab.com/acme/widgets"));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("INVALID_PROVIDER_ENV");
 	});
 
 	test("the invalid-value error names the offending value and both accepted values", async () => {
 		process.env.AI_VCS_PROVIDER = "bitbucket";
-		let caught: unknown;
-		try {
-			await detectProvider("https://github.com/acme/widgets");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://github.com/acme/widgets"));
 		const message = (caught as Error).message;
 		expect(message).toContain("bitbucket");
 		expect(message).toContain("github");
@@ -376,19 +287,9 @@ describe("detectProvider — AI_VCS_PROVIDER edge values", () => {
 
 	test("the invalid-value error code is distinct from the unrecognized-host code", async () => {
 		process.env.AI_VCS_PROVIDER = "bitbucket";
-		let envErr: unknown;
-		try {
-			await detectProvider("https://github.com/acme/widgets");
-		} catch (e) {
-			envErr = e;
-		}
+		const envErr = await catchError(() => detectProvider("https://github.com/acme/widgets"));
 		delete process.env.AI_VCS_PROVIDER;
-		let hostErr: unknown;
-		try {
-			await detectProvider("https://totally-unknown-vcs-host.test/acme/widgets");
-		} catch (e) {
-			hostErr = e;
-		}
+		const hostErr = await catchError(() => detectProvider("https://totally-unknown-vcs-host.test/acme/widgets"));
 		expect((envErr as ProviderError).code).not.toBe((hostErr as ProviderError).code);
 	});
 });
@@ -423,23 +324,13 @@ describe("detectProvider — gitlab.com URL-form parity with the github.com form
 
 describe("detectProvider — boundaries of the /-/merge_requests/<n> path rule", () => {
 	test("a /-/merge_requests path with no number does not trigger the path rule and falls back to host matching", async () => {
-		let caught: unknown;
-		try {
-			await detectProvider("https://vcs.unrecognized-host.test/team/proj/-/merge_requests");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://vcs.unrecognized-host.test/team/proj/-/merge_requests"));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("HOST_NOT_RECOGNIZED");
 	});
 
 	test("a /merge_requests/<n> path missing the /-/ segment does not trigger the path rule", async () => {
-		let caught: unknown;
-		try {
-			await detectProvider("https://vcs.unrecognized-host.test/team/proj/merge_requests/42");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://vcs.unrecognized-host.test/team/proj/merge_requests/42"));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("HOST_NOT_RECOGNIZED");
 	});
@@ -454,12 +345,7 @@ describe("detectProvider — boundaries of the /-/merge_requests/<n> path rule",
 describe("detectProvider — degenerate AI_VCS_GITLAB_HOSTS values", () => {
 	test("an allowlist of only commas and whitespace matches nothing and leaves the host unrecognized", async () => {
 		process.env.AI_VCS_GITLAB_HOSTS = " , , ";
-		let caught: unknown;
-		try {
-			await detectProvider("https://totally-unknown-vcs-host.test/acme/widgets");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://totally-unknown-vcs-host.test/acme/widgets"));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("HOST_NOT_RECOGNIZED");
 	});
@@ -472,12 +358,7 @@ describe("detectProvider — degenerate AI_VCS_GITLAB_HOSTS values", () => {
 
 	test("an allowlist entry never widens matching to a host that merely contains it as a substring", async () => {
 		process.env.AI_VCS_GITLAB_HOSTS = "corp.internal";
-		let caught: unknown;
-		try {
-			await detectProvider("https://git.corp.internal/acme/widgets");
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider("https://git.corp.internal/acme/widgets"));
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("HOST_NOT_RECOGNIZED");
 	});
@@ -501,12 +382,7 @@ describe("detectProvider — classifies git failures by exit code, not by parsin
 		createdDirs.push(dir);
 		fakeGit(dir, "fatal: ceci nest pas un depot git (ni aucun des repertoires parents) : .git", 128);
 
-		let caught: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider());
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_GIT_REPO");
 	});
@@ -516,12 +392,7 @@ describe("detectProvider — classifies git failures by exit code, not by parsin
 		createdDirs.push(dir);
 		fakeGit(dir, "Fehler: Kein Remote-Repository namens origin gefunden", 2);
 
-		let caught: unknown;
-		try {
-			await detectProvider();
-		} catch (e) {
-			caught = e;
-		}
+		const caught = await catchError(() => detectProvider());
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_REMOTE");
 	});
