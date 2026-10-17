@@ -1,58 +1,118 @@
 #!/usr/bin/env bun
-import { $ } from "bun";
+import { execFile } from "node:child_process";
 
-const run = async (cmd: string): Promise<string> => {
-  const r = await $`sh -c ${cmd}`.quiet().nothrow();
-  return r.exitCode === 0 ? r.text().trim() : "";
+export type Run = (file: string, args: readonly string[]) => Promise<string>;
+
+export type RangeReport = {
+  range: string;
+  source: string;
+  defaultBranch?: string;
+  lastRelease?: string | null;
+  wholeHistory?: boolean;
 };
 
-const explicit = process.argv[2];
-if (explicit) {
-  console.log(JSON.stringify({ range: explicit, source: "explicit" }));
-  process.exit(0);
+/** Runs a command with an argv array. Ref names never pass through a shell. */
+export function execRun(file: string, args: readonly string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(file, [...args], { encoding: "utf8" }, (error, stdout) => {
+      resolve(error ? "" : stdout.trim());
+    });
+  });
 }
 
-await run("git fetch --tags --quiet origin");
-
-const remoteUrl = await run("git remote get-url origin");
-const gitlab = remoteUrl.includes("gitlab");
-
-const defaultBranch =
-  (await run("git symbolic-ref --short refs/remotes/origin/HEAD")).replace(/^origin\//, "") ||
-  (gitlab
-    ? await run("glab repo view -F json | jq -r .default_branch")
-    : await run("gh repo view --json defaultBranchRef -q .defaultBranchRef.name"));
-
-if (!defaultBranch) {
-  console.error("Cannot find the default branch.");
-  process.exit(1);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const head = `origin/${defaultBranch}`;
-
-const providerTag = gitlab
-  ? await run("glab api 'projects/:id/releases?per_page=1' | jq -r '.[0].tag_name // empty'")
-  : await run("gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName'");
-
-const hasTag = async (tag: string) => tag !== "" && (await run(`git rev-parse -q --verify refs/tags/${tag}`)) !== "";
-
-let tag = "";
-let source = "none";
-if (await hasTag(providerTag)) {
-  tag = providerTag;
-  source = "provider-release";
-} else {
-  const tags = (await run(`git tag --merged ${head} --sort=-v:refname`)).split("\n");
-  tag = tags.find((t) => /^v?\d+\.\d+\.\d+$/.test(t)) ?? "";
-  if (tag) source = "semver-tag";
+function parsed(text: string): unknown {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
-console.log(
-  JSON.stringify({
+function stringField(value: unknown, key: string): string {
+  if (!isRecord(value)) return "";
+  const field = value[key];
+  return typeof field === "string" ? field : "";
+}
+
+async function providerDefaultBranch(run: Run, gitlab: boolean): Promise<string> {
+  if (gitlab) return stringField(parsed(await run("glab", ["repo", "view", "-F", "json"])), "default_branch");
+  const body = parsed(await run("gh", ["repo", "view", "--json", "defaultBranchRef"]));
+  return stringField(isRecord(body) ? body.defaultBranchRef : undefined, "name");
+}
+
+async function providerReleaseTag(run: Run, gitlab: boolean): Promise<string> {
+  const body = gitlab
+    ? parsed(await run("glab", ["api", "projects/:id/releases?per_page=1"]))
+    : parsed(
+        await run("gh", [
+          "release",
+          "list",
+          "--exclude-drafts",
+          "--exclude-pre-releases",
+          "-L",
+          "1",
+          "--json",
+          "tagName",
+        ]),
+      );
+  if (!Array.isArray(body)) return "";
+  const first = body[0];
+  return stringField(first, gitlab ? "tag_name" : "tagName");
+}
+
+async function hasTag(run: Run, tag: string): Promise<boolean> {
+  if (tag === "") return false;
+  const verified = await run("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`]);
+  return verified !== "";
+}
+
+export async function discoverRange(run: Run, explicit?: string): Promise<RangeReport> {
+  if (explicit) return { range: explicit, source: "explicit" };
+
+  await run("git", ["fetch", "--tags", "--quiet", "origin"]);
+  const remoteUrl = await run("git", ["remote", "get-url", "origin"]);
+  const gitlab = remoteUrl.includes("gitlab");
+  const symbolic = (await run("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).replace(
+    /^origin\//,
+    "",
+  );
+  const defaultBranch = symbolic || (await providerDefaultBranch(run, gitlab));
+  if (!defaultBranch) throw new Error("Cannot find the default branch.");
+
+  const head = `origin/${defaultBranch}`;
+  const providerTag = await providerReleaseTag(run, gitlab);
+  let tag = "";
+  let source = "none";
+  if (await hasTag(run, providerTag)) {
+    tag = providerTag;
+    source = "provider-release";
+  } else {
+    const tags = (await run("git", ["tag", "--merged", head, "--sort=-v:refname"])).split("\n");
+    tag = tags.find((candidate) => /^v?\d+\.\d+\.\d+$/.test(candidate)) ?? "";
+    if (tag) source = "semver-tag";
+  }
+
+  return {
     range: tag ? `${tag}..${head}` : head,
     defaultBranch,
     lastRelease: tag || null,
     source,
     wholeHistory: !tag,
-  }),
-);
+  };
+}
+
+async function main(): Promise<void> {
+  try {
+    console.log(JSON.stringify(await discoverRange(execRun, process.argv[2])));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+if (import.meta.main) await main();
