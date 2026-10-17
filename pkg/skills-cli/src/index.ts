@@ -7,14 +7,18 @@
 import { Command } from "commander";
 import { registerBatchOpen } from "./commands/batch-open";
 import { registerChannelReview } from "./commands/channel-review";
+import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCredentials } from "./commands/credentials";
 import { registerDemo } from "./commands/demo";
 import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
+import { registerProxy } from "./commands/proxy";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
+import { registerStash } from "./commands/stash";
+import { registerVcsProvider } from "./commands/vcs-provider";
 import {
 	guardExtensionCommands,
 	registerRequireExtension,
@@ -38,7 +42,11 @@ registerBatchOpen(program);
 registerLaunch(program);
 registerDemo(program);
 registerRerun(program);
+registerStash(program);
+registerVcsProvider(program);
+registerClipboardImage(program);
 registerProto(program);
+registerProxy(program);
 registerOverwatchSnapshot(program);
 registerRequireExtension(program);
 

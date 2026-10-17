@@ -1,8 +1,9 @@
 # 👻 DeeGee
 
-Browser, inbox, and channel review plugin for Codex and Claude Code. DeeGee adds
-browser tab groups, guided tours, live-page prototypes, agent chat, inbox cleanup,
-channel review, and Google SMS cleanup. The companion browser extension is `dg-ai-extension`.
+Browser, inbox, channel review, and agent workflow plugin for Codex and Claude Code.
+DeeGee adds stash, proxy, browser tab groups, guided tours, live-page prototypes,
+agent chat, inbox cleanup, channel review, and Google SMS cleanup. The companion
+browser extension is `dg-ai-extension`.
 
 ## Install
 
@@ -19,6 +20,8 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 ```
 
 These install the compiled CLI binaries and stage the extension; no Bun is needed.
+The extension, all three binaries, and both plugin manifests share release
+version **1.15.0**.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
@@ -44,8 +47,8 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 
 ### Workflow skills
 
-Instruction-only skills for day-to-day agent work. Claude Code also accepts the
-bare `/<name>`.
+The [canonical index](plugins/dg/skills/README.md) lists every installed skill.
+Claude Code also accepts the bare `/<name>`.
 
 | Skill | Use |
 | --- | --- |
@@ -59,11 +62,60 @@ bare `/<name>`.
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
+| `stash` | Resolve scratch, state, or repository artifact paths |
+| `proxy` | Delegate to one of six external CLI agents with persona and background support |
 | `teach` | Teach a concept across sessions |
 | `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
+
+### Stash, providers, and proxy
+
+Use the installed CLI from a terminal:
+
+```bash
+dg-skills stash -u review findings.md
+dg-skills stash -a review findings.md
+dg-skills vcs-provider detect
+dg-skills vcs-provider list-prs --limit 10
+dg-skills proxy --list-backends
+dg-skills proxy codex --prompt "Review the current changes"
+```
+
+`stash` prints an absolute path and creates its parent. Its default scratch scope
+separates working directories; `--state` shares a project bucket across worktrees,
+`--agents` uses the current worktree's `.agents`, and `--main` uses the main
+worktree's `.agents`. `--global` removes scratch/state bucketing, `--unique` names
+a fresh artifact, `--root` prints the root, and `--dir` selects another directory.
+The [developer guide](docs/DEVELOPER.md#wave-2a-cli-commands) lists flags, roots,
+and all ten `vcs-provider` verbs for GitHub and GitLab.
+
+`proxy` supports **codex**, **copilot**, **pi**, **opencode**, **cortex**, and
+**grok**. Install and authenticate the chosen backend separately. It accepts
+`--prompt-file`, `--resume`, and persona selection through `--subagent` or an
+explicit `--spec <plan> --slice <id>`. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`)
+for persona files. `--plan` prints a quoted detached launch command; run that
+command, then inspect it with `dg-skills proxy background status <id>` or `list`.
+These packaged persona/background helpers work before the public spec/bg ports;
+they need no legacy helper. Detached launch needs a POSIX `sh`.
+Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume rules.
+
+`dg-skills clipboard-image <dest.png>` captures through WSL (`wslpath` and
+`powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
+stdout. The clipboard skill resolves its default destination through stash.
+
+### Post-merge cutover
+
+After each migration wave merges, refresh the plugin and run `dg-skills install`
+(or `dg-skills install --cli-only`). Verify the migrated commands before manually
+repointing personal command shims and references, then remove duplicate local
+skills when their installed replacements work. This release leaves legacy files,
+personal settings, permission rules, and installed plugin caches untouched.
+Review host permissions manually with narrow command rules that retain existing
+approval prompts, including separate approval for `pw code`. Later-wave commands
+and skills remain separate prerequisites until their ports ship; this release
+adds stash, vcs-provider, proxy, and clipboard-image to the compiled CLI.
 
 ## Supported browsers
 

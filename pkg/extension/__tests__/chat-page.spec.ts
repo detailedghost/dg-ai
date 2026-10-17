@@ -1333,10 +1333,18 @@ async function renderToolbarPage(
 ) {
 	const root = newRoot();
 	const fake = makeFakeClient(initialState);
+	const connected = initialState === "connected";
 	await renderChatPage({
 		root,
 		createClient: () => fake.client as never,
 		loadBootstraps: async () => bootstraps(),
+		pairing: {
+			runtime: {
+				sendMessage: mock(() => Promise.resolve({ connected })),
+			},
+			findPort: () =>
+				Promise.resolve(connected ? bootstraps()[0].port : undefined),
+		},
 	});
 	fake.emit(
 		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),

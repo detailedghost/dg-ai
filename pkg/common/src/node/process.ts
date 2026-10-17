@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 
+/** Detect WSL from its environment marker or Linux kernel version; unreadable kernel metadata returns false. */
 export function isWSL(): boolean {
 	if (process.env.WSL_DISTRO_NAME) return true;
 	if (process.platform !== "linux") return false;
@@ -33,6 +34,7 @@ function openers(): Array<[string, (url: string) => string[]]> {
 	return [["xdg-open", (u) => [u]]];
 }
 
+/** Try platform URL launchers in order; true means a launcher spawned, not that the page loaded. */
 export function tryOpen(url: string): Promise<boolean> {
 	const candidates = openers();
 	return new Promise((resolve) => {
@@ -50,6 +52,7 @@ export function tryOpen(url: string): Promise<boolean> {
 	});
 }
 
+/** Run argv synchronously, returning trimmed UTF-8 stdout and throwing on startup or command failure. */
 export function run(
 	command: string,
 	args: string[],
@@ -69,46 +72,90 @@ export function run(
 	return r.stdout.trim();
 }
 
-type RunCaptureOptions = { stdin?: string; cwd?: string; timeoutMs?: number };
-
-type RunCaptureResult = {
-	status: number;
-	signal: NodeJS.Signals | null;
-	stdout: string;
-	stderr: string;
+type RunCaptureOptions = {
+	/** Null ignores stdin; undefined retains the default closed pipe. */
+	stdin?: string | null;
+	cwd?: string;
+	timeoutMs?: number;
 };
 
-export function runCapture(
+type RunCaptureResult<Output = string> = {
+	status: number;
+	signal: NodeJS.Signals | null;
+	stdout: Output;
+	stderr: Output;
+};
+
+/** Collect untrimmed UTF-8 streams and exit/signal status; startup errors reject instead of returning a status. */
+export async function runCapture(
 	command: string,
 	args: string[],
 	options: RunCaptureOptions = {},
 ): Promise<RunCaptureResult> {
+	const result = await runCaptureBytes(command, args, options);
+	return {
+		...result,
+		stdout: result.stdout.toString("utf8"),
+		stderr: result.stderr.toString("utf8"),
+	};
+}
+
+/**
+ * Capture exact bytes and signal-derived status; startup errors reject and nonzero exits resolve.
+ * Null stdin ignores input, undefined closes an empty pipe, and a string supplies its exact contents.
+ */
+export function runCaptureBytes(
+	command: string,
+	args: string[],
+	options: RunCaptureOptions = {},
+): Promise<RunCaptureResult<Buffer>> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, {
-			stdio: "pipe",
+		const captureOptions = {
 			cwd: options.cwd,
 			timeout: options.timeoutMs,
-			killSignal: "SIGKILL",
-		});
-		let stdout = "";
-		let stderr = "";
+			killSignal: "SIGKILL" as const,
+		};
+		const child =
+			options.stdin === null
+				? spawn(command, args, {
+						...captureOptions,
+						stdio: ["ignore", "pipe", "pipe"],
+					})
+				: spawn(command, args, { ...captureOptions, stdio: "pipe" });
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
 		child.stdout.on("data", (chunk: Buffer) => {
-			stdout += chunk.toString("utf8");
+			stdout.push(chunk);
 		});
 		child.stderr.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString("utf8");
+			stderr.push(chunk);
 		});
 		child.on("error", reject);
-		child.on("close", (code, signal) => {
+		child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
 			const status =
 				code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0);
-			resolve({ status, signal, stdout, stderr });
+			const out = Buffer.concat(stdout);
+			const err = Buffer.concat(stderr);
+			resolve({
+				status,
+				signal,
+				stdout: out,
+				stderr: err,
+			});
 		});
-		if (options.stdin !== undefined) child.stdin.write(options.stdin);
-		child.stdin.end();
+		child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+			if (error.code !== "EPIPE") reject(error);
+		});
+		try {
+			if (typeof options.stdin === "string") child.stdin?.write(options.stdin);
+			child.stdin?.end();
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EPIPE") reject(error);
+		}
 	});
 }
 
+/** Wait for stdout to accept the text, propagating write errors. */
 export function writeStdout(value: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		process.stdout.write(value, (error) => {
