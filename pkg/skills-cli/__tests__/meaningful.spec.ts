@@ -1104,3 +1104,102 @@ else if (args[1] !== "ready") process.exit(91);
   expect(existsSync(join(repo.dir, "never"))).toBe(false);
  });
 });
+
+describe("meaningful review hardening", () => {
+	test("reports and reshapes non-ASCII paths without git quoting", () => {
+		const repo = makeRepo();
+		const file = "café/über.ts";
+		const backup = commit(repo, { [file]: "x\n", "a.ts": "a\n" });
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		const info = JSON.parse(runMeaningful(repo, ["--json", "info"]).stdout);
+		expect(info.files).toEqual(["a.ts", file]);
+		expect(Object.keys(info.file_authors).sort()).toEqual(["a.ts", file]);
+		const result = runMeaningful(repo, [
+			"apply-json",
+			"--base",
+			repo.base,
+			jsonPlan([
+				{ subject: "feat(scope): accent", files: [file] },
+				{ subject: "feat(scope): plain", files: ["a.ts"] },
+			]),
+		]);
+		expectApplied(repo, result, backup, tree);
+	});
+
+	test("keeps every paragraph of a text-plan message", () => {
+		const repo = makeRepo();
+		const backup = commit(repo, { "a.ts": "a\n" });
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		const plan = rawPlan(
+			"MSG: feat: one\n\nFirst paragraph.\n\nSecond paragraph.\nFILES:\na.ts\n",
+		);
+		const result = runMeaningful(repo, ["apply", "--base", repo.base, plan]);
+		expectApplied(repo, result, backup, tree);
+		expect(git(repo, ["log", "-1", "--format=%B"])).toBe(
+			"feat: one\n\nFirst paragraph.\n\nSecond paragraph.",
+		);
+	});
+
+	test("strips only AI co-author names, not humans whose name starts with Claude", () => {
+		const repo = makeRepo();
+		const backup = commit(
+			repo,
+			{ "a.ts": "a\n" },
+			"feat: one",
+			"Claudette Martin <claudette@example.invalid>",
+		);
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		const info = JSON.parse(runMeaningful(repo, ["--json", "info"]).stdout);
+		expect(info.file_authors).toEqual({ "a.ts": ["Claudette Martin"] });
+		const human = "Claudette Martin <claudette@example.invalid>";
+		const result = runMeaningful(repo, [
+			"apply-json",
+			"--base",
+			repo.base,
+			jsonPlan([
+				{
+					subject: "feat(scope): one",
+					coauthors: [human, "Claude Sonnet 5.5 <noreply@anthropic.com>"],
+					files: ["a.ts"],
+				},
+			]),
+		]);
+		expectApplied(repo, result, backup, tree);
+		expect(git(repo, ["log", "-1", "--format=%B"])).toBe(
+			`feat(scope): one\n\nCo-Authored-By: ${human}`,
+		);
+	});
+
+	test("rejects a non-object group with a usage error", () => {
+		const repo = makeRepo();
+		commit(repo, { "a.ts": "a\n" });
+		const plan = rawPlan(JSON.stringify({ groups: [null] }), "plan.json");
+		const result = runMeaningful(repo, ["apply-json", "--base", repo.base, plan]);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("group 1");
+		expect(result.stderr).not.toContain("TypeError");
+	});
+
+	test("pushes only the current branch even when push.default is matching", () => {
+		const repo = makeRepo();
+		git(repo, ["config", "push.default", "matching"]);
+		git(repo, ["branch", "other", "main"]);
+		git(repo, ["push", "-q", "origin", "other"]);
+		const otherRemote = git(repo, ["ls-remote", "origin", "refs/heads/other"]);
+		git(repo, ["update-ref", "refs/heads/other", "HEAD"]);
+		const backup = commit(repo, { "a.ts": "a\n", "b.ts": "b\n" });
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		git(repo, ["update-ref", "refs/heads/other", backup]);
+		const result = runMeaningful(repo, [
+			"apply-json",
+			"--base",
+			repo.base,
+			jsonPlan([
+				{ subject: "feat(scope): a", files: ["a.ts"] },
+				{ subject: "feat(scope): b", files: ["b.ts"] },
+			]),
+		]);
+		expectApplied(repo, result, backup, tree);
+		expect(git(repo, ["ls-remote", "origin", "refs/heads/other"])).toBe(otherRemote);
+	});
+});

@@ -13,8 +13,6 @@ import {
 import { emitJson } from "../utils/json";
 import { defineCommand, die, EXIT } from "../utils/legacy-command";
 
-// --- command ---------------------------------------------------------------
-
 const cmd = defineCommand({
 	name: "meaningful",
 	description: "Git plumbing for the /meaningful skill.",
@@ -46,8 +44,6 @@ export async function main(argv: string[]): Promise<void> {
 	await cmd.run(argv);
 }
 
-// --- subcommands -----------------------------------------------------------
-
 /** Extract --base <ref> from args array; returns [ref|undefined, remaining]. */
 function extractBase(args: string[]): [string | undefined, string[]] {
 	const idx = args.indexOf("--base");
@@ -69,9 +65,7 @@ async function cmdInfo(args: string[]): Promise<void> {
 	let upstream = "";
 	try {
 		upstream = (await git`rev-parse --abbrev-ref --symbolic-full-name @{u}`).text().trim();
-	} catch {
-		// no upstream configured
-	}
+	} catch {}
 
 	let baseSha = "";
 	try {
@@ -84,7 +78,6 @@ async function cmdInfo(args: string[]): Promise<void> {
 	const headSha = (await git`rev-parse HEAD`).text().trim();
 	const ahead = Number((await git`rev-list --count ${range}`).text().trim());
 
-	// %H = sha, %aN = author name (respects .mailmap), %s = subject
 	const commitsRaw = (await git`log --reverse --format=%H%x09%aN%x09%s ${range}`).text().trim();
 	const commits =
 		commitsRaw.length === 0
@@ -98,15 +91,13 @@ async function cmdInfo(args: string[]): Promise<void> {
 					};
 				});
 
-	// Renames disabled: a rename appears as both old path (deleted) and new path (added).
-	const filesRaw = (await git`-c diff.renames=false diff --name-only ${range}`).text().trim();
+	const filesRaw = (await git`-c diff.renames=false -c core.quotePath=false diff --name-only ${range}`).text().trim();
 	const files = filesRaw.length === 0 ? [] : filesRaw.split("\n");
 
-	// file_authors: file → distinct human author names across the range (AI authors excluded).
 	const fileAuthors: Record<string, string[]> = {};
 	for (const { sha, author } of commits) {
-		if (/claude/i.test(author)) continue;
-		const touched = (await git`-c diff.renames=false diff-tree --no-commit-id -r --name-only ${sha}`).text().trim();
+		if (isAiName(author)) continue;
+		const touched = (await git`-c diff.renames=false -c core.quotePath=false diff-tree --no-commit-id -r --name-only ${sha}`).text().trim();
 		for (const f of touched.split("\n").filter(Boolean)) {
 			if (!fileAuthors[f]) fileAuthors[f] = [];
 			if (!fileAuthors[f].includes(author)) fileAuthors[f].push(author);
@@ -177,8 +168,6 @@ async function cmdAbort(args: string[]): Promise<void> {
 	await git`reset --hard ${ref}`;
 }
 
-// --- shared reshape pipeline (apply + apply-json) ---------------------------
-
 interface ReshapeContext {
 	branch: string;
 	baseSha: string;
@@ -186,9 +175,7 @@ interface ReshapeContext {
 	origTree: string;
 }
 
-/** Dirty-tree refusal, detached-HEAD refusal, base resolution, and backup/tree
- * capture — the preflight steps both apply commands share before touching
- * anything destructive. */
+/** Refuse a dirty tree or detached HEAD, resolve the base, and capture the backup and tree. */
 async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContext> {
 	if (await isDirty()) die("working tree has uncommitted changes; stash or commit first.", EXIT.ERR);
 
@@ -205,7 +192,6 @@ async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContex
 	}
 
 	const backup = (await git`rev-parse HEAD`).text().trim();
-	// Capture pre-reshape tree for the integrity check before push.
 	const origTree = (await git`rev-parse HEAD^{tree}`).text().trim();
 
 	process.stderr.write(`meaningful: backup ref = ${backup}\n`);
@@ -213,11 +199,10 @@ async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContex
 	return { branch, baseSha, backup, origTree };
 }
 
-/** Validate that the union of plan-group files equals the diff from base
- * (rename detection disabled — see the File-Set Convention doc). */
+/** Require the union of plan-group files to equal the diff from base. */
 async function assertFilesMatchDiff(baseSha: string, groups: Group[]): Promise<void> {
 	const range = `${baseSha}..HEAD`;
-	const expectedRaw = (await git`-c diff.renames=false diff --name-only ${range}`).text().trim();
+	const expectedRaw = (await git`-c diff.renames=false -c core.quotePath=false diff --name-only ${range}`).text().trim();
 	const expected = new Set(
 		expectedRaw.length === 0
 			? []
@@ -236,18 +221,12 @@ async function assertFilesMatchDiff(baseSha: string, groups: Group[]): Promise<v
 	}
 }
 
-/** Prefix a path with git's literal pathspec magic so glob-looking characters
- * in real filenames (e.g. the brackets in `entity/[entityId]/merge`) match
- * literally instead of being parsed as an fnmatch pattern. Without this,
- * `git add -- <bracketed path>` silently stages nothing and the tree-equality
- * guard trips. */
+/** Prefix a path with git's literal pathspec magic. */
 function literalPathspec(file: string): string {
 	return `:(literal)${file}`;
 }
 
-/** Soft-reset to base, recommit each group, run the tree-equality guard, and
- * push. Shared by apply and apply-json — the only difference between the two
- * commands is how `groups` gets built from their respective plan formats. */
+/** Soft-reset to base, recommit each group, check the tree, and push. */
 async function reshapeAndPush(groups: Group[], ctx: ReshapeContext): Promise<void> {
 	const workdir = statePath("meaningful", uniqueName("meaningful"));
 	mkdirSync(workdir, { recursive: true });
@@ -290,7 +269,6 @@ async function reshapeAndPush(groups: Group[], ctx: ReshapeContext): Promise<voi
 			process.stderr.write(`meaningful: committed group ${i + 1}\n`);
 		}
 
-		// Tree-equality guard: reshaped commits must produce an identical tree.
 		const dirty = (await git`status --porcelain`).text().trim();
 		const reshapedTree = (await git`rev-parse HEAD^{tree}`).text().trim();
 		if (dirty || reshapedTree !== ctx.origTree) {
@@ -302,18 +280,17 @@ async function reshapeAndPush(groups: Group[], ctx: ReshapeContext): Promise<voi
 			);
 		}
 
-		// Force-push-with-lease if upstream exists, otherwise set and push
-		let hasUpstream = false;
+		let upstream: { remote: string; ref: string } | null = null;
 		try {
+			const remote = (await git`config branch.${ctx.branch}.remote`).text().trim();
+			const ref = (await git`config branch.${ctx.branch}.merge`).text().trim();
 			await git`rev-parse --abbrev-ref @{u}`;
-			hasUpstream = true;
-		} catch {
-			// no upstream
-		}
+			if (remote && ref) upstream = { remote, ref };
+		} catch {}
 
-		if (hasUpstream) {
+		if (upstream) {
 			process.stderr.write("meaningful: force-push-with-lease...\n");
-			await git`push --force-with-lease`;
+			await git`push --force-with-lease ${upstream.remote} HEAD:${upstream.ref}`;
 		} else {
 			process.stderr.write("meaningful: no upstream; setting and pushing.\n");
 			await git`push -u origin ${ctx.branch}`;
@@ -323,23 +300,26 @@ async function reshapeAndPush(groups: Group[], ctx: ReshapeContext): Promise<voi
 	}
 }
 
-// --- plan parsing (text) -----------------------------------------------------
+const AI_NAME = /^claude(?: (?:code|opus|sonnet|haiku|fable)\b.*)?$/i;
 
-/** Strip Co-Authored-By trailers whose name contains "claude" or email is noreply@anthropic.com. */
+function isAiName(name: string): boolean {
+	return AI_NAME.test(name.trim());
+}
+
+/** Strip Co-Authored-By trailers from an AI name or noreply@anthropic.com. */
 function stripClaudeTrailers(msg: string): string {
 	return msg
 		.split("\n")
 		.filter((l) => {
 			const m = l.match(/^Co-Authored-By:\s*(.+?)\s*<([^>]+)>/i);
 			if (!m) return true;
-			return !/claude/i.test(m[1]) && m[2] !== "noreply@anthropic.com";
+			return !isAiName(m[1]) && m[2] !== "noreply@anthropic.com";
 		})
 		.join("\n")
 		.trimEnd();
 }
 
-/** Validate an inline "Name <email>" string shared by AUTHOR lines (text plan)
- * and author/coauthors fields (JSON plan); dies with a consistent message. */
+/** Validate an inline "Name <email>" string. */
 function validateAuthorFormat(val: string, context: string): void {
 	if (!/^[^<]+ <[^>]+>/.test(val)) die(`malformed ${context}: "${val}" — expected: Name <email>`, EXIT.USAGE);
 }
@@ -378,7 +358,8 @@ function parsePlan(text: string): Group[] {
 		}
 
 		if (line.trim() === "") {
-			mode = "none";
+			if (mode === "msg" && current) current.msg += "\n";
+			else mode = "none";
 			continue;
 		}
 
@@ -396,8 +377,6 @@ function parsePlan(text: string): Group[] {
 	return groups.filter((gr) => gr.files.length > 0);
 }
 
-// --- plan parsing (JSON) -----------------------------------------------------
-
 interface JsonGroup {
 	subject: string;
 	body?: string;
@@ -411,10 +390,7 @@ interface JsonPlan {
 	groups: JsonGroup[];
 }
 
-/** Parse a JSON plan into the same Group[] shape the text parser produces.
- * Subject/body are joined with an explicit blank line and coauthor trailers
- * are appended as their own paragraph — no shared "mode" state, so this path
- * never hits parsePlan()'s blank-line/body-glue bug. */
+/** Parse a JSON plan into the same Group[] shape as the text parser. */
 function parseJsonPlan(text: string): { base?: string; groups: Group[] } {
 	let raw: unknown;
 	try {
@@ -431,6 +407,7 @@ function parseJsonPlan(text: string): { base?: string; groups: Group[] } {
 
 	const groups: Group[] = plan.groups.map((g, i) => {
 		const n = i + 1;
+		if (typeof g !== "object" || g === null) die(`group ${n}: must be an object.`, EXIT.USAGE);
 		if (typeof g.subject !== "string" || g.subject.trim() === "")
 			die(`group ${n}: missing/invalid "subject".`, EXIT.USAGE);
 		if (
