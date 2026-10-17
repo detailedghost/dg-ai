@@ -334,9 +334,7 @@ describe("compiled stash", () => {
 		const binary = join(tmp("stash-binary-"), "dg-skills");
 		const build = Bun.spawnSync([
 			process.execPath,
-			"build",
-			CLI_TS,
-			"--compile",
+			`${import.meta.dir}/../build.ts`,
 			"--outfile",
 			binary,
 		]);

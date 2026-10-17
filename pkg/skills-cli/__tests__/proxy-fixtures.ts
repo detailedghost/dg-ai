@@ -141,9 +141,7 @@ export function compileProxyCli(
 	const result = Bun.spawnSync(
 		[
 			process.execPath,
-			"build",
-			join(import.meta.dir, "../src/index.ts"),
-			"--compile",
+			join(import.meta.dir, "../build.ts"),
 			"--outfile",
 			binary,
 		],
