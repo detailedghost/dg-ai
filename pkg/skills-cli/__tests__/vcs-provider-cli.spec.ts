@@ -1499,9 +1499,7 @@ describe("compiled vcs-provider", () => {
 		const originalBinary = join(buildDir, "dg-skills");
 		const build = Bun.spawnSync([
 			process.execPath,
-			"build",
-			CLI_TS,
-			"--compile",
+			`${import.meta.dir}/../build.ts`,
 			"--outfile",
 			originalBinary,
 		]);
