@@ -1,25 +1,31 @@
 import { Command as CommanderCommand } from "commander";
 
+/** Compatibility status vocabulary; raw commands retain their own observed exit codes. */
 export const EXIT = { OK: 0, ERR: 1, USAGE: 2, VALIDATION: 3, UNSUPPORTED: 4 } as const;
 
+/** Write a prefixed error to stderr and terminate with the requested status. */
 export function die(msg: string, code = 1): never {
 	process.stderr.write(`error: ${msg}\n`);
 	process.exit(code);
 }
 
+/** Describe a legacy handler receiving raw arguments after global help/json flags are removed. */
 export interface SubcommandSpec {
 	description?: string;
 	args?: string[];
 	run: (args: string[], opts: { json: boolean; help: boolean }) => Promise<number | void>;
 }
 
+/** Declare the subcommand map used by the compatibility dispatcher and its generated help. */
 export interface CommandSpec {
 	name: string;
 	description?: string;
 	subcommands: Record<string, SubcommandSpec>;
 }
 
+/** An explicit argv runner; invoking run terminates the process with the handler status. */
 export interface Command {
+	/** Dispatch argv and terminate the process with the selected handler's status. */
 	run(argv: string[]): Promise<void>;
 }
 
@@ -36,6 +42,7 @@ function buildUsage(spec: CommandSpec): string {
 	return lines.join("\n");
 }
 
+/** Build an inert dispatcher; run handles help/usage and converts handler exceptions to exit 1. */
 export function defineCommand(spec: CommandSpec): Command {
 	return {
 		async run(argv: string[]) {
@@ -75,12 +82,14 @@ export function defineCommand(spec: CommandSpec): Command {
 	};
 }
 
+/** Describe a custom parser that owns every argument and may return its own exit status. */
 export interface RawCommandSpec {
 	name: string;
 	description?: string;
 	run: (argv: string[]) => number | void | Promise<number | void>;
 }
 
+/** Register without consuming help, unknown options, or literal --; forward returned statuses unchanged. */
 export function registerRawCommand(program: CommanderCommand, spec: RawCommandSpec): void {
 	const command = new CommanderCommand(spec.name)
 		.description(spec.description ?? "")
@@ -98,6 +107,7 @@ export function registerRawCommand(program: CommanderCommand, spec: RawCommandSp
 	program.addCommand(command);
 }
 
+/** Attach the compatibility dispatcher to Commander without executing it during registration. */
 export function registerLegacyCommand(program: CommanderCommand, spec: CommandSpec): void {
 	const command = defineCommand(spec);
 	registerRawCommand(program, {

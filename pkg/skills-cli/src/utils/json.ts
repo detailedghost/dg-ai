@@ -1,12 +1,15 @@
+/** Write one pretty-printed JSON value followed by a newline. */
 export function emitJson(obj: unknown): void {
 	process.stdout.write(JSON.stringify(obj, null, 2) + "\n");
 }
 
+/** Read stdin fully and parse JSON; T is a compile-time assertion, not runtime validation. */
 export async function readJsonStdin<T = unknown>(): Promise<T> {
 	const text = await Bun.stdin.text();
 	return JSON.parse(text) as T;
 }
 
+/** Escape JSON string contents without adding surrounding quotes. */
 export function escapeJsonString(s: string): string {
 	let out = "";
 	for (let i = 0; i < s.length; i++) {

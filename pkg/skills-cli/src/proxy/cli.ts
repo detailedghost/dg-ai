@@ -45,6 +45,7 @@ function parseArgs(argv: string[]) {
 	return { positionals, flags, listBackends, plan, help };
 }
 
+/** Dispatch proxy argv explicitly; emit result JSON and preserve backend failures as process exit statuses. */
 export async function main(argv: string[]): Promise<number | void> {
 	if (argv[0] === "background") return backgroundMain(argv.slice(1));
 	const { positionals, flags, listBackends, plan, help } = parseArgs(argv);

@@ -34,6 +34,7 @@ function parseEvents(stdout: string): ParsedResult {
 	return { sessionId, message: message || errorMessage };
 }
 
+/** Grok Build adapter with structured event parsing and model/effort passthrough. */
 export const grok: Backend = {
 	bin: "grok",
 	buildArgs,

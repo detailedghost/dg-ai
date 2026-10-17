@@ -69,6 +69,7 @@ function parseEvents(stdout: string): ParsedResult {
 	return { sessionId, message: resultMessage || assistantText };
 }
 
+/** Cortex Code adapter with headless result parsing and session continuation. */
 export const cortex: Backend = {
 	bin: "cortex",
 	buildArgs,

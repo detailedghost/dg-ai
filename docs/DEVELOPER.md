@@ -100,6 +100,15 @@ it saves under `.agents/clipboard`. The clipboard skill chooses its default
 unique repository path through stash instead. Neither command needs a legacy
 helper on PATH.
 
+Scratch/state tool and bucket directories use mode `0700`; proxy transcripts
+use exclusive creation with mode `0600` before any backend starts. On POSIX,
+foreign-owned or group/other-writable roots and managed descendants fail closed;
+managed descendants also reject symlinks. A configured root may itself be a
+symlink only when its ownership, resolved target, and ancestors pass the safety
+checks. Choose owned `AI_SCRATCH_DIR` and `AI_STATE_DIR` roots when an existing
+root is unsafe; do not change a foreign directory's ownership or permissions.
+Windows retains directory/symlink checks but cannot enforce POSIX ownership.
+
 #### VCS provider
 
 Run inside a Git checkout with an origin remote and the matching CLI installed

@@ -9,6 +9,7 @@ import { opencode } from "./opencode";
 import { pi } from "./pi";
 import type { Backend } from "./types";
 
+/** Registry of supported backend identities; selection is explicit and never falls back to another backend. */
 export const BACKENDS: Record<string, Backend> = {
 	codex,
 	copilot,

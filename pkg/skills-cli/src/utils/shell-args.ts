@@ -1,3 +1,4 @@
+/** Split literal whitespace, preserve interpolated scalars as one token, and expand arrays without shell evaluation. */
 export function buildArgs(
 	strings: TemplateStringsArray,
 	values: unknown[],

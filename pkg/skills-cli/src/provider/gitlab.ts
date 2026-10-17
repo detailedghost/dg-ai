@@ -607,6 +607,7 @@ async function checkAuth(tag: ShellTag): Promise<boolean> {
 	return checkAuthStatus(tag);
 }
 
+/** Create an inert GitLab adapter with configured reviewers and per-instance current-MR memoization. */
 export function createGitlabProvider(): Provider {
 	const bin = resolveGlabBin();
 	const tag = makeBinPreflightTag(bin, {
