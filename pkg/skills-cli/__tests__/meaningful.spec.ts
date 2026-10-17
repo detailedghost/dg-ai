@@ -1095,7 +1095,7 @@ else if (args[1] !== "ready") process.exit(91);
    else expect(call.args[call.args.indexOf("--description") + 1]).toBe(body);
   }
   if (provider === "github") {
-   const ready = runCompiled(["deps-upgrade", "ready-when-green", String(id), "--interval-seconds", "0"], repo.dir, env);
+   const ready = runCompiled(["deps-upgrade", "ready-when-green", String(id), "--interval-seconds", "1"], repo.dir, env);
    expect(ready.exitCode).toBe(0);
    expect(JSON.parse(ready.stdout)).toEqual({ status: "ready", url });
    expect(calls().some((call) => call.args.join(" ") === `pr ready ${id}`)).toBe(true);
