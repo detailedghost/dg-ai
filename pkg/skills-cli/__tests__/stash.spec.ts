@@ -145,11 +145,14 @@ describe("stash scratch and state", () => {
 		);
 	});
 
-	test("does not chmod an existing dir", () => {
+	test("makes an existing owned tool directory private", () => {
 		const f = fixture();
 		mkdirSync(join(f.scratch, "demo"), { mode: 0o755 });
-		stash(["demo"], f.main, f);
-		expect(statSync(join(f.scratch, "demo")).mode & 0o777).toBe(0o755);
+		const r = stash(["demo"], f.main, f);
+		expect(r.code).toBe(0);
+		expect(r.out).toBe(`${join(f.scratch, "demo", cwdHash(f.main))}\n`);
+		expect(r.err).toBe("");
+		expect(statSync(join(f.scratch, "demo")).mode & 0o777).toBe(0o700);
 	});
 });
 
