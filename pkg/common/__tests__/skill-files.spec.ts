@@ -3,29 +3,6 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { filesToInstall, skillDirectoryNames } from "../src/skill-files";
 
-/** Instruction files a skills-only install of this repo writes. README.md is not one of them. */
-const REPO_SKILL_FILES = [
-	"browser/SKILL.md",
-	"browser/references/install.md",
-	"channel-review/SKILL.md",
-	"channel-review/references/commands.md",
-	"channel-review/references/config.example.json",
-	"channel-review/references/relay-setup.md",
-	"channel-review/references/setup.md",
-	"chat/SKILL.md",
-	"demo/SKILL.md",
-	"demo/references/authoring.md",
-	"google-sms-cleanup/SKILL.md",
-	"inbox-cleanup/SKILL.md",
-	"inbox-cleanup/references/providers.md",
-	"inbox-cleanup/references/workflow.md",
-	"overwatch/SKILL.md",
-	"proto/SKILL.md",
-	"proto/agents/openai.yaml",
-	"proto/references/commands.md",
-	"proto/references/contracts.md",
-];
-
 function walk(root: string): string[] {
 	const files: string[] = [];
 	const visit = (dir: string) => {
@@ -75,11 +52,7 @@ describe("filesToInstall", () => {
 
 	test("returns paths in sorted order", () => {
 		expect(
-			filesToInstall([
-				"zebra/SKILL.md",
-				"alpha/note.md",
-				"alpha/SKILL.md",
-			]),
+			filesToInstall(["zebra/SKILL.md", "alpha/note.md", "alpha/SKILL.md"]),
 		).toEqual(["alpha/SKILL.md", "alpha/note.md", "zebra/SKILL.md"]);
 	});
 
@@ -113,7 +86,19 @@ describe("filesToInstall", () => {
 			dir = parent;
 		}
 		expect(root).not.toBe("");
-		expect(filesToInstall(walk(root))).toEqual(REPO_SKILL_FILES);
-		expect(walk(root)).toContain("README.md");
+		const expected = readdirSync(root, { withFileTypes: true })
+			.filter(
+				(entry) =>
+					entry.isDirectory() && existsSync(join(root, entry.name, "SKILL.md")),
+			)
+			.flatMap((entry) =>
+				walk(join(root, entry.name)).map((file) => `${entry.name}/${file}`),
+			)
+			.sort();
+		const tree = walk(root);
+		const selected = filesToInstall(tree);
+		expect(selected).toEqual(expected);
+		expect(tree).toContain("README.md");
+		expect(selected).not.toContain("README.md");
 	});
 });
