@@ -3,9 +3,9 @@ import { loadConfig } from "../src/config";
 import { createRunners } from "../src/runners";
 import { RUNNER_NAMES, type RunnerName } from "../src/runners/types";
 import {
-	type TempHome,
 	createTempHome,
 	minimalConfigJson,
+	type TempHome,
 	writeConfigFile,
 } from "./support/fakes";
 
@@ -123,6 +123,7 @@ function harness(
 					signal: null,
 					timedOut: false,
 					aborted: false,
+					outputTail: "",
 					stderrTail: "",
 				}
 			);
@@ -283,6 +284,15 @@ describe("runner probe", () => {
 });
 
 describe("runner run argv", () => {
+	test.each(["claude", "codex", "copilot"] as const)(
+		"%s passes the requested model as a separate argument",
+		async (name) => {
+			const h = harness();
+			await h.runners[name].run(runRequest({ model: "example-model" }));
+			const argv = h.processes[0]!.argv;
+			expect(argv[argv.indexOf("--model") + 1]).toBe("example-model");
+		},
+	);
 	test("claude builds the thrash prompt with spice and comment as one element and the allowlist last", async () => {
 		const config = configWith();
 		const h = harness({ config });
@@ -483,6 +493,58 @@ describe("runner run argv", () => {
 });
 
 describe("runner run result", () => {
+	test.each([0, 1])(
+		"recognizes a limit on stdout even with exit status %i",
+		async (status) => {
+			const h = harness({
+				process: () => ({
+					status,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "",
+					outputTail: "You've hit your limit · resets 8pm\n",
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-207");
+		},
+	);
+
+	test.each(["claude", "codex", "copilot"] as const)(
+		"%s detects limits after a long run",
+		async (name) => {
+			const h = harness({
+				step: 600_000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "ERROR: You've hit your usage limit.",
+					outputTail: "ERROR: You've hit your usage limit.",
+				}),
+			});
+			expect((await h.runners[name].run(runRequest())).code).toBe("CR-207");
+		},
+	);
+
+	test.each(["timedOut", "aborted"] as const)(
+		"preserves %s when the tail also mentions a limit",
+		async (reason) => {
+			const h = harness({
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					[reason]: true,
+					stderrTail: "",
+					outputTail: "You've hit your limit",
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBeUndefined();
+		},
+	);
 	test.each([...RUNNER_NAMES])("%s returns CR-201 without spawning when the binary is missing", async (name) => {
 		const h = harness({ which: () => undefined });
 		const result = await h.runners[name].run(runRequest());
@@ -503,6 +565,7 @@ describe("runner run result", () => {
 				signal: "SIGKILL",
 				timedOut: true,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "",
 			}),
 		});
@@ -523,6 +586,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "",
 				code: "CR-201",
 			}),
@@ -537,21 +601,25 @@ describe("runner run result", () => {
 		"Not logged in",
 		"authentication failed",
 		"401 Unauthorized",
-	])("infers CR-202 from a fast nonzero exit with stderr %p", async (stderrTail) => {
-		const h = harness({
-			step: 5000,
-			process: () => ({
-				status: 1,
-				signal: null,
-				timedOut: false,
-				aborted: false,
-				stderrTail,
-			}),
-		});
-		const result = await h.runners.claude.run(runRequest());
-		expect(result.code).toBe("CR-202");
-		expect(result.status).toBe(1);
-	});
+	])(
+		"infers CR-202 from a fast nonzero exit with stderr %p",
+		async (stderrTail) => {
+			const h = harness({
+				step: 5000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					outputTail: "",
+					stderrTail,
+				}),
+			});
+			const result = await h.runners.claude.run(runRequest());
+			expect(result.code).toBe("CR-202");
+			expect(result.status).toBe(1);
+		},
+	);
 
 	test.each([
 		["claude", "+ the handler prints: not logged in\n  and Not logged in appears mid-line"],
@@ -583,7 +651,9 @@ describe("runner run result", () => {
 					signal: null,
 					timedOut: false,
 					aborted: false,
-					stderrTail: "thinking...\nERROR: unexpected status 401 Unauthorized: missing bearer",
+					outputTail: "",
+					stderrTail:
+						"thinking...\nERROR: unexpected status 401 Unauthorized: missing bearer",
 				}),
 			});
 			const result = await h.runners[name].run(runRequest());
@@ -709,6 +779,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "Not logged in",
 			}),
 		});
@@ -724,6 +795,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "segmentation fault",
 			}),
 		});
@@ -739,6 +811,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "Please run /login",
 			}),
 		});
@@ -818,6 +891,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "TypeError: login page failed to authenticate the user",
 			}),
 		});

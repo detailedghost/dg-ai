@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
@@ -28,9 +28,7 @@ afterEach(() => {
 	for (const pid of strayPids.splice(0)) {
 		try {
 			process.kill(pid, "SIGKILL");
-		} catch {
-			continue;
-		}
+		} catch {}
 	}
 	rmSync(dir, { recursive: true, force: true });
 });
@@ -99,6 +97,15 @@ process.stdout.write("grandchild=" + grandchild.pid + "\\n");
 `;
 
 describe("runProcess", () => {
+	test("retains stdout and stderr diagnostics separately in the bounded combined tail", async () => {
+		const path = script(
+			`process.stdout.write('x'.repeat(10000)); process.stderr.write("You've hit your limit");`,
+		);
+		const result = await runProcess(request([process.execPath, path]));
+		expect(result.outputTail).toContain("You've hit your limit");
+		expect(result.outputTail).toContain("x".repeat(TAIL_BYTES));
+		expect(result.outputTail.length).toBeLessThanOrEqual(2 * TAIL_BYTES + 1);
+	});
 	test("resolves status 0 and reports the child pid through onSpawn", async () => {
 		const child = script(`console.log("pid=" + process.pid);`);
 		const pids: number[] = [];

@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
+import { isAiUsageLimit } from "@dg/common";
 import { runCapture } from "@dg/common/node";
 import type { ChannelConfig } from "../config";
 import {
 	CLI_TIMEOUT_MS,
-	type SkillFs,
 	realSkillFs,
+	type SkillFs,
 	thrashInstalled,
 } from "./probe";
 import { foldGrokStream } from "./grok-stream";
@@ -64,8 +65,13 @@ const SPECS: Record<RunnerName, Spec> = {
 			path,
 			"-p",
 			claudePrompt(request),
-			...(request.task === "fix" ? ["--append-system-prompt", UNTRUSTED_REPORT_NOTE] : []),
-			...(request.task === "deps" ? ["--add-dir", config.automation.cloneRoot] : []),
+			...(request.model ? ["--model", request.model] : []),
+			...(request.task === "fix"
+				? ["--append-system-prompt", UNTRUSTED_REPORT_NOTE]
+				: []),
+			...(request.task === "deps"
+				? ["--add-dir", config.automation.cloneRoot]
+				: []),
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -79,6 +85,7 @@ const SPECS: Record<RunnerName, Spec> = {
 		argv: (path, request) => [
 			path,
 			"exec",
+			...(request.model ? ["--model", request.model] : []),
 			"--skip-git-repo-check",
 			"-C",
 			request.cwd,
@@ -91,6 +98,7 @@ const SPECS: Record<RunnerName, Spec> = {
 			path,
 			"-p",
 			`Use the thrash skill: /thrash ${thrashArgs(request)}`,
+			...(request.model ? ["--model", request.model] : []),
 			"--allow-all-tools",
 			"--no-ask-user",
 			"-s",
@@ -193,7 +201,7 @@ export function createRunners(
 					};
 				}
 				const startedAt = now();
-				const { stderrTail, stdoutTail, code, ...outcome } = await spawn({
+				const { stderrTail, stdoutTail, outputTail, code, ...outcome } = await spawn({
 					argv: spec.argv(path, request, config),
 					cwd: request.cwd,
 					timeoutMs: request.timeoutMs,
@@ -214,6 +222,13 @@ export function createRunners(
 							? `${stderrTail}\n${stdoutTail ?? ""}`
 							: stderrTail;
 				if (code) return { ...outcome, code };
+				if (
+					!outcome.aborted &&
+					!outcome.timedOut &&
+					isAiUsageLimit(outputTail ?? `${stdoutTail ?? ""}\n${stderrTail}`)
+				) {
+					return { ...outcome, code: "CR-207" };
+				}
 				if (failedFast && AUTH_FAILURE[name].test(evidence)) {
 					return { ...outcome, code: "CR-202" };
 				}

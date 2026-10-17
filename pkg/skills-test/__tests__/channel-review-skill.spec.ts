@@ -302,7 +302,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 
 	test.each([
 		["overview", "### Commands", 5],
-		["review", "### Review flags", 7],
+		["review", "### Review flags", 8],
 		["address", "### Address flags", 4],
 	] as const)("the $help %s section and the commands.md %s table list the same tokens", (topic, heading, size) => {
 		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, topic);
@@ -391,6 +391,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"owner.email",
 			"owner.senderIds",
 			"runner.default",
+			"runner.fallback",
 			"runner.timeoutMinutes",
 			"runner.addressTimeoutMinutes",
 			"runner.claude.allowedTools",

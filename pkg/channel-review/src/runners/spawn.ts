@@ -30,6 +30,7 @@ export type ProcessResult = {
 	aborted: boolean;
 	stderrTail: string;
 	stdoutTail?: string;
+	outputTail?: string;
 	code?: Extract<CrCode, "CR-201">;
 };
 
@@ -85,6 +86,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 			aborted: false,
 			stderrTail: "",
 			stdoutTail: "",
+			outputTail: "",
 			code: "CR-201",
 		};
 	}
@@ -128,6 +130,8 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 				}
 				if (index === 1) {
 					stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TAIL_BYTES);
+				} else {
+					stdoutTail = Buffer.concat([stdoutTail, chunk]).subarray(-TAIL_BYTES);
 				}
 			}
 		});
@@ -161,5 +165,6 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 		aborted,
 		stderrTail: stderrTail.toString("utf8"),
 		stdoutTail: stdoutTail.toString("utf8"),
+		outputTail: `${stdoutTail.toString("utf8")}\n${stderrTail.toString("utf8")}`,
 	};
 }

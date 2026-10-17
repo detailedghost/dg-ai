@@ -17,6 +17,19 @@ const GITHUB_URL = "https://github.com/o/r/pull/12";
 const GITLAB_URL = "https://gitlab.com/g/p/-/merge_requests/5";
 
 describe("parseTrigger", () => {
+	test("preserves a model name's case and accepts an uppercase flag", () => {
+		expect(
+			parseTrigger(`!owner $review ${GITHUB_URL} ~MODEL Opus-4.6`, OPTIONS),
+		).toMatchObject({ kind: "run", model: "Opus-4.6" });
+	});
+	test.each(["", "~comment", "--help", "bad;name"])(
+		"rejects invalid or missing model: %s",
+		(model) => {
+			expect(
+				parseTrigger(`!owner $review ${GITHUB_URL} ~model ${model}`, OPTIONS),
+			).toEqual({ kind: "error", code: "CR-108" });
+		},
+	);
 	test("returns run with url, host, spice, comment and no agent from Teams HTML with an at-mention and a link", () => {
 		const html = `<p><at>Review Bot</at> !owner $review <a href="${GITHUB_URL}">the PR</a> ~spice 3 ~comment</p>`;
 		const result = parseTrigger(html, OPTIONS);

@@ -1,5 +1,5 @@
-import { RUNNER_NAMES, type RunnerName } from "./runners/types";
 import type { CrCode } from "./errors";
+import { RUNNER_NAMES, type RunnerName } from "./runners/types";
 import { canonicalPrPath } from "./state";
 import type { PrHost } from "./verdict/types";
 
@@ -10,7 +10,10 @@ export type TriggerResult =
 	| { kind: "help"; topic: HelpTopic }
 	| {
 			kind: "error";
-			code: Extract<CrCode, "CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105">;
+			code: Extract<
+				CrCode,
+				"CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105" | "CR-108"
+			>;
 	  }
 	| { kind: "emoji"; slot?: string }
 	| { kind: "address"; url: string; number: number; host: PrHost; noCi: boolean }
@@ -24,6 +27,7 @@ export type TriggerResult =
 			stacked: boolean;
 			fun: boolean;
 			agent?: RunnerName;
+			model?: string;
 	  };
 
 export type ReadinessResult =
@@ -156,6 +160,17 @@ export function parseTrigger(
 		agent = RUNNER_NAMES.find((name) => name === value);
 		if (!agent) return { kind: "error", code: "CR-103" };
 	}
+	const modelIndex = tokens.indexOf("~model");
+	const model =
+		modelIndex === -1
+			? undefined
+			: text.split(/\s+/).filter(Boolean)[modelIndex + 1];
+	if (
+		tokens.includes("~model") &&
+		(model === undefined || !/^[a-z0-9][a-z0-9._:/-]{0,127}$/i.test(model))
+	) {
+		return { kind: "error", code: "CR-108" };
+	}
 
 	return {
 		kind: "run",
@@ -165,6 +180,7 @@ export function parseTrigger(
 		stacked: tokens.includes("~stacked"),
 		fun: tokens.includes("~fun"),
 		...(agent === undefined ? {} : { agent }),
+		...(model === undefined ? {} : { model }),
 	};
 }
 

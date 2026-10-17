@@ -9,9 +9,9 @@ export const GROK_OUTPUT_FORMATS = ["plain", "json", "streaming-json"] as const;
 
 export type GrokOutputFormat = (typeof GROK_OUTPUT_FORMATS)[number];
 
-type RunnerCode = Extract<CrCode, "CR-201" | "CR-202">;
+type RunnerCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-207">;
 
-type ProbeCode = RunnerCode | Extract<CrCode, "CR-206">;
+type ProbeCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-206">;
 
 export type RunTask =
 	| { task: "thrash"; url: string; spice?: number; comment: boolean }
@@ -22,13 +22,16 @@ export type RunTask =
 export type Runner = {
 	name: RunnerName;
 	probe(): Promise<{ ok: true } | { ok: false; code: ProbeCode }>;
-	run(request: RunTask & {
-		cwd: string;
-		timeoutMs: number;
-		logPath: string;
-		signal: AbortSignal;
-		onSpawn?: (pid: number) => void;
-	}): Promise<{
+	run(
+		request: RunTask & {
+			model?: string;
+			cwd: string;
+			timeoutMs: number;
+			logPath: string;
+			signal: AbortSignal;
+			onSpawn?: (pid: number) => void;
+		},
+	): Promise<{
 		status: number | null;
 		signal: string | null;
 		timedOut: boolean;

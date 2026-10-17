@@ -230,6 +230,7 @@ describe("handleIssue", () => {
 					signal: null,
 					timedOut: false,
 					aborted: false,
+					outputTail: "",
 					stderrTail: "",
 				};
 			},

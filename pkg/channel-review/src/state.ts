@@ -12,6 +12,7 @@ export type BlockedOptions = {
 	comment: boolean;
 	fun: boolean;
 	agent?: RunnerName;
+	model?: string;
 };
 
 export type CurrentJob = {

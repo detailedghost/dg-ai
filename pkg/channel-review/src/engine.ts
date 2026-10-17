@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { createSerialQueue, describeError } from "@dg/common";
+import { createSerialQueue, describeError, escapeHtml } from "@dg/common";
 import {
 	type AddressWorkspace,
 	cloneDirName,
@@ -114,7 +114,10 @@ type ReviewJob = JobBase & {
 	fun: boolean;
 	stacked: boolean;
 	agent?: RunnerName;
+	model?: string;
 };
+
+type ReviewRunner = { runner: Runner; model?: string };
 
 type Job = AddressJob | ReviewJob;
 
@@ -233,6 +236,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				comment: job.comment,
 				fun: job.fun,
 				agent: job.agent,
+				model: job.model,
 			};
 			state.markBlocked(target.url, job.messageId, options, job.chatId);
 		} else if (state.get().blocked[key] && (typeof outcome === "string" || outcome.code === "CR-302")) {
@@ -243,7 +247,13 @@ export function createEngine(deps: EngineDeps): Engine {
 	async function execute(
 		job: Pick<JobBase, "messageId" | "chatId">,
 		target: Target,
-		run: { task: RunTask; cwd: string; timeoutMs: number; logName: string },
+		run: {
+			task: RunTask;
+			cwd: string;
+			timeoutMs: number;
+			logName: string;
+			model?: string;
+		},
 		runner: Runner,
 		signal: AbortSignal,
 	): Promise<CrCode | null> {
@@ -259,6 +269,7 @@ export function createEngine(deps: EngineDeps): Engine {
 		try {
 			result = await runner.run({
 				...run.task,
+				model: run.model,
 				cwd: run.cwd,
 				timeoutMs: run.timeoutMs,
 				logPath: join(paths.jobsDir, `${run.logName}.log`),
@@ -274,6 +285,17 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 		if (result.aborted) return "CR-205";
 		if (result.timedOut) return "CR-204";
+		if (result.code === "CR-207") {
+			log.warn(
+				`runner ${runner.name} reached its usage limit: ${run.task.task}`,
+			);
+			if (run.task.task !== "thrash")
+				await attempt("usage-limit owner notification", () =>
+					provider.dm({
+						text: `${replyText("CR-207", { agent: runner.name })}\nTask: ${run.task.task}\n${target.url}`,
+					}),
+				);
+		}
 		if (result.code) return result.code;
 		return result.status === 0 ? null : "CR-203";
 	}
@@ -282,22 +304,65 @@ export function createEngine(deps: EngineDeps): Engine {
 		job: ReviewJob,
 		target: Target,
 		logName: string,
-		runner: Runner,
+		selection: ReviewRunner,
 		signal: AbortSignal,
 	): Promise<Outcome> {
-		const startedAt = clock();
-		const failed = await execute(
-			job,
-			target,
-			{
-				task: { task: "thrash", url: target.url, spice: job.spice, comment: job.comment },
-				cwd: paths.workDir,
-				timeoutMs,
-				logName,
-			},
-			runner,
-			signal,
-		);
+		let startedAt = clock();
+		const deadline = startedAt.getTime() + timeoutMs;
+		let attemptLogName = logName;
+		const run = () => {
+			const remainingMs = deadline - clock().getTime();
+			if (remainingMs <= 0) return Promise.resolve("CR-204" as const);
+			return execute(
+				job,
+				target,
+				{
+					task: {
+						task: "thrash",
+						url: target.url,
+						spice: job.spice,
+						comment: job.comment,
+					},
+					cwd: paths.workDir,
+					timeoutMs: remainingMs,
+					logName: attemptLogName,
+					model: selection.model,
+				},
+				selection.runner,
+				signal,
+			);
+		};
+		let failed = await run();
+		if (
+			failed === "CR-207" &&
+			selection.runner.name === "claude" &&
+			config.runner.fallback !== null
+		) {
+			if (signal.aborted) return { code: "CR-205" };
+			const fallback = runners[config.runner.fallback];
+			let available = false;
+			try {
+				available = (await fallback.probe()).ok;
+			} catch (error) {
+				log.warn(`fallback probe failed: ${describeError(error)}`);
+			}
+			if (signal.aborted) return { code: "CR-205" };
+			if (clock().getTime() >= deadline) return { code: "CR-204" };
+			if (available) {
+				await attempt("fallback reply", () =>
+					provider.reply({
+						chatId: job.chatId,
+						html: true,
+						text: `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${escapeHtml(job.messageId)}"><p>$review ${escapeHtml(job.url)}</p></blockquote><p>Claude is out of tokens, so I'm using ${fallback.name === "codex" ? "Codex" : "Copilot"} for this review.</p>`,
+					}),
+				);
+				selection.runner = fallback;
+				selection.model = undefined;
+				attemptLogName = `${logName}-fallback-${fallback.name}`;
+				startedAt = clock();
+				failed = await run();
+			}
+		}
 		if (failed) return { code: failed };
 		try {
 			const read = await verdict.read({ url: target.url, host: job.host, since: startedAt });
@@ -316,11 +381,16 @@ export function createEngine(deps: EngineDeps): Engine {
 		return verdictProbe.ok ? null : verdictProbe.code;
 	}
 
-	async function reviewSingle(job: ReviewJob, runner: Runner, signal: AbortSignal): Promise<void> {
+	async function reviewSingle(
+		job: ReviewJob,
+		selection: ReviewRunner,
+		signal: AbortSignal,
+	): Promise<void> {
 		const target = { number: job.number, url: job.url };
-		const outcome = await review(job, target, job.messageId, runner, signal);
+		const outcome = await review(job, target, job.messageId, selection, signal);
 		settleBlocked(job, target, outcome);
-		if (typeof outcome !== "string") return fail(job, outcome.code, runner.name);
+		if (typeof outcome !== "string")
+			return fail(job, outcome.code, selection.runner.name);
 
 		const label = VERDICT_LABELS[outcome];
 		log.info(`message ${job.messageId} done: ${outcome} ${job.url}`);
@@ -331,7 +401,11 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 	}
 
-	async function reviewStack(job: ReviewJob, runner: Runner, signal: AbortSignal): Promise<void> {
+	async function reviewStack(
+		job: ReviewJob,
+		selection: ReviewRunner,
+		signal: AbortSignal,
+	): Promise<void> {
 		let descendants: Target[];
 		try {
 			descendants = await stack.descendants({ url: job.url, host: job.host });
@@ -340,16 +414,22 @@ export function createEngine(deps: EngineDeps): Engine {
 			if (!(err instanceof VerdictError)) {
 				log.error(`stack read threw: ${describeError(err)}`);
 			}
-			return fail(job, code, runner.name);
+			return fail(job, code, selection.runner.name);
 		}
 
 		const rows: StackRow[] = [];
 		for (const target of [{ number: job.number, url: job.url }, ...descendants]) {
 			const outcome = signal.aborted
 				? ({ code: "CR-205" } as const)
-				: await review(job, target, `${job.messageId}-${target.number}`, runner, signal);
+				: await review(
+						job,
+						target,
+						`${job.messageId}-${target.number}`,
+						selection,
+						signal,
+					);
 			if (typeof outcome !== "string" && outcome.code === "CR-205") {
-				return fail(job, "CR-205", runner.name);
+				return fail(job, "CR-205", selection.runner.name);
 			}
 			settleBlocked(job, target, outcome);
 			rows.push({ ...target, outcome });
@@ -413,7 +493,14 @@ export function createEngine(deps: EngineDeps): Engine {
 		if (stopped) return;
 		const controller = new AbortController();
 		active = controller;
-		const runner = runners[job.kind === "address" ? "claude" : (job.agent ?? config.runner.default)];
+		const runner =
+			runners[
+				job.kind === "address" ? "claude" : (job.agent ?? config.runner.default)
+			];
+		const selection: ReviewRunner = {
+			runner,
+			model: job.kind === "review" ? job.model : undefined,
+		};
 		try {
 			state.markHandled(job.messageId, "running", job.chatId);
 			await move(job.chatId, job.messageId, "inProgress");
@@ -426,11 +513,14 @@ export function createEngine(deps: EngineDeps): Engine {
 			}
 			const blocker = await preflight(runner, job);
 			if (blocker) await fail(job, blocker, runner.name);
-			else if (job.stacked) await reviewStack(job, runner, controller.signal);
-			else await reviewSingle(job, runner, controller.signal);
+			else if (job.stacked)
+				await reviewStack(job, selection, controller.signal);
+			else await reviewSingle(job, selection, controller.signal);
 		} catch (err) {
-			log.error(`job ${job.messageId} failed unexpectedly: ${describeError(err)}`);
-			await fail(job, "CR-203", runner.name);
+			log.error(
+				`job ${job.messageId} failed unexpectedly: ${describeError(err)}`,
+			);
+			await fail(job, "CR-203", selection.runner.name);
 		} finally {
 			state.setCurrent(null);
 			reactionState.delete(job.messageId);
@@ -545,13 +635,24 @@ export function createEngine(deps: EngineDeps): Engine {
 				})
 			: undefined;
 		return quoted?.kind === "run"
-			? { spice: quoted.spice, comment: quoted.comment, fun: quoted.fun, agent: quoted.agent }
+			? {
+					spice: quoted.spice,
+					comment: quoted.comment,
+					fun: quoted.fun,
+					agent: quoted.agent,
+					model: quoted.model,
+				}
 			: { comment: false, fun: false };
 	}
 
 	function toJob(
 		message: ChatMessage,
-	): Job | { error: CrCode } | { help: HelpTopic } | { emoji: string | undefined } | null {
+	):
+		| Job
+		| { error: CrCode }
+		| { help: HelpTopic }
+		| { emoji: string | undefined }
+		| null {
 		const trigger = parseTrigger(message.text, {
 			ownerToken: config.owner.token,
 			hosts: config.hosts,
@@ -586,6 +687,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				stacked: trigger.stacked,
 				fun: trigger.fun,
 				agent: trigger.agent,
+				model: trigger.model,
 			};
 		}
 

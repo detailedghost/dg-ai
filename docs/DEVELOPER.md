@@ -331,6 +331,14 @@ Every review machine needs a signed-in runner and thrash installed in that
 runner's skill roots. `status` reports each runner probe, including CR-206 for
 missing thrash after executable and login checks pass.
 
+AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
+bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,
+including Claude's exit-zero limit responses. Review jobs retry a limited Claude
+run once with `runner.fallback` (Codex by default) after a successful probe. The
+fallback keeps the remaining timeout, uses its own default model, writes a separate
+log, and replies to the original request. Other AI tasks expose the same error and
+notify the owner; write tasks are not automatically retried.
+
 The [relay contract](../pkg/channel-review/README.md) lists every relay call.
 A relay deploy can drop SSE streams and the relay's replay buffer. The daemon
 reconnects and may report a gap; commands posted during the deploy cannot

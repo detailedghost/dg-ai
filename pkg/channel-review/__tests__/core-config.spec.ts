@@ -16,11 +16,11 @@ import {
 	saveDefaultEnv,
 } from "../src/config";
 import {
-	type TempHome,
 	completeFunPool,
 	createTempHome,
 	ENVS,
 	minimalConfigJson,
+	type TempHome,
 	writeConfigFile,
 } from "./support/fakes";
 
@@ -53,6 +53,19 @@ const loadFailure = (body: Record<string, unknown>): DgCliError => {
 };
 
 describe("loadConfig defaults", () => {
+	test("defaults review fallback to Codex and permits disabling or selecting Copilot", () => {
+		expect(load().runner.fallback).toBe("codex");
+		expect(load({ runner: { fallback: null } }).runner.fallback).toBeNull();
+		expect(load({ runner: { fallback: "copilot" } }).runner.fallback).toBe(
+			"copilot",
+		);
+	});
+	test.each(["claude", "gemini", false])(
+		"rejects an unsupported fallback %p",
+		(fallback) => {
+			expect(() => load({ runner: { fallback } })).toThrow("runner.fallback");
+		},
+	);
 	test("fills every default from a config with only the required keys", () => {
 		const config = load();
 		expect(config).toMatchObject({

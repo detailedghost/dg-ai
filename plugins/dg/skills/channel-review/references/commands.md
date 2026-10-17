@@ -74,8 +74,15 @@ the review reactions.
 | `~spice 1-5` | Pass a whole-number review level to thrash. | Missing value or a value outside 1–5: CR-102. |
 | `~comment` | Pass thrash's comment option. | Optional. |
 | `~agent claude\|codex\|copilot\|grok` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
+| `~model <name>` | Pass a model name to the selected runner. | Missing or malformed name: CR-108. |
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
+
+If Claude runs out of tokens, the bot retries the review once with Codex by
+default when Codex passes its readiness check. It replies to the original request:
+“Claude is out of tokens, so I'm using Codex for this review.” The retry uses
+Codex's default model and the time remaining for that PR. The rest of a stacked
+review stays on Codex. Set `runner.fallback` to null to disable this behavior.
 
 ### Address flags
 
@@ -257,12 +264,14 @@ the shipped catalog exactly.
 | `CR-105` | `Send $address and $review in separate messages, so I didn't run anything. Pick one and try again.` | Send one command per message. |
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-107` | `Only {owner} can run $emoji, so I didn't change anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
+| `CR-108` | `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.` | Provide a valid model name. |
 | `CR-201` | `I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.` | Install the runner or correct its executable path. |
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |
 | `CR-204` | `The review took longer than {minutes} minutes, so I stopped it. Try again with a lower ~spice.` | Lower the spice or inspect the timeout. |
 | `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
+| `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with Codex by default after a Claude limit, if Codex passes its probe. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |
