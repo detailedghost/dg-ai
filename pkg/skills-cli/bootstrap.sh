@@ -41,6 +41,7 @@ copy_skill_tree() {
     echo "dg-skills: refusing to copy a symlink from ${src}" >&2
     exit 1
   fi
+  refuse_persona_links "$src"
   mkdir -p "$dest"
   found=0
   for skill in "$src"/*/; do
@@ -76,30 +77,39 @@ copy_skill_tree() {
   sort "$manifest"
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
-  copy_thrash_persona "$src" "$dest"
+  copy_personas "$src" "$dest"
   echo "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
   rm -f "$manifest"
 }
 
-# The thrash persona lives beside the skills tree. Copy it next to the
-# install so a skills-only bot can read it without the compiled binary.
-copy_thrash_persona() {
-  skills_src=$1
-  skills_dest=$2
-  parent=$(CDPATH= cd -- "$skills_src/.." && pwd)
-  persona="${parent}/agents/thrash.md"
-  if [ ! -e "$persona" ]; then
-    return 0
-  fi
-  if [ -L "$persona" ]; then
-    echo "dg-skills: refusing to copy a symlink persona at ${persona}" >&2
+persona_source() {
+  CDPATH= cd -- "$1/.." 2>/dev/null && printf '%s\n' "$(pwd)/agents"
+}
+
+refuse_persona_links() {
+  agents_src=$(persona_source "$1") || return 0
+  [ -d "$agents_src" ] || return 0
+  if find "$agents_src" -type l | grep -q .; then
+    echo "dg-skills: refusing to copy a symlink persona from ${agents_src}" >&2
     exit 1
   fi
-  agents=$(CDPATH= cd -- "$skills_dest/.." && pwd)/agents
+}
+
+copy_personas() {
+  agents_src=$(persona_source "$1") || return 0
+  [ -d "$agents_src" ] || return 0
+  agents=$(CDPATH= cd -- "$2/.." && pwd)/agents
   mkdir -p "$agents"
-  cp "$persona" "${agents}/thrash.md"
-  chmod 644 "${agents}/thrash.md"
-  echo "Installed thrash persona at ${agents}/thrash.md."
+  count=0
+  for persona in "$agents_src"/*.md; do
+    [ -f "$persona" ] || continue
+    rm -f "${agents}/$(basename "$persona")"
+    cp "$persona" "${agents}/$(basename "$persona")"
+    chmod 644 "${agents}/$(basename "$persona")"
+    count=$((count + 1))
+  done
+  [ "$count" -gt 0 ] && echo "Installed ${count} personas at ${agents}."
+  return 0
 }
 
 skills_tree_source() {

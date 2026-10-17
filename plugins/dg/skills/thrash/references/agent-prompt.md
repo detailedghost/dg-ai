@@ -4,7 +4,7 @@ Use the host's native agent facility with its configured `thrash` persona, a sho
 review description, and the template below. Resolve the persona through the host
 registry or explicitly configured `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`. If those
 have no thrash persona, read `<skills-directory>/../agents/thrash.md`. The
-skills-only install copies `plugins/dg/agents/thrash.md` to that path. If the
+skills-only install copies every persona in `plugins/dg/agents` to that folder. If the
 file is missing, report the missing persona and stop; do not invent its review
 checklists.
 

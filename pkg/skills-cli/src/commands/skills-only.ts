@@ -8,7 +8,9 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	installSkillTree,
-	installThrashPersona,
+	installPersonas,
+	listPersonaFiles,
+	personasDest,
 	skillsInstallDest,
 } from "@dg/common/node";
 
@@ -36,7 +38,8 @@ export type SkillsOnlyRequest = {
 export type SkillsOnlyResult = {
 	dest: string;
 	files: string[];
-	persona?: string;
+	personas: string[];
+	personasDir?: string;
 };
 
 export function runSkillsOnlyInstall(input: SkillsOnlyRequest): SkillsOnlyResult {
@@ -50,16 +53,20 @@ export function runSkillsOnlyInstall(input: SkillsOnlyRequest): SkillsOnlyResult
 	const dest =
 		input.dest ||
 		skillsInstallDest(input.env ?? process.env, input.home ?? homedir());
+	const personaNames = listPersonaFiles(root);
 	const files = installSkillTree(source, dest);
-	const persona = installThrashPersona(root, dest);
-	return persona ? { dest, files, persona } : { dest, files };
+	if (personaNames.length === 0) return { dest, files, personas: [] };
+	const personas = installPersonas(root, personaNames, dest);
+	return { dest, files, personas, personasDir: personasDest(dest) };
 }
 
 export function skillsOnlyReport(result: SkillsOnlyResult): string {
 	return [
 		...result.files,
 		`Installed ${result.files.length} skill files at ${result.dest}.`,
-		...(result.persona ? [`Installed thrash persona at ${result.persona}.`] : []),
+		...(result.personasDir
+			? [`Installed ${result.personas.length} personas at ${result.personasDir}.`]
+			: []),
 		"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).",
 	].join("\n");
 }
