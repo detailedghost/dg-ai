@@ -2,9 +2,10 @@
 
 Run /dg:channel-review in Claude Code or $dg:channel-review in Codex to inspect
 or manage a local daemon that reviews GitHub PRs and GitLab MRs posted in Teams.
-Mention the bot with the owner token, `$review`, and a PR link. Claude runs the thrash skill;
-Codex and Copilot runners are experimental. Install thrash separately on every
-machine that runs reviews.
+Mention the bot with the owner token, `$review`, and a PR link. Claude runs the thrash skill
+by default. If Claude runs out of tokens, the daemon replies to that request and
+retries once with Codex. Select Grok Build with `~agent grok`; `~model` chooses
+a model for the selected runner. Install thrash separately on every review machine.
 
 It needs a Teams bot relay that streams each chat's messages over Server-Sent
 Events; see the [relay contract](../pkg/channel-review/README.md) and
@@ -14,6 +15,11 @@ on dev in a test chat. A human signs in to AWS SSO and adds the bot to the chat.
 [setup](../plugins/dg/skills/channel-review/references/setup.md) and
 [commands](../plugins/dg/skills/channel-review/references/commands.md) for production
 rollout, custom emojis, request tokens, and recovery.
+
+Review progress and handled requests use the shared local `daemon.db`, with one
+state row per environment. The first writable start imports legacy JSON once and
+retains the source. Deploy compatible `dg-daemon` and `dg-skills` builds together;
+see [the migration decision](adr/0018-channel-review-state-in-daemon-db.md).
 
 ## Architecture and automation
 

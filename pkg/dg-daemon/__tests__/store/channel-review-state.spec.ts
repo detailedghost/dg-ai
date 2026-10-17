@@ -22,20 +22,27 @@ function addMessage(store: ChatStore, id: string) {
 }
 
 describe("channel-review sharing daemon.db", () => {
-	test("opens an existing v10 daemon.db with encrypted rows and preserves its crypto metadata and key", async () => {
+	test("opens an existing v11 daemon.db and preserves encrypted messages, sessions, and key metadata", async () => {
 		const { paths, reviewPaths } = setup();
 		const original = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 		addMessage(original, "before-import");
+		original.saveSession({
+			sessionId: "compat-session", token: "compat-session-token",
+			cwd: "/work/app", agentIdentity: "codex", role: "agent",
+			state: "active", awaitingAgent: false, cliAttached: false,
+			createdAt: 1_000, lastActivityAt: 2_000,
+		});
+		const sessions = original.loadSessions();
 		const meta = original.cryptoMeta();
 		original.close();
-		// Restore the exact pre-review schema; migrations 1-10 are unchanged.
 		const legacy = new Database(paths.dbPath, { strict: true });
 		legacy.run("DROP VIEW channel_review_current");
 		legacy.run("DROP VIEW channel_review_requests");
 		legacy.run("DROP TABLE channel_review_state");
-		legacy.run("PRAGMA user_version = 10");
+		legacy.run("PRAGMA user_version = 11");
 		const ciphertext = legacy.query("SELECT body_ciphertext FROM messages").get();
-		expect(readSchemaVersion(legacy)).toBe(10);
+		const tokens = legacy.query("SELECT token_ciphertext, token_iv, token_tag FROM sessions").all();
+		expect(readSchemaVersion(legacy)).toBe(11);
 		legacy.close(true);
 		const key = readFileSync(paths.keyPath);
 		mkdirSync(dirname(reviewPaths.statePath), { recursive: true });
@@ -46,11 +53,13 @@ describe("channel-review sharing daemon.db", () => {
 		const main = await ChatStore.open(paths, FILE_ONLY_SEAMS);
 		expect(main.userVersion()).toBe(CURRENT_SCHEMA_VERSION);
 		expect(main.cryptoMeta()).toEqual(meta);
+		expect(main.loadSessions()).toEqual(sessions);
 		expect(readFileSync(paths.keyPath)).toEqual(key);
 		expect(main.peekAll("compat-session")[0]?.body).toBe("encrypted body before-import");
 		main.close();
 		const raw = new Database(paths.dbPath, { readonly: true });
 		expect(raw.query("SELECT body_ciphertext FROM messages").get()).toEqual(ciphertext);
+		expect(raw.query("SELECT token_ciphertext, token_iv, token_tag FROM sessions").all()).toEqual(tokens);
 		raw.close(true);
 		const snapshots = readdirSync(paths.daemonDir).filter(name => name.startsWith("pre-migration-v12-"));
 		expect(snapshots).toHaveLength(1);

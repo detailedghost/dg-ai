@@ -23,7 +23,7 @@ export type CurrentJob = {
 		origin: "daemon" | "manual";
 		backend: string;
 		model?: string;
-		modelSource: "requested" | "default";
+		modelSource: "requested" | "configured" | "default";
 	};
 	messageId: string;
 	chatId?: string;
@@ -148,7 +148,7 @@ function isCurrentJob(value: unknown): value is CurrentJob {
 				(value.execution.origin === "daemon" || value.execution.origin === "manual") &&
 				typeof value.execution.backend === "string" &&
 				(value.execution.model === undefined || typeof value.execution.model === "string") &&
-				(value.execution.modelSource === "requested" || value.execution.modelSource === "default")))
+				(value.execution.modelSource === "requested" || value.execution.modelSource === "configured" || value.execution.modelSource === "default")))
 	);
 }
 

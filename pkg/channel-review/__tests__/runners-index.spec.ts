@@ -71,10 +71,6 @@ const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 		`${HOME}/.copilot/skills/thrash/SKILL.md`,
 		`${HOME}/.claude/skills/thrash/SKILL.md`,
 	],
-	grok: [
-		`${HOME}/.grok/skills/thrash/SKILL.md`,
-		`${HOME}/.claude/skills/thrash/SKILL.md`,
-	],
 };
 
 
@@ -227,13 +223,13 @@ describe("runner probe", () => {
 		expect(h.captures[0]?.args).toEqual(["models"]);
 	});
 
-	test("grok runs grok models and CR-202 follows a nonzero exit", async () => {
+	test("grok reports CR-203 when models fails without authentication evidence", async () => {
 		const h = harness({
 			capture: () => ({ status: 1, signal: null, stdout: "", stderr: "" }),
 		});
 		expect(await h.runners.grok.probe()).toEqual({
 			ok: false,
-			code: "CR-202",
+			code: "CR-203",
 		});
 		expect(h.captures[0]).toMatchObject({
 			command: PATHS.grok,
@@ -309,8 +305,9 @@ describe("runner run argv", () => {
 		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
 		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
 		expect(h.processes[0]?.argv).toEqual([
-			"/opt/grok", "-p", `/thrash ${URL} -s 4 -c`, "--model", "grok-4.6",
-			"--cwd", "/work", "--output-format", "streaming-json", "--always-approve",
+			"/opt/grok", "--no-auto-update", "-p", `/thrash ${URL} -s 4 -c`,
+			"--output-format", "streaming-json", "--always-approve", "--cwd", "/work",
+			"--model", "grok-4.6",
 		]);
 	});
 
@@ -953,6 +950,13 @@ describe("runner run result", () => {
 });
 
 describe("runner attribution", () => {
+	test("Grok reports its configured model and lets an explicit request override it", async () => {
+		const { runners, processes } = harness({ config: configWith({ grok: { model: "configured-model" } }) });
+		await runners.grok.run(runRequest());
+		await runners.grok.run(runRequest({ model: "requested-model" }));
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "configured-model", modelSource: "configured" });
+		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "requested-model", modelSource: "requested" });
+	});
 	test.each([
 		...RUNNER_NAMES,
 	])("%s defaults to manual and passes fresh orchestration evidence only", async (name) => {

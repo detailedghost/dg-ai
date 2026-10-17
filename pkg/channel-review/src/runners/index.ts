@@ -9,7 +9,6 @@ import {
 	type SkillFs,
 	thrashInstalled,
 } from "./probe";
-import { foldGrokStream } from "./grok-stream";
 import { type ProcessRequest, type ProcessResult, runProcess } from "./spawn";
 import { RUNNER_NAMES, type RunTask, type Runner, type RunnerName } from "./types";
 
@@ -193,6 +192,7 @@ export function createRunners(
 					};
 				}
 				const startedAt = now();
+				const model = request.model ?? (name === "grok" ? config.runner.grok?.model : undefined);
 				const { stderrTail, stdoutTail, outputTail, code, ...outcome } = await spawn({
 					argv: spec.argv(path, request, config),
 					cwd: request.cwd,
@@ -201,8 +201,8 @@ export function createRunners(
 							THRASH_EXECUTION_CONTEXT: JSON.stringify({
 								origin: request.origin ?? "manual",
 								backend: name,
-								model: request.model,
-								modelSource: request.model ? "requested" : "default",
+								model,
+								modelSource: request.model ? "requested" : model ? "configured" : "default",
 							}),
 						}
 						: {},
@@ -216,25 +216,21 @@ export function createRunners(
 					outcome.status !== null &&
 					outcome.status !== 0 &&
 					now() - startedAt < AUTH_INFERENCE_WINDOW_MS;
-				const grokError = name === "grok" ? foldGrokStream(stdoutTail ?? "").error : undefined;
-				const evidence =
-					name === "grok" && grokError
-						? `${stderrTail}\n${grokError}`
-						: name === "claude"
-							? `${stderrTail}\n${stdoutTail ?? ""}`
-							: stderrTail;
+				const evidence = name === "claude"
+					? `${stderrTail}\n${stdoutTail ?? ""}`
+					: stderrTail;
 				if (code) return { ...outcome, code };
 				if (
 					!outcome.aborted &&
 					!outcome.timedOut &&
-					isAiUsageLimit(outputTail ?? `${stdoutTail ?? ""}\n${stderrTail}`)
+					isAiUsageLimit(`${outputTail ?? ""}\n${stdoutTail ?? ""}\n${stderrTail}`)
 				) {
 					return { ...outcome, code: "CR-207" };
 				}
 				if (
 					failedFast &&
 					(name === "grok"
-						? grokAuthFailure(outputTail ?? `${stdoutTail ?? ""}\n${stderrTail}`)
+						? grokAuthFailure(`${outputTail ?? ""}\n${stdoutTail ?? ""}\n${stderrTail}`)
 						: AUTH_FAILURE[name].test(evidence))
 				) {
 					return { ...outcome, code: "CR-202" };

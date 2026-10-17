@@ -27,7 +27,7 @@ re-exports that authority. Both `ChatStore.open` and channel-review call the
 same opener; neither imports the other's workspace package. The Bun-specific
 entry point is separate from the general Node and browser-safe common barrels.
 
-Central migration 11 adds:
+Central migration 12 adds:
 
 | Object | Purpose |
 | --- | --- |
@@ -97,7 +97,7 @@ protecting the database, snapshots, and retained legacy JSON.
 
 ## Validation and deployment
 
-Regression tests exercise version-10 daemon.db with encrypted messages and
+Regression tests exercise version-11 daemon.db with encrypted messages and
 unchanged key metadata, both startup orders, concurrent schema initialization,
 transaction failure/retry, source retention/idempotency, separate environment
 rows, query views, replay cursors, existing CLI status/start/stop behavior, and
@@ -115,13 +115,11 @@ an old JSON writer alongside the new service.
 
 ## Merge and ADR integration
 
-This record is Proposed while the implementation is off master. The separate
-docs branch owns ADRs 0001–0016 and the ADR index; this base does not contain
-that tree. At merge, add 0018 to `docs/adr/toc.md`,
-mark this record Accepted, and update 0002's status with a linked partial
-supersession and a dated explanation that its channel-review JSON decision is
-replaced. Preserve 0002's accepted historical Decision and its unrelated daemon
-storage decision. Do not create a parallel `doc/adr` tree.
+This record is Proposed while the implementation is off master and appears in
+the ADR index. When the implementation merges, mark it Accepted and add a
+linked partial supersession to [0003](0003-storage-by-writer.md) for its
+channel-review JSON decision. Preserve that record’s historical Decision and
+its unrelated daemon storage decision.
 
 ## Source evidence
 
@@ -135,7 +133,7 @@ flowchart LR
 ```
 
 - [Shared opener](../../pkg/common/src/node/daemon-db.ts)
-- [Central schema and migration 11](../../pkg/common/src/node/daemon-schema.ts)
+- [Central schema and migration 12](../../pkg/common/src/node/daemon-schema.ts)
 - [Migration runner](../../pkg/common/src/node/sqlite.ts)
 - [Review state/import API](../../pkg/channel-review/src/state.ts)
 - [Existing restart recovery](../../pkg/channel-review/src/engine.ts)

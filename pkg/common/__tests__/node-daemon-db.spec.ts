@@ -26,14 +26,14 @@ describe("openDaemonDatabase", () => {
 		expect(existsSync(paths.credentialsDbPath)).toBe(false);
 	});
 
-	test("rolls back a failed schema-11 migration and retries after repairing the conflict", () => {
+	test("rolls back a failed schema-12 migration and retries after repairing the conflict", () => {
 		const paths = freshPaths();
 		mkdirSync(paths.daemonDir, { recursive: true });
 		const db = new Database(paths.dbPath, { strict: true, create: true });
-		runMigrations(db, SCHEMA_STEPS.filter(step => step.version <= 10));
+		runMigrations(db, SCHEMA_STEPS.filter(step => step.version <= 11));
 		db.run("CREATE VIEW channel_review_current AS SELECT 'conflict' AS value");
 		expect(() => openDaemonDatabase(paths)).toThrow("already exists");
-		expect(readSchemaVersion(db)).toBe(10);
+		expect(readSchemaVersion(db)).toBe(11);
 		expect(db.query("SELECT name FROM sqlite_master WHERE name IN ('channel_review_state', 'channel_review_requests')").all()).toEqual([]);
 		db.run("DROP VIEW channel_review_current");
 		db.close(true);

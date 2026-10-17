@@ -208,7 +208,7 @@ every required key with placeholder values.
 | `runner.<name>.path` | string | Unset | Optional executable path for claude, codex, copilot, or grok; otherwise uses PATH. |
 | `reactions.*` | strings | See [reaction defaults](commands.md#reactions) | Override `pending`, `inProgress`, `changesRequested`, `approved`, `comment`, or `failure`. |
 | `relay.*` | `appName` string; `secret` object | Required: `appName`, `secret.id`, `secret.key`, `secret.region` | Application name registered with the relay, and where the relay secret lives: the AWS Secrets Manager secret `id`, the JSON `key` inside it, and its `region`. Config never holds the secret value. |
-| `fun.pool` | entry array | Shipped pool | Optional pool override with at least eight entries; see [pool rules](commands.md~fun). |
+| `fun.pool` | entry array | Shipped pool | Optional pool override with at least eight entries; see [pool rules](commands.md#fun). |
 | `rereview.phrases` | string array | `ready`, `fixed`, `addressed`, `updated`, `ptal`, `re-review`, `good to go` | Readiness phrases for blocked PRs. |
 | `hosts.github` | string array | `[]` | Add GitHub Enterprise hosts to the built-in github.com allowlist. |
 | `hosts.gitlab` | string array | `[]` | Add self-hosted GitLab hosts to the built-in gitlab.com allowlist. |

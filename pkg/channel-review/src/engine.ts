@@ -258,6 +258,7 @@ export function createEngine(deps: EngineDeps): Engine {
 		signal: AbortSignal,
 	): Promise<CrCode | null> {
 		if (signal.aborted) return "CR-205";
+		const model = run.model ?? (runner.name === "grok" ? config.runner.grok?.model : undefined);
 		state.setCurrent({
 			messageId: job.messageId,
 			chatId: job.chatId,
@@ -269,15 +270,15 @@ export function createEngine(deps: EngineDeps): Engine {
 					execution: {
 						origin: run.task.origin ?? "manual",
 						backend: runner.name,
-						model: run.model,
-						modelSource: run.model ? "requested" : "default",
+						model,
+						modelSource: run.model ? "requested" : model ? "configured" : "default",
 					} as const,
 				}
 				: {}),
 		});
 		if (run.task.task === "thrash") {
 			log.info(
-				`Review execution: Automatic (daemon); orchestrator: ${runner.name} (${run.model ? "requested model" : "CLI default; model unresolved"}); reviewer models are recorded per chunk.`,
+				`Review execution: Automatic (daemon); orchestrator: ${runner.name} (${model ? `${run.model ? "requested" : "configured"} model: ${model}` : "CLI default; model unresolved"}); reviewer models are recorded per chunk.`,
 			);
 		}
 		let result: Awaited<ReturnType<Runner["run"]>>;

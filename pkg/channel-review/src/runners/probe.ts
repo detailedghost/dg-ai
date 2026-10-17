@@ -39,10 +39,6 @@ const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, { dir: string; nested: bo
 		{ dir: ".copilot/skills", nested: false },
 		{ dir: ".claude/skills", nested: false },
 	],
-	grok: [
-		{ dir: ".grok/skills", nested: false },
-		{ dir: ".claude/skills", nested: false },
-	],
 };
 
 function hasThrash(fs: SkillFs, skillsDir: string): boolean {

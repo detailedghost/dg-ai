@@ -184,6 +184,21 @@ describe("engine single review", () => {
 		expect(basename(h.runner.runs[0]?.logPath ?? "")).toBe("m1.log");
 	});
 
+	test("persists the configured Grok model while a daemon review is live", async () => {
+		let snapshot: unknown;
+		const h = setup({
+			configExtra: { runner: { default: "grok", grok: { model: "configured-model" } } },
+			runnerScript: () => {
+				snapshot = h.state.get().current;
+				return OK_RESULT;
+			},
+		});
+		await h.engine.handle(reviewMessage("m1"));
+		await h.engine.idle();
+		expect(snapshot).toMatchObject({ execution: { origin: "daemon", backend: "grok", model: "configured-model", modelSource: "configured" } });
+		expect(h.log.lines.some(line => line.message.includes("configured-model"))).toBe(true);
+	});
+
 	test("records the spawned pid and the job in state.current while the run is live", async () => {
 		let snapshot: unknown;
 		const h = setup({

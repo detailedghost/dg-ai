@@ -4,7 +4,7 @@ import { CLI_TIMEOUT_MS } from "./probe";
 import type { Runner } from "./types";
 
 const AUTH_FAILURE =
-	/^(?:error:\s*)?(?:not signed in\b|not authenticated\b|invalid API key\b|authentication failed\b|your auth token is invalid or expired\b|401 unauthorized\b)/im;
+	/^(?:error:\s*)?(?:not signed in\b|not logged in\b|not authenticated\b|please run `?grok login\b|invalid API key\b|authentication failed\b|your auth token is invalid or expired\b|401 unauthorized\b|error:\s.*401 unauthorized\b)/im;
 
 export function grokAuthFailure(output: string): boolean {
 	return output.split(/\r?\n/).some((line) => {

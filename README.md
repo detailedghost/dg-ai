@@ -22,6 +22,8 @@ These install the compiled CLI binaries and stage the extension; no Bun is neede
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
+From a checkout, `mise run install:skills` copies instruction files without binaries;
+see [skills-only installation](docs/install.md#skills-only-install) for `--skills-only`.
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.
 
@@ -51,7 +53,5 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 - [Architecture decisions](docs/adr/toc.md)
 - [Developer guide](docs/DEVELOPER.md)
 - [Contributing](docs/contributing.md)
-
-See [skills-only installation](docs/install.md#skills-only-install) to copy instruction files without binaries.
 
 - [Security](SECURITY.md)

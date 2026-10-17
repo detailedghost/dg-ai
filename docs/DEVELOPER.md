@@ -402,11 +402,11 @@ exact Claude scratch write rule and WSL restart result during live validation.
 Review tasks pass `origin: "daemon"` explicitly to the runner, including Teams requests
 and readiness events. Other direct runner callers default to `manual`. The runner puts
 fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
-`modelSource` (`requested` or `default`). These model fields describe the orchestrator,
+`modelSource` (`requested`, `configured`, or `default`). These model fields describe the orchestrator,
 not the reviewer. Child spawning strips inherited `THRASH_*` variables before applying
 this attempt's context. Fallback rebuilds it for the successful backend with no stale
 Claude model. Current-job status includes `execution`; local logs identify origin and
-orchestrator model evidence. These fields can be retained by a future persistence layer.
+orchestrator model evidence. The shared database snapshot retains this current-job metadata.
 
 The user-owned `scripts/ai/skills/thrash-core.ts` and `thrash-helper.ts` own the compiled
 review contract. The canonical user skill is `~/.claude/skills/thrash`, imported by copy

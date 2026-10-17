@@ -104,7 +104,7 @@ describe("runProcess", () => {
 		const result = await runProcess(request([process.execPath, path]));
 		expect(result.outputTail).toContain("You've hit your limit");
 		expect(result.outputTail).toContain("x".repeat(TAIL_BYTES));
-		expect(result.outputTail.length).toBeLessThanOrEqual(2 * TAIL_BYTES + 1);
+		expect(result.outputTail?.length).toBeLessThanOrEqual(2 * TAIL_BYTES + 1);
 	});
 	test("resolves status 0 and reports the child pid through onSpawn", async () => {
 		const child = script(`console.log("pid=" + process.pid);`);
@@ -336,6 +336,7 @@ process.exit(0);
 			aborted: false,
 			stderrTail: "",
 			stdoutTail: "",
+			outputTail: "",
 			code: "CR-201",
 		});
 	});

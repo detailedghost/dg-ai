@@ -11,5 +11,5 @@ Read [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md
 authentication and mutations need validation in your provider/browser setup.
 
 For a fixture-only install, see [CLI-only installation](install.md#cli-only-install).
-Live provider profiles need the daemon; [the credential ADR](adr/0005-credential-store.md)
+Live provider profiles need the daemon; [the credential ADR](adr/0006-credential-store.md)
 describes the separate service credential store.

@@ -29,9 +29,7 @@ import {
 import {
 	type DgPaths,
 	ensurePrivateDir,
-	readSchemaVersion,
 	readSessionFiles,
-	runMigrations,
 } from "@dg/common/node";
 import {
 	buildAad,
