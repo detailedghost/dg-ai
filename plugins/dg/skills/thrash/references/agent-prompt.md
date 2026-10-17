@@ -2,10 +2,11 @@
 
 Use the host's native agent facility with its configured `thrash` persona, a short
 review description, and the template below. Resolve the persona through the host
-registry or explicitly configured `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`, else the
-packaged `dg:thrash` persona. If the
-persona is unavailable, report the missing configuration and stop; do not invent
-its review checklists.
+registry or explicitly configured `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`. If those
+have no thrash persona, read `<skills-directory>/../agents/thrash.md`. The
+skills-only install copies `plugins/dg/agents/thrash.md` to that path. If the
+file is missing, report the missing persona and stop; do not invent its review
+checklists.
 
 Launch one agent per chunk in one message so they run in parallel, at the same `SPICE`.
 Every chunk gets the same `CONTEXT` file, which holds the title, description, base and
