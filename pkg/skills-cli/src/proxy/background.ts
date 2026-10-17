@@ -40,7 +40,7 @@ export interface JobMeta {
 }
 
 interface JobState extends JobMeta {
-	state: "running" | "done" | "unknown" | "cancelled";
+	state: "running" | "done" | "unknown" | "canceled";
 	exitCode: number | null;
 	pendingUpdate: string | null;
 }
@@ -310,8 +310,8 @@ async function cmdCancel(args: string[]): Promise<void> {
 	}
 
 	const signal = terminateGroup(pid);
-	writeFileSync(jobPaths(id).cancelledFile, new Date().toISOString());
-	emitJson({ id, action: "cancel", result: "cancelled", signal });
+	writeFileSync(jobPaths(id).canceledFile, new Date().toISOString());
+	emitJson({ id, action: "cancel", result: "canceled", signal });
 }
 
 async function cmdUpdate(args: string[]): Promise<void> {
@@ -333,9 +333,9 @@ async function cmdUpdate(args: string[]): Promise<void> {
 	}
 
 	const state = deriveState(meta);
-	if (state.state === "cancelled") {
-		process.stderr.write(`bg: job ${id} was cancelled; not resuming.\n`);
-		emitJson({ id, action: "update", result: "cancelled-job" });
+	if (state.state === "canceled") {
+		process.stderr.write(`bg: job ${id} was canceled; not resuming.\n`);
+		emitJson({ id, action: "update", result: "canceled-job" });
 		return;
 	}
 
@@ -367,10 +367,10 @@ async function cmdDrain(args: string[]): Promise<void> {
 	}
 	const paths = jobPaths(id);
 
-	if (existsSync(paths.cancelledFile)) {
-		// A cancelled job's queued context is dropped, not resumed.
+	if (existsSync(paths.canceledFile)) {
+		// A canceled job's queued context is dropped, not resumed.
 		rmSync(paths.pendingFile, { force: true });
-		emitJson({ id, action: "drain", result: "cancelled" });
+		emitJson({ id, action: "drain", result: "canceled" });
 		return;
 	}
 
@@ -542,8 +542,8 @@ function deriveState(meta: JobMeta): JobState {
 		: null;
 	const base = { ...meta, pendingUpdate };
 
-	if (existsSync(paths.cancelledFile))
-		return { ...base, state: "cancelled", exitCode: null };
+	if (existsSync(paths.canceledFile))
+		return { ...base, state: "canceled", exitCode: null };
 	if (existsSync(paths.statusFile)) {
 		const raw = readFileSync(paths.statusFile, "utf8").trim();
 		const code = raw === "" ? Number.NaN : Number.parseInt(raw, 10);
@@ -736,7 +736,7 @@ interface JobPaths {
 	pidFile: string;
 	metaFile: string;
 	pendingFile: string;
-	cancelledFile: string;
+	canceledFile: string;
 	identityFile: string;
 }
 
@@ -753,7 +753,7 @@ function jobPaths(id: string): JobPaths {
 		identityFile: ephemeral("identity.json"),
 		metaFile: p("meta.json"),
 		pendingFile: p("pending"),
-		cancelledFile: p("cancelled"),
+		canceledFile: p("canceled"),
 	};
 }
 

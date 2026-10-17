@@ -312,6 +312,16 @@ describe("clipboard-image failures and help", () => {
 		expect(readdirSync(f.temp)).toEqual([]);
 	});
 
+	test("names the missing native command before reporting no image", () => {
+		const f = clipboardFixture(["wslpath"]);
+		const proc = f.run(["-"], { PLATFORM_IS_WSL: "1" });
+		expect(proc.exitCode).toBe(1);
+		expect(proc.stderr.toString()).toMatch(
+			/^clipboard-image: .*powershell\.exe.*\nclipboard-image: no image on clipboard\n$/,
+		);
+		expect(readdirSync(f.temp)).toEqual([]);
+	});
+
 	test("validates an unknown flag after successful extraction and cleans up", () => {
 		const f = clipboardFixture();
 		const proc = f.run(["--unknown"]);

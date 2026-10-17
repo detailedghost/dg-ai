@@ -156,7 +156,7 @@ export function runCaptureBytes(
 }
 
 /** Wait for stdout to accept the text, propagating write errors. */
-export function writeStdout(value: string): Promise<void> {
+export function writeStdout(value: string | Uint8Array): Promise<void> {
 	return new Promise((resolve, reject) => {
 		process.stdout.write(value, (error) => {
 			if (error) reject(error);
