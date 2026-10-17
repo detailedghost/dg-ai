@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,7 +73,22 @@ describe("resolvePersona", () => {
 	});
 
 	test("throws a descriptive error when the named agent file is missing", async () => {
-		await expect(resolvePersona({ subagent: "ghost-agent" })).rejects.toThrow(/Agent persona not found: ghost-agent/);
+		await expect(resolvePersona({ subagent: "ghost-agent" })).rejects.toThrow(
+			/Agent persona not found: ghost-agent/,
+		);
+	});
+
+	test("falls back to the packaged plugin persona when no file exists on disk", async () => {
+		const shipped = readFileSync(
+			join(import.meta.dir, "../../../plugins/dg/agents/thrash.md"),
+			"utf8",
+		);
+		expect(await resolvePersona({ subagent: "thrash" })).toBe(shipped);
+	});
+
+	test("prefers a persona file on disk over the packaged persona", async () => {
+		writeAgentPersona("thrash", "local thrash");
+		expect(await resolvePersona({ subagent: "thrash" })).toBe("local thrash");
 	});
 
 	test("prefers subagent over spec/slice when both are supplied", async () => {
@@ -89,15 +104,24 @@ describe("resolvePersona", () => {
 	test("reads numeric and string slice ids from an explicit plan without spec-cli", async () => {
 		writeAgentPersona("reviewer", "review role");
 		const plan = join(scratchHome, "plan with spaces.md");
-		writeFileSync(plan, "---\nslices:\n  - id: 1\n    agents:\n      primary: reviewer\n  - id: 'second'\n    agents:\n      primary: reviewer\n---\n# Plan\n");
-		expect(await resolvePersona({ spec: plan, slice: "1" })).toBe("review role");
-		expect(await resolvePersona({ spec: plan, slice: "second" })).toBe("review role");
+		writeFileSync(
+			plan,
+			"---\nslices:\n  - id: 1\n    agents:\n      primary: reviewer\n  - id: 'second'\n    agents:\n      primary: reviewer\n---\n# Plan\n",
+		);
+		expect(await resolvePersona({ spec: plan, slice: "1" })).toBe(
+			"review role",
+		);
+		expect(await resolvePersona({ spec: plan, slice: "second" })).toBe(
+			"review role",
+		);
 	});
 
 	test("throws a useful error when the requested slice is missing", async () => {
 		const plan = join(scratchHome, "plan.md");
 		writeFileSync(plan, "---\nslices:\n  - id: 1\n---\n");
-		await expect(resolvePersona({ spec: plan, slice: "missing" })).rejects.toThrow(/Slice not found.*missing/);
+		await expect(
+			resolvePersona({ spec: plan, slice: "missing" }),
+		).rejects.toThrow(/Slice not found.*missing/);
 	});
 
 	test("returns null when a matching slice has no primary agent", async () => {
