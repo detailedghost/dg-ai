@@ -8,7 +8,7 @@ Maintain this structure in your working context (not a file — unless the user 
 - [DECIDED] Branch > Sub-topic: Decision statement.
 - [OPEN] Branch > Sub-topic: Waiting on user input re: X
 - [ASSUMED] Branch > Sub-topic: Assumption stated. *User confirmed: yes/no*
-- [PROTOTYPING] Branch > Sub-topic: Options A/B/C handed to `/prototype`. Resume on return.
+- [PROTOTYPING] Branch > Sub-topic: Options A/B/C shown as a throwaway snippet. Resume on return.
 
 ## Design Tree
 - [x] Branch 1 (all sub-decisions resolved)

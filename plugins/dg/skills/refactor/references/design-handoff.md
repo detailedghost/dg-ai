@@ -16,7 +16,7 @@ During the conversation:
 
 - Read `references/deepening.md` when classifying dependencies.
 - If multiple interface designs are plausible — user is uncertain or wants to compare — read `references/interface-design.md` and run its parallel-sub-agent protocol. Otherwise stay in single-design mode.
-- If a candidate names a deepened module by a concept not in `monolith.md`, flag it: `"This refactor would benefit from adding '<concept>' to monolith.md. Run /spring-break to consolidate after the work lands."`
+- If a candidate names a deepened module by a concept not in `.agents/monolith.md`, flag it: `"This refactor would benefit from adding '<concept>' to .agents/monolith.md after the work lands."` If that file is absent, skip the flag.
 
 **GATE:** Final Summary produced (purpose, deepened-module shape, dependency strategy, test plan, migration steps). User confirmed.
 
@@ -24,15 +24,14 @@ ______________________________________________________________________
 
 ## §5 — Hand-off
 
-Compute slug: `spec-cli slugify "<header>"`.
+Compute the slug from the header: lowercase it, replace each run of characters outside `a-z` and `0-9` with `_`, then trim leading and trailing underscores.
 
 Write design summary to `$(stash -s refactor <slug>.md)`, then ask via `AskUserQuestion`:
 
 | Option | Effect |
 |---|---|
-| **Build now via `/spec` (Recommended)** | Hand off to `/spec "<slug>"` — the refactor design seeds the planning conversation. Print: `"Refactor design at $(stash -s refactor <slug>.md). Run /spec to build the feature."` |
-| **Park via `/kick`** | Hand off to `/kick <slug>` — write the spec, defer engineering. |
-| **Just print the design** | Echo the summary path. No spec, no commit. User picks up later manually. |
+| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug>`. The design summary is the request. Engineering waits. |
+| **Just print the design** | Echo the summary path. No bundle, no commit. The user picks it up later. |
 
 **GATE:** Hand-off path printed; design summary file exists at `$(stash -s refactor <slug>.md)`.
 

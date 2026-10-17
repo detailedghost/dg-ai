@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /spec or /kick takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
+description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /kick or /grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
 ---
 
 # /wayfinder — Chart the Way, Then Walk It
@@ -16,13 +16,13 @@ Adapted from Matt Pocock's `wayfinder` (mattpocock/skills). The map lives in loc
 | Signal | Skill | Why |
 |---|---|---|
 | Big, foggy, needs many sessions of decisions | `/wayfinder` | Decisions come first, across sessions |
-| One feature, shape is clear | `/spec` | Goes straight to a build bundle |
+| One feature, shape is clear | `/kick` | Parks a build bundle without a map |
 | One design, fits one session | `/grill-me` | One interview, no map |
 | Something is broken | `/hunt` | Diagnosis, not design |
 | Only a list of open questions in this chat | `/walk` | No durable map needed |
 | Decisions are done, you want to defer the build | `/kick` | Parks a bundle |
 
-Wayfinder ends where `/spec` starts. Never build inside a map.
+Wayfinder ends where `/kick` starts. Never build inside a map.
 
 ## Flags
 
@@ -42,7 +42,7 @@ Wayfinder ends where `/spec` starts. Never build inside a map.
 
 ## Where the map lives
 
-`$(stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `stash`. Never build it by hand. Commit the map with the repo like a spec bundle. Use `/jot -s` for a session handoff.
+`$(stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `stash`. Never build it by hand. Commit the map with the repo like a spec bundle. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 
@@ -63,6 +63,5 @@ Every ticket closed, **Not yet specified** empty. Then offer:
 
 | Next | When |
 |---|---|
-| `/spec "<destination>"` | Destination is a feature. Pass the map path as input context. |
-| `/kick` | Plan now, build later. |
-| `/assign` | Destination is a change in place. Pick the agent. |
+| `/kick "<destination>"` | Destination is a feature or a change in place. Pass the map path as input context. |
+| `/grill-me` | One design question is still open. Finish it before kicking. |

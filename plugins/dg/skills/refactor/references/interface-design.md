@@ -61,4 +61,4 @@ After comparing, **give your own recommendation**: which design you think is str
 The chosen design (single or hybrid) becomes the seed for the rest of the `/refactor` step 4 conversation. From there:
 
 - The design summary written at step 5 captures the chosen interface, dependency strategy, and migration path.
-- `/spec` consumes that summary as the discovery seed (operator references it during the interview).
+- `/kick` consumes that summary as the request when the user parks the design.

@@ -15,7 +15,7 @@ Read in this order, skipping any that don't exist:
 
 **Domain language:** This skill is informed by the project's domain model. Use `.agents/monolith.md` terms exactly when naming a deepened module. If the deepened module needs a concept not in `monolith.md`, flag it during the design conversation: `"This refactor would introduce '<concept>' as a first-class term — propose adding it to monolith.md."`
 
-If `.agents/monolith.md` is missing, note: `"No monolith.md found — candidate names will use file/module paths instead of domain concepts. Run /spring-break or /agent-seed to seed it."`
+If `.agents/monolith.md` is missing, note: `"No monolith.md found — candidate names will use file/module paths instead of domain concepts. Run /agent-seed if .agents/ itself is missing."`
 
 ______________________________________________________________________
 

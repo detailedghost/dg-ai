@@ -35,7 +35,7 @@ Execute steps in order. Do not skip steps. Report progress after each.
     ```
     <!-- [Topic] learnings. Max 100 lines. Prune oldest when full. -->
     <!-- Format: - [YYYY-MM-DD] one learning per line, concise and actionable -->
-    <!-- Any agent may add entries. spring-break owns structure and cleanup. -->
+    <!-- Any agent may add entries. Prune the oldest lines when the file passes 100 lines. -->
     ```
 - Create `.agents/paths.md` if not present — this is a repo-specific file/directory lookup table that agents read before exploring the codebase. See templates.md for the template. Populate it during Step 5 using detected project structure.
 - **Add `.agents/` to `.gitignore`** — local agent workspace, not project source:
@@ -49,8 +49,8 @@ Execute steps in order. Do not skip steps. Report progress after each.
 
 - `prompt.md` or `PROMPT.md` -> append to `.agents/references/architecture.md`
 - `specs/` -> rename to `.agents/spec/` (preserve contents)
-- `learnings/` with topic-cluster content -> report "run spring-break to migrate"
-- `school/domains/`, `school/archive/` -> report "run spring-break to migrate"
+- `learnings/` with topic-cluster content -> move each file into `.agents/school/` under the closest stub name, then prune to the stub's line cap
+- `school/domains/`, `school/archive/` -> move still-relevant notes into the matching `.agents/school/` stub, then remove the old directories
 - Any other non-canonical files -> report what they are and where they might belong
 - Report each move made
 
@@ -129,6 +129,6 @@ Print summary:
 - Git tag created (name)
 
 Then ask the user:
-> "Want me to run /spring-break to clean up school files, then clear context and start fresh?"
+> "School files are seeded. A later session can prune any file that passes its line cap. Start a fresh session so the next agent reads the slim layout?"
 
-Always ask — even if school/ looks clean. The agent-seed run itself burns context, and starting fresh lets the user (or next agent) benefit from the slim new layout immediately.
+Always ask. The agent-seed run itself burns context, and a fresh session lets the next agent read the slim layout.

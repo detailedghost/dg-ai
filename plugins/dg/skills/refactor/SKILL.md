@@ -1,6 +1,6 @@
 ---
 name: refactor
-description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 5 high-leverage refactor candidates (or accepts your own), then drops into a /grill-me design conversation on the chosen one. Hands off to /spec when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
+description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 5 high-leverage refactor candidates (or accepts your own), then drops into a /grill-me design conversation on the chosen one. Hands off to /kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
 ---
 
 # /refactor — Codebase Architecture Improvement
@@ -30,4 +30,4 @@ Surface architectural friction and propose **deepening opportunities** — refac
 2. **Explore** — launch Explore agent on scope path. Returns 5–10 friction areas ranked by impact.
 3. **Present candidates** — synthesize into exactly 5; present via `AskUserQuestion` (single-select). **GATE:** user picks one or supplies their own via "Other."
 4. **Design conversation** — invoke `/grill-me` with chosen candidate. **GATE:** Final Summary confirmed.
-5. **Hand-off** — write design summary; ask: build now (`/spec`), park (`/kick`), or print only. **GATE:** summary file written.
+5. **Hand-off** — write design summary; ask: park the build (`/kick`) or print only. **GATE:** summary file written.

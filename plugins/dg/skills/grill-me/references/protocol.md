@@ -12,7 +12,7 @@
 `.agents/monolith.md` is the project glossary. Treat it as authoritative.
 
 - When the user uses a term that conflicts with `monolith.md`, stop the current branch and reconcile *before* continuing. Quote both definitions; ask which is canonical.
-- When a new precise term crystallizes during the interview, append it to `monolith.md` inline — do not batch. Match the table schema in `~/.claude/skills/monolith/references/template.md` so `/monolith --prune` stays compatible.
+- When a new precise term crystallizes during the interview and `.agents/monolith.md` exists, append it inline — do not batch. Use the file's existing table columns: term, definition, and a one-line example. If the file is absent, keep the term in the decision log only.
 - `monolith.md` is a glossary, not a design doc. Strip implementation detail; keep term + crisp definition + 1-line example.
 
 ## Question Taxonomy
@@ -74,13 +74,13 @@ Share what you learned, then ask only what you couldn't answer yourself. Use `As
 For trade-off questions where reading words on a screen is a poor substitute for *trying* the options — UI layouts, interaction flows, state-machine shapes, API ergonomics, CLI argument styles, anything where the user might say "I won't know until I see it" — add a final option to the `AskUserQuestion` call:
 
 - **Label:** `Prototype each, then pick`
-- **Description:** `Hand off to /prototype to build each option one at a time so I can try them, then resume here with the choice.`
+- **Description:** `Show each option as a tiny throwaway (a snippet, a short HTML file, or a CLI sketch) so I can try them, then resume here with the choice.`
 
 When the user selects it:
 
 1. Pause the interview at the current branch. Record the open question as `[PROTOTYPING]` in the decision log with the candidate options listed.
-1. Invoke the `/prototype` skill with the question framing and each option as a separate variation. Let `/prototype` route to terminal-app or UI-variation mode based on the nature of the question.
-1. When the user returns with a pick (or a refined option that emerged from prototyping), record it as `[DECIDED]`, note that prototyping informed it, and resume the next branch.
+1. Build each option as a tiny throwaway in the chat: a code snippet, a short HTML file, or a CLI sketch. One option at a time. Ask the user to react before the next one.
+1. When the user returns with a pick (or a refined option that emerged from the throwaway), record it as `[DECIDED]`, note that the throwaway informed it, and resume the next branch.
 1. If prototyping surfaced *new* sub-questions, push them onto the open-questions list before continuing.
 
 Skip the hatch for questions the user can clearly answer from intent alone (priority, scope, deadlines, compliance rules) — prototyping there is wasted motion.
