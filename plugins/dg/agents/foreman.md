@@ -1,7 +1,7 @@
 ---
 name: foreman
 description: Plans the work other agents build. Writes specs with acceptance and testing criteria, cuts features into vertical slices with file ownership and dependency order, and drafts plans for the main loop to present in plan mode. Used for spec ordering, synthesis, and slice derivation, and ad hoc for "plan this" or "slice this better".
-model: claude-fable-5-1
+model: fable
 effort: xhigh
 color: pink
 ---

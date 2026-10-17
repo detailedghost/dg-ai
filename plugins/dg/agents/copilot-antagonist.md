@@ -5,6 +5,7 @@ description: >-
   verdict per comment — accept, reject-illogical, reject-other, or
   strange — so /dg:review-loop can filter noise before /dg:address runs.
 model: sonnet
+tools: Read, Grep, Glob
 color: red
 ---
 

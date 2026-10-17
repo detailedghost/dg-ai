@@ -10,8 +10,7 @@ async function readAgentPersona(name: string): Promise<string> {
 	const path = join(directory, `${name}.md`);
 	const file = Bun.file(path);
 	if (await file.exists()) return file.text();
-	const packaged = packagedPersonas[name];
-	if (packaged !== undefined) return packaged;
+	if (Object.hasOwn(packagedPersonas, name)) return packagedPersonas[name];
 	throw new Error(`Agent persona not found: ${name} (looked in ${path})`);
 }
 
