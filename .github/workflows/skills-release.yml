@@ -69,7 +69,7 @@ jobs:
       - name: Build ${{ matrix.asset }}
         working-directory: pkg/skills-cli
         run: >-
-          bun build src/index.ts --compile
+          bun build.ts
           --target=${{ matrix.target }}
           --outfile dist/${{ matrix.asset }}
 

@@ -15,4 +15,5 @@ export * from "./providers/teams-relay";
 export { createRunners } from "./runners";
 export { createStackReader, createVerdictReader } from "./verdict";
 export * from "./daemon";
+export * from "./credentials";
 export * from "./emojis";

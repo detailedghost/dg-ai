@@ -72,22 +72,26 @@ export async function preflight({
 	fetch,
 	runCapture,
 	which,
+	secret: resolvedSecret,
 }: {
 	config: ChannelConfig;
 	env: EnvSettings & { name: string };
 	fetch: typeof globalThis.fetch;
+	secret?: string;
 } & SecretSeams): Promise<PreflightReport> {
 	let secret: string;
 	try {
-		secret = await fetchRelaySecret(
-			{
-				profile: env.awsProfile,
-				region: config.relay.secret.region,
-				id: config.relay.secret.id,
-				key: config.relay.secret.key,
-			},
-			{ runCapture, which },
-		);
+		secret =
+			resolvedSecret ||
+			(await fetchRelaySecret(
+				{
+					profile: env.awsProfile,
+					region: config.relay.secret.region,
+					id: config.relay.secret.id,
+					key: config.relay.secret.key,
+				},
+				{ runCapture, which },
+			));
 	} catch (error) {
 		return {
 			env: env.name,

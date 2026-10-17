@@ -8,10 +8,11 @@ const OUTPUT_CAP_BYTES = 5 * 1024 * 1024;
 const OAUTH_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN";
 const TAIL_BYTES = 8 * 1024;
 const DRAIN_GRACE_MS = 2000;
-const STRIPPED_ENV = /^(CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT)$/;
+const STRIPPED_ENV = /^(THRASH_.*|CLAUDECODE|CLAUDE_CODE_.*|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT)$/;
 
 export type ProcessRequest = {
 	argv: string[];
+	env?: Record<string, string>;
 	cwd: string;
 	timeoutMs: number;
 	logPath: string;
@@ -30,6 +31,7 @@ export type ProcessResult = {
 	aborted: boolean;
 	stderrTail: string;
 	stdoutTail?: string;
+	outputTail?: string;
 	code?: Extract<CrCode, "CR-201">;
 };
 
@@ -69,7 +71,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 	try {
 		proc = Bun.spawn(argv, {
 			cwd,
-			env: childEnv(keepOauthToken),
+			env: { ...childEnv(keepOauthToken), ...request.env },
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
@@ -85,6 +87,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 			aborted: false,
 			stderrTail: "",
 			stdoutTail: "",
+			outputTail: "",
 			code: "CR-201",
 		};
 	}
@@ -128,6 +131,8 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 				}
 				if (index === 1) {
 					stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TAIL_BYTES);
+				} else {
+					stdoutTail = Buffer.concat([stdoutTail, chunk]).subarray(-TAIL_BYTES);
 				}
 			}
 		});
@@ -161,5 +166,6 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 		aborted,
 		stderrTail: stderrTail.toString("utf8"),
 		stdoutTail: stdoutTail.toString("utf8"),
+		outputTail: `${stdoutTail.toString("utf8")}\n${stderrTail.toString("utf8")}`,
 	};
 }

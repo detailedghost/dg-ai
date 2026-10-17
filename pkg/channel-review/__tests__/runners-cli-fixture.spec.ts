@@ -20,7 +20,7 @@ import {
 	writeConfigFile,
 } from "./support/fakes";
 
-const HOME = "/home/dev";
+let HOME: string;
 const URL = "https://github.com/o/r/pull/12";
 const FIXTURE = `
 import { appendFileSync } from "node:fs";
@@ -45,6 +45,10 @@ if (record) {
 	}) + "\\n");
 }
 const mode = process.env.DG_CLI_MODE ?? "ok";
+if (args[0] === "inspect" && args[1] === "--json") {
+	console.log(JSON.stringify({ skills: [{ name: "thrash", userInvocable: true }] }));
+	process.exit(0);
+}
 const probe = (args[0] === "auth" && args[1] === "status") || args[0] === "models";
 if (probe) {
 	if (mode === "logged-out") {
@@ -55,7 +59,7 @@ if (probe) {
 		console.log("You are not authenticated.");
 		process.exit(0);
 	}
-	console.log("You are logged in");
+	console.log(args[0] === "models" ? "You are using XAI_API_KEY." : "You are logged in");
 	process.exit(0);
 }
 if (mode === "logged-out") {
@@ -118,6 +122,7 @@ let saved: Map<string, string | undefined>;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "cli-fixture-"));
+	HOME = root;
 	binDir = join(root, "bin");
 	mkdirSync(binDir);
 	const script = join(root, "cli-fixture.mjs");

@@ -18,6 +18,14 @@ import {
 } from "@dg/channel-review";
 import { describeError, isRecord } from "@dg/common";
 import { Argument, type Command, Option } from "commander";
+import {
+	CONNECT_PROVIDERS,
+	type ConnectFlags,
+	type ConnectProvider,
+	defaultConnectDeps,
+	runConnect,
+} from "./channel-review-connect";
+import { type MigrateFlags, runMigrateEnv } from "./channel-review-migrate";
 
 type RunFlags = {
 	env?: EnvName;
@@ -166,6 +174,38 @@ export function registerChannelReview(program: Command): void {
 		.addOption(runnerOption())
 		.addOption(chatIdOption())
 		.action(runDaemon);
+
+	command
+		.command("connect")
+		.description(
+			"store a Datadog token, Sentry token or relay secret in the dg credential store; values are never printed",
+		)
+		.addArgument(new Argument("<provider>", "secret to store").choices(CONNECT_PROVIDERS))
+		.addOption(envOption())
+		.option("--site <site>", "Datadog site such as us5.datadoghq.com, or the Sentry base URL")
+		.option("--org <slug>", "Sentry organization slug")
+		.option("--paste", "open the token page in the default browser and paste the token")
+		.option("--session <id>", "dg session to authenticate with")
+		.action(async (provider: ConnectProvider, flags: ConnectFlags) => {
+			await runConnect(provider, flags);
+		});
+
+	command
+		.command("migrate-env")
+		.description(
+			"move channel-review secrets from a .env file into the dg credential store",
+		)
+		.option("--file <path>", "env file (default: .env next to the mise config in the current folder)")
+		.option("--dry-run", "list the variables that would move")
+		.option("--session <id>", "dg session to authenticate with")
+		.action(async (flags: MigrateFlags) => {
+			await runMigrateEnv(flags, {
+				createClient: defaultConnectDeps.createClient,
+				write: (line) => console.log(line),
+				now: () => new Date(),
+				cwd: () => process.cwd(),
+			});
+		});
 
 	command
 		.command("env")

@@ -26,9 +26,22 @@ export type CredentialsDeps = {
 	now(): Date;
 };
 
-function promptHidden(prompt: string): Promise<string> {
-	const stdin = process.stdin;
-	process.stderr.write(prompt);
+export type HiddenInput = {
+	setRawMode(mode: boolean): unknown;
+	setEncoding(encoding: "utf8"): unknown;
+	resume(): unknown;
+	pause(): unknown;
+	on(event: "data", listener: (chunk: string) => void): unknown;
+	off(event: "data", listener: (chunk: string) => void): unknown;
+};
+
+/** Reads one line from a raw-mode TTY without echoing it. */
+export function promptHidden(
+	prompt: string,
+	stdin: HiddenInput = process.stdin,
+	output: { write(text: string): unknown } = process.stderr,
+): Promise<string> {
+	output.write(prompt);
 	stdin.setRawMode(true);
 	stdin.setEncoding("utf8");
 	stdin.resume();
@@ -38,7 +51,7 @@ function promptHidden(prompt: string): Promise<string> {
 			stdin.off("data", onData);
 			stdin.setRawMode(false);
 			stdin.pause();
-			process.stderr.write("\n");
+			output.write("\n");
 			if (error) reject(error);
 			else resolve(value);
 		};

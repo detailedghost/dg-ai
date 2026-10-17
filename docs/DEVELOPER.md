@@ -71,8 +71,8 @@ bun test                  # daemon, store, dispatch and asset tests
 bun run build             # compile binary to dist/dg-daemon
 ```
 
-The daemon is loopback-only and capability-gated. Its store is encrypted at
-rest: the data key comes from the OS keychain when one is available and from a
+The daemon is loopback-only and capability-gated. Its private record fields
+are encrypted at rest: the data key comes from the OS keychain when one is available and from a
 file-backed key otherwise, so a machine with no keychain still works. On WSL it
 needs **mirrored** networking mode — under NAT the Windows-side browser cannot
 reach the loopback port, and the daemon exits with code 3 rather than pretending
@@ -87,7 +87,8 @@ extension can pin again. `/start` also caps how many sessions can be active
 at once (`DG_MAX_SESSIONS`, default 256), so a runaway local caller cannot
 grow the session directory or the in-memory registry without limit.
 
-`~/.dg` is two independent trees. `daemon/` holds that encrypted `daemon.db`.
+`~/.dg` separates daemon and agent data. `daemon/` holds `daemon.db`, with
+encrypted private fields and plaintext operational metadata.
 `agents/` holds session files, staged assets, and a second database,
 `memory.db`, that keeps its records in plain text **on purpose**: FTS5
 cannot index ciphertext, which is why an agent's memory lives in a separate
@@ -326,10 +327,59 @@ Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
 config contract and error templates.
 
 The daemon runs separately from the loopback chat daemon. It fetches its secret
-into memory and keeps per-environment state under `DG_HOME/channel-review`.
+into memory. Per-environment operational state lives in the existing
+`DG_HOME/daemon/daemon.db`, in `channel_review_state`; configuration, PID files,
+and logs remain under `DG_HOME/channel-review`. The schema-only opener and
+single migration list live in `@dg/common/daemon-db`; `ChatStore` retains
+ownership of crypto/key initialization. Both processes can start independently.
+The service imports its legacy `state.<env>.json` once in a transaction and
+retains the source. Status only reads; malformed state reports an error.
+See [ADR 0018](adr/0018-channel-review-state-in-daemon-db.md) for schema,
+restart behavior, migration guarantees, and integration with the ADR branch.
+
+Review operational state retains its prior plaintext boundary; the shared opener
+does not read keys or credentials. For local inspection of the shared database:
+
+```sql
+SELECT env, status, count(*) FROM channel_review_requests GROUP BY env, status;
+SELECT * FROM channel_review_current WHERE env = 'dev';
+```
+
+Build and deploy **both `dg-daemon` and `dg-skills`** with schema 12 support
+before allowing the new service to migrate the shared file. Older daemon
+binaries refuse schema 12 on restart. Never run an old JSON writer alongside
+the database-backed service. Retained legacy JSON is a recovery source rather
+than a live mirror. Pending/running requests become failed on restart with
+CR-205; the service does not reconstruct or rerun the queue.
+
+`resolveSecrets` (`pkg/channel-review/src/credentials.ts`) reads the
+`channel-review/` entries once at daemon start through the `channel-review`
+grant and builds an env-like map for the relay connect and the sinks: the store
+first, then the process environment. `status` reports each source.
+`dg-skills channel-review connect` drives Chrome through `playwright-core`. It
+imports the package lazily, so other commands never load it, and the compiled
+build (`pkg/skills-cli/build.ts`) marks `chromium-bidi` external because the
+CDP flow does not use it. The build also rewrites Playwright's two computed
+metadata imports to static imports, embedding `package.json` and `browsers.json`.
+Playwright is pinned; when upgrading it, run the compiled connect regression,
+which removes the dependency's source before starting the binary.
 Every review machine needs a signed-in runner and thrash installed in that
 runner's skill roots. `status` reports each runner probe, including CR-206 for
 missing thrash after executable and login checks pass.
+Grok Build is available through `~agent grok`, `--runner grok`, or
+`runner.default`; `~model` passes its model ID unchanged. Its probe uses
+`grok models` for the resolved auth source and `grok inspect --json` for an
+enabled, invocable `/thrash`. These utilities do not generate model output.
+The review runs headlessly with `--always-approve`. `runner.fallback: "grok"`
+opts into Grok after a Claude limit; the automatic default stays Codex.
+
+AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
+bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,
+including Claude's exit-zero limit responses. Review jobs retry a limited Claude
+run once with `runner.fallback` (Codex by default) after a successful probe. The
+fallback keeps the remaining timeout, uses its own default model, writes a separate
+log, and replies to the original request. Other AI tasks expose the same error and
+notify the owner; write tasks are not automatically retried.
 
 The [relay contract](../pkg/channel-review/README.md) lists every relay call.
 A relay deploy can drop SSE streams and the relay's replay buffer. The daemon
@@ -346,3 +396,30 @@ remains pending. Check that the installed skill runs the compiled binary and
 prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
 stopped; named errors with remedies also pass the bootstrap check. Record the
 exact Claude scratch write rule and WSL restart result during live validation.
+
+### Review attribution
+
+Review tasks pass `origin: "daemon"` explicitly to the runner, including Teams requests
+and readiness events. Other direct runner callers default to `manual`. The runner puts
+fresh JSON in `THRASH_EXECUTION_CONTEXT`: `origin`, `backend`, optional `model`, and
+`modelSource` (`requested`, `configured`, or `default`). These model fields describe the orchestrator,
+not the reviewer. Child spawning strips inherited `THRASH_*` variables before applying
+this attempt's context. Fallback rebuilds it for the successful backend with no stale
+Claude model. Current-job status includes `execution`; local logs identify origin and
+orchestrator model evidence. The shared database snapshot retains this current-job metadata.
+
+The user-owned `scripts/ai/skills/thrash-core.ts` and `thrash-helper.ts` own the compiled
+review contract. The canonical user skill is `~/.claude/skills/thrash`, imported by copy
+into Codex. Its `references/attribution.md` describes the helper `attribute` command.
+Each successful chunk gets its own backend/model evidence. Native worker configuration,
+requested aliases, resolved runtime IDs, CLI defaults, and unknown models stay distinct.
+A proxy persona does not select a model. Distinct worker backends/models remain in the
+compiled artifact and public label; the parent model is not substituted.
+
+Public bodies, previews, tallies, and compile/post JSON show `Automatic (daemon)` or
+`Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
+The helper freezes origin in a unique diff plan and does not trust review contents for
+attribution. It preserves verdicts, dedupe, partial coverage, gates, and provider fallback.
+Deploy the helper bundle and canonical/imported skill instructions with the runner change;
+old helpers do not consume the new context. Build helpers to a staged path until activation
+is coordinated. Do not replace a live helper or restart a daemon during implementation.

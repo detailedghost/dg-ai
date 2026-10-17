@@ -15,6 +15,27 @@ walks a new person through the setup. The
 [setup reference](../../plugins/dg/skills/channel-review/references/setup.md)
 lists every config key.
 
+## Persistent state
+
+Channel-review uses the existing `DG_HOME/daemon/daemon.db`, with one complete
+snapshot per environment in `channel_review_state`. The shared schema migration
+list and opener live in `@dg/common/daemon-db`; `ChatStore` owns crypto setup.
+No main daemon process or extension attachment is needed to open review state.
+`channel_review_requests` and `channel_review_current` are SQL inspection views.
+
+The first writable open imports `DG_HOME/channel-review/state.<env>.json`
+transactionally and retains the source. A committed database row prevents
+reimport over newer data. Malformed input fails without consuming the import;
+repair the source and retry. Status reads do not initialize or import state.
+Pending/running requests become failed with CR-205 during normal restart
+recovery; the in-memory queue is not reconstructed. Cursors and all automation
+state survive. Cursor-only writes coalesce for up to one second.
+
+Deploy compatible `dg-daemon` and `dg-skills` binaries together: central schema
+11 is newer than older daemon builds accept. See
+[ADR 0018](../../docs/adr/0018-channel-review-state-in-daemon-db.md) and
+[state and recovery](../../plugins/dg/skills/channel-review/references/setup.md#state-and-recovery).
+
 ## Relay contract
 
 Every path is relative to `envs.<name>.baseUrl`, such as

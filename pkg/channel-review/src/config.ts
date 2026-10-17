@@ -115,6 +115,7 @@ export type ChannelConfig = {
 	owner: { token: string; email: string; senderIds: string[] };
 	runner: {
 		default: RunnerName;
+		fallback: Exclude<RunnerName, "claude"> | null;
 		timeoutMinutes: number;
 		addressTimeoutMinutes: number;
 		claude: { path?: string; allowedTools: string[]; addressAllowedTools: string[] };
@@ -246,12 +247,16 @@ function wholeDays(value: unknown, path: string): number {
 function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	const rec = section(raw, "runner", "", [
 		"default",
+		"fallback",
 		"timeoutMinutes",
 		"addressTimeoutMinutes",
 		...RUNNER_NAMES,
 	]);
 	const defaultRunner = rec.default ?? "claude";
 	requireOneOf(defaultRunner, "runner.default", RUNNER_NAMES);
+	const fallback = rec.fallback === undefined ? "codex" : rec.fallback;
+	if (fallback !== null)
+		requireOneOf(fallback, "runner.fallback", ["codex", "copilot", "grok"] as const);
 	const timeout = minutes(rec.timeoutMinutes ?? 30, "runner.timeoutMinutes");
 	const addressTimeout = minutes(rec.addressTimeoutMinutes ?? 60, "runner.addressTimeoutMinutes");
 
@@ -288,13 +293,14 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	];
 	requireStringArray(addressAllowedTools, "runner.claude.addressAllowedTools");
 
-	const binary = (name: "codex" | "copilot") =>
+	const binary = (name: Exclude<RunnerName, "claude">) =>
 		rec[name] === undefined
 			? undefined
 			: { path: optionalText(section(rec, name, "runner", ["path"]), "path", `runner.${name}`) };
 
 	return {
 		default: defaultRunner,
+		fallback,
 		timeoutMinutes: timeout,
 		addressTimeoutMinutes: addressTimeout,
 		claude: {

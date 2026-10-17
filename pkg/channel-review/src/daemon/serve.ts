@@ -17,6 +17,7 @@ import {
 } from "../providers/teams-relay";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
+import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { startAutomation } from "../automation/start";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
@@ -94,7 +95,7 @@ export function buildEngine({
 	process: ProcessSeam;
 } {
 	const state = createStateStore(
-		paths.statePath,
+		paths,
 		undefined,
 		undefined,
 		defaultChatId,
@@ -219,6 +220,14 @@ export async function serve({
 		? { ...config, runner: { ...config.runner, default: overrides.runner } }
 		: config;
 
+	const secrets = await resolveSecrets({
+		envName: env.name,
+		env: seams.env ?? process.env,
+		source: seams.credentials ?? createGrantCredentialSource(),
+	});
+	if (secrets.warning) log.warn(secrets.warning);
+	seams = { ...seams, env: secrets.env };
+
 	let connection: Connection;
 	let funPool: FunEntry[];
 	try {
@@ -245,159 +254,165 @@ export async function serve({
 	const { chats } = connection;
 	const switcher = switchable(connection.provider);
 	const { runners, verdict } = readers(effective, seams, log);
-	const {
-		engine,
-		state,
-		process: processes,
-	} = buildEngine({
-		config: effective,
-		provider: switcher.provider,
-		defaultChatId: chats[0].id,
-		botName: env.botName,
-		paths,
-		seams: { ...seams, runners, verdict },
-		log,
-		funPool,
-		platform,
-	});
-
-	await probeAll(
-		runners,
-		verdict,
-		seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,
-		log,
-	);
-
-	if (signal.aborted) return 0;
+	let built: ReturnType<typeof buildEngine>;
 	try {
-		await engine.recover(processes);
+		built = buildEngine({
+			config: effective,
+			provider: switcher.provider,
+			defaultChatId: chats[0].id,
+			botName: env.botName,
+			paths,
+			seams: { ...seams, runners, verdict },
+			log,
+			funPool,
+			platform,
+		});
 	} catch (error) {
-		log.error(`recovery failed: ${describeError(error)}`);
+		log.error(`state initialization failed: ${describeError(error)}`);
 		return 1;
 	}
-
-	if (signal.aborted) return 0;
-	ensurePrivateDir(dirname(paths.pidPath));
-	writeFileAtomic(
-		paths.pidPath,
-		JSON.stringify({
-			pid: process.pid,
-			env: env.name,
-			startedAt: new Date().toISOString(),
-			chats,
-		}),
-		0o600,
-	);
-	log.info(
-		`daemon started for ${chats.map(({ id }) => `chat ${id}`).join(", ")} (pid ${process.pid})`,
-	);
-	const stopMaintenance = startMaintenance({
-		engine,
-		logPath: paths.logPath,
-		seams,
-		log,
-	});
-	const automation = startAutomation({
-		config: effective,
-		engine,
-		state,
-		provider: switcher.provider,
-		jobsDir: paths.jobsDir,
-		seams,
-		log,
-		signal,
-	});
-
-	async function dispatch(chatId: string, event: ChatEvent): Promise<void> {
-		if (event.type === "gap") {
-			log.warn(`chat ${chatId}: event gap, the relay lost events between reconnects`);
-			return;
-		}
-		if (event.type === "message") {
-			try {
-				await engine.handle(event.message);
-			} catch (error) {
-				log.error(
-					`chat ${chatId}: message ${event.message.id} failed: ${describeError(error)}`,
-				);
-				return;
-			}
-		} else if (event.type === "reaction") {
-			try {
-				await engine.handleReaction(event.reaction);
-			} catch (error) {
-				log.error(
-					`chat ${chatId}: reaction ${event.reaction.id} failed: ${describeError(error)}`,
-				);
-				return;
-			}
-		} else {
-			log.info(`chat ${chatId}: skipped ${String((event as { type: unknown }).type)} event`);
-		}
-		if (typeof event.eventId === "string") {
-			state.setLastEventId(chatId, event.eventId);
-		}
-	}
-
-	async function pump(chatId: string): Promise<number> {
-		let refetched = false;
-		for (;;) {
-			try {
-				for await (const event of switcher.provider.subscribe({
-					chatId,
-					resumeId: state.get().lastEventIds[chatId],
-					signal,
-				})) {
-					refetched = false;
-					await dispatch(chatId, event);
-				}
-				if (signal.aborted) return 0;
-				log.error(`chat ${chatId}: the event stream ended unexpectedly`);
-				return 1;
-			} catch (error) {
-				if (signal.aborted) return 0;
-				if (!(error instanceof RelayAuthError)) {
-					log.error(`chat ${chatId}: ${describeError(error)}`);
-					return 1;
-				}
-				if (refetched) {
-					log.error(authRemedy(config, env));
-					return 1;
-				}
-				refetched = true;
-				log.warn(
-					`chat ${chatId}: the relay rejected the secret; fetching a fresh one`,
-				);
-				try {
-					const next = await connect({
-						config,
-						env,
-						overrides: { chatId },
-						seams,
-						log,
-					});
-					switcher.swap(next.provider);
-				} catch (refetchError) {
-					log.error(`chat ${chatId}: ${describeError(refetchError)}`);
-					return 1;
-				}
-			}
-		}
-	}
-
-	let code: number;
+	const { engine, state, process: processes } = built;
 	try {
-		const codes = await Promise.all(chats.map(({ id }) => pump(id)));
-		code = codes.includes(0) ? 0 : 1;
-	} finally {
-		stopMaintenance();
-		await automation.stop();
-		await withTimeout(
-			engine.stop(),
-			seams.stopTimeoutMs ?? SERVE_STOP_TIMEOUT_MS,
+		await probeAll(
+			runners,
+			verdict,
+			seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,
+			log,
 		);
-		state.flush();
-		rmSync(paths.pidPath, { force: true });
+
+		if (signal.aborted) return 0;
+		try {
+			await engine.recover(processes);
+		} catch (error) {
+			log.error(`recovery failed: ${describeError(error)}`);
+			return 1;
+		}
+
+		if (signal.aborted) return 0;
+		ensurePrivateDir(dirname(paths.pidPath));
+		writeFileAtomic(
+			paths.pidPath,
+			JSON.stringify({
+				pid: process.pid,
+				env: env.name,
+				startedAt: new Date().toISOString(),
+				chats,
+			}),
+			0o600,
+		);
+		log.info(
+			`daemon started for ${chats.map(({ id }) => `chat ${id}`).join(", ")} (pid ${process.pid})`,
+		);
+		const stopMaintenance = startMaintenance({
+			engine,
+			logPath: paths.logPath,
+			seams,
+			log,
+		});
+		const automation = startAutomation({
+			config: effective,
+			engine,
+			state,
+			provider: switcher.provider,
+			jobsDir: paths.jobsDir,
+			seams,
+			log,
+			signal,
+		});
+
+		async function dispatch(chatId: string, event: ChatEvent): Promise<void> {
+			if (event.type === "gap") {
+				log.warn(`chat ${chatId}: event gap, the relay lost events between reconnects`);
+				return;
+			}
+			if (event.type === "message") {
+				try {
+					await engine.handle(event.message);
+				} catch (error) {
+					log.error(
+						`chat ${chatId}: message ${event.message.id} failed: ${describeError(error)}`,
+					);
+					return;
+				}
+			} else if (event.type === "reaction") {
+				try {
+					await engine.handleReaction(event.reaction);
+				} catch (error) {
+					log.error(
+						`chat ${chatId}: reaction ${event.reaction.id} failed: ${describeError(error)}`,
+					);
+					return;
+				}
+			} else {
+				log.info(`chat ${chatId}: skipped ${String((event as { type: unknown }).type)} event`);
+			}
+			if (typeof event.eventId === "string") {
+				state.setLastEventId(chatId, event.eventId);
+			}
+		}
+
+		async function pump(chatId: string): Promise<number> {
+			let refetched = false;
+			for (;;) {
+				try {
+					for await (const event of switcher.provider.subscribe({
+						chatId,
+						resumeId: state.get().lastEventIds[chatId],
+						signal,
+					})) {
+						refetched = false;
+						await dispatch(chatId, event);
+					}
+					if (signal.aborted) return 0;
+					log.error(`chat ${chatId}: the event stream ended unexpectedly`);
+					return 1;
+				} catch (error) {
+					if (signal.aborted) return 0;
+					if (!(error instanceof RelayAuthError)) {
+						log.error(`chat ${chatId}: ${describeError(error)}`);
+						return 1;
+					}
+					if (refetched) {
+						log.error(authRemedy(config, env));
+						return 1;
+					}
+					refetched = true;
+					log.warn(
+						`chat ${chatId}: the relay rejected the secret; fetching a fresh one`,
+					);
+					try {
+						const next = await connect({
+							config,
+							env,
+							overrides: { chatId },
+							seams,
+							log,
+						});
+						switcher.swap(next.provider);
+					} catch (refetchError) {
+						log.error(`chat ${chatId}: ${describeError(refetchError)}`);
+						return 1;
+					}
+				}
+			}
+		}
+
+		let code: number;
+		try {
+			const codes = await Promise.all(chats.map(({ id }) => pump(id)));
+			code = codes.includes(0) ? 0 : 1;
+		} finally {
+			stopMaintenance();
+			await automation.stop();
+			await withTimeout(
+				engine.stop(),
+				seams.stopTimeoutMs ?? SERVE_STOP_TIMEOUT_MS,
+			);
+			state.flush();
+			rmSync(paths.pidPath, { force: true });
+		}
+		return code;
+	} finally {
+		state.close();
 	}
-	return code;
 }
