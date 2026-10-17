@@ -12,6 +12,7 @@ async function readAgentPersona(name: string): Promise<string> {
 	return file.text();
 }
 
+/** Load an explicit persona or a plan slice's primary agent; explicit subagent wins and missing files reject. */
 export async function resolvePersona(opts: { subagent?: string; spec?: string; slice?: string }): Promise<string | null> {
 	if (opts.subagent) return readAgentPersona(opts.subagent);
 	if (opts.spec && opts.slice) {
@@ -21,6 +22,7 @@ export async function resolvePersona(opts: { subagent?: string; spec?: string; s
 	return null;
 }
 
+/** Prepend the role briefing when present; null preserves the original prompt unchanged. */
 export function withPersona(persona: string | null, prompt: string): string {
 	if (persona === null) return prompt;
 	return `You are being briefed to act as the following specialized role:\n\n${persona}\n\n---\nTask:\n${prompt}`;

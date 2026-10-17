@@ -9,10 +9,12 @@ import type { Backend, BuildArgsInput } from "./backends/types";
 
 const STDERR_TAIL_LENGTH = 2000;
 
+/** Create the shared private proxy scratch directory, rejecting unsafe managed paths. */
 export function proxyDir(): string {
 	return scratchDir("proxy", { cwdScope: false });
 }
 
+/** Create an exclusive 0600 transcript before spawning; return parsed stdout, stderr tail, and the actual exit status. */
 export async function runBackend(
 	backendName: string,
 	backend: Backend,

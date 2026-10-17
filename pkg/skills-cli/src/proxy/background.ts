@@ -92,6 +92,7 @@ const cmd = defineCommand({
 	},
 });
 
+/** Run packaged detached-job commands; cancellation and updates use ownership-checked job locks. */
 export async function main(argv: string[]): Promise<void | number> {
 	await cmd.run(argv);
 }

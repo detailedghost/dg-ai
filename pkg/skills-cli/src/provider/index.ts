@@ -13,10 +13,12 @@ function cacheKey(override: ProviderKind | undefined, cwd: string): string {
 	return `${override ?? ""}::${cwd}`;
 }
 
+/** Discard cached provider resolutions, including their captured executable/configuration choices. */
 export function resetProviderCache(): void {
 	cache.clear();
 }
 
+/** Cache resolution by cwd and explicit provider override; rejected resolutions are evicted for retry. */
 export async function getProvider(override?: ProviderKind): Promise<Provider> {
 	const cwd = process.cwd();
 	const key = cacheKey(override, cwd);
@@ -36,6 +38,7 @@ export async function getProvider(override?: ProviderKind): Promise<Provider> {
 	return resolution;
 }
 
+/** Resolve a URL-specific adapter without using the cwd cache; recognized URLs outrank the provider override. */
 export async function getProviderForUrl(url: string): Promise<Provider> {
 	const { kind } = await detectProvider(url);
 	return buildProvider(kind);

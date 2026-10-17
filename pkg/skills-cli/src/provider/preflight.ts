@@ -1,6 +1,7 @@
 import { makeShellTag, redactTokens, type ShellTag } from "../utils/git";
 import { ProviderError } from "./types";
 
+/** Provide the stable missing-binary error code and actionable CLI installation/override guidance. */
 export interface BinPreflightOptions {
 	code: string;
 	label: string;

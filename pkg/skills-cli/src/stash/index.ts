@@ -2,8 +2,10 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { agentsPath, agentsRoot, scratchDir, scratchRoot, stateDir, stateRoot, uniqueName } from "@dg/common/node";
 
+/** Choose ephemeral scratch, durable project state, or current/main worktree artifacts. */
 export type StashKind = "scratch" | "state" | "agents" | "main";
 
+/** Parsed scope and naming options; resolution validates combinations and path safety. */
 export interface StashArgs {
 	kind: StashKind;
 	global: boolean;
@@ -15,11 +17,13 @@ export interface StashArgs {
 	name?: string;
 }
 
+/** Resolved absolute destination plus an optional warning when a repository artifact is not ignored. */
 export interface StashResult {
 	path: string;
 	warning?: string;
 }
 
+/** Compatibility help for stash scopes and flags; parsing preserves usage-error exit 1. */
 export const USAGE = `Usage: stash [flags] <tool> [name]
 
 Prints one absolute path and creates its parent (the dir itself without a name).
@@ -58,6 +62,7 @@ function expandShort(argv: string[]): string[] {
 	});
 }
 
+/** Parse raw stash flags, including grouped short flags; reject conflicting scopes and excess arguments. */
 export function parseArgs(argv: string[]): StashArgs {
 	const parsed: StashArgs = { kind: "scratch", global: false, unique: false, root: false, help: false };
 	const chosen = new Set<StashKind>();
@@ -103,6 +108,7 @@ function isIgnored(top: string, target: string): boolean {
 	return Bun.spawnSync(["git", "check-ignore", "-q", target], { cwd: top, stderr: "ignore" }).exitCode !== 1;
 }
 
+/** Create the destination parent without creating the file; reject incompatible scopes or unsafe relative paths. */
 export function resolveStash(args: StashArgs): StashResult {
 	const cwd = args.dir ? path.resolve(args.dir) : undefined;
 	const repoLocal = args.kind === "agents" || args.kind === "main";
@@ -140,6 +146,7 @@ export function resolveStash(args: StashArgs): StashResult {
 	return { path: target };
 }
 
+/** Print the resolved path, send warnings to stderr, and return 1 for parsing or resolution errors. */
 export function main(argv: string[]): number {
 	try {
 		const args = parseArgs(argv);
@@ -156,4 +163,3 @@ export function main(argv: string[]): number {
 		return 1;
 	}
 }
-

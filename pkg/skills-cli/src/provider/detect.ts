@@ -1,8 +1,10 @@
 import { git, redactTokens, ShellError } from "../utils/git";
 import { ProviderError, type ProviderKind, parseScpForm } from "./types";
 
+/** Record whether provider selection came from an override, recognized host, or merge-request URL path. */
 export type DetectSource = "env" | "host" | "path";
 
+/** The provider identity and the rule that selected it; repository metadata is resolved separately. */
 export interface DetectResult {
 	kind: ProviderKind;
 	source: DetectSource;

@@ -57,6 +57,7 @@ function parseEvents(stdout: string): ParsedResult {
 	return { sessionId, message: message || fallback };
 }
 
+/** Noninteractive Codex adapter with JSON event parsing and session resume support. */
 export const codex: Backend = {
 	bin: "codex",
 	buildArgs,

@@ -5,6 +5,7 @@ function record(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Read YAML frontmatter from a plan or bundle directory; absent assignment returns null, invalid plans throw. */
 export function resolveSlicePrimary(spec: string, slice: string): string | null {
 	let file = resolve(spec);
 	if (existsSync(file) && statSync(file).isDirectory()) file = join(file, "plan.md");

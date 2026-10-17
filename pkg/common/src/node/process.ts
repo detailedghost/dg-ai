@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 
+/** Detect WSL from its environment marker or Linux kernel version; unreadable kernel metadata returns false. */
 export function isWSL(): boolean {
 	if (process.env.WSL_DISTRO_NAME) return true;
 	if (process.platform !== "linux") return false;
@@ -33,6 +34,7 @@ function openers(): Array<[string, (url: string) => string[]]> {
 	return [["xdg-open", (u) => [u]]];
 }
 
+/** Try platform URL launchers in order; true means a launcher spawned, not that the page loaded. */
 export function tryOpen(url: string): Promise<boolean> {
 	const candidates = openers();
 	return new Promise((resolve) => {
@@ -50,6 +52,7 @@ export function tryOpen(url: string): Promise<boolean> {
 	});
 }
 
+/** Run argv synchronously, returning trimmed UTF-8 stdout and throwing on startup or command failure. */
 export function run(
 	command: string,
 	args: string[],
@@ -83,6 +86,7 @@ type RunCaptureResult<Output = string> = {
 	stderr: Output;
 };
 
+/** Collect untrimmed UTF-8 streams and exit/signal status; startup errors reject instead of returning a status. */
 export async function runCapture(
 	command: string,
 	args: string[],
@@ -96,7 +100,10 @@ export async function runCapture(
 	};
 }
 
-/** Capture exact process bytes when an adapter needs to preserve a binary stream. */
+/**
+ * Capture exact bytes and signal-derived status; startup errors reject and nonzero exits resolve.
+ * Null stdin ignores input, undefined closes an empty pipe, and a string supplies its exact contents.
+ */
 export function runCaptureBytes(
 	command: string,
 	args: string[],
@@ -148,6 +155,7 @@ export function runCaptureBytes(
 	});
 }
 
+/** Wait for stdout to accept the text, propagating write errors. */
 export function writeStdout(value: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		process.stdout.write(value, (error) => {

@@ -3,6 +3,7 @@
 
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
+/** OpenCode adapter that normalizes streamed JSON text and session IDs for proxy results. */
 export const opencode: Backend = {
 	bin: "opencode",
 	buildArgs(input: BuildArgsInput): string[] {

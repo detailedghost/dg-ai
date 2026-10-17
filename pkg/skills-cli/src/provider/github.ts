@@ -538,6 +538,7 @@ async function checkAuth(tag: ShellTag): Promise<boolean> {
 	return checkAuthStatus(tag);
 }
 
+/** Create an inert GitHub adapter using GH_BIN or gh; commands validate CLI availability when invoked. */
 export function createGithubProvider(): Provider {
 	const bin = resolveGhBin();
 	const tag = makeBinPreflightTag(bin, {

@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+/** Select explicit/configured/source skill roots; a selected root suppresses default fallback discovery. */
 export interface SkillAssetOptions {
 	skillsRoot?: string;
 	configuredSkillsRoot?: string;
@@ -38,6 +39,7 @@ function sourceRoots(): string[] {
 	return roots;
 }
 
+/** Resolve a real installed asset contained in its skill directory; reject traversal, escaping symlinks, and virtual paths. */
 export function resolveSkillAsset(
 	skill: string,
 	relativePath: string,

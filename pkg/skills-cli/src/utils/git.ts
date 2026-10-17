@@ -1,10 +1,12 @@
 import { runCaptureBytes } from "@dg/common/node";
 import { buildArgs } from "./shell-args";
 
+/** Untrimmed process bytes with the successful exit status and a UTF-8 stdout convenience reader. */
 export interface ShellOutput {
 	exitCode: number;
 	stdout: Buffer;
 	stderr: Buffer;
+	/** Decode stdout without trimming or changing the stored bytes. */
 	text(): string;
 }
 
@@ -15,10 +17,12 @@ const TOKEN_RE = new RegExp(
 	),
 	"g",
 );
+/** Replace recognized GitHub/GitLab token patterns before surfacing diagnostics; not a general secret scrubber. */
 export function redactTokens(s: string): string {
 	return s.replace(TOKEN_RE, "<redacted-token>");
 }
 
+/** Preserve raw failure streams/status while redacting recognized tokens from the human-readable message. */
 export class ShellError extends Error {
 	constructor(
 		public readonly bin: string,
@@ -36,10 +40,12 @@ export class ShellError extends Error {
 	}
 }
 
+/** Supply stdin explicitly; omitted input ignores stdin, while an empty string keeps a closed pipe. */
 export interface RunShellOptions {
 	input?: string;
 }
 
+/** Execute argv without a shell; preserve exact output bytes and throw ShellError on nonzero exit. */
 export async function runShell(bin: string, args: string[], opts?: RunShellOptions): Promise<ShellOutput> {
 	const { status: exitCode, stdout, stderr } = await runCaptureBytes(bin, args, {
 		stdin: opts?.input ?? null,
@@ -57,12 +63,14 @@ export async function runShell(bin: string, args: string[], opts?: RunShellOptio
 	};
 }
 
+/** Build argv from template values without shell expansion, with optional per-call stdin. */
 export interface ShellTag {
 	(strings: TemplateStringsArray, ...values: unknown[]): Promise<ShellOutput>;
 	/** Returns a new tagged-template function bound to `input` on stdin for one call. */
 	withInput(input: string): (strings: TemplateStringsArray, ...values: unknown[]) => Promise<ShellOutput>;
 }
 
+/** Bind a binary to the literal/interpolated argv builder; no process starts until the tag is called. */
 export function makeShellTag(bin: string): ShellTag {
 	const tag = ((strings: TemplateStringsArray, ...values: unknown[]): Promise<ShellOutput> => {
 		const args = buildArgs(strings, values);
@@ -79,24 +87,30 @@ export function makeShellTag(bin: string): ShellTag {
 	return tag;
 }
 
+/** Run git through the argv-safe tag, throwing ShellError on command failure. */
 export const git = makeShellTag("git");
+/** Run gh through the argv-safe tag; provider adapters separately support executable overrides. */
 export const gh = makeShellTag("gh");
 
+/** Read the current branch name; a detached checkout retains Git's HEAD result. */
 export async function currentBranch(): Promise<string> {
 	const result = await git`rev-parse --abbrev-ref HEAD`;
 	return result.stdout.toString().trim();
 }
 
+/** Return the shared ancestor of HEAD and the supplied ref; unresolved refs reject. */
 export async function mergeBase(ref: string): Promise<string> {
 	const result = await git`merge-base HEAD ${ref}`;
 	return result.stdout.toString().trim();
 }
 
+/** Include both tracked changes and untracked files when checking working-tree status. */
 export async function isDirty(): Promise<boolean> {
 	const result = await git`status --porcelain`;
 	return result.stdout.toString().trim().length > 0;
 }
 
+/** Prefer local main/master, then origin/HEAD, falling back to main when no default resolves. */
 export async function baseBranch(): Promise<string> {
 	const checkRef = async (ref: string): Promise<boolean> => {
 		try {

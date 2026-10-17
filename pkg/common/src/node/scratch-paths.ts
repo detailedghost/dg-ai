@@ -19,6 +19,7 @@ export function cwdHash(dir: string = process.cwd()): string {
 	return createHash("sha1").update(dir).digest("hex").slice(0, 8);
 }
 
+/** Return the main worktree path, falling back to the supplied directory when Git cannot resolve it. */
 export function projectRoot(dir: string = process.cwd()): string {
 	try {
 		const result = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
@@ -43,6 +44,7 @@ export function projectHash(dir: string = process.cwd()): string {
 	return createHash("sha1").update(projectRoot(dir)).digest("hex").slice(0, 8);
 }
 
+/** Generate a lowercase alphanumeric suffix from random bytes; this is a filename suffix, not a secret. */
 export function randSuffix(len = 4): string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 	let out = "";
@@ -55,6 +57,7 @@ export function randSuffix(len = 4): string {
 	return out;
 }
 
+/** Generate an adjective-animal label for human-readable artifact names. */
 export function readableSuffix(): string {
 	return uniqueNamesGenerator({
 		dictionaries: [adjectives, animals],
@@ -63,6 +66,7 @@ export function readableSuffix(): string {
 	});
 }
 
+/** Return the current worktree toplevel, or null when Git reports no checkout. */
 export function repoRoot(dir: string = process.cwd()): string | null {
 	const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
 		cwd: dir,
@@ -72,6 +76,7 @@ export function repoRoot(dir: string = process.cwd()): string | null {
 	return result.stdout.toString().trim() || null;
 }
 
+/** Find the nearest ancestor containing an .agents directory; return null at the filesystem root. */
 export function findAgentsDir(startDir?: string): string | null {
 	let d = path.resolve(startDir ?? process.cwd());
 	while (true) {
@@ -90,12 +95,14 @@ export function findAgentsDir(startDir?: string): string | null {
 	}
 }
 
+/** Check lexical containment after resolving both paths; this does not resolve symlinks. */
 export function isPathInside(child: string, parent: string): boolean {
 	const c = path.resolve(child);
 	const p = path.resolve(parent);
 	return c === p || c.startsWith(p.endsWith(path.sep) ? p : p + path.sep);
 }
 
+/** Select the working directory and bucket scope; disabling cwdScope shares the tool directory. */
 export interface ScratchPathOptions {
 	/** Accepted for compatibility; no longer enforced. */
 	ephemeral?: boolean;
@@ -105,11 +112,13 @@ export interface ScratchPathOptions {
 
 const PRIVATE_DIR_MODE = 0o700;
 
+/** Resolve the configured scratch root without creating or validating it. */
 export function scratchRoot(): string {
 	// Ephemeral root for every AI tool + worktree; override with AI_SCRATCH_DIR.
 	return process.env["AI_SCRATCH_DIR"] ?? "/tmp/ai";
 }
 
+/** Resolve AI_STATE_DIR, else the XDG state root under ai, without touching the filesystem. */
 export function stateRoot(): string {
 	const explicit = process.env["AI_STATE_DIR"];
 	if (explicit) return explicit;
@@ -241,6 +250,7 @@ function rootedPath(
 	return path.join(dir, uniqueName(tool));
 }
 
+/** Build a UTC date/minute artifact name with a random suffix and the caller-supplied suffix. */
 export function uniqueName(tool: string, suffix = ""): string {
 	const iso = new Date().toISOString();
 	const ymd = iso.slice(0, 10).replace(/-/g, "");
@@ -252,6 +262,7 @@ function resolveCwd(opts: ScratchPathOptions): string | undefined {
 	return opts.cwd ? path.resolve(opts.cwd) : undefined;
 }
 
+/** Create a private cwd-scoped tool directory; reject unsafe ownership, permissions, or managed symlinks. */
 export function scratchDir(
 	tool: string,
 	opts: ScratchPathOptions = {},
@@ -265,6 +276,7 @@ export function scratchDir(
 	);
 }
 
+/** Create a private project-scoped tool directory shared by linked worktrees; reject unsafe managed paths. */
 export function stateDir(tool: string, opts: ScratchPathOptions = {}): string {
 	return rootedDir(
 		stateRoot(),
@@ -275,6 +287,7 @@ export function stateDir(tool: string, opts: ScratchPathOptions = {}): string {
 	);
 }
 
+/** Resolve a named or generated scratch path, creating its private directory but not the file. */
 export function scratchPath(
 	tool: string,
 	name?: string,
@@ -290,6 +303,7 @@ export function scratchPath(
 	);
 }
 
+/** Resolve a named or generated state path, creating its private project directory but not the file. */
 export function statePath(
 	tool: string,
 	name?: string,
@@ -305,12 +319,14 @@ export function statePath(
 	);
 }
 
+/** Signal that a repository-local artifact path was requested outside a Git worktree. */
 export class NotInWorktreeError extends Error {
 	constructor() {
 		super("not in a git worktree");
 	}
 }
 
+/** Resolve .agents in the current or main worktree; throw NotInWorktreeError outside Git. */
 export function agentsRoot(
 	opts: { cwd?: string; main?: boolean } = {},
 ): string {
@@ -320,6 +336,7 @@ export function agentsRoot(
 	return path.join(opts.main ? projectRoot(dir) : top, ".agents");
 }
 
+/** Resolve a repository artifact path and create its parent; an omitted name returns the tool directory. */
 export function agentsPath(
 	tool: string,
 	name?: string,

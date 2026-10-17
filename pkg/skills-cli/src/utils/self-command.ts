@@ -1,12 +1,14 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
+/** Override source/compiled invocation detection, mainly for embedding and isolated tests. */
 export interface SelfCommandOptions {
 	execPath?: string;
 	entrypoint?: string;
 	compiled?: boolean;
 }
 
+/** Build argv for this compiled binary or a real source entrypoint; reject virtual Bun executable paths. */
 export function selfCommand(
 	args: string[],
 	opts: SelfCommandOptions = {},
@@ -28,6 +30,7 @@ export function selfCommand(
 	return [execPath, source, ...args];
 }
 
+/** Quote every argv element for a POSIX shell, including empty strings and embedded single quotes. */
 export function shellCommand(argv: readonly string[]): string {
 	return argv.map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
 }
