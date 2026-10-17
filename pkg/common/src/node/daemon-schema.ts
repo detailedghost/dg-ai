@@ -425,7 +425,6 @@ function createV12ChannelReview(db: Database): void {
 		legacy_source TEXT,
 		imported_at TEXT
 	) STRICT`);
-	// Views keep inspection in sync with the full snapshot, including imported requests.
 	db.run(`CREATE VIEW channel_review_requests AS
 		SELECT s.env, h.key AS message_id,
 			json_extract(h.value, '$.status') AS status,
@@ -444,6 +443,8 @@ function createV12ChannelReview(db: Database): void {
 		FROM channel_review_state WHERE json_type(state_json, '$.current') = 'object'`);
 }
 
+export const CHANNEL_REVIEW_SCHEMA_VERSION = 12;
+
 export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 1, run: createV1Tables },
 	{ version: 2, run: createV2Additions },
@@ -456,7 +457,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 9, run: createV9OverwatchBoard },
 	{ version: 10, run: createV10Inbox },
 	{ version: 11, run: createV11ChatSessions },
-	{ version: 12, run: createV12ChannelReview },
+	{ version: CHANNEL_REVIEW_SCHEMA_VERSION, run: createV12ChannelReview },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

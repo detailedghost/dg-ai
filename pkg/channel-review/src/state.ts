@@ -1,8 +1,12 @@
 import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
-import { CURRENT_SCHEMA_VERSION, openDaemonDatabase } from "@dg/common/daemon-db";
 import { dirname } from "node:path";
 import { DgCliError, describeError, isRecord } from "@dg/common";
+import {
+	CHANNEL_REVIEW_SCHEMA_VERSION,
+	CURRENT_SCHEMA_VERSION,
+	openDaemonDatabase,
+} from "@dg/common/daemon-db";
 import { DEFAULT_BUSY_TIMEOUT_MS, ForwardOnlyVersionError, readSchemaVersion } from "@dg/common/node";
 import type { ChannelReviewPaths } from "./paths";
 import { RUNNER_NAMES, type RunnerName } from "./runners/types";
@@ -311,7 +315,7 @@ export function readStateSnapshot(paths: StateLocation, legacyChatId?: string): 
 		if (version > CURRENT_SCHEMA_VERSION) {
 			throw new ForwardOnlyVersionError(version, CURRENT_SCHEMA_VERSION);
 		}
-		const row = version >= 12 ? readRow(db, paths.env) : null;
+		const row = version >= CHANNEL_REVIEW_SCHEMA_VERSION ? readRow(db, paths.env) : null;
 		return row ? parseState(JSON.parse(row.state_json), legacyChatId)
 			: loadLegacy(paths.statePath, legacyChatId);
 	} finally {
@@ -319,14 +323,12 @@ export function readStateSnapshot(paths: StateLocation, legacyChatId?: string): 
 	}
 }
 
-/** Import and the durable 'already initialized' marker are the same SQLite row. */
 function initialize(db: Database, paths: StateLocation, legacyChatId?: string): StateRow {
 	return db.transaction(() => {
 		const existing = readRow(db, paths.env);
 		if (existing) return existing;
 		const imported = existsSync(paths.statePath);
 		const state = loadLegacy(paths.statePath, legacyChatId);
-		// A status read before the first connection must not consume a scalar cursor.
 		if ("lastEventId" in state && legacyChatId === undefined) {
 			throw new DgCliError(`cannot import state file ${paths.statePath}: legacy lastEventId requires a chat id`);
 		}

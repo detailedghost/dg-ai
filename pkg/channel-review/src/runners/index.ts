@@ -3,6 +3,7 @@ import { isAiUsageLimit } from "@dg/common";
 import { runCapture } from "@dg/common/node";
 import type { ChannelConfig } from "../config";
 import { grokAuthFailure, probeGrok } from "./grok";
+import { resolveModel } from "./model";
 import {
 	CLI_TIMEOUT_MS,
 	realSkillFs,
@@ -108,6 +109,7 @@ const SPECS: Record<RunnerName, Spec> = {
 		argv: (path, request, config) => {
 			const grok = config.runner.grok;
 			const tools = grok?.tools ?? [];
+			const { model } = resolveModel("grok", request.model, config);
 			return [
 				path,
 				"--no-auto-update",
@@ -118,7 +120,7 @@ const SPECS: Record<RunnerName, Spec> = {
 				"--always-approve",
 				"--cwd",
 				request.cwd,
-				...((request.model ?? grok?.model) ? ["--model", (request.model ?? grok?.model)!] : []),
+				...(model ? ["--model", model] : []),
 				...(tools.length > 0 ? ["--tools", tools.join(",")] : []),
 			];
 		},
@@ -192,7 +194,7 @@ export function createRunners(
 					};
 				}
 				const startedAt = now();
-				const model = request.model ?? (name === "grok" ? config.runner.grok?.model : undefined);
+				const { model, source } = resolveModel(name, request.model, config);
 				const { stderrTail, stdoutTail, outputTail, code, ...outcome } = await spawn({
 					argv: spec.argv(path, request, config),
 					cwd: request.cwd,
@@ -202,7 +204,7 @@ export function createRunners(
 								origin: request.origin ?? "manual",
 								backend: name,
 								model,
-								modelSource: request.model ? "requested" : model ? "configured" : "default",
+								modelSource: source,
 							}),
 						}
 						: {},

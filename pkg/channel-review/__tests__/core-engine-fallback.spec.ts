@@ -59,6 +59,8 @@ test("Claude exhaustion retries with Codex when it is the configured fallback an
 	expect(h.provider.dms).toHaveLength(0);
 	expect(h.replies()[0]).toMatchObject({ html: true });
 	expect(h.replies()[0]?.text).toContain('itemid="m1"');
+	expect(h.replies()[0]?.text).toContain(`<p>${PR_URL}</p>`);
+	expect(h.replies()[0]?.text).not.toContain("$review");
 	expect(h.replies()[0]?.text).toContain(
 		"Claude is out of tokens, so I'm using Codex for this review.",
 	);

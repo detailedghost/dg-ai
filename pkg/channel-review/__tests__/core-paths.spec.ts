@@ -52,8 +52,10 @@ describe("channelReviewPaths", () => {
 		});
 		expect(paths.env).toBe("dev");
 		expect(paths.dbPath).toBe("/data/dg/daemon/daemon.db");
-		const { env, dbPath, ...localPaths } = paths;
-		for (const value of Object.values(localPaths)) {
+		const localPaths = Object.entries(paths).filter(
+			([key]) => key !== "env" && key !== "dbPath",
+		);
+		for (const [, value] of localPaths) {
 			expect(String(value).startsWith("/data/dg/channel-review")).toBe(true);
 		}
 	});

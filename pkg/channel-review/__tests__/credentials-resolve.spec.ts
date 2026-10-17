@@ -5,7 +5,7 @@ import { resolveSecrets } from "../src/credentials";
 import { status } from "../src/daemon";
 import type { PreflightReport } from "../src/providers/teams-relay";
 import { createDaemonHarness, type DaemonHarness } from "./daemon-harness";
-import { createFakeCredentialSource } from "./support/fakes";
+import { createFakeCredentialSource, waitUntil } from "./support/fakes";
 
 const STORE_RELAY = "fixture-store-relay-7f1c";
 const ENV_RELAY = "fixture-env-relay-2b9d";
@@ -63,6 +63,45 @@ describe("resolveSecrets", () => {
 		});
 		expect(resolved.warning).toBeUndefined();
 		expect(source.closed).toBe(1);
+	});
+
+	test("skips an expired store record so a valid env value is used", async () => {
+		const resolved = await resolveSecrets({
+			envName: "dev",
+			env: { DATADOG_ACCESS_TOKEN: "env-datadog" },
+			source: createFakeCredentialSource({
+				"channel-review/datadog": {
+					value: STORE_DATADOG,
+					meta: { expiresAt: "2026-09-01T00:00:00.000Z" },
+				},
+			}),
+			now: () => new Date("2026-10-01T00:00:00.000Z"),
+		});
+		expect(resolved.env.DATADOG_ACCESS_TOKEN).toBe("env-datadog");
+		expect(resolved.secrets.datadog).toEqual({
+			name: "channel-review/datadog",
+			source: "env",
+			expiresAt: "2026-09-01T00:00:00.000Z",
+			expired: true,
+		});
+		expect(resolved.warning).toContain("channel-review/datadog");
+	});
+
+	test("ignores a non-string expiresAt", async () => {
+		const resolved = await resolveSecrets({
+			envName: "dev",
+			env: {},
+			source: createFakeCredentialSource({
+				"channel-review/sentry": {
+					value: STORE_SENTRY,
+					meta: { expiresAt: 5 as unknown as string },
+				},
+			}),
+		});
+		expect(resolved.secrets.sentry).toEqual({
+			name: "channel-review/sentry",
+			source: "store",
+		});
 	});
 
 	test("falls back to env when the store has no entry", async () => {
@@ -144,12 +183,11 @@ describe("daemon credential wiring", () => {
 			"channel-review/relay/dev": { value: STORE_RELAY },
 		});
 		const { controller, done } = h.startServe();
-		while (
-			h.providers.length === 0 ||
-			!h.log.lines.some((line) => line.message.includes("daemon started"))
-		) {
-			await Bun.sleep(5);
-		}
+		await waitUntil(
+			() =>
+				h.providers.length > 0 &&
+				h.log.lines.some((line) => line.message.includes("daemon started")),
+		);
 		controller.abort();
 		await done;
 		expect(h.providerSecrets).toEqual([STORE_RELAY]);
@@ -166,7 +204,7 @@ describe("daemon credential wiring", () => {
 			new DaemonNotRunningError(),
 		);
 		const { controller, done } = h.startServe();
-		while (h.providers.length === 0) await Bun.sleep(5);
+		await waitUntil(() => h.providers.length > 0);
 		controller.abort();
 		await done;
 		expect(h.providerSecrets).toEqual([ENV_RELAY]);

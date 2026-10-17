@@ -539,7 +539,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 	const stack = createFakeStackReader(options.descendants);
 	const workspace = createFakeWorkspace();
 	const clock = createFixedClock();
-	const state: StateStore = createStateStore(paths, clock);
+	const state: StateStore = home.track(createStateStore(paths, clock));
 	const log = createRecordedLog();
 	const persisted: { slot: string; id: string }[] = [];
 	const timers: { ms: number; task: () => Promise<void>; canceled: boolean }[] = [];
@@ -602,7 +602,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 		timers,
 		trail,
 		replies: () => provider.replies(),
-		cleanup: () => { state.close(); home.cleanup(); },
+		cleanup: () => home.cleanup(),
 	};
 }
 

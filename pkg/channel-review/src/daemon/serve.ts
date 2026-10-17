@@ -17,8 +17,8 @@ import {
 } from "../providers/teams-relay";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
-import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { startAutomation } from "../automation/start";
+import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
 import { createStateStore } from "../state";
@@ -220,13 +220,17 @@ export async function serve({
 		? { ...config, runner: { ...config.runner, default: overrides.runner } }
 		: config;
 
-	const secrets = await resolveSecrets({
-		envName: env.name,
-		env: seams.env ?? process.env,
-		source: seams.credentials ?? createGrantCredentialSource(),
-	});
-	if (secrets.warning) log.warn(secrets.warning);
-	seams = { ...seams, env: secrets.env };
+	const baseEnv = seams.env ?? process.env;
+	async function refreshSecrets(): Promise<void> {
+		const secrets = await resolveSecrets({
+			envName: env.name,
+			env: baseEnv,
+			source: seams.credentials ?? createGrantCredentialSource(),
+		});
+		if (secrets.warning) log.warn(secrets.warning);
+		seams = { ...seams, env: secrets.env };
+	}
+	await refreshSecrets();
 
 	let connection: Connection;
 	let funPool: FunEntry[];
@@ -387,6 +391,7 @@ export async function serve({
 						`chat ${chatId}: the relay rejected the secret; fetching a fresh one`,
 					);
 					try {
+						await refreshSecrets();
 						const next = await connect({
 							config,
 							env,
