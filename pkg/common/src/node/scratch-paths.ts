@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, statSync } from "node:fs";
+import {
+	chmodSync,
+	lstatSync,
+	mkdirSync,
+	realpathSync,
+	statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { adjectives, animals, uniqueNamesGenerator } from "unique-names-generator";
+import {
+	adjectives,
+	animals,
+	uniqueNamesGenerator,
+} from "unique-names-generator";
 
 /** Per-cwd bucket for working artifacts, including separate linked worktrees. */
 export function cwdHash(dir: string = process.cwd()): string {
@@ -11,7 +21,10 @@ export function cwdHash(dir: string = process.cwd()): string {
 
 export function projectRoot(dir: string = process.cwd()): string {
 	try {
-		const result = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], { cwd: dir, stderr: "ignore" });
+		const result = Bun.spawnSync(["git", "worktree", "list", "--porcelain"], {
+			cwd: dir,
+			stderr: "ignore",
+		});
 		if (result.exitCode === 0) {
 			const first = result.stdout
 				.toString()
@@ -43,11 +56,18 @@ export function randSuffix(len = 4): string {
 }
 
 export function readableSuffix(): string {
-	return uniqueNamesGenerator({ dictionaries: [adjectives, animals], separator: "-", length: 2 });
+	return uniqueNamesGenerator({
+		dictionaries: [adjectives, animals],
+		separator: "-",
+		length: 2,
+	});
 }
 
 export function repoRoot(dir: string = process.cwd()): string | null {
-	const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], { cwd: dir, stderr: "ignore" });
+	const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
+		cwd: dir,
+		stderr: "ignore",
+	});
 	if (result.exitCode !== 0) return null;
 	return result.stdout.toString().trim() || null;
 }
@@ -97,18 +117,123 @@ export function stateRoot(): string {
 	return path.join(xdg || path.join(homedir(), ".local", "state"), "ai");
 }
 
-function rootedDir(base: string, bucket: string, tool: string, opts: ScratchPathOptions): string {
-	const dir = opts.cwdScope === false ? path.join(base, tool) : path.join(base, tool, bucket);
-	mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+function directoryEntry(dir: string) {
+	try {
+		return lstatSync(dir);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		try {
+			mkdirSync(dir, { mode: PRIVATE_DIR_MODE });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		}
+		return lstatSync(dir);
+	}
+}
+
+function unsafeDirectory(dir: string): never {
+	throw new Error(`unsafe scratch/state directory: ${dir}`);
+}
+
+function safeAncestors(
+	dir: string,
+	uid: number | undefined,
+	systemUid: number,
+): void {
+	const parent = path.dirname(dir);
+	if (parent !== dir) safeAncestors(parent, uid, systemUid);
+	const entry = directoryEntry(dir);
+	if (
+		uid !== undefined &&
+		entry.uid !== uid &&
+		entry.uid !== 0 &&
+		entry.uid !== systemUid
+	)
+		unsafeDirectory(dir);
+	if (entry.isSymbolicLink()) {
+		safeAncestors(realpathSync(dir), uid, systemUid);
+		return;
+	}
+	if (!entry.isDirectory()) unsafeDirectory(dir);
+	// Sticky shared ancestors (such as /tmp) protect the owned entry below them.
+	if (
+		uid !== undefined &&
+		(entry.mode & 0o022) !== 0 &&
+		(entry.mode & 0o1000) === 0
+	)
+		unsafeDirectory(dir);
+}
+
+function rootedDir(
+	base: string,
+	bucket: string,
+	tool: string,
+	opts: ScratchPathOptions,
+	allowRootLink: boolean,
+): string {
+	const dir =
+		opts.cwdScope === false
+			? path.join(base, tool)
+			: path.join(base, tool, bucket);
+	const root = path.resolve(base);
+	const relative = path.relative(root, path.resolve(dir));
+	if (
+		!relative ||
+		relative === ".." ||
+		relative.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relative)
+	)
+		unsafeDirectory(dir);
+	// Windows does not expose POSIX ownership; retain directory and symlink checks there.
+	const uid = process.getuid?.();
+	// The filesystem root's owner controls this tree, including remapped sandbox system directories.
+	const systemUid = lstatSync(path.parse(root).root).uid;
+	safeAncestors(path.dirname(root), uid, systemUid);
+	const entry = directoryEntry(root);
+	if (entry.isSymbolicLink()) {
+		if (!allowRootLink || (uid !== undefined && entry.uid !== uid))
+			unsafeDirectory(root);
+		safeAncestors(realpathSync(root), uid, systemUid);
+	}
+	const rootStat = statSync(root);
+	if (
+		!rootStat.isDirectory() ||
+		(uid !== undefined &&
+			(rootStat.uid !== uid || (rootStat.mode & 0o022) !== 0))
+	)
+		unsafeDirectory(root);
+	let child = root;
+	for (const segment of relative.split(path.sep)) {
+		child = path.join(child, segment);
+		const childStat = directoryEntry(child);
+		if (
+			!childStat.isDirectory() ||
+			childStat.isSymbolicLink() ||
+			(uid !== undefined &&
+				(childStat.uid !== uid || (childStat.mode & 0o022) !== 0))
+		)
+			unsafeDirectory(child);
+		if (uid !== undefined && (childStat.mode & 0o777) !== PRIVATE_DIR_MODE)
+			chmodSync(child, PRIVATE_DIR_MODE);
+	}
 	return dir;
 }
 
-function rootedPath(base: string, bucket: string, tool: string, name?: string, opts: ScratchPathOptions = {}): string {
-	const dir = rootedDir(base, bucket, tool, opts);
+function rootedPath(
+	base: string,
+	bucket: string,
+	tool: string,
+	name: string | undefined,
+	opts: ScratchPathOptions,
+	allowRootLink: boolean,
+): string {
+	const dir = rootedDir(base, bucket, tool, opts, allowRootLink);
 
 	if (name) {
 		if (path.isAbsolute(name) || name.includes("..")) {
-			throw new Error(`scratchPath: name must be a plain filename, got: ${name}`);
+			throw new Error(
+				`scratchPath: name must be a plain filename, got: ${name}`,
+			);
 		}
 		return path.join(dir, name);
 	}
@@ -127,20 +252,57 @@ function resolveCwd(opts: ScratchPathOptions): string | undefined {
 	return opts.cwd ? path.resolve(opts.cwd) : undefined;
 }
 
-export function scratchDir(tool: string, opts: ScratchPathOptions = {}): string {
-	return rootedDir(scratchRoot(), cwdHash(resolveCwd(opts)), tool, opts);
+export function scratchDir(
+	tool: string,
+	opts: ScratchPathOptions = {},
+): string {
+	return rootedDir(
+		scratchRoot(),
+		cwdHash(resolveCwd(opts)),
+		tool,
+		opts,
+		process.env["AI_SCRATCH_DIR"] !== undefined,
+	);
 }
 
 export function stateDir(tool: string, opts: ScratchPathOptions = {}): string {
-	return rootedDir(stateRoot(), projectHash(resolveCwd(opts)), tool, opts);
+	return rootedDir(
+		stateRoot(),
+		projectHash(resolveCwd(opts)),
+		tool,
+		opts,
+		!!process.env["AI_STATE_DIR"],
+	);
 }
 
-export function scratchPath(tool: string, name?: string, opts: ScratchPathOptions = {}): string {
-	return rootedPath(scratchRoot(), cwdHash(resolveCwd(opts)), tool, name, opts);
+export function scratchPath(
+	tool: string,
+	name?: string,
+	opts: ScratchPathOptions = {},
+): string {
+	return rootedPath(
+		scratchRoot(),
+		cwdHash(resolveCwd(opts)),
+		tool,
+		name,
+		opts,
+		process.env["AI_SCRATCH_DIR"] !== undefined,
+	);
 }
 
-export function statePath(tool: string, name?: string, opts: ScratchPathOptions = {}): string {
-	return rootedPath(stateRoot(), projectHash(resolveCwd(opts)), tool, name, opts);
+export function statePath(
+	tool: string,
+	name?: string,
+	opts: ScratchPathOptions = {},
+): string {
+	return rootedPath(
+		stateRoot(),
+		projectHash(resolveCwd(opts)),
+		tool,
+		name,
+		opts,
+		!!process.env["AI_STATE_DIR"],
+	);
 }
 
 export class NotInWorktreeError extends Error {
@@ -149,14 +311,20 @@ export class NotInWorktreeError extends Error {
 	}
 }
 
-export function agentsRoot(opts: { cwd?: string; main?: boolean } = {}): string {
+export function agentsRoot(
+	opts: { cwd?: string; main?: boolean } = {},
+): string {
 	const dir = path.resolve(opts.cwd ?? process.cwd());
 	const top = repoRoot(dir);
 	if (!top) throw new NotInWorktreeError();
 	return path.join(opts.main ? projectRoot(dir) : top, ".agents");
 }
 
-export function agentsPath(tool: string, name?: string, opts: { cwd?: string; main?: boolean } = {}): string {
+export function agentsPath(
+	tool: string,
+	name?: string,
+	opts: { cwd?: string; main?: boolean } = {},
+): string {
 	const dir = path.join(agentsRoot(opts), tool);
 	if (!name) {
 		mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });

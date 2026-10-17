@@ -2,33 +2,39 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as nodeFs from "node:fs";
 import * as nodeOs from "node:os";
 import * as nodePath from "node:path";
+import { scratchFixtures } from "../../skills-cli/__tests__/git-repo-fixtures";
 import {
 	agentsPath,
 	agentsRoot,
 	cwdHash,
 	findAgentsDir,
+	isPathInside,
+	NotInWorktreeError,
+	projectHash,
+	projectRoot,
 	randSuffix,
 	readableSuffix,
 	repoRoot,
-	projectHash,
 	scratchDir,
-	stateDir,
-	uniqueName,
 	scratchPath,
+	scratchRoot,
+	stateDir,
 	statePath,
 	stateRoot,
-	scratchRoot,
-	projectRoot,
-	isPathInside,
-	NotInWorktreeError,
+	uniqueName,
 } from "../src/node/scratch-paths";
-import { scratchFixtures } from "../../skills-cli/__tests__/git-repo-fixtures";
 
 const fixtures = scratchFixtures();
 const makeTmp = () => fixtures.tmp();
-const trackedEnv = ["AI_SCRATCH_DIR", "AI_STATE_DIR", "XDG_STATE_HOME"] as const;
+const trackedEnv = [
+	"AI_SCRATCH_DIR",
+	"AI_STATE_DIR",
+	"XDG_STATE_HOME",
+] as const;
 let savedEnv: (string | undefined)[];
-beforeEach(() => { savedEnv = trackedEnv.map((key) => process.env[key]); });
+beforeEach(() => {
+	savedEnv = trackedEnv.map((key) => process.env[key]);
+});
 afterEach(() => {
 	fixtures.cleanup();
 	trackedEnv.forEach((key, index) => {
@@ -142,7 +148,9 @@ process.stdout.write(JSON.stringify({ found: findAgentsDir(${JSON.stringify(deep
 		expect(found).toBeNull();
 		expect(visited[0]).toBe(nodePath.join(deep, ".agents"));
 		expect(visited).toContain(nodePath.join(nodePath.dirname(deep), ".agents"));
-		expect(visited.at(-1)).toBe(nodePath.join(nodePath.parse(deep).root, ".agents"));
+		expect(visited.at(-1)).toBe(
+			nodePath.join(nodePath.parse(deep).root, ".agents"),
+		);
 	});
 
 	test(".agents must be a directory, not a file", () => {
@@ -192,7 +200,9 @@ describe("scratchPath", () => {
 		process.env.AI_SCRATCH_DIR = base;
 
 		scratchPath("newtool");
-		expect(nodeFs.existsSync(nodePath.join(base, "newtool", cwdHash()))).toBe(true);
+		expect(nodeFs.existsSync(nodePath.join(base, "newtool", cwdHash()))).toBe(
+			true,
+		);
 	});
 
 	test("returns base/tool/<cwd-hash>/name by default", () => {
@@ -233,11 +243,170 @@ describe("scratchPath", () => {
 		const base = makeTmp();
 		process.env.AI_SCRATCH_DIR = base;
 
-		expect(() => scratchPath("tool", "f.txt", { ephemeral: true })).not.toThrow();
+		expect(() =>
+			scratchPath("tool", "f.txt", { ephemeral: true }),
+		).not.toThrow();
 	});
 });
 
 // ── repoRoot ─────────────────────────────────────────────────────────────────
+
+describe("managed scratch and state directories", () => {
+	for (const { env, getDir, getHash } of [
+		{ env: "AI_SCRATCH_DIR", getDir: scratchDir, getHash: cwdHash },
+		{ env: "AI_STATE_DIR", getDir: stateDir, getHash: projectHash },
+	] as const) {
+		test(`${env} makes existing tool and bucket directories private before returning them`, () => {
+			const base = makeTmp();
+			process.env[env] = base;
+			const tool = nodePath.join(base, "private-artifacts");
+			const bucket = nodePath.join(tool, getHash());
+			nodeFs.mkdirSync(bucket, { recursive: true });
+			for (const dir of [tool, bucket]) nodeFs.chmodSync(dir, 0o755);
+
+			expect(getDir("private-artifacts")).toBe(bucket);
+			for (const dir of [tool, bucket]) {
+				expect(nodeFs.statSync(dir).mode & 0o777).toBe(0o700);
+			}
+		});
+
+		for (const descendant of ["tool", "bucket"] as const) {
+			test(`${env} rejects a symlinked ${descendant} without modifying its target`, () => {
+				const base = makeTmp();
+				const outside = makeTmp();
+				process.env[env] = base;
+				const marker = nodePath.join(outside, "existing-plan.md");
+				nodeFs.writeFileSync(marker, "preserve this plan");
+				nodeFs.chmodSync(outside, 0o755);
+				const tool = nodePath.join(base, "private-artifacts");
+				if (descendant === "bucket") nodeFs.mkdirSync(tool);
+				const link =
+					descendant === "tool" ? tool : nodePath.join(tool, getHash());
+				nodeFs.symlinkSync(outside, link);
+
+				expect(() => getDir("private-artifacts")).toThrow();
+				expect(nodeFs.lstatSync(link).isSymbolicLink()).toBe(true);
+				expect(nodeFs.statSync(outside).mode & 0o777).toBe(0o755);
+				expect(nodeFs.readdirSync(outside)).toEqual(["existing-plan.md"]);
+				expect(nodeFs.readFileSync(marker, "utf8")).toBe("preserve this plan");
+			});
+		}
+
+		for (const linkedRoot of [false, true]) {
+			test(`${env} rejects an unsafe writable root ancestor${linkedRoot ? " behind a configured symlink" : ""}`, () => {
+				const boundary = makeTmp();
+				const parent = nodePath.join(boundary, "shared");
+				const base = nodePath.join(parent, "artifacts");
+				nodeFs.mkdirSync(base, { recursive: true });
+				nodeFs.chmodSync(parent, 0o777);
+				const configured = linkedRoot
+					? nodePath.join(makeTmp(), "configured-root")
+					: base;
+				if (linkedRoot) nodeFs.symlinkSync(base, configured);
+				process.env[env] = configured;
+
+				expect(() => getDir("private-artifacts")).toThrow();
+				expect(nodeFs.statSync(parent).mode & 0o777).toBe(0o777);
+				expect(nodeFs.readdirSync(base)).toEqual([]);
+			});
+		}
+
+		test(`${env} accepts an explicitly configured root symlink into a safe directory`, () => {
+			const target = makeTmp();
+			nodeFs.chmodSync(target, 0o755);
+			const link = nodePath.join(makeTmp(), "configured-root");
+			nodeFs.symlinkSync(target, link);
+			process.env[env] = link;
+
+			const dir = getDir("private-artifacts");
+			expect(nodeFs.realpathSync(dir)).toBe(
+				nodePath.join(target, "private-artifacts", getHash()),
+			);
+			expect(nodeFs.statSync(dir).mode & 0o777).toBe(0o700);
+			expect(nodeFs.statSync(target).mode & 0o777).toBe(0o755);
+			expect(nodeFs.lstatSync(link).isSymbolicLink()).toBe(true);
+		});
+	}
+
+	test("rejects a symlinked default state root in an isolated HOME", () => {
+		const home = makeTmp();
+		const outside = makeTmp();
+		const parent = nodePath.join(home, ".local", "state");
+		nodeFs.mkdirSync(parent, { recursive: true });
+		nodeFs.symlinkSync(outside, nodePath.join(parent, "ai"));
+
+		const proc = Bun.spawnSync(
+			[
+				process.execPath,
+				"--eval",
+				`
+import { stateRoot, stateDir } from ${JSON.stringify(`${import.meta.dir}/../src/node/scratch-paths.ts`)};
+let rejected = false;
+try { stateDir("private-artifacts"); } catch { rejected = true; }
+console.log(JSON.stringify({ root: stateRoot(), rejected }));
+`,
+			],
+			{
+				env: {
+					...process.env,
+					HOME: home,
+					AI_STATE_DIR: undefined,
+					XDG_STATE_HOME: undefined,
+				},
+			},
+		);
+		expect(proc.exitCode).toBe(0);
+		const result = JSON.parse(proc.stdout.toString());
+		expect(result.root).toBe(nodePath.join(parent, "ai"));
+		expect(result.rejected).toBe(true);
+		expect(nodeFs.readdirSync(outside)).toEqual([]);
+	});
+
+	for (const competingEntry of ["directory", "symlink"] as const) {
+		test(`validates a competing ${competingEntry} created during first use`, () => {
+			const root = makeTmp();
+			const outside = makeTmp();
+			const tool = nodePath.join(root, "concurrent-artifacts");
+			const proc = Bun.spawnSync(
+				[
+					process.execPath,
+					"--eval",
+					`
+import { mock } from "bun:test";
+const fs = await import("node:fs");
+const originalMkdir = fs.mkdirSync;
+const originalSymlink = fs.symlinkSync;
+let injected = false;
+mock.module("node:fs", () => ({ ...fs, mkdirSync(candidate, options) {
+	if (!injected && candidate === ${JSON.stringify(tool)}) {
+		injected = true;
+		${competingEntry === "directory" ? "originalMkdir(candidate, { mode: 0o755 });" : `originalSymlink(${JSON.stringify(outside)}, candidate);`}
+	}
+	return originalMkdir(candidate, options);
+} }));
+const { scratchDir } = await import(${JSON.stringify(`${import.meta.dir}/../src/node/scratch-paths.ts`)});
+let dir = null;
+let rejected = false;
+try { dir = scratchDir("concurrent-artifacts", { cwdScope: false }); } catch { rejected = true; }
+console.log(JSON.stringify({ injected, dir, rejected }));
+`,
+				],
+				{ env: { ...process.env, AI_SCRATCH_DIR: root } },
+			);
+			expect(proc.exitCode).toBe(0);
+			const result = JSON.parse(proc.stdout.toString());
+			expect(result.injected).toBe(true);
+			expect(result.rejected).toBe(competingEntry === "symlink");
+			if (competingEntry === "directory") {
+				expect(result.dir).toBe(tool);
+				expect(nodeFs.statSync(tool).mode & 0o777).toBe(0o700);
+			} else {
+				expect(nodeFs.lstatSync(tool).isSymbolicLink()).toBe(true);
+				expect(nodeFs.readdirSync(outside)).toEqual([]);
+			}
+		});
+	}
+});
 
 describe("repoRoot", () => {
 	test("returns a non-empty string when run inside a git repo (temp init)", () => {
@@ -303,7 +472,9 @@ describe("statePath", () => {
 		delete process.env.AI_STATE_DIR;
 		delete process.env.XDG_STATE_HOME;
 
-		expect(stateRoot()).toBe(nodePath.join(nodeOs.homedir(), ".local", "state", "ai"));
+		expect(stateRoot()).toBe(
+			nodePath.join(nodeOs.homedir(), ".local", "state", "ai"),
+		);
 	});
 
 	test("never resolves under ~/.cache, which XDG may delete at any time", () => {
@@ -364,7 +535,9 @@ describe("statePath", () => {
 		const base = makeTmp();
 		process.env.AI_STATE_DIR = base;
 
-		expect(statePath("bg", "job.log", { cwdScope: false })).toBe(nodePath.join(base, "bg", "job.log"));
+		expect(statePath("bg", "job.log", { cwdScope: false })).toBe(
+			nodePath.join(base, "bg", "job.log"),
+		);
 	});
 
 	test("rejects a traversing name", () => {
@@ -384,7 +557,9 @@ describe("uniqueName", () => {
 	});
 
 	test("appends the suffix verbatim", () => {
-		expect(uniqueName("pw", ".zip")).toMatch(/^pw-\d{8}-\d{4}-[a-z0-9]{4}\.zip$/);
+		expect(uniqueName("pw", ".zip")).toMatch(
+			/^pw-\d{8}-\d{4}-[a-z0-9]{4}\.zip$/,
+		);
 	});
 });
 
@@ -401,10 +576,18 @@ describe("cwd option", () => {
 		process.env.AI_SCRATCH_DIR = base;
 		process.env.AI_STATE_DIR = base;
 		try {
-			expect(scratchPath("t", "f", { cwd: linked })).toBe(nodePath.join(base, "t", cwdHash(linked), "f"));
-			expect(statePath("t", "f", { cwd: linked })).toBe(nodePath.join(base, "t", projectHash(main), "f"));
-			expect(scratchDir("t", { cwd: main, cwdScope: false })).toBe(nodePath.join(base, "t"));
-			expect(stateDir("t", { cwd: main })).toBe(nodePath.join(base, "t", projectHash(main)));
+			expect(scratchPath("t", "f", { cwd: linked })).toBe(
+				nodePath.join(base, "t", cwdHash(linked), "f"),
+			);
+			expect(statePath("t", "f", { cwd: linked })).toBe(
+				nodePath.join(base, "t", projectHash(main), "f"),
+			);
+			expect(scratchDir("t", { cwd: main, cwdScope: false })).toBe(
+				nodePath.join(base, "t"),
+			);
+			expect(stateDir("t", { cwd: main })).toBe(
+				nodePath.join(base, "t", projectHash(main)),
+			);
 		} finally {
 			delete process.env.AI_SCRATCH_DIR;
 			delete process.env.AI_STATE_DIR;
@@ -427,7 +610,9 @@ describe("agentsRoot and agentsPath", () => {
 	test("resolve the current worktree or the main worktree", () => {
 		const { main, linked } = linkedWorktreeFixture();
 		expect(agentsRoot({ cwd: linked })).toBe(nodePath.join(linked, ".agents"));
-		expect(agentsRoot({ cwd: linked, main: true })).toBe(nodePath.join(main, ".agents"));
+		expect(agentsRoot({ cwd: linked, main: true })).toBe(
+			nodePath.join(main, ".agents"),
+		);
 	});
 
 	test("create the tool dir, or the name's parent", () => {
@@ -443,7 +628,9 @@ describe("agentsRoot and agentsPath", () => {
 
 	test("throw outside a git worktree", () => {
 		const outside = makeTmp();
-		expect(() => agentsPath("proto", "x", { cwd: outside })).toThrow("not in a git worktree");
+		expect(() => agentsPath("proto", "x", { cwd: outside })).toThrow(
+			"not in a git worktree",
+		);
 	});
 });
 

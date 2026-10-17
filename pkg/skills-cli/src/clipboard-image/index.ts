@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
+	closeSync,
 	constants,
 	copyFileSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
 	renameSync,
 	rmSync,
 	statSync,
-	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -27,7 +28,10 @@ function writeOutput(data: string | Buffer): Promise<void> {
 	});
 }
 
-async function extractImage(tempfile: string): Promise<boolean> {
+async function extractImage(
+	tempfile: string,
+	descriptor: number,
+): Promise<boolean> {
 	if (
 		process.env.PLATFORM_IS_WSL === "1" ||
 		process.env.WSL_INTEROP ||
@@ -60,12 +64,8 @@ $img.Save('${destination}', [System.Drawing.Imaging.ImageFormat]::Png)
 				: null;
 	if (!argv) return false;
 	try {
-		const child = Bun.spawn(argv, { stdout: "pipe", stderr: "ignore" });
-		const [bytes] = await Promise.all([
-			new Response(child.stdout).arrayBuffer(),
-			child.exited,
-		]);
-		writeFileSync(tempfile, Buffer.from(bytes));
+		const child = Bun.spawn(argv, { stdout: descriptor, stderr: "ignore" });
+		await child.exited;
 	} catch {
 		// Native extraction errors are reported as an empty clipboard, with stderr suppressed.
 	}
@@ -110,19 +110,22 @@ export async function main(argv: string[]): Promise<number> {
 	const tempfile = join(tmpdir(), `clipboard-image-${randomUUID()}.png`);
 	let created = false;
 	let keep = false;
+	let descriptor: number | undefined;
 	try {
-		writeFileSync(tempfile, "", { flag: "wx", mode: 0o600 });
+		descriptor = openSync(tempfile, "wx", 0o600);
 		created = true;
-		if (!(await extractImage(tempfile))) {
+		const supported = await extractImage(tempfile, descriptor);
+		closeSync(descriptor);
+		descriptor = undefined;
+		if (!supported) {
 			process.stderr.write(
 				"clipboard-image: no supported clipboard backend found\n  Wayland: install wl-paste (wl-clipboard)\n  X11:     install xclip\n  WSL:     run inside WSL\n",
 			);
 			return 1;
 		}
-		const bytes = readFileSync(tempfile);
-		if (bytes.length === 0) throw new Error("no image on clipboard");
+		if (statSync(tempfile).size === 0) throw new Error("no image on clipboard");
 		const destination = argv[0];
-		if (destination === "-") await writeOutput(bytes);
+		if (destination === "-") await writeOutput(readFileSync(tempfile));
 		else if (destination === "--scratch" || destination === "-s") {
 			await writeOutput(`${tempfile}\n`);
 			keep = true;
@@ -140,6 +143,7 @@ export async function main(argv: string[]): Promise<number> {
 		);
 		return 1;
 	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
 		if (created && !keep) rmSync(tempfile, { force: true });
 	}
 }
