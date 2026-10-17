@@ -1,7 +1,15 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { protectedPushReason } from "@dg/common";
 import { statePath, uniqueName } from "@dg/common/node";
-import { baseBranch, currentBranch, git, isDirty, resolveBaseSha } from "../utils/git";
+import {
+	baseBranch,
+	currentBranch,
+	git,
+	isDirty,
+	remoteDefaultBranch,
+	resolveBaseSha,
+} from "../utils/git";
 import { emitJson } from "../utils/json";
 import { defineCommand, die, EXIT } from "../utils/legacy-command";
 
@@ -186,6 +194,8 @@ async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContex
 
 	const branch = await currentBranch();
 	if (branch === "HEAD") die("detached HEAD.", EXIT.ERR);
+	const blocked = protectedPushReason(branch, await remoteDefaultBranch());
+	if (blocked) die(blocked, EXIT.ERR);
 
 	let baseSha = "";
 	try {

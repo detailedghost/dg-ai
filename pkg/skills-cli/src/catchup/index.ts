@@ -1,3 +1,4 @@
+import { protectedPushReason } from "@dg/common";
 import { runCapture } from "@dg/common/node";
 import { runNative } from "./process";
 import { verifyBuild } from "./verify";
@@ -125,9 +126,9 @@ export async function main(argv: string[]): Promise<number> {
 		const after = await query(["rev-parse", "HEAD"]);
 		let reason = "";
 		let pushed = "NO";
+		const blocked = protectedPushReason(branch, base);
 		if (!push) reason = "--no-push flag set";
-		else if (branch === "main" || branch === "master")
-			reason = `refusing to force-push protected branch '${branch}'`;
+		else if (blocked) reason = blocked;
 		else if (before === after)
 			reason = "rebase did not rewrite history (HEAD unchanged)";
 		else if (

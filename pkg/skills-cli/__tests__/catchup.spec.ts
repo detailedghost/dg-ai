@@ -673,7 +673,7 @@ console.log("loaded");
 		expect(calls().some((call) => call.args[0] === "push")).toBe(false);
 	});
 
-	test.each(["main", "master"])(
+	test.each(["main", "master", "develop"])(
 		"rebases protected %s locally but skips pushing it",
 		(branch) => {
 			const repo = makeRepo(branch);

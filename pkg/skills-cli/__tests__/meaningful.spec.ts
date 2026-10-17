@@ -820,6 +820,37 @@ describe("meaningful preflight, backup and rollback", () => {
 		expect(git(repo, ["status", "--porcelain"])).toBe("");
 	});
 
+	test.each(["main", "master", "develop"])(
+		"refuses to reshape or push protected branch %s",
+		(branch) => {
+			const repo = makeRepo(undefined, false);
+			if (branch === "main") git(repo, ["checkout", "-q", "main"]);
+			else {
+				git(repo, ["checkout", "-q", "-b", branch]);
+				git(repo, ["push", "-u", "origin", branch]);
+				git(repo, [
+					"symbolic-ref",
+					"refs/remotes/origin/HEAD",
+					`refs/remotes/origin/${branch}`,
+				]);
+			}
+			const head = commit(repo, { "a.ts": "a\n" });
+			const remote = git(repo, ["ls-remote", "origin"]);
+			const result = runMeaningful(repo, [
+				"apply-json",
+				"--base",
+				repo.base,
+				jsonPlan([{ subject: "feat: rewritten", files: ["a.ts"] }]),
+			]);
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain(
+				`refusing to force-push protected branch '${branch}'`,
+			);
+			expect(git(repo, ["rev-parse", "HEAD"])).toBe(head);
+			expect(git(repo, ["ls-remote", "origin"])).toBe(remote);
+		},
+	);
+
 	test.each([true, false])(
 		"pushes an identical tree with tracked upstream = %s and abort leaves the remote unchanged",
 		(tracked) => {
