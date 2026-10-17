@@ -28,6 +28,14 @@ function reportCause(error: unknown): void {
 	);
 }
 
+function clipboardCommand(): string[] | null {
+	if (process.env.WAYLAND_DISPLAY && Bun.which("wl-paste"))
+		return ["wl-paste", "--type", "image/png"];
+	if (process.env.DISPLAY && Bun.which("xclip"))
+		return ["xclip", "-selection", "clipboard", "-t", "image/png", "-o"];
+	return null;
+}
+
 async function extractImage(
 	tempfile: string,
 	descriptor: number,
@@ -56,12 +64,7 @@ $img.Save('${destination}', [System.Drawing.Imaging.ImageFormat]::Png)
 		}
 		return true;
 	}
-	const argv =
-		process.env.WAYLAND_DISPLAY && Bun.which("wl-paste")
-			? ["wl-paste", "--type", "image/png"]
-			: process.env.DISPLAY && Bun.which("xclip")
-				? ["xclip", "-selection", "clipboard", "-t", "image/png", "-o"]
-				: null;
+	const argv = clipboardCommand();
 	if (!argv) return false;
 	try {
 		const child = Bun.spawn(argv, { stdout: descriptor, stderr: "ignore" });
@@ -90,14 +93,11 @@ function saveImage(tempfile: string, destination: string): void {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
 	const staged = join(dirname(target), `.clipboard-image-${randomUUID()}.tmp`);
-	let copied = false;
 	try {
 		copyFileSync(tempfile, staged, constants.COPYFILE_EXCL);
-		copied = true;
-		// Replace the destination entry, rather than following a file symlink.
 		renameSync(staged, target);
 	} finally {
-		if (copied) rmSync(staged, { force: true });
+		rmSync(staged, { force: true });
 	}
 }
 
