@@ -14,6 +14,7 @@ import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
+import { registerProxy } from "./commands/proxy";
 import { registerProto } from "./commands/proto";
 import { registerRerun } from "./commands/rerun";
 import { registerStash } from "./commands/stash";
@@ -45,6 +46,7 @@ registerStash(program);
 registerVcsProvider(program);
 registerClipboardImage(program);
 registerProto(program);
+registerProxy(program);
 registerOverwatchSnapshot(program);
 registerRequireExtension(program);
 
