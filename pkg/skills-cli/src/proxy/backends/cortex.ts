@@ -10,6 +10,7 @@
  * cortex's built-in Snowflake SQL tool fully enabled (DDL/DML included).
  */
 
+import { parseJsonLines } from "./json-lines";
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
 function buildArgs(input: BuildArgsInput): string[] {
@@ -40,15 +41,7 @@ function parseEvents(stdout: string): ParsedResult {
 	let resultMessage = "";
 	let assistantText = "";
 
-	for (const line of stdout.split("\n")) {
-		if (!line.trim()) continue;
-
-		let event: any;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			continue;
-		}
+	for (const event of parseJsonLines(stdout)) {
 
 		if (sessionId === null && event.session_id) {
 			sessionId = event.session_id;

@@ -15,10 +15,11 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { BACKENDS, withPersona } from "../src/proxy/index";
+import { BACKENDS, type BackendName, withPersona } from "../src/proxy/index";
 import { shellCommand } from "../src/utils/self-command";
 import {
 	compileProxyCli,
@@ -244,6 +245,20 @@ describe("compiled proxy background", () => {
 		expect(existsSync(lock.directory)).toBe(false);
 	});
 
+	test("recovers an unreadable populated lock once it is old enough to be abandoned", async () => {
+		const id = "abandoned-malformed";
+		const directory = join(fixture.scratch, "bg", `${id}.lock`);
+		mkdirSync(directory, { recursive: true });
+		writeFileSync(join(directory, "one.json"), "{");
+		writeFileSync(join(directory, "two.json"), "{");
+		const old = new Date(Date.now() - 5 * 60 * 1000);
+		utimesSync(directory, old, old);
+		expect(await json(["background", "drain", id])).toMatchObject({
+			result: "unknown",
+		});
+		expect(existsSync(directory)).toBe(false);
+	});
+
 	test("keeps a live owner's lock and reports contention without stealing it", async () => {
 		const id = "live-owner";
 		const owner = { pid: process.pid, nonce: "live-owner" };
@@ -298,7 +313,7 @@ describe("compiled proxy background", () => {
 		]);
 	});
 
-	test.each(Object.keys(BACKENDS))(
+	test.each(Object.keys(BACKENDS) as BackendName[])(
 		"executes %s through the compiled command with output and cwd parity",
 		async (name) => {
 			fixture.fakeBackend(name);
@@ -378,6 +393,41 @@ describe("compiled proxy background", () => {
 		expect(existsSync(join(fixture.root, "forbidden"))).toBe(false);
 	}, 20000);
 
+	test("list and status skip a truncated meta file instead of failing for every job", async () => {
+		const job: Job = await json(["background", "run", ":"]);
+		await finished(job);
+		const truncated = join(fixture.state, "bg", "truncated.meta.json");
+		writeFileSync(truncated, '{"id":');
+		const listed = await json(["background", "list"]);
+		expect(listed.jobs.map((value: Job) => value.id)).toEqual([job.id]);
+		expect(await json(["background", "status", job.id])).toMatchObject({
+			drainOutput: null,
+		});
+		expect(
+			await json(["background", "prune", "--cwd", fixture.root]),
+		).toMatchObject({ removed: [job.id] });
+		rmSync(truncated);
+	});
+
+	test("status surfaces the output a failed drain left behind", async () => {
+		const job: Job = await json(["background", "run", ":"]);
+		await finished(job);
+		writeFileSync(
+			join(fixture.state, "bg", `${job.id}.drain.log`),
+			'{"result":"no-session"}\n',
+		);
+		expect(await json(["background", "status", job.id])).toMatchObject({
+			drainOutput: '{"result":"no-session"}',
+		});
+	});
+
+	test("run rejects a command split across several arguments", async () => {
+		const result = await run(["background", "run", "sh", "-c", "echo hi"]);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("one quoted argument");
+		expect(jobs()).toEqual([]);
+	});
+
 	test("queues ordered context, automatically drains once, and resumes the actual backend session", async () => {
 		const gate = join(fixture.root, "release ' gate");
 		fixture.fakeBackend("pi", { gate });
@@ -387,6 +437,10 @@ describe("compiled proxy background", () => {
 			"pi",
 			"--prompt",
 			"initial task",
+			"--model",
+			"fixture ' model",
+			"--effort",
+			"high",
 		]);
 		const job: Job = await json([
 			"background",
@@ -427,6 +481,8 @@ describe("compiled proxy background", () => {
 			args: BACKENDS.pi.buildArgs({
 				prompt: contexts.join("\n"),
 				resume: "fixture-session",
+				model: "fixture ' model",
+				effort: "high",
 			}),
 			cwd: fixture.root,
 		});

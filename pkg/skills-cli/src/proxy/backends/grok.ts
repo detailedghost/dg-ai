@@ -1,3 +1,4 @@
+import { parseJsonLines } from "./json-lines";
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
 function buildArgs(input: BuildArgsInput): string[] {
@@ -13,14 +14,7 @@ function parseEvents(stdout: string): ParsedResult {
 	let message = "";
 	let errorMessage = "";
 
-	for (const line of stdout.split("\n")) {
-		if (!line.trim()) continue;
-		let event: any;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			continue;
-		}
+	for (const event of parseJsonLines(stdout)) {
 		if (sessionId === null && typeof event.sessionId === "string") {
 			sessionId = event.sessionId;
 		}

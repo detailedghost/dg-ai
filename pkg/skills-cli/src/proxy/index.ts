@@ -1,7 +1,7 @@
 // Public surface of the /proxy helper module. cli.ts and any future
 // importer should only ever reach into this file, not the internals.
 
-export { BACKENDS } from "./backends";
+export { BACKENDS, type BackendName, findBackend } from "./backends";
 export type {
 	Backend,
 	BuildArgsInput,

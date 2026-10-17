@@ -38,7 +38,7 @@ This writes the fully briefed prompt and prints JSON containing the exact quoted
 "$DG" proxy background list
 ```
 
-Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern.
+Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
 
 The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `status` reports the job as `unknown`, and `cancel` returns `no-pid` without signaling any process.
 

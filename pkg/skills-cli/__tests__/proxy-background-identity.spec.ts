@@ -69,10 +69,10 @@ describe("background pid identity off Linux", () => {
 		expect(readPid(job as never)).toBeNull();
 	});
 
-	test("terminateGroup refuses to signal and leaves the process alive", () => {
+	test("terminateGroup refuses to signal and leaves the process alive", async () => {
 		const pid = detachedSleeper();
 		setPlatform("darwin");
-		expect(() => terminateGroup(pid)).toThrow(/Refusing to signal/);
+		await expect(terminateGroup(pid)).rejects.toThrow(/Refusing to signal/);
 		expect(() => process.kill(pid, 0)).not.toThrow();
 	});
 });

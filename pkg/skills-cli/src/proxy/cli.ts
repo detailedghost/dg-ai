@@ -7,6 +7,7 @@ import {
 	BACKENDS,
 	checkPreflight,
 	classifyFailure,
+	findBackend,
 	proxyDir,
 	resolvePersona,
 	runBackend,
@@ -96,7 +97,7 @@ export async function main(argv: string[]): Promise<number | void> {
 		process.exit(1);
 	}
 
-	const backend = BACKENDS[backendName];
+	const backend = findBackend(backendName);
 	if (!backend) {
 		console.error(
 			`unknown backend "${backendName}", known: ${Object.keys(BACKENDS).join(", ")}`,

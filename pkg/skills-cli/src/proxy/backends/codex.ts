@@ -5,18 +5,20 @@
  * an error message out of the stream when a turn fails.
  */
 
+import { parseJsonLines } from "./json-lines";
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
 function buildArgs(input: BuildArgsInput): string[] {
-	// `-a/--ask-for-approval` doesn't exist on `codex exec` — only `-s/--sandbox` does.
 	const args = input.resume
-		? ["exec", "resume", input.resume, input.prompt, "--json"]
-		: ["exec", input.prompt, "--json", "-s", "workspace-write"];
+		? ["exec", "resume", "--json", "-c", 'sandbox_mode="workspace-write"']
+		: ["exec", "--json", "-s", "workspace-write"];
 
 	if (input.model) args.push("-m", input.model);
 	if (input.effort) args.push("-c", `model_reasoning_effort=${input.effort}`);
 
-	return args;
+	return input.resume
+		? [...args, "--", input.resume, input.prompt]
+		: [...args, "--", input.prompt];
 }
 
 function unwrapErrorMessage(raw: string): string {
@@ -33,15 +35,7 @@ function parseEvents(stdout: string): ParsedResult {
 	let message = "";
 	let fallback = "";
 
-	for (const line of stdout.split("\n")) {
-		if (!line.trim()) continue;
-
-		let event: any;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			continue;
-		}
+	for (const event of parseJsonLines(stdout)) {
 
 		if (event.type === "thread.started" && sessionId === null) {
 			sessionId = event.thread_id ?? null;

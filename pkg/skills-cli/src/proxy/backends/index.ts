@@ -9,8 +9,11 @@ import { opencode } from "./opencode";
 import { pi } from "./pi";
 import type { Backend } from "./types";
 
+/** Names of the supported backends. */
+export type BackendName = "codex" | "copilot" | "pi" | "opencode" | "cortex" | "grok";
+
 /** Registry of supported backend identities; selection is explicit and never falls back to another backend. */
-export const BACKENDS: Record<string, Backend> = {
+export const BACKENDS: Record<BackendName, Backend> = {
 	codex,
 	copilot,
 	pi,
@@ -18,3 +21,8 @@ export const BACKENDS: Record<string, Backend> = {
 	cortex,
 	grok,
 };
+
+/** Look up a backend by user-supplied name; unknown names, including inherited object keys, return undefined. */
+export function findBackend(name: string): Backend | undefined {
+	return Object.hasOwn(BACKENDS, name) ? BACKENDS[name as BackendName] : undefined;
+}
