@@ -2068,3 +2068,17 @@ describe("postReview — failure handling", () => {
 		expect(posted.url).toBe("https://gitlab.com/acme/widgets/-/merge_requests/7");
 	});
 });
+
+describe("viewPullRequest — inherited state names", () => {
+	test("an inherited object key as the state maps to CLOSED, not a function", async () => {
+		const mrPath = writeJson("inherited-state.json", rawMr(41, "opened", { state: "constructor" }));
+		fakeGlab(`#!/bin/sh
+cat "${mrPath}"
+exit 0
+`);
+
+		const pr = await createGitlabProvider().viewPullRequest({ number: 41 });
+
+		expect(pr.state).toBe("CLOSED");
+	});
+});

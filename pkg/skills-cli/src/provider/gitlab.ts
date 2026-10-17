@@ -135,7 +135,7 @@ function isNoMrError(err: unknown): boolean {
 
 function normalizeGlMr(raw: Record<string, unknown>): PullRequest {
 	const rawState = raw.state as string;
-	const state = GITLAB_STATE_TO_PR_STATE[rawState] ?? "CLOSED";
+	const state = Object.hasOwn(GITLAB_STATE_TO_PR_STATE, rawState) ? GITLAB_STATE_TO_PR_STATE[rawState] : "CLOSED";
 	const headRefName = (raw[FIELD_MAP.headRefName.gitlab] as string) ?? "";
 	const baseRefName = (raw[FIELD_MAP.baseRefName.gitlab] as string) ?? "";
 	const mergedAt = (raw[FIELD_MAP.mergedAt.gitlab] as string | null) ?? null;
