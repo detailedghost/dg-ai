@@ -188,8 +188,13 @@ describe("resolveDgPaths", () => {
 
 describe("runCapture", () => {
 	it("distinguishes ignored stdin from the default closed pipe", async () => {
-		const script =
-			'import { fstatSync, readFileSync } from "node:fs"; console.log(JSON.stringify({device: fstatSync(0).isCharacterDevice(), input: readFileSync(0,"utf8")}));';
+		const script = `
+import { fstatSync, readFileSync } from "node:fs";
+console.log(JSON.stringify({
+	device: fstatSync(0).isCharacterDevice(),
+	input: readFileSync(0, "utf8"),
+}));
+`;
 		const ignored = await runCapture(process.execPath, ["-e", script], {
 			stdin: null,
 			timeoutMs: 2000,
@@ -223,7 +228,7 @@ process.exitCode = 7;
 		const result = await runCapture(process.execPath, [
 			"-e",
 			`
-process.stdout.write(Buffer.from([0xe2]));
+await new Promise((resolve) => process.stdout.write(Buffer.from([0xe2]), resolve));
 await Bun.sleep(40);
 process.stdout.write(Buffer.from([0x82, 0xac, 32, 10]));
 `,
@@ -244,7 +249,7 @@ const result = await runCapture(process.execPath, ["-e", "process.exit(0)"], {st
 console.log(JSON.stringify({status: result.status, stdout: result.stdout, stderr: result.stderr}));
 `,
 			],
-			{ stdout: "pipe", stderr: "pipe" },
+			{ stdout: "pipe", stderr: "pipe", timeout: 10000 },
 		);
 		expect(probe.stderr.toString()).toBe("");
 		expect(probe.exitCode).toBe(0);
