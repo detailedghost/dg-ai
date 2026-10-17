@@ -3,8 +3,8 @@
 Run /dg:channel-review in Claude Code or $dg:channel-review in Codex to inspect
 or manage a local daemon that reviews GitHub PRs and GitLab MRs posted in Teams.
 Mention the bot with the owner token, `$review`, and a PR link. Claude runs the thrash skill
-by default. If Claude runs out of tokens, the daemon replies to that request and
-retries once with Codex. Select Grok Build with `~agent grok`; `~model` chooses
+by default. If Claude runs out of tokens, the review fails. To retry once with
+Codex, set `"fallback": "codex"` under `runner` in the config. Select Grok Build with `~agent grok`; `~model` chooses
 a model for the selected runner. Install thrash separately on every review machine.
 
 It needs a Teams bot relay that streams each chat's messages over Server-Sent

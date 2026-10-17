@@ -81,6 +81,7 @@ export type UiLocator = {
 	click(): Promise<void>;
 	fill(value: string): Promise<void>;
 	count(): Promise<number>;
+	allInnerTexts(): Promise<string[]>;
 	isVisible(): Promise<boolean>;
 };
 
@@ -219,6 +220,13 @@ function datadogAppHost(site: string): string {
 	return site.split(".").length === 2 ? `app.${site}` : site;
 }
 
+const DATADOG_HOST_PATTERN =
+	/(?:^|\.)(?:datadoghq\.(?:com|eu)|ddog-gov\.com)$/;
+
+function isDatadogHost(host: string): boolean {
+	return DATADOG_HOST_PATTERN.test(host.toLowerCase());
+}
+
 function datadogSiteFromHost(host: string): string {
 	return host.startsWith("app.") ? host.slice("app.".length) : host;
 }
@@ -285,31 +293,39 @@ async function pasteToken(
 	return validate(await deps.readSecret(`${label}: `), pattern, label);
 }
 
-async function revokeDatadogToken(
-	page: UiPage,
-	deps: ConnectDeps,
-): Promise<void> {
-	const row = page
+async function listDatadogTokenRows(page: UiPage): Promise<string[]> {
+	const texts = await page
 		.getByRole("row")
 		.filter({ hasText: CONNECT_TOKEN_NAME })
-		.first();
-	if ((await row.count()) === 0) return;
-	try {
-		await row
-			.getByRole("button", { name: /revoke/i })
-			.first()
-			.click();
-		await page
-			.getByRole("dialog")
-			.last()
-			.getByRole("button", { name: /revoke/i })
-			.first()
-			.click();
-		deps.write(`revoked the previous ${CONNECT_TOKEN_NAME} token`);
-	} catch {
-		deps.write(
-			`Could not revoke the previous ${CONNECT_TOKEN_NAME} token. Revoke it in Datadog by hand.`,
-		);
+		.allInnerTexts();
+	return texts.map((text) => text.replace(/\s+/g, " ").trim());
+}
+
+async function revokeDatadogTokens(
+	page: UiPage,
+	deps: ConnectDeps,
+	previous: string[],
+): Promise<void> {
+	for (const text of previous) {
+		try {
+			const row = page.getByRole("row").filter({ hasText: text });
+			if ((await row.count()) !== 1) throw new Error("ambiguous row");
+			await row
+				.getByRole("button", { name: /revoke/i })
+				.first()
+				.click();
+			await page
+				.getByRole("dialog")
+				.last()
+				.getByRole("button", { name: /revoke/i })
+				.first()
+				.click();
+			deps.write(`revoked the previous ${CONNECT_TOKEN_NAME} token`);
+		} catch {
+			deps.write(
+				`Could not revoke the previous ${CONNECT_TOKEN_NAME} token. Revoke it in Datadog by hand.`,
+			);
+		}
 	}
 }
 
@@ -376,8 +392,18 @@ async function connectDatadog(
 	flags: ConnectFlags,
 	deps: ConnectDeps,
 ): Promise<void> {
+	if (flags.site !== undefined && !isDatadogHost(flags.site))
+		throw new DgCliError("That is not a Datadog site.");
 	const tokensUrl = (site: string) =>
 		`https://${datadogAppHost(site)}${DATADOG_TOKENS_PATH}`;
+	const save = (value: string, site: string) =>
+		store(deps, flags, DATADOG_CREDENTIAL, value, {
+			provider: "datadog",
+			site,
+			scopes: DATADOG_SCOPES,
+			expiresAt: new Date(deps.now().getTime() + YEAR_MS).toISOString(),
+			createdBy: "connect",
+		});
 	const captured = flags.paste
 		? undefined
 		: await viaBrowser(deps, async (session) => {
@@ -388,34 +414,29 @@ async function connectDatadog(
 					DATADOG_TOKENS_PATH,
 					/access tokens/i,
 					({ hostname, pathname }) =>
-						/datadoghq|ddog-gov/.test(hostname) &&
-						!pathname.startsWith("/account/"),
+						isDatadogHost(hostname) && !pathname.startsWith("/account/"),
 				);
-				await revokeDatadogToken(session.page, deps);
+				const previous = await listDatadogTokenRows(session.page);
 				await createDatadogToken(session.page);
-				return {
-					value: await copyDatadogToken(session, url.origin),
-					site: flags.site ?? datadogSiteFromHost(url.hostname),
-				};
+				const value = await copyDatadogToken(session, url.origin);
+				const site = flags.site ?? datadogSiteFromHost(url.hostname);
+				await save(value, site);
+				await revokeDatadogTokens(session.page, deps, previous);
+				return { value, site };
 			});
 	const site = captured?.site ?? flags.site ?? DEFAULT_DATADOG_SITE;
-	const value =
-		captured?.value ??
-		(await pasteToken(
+	let value = captured?.value;
+	if (value === undefined) {
+		value = await pasteToken(
 			deps,
 			tokensUrl(site),
 			`Create a personal access token named ${CONNECT_TOKEN_NAME} with expiration 1 year and scopes ${DATADOG_SCOPES.join(", ")}, then copy it.`,
 			"Datadog access token",
 			DATADOG_TOKEN_PATTERN,
-		));
+		);
+		await save(value, site);
+	}
 	const now = deps.now();
-	await store(deps, flags, DATADOG_CREDENTIAL, value, {
-		provider: "datadog",
-		site,
-		scopes: DATADOG_SCOPES,
-		expiresAt: new Date(now.getTime() + YEAR_MS).toISOString(),
-		createdBy: "connect",
-	});
 	await verify(
 		deps,
 		`https://api.${site}/api/v2/error-tracking/issues/search`,

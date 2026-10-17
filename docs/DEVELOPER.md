@@ -371,12 +371,13 @@ Grok Build is available through `~agent grok`, `--runner grok`, or
 `grok models` for the resolved auth source and `grok inspect --json` for an
 enabled, invocable `/thrash`. These utilities do not generate model output.
 The review runs headlessly with `--always-approve`. `runner.fallback: "grok"`
-opts into Grok after a Claude limit; the automatic default stays Codex.
+opts into Grok after a Claude limit. Fallback is off by default.
 
 AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
 bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,
 including Claude's exit-zero limit responses. Review jobs retry a limited Claude
-run once with `runner.fallback` (Codex by default) after a successful probe. The
+run once with `runner.fallback` after a successful probe. Fallback is opt-in:
+set `"fallback": "codex"` to enable it. The
 fallback keeps the remaining timeout, uses its own default model, writes a separate
 log, and replies to the original request. Other AI tasks expose the same error and
 notify the owner; write tasks are not automatically retried.

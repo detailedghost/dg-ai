@@ -254,7 +254,7 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	]);
 	const defaultRunner = rec.default ?? "claude";
 	requireOneOf(defaultRunner, "runner.default", RUNNER_NAMES);
-	const fallback = rec.fallback === undefined ? "codex" : rec.fallback;
+	const fallback = rec.fallback === undefined ? null : rec.fallback;
 	if (fallback !== null)
 		requireOneOf(fallback, "runner.fallback", ["codex", "copilot", "grok"] as const);
 	const timeout = minutes(rec.timeoutMinutes ?? 30, "runner.timeoutMinutes");

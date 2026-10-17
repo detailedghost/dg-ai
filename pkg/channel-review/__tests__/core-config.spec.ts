@@ -53,8 +53,10 @@ const loadFailure = (body: Record<string, unknown>): DgCliError => {
 };
 
 describe("loadConfig defaults", () => {
-	test("defaults review fallback to Codex and permits disabling or selecting Copilot", () => {
-		expect(load().runner.fallback).toBe("codex");
+	test("leaves review fallback off unless it is set, and permits Codex or Copilot", () => {
+		expect(load().runner.fallback).toBeNull();
+		expect(load({ runner: {} }).runner.fallback).toBeNull();
+		expect(load({ runner: { fallback: "codex" } }).runner.fallback).toBe("codex");
 		expect(load({ runner: { fallback: null } }).runner.fallback).toBeNull();
 		expect(load({ runner: { fallback: "copilot" } }).runner.fallback).toBe(
 			"copilot",

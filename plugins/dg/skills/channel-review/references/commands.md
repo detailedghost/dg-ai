@@ -82,12 +82,13 @@ the review reactions.
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
 
-If Claude runs out of tokens, the bot retries the review once with Codex by
-default when Codex passes its readiness check. It replies to the original request:
+If Claude runs out of tokens, the review fails by default. To retry once with
+Codex, set `"fallback": "codex"` under `runner`. The bot then retries when Codex
+passes its readiness check. It replies to the original request:
 “Claude is out of tokens, so I'm using Codex for this review.” The retry uses
 Codex's default model and the time remaining for that PR. The rest of a stacked
-review stays on Codex. Set `runner.fallback` to null to disable this behavior.
-Set `runner.fallback` to `"grok"` to use Grok Build instead. Explicit
+review stays on Codex. Set `runner.fallback` to `"grok"` to use Grok Build
+instead. Explicit
 `~agent grok` reviews use Grok directly and do not switch backends on a limit.
 Use `~model <id>` to select a Grok model, or omit it to use Grok’s configured
 default. For example: `$review https://github.com/example/project/pull/42 ~agent grok ~model grok-build`.

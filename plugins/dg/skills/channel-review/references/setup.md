@@ -197,7 +197,7 @@ every required key with placeholder values.
 | `owner.email` | string | Required | Owner email that the relay uses when sending chat replies. |
 | `owner.senderIds` | string array | `[]` | Chat sender IDs (Teams Azure AD object IDs) that may run `$address`. Entries are trimmed and must not be empty. Reviews and help do not check it. |
 | `runner.default` | string | `claude` | Default runner: claude, codex, copilot, or grok. |
-| `runner.fallback` | string or null | `codex` | Retry a Claude review once after a usage limit. Choose codex, copilot, or grok; null disables fallback. The fallback must pass its runner probe. |
+| `runner.fallback` | string or null | `null` | Retry a Claude review once after a usage limit. Off by default. Set `"fallback": "codex"` to turn it on, or choose copilot or grok. The fallback must pass its runner probe. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
 | `runner.claude.allowedTools` | string array | `Bash(<home>/scripts/bin/thrash-helper:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |

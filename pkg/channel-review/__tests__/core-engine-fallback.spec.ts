@@ -16,7 +16,11 @@ import {
 const LIMIT = { ...OK_RESULT, status: 1, code: "CR-207" } as const;
 const harnesses: EngineHarness[] = [];
 const setup = (options: HarnessOptions = {}) => {
-	const h = createEngineHarness({ runnerScript: () => LIMIT, ...options });
+	const h = createEngineHarness({
+		runnerScript: () => LIMIT,
+		configExtra: { runner: { fallback: "codex" } },
+		...options,
+	});
 	harnesses.push(h);
 	return h;
 };
@@ -24,7 +28,7 @@ afterEach(() => {
 	for (const h of harnesses.splice(0)) h.cleanup();
 });
 
-test("Claude exhaustion retries with Codex by default and reads only its verdict", async () => {
+test("Claude exhaustion retries with Codex when it is the configured fallback and reads only its verdict", async () => {
 	const h = setup();
 	h.runners.codex.run = async (request) => {
 		h.runners.codex.runs.push(request);
@@ -105,6 +109,17 @@ test("keeps Codex for remaining PRs in a stack", async () => {
 	).toEqual([PR_URL, child]);
 	expect(h.runners.codex.probeCalls).toBe(1);
 	expect(h.verdict.reads).toHaveLength(2);
+});
+
+test("does not fall back when the fallback key is absent", async () => {
+	const h = setup({ configExtra: {} });
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.runners.codex.probeCalls).toBe(0);
+	expect(h.runners.codex.runs).toHaveLength(0);
+	expect(h.replies().at(-1)?.text).toBe(
+		replyText("CR-207", { agent: "claude" }),
+	);
 });
 
 test("can disable automatic fallback", async () => {

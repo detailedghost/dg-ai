@@ -22,7 +22,7 @@ type PageOptions = {
 	clipboard?: string;
 	domToken?: string | null;
 	failOn?: RegExp;
-	rows?: number;
+	rows?: string[];
 };
 
 function createFakeSession(options: PageOptions) {
@@ -52,7 +52,8 @@ function createFakeSession(options: PageOptions) {
 		locator: (selector) => locate(`${path} ${selector}`),
 		click: () => act(path, "click"),
 		fill: (value) => act(path, `fill(${value})`),
-		count: async () => (path.includes("role=row") ? (options.rows ?? 0) : 1),
+		count: async () => 1,
+		allInnerTexts: async () => options.rows ?? [],
 		isVisible: async () => true,
 		...({ path } as object),
 	});
@@ -104,6 +105,7 @@ function createHarness(
 		pasted?: string;
 		grants?: CredentialGrantSummary[];
 		status?: number;
+		failSet?: boolean;
 	} = {},
 ) {
 	const lines: string[] = [];
@@ -115,12 +117,18 @@ function createHarness(
 	const relayCalls: unknown[] = [];
 	let launches = 0;
 	let clientClosed = 0;
+	let setFailed = false;
 	const fake = createFakeSession(
 		options.page ?? { urls: ["https://app.datadoghq.com/"] },
 	);
 	const deps: ConnectDeps = {
 		createClient: () => ({
 			set: async (name, value, meta) => {
+				if (options.failSet && sets.length === 0 && !setFailed) {
+					setFailed = true;
+					throw new Error("store failed");
+				}
+				fake.actions.push("STORE");
 				sets.push({ name, value, meta });
 			},
 			listGrants: async () => options.grants ?? [],
@@ -248,12 +256,12 @@ describe("channel-review connect datadog", () => {
 		expectNoSecret(h, DATADOG_TOKEN);
 	});
 
-	test("revokes an existing token with the same name before it creates one", async () => {
+	test("revokes the old token with the same name only after the new token is stored", async () => {
 		const h = createHarness({
 			page: {
 				urls: ["https://app.datadoghq.com/personal-settings/access-tokens"],
 				clipboard: DATADOG_TOKEN,
-				rows: 1,
+				rows: ["channel-review-daemon created 2026-01-01"],
 			},
 			grants: [
 				{
@@ -270,10 +278,97 @@ describe("channel-review connect datadog", () => {
 		const create = h.fake.actions.findIndex((action) =>
 			action.includes("new (access )?token"),
 		);
-		expect(revoke).toBeGreaterThan(-1);
-		expect(revoke).toBeLessThan(create);
+		const stored = h.fake.actions.indexOf("STORE");
+		expect(create).toBeGreaterThan(-1);
+		expect(stored).toBeGreaterThan(create);
+		expect(revoke).toBeGreaterThan(stored);
+		expect(
+			h.fake.actions
+				.filter((action) => action.includes("role=row"))
+				.filter((action) => action.includes("(/revoke/i)"))
+				.every((action) =>
+					action.includes("[channel-review-daemon created 2026-01-01]"),
+				),
+		).toBe(true);
 		expect(h.sets[0]?.meta?.site).toBe("datadoghq.com");
 		expect(h.granted).toEqual([]);
+	});
+
+	test("does not revoke the old token when copying the new token fails", async () => {
+		const h = createHarness({
+			page: {
+				urls: ["https://app.datadoghq.com/personal-settings/access-tokens"],
+				failOn: /role=button\(\/copy\/i\)/,
+				rows: ["channel-review-daemon created 2026-01-01"],
+			},
+			pasted: DATADOG_TOKEN,
+		});
+		await h.run("datadog");
+		expect(h.fake.actions.some((a) => a.includes("(/revoke/i)"))).toBe(false);
+		expect(h.sets).toHaveLength(1);
+	});
+
+	test("does not revoke the old token when storing the new token fails", async () => {
+		const h = createHarness({
+			page: {
+				urls: ["https://app.datadoghq.com/personal-settings/access-tokens"],
+				clipboard: DATADOG_TOKEN,
+				rows: ["channel-review-daemon created 2026-01-01"],
+			},
+			pasted: DATADOG_TOKEN,
+			failSet: true,
+		});
+		await h.run("datadog");
+		expect(h.fake.actions.some((a) => a.includes("(/revoke/i)"))).toBe(false);
+	});
+
+	test("rejects a site that is not a Datadog site before any request", async () => {
+		for (const site of [
+			"datadoghq.example.net",
+			"evil-datadoghq.com",
+			"datadoghq.com.evil.net",
+		]) {
+			const h = createHarness({ pasted: DATADOG_TOKEN });
+			const error = await h
+				.run("datadog", { site, paste: true })
+				.catch((caught: Error) => caught);
+			expect((error as Error).message).toBe("That is not a Datadog site.");
+			expect(h.requests).toEqual([]);
+			expect(h.sets).toEqual([]);
+		}
+	});
+
+	test("accepts the known Datadog sites", async () => {
+		for (const site of [
+			"datadoghq.com",
+			"datadoghq.eu",
+			"us3.datadoghq.com",
+			"us5.datadoghq.com",
+			"ap1.datadoghq.com",
+			"ap2.datadoghq.com",
+			"ddog-gov.com",
+			"app.datadoghq.com",
+		]) {
+			const h = createHarness({ pasted: DATADOG_TOKEN });
+			await h.run("datadog", { site, paste: true });
+			expect(h.requests).toHaveLength(1);
+		}
+	});
+
+	test("does not trust a sign-in host that only contains datadoghq", async () => {
+		const h = createHarness({
+			page: {
+				urls: ["https://datadoghq.example.net/personal-settings/access-tokens"],
+				clipboard: DATADOG_TOKEN,
+			},
+			pasted: DATADOG_TOKEN,
+		});
+		h.deps.sleep = async () => {
+			throw new Error("stop waiting");
+		};
+		await h.run("datadog");
+		expect(h.sets).toHaveLength(1);
+		expect(h.fake.actions.some((a) => a.includes("fill("))).toBe(false);
 	});
 
 	test("rejects a copied value that is not a token, clears the clipboard and falls back to paste", async () => {

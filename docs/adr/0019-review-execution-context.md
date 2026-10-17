@@ -25,8 +25,9 @@ reviewer models. Parent context alone cannot prove a reviewer model; unresolved
 models stay explicit. Deploy compatible helper and skill instructions with the
 runner changes; old helpers do not consume the context.
 
-A Claude review that returns CR-207 may retry once with the configured fallback,
-Codex by default, after its readiness probe succeeds. The fallback gets a fresh
+A Claude review that returns CR-207 may retry once with the configured fallback
+after its readiness probe succeeds. Fallback is opt-in. It is off when
+`runner.fallback` is absent, and `"fallback": "codex"` turns it on. The fallback gets a fresh
 context, its own model default and log, and the remaining original timeout.
 The daemon replies to the triggering chat request that Claude is out of tokens
 and names the fallback. It does not send an owner DM for a review fallback.
