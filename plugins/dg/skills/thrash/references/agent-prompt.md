@@ -56,12 +56,17 @@ Use the host's native background task facility when it exists:
 
 ```bash
 "$DG" proxy <backend> --subagent thrash \
-  --cwd "<repo root>" --prompt "<template, plus the line below>"
+  --cwd "<repo root>" --prompt-file "<chunk task file>"
 ```
 
-Add this line to the template, after `TARGET`: "You may read files in the TARGET repo
-for context, but do not modify any tracked file." The backend uses its own tools;
-the line keeps its review scoped to reads and the findings artifact.
+Write the template to the chunk task file with this line added after `TARGET`: "Open
+only ANNOTATED_DIFF and CONTEXT. Phrase any claim that needs other code as a question."
+This matches the native `thrash` persona, so proxy and native reviews behave the same.
+
+The backend uses its own file and command tools, and no backend runs in a read-only
+sandbox (codex runs `workspace-write`; the others have none). A diff from a third-party
+PR can carry injected instructions, so do not use `--proxy` on a PR from an author you
+do not trust.
 
 If the host has no native background facility, prepare one plan per chunk:
 
@@ -89,10 +94,10 @@ same target working directory:
 
 ```bash
 "$DG" proxy <backend> --resume "<sessionId>" --cwd "<repo root>" \
-  --prompt "Write the fenced json block to FINDINGS_PATH now<, fixing: error text>. Reply with only the WROTE line."
+  --prompt-file "<retry task file>"
 ```
 
-Run that actual resume execution through the same background facility. In the
+The retry task file holds: "Write the fenced json block to FINDINGS_PATH now<, fixing: error text>. Reply with only the WROTE line." Run that actual resume execution through the same background facility. In the
 portable fallback, use `"$DG" proxy background update "<id>" "<retry prompt>"` on
 the completed job to resume its backend session with the retained target cwd, then
 wait with `"$DG" proxy background status "<newJobId>"` and read `newJobLog`

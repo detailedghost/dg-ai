@@ -101,7 +101,3 @@ nit → low. Unanchored findings are terminal-only in this mode. Nothing posts.
 - GitLab adapter behavior is verified against fixtures. A live MR run requires an
   installed, authenticated `glab`; see https://gitlab.com/gitlab-org/cli.
 - A GitLab `bulk_publish` with zero draft notes and a `reviewer_state` is untested live.
-- `resolveBaseSha` in `pkg/skills-cli/src/utils/git.ts` prefixes its divergence warning with `meaningful:`.
-  The warning is correct; only the prefix is borrowed.
-- The host `/review -x` workflow is outside this migration; it may still use a raw
-  `gh api` recipe. Check that installed skill before invoking its publish path.

@@ -155,7 +155,7 @@ async function hasOriginRemote(): Promise<boolean> {
 }
 
 /** Resolve the reshape base: the override ref or the remote default branch, never a commit HEAD does not descend from. */
-export async function resolveBaseSha(overrideRef?: string): Promise<string> {
+export async function resolveBaseSha(overrideRef?: string, tool = "meaningful"): Promise<string> {
 	if (overrideRef) {
 		const sha = (await git`rev-parse --verify --end-of-options ${overrideRef}^{commit}`).text().trim();
 		try {
@@ -164,7 +164,7 @@ export async function resolveBaseSha(overrideRef?: string): Promise<string> {
 		} catch {}
 		const forkPoint = await mergeBase(sha);
 		process.stderr.write(
-			`warning: --base ${overrideRef} (${sha.slice(0, 8)}) is not an ancestor of HEAD; ` +
+			`${tool}: warning: --base ${overrideRef} (${sha.slice(0, 8)}) is not an ancestor of HEAD; ` +
 				`using merge-base ${forkPoint.slice(0, 8)} instead\n`,
 		);
 		return forkPoint;
@@ -179,7 +179,9 @@ export async function resolveBaseSha(overrideRef?: string): Promise<string> {
 		const localSha = (await git`rev-parse refs/heads/${defaultBranch}`).text().trim();
 		const remoteSha = (await git`rev-parse ${remoteRef}`).text().trim();
 		if (localSha !== remoteSha) {
-			process.stderr.write(`warning: local ${defaultBranch} differs from ${remoteRef}; using remote ref for base\n`);
+			process.stderr.write(
+				`${tool}: warning: local ${defaultBranch} differs from ${remoteRef}; using remote ref for base\n`,
+			);
 		}
 	} catch {}
 

@@ -151,6 +151,17 @@ const EMPTY_THREADS = JSON.stringify({
 });
 
 describe("local mode", () => {
+	test("diff prefixes a non-ancestor base warning with thrash", () => {
+		const repo = fixtureRepo();
+		cliFixtures.runGit(["checkout", "-q", "main"], repo);
+		cliFixtures.commitFile(repo, "other.txt", "other\n", "chore: main moves");
+		cliFixtures.runGit(["checkout", "-q", "feature"], repo);
+		const result = run(["diff", "--base", "main", "."], { cwd: repo });
+		expect(result.exitCode).toBe(EXIT.OK);
+		expect(result.stderr).toContain("thrash: warning: --base main");
+		expect(result.stderr).not.toContain("meaningful:");
+	});
+
 	test("diff accepts a file target and an explicit base without including unrelated untracked paths", () => {
 		const repo = fixtureRepo();
 		const result = run(["diff", "--base", "main", "src/a.ts"], { cwd: repo });

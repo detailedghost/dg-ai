@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ReviewThread } from "../src/provider/types";
 import {
 	addressFileName,
@@ -226,6 +228,27 @@ describe("decideVerdict", () => {
 	test("the default spice allows 1 high and requests changes at 2", () => {
 		expect(decideVerdict(tally(0, 1), SPICE_DEFAULT, false).verdict).toBe("approve");
 		expect(decideVerdict(tally(0, 2), SPICE_DEFAULT, false).verdict).toBe("request_changes");
+	});
+
+	test("the thrash skill documents the verdict limits and chunk constants it owns", () => {
+		const skill = readFileSync(
+			join(import.meta.dir, "../../../plugins/dg/skills/thrash/SKILL.md"),
+			"utf8",
+		);
+		const tiers = ["critical", "high", "medium", "low"] as const;
+		const documented: Record<number, Partial<Record<Tier, number>>> = {};
+		for (const match of skill.matchAll(/^\| (\d) \|(.*)\|$/gm)) {
+			const cells = (match[2] ?? "").split("|").map((cell) => cell.trim());
+			const limits: Partial<Record<Tier, number>> = {};
+			tiers.forEach((tier, index) => {
+				const cell = cells[index];
+				if (cell) limits[tier] = Number(cell);
+			});
+			documented[Number(match[1])] = limits;
+		}
+		expect(documented).toEqual(VERDICT_LIMITS);
+		expect(skill).toContain(`(${LARGE_DIFF_LINES} changed lines)`);
+		expect(skill).toContain(`\`MAX_CHUNKS\` (${MAX_CHUNKS})`);
 	});
 
 	test("each tier limit passes at the limit and fails one past it", () => {

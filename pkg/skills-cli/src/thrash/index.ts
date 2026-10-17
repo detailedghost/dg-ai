@@ -229,7 +229,7 @@ async function cmdDiff(args: string[]): Promise<number> {
 	const resolved = await resolveTarget(arg);
 	const target: DiffTarget =
 		resolved.mode === "local"
-			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base")) }
+			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base"), "thrash") }
 			: resolved;
 	const written = await writeDiff(target);
 	const untracked = target.mode === "local" ? await listUntracked(target) : [];
