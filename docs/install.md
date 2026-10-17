@@ -156,7 +156,7 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 The standalone path copies the skills to `$CODEX_HOME/skills` (or
 `~/.codex/skills`). Start a new Codex thread after either installation method.
 
-## 🌐 Supported browsers
+## Supported browsers
 
 - **Chromium** — Chrome, Edge, Brave, Vivaldi, Opera (single build)
 - **Firefox** 139+

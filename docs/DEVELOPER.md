@@ -474,9 +474,10 @@ than a live mirror. Pending/running requests become failed on restart with
 CR-205; the service does not reconstruct or rerun the queue.
 
 `resolveSecrets` (`pkg/channel-review/src/credentials.ts`) reads the
-`channel-review/` entries once at daemon start through the `channel-review`
-grant and builds an env-like map for the relay connect and the sinks: the store
-first, then the process environment. `status` reports each source.
+`channel-review/` entries at daemon start, and again before a relay auth retry,
+through the `channel-review` grant. It builds an env-like map for the relay
+connect and the sinks: unexpired store records first, then the process
+environment. `status` reports each source and flags expired records.
 `dg-skills channel-review connect` drives Chrome through `playwright-core`. It
 imports the package lazily, so other commands never load it, and the compiled
 build (`pkg/skills-cli/build.ts`) marks `chromium-bidi` external because the
@@ -492,13 +493,13 @@ Grok Build is available through `~agent grok`, `--runner grok`, or
 `grok models` for the resolved auth source and `grok inspect --json` for an
 enabled, invocable `/thrash`. These utilities do not generate model output.
 The review runs headlessly with `--always-approve`. `runner.fallback: "grok"`
-opts into Grok after a Claude limit. Fallback is off by default.
+opts into Grok after a Claude limit.
 
 AI usage-limit detection lives in `@dg/common` as `isAiUsageLimit`. Runners check
 bounded tails from both stdout and stderr and return CR-207 for quota exhaustion,
 including Claude's exit-zero limit responses. Review jobs retry a limited Claude
-run once with `runner.fallback` after a successful probe. Fallback is opt-in:
-set `"fallback": "codex"` to enable it. The
+run once with `runner.fallback` after a successful probe. Fallback is off by
+default: set `"fallback": "codex"` to enable it. The
 fallback keeps the remaining timeout, uses its own default model, writes a separate
 log, and replies to the original request. Other AI tasks expose the same error and
 notify the owner; write tasks are not automatically retried.
@@ -530,9 +531,10 @@ this attempt's context. Fallback rebuilds it for the successful backend with no 
 Claude model. Current-job status includes `execution`; local logs identify origin and
 orchestrator model evidence. The shared database snapshot retains this current-job metadata.
 
-The user-owned `scripts/ai/skills/thrash-core.ts` and `thrash-helper.ts` own the compiled
-review contract. The canonical user skill is `~/.claude/skills/thrash`, imported by copy
-into Codex. Its `references/attribution.md` describes the helper `attribute` command.
+The thrash helper owns the compiled review contract. It reads the
+`THRASH_EXECUTION_CONTEXT` JSON above and needs a helper version that understands
+`origin` and `modelSource`; older helpers ignore the variable. The skill's
+`references/attribution.md` describes the helper `attribute` command.
 Each successful chunk gets its own backend/model evidence. Native worker configuration,
 requested aliases, resolved runtime IDs, CLI defaults, and unknown models stay distinct.
 A proxy persona does not select a model. Distinct worker backends/models remain in the
@@ -542,6 +544,5 @@ Public bodies, previews, tallies, and compile/post JSON show `Automatic (daemon)
 `Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
 The helper freezes origin in a unique diff plan and does not trust review contents for
 attribution. It preserves verdicts, dedupe, partial coverage, gates, and provider fallback.
-Deploy the helper bundle and canonical/imported skill instructions with the runner change;
-old helpers do not consume the new context. Build helpers to a staged path until activation
-is coordinated. Do not replace a live helper or restart a daemon during implementation.
+Ship the helper and the skill instructions together with the runner change; old
+helpers do not consume the new context.
