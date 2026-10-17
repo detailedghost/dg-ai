@@ -448,11 +448,11 @@ describe("vcs-provider-cli capabilities — reflects the calling repo's actual d
 });
 
 describe("vcs-provider-cli capabilities — the GitLab AI reviewer is configurable", () => {
-	test("VCS_GITLAB_AI_REVIEW_BOT names the reviewer the review loop should consume", async () => {
+	test("AI_VCS_GITLAB_REVIEW_BOT names the reviewer the review loop should consume", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
 		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
-			env: { VCS_GITLAB_AI_REVIEW_BOT: "some_other_bot,gitlab_duo" },
+			env: { AI_VCS_GITLAB_REVIEW_BOT: "some_other_bot,gitlab_duo" },
 		});
 
 		expect(exitCode).toBe(0);
@@ -464,11 +464,11 @@ describe("vcs-provider-cli capabilities — the GitLab AI reviewer is configurab
 		});
 	});
 
-	test("VCS_GITLAB_AI_REVIEW_BOT=none reports no reviewer, which is what routes the loop to proxy mode", async () => {
+	test("AI_VCS_GITLAB_REVIEW_BOT=none reports no reviewer, which is what routes the loop to proxy mode", async () => {
 		const repo = makeGitRepoWithOrigin("https://gitlab.com/acme/widgets.git");
 		const { stdout, exitCode } = runCli(["capabilities"], {
 			cwd: repo,
-			env: { VCS_GITLAB_AI_REVIEW_BOT: "none" },
+			env: { AI_VCS_GITLAB_REVIEW_BOT: "none" },
 		});
 
 		expect(exitCode).toBe(0);
@@ -599,7 +599,7 @@ describe("vcs-provider-cli list-prs", () => {
 		});
 		const calledPaths = readCalls(log).join("\n");
 		expect(calledPaths).toContain("repos/{owner}/{repo}/pulls");
-		expect(calledPaths).toContain("--paginate");
+		expect(calledPaths).toContain("per_page=100");
 	});
 
 	test("an empty result set prints a bare [] rather than null or a wrapper", async () => {
@@ -1639,7 +1639,7 @@ describe("compiled vcs-provider", () => {
 				expect(argv[argv.indexOf("--body-file") + 1]).toBe("-");
 				expect(readFileSync(stdinPath, "utf8")).toBe(body);
 			} else {
-				expect(argv[argv.indexOf("--description") + 1]).toBe(body);
+				expect(argv).toContain(`--description=${body}`);
 			}
 			expect(run(["list-threads", "83"], repo, env)).toEqual({
 				exitCode: 0,

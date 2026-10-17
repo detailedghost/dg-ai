@@ -33,9 +33,13 @@ export function parseRepoRef(urlOrSlug: string): RepoRef {
 		host = scpMatch.host;
 		path = scpMatch.path;
 	} else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(urlOrSlug)) {
-		const parsed = new URL(urlOrSlug);
-		host = parsed.hostname;
-		path = parsed.pathname;
+		try {
+			const parsed = new URL(urlOrSlug);
+			host = parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.host : parsed.hostname;
+			path = parsed.pathname;
+		} catch {
+			throw new ProviderError("INVALID_REPO_REF", `cannot parse a repo reference from "${redactTokens(urlOrSlug)}"`);
+		}
 	} else {
 		host = "";
 		path = urlOrSlug;
@@ -73,7 +77,8 @@ const PR_STATE_FILTERS: Record<string, PrStateFilter> = { ...GITLAB_STATE_TO_PR_
 /** Collapses either provider's state vocabulary to one filter value, so the same call means the same thing on both. */
 export function normalizePrStateFilter(state?: string): PrStateFilter {
 	if (state === undefined) return "ALL";
-	const normalized = PR_STATE_FILTERS[state.toLowerCase()];
+	const key = state.toLowerCase();
+	const normalized = Object.hasOwn(PR_STATE_FILTERS, key) ? PR_STATE_FILTERS[key] : undefined;
 	if (normalized === undefined) {
 		throw new ProviderError(
 			"INVALID_PR_STATE",
@@ -156,7 +161,8 @@ const ISSUE_STATE_FILTERS: Record<string, IssueStateFilter> = { open: "OPEN", cl
 /** Issues have no MERGED state, so this is a smaller vocabulary than normalizePrStateFilter; defaults to OPEN, matching gh/glab's own default. */
 export function normalizeIssueStateFilter(state?: string): IssueStateFilter {
 	if (state === undefined) return "OPEN";
-	const normalized = ISSUE_STATE_FILTERS[state.toLowerCase()];
+	const key = state.toLowerCase();
+	const normalized = Object.hasOwn(ISSUE_STATE_FILTERS, key) ? ISSUE_STATE_FILTERS[key] : undefined;
 	if (normalized === undefined) {
 		throw new ProviderError(
 			"INVALID_ISSUE_STATE",
@@ -235,6 +241,11 @@ export function isCliErrorContaining(err: unknown, needle: string): boolean {
 	return text.includes(needle);
 }
 
+/** Shared by both adapters: matches a CLI's missing-resource failure, such as an expired CI log. */
+export function isNotFoundError(err: unknown): boolean {
+	return ["not found", "http 404", "http 410"].some((needle) => isCliErrorContaining(err, needle));
+}
+
 /** Shared by both adapters: makes ensureLabel idempotent by swallowing a duplicate-name error, on any of these wordings. */
 export function isAlreadyExistsError(err: unknown): boolean {
 	return (
@@ -256,18 +267,12 @@ export function extractNumberFromUrl(url: string, pattern: RegExp, context: stri
 /** Accepts a bare number or either provider's PR/MR URL, so a caller can take a stored URL without resolving the provider first. */
 export function parsePrNumberArg(arg: string): number {
 	const direct = Number(arg);
-	if (Number.isSafeInteger(direct) && direct > 0) return direct;
+	if (/^\d+$/.test(arg) && Number.isSafeInteger(direct) && direct > 0) return direct;
 	const match = /\/(?:pull|merge_requests)\/(\d+)/.exec(arg);
 	if (!match) {
 		throw new ProviderError("PARSE_ERROR", `not a pull request number or URL: "${redactTokens(arg)}"`);
 	}
 	return Number(match[1]);
-}
-
-/** Shared by both adapters: getPullRequestBody is always "view the PR/MR, return its body". */
-export async function getBodyViaView(view: () => Promise<{ body: string }>): Promise<string> {
-	const pr = await view();
-	return pr.body;
 }
 
 /** A failed CI execution/job with a bounded log excerpt and its provider UI link. */
@@ -351,7 +356,7 @@ export interface Provider {
 	/** Resolve the provider-owned discussion token; ref supplies targeting where the provider needs it. */
 	resolveThread(threadId: string, ref?: PrRef): Promise<void>;
 	/** Reply directly to the thread's original review comment, then return the published reply. */
-	replyToThread(threadId: string, commentId: string, body: string, ref?: PrRef): Promise<ReviewComment>;
+	replyToThread(thread: ReviewThread, body: string, ref?: PrRef): Promise<ReviewComment>;
 	/** Return failing jobs associated with this request's current head, with bounded log excerpts. */
 	listCiFailures(ref: PrRef): Promise<CiFailure[]>;
 	/** Unified diff of the pull request as the provider serves it. */
@@ -382,10 +387,32 @@ export interface Provider {
 	checkAuth(): Promise<boolean>;
 }
 
+/** Every code a provider adapter can raise. */
+export type ProviderErrorCode =
+	| "EMPTY_HEAD_SHA"
+	| "GH_NOT_FOUND"
+	| "GLAB_NOT_FOUND"
+	| "HOST_NOT_RECOGNIZED"
+	| "INVALID_ARGUMENT"
+	| "INVALID_ISSUE_STATE"
+	| "INVALID_MR_IID"
+	| "INVALID_PIPELINE_ID"
+	| "INVALID_PROVIDER_ENV"
+	| "INVALID_PR_STATE"
+	| "INVALID_REPO_REF"
+	| "NO_CURRENT_MR"
+	| "NO_CURRENT_PR"
+	| "NO_GIT_REPO"
+	| "NO_REMOTE"
+	| "PAGE_LIMIT_EXCEEDED"
+	| "PARSE_ERROR"
+	| "PIPELINE_SHA_MISMATCH"
+	| "REST_FILTER_UNIMPLEMENTED";
+
 /** A stable provider error code with a human-readable explanation and optional underlying cause. */
 export class ProviderError extends Error {
 	constructor(
-		public readonly code: string,
+		public readonly code: ProviderErrorCode,
 		message: string,
 		options?: ErrorOptions,
 	) {

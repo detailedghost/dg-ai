@@ -4,8 +4,11 @@ import {
 	FIELD_MAP,
 	GITLAB_STATE_TO_PR_STATE,
 	LOG_EXCERPT_MAX_CHARS,
+	normalizeIssueStateFilter,
+	normalizePrStateFilter,
 	notSupportedMessage,
 	ProviderError,
+	parsePrNumberArg,
 	parseRepoRef,
 	truncateLogExcerpt,
 } from "../src/provider/types";
@@ -81,6 +84,26 @@ describe("parseRepoRef", () => {
 			owner: "group/subgroup",
 			repo: "project",
 		});
+	});
+
+	test("keeps the port of an https URL so a self-hosted instance is reached on it", () => {
+		expect(parseRepoRef("https://git.example.com:8443/group/repo")).toEqual({
+			host: "git.example.com:8443",
+			owner: "group",
+			repo: "repo",
+		});
+	});
+
+	test("an unparseable URL raises INVALID_REPO_REF without echoing userinfo tokens", () => {
+		let caught: unknown;
+		try {
+			parseRepoRef("https://user:ghp_abcdefghijklmnopqrstuvwxyz0123@:bad/group/repo");
+		} catch (err) {
+			caught = err;
+		}
+		expect(caught).toBeInstanceOf(ProviderError);
+		expect((caught as ProviderError).code).toBe("INVALID_REPO_REF");
+		expect((caught as ProviderError).message).not.toContain("ghp_abcdefghij");
 	});
 
 	test("a deeply nested scp-like path keeps every intermediate segment in owner", () => {
@@ -163,8 +186,8 @@ describe("truncateLogExcerpt", () => {
 
 describe("ProviderError", () => {
 	test("carries a machine-readable code discriminant distinct from .message", () => {
-		const err = new ProviderError("SOME_CODE", "human readable explanation");
-		expect(err.code).toBe("SOME_CODE");
+		const err = new ProviderError("PARSE_ERROR", "human readable explanation");
+		expect(err.code).toBe("PARSE_ERROR");
 		expect(err.message).toBe("human readable explanation");
 		expect(err).toBeInstanceOf(Error);
 	});
@@ -201,5 +224,24 @@ describe("FIELD_MAP", () => {
 		expect(FIELD_MAP.headRefName).toEqual({ github: "headRefName", gitlab: "source_branch" });
 		expect(FIELD_MAP.baseRefName).toEqual({ github: "baseRefName", gitlab: "target_branch" });
 		expect(FIELD_MAP.mergedAt).toEqual({ github: "mergedAt", gitlab: "merged_at" });
+	});
+});
+
+describe("state filters and numeric arguments", () => {
+	test("an inherited object key is not a valid pull request state", () => {
+		expect(() => normalizePrStateFilter("constructor")).toThrow(ProviderError);
+	});
+
+	test("an inherited object key is not a valid issue state", () => {
+		expect(() => normalizeIssueStateFilter("constructor")).toThrow(ProviderError);
+	});
+
+	test.each(["1e3", "0x10", "1.5", "-4", " 7"])("parsePrNumberArg rejects %s", (arg) => {
+		expect(() => parsePrNumberArg(arg)).toThrow(ProviderError);
+	});
+
+	test("parsePrNumberArg still accepts a plain number and a URL", () => {
+		expect(parsePrNumberArg("42")).toBe(42);
+		expect(parsePrNumberArg("https://github.com/acme/widgets/pull/17")).toBe(17);
 	});
 });

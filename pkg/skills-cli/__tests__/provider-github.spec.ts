@@ -17,6 +17,8 @@ const ENV_KEYS = [
 	"FAKE_PR_JSON",
 	"FAKE_ALL_JSON",
 	"FAKE_RUN_JSON",
+	"FAKE_PAGE1_JSON",
+	"FAKE_PAGE2_JSON",
 ] as const;
 
 let savedEnv: Record<string, string | undefined>;
@@ -544,7 +546,7 @@ describe("replyToThread", () => {
 		);
 
 		const provider = createGithubProvider();
-		const comment = await provider.replyToThread("RT_kwALOAB1", "5001", "thanks, fixed", { number: 42 });
+		const comment = await provider.replyToThread(cliFixtures.reviewThread("RT_kwALOAB1", "5001"), "thanks, fixed", { number: 42 });
 
 		expect(comment.id).toBe("5003");
 		const calls = readCalls(log).join("\n");
@@ -563,7 +565,7 @@ describe("replyToThread", () => {
 		);
 
 		const provider = createGithubProvider();
-		const comment = await provider.replyToThread("RT_kwALOAB1", "5002", "thanks, fixed", { number: 42 });
+		const comment = await provider.replyToThread(cliFixtures.reviewThread("RT_kwALOAB1", "5002"), "thanks, fixed", { number: 42 });
 
 		expect(comment).toEqual({
 			id: "5004",
@@ -586,7 +588,7 @@ describe("replyToThread", () => {
 		);
 
 		const provider = createGithubProvider();
-		await expect(provider.replyToThread("RT_kwALOAB1", "5005", "wrong parent", { number: 42 })).rejects.toMatchObject({
+		await expect(provider.replyToThread(cliFixtures.reviewThread("RT_kwALOAB1", "5005"), "wrong parent", { number: 42 })).rejects.toMatchObject({
 			code: "PARSE_ERROR",
 		});
 	});
@@ -610,7 +612,7 @@ describe("listCiFailures — per-item best-effort degrade", () => {
     exit 0
     ;;
   *92002*)
-    echo "log expired" 1>&2
+    echo "gh: Not Found (HTTP 404)" 1>&2
     exit 1
     ;;
   *"pr view"*)
@@ -864,19 +866,23 @@ describe("closePullRequest", () => {
 });
 
 describe("listPullRequests — pagination", () => {
-	test("collects a --paginate response that spans more than one 100-item page", async () => {
+	test("collects results that span more than one 100-item page", async () => {
 		const page1 = Array.from({ length: 100 }, (_, i) =>
 			rawPrRest(i + 1, i === 99 ? "closed" : "open", i === 99 ? { merged_at: "2026-01-01T00:00:00Z" } : {}),
 		);
 		const page2 = Array.from({ length: 50 }, (_, i) => rawPrRest(i + 101, "open"));
-		const all = [...page1, ...page2];
-		process.env.FAKE_ALL_JSON = writeJson("all.json", all);
+		process.env.FAKE_PAGE1_JSON = writeJson("page1.json", page1);
+		process.env.FAKE_PAGE2_JSON = writeJson("page2.json", page2);
 		const log = callLogPath();
 
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
-    cat "$FAKE_ALL_JSON"
+  *"-F page=1 "*)
+    cat "$FAKE_PAGE1_JSON"
+    exit 0
+    ;;
+  *"-F page=2 "*)
+    cat "$FAKE_PAGE2_JSON"
     exit 0
     ;;`),
 		);
@@ -885,16 +891,53 @@ describe("listPullRequests — pagination", () => {
 		const result = await provider.listPullRequests({});
 
 		expect(result).toHaveLength(150);
-		expect(result.map((r) => r.number).sort((a, b) => a - b)).toEqual(all.map((r) => r.number).sort((a, b) => a - b));
 		const merged = result.find((r) => r.number === 100);
 		expect(merged?.merged).toBe(true);
 		expect(merged?.state).toBe("MERGED");
 		const notMerged = result.find((r) => r.number === 1);
 		expect(notMerged?.merged).toBe(false);
 		const calls = readCalls(log).join("\n");
-		expect(calls).toContain("--paginate");
+		expect(calls).not.toContain("--paginate");
 		expect(calls).toContain("per_page=100");
 	});
+
+	test("stops requesting pages once opts.limit is satisfied", async () => {
+		process.env.FAKE_PAGE1_JSON = writeJson(
+			"limit-page1.json",
+			Array.from({ length: 100 }, (_, i) => rawPrRest(i + 1, "open")),
+		);
+		const log = callLogPath();
+		fakeGh(
+			ghScript(`
+  *"-F page=1 "*)
+    cat "$FAKE_PAGE1_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const result = await createGithubProvider().listPullRequests({ limit: 3 });
+
+		expect(result.map((r) => r.number)).toEqual([1, 2, 3]);
+		expect(readCalls(log).filter((c) => c.includes("page="))).toHaveLength(1);
+	});
+
+	test("raises PAGE_LIMIT_EXCEEDED instead of fetching an unbounded history", async () => {
+		process.env.FAKE_PAGE1_JSON = writeJson(
+			"endless-page.json",
+			Array.from({ length: 100 }, (_, i) => rawPrRest(i + 1, "open")),
+		);
+		fakeGh(
+			ghScript(`
+  *"/pulls --method GET"*)
+    cat "$FAKE_PAGE1_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const caught = await cliFixtures.catchError(() => createGithubProvider().listPullRequests({}));
+
+		expect((caught as ProviderError).code).toBe("PAGE_LIMIT_EXCEEDED");
+	}, 30000);
 });
 
 describe("listPullRequests — opts.limit and filter flags", () => {
@@ -903,7 +946,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("limit-all.json", all);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -926,7 +969,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("default-state-all.json", all);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -955,7 +998,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
     cat "$FAKE_REPO_JSON"
     exit 0
     ;;
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -976,7 +1019,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("filter-all-explicit.json", []);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -997,7 +1040,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("author-all.json", []);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -1014,7 +1057,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("label-all.json", []);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -1032,7 +1075,7 @@ describe("listPullRequests — opts.limit and filter flags", () => {
 		process.env.FAKE_ALL_JSON = writeJson("closed-vs-merged.json", all);
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -1096,7 +1139,7 @@ describe("listPullRequests — cross-provider state vocabulary", () => {
 		const log = callLogPath();
 		fakeGh(
 			ghScript(`
-  *"--paginate"*)
+  *"/pulls --method GET"*)
     cat "$FAKE_ALL_JSON"
     exit 0
     ;;`),
@@ -1441,7 +1484,7 @@ describe("postReview", () => {
 		expect(posted).toMatchObject({ verdict: "comment", degraded: true, commentCount: 0 });
 		const payload = JSON.parse(readFileSync(stdinCapture, "utf8"));
 		expect(payload.event).toBe("COMMENT");
-		expect(payload.body).toBe("Reviewed via /thrash.");
+		expect(payload.body).toBe("Review submitted.");
 		expect(readCalls(log).filter((c) => c.includes("pulls/12/reviews"))).toHaveLength(2);
 	});
 
@@ -1464,5 +1507,132 @@ describe("postReview", () => {
 		await expect(provider.postReview(ref, { verdict: "approve", body: "b", comments })).rejects.toThrow(
 			/part of the diff/,
 		);
+	});
+});
+
+describe("listUnresolvedThreads — GraphQL variable typing", () => {
+	function emptyThreads(hasNextPage = false) {
+		return {
+			data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage, endCursor: null } } } } },
+		};
+	}
+
+	test("sends owner and repo as raw strings so numeric or boolean-looking names are not coerced", async () => {
+		const log = callLogPath();
+		process.env.FAKE_PR_JSON = writeJson("typed.json", emptyThreads());
+		fakeGhThreads();
+
+		await createGithubProvider().listUnresolvedThreads(
+			{},
+			{ number: 7, repo: { host: "github.com", owner: "123", repo: "true" } },
+		);
+
+		const calls = readCalls(log).join("\n");
+		expect(calls).toContain("-f owner=123");
+		expect(calls).toContain("-f repo=true");
+		expect(calls).toContain("-F number=7");
+	});
+
+	test("keeps the typed placeholder flags when no repository is given", async () => {
+		const log = callLogPath();
+		process.env.FAKE_PR_JSON = writeJson("placeholders.json", emptyThreads());
+		fakeGhThreads();
+
+		await createGithubProvider().listUnresolvedThreads();
+
+		const calls = readCalls(log).join("\n");
+		expect(calls).toContain("-F owner={owner}");
+		expect(calls).toContain("-F repo={repo}");
+	});
+
+	test("raises PAGE_LIMIT_EXCEEDED when a thread has more comments than one page", async () => {
+		process.env.FAKE_PR_JSON = writeJson("long-thread.json", {
+			data: {
+				repository: {
+					pullRequest: {
+						reviewThreads: {
+							nodes: [
+								{
+									id: "RT_long",
+									isResolved: false,
+									path: "a.ts",
+									line: 1,
+									comments: { nodes: [], pageInfo: { hasNextPage: true } },
+								},
+							],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+					},
+				},
+			},
+		});
+		fakeGhThreads();
+
+		const caught = await cliFixtures.catchError(() => createGithubProvider().listUnresolvedThreads());
+
+		expect((caught as ProviderError).code).toBe("PAGE_LIMIT_EXCEEDED");
+	});
+});
+
+describe("listCiFailures — fetch failures", () => {
+	test("an authorization failure on the log request is raised, not hidden as an empty log", async () => {
+		process.env.FAKE_PR_JSON = writeJson("auth-runs.json", [
+			{ total_count: 1, check_runs: [{ id: 95001, name: "CI", conclusion: "failure" }] },
+		]);
+		fakeGh(
+			ghScript(`
+  *95001*)
+    echo "gh: Bad credentials (HTTP 401)" 1>&2
+    exit 1
+    ;;
+  *"pr view"*)
+    echo '{"headRefOid":"abc123"}'
+    exit 0
+    ;;
+  *)
+    cat "$FAKE_PR_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const caught = await cliFixtures.catchError(() => createGithubProvider().listCiFailures({ number: 1 }));
+
+		expect(caught).toBeInstanceOf(Error);
+		expect(String((caught as Error).message)).toContain("401");
+	});
+});
+
+describe("postReview — comment anchors", () => {
+	test("a comment with neither newLine nor oldLine is rejected with its path named", async () => {
+		fakeGh(
+			ghScript(`
+  *"pr view"*)
+    echo '{"headRefOid":"abc123"}'
+    exit 0
+    ;;`),
+		);
+
+		const caught = await cliFixtures.catchError(() =>
+			createGithubProvider().postReview(
+				{ number: 5 },
+				{ verdict: "comment", body: "b", comments: [{ path: "src/a.ts", body: "x" }] },
+			),
+		);
+
+		expect((caught as ProviderError).code).toBe("INVALID_ARGUMENT");
+		expect((caught as ProviderError).message).toContain("src/a.ts");
+	});
+});
+
+describe("replyToThread — thread without a root comment", () => {
+	test("rejects with INVALID_ARGUMENT instead of posting to an undefined comment", async () => {
+		fakeGh(ghScript(""));
+		const thread = { ...cliFixtures.reviewThread("RT_empty", "1"), commentId: undefined };
+
+		const caught = await cliFixtures.catchError(() =>
+			createGithubProvider().replyToThread(thread, "hello", { number: 3 }),
+		);
+
+		expect((caught as ProviderError).code).toBe("INVALID_ARGUMENT");
 	});
 });

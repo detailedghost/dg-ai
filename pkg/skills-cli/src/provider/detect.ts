@@ -20,7 +20,8 @@ function parseHost(url: string): string {
 	} catch {
 		throw new ProviderError(
 			"HOST_NOT_RECOGNIZED",
-			`vcs remote url could not be parsed: "${redactTokens(url)}" (set AI_VCS_PROVIDER=github|gitlab, or add its host to AI_VCS_GITLAB_HOSTS)`,
+			`vcs remote url could not be parsed: "${redactTokens(url)}" ` +
+				"(set AI_VCS_PROVIDER=github|gitlab, or add its host to AI_VCS_GITLAB_HOSTS)",
 		);
 	}
 }
@@ -41,10 +42,12 @@ function resolveFromUrl(url: string): DetectResult {
 	const host = parseHost(url);
 	if (host === "github.com") return { kind: "github", source: "host" };
 	if (host === "gitlab.com") return { kind: "gitlab", source: "host" };
-	if (gitlabHostAllowlist().includes(host)) return { kind: "gitlab", source: "host" };
+	if (gitlabHostAllowlist().includes(host))
+		return { kind: "gitlab", source: "host" };
 	throw new ProviderError(
 		"HOST_NOT_RECOGNIZED",
-		`vcs host not recognized: ${host} (set AI_VCS_PROVIDER=github|gitlab, or add "${host}" to AI_VCS_GITLAB_HOSTS)`,
+		`vcs host not recognized: ${host} ` +
+			`(set AI_VCS_PROVIDER=github|gitlab, or add "${host}" to AI_VCS_GITLAB_HOSTS)`,
 	);
 }
 
@@ -84,10 +87,7 @@ function envOverride(): ProviderKind | undefined {
 	);
 }
 
-/**
- * An explicitly passed URL outranks AI_VCS_PROVIDER, which falls back to covering only hosts the URL
- * rules cannot place — a caller resolving several hosts in one run must not have them all forced to one.
- */
+/** An explicit URL outranks AI_VCS_PROVIDER, which only covers hosts the URL rules cannot place. */
 export async function detectProvider(remoteUrl?: string): Promise<DetectResult> {
 	const override = envOverride();
 	if (remoteUrl !== undefined) {

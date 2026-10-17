@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { ReviewThread } from "../src/provider/types";
 import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 
 /** A PATH string with every directory that resolves vcs-provider-cli filtered out. */
@@ -154,4 +155,9 @@ export function isolateCliTests(): void {
   Object.assign(process.env, savedEnv);
   fixtures.cleanup();
  });
+}
+
+/** A thread with one root comment id and no loaded comments. */
+export function reviewThread(threadId: string, commentId: string): ReviewThread {
+	return { threadId, resolved: false, comments: [], commentId, path: "", line: null };
 }

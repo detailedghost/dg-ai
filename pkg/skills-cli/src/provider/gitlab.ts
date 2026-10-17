@@ -1,4 +1,4 @@
-import { ShellError, type ShellTag } from "../utils/git";
+import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
 	type CiFailure,
@@ -11,11 +11,11 @@ import {
 	FIELD_MAP,
 	flattenPaginated,
 	GITLAB_STATE_TO_PR_STATE,
-	getBodyViaView,
 	hostnameFlags,
 	type Issue,
 	isAlreadyExistsError,
 	isCliErrorContaining,
+	isNotFoundError,
 	type ListIssuesOptions,
 	type ListPullRequestsOptions,
 	type ListUnresolvedThreadsOptions,
@@ -42,8 +42,6 @@ const DEFAULT_HOST = "gitlab.com";
 
 const FAILING_JOB_STATUSES = new Set(["failed"]);
 
-const DEFAULT_AI_REVIEW_BOTS = "";
-
 const CONTROL_CHAR_CEILING = 0x1f;
 const TAB = 0x09;
 const LINE_FEED = 0x0a;
@@ -53,17 +51,31 @@ function resolveGlabBin(): string {
 	return process.env.GLAB_BIN ?? "glab";
 }
 
-/** Drops the control characters JSON forbids inside a string, keeping tab, LF and CR, legal between tokens. */
+const ESCAPED_WHITESPACE: Record<number, string> = { [TAB]: "\\t", [LINE_FEED]: "\\n", [CARRIAGE_RETURN]: "\\r" };
+
+/** Escapes raw tab, LF and CR inside string literals and drops other control characters everywhere. */
 function stripRawControlChars(raw: string): string {
 	let out = "";
-	let start = 0;
-	for (let i = 0; i < raw.length; i++) {
-		const code = raw.charCodeAt(i);
-		if (code > CONTROL_CHAR_CEILING || code === TAB || code === LINE_FEED || code === CARRIAGE_RETURN) continue;
-		out += raw.slice(start, i);
-		start = i + 1;
+	let inString = false;
+	let escaped = false;
+	for (const char of raw) {
+		const code = char.charCodeAt(0);
+		if (escaped) {
+			escaped = false;
+			if (code > CONTROL_CHAR_CEILING) out += char;
+			continue;
+		}
+		if (code > CONTROL_CHAR_CEILING) {
+			if (inString && char === "\\") escaped = true;
+			else if (char === '"') inString = !inString;
+			out += char;
+		} else if (inString) {
+			out += ESCAPED_WHITESPACE[code] ?? "";
+		} else if (code === TAB || code === LINE_FEED || code === CARRIAGE_RETURN) {
+			out += char;
+		}
 	}
-	return start === 0 ? raw : out + raw.slice(start);
+	return out;
 }
 
 /** GitLab embeds raw control characters in descriptions and notes carrying code-review markdown. */
@@ -71,13 +83,9 @@ function parseGlabJson<T = Record<string, unknown>>(raw: string): T {
 	return JSON.parse(stripRawControlChars(raw)) as T;
 }
 
-/**
- * Comma-separated `VCS_GITLAB_AI_REVIEW_BOT`; an empty value or `none` declares no AI reviewer.
- * `copilot` is dropped rather than honoured: GitLab cannot have it, and accepting the name would
- * let the Copilot-only subcommands past their gate and on to GitHub's API.
- */
+/** Comma-separated `AI_VCS_GITLAB_REVIEW_BOT`; empty or `none` declares no reviewer, and `copilot` is dropped. */
 function resolveAiReviewBotNames(): string[] {
-	const raw = process.env.VCS_GITLAB_AI_REVIEW_BOT ?? DEFAULT_AI_REVIEW_BOTS;
+	const raw = process.env.AI_VCS_GITLAB_REVIEW_BOT ?? "";
 	if (raw.trim().toLowerCase() === "none") return [];
 	return raw
 		.split(",")
@@ -101,11 +109,7 @@ function mrHeadRef(iid: string): string {
 	return `refs/merge-requests/${iid}/head`;
 }
 
-/**
- * glab's `-R`/`--repo` only accepts OWNER/REPO, GROUP/NAMESPACE/REPO, or a full URL — never a bare
- * HOST/OWNER/REPO (that's gh's syntax). A self-hosted host is indistinguishable from a subgroup
- * segment in that bare form, so emit the full URL instead once the host isn't the default.
- */
+/** glab `-R` takes OWNER/REPO or a full URL, so a non-default host is emitted as a URL. */
 function glSlug(repo?: RepoRef): string {
 	if (!repo) return "";
 	const path = `${repo.owner}/${repo.repo}`;
@@ -179,14 +183,15 @@ async function currentPullRequest(tag: ShellTag, repo?: RepoRef): Promise<PullRe
 }
 
 async function viewPullRequest(tag: ShellTag, ref: PrRef): Promise<PullRequest> {
-	const result = await tag`mr view ${String(ref.number)} ${mrRepoFlags(ref.repo)} --output json`;
+	const result =
+		await tag`mr view ${requireMrIid(ref.number, "viewPullRequest")} ${mrRepoFlags(ref.repo)} --output json`;
 	return normalizeGlMr(parseGlabJson(result.stdout.toString()));
 }
 
 async function createPullRequest(tag: ShellTag, input: CreatePullRequestInput, repo?: RepoRef): Promise<PullRequest> {
 	const draftFlags = input.draft ? ["--draft"] : [];
 	const result =
-		await tag`mr create ${draftFlags} --title ${input.title} --source-branch ${input.head} --target-branch ${input.base} --description ${input.body} ${mrRepoFlags(repo)}`;
+		await tag`mr create ${draftFlags} --title ${input.title} --source-branch ${input.head} --target-branch ${input.base} --description=${input.body} ${mrRepoFlags(repo)}`;
 	const number = extractMrNumber(result.stdout.toString().trim());
 	return viewPullRequest(tag, { number, repo });
 }
@@ -214,11 +219,18 @@ function issueStateFlags(opts?: ListIssuesOptions): string[] {
 
 async function listIssues(tag: ShellTag, opts?: ListIssuesOptions, repo?: RepoRef): Promise<Issue[]> {
 	const limit = opts?.limit ?? 100;
+	const perPage = Math.min(limit, PAGE_SIZE);
 	const labelFlags = opts?.label ? ["--label", opts.label] : [];
-	const result =
-		await tag`issue list --per-page ${String(limit)} --page 1 --output json ${issueStateFlags(opts)} ${labelFlags} ${mrRepoFlags(repo)}`;
-	const raw = parseGlabJson(result.stdout.toString());
-	return (Array.isArray(raw) ? raw : []).map(normalizeGlIssue).slice(0, limit);
+	const issues: Issue[] = [];
+	for (let page = 1; page <= MAX_LIST_PAGES && issues.length < limit; page++) {
+		const result =
+			await tag`issue list --per-page ${String(perPage)} --page ${String(page)} --output json ${issueStateFlags(opts)} ${labelFlags} ${mrRepoFlags(repo)}`;
+		const raw = parseGlabJson(result.stdout.toString());
+		const batch: Array<Record<string, unknown>> = Array.isArray(raw) ? raw : [];
+		issues.push(...batch.map(normalizeGlIssue));
+		if (batch.length < perPage) break;
+	}
+	return issues.slice(0, limit);
 }
 
 async function viewIssue(tag: ShellTag, number: number, repo?: RepoRef): Promise<Issue> {
@@ -230,11 +242,7 @@ function extractIssueNumber(url: string): number {
 	return extractNumberFromUrl(url, /\/-\/(?:issues|work_items)\/(\d+)(?:[/?#]|$)/, "glab issue create");
 }
 
-/**
- * No stdin-body path (glab's `-d -` opens an editor, unlike gh's `-F -`), so an empty body needs
- * `--description=` glued as one token: template interpolation skips a bare empty-string value,
- * which would otherwise leave a dangling `--description` that eats the next token (e.g. --label).
- */
+/** The body is glued as `--description=` so an empty value cannot leave a dangling flag. */
 async function createIssue(tag: ShellTag, input: CreateIssueInput, repo?: RepoRef): Promise<Issue> {
 	const labelFlags = input.labels?.length ? ["--label", input.labels.join(",")] : [];
 	const assigneeFlags = input.assignees?.length ? ["--assignee", input.assignees.join(",")] : [];
@@ -340,8 +348,11 @@ function makeMrIidResolver(tag: ShellTag): () => Promise<number> {
 	};
 }
 
-/** An explicit ref supplies both halves of the endpoint, so it skips the current-branch MR lookup entirely. */
+/** An explicit ref skips the current-branch lookup; a ref naming another repo must carry its own number. */
 async function threadIid(resolveIid: () => Promise<number>, ref?: PrRef, context = "thread"): Promise<string> {
+	if (ref?.repo && ref.number === undefined) {
+		throw new ProviderError("INVALID_ARGUMENT", `${context}: a merge request number is required when a repository is given`);
+	}
 	return requireMrIid(ref?.number ?? (await resolveIid()), context);
 }
 
@@ -355,9 +366,8 @@ async function listUnresolvedThreads(
 	const result =
 		await tag`api projects/${glProjectPath(ref?.repo)}/merge_requests/${iid}/discussions --paginate ${apiHostFlags(ref?.repo)}`;
 	const list = flattenPaginated<RawDiscussion>(parseGlabJson(result.stdout.toString()));
-	const filtered = opts?.includeResolved
-		? list
-		: list.filter((d) => isResolvableDiscussion(d) && !isResolvedDiscussion(d));
+	const resolvable = list.filter(isResolvableDiscussion);
+	const filtered = opts?.includeResolved ? resolvable : resolvable.filter((d) => !isResolvedDiscussion(d));
 	return filtered.map(normalizeGlThread);
 }
 
@@ -374,14 +384,13 @@ async function resolveThread(
 async function replyToThread(
 	tag: ShellTag,
 	resolveIid: () => Promise<number>,
-	threadId: string,
-	_commentId: string,
+	thread: ReviewThread,
 	body: string,
 	ref?: PrRef,
 ): Promise<ReviewComment> {
 	const iid = await threadIid(resolveIid, ref);
 	const result =
-		await tag`api projects/${glProjectPath(ref?.repo)}/merge_requests/${iid}/discussions/${threadId}/notes -f body=${body} ${apiHostFlags(ref?.repo)}`;
+		await tag`api projects/${glProjectPath(ref?.repo)}/merge_requests/${iid}/discussions/${thread.threadId}/notes -f body=${body} ${apiHostFlags(ref?.repo)}`;
 	const raw = parseGlabJson<{
 		id?: string | number;
 		body?: string;
@@ -455,7 +464,9 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 		try {
 			const traceResult = await tag`api projects/${project}/jobs/${jobId}/trace ${hostFlags}`;
 			logExcerpt = truncateLogExcerpt(traceResult.stdout.toString());
-		} catch {}
+		} catch (err) {
+			if (!isNotFoundError(err)) throw err;
+		}
 		results.push({
 			executionId: pipelineId,
 			jobId,
@@ -470,26 +481,27 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 }
 
 async function retargetPullRequest(tag: ShellTag, ref: PrRef, newBase: string): Promise<void> {
-	await tag`mr update ${String(ref.number)} --target-branch ${newBase} ${mrRepoFlags(ref.repo)}`;
+	await tag`mr update ${requireMrIid(ref.number, "retargetPullRequest")} --target-branch ${newBase} ${mrRepoFlags(ref.repo)}`;
 }
 
 async function getPullRequestBody(tag: ShellTag, ref: PrRef): Promise<string> {
-	return getBodyViaView(() => viewPullRequest(tag, ref));
+	return (await viewPullRequest(tag, ref)).body;
 }
 
 async function setPullRequestBody(tag: ShellTag, ref: PrRef, body: string): Promise<void> {
-	await tag.withInput(body)`mr update ${String(ref.number)} --description-file - ${mrRepoFlags(ref.repo)}`;
+	await tag.withInput(body)`mr update ${requireMrIid(ref.number, "setPullRequestBody")} --description-file - ${mrRepoFlags(ref.repo)}`;
 }
 
 /** `glab mr close` takes no comment flag, so a comment is posted as its own note first. */
 async function closePullRequest(tag: ShellTag, ref: PrRef, comment?: string): Promise<void> {
+	const iid = requireMrIid(ref.number, "closePullRequest");
 	if (comment !== undefined) {
-		await tag`api projects/${glProjectPath(ref.repo)}/merge_requests/${requireMrIid(ref.number, "closePullRequest")}/notes -f body=${comment} ${apiHostFlags(ref.repo)}`;
+		await tag`api projects/${glProjectPath(ref.repo)}/merge_requests/${iid}/notes -f body=${comment} ${apiHostFlags(ref.repo)}`;
 	}
-	await tag`mr close ${String(ref.number)} ${mrRepoFlags(ref.repo)}`;
+	await tag`mr close ${iid} ${mrRepoFlags(ref.repo)}`;
 }
 
-/** `glab mr list` has no `--state` flag — state is selected via -A/--closed/--merged, defaulting to open-only. */
+/** `glab mr list` has no `--state` flag; no state means all, as on GitHub. */
 function listFilterFlags(opts?: ListPullRequestsOptions): string[] {
 	const flags: string[] = [];
 	const state = normalizePrStateFilter(opts?.state);
@@ -530,7 +542,7 @@ async function listPullRequests(tag: ShellTag, opts?: ListPullRequestsOptions, r
 }
 
 async function fetchDiff(tag: ShellTag, ref: PrRef): Promise<string> {
-	const result = await tag`mr diff ${String(ref.number)} --raw ${mrRepoFlags(ref.repo)}`;
+	const result = await tag`mr diff ${requireMrIid(ref.number, "fetchDiff")} --raw ${mrRepoFlags(ref.repo)}`;
 	return result.stdout.toString();
 }
 
@@ -561,50 +573,68 @@ function toGitlabPosition(c: ReviewCommentInput, refs: GlDiffRefs): Record<strin
 
 const JSON_CONTENT_TYPE_HEADER = "Content-Type: application/json";
 
-/**
- * Draft notes are GitLab's single-review analog: every comment lands as a draft, then one
- * bulk_publish releases them with the summary note and reviewer state together.
- */
+function draftNoteId(stdout: string): string | undefined {
+	try {
+		const id = parseGlabJson<{ id?: unknown }>(stdout).id;
+		return typeof id === "number" || typeof id === "string" ? String(id) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isApprovalRefusal(err: unknown): boolean {
+	return isCliErrorContaining(err, "401") || isCliErrorContaining(err, "403");
+}
+
+/** Posts every comment as a draft note, then releases them in one bulk_publish; failed runs delete their drafts. */
 async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Promise<PostedReview> {
 	const project = glProjectPath(ref.repo);
 	const hostFlags = apiHostFlags(ref.repo);
-	const iid = String(ref.number);
+	const iid = requireMrIid(ref.number, "postReview");
 	const mrResult = await tag`api projects/${project}/merge_requests/${iid} ${hostFlags}`;
-	const mr = JSON.parse(mrResult.stdout.toString());
+	const mr = parseGlabJson(mrResult.stdout.toString());
 	const refs = mr?.diff_refs as GlDiffRefs | undefined;
 	if (!refs?.head_sha) {
 		throw new ProviderError("PARSE_ERROR", "glab api merge request response is missing diff_refs");
 	}
-	for (const c of input.comments) {
-		const payload = JSON.stringify({ note: c.body, position: toGitlabPosition(c, refs) });
+	const draftIds: string[] = [];
+	try {
+		for (const c of input.comments) {
+			const payload = JSON.stringify({ note: c.body, position: toGitlabPosition(c, refs) });
+			const draft = await tag.withInput(
+				payload,
+			)`api projects/${project}/merge_requests/${iid}/draft_notes -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
+			const draftId = draftNoteId(draft.stdout.toString());
+			if (draftId !== undefined) draftIds.push(draftId);
+		}
+		const state = GITLAB_REVIEWER_STATES[input.verdict];
+		const publish = JSON.stringify({
+			...(input.body.trim() ? { note: input.body } : {}),
+			...(state ? { reviewer_state: state } : {}),
+		});
 		await tag.withInput(
-			payload,
-		)`api projects/${project}/merge_requests/${iid}/draft_notes -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
+			publish,
+		)`api projects/${project}/merge_requests/${iid}/draft_notes/bulk_publish -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
+	} catch (err) {
+		for (const draftId of draftIds) {
+			await tag`api projects/${project}/merge_requests/${iid}/draft_notes/${draftId} -X DELETE ${hostFlags}`.catch(
+				() => undefined,
+			);
+		}
+		throw err;
 	}
-	const state = GITLAB_REVIEWER_STATES[input.verdict];
-	const publish = JSON.stringify({
-		...(input.body.trim() ? { note: input.body } : {}),
-		...(state ? { reviewer_state: state } : {}),
-	});
-	await tag.withInput(
-		publish,
-	)`api projects/${project}/merge_requests/${iid}/draft_notes/bulk_publish -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
 	let verdict: ReviewVerdict = input.verdict;
 	let degraded = false;
 	if (input.verdict === "approve") {
 		try {
 			await tag`api projects/${project}/merge_requests/${iid}/approve -X POST ${hostFlags}`;
 		} catch (err) {
-			if (!(err instanceof ShellError)) throw err;
+			if (!isApprovalRefusal(err)) throw err;
 			verdict = "comment";
 			degraded = true;
 		}
 	}
 	return { url: (mr.web_url as string) ?? "", verdict, degraded, commentCount: input.comments.length };
-}
-
-async function checkAuth(tag: ShellTag): Promise<boolean> {
-	return checkAuthStatus(tag);
 }
 
 /** Create an inert GitLab adapter with configured reviewers and per-instance current-MR memoization. */
@@ -631,7 +661,7 @@ export function createGitlabProvider(): Provider {
 		viewPullRequest: (ref) => viewPullRequest(tag, ref),
 		listUnresolvedThreads: (opts, ref) => listUnresolvedThreads(tag, resolveIid, opts, ref),
 		resolveThread: (threadId, ref) => resolveThread(tag, resolveIid, threadId, ref),
-		replyToThread: (threadId, commentId, body, ref) => replyToThread(tag, resolveIid, threadId, commentId, body, ref),
+		replyToThread: (thread, body, ref) => replyToThread(tag, resolveIid, thread, body, ref),
 		listCiFailures: (ref) => listCiFailures(tag, ref),
 		fetchDiff: (ref) => fetchDiff(tag, ref),
 		postReview: (ref, input) => postReview(tag, ref, input),
@@ -645,6 +675,6 @@ export function createGitlabProvider(): Provider {
 		createIssue: (input, repo) => createIssue(tag, input, repo),
 		addLabelsToIssue: (number, labels, repo) => addLabelsToIssue(tag, number, labels, repo),
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
-		checkAuth: () => checkAuth(tag),
+		checkAuth: () => checkAuthStatus(tag),
 	};
 }

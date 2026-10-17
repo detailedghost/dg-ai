@@ -21,7 +21,7 @@ const ENV_KEYS = [
 	"FAKE_PAGE2_JSON",
 	"FAKE_PIPELINES_JSON",
 	"FAKE_JOBS_JSON",
-	"VCS_GITLAB_AI_REVIEW_BOT",
+	"AI_VCS_GITLAB_REVIEW_BOT",
 ] as const;
 
 let savedEnv: Record<string, string | undefined>;
@@ -124,49 +124,49 @@ describe("createGitlabProvider — capabilities", () => {
 		expect(provider.capabilities.nativeStacking).toBe(false);
 	});
 
-	test("VCS_GITLAB_AI_REVIEW_BOT names the reviewer instead of the default", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "my_own_bot";
+	test("AI_VCS_GITLAB_REVIEW_BOT names the reviewer instead of the default", () => {
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "my_own_bot";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBot).toBe(true);
 		expect(provider.capabilities.aiReviewBotNames).toEqual(["my_own_bot"]);
 	});
 
-	test("a comma-separated VCS_GITLAB_AI_REVIEW_BOT declares every reviewer, trimmed", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = " review_bot , gitlab_duo ";
+	test("a comma-separated AI_VCS_GITLAB_REVIEW_BOT declares every reviewer, trimmed", () => {
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = " review_bot , gitlab_duo ";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBotNames).toEqual(["review_bot", "gitlab_duo"]);
 	});
 
-	test("VCS_GITLAB_AI_REVIEW_BOT=none declares no reviewer, restoring the proxy route", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "none";
+	test("AI_VCS_GITLAB_REVIEW_BOT=none declares no reviewer, restoring the proxy route", () => {
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "none";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBot).toBe(false);
 		expect(provider.capabilities.aiReviewBotNames).toEqual([]);
 	});
 
-	test("an empty VCS_GITLAB_AI_REVIEW_BOT declares no reviewer rather than an unnamed one", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "";
+	test("an empty AI_VCS_GITLAB_REVIEW_BOT declares no reviewer rather than an unnamed one", () => {
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBot).toBe(false);
 		expect(provider.capabilities.aiReviewBotNames).toEqual([]);
 	});
 
-	test("copilot is dropped from VCS_GITLAB_AI_REVIEW_BOT, since GitLab cannot have it", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "Copilot";
+	test("copilot is dropped from AI_VCS_GITLAB_REVIEW_BOT, since GitLab cannot have it", () => {
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "Copilot";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBot).toBe(false);
 		expect(provider.capabilities.aiReviewBotNames).toEqual([]);
 	});
 
 	test("copilot is dropped from a list while the other reviewers are kept", () => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "copilot,review_bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "copilot,review_bot";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBotNames).toEqual(["review_bot"]);
 	});
 
 	test("capabilities never shells out to glab, so it answers with no provider binary present", () => {
 		process.env.GLAB_BIN = "/nonexistent/glab-does-not-exist";
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "review_bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "review_bot";
 		const provider = createGitlabProvider();
 		expect(provider.capabilities.aiReviewBot).toBe(true);
 	});
@@ -347,10 +347,9 @@ describe("createPullRequest", () => {
 			glabScript(`
   *"mr create"*)
     while [ "$#" -gt 0 ]; do
-      if [ "$1" = "--description" ]; then
-        shift
-        printf '%s' "$1" > "$FAKE_ARGV_CAPTURE"
-      fi
+      case "$1" in
+        --description=*) printf '%s' "\${1#--description=}" > "$FAKE_ARGV_CAPTURE" ;;
+      esac
       shift
     done
     echo "https://gitlab.com/acme/widgets/-/merge_requests/9002"
@@ -459,14 +458,14 @@ describe("listUnresolvedThreads — discussions mapping", () => {
 		]);
 	});
 
-	test("includeResolved:true returns every discussion unfiltered, including the non-resolvable plain comment", async () => {
+	test("includeResolved:true adds resolved discussions but still excludes the non-resolvable plain comment", async () => {
 		process.env.FAKE_MR_JSON = writeJson("discussions.json", discussionsFixture());
 		fakeGlabDiscussions();
 
 		const provider = createGitlabProvider();
 		const threads = await provider.listUnresolvedThreads({ includeResolved: true });
 
-		expect(threads.map((t) => t.threadId).sort()).toEqual(["disc-1", "disc-2", "disc-3"]);
+		expect(threads.map((t) => t.threadId).sort()).toEqual(["disc-1", "disc-2"]);
 	});
 
 	test("a discussion with multiple notes derives commentId from the FIRST note's id, not the last", async () => {
@@ -603,7 +602,7 @@ describe("replyToThread — POST .../discussions/{id}/notes", () => {
 		);
 
 		const provider = createGitlabProvider();
-		const comment = await provider.replyToThread("disc-1", "5001", "thanks, fixed");
+		const comment = await provider.replyToThread(cliFixtures.reviewThread("disc-1", "5001"), "thanks, fixed");
 
 		expect(comment).toEqual({
 			id: "504",
@@ -631,7 +630,7 @@ describe("replyToThread — POST .../discussions/{id}/notes", () => {
 		);
 
 		const provider = createGitlabProvider();
-		const caught = await cliFixtures.catchError(() => provider.replyToThread("disc-1", "5001", "thanks"));
+		const caught = await cliFixtures.catchError(() => provider.replyToThread(cliFixtures.reviewThread("disc-1", "5001"), "thanks"));
 
 		expect(caught).toBeInstanceOf(ProviderError);
 		expect((caught as ProviderError).code).toBe("NO_CURRENT_MR");
@@ -755,7 +754,7 @@ esac
     exit 0
     ;;
   *84002*)
-    echo "trace expired" 1>&2
+    echo "404 Not Found" 1>&2
     exit 1
     ;;`,
 		);
@@ -1848,5 +1847,224 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 			code: "PARSE_ERROR",
 		});
 		expect(readCalls(log)).toHaveLength(1);
+	});
+});
+
+describe("createPullRequest — empty body", () => {
+	test("glues --description= so an empty body cannot swallow the next flag", async () => {
+		const log = callLogPath();
+		process.env.FAKE_MR_JSON = writeJson("empty-body-mr.json", rawMr(9100, "opened"));
+		fakeGlab(
+			glabScript(`
+  *"mr create"*)
+    echo "https://gitlab.com/acme/widgets/-/merge_requests/9100"
+    exit 0
+    ;;
+  *"mr view"*)
+    cat "$FAKE_MR_JSON"
+    exit 0
+    ;;`),
+		);
+
+		await createGitlabProvider().createPullRequest(
+			{ title: "t", body: "", base: "main", head: "feature" },
+			{ host: "gitlab.com", owner: "acme", repo: "widgets" },
+		);
+
+		const create = readCalls(log).find((c) => c.startsWith("mr create")) ?? "";
+		expect(create).toContain("--description= ");
+		expect(create).toContain("-R acme/widgets");
+	});
+});
+
+describe("listIssues — paging past one page", () => {
+	test("pages through results until the requested limit is reached", async () => {
+		const page = (start: number, count: number) =>
+			Array.from({ length: count }, (_, i) => ({ iid: start + i, title: `i${start + i}`, state: "opened" }));
+		process.env.FAKE_PAGE1_JSON = writeJson("issues-page1.json", page(1, 100));
+		process.env.FAKE_PAGE2_JSON = writeJson("issues-page2.json", page(101, 100));
+		const log = callLogPath();
+		fakeGlab(`#!/bin/sh
+ARGS="$*"
+printf '%s\n' "$ARGS" >> "$FAKE_CALL_LOG"
+case "$ARGS" in
+  *"--page 1"*) cat "$FAKE_PAGE1_JSON" ;;
+  *"--page 2"*) cat "$FAKE_PAGE2_JSON" ;;
+  *) echo "[]" ;;
+esac
+`);
+
+		const issues = await createGitlabProvider().listIssues({ limit: 150 });
+
+		expect(issues).toHaveLength(150);
+		expect(issues.at(-1)?.number).toBe(150);
+		const calls = readCalls(log);
+		expect(calls.every((c) => c.includes("--per-page 100"))).toBe(true);
+		expect(calls).toHaveLength(2);
+	});
+});
+
+describe("thread targeting", () => {
+	test("a ref naming another repository must carry its own merge request number", async () => {
+		const log = callLogPath();
+		fakeGlab(glabScript(""));
+
+		const caught = await cliFixtures.catchError(() =>
+			createGitlabProvider().listUnresolvedThreads(
+				{},
+				{ repo: { host: "gitlab.com", owner: "other", repo: "project" } } as never,
+			),
+		);
+
+		expect((caught as ProviderError).code).toBe("INVALID_ARGUMENT");
+		expect(readCalls(log)).toEqual([]);
+	});
+});
+
+describe("listCiFailures — trace fetch failures", () => {
+	test("a server error on the trace request is raised, not hidden as an empty log", async () => {
+		const headSha = HEAD_SHA;
+		const mrJson = writeJson("trace-mr.json", { sha: headSha });
+		const pipelinesJson = writeJson("trace-pipelines.json", [headPipeline(5001)]);
+		const jobsJson = writeJson("trace-jobs.json", [{ id: 86001, name: "build", status: "failed", web_url: "u" }]);
+		fakeGlab(
+			glabScript(`
+  *"/trace"*)
+    echo "500 Internal Server Error" 1>&2
+    exit 1
+    ;;
+  *"/jobs"*)
+    cat "${jobsJson}"
+    exit 0
+    ;;
+  *"/pipelines"*)
+    cat "${pipelinesJson}"
+    exit 0
+    ;;
+  *"merge_requests/1"*)
+    cat "${mrJson}"
+    exit 0
+    ;;`),
+		);
+
+		const caught = await cliFixtures.catchError(() => createGitlabProvider().listCiFailures({ number: 1 }));
+
+		expect(String((caught as Error).message)).toContain("500");
+	});
+});
+
+describe("JSON parsing — raw whitespace inside string literals", () => {
+	test("a raw newline and tab inside a description are escaped instead of failing the parse", async () => {
+		const mrPath = join(tmp("fake-glab-rawstr-"), "mr.json");
+		const encoded = JSON.stringify({
+			iid: 31,
+			title: "raw string whitespace",
+			web_url: "https://gitlab.com/acme/widgets/-/merge_requests/31",
+			state: "opened",
+			source_branch: "f",
+			target_branch: "main",
+			description: "PLACEHOLDER",
+			merged_at: null,
+		}).replace("PLACEHOLDER", `first${String.fromCharCode(10)}second${String.fromCharCode(9)}third`);
+		expect(() => JSON.parse(encoded)).toThrow();
+		writeFileSync(mrPath, encoded);
+		fakeGlab(`#!/bin/sh
+cat "${mrPath}"
+exit 0
+`);
+
+		const pr = await createGitlabProvider().viewPullRequest({ number: 31 });
+
+		expect(pr.body).toBe("first\nsecond\tthird");
+	});
+});
+
+describe("merge request iid validation", () => {
+	test.each([
+		["fetchDiff", (p: ReturnType<typeof createGitlabProvider>) => p.fetchDiff({ number: Number.NaN })],
+		["retargetPullRequest", (p: ReturnType<typeof createGitlabProvider>) => p.retargetPullRequest({ number: 0 }, "main")],
+		["setPullRequestBody", (p: ReturnType<typeof createGitlabProvider>) => p.setPullRequestBody({ number: -1 }, "b")],
+		["closePullRequest", (p: ReturnType<typeof createGitlabProvider>) => p.closePullRequest({ number: 1.5 })],
+		["viewPullRequest", (p: ReturnType<typeof createGitlabProvider>) => p.viewPullRequest({ number: 0 })],
+	])("%s fails closed on a junk number before shelling out", async (_name, call) => {
+		const log = callLogPath();
+		fakeGlab(glabScript(""));
+
+		const caught = await cliFixtures.catchError(() => call(createGitlabProvider()));
+
+		expect((caught as ProviderError).code).toBe("INVALID_MR_IID");
+		expect(readCalls(log)).toEqual([]);
+	});
+});
+
+describe("postReview — failure handling", () => {
+	const ref = { number: 7, repo: { host: "gitlab.com", owner: "acme", repo: "widgets" } };
+	const comments = [
+		{ path: "a.ts", newLine: 1, body: "one" },
+		{ path: "b.ts", newLine: 2, body: "two" },
+	];
+	const MR_WITH_CONTROL_CHAR = `{"web_url":"https://gitlab.com/acme/widgets/-/merge_requests/7","description":"a${String.fromCharCode(1)}b","diff_refs":{"base_sha":"b1","start_sha":"s1","head_sha":"h1"}}`;
+
+	function script(opts: { failPublish?: boolean; approveError?: string } = {}): string {
+		return glabScript(`
+  *"draft_notes -X POST"*)
+    cat > /dev/null
+    echo '{"id":11}'
+    exit 0
+    ;;
+  *"-X DELETE"*)
+    exit 0
+    ;;
+  *"bulk_publish"*)
+    cat > /dev/null
+    ${opts.failPublish ? "echo '500 Internal Server Error' 1>&2; exit 1" : "exit 0"}
+    ;;
+  *"/approve"*)
+    ${opts.approveError ? `echo '${opts.approveError}' 1>&2; exit 1` : "echo '{}'; exit 0"}
+    ;;
+  *"merge_requests/7")
+    echo '${MR_WITH_CONTROL_CHAR}'
+    exit 0
+    ;;`);
+	}
+
+	test("a failed bulk_publish deletes every draft it created before rethrowing", async () => {
+		const log = callLogPath();
+		fakeGlab(script({ failPublish: true }));
+
+		const caught = await cliFixtures.catchError(() =>
+			createGitlabProvider().postReview(ref, { verdict: "comment", body: "s", comments }),
+		);
+
+		expect(String((caught as Error).message)).toContain("500");
+		const deletes = readCalls(log).filter((c) => c.includes("-X DELETE"));
+		expect(deletes).toHaveLength(2);
+		expect(deletes.every((c) => /draft_notes\/\d+ -X DELETE/.test(c))).toBe(true);
+	});
+
+	test("an approve failure that is not an authorization refusal is raised, not degraded", async () => {
+		fakeGlab(script({ approveError: "503 Service Unavailable" }));
+
+		const caught = await cliFixtures.catchError(() =>
+			createGitlabProvider().postReview(ref, { verdict: "approve", body: "s", comments: [] }),
+		);
+
+		expect(String((caught as Error).message)).toContain("503");
+	});
+
+	test("an authorization refusal on approve still degrades to a comment", async () => {
+		fakeGlab(script({ approveError: "403 Forbidden" }));
+
+		const posted = await createGitlabProvider().postReview(ref, { verdict: "approve", body: "s", comments: [] });
+
+		expect(posted).toMatchObject({ verdict: "comment", degraded: true });
+	});
+
+	test("an MR payload carrying a raw control character still parses", async () => {
+		fakeGlab(script());
+
+		const posted = await createGitlabProvider().postReview(ref, { verdict: "comment", body: "s", comments: [] });
+
+		expect(posted.url).toBe("https://gitlab.com/acme/widgets/-/merge_requests/7");
 	});
 });
