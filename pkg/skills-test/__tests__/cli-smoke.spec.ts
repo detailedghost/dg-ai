@@ -25,6 +25,10 @@ async function runCli(args: string[]): Promise<{ code: number; out: string }> {
 	return { code, out };
 }
 
+function expectListed(out: string, verb: string): void {
+	expect(out).toMatch(new RegExp(`^  ${verb}(?: |$)`, "m"));
+}
+
 describe("dg-skills CLI", () => {
 	test("--help exits 0 and lists every command the skills use", async () => {
 		const { code, out } = await runCli(["--help"]);
@@ -48,7 +52,7 @@ describe("dg-skills CLI", () => {
 			"meaningful",
 			"catchup",
 		]) {
-			expect(out).toContain(cmd);
+			expectListed(out, cmd);
 		}
 	});
 
@@ -118,7 +122,7 @@ describe("dg-skills CLI", () => {
 			"check-no-findings",
 			"await-copilot-review",
 		]) {
-			expect(out).toContain(command);
+			expectListed(out, command);
 		}
 	});
 
@@ -151,7 +155,7 @@ describe("dg-skills CLI", () => {
 			"ready-when-green",
 			"summary",
 		]) {
-			expect(out).toContain(verb);
+			expectListed(out, verb);
 		}
 	});
 
@@ -159,7 +163,7 @@ describe("dg-skills CLI", () => {
 		const { code, out } = await runCli(["meaningful", "--help"]);
 		expect(code).toBe(0);
 		for (const verb of ["info", "apply", "apply-json", "abort"])
-			expect(out).toContain(verb);
+			expectListed(out, verb);
 	});
 
 	test("catchup --help documents default and disabled pushing", async () => {
