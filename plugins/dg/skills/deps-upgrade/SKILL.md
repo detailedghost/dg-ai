@@ -52,24 +52,24 @@ never embed credentials in commands, reports or repository files.
 
 On GitLab, `list-prs`/`close-prs`/`push-pr`/`pr-body` go through the shared VCS provider layer instead of `gh`. `list-prs` looks up open MRs authored by the configured Renovate bot login (`renovate-bot` by default, override with `AI_RENOVATE_BOT_LOGIN`) — this assumes the target repo actually runs Renovate under that login; a zero-result lookup prints a warning rather than silently reporting nothing to do. Step 4's `bump-action` remains GitHub Actions-specific by design (it only bumps `.github/workflows/*.yml` refs). On a repo with no `.github/workflows`, it exits non-zero with `no workflow files changed — check <from> tag` rather than skipping quietly, so do not call it on a GitLab-only repo. That guard is deliberate: exiting zero on no matches would hide a mistyped `<from>` tag on GitHub.
 
-Also read `.agents/school/DEPS.md` for past upgrade notes (recurring issues, recent runs).
+Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring issues, recent runs).
 
 ## Step Overview
 
 | # | Step | `"$DG" deps-upgrade` subcommand | Gate |
 |---|------|------|------|
-| 1 | **Prepare** — Fetch default branch, create worktree + `drb/chore/deps_update_<ts>` branch, then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
+| 1 | **Prepare** — Fetch default branch, create worktree + `<prefix>deps_update_<ts>` branch (prefix: `$DG_DEPS_BRANCH_PREFIX`, default `drb/chore/`), then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
 | 2 | **Discover** — List open Dependabot PRs (GitHub) or Renovate MRs (GitLab), categorize by severity | `list-prs` | Update list exists (may be empty) |
 | 3 | **Security Audit** — Run ecosystem audit, find fixable vulns | `audit` | At least one update to apply |
 | 4 | **Apply Updates** — Check each target with `cooldown <pkg> <old> <new> --cooldown-days N` first; bump to the verdict's `version` (`ok`/`fallback`), skip `held`/`unknown`. Update manifests, clean lockfile | `cooldown`, `bump-dep`, `bump-action` | Install succeeds, lockfile clean |
-| 5 | **Fix Breaking Changes** — Migrate for major bumps | `pr-body <n>` for changelogs; pass migrated files via `bump-dep --files …` | Migration changes applied |
+| 5 | **Fix Breaking Changes** — Migrate for major bumps | `pr-body <n>` for changelogs; commit migrated files via `commit chore deps "<msg>" --files …` | Migration changes applied |
 | 6 | **Verify** — Build, lint, test (all must pass) | *native project build/lint/test commands* | All green |
 | 7 | **Validate** — Optional qa-devops + security re-audit | `audit` again | Clean or skipped |
 | 8 | **Commit** — One commit per dependency, conventional format | covered by `bump-dep` / `bump-action`; `commit <type> <scope> "<msg>"` for one-offs | All committed, clean tree |
-| 9 | **Close PRs** — Close Dependabot PRs with comment | `close-prs <n>…` | Applicable PRs closed |
+| 9 | **Record History** — Update `.agents/school/DEPS.md` | `commit docs deps "…"` | History updated |
 | 10 | **Push & PR** — Push branch, **always** open combined PR **as a draft**, then open it in the browser. Put the `summary` "Held by cooldown" list in the body | `push-pr "<title>"` (body on stdin), then `"$DG" batch-open` | PR URL returned |
 | 10b | **Ready When Green** — Wait for CI, then mark the PR ready. A repo with no CI is marked ready after a 5 min grace period | `ready-when-green <pr>` | JSON `ready` (exit 0), `failed` (1) or `timeout` (2); report it |
-| 11 | **Record History** — Update `.agents/school/DEPS.md` | `commit docs deps "…"` | History updated |
+| 11 | **Close PRs** — After the PR URL exists, close Dependabot PRs with comment | `close-prs <n>…` | Applicable PRs closed |
 | 12 | **Summary** — Emit end-of-run report | `summary` | Markdown report printed |
 
 ## General Rules
@@ -81,6 +81,6 @@ Also read `.agents/school/DEPS.md` for past upgrade notes (recurring issues, rec
 - **One thing at a time.** Patch -> minor -> major. Fix breakage before moving on.
 - **Stop early if nothing to do.** Zero PRs + zero vulnerabilities = report and exit.
 - NEVER skip a gate condition.
-- **Opening the PR is a mandatory final step, not optional.** This skill's job is to land the batch as a combined PR (see the skill description). Once verify (Step 6) is green and history is recorded, run Step 10 to push and open the PR before finishing. Surfacing it in the browser is best-effort and never fails the run.
+- **Opening the PR is a mandatory final step, not optional.** This skill's job is to land the batch as a combined PR (see the skill description). Once verify (Step 6) is green, record history (Step 9), then run Step 10 to push and open the PR before finishing. Surfacing it in the browser is best-effort and never fails the run.
 - **Never upgrade blind.** A package held by the cooldown or with an unknown publish age stays on its current version and is listed under "Held by cooldown" in the summary and PR body.
 - **Always end the run with `"$DG" deps-upgrade summary`** so the user sees a consistent report.

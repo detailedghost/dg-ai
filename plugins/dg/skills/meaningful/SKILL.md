@@ -68,10 +68,3 @@ existing approval for that exact plan and operation; do not ask for it again.
 ## Notes
 - Never use plain `--force`; the helper uses `--force-with-lease`.
 - Only commits on this branch (since merge base) are in scope — never reshape across the merge base.
-
-## Validation
-
-The ported real-git suite is `pkg/skills-cli/__tests__/meaningful.spec.ts`. It
-preserves the ten legacy history/backup/rollback cases and checks CLI status,
-plan schemas, literal paths/messages, attribution and inert imports in disposable
-repositories with local bare remotes and isolated durable state.

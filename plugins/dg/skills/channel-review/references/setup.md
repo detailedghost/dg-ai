@@ -34,7 +34,7 @@ Install these on every machine that runs the daemon:
   the configured Secrets Manager secret.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
 - At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
-- The thrash skill where that runner finds it. dg does not ship thrash.
+- The thrash skill where that runner finds it. The dg plugin ships `/dg:thrash` and its persona; a skills-only install copies both.
 - For `$address`: the address skill available to the selected runner,
   `dg-skills address`, and `gh` or `glab` signed in with push access.
 

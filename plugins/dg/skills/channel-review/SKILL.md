@@ -29,7 +29,7 @@ follow [relay setup](references/relay-setup.md); start config.json from
 [the example config](references/config.example.json).
 
 Require the dg plugin, AWS CLI with SSO access, `gh` (`glab` for GitLab), a signed-in
-runner CLI, and the thrash skill on every machine. dg does not ship thrash.
+runner CLI, and the thrash skill on every machine. The dg plugin ships `/dg:thrash` and its persona.
 Claude with the default allowlist is the supported, safe default. The
 experimental codex runner runs with `--dangerously-bypass-approvals-and-sandbox`,
 copilot with `--allow-all-tools`, and grok with `--always-approve`. A prompt

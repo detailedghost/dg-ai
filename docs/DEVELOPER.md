@@ -167,6 +167,13 @@ exit code, and backend session ID when available. See the
 `DG_SKILLS_DIR` relocates the real canonical skill tree for shared resource
 lookup; compiled code must not use virtual Bun module paths for external files.
 
+#### Meaningful tests
+
+The real-git suite is `pkg/skills-cli/__tests__/meaningful.spec.ts`. It
+preserves the ten legacy history/backup/rollback cases and checks CLI status,
+plan schemas, literal paths/messages, attribution and inert imports in disposable
+repositories with local bare remotes and isolated durable state.
+
 ### pkg/dg-daemon (chat daemon)
 
 ```bash

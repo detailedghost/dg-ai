@@ -63,8 +63,7 @@ one-node stack).
 
 `--native` additionally attempts `gh stack link` after base retargeting and
 before the body updates. It needs an external GitHub CLI extension providing
-that command; the legacy installation command was
-`gh extension install github/gh-stack`. The extension is optional and its
+that command. The extension is optional and its
 availability and behavior depend on that external project. A missing extension
 or failed link is reported on stderr; body updates still continue.
 
