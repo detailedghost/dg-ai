@@ -3,6 +3,7 @@
 // success/failure classification belongs to the caller (cli.ts), not here.
 
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { scratchDir } from "@dg/common/node";
 import type { Backend, BuildArgsInput } from "./backends/types";
 
@@ -24,6 +25,8 @@ export async function runBackend(
 	logFile: string;
 }> {
 	const args = backend.buildArgs(input);
+	const logFile = `${proxyDir()}/${Date.now()}-${randomUUID()}-${backendName}.jsonl`;
+	writeFileSync(logFile, "", { flag: "wx", mode: 0o600 });
 	const proc = Bun.spawn([backend.bin, ...args], {
 		cwd: input.cwd ?? process.cwd(),
 		stdout: "pipe",
@@ -32,8 +35,9 @@ export async function runBackend(
 
 	// Stream stdout to the log file as chunks arrive so the run is observable live
 	// (`tail -f <logFile>`) instead of only after exit; announce the path on stderr.
-	const logFile = `${proxyDir()}/${Date.now()}-${randomUUID()}-${backendName}.jsonl`;
-	console.error(`proxy: streaming ${backendName} output -> ${logFile} (tail -f to watch)`);
+	console.error(
+		`proxy: streaming ${backendName} output -> ${logFile} (tail -f to watch)`,
+	);
 	const logSink = Bun.file(logFile).writer();
 
 	const decoder = new TextDecoder();
@@ -47,7 +51,10 @@ export async function runBackend(
 		stdout += decoder.decode();
 	})();
 
-	const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+	const [stderr, exitCode] = await Promise.all([
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
 	await pumpStdout;
 	await logSink.end();
 

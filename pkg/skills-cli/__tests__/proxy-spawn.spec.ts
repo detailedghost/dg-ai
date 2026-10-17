@@ -11,10 +11,16 @@ function fakeStream(text: string): ReadableStream {
 	return new Response(text).body!;
 }
 
-function stubSpawn(opts: { stdout?: string; stderr?: string; exitCode?: number }) {
+function stubSpawn(opts: {
+	stdout?: string;
+	stderr?: string;
+	exitCode?: number;
+	onSpawn?: () => void;
+}) {
 	const calls: unknown[][] = [];
 	const fn = mock((...args: unknown[]) => {
 		calls.push(args);
+		opts.onSpawn?.();
 		return {
 			stdout: fakeStream(opts.stdout ?? ""),
 			stderr: fakeStream(opts.stderr ?? ""),
@@ -87,7 +93,13 @@ describe("runBackend", () => {
 
 		await runBackend("codex", backend, { prompt: "hi" });
 
-		expect(calls[0]?.[0]).toEqual(["my-backend", "--model", "x", "--prompt", "hi"]);
+		expect(calls[0]?.[0]).toEqual([
+			"my-backend",
+			"--model",
+			"x",
+			"--prompt",
+			"hi",
+		]);
 	});
 
 	test("passes buildArgs the full input, including cwd removed from the args call itself", async () => {
@@ -95,10 +107,18 @@ describe("runBackend", () => {
 		const buildArgs = mock(() => []);
 		const backend = makeBackend({ buildArgs });
 
-		await runBackend("codex", backend, { prompt: "hi", model: "m1", cwd: "/x" });
+		await runBackend("codex", backend, {
+			prompt: "hi",
+			model: "m1",
+			cwd: "/x",
+		});
 
 		// buildArgs receives the raw input object (cwd is consumed separately for spawn options)
-		expect(buildArgs).toHaveBeenCalledWith({ prompt: "hi", model: "m1", cwd: "/x" });
+		expect(buildArgs).toHaveBeenCalledWith({
+			prompt: "hi",
+			model: "m1",
+			cwd: "/x",
+		});
 	});
 
 	test("uses the provided cwd for the spawned process", async () => {
@@ -181,7 +201,56 @@ describe("runBackend", () => {
 	test("keeps generated logs inside the explicitly isolated scratch root", async () => {
 		stubSpawn({ stdout: "owned log" });
 		const result = await runBackend("codex", makeBackend(), { prompt: "hi" });
-		expect(path.relative(scratchDir, result.logFile).startsWith("..")).toBe(false);
+		expect(path.relative(scratchDir, result.logFile).startsWith("..")).toBe(
+			false,
+		);
 		expect(fs.readFileSync(result.logFile, "utf8")).toBe("owned log");
 	});
+
+	test("creates a private empty transcript before spawning the backend", async () => {
+		let transcriptAtSpawn = "";
+		stubSpawn({
+			stdout: "sensitive backend output",
+			onSpawn() {
+				const dir = path.join(scratchDir, "proxy");
+				const entries = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+				expect(entries).toHaveLength(1);
+				transcriptAtSpawn = path.join(dir, entries[0]!);
+				expect(fs.lstatSync(transcriptAtSpawn).isFile()).toBe(true);
+				expect(fs.statSync(transcriptAtSpawn).mode & 0o777).toBe(0o600);
+				expect(fs.readFileSync(transcriptAtSpawn, "utf8")).toBe("");
+			},
+		});
+
+		const result = await runBackend("codex", makeBackend(), { prompt: "hi" });
+		expect(result.logFile).toBe(transcriptAtSpawn);
+		expect(fs.readFileSync(result.logFile, "utf8")).toBe(
+			"sensitive backend output",
+		);
+	});
+
+	for (const unsafePath of [
+		"symlinked tool",
+		"writable root ancestor",
+	] as const) {
+		test(`rejects a ${unsafePath} before spawning the backend`, async () => {
+			const outside = path.join(scratchDir, "outside");
+			fs.mkdirSync(outside);
+			if (unsafePath === "symlinked tool") {
+				fs.symlinkSync(outside, path.join(scratchDir, "proxy"));
+			} else {
+				const unsafeParent = path.join(scratchDir, "shared");
+				fs.mkdirSync(unsafeParent, { mode: 0o777 });
+				fs.chmodSync(unsafeParent, 0o777);
+				process.env.AI_SCRATCH_DIR = path.join(unsafeParent, "artifacts");
+			}
+			const { fn } = stubSpawn({ stdout: "must not run" });
+
+			await expect(
+				runBackend("codex", makeBackend(), { prompt: "hi" }),
+			).rejects.toThrow();
+			expect(fn).not.toHaveBeenCalled();
+			expect(fs.readdirSync(outside)).toEqual([]);
+		});
+	}
 });
