@@ -131,5 +131,4 @@ adds stash, vcs-provider, proxy, and clipboard-image to the compiled CLI.
 - [Developer guide](docs/DEVELOPER.md)
 
 - [Contributing](docs/contributing.md)
-
 - [Security](SECURITY.md)

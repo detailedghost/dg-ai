@@ -15,7 +15,11 @@ import {
 } from "@dg/channel-review";
 import { type CredentialMeta, DgCliError } from "@dg/common";
 import { writeFileAtomic } from "@dg/common/node";
-import { type ConnectClient, ensureGrant } from "./channel-review-connect";
+import {
+	type ConnectClient,
+	defaultConnectDeps,
+	ensureGrant,
+} from "./channel-review-connect";
 
 const MISE_CONFIGS = [".mise/config.toml", ".mise.toml", "mise.toml"];
 const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
@@ -43,25 +47,29 @@ type Migration = {
 
 type Entry = { indices: number[]; value: string };
 
+function endOfAssignment(lines: string[], start: number, raw: string): number {
+	const quote = raw[0];
+	if (quote !== '"' && quote !== "'" && quote !== "`") return start;
+	let tail = raw.slice(1);
+	let end = start;
+	while (!tail.includes(quote)) {
+		end++;
+		if (end >= lines.length)
+			throw new DgCliError(
+				`Unterminated quoted env assignment at line ${start + 1}.`,
+			);
+		tail += `\n${lines[end]}`;
+	}
+	return end;
+}
+
 function parseEnv(lines: string[]): Map<string, Entry> {
 	const entries = new Map<string, Entry>();
 	for (let index = 0; index < lines.length; index++) {
 		const match = lines[index]?.match(ENV_LINE);
 		if (!match?.[1]) continue;
 		const start = index;
-		const raw = match[2] ?? "";
-		const quote = raw[0];
-		if (quote === '"' || quote === "'" || quote === "`") {
-			let tail = raw.slice(1);
-			while (!tail.includes(quote)) {
-				index++;
-				if (index >= lines.length)
-					throw new DgCliError(
-						`Unterminated quoted env assignment at line ${start + 1}.`,
-					);
-				tail += `\n${lines[index]}`;
-			}
-		}
+		index = endOfAssignment(lines, start, match[2] ?? "");
 		const value = parseDotEnv(lines.slice(start, index + 1).join("\n"))[
 			match[1]
 		];
@@ -117,10 +125,17 @@ function stamp(now: Date): string {
 	return now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
 }
 
-/** Moves known channel-review secrets from a .env file into the store and deletes only their lines. The backup is deleted once the file is rewritten unless keepBackup is set. Prints names, never values. */
+/** Moves known channel-review secrets from a .env file into the store. */
+export const defaultMigrateDeps: MigrateDeps = {
+	createClient: defaultConnectDeps.createClient,
+	write: defaultConnectDeps.write,
+	now: defaultConnectDeps.now,
+	cwd: () => process.cwd(),
+};
+
 export async function runMigrateEnv(
 	flags: MigrateFlags,
-	deps: MigrateDeps,
+	deps: MigrateDeps = defaultMigrateDeps,
 ): Promise<void> {
 	const file = flags.file ?? defaultEnvFile(deps.cwd());
 	if (!existsSync(file)) throw new DgCliError(`${file} does not exist.`);
