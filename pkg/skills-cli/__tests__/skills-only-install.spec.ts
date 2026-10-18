@@ -92,7 +92,7 @@ function sha256(text: string): string {
 }
 
 /** A fetch that serves one skills-v release (plus daemon, agent and ext releases) and logs every URL. */
-function writePreload(dir: string, log: string, opts: { sums?: string } = {}): string {
+function writePreload(dir: string, log: string, opts: { sums?: string; offline?: boolean } = {}): string {
 	const asset = skillsAssetName();
 	const base = "https://github.com/detailedghost/dg-ai/releases/download";
 	const releases = [
@@ -113,6 +113,7 @@ const releases = ${JSON.stringify(releases)};
 globalThis.fetch = (async (input: unknown) => {
   const url = String(input);
   appendFileSync(${JSON.stringify(log)}, url + "\\n");
+  if (${opts.offline ? "true" : "false"}) throw new TypeError("fetch failed: offline");
   if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
   if (url.endsWith("/skills-v9.9.9/${asset}")) return new Response(${JSON.stringify(SKILLS_BINARY)});
   if (url.endsWith("/skills-v9.9.9/SHA256SUMS")) return new Response(${JSON.stringify(sums)});
@@ -371,6 +372,27 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect(result.stderr).toContain(`SHA256SUMS in v9.9.9 has no entry for ${skillsAssetName()}`);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("an offline release listing warns and keeps the copied skills, exit 0", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-offline-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		const dest = join(directory, "dest");
+		try {
+			const result = await run(
+				["bun", "--preload", writePreload(directory, fetchLog, { offline: true }), ENTRY, "install", "--skills-only", "--dest", dest],
+				childEnv(home),
+			);
+			expect(result.code).toBe(0);
+			expect(result.stderr).toContain("⚠ dg-skills install skipped: fetch failed: offline");
+			expect(filesUnder(dest)).toEqual(REPO_SKILL_FILES);
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

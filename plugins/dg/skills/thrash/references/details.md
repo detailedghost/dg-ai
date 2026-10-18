@@ -68,7 +68,8 @@ works while those paths sit inside its folder; otherwise `compile` asks you to r
 `post --dry-run`, or `DG_THRASH_DRY_RUN=1` (also `true` or `yes`) in the environment,
 prints `{ dryRun: true, url, requestedVerdict, review }` and returns. It does not detect
 the provider, call `gh` or `glab`, or write `.posted.json`. It still refuses a local target
-and a review compiled for another URL. `/thrash -n` exports the variable at the start of the
+and a review compiled for another URL. Because it skips provider detection, a URL on an
+unsupported host previews cleanly even though a real `post` would fail. `/thrash -n` exports the variable at the start of the
 run and passes the flag, so report-only is safe even when a step runs by mistake.
 
 ## Stacks with merged or closed PRs
