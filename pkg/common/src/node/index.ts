@@ -11,6 +11,7 @@ export * from "./owner-token";
 export * from "./paths";
 export * from "./pidfile";
 export * from "./process";
+export * from "./scratch-paths";
 export * from "./session-tokens";
 export * from "./sqlite";
 export * from "./wsl-guard";

@@ -29,9 +29,37 @@ describe("dg-skills CLI", () => {
 	test("--help exits 0 and lists every command the skills use", async () => {
 		const { code, out } = await runCli(["--help"]);
 		expect(code).toBe(0);
-		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review"]) {
+		for (const cmd of ["install", "batch-open", "launch", "demo", "rerun", "channel-review", "stash", "clipboard-image", "vcs-provider", "proxy"]) {
 			expect(out).toContain(cmd);
 		}
+	});
+
+	test("stash --help documents all storage scopes without starting a service", async () => {
+		const { code, out } = await runCli(["stash", "--help"]);
+		expect(code).toBe(0);
+		for (const flag of ["--scratch", "--state", "--agents", "--main", "--global", "--unique", "--root", "--dir"]) {
+			expect(out).toContain(flag);
+		}
+	});
+
+	test("clipboard-image --help documents native capture without reading the clipboard", async () => {
+		const { code, out } = await runCli(["clipboard-image", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("--scratch");
+	});
+
+	test("vcs-provider --help lists the complete provider command inventory", async () => {
+		const { code, out } = await runCli(["vcs-provider", "--help"]);
+		expect(code).toBe(0);
+		for (const command of ["detect", "capabilities", "auth", "list-prs", "list-issues", "view-issue", "view-pr", "list-threads", "create-pr", "merged-pr-for-branch"]) {
+			expect(out).toContain(command);
+		}
+	});
+
+	test("proxy --help documents backend selection without starting a backend", async () => {
+		const { code, out } = await runCli(["proxy", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("--prompt");
 	});
 
 	test("install --help documents extension + CLI setup", async () => {
