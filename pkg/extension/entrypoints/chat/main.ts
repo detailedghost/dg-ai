@@ -122,6 +122,11 @@ type PageChatClient = ChatClient & {
 		body: string,
 		opts?: SendUserMessageOptions,
 	): Promise<SendResult>;
+	requestNewSessionAndWait(
+		requestingSessionId: string,
+		role: SessionRole,
+		workset?: string,
+	): Promise<SendResult>;
 };
 
 function createRelayChatClient(): PageChatClient {
@@ -288,12 +293,15 @@ function createRelayChatClient(): PageChatClient {
 					`Session ${requestingSessionId} is not available in this chat page`,
 				);
 			}
-			send({
-				type: MSG.sessionCreate,
-				sessionId: requestingSessionId,
-				role,
-				...(workset ? { workset } : {}),
-			});
+			send(sessionCreateMessage(requestingSessionId, role, workset));
+		},
+
+		requestNewSessionAndWait(
+			requestingSessionId: string,
+			role: SessionRole,
+			workset?: string,
+		): Promise<SendResult> {
+			return sendAndWait(sessionCreateMessage(requestingSessionId, role, workset));
 		},
 
 		disconnectSession(sessionId: string): Promise<void> {
@@ -339,6 +347,40 @@ function createRelayChatClient(): PageChatClient {
 			});
 		},
 	};
+}
+
+function sessionCreateMessage(
+	requestingSessionId: string,
+	role: SessionRole,
+	workset?: string,
+): Record<string, unknown> {
+	return {
+		type: MSG.sessionCreate,
+		sessionId: requestingSessionId,
+		role,
+		...(workset ? { workset } : {}),
+	};
+}
+
+function requestNewSessionThroughClient(
+	client: ChatClient,
+	requestingSessionId: string,
+	role: SessionRole,
+	workset?: string,
+): Promise<SendResult> {
+	const maybeRelay = client as Partial<PageChatClient>;
+	if (maybeRelay.requestNewSessionAndWait) {
+		return maybeRelay.requestNewSessionAndWait(requestingSessionId, role, workset);
+	}
+	try {
+		client.requestNewSession(requestingSessionId, role, workset);
+		return Promise.resolve({ ok: true });
+	} catch (error) {
+		return Promise.resolve({
+			ok: false,
+			error: error instanceof Error ? error.message : String(error),
+		});
+	}
 }
 
 function dispatchCommandThroughClient(
@@ -793,17 +835,15 @@ export async function renderChatPage(
 			[...bootstrapBySession.keys()][0];
 		if (requestingSessionId) {
 			const selected = sessions.get(requestingSessionId);
-			try {
-				client.requestNewSession(
-					requestingSessionId,
-					"agent",
-					selected?.workset,
-				);
-				return;
-			} catch (error) {
-				showError(error);
-				return;
-			}
+			void requestNewSessionThroughClient(
+				client,
+				requestingSessionId,
+				"agent",
+				selected?.workset,
+			).then((result) => {
+				if (!result.ok) showError(result.error);
+			});
+			return;
 		}
 		void (browser.runtime as unknown as ChatRuntime)
 			.sendMessage({ type: MSG.sessionLaunch })
