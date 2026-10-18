@@ -3,9 +3,9 @@ import { loadConfig } from "../src/config";
 import { createRunners } from "../src/runners";
 import { RUNNER_NAMES, type RunnerName } from "../src/runners/types";
 import {
-	type TempHome,
 	createTempHome,
 	minimalConfigJson,
+	type TempHome,
 	writeConfigFile,
 } from "./support/fakes";
 
@@ -57,7 +57,7 @@ function fakeFs(files: string[]) {
 	};
 }
 
-const SKILL_ROOTS: Record<RunnerName, string[]> = {
+const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 	claude: [
 		`${HOME}/.claude/skills/thrash/SKILL.md`,
 		`${HOME}/.claude/plugins/dg/skills/thrash/SKILL.md`,
@@ -69,10 +69,6 @@ const SKILL_ROOTS: Record<RunnerName, string[]> = {
 	],
 	copilot: [
 		`${HOME}/.copilot/skills/thrash/SKILL.md`,
-		`${HOME}/.claude/skills/thrash/SKILL.md`,
-	],
-	grok: [
-		`${HOME}/.grok/skills/thrash/SKILL.md`,
 		`${HOME}/.claude/skills/thrash/SKILL.md`,
 	],
 };
@@ -110,7 +106,10 @@ function harness(
 				(await options.capture?.(command, args)) ?? {
 					status: 0,
 					signal: null,
-					stdout: "",
+					stdout: command !== PATHS.grok ? "" : args[0] === "models"
+						? "You are logged in with example.com.\nAvailable models:"
+						: JSON.stringify({ skills: options.files === undefined
+							? [{ name: "thrash", userInvocable: true }] : [] }),
 					stderr: "",
 				}
 			);
@@ -123,6 +122,7 @@ function harness(
 					signal: null,
 					timedOut: false,
 					aborted: false,
+					outputTail: "",
 					stderrTail: "",
 				}
 			);
@@ -153,6 +153,24 @@ describe("createRunners", () => {
 });
 
 describe("runner probe", () => {
+	test("Grok probes its configured executable in the review's scratch directory", async () => {
+		const h = harness({
+			config: configWith({ grok: { path: "/opt/grok" } }),
+			which: () => undefined,
+			capture: (_command, args) => ({
+				status: 0, signal: null, stderr: "",
+				stdout: args[0] === "models" ? "You are logged in with example.com."
+					: JSON.stringify({ skills: [{ name: "thrash", userInvocable: true }] }),
+			}),
+		});
+		expect(await h.runners.grok.probe({ cwd: "/scratch" })).toEqual({ ok: true });
+		expect(h.whichCalls).toEqual([]);
+		expect(h.captures.map(call => [call.command, call.args, call.options])).toEqual([
+			["/opt/grok", ["models"], { cwd: "/scratch", timeoutMs: 60_000 }],
+			["/opt/grok", ["inspect", "--json"], { cwd: "/scratch", timeoutMs: 60_000 }],
+		]);
+	});
+
 	test.each([...RUNNER_NAMES])("%s returns ok when found, signed in, and thrash is installed", async (name) => {
 		const { runners } = harness();
 		expect(await runners[name].probe()).toEqual({ ok: true });
@@ -205,13 +223,13 @@ describe("runner probe", () => {
 		expect(h.captures[0]?.args).toEqual(["models"]);
 	});
 
-	test("grok runs grok models and CR-202 follows a nonzero exit", async () => {
+	test("grok reports CR-203 when models fails without authentication evidence", async () => {
 		const h = harness({
 			capture: () => ({ status: 1, signal: null, stdout: "", stderr: "" }),
 		});
 		expect(await h.runners.grok.probe()).toEqual({
 			ok: false,
-			code: "CR-202",
+			code: "CR-203",
 		});
 		expect(h.captures[0]).toMatchObject({
 			command: PATHS.grok,
@@ -252,7 +270,7 @@ describe("runner probe", () => {
 	});
 
 	test.each(
-		RUNNER_NAMES.flatMap((name) =>
+		(["claude", "codex", "copilot"] as const).flatMap((name) =>
 			SKILL_ROOTS[name].map((file) => [name, file] as const),
 		),
 	)("%s finds thrash at %s", async (name, file) => {
@@ -283,6 +301,25 @@ describe("runner probe", () => {
 });
 
 describe("runner run argv", () => {
+	test("Grok uses installed headless flags and one slash prompt argument", async () => {
+		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
+		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
+		expect(h.processes[0]?.argv).toEqual([
+			"/opt/grok", "--no-auto-update", "-p", `/thrash ${URL} -s 4 -c`,
+			"--output-format", "streaming-json", "--always-approve", "--cwd", "/work",
+			"--model", "grok-4.6",
+		]);
+	});
+
+	test.each([...RUNNER_NAMES])(
+		"%s passes the requested model as a separate argument",
+		async (name) => {
+			const h = harness();
+			await h.runners[name].run(runRequest({ model: "example-model" }));
+			const argv = h.processes[0]!.argv;
+			expect(argv[argv.indexOf("--model") + 1]).toBe("example-model");
+		},
+	);
 	test("claude builds the thrash prompt with spice and comment as one element and the allowlist last", async () => {
 		const config = configWith();
 		const h = harness({ config });
@@ -483,6 +520,71 @@ describe("runner run argv", () => {
 });
 
 describe("runner run result", () => {
+	test.each([
+		["CR-202", "Not signed in. Run `grok login` to authenticate."],
+		["CR-207", "You’ve hit the rate limit for your plan."],
+	] as const)("Grok classifies streamed error messages as %s", async (code, message) => {
+		const h = harness({
+			process: () => ({
+				status: 1, signal: null, timedOut: false, aborted: false,
+				stderrTail: "", outputTail: JSON.stringify({ type: "error", message }),
+			}),
+		});
+		expect((await h.runners.grok.run(runRequest())).code).toBe(code);
+	});
+
+	test.each([0, 1])(
+		"recognizes a limit on stdout even with exit status %i",
+		async (status) => {
+			const h = harness({
+				process: () => ({
+					status,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "",
+					outputTail: "You've hit your limit · resets 8pm\n",
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-207");
+		},
+	);
+
+	test.each([...RUNNER_NAMES])(
+		"%s detects limits after a long run",
+		async (name) => {
+			const h = harness({
+				step: 600_000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "ERROR: You've hit your usage limit.",
+					outputTail: "ERROR: You've hit your usage limit.",
+				}),
+			});
+			expect((await h.runners[name].run(runRequest())).code).toBe("CR-207");
+		},
+	);
+
+	test.each(["timedOut", "aborted"] as const)(
+		"preserves %s when the tail also mentions a limit",
+		async (reason) => {
+			const h = harness({
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					[reason]: true,
+					stderrTail: "",
+					outputTail: "You've hit your limit",
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBeUndefined();
+		},
+	);
 	test.each([...RUNNER_NAMES])("%s returns CR-201 without spawning when the binary is missing", async (name) => {
 		const h = harness({ which: () => undefined });
 		const result = await h.runners[name].run(runRequest());
@@ -503,6 +605,7 @@ describe("runner run result", () => {
 				signal: "SIGKILL",
 				timedOut: true,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "",
 			}),
 		});
@@ -523,6 +626,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "",
 				code: "CR-201",
 			}),
@@ -537,21 +641,25 @@ describe("runner run result", () => {
 		"Not logged in",
 		"authentication failed",
 		"401 Unauthorized",
-	])("infers CR-202 from a fast nonzero exit with stderr %p", async (stderrTail) => {
-		const h = harness({
-			step: 5000,
-			process: () => ({
-				status: 1,
-				signal: null,
-				timedOut: false,
-				aborted: false,
-				stderrTail,
-			}),
-		});
-		const result = await h.runners.claude.run(runRequest());
-		expect(result.code).toBe("CR-202");
-		expect(result.status).toBe(1);
-	});
+	])(
+		"infers CR-202 from a fast nonzero exit with stderr %p",
+		async (stderrTail) => {
+			const h = harness({
+				step: 5000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					outputTail: "",
+					stderrTail,
+				}),
+			});
+			const result = await h.runners.claude.run(runRequest());
+			expect(result.code).toBe("CR-202");
+			expect(result.status).toBe(1);
+		},
+	);
 
 	test.each([
 		["claude", "+ the handler prints: not logged in\n  and Not logged in appears mid-line"],
@@ -583,7 +691,9 @@ describe("runner run result", () => {
 					signal: null,
 					timedOut: false,
 					aborted: false,
-					stderrTail: "thinking...\nERROR: unexpected status 401 Unauthorized: missing bearer",
+					outputTail: "",
+					stderrTail:
+						"thinking...\nERROR: unexpected status 401 Unauthorized: missing bearer",
 				}),
 			});
 			const result = await h.runners[name].run(runRequest());
@@ -709,6 +819,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "Not logged in",
 			}),
 		});
@@ -724,6 +835,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "segmentation fault",
 			}),
 		});
@@ -739,6 +851,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "Please run /login",
 			}),
 		});
@@ -818,6 +931,7 @@ describe("runner run result", () => {
 				signal: null,
 				timedOut: false,
 				aborted: false,
+				outputTail: "",
 				stderrTail: "TypeError: login page failed to authenticate the user",
 			}),
 		});
@@ -833,4 +947,35 @@ describe("runner run result", () => {
 			expect(h.processes[0]?.keepOauthToken).toBe(name === "claude");
 		},
 	);
+});
+
+describe("runner attribution", () => {
+	test("Grok reports its configured model and lets an explicit request override it", async () => {
+		const { runners, processes } = harness({ config: configWith({ grok: { model: "configured-model" } }) });
+		await runners.grok.run(runRequest());
+		await runners.grok.run(runRequest({ model: "requested-model" }));
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "configured-model", modelSource: "configured" });
+		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "requested-model", modelSource: "requested" });
+	});
+	test.each([
+		...RUNNER_NAMES,
+	])("%s defaults to manual and passes fresh orchestration evidence only", async (name) => {
+		const { runners, processes } = harness();
+		await runners[name].run(runRequest({ origin: "daemon", model: "opus" }));
+		await runners[name].run(runRequest());
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+			origin: "daemon",
+			backend: name,
+			model: "opus",
+			modelSource: "requested",
+		});
+		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+			origin: "manual",
+			backend: name,
+			modelSource: "default",
+		});
+		expect(processes[0]!.env!.THRASH_EXECUTION_CONTEXT).not.toContain(
+			"reviewers",
+		);
+	});
 });

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { loadConfig, REACTION_DEFAULTS, resolveEnv } from "../../channel-review/src/config";
 import { ERROR_CATALOG } from "../../channel-review/src/errors";
 import { helpText } from "../../channel-review/src/help";
+import { RUNNER_NAMES } from "../../channel-review/src/runners/types";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
 const TARGET_VERSION = "1.14.0";
@@ -254,6 +255,18 @@ describe("channel-review skill distribution", () => {
 });
 
 describe("channel-review docs do not drift from the shipped CLI", () => {
+	test("help and runner documentation list every selectable backend", () => {
+		const reviewHelp = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "review");
+		const commands = readRef("commands.md");
+		const setup = readRef("setup.md");
+		for (const name of RUNNER_NAMES) {
+			expect(reviewHelp).toContain(name);
+			expect(commands).toContain(name);
+			expect(setup).toContain(`| ${name} |`);
+			expect(ERROR_CATALOG["CR-103"]).toContain(name);
+		}
+	});
+
 	const content = () => allContent();
 
 	test("every subcommand and flag the CLI registers is documented", () => {
@@ -261,7 +274,16 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		const top = declaredCommands(cliSource).filter(
 			(n) => n !== "channel-review",
 		);
-		expect(top).toEqual(["start", "stop", "status", "logs", "run", "env"]);
+		expect(top).toEqual([
+			"start",
+			"stop",
+			"status",
+			"logs",
+			"run",
+			"connect",
+			"migrate-env",
+			"env",
+		]);
 		const emojis = declaredCommands(emojisSource);
 		expect(emojis).toEqual(["capture", "set", "show"]);
 		for (const name of top)
@@ -270,7 +292,21 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			expect(content()).toMatch(new RegExp(`emojis ${name}\\b`));
 		const flags = declaredFlags(cliSource, emojisSource);
 		expect([...flags].sort()).toEqual(
-			["--chat-id", "--env", "--follow", "--lines", "--runner", "--slot", "--timeout"].sort(),
+			[
+				"--chat-id",
+				"--dry-run",
+				"--env",
+				"--file",
+				"--follow",
+				"--lines",
+				"--org",
+				"--paste",
+				"--runner",
+				"--session",
+				"--site",
+				"--slot",
+				"--timeout",
+			].sort(),
 		);
 		for (const flag of flags) expect(commands).toContain(flag);
 	});
@@ -302,7 +338,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 
 	test.each([
 		["overview", "### Commands", 5],
-		["review", "### Review flags", 7],
+		["review", "### Review flags", 8],
 		["address", "### Address flags", 4],
 	] as const)("the $help %s section and the commands.md %s table list the same tokens", (topic, heading, size) => {
 		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, topic);
@@ -391,6 +427,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"owner.email",
 			"owner.senderIds",
 			"runner.default",
+			"runner.fallback",
 			"runner.timeoutMinutes",
 			"runner.addressTimeoutMinutes",
 			"runner.claude.allowedTools",
@@ -554,15 +591,17 @@ describe("channel-review catalog entries", () => {
 		);
 	});
 
-	test("the root README names channel review in its intro and has its own section after inbox cleanup", () => {
+	test("the root README names channel review and links its topic guide after inbox cleanup", () => {
 		const readme = readRepoFile("README.md");
 		const intro = readme.split("\n").slice(0, 5).join("\n");
 		expect(intro).toMatch(/channel review/i);
-		const inbox = readme.indexOf("### Inbox cleanup");
-		const channel = readme.indexOf("### Channel review");
+		const inbox = readme.indexOf("[Inbox cleanup](docs/inbox-cleanup.md)");
+		const channel = readme.indexOf("[Channel review](docs/channel-review.md)");
 		expect(inbox).toBeGreaterThan(-1);
 		expect(channel).toBeGreaterThan(inbox);
-		expect(readme.slice(channel)).toContain("channel-review");
+		const guide = readRepoFile("docs/channel-review.md");
+		expect(guide).toContain("$dg:channel-review");
+		expect(guide).toContain("../pkg/channel-review/README.md");
 	});
 
 	test("AGENT-INSTALL lists the skill, the human-only steps, and the agent-safe commands", () => {
@@ -606,4 +645,24 @@ describe("channel-review catalog entries", () => {
 		])
 			expect(section).toContain(word);
 	});
+});
+
+test("review attribution docs distinguish execution origin from worker models", () => {
+	const commands = readRepoFile(
+		"plugins/dg/skills/channel-review/references/commands.md",
+	);
+	for (const label of [
+		"Automatic (daemon)",
+		"Manual (CLI)",
+		"orchestrator",
+		"worker",
+	])
+		expect(commands).toContain(label);
+	const developer = readRepoFile("docs/DEVELOPER.md");
+	for (const field of [
+		"THRASH_EXECUTION_CONTEXT",
+		"modelSource",
+		"attribution.md",
+	])
+		expect(developer).toContain(field);
 });

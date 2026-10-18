@@ -200,6 +200,9 @@ describe("ChatStore migration to schema v9", () => {
 			raw.run("DROP TABLE overwatch_merges");
 			raw.run("DROP TABLE overwatch_settings");
 			raw.run("DELETE FROM sessions WHERE id = '__overwatch__'");
+			raw.run("DROP VIEW channel_review_current");
+			raw.run("DROP VIEW channel_review_requests");
+			raw.run("DROP TABLE channel_review_state");
 			raw.run("PRAGMA user_version = 8");
 			raw.close(true);
 

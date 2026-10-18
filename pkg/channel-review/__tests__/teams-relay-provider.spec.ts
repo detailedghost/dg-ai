@@ -11,9 +11,11 @@ import {
 	APP_NAME,
 	BOT_NAME,
 	CHAT_ID,
+	createEngineHarness,
 	createRecordedLog,
 	createTempHome,
 	minimalConfigJson,
+	PR_URL,
 	SENDER_EMAIL,
 	type TempHome,
 	waitUntil,
@@ -323,6 +325,51 @@ describe("createTeamsRelayProvider subscribe", () => {
 			},
 		});
 	});
+
+	test.each(['href="', 'href = "'])(
+		"preserves a titled HTML link (%s) from SSE through scheduling and replay protection",
+		async (attribute) => {
+			const text = `<p>!owner $review <a ${attribute}${PR_URL}?a=1&amp;b=2">Fix the linked records (owner's follow-up)…</a> ~agent codex ~model Codex-Model</p>`;
+			const harness = createHarness({
+				handlers: [sseResponse([messageFrame("e-link", "m-link", text)], { end: false })],
+			});
+			const engine = createEngineHarness();
+			const drain = startDrain(harness);
+			try {
+				await waitUntil(() => drain.events.length === 1);
+				await drain.stop();
+				const event = drain.events[0];
+				if (event?.type !== "message") throw new Error("expected a message event");
+				expect(event.message.text).toBe(text);
+				await engine.engine.handle(event.message);
+				await engine.engine.idle();
+				await engine.engine.handle(event.message);
+				await engine.engine.idle();
+				await engine.engine.handle({
+					...event.message,
+					id: "m-no-gate",
+					text: text.replace("!owner", ""),
+				});
+				await engine.engine.handle({
+					...event.message,
+					id: "m-bot",
+					from: { isBot: true },
+				});
+				await engine.engine.idle();
+				expect(engine.runners.codex.runs).toHaveLength(1);
+				expect(engine.runners.codex.runs[0]).toMatchObject({
+					url: PR_URL,
+					model: "Codex-Model",
+				});
+				expect(engine.state.get().handled["m-link"]?.status).toBe("done");
+				expect(engine.trail("m-link")).toContain("+approved");
+				expect(harness.requests.every((request) => request.method === "GET")).toBe(true);
+			} finally {
+				await drain.stop();
+				engine.cleanup();
+			}
+		},
+	);
 
 	test("maps a null text to an empty string", async () => {
 		const harness = createHarness({

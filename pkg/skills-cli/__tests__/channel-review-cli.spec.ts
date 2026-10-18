@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { channelReviewPaths, createStateStore } from "@dg/channel-review";
 import { skillsEntry } from "./inbox-cli-harness";
 import { mergeEnv } from "./module-call";
 
@@ -157,6 +158,24 @@ describe("channel-review status", () => {
 		const body = JSON.parse(result.stdout);
 		expect(body).toMatchObject({ env: "dev", running: false });
 		expect(body.preflight.config.error).toContain(configPath());
+	});
+
+	test("status reads each environment from daemon.db across CLI processes", async () => {
+		const dev = channelReviewPaths("dev", { env: { DG_HOME: dgHome } });
+		const prod = channelReviewPaths("prod", { env: { DG_HOME: dgHome } });
+		for (const paths of [dev, prod]) {
+			const store = createStateStore(paths);
+			store.setLastEventId("chat", `${paths.env}-cursor`);
+			store.setCurrent({ messageId: `${paths.env}-request`, chatId: "chat", url: "https://github.com/example/app/pull/1", number: 1, startedAt: new Date().toISOString(), pid: 1234, pidStart: "start-1234" });
+			store.close();
+		}
+		for (const env of ["dev", "prod"]) {
+			const result = await run(["status", "--env", env]);
+			const body = JSON.parse(result.stdout);
+			expect(result.code).toBe(1); // Missing config; state is still reported.
+			expect(body.lastEventIds).toEqual({ chat: `${env}-cursor` });
+			expect(body.current).toMatchObject({ messageId: `${env}-request`, pid: 1234, pidStart: "start-1234" });
+		}
 	});
 
 	test("with config and no aws it reports env dev, running false, runner probes, and a preflight secret error", async () => {

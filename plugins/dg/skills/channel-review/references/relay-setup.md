@@ -47,11 +47,15 @@ that the relay registered for this client, and the secret.
 1. Config names only where the secret lives: `relay.secret.id`,
    `relay.secret.key`, `relay.secret.region`, and `envs.<name>.awsProfile`.
    Never put the secret value in config or a chat. The daemon reads it into
-   memory at start and never writes it to disk.
-1. Optional: to start without an AWS SSO session, put the value in the
-   git-ignored `.env` as `CHANNEL_REVIEW_RELAY_SECRET_<ENV>`, such as
-   `CHANNEL_REVIEW_RELAY_SECRET_DEV`. The daemon then uses it and skips AWS.
-   Keep `.env` at mode 600, and never commit it.
+   memory at start and never writes it to disk in plaintext.
+1. Optional: to start without an AWS SSO session each time, run
+   `dg-skills channel-review connect relay --env <env>` once. It fetches the
+   secret through AWS and stores it in the dg credential store as
+   `channel-review/relay/<env>`. dg-daemon must run. The
+   command also creates the `channel-review` grant the daemon reads through.
+   `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` in the git-ignored `.env` still works as
+   a fallback. Keep `.env` at mode 600, and never commit it. To move an
+   existing value into the store, run `dg-skills channel-review migrate-env`.
 
 ## 4. Local setup
 
@@ -92,11 +96,12 @@ that the relay registered for this client, and the secret.
 Skip this step unless the person wants the daemon to watch an error tracker or
 to upgrade dependencies on a schedule. Both stay off until enabled.
 
-1. Add the credentials for each sink to the git-ignored `.env`:
-   `DATADOG_ACCESS_TOKEN` (a personal access token with `error_tracking_read`,
-   `apm_read` and `logs_read_data`), or `DATADOG_API_KEY` and `DATADOG_APP_KEY`,
-   plus `DATADOG_SITE` when the org is not on `datadoghq.com`; or
-   `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and optionally `SENTRY_BASE_URL`.
+1. Store the credentials for each sink: `dg-skills channel-review connect datadog` or `dg-skills channel-review connect sentry --org <slug>`. A
+   **human** signs in to the browser window that opens. The Datadog token
+   expires in 1 year; run `connect datadog` again before then (`dg-skills credentials list` flags it 14 days ahead). See
+   [setup](setup.md#credentials). The `.env` variables (`DATADOG_ACCESS_TOKEN`,
+   `DATADOG_SITE`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_BASE_URL`) still
+   work as fallbacks.
 1. Keep `automation.cloneRoot` at its default, or set an absolute path that is
    not under `~/code`.
 1. Add `errorWatch` and `deps` to config.json, starting from
@@ -104,8 +109,9 @@ to upgrade dependencies on a schedule. Both stay off until enabled.
    list the services under `errorWatch.repos`, and list the repos under
    `deps.repos`. Each key is in [setup](setup.md#error-watch-and-dependency-upgrades).
 1. Sign in `gh` with push and PR access to those repos.
-1. Run `mise run remote:status`. Require `errorWatch.missingEnv` to be empty
-   and each enabled provider to show no `lastError`.
+1. Run `mise run remote:status`. Require `errorWatch.missingEnv` to be empty,
+   `credentials.<provider>.source` to be `store`, and each enabled provider to
+   show no `lastError`.
 1. Restart the daemon. After the first poll, the daemon only marks open issues
    as seen. It messages the owner about issues that appear later.
 

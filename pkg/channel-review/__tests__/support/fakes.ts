@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressWorkspace, PrHead } from "../../src/address";
+import type { CredentialMeta, CredentialRecord } from "@dg/common";
 import { loadConfig } from "../../src/config";
+import type { CredentialSource } from "../../src/credentials";
 import { createEngine } from "../../src/engine";
 import { channelReviewPaths } from "../../src/paths";
 import type { Log } from "../../src/engine";
@@ -51,15 +53,21 @@ export type ProbeResult = Awaited<ReturnType<Runner["probe"]>>;
 export type TempHome = {
 	dir: string;
 	env: Record<string, string>;
+	track<T extends { close(): void }>(resource: T): T;
 	cleanup(): void;
 };
 
 export function createTempHome(): TempHome {
 	const dir = mkdtempSync(join(tmpdir(), "channel-review-"));
+	const resources: { close(): void }[] = [];
 	return {
 		dir,
 		env: { DG_HOME: dir },
-		cleanup: () => rmSync(dir, { recursive: true, force: true }),
+		track(resource) { resources.push(resource); return resource; },
+		cleanup() {
+			for (const resource of resources.splice(0)) resource.close();
+			rmSync(dir, { recursive: true, force: true });
+		},
 	};
 }
 
@@ -531,7 +539,7 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 	const stack = createFakeStackReader(options.descendants);
 	const workspace = createFakeWorkspace();
 	const clock = createFixedClock();
-	const state: StateStore = createStateStore(paths.statePath, clock);
+	const state: StateStore = createStateStore(paths, clock);
 	const log = createRecordedLog();
 	const persisted: { slot: string; id: string }[] = [];
 	const timers: { ms: number; task: () => Promise<void>; canceled: boolean }[] = [];
@@ -594,6 +602,41 @@ export function createEngineHarness(options: HarnessOptions = {}) {
 		timers,
 		trail,
 		replies: () => provider.replies(),
-		cleanup: () => home.cleanup(),
+		cleanup: () => { state.close(); home.cleanup(); },
 	};
+}
+
+export type FakeCredentialSource = CredentialSource & {
+	gets: string[];
+	closed: number;
+};
+
+export function createFakeCredentialSource(
+	entries: Record<string, { value: string; meta?: CredentialMeta }> = {},
+	failure?: Error,
+): FakeCredentialSource {
+	const updatedAt = "2026-10-01T00:00:00.000Z";
+	const source: FakeCredentialSource = {
+		gets: [],
+		closed: 0,
+		list: async () => {
+			if (failure) throw failure;
+			return Object.entries(entries).map(([name, entry]) => ({
+				name,
+				meta: entry.meta ?? {},
+				updatedAt,
+			}));
+		},
+		get: async (name) => {
+			source.gets.push(name);
+			const entry = entries[name];
+			return entry
+				? ({ value: entry.value, meta: entry.meta ?? {}, updatedAt } satisfies CredentialRecord)
+				: undefined;
+		},
+		close: () => {
+			source.closed += 1;
+		},
+	};
+	return source;
 }

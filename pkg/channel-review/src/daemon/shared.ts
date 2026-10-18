@@ -3,6 +3,7 @@ import type { SystemSeams } from "@dg/common/node";
 import { type EnvName, ENV_NAMES, loadConfig, type resolveEnv } from "../config";
 import type { AddressWorkspace } from "../address";
 import type { AutomationSeams } from "../automation/start";
+import type { CredentialSource } from "../credentials";
 import type { Log } from "../engine";
 import { channelReviewPaths } from "../paths";
 import type { createTeamsRelayProvider } from "../providers/teams-relay";
@@ -25,6 +26,7 @@ export type DaemonSeams = AutomationSeams & {
 		key: string;
 	}) => Promise<string>;
 	createProvider?: typeof createTeamsRelayProvider;
+	credentials?: CredentialSource;
 	runners?: Record<RunnerName, Runner>;
 	verdict?: VerdictReader;
 	stack?: StackReader;

@@ -9,10 +9,10 @@ export const ERROR_CATALOG = {
 		"That link is not on a GitHub or GitLab server I review, so I didn't review it.",
 	"CR-105":
 		"Send $address and $review in separate messages, so I didn't run anything. Pick one and try again.",
-	"CR-106":
-		"Only {owner} can run $address, so I didn't run anything.",
-	"CR-107":
-		"Only {owner} can run $emoji, so I didn't change anything.",
+	"CR-106": "Only {owner} can run $address, so I didn't run anything.",
+	"CR-107": "Only {owner} can run $emoji, so I didn't change anything.",
+	"CR-108":
+		"The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.",
 	"CR-201":
 		"I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.",
 	"CR-202":
@@ -25,6 +25,8 @@ export const ERROR_CATALOG = {
 		"The service stopped before the job finished. If you sent a request, post it again to restart it.",
 	"CR-206":
 		"The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.",
+	"CR-207":
+		"{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.",
 	"CR-301":
 		"The review finished, but I found no review on the pull request. Check the PR, or post the request again.",
 	"CR-302":

@@ -39,3 +39,21 @@ regexes = [
   '''^2031425364758697a8b9cadbecfd0e1f$''',
   '''^30415263748596a7b8c9daebfc0d1e2f$''',
 ]
+
+[[allowlists]]
+description = "Synthetic relay secret in channel-review connect tests"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/skills-cli/__tests__/channel-review-connect\.spec\.ts$''']
+regexes = ['''^fixture-relay-secret-5e2a$''']
+
+[[allowlists]]
+description = "Synthetic GitLab token fixtures in skills CLI redaction tests"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/skills-cli/__tests__/git\.spec\.ts$''',
+  '''(?:^|/)pkg/skills-cli/__tests__/provider-detect\.spec\.ts$''',
+  '''(?:^|/)pkg/skills-cli/__tests__/provider-types\.spec\.ts$''',
+]
+regexes = ['''^gl(?:pat|dt|rt|soat)-ABCDEFGHIJKLMNOPQRST$''']

@@ -1,8 +1,11 @@
+import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
+import { CURRENT_SCHEMA_VERSION, openDaemonDatabase } from "@dg/common/daemon-db";
 import { dirname } from "node:path";
 import { DgCliError, describeError, isRecord } from "@dg/common";
-import { ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
-import type { RunnerName } from "./runners/types";
+import { DEFAULT_BUSY_TIMEOUT_MS, ForwardOnlyVersionError, readSchemaVersion } from "@dg/common/node";
+import type { ChannelReviewPaths } from "./paths";
+import { RUNNER_NAMES, type RunnerName } from "./runners/types";
 import type { PrHost } from "./verdict/types";
 
 export type HandledStatus = "pending" | "running" | "done" | "failed";
@@ -12,9 +15,16 @@ export type BlockedOptions = {
 	comment: boolean;
 	fun: boolean;
 	agent?: RunnerName;
+	model?: string;
 };
 
 export type CurrentJob = {
+	execution?: {
+		origin: "daemon" | "manual";
+		backend: string;
+		model?: string;
+		modelSource: "requested" | "configured" | "default";
+	};
 	messageId: string;
 	chatId?: string;
 	url: string;
@@ -80,6 +90,7 @@ export type StateStore = {
 	get(): ChannelState;
 	setLastEventId(chatId: string, id: string): void;
 	flush(): void;
+	close(): void;
 	setCurrent(current: CurrentJob | null): void;
 	markHandled(messageId: string, status: HandledStatus, chatId?: string): void;
 	markBlocked(
@@ -131,7 +142,13 @@ function isCurrentJob(value: unknown): value is CurrentJob {
 		typeof value.startedAt === "string" &&
 		(value.chatId === undefined || typeof value.chatId === "string") &&
 		(value.pid === undefined || typeof value.pid === "number") &&
-		(value.pidStart === undefined || typeof value.pidStart === "string")
+		(value.pidStart === undefined || typeof value.pidStart === "string") &&
+		(value.execution === undefined ||
+			(isRecord(value.execution) &&
+				(value.execution.origin === "daemon" || value.execution.origin === "manual") &&
+				typeof value.execution.backend === "string" &&
+				(value.execution.model === undefined || typeof value.execution.model === "string") &&
+				(value.execution.modelSource === "requested" || value.execution.modelSource === "configured" || value.execution.modelSource === "default")))
 	);
 }
 
@@ -155,6 +172,9 @@ function isBlockedEntry(value: unknown): value is BlockedEntry {
 		isRecord(value.options) &&
 		typeof value.options.comment === "boolean" &&
 		typeof value.options.fun === "boolean" &&
+		(value.options.spice === undefined || (typeof value.options.spice === "number" && Number.isFinite(value.options.spice))) &&
+		(value.options.agent === undefined || RUNNER_NAMES.includes(value.options.agent as RunnerName)) &&
+		(value.options.model === undefined || typeof value.options.model === "string") &&
 		typeof value.at === "string"
 	);
 }
@@ -240,61 +260,119 @@ function parseEventIds(
 	if (typeof raw.lastEventId === "string" && legacyChatId !== undefined) {
 		ids[legacyChatId] = raw.lastEventId;
 	}
-	if (isRecord(raw.lastEventIds)) {
-		for (const [chatId, id] of Object.entries(raw.lastEventIds)) {
-			if (typeof id === "string") ids[chatId] = id;
-		}
+	Object.assign(ids, validEntries(raw.lastEventIds, "lastEventIds",
+		(value): value is string => typeof value === "string"));
+	if (raw.lastEventId !== undefined && typeof raw.lastEventId !== "string") {
+		throw new TypeError("lastEventId must be a string");
 	}
 	return ids;
 }
 
-function load(path: string, legacyChatId: string | undefined): ChannelState {
-	const empty: ChannelState = {
-		lastEventIds: {},
-		current: null,
-		handled: {},
-		blocked: {},
-		issues: {},
-		sinks: {},
-		fixStarts: [],
-		deps: { lastRun: {} },
-		prWatch: {},
+type StateLocation = Pick<ChannelReviewPaths, "env" | "dbPath" | "statePath">;
+type StateRow = { state_json: string; revision: number };
+
+function parseState(raw: unknown, legacyChatId?: string): ChannelState {
+	if (!isRecord(raw)) throw new TypeError("state must be an object");
+	return {
+		...raw,
+		lastEventIds: parseEventIds(raw, legacyChatId),
+		current: parseCurrent(raw.current),
+		handled: validEntries(raw.handled, "handled", isHandledEntry),
+		blocked: validEntries(raw.blocked, "blocked", isBlockedEntry),
+		issues: validEntries(raw.issues, "issues", isIssueEntry),
+		sinks: validEntries(raw.sinks, "sinks", isSinkEntry),
+		fixStarts: parseFixStarts(raw.fixStarts),
+		deps: parseDeps(raw.deps),
+		prWatch: validEntries(raw.prWatch, "prWatch", isPrWatchEntry),
 	};
-	if (!existsSync(path)) return empty;
+}
+
+function loadLegacy(path: string, legacyChatId?: string): ChannelState {
+	if (!existsSync(path)) return parseState({});
 	try {
-		const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
-		if (!isRecord(raw)) throw new TypeError("state must be an object");
-		return {
-			lastEventIds: parseEventIds(raw, legacyChatId),
-			current: parseCurrent(raw.current),
-			handled: validEntries(raw.handled, "handled", isHandledEntry),
-			blocked: validEntries(raw.blocked, "blocked", isBlockedEntry),
-			issues: validEntries(raw.issues, "issues", isIssueEntry),
-			sinks: validEntries(raw.sinks, "sinks", isSinkEntry),
-			fixStarts: parseFixStarts(raw.fixStarts),
-			deps: parseDeps(raw.deps),
-			prWatch: validEntries(raw.prWatch, "prWatch", isPrWatchEntry),
-		};
+		return parseState(JSON.parse(readFileSync(path, "utf8")), legacyChatId);
 	} catch (err) {
 		throw new DgCliError(`cannot read state file ${path}: ${describeError(err)}`);
 	}
 }
 
+function readRow(db: Database, env: string): StateRow | null {
+	return db.query("SELECT state_json, revision FROM channel_review_state WHERE env = ?")
+		.get(env) as StateRow | null;
+}
+
+/** Read-only inspection: never initializes a database or consumes the legacy import. */
+export function readStateSnapshot(paths: StateLocation, legacyChatId?: string): ChannelState {
+	if (!existsSync(paths.dbPath)) return loadLegacy(paths.statePath, legacyChatId);
+	const db = new Database(paths.dbPath, { readonly: true, strict: true });
+	try {
+		db.run(`PRAGMA busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
+		const version = readSchemaVersion(db);
+		if (version > CURRENT_SCHEMA_VERSION) {
+			throw new ForwardOnlyVersionError(version, CURRENT_SCHEMA_VERSION);
+		}
+		const row = version >= 12 ? readRow(db, paths.env) : null;
+		return row ? parseState(JSON.parse(row.state_json), legacyChatId)
+			: loadLegacy(paths.statePath, legacyChatId);
+	} finally {
+		db.close(true);
+	}
+}
+
+/** Import and the durable 'already initialized' marker are the same SQLite row. */
+function initialize(db: Database, paths: StateLocation, legacyChatId?: string): StateRow {
+	return db.transaction(() => {
+		const existing = readRow(db, paths.env);
+		if (existing) return existing;
+		const imported = existsSync(paths.statePath);
+		const state = loadLegacy(paths.statePath, legacyChatId);
+		// A status read before the first connection must not consume a scalar cursor.
+		if ("lastEventId" in state && legacyChatId === undefined) {
+			throw new DgCliError(`cannot import state file ${paths.statePath}: legacy lastEventId requires a chat id`);
+		}
+		delete (state as ChannelState & { lastEventId?: string }).lastEventId;
+		const json = JSON.stringify(state);
+		const now = new Date().toISOString();
+		db.run(`INSERT INTO channel_review_state
+			(env, state_json, updated_at, legacy_source, imported_at) VALUES (?, ?, ?, ?, ?)`,
+			[paths.env, json, now, imported ? paths.statePath : null, imported ? now : null]);
+		return { state_json: json, revision: 0 };
+	}).immediate();
+}
+
 export function createStateStore(
-	path: string,
+	paths: StateLocation,
 	clock: () => Date = () => new Date(),
 	eventSaveIntervalMs = EVENT_SAVE_INTERVAL_MS,
 	legacyChatId?: string,
 ): StateStore {
-	const state = load(path, legacyChatId);
+	const db = openDaemonDatabase({ dbPath: paths.dbPath, daemonDir: dirname(paths.dbPath) });
+	let row: StateRow;
+	let state: ChannelState;
+	try {
+		row = initialize(db, paths, legacyChatId);
+		state = parseState(JSON.parse(row.state_json), legacyChatId);
+	} catch (error) {
+		db.close(false);
+		throw error;
+	}
+	let revision = row.revision;
+	let closed = false;
 	let eventTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastSavedAt = 0;
 
 	function save(): void {
 		clearTimeout(eventTimer);
 		eventTimer = undefined;
-		ensurePrivateDir(dirname(path));
-		writeFileAtomic(path, `${JSON.stringify(state, null, "\t")}\n`);
+		if (closed) throw new DgCliError("channel-review state store is closed");
+		const result = db.run(`UPDATE channel_review_state
+			SET state_json = ?, revision = revision + 1, updated_at = ?
+			WHERE env = ? AND revision = ?`,
+			[JSON.stringify(state), clock().toISOString(), paths.env, revision]);
+		if (result.changes !== 1) {
+			throw new DgCliError(`channel-review ${paths.env} state changed on another connection; reopen the store`);
+		}
+		revision++;
 		lastSavedAt = Date.now();
 	}
 
@@ -313,6 +391,15 @@ export function createStateStore(
 		},
 		flush() {
 			if (eventTimer !== undefined) save();
+		},
+		close() {
+			if (closed) return;
+			try {
+				if (eventTimer !== undefined) save();
+			} finally {
+				closed = true;
+				db.close(true);
+			}
 		},
 		setCurrent(current) {
 			state.current = current;

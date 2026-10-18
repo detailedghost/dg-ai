@@ -50,7 +50,10 @@ describe("channelReviewPaths", () => {
 			homeDir: "/home/dev",
 			env: { DG_HOME: "/data/dg" },
 		});
-		for (const value of Object.values(paths)) {
+		expect(paths.env).toBe("dev");
+		expect(paths.dbPath).toBe("/data/dg/daemon/daemon.db");
+		const { env, dbPath, ...localPaths } = paths;
+		for (const value of Object.values(localPaths)) {
 			expect(String(value).startsWith("/data/dg/channel-review")).toBe(true);
 		}
 	});

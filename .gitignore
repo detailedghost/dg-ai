@@ -19,3 +19,5 @@ dist/
 reports/
 mutation.json
 **/reports/mutation/
+# migrate-env backups still contain credentials.
+.env.bak-*
