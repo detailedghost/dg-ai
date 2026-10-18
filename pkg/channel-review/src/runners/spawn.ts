@@ -161,7 +161,7 @@ export async function runProcess(request: ProcessRequest): Promise<ProcessResult
 
 	return {
 		status: proc.exitCode,
-		signal: proc.signalCode ?? null,
+		signal: typeof proc.signalCode === "string" ? proc.signalCode : null,
 		timedOut,
 		aborted,
 		stderrTail: stderrTail.toString("utf8"),
