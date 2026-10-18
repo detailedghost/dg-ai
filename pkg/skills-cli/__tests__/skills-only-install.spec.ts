@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
+import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
@@ -27,10 +28,6 @@ const SUMMARY =
 	"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).";
 
 const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
-const REPO_SKILL_FILES = readdirSync(REPO_SKILLS, { withFileTypes: true })
-	.filter((entry) => entry.isDirectory() && existsSync(join(REPO_SKILLS, entry.name, "SKILL.md")))
-	.flatMap((entry) => filesUnder(join(REPO_SKILLS, entry.name)).map((file) => `${entry.name}/${file}`))
-	.sort();
 
 type RunResult = { code: number; stdout: string; stderr: string };
 
@@ -268,10 +265,10 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), [
+			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, thrashPersonaPath(dest), [
 				`dg-skills installed v9.9.9 at ${join(home, "bin", "dg-skills")}`,
 			]);
-			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
+			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
 				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
 			);
@@ -304,7 +301,7 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
-			expect(filesUnder(join(home, "skills"))).toEqual(REPO_SKILL_FILES);
+			expect(filesUnder(join(home, "skills"))).toEqual(INSTALLED_SKILL_FILES);
 			expect(readFileSync(join(home, "agents", "thrash.md"), "utf8")).toContain("thrash");
 			expect(existsSync(join(home, ".dg", "skills"))).toBe(false);
 			expect(existsSync(join(home, ".dg", "bin"))).toBe(false);
@@ -392,7 +389,7 @@ describe("dg-skills install --skills-only", () => {
 			);
 			expect(result.code).toBe(0);
 			expect(result.stderr).toContain("⚠ dg-skills install skipped: fetch failed: offline");
-			expect(filesUnder(dest)).toEqual(REPO_SKILL_FILES);
+			expect(filesUnder(dest)).toEqual(INSTALLED_SKILL_FILES);
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -464,8 +461,8 @@ describe("bootstrap.sh --skills-only", () => {
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			const installedAt = join(home, "bin", "dg-skills");
 			const trailer = [`dg-skills installed at ${installedAt}`, `Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`];
-			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), trailer);
-			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
+			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, thrashPersonaPath(dest), trailer);
+			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
 				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
 			);
@@ -529,7 +526,7 @@ describe("bootstrap.sh --skills-only", () => {
 				}),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), [
+			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, thrashPersonaPath(dest), [
 				"Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only.",
 			]);
 			expect(existsSync(curlLog)).toBe(false);
