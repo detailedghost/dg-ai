@@ -11,6 +11,7 @@ export * from "./inbox-format";
 export * from "./markers";
 export * from "./pairing";
 export * from "./plan-format";
+export * from "./protected-branch";
 export * from "./proto-format";
 export * from "./serial-queue";
 export * from "./session-connect";

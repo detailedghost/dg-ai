@@ -92,7 +92,8 @@ Stash supports scratch, state, current-worktree, and main-worktree scopes.
 Clipboard capture needs WSL's `wslpath` and `powershell.exe`, Wayland's `wl-paste`,
 or X11's `xclip`. Proxy needs the selected backend installed and authenticated;
 its packaged persona and background helpers work without public spec/bg commands.
-Set `DG_PERSONAS_DIR` or `DG_AGENTS_DIR` for persona files; detached launch needs
+Set `DG_PERSONAS_DIR` or `DG_AGENTS_DIR` for persona files; otherwise proxy uses the
+personas packaged in `agents/`. Detached launch needs
 POSIX `sh`. The provider helper needs Git and authenticated `gh` or `glab`;
 `vcs-provider` is a CLI command, not a separate skill. See the
 [command reference](../../../docs/DEVELOPER.md#wave-2a-cli-commands) for its full

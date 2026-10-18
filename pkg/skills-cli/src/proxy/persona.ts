@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { packagedPersonas } from "./packaged-personas";
 import { resolveSlicePrimary } from "./spec-persona";
 
 async function readAgentPersona(name: string): Promise<string> {
@@ -8,8 +9,10 @@ async function readAgentPersona(name: string): Promise<string> {
 	const directory = process.env.DG_PERSONAS_DIR ?? process.env.DG_AGENTS_DIR ?? join(home, ".claude", "agents");
 	const path = join(directory, `${name}.md`);
 	const file = Bun.file(path);
-	if (!(await file.exists())) throw new Error(`Agent persona not found: ${name} (looked in ${path})`);
-	return file.text();
+	if (await file.exists()) return file.text();
+	const packaged = packagedPersonas[name];
+	if (packaged !== undefined) return packaged;
+	throw new Error(`Agent persona not found: ${name} (looked in ${path})`);
 }
 
 /** Load an explicit persona or a plan slice's primary agent; explicit subagent wins and missing files reject. */

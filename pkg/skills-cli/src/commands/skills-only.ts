@@ -6,7 +6,11 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { installSkillTree, skillsInstallDest } from "@dg/common/node";
+import {
+	installSkillTree,
+	installThrashPersona,
+	skillsInstallDest,
+} from "@dg/common/node";
 
 export type SkillsOnlyFlags = {
 	cliOnly: boolean;
@@ -32,6 +36,7 @@ export type SkillsOnlyRequest = {
 export type SkillsOnlyResult = {
 	dest: string;
 	files: string[];
+	persona?: string;
 };
 
 export function runSkillsOnlyInstall(input: SkillsOnlyRequest): SkillsOnlyResult {
@@ -45,13 +50,16 @@ export function runSkillsOnlyInstall(input: SkillsOnlyRequest): SkillsOnlyResult
 	const dest =
 		input.dest ||
 		skillsInstallDest(input.env ?? process.env, input.home ?? homedir());
-	return { dest, files: installSkillTree(source, dest) };
+	const files = installSkillTree(source, dest);
+	const persona = installThrashPersona(root, dest);
+	return persona ? { dest, files, persona } : { dest, files };
 }
 
 export function skillsOnlyReport(result: SkillsOnlyResult): string {
 	return [
 		...result.files,
 		`Installed ${result.files.length} skill files at ${result.dest}.`,
+		...(result.persona ? [`Installed thrash persona at ${result.persona}.`] : []),
 		"Skills-only install: no binaries were fetched and no skill content was executed.",
 	].join("\n");
 }

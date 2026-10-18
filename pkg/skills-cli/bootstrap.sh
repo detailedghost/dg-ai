@@ -74,8 +74,30 @@ copy_skill_tree() {
   sort "$manifest"
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
+  copy_thrash_persona "$src" "$dest"
   echo "Skills-only install: no binaries were fetched and no skill content was executed."
   rm -f "$manifest"
+}
+
+# The thrash persona lives beside the skills tree. Copy it next to the
+# install so a skills-only bot can read it without the compiled binary.
+copy_thrash_persona() {
+  skills_src=$1
+  skills_dest=$2
+  parent=$(CDPATH= cd -- "$skills_src/.." && pwd)
+  persona="${parent}/agents/thrash.md"
+  if [ ! -e "$persona" ]; then
+    return 0
+  fi
+  if [ -L "$persona" ]; then
+    echo "dg-skills: refusing to copy a symlink persona at ${persona}" >&2
+    exit 1
+  fi
+  agents=$(CDPATH= cd -- "$skills_dest/.." && pwd)/agents
+  mkdir -p "$agents"
+  cp "$persona" "${agents}/thrash.md"
+  chmod 644 "${agents}/thrash.md"
+  echo "Installed thrash persona at ${agents}/thrash.md."
 }
 
 skills_tree_source() {

@@ -135,6 +135,18 @@ export async function baseBranch(): Promise<string> {
 	return "main";
 }
 
+/** Remote default branch when origin/HEAD exists, otherwise the local fallback. */
+export async function remoteDefaultBranch(): Promise<string> {
+	try {
+		const result = await git`symbolic-ref --short refs/remotes/origin/HEAD`;
+		const remote = result.stdout.toString().trim();
+		if (remote.startsWith("origin/")) return remote.slice("origin/".length);
+	} catch {
+		// no origin/HEAD
+	}
+	return baseBranch();
+}
+
 /** Resolve the base SHA for reshape operations.
  *
  * When overrideRef is given, resolve it via `git rev-parse` — but if the result is not an

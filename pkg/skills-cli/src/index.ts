@@ -5,19 +5,26 @@
  */
 
 import { Command } from "commander";
+import { registerAddress } from "./commands/address";
 import { registerBatchOpen } from "./commands/batch-open";
+import { registerCatchup } from "./commands/catchup";
+import { registerChain } from "./commands/chain";
 import { registerChannelReview } from "./commands/channel-review";
 import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCredentials } from "./commands/credentials";
 import { registerDemo } from "./commands/demo";
+import { registerDepsUpgrade } from "./commands/deps-upgrade";
+import { registerFile } from "./commands/file";
 import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
+import { registerMeaningful } from "./commands/meaningful";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
-import { registerProxy } from "./commands/proxy";
 import { registerProto } from "./commands/proto";
+import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
 import { registerStash } from "./commands/stash";
+import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
 import {
 	guardExtensionCommands,
@@ -43,6 +50,13 @@ registerLaunch(program);
 registerDemo(program);
 registerRerun(program);
 registerStash(program);
+registerAddress(program);
+registerThrash(program);
+registerChain(program);
+registerCatchup(program);
+registerFile(program);
+registerDepsUpgrade(program);
+registerMeaningful(program);
 registerVcsProvider(program);
 registerClipboardImage(program);
 registerProto(program);

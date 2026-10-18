@@ -7,6 +7,8 @@
 import {
 	chmodSync,
 	copyFileSync,
+	existsSync,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	rmSync,
@@ -75,4 +77,31 @@ export function installSkillTree(source: string, dest: string): string[] {
 		chmodSync(to, 0o644);
 	}
 	return files;
+}
+
+/** Skills-only install writes the thrash persona beside the skills directory. */
+export function thrashPersonaDest(skillsDest: string): string {
+	return join(dirname(skillsDest), "agents", "thrash.md");
+}
+
+/**
+ * Copy plugins/dg/agents/thrash.md so a skills-only install can load the
+ * persona without the compiled binary. Missing source returns undefined.
+ */
+export function installThrashPersona(
+	repoRoot: string,
+	skillsDest: string,
+): string | undefined {
+	const source = join(repoRoot, "plugins", "dg", "agents", "thrash.md");
+	if (!existsSync(source)) return undefined;
+	if (lstatSync(source).isSymbolicLink()) {
+		throw new Error(
+			"skills-only install refuses symlink plugins/dg/agents/thrash.md",
+		);
+	}
+	const dest = thrashPersonaDest(skillsDest);
+	mkdirSync(dirname(dest), { recursive: true });
+	copyFileSync(source, dest);
+	chmodSync(dest, 0o644);
+	return dest;
 }

@@ -74,6 +74,21 @@ describe("skills-only helpers", () => {
 			expect(skillsOnlyReport(result)).toBe(
 				`from-repo/SKILL.md\nInstalled 1 skill files at ${dest}.\n${SUMMARY}`,
 			);
+			mkdirSync(join(repo, "plugins", "dg", "agents"), { recursive: true });
+			writeFileSync(join(repo, "plugins", "dg", "agents", "thrash.md"), "thrash persona\n");
+			const withPersona = runSkillsOnlyInstall({
+				repo,
+				dest,
+				repoRoot: other,
+				env: {},
+				home: directory,
+			});
+			const persona = join(directory, "agents", "thrash.md");
+			expect(withPersona.persona).toBe(persona);
+			expect(readFileSync(persona, "utf8")).toBe("thrash persona\n");
+			expect(skillsOnlyReport(withPersona)).toContain(
+				`Installed thrash persona at ${persona}.`,
+			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

@@ -1,0 +1,23 @@
+{
+  "base": "origin/main",
+  "groups": [
+    {
+      "subject": "feat(search): add query validation",
+      "body": "Rejects empty search terms before querying the catalog.\n\nKeeps validation shared between the form and request handler.",
+      "author": "Alex Example <alex@example.invalid>",
+      "coauthors": [
+        "Sam Example <sam@example.invalid>"
+      ],
+      "files": [
+        "src/search/validate.ts",
+        "src/search/validate.spec.ts"
+      ]
+    },
+    {
+      "subject": "feat(items): display item details",
+      "files": [
+        "src/items/[itemId]/details/page.tsx"
+      ]
+    }
+  ]
+}
