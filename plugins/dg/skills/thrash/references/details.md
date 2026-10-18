@@ -73,8 +73,11 @@ run and passes the flag, so report-only is safe even when a step runs by mistake
 
 ## Stacks with merged or closed PRs
 
-`stack` lists PRs in every state and joins them by head and base branch. When a branch
-name was reused, the open PR owns it, else the newest. Only open PRs get a diff and a
+`stack` lists open PRs, adds the target if it is not open, then, for each base branch no
+candidate owns, asks for PRs of any state with that head branch, until no base is left.
+It never lists the repository's whole PR history. PRs join by head and base branch; when
+a branch name was reused, the open PR owns it, else the newest. A closed PR is found when
+it sits on the chain's base side; closed PRs branching off an open one are not searched. Only open PRs get a diff and a
 review. A merged PR is never reviewed again: it stays in the stack as context, each open
 PR's context file lists it under "Merged earlier in this stack", and its `statusPath`
 tallies as "merged (context only, not reviewed)". A closed unmerged PR tallies as

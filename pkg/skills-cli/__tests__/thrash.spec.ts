@@ -681,21 +681,27 @@ describe("remote mode via the GitHub adapter", () => {
 
 	test("stack --diff reviews only open PRs, keeps merged ones as context and reports closed ones", () => {
 		const url = (n: number) => PR_URL.replace("12", String(n));
-		const pulls = [
-			{ number: 12, title: "one", html_url: url(12), state: "open", merged_at: null, head: { ref: "a" }, base: { ref: "main" } },
-			{ number: 13, title: "two", html_url: url(13), state: "closed", merged_at: "2026-10-01T00:00:00Z", head: { ref: "b" }, base: { ref: "a" } },
-			{ number: 14, title: "three", html_url: url(14), state: "open", merged_at: null, head: { ref: "c" }, base: { ref: "b" } },
-			{ number: 15, title: "dropped", html_url: url(15), state: "closed", merged_at: null, head: { ref: "d" }, base: { ref: "c" } },
-		];
+		const pr = (number: number, title: string, state: string, merged: boolean, head: string, base: string) => ({
+			number, title, html_url: url(number), state, merged_at: merged ? "2026-10-01T00:00:00Z" : null,
+			head: { ref: head }, base: { ref: base },
+		});
+		const open = [pr(12, "one", "open", false, "a", "x"), pr(14, "three", "open", false, "c", "b")];
 		const gh = fakeGh(
 			cliFixtures.shScript(`
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify(open)}'
+    ;;
+  *"pulls --method GET"*"head=acme:b"*)
+    echo '${JSON.stringify([pr(13, "two", "closed", true, "b", "a"), pr(9, "old", "closed", true, "b2", "a")])}'
+    ;;
+  *"pulls --method GET"*"head=acme:x"*)
+    echo '${JSON.stringify([pr(11, "dropped", "closed", false, "x", "main")])}'
+    ;;
   *"pulls --method GET"*)
-    echo '${JSON.stringify(pulls)}'
-    exit 0
+    echo '[]'
     ;;
   *"pr diff"*)
     cat "$FAKE_DIFF"
-    exit 0
     ;;`),
 		);
 		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
@@ -706,27 +712,52 @@ describe("remote mode via the GitHub adapter", () => {
 		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
 		const rows = JSON.parse(result.stdout);
 		expect(rows.map((r: { number: number; state: string; reviewed: boolean }) => [r.number, r.state, r.reviewed])).toEqual([
+			[11, "closed", false],
 			[12, "open", true],
 			[13, "merged", false],
 			[14, "open", true],
-			[15, "closed", false],
 		]);
-		expect(rows[1].diffPath).toBeUndefined();
-		expect(rows[3].chunks).toBeUndefined();
-		const diffCalls = cliFixtures.readCalls(gh.log).filter((call) => call.startsWith("pr diff"));
-		expect(diffCalls.map((call) => call.split(" ")[2]).sort()).toEqual(["12", "14"]);
-		expect(cliFixtures.readCalls(gh.log).some((call) => call.includes("state=all"))).toBe(true);
-		const context = readFileSync(rows[2].contextPath, "utf8");
+		expect(rows[0].diffPath).toBeUndefined();
+		expect(rows[2].chunks).toBeUndefined();
+		const calls = cliFixtures.readCalls(gh.log);
+		expect(calls.filter((call) => call.startsWith("pr diff")).map((call) => call.split(" ")[2]).sort()).toEqual(["12", "14"]);
+		expect(calls.some((call) => call.includes("state=all"))).toBe(true);
+		expect(calls.filter((call) => call.includes("pulls --method GET") && !call.includes("head=")).every((call) => call.includes("state=open"))).toBe(true);
+		const context = readFileSync(rows[3].contextPath, "utf8");
 		expect(context).toContain("## Merged earlier in this stack (context only, not reviewed)");
 		expect(context).toContain(`- #13 two (${url(13)}), b into a`);
-		expect(context).not.toContain("#15");
-		expect(JSON.parse(readFileSync(rows[1].statusPath, "utf8"))).toEqual({ target: url(13), stackState: "merged" });
-		const tally = run(["tally", rows[1].statusPath, rows[3].statusPath], { cwd, env });
+		expect(context).not.toContain("#11");
+		expect(JSON.parse(readFileSync(rows[2].statusPath, "utf8"))).toEqual({ target: url(13), stackState: "merged" });
+		const tally = run(["tally", rows[0].statusPath, rows[2].statusPath], { cwd, env });
 		expect(tally.exitCode, tally.stderr).toBe(EXIT.OK);
 		expect(tally.stdout).toContain("| #13 |");
 		expect(tally.stdout).toContain("merged (context only, not reviewed)");
-		expect(tally.stdout).toContain("| #15 |");
+		expect(tally.stdout).toContain("| #11 |");
 		expect(tally.stdout).toContain("closed without merging (not reviewed)");
+	});
+
+	test("stack from a merged PR fetches it and walks down to the open child", () => {
+		const url = (n: number) => PR_URL.replace("12", String(n));
+		const merged = { number: 13, title: "two", url: url(13), state: "MERGED", headRefName: "b", baseRefName: "main", body: "", mergedAt: "2026-10-01T00:00:00Z" };
+		const child = { number: 14, title: "three", html_url: url(14), state: "open", merged_at: null, head: { ref: "c" }, base: { ref: "b" } };
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify([child])}'
+    ;;
+  *"pr view 13"*)
+    echo '${JSON.stringify(merged)}'
+    ;;
+  *"pulls --method GET"*)
+    echo '[]'
+    ;;`),
+		);
+		const result = run(["stack", url(13)], { env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log } });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).map((r: { number: number; state: string }) => [r.number, r.state])).toEqual([
+			[13, "merged"],
+			[14, "open"],
+		]);
 	});
 
 	test("stack --diff with no merged member leaves the context file without a merged section", () => {
@@ -888,33 +919,38 @@ describe("remote mode via the GitLab adapter", () => {
 });
 
 describe("stack via the GitLab adapter", () => {
-	test("lists every MR state and marks merged and closed ones", () => {
-		const url = "https://gitlab.com/acme/widgets/-/merge_requests/22";
+	test("asks per base branch for merged and closed MRs and marks them", () => {
+		const url = "https://gitlab.com/acme/widgets/-/merge_requests/23";
 		const dir = cliFixtures.tmp(createdDirs, "thrash-stack-glab-");
-		const mrs = [
-			cliFixtures.glMr(21, "a"),
-			cliFixtures.glMr(22, "b", { target_branch: "a", state: "merged", merged_at: "2026-10-01T00:00:00Z" }),
-			cliFixtures.glMr(23, "c", { target_branch: "b" }),
-			cliFixtures.glMr(24, "d", { target_branch: "c", state: "closed" }),
-		];
+		const open = [cliFixtures.glMr(21, "a", { target_branch: "x" }), cliFixtures.glMr(23, "c", { target_branch: "b" })];
 		writeFakeCli(
 			dir,
 			"glab",
 			cliFixtures.shScript(`
+  *"mr list"*"--source-branch b"*)
+    echo '${JSON.stringify([cliFixtures.glMr(22, "b", { target_branch: "a", state: "merged", merged_at: "2026-10-01T00:00:00Z" })])}'
+    ;;
+  *"mr list"*"--source-branch x"*)
+    echo '${JSON.stringify([cliFixtures.glMr(20, "x", { state: "closed" })])}'
+    ;;
+  *"mr list"*"--all"*)
+    echo '[]'
+    ;;
   *"mr list"*)
-    echo '${JSON.stringify(mrs)}'
+    echo '${JSON.stringify(open)}'
     ;;`),
 		);
 		const log = join(dir, "calls.log");
 		const result = run(["stack", url], { env: { GLAB_BIN: join(dir, "glab"), FAKE_CALL_LOG: log } });
 		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
 		expect(JSON.parse(result.stdout).map((r: { number: number; state: string }) => [r.number, r.state])).toEqual([
+			[20, "closed"],
 			[21, "open"],
 			[22, "merged"],
 			[23, "open"],
-			[24, "closed"],
 		]);
-		expect(cliFixtures.readCalls(log).some((call) => call.includes("mr list") && call.includes("--all"))).toBe(true);
+		const calls = cliFixtures.readCalls(log);
+		expect(calls.some((call) => call.includes("--all") && call.includes("--source-branch b"))).toBe(true);
 	});
 });
 

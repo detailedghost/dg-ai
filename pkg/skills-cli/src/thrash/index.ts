@@ -362,13 +362,41 @@ function mergedContextSection(merged: PullRequest[]): string {
 	return `\n## Merged earlier in this stack (context only, not reviewed)\n\n${lines.join("\n")}\n`;
 }
 
+/**
+ * Open PRs, the target, and any merged or closed PR whose head is the base of a candidate.
+ * Lists only open PRs in bulk, then asks per unowned base branch, so cost does not grow with history.
+ */
+async function stackCandidates(
+	provider: Awaited<ReturnType<typeof getProviderForUrl>>,
+	target: RemoteTarget,
+): Promise<PullRequest[]> {
+	const pool = new Map<number, PullRequest>();
+	for (const pr of await provider.listPullRequests({ state: "open" }, target.repo)) pool.set(pr.number, pr);
+	if (!pool.has(target.number)) {
+		const pr = await provider.viewPullRequest(prRef(target));
+		pool.set(pr.number, pr);
+	}
+	const asked = new Set<string>();
+	for (;;) {
+		const heads = new Set([...pool.values()].map((pr) => pr.headRefName));
+		const bases = [...new Set([...pool.values()].map((pr) => pr.baseRefName))].filter(
+			(base) => !heads.has(base) && !asked.has(base),
+		);
+		if (bases.length === 0) return [...pool.values()];
+		for (const base of bases) {
+			asked.add(base);
+			const found = await provider.listPullRequests({ state: "all", head: base }, target.repo);
+			for (const pr of found) if (pr.headRefName === base && !pool.has(pr.number)) pool.set(pr.number, pr);
+		}
+	}
+}
+
 async function cmdStack(args: string[]): Promise<number> {
 	const arg = positional(args, "stack");
 	const target = await resolveTarget(arg);
 	if (target.mode === "local") throw new Error("stack needs a PR or MR URL");
 	const provider = await getProviderForUrl(target.url);
-	const all = await provider.listPullRequests({ state: "all" }, target.repo);
-	const stack = stackFor(all, target.number);
+	const stack = stackFor(await stackCandidates(provider, target), target.number);
 	if (!args.includes("--diff")) {
 		printJson(
 			stack.map((pr) => ({
