@@ -450,7 +450,8 @@ export async function renderChatPage(
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
 	let selectedSessionId = order[0];
 	let tokenRejected = false;
-	let daemonReachable = bootstraps.length > 0;
+	// A stored session is not a live daemon. Stay false until the pairing probe reports.
+	let daemonReachable = false;
 	let connectionDetail: string | undefined;
 	let moving: { sessionId: string; originalOrder: string[] } | undefined;
 	let activeDrag: { sessionId: string; cancel(): void } | undefined;
@@ -569,12 +570,7 @@ export async function renderChatPage(
 		...options.pairing,
 		onDaemon(reachable) {
 			daemonReachable = reachable;
-			for (const create of root.querySelectorAll<HTMLButtonElement>(
-				'button[data-action="create-chat"]',
-			)) {
-				create.disabled =
-					client.getConnectionState() === "daemon-not-running" && !reachable;
-			}
+			syncCreateChatDisabled();
 		},
 	});
 
@@ -840,6 +836,15 @@ export async function renderChatPage(
 		return !tokenRejected && (bootstraps.length > 0 || sessions.list().length > 0);
 	}
 
+	function syncCreateChatDisabled(): void {
+		const disabled =
+			client.getConnectionState() === "daemon-not-running" && !daemonReachable;
+		for (const create of root.querySelectorAll<HTMLButtonElement>(
+			'button[data-action="create-chat"]',
+		))
+			create.disabled = disabled;
+	}
+
 	function updateConnectionStatus(): void {
 		const connection = client.getConnectionState();
 		const state: PillState = isPaired() ? connection : "not-paired";
@@ -848,10 +853,7 @@ export async function renderChatPage(
 		connectionStatus.hidden = state === "connected";
 		const message = connectionStatusLabel(state, connectionDetail);
 		connectionStatus.textContent = message;
-		for (const create of root.querySelectorAll<HTMLButtonElement>(
-			'button[data-action="create-chat"]',
-		))
-			create.disabled = connection === "daemon-not-running" && !daemonReachable;
+		syncCreateChatDisabled();
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
 		);

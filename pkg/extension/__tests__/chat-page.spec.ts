@@ -1468,16 +1468,64 @@ test("the daemon status pill is hidden when connected and names the state otherw
 	expect(pill.textContent).toBe("Daemon unreachable");
 });
 
-test("the new chat button is enabled when connected and disabled while the daemon is unreachable", async () => {
-	const connected = await renderToolbarPage("connected");
-	expect(
-		(toolbarControl(connected, "create-chat") as HTMLButtonElement).disabled,
-	).toBe(false);
+function deferredPort(): {
+	promise: Promise<number | undefined>;
+	resolve: (port: number | undefined) => void;
+} {
+	let settle: (port: number | undefined) => void = () => {};
+	const promise = new Promise<number | undefined>((resolve) => {
+		settle = resolve;
+	});
+	return { promise, resolve: (port) => settle(port) };
+}
 
-	const down = await renderToolbarPage("daemon-not-running");
-	expect(
-		(toolbarControl(down, "create-chat") as HTMLButtonElement).disabled,
-	).toBe(true);
+function createChatButton(root: HTMLElement): HTMLButtonElement {
+	return toolbarControl(root, "create-chat") as HTMLButtonElement;
+}
+
+test("the new chat button is enabled when connected and disabled while the daemon is unreachable", async () => {
+	const connected = newRoot();
+	await renderChatPage({
+		root: connected,
+		createClient: () => makeFakeClient("connected").client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: { findPort: () => new Promise(() => {}) },
+	});
+	expect(createChatButton(connected).disabled).toBe(false);
+
+	const down = newRoot();
+	const downClient = makeFakeClient("daemon-not-running");
+	const unreachable = deferredPort();
+	await renderChatPage({
+		root: down,
+		createClient: () => downClient.client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: { findPort: () => unreachable.promise },
+	});
+	downClient.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	const downButton = createChatButton(down);
+	expect(downButton.disabled).toBe(true);
+
+	unreachable.resolve(undefined);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(downButton.disabled).toBe(true);
+
+	const up = newRoot();
+	const upClient = makeFakeClient("daemon-not-running");
+	const reachable = deferredPort();
+	await renderChatPage({
+		root: up,
+		createClient: () => upClient.client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: { findPort: () => reachable.promise },
+	});
+	const upButton = createChatButton(up);
+	expect(upButton.disabled).toBe(true);
+	reachable.resolve(bootstraps()[0]?.port);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(upButton.disabled).toBe(false);
 });
 
 const NOT_PAIRED_HINT = "Not paired";
