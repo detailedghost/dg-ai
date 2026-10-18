@@ -42,6 +42,29 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `google-sms-cleanup` | Organize Google Messages in the browser | [Skill guide](plugins/dg/skills/google-sms-cleanup/SKILL.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
 
+### Workflow skills
+
+Instruction-only skills for day-to-day agent work. Claude Code also accepts the
+bare `/<name>`.
+
+| Skill | Use |
+| --- | --- |
+| `agent-seed` | Set up a project's `.agents/` folder and a minimal `CLAUDE.md` |
+| `clipboard-img` | Save the clipboard image as a PNG |
+| `grill-me` | Interview the user about a design until every branch is resolved |
+| `hook-comment-disable` | Turn off the American-English hook for one session |
+| `hunt` | Find the root cause of a bug with parallel evidence gathering |
+| `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
+| `pushup` | Push the branch, open its PR, and open the PR in a tab group |
+| `refactor` | Find refactor candidates and discuss the chosen one |
+| `rename-session` | Suggest names for the current session |
+| `standard-test` | Language-agnostic rules for writing and reviewing tests |
+| `teach` | Teach a concept across sessions |
+| `wait-what` | Explain the last answer again, more simply |
+| `walk` | Go through the open questions one at a time |
+| `wayfinder` | Map work too big for one session as decision tickets |
+| `what-changed` | Write release notes from tags, PRs, and commits |
+
 ## Supported browsers
 
 - Chromium: Chrome, Edge, Brave, Vivaldi, and Opera.
@@ -50,8 +73,11 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 ## Documentation
 
 - [Scheduled jobs, services, and dashboard](docs/jobs-and-services.md)
+
 - [Architecture decisions](docs/adr/toc.md)
+
 - [Developer guide](docs/DEVELOPER.md)
+
 - [Contributing](docs/contributing.md)
 
 - [Security](SECURITY.md)

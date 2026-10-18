@@ -24,27 +24,11 @@ const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
 const SUMMARY =
 	"Skills-only install: no binaries were fetched and no skill content was executed.";
 
-const REPO_SKILL_FILES = [
-	"browser/SKILL.md",
-	"browser/references/install.md",
-	"channel-review/SKILL.md",
-	"channel-review/references/commands.md",
-	"channel-review/references/config.example.json",
-	"channel-review/references/relay-setup.md",
-	"channel-review/references/setup.md",
-	"chat/SKILL.md",
-	"demo/SKILL.md",
-	"demo/references/authoring.md",
-	"google-sms-cleanup/SKILL.md",
-	"inbox-cleanup/SKILL.md",
-	"inbox-cleanup/references/providers.md",
-	"inbox-cleanup/references/workflow.md",
-	"overwatch/SKILL.md",
-	"proto/SKILL.md",
-	"proto/agents/openai.yaml",
-	"proto/references/commands.md",
-	"proto/references/contracts.md",
-];
+const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
+const REPO_SKILL_FILES = readdirSync(REPO_SKILLS, { withFileTypes: true })
+	.filter((entry) => entry.isDirectory() && existsSync(join(REPO_SKILLS, entry.name, "SKILL.md")))
+	.flatMap((entry) => filesUnder(join(REPO_SKILLS, entry.name)).map((file) => `${entry.name}/${file}`))
+	.sort();
 
 type RunResult = { code: number; stdout: string; stderr: string };
 
@@ -189,7 +173,7 @@ describe("dg-skills install --skills-only", () => {
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, REPO_SKILL_FILES);
-			expectExactCopy(join(REPO, "plugins", "dg", "skills"), dest, REPO_SKILL_FILES);
+			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
 			expect(readFileSync(join(dest, "google-sms-cleanup", "SKILL.md"), "utf8")).toContain(
 				"google-sms-cleanup",
 			);
@@ -305,7 +289,7 @@ describe("bootstrap.sh --skills-only", () => {
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, REPO_SKILL_FILES);
-			expectExactCopy(join(REPO, "plugins", "dg", "skills"), dest, REPO_SKILL_FILES);
+			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
 			expect(existsSync(curlLog)).toBe(false);
 			expect(existsSync(join(directory, "home", "bin", "dg-skills"))).toBe(false);
 		} finally {
