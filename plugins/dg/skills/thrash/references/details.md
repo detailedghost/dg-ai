@@ -76,6 +76,7 @@ run and passes the flag, so report-only is safe even when a step runs by mistake
 
 `stack` lists open PRs, adds the target if it is not open, then, for each base branch no
 candidate owns, asks for PRs of any state with that head branch, until no base is left.
+It never asks about the default branch, so a merged main-to-release PR cannot become the root of every stack.
 It never lists the repository's whole PR history. PRs join by head and base branch; when
 a branch name was reused, the open PR owns it, else the newest. A closed PR is found when
 it sits on the chain's base side; closed PRs branching off an open one are not searched. Only open PRs get a diff and a

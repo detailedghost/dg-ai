@@ -736,6 +736,31 @@ describe("remote mode via the GitHub adapter", () => {
 		expect(tally.stdout).toContain("closed without merging (not reviewed)");
 	});
 
+	test("stack never climbs past the default branch into a merged release PR", () => {
+		const url = (n: number) => PR_URL.replace("12", String(n));
+		const open = [{ number: 12, title: "one", html_url: url(12), state: "open", merged_at: null, head: { ref: "a" }, base: { ref: "main" } }];
+		const release = [{ number: 5, title: "release", html_url: url(5), state: "closed", merged_at: "2026-09-01T00:00:00Z", head: { ref: "main" }, base: { ref: "production" } }];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"repo view"*)
+    echo '{"owner":{"login":"acme"},"name":"widgets","defaultBranchRef":{"name":"main"},"url":"https://github.com/acme/widgets"}'
+    ;;
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify(open)}'
+    ;;
+  *"pulls --method GET"*"head=acme:main"*)
+    echo '${JSON.stringify(release)}'
+    ;;
+  *"pulls --method GET"*)
+    echo '[]'
+    ;;`),
+		);
+		const result = run(["stack", url(12)], { env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log } });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).map((r: { number: number }) => r.number)).toEqual([12]);
+		expect(cliFixtures.readCalls(gh.log).some((call) => call.includes("head=acme:main"))).toBe(false);
+	});
+
 	test("stack from a merged PR fetches it and walks down to the open child", () => {
 		const url = (n: number) => PR_URL.replace("12", String(n));
 		const merged = { number: 13, title: "two", url: url(13), state: "MERGED", headRefName: "b", baseRefName: "main", body: "", mergedAt: "2026-10-01T00:00:00Z" };

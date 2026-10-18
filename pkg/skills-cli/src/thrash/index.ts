@@ -365,6 +365,7 @@ function mergedContextSection(merged: PullRequest[]): string {
 /**
  * Open PRs, the target, and any merged or closed PR whose head is the base of a candidate.
  * Lists only open PRs in bulk, then asks per unowned base branch, so cost does not grow with history.
+ * The default branch is never asked about.
  */
 async function stackCandidates(
 	provider: Awaited<ReturnType<typeof getProviderForUrl>>,
@@ -376,7 +377,12 @@ async function stackCandidates(
 		const pr = await provider.viewPullRequest(prRef(target));
 		pool.set(pr.number, pr);
 	}
-	const asked = new Set<string>();
+	// The default branch is everyone's base; a merged main-to-release PR must not become every stack's root.
+	const defaultBranch = await provider
+		.repoInfo(target.repo)
+		.then((info) => info.defaultBranch)
+		.catch(() => "");
+	const asked = new Set<string>(defaultBranch ? [defaultBranch] : []);
 	for (;;) {
 		const heads = new Set([...pool.values()].map((pr) => pr.headRefName));
 		const bases = [...new Set([...pool.values()].map((pr) => pr.baseRefName))].filter(
