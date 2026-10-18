@@ -83,11 +83,12 @@ marker at `~/.dg/cli-only`.
 
 ## Skills-only install
 
-Copy the skill instruction files and nothing else. This path writes
+Copy the skill instruction files plus the `dg-skills` CLI they call. This path writes
 `plugins/dg/skills` (each `SKILL.md` plus the reference files next to it,
-including `google-sms-cleanup`) into a directory you choose. It does not
-download `dg-skills`, `dg-daemon`, `dg-agent`, or the extension, and it does
-not run the text inside a skill.
+including `google-sms-cleanup`) into a directory you choose, then installs
+`dg-skills` from the latest `skills-v*` release into `${DG_HOME:-~/.dg}/bin`,
+verified against that release's `SHA256SUMS`. It does not download `dg-daemon`,
+`dg-agent`, or the extension, and it does not run the text inside a skill.
 
 From a checkout:
 

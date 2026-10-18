@@ -894,20 +894,31 @@ export function addressFileName(now: Date, sequence: number): string {
 	return `${date}-${time}-${String(sequence).padStart(3, "0")}.md`;
 }
 
-type StackLink = Pick<PullRequest, "number" | "headRefName" | "baseRefName">;
+type StackLink = Pick<PullRequest, "number" | "headRefName" | "baseRefName"> & { state?: PullRequest["state"] };
 
-/** Every PR joined to `number` through head and base branches, root first, each parent before its children. */
+/** Open PRs sort last so they own a reused branch name; older PRs sort before newer ones. */
+function stackOrder(a: StackLink, b: StackLink): number {
+	const openA = a.state === undefined || a.state === "OPEN" ? 1 : 0;
+	const openB = b.state === undefined || b.state === "OPEN" ? 1 : 0;
+	return openA - openB || a.number - b.number;
+}
+
+/**
+ * Every PR joined to `number` through head and base branches, root first, each parent before its children.
+ * Merged and closed PRs may appear; when a branch name was reused, the open PR, else the newest, owns it.
+ */
 export function stackFor<T extends StackLink>(prs: T[], number: number): T[] {
 	const start = prs.find((pr) => pr.number === number);
-	if (!start) throw new Error(`#${number} is not in the list of open pull requests`);
+	if (!start) throw new Error(`#${number} is not in the list of pull requests`);
 	const byHead = new Map<string, T>();
 	const childrenOf = new Map<string, T[]>();
-	for (const pr of [...prs].sort((a, b) => a.number - b.number)) {
+	for (const pr of [...prs].sort(stackOrder)) {
 		byHead.set(pr.headRefName, pr);
 		const siblings = childrenOf.get(pr.baseRefName);
 		if (siblings) siblings.push(pr);
 		else childrenOf.set(pr.baseRefName, [pr]);
 	}
+	for (const children of childrenOf.values()) children.sort((a, b) => a.number - b.number);
 	let root = start;
 	const climbed = new Set<number>([root.number]);
 	for (let parent = byHead.get(root.baseRefName); parent && !climbed.has(parent.number); ) {
@@ -935,6 +946,21 @@ export interface TallyRow {
 	posted?: PostedReview;
 }
 
+/** A stack member that thrash does not review: merged (context only) or closed without merging. */
+export interface StackStatusRow {
+	target: string;
+	stackState: "merged" | "closed";
+}
+
+export const STACK_STATE_LABEL: Record<StackStatusRow["stackState"], string> = {
+	merged: "merged (context only, not reviewed)",
+	closed: "closed without merging (not reviewed)",
+};
+
+export function isStackStatusRow(row: TallyRow | StackStatusRow): row is StackStatusRow {
+	return "stackState" in row;
+}
+
 function tallyPrCell(target: string): string {
 	const match = /\/(?:pull|merge_requests)\/(\d+)/.exec(target);
 	return match ? `#${match[1]}` : target;
@@ -947,10 +973,15 @@ function tallyVerdictCell(row: TallyRow): string {
 }
 
 /** Markdown summary of one or more reviews: PR, link, findings per tier, inline count, verdict. */
-export function renderTallyTable(rows: TallyRow[]): string {
+export function renderTallyTable(rows: Array<TallyRow | StackStatusRow>): string {
 	const header = `| PR | Link | ${TIERS.map((t) => TIER_EMOJI[t]).join(" | ")} | Inline | Verdict |`;
 	const lines = [header, `|${" --- |".repeat(TIERS.length + 4)}`];
 	for (const row of rows) {
+		if (isStackStatusRow(row)) {
+			const blanks = TIERS.map(() => "-").join(" | ");
+			lines.push(`| ${tallyPrCell(row.target)} | [PR](${row.target}) | ${blanks} | - | ${STACK_STATE_LABEL[row.stackState]} |`);
+			continue;
+		}
 		const link = row.posted ? `[review](${row.posted.url})` : `[PR](${row.target})`;
 		const counts = TIERS.map((t) => row.review.tally[t]).join(" | ");
 		const inline = row.posted?.commentCount ?? row.review.comments.length;

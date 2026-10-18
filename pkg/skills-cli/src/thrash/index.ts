@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { scratchPath } from "@dg/common/node";
@@ -8,6 +8,7 @@ import { getProviderForUrl } from "../provider/index";
 import {
 	type ProviderKind,
 	type PrRef,
+	type PullRequest,
 	parsePrNumberArg,
 	parseRepoRef,
 	type RepoRef,
@@ -33,6 +34,7 @@ import {
 	renderAddressFile,
 	renderPreview,
 	renderTallyTable,
+	type StackStatusRow,
 	stackFor,
 	type TallyRow,
 	toPostReviewInput,
@@ -349,35 +351,59 @@ async function cmdPost(args: string[]): Promise<number> {
 	return EXIT.OK;
 }
 
+function stackState(pr: PullRequest): "open" | "merged" | "closed" {
+	if (pr.merged || pr.state === "MERGED") return "merged";
+	return pr.state === "CLOSED" ? "closed" : "open";
+}
+
+function mergedContextSection(merged: PullRequest[]): string {
+	if (merged.length === 0) return "";
+	const lines = merged.map((pr) => `- #${pr.number} ${pr.title} (${pr.url}), ${pr.headRefName} into ${pr.baseRefName}`);
+	return `\n## Merged earlier in this stack (context only, not reviewed)\n\n${lines.join("\n")}\n`;
+}
+
 async function cmdStack(args: string[]): Promise<number> {
 	const arg = positional(args, "stack");
 	const target = await resolveTarget(arg);
 	if (target.mode === "local") throw new Error("stack needs a PR or MR URL");
 	const provider = await getProviderForUrl(target.url);
-	const open = await provider.listPullRequests({ state: "open" }, target.repo);
-	const stack = stackFor(open, target.number);
+	const all = await provider.listPullRequests({ state: "all" }, target.repo);
+	const stack = stackFor(all, target.number);
 	if (!args.includes("--diff")) {
 		printJson(
-			stack.map(({ number, title, url, headRefName, baseRefName }) => ({
-				number,
-				title,
-				url,
-				headRefName,
-				baseRefName,
+			stack.map((pr) => ({
+				number: pr.number,
+				title: pr.title,
+				url: pr.url,
+				headRefName: pr.headRefName,
+				baseRefName: pr.baseRefName,
+				state: stackState(pr),
 			})),
 		);
 		return EXIT.OK;
 	}
+	const merged = stack.filter((pr) => stackState(pr) === "merged");
 	const rows = await Promise.all(
 		stack.map(async (pr) => {
+			const state = stackState(pr);
+			if (state !== "open") {
+				// Merged PRs are context for the open ones; closed ones are reported. Neither is reviewed.
+				const statusPath = scratchPath(TOOL, `${targetSlug({ ...target, number: pr.number })}.stack-status.json`);
+				const status: StackStatusRow = { target: pr.url, stackState: state };
+				writeFileSync(statusPath, JSON.stringify(status, null, 2));
+				return { number: pr.number, url: pr.url, state, reviewed: false, statusPath };
+			}
 			const { diffPath, contextPath, chunks, skipped, stats } = await writeDiff({
 				...target,
 				url: pr.url,
 				number: pr.number,
 			});
+			appendFileSync(contextPath, mergedContextSection(merged));
 			return {
 				number: pr.number,
 				url: pr.url,
+				state,
+				reviewed: true,
 				diffPath,
 				contextPath,
 				chunks,
@@ -393,8 +419,10 @@ async function cmdStack(args: string[]): Promise<number> {
 function cmdTally(args: string[]): number {
 	const reviewPaths = args.filter((a) => !a.startsWith("--"));
 	if (reviewPaths.length === 0) throw new Error("tally requires one or more review JSON files");
-	const rows: TallyRow[] = reviewPaths.map((reviewPath) => {
-		const stored = JSON.parse(readFileSync(reviewPath, "utf8")) as ReviewFile;
+	const rows: Array<TallyRow | StackStatusRow> = reviewPaths.map((reviewPath) => {
+		const parsed = JSON.parse(readFileSync(reviewPath, "utf8")) as ReviewFile | StackStatusRow;
+		if ("stackState" in parsed) return { target: parsed.target, stackState: parsed.stackState };
+		const stored = parsed;
 		const postedPath = reviewPath.replace(/\.review\.json$/, ".posted.json");
 		const posted = postedPath !== reviewPath && existsSync(postedPath);
 		return {
@@ -430,7 +458,7 @@ const command = defineCommand({
 		},
 		stack: {
 			description:
-				"List every open PR or MR in the target's stack, root first, as JSON; --diff also writes each diff and prints its paths",
+				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed",
 			args: ["target"],
 			run: cmdStack,
 		},

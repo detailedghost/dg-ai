@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
-# Skills-only (instruction files, no release binaries, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
+# Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
 # Skills-only copies plugins/dg/skills into $env:DG_SKILLS_DEST
@@ -48,7 +48,7 @@ function Copy-DgSkillTree {
 	if (-not $found) { throw "dg-skills: $Source has no skill directories" }
 	$manifest | Sort-Object | ForEach-Object { Write-Host $_ }
 	Write-Host "Installed $($manifest.Count) skill files at $Destination."
-	Write-Host "Skills-only install: no binaries were fetched and no skill content was executed."
+	Write-Host "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
 }
 
 function Get-DgSkillsSource {
@@ -76,7 +76,10 @@ if ($env:DG_SKILLS_ONLY -eq "1") {
 		elseif ($env:DG_HOME) { Join-Path $env:DG_HOME "skills" }
 		else { Join-Path $env:USERPROFILE ".dg\skills" }
 	Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
-	exit 0
+	if ($env:DG_SKILLS_NO_CLI -eq "1") {
+		Write-Host "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
+		exit 0
+	}
 }
 
 $repo = "detailedghost/dg-ai"
@@ -149,6 +152,9 @@ function Convert-DgInstallLine {
 	}
 	return $Line
 }
+
+# Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
+if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
 
 $env:DG_SKILLS_BOOTSTRAP = "1"
 if ($env:DG_CLI_ONLY -eq "1") {

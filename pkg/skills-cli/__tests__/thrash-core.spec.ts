@@ -431,7 +431,57 @@ describe("stackFor", () => {
 	});
 
 	test("a number not in the list throws", () => {
-		expect(() => stackFor(OPEN, 7)).toThrow(/#7/);
+		expect(() => stackFor(OPEN, 7)).toThrow("#7 is not in the list of pull requests");
+	});
+
+	const st = (number: number, headRefName: string, baseRefName: string, state: "OPEN" | "MERGED" | "CLOSED") => ({
+		number,
+		headRefName,
+		baseRefName,
+		state,
+	});
+
+	test("a merged PR mid-stack keeps the chain joined, so the open child is found from the root", () => {
+		const prs = [st(1, "a", "main", "OPEN"), st(2, "b", "a", "MERGED"), st(3, "c", "b", "OPEN")];
+		for (const start of [1, 2, 3]) {
+			expect(stackFor(prs, start).map((p) => p.number)).toEqual([1, 2, 3]);
+		}
+	});
+
+	test("an open PR owns a reused branch name over an older merged or newer closed one", () => {
+		const prs = [
+			st(5, "feature", "main", "MERGED"),
+			st(8, "feature", "main", "OPEN"),
+			st(9, "feature", "main", "CLOSED"),
+			st(10, "next", "feature", "OPEN"),
+		];
+		expect(stackFor(prs, 10).map((p) => p.number)).toEqual([8, 10]);
+	});
+
+	test("without an open owner, the newest PR owns a reused branch name, whatever the input order", () => {
+		const merged5 = st(5, "feature", "main", "MERGED");
+		const merged7 = st(7, "feature", "main", "MERGED");
+		const child = st(10, "next", "feature", "OPEN");
+		expect(stackFor([merged5, merged7, child], 10).map((p) => p.number)).toEqual([7, 10]);
+		expect(stackFor([merged7, merged5, child], 10).map((p) => p.number)).toEqual([7, 10]);
+	});
+
+	test("a PR without a state counts as open and owns its branch over a newer merged one", () => {
+		const legacy = { number: 3, headRefName: "feature", baseRefName: "main" };
+		const prs = [st(9, "feature", "main", "MERGED"), legacy, st(10, "next", "feature", "OPEN")];
+		expect(stackFor(prs, 10).map((p) => p.number)).toEqual([3, 10]);
+		const reversed = [legacy, st(9, "feature", "main", "MERGED"), st(10, "next", "feature", "OPEN")];
+		expect(stackFor(reversed, 10).map((p) => p.number)).toEqual([3, 10]);
+	});
+
+	test("an open PR owns its branch over a newer merged one listed after it", () => {
+		const prs = [st(3, "feature", "main", "OPEN"), st(9, "feature", "main", "MERGED"), st(10, "next", "feature", "OPEN")];
+		expect(stackFor(prs, 10).map((p) => p.number)).toEqual([3, 10]);
+	});
+
+	test("children stay in number order whatever their state", () => {
+		const prs = [st(1, "a", "main", "OPEN"), st(2, "b", "a", "OPEN"), st(3, "c", "a", "CLOSED"), st(4, "d", "a", "MERGED")];
+		expect(stackFor(prs, 1).map((p) => p.number)).toEqual([1, 2, 3, 4]);
 	});
 });
 
@@ -454,6 +504,17 @@ describe("renderTallyTable", () => {
 	test("a degraded post names the refused verdict", () => {
 		const posted = { url: `${target}#r1`, verdict: "comment" as const, degraded: true, commentCount: 2 };
 		expect(renderTallyTable([{ target, review, posted }])).toContain("| Comment (approve refused) |");
+	});
+
+	test("stack status rows say merged context or closed, with no counts", () => {
+		const table = renderTallyTable([
+			{ target, stackState: "merged" },
+			{ target: target.replace("12", "13"), stackState: "closed" },
+		]);
+		expect(table.split("\n")[1]).toBe(`|${" --- |".repeat(9)}`);
+		expect(table).toContain(`| #12 | [PR](${target}) | - | - | - | - | - | - | merged (context only, not reviewed) |`);
+		expect(table).toContain("| #13 |");
+		expect(table).toContain("| closed without merging (not reviewed) |");
 	});
 
 	test("an unposted row links the PR and says so", () => {

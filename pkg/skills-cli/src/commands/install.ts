@@ -209,6 +209,11 @@ async function installCli(): Promise<void> {
 	removeRetiredBinaries();
 }
 
+/** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
+async function installSkillsCli(): Promise<void> {
+	await installBinary(BINARIES[0], await listReleases());
+}
+
 async function installCliOnly(): Promise<void> {
 	const releases = await listReleases();
 	await installBinary(BINARIES[0], releases);
@@ -328,6 +333,7 @@ export function registerInstall(program: Command): void {
 						repoRoot: repoRoot(),
 					});
 					console.log(skillsOnlyReport(result));
+					await installSkillsCli();
 					return;
 				}
 				if (opts.cliOnly) return installCliOnly();

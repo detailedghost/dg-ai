@@ -1,7 +1,9 @@
 /**
  * Skills-only install: the real command copies plugins/dg/skills into a temp
- * directory, fetches nothing, and does not execute skill content.
+ * directory, does not execute skill content, and fetches only the dg-skills CLI
+ * (checksum-verified), never dg-daemon, dg-agent or the extension.
  */
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
 	chmodSync,
@@ -22,7 +24,7 @@ const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
 const SUMMARY =
-	"Skills-only install: no binaries were fetched and no skill content was executed.";
+	"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).";
 
 const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
 const REPO_SKILL_FILES = readdirSync(REPO_SKILLS, { withFileTypes: true })
@@ -77,18 +79,60 @@ async function run(
 	return { code, stdout, stderr };
 }
 
-function writePreload(dir: string, log: string): string {
+const SKILLS_BINARY = "#!/bin/sh\necho fake dg-skills\n";
+
+function skillsAssetName(): string {
+	const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+	const cpu = process.arch === "arm64" ? "arm64" : "x64";
+	return `dg-skills-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
+}
+
+function sha256(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
+
+/** A fetch that serves one skills-v release (plus daemon, agent and ext releases) and logs every URL. */
+function writePreload(dir: string, log: string, opts: { sums?: string } = {}): string {
+	const asset = skillsAssetName();
+	const base = "https://github.com/detailedghost/dg-ai/releases/download";
+	const releases = [
+		{ tag_name: "skills-v9.9.9", draft: false, assets: [
+			{ name: asset, browser_download_url: `${base}/skills-v9.9.9/${asset}` },
+			{ name: "SHA256SUMS", browser_download_url: `${base}/skills-v9.9.9/SHA256SUMS` },
+		] },
+		{ tag_name: "daemon-v9.9.9", draft: false, assets: [{ name: asset.replace("dg-skills", "dg-daemon"), browser_download_url: `${base}/daemon-v9.9.9/x` }] },
+		{ tag_name: "agent-v9.9.9", draft: false, assets: [{ name: asset.replace("dg-skills", "dg-agent"), browser_download_url: `${base}/agent-v9.9.9/x` }] },
+		{ tag_name: "ext-v9.9.9", draft: false, assets: [{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/ext-v9.9.9/x` }] },
+	];
+	const sums = opts.sums ?? `${sha256(SKILLS_BINARY)}  ${asset}\n`;
 	const path = join(dir, "preload.ts");
 	writeFileSync(
 		path,
 		`import { appendFileSync } from "node:fs";
-globalThis.fetch = (input: unknown) => {
-  appendFileSync(${JSON.stringify(log)}, String(input) + "\\n");
-  throw new Error("skills-only install must not fetch " + String(input));
-};
+const releases = ${JSON.stringify(releases)};
+globalThis.fetch = (async (input: unknown) => {
+  const url = String(input);
+  appendFileSync(${JSON.stringify(log)}, url + "\\n");
+  if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
+  if (url.endsWith("/skills-v9.9.9/${asset}")) return new Response(${JSON.stringify(SKILLS_BINARY)});
+  if (url.endsWith("/skills-v9.9.9/SHA256SUMS")) return new Response(${JSON.stringify(sums)});
+  throw new Error("skills-only install must not fetch " + url);
+}) as typeof fetch;
 `,
 	);
 	return path;
+}
+
+function fetchedUrls(log: string): string[] {
+	return readFileSync(log, "utf8").split("\n").filter(Boolean);
+}
+
+function expectOnlySkillsCliFetched(log: string): void {
+	const urls = fetchedUrls(log);
+	expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
+	expect(urls.some((url) => url.endsWith(`/skills-v9.9.9/${skillsAssetName()}`))).toBe(true);
+	expect(urls.some((url) => url.endsWith("/skills-v9.9.9/SHA256SUMS"))).toBe(true);
+	expect(urls.filter((url) => /daemon-v|agent-v|ext-v/.test(url))).toEqual([]);
 }
 
 function thrashPersonaPath(skillsDest: string): string {
@@ -100,6 +144,7 @@ function expectReport(
 	dest: string,
 	files: string[],
 	persona?: string,
+	trailer: string[] = [],
 ): void {
 	const lines = stdout.trim().split("\n");
 	const summaryAt = lines.findIndex((line) => line.startsWith("Installed ") && line.includes("skill files"));
@@ -111,7 +156,7 @@ function expectReport(
 		next += 1;
 	}
 	expect(lines[next]).toBe(SUMMARY);
-	expect(lines).toHaveLength(next + 1);
+	expect(lines.slice(next + 1)).toEqual(trailer);
 }
 
 function expectExactCopy(sourceRoot: string, dest: string, files: string[]): void {
@@ -149,18 +194,54 @@ function writeProbe(skills: string, sentinelDir: string): string[] {
 	].sort();
 }
 
-function writeCurlStub(bin: string, log: string): void {
+/**
+ * A curl that serves one skills-v release for bootstrap.sh, verifies nothing itself, and logs
+ * every call. The source archive fails (exit 99) so a fetch outside a checkout is visible.
+ * The served binary writes RAN_MARKER if anything executes it.
+ */
+function writeCurlStub(bin: string, log: string): string {
 	mkdirSync(bin, { recursive: true });
+	const os = process.platform === "darwin" ? "macos" : "linux";
+	const cpu = process.arch === "arm64" ? "arm64" : "x64";
+	const asset = `dg-skills-${os}-${cpu}`;
+	const binary = `#!/bin/sh\ntouch "$RAN_MARKER"\n`;
+	const url = `https://github.com/detailedghost/dg-ai/releases/download/skills-v9.9.9/${asset}`;
+	const releases = JSON.stringify([
+		{ tag_name: "skills-v9.9.9", draft: false, assets: [
+			{ name: asset, browser_download_url: url },
+			{ name: "SHA256SUMS", browser_download_url: url.replace(asset, "SHA256SUMS") },
+		] },
+	]);
+	const store = join(bin, "store");
+	mkdirSync(store, { recursive: true });
+	writeFileSync(join(store, "releases.json"), releases);
+	writeFileSync(join(store, "binary"), binary);
+	writeFileSync(join(store, "SHA256SUMS"), `${createHash("sha256").update(binary).digest("hex")}  ${asset}\n`);
 	const curl = join(bin, "curl");
 	writeFileSync(
 		curl,
-		`#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nexit 99\n`,
+		`#!/bin/sh
+printf '%s\\n' "$*" >> ${JSON.stringify(log)}
+out=""; prev=""; url=""
+for a in "$@"; do
+  if [ "$prev" = "-o" ]; then out="$a"; fi
+  url="$a"; prev="$a"
+done
+store=${JSON.stringify(store)}
+case "$url" in
+  *"/releases?"*) cat "$store/releases.json" ;;
+  *SHA256SUMS) cat "$store/SHA256SUMS" > "\${out:-/dev/stdout}" ;;
+  *"/skills-v9.9.9/"*) cat "$store/binary" > "\${out:-/dev/stdout}" ;;
+  *) exit 99 ;;
+esac
+`,
 	);
 	chmodSync(curl, 0o755);
+	return binary;
 }
 
 describe("dg-skills install --skills-only", () => {
-	test("installs the repository skill files, fetches nothing, and runs nothing", async () => {
+	test("installs the repository skill files and only the verified dg-skills CLI, and runs nothing", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-e2e-"));
 		const dest = join(directory, "skills");
 		const fetchLog = join(directory, "fetch.log");
@@ -186,7 +267,9 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest));
+			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), [
+				`dg-skills installed v9.9.9 at ${join(home, "bin", "dg-skills")}`,
+			]);
 			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
 			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
 				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
@@ -195,8 +278,10 @@ describe("dg-skills install --skills-only", () => {
 				"google-sms-cleanup",
 			);
 			expect(existsSync(join(dest, "README.md"))).toBe(false);
-			expect(readFileSync(fetchLog, "utf8")).toBe("");
-			expect(existsSync(join(home, "bin"))).toBe(false);
+			expectOnlySkillsCliFetched(fetchLog);
+			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toBe(SKILLS_BINARY);
+			expect(readFileSync(join(home, "bin", ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
+			expect(readdirSync(join(home, "bin")).sort()).toEqual([".dg-skills.version", "dg-skills"]);
 			expect(readFileSync(join(home, "cli-only"), "utf8")).toBe("keep");
 			expect(filesUnder(dest).some((file) => /dg-skills|dg-daemon|dg-agent|\.zip$/.test(file))).toBe(
 				false,
@@ -209,16 +294,20 @@ describe("dg-skills install --skills-only", () => {
 	test("defaults the destination to DG_HOME/skills and can omit --repo inside the checkout", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-default-"));
 		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
 		try {
 			const result = await run(
-				["bun", ENTRY, "install", "--skills-only"],
+				["bun", "--preload", writePreload(directory, fetchLog), ENTRY, "install", "--skills-only"],
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
 			expect(filesUnder(join(home, "skills"))).toEqual(REPO_SKILL_FILES);
 			expect(readFileSync(join(home, "agents", "thrash.md"), "utf8")).toContain("thrash");
 			expect(existsSync(join(home, ".dg", "skills"))).toBe(false);
-			expect(existsSync(join(home, "bin"))).toBe(false);
+			expect(existsSync(join(home, ".dg", "bin"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(true);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -230,9 +319,11 @@ describe("dg-skills install --skills-only", () => {
 		const dest = join(directory, "dest");
 		const skills = join(repo, "plugins", "dg", "skills");
 		const files = writeProbe(skills, directory);
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
 		try {
 			const result = await run(
-				["bun", ENTRY, "install", "--skills-only", "--repo", repo, "--dest", dest],
+				["bun", "--preload", writePreload(directory, fetchLog), ENTRY, "install", "--skills-only", "--repo", repo, "--dest", dest],
 				childEnv(join(directory, "home")),
 			);
 			expect(result.code).toBe(0);
@@ -241,6 +332,46 @@ describe("dg-skills install --skills-only", () => {
 			expect(existsSync(join(dest, "probe-exec", "executed-by-skill.txt"))).toBe(false);
 			expect(existsSync(join(skills, "probe-exec", "executed-by-skill.txt"))).toBe(false);
 			expect(existsSync(join(dest, "pwned.txt"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a dg-skills CLI whose checksum does not match SHA256SUMS", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-sums-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		try {
+			const preload = writePreload(directory, fetchLog, { sums: `${"0".repeat(64)}  ${skillsAssetName()}\n` });
+			const result = await run(
+				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
+				childEnv(home),
+			);
+			expect(result.code).toBe(0);
+			expect(result.stderr).toContain(`checksum mismatch for ${skillsAssetName()} in v9.9.9`);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, "bin", ".dg-skills.version"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a SHA256SUMS that omits the dg-skills asset", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-nosum-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		try {
+			const preload = writePreload(directory, fetchLog, { sums: `${"a".repeat(64)}  other-asset\n` });
+			const result = await run(
+				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
+				childEnv(home),
+			);
+			expect(result.stderr).toContain(`SHA256SUMS in v9.9.9 has no entry for ${skillsAssetName()}`);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -291,28 +422,38 @@ describe("skills-only docs", () => {
 });
 
 describe("bootstrap.sh --skills-only", () => {
-	test("copies the repository skills and does not call curl", async () => {
+	test("copies the repository skills, then installs only the verified dg-skills CLI", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-"));
 		const dest = join(directory, "skills");
 		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "bin");
-		writeCurlStub(bin, curlLog);
+		const bin = join(directory, "stub");
+		const binary = writeCurlStub(bin, curlLog);
+		const home = join(directory, "home");
+		const marker = join(directory, "ran");
 		try {
 			const result = await run(
 				["sh", BOOTSTRAP, "--skills-only"],
-				childEnv(join(directory, "home"), {
+				childEnv(home, {
 					DG_SKILLS_DEST: dest,
 					PATH: `${bin}:${process.env.PATH}`,
+					RAN_MARKER: marker,
 				}),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest));
+			const installedAt = join(home, "bin", "dg-skills");
+			const trailer = [`dg-skills installed at ${installedAt}`, `Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`];
+			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), trailer);
 			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
 			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
 				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
 			);
-			expect(existsSync(curlLog)).toBe(false);
-			expect(existsSync(join(directory, "home", "bin", "dg-skills"))).toBe(false);
+			expect(readFileSync(installedAt, "utf8")).toBe(binary);
+			expect(readFileSync(join(home, "bin", ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
+			expect(existsSync(marker)).toBe(false);
+			const calls = readFileSync(curlLog, "utf8");
+			expect(calls).toContain("/releases?");
+			expect(calls).toContain("SHA256SUMS");
+			expect(calls).not.toMatch(/daemon|agent|ext-v|archive/);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -323,9 +464,10 @@ describe("bootstrap.sh --skills-only", () => {
 		const skills = join(directory, "skills-src");
 		const dest = join(directory, "out");
 		const files = writeProbe(skills, directory);
-		const bin = join(directory, "bin");
+		const bin = join(directory, "stub");
 		const curlLog = join(directory, "curl.log");
 		writeCurlStub(bin, curlLog);
+		const marker = join(directory, "ran");
 		try {
 			const result = await run(
 				["sh", BOOTSTRAP],
@@ -334,13 +476,42 @@ describe("bootstrap.sh --skills-only", () => {
 					DG_SKILLS_SOURCE: skills,
 					DG_SKILLS_DEST: dest,
 					PATH: `${bin}:${process.env.PATH}`,
+					RAN_MARKER: marker,
 				}),
 			);
 			expect(result.code).toBe(0);
 			expectExactCopy(skills, dest, files);
 			expect(existsSync(join(directory, "sentinel.txt"))).toBe(false);
 			expect(existsSync(join(dest, "probe-exec", "executed-by-skill.txt"))).toBe(false);
+			expect(existsSync(marker)).toBe(false);
+			expect(existsSync(join(directory, "home", "bin", "dg-skills"))).toBe(true);
+			expect(readFileSync(curlLog, "utf8")).not.toContain("archive");
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("DG_SKILLS_NO_CLI=1 keeps it an offline copy with no curl call", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-nocli-"));
+		const dest = join(directory, "skills");
+		const curlLog = join(directory, "curl.log");
+		const bin = join(directory, "stub");
+		writeCurlStub(bin, curlLog);
+		try {
+			const result = await run(
+				["sh", BOOTSTRAP, "--skills-only"],
+				childEnv(join(directory, "home"), {
+					DG_SKILLS_DEST: dest,
+					DG_SKILLS_NO_CLI: "1",
+					PATH: `${bin}:${process.env.PATH}`,
+				}),
+			);
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest), [
+				"Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only.",
+			]);
 			expect(existsSync(curlLog)).toBe(false);
+			expect(existsSync(join(directory, "home", "bin"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -350,7 +521,7 @@ describe("bootstrap.sh --skills-only", () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-remote-"));
 		const script = join(directory, "bootstrap.sh");
 		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "bin");
+		const bin = join(directory, "stub");
 		writeFileSync(script, readFileSync(BOOTSTRAP));
 		writeCurlStub(bin, curlLog);
 		try {

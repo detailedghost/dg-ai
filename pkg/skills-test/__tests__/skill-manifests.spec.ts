@@ -113,7 +113,7 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	const cliSkills = skillsMentioning(".dg/bin/dg-skills");
+	const cliSkills = skillsMentioning("/bin/dg-skills");
 
 	test("at least one skill invokes the dg-skills binary", () => {
 		expect(cliSkills.length).toBeGreaterThan(0);

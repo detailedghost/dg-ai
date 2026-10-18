@@ -53,3 +53,11 @@ they were.
   Bun can install. The end-to-end test installs this repository's skill tree
   through the TypeScript command and through `bootstrap.sh`, and both results
   have to be the same paths.
+
+## Amendment (2026-10-18)
+
+Skills-only now also installs the `dg-skills` CLI from the latest `skills-v*` release, because
+the skills call it. It uses the same download and SHA256SUMS check as the default path
+(`fetchCliBinary` in the CLI, the shared download block in `bootstrap.sh` and `bootstrap.ps1`)
+and installs into `${DG_HOME:-~/.dg}/bin`. It still fetches no `dg-daemon`, `dg-agent` or
+extension, never runs `dg-skills install`, and never executes skill content.
