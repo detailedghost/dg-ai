@@ -60,6 +60,6 @@ If the range holds no commits, say that nothing has merged since the last releas
    - The card shows the product logo, the title "What's new in <product>", the upcoming version (the next version that the release workflow will compute), and a short list of the user-visible changes in the same order as the video.
    - Show the card for about 6 seconds with a short fade. Then use ffmpeg to join the demo parts after it into one video.
    - With `-n`, captions and cards must not show PR numbers such as "#1234" or technical terms.
-   - Run `/unslop` on all card and caption text before rendering.
+   - Before rendering, edit all card and caption text. Cut filler openers, hedges, and stock phrases such as "In today's fast-paced world". Use short, concrete, active sentences.
 
 If a range or release target cannot be established from repository evidence, draft the parts that are known and ask for the missing boundary.
