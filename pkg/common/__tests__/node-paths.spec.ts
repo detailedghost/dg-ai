@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, posix, resolve, sep, win32 } from "node:path";
-import { resolveDgPaths, runCapture } from "@dg/common/node";
+import { resolveDgPaths, runCapture, runCaptureBytes } from "@dg/common/node";
 
 const SRC_DIR = resolve(import.meta.dir, "../src");
 const BARREL_ENTRY = join(SRC_DIR, "index.ts");
@@ -187,6 +187,74 @@ describe("resolveDgPaths", () => {
 });
 
 describe("runCapture", () => {
+	it("distinguishes ignored stdin from the default closed pipe", async () => {
+		const script =
+			'import { fstatSync, readFileSync } from "node:fs"; console.log(JSON.stringify({device: fstatSync(0).isCharacterDevice(), input: readFileSync(0,"utf8")}));';
+		const ignored = await runCapture(process.execPath, ["-e", script], {
+			stdin: null,
+			timeoutMs: 2000,
+		});
+		const closedPipe = await runCapture(process.execPath, ["-e", script], {
+			timeoutMs: 2000,
+		});
+		expect(ignored.status).toBe(0);
+		expect(closedPipe.status).toBe(0);
+		expect(JSON.parse(ignored.stdout)).toEqual({ device: true, input: "" });
+		expect(JSON.parse(closedPipe.stdout)).toEqual({ device: false, input: "" });
+	});
+
+	it("preserves arbitrary bytes in both streams when buffer capture is requested", async () => {
+		const stdout = Buffer.from([0xff, 0, 0x80, 32, 10]);
+		const stderr = Buffer.from([0xfe, 0, 0x81, 9, 10]);
+		const result = await runCaptureBytes(process.execPath, [
+			"-e",
+			`
+await new Promise((resolve) => process.stdout.write(Buffer.from(${JSON.stringify([...stdout])}), resolve));
+await new Promise((resolve) => process.stderr.write(Buffer.from(${JSON.stringify([...stderr])}), resolve));
+process.exitCode = 7;
+`,
+		]);
+		expect(result.status).toBe(7);
+		expect(result.stdout).toEqual(stdout);
+		expect(result.stderr).toEqual(stderr);
+	});
+
+	it("decodes UTF-8 after collecting bytes split across child writes", async () => {
+		const result = await runCapture(process.execPath, [
+			"-e",
+			`
+process.stdout.write(Buffer.from([0xe2]));
+await Bun.sleep(40);
+process.stdout.write(Buffer.from([0x82, 0xac, 32, 10]));
+`,
+		]);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toBe("€ \n");
+	});
+
+	it("keeps the child's result when it exits without reading a large stdin", () => {
+		const module = join(NODE_DIR_PREFIX, "process.ts");
+		const probe = Bun.spawnSync(
+			[
+				process.execPath,
+				"-e",
+				`
+import { runCapture } from ${JSON.stringify(module)};
+const result = await runCapture(process.execPath, ["-e", "process.exit(0)"], {stdin: "x".repeat(8 * 1024 * 1024)});
+console.log(JSON.stringify({status: result.status, stdout: result.stdout, stderr: result.stderr}));
+`,
+			],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
+		expect(probe.stderr.toString()).toBe("");
+		expect(probe.exitCode).toBe(0);
+		expect(JSON.parse(probe.stdout.toString())).toEqual({
+			status: 0,
+			stdout: "",
+			stderr: "",
+		});
+	});
+
 	it("returns a non-zero status with stdout/stderr captured separately, without throwing", async () => {
 		const result = await runCapture("sh", [
 			"-c",

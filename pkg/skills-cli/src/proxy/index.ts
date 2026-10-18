@@ -1,0 +1,14 @@
+// Public surface of the /proxy helper module. cli.ts and any future
+// importer should only ever reach into this file, not the internals.
+
+export { BACKENDS } from "./backends";
+export type {
+	Backend,
+	BuildArgsInput,
+	Install,
+	ParsedResult,
+} from "./backends/types";
+export { classifyFailure } from "./likely-cause";
+export { resolvePersona, withPersona } from "./persona";
+export { checkPreflight } from "./preflight";
+export { proxyDir, runBackend } from "./spawn";

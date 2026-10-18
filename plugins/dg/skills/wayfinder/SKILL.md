@@ -3,6 +3,20 @@ name: wayfinder
 description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /kick or /grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
 ---
 
+Resolve the CLI before using the commands below:
+
+```bash
+DG="$HOME/.dg/bin/dg-skills"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
+```
+
 # /wayfinder — Chart the Way, Then Walk It
 
 A loose idea is too big for one session and wrapped in fog. Find the way to the **destination** before you build. A **map** lists the decisions made and the fog left. **Tickets** are single decisions, each sized for one session. Resolve one ticket per session until no ticket and no fog remain. Then hand off.
@@ -42,7 +56,7 @@ Wayfinder ends where `/kick` starts. Never build inside a map.
 
 ## Where the map lives
 
-`$(stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `stash`. Never build it by hand. Commit the map with the repo like a spec bundle. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$("$DG" stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `"$DG" stash`. Never build it by hand. Commit the map with the repo like a spec bundle. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 

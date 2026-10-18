@@ -61,6 +61,112 @@ binaries. From the repo root, `mise run install:skills` runs
 `filesToInstall` in `@dg/common`; the copy is `installSkillTree` in
 `@dg/common/node`. See [ADR 0001](adr/0001-skills-only-install.md).
 
+### Wave 2a CLI commands
+
+These commands run from the installed `dg-skills` binary without Bun, the
+extension, or dg-daemon. CLI-only installation includes the stash, proxy, and
+clipboard skills. `vcs-provider` has no separate skill. Skills-only installation
+copies instructions and references; it does not install these runtime tools.
+
+#### Artifact paths and clipboard capture
+
+`dg-skills stash [flags] <tool> [name]` prints one absolute path and creates its
+parent (the directory itself when you omit the name). Never construct the
+bucket paths yourself.
+
+| Scope | Flag | Path |
+| --- | --- | --- |
+| Scratch | `--scratch` (default) | `$AI_SCRATCH_DIR/<tool>/<cwd-hash>`; default root `/tmp/ai` |
+| State | `-s`, `--state` | `$AI_STATE_DIR/<tool>/<project-hash>`; default root `${XDG_STATE_HOME:-$HOME/.local/state}/ai` |
+| Current worktree | `-a`, `--agents` | `<worktree>/.agents/<tool>` |
+| Main worktree | `-m`, `--main` | `<main worktree>/.agents/<tool>` |
+
+`-G`/`--global` removes the scratch/state bucket; repository scopes reject it.
+`-u`/`--unique` generates a name and treats a supplied name as its suffix.
+`-r`/`--root` prints only the root without requiring a tool.
+`-C`/`--dir <dir>` resolves paths for another directory. Git supplies worktree
+identity; repository scopes require a Git checkout. Usage errors exit 1.
+
+```bash
+dg-skills stash --state review handoff.md
+dg-skills stash --main review findings.md
+dg-skills clipboard-image "$(dg-skills stash -a -u clipboard .png)"
+```
+
+`clipboard-image` needs `wslpath` plus `powershell.exe` on WSL, `wl-paste` on
+Wayland, or `xclip` on X11. Its explicit destination saves a PNG; `--scratch`
+keeps a temporary PNG and prints its path; `-` emits PNG bytes. Without arguments
+it saves under `.agents/clipboard`. The clipboard skill chooses its default
+unique repository path through stash instead. Neither command needs a legacy
+helper on PATH.
+
+Scratch/state tool and bucket directories use mode `0700`; proxy transcripts
+use exclusive creation with mode `0600` before any backend starts. On POSIX,
+foreign-owned or group/other-writable roots and managed descendants fail closed;
+managed descendants also reject symlinks. A configured root may itself be a
+symlink only when its ownership, resolved target, and ancestors pass the safety
+checks. Choose owned `AI_SCRATCH_DIR` and `AI_STATE_DIR` roots when an existing
+root is unsafe; do not change a foreign directory's ownership or permissions.
+Windows retains directory/symlink checks but cannot enforce POSIX ownership.
+
+#### VCS provider
+
+Run inside a Git checkout with an origin remote and the matching CLI installed
+and authenticated: `gh` for GitHub, `glab` for GitLab. Detection recognizes
+`github.com` and `gitlab.com`; set `AI_VCS_GITLAB_HOSTS` to a comma-separated
+self-hosted GitLab host list or `AI_VCS_PROVIDER=github|gitlab` to select a
+provider explicitly. CLI overrides `GH_BIN` and `GLAB_BIN` select executables.
+
+| Subcommand after `dg-skills vcs-provider` | Result or options |
+| --- | --- |
+| `detect` | Provider/repository JSON; always exits 0, with nulls and a reason when unresolved |
+| `capabilities` | Provider capabilities; fails when no provider resolves |
+| `auth` | Exit 0 when authenticated, nonzero otherwise; no success output |
+| `list-prs` | JSON array; `--limit N`, `--head <branch>` |
+| `list-issues` | Open issues as JSON; `--limit N` |
+| `view-issue <number>` | One normalized issue |
+| `view-pr <number>` | One normalized pull request or merge request |
+| `list-threads <number>` | Unresolved review threads |
+| `create-pr` | `--title`, `--base`, `--head`, `--body` required; optional `--draft` |
+| `merged-pr-for-branch <branch>` | First matching merged request, or JSON null |
+
+This command ports the provider library into the compiled CLI; channel-review's
+verdict readers remain separate. Configure GitLab AI review identities explicitly
+with `VCS_GITLAB_AI_REVIEW_BOT`; there is no personal reviewer default.
+
+#### Proxy
+
+`dg-skills proxy <backend> --prompt "<task>"` delegates to one of six external
+executables: `codex`, `copilot`, `pi`, `opencode`, `cortex`, or `grok`. The chosen
+backend needs its own installation, authentication, and service access. A missing
+backend returns installation guidance; the CLI never silently switches backend.
+`--list-backends` lists identities without starting one. Use `--prompt-file`
+instead of `--prompt` for a saved task, and `--cwd`, `--model`, or `--effort` for
+explicit overrides. `--resume <id>` continues a backend session.
+
+`--subagent <name>` reads a persona Markdown file.
+`--spec <plan-file-or-directory> --slice <id>` reads the plan's assigned primary
+agent. Persona lookup uses `DG_PERSONAS_DIR`, then `DG_AGENTS_DIR`, then the
+personal `.claude/agents` directory under the user's home. Resume execution does
+not inject a persona again. These helpers ship inside proxy and need no public
+spec command.
+
+```bash
+dg-skills proxy codex --plan --prompt-file task.md --subagent reviewer
+```
+
+`--plan` saves the briefed prompt and prints `{plan, backend, planFile, command}`.
+Execute the exact quoted `command` to launch a detached job, then use
+`dg-skills proxy background status <id>` or `list`. `update <id> <context>` queues
+context or resumes a completed session; `cancel <id>` stops the owned job.
+The packaged background commands also include `run`, `drain`, `kill`, and `prune`;
+they work without the later public bg command. Detached launch needs POSIX `sh`;
+native Windows execution still needs validation. Result JSON includes the log path,
+exit code, and backend session ID when available. See the
+[proxy skill](../plugins/dg/skills/proxy/SKILL.md) for failure and resume handling.
+`DG_SKILLS_DIR` relocates the real canonical skill tree for shared resource
+lookup; compiled code must not use virtual Bun module paths for external files.
+
 ### pkg/dg-daemon (chat daemon)
 
 ```bash
@@ -188,12 +294,27 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 | `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
 | skill tree | the repository itself | tracked in `master` |
 
-The four released packages and both plugin manifests share version 1.14.0.
+The four released packages and both plugin manifests share version 1.15.0.
 Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
+`@dg/common` stays at 1.0.0; it is not part of this matched release set.
 Each workflow publishes its own tag. `dg-skills install` refreshes the extension
 zip, `dg-skills`, `dg-daemon` and `dg-agent` in one pass, skipping any that is already
 current. A platform with no published binary warns and continues rather than
 failing the whole install.
+
+## Manual post-merge cutover
+
+After each wave merges, refresh the plugin and install the published matched
+release (`dg-skills install`, or `dg-skills install --cli-only`). Smoke the
+migrated commands from outside the checkout with installed skill resources and
+without legacy helpers on PATH. Only then manually update personal shims and
+references and remove duplicate local skill copies.
+
+The migration does not edit legacy files, personal settings, permission rules,
+or installed plugin caches. Review narrow host command permissions separately;
+retain existing approval semantics, including separate approval for `pw code`.
+Do not broadly allowlist the binary to bypass those prompts. Later-wave public
+commands and their skills remain separate dependencies until their ports land.
 
 ## Cross-package integration checklist
 
