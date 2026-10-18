@@ -8,17 +8,18 @@
 		"./lib": "./src/utils/lib.ts"
 	},
 	"scripts": {
-		"build": "bun build src/index.ts --compile --outfile dist/dg-skills",
+		"build": "bun build.ts",
 		"lint": "tsc --noEmit",
 		"test": "bun test"
 	},
 	"dependencies": {
 		"@dg/channel-review": "workspace:*",
 		"@dg/common": "workspace:*",
+		"@dg/dg-agent": "workspace:*",
+		"@dg/inbox": "workspace:*",
 		"commander": "^14.0.0",
 		"marked": "^16.0.0",
-		"@dg/inbox": "workspace:*",
-		"@dg/dg-agent": "workspace:*"
+		"playwright-core": "1.64.1"
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { channelReviewPaths } from "../src/paths";
 import { loadConfig } from "../src/config";
 import { RateLimitError } from "../src/sinks/errors";
 import { createErrorPoller, issueKey } from "../src/sinks/poller";
@@ -32,13 +32,13 @@ function setup(errorWatch: Record<string, unknown> = { enabled: true }) {
 		env: home.env,
 	});
 	const clock = createFixedClock();
-	const statePath = join(home.dir, "state.json");
+	const paths = channelReviewPaths("dev", { env: home.env });
 	const sink = createFakeSink();
 	const handed: [string, string][] = [];
 	const sleeps: number[] = [];
 	const log = createRecordedLog();
 	function build() {
-		const state = createStateStore(statePath, clock);
+		const state = home.track(createStateStore(paths, clock));
 		const poller = createErrorPoller({
 			config,
 			sinks: [sink],

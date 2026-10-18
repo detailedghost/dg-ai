@@ -6,7 +6,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./node": "./src/node/index.ts",
-		"./msal": "./src/msal/index.ts"
+		"./msal": "./src/msal/index.ts",
+		"./daemon-db": "./src/node/daemon-db.ts"
 	},
 	"scripts": {
 		"lint": "tsc --noEmit",

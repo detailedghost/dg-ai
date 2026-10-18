@@ -1,4 +1,5 @@
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
+import { openDaemonDatabase } from "@dg/common/daemon-db";
 import { createHmac, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, rmSync, statSync } from "node:fs";
@@ -26,13 +27,9 @@ import {
 	validateInboxAuthCache,
 } from "@dg/common";
 import {
-	applyConnectionPragmas,
-	DEFAULT_BUSY_TIMEOUT_MS,
 	type DgPaths,
 	ensurePrivateDir,
-	readSchemaVersion,
 	readSessionFiles,
-	runMigrations,
 } from "@dg/common/node";
 import {
 	buildAad,
@@ -56,7 +53,6 @@ import type {
 	SessionPersistence,
 } from "../session/persistence";
 import { readEnvNumber } from "../utils/env";
-import { SCHEMA_STEPS } from "./schema";
 
 const DEFAULT_CLAIM_LEASE_MS = 30_000;
 const HISTORY_TAIL_BATCH_ROWS = 200;
@@ -545,20 +541,6 @@ function computeNextRunAt(job: ScheduledJob, ranAt: Date): Date {
 	return new Date(ranAt.getTime() + job.intervalMs);
 }
 
-function ensureDaemonDir(daemonDir: string): void {
-	if (!existsSync(daemonDir)) {
-		ensurePrivateDir(daemonDir);
-		return;
-	}
-	const mode = statSync(daemonDir).mode & 0o777;
-	if (mode !== 0o700) {
-		console.warn(
-			`dg-daemon: daemon directory ${daemonDir} had mode ${mode.toString(8)} (expected 0700) — fixing; a permissive directory may have exposed the database or -wal sidecar`,
-		);
-		chmodSync(daemonDir, 0o700);
-	}
-}
-
 /** Emitted after a message lands in `messages` or `agent_messages`, so a blocked `cli-recv` can wake without polling. */
 export const CHAT_STORE_MESSAGE_EVENT = "message";
 
@@ -584,22 +566,8 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		seams: StoreSeams = {},
 	): Promise<ChatStore> {
 		const env = seams.env ?? process.env;
-		ensureDaemonDir(paths.daemonDir);
-
-		const db = new Database(paths.dbPath, {
-			strict: true,
-			create: true,
-			readwrite: true,
-		});
+		const db = openDaemonDatabase(paths);
 		try {
-			applyConnectionPragmas(db, DEFAULT_BUSY_TIMEOUT_MS);
-			const migrated = readSchemaVersion(db) > 0;
-			runMigrations(
-				db,
-				SCHEMA_STEPS,
-				migrated ? { snapshotDir: paths.daemonDir } : {},
-			);
-
 			const existingRow = db
 				.query(
 					"SELECT format_version, key_id, key_source, wrapped_data_key FROM crypto_meta WHERE id = 1",

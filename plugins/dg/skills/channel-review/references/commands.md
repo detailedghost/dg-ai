@@ -1,11 +1,11 @@
 # Channel review commands
 
 Run the installed `dg-skills` binary. Claude is the supported default runner.
-Codex and Copilot are experimental. Codex runs with
-`--dangerously-bypass-approvals-and-sandbox`; Copilot runs with `--allow-all-tools`.
-Both run on content that PR authors write, so a prompt injection in a PR can run
+Codex, Copilot, and Grok Build are experimental. Codex runs with
+`--dangerously-bypass-approvals-and-sandbox`; Copilot runs with `--allow-all-tools`;
+Grok runs with `--always-approve`. They run on content that PR authors write, so a prompt injection in a PR can run
 any command as you. Claude with the default allowlist is the safe choice.
-Both report CR-203 for execution failures without a more specific error code.
+All report CR-203 for execution failures without a more specific error code.
 `$address` always runs on Claude and reports runner failures with the same
 codes: CR-203 for a failed run and CR-204 after `runner.addressTimeoutMinutes`.
 Runner availability, login, missing thrash, and timeouts have separate codes.
@@ -20,6 +20,8 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review run` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Run the foreground daemon. |
 | `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
+| `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
+| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Prints variable names only. |
 
 Flags are optional. Commands use the saved environment unless `--env` overrides
 it. Start and run accept runner and chat overrides for that invocation.
@@ -33,6 +35,8 @@ dg-skills channel-review stop --env dev
 dg-skills channel-review run --env dev
 dg-skills channel-review logs --env dev -n 100 -f
 dg-skills channel-review env
+dg-skills channel-review connect datadog
+dg-skills channel-review migrate-env --dry-run
 ```
 
 ## Teams requests
@@ -74,8 +78,20 @@ the review reactions.
 | `~spice 1-5` | Pass a whole-number review level to thrash. | Missing value or a value outside 1–5: CR-102. |
 | `~comment` | Pass thrash's comment option. | Optional. |
 | `~agent claude\|codex\|copilot\|grok` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
+| `~model <name>` | Pass a model name to the selected runner. | Missing or malformed name: CR-108. |
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
+
+If Claude runs out of tokens, the review fails by default. To retry once with
+Codex, set `"fallback": "codex"` under `runner`. The bot then retries when Codex
+passes its readiness check. It replies to the original request:
+“Claude is out of tokens, so I'm using Codex for this review.” The retry uses
+Codex's default model and the time remaining for that PR. The rest of a stacked
+review stays on Codex. Set `runner.fallback` to `"grok"` to use Grok Build
+instead. Explicit
+`~agent grok` reviews use Grok directly and do not switch backends on a limit.
+Use `~model <id>` to select a Grok model, or omit it to use Grok’s configured
+default. For example: `$review https://github.com/example/project/pull/42 ~agent grok ~model grok-build`.
 
 ### Address flags
 
@@ -257,12 +273,14 @@ the shipped catalog exactly.
 | `CR-105` | `Send $address and $review in separate messages, so I didn't run anything. Pick one and try again.` | Send one command per message. |
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-107` | `Only {owner} can run $emoji, so I didn't change anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
+| `CR-108` | `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.` | Provide a valid model name. |
 | `CR-201` | `I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.` | Install the runner or correct its executable path. |
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |
 | `CR-204` | `The review took longer than {minutes} minutes, so I stopped it. Try again with a lower ~spice.` | Lower the spice or inspect the timeout. |
 | `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
+| `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with Codex by default after a Claude limit, if Codex passes its probe. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |
@@ -295,3 +313,11 @@ addresses, and long tokens from the text and caps it at 400 characters.
 | `CI did not finish within <n> minutes on <url>.` | `deps.ciTimeoutMinutes` passed. |
 | `Deps upgrade failed for <repo>. <CR text> Job log: <path>` | The upgrade job failed, timed out (CR-204), or stopped (CR-205). |
 | `Deps upgrade for <repo> was interrupted. <CR-205 text>` | The daemon restarted during an upgrade job. |
+
+Review attribution is recorded in the compiled and published review. Jobs run by this
+daemon, including explicit Teams requests and readiness events, say `Automatic (daemon)`.
+A direct user CLI `/thrash` defaults to `Manual (CLI)`. Both show the reviewing backend
+and model evidence for each distinct worker model. The daemon's `~model` selects the
+orchestrator; native thrash workers can use a different configured model. CLI defaults
+and unresolved aliases are labeled as such. Current-job status carries `execution` with
+origin and orchestration evidence; compiled review artifacts carry actual worker evidence.

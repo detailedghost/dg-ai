@@ -16,11 +16,11 @@ import {
 	saveDefaultEnv,
 } from "../src/config";
 import {
-	type TempHome,
 	completeFunPool,
 	createTempHome,
 	ENVS,
 	minimalConfigJson,
+	type TempHome,
 	writeConfigFile,
 } from "./support/fakes";
 
@@ -53,6 +53,25 @@ const loadFailure = (body: Record<string, unknown>): DgCliError => {
 };
 
 describe("loadConfig defaults", () => {
+	test("leaves review fallback off unless it is set, and permits Codex or Copilot", () => {
+		expect(load().runner.fallback).toBeNull();
+		expect(load({ runner: {} }).runner.fallback).toBeNull();
+		expect(load({ runner: { fallback: "codex" } }).runner.fallback).toBe("codex");
+		expect(load({ runner: { fallback: null } }).runner.fallback).toBeNull();
+		expect(load({ runner: { fallback: "copilot" } }).runner.fallback).toBe(
+			"copilot",
+		);
+	});
+	test("accepts Grok defaults, fallback and executable override", () => {
+		const config = load({ runner: { default: "grok", fallback: "grok", grok: { path: "/opt/grok" } } });
+		expect(config.runner).toMatchObject({ default: "grok", fallback: "grok", grok: { path: "/opt/grok" } });
+	});
+	test.each(["claude", "gemini", false])(
+		"rejects an unsupported fallback %p",
+		(fallback) => {
+			expect(() => load({ runner: { fallback } })).toThrow("runner.fallback");
+		},
+	);
 	test("fills every default from a config with only the required keys", () => {
 		const config = load();
 		expect(config).toMatchObject({

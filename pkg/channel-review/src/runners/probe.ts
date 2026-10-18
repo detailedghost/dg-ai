@@ -26,7 +26,7 @@ export const realSkillFs: SkillFs = {
 	},
 };
 
-const SKILL_ROOTS: Record<RunnerName, { dir: string; nested: boolean }[]> = {
+const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, { dir: string; nested: boolean }[]> = {
 	claude: [
 		{ dir: ".claude/skills", nested: false },
 		{ dir: ".claude/plugins", nested: true },
@@ -37,10 +37,6 @@ const SKILL_ROOTS: Record<RunnerName, { dir: string; nested: boolean }[]> = {
 	],
 	copilot: [
 		{ dir: ".copilot/skills", nested: false },
-		{ dir: ".claude/skills", nested: false },
-	],
-	grok: [
-		{ dir: ".grok/skills", nested: false },
 		{ dir: ".claude/skills", nested: false },
 	],
 };
@@ -59,7 +55,7 @@ function nestedHasThrash(fs: SkillFs, dir: string, depth: number): boolean {
 }
 
 export function thrashInstalled(
-	name: RunnerName,
+	name: Exclude<RunnerName, "grok">,
 	homedir: string,
 	fs: SkillFs,
 ): boolean {

@@ -1,12 +1,23 @@
 import { describeError, isRecord, withTimeout } from "@dg/common";
 import type { SystemSeams } from "@dg/common/node";
-import { type ChannelConfig, type EnvName, loadConfig, resolveEnv } from "../config";
+import {
+	type ChannelConfig,
+	type EnvName,
+	loadConfig,
+	resolveEnv,
+} from "../config";
+import {
+	type CredentialSource,
+	createGrantCredentialSource,
+	localSecretName,
+	resolveSecrets,
+} from "../credentials";
 import { channelReviewPaths } from "../paths";
 import { type PreflightReport, preflight } from "../providers/teams-relay";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
 import { missingEnvByProvider } from "../sinks";
-import { type ChannelState, createStateStore } from "../state";
+import { type ChannelState, readStateSnapshot } from "../state";
 import { isOurDaemon, readPidRecord } from "./pid";
 import type { PlatformSeam } from "./platform";
 import {
@@ -16,7 +27,11 @@ import {
 	SERVE_PROBE_TIMEOUT_MS,
 } from "./shared";
 
-type PreflightCall = { config: ChannelConfig; env: ResolvedEnv };
+type PreflightCall = {
+	config: ChannelConfig;
+	env: ResolvedEnv;
+	secret?: string;
+};
 
 type StatusSeams = {
 	platform: PlatformSeam;
@@ -26,6 +41,7 @@ type StatusSeams = {
 	probeTimeoutMs?: number;
 	preflight?: (call: PreflightCall) => Promise<PreflightReport>;
 	env?: Record<string, string | undefined>;
+	credentials?: CredentialSource;
 };
 
 function automationReport(
@@ -130,12 +146,13 @@ export async function status(
 	let lastEventIds: Record<string, string> = {};
 	let current: unknown = null;
 	let snapshot: ChannelState | undefined;
+	let stateError: string | undefined;
 	try {
-		snapshot = createStateStore(paths.statePath).get();
+		snapshot = readStateSnapshot(paths);
 		lastEventIds = snapshot.lastEventIds;
 		current = snapshot.current;
-	} catch {
-		lastEventIds = {};
+	} catch (error) {
+		stateError = describeError(error);
 	}
 
 	const body: Record<string, unknown> = {
@@ -149,6 +166,8 @@ export async function status(
 		logPath: paths.logPath,
 	};
 
+	if (stateError) body.state = { error: stateError };
+
 	if (config === undefined || env === undefined) {
 		body.preflight = { config: { error: configError } };
 		io.out(JSON.stringify(body, null, 2));
@@ -156,7 +175,16 @@ export async function status(
 	}
 
 	body.address = `allowAnySender ${config.address.allowAnySender}, senderIds ${config.owner.senderIds.length}`;
-	Object.assign(body, automationReport(config, snapshot, seams.env ?? process.env));
+	const secrets = await resolveSecrets({
+		envName: name,
+		env: seams.env ?? process.env,
+		source: seams.credentials ?? createGrantCredentialSource(system),
+	});
+	body.credentials = {
+		...secrets.secrets,
+		...(secrets.warning ? { warning: secrets.warning } : {}),
+	};
+	Object.assign(body, automationReport(config, snapshot, secrets.env));
 	body.runners = await runnerProbes(
 		seams.runners ?? createRunners(config),
 		seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,
@@ -168,7 +196,11 @@ export async function status(
 			((call: PreflightCall) =>
 				preflight({ ...call, fetch: globalThis.fetch }));
 		try {
-			const report = await check({ config, env });
+			const report = await check({
+				config,
+				env,
+				secret: secrets.env[localSecretName(name)],
+			});
 			const { env: _env, ...checks } = report;
 			body.preflight = checks;
 			failed = hasError(checks);
@@ -178,5 +210,5 @@ export async function status(
 		}
 	}
 	io.out(JSON.stringify(body, null, 2));
-	return failed ? 1 : 0;
+	return failed || stateError ? 1 : 0;
 }

@@ -152,11 +152,11 @@ describe("engine single review", () => {
 		expect(h.runner.runs[0]?.signal).toBeInstanceOf(AbortSignal);
 	});
 
-	test("uses the runner named by ~agent", async () => {
+	test.each(["codex", "grok"] as const)("uses the runner named by ~agent %s", async (name) => {
 		const h = setup();
-		await h.engine.handle(reviewMessage("m1", PR_URL, "~agent codex"));
+		await h.engine.handle(reviewMessage("m1", PR_URL, `~agent ${name}`));
 		await h.engine.idle();
-		expect(h.runners.codex.runs).toHaveLength(1);
+		expect(h.runners[name].runs).toHaveLength(1);
 		expect(h.runners.claude.runs).toHaveLength(0);
 	});
 
@@ -184,6 +184,21 @@ describe("engine single review", () => {
 		expect(basename(h.runner.runs[0]?.logPath ?? "")).toBe("m1.log");
 	});
 
+	test("persists the configured Grok model while a daemon review is live", async () => {
+		let snapshot: unknown;
+		const h = setup({
+			configExtra: { runner: { default: "grok", grok: { model: "configured-model" } } },
+			runnerScript: () => {
+				snapshot = h.state.get().current;
+				return OK_RESULT;
+			},
+		});
+		await h.engine.handle(reviewMessage("m1"));
+		await h.engine.idle();
+		expect(snapshot).toMatchObject({ execution: { origin: "daemon", backend: "grok", model: "configured-model", modelSource: "configured" } });
+		expect(h.log.lines.some(line => line.message.includes("configured-model"))).toBe(true);
+	});
+
 	test("records the spawned pid and the job in state.current while the run is live", async () => {
 		let snapshot: unknown;
 		const h = setup({
@@ -201,6 +216,7 @@ describe("engine single review", () => {
 			number: 12,
 			pid: 4242,
 			pidStart: "start-4242",
+			execution: { origin: "daemon", backend: "claude", modelSource: "default" },
 		});
 		expect(typeof (snapshot as { startedAt: string }).startedAt).toBe("string");
 	});
@@ -942,7 +958,7 @@ describe("engine re-review", () => {
 		await h.engine.handle(buildMessage("m2", `fixed, ${PR_URL}`));
 		await h.engine.idle();
 		expect(h.runner.runs).toHaveLength(1);
-		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL });
+		expect(h.runner.runs[0]).toMatchObject({ url: PR_URL, origin: "daemon" });
 		expect(h.runner.runs[0]).not.toHaveProperty("spice", expect.anything());
 		expect(h.trail("m2")).toEqual([...FULL_TRAIL, "+approved"]);
 	});

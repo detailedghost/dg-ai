@@ -1,4 +1,5 @@
 import type { ChannelConfig } from "../config";
+import { localSecretName } from "../credentials";
 import type { Log } from "../engine";
 import {
 	createTeamsRelayProvider,
@@ -14,10 +15,6 @@ export function authRemedy(config: ChannelConfig, env: ResolvedEnv): string {
 		`Check that the AWS secret ${id} (key ${key}) holds the ${env.name} API code,`,
 		`and run: aws sso login --profile ${env.awsProfile}`,
 	].join(" ");
-}
-
-export function localSecretName(envName: string): string {
-	return `CHANNEL_REVIEW_RELAY_SECRET_${envName.toUpperCase()}`;
 }
 
 export async function connect({
