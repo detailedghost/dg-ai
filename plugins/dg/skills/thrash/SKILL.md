@@ -57,7 +57,7 @@ Nits never fail a review. `--comment` replaces the event. Spice never moves a ti
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="$HOME/.dg/bin/dg-skills"
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
 if [ ! -x "$DG" ]; then
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then

@@ -26,7 +26,7 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 
 <!-- markdownlint-enable MD013 -->
 
-Both install `~/.dg/bin/dg-skills` (released as `skills-v*`), then run
+Both install `~/.dg/bin/dg-skills` (`$DG_HOME/bin` when `DG_HOME` is set) (released as `skills-v*`), then run
 `dg-skills install`, which also fetches `~/.dg/bin/dg-daemon` (`daemon-v*`) and
 `~/.dg/bin/dg-agent` (`agent-v*`), stages the extension and prints the **Load
 unpacked** steps. Re-run `dg-skills install` anytime to update all three; each

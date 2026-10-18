@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 /**
  * Unit smoke tests for the install script's release-asset resolution — the
  * exact logic that broke install (skills-v* vs ext-v* tags) and the platform→
@@ -5,6 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	cliBinDir,
 	cliAssetName,
 	cliDest,
 	cliVersionFile,
@@ -166,5 +169,23 @@ describe("the fetcher is generalized over binaryName and tagPrefix, with no deri
 		expect(cliDest("dg-daemon")).toContain("dg-daemon");
 		expect(cliVersionFile("dg-daemon")).toContain(".dg-daemon.version");
 		expect(cliVersionFile("dg-skills")).toContain(".dg-skills.version");
+	});
+
+	test("cliBinDir honors DG_HOME and falls back to ~/.dg/bin", () => {
+		expect(cliBinDir({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/bin");
+		expect(cliBinDir({})).toBe(join(homedir(), ".dg", "bin"));
+		expect(cliBinDir({ DG_HOME: "" })).toBe(join(homedir(), ".dg", "bin"));
+	});
+
+	test("cliDest and cliVersionFile land in the DG_HOME bin directory", () => {
+		const saved = process.env.DG_HOME;
+		process.env.DG_HOME = "/opt/dg-home";
+		try {
+			expect(cliDest("dg-agent")).toStartWith("/opt/dg-home/bin/dg-agent");
+			expect(cliVersionFile("dg-agent")).toBe("/opt/dg-home/bin/.dg-agent.version");
+		} finally {
+			if (saved === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = saved;
+		}
 	});
 });

@@ -120,6 +120,10 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	});
 
 	for (const { name, md } of cliSkills) {
+		test(`${name}: resolves the binary under DG_HOME, not a hardcoded ~/.dg`, () => {
+			expect(md).not.toMatch(/="\$HOME\/\.dg\/bin\//);
+			expect(md).not.toMatch(/="~\/\.dg\/bin\//);
+		});
 		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
 			expect(md).toContain("skills-cli");
 			expect(md).toContain("bootstrap.sh");

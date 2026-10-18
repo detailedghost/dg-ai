@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
 	PostedReview,
 	PostReviewInput,
@@ -290,6 +291,32 @@ export function diffStats(files: DiffFile[]): DiffStats {
 		}
 	}
 	return { files: files.length, added, deleted, changed: added + deleted };
+}
+
+/**
+ * Resolve a path stored in a thrash plan.json against the folder that holds the plan.
+ * Plans store paths relative to that folder, so a copied scratch folder reads its own files.
+ * An absolute path (older plans) is accepted only inside the folder. Anything that escapes it throws.
+ */
+export function resolvePlanPath(root: string, stored: string): string {
+	const base = path.resolve(root);
+	const resolved = path.resolve(base, stored);
+	const rel = path.relative(base, resolved);
+	if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+		throw new Error(
+			path.isAbsolute(stored)
+				? `plan path ${stored} is outside the plan folder ${base}; the plan predates relative paths or was copied, so run thrash diff again`
+				: `plan path ${stored} escapes the plan folder ${base}`,
+		);
+	}
+	return resolved;
+}
+
+/** Store a scratch path relative to the plan folder; refuses a path outside it. */
+export function relativePlanPath(root: string, absolute: string): string {
+	const rel = path.relative(path.resolve(root), path.resolve(absolute));
+	resolvePlanPath(root, rel);
+	return rel;
 }
 
 export interface PlanChunk {

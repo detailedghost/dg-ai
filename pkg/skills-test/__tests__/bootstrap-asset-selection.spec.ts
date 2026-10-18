@@ -83,7 +83,7 @@ function fakeBinary(url: string): string {
 
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
-	options: { sums?: string; installBody?: string } = {},
+	options: { sums?: string; installBody?: string; dgHome?: string } = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
 	const binDir = join(dir, "stubbin");
@@ -107,6 +107,7 @@ async function runBootstrap(
 			...process.env,
 			PATH: `${binDir}:${process.env.PATH}`,
 			HOME: home,
+			DG_HOME: options.dgHome ?? "",
 			STUBDIR: dir,
 			COUNTER: counterFile,
 			...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
@@ -118,8 +119,9 @@ async function runBootstrap(
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
 
-	const destPath = join(home, ".dg", "bin", "dg-skills");
-	const versionPath = join(home, ".dg", "bin", ".dg-skills.version");
+	const binRoot = join(options.dgHome || join(home, ".dg"), "bin");
+	const destPath = join(binRoot, "dg-skills");
+	const versionPath = join(binRoot, ".dg-skills.version");
 	const destContent = existsSync(destPath)
 		? readFileSync(destPath, "utf8")
 		: undefined;
@@ -146,6 +148,17 @@ describe("bootstrap.sh picks its binary from the skills-v* tag only", () => {
 		expect(run.code).toBe(0);
 		expect(run.destUrl).toContain("/skills-v1.0.0/");
 		expect(run.destUrl?.endsWith(`/${SKILLS_ASSET}`)).toBe(true);
+		expect(run.versionContent).toBe("1.0.0");
+	});
+
+	test("installs into $DG_HOME/bin when DG_HOME is set", async () => {
+		const dgHome = mkdtempSync(join(tmpdir(), "dg-home-"));
+		const run = await runBootstrap(
+			[[release("skills-v1.0.0", [SKILLS_ASSET])]],
+			{ dgHome },
+		);
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain(`dg-skills installed at ${join(dgHome, "bin", "dg-skills")}`);
 		expect(run.versionContent).toBe("1.0.0");
 	});
 

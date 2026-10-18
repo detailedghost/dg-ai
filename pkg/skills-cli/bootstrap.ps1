@@ -82,7 +82,8 @@ if ($env:DG_SKILLS_ONLY -eq "1") {
 $repo = "detailedghost/dg-ai"
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $asset = "dg-skills-windows-$arch.exe"
-$binDir = Join-Path $env:USERPROFILE ".dg\bin"
+$dgHome = if ($env:DG_HOME) { $env:DG_HOME } else { Join-Path $env:USERPROFILE ".dg" }
+$binDir = Join-Path $dgHome "bin"
 $dest = Join-Path $binDir "dg-skills.exe"
 
 $headers = @{ "User-Agent" = "dg-ai" }

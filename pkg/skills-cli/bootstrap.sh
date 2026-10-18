@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the compiled dg-skills CLI for the current platform into ~/.dg/bin.
+# Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
 #   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
@@ -134,7 +134,7 @@ if [ "$SKILLS_ONLY" = "1" ]; then
 fi
 
 REPO="detailedghost/dg-ai"
-BIN_DIR="${HOME}/.dg/bin"
+BIN_DIR="${DG_HOME:-${HOME}/.dg}/bin"
 DEST="${BIN_DIR}/dg-skills"
 
 os=$(uname -s)

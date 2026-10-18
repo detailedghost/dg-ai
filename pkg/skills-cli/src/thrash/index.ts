@@ -28,6 +28,8 @@ import {
 	parseTier,
 	parseUnifiedDiff,
 	planChunks,
+	relativePlanPath,
+	resolvePlanPath,
 	renderAddressFile,
 	renderPreview,
 	renderTallyTable,
@@ -218,8 +220,18 @@ async function writeDiff(target: Target) {
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
 	writeFileSync(contextPath, await renderContext(target, files, plan));
-	const planFile: PlanFile = { contextPath, chunks, skipped: plan.skipped };
-	writeFileSync(planPathFor(diffPath), JSON.stringify(planFile, null, 2));
+	const planPath = planPathFor(diffPath);
+	const planRoot = path.dirname(planPath);
+	const planFile: PlanFile = {
+		contextPath: relativePlanPath(planRoot, contextPath),
+		chunks: chunks.map((chunk) => ({
+			...chunk,
+			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
+			findingsPath: relativePlanPath(planRoot, chunk.findingsPath),
+		})),
+		skipped: plan.skipped,
+	};
+	writeFileSync(planPath, JSON.stringify(planFile, null, 2));
 	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats: diffStats(files) };
 }
 
@@ -266,13 +278,16 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
-	const plan = JSON.parse(readFileSync(planPathFor(diffPath), "utf8")) as PlanFile;
+	const planPath = planPathFor(diffPath);
+	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	const planRoot = path.dirname(path.resolve(planPath));
 	const output = mergeOutputs(
 		plan.chunks.map((chunk) => {
-			if (!existsSync(chunk.findingsPath)) {
-				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${chunk.findingsPath}`);
+			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
+			if (!existsSync(findingsPath)) {
+				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
 			}
-			return parseAgentOutput(readFileSync(chunk.findingsPath, "utf8"));
+			return parseAgentOutput(readFileSync(findingsPath, "utf8"));
 		}),
 	);
 	const splitReview = plan.chunks.length > 1 || plan.skipped.length > 0;
@@ -303,18 +318,32 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	return EXIT.OK;
 }
 
+/** True when `post` must not publish: `--dry-run`, or DG_THRASH_DRY_RUN set to 1, true or yes. */
+export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean {
+	return args.includes("--dry-run") || /^(1|true|yes)$/i.test(env.DG_THRASH_DRY_RUN?.trim() ?? "");
+}
+
 async function cmdPost(args: string[]): Promise<number> {
 	const arg = positional(args, "post");
-	const target = await resolveTarget(arg);
-	if (target.mode === "local") {
+	if (!isUrl(arg)) {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
 	}
 	const stored = JSON.parse(readFileSync(requireOption(args, "--review"), "utf8")) as ReviewFile;
 	if (stored.target !== arg) {
 		throw new Error(`review file was compiled for ${stored.target}, not ${arg}`);
 	}
+	const input = toPostReviewInput(stored.review);
+	if (isPostDryRun(args)) {
+		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
+		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
+		return EXIT.OK;
+	}
+	const target = await resolveTarget(arg);
+	if (target.mode === "local") {
+		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
+	}
 	const provider = await getProviderForUrl(target.url);
-	const posted = await provider.postReview(prRef(target), toPostReviewInput(stored.review));
+	const posted = await provider.postReview(prRef(target), input);
 	writeFileSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), JSON.stringify(posted, null, 2));
 	printJson({ ...posted, requestedVerdict: stored.review.verdict });
 	return EXIT.OK;
@@ -395,7 +424,7 @@ const command = defineCommand({
 			run: (args, opts) => cmdCompile(args, opts),
 		},
 		post: {
-			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file>",
+			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file> [--dry-run]. --dry-run or DG_THRASH_DRY_RUN=1 prints the review and makes no provider call",
 			args: ["target"],
 			run: cmdPost,
 		},

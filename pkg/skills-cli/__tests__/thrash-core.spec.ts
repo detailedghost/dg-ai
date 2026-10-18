@@ -26,6 +26,8 @@ import {
 	spiceLabel,
 	toPostReviewInput,
 	VERDICT_LIMITS,
+	relativePlanPath,
+	resolvePlanPath,
 } from "../src/thrash/core";
 
 const FIXTURE = `diff --git a/src/a.ts b/src/a.ts
@@ -620,5 +622,37 @@ describe("compileReview with merged chunks", () => {
 			{ spice: 2, commentOnly: false, existing: [], coverage: { chunks: [chunk(1), chunk(2)], skipped: [] } },
 		);
 		expect(review.verdict).toBe("approve");
+	});
+});
+
+describe("plan paths", () => {
+	test("resolvePlanPath joins a relative path to the plan folder", () => {
+		expect(resolvePlanPath("/scratch/a", "x.findings.md")).toBe("/scratch/a/x.findings.md");
+		expect(resolvePlanPath("/scratch/a/", "sub/x.md")).toBe("/scratch/a/sub/x.md");
+	});
+
+	test("resolvePlanPath accepts an absolute path inside the folder", () => {
+		expect(resolvePlanPath("/scratch/a", "/scratch/a/x.md")).toBe("/scratch/a/x.md");
+	});
+
+	test("resolvePlanPath refuses escapes with distinct messages", () => {
+		expect(() => resolvePlanPath("/scratch/a", "/scratch/b/x.md")).toThrow(
+			"plan path /scratch/b/x.md is outside the plan folder /scratch/a; the plan predates relative paths or was copied, so run thrash diff again",
+		);
+		expect(() => resolvePlanPath("/scratch/a", "../b/x.md")).toThrow(
+			"plan path ../b/x.md escapes the plan folder /scratch/a",
+		);
+		expect(() => resolvePlanPath("/scratch/a", "..")).toThrow("escapes the plan folder");
+		expect(() => resolvePlanPath("/scratch/a", ".")).toThrow("escapes the plan folder");
+		expect(() => resolvePlanPath("/scratch/a", "/scratch/a")).toThrow("is outside the plan folder");
+	});
+
+	test("resolvePlanPath allows a file whose name starts with two dots", () => {
+		expect(resolvePlanPath("/scratch/a", "..x.md")).toBe("/scratch/a/..x.md");
+	});
+
+	test("relativePlanPath stores a path inside the folder and refuses one outside", () => {
+		expect(relativePlanPath("/scratch/a", "/scratch/a/x.md")).toBe("x.md");
+		expect(() => relativePlanPath("/scratch/a", "/scratch/b/x.md")).toThrow("escapes the plan folder");
 	});
 });

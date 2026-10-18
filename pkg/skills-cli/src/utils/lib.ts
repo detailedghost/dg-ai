@@ -208,13 +208,18 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
+/** `$DG_HOME/bin`, else `~/.dg/bin`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
+	return join(env.DG_HOME || join(homedir(), ".dg"), "bin");
+}
+
 export function cliDest(binaryName: string): string {
 	const name = process.platform === "win32" ? `${binaryName}.exe` : binaryName;
-	return join(homedir(), ".dg", "bin", name);
+	return join(cliBinDir(), name);
 }
 
 export function cliVersionFile(binaryName: string): string {
-	return join(homedir(), ".dg", "bin", `.${binaryName}.version`);
+	return join(cliBinDir(), `.${binaryName}.version`);
 }
 
 export function resolveCliAsset(
@@ -232,7 +237,7 @@ export async function fetchCliBinary(
 	if (!dl.ok)
 		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
 	const buf = Buffer.from(await dl.arrayBuffer());
-	const binDir = join(homedir(), ".dg", "bin");
+	const binDir = cliBinDir();
 	mkdirSync(binDir, { recursive: true });
 	const dest = cliDest(binaryName);
 	const staging = join(binDir, `.${binaryName}.${process.pid}.tmp`);

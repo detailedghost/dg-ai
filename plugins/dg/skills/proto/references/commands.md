@@ -30,7 +30,7 @@ Use a freshly compiled binary in a development checkout; otherwise use the
 installed binary and bootstrap it once if missing:
 
 ```bash
-DG="$HOME/.dg/bin/dg-skills"
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
 SRC=""
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&
   [ -f "$CLAUDE_PLUGIN_ROOT/pkg/skills-cli/package.json" ]; then

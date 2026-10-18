@@ -18,7 +18,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { BACKENDS } from "../src/proxy";
 import { EXIT } from "../src/utils/legacy-command";
 import * as cliFixtures from "./cli-fixtures";
@@ -261,6 +261,65 @@ describe("local mode", () => {
 			false,
 		);
 		expect(existsSync(join(repo, ".agents", "code-review"))).toBe(false);
+	});
+
+	test("plan.json stores chunk paths relative to its folder", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		const plan = JSON.parse(readFileSync(diff.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		expect(plan.contextPath).toBe(basename(diff.contextPath));
+		expect(plan.chunks[0].findingsPath).toBe(basename(diff.chunks[0].findingsPath));
+		expect(plan.chunks[0].annotatedPath).toBe(basename(diff.chunks[0].annotatedPath));
+	});
+
+	test("a copied scratch folder compiles from its own findings, not the original's", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 3, tier: "high", body: "Original finding." }]);
+		const copy = cliFixtures.tmp(createdDirs, "thrash-copy-");
+		cpSync(dirname(diff.diffPath), copy, { recursive: true });
+		const copiedDiff = join(copy, basename(diff.diffPath));
+		writeFileSync(
+			join(copy, basename(diff.chunks[0].findingsPath)),
+			`\`\`\`json\n${JSON.stringify({ changed: "Adds a.", strengths: [], opportunities: [], findings: [{ path: "src/a.ts", line: 3, tier: "low", body: "Copied finding." }] })}\n\`\`\`\n`,
+		);
+		const result = run(["compile", ".", "--diff", copiedDiff, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const review = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8")).review;
+		const text = JSON.stringify(review);
+		expect(text).toContain("Copied finding.");
+		expect(text).not.toContain("Original finding.");
+	});
+
+	for (const [label, stored, message] of [
+		["an absolute path outside the folder", "/etc/passwd", "run thrash diff again"],
+		["a parent-relative path", "../elsewhere.findings.md", "escapes the plan folder"],
+	] as const) {
+		test(`compile refuses a plan with ${label}`, () => {
+			const repo = fixtureRepo();
+			const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+			findingsFile(diff, []);
+			const planPath = diff.diffPath.replace(/\.diff$/, ".plan.json");
+			const plan = JSON.parse(readFileSync(planPath, "utf8"));
+			plan.chunks[0].findingsPath = stored;
+			writeFileSync(planPath, JSON.stringify(plan));
+			const result = run(["compile", ".", "--diff", diff.diffPath], { cwd: repo });
+			expect(result.exitCode).toBe(EXIT.ERR);
+			expect(result.stderr).toContain(message);
+		});
+	}
+
+	test("compile still reads an older plan whose absolute paths sit inside its folder", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 3, tier: "low", body: "Legacy plan finding." }]);
+		const planPath = diff.diffPath.replace(/\.diff$/, ".plan.json");
+		const plan = JSON.parse(readFileSync(planPath, "utf8"));
+		plan.chunks[0].findingsPath = diff.chunks[0].findingsPath;
+		writeFileSync(planPath, JSON.stringify(plan));
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8")).toContain("Legacy plan finding.");
 	});
 
 	test("compile . writes an /address-compatible file and prints the preview", () => {
@@ -746,6 +805,101 @@ describe("remote mode via the GitLab adapter", () => {
 		expect(tally.exitCode).toBe(EXIT.OK);
 		expect(tally.stdout).toContain("Comment (approve refused)");
 		expect(tally.stdout).toContain(`[review](${url})`);
+	});
+});
+
+describe("post --dry-run", () => {
+	const url = "https://gitlab.com/acme/widgets/-/merge_requests/12";
+
+	function compiledGitlabReview(): { env: Record<string, string>; cwd: string; reviewPath: string; log: string } {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-dry-glab-");
+		const diffPath = join(dir, "mr.diff");
+		const log = join(dir, "calls.log");
+		writeFileSync(diffPath, GH_DIFF);
+		writeFakeCli(
+			dir,
+			"glab",
+			cliFixtures.shScript(`
+  *"mr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"mr view 12"*)
+    echo '${JSON.stringify(cliFixtures.glMr(12, "feature"))}'
+    ;;
+  *"/discussions"*)
+    echo '[]'
+    ;;
+  *"api projects/acme%2Fwidgets/merge_requests/12"*)
+    echo '${JSON.stringify({ web_url: url, diff_refs: { base_sha: "base", start_sha: "start", head_sha: "head" } })}'
+    ;;
+  *)
+    echo "unexpected write" >&2
+    exit 9
+    ;;`),
+		);
+		const env = { GLAB_BIN: join(dir, "glab"), FAKE_CALL_LOG: log, FAKE_DIFF: diffPath };
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-dry-cwd-");
+		const diff = JSON.parse(run(["diff", url], { cwd, env }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 4, tier: "medium", body: "Cover the public contract." }]);
+		const compiled = JSON.parse(run(["compile", url, "--diff", diff.diffPath, "--json"], { cwd, env }).stdout);
+		return { env, cwd, reviewPath: compiled.reviewPath, log };
+	}
+
+	function assertNoProviderCall(log: string, before: number): void {
+		expect(cliFixtures.readCalls(log).slice(before)).toEqual([]);
+	}
+
+	test("--dry-run prints the review it would post and calls no provider", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath, "--dry-run"], { cwd, env });
+		expect(post.exitCode, post.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(post.stdout);
+		expect(out).toMatchObject({ dryRun: true, url, requestedVerdict: "approve" });
+		expect(out.review.comments).toHaveLength(1);
+		expect(JSON.stringify(out.review)).toContain("Cover the public contract.");
+		assertNoProviderCall(log, before);
+		expect(existsSync(reviewPath.replace(/\.review\.json$/, ".posted.json"))).toBe(false);
+	});
+
+	for (const value of ["1", "true", "YES", " 1 "]) {
+		test(`DG_THRASH_DRY_RUN=${JSON.stringify(value)} makes post a no-op without the flag`, () => {
+			const { env, cwd, reviewPath, log } = compiledGitlabReview();
+			const before = cliFixtures.readCalls(log).length;
+			const post = run(["post", url, "--review", reviewPath], {
+				cwd,
+				env: { ...env, DG_THRASH_DRY_RUN: value },
+			});
+			expect(post.exitCode, post.stderr).toBe(EXIT.OK);
+			expect(JSON.parse(post.stdout).dryRun).toBe(true);
+			assertNoProviderCall(log, before);
+		});
+	}
+
+	test("DG_THRASH_DRY_RUN=0 still posts", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], {
+			cwd,
+			env: { ...env, DG_THRASH_DRY_RUN: "0" },
+		});
+		expect(post.stdout).not.toContain('"dryRun"');
+		expect(
+			cliFixtures.readCalls(log).slice(before).some((call) => call.includes("/draft_notes")),
+		).toBe(true);
+	});
+
+	test("--dry-run still refuses a local target and a mismatched review", () => {
+		const repo = fixtureRepo();
+		const local = run(["post", ".", "--review", "/nonexistent.json", "--dry-run"], { cwd: repo });
+		expect(local.exitCode).toBe(EXIT.ERR);
+		expect(local.stderr).toContain("post needs a PR or MR URL");
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const review = join(cwd, "review.json");
+		writeFileSync(review, JSON.stringify({ target: ".", review: {} }));
+		const mismatch = run(["post", url, "--review", review, "--dry-run"], { cwd });
+		expect(mismatch.exitCode).toBe(EXIT.ERR);
+		expect(mismatch.stderr).toContain("compiled for .");
 	});
 });
 
