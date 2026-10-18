@@ -181,7 +181,6 @@ function createRelayChatClient(): PageChatClient {
 		return runtime
 			.sendMessage(message)
 			.then((response): SendResult => {
-				connectionState = "connected";
 				if (
 					typeof response === "object" &&
 					response !== null &&
@@ -196,6 +195,7 @@ function createRelayChatClient(): PageChatClient {
 								: "the daemon rejected this request",
 					};
 				}
+				connectionState = "connected";
 				return { ok: true };
 			})
 			.catch((error): SendResult => {
@@ -301,6 +301,12 @@ function createRelayChatClient(): PageChatClient {
 			role: SessionRole,
 			workset?: string,
 		): Promise<SendResult> {
+			if (!knownSessions.has(requestingSessionId)) {
+				return Promise.resolve({
+					ok: false,
+					error: `Session ${requestingSessionId} is not available in this chat page`,
+				});
+			}
 			return sendAndWait(sessionCreateMessage(requestingSessionId, role, workset));
 		},
 
@@ -370,7 +376,12 @@ function requestNewSessionThroughClient(
 ): Promise<SendResult> {
 	const maybeRelay = client as Partial<PageChatClient>;
 	if (maybeRelay.requestNewSessionAndWait) {
-		return maybeRelay.requestNewSessionAndWait(requestingSessionId, role, workset);
+		return maybeRelay
+			.requestNewSessionAndWait(requestingSessionId, role, workset)
+			.catch((error: unknown): SendResult => ({
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+			}));
 	}
 	try {
 		client.requestNewSession(requestingSessionId, role, workset);

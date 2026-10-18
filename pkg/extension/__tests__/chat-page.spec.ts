@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { afterEach, expect, mock, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
@@ -13,6 +13,9 @@ const relaySentMessages: unknown[] = [];
 const relayDefaultReply = (_message: unknown): Promise<unknown> =>
 	Promise.resolve({ ok: true, state: "connected" });
 let relayReply = relayDefaultReply;
+afterEach(() => {
+	relayReply = relayDefaultReply;
+});
 mock.module("wxt/browser", () => ({
 	browser: {
 		storage: { session: { get: mock(() => Promise.resolve({})) } },
@@ -1748,66 +1751,54 @@ test("regression #35: New chat on a stored session shows the background's reject
 			error: "requestNewSession: not connected to the daemon",
 		}),
 	);
-	try {
-		const button = createChatButton(root);
-		expect(button.disabled).toBe(false);
-		click(button);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+	const button = createChatButton(root);
+	expect(button.disabled).toBe(false);
+	click(button);
+	await new Promise((resolve) => setTimeout(resolve, 0));
 
-		expect(relaySentMessages).toContainEqual(
-			expect.objectContaining({
-				type: MSG.sessionCreate,
-				sessionId: "session-a",
-				role: "agent",
-				workset: "ws-1",
-			}),
-		);
-		expect(relaySentMessages).not.toContainEqual(
-			expect.objectContaining({ type: MSG.sessionLaunch }),
-		);
-		const error = root.querySelector(".chat-thread__error");
-		expect(error?.hasAttribute("hidden")).toBe(false);
-		expect(error?.textContent).toContain("not connected to the daemon");
-	} finally {
-		relayReply = relayDefaultReply;
-	}
+	expect(relaySentMessages).toContainEqual(
+		expect.objectContaining({
+			type: MSG.sessionCreate,
+			sessionId: "session-a",
+			role: "agent",
+			workset: "ws-1",
+		}),
+	);
+	expect(relaySentMessages).not.toContainEqual(
+		expect.objectContaining({ type: MSG.sessionLaunch }),
+	);
+	const error = root.querySelector(".chat-thread__error");
+	expect(error?.hasAttribute("hidden")).toBe(false);
+	expect(error?.textContent).toContain("not connected to the daemon");
 });
 
 test("regression #35: New chat on a stored session shows an error when the background never answers", async () => {
 	const root = await renderRelayPageWithStoredSession(() =>
 		Promise.reject(new Error("The message port closed before a response was received.")),
 	);
-	try {
-		const button = createChatButton(root);
-		expect(button.disabled).toBe(false);
-		click(button);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+	const button = createChatButton(root);
+	expect(button.disabled).toBe(false);
+	click(button);
+	await new Promise((resolve) => setTimeout(resolve, 0));
 
-		const error = root.querySelector(".chat-thread__error");
-		expect(error?.hasAttribute("hidden")).toBe(false);
-		expect(error?.textContent).toContain("message port closed");
-	} finally {
-		relayReply = relayDefaultReply;
-	}
+	const error = root.querySelector(".chat-thread__error");
+	expect(error?.hasAttribute("hidden")).toBe(false);
+	expect(error?.textContent).toContain("message port closed");
 });
 
 test("New chat on a stored session leaves the error surface hidden when the background accepts", async () => {
 	const root = await renderRelayPageWithStoredSession(() =>
 		Promise.resolve({ ok: true }),
 	);
-	try {
-		const button = createChatButton(root);
-		expect(button.disabled).toBe(false);
-		click(button);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+	const button = createChatButton(root);
+	expect(button.disabled).toBe(false);
+	click(button);
+	await new Promise((resolve) => setTimeout(resolve, 0));
 
-		expect(relaySentMessages).toContainEqual(
-			expect.objectContaining({ type: MSG.sessionCreate }),
-		);
-		expect(root.querySelector(".chat-thread__error")?.hasAttribute("hidden")).toBe(true);
-	} finally {
-		relayReply = relayDefaultReply;
-	}
+	expect(relaySentMessages).toContainEqual(
+		expect.objectContaining({ type: MSG.sessionCreate }),
+	);
+	expect(root.querySelector(".chat-thread__error")?.hasAttribute("hidden")).toBe(true);
 });
 
 test("New chat with an injected client surfaces a synchronous requestNewSession failure", async () => {
@@ -1852,4 +1843,59 @@ test("New chat with an injected client keeps the error surface hidden when reque
 
 	expect(fake.requestedSessions).toEqual([{ requestingSessionId: "session-a" }]);
 	expect(root.querySelector(".chat-thread__error")?.hasAttribute("hidden")).toBe(true);
+});
+
+test("regression #35: a rejected New chat leaves the page reporting the socket as not connected", async () => {
+	const root = await renderRelayPageWithStoredSession(() =>
+		Promise.resolve({
+			ok: false,
+			error: "requestNewSession: not connected to the daemon",
+		}),
+	);
+	click(createChatButton(root));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	root.querySelector<HTMLElement>(".chat-rail__focus")?.click();
+
+	const pill = statusPill(root);
+	expect(pill.hidden).toBe(false);
+	expect(pill.dataset.connection).toBe("reconnecting");
+});
+
+test("an accepted relayed request marks the page connected", async () => {
+	const root = await renderRelayPageWithStoredSession(() =>
+		Promise.resolve({ ok: true }),
+	);
+	click(createChatButton(root));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	root.querySelector<HTMLElement>(".chat-rail__focus")?.click();
+
+	expect(statusPill(root).hidden).toBe(true);
+});
+
+test("New chat with an injected client whose wait rejects still shows the error", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	const client = {
+		...fake.client,
+		requestNewSessionAndWait: mock(() =>
+			Promise.reject(new Error("relay channel closed")),
+		),
+	};
+	await renderChatPage({
+		root,
+		createClient: () => client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: { findPort: async () => bootstraps()[0]?.port },
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	click(createChatButton(root));
+	await new Promise((resolve) => setTimeout(resolve, 0));
+
+	expect(client.requestNewSessionAndWait).toHaveBeenCalledTimes(1);
+	const error = root.querySelector(".chat-thread__error");
+	expect(error?.hasAttribute("hidden")).toBe(false);
+	expect(error?.textContent).toContain("relay channel closed");
 });
