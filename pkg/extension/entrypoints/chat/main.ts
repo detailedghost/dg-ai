@@ -1336,8 +1336,20 @@ export async function renderChatPage(
 		}
 	});
 
-	client.onConnectionChange((_state, detail) => {
+	// Entering daemon-not-running retires the last probe. A repeat of the same
+	// state must not clear a probe that already answered for this drop:
+	// setConnected starts another refresh, and clearing here would disable
+	// New chat until that refresh got past findPort.
+	let lastConnectionState = client.getConnectionState();
+	client.onConnectionChange((state, detail) => {
 		connectionDetail = detail;
+		if (
+			state === "daemon-not-running" &&
+			lastConnectionState !== "daemon-not-running"
+		) {
+			daemonReachable = false;
+		}
+		lastConnectionState = state;
 		updateConnectionStatus();
 	});
 

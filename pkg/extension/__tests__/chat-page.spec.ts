@@ -43,13 +43,26 @@ function makeFakeClient(
 	initialState: "connected" | "daemon-not-running" = "connected",
 ) {
 	const listeners = new Set<FrameListener>();
+	const connectionListeners = new Set<
+		(
+			state: "connected" | "reconnecting" | "daemon-not-running",
+			detail?: string,
+		) => void
+	>();
 	const requestedSessions: Array<{ requestingSessionId: string }> = [];
 	const closedSessions: string[] = [];
-	const state = initialState;
+	let state: "connected" | "reconnecting" | "daemon-not-running" = initialState;
 	return {
 		client: {
 			connect: mock(() => {}),
-			onConnectionChange: mock(() => {}),
+			onConnectionChange(
+				listener: (
+					state: "connected" | "reconnecting" | "daemon-not-running",
+					detail?: string,
+				) => void,
+			) {
+				connectionListeners.add(listener);
+			},
 			onFrame(listener: FrameListener) {
 				listeners.add(listener);
 			},
@@ -64,6 +77,13 @@ function makeFakeClient(
 		},
 		emit(frame: ChatFrame) {
 			for (const listener of listeners) listener(frame);
+		},
+		emitConnection(
+			next: "connected" | "reconnecting" | "daemon-not-running",
+			detail?: string,
+		) {
+			state = next;
+			for (const listener of connectionListeners) listener(next, detail);
 		},
 		requestedSessions,
 		closedSessions,
@@ -1526,6 +1546,49 @@ test("the new chat button is enabled when connected and disabled while the daemo
 	reachable.resolve(bootstraps()[0]?.port);
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	expect(upButton.disabled).toBe(false);
+});
+
+test("the new chat button stays disabled after a drop until a fresh probe says the daemon is up", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient("connected");
+	const probes: Array<ReturnType<typeof deferredPort>> = [];
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+		pairing: {
+			findPort: () => {
+				const probe = deferredPort();
+				probes.push(probe);
+				return probe.promise;
+			},
+		},
+	});
+	const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+	await tick();
+	const initial = probes[probes.length - 1];
+	expect(initial).toBeDefined();
+	initial?.resolve(bootstraps()[0]?.port);
+	await tick();
+	const button = createChatButton(root);
+	expect(button.disabled).toBe(false);
+
+	const beforeDrop = probes.length;
+	fake.emitConnection("daemon-not-running");
+	expect(button.disabled).toBe(true);
+	await tick();
+	expect(probes.length).toBeGreaterThan(beforeDrop);
+	expect(button.disabled).toBe(true);
+
+	probes[probes.length - 1]?.resolve(bootstraps()[0]?.port);
+	await tick();
+	expect(button.disabled).toBe(false);
+
+	const beforeRepeat = probes.length;
+	fake.emitConnection("daemon-not-running");
+	await tick();
+	expect(probes.length).toBeGreaterThan(beforeRepeat);
+	expect(button.disabled).toBe(false);
 });
 
 const NOT_PAIRED_HINT = "Not paired";
