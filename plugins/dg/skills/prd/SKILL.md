@@ -23,8 +23,8 @@ description: Produce a handoff-ready PRD. Run /kick to park a spec bundle, reloc
    `git mv .agents/spec/<NNN>_<slug>/* .agents/spec/todo/<prd-slug>/`
    (moves `plan.md`, `context.md`, and any other files the bundle has). `rmdir` the emptied numbered directory.
 3. **Owner.** If a slice does not name an owner, write "implementing agent" on that slice in `plan.md`. Do not call out to another skill to assign owners.
-4. **Permissions.** Ask once: "May the next agent edit the repo, run tests, and open a pull request?" Record the answer under `## Permissions` in `plan.md`. `/pickup` reads that section and does not ask again.
-5. **Fold the commit.** `git add .agents/spec/todo/<prd-slug>/ && git commit --amend --no-edit` so the PRD is one commit.
+4. **Permissions.** Ask once: "May the next agent edit the repo, run tests, and open a pull request?" Record the answer under `## Permissions` in `plan.md`. `/pickup` reads that section at its permissions step and does not ask again.
+5. **Fold the commit.** Run `git log -1 --format=%s` and `git status -sb`. If the subject is `chore(spec): park <slug> (deferred)` and the commit is not pushed, run `git add -f .agents/spec/todo/<prd-slug>/ && git commit --amend --no-edit` so the PRD is one commit. Otherwise make a normal follow-up commit: `git add -f .agents/spec/todo/<prd-slug>/ && git commit -m "chore(spec): hand off <prd-slug>"`.
 
 ## After Exit
 

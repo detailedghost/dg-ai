@@ -119,31 +119,30 @@ public void Send_ValidEmail_Queues_Bad()
     // ...
 }
 
-// good — shared fixture via xUnit IClassFixture; substitute held privately in fixture
+// good — xUnit builds a new test class instance per test, so the constructor gives each test its own sut and substitute
 namespace MyApp.Tests;
 
-public sealed class MailerFixture
+public sealed class MailerTests
 {
-    public IQueue Queue { get; } = Substitute.For<IQueue>();
-    public Mailer Mailer { get; }
+    private readonly IQueue _queue = Substitute.For<IQueue>();
+    private readonly Mailer _mailer;
 
-    public MailerFixture() =>
-        Mailer = new Mailer(
+    public MailerTests() =>
+        _mailer = new Mailer(
             new SmtpOptions { Host = "localhost", Port = 25 },
             Substitute.For<ILogger<Mailer>>(),
-            Queue);
-}
+            _queue);
 
-public sealed class MailerTests(MailerFixture f) : IClassFixture<MailerFixture>
-{
     [Fact]
     public void Send_ValidEmail_EnqueuesMessage()
     {
-        f.Mailer.Send(new Email("to@example.com", "Hello"));
-        f.Queue.Received(1).Enqueue(Arg.Any<Email>());
+        _mailer.Send(new Email("to@example.com", "Hello"));
+        _queue.Received(1).Enqueue(Arg.Any<Email>());
     }
 }
 ```
+
+Keep `IClassFixture` for read-only setup. A fixture that holds a substitute collects calls from every test in the class.
 
 ---
 

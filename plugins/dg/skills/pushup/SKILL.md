@@ -1,7 +1,7 @@
 ---
 name: pushup
 description: Push the current branch, open its PR, and drop that PR into a dg:browser tab group in one step. Use when committed work is ready to share — "push this up", "ship it", "open a PR and show me". Re-running on a branch that already has a PR just reopens it in the browser.
-allowed-tools: Bash(git:*) Bash(gh:*) Bash(~/.dg/bin/dg-skills:*) Bash(cat:*) Bash(printf:*)
+allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(~/.dg/bin/dg-skills:*)
 ---
 
 # /pushup — push, PR, open it
@@ -26,10 +26,11 @@ commits already have the shape you want them reviewed in.
 3. **Push.** `git push -u origin <branch>`.
 4. **Reuse an existing PR.** `gh pr view --json url -q .url`. If one comes back, skip to step 6.
    Never open a second PR for the same branch.
-5. **Open the PR.** Title: one conventional-commit line covering the change as a whole. Body: two
+5. **Open the PR.** With `--draft`, pass `--draft` to `gh pr create`. Title: one conventional-commit line covering the change as a whole. Body: two
    sentences of context, then one tight bullet per logical change.
-6. **Open it in the browser.** `"$DG" batch-open --group <name> <url>`, defaulting to group
-   `pr`. Bootstrap the binary first when missing:
+6. **Open it in the browser.** `~/.dg/bin/dg-skills batch-open --group <name> <url>`, defaulting to group
+   `pr`. Bootstrap the binary first when missing. The bootstrap runs `sh` and `curl`, which this skill
+   does not pre-approve, so Claude Code asks before each one:
 
    ```sh
    DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"

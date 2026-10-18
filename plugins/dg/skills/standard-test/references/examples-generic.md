@@ -79,9 +79,10 @@ from test_utils import setup_with_providers
 # bad — literal duplicates production behavior
 assert format_currency(1234.56) == "$1,234.56"
 
-# good — derive from the same transform production uses
-assert format_currency(1234.56) == format_currency(1234.56_known_good)
-# or, for a pipeline: assert display(transform(input)) == display(known_good_raw)
+# good — round-trip through an independent inverse
+assert parse_currency(format_currency(1234.56)) == 1234.56
+# or compare with a value computed another way
+assert format_currency(1234.56) == format_cents_with_separators(123456)
 ```
 
 ---

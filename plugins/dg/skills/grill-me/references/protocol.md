@@ -4,7 +4,7 @@
 
 1. Read the user's topic/feature description (from args or ask if empty).
 1. Read AGENTS.md, `.agents/paths.md`, `.agents/monolith.md` (if present), and relevant `.agents/school/` files to build codebase context. Use the project's canonical vocabulary from `monolith.md` in your questions and your design tree — do not invent new terms when an established one exists.
-1. Do a first-pass codebase exploration: identify related files, patterns, existing abstractions that the feature will touch or depend on. Use fff-ai MCP tools (fallback: Grep), Read, or the Explore agent.
+1. Do a first-pass codebase exploration: identify related files, patterns, existing abstractions that the feature will touch or depend on. Use fff MCP tools (`mcp__fff__*`) (fallback: Grep), Read, or the Explore agent.
 1. Draft an initial **design tree** — a hierarchical outline of every decision area the plan needs to cover. Present it to the user as the interview roadmap.
 
 ## Domain Alignment
@@ -23,8 +23,8 @@ Categorize every question before asking it:
 |----------|-----------|----------|
 | **Intent** — why, for whom, priority | Yes | AskUserQuestion with options when possible |
 | **Constraint** — budget, timeline, compliance | Yes | Direct question |
-| **Architecture** — where does it fit, what pattern | Maybe | Explore codebase first (fff-ai; fallback: Grep); ask only if ambiguous |
-| **Existing behavior** — how does X work today | No | Read the code (fff-ai to find files; fallback: Grep). Report findings, then ask follow-up |
+| **Architecture** — where does it fit, what pattern | Maybe | Explore codebase first (fff; fallback: Grep); ask only if ambiguous |
+| **Existing behavior** — how does X work today | No | Read the code (fff to find files; fallback: Grep). Report findings, then ask follow-up |
 | **Library/API capability** — can lib X do Y | No | Use `context7` (resolve-library-id → query-docs). Fallback: WebFetch the official docs URL |
 | **Edge case** — what happens when Z | Propose | State your assumption, ask user to confirm or correct |
 | **Trade-off** — option A vs B | Yes | Present pros/cons from your analysis, ask for preference |
@@ -34,7 +34,7 @@ Categorize every question before asking it:
 
 When you need information:
 
-1. **Codebase first** — fff-ai MCP tools for file search (fallback: Grep if MCP unavailable), plus Read. Look for existing patterns, tests, types, configs.
+1. **Codebase first** — fff MCP tools (`mcp__fff__*`) for file search (fallback: Grep if MCP unavailable), plus Read. Look for existing patterns, tests, types, configs.
 1. **Context7** — `resolve-library-id` to find the library, then `query-docs` for specific API/behavior questions.
 1. **WebFetch** — Direct URL fetch for official documentation pages.
 1. **WebSearch** — Broad search when you don't know the right doc URL.
@@ -113,7 +113,7 @@ At convergence, before writing the Final Summary, walk every `[DECIDED]` item an
 1. Will future readers be confused without the context behind it?
 1. Did it resolve a genuine trade-off among real alternatives?
 
-All three "yes" → write `.agents/decisions/NNNN-slug.md` using the template in `decisions.md`. Any "no" → skip; the Final Summary covers it.
+All three "yes" → write `<adr-root>/NNNN-slug.md` using the template in `decisions.md`. Any "no" → skip; the Final Summary covers it.
 
 ## Convergence
 

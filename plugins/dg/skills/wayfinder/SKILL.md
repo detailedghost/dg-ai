@@ -17,7 +17,7 @@ if [ ! -x "$DG" ]; then
 fi
 ```
 
-# /wayfinder — Chart the Way, Then Walk It
+# /wayfinder - Chart the Way, Then Walk It
 
 A loose idea is too big for one session and wrapped in fog. Find the way to the **destination** before you build. A **map** lists the decisions made and the fog left. **Tickets** are single decisions, each sized for one session. Resolve one ticket per session until no ticket and no fog remain. Then hand off.
 
@@ -53,10 +53,11 @@ Wayfinder ends where `/kick` starts. Never build inside a map.
 | Name destination, sketch fog, create tickets | Chart mode | [references/map.md](references/map.md) |
 | Claim, resolve, record, graduate fog | Work mode | [references/work.md](references/work.md) |
 | Map file and ticket file formats | Both | [references/map.md](references/map.md) |
+| List maps (`-l`) | Here | For each directory under `$("$DG" stash -m wayfinder)/`, print the slug, the count of tickets with `status: open`, and the fog count. The fog count is the number of non-blank lines under `## Not yet specified` in `map.md`. |
 
 ## Where the map lives
 
-`$("$DG" stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `"$DG" stash`. Never build it by hand. Commit the map with the repo like a spec bundle. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$("$DG" stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `"$DG" stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 

@@ -41,6 +41,8 @@ For the skill's `--scratch` / `-s` option, resolve `OUTPUT` with `"$DG" stash -u
 
 ## After Success
 
+With `-`, the PNG goes to stdout and no file exists. Skip these steps.
+
 1. Report the saved filename (printed to stdout by the script).
 1. If the user provided no arguments, mention the auto-generated filename.
 1. Read the saved image with the Read tool so the user can see it inline.

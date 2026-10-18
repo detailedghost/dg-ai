@@ -30,12 +30,12 @@ AGENTS.md                   <- primary authority: 30-60 lines (conventions, refe
   spec/                     <- spec bundles (/kick and /pickup write here)
 ```
 
-A git tag `agent-seed/YYYY-MM-DD` is created on the commit containing the original `.bak` backups, then the `.bak` files are removed in a follow-up commit. To recover the original CLAUDE.md: `git show agent-seed/<date>:.agents/references/CLAUDE.md.bak`
+A git tag `agent-seed/YYYY-MM-DD` is created on a commit that force-adds the original `.bak` backups, then the `.bak` files are removed in a follow-up commit. To recover the original CLAUDE.md: `git show agent-seed/<date>:.agents/references/CLAUDE.md.bak`
 
 ## Rules
 
 - **AGENTS.md is the authority.** CLAUDE.md just points to it.
-- Always backup CLAUDE.md (and AGENTS.md if it exists) before rewriting. Halt if backup fails. Backups are committed then removed (see Step 10 — tag preserves recovery path).
+- Always backup CLAUDE.md (and AGENTS.md if it exists) before rewriting. Halt if backup fails. Backups are committed then removed (see Step 8 — tag preserves recovery path).
 - School files: seed stubs with inline format rules. Any agent may write entries following the format. Prune a school file when it passes the line cap in its header.
 - Never create or touch `.agents/school/DEPS.md` — that belongs to deps-upgrade.
 - For monorepos, create per-package `AGENTS.md` files (thin pointers to root).

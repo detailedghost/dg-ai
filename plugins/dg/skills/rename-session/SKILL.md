@@ -5,7 +5,7 @@ description: Intelligently rename the current session — generates 3 candidate 
 
 # Skill: rename-session
 
-Rename the current Claude Code session. Without an argument, reads conversation context and git signals to propose 3 candidates; you pick one. With an argument, writes the name immediately.
+Rename the current Claude Code session. Without an argument, reads conversation context and git signals to propose 3 candidates and applies the first. With `--pick`, you choose one. With an argument, writes the name immediately.
 
 **Usage:**
 - `/rename-session` — generate candidates, auto-apply the best one
@@ -46,11 +46,17 @@ Using the conversation context (what has been discussed and done this session) p
 **4. Write the rename**
 
 ```bash
-session_file=$(grep -rl "$CLAUDE_CODE_SESSION_ID" ~/.claude/sessions/ 2>/dev/null)
-tmp=$(mktemp)
-jq --arg name "CHOSEN_NAME" '. + {name: $name}' "$session_file" > "$tmp" && mv "$tmp" "$session_file"
+[ -n "$CLAUDE_CODE_SESSION_ID" ] || { echo "CLAUDE_CODE_SESSION_ID is unset" >&2; exit 1; }
+matches=$(grep -rlF -- "$CLAUDE_CODE_SESSION_ID" ~/.claude/sessions/ 2>/dev/null)
+[ "$(printf '%s\n' "$matches" | grep -c .)" = 1 ] || { echo "expected exactly one session file" >&2; exit 1; }
+session_file=$matches
+tmp=$(mktemp "$session_file.XXXXXX") && cp -p "$session_file" "$tmp" &&
+  jq --arg name "CHOSEN_NAME" '. + {name: $name}' "$session_file" > "$tmp" &&
+  mv "$tmp" "$session_file" || { rm -f "$tmp"; exit 1; }
 ```
+
+The temp file sits next to the session file, so `mv` stays on one filesystem, and `cp -p` keeps the file mode.
 
 Confirm: print `Session renamed to: <name>`
 
-If `$CLAUDE_CODE_SESSION_ID` is unset or no session file is found, print an error and stop.
+If the script stops, print its error and stop.
