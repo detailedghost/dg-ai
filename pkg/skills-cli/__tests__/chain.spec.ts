@@ -1038,7 +1038,7 @@ describe("relocated compiled chain and file commands", () => {
 			cwd,
 			env: {
 				PATH: tools, HOME: home, TMPDIR: stage,
-				DG_SKILLS_DEST: installedSkills,
+				DG_SKILLS_DEST: installedSkills, DG_SKILLS_NO_CLI: "1",
 			},
 		});
 		if (bootstrap.exitCode !== 0) throw new Error(`Copied bootstrap failed: ${bootstrap.stderr.toString()}`);

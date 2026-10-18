@@ -57,6 +57,34 @@ same path, line, side, and text, keeping the higher tier. The merged set then ge
 usual tally, verdict, nit ladder, and thread dedupe. The body gains a "Review coverage"
 section that lists the chunks.
 
+`plan.json` stores the context, annotated and findings paths relative to its own folder,
+and `compile` resolves them against the folder that holds the plan. A copied scratch
+folder therefore compiles from its own findings. A stored path that escapes the folder
+(`..` or an absolute path elsewhere) is refused. An older plan with absolute paths still
+works while those paths sit inside its folder; otherwise `compile` asks you to run `diff` again.
+
+## Report-only (`--dry-run`)
+
+`post --dry-run`, or `DG_THRASH_DRY_RUN=1` (also `true` or `yes`) in the environment,
+prints `{ dryRun: true, url, requestedVerdict, review }` and returns. It does not detect
+the provider, call `gh` or `glab`, or write `.posted.json`. It still refuses a local target
+and a review compiled for another URL. Because it skips provider detection, a URL on an
+unsupported host previews cleanly even though a real `post` would fail. `/thrash -n` exports the variable at the start of the
+run and passes the flag, so report-only is safe even when a step runs by mistake.
+
+## Stacks with merged or closed PRs
+
+`stack` lists open PRs, adds the target if it is not open, then, for each base branch no
+candidate owns, asks for PRs of any state with that head branch, until no base is left.
+It never asks about the default branch, so a merged main-to-release PR cannot become the root of every stack.
+It never lists the repository's whole PR history. PRs join by head and base branch; when
+a branch name was reused, the open PR owns it, else the newest. A closed PR is found when
+it sits on the chain's base side; closed PRs branching off an open one are not searched. Only open PRs get a diff and a
+review. A merged PR is never reviewed again: it stays in the stack as context, each open
+PR's context file lists it under "Merged earlier in this stack", and its `statusPath`
+tallies as "merged (context only, not reviewed)". A closed unmerged PR tallies as
+"closed without merging (not reviewed)". GitHub and GitLab behave the same.
+
 ## Local mode
 
 `.` or a path resolves the repo root, then diffs the working tree against the fork point

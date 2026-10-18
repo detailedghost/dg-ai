@@ -1,10 +1,12 @@
 #!/bin/sh
-# Install the compiled dg-skills CLI for the current platform into ~/.dg/bin.
+# Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
 #   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
-#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files only.
-#       No release binaries are downloaded and no skill content is executed.
+#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
+#       install only the dg-skills CLI (checksum-verified like the default path).
+#       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.
+#       DG_SKILLS_NO_CLI=1 keeps it an offline copy (no CLI download).
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
 # --skills-only instead copies plugins/dg/skills into $DG_SKILLS_DEST
@@ -75,7 +77,7 @@ copy_skill_tree() {
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
   copy_thrash_persona "$src" "$dest"
-  echo "Skills-only install: no binaries were fetched and no skill content was executed."
+  echo "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
   rm -f "$manifest"
 }
 
@@ -130,11 +132,14 @@ if [ "$SKILLS_ONLY" = "1" ]; then
   fi
   dest="${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
   copy_skill_tree "$(skills_tree_source)" "$dest"
-  exit 0
+  if [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
+    echo "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
+    exit 0
+  fi
 fi
 
 REPO="detailedghost/dg-ai"
-BIN_DIR="${HOME}/.dg/bin"
+BIN_DIR="${DG_HOME:-${HOME}/.dg}/bin"
 DEST="${BIN_DIR}/dg-skills"
 
 os=$(uname -s)
@@ -275,7 +280,10 @@ case ":${PATH}:" in
 *) echo "Add to PATH:  export PATH=\"${BIN_DIR}:\$PATH\"" ;;
 esac
 
-if [ "${CLI_ONLY}" = "1" ]; then
+if [ "${SKILLS_ONLY}" = "1" ]; then
+  # Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
+  exit 0
+elif [ "${CLI_ONLY}" = "1" ]; then
   DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
 else
   # Set up the browser extension too, so one command installs everything.

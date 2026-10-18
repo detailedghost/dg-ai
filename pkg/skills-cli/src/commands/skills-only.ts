@@ -1,6 +1,6 @@
 /**
  * `install --skills-only` copies plugins/dg/skills as instruction files.
- * It does not list GitHub releases or spawn anything inside a skill.
+ * It never spawns anything inside a skill. The install command then fetches only the dg-skills CLI.
  */
 
 import { existsSync } from "node:fs";
@@ -60,6 +60,6 @@ export function skillsOnlyReport(result: SkillsOnlyResult): string {
 		...result.files,
 		`Installed ${result.files.length} skill files at ${result.dest}.`,
 		...(result.persona ? [`Installed thrash persona at ${result.persona}.`] : []),
-		"Skills-only install: no binaries were fetched and no skill content was executed.",
+		"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).",
 	].join("\n");
 }

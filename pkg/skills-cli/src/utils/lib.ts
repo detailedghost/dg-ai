@@ -100,7 +100,7 @@ export type Release = {
 	assets: { name: string; browser_download_url: string }[];
 };
 
-export type PickedAsset = { name: string; url: string; version: string };
+export type PickedAsset = { name: string; url: string; version: string; sumsUrl?: string };
 
 const UA = { "User-Agent": "dg-ai-extension" };
 
@@ -154,11 +154,36 @@ export function pickCliAsset(
 	);
 	const asset = rel?.assets.find((a) => a.name === name);
 	if (!rel || !asset) return undefined;
+	const sums = rel.assets.find((a) => a.name === "SHA256SUMS");
 	return {
 		name: asset.name,
 		url: asset.browser_download_url,
 		version: rel.tag_name.slice(spec.tagPrefix.length),
+		...(sums ? { sumsUrl: sums.browser_download_url } : {}),
 	};
+}
+
+/** The hash SHA256SUMS lists for `assetName` (GNU `<hash>  <name>` or `<hash> *<name>`), lowercased. */
+export function expectedSha256(sums: string, assetName: string): string | undefined {
+	for (const line of sums.split(/\r?\n/)) {
+		const match = /^([0-9A-Fa-f]{64})\s+\*?(.+?)\s*$/.exec(line);
+		if (match && match[2] === assetName) return match[1].toLowerCase();
+	}
+	return undefined;
+}
+
+/**
+ * Check a downloaded binary against the release's SHA256SUMS, the same rule bootstrap.sh and
+ * bootstrap.ps1 apply. A release without SHA256SUMS passes; one that omits the asset or mismatches throws.
+ */
+export async function verifyCliChecksum(asset: PickedAsset, buf: Uint8Array, tag: string): Promise<void> {
+	if (!asset.sumsUrl) return;
+	const res = await fetch(asset.sumsUrl, { headers: UA });
+	if (!res.ok) throw new Error(`failed to download SHA256SUMS for ${tag}: HTTP ${res.status}`);
+	const expected = expectedSha256(await res.text(), asset.name);
+	if (!expected) throw new Error(`SHA256SUMS in ${tag} has no entry for ${asset.name}`);
+	const actual = new Bun.CryptoHasher("sha256").update(buf).digest("hex");
+	if (actual !== expected) throw new Error(`checksum mismatch for ${asset.name} in ${tag}`);
 }
 
 export const RELEASES_PER_PAGE = 100;
@@ -208,13 +233,18 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
+/** `$DG_HOME/bin`, else `~/.dg/bin`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
+	return join(env.DG_HOME || join(homedir(), ".dg"), "bin");
+}
+
 export function cliDest(binaryName: string): string {
 	const name = process.platform === "win32" ? `${binaryName}.exe` : binaryName;
-	return join(homedir(), ".dg", "bin", name);
+	return join(cliBinDir(), name);
 }
 
 export function cliVersionFile(binaryName: string): string {
-	return join(homedir(), ".dg", "bin", `.${binaryName}.version`);
+	return join(cliBinDir(), `.${binaryName}.version`);
 }
 
 export function resolveCliAsset(
@@ -232,7 +262,8 @@ export async function fetchCliBinary(
 	if (!dl.ok)
 		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
 	const buf = Buffer.from(await dl.arrayBuffer());
-	const binDir = join(homedir(), ".dg", "bin");
+	await verifyCliChecksum(asset, buf, `v${asset.version}`);
+	const binDir = cliBinDir();
 	mkdirSync(binDir, { recursive: true });
 	const dest = cliDest(binaryName);
 	const staging = join(binDir, `.${binaryName}.${process.pid}.tmp`);

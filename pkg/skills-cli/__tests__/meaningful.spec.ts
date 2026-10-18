@@ -966,7 +966,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   const home = join(stage, "bootstrap home");
   for (const dir of [tools, cwd, home]) mkdirSync(dir, { recursive: true });
   for (const tool of compiledBootstrapTools) symlinkSync(tool.path, join(tools, tool.name));
-  const installResult = Bun.spawnSync([join(tools, "sh"), bootstrap, "--skills-only"], { cwd, env: { HOME: home, PATH: tools, TMPDIR: stage, DG_SKILLS_DEST: skills } });
+  const installResult = Bun.spawnSync([join(tools, "sh"), bootstrap, "--skills-only"], { cwd, env: { HOME: home, PATH: tools, TMPDIR: stage, DG_SKILLS_DEST: skills, DG_SKILLS_NO_CLI: "1" } });
   if (installResult.exitCode !== 0) throw new Error(`Skills-only fixture install failed: ${installResult.stderr.toString()}`);
   rmSync(stage, { recursive: true, force: true });
  }, 120_000);

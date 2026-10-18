@@ -12,7 +12,7 @@ Reshape commits on the current branch since `main` into a tighter, more reviewab
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="$HOME/.dg/bin/dg-skills"
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
 if [ ! -x "$DG" ]; then
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then

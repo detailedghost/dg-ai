@@ -118,8 +118,12 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/
 ```
 
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
-from `--cli-only`: that path still installs the `dg-skills` binary and writes
-`~/.dg/cli-only`. Skills-only leaves `~/.dg/bin` and that marker untouched.
+from `--cli-only`, which writes `~/.dg/cli-only`. Every skills-only path also
+installs the `dg-skills` CLI from the latest `skills-v*` release into
+`${DG_HOME:-~/.dg}/bin`, checked against the release's `SHA256SUMS`, because the
+skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
+`cli-only` marker untouched, and never executes skill content. Set
+`DG_SKILLS_NO_CLI=1` with the bootstraps for an offline copy that skips the CLI.
 
 ______________________________________________________________________
 
@@ -147,12 +151,12 @@ the `/dg:*` skills are available.
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
 The skills run compiled binaries. Bootstrap once — this downloads `dg-skills`
-for the current platform into `~/.dg/bin`, **then runs `dg-skills install`**,
+for the current platform into `~/.dg/bin` (`$DG_HOME/bin` when `DG_HOME` is set), **then runs `dg-skills install`**,
 which fetches `dg-daemon` and `dg-agent` too, stages the extension, and prints the exact **Load
 unpacked** path:
 
 ```bash
-DG="$HOME/.dg/bin/dg-skills"
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
 if [ ! -x "$DG" ]; then
   PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
   LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
@@ -222,8 +226,8 @@ Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-rev
 grouping/tours work with the browser or demo skill. For the chat harness:
 
 ```bash
-"$HOME/.dg/bin/dg-agent" --help
-"$HOME/.dg/bin/dg-daemon" status
+"${DG_HOME:-$HOME/.dg}/bin/dg-agent" --help
+"${DG_HOME:-$HOME/.dg}/bin/dg-daemon" status
 ```
 
 `dg-agent --help` should list `start`, `recv`, `send`, `progress`, `spawn`,

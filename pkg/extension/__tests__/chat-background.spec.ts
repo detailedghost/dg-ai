@@ -1016,6 +1016,38 @@ test("MSG.sessionCreate relays to the daemon as a real session-create frame", as
 	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
 });
 
+test("regression #35: MSG.sessionCreate answers with an error when the socket is down", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	registerChat({ browserApi: api, openSocket });
+	const bootstrap = makeBootstrap();
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("close");
+	await settle();
+	const sendResponse = mock((_r: unknown) => undefined);
+	const sentBefore = socket.send.mock.calls.length;
+
+	getOnMessage()?.(
+		{ type: MSG.sessionCreate, sessionId: bootstrap.sessionId, role: "agent" },
+		extensionPageSender(api),
+		sendResponse,
+	);
+	await settle();
+
+	expect(sendResponse).toHaveBeenCalledTimes(1);
+	expect(sendResponse).toHaveBeenCalledWith({
+		ok: false,
+		error: "requestNewSession: not connected to the daemon",
+	});
+	const sent = socket.send.mock.calls
+		.slice(sentBefore)
+		.map(([raw]) => JSON.parse(raw as string));
+	expect(sent.some((f) => f.type === "session-create")).toBe(false);
+});
+
 test("MSG.sessionClose relays to the daemon as a real session-close frame", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
