@@ -36,11 +36,13 @@ function legacyInvocation(commands: string[]): RegExp {
 	const names = commands.join("|");
 	return new RegExp(
 		[
-			"(?:^\\s*|\\$\\(\\s*|`)(?:" + names + ")(?:\\.ts)?(?=\\s|`|$)",
-			"[\"'](?:" + names + ")\\s+",
-			"\\b(?:spawn(?:Sync)?|exec(?:File)?(?:Sync)?|run(?:Capture|Shell)?)\\s*\\(\\s*(?:\\[\\s*)?[\"'`](?:" +
+			"(?:^\\s*|\\$\\(\\s*|`)(?:(?:bash|sh)\\s+)?(?:" +
 				names +
-				")(?:\\.ts)?(?=[\"'`\\s])",
+				")(?:\\.ts|\\.sh)?(?=\\s|`|$)",
+			"[\"'](?:(?:bash|sh)\\s+)?(?:" + names + ")(?:\\.ts|\\.sh)?\\s+",
+			"\\b(?:spawn(?:Sync)?|exec(?:File)?(?:Sync)?|run(?:Capture|Shell)?)\\s*\\(\\s*(?:\\[\\s*)?(?:[\"'`](?:bash|sh)[\"'`]\\s*,\\s*)?[\"'`](?:" +
+				names +
+				")(?:\\.ts|\\.sh)?(?=[\"'`\\s])",
 		].join("|"),
 	);
 }
@@ -52,6 +54,15 @@ const retiredHelpers = legacyInvocation([
 	"vcs-provider-cli",
 	"proxy-helper",
 	"bg-helper",
+	"address-helper",
+	"thrash-helper",
+	"chain",
+	"chain-cli",
+	"file-cli",
+	"meaningful-helper",
+	"deps-upgrade-helper",
+	"catchup",
+	"verify-build",
 ]);
 const consumerFiles = skillFiles.filter((file) =>
 	[
@@ -104,6 +115,18 @@ describe("legacy executable detection", () => {
 		"vcs-provider-cli detect",
 		"proxy-helper codex --prompt-file task.md",
 		"bg-helper run command",
+		"address-helper gather-unresolved",
+		"thrash-helper compile . --diff review.diff",
+		"chain plan 1 2",
+		"chain-cli render 1 2",
+		"file-cli list --group-by-label",
+		"meaningful-helper info",
+		"deps-upgrade-helper prepare",
+		"catchup.sh --no-push",
+		"bash catchup.sh --no-push",
+		'Bun.spawn(["bash", "catchup.sh"])',
+		"verify-build.sh",
+		'runCapture("address-helper", ["probe"])',
 		'Bun.spawn(["proxy-helper", "codex"])',
 		'Bun.spawn(["stash", "tool"])',
 		'runCapture("clipboard-image", ["-"])',
@@ -119,6 +142,13 @@ describe("legacy executable detection", () => {
 		'"$DG" vcs-provider detect',
 		'"$DG" proxy codex --prompt-file task.md',
 		'"$DG" proxy background run command',
+		'"$DG" address gather-unresolved',
+		'"$DG" thrash compile . --diff review.diff',
+		'"$DG" chain plan 1 2',
+		'"$DG" file list --group-by-label',
+		'"$DG" meaningful info',
+		'"$DG" deps-upgrade prepare',
+		'"$DG" catchup --no-push',
 		"const legacyName = /^proxy-helper(?:\\.sh)?$/;",
 		'Bun.spawn([binary, "stash", "tool"])',
 		'const name = "clipboard-image";',

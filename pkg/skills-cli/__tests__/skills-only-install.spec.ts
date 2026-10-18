@@ -91,13 +91,27 @@ globalThis.fetch = (input: unknown) => {
 	return path;
 }
 
-function expectReport(stdout: string, dest: string, files: string[]): void {
+function thrashPersonaPath(skillsDest: string): string {
+	return join(skillsDest, "..", "agents", "thrash.md");
+}
+
+function expectReport(
+	stdout: string,
+	dest: string,
+	files: string[],
+	persona?: string,
+): void {
 	const lines = stdout.trim().split("\n");
-	const summaryAt = lines.findIndex((line) => line.startsWith("Installed "));
+	const summaryAt = lines.findIndex((line) => line.startsWith("Installed ") && line.includes("skill files"));
 	expect(lines.slice(0, summaryAt)).toEqual(files);
 	expect(lines[summaryAt]).toBe(`Installed ${files.length} skill files at ${dest}.`);
-	expect(lines[summaryAt + 1]).toBe(SUMMARY);
-	expect(lines).toHaveLength(summaryAt + 2);
+	let next = summaryAt + 1;
+	if (persona) {
+		expect(lines[next]).toBe(`Installed thrash persona at ${persona}.`);
+		next += 1;
+	}
+	expect(lines[next]).toBe(SUMMARY);
+	expect(lines).toHaveLength(next + 1);
 }
 
 function expectExactCopy(sourceRoot: string, dest: string, files: string[]): void {
@@ -172,8 +186,11 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES);
+			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest));
 			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
+			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
+				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
+			);
 			expect(readFileSync(join(dest, "google-sms-cleanup", "SKILL.md"), "utf8")).toContain(
 				"google-sms-cleanup",
 			);
@@ -199,6 +216,7 @@ describe("dg-skills install --skills-only", () => {
 			);
 			expect(result.code).toBe(0);
 			expect(filesUnder(join(home, "skills"))).toEqual(REPO_SKILL_FILES);
+			expect(readFileSync(join(home, "agents", "thrash.md"), "utf8")).toContain("thrash");
 			expect(existsSync(join(home, ".dg", "skills"))).toBe(false);
 			expect(existsSync(join(home, "bin"))).toBe(false);
 		} finally {
@@ -288,8 +306,11 @@ describe("bootstrap.sh --skills-only", () => {
 				}),
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			expectReport(result.stdout, dest, REPO_SKILL_FILES);
+			expectReport(result.stdout, dest, REPO_SKILL_FILES, thrashPersonaPath(dest));
 			expectExactCopy(REPO_SKILLS, dest, REPO_SKILL_FILES);
+			expect(readFileSync(thrashPersonaPath(dest), "utf8")).toBe(
+				readFileSync(join(REPO, "plugins", "dg", "agents", "thrash.md"), "utf8"),
+			);
 			expect(existsSync(curlLog)).toBe(false);
 			expect(existsSync(join(directory, "home", "bin", "dg-skills"))).toBe(false);
 		} finally {
