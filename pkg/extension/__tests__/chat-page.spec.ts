@@ -1750,7 +1750,7 @@ test("regression #35: New chat on a stored session shows the background's reject
 	);
 	try {
 		const button = createChatButton(root);
-		button.disabled = false;
+		expect(button.disabled).toBe(false);
 		click(button);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1779,7 +1779,7 @@ test("regression #35: New chat on a stored session shows an error when the backg
 	);
 	try {
 		const button = createChatButton(root);
-		button.disabled = false;
+		expect(button.disabled).toBe(false);
 		click(button);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1797,7 +1797,7 @@ test("New chat on a stored session leaves the error surface hidden when the back
 	);
 	try {
 		const button = createChatButton(root);
-		button.disabled = false;
+		expect(button.disabled).toBe(false);
 		click(button);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
