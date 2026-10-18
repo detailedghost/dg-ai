@@ -9,7 +9,7 @@ import {
 } from "../src/commands/skills-only";
 
 const SUMMARY =
-	"Skills-only install: no binaries were fetched and no skill content was executed.";
+	"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).";
 
 describe("skills-only helpers", () => {
 	test("rejects flags that would fetch binaries or build the extension", () => {

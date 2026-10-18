@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { scratchPath } from "@dg/common/node";
@@ -8,6 +8,7 @@ import { getProviderForUrl } from "../provider/index";
 import {
 	type ProviderKind,
 	type PrRef,
+	type PullRequest,
 	parsePrNumberArg,
 	parseRepoRef,
 	type RepoRef,
@@ -28,9 +29,12 @@ import {
 	parseTier,
 	parseUnifiedDiff,
 	planChunks,
+	relativePlanPath,
+	resolvePlanPath,
 	renderAddressFile,
 	renderPreview,
 	renderTallyTable,
+	type StackStatusRow,
 	stackFor,
 	type TallyRow,
 	toPostReviewInput,
@@ -218,8 +222,18 @@ async function writeDiff(target: Target) {
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
 	writeFileSync(contextPath, await renderContext(target, files, plan));
-	const planFile: PlanFile = { contextPath, chunks, skipped: plan.skipped };
-	writeFileSync(planPathFor(diffPath), JSON.stringify(planFile, null, 2));
+	const planPath = planPathFor(diffPath);
+	const planRoot = path.dirname(planPath);
+	const planFile: PlanFile = {
+		contextPath: relativePlanPath(planRoot, contextPath),
+		chunks: chunks.map((chunk) => ({
+			...chunk,
+			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
+			findingsPath: relativePlanPath(planRoot, chunk.findingsPath),
+		})),
+		skipped: plan.skipped,
+	};
+	writeFileSync(planPath, JSON.stringify(planFile, null, 2));
 	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats: diffStats(files) };
 }
 
@@ -266,13 +280,16 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
-	const plan = JSON.parse(readFileSync(planPathFor(diffPath), "utf8")) as PlanFile;
+	const planPath = planPathFor(diffPath);
+	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	const planRoot = path.dirname(path.resolve(planPath));
 	const output = mergeOutputs(
 		plan.chunks.map((chunk) => {
-			if (!existsSync(chunk.findingsPath)) {
-				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${chunk.findingsPath}`);
+			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
+			if (!existsSync(findingsPath)) {
+				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
 			}
-			return parseAgentOutput(readFileSync(chunk.findingsPath, "utf8"));
+			return parseAgentOutput(readFileSync(findingsPath, "utf8"));
 		}),
 	);
 	const splitReview = plan.chunks.length > 1 || plan.skipped.length > 0;
@@ -303,21 +320,81 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	return EXIT.OK;
 }
 
+/** True when `post` must not publish: `--dry-run`, or DG_THRASH_DRY_RUN set to 1, true or yes. */
+export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean {
+	return args.includes("--dry-run") || /^(1|true|yes)$/i.test(env.DG_THRASH_DRY_RUN?.trim() ?? "");
+}
+
 async function cmdPost(args: string[]): Promise<number> {
 	const arg = positional(args, "post");
-	const target = await resolveTarget(arg);
-	if (target.mode === "local") {
+	if (!isUrl(arg)) {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
 	}
 	const stored = JSON.parse(readFileSync(requireOption(args, "--review"), "utf8")) as ReviewFile;
 	if (stored.target !== arg) {
 		throw new Error(`review file was compiled for ${stored.target}, not ${arg}`);
 	}
+	const input = toPostReviewInput(stored.review);
+	if (isPostDryRun(args)) {
+		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
+		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
+		return EXIT.OK;
+	}
+	const target = await resolveTarget(arg);
+	if (target.mode === "local") {
+		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
+	}
 	const provider = await getProviderForUrl(target.url);
-	const posted = await provider.postReview(prRef(target), toPostReviewInput(stored.review));
+	const posted = await provider.postReview(prRef(target), input);
 	writeFileSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), JSON.stringify(posted, null, 2));
 	printJson({ ...posted, requestedVerdict: stored.review.verdict });
 	return EXIT.OK;
+}
+
+function stackState(pr: PullRequest): "open" | "merged" | "closed" {
+	if (pr.merged || pr.state === "MERGED") return "merged";
+	return pr.state === "CLOSED" ? "closed" : "open";
+}
+
+function mergedContextSection(merged: PullRequest[]): string {
+	if (merged.length === 0) return "";
+	const lines = merged.map((pr) => `- #${pr.number} ${pr.title} (${pr.url}), ${pr.headRefName} into ${pr.baseRefName}`);
+	return `\n## Merged earlier in this stack (context only, not reviewed)\n\n${lines.join("\n")}\n`;
+}
+
+/**
+ * Open PRs, the target, and any merged or closed PR whose head is the base of a candidate.
+ * Lists only open PRs in bulk, then asks per unowned base branch, so cost does not grow with history.
+ * The default branch is never asked about.
+ */
+async function stackCandidates(
+	provider: Awaited<ReturnType<typeof getProviderForUrl>>,
+	target: RemoteTarget,
+): Promise<PullRequest[]> {
+	const pool = new Map<number, PullRequest>();
+	for (const pr of await provider.listPullRequests({ state: "open" }, target.repo)) pool.set(pr.number, pr);
+	if (!pool.has(target.number)) {
+		const pr = await provider.viewPullRequest(prRef(target));
+		pool.set(pr.number, pr);
+	}
+	// The default branch is everyone's base; a merged main-to-release PR must not become every stack's root.
+	const defaultBranch = await provider
+		.repoInfo(target.repo)
+		.then((info) => info.defaultBranch)
+		.catch(() => "");
+	const asked = new Set<string>(defaultBranch ? [defaultBranch] : []);
+	for (;;) {
+		const heads = new Set([...pool.values()].map((pr) => pr.headRefName));
+		const bases = [...new Set([...pool.values()].map((pr) => pr.baseRefName))].filter(
+			(base) => !heads.has(base) && !asked.has(base),
+		);
+		if (bases.length === 0) return [...pool.values()];
+		for (const base of bases) {
+			asked.add(base);
+			const found = await provider.listPullRequests({ state: "all", head: base }, target.repo);
+			for (const pr of found) if (pr.headRefName === base && !pool.has(pr.number)) pool.set(pr.number, pr);
+		}
+	}
 }
 
 async function cmdStack(args: string[]): Promise<number> {
@@ -325,30 +402,42 @@ async function cmdStack(args: string[]): Promise<number> {
 	const target = await resolveTarget(arg);
 	if (target.mode === "local") throw new Error("stack needs a PR or MR URL");
 	const provider = await getProviderForUrl(target.url);
-	const open = await provider.listPullRequests({ state: "open" }, target.repo);
-	const stack = stackFor(open, target.number);
+	const stack = stackFor(await stackCandidates(provider, target), target.number);
 	if (!args.includes("--diff")) {
 		printJson(
-			stack.map(({ number, title, url, headRefName, baseRefName }) => ({
-				number,
-				title,
-				url,
-				headRefName,
-				baseRefName,
+			stack.map((pr) => ({
+				number: pr.number,
+				title: pr.title,
+				url: pr.url,
+				headRefName: pr.headRefName,
+				baseRefName: pr.baseRefName,
+				state: stackState(pr),
 			})),
 		);
 		return EXIT.OK;
 	}
+	const merged = stack.filter((pr) => stackState(pr) === "merged");
 	const rows = await Promise.all(
 		stack.map(async (pr) => {
+			const state = stackState(pr);
+			if (state !== "open") {
+				// Merged PRs are context for the open ones; closed ones are reported. Neither is reviewed.
+				const statusPath = scratchPath(TOOL, `${targetSlug({ ...target, number: pr.number })}.stack-status.json`);
+				const status: StackStatusRow = { target: pr.url, stackState: state };
+				writeFileSync(statusPath, JSON.stringify(status, null, 2));
+				return { number: pr.number, url: pr.url, state, reviewed: false, statusPath };
+			}
 			const { diffPath, contextPath, chunks, skipped, stats } = await writeDiff({
 				...target,
 				url: pr.url,
 				number: pr.number,
 			});
+			appendFileSync(contextPath, mergedContextSection(merged));
 			return {
 				number: pr.number,
 				url: pr.url,
+				state,
+				reviewed: true,
 				diffPath,
 				contextPath,
 				chunks,
@@ -364,8 +453,10 @@ async function cmdStack(args: string[]): Promise<number> {
 function cmdTally(args: string[]): number {
 	const reviewPaths = args.filter((a) => !a.startsWith("--"));
 	if (reviewPaths.length === 0) throw new Error("tally requires one or more review JSON files");
-	const rows: TallyRow[] = reviewPaths.map((reviewPath) => {
-		const stored = JSON.parse(readFileSync(reviewPath, "utf8")) as ReviewFile;
+	const rows: Array<TallyRow | StackStatusRow> = reviewPaths.map((reviewPath) => {
+		const parsed = JSON.parse(readFileSync(reviewPath, "utf8")) as ReviewFile | StackStatusRow;
+		if ("stackState" in parsed) return { target: parsed.target, stackState: parsed.stackState };
+		const stored = parsed;
 		const postedPath = reviewPath.replace(/\.review\.json$/, ".posted.json");
 		const posted = postedPath !== reviewPath && existsSync(postedPath);
 		return {
@@ -395,13 +486,13 @@ const command = defineCommand({
 			run: (args, opts) => cmdCompile(args, opts),
 		},
 		post: {
-			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file>",
+			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file> [--dry-run]. --dry-run or DG_THRASH_DRY_RUN=1 prints the review and makes no provider call",
 			args: ["target"],
 			run: cmdPost,
 		},
 		stack: {
 			description:
-				"List every open PR or MR in the target's stack, root first, as JSON; --diff also writes each diff and prints its paths",
+				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed",
 			args: ["target"],
 			run: cmdStack,
 		},

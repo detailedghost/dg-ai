@@ -203,7 +203,7 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
 		const dest = /export function cliDest[\s\S]*?\n}/.exec(lib)?.[0];
 
-		expect(dest).toContain('join(homedir(), ".dg", "bin"');
+		expect(dest).toContain("join(cliBinDir(), name)");
 		expect(dest).not.toContain("binaryName ===");
 	});
 

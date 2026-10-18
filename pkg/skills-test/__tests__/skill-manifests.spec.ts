@@ -113,13 +113,17 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	const cliSkills = skillsMentioning(".dg/bin/dg-skills");
+	const cliSkills = skillsMentioning("/bin/dg-skills");
 
 	test("at least one skill invokes the dg-skills binary", () => {
 		expect(cliSkills.length).toBeGreaterThan(0);
 	});
 
 	for (const { name, md } of cliSkills) {
+		test(`${name}: resolves the binary under DG_HOME, not a hardcoded ~/.dg`, () => {
+			expect(md).not.toMatch(/="\$HOME\/\.dg\/bin\//);
+			expect(md).not.toMatch(/="~\/\.dg\/bin\//);
+		});
 		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
 			expect(md).toContain("skills-cli");
 			expect(md).toContain("bootstrap.sh");

@@ -83,7 +83,7 @@ function fakeBinary(url: string): string {
 
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
-	options: { sums?: string; installBody?: string } = {},
+	options: { sums?: string; installBody?: string; dgHome?: string; skillsOnly?: boolean } = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
 	const binDir = join(dir, "stubbin");
@@ -102,12 +102,18 @@ async function runBootstrap(
 	const home = join(dir, "home");
 	mkdirSync(home, { recursive: true });
 
-	const proc = Bun.spawn(["sh", BOOTSTRAP], {
+	const skillsSource = join(dir, "skills-src");
+	mkdirSync(join(skillsSource, "probe"), { recursive: true });
+	writeFileSync(join(skillsSource, "probe", "SKILL.md"), "probe\n");
+	const proc = Bun.spawn(["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : [])], {
 		env: {
 			...process.env,
 			PATH: `${binDir}:${process.env.PATH}`,
 			HOME: home,
+			DG_HOME: options.dgHome ?? "",
 			STUBDIR: dir,
+			DG_SKILLS_SOURCE: skillsSource,
+			DG_SKILLS_DEST: join(dir, "skills-out"),
 			COUNTER: counterFile,
 			...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
 		},
@@ -118,8 +124,9 @@ async function runBootstrap(
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
 
-	const destPath = join(home, ".dg", "bin", "dg-skills");
-	const versionPath = join(home, ".dg", "bin", ".dg-skills.version");
+	const binRoot = join(options.dgHome || join(home, ".dg"), "bin");
+	const destPath = join(binRoot, "dg-skills");
+	const versionPath = join(binRoot, ".dg-skills.version");
 	const destContent = existsSync(destPath)
 		? readFileSync(destPath, "utf8")
 		: undefined;
@@ -147,6 +154,42 @@ describe("bootstrap.sh picks its binary from the skills-v* tag only", () => {
 		expect(run.destUrl).toContain("/skills-v1.0.0/");
 		expect(run.destUrl?.endsWith(`/${SKILLS_ASSET}`)).toBe(true);
 		expect(run.versionContent).toBe("1.0.0");
+	});
+
+	test("installs into $DG_HOME/bin when DG_HOME is set", async () => {
+		const dgHome = mkdtempSync(join(tmpdir(), "dg-home-"));
+		const run = await runBootstrap(
+			[[release("skills-v1.0.0", [SKILLS_ASSET])]],
+			{ dgHome },
+		);
+		expect(run.code).toBe(0);
+		expect(run.stdout).toContain(`dg-skills installed at ${join(dgHome, "bin", "dg-skills")}`);
+		expect(run.versionContent).toBe("1.0.0");
+	});
+
+	test("--skills-only installs the verified CLI from skills-v and never runs dg-skills install", async () => {
+		const binary = '#!/bin/sh\necho "install ran: $*"\n';
+		const sums = `${createHash("sha256").update(binary).digest("hex")}  ${SKILLS_ASSET}\n`;
+		const run = await runBootstrap(
+			[[release("daemon-v9.0.0", [SKILLS_ASSET]), release("skills-v2.0.0", [SKILLS_ASSET, "SHA256SUMS"])]],
+			{ sums, skillsOnly: true, installBody: '#!/bin/sh\necho "install ran: $*"' },
+		);
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.versionContent).toBe("2.0.0");
+		expect(run.stdout).toContain("Installed 1 skill files");
+		expect(run.stdout).toContain("dg-skills installed at");
+		expect(run.stdout).not.toContain("install ran");
+		expect(run.stdout).not.toContain("Setting up the dg-ai-extension");
+	});
+
+	test("--skills-only refuses a checksum mismatch and keeps no binary", async () => {
+		const run = await runBootstrap(
+			[[release("skills-v2.0.0", [SKILLS_ASSET, "SHA256SUMS"])]],
+			{ sums: `${"0".repeat(64)}  ${SKILLS_ASSET}\n`, skillsOnly: true },
+		);
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain(`checksum mismatch for ${SKILLS_ASSET}`);
+		expect(run.destUrl).toBeUndefined();
 	});
 
 	test("refuses an identically-named asset attached to a NEWER non-skills release", async () => {

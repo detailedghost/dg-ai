@@ -31,7 +31,7 @@ model, so cost scales with size up to 8x. One publish. The verdict posts with no
 | `-s, --spice N` | 1 to 5, default 2. Scrutiny depth, nit budget, and verdict limits. Tone never changes. |
 | `-c, --comment` | Post as comment only. No approve, no request-changes. |
 | `--confirm` | Confirm before posting. |
-| `-n, --dry-run` | Preview only. Never posts. |
+| `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
 | `-t, --min-tier <tier>` | Drop findings below this tier. Overrides the spice nit ladder. |
 | `-b, --base <ref>` | Local mode only. Override fork-point detection. |
 | `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `cortex`, `grok`) through `/proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
@@ -57,16 +57,27 @@ Nits never fail a review. `--comment` replaces the event. Spice never moves a ti
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="$HOME/.dg/bin/dg-skills"
-if [ ! -x "$DG" ]; then
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
+dg_bootstrap() {
   LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
   fi
+}
+dg_has_thrash() {
+  case "$("$DG" thrash --help 2>/dev/null)" in *--dry-run*) return 0 ;; esac
+  return 1
+}
+if [ ! -x "$DG" ] || ! dg_has_thrash; then
+  dg_bootstrap
+  dg_has_thrash || { echo "dg-skills at $DG is missing thrash post --dry-run; update it with the bootstrap above" >&2; exit 1; }
 fi
 ```
+
+`DG_HOME` moves the whole install, binary included. A binary whose `thrash` help lacks
+`--dry-run` is stale: re-bootstrap once, then stop with that error rather than run it.
 
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the
@@ -107,9 +118,11 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    prints the preview plus `REVIEW_JSON=` and `VERDICT=`. Show the preview. On a rejected
    or missing file, follow the retry in `references/agent-prompt.md`.
 4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/address -l`, then stop.
-   `--dry-run`: skip to step 6. Confirm through the host's user-question facility only when `--confirm` was
+   `--dry-run`: run `export DG_THRASH_DRY_RUN=1` at the start of the run (every fresh shell),
+   and in step 5 call `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
+   the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility only when `--confirm` was
    passed. Otherwise go to step 5 now.
-5. **Post.** `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON"` posts and saves the result
+5. **Post.** `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--dry-run` in report-only mode) posts and saves the result
    next to the review JSON. If `degraded` is true, say the provider refused the requested
    verdict and posted as comment (for example, an own-PR restriction); the body still states the verdict.
 6. **Tally.** `"$DG" thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
@@ -128,18 +141,23 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
 
 `--stacked` runs the same steps across the stack, keeping per-PR output out of context:
 
-1. `"$DG" thrash stack "$TARGET" --diff` fetches every diff in parallel and prints one row
-   per PR, root first: `number`, `url`, `diffPath`, `contextPath`, `chunks`,
-   `skipped`, `changed`.
+1. `"$DG" thrash stack "$TARGET" --diff` walks every PR in the stack, open, merged or closed,
+   root first, and prints one row per PR with `number`, `url`, `state` and `reviewed`.
+   Only **open** PRs are reviewed: their rows add `diffPath`, `contextPath`, `chunks`,
+   `skipped` and `changed`, and each context file lists the merged PRs as context.
+   A **merged** PR is never reviewed again; its row has a `statusPath` and tally shows
+   "merged (context only, not reviewed)". A **closed** unmerged PR gets the same and shows
+   "closed without merging (not reviewed)". Report closed PRs to the user.
 2. Launch every chunk agent of every PR in one message, or every `--proxy` job. Wait for
    all `WROTE` replies.
 3. Compile every PR in one shell loop with stdout sent to `/dev/null`; errors still show.
    Each review JSON is its `diffPath` with `.diff` replaced by `.review.json`.
-4. `"$DG" thrash tally` on all review files is the preview; unposted rows say so.
+4. `"$DG" thrash tally` on all review files plus every `statusPath`, in stack order, is the
+   preview; unposted rows say so.
    For `--dry-run`, show the unposted tally and stop. Otherwise post with no confirm,
    unless `--confirm` was passed. Then one confirm covers the stack.
-5. Post in one shell loop with stdout sent to `/dev/null`, then run `tally` again as the
-   final report.
+5. Post in one shell loop with stdout sent to `/dev/null` (with `--dry-run` in report-only
+   mode), then run `tally` again on the same files as the final report.
 
 ## Rules
 

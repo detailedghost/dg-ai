@@ -18,7 +18,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { BACKENDS } from "../src/proxy";
 import { EXIT } from "../src/utils/legacy-command";
 import * as cliFixtures from "./cli-fixtures";
@@ -261,6 +261,65 @@ describe("local mode", () => {
 			false,
 		);
 		expect(existsSync(join(repo, ".agents", "code-review"))).toBe(false);
+	});
+
+	test("plan.json stores chunk paths relative to its folder", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		const plan = JSON.parse(readFileSync(diff.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		expect(plan.contextPath).toBe(basename(diff.contextPath));
+		expect(plan.chunks[0].findingsPath).toBe(basename(diff.chunks[0].findingsPath));
+		expect(plan.chunks[0].annotatedPath).toBe(basename(diff.chunks[0].annotatedPath));
+	});
+
+	test("a copied scratch folder compiles from its own findings, not the original's", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 3, tier: "high", body: "Original finding." }]);
+		const copy = cliFixtures.tmp(createdDirs, "thrash-copy-");
+		cpSync(dirname(diff.diffPath), copy, { recursive: true });
+		const copiedDiff = join(copy, basename(diff.diffPath));
+		writeFileSync(
+			join(copy, basename(diff.chunks[0].findingsPath)),
+			`\`\`\`json\n${JSON.stringify({ changed: "Adds a.", strengths: [], opportunities: [], findings: [{ path: "src/a.ts", line: 3, tier: "low", body: "Copied finding." }] })}\n\`\`\`\n`,
+		);
+		const result = run(["compile", ".", "--diff", copiedDiff, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const review = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8")).review;
+		const text = JSON.stringify(review);
+		expect(text).toContain("Copied finding.");
+		expect(text).not.toContain("Original finding.");
+	});
+
+	for (const [label, stored, message] of [
+		["an absolute path outside the folder", "/etc/passwd", "run thrash diff again"],
+		["a parent-relative path", "../elsewhere.findings.md", "escapes the plan folder"],
+	] as const) {
+		test(`compile refuses a plan with ${label}`, () => {
+			const repo = fixtureRepo();
+			const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+			findingsFile(diff, []);
+			const planPath = diff.diffPath.replace(/\.diff$/, ".plan.json");
+			const plan = JSON.parse(readFileSync(planPath, "utf8"));
+			plan.chunks[0].findingsPath = stored;
+			writeFileSync(planPath, JSON.stringify(plan));
+			const result = run(["compile", ".", "--diff", diff.diffPath], { cwd: repo });
+			expect(result.exitCode).toBe(EXIT.ERR);
+			expect(result.stderr).toContain(message);
+		});
+	}
+
+	test("compile still reads an older plan whose absolute paths sit inside its folder", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 3, tier: "low", body: "Legacy plan finding." }]);
+		const planPath = diff.diffPath.replace(/\.diff$/, ".plan.json");
+		const plan = JSON.parse(readFileSync(planPath, "utf8"));
+		plan.chunks[0].findingsPath = diff.chunks[0].findingsPath;
+		writeFileSync(planPath, JSON.stringify(plan));
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8")).toContain("Legacy plan finding.");
 	});
 
 	test("compile . writes an /address-compatible file and prints the preview", () => {
@@ -560,6 +619,7 @@ describe("remote mode via the GitHub adapter", () => {
 				url: "u12",
 				headRefName: "a",
 				baseRefName: "main",
+				state: "open",
 			},
 			{
 				number: 13,
@@ -567,6 +627,7 @@ describe("remote mode via the GitHub adapter", () => {
 				url: "u13",
 				headRefName: "b",
 				baseRefName: "a",
+				state: "open",
 			},
 		]);
 	});
@@ -616,6 +677,139 @@ describe("remote mode via the GitHub adapter", () => {
 		expect(readFileSync(rows[1].chunks[0].annotatedPath, "utf8")).toContain(
 			"const c = 4;",
 		);
+	});
+
+	test("stack --diff reviews only open PRs, keeps merged ones as context and reports closed ones", () => {
+		const url = (n: number) => PR_URL.replace("12", String(n));
+		const pr = (number: number, title: string, state: string, merged: boolean, head: string, base: string) => ({
+			number, title, html_url: url(number), state, merged_at: merged ? "2026-10-01T00:00:00Z" : null,
+			head: { ref: head }, base: { ref: base },
+		});
+		const open = [pr(12, "one", "open", false, "a", "x"), pr(14, "three", "open", false, "c", "b")];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify(open)}'
+    ;;
+  *"pulls --method GET"*"head=acme:b"*)
+    echo '${JSON.stringify([pr(13, "two", "closed", true, "b", "a"), pr(9, "old", "closed", true, "b2", "a")])}'
+    ;;
+  *"pulls --method GET"*"head=acme:x"*)
+    echo '${JSON.stringify([pr(11, "dropped", "closed", false, "x", "main")])}'
+    ;;
+  *"pulls --method GET"*)
+    echo '[]'
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    ;;`),
+		);
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const diffFixture = join(cwd, "pr.diff");
+		writeFileSync(diffFixture, GH_DIFF);
+		const env = { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture };
+		const result = run(["stack", url(14), "--diff"], { cwd, env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout);
+		expect(rows.map((r: { number: number; state: string; reviewed: boolean }) => [r.number, r.state, r.reviewed])).toEqual([
+			[11, "closed", false],
+			[12, "open", true],
+			[13, "merged", false],
+			[14, "open", true],
+		]);
+		expect(rows[0].diffPath).toBeUndefined();
+		expect(rows[2].chunks).toBeUndefined();
+		const calls = cliFixtures.readCalls(gh.log);
+		expect(calls.filter((call) => call.startsWith("pr diff")).map((call) => call.split(" ")[2]).sort()).toEqual(["12", "14"]);
+		expect(calls.some((call) => call.includes("state=all"))).toBe(true);
+		expect(calls.filter((call) => call.includes("pulls --method GET") && !call.includes("head=")).every((call) => call.includes("state=open"))).toBe(true);
+		const context = readFileSync(rows[3].contextPath, "utf8");
+		expect(context).toContain("## Merged earlier in this stack (context only, not reviewed)");
+		expect(context).toContain(`- #13 two (${url(13)}), b into a`);
+		expect(context).not.toContain("#11");
+		expect(JSON.parse(readFileSync(rows[2].statusPath, "utf8"))).toEqual({ target: url(13), stackState: "merged" });
+		const tally = run(["tally", rows[0].statusPath, rows[2].statusPath], { cwd, env });
+		expect(tally.exitCode, tally.stderr).toBe(EXIT.OK);
+		expect(tally.stdout).toContain("| #13 |");
+		expect(tally.stdout).toContain("merged (context only, not reviewed)");
+		expect(tally.stdout).toContain("| #11 |");
+		expect(tally.stdout).toContain("closed without merging (not reviewed)");
+	});
+
+	test("stack never climbs past the default branch into a merged release PR", () => {
+		const url = (n: number) => PR_URL.replace("12", String(n));
+		const open = [{ number: 12, title: "one", html_url: url(12), state: "open", merged_at: null, head: { ref: "a" }, base: { ref: "main" } }];
+		const release = [{ number: 5, title: "release", html_url: url(5), state: "closed", merged_at: "2026-09-01T00:00:00Z", head: { ref: "main" }, base: { ref: "production" } }];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"repo view"*)
+    echo '{"owner":{"login":"acme"},"name":"widgets","defaultBranchRef":{"name":"main"},"url":"https://github.com/acme/widgets"}'
+    ;;
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify(open)}'
+    ;;
+  *"pulls --method GET"*"head=acme:main"*)
+    echo '${JSON.stringify(release)}'
+    ;;
+  *"pulls --method GET"*)
+    echo '[]'
+    ;;`),
+		);
+		const result = run(["stack", url(12)], { env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log } });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).map((r: { number: number }) => r.number)).toEqual([12]);
+		expect(cliFixtures.readCalls(gh.log).some((call) => call.includes("head=acme:main"))).toBe(false);
+	});
+
+	test("stack from a merged PR fetches it and walks down to the open child", () => {
+		const url = (n: number) => PR_URL.replace("12", String(n));
+		const merged = { number: 13, title: "two", url: url(13), state: "MERGED", headRefName: "b", baseRefName: "main", body: "", mergedAt: "2026-10-01T00:00:00Z" };
+		const child = { number: 14, title: "three", html_url: url(14), state: "open", merged_at: null, head: { ref: "c" }, base: { ref: "b" } };
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*"state=open"*)
+    echo '${JSON.stringify([child])}'
+    ;;
+  *"pr view 13"*)
+    echo '${JSON.stringify(merged)}'
+    ;;
+  *"pulls --method GET"*)
+    echo '[]'
+    ;;`),
+		);
+		const result = run(["stack", url(13)], { env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log } });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).map((r: { number: number; state: string }) => [r.number, r.state])).toEqual([
+			[13, "merged"],
+			[14, "open"],
+		]);
+	});
+
+	test("stack --diff with no merged member leaves the context file without a merged section", () => {
+		const pulls = [
+			{ number: 12, title: "one", html_url: PR_URL, state: "open", merged_at: null, head: { ref: "a" }, base: { ref: "main" } },
+		];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*)
+    echo '${JSON.stringify(pulls)}'
+    exit 0
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    exit 0
+    ;;`),
+		);
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const diffFixture = join(cwd, "pr.diff");
+		writeFileSync(diffFixture, GH_DIFF);
+		const result = run(["stack", PR_URL, "--diff"], {
+			cwd,
+			env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture },
+		});
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout);
+		expect(readFileSync(rows[0].contextPath, "utf8")).not.toContain("Merged earlier");
 	});
 
 	test("post rejects a review compiled for a different target", () => {
@@ -746,6 +940,137 @@ describe("remote mode via the GitLab adapter", () => {
 		expect(tally.exitCode).toBe(EXIT.OK);
 		expect(tally.stdout).toContain("Comment (approve refused)");
 		expect(tally.stdout).toContain(`[review](${url})`);
+	});
+});
+
+describe("stack via the GitLab adapter", () => {
+	test("asks per base branch for merged and closed MRs and marks them", () => {
+		const url = "https://gitlab.com/acme/widgets/-/merge_requests/23";
+		const dir = cliFixtures.tmp(createdDirs, "thrash-stack-glab-");
+		const open = [cliFixtures.glMr(21, "a", { target_branch: "x" }), cliFixtures.glMr(23, "c", { target_branch: "b" })];
+		writeFakeCli(
+			dir,
+			"glab",
+			cliFixtures.shScript(`
+  *"mr list"*"--source-branch b"*)
+    echo '${JSON.stringify([cliFixtures.glMr(22, "b", { target_branch: "a", state: "merged", merged_at: "2026-10-01T00:00:00Z" })])}'
+    ;;
+  *"mr list"*"--source-branch x"*)
+    echo '${JSON.stringify([cliFixtures.glMr(20, "x", { state: "closed" })])}'
+    ;;
+  *"mr list"*"--all"*)
+    echo '[]'
+    ;;
+  *"mr list"*)
+    echo '${JSON.stringify(open)}'
+    ;;`),
+		);
+		const log = join(dir, "calls.log");
+		const result = run(["stack", url], { env: { GLAB_BIN: join(dir, "glab"), FAKE_CALL_LOG: log } });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).map((r: { number: number; state: string }) => [r.number, r.state])).toEqual([
+			[20, "closed"],
+			[21, "open"],
+			[22, "merged"],
+			[23, "open"],
+		]);
+		const calls = cliFixtures.readCalls(log);
+		expect(calls.some((call) => call.includes("--all") && call.includes("--source-branch b"))).toBe(true);
+	});
+});
+
+describe("post --dry-run", () => {
+	const url = "https://gitlab.com/acme/widgets/-/merge_requests/12";
+
+	function compiledGitlabReview(): { env: Record<string, string>; cwd: string; reviewPath: string; log: string } {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-dry-glab-");
+		const diffPath = join(dir, "mr.diff");
+		const log = join(dir, "calls.log");
+		writeFileSync(diffPath, GH_DIFF);
+		writeFakeCli(
+			dir,
+			"glab",
+			cliFixtures.shScript(`
+  *"mr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"mr view 12"*)
+    echo '${JSON.stringify(cliFixtures.glMr(12, "feature"))}'
+    ;;
+  *"/discussions"*)
+    echo '[]'
+    ;;
+  *"api projects/acme%2Fwidgets/merge_requests/12"*)
+    echo '${JSON.stringify({ web_url: url, diff_refs: { base_sha: "base", start_sha: "start", head_sha: "head" } })}'
+    ;;
+  *)
+    echo "unexpected write" >&2
+    exit 9
+    ;;`),
+		);
+		const env = { GLAB_BIN: join(dir, "glab"), FAKE_CALL_LOG: log, FAKE_DIFF: diffPath };
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-dry-cwd-");
+		const diff = JSON.parse(run(["diff", url], { cwd, env }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 4, tier: "medium", body: "Cover the public contract." }]);
+		const compiled = JSON.parse(run(["compile", url, "--diff", diff.diffPath, "--json"], { cwd, env }).stdout);
+		return { env, cwd, reviewPath: compiled.reviewPath, log };
+	}
+
+	function assertNoProviderCall(log: string, before: number): void {
+		expect(cliFixtures.readCalls(log).slice(before)).toEqual([]);
+	}
+
+	test("--dry-run prints the review it would post and calls no provider", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath, "--dry-run"], { cwd, env });
+		expect(post.exitCode, post.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(post.stdout);
+		expect(out).toMatchObject({ dryRun: true, url, requestedVerdict: "approve" });
+		expect(out.review.comments).toHaveLength(1);
+		expect(JSON.stringify(out.review)).toContain("Cover the public contract.");
+		assertNoProviderCall(log, before);
+		expect(existsSync(reviewPath.replace(/\.review\.json$/, ".posted.json"))).toBe(false);
+	});
+
+	for (const value of ["1", "true", "YES", " 1 "]) {
+		test(`DG_THRASH_DRY_RUN=${JSON.stringify(value)} makes post a no-op without the flag`, () => {
+			const { env, cwd, reviewPath, log } = compiledGitlabReview();
+			const before = cliFixtures.readCalls(log).length;
+			const post = run(["post", url, "--review", reviewPath], {
+				cwd,
+				env: { ...env, DG_THRASH_DRY_RUN: value },
+			});
+			expect(post.exitCode, post.stderr).toBe(EXIT.OK);
+			expect(JSON.parse(post.stdout).dryRun).toBe(true);
+			assertNoProviderCall(log, before);
+		});
+	}
+
+	test("DG_THRASH_DRY_RUN=0 still posts", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], {
+			cwd,
+			env: { ...env, DG_THRASH_DRY_RUN: "0" },
+		});
+		expect(post.stdout).not.toContain('"dryRun"');
+		expect(
+			cliFixtures.readCalls(log).slice(before).some((call) => call.includes("/draft_notes")),
+		).toBe(true);
+	});
+
+	test("--dry-run still refuses a local target and a mismatched review", () => {
+		const repo = fixtureRepo();
+		const local = run(["post", ".", "--review", "/nonexistent.json", "--dry-run"], { cwd: repo });
+		expect(local.exitCode).toBe(EXIT.ERR);
+		expect(local.stderr).toContain("post needs a PR or MR URL");
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const review = join(cwd, "review.json");
+		writeFileSync(review, JSON.stringify({ target: ".", review: {} }));
+		const mismatch = run(["post", url, "--review", review, "--dry-run"], { cwd });
+		expect(mismatch.exitCode).toBe(EXIT.ERR);
+		expect(mismatch.stderr).toContain("compiled for .");
 	});
 });
 

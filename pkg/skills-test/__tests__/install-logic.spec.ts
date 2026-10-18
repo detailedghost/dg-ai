@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 /**
  * Unit smoke tests for the install script's release-asset resolution — the
  * exact logic that broke install (skills-v* vs ext-v* tags) and the platform→
@@ -5,6 +7,8 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+	cliBinDir,
+	expectedSha256,
 	cliAssetName,
 	cliDest,
 	cliVersionFile,
@@ -166,5 +170,44 @@ describe("the fetcher is generalized over binaryName and tagPrefix, with no deri
 		expect(cliDest("dg-daemon")).toContain("dg-daemon");
 		expect(cliVersionFile("dg-daemon")).toContain(".dg-daemon.version");
 		expect(cliVersionFile("dg-skills")).toContain(".dg-skills.version");
+	});
+
+	test("cliBinDir honors DG_HOME and falls back to ~/.dg/bin", () => {
+		expect(cliBinDir({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/bin");
+		expect(cliBinDir({})).toBe(join(homedir(), ".dg", "bin"));
+		expect(cliBinDir({ DG_HOME: "" })).toBe(join(homedir(), ".dg", "bin"));
+	});
+
+	test("cliDest and cliVersionFile land in the DG_HOME bin directory", () => {
+		const saved = process.env.DG_HOME;
+		process.env.DG_HOME = "/opt/dg-home";
+		try {
+			expect(cliDest("dg-agent")).toStartWith("/opt/dg-home/bin/dg-agent");
+			expect(cliVersionFile("dg-agent")).toBe("/opt/dg-home/bin/.dg-agent.version");
+		} finally {
+			if (saved === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = saved;
+		}
+	});
+
+	test("expectedSha256 reads GNU text and binary-mode lines and lowercases the hash", () => {
+		const hash = "AB".repeat(32);
+		const sums = `${"1".repeat(64)}  other\n${hash} *dg-skills-linux-x64\r\n`;
+		expect(expectedSha256(sums, "dg-skills-linux-x64")).toBe(hash.toLowerCase());
+		expect(expectedSha256(`${"2".repeat(64)}  dg-skills-linux-x64   \n`, "dg-skills-linux-x64")).toBe("2".repeat(64));
+		expect(expectedSha256(sums, "dg-skills-linux")).toBeUndefined();
+		expect(expectedSha256(`${"3".repeat(63)}  dg-skills-linux-x64\n`, "dg-skills-linux-x64")).toBeUndefined();
+		expect(expectedSha256(`x${"3".repeat(64)}  dg-skills-linux-x64\n`, "dg-skills-linux-x64")).toBeUndefined();
+	});
+
+	test("pickCliAsset carries the release's SHA256SUMS url only when the release publishes one", () => {
+		const rel = (assets: string[]) => [{
+			tag_name: "skills-v1.0.0",
+			draft: false,
+			assets: assets.map((name) => ({ name, browser_download_url: `https://x/${name}` })),
+		}];
+		const spec = { binaryName: "dg-skills", tagPrefix: "skills-v" };
+		expect(pickCliAsset(rel(["dg-skills-linux-x64", "SHA256SUMS"]), spec, "linux", "x64")?.sumsUrl).toBe("https://x/SHA256SUMS");
+		expect(pickCliAsset(rel(["dg-skills-linux-x64"]), spec, "linux", "x64")).not.toHaveProperty("sumsUrl");
 	});
 });
