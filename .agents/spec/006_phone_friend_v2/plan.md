@@ -3,7 +3,7 @@ feature: phone-friend v2
 feature_snake_case: phone_friend_v2
 date: '2026-10-19'
 version: '1.0'
-status: draft
+status: in-review
 current_slice: 4
 pr_strategy: single
 slices:
@@ -67,6 +67,8 @@ permissions:
   auto_cleanup_worktree: false
   slice_commits: true
   housekeeping_commit: true
+worktree:
+  pr_url: https://github.com/detailedghost/dg-ai/pull/39
 ---
 
 # phone-friend v2
@@ -164,3 +166,6 @@ Rename the CLI to `dg-agent phone-friend` with phone verbs (number, invite, dial
 (slice 3) A source-run dg-daemon with a temp DG_HOME on Linux writes a keychain entry (secret-tool, service dg-server, account chat-store-kek:<hash of DG_HOME>). Clear it after any manual e2e.
 
 ## Issues Remediation
+(deferred, LOW) A key race between a run with a session and a run without one can make a store key and a file key. The file wins, and the next run with a session moves it.
+(deferred, LOW) On Windows, the pid check trusts any live pid, and off skips the SIGTERM handler.
+(deferred, LOW) Message text has no size cap.
