@@ -57,3 +57,10 @@ paths = [
   '''(?:^|/)pkg/skills-cli/__tests__/provider-types\.spec\.ts$''',
 ]
 regexes = ['''^gl(?:pat|dt|rt|soat)-ABCDEFGHIJKLMNOPQRST$''']
+
+[[allowlists]]
+description = "Synthetic AWS access key fixture in the skills-test no-local-zone spec"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/skills-test/__tests__/no-local-zone\.spec\.ts$''']
+regexes = ['''^AKIAABCDEFGHIJKLMNOP$''']
