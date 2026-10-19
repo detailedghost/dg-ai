@@ -6,7 +6,7 @@ Active when `-p`/`--proxy <backend>` is passed, or when default mode
 auto-routes here because the provider has no AI review bot (see
 Phase 0 below). No PR, no `gh`, no GitHub Copilot — the reviewer is a
 local `/proxy` backend
-(`codex | copilot | pi | opencode | cortex | grok`) reviewing the current branch's
+(`codex | copilot | pi | opencode | grok`) reviewing the current branch's
 diff. Findings land in a `.agents/code-review/*.md` file and flow
 through `/address`'s existing local-review path (`-l`/`--local`) —
 this workflow does not re-implement triage, fix, QA, commit, or
@@ -23,7 +23,7 @@ add here rather than fork it:
 
 - `-p <backend>` / `--proxy <backend>` → `proxyMode = true`,
   `backend = <backend>`. Reject unknown backends (must be one of
-  `codex`, `copilot`, `pi`, `opencode`, `cortex`, `grok` — same set `/proxy` accepts).
+  `codex`, `copilot`, `pi`, `opencode`, `grok` — same set `/proxy` accepts).
 - `-b <ref>` / `--base <ref>` → `baseOverride = <ref>`. Proxy mode
   only — this includes an auto-routed run, so it still applies with no
   `-p` flag on a provider with no AI review bot. Ignored (with a

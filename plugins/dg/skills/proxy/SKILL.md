@@ -1,6 +1,6 @@
 ---
 name: proxy
-description: Delegate a coding task to an installed CLI agent (codex, copilot, pi, opencode, cortex, or grok), with persona, resume, and background support.
+description: Delegate a coding task to an installed CLI agent (codex, copilot, pi, opencode, or grok), with persona, resume, and background support.
 ---
 
 # Proxy
@@ -48,7 +48,7 @@ The packaged background pattern proves a job's identity from its Linux `/proc` s
 
 | Flag | Behavior |
 |---|---|
-| `--list-backends` | List all six registered backend identities without running one |
+| `--list-backends` | List all five registered backend identities without running one |
 | `--prompt` | Supply the task directly; takes precedence over `--prompt-file` |
 | `--prompt-file` | Read the task from a file, keeping large prompts out of argv |
 | `--model` | Override the backend model |

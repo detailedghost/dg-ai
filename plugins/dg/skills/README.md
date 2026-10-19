@@ -23,7 +23,7 @@ binaries. The skills-root README itself is not installed.
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
-| `proxy/` | Delegate to codex, copilot, pi, opencode, cortex, or grok |
+| `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
 | `pushup/` | Push a branch, open its PR, and group the PR in the browser |
 | `refactor/` | Find architectural improvements and discuss a chosen approach |
 | `rename-session/` | Suggest or apply a session name |

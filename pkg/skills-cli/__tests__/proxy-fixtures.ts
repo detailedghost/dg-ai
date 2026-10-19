@@ -101,13 +101,6 @@ export function proxyFixtures() {
 						part: { text: "fixture done" },
 					},
 				],
-				cortex: [
-					{
-						type: "result",
-						session_id: "fixture-session",
-						result: "fixture done",
-					},
-				],
 				grok: [
 					{ type: "text", sessionId: "fixture-session", data: "fixture done" },
 				],

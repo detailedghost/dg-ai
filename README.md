@@ -58,7 +58,7 @@ Claude Code also accepts the bare `/<name>`.
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
-| `proxy` | Delegate to one of six external CLI agents with persona and background support |
+| `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
@@ -91,7 +91,7 @@ a fresh artifact, `--root` prints the root, and `--dir` selects another director
 The [developer guide](docs/DEVELOPER.md#wave-2a-cli-commands) lists flags, roots,
 and all ten `vcs-provider` verbs for GitHub and GitLab.
 
-`proxy` supports **codex**, **copilot**, **pi**, **opencode**, **cortex**, and
+`proxy` supports **codex**, **copilot**, **pi**, **opencode**, and
 **grok**. Install and authenticate the chosen backend separately. It accepts
 `--prompt-file`, `--resume`, and persona selection through `--subagent` or an
 explicit `--spec <plan> --slice <id>`. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`)

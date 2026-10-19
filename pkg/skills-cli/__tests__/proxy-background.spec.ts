@@ -300,7 +300,7 @@ describe("compiled proxy background", () => {
 		);
 	}, 10000);
 
-	test("lists the six public backend identities from the relocated executable", async () => {
+	test("lists the five public backend identities from the relocated executable", async () => {
 		const result = await run(["--list-backends"]);
 		expect(result.exitCode, result.stderr).toBe(0);
 		expect(result.stdout.trim().split("\n")).toEqual([
@@ -308,7 +308,6 @@ describe("compiled proxy background", () => {
 			"copilot",
 			"pi",
 			"opencode",
-			"cortex",
 			"grok",
 		]);
 	});

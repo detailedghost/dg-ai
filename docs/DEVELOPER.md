@@ -141,8 +141,8 @@ with `AI_VCS_GITLAB_REVIEW_BOT`; there is no personal reviewer default.
 
 #### Proxy
 
-`dg-skills proxy <backend> --prompt "<task>"` delegates to one of six external
-executables: `codex`, `copilot`, `pi`, `opencode`, `cortex`, or `grok`. The chosen
+`dg-skills proxy <backend> --prompt "<task>"` delegates to one of five external
+executables: `codex`, `copilot`, `pi`, `opencode`, or `grok`. The chosen
 backend needs its own installation, authentication, and service access. A missing
 backend returns installation guidance; the CLI never silently switches backend.
 `--list-backends` lists identities without starting one. Use `--prompt-file`

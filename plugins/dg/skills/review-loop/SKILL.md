@@ -5,7 +5,7 @@ description: >-
   Copilot review on an open PR, filters its comments through a
   copilot-antagonist agent, hands accepted items to /address, and
   repeats. `--proxy <backend>` mode swaps the reviewer for a local
-  proxy-backend coding agent (codex/copilot/pi/opencode/cortex/grok) instead —
+  proxy-backend coding agent (codex/copilot/pi/opencode/grok) instead —
   no PR or GitHub Copilot access required, findings flow straight
   into /address's local code-review path. Both modes are
   fire-and-forget and capped at a few rounds by default.
@@ -49,7 +49,7 @@ access — it reviews the current branch's diff with a local external
 coding agent instead. See [Proxy mode](#proxy-mode) below.
 
 **Usage:** `/review-loop [-r N] [-w <sec>] [-s] [-n] [-k]`
-**Usage (proxy):** `/review-loop -p <codex|copilot|pi|opencode|cortex|grok> [-b <ref>] [-r N] [-s] [-k]`
+**Usage (proxy):** `/review-loop -p <codex|copilot|pi|opencode|grok> [-b <ref>] [-r N] [-s] [-k]`
 
 | Flag | Short | Effect |
 |------|-------|--------|
@@ -58,7 +58,7 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 | `--single` | `-s` | Run one round step and exit. Use when you want manual pacing between rounds. |
 | `--no-retrigger` | `-n` | Run one round, skip the re-request at the end. Implies `--single`. In proxy mode there's no separate "retrigger" step (see [Proxy mode](#proxy-mode)), so this is a no-op alias for `--single` — kept for flag parity between modes. |
 | `--skip` | `-k` | No-op exit. Use when a planning workflow auto-invokes this and you want to bail out. |
-| `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| cortex \| grok`, passed straight through to `/proxy`. No PR required. |
+| `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| grok`, passed straight through to `/proxy`. No PR required. |
 | `--base <ref>` | `-b <ref>` | Proxy mode only. Override diff-base detection (see [Proxy mode](#proxy-mode)). |
 
 ### Default: auto mode
@@ -80,7 +80,7 @@ Use `--single` for manual round-by-round control, or set
 ### Proxy mode
 
 `--proxy <backend>` replaces the GitHub Copilot reviewer with a local
-`/proxy` backend (codex/copilot/pi/opencode/cortex/grok) reviewing `base..HEAD` on
+`/proxy` backend (codex/copilot/pi/opencode/grok) reviewing `base..HEAD` on
 the current branch — no PR, no `gh`, no GitHub Copilot access needed.
 
 Round shape: diff → `/proxy <backend>` reviews it and writes findings

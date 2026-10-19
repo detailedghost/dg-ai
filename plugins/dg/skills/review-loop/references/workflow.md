@@ -65,7 +65,7 @@ OUT: `prNumber`, `prUrl`.
    been passed — the user does not have to pass `--proxy` themselves.
    `<backend>` comes from the required
    `REVIEW_LOOP_DEFAULT_PROXY_BACKEND` environment variable. When it
-   is unset, fail loud: print `review-loop: REVIEW_LOOP_DEFAULT_PROXY_BACKEND is not set — set it to one of codex|copilot|pi|opencode|cortex|grok to auto-route on this provider, or pass --proxy <backend> explicitly.` and exit 1. Never guess a backend
+   is unset, fail loud: print `review-loop: REVIEW_LOOP_DEFAULT_PROXY_BACKEND is not set — set it to one of codex|copilot|pi|opencode|grok to auto-route on this provider, or pass --proxy <backend> explicitly.` and exit 1. Never guess a backend
    and never fall back to one silently. Findings reached this way are
    LOCAL-ONLY, the same as any other `--proxy` run: they surface
    through `/address` and are never posted back to the merge request.
