@@ -400,6 +400,7 @@ export type ProviderErrorCode =
 	| "INVALID_PROVIDER_ENV"
 	| "INVALID_PR_STATE"
 	| "INVALID_REPO_REF"
+	| "NATIVE_STACK_UNSUPPORTED"
 	| "NO_CURRENT_MR"
 	| "NO_CURRENT_PR"
 	| "NO_GIT_REPO"
@@ -407,7 +408,8 @@ export type ProviderErrorCode =
 	| "PAGE_LIMIT_EXCEEDED"
 	| "PARSE_ERROR"
 	| "PIPELINE_SHA_MISMATCH"
-	| "REST_FILTER_UNIMPLEMENTED";
+	| "REST_FILTER_UNIMPLEMENTED"
+	| "UNRESOLVED_BRANCH_REF";
 
 /** A stable provider error code with a human-readable explanation and optional underlying cause. */
 export class ProviderError extends Error {

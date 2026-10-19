@@ -207,6 +207,10 @@ async function cmdGatherCiFailures(args: string[]): Promise<void> {
 	process.stdout.write(JSON.stringify(results) + "\n");
 }
 
+function replyTarget(threadId: string, commentId: string): ReviewThread {
+	return { threadId, commentId, resolved: false, comments: [], path: "", line: null };
+}
+
 async function cmdReply(rawArgs: string[]): Promise<void> {
 	const { prArg, rest: args } = extractPrFlag(rawArgs);
 	if (args.length < 3) die("reply requires <comment_id> <thread_id> <body> [--pr=<number>]");
@@ -215,7 +219,7 @@ async function cmdReply(rawArgs: string[]): Promise<void> {
 	const body = botPrefix(args.slice(2).join(" "));
 	const provider = await getProvider();
 	const ref = { number: await getPrNumber(prArg) };
-	await provider.replyToThread(threadId, commentId, body, ref);
+	await provider.replyToThread(replyTarget(threadId, commentId), body, ref);
 }
 
 async function cmdResolve(rawArgs: string[]): Promise<void> {
@@ -242,7 +246,7 @@ async function cmdResolveWithReply(rawArgs: string[]): Promise<void> {
 	const ref = { number: await getPrNumber(prArg) };
 	const provider = await getProvider();
 
-	await provider.replyToThread(threadId, commentId, body, ref);
+	await provider.replyToThread(replyTarget(threadId, commentId), body, ref);
 	await provider.resolveThread(threadId, ref);
 	process.stdout.write(JSON.stringify({ replied: true, resolved: threadId }) + "\n");
 }
@@ -323,7 +327,7 @@ async function cmdBatchClose(rawArgs: string[]): Promise<void> {
 			const itemErrors: string[] = [];
 
 			try {
-				await provider.replyToThread(item.threadId, String(item.commentId), body, ref);
+				await provider.replyToThread(replyTarget(item.threadId, String(item.commentId)), body, ref);
 			} catch (error) {
 				itemErrors.push(`reply failed for thread ${item.threadId}: ${errorMessage(error)}`);
 				return itemErrors;
