@@ -117,24 +117,6 @@ function rawPlan(contents: string, name = "plan.txt"): string {
 	return file;
 }
 
-function textPlan(
-	groups: Array<{ msg: string; files: readonly string[]; author?: string }>,
-): string {
-	return rawPlan(
-		groups
-			.map(({ msg, files, author }) =>
-				[
-					`MSG: ${msg}`,
-					...(author ? [`AUTHOR: ${author}`] : []),
-					"FILES:",
-					...files,
-					"",
-				].join("\n"),
-			)
-			.join("\n"),
-	);
-}
-
 function jsonPlan(groups: JsonGroup[], base?: string): string {
 	return rawPlan(
 		JSON.stringify({ ...(base ? { base } : {}), groups }),
@@ -189,7 +171,7 @@ describe("meaningful usage and import isolation", () => {
 			args: ["apply"],
 			status: 2,
 			stream: "stderr",
-			message: "usage: apply [--base <ref>] <plan-file>",
+			message: "unknown subcommand 'apply'",
 		},
 		{
 			args: ["apply-json"],
@@ -390,117 +372,8 @@ describe("meaningful info", () => {
 	);
 });
 
-describe("meaningful apply text plans", () => {
-	test("preserves the original tree when a group renames and edits existing files", () => {
-		const repo = makeRepo({
-			"old.ts": "export const x = 1;\n",
-			"other.ts": "export const y = 2;\n",
-		});
-		git(repo, ["mv", "old.ts", "new.ts"]);
-		const backup = commit(
-			repo,
-			{ "other.ts": "export const y = 99;\n" },
-			"refactor: rename and edit",
-		);
-		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
-		const info = runMeaningful(repo, ["info", "--base", repo.base]);
-		expect(info.exitCode).toBe(0);
-		expect(JSON.parse(info.stdout).files).toEqual([
-			"new.ts",
-			"old.ts",
-			"other.ts",
-		]);
-		const result = runMeaningful(repo, [
-			"apply",
-			"--base",
-			repo.base,
-			textPlan([
-				{
-					msg: "refactor(scope): rename and edit",
-					files: ["old.ts", "new.ts", "other.ts"],
-				},
-			]),
-		]);
-		expectApplied(repo, result, backup, tree);
-	});
-
-	test.each([
-		{ label: "omitted", files: ["a.ts"] },
-		{ label: "extra", files: ["a.ts", "b.ts", "ghost.ts"] },
-	])("rejects $label files before changing history", ({ files }) => {
-		const repo = makeRepo();
-		commit(repo, { "a.ts": "a\n", "b.ts": "b\n" });
-		const before = snapshot(repo);
-		const result = runMeaningful(repo, [
-			"apply",
-			"--base",
-			repo.base,
-			textPlan([{ msg: "feat: files", files }]),
-		]);
-		expect(result.exitCode).toBe(1);
-		expect(result.stdout).toBe("");
-		expect(result.stderr).toContain("plan/diff mismatch");
-		expect(result.stderr).toContain("expected files:\na.ts\nb.ts\n");
-		expect(snapshot(repo)).toEqual(before);
-	});
-
-	test("reshapes only the commits above an explicit base and preserves earlier history", () => {
-		const repo = makeRepo();
-		const explicitBase = commit(
-			repo,
-			{ "base-file.ts": "base\n" },
-			"chore: base file",
-		);
-		const backup = commit(repo, { "work.ts": "work\n" }, "feat: work");
-		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
-		const result = runMeaningful(repo, [
-			"apply",
-			textPlan([{ msg: "feat(scope): work", files: ["work.ts"] }]),
-			"--base",
-			explicitBase,
-		]);
-		expectApplied(repo, result, backup, tree);
-		expect(git(repo, ["rev-parse", "HEAD~1"])).toBe(explicitBase);
-		expect(git(repo, ["rev-list", "--count", `${explicitBase}..HEAD`])).toBe(
-			"1",
-		);
-	});
-
-	test("preserves text-plan author, contiguous body, human trailers and separate groups", () => {
-		const repo = makeRepo();
-		const backup = commit(repo, { "a.ts": "a\n", "b.ts": "b\n" });
-		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
-		const subject = 'feat: literal $(touch never) `echo nope` ; & "quotes"';
-		const body = "Body with $HOME and a backslash \\ intact.";
-		const human = "Co-Authored-By: Human <human@example.invalid>";
-		const plan = textPlan([
-			{
-				msg: `${subject}\n${body}\n${human}\nCo-Authored-By: Claude <noreply@anthropic.com>`,
-				author: "Alice <alice@example.invalid>",
-				files: ["a.ts"],
-			},
-			{ msg: "feat: second", files: ["b.ts"] },
-		]);
-		const result = runMeaningful(repo, ["apply", "--base", repo.base, plan]);
-		expectApplied(repo, result, backup, tree);
-		expect(git(repo, ["log", "-1", "--format=%B", "HEAD~1"])).toBe(
-			`${subject}\n${body}\n${human}`,
-		);
-		expect(git(repo, ["log", "-1", "--format=%an <%ae>", "HEAD~1"])).toBe(
-			"Alice <alice@example.invalid>",
-		);
-		expect(
-			git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD~1"]),
-		).toBe("a.ts");
-		expect(
-			git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]),
-		).toBe("b.ts");
-		expect(existsSync(join(repo.dir, "never"))).toBe(false);
-	});
-});
-
 describe("meaningful apply-json", () => {
-	test("keeps body paragraphs and human coauthors, removes AI trailers and honors authors", () => {
+	test("keeps body paragraphs and every coauthor trailer, including AI ones, and honors authors", () => {
 		const repo = makeRepo();
 		const backup = commit(repo, { "page.tsx": "page\n", "a.ts": "a\n" });
 		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
@@ -523,7 +396,7 @@ describe("meaningful apply-json", () => {
 		]);
 		expectApplied(repo, result, backup, tree);
 		expect(git(repo, ["log", "--format=%B", "-1", "HEAD~1"])).toBe(
-			`${group.subject}\n\n${group.body}\n\nCo-Authored-By: ${group.coauthors![0]}`,
+			`${group.subject}\n\n${group.body}\n\n${group.coauthors!.map((c) => `Co-Authored-By: ${c}`).join("\n")}`,
 		);
 		expect(git(repo, ["log", "--format=%an <%ae>", "-1", "HEAD~1"])).toBe(
 			group.author!,
@@ -688,19 +561,16 @@ describe("meaningful apply-json", () => {
 });
 
 describe("meaningful preflight, backup and rollback", () => {
-	test.each(["apply", "apply-json"])(
-		"%s refuses dirty work without changing history or dirty content",
-		(verb) => {
+	test(
+		"apply-json refuses dirty work without changing history or dirty content",
+		() => {
 			const repo = makeRepo();
 			commit(repo, { "a.ts": "committed\n" });
 			write(repo, "a.ts", "dirty\n");
 			write(repo, "untracked.ts", "keep me\n");
 			const before = snapshot(repo);
-			const plan =
-				verb === "apply"
-					? textPlan([{ msg: "feat: a", files: ["a.ts"] }])
-					: jsonPlan([{ subject: "feat: a", files: ["a.ts"] }]);
-			const result = runMeaningful(repo, [verb, "--base", repo.base, plan]);
+			const plan = jsonPlan([{ subject: "feat: a", files: ["a.ts"] }]);
+			const result = runMeaningful(repo, ["apply-json", "--base", repo.base, plan]);
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).toContain("working tree has uncommitted changes");
 			expect(result.stderr).not.toContain("backup ref");
@@ -713,17 +583,17 @@ describe("meaningful preflight, backup and rollback", () => {
 	);
 
 	test.each(["detached", "missing-base"])(
-		"apply rejects %s before resetting HEAD",
+		"apply-json rejects %s before resetting HEAD",
 		(mode) => {
 			const repo = makeRepo();
 			commit(repo, { "a.ts": "a\n" });
 			if (mode === "detached") git(repo, ["checkout", "--detach", "-q"]);
 			const before = snapshot(repo);
 			const result = runMeaningful(repo, [
-				"apply",
+				"apply-json",
 				"--base",
 				mode === "detached" ? "base" : "no-such-base",
-				textPlan([{ msg: "feat: a", files: ["a.ts"] }]),
+				jsonPlan([{ subject: "feat: a", files: ["a.ts"] }]),
 			]);
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).toContain(
@@ -733,13 +603,13 @@ describe("meaningful preflight, backup and rollback", () => {
 		},
 	);
 
-	test.each(["apply", "apply-json"])(
-		"%s reports a missing plan as status 1",
-		(verb) => {
+	test(
+		"apply-json reports a missing plan as status 1",
+		() => {
 			const repo = makeRepo();
 			const missing = join(fixtures.tmp("dg-meaningful-missing-"), "no-plan");
 			const before = snapshot(repo);
-			const result = runMeaningful(repo, [verb, missing]);
+			const result = runMeaningful(repo, ["apply-json", missing]);
 			expect(result).toEqual({
 				exitCode: 1,
 				stdout: "",
@@ -748,19 +618,6 @@ describe("meaningful preflight, backup and rollback", () => {
 			expect(snapshot(repo)).toEqual(before);
 		},
 	);
-
-	test.each([
-		["", 1, "no groups parsed from plan"],
-		["MSG: feat: a\nAUTHOR: invalid\nFILES:\na.ts\n", 2, "malformed AUTHOR line"],
-	] as const)("rejects the text plan %j before changing history", (text, status, message) => {
-		const repo = makeRepo();
-		commit(repo, { "a.ts": "a\n" });
-		const before = snapshot(repo);
-		const result = runMeaningful(repo, ["apply", "--base", repo.base, rawPlan(text)]);
-		expect(result.exitCode).toBe(status);
-		expect(result.stderr).toContain(message);
-		expect(snapshot(repo)).toEqual(before);
-	});
 
 	test("restores the backup when a post-commit hook makes the reshaped tree dirty", () => {
 		const repo = makeRepo();
@@ -1126,21 +983,7 @@ describe("meaningful review hardening", () => {
 		expectApplied(repo, result, backup, tree);
 	});
 
-	test("keeps every paragraph of a text-plan message", () => {
-		const repo = makeRepo();
-		const backup = commit(repo, { "a.ts": "a\n" });
-		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
-		const plan = rawPlan(
-			"MSG: feat: one\n\nFirst paragraph.\n\nSecond paragraph.\nFILES:\na.ts\n",
-		);
-		const result = runMeaningful(repo, ["apply", "--base", repo.base, plan]);
-		expectApplied(repo, result, backup, tree);
-		expect(git(repo, ["log", "-1", "--format=%B"])).toBe(
-			"feat: one\n\nFirst paragraph.\n\nSecond paragraph.",
-		);
-	});
-
-	test("strips only AI co-author names, not humans whose name starts with Claude", () => {
+	test("keeps AI and human co-author trailers alike", () => {
 		const repo = makeRepo();
 		const backup = commit(
 			repo,
@@ -1166,7 +1009,7 @@ describe("meaningful review hardening", () => {
 		]);
 		expectApplied(repo, result, backup, tree);
 		expect(git(repo, ["log", "-1", "--format=%B"])).toBe(
-			`feat(scope): one\n\nCo-Authored-By: ${human}`,
+			`feat(scope): one\n\nCo-Authored-By: ${human}\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`,
 		);
 	});
 

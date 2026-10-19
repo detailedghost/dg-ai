@@ -21,11 +21,6 @@ const cmd = defineCommand({
 			description: "Print branch info as JSON",
 			run: cmdInfo,
 		},
-		apply: {
-			description: "Soft-reset to base and recommit groups from a text plan file",
-			args: ["[--base <ref>]", "plan-file"],
-			run: cmdApply,
-		},
 		"apply-json": {
 			description: "Soft-reset to base and recommit groups from a JSON plan file",
 			args: ["[--base <ref>]", "plan-file"],
@@ -115,29 +110,6 @@ async function cmdInfo(args: string[]): Promise<void> {
 		files,
 		file_authors: fileAuthors,
 	});
-}
-
-async function cmdApply(args: string[]): Promise<void> {
-	const [baseOverride, rest] = extractBase(args);
-	const planFile = rest[0];
-	if (!planFile) die("usage: apply [--base <ref>] <plan-file>", EXIT.USAGE);
-
-	let planText = "";
-	try {
-		planText = readFileSync(planFile, "utf8");
-	} catch {
-		die(`plan file not found: ${planFile}`, EXIT.ERR);
-	}
-
-	const ctx = await preflightAndCapture(baseOverride);
-
-	const groups = parsePlan(planText);
-	if (groups.length === 0) die("no groups parsed from plan.", EXIT.ERR);
-
-	await assertFilesMatchDiff(ctx.baseSha, groups);
-	await reshapeAndPush(groups, ctx);
-
-	process.stdout.write(`${ctx.backup}\n`);
 }
 
 async function cmdApplyJson(args: string[]): Promise<void> {
@@ -306,19 +278,6 @@ function isAiName(name: string): boolean {
 	return AI_NAME.test(name.trim());
 }
 
-/** Strip Co-Authored-By trailers from an AI name or noreply@anthropic.com. */
-function stripClaudeTrailers(msg: string): string {
-	return msg
-		.split("\n")
-		.filter((l) => {
-			const m = l.match(/^Co-Authored-By:\s*(.+?)\s*<([^>]+)>/i);
-			if (!m) return true;
-			return !isAiName(m[1]) && m[2] !== "noreply@anthropic.com";
-		})
-		.join("\n")
-		.trimEnd();
-}
-
 /** Validate an inline "Name <email>" string. */
 function validateAuthorFormat(val: string, context: string): void {
 	if (!/^[^<]+ <[^>]+>/.test(val)) die(`malformed ${context}: "${val}" — expected: Name <email>`, EXIT.USAGE);
@@ -328,53 +287,6 @@ interface Group {
 	msg: string;
 	author?: string;
 	files: string[];
-}
-
-function parsePlan(text: string): Group[] {
-	const groups: Group[] = [];
-	let current: Group | null = null;
-	let mode: "msg" | "files" | "none" = "none";
-
-	for (const raw of text.split("\n")) {
-		const line = raw.trimEnd();
-
-		if (line.startsWith("MSG:")) {
-			current = { msg: line.slice(4).trimStart(), files: [] };
-			groups.push(current);
-			mode = "msg";
-			continue;
-		}
-
-		if (line.startsWith("AUTHOR:") && current) {
-			const val = line.slice(7).trim();
-			validateAuthorFormat(val, "AUTHOR line");
-			current.author = val;
-			continue;
-		}
-
-		if (line.startsWith("FILES:")) {
-			mode = "files";
-			continue;
-		}
-
-		if (line.trim() === "") {
-			if (mode === "msg" && current) current.msg += "\n";
-			else mode = "none";
-			continue;
-		}
-
-		if (!current) continue;
-
-		if (mode === "msg") {
-			current.msg += `\n${line}`;
-		} else if (mode === "files") {
-			const f = line.trim();
-			if (f) current.files.push(f);
-		}
-	}
-
-	for (const gr of groups) gr.msg = stripClaudeTrailers(gr.msg.trim());
-	return groups.filter((gr) => gr.files.length > 0);
 }
 
 interface JsonGroup {
@@ -423,7 +335,7 @@ function parseJsonPlan(text: string): { base?: string; groups: Group[] } {
 		if (g.body?.trim()) msg += `\n\n${g.body.trim()}`;
 		if (g.coauthors?.length) msg += `\n\n${g.coauthors.map((c) => `Co-Authored-By: ${c}`).join("\n")}`;
 
-		return { msg: stripClaudeTrailers(msg), author: g.author, files: g.files };
+		return { msg, author: g.author, files: g.files };
 	});
 
 	return { base: plan.base, groups };

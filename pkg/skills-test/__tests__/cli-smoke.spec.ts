@@ -162,7 +162,7 @@ describe("dg-skills CLI", () => {
 	test("meaningful --help lists history reshaping operations", async () => {
 		const { code, out } = await runCli(["meaningful", "--help"]);
 		expect(code).toBe(0);
-		for (const verb of ["info", "apply", "apply-json", "abort"])
+		for (const verb of ["info", "apply-json", "abort"])
 			expectListed(out, verb);
 	});
 
