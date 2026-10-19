@@ -150,3 +150,7 @@ Grok Bots and a Claude Code session need a private chat channel. A new `dg-agent
 (slice 3) Plan deviation: no plugin version bump; the repo bumps the matched set (10 files) in a separate chore(release) change. skills-cli demo --verify and dashboard browser tests fail locally only because no Chromium-family browser is on PATH.
 
 ## Issues Remediation
+(deferred, LOW) Concurrent `phone start` calls have no lock, so two can race to spawn a listener or make the key.
+(deferred, LOW) On Windows, `isAlive` trusts any live pid, and `stop` ends the listener without its SIGTERM handler. CI never runs `phone start` or `stop` on Windows.
+(deferred, LOW) Rumor content has no size cap. A compromised peer key can fill the agent context.
+(deferred, repo-wide) The Grok setup uses the same `curl | sh` bootstrap from a git tag as every other skill.
