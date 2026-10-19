@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Message } from "./chat";
@@ -21,9 +22,11 @@ function readJson<T>(path: string, fallback: T): T {
 export function loadOrCreateKey(paths: DgPaths): Uint8Array {
 	ensurePrivateDir(paths.phoneDir);
 	if (existsSync(paths.phoneKeyPath)) {
-		const decoded = nip19.decode(readFileSync(paths.phoneKeyPath, "utf8").trim());
-		if (decoded.type !== "nsec") throw new Error(`${paths.phoneKeyPath} does not hold an nsec`);
-		return decoded.data;
+		try {
+			const decoded = nip19.decode(readFileSync(paths.phoneKeyPath, "utf8").trim());
+			if (decoded.type === "nsec") return decoded.data;
+		} catch {}
+		throw new DgCliError(`${paths.phoneKeyPath} does not hold a valid nsec`);
 	}
 	const sk = generateSecretKey();
 	writeFileAtomic(paths.phoneKeyPath, `${nip19.nsecEncode(sk)}\n`, 0o600);

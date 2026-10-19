@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { finalizeEvent, generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import { finalizeEvent, generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
 import {
 	fetchNew,
 	LOOKBACK_SECONDS,
@@ -8,6 +8,7 @@ import {
 	unwrapFromPeer,
 	wrap,
 } from "../../src/phone/chat";
+import { SEEN_ID_LIMIT } from "../../src/phone/store";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
@@ -129,7 +130,7 @@ describe("fetchNew", () => {
 		expect(messages.map((m) => m.text)).toEqual(["late"]);
 	});
 
-	it("drops non-peer messages but marks them seen", async () => {
+	it("drops non-peer messages and keeps their ids out of the saved seen list", async () => {
 		const alice = identity();
 		const bob = identity();
 		const mallory = identity();
@@ -140,21 +141,47 @@ describe("fetchNew", () => {
 		const { messages, seen } = await fetchNew(pool, RELAYS, bob.sk, alice.pub, { cursor: 0, ids: [] });
 
 		expect(messages).toEqual([]);
-		expect(seen.ids).toContain(spam.id);
+		expect(seen.ids).not.toContain(spam.id);
 	});
+
+	it("keeps a peer id seen after a stranger floods past the id limit", async () => {
+		const alice = identity();
+		const bob = identity();
+		const mallory = identity();
+		const pool = createFakePool();
+		await publish(pool, ["wss://a.example"], wrap("real", alice.sk, bob.pub));
+		const first = await fetchNew(pool, RELAYS, bob.sk, alice.pub, { cursor: 0, ids: [] });
+		for (let i = 0; i < SEEN_ID_LIMIT + 1; i += 1) {
+			pool.events.push({ ...wrap("x", mallory.sk, bob.pub) });
+		}
+
+		const second = await fetchNew(pool, RELAYS, bob.sk, alice.pub, first.seen);
+
+		expect(first.messages.map((m) => m.text)).toEqual(["real"]);
+		expect(second.messages).toEqual([]);
+	}, 60000);
 
 	it("sorts messages by inner timestamp", async () => {
 		const alice = identity();
 		const bob = identity();
 		const pool = createFakePool();
-		await publish(pool, RELAYS, wrap("first", alice.sk, bob.pub));
-		await Bun.sleep(1100);
-		await publish(pool, RELAYS, wrap("second", alice.sk, bob.pub));
-		pool.events.reverse();
+		const at = (content: string, created_at: number) =>
+			nip59.createWrap(
+				nip59.createSeal(
+					nip59.createRumor({ kind: 14, content, created_at, tags: [["p", bob.pub]] }, alice.sk),
+					alice.sk,
+					bob.pub,
+				),
+				bob.pub,
+			);
+		pool.events.push(at("second", 2_000), at("first", 1_000));
 
 		const { messages } = await fetchNew(pool, RELAYS, bob.sk, alice.pub, { cursor: 0, ids: [] });
 
-		expect(messages.map((m) => m.text)).toEqual(["first", "second"]);
+		expect(messages.map((m) => [m.text, m.ts])).toEqual([
+			["first", 1_000],
+			["second", 2_000],
+		]);
 	});
 });
 
@@ -176,5 +203,26 @@ describe("subscribe", () => {
 
 		expect(received).toEqual(["live"]);
 		expect(latestIds).toEqual([event.id]);
+	});
+
+	it("never delivers a stranger message and keeps its id out of the seen state", async () => {
+		const alice = identity();
+		const bob = identity();
+		const mallory = identity();
+		const pool = createFakePool();
+		const received: string[] = [];
+		let latestIds: string[] = [];
+		const sub = subscribe(pool, RELAYS, bob.sk, alice.pub, { cursor: 0, ids: [] }, (message, seen) => {
+			received.push(message.text);
+			latestIds = seen.ids;
+		});
+		const real = wrap("real", alice.sk, bob.pub);
+
+		await publish(pool, RELAYS, wrap("spam", mallory.sk, bob.pub));
+		await publish(pool, RELAYS, real);
+		sub.close();
+
+		expect(received).toEqual(["real"]);
+		expect(latestIds).toEqual([real.id]);
 	});
 });

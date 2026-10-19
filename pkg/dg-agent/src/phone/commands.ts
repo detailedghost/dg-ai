@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
 	type DgPaths,
 	ensurePrivateDir,
+	readCappedStdin,
 	resolveDgPaths,
 	selfCommand,
 	writeFileAtomic,
@@ -30,9 +31,24 @@ export type PhoneDeps = {
 	kill: (pid: number) => void;
 	write: (text: string) => void;
 	sleep: (ms: number) => Promise<void>;
+	readStdin: () => Promise<string | undefined>;
 };
 
 const FOLLOW_POLL_MS = 1000;
+const STOP_WAIT_MS = 5000;
+const MAX_SEND_BYTES = 64 * 1024;
+
+function isOurListener(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+	} catch {
+		return false;
+	}
+	const cmdline = `/proc/${pid}/cmdline`;
+	if (!existsSync(cmdline)) return true;
+	const args = readFileSync(cmdline, "utf8").split("\0");
+	return args.includes("phone") && args.includes("__run");
+}
 
 function defaultDeps(): PhoneDeps {
 	return {
@@ -52,17 +68,11 @@ function defaultDeps(): PhoneDeps {
 			if (child.pid === undefined) throw new DgCliError("could not spawn the phone listener");
 			return child.pid;
 		},
-		isAlive: (pid) => {
-			try {
-				process.kill(pid, 0);
-				return true;
-			} catch {
-				return false;
-			}
-		},
+		isAlive: isOurListener,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		write: writeStdout,
 		sleep: (ms) => Bun.sleep(ms),
+		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
 	};
 }
 
@@ -96,11 +106,21 @@ function livePid(deps: PhoneDeps): number | undefined {
 	return pid !== undefined && deps.isAlive(pid) ? pid : undefined;
 }
 
+async function stopListener(pid: number, deps: PhoneDeps): Promise<void> {
+	deps.kill(pid);
+	for (let waited = 0; deps.isAlive(pid) && waited < STOP_WAIT_MS; waited += 100) {
+		await deps.sleep(100);
+	}
+	if (deps.isAlive(pid)) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
+	rmSync(deps.paths.phonePidPath, { force: true });
+}
+
 export async function phoneStart(
 	opts: { peer?: string; relay?: string[] },
 	deps: PhoneDeps,
 ): Promise<void> {
-	const config = readConfig(deps.paths);
+	const saved = readConfig(deps.paths);
+	const config = { ...saved };
 	if (opts.peer) {
 		peerHex(opts.peer);
 		config.peer = opts.peer;
@@ -113,20 +133,22 @@ export async function phoneStart(
 		);
 	}
 	const peer = config.peer;
-	writeConfig(deps.paths, config);
+	const changed = JSON.stringify(saved) !== JSON.stringify(config);
 	const running = livePid(deps);
-	if (running !== undefined) {
+	if (running !== undefined && !changed) {
 		printJson(deps, { npub, peer, pid: running, status: "running" });
 		return;
 	}
+	if (running !== undefined) await stopListener(running, deps);
+	writeConfig(deps.paths, config);
 	const pid = deps.spawnListener(deps.paths);
 	writeFileAtomic(deps.paths.phonePidPath, `${pid}\n`, 0o600);
-	printJson(deps, { npub, peer, pid, status: "started" });
+	printJson(deps, { npub, peer, pid, status: running === undefined ? "started" : "restarted" });
 }
 
 export async function phoneStop(deps: PhoneDeps): Promise<void> {
 	const pid = livePid(deps);
-	if (pid !== undefined) deps.kill(pid);
+	if (pid !== undefined) await stopListener(pid, deps);
 	rmSync(deps.paths.phonePidPath, { force: true });
 	printJson(deps, { pid: pid ?? null, status: "stopped" });
 }
@@ -134,15 +156,23 @@ export async function phoneStop(deps: PhoneDeps): Promise<void> {
 function printUnread(deps: PhoneDeps): void {
 	const { phoneInboxPath, phoneReadOffsetPath } = deps.paths;
 	if (!existsSync(phoneInboxPath)) return;
-	const inbox = readFileSync(phoneInboxPath);
+	const size = statSync(phoneInboxPath).size;
 	const saved = existsSync(phoneReadOffsetPath)
 		? Number(readFileSync(phoneReadOffsetPath, "utf8"))
 		: 0;
-	const offset = Number.isInteger(saved) && saved <= inbox.length ? saved : 0;
-	const end = inbox.lastIndexOf(0x0a) + 1;
-	if (end <= offset) return;
-	deps.write(inbox.subarray(offset, end).toString("utf8"));
-	writeFileAtomic(phoneReadOffsetPath, String(end), 0o600);
+	const offset = Number.isInteger(saved) && saved >= 0 && saved <= size ? saved : 0;
+	if (size === offset) return;
+	const unread = Buffer.alloc(size - offset);
+	const fd = openSync(phoneInboxPath, "r");
+	try {
+		readSync(fd, unread, 0, unread.length, offset);
+	} finally {
+		closeSync(fd);
+	}
+	const end = unread.lastIndexOf(0x0a) + 1;
+	if (end === 0) return;
+	deps.write(unread.subarray(0, end).toString("utf8"));
+	writeFileAtomic(phoneReadOffsetPath, String(offset + end), 0o600);
 }
 
 export async function phoneListen(opts: { follow?: boolean }, deps: PhoneDeps): Promise<void> {
@@ -183,7 +213,9 @@ export async function phoneListen(opts: { follow?: boolean }, deps: PhoneDeps): 
 export async function phoneSend(text: string, deps: PhoneDeps): Promise<void> {
 	const config = readConfig(deps.paths);
 	const peer = peerHex(requirePeer(config));
-	const event = wrap(text, loadOrCreateKey(deps.paths), peer);
+	const body = text === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : text;
+	if (!body) throw new DgCliError("message text is empty");
+	const event = wrap(body, loadOrCreateKey(deps.paths), peer);
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, config.relays, event);
@@ -249,7 +281,7 @@ export function registerPhoneCommands(
 	phone
 		.command("send")
 		.description("send one message to the peer")
-		.argument("<text>", "message text")
+		.argument("<text>", "message text, or - to read it from stdin")
 		.action((text: string) => phoneSend(text, makeDeps()));
 
 	phone

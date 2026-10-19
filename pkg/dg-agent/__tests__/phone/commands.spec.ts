@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
-import { wrap } from "../../src/phone/chat";
+import { fetchNew, wrap } from "../../src/phone/chat";
 import {
 	type PhoneDeps,
 	phoneListen,
@@ -42,6 +42,7 @@ function deps(overrides: Partial<PhoneDeps> = {}): PhoneDeps {
 			out.push(line);
 		},
 		sleep: async () => {},
+		readStdin: async () => "from stdin\n",
 		...overrides,
 	};
 }
@@ -84,6 +85,32 @@ describe("phoneStart", () => {
 		await phoneStart({}, deps());
 
 		expect(spawned).toBe(2);
+	});
+
+	it("restarts a running listener when the peer changes", async () => {
+		await phoneStart({ peer: peerNpub }, deps());
+		const other = nip19.npubEncode(getPublicKey(generateSecretKey()));
+		let killed = 0;
+
+		await phoneStart({ peer: other }, deps({ kill: (pid) => {
+			killed += 1;
+			alive.delete(pid);
+		} }));
+
+		expect(killed).toBe(1);
+		expect(spawned).toBe(2);
+		expect(readConfig(paths).peer).toBe(other);
+		expect(lines().at(-1)).toMatchObject({ peer: other, status: "restarted" });
+	});
+
+	it("fails and keeps the old peer when the running listener does not stop", async () => {
+		await phoneStart({ peer: peerNpub }, deps());
+		const other = nip19.npubEncode(getPublicKey(generateSecretKey()));
+
+		await expect(phoneStart({ peer: other }, deps({ kill: () => {} }))).rejects.toThrow("did not stop");
+
+		expect(readConfig(paths).peer).toBe(peerNpub);
+		expect(spawned).toBe(1);
 	});
 
 	it("saves custom relays", async () => {
@@ -182,6 +209,24 @@ describe("phoneSend", () => {
 		const [result] = lines() as { id: string; relays_ok: string[] }[];
 		expect(result.relays_ok).toEqual(readConfig(paths).relays);
 		expect(pool.events[0]?.id).toBe(result.id);
+	});
+
+	it("reads the text from stdin when the argument is -", async () => {
+		await phoneStart({ peer: peerNpub }, deps());
+		const mine = getPublicKey(loadOrCreateKey(paths));
+		const reader = createFakePool();
+
+		await phoneSend("-", deps());
+		reader.events.push(...pool.events);
+		const { messages } = await fetchNew(reader, ["wss://a"], peerSk, mine, { cursor: 0, ids: [] });
+
+		expect(messages.map((m) => m.text)).toEqual(["from stdin"]);
+	});
+
+	it("rejects empty stdin", async () => {
+		await phoneStart({ peer: peerNpub }, deps());
+
+		await expect(phoneSend("-", deps({ readStdin: async () => "" }))).rejects.toThrow("empty");
 	});
 
 	it("fails when no relay accepts the message", async () => {

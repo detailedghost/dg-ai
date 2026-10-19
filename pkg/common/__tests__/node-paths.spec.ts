@@ -85,6 +85,15 @@ describe("resolveDgPaths", () => {
 		"logDir",
 	] as const;
 	const AGENT_FIELDS = ["sessionsDir", "assetsDir", "memoryDbPath"] as const;
+	const PHONE_FIELDS = [
+		"phoneKeyPath",
+		"phoneConfigPath",
+		"phoneInboxPath",
+		"phoneSeenPath",
+		"phoneReadOffsetPath",
+		"phonePidPath",
+		"phoneLogPath",
+	] as const;
 
 	it("puts every daemon path under <root>/daemon and every agent path under <root>/agents", () => {
 		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
@@ -108,6 +117,15 @@ describe("resolveDgPaths", () => {
 		}
 		for (const field of DAEMON_FIELDS) {
 			expect(paths[field].startsWith(`${paths.agentsDir}/`)).toBe(false);
+		}
+	});
+
+	it("puts every phone path under <root>/phone, apart from the daemon and agent trees", () => {
+		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
+
+		expect(paths.phoneDir).toBe(posix.join(paths.stateDir, "phone"));
+		for (const field of PHONE_FIELDS) {
+			expect(posix.dirname(paths[field])).toBe(paths.phoneDir);
 		}
 	});
 
@@ -135,6 +153,9 @@ describe("resolveDgPaths", () => {
 		}
 		for (const field of AGENT_FIELDS) {
 			expect(win32.dirname(paths[field])).toBe(paths.agentsDir);
+		}
+		for (const field of PHONE_FIELDS) {
+			expect(win32.dirname(paths[field])).toBe(paths.phoneDir);
 		}
 	});
 

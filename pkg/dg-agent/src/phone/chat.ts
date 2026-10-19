@@ -10,6 +10,7 @@ export const GIFT_WRAP_KIND = 1059;
 export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
 const QUERY_MAX_WAIT_MS = 8000;
+export const STRANGER_ID_LIMIT = 10000;
 
 export function wrap(text: string, sk: Uint8Array, peerPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: peerPub }, text);
@@ -64,18 +65,17 @@ export async function fetchNew(
 		maxWait: QUERY_MAX_WAIT_MS,
 	});
 	const known = new Set(seen.ids);
-	const fresh = events.filter((event) => {
-		if (known.has(event.id)) return false;
+	const messages: Message[] = [];
+	for (const event of events) {
+		if (known.has(event.id)) continue;
 		known.add(event.id);
-		return true;
-	});
-	const messages = fresh
-		.map((event) => unwrapFromPeer(event, sk, peerPub))
-		.filter((message): message is Message => message !== null)
-		.sort((a, b) => a.ts - b.ts);
+		const message = unwrapFromPeer(event, sk, peerPub);
+		if (message) messages.push(message);
+	}
+	messages.sort((a, b) => a.ts - b.ts);
 	return {
 		messages,
-		seen: remember({ ...seen, cursor: startedAt }, fresh.map((event) => event.id)),
+		seen: remember({ ...seen, cursor: startedAt }, messages.map((message) => message.id)),
 	};
 }
 
@@ -89,13 +89,21 @@ export function subscribe(
 ): SubCloser {
 	let state = seen;
 	const known = new Set(seen.ids);
+	const strangers = new Set<string>();
 	return pool.subscribe(relays, inboxFilter(getPublicKey(sk), seen.cursor), {
 		onevent(event) {
-			if (known.has(event.id)) return;
+			if (known.has(event.id) || strangers.has(event.id)) return;
+			const message = unwrapFromPeer(event, sk, peerPub);
+			if (!message) {
+				strangers.add(event.id);
+				if (strangers.size > STRANGER_ID_LIMIT) {
+					strangers.delete(strangers.values().next().value as string);
+				}
+				return;
+			}
 			known.add(event.id);
 			state = remember({ ...state, cursor: Math.floor(Date.now() / 1000) }, [event.id]);
-			const message = unwrapFromPeer(event, sk, peerPub);
-			if (message) onMessage(message, state);
+			onMessage(message, state);
 		},
 	});
 }

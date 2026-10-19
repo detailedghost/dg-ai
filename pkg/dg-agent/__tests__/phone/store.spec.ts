@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import {
 	appendInbox,
@@ -35,6 +36,22 @@ describe("loadOrCreateKey", () => {
 		expect(statSync(paths.phoneKeyPath).mode & 0o777).toBe(0o600);
 		expect(statSync(paths.phoneDir).mode & 0o777).toBe(0o700);
 		expect(readFileSync(paths.phoneKeyPath, "utf8").trim()).toStartWith("nsec1");
+	});
+});
+
+describe("loadOrCreateKey with a corrupt key file", () => {
+	it("names the file and never echoes its contents", () => {
+		loadOrCreateKey(paths);
+		const broken = `${readFileSync(paths.phoneKeyPath, "utf8").trim()}x`;
+		writeFileSync(paths.phoneKeyPath, broken);
+
+		expect(() => loadOrCreateKey(paths)).toThrow(DgCliError);
+		try {
+			loadOrCreateKey(paths);
+		} catch (err) {
+			expect(String(err)).toContain(paths.phoneKeyPath);
+			expect(String(err)).not.toContain(broken);
+		}
 	});
 });
 
