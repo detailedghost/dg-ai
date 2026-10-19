@@ -353,13 +353,13 @@ describe("clipboard-image failures and help", () => {
 		expect(readdirSync(f.temp)).toEqual([]);
 	});
 
-	test("retains legacy nonempty-output behavior when the native tool exits nonzero", () => {
+	test("fails with exit 1 when the native tool exits nonzero, even after it wrote bytes", () => {
 		const f = clipboardFixture();
 		const proc = f.run(["-"], { CLIPBOARD_TEST_STATUS: "1" });
-		expect(proc.exitCode).toBe(0);
-		expect(proc.stdout.length).toBe(PNG.length);
-		expect(proc.stdout.equals(PNG)).toBe(true);
-		expect(proc.stderr.toString()).toBe("");
+		expect(proc.exitCode).toBe(1);
+		expect(proc.stdout.length).toBe(0);
+		expect(proc.stderr.toString()).toContain("wl-paste exited with status 1");
+		expect(readdirSync(f.temp)).toEqual([]);
 	});
 
 	test("cleans up when the explicit destination's parent does not exist", () => {

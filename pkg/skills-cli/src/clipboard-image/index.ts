@@ -66,12 +66,10 @@ $img.Save('${destination}', [System.Drawing.Imaging.ImageFormat]::Png)
 	}
 	const argv = clipboardCommand();
 	if (!argv) return false;
-	try {
-		const child = Bun.spawn(argv, { stdout: descriptor, stderr: "ignore" });
-		await child.exited;
-	} catch (error) {
-		reportCause(error);
-	}
+	const child = Bun.spawn(argv, { stdout: descriptor, stderr: "ignore" });
+	const status = await child.exited;
+	if (status !== 0 && statSync(tempfile).size > 0)
+		throw new Error(`${argv[0]} exited with status ${status}`);
 	return true;
 }
 
