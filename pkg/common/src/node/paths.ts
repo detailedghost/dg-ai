@@ -22,15 +22,15 @@ export type DgPaths = {
 	assetsDir: string;
 	memoryDbPath: string;
 	grantsDir: string;
-	phoneDir: string;
-	phoneKeyPath: string;
-	phoneConfigPath: string;
-	phoneInboxPath: string;
-	phoneSeenPath: string;
-	/** Byte offset already printed by `listen`, so the next call tails phoneInboxPath from there. */
-	phoneReadOffsetPath: string;
-	phonePidPath: string;
-	phoneLogPath: string;
+	phoneFriendDir: string;
+	phoneFriendKeyPath: string;
+	phoneFriendConfigPath: string;
+	phoneFriendInboxPath: string;
+	phoneFriendSeenPath: string;
+	/** Byte offset already printed by `listen`, so the next call tails phoneFriendInboxPath from there. */
+	phoneFriendReadOffsetPath: string;
+	phoneFriendPidPath: string;
+	phoneFriendLogPath: string;
 };
 
 export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
@@ -42,7 +42,7 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const stateDir = env.DG_HOME ?? path.join(homeDir, ".dg");
 	const daemonDir = path.join(stateDir, "daemon");
 	const agentsDir = path.join(stateDir, "agents");
-	const phoneDir = path.join(stateDir, "phone");
+	const phoneFriendDir = path.join(stateDir, "phone-friend");
 
 	return {
 		stateDir,
@@ -59,13 +59,13 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		assetsDir: path.join(agentsDir, "assets"),
 		memoryDbPath: path.join(agentsDir, "memory.db"),
 		grantsDir: path.join(stateDir, "grants"),
-		phoneDir,
-		phoneKeyPath: path.join(phoneDir, "key"),
-		phoneConfigPath: path.join(phoneDir, "config.json"),
-		phoneInboxPath: path.join(phoneDir, "inbox.jsonl"),
-		phoneSeenPath: path.join(phoneDir, "seen.json"),
-		phoneReadOffsetPath: path.join(phoneDir, "read.offset"),
-		phonePidPath: path.join(phoneDir, "listener.pid"),
-		phoneLogPath: path.join(phoneDir, "listener.log"),
+		phoneFriendDir,
+		phoneFriendKeyPath: path.join(phoneFriendDir, "key"),
+		phoneFriendConfigPath: path.join(phoneFriendDir, "config.json"),
+		phoneFriendInboxPath: path.join(phoneFriendDir, "inbox.jsonl"),
+		phoneFriendSeenPath: path.join(phoneFriendDir, "seen.json"),
+		phoneFriendReadOffsetPath: path.join(phoneFriendDir, "read.offset"),
+		phoneFriendPidPath: path.join(phoneFriendDir, "listener.pid"),
+		phoneFriendLogPath: path.join(phoneFriendDir, "listener.log"),
 	};
 }

@@ -4,29 +4,29 @@ import { remember, type Seen } from "./store";
 
 export type Message = { id: string; ts: number; from: string; text: string };
 
-export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subscribe">;
+export type PhoneFriendPool = Pick<AbstractSimplePool, "publish" | "querySync" | "subscribe">;
 
 export const GIFT_WRAP_KIND = 1059;
 /** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
 export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
 const QUERY_MAX_WAIT_MS = 8000;
-/** Caps the live subscription's non-peer id cache so relay spam cannot grow it without bound. */
+/** Caps the live subscription's non-contact id cache so relay spam cannot grow it without bound. */
 export const STRANGER_ID_LIMIT = 10000;
 
-export function wrap(text: string, sk: Uint8Array, peerPub: string): NostrEvent {
-	return nip17.wrapEvent(sk, { publicKey: peerPub }, text);
+export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEvent {
+	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
 }
 
-/** Returns null for a non-peer sender or a failed decrypt; never throws. */
-export function unwrapFromPeer(
+/** Returns null for a non-contact sender or a failed decrypt; never throws. */
+export function unwrapFromContact(
 	event: NostrEvent,
 	sk: Uint8Array,
-	peerPub: string,
+	contactPub: string,
 ): Message | null {
 	try {
 		const rumor = nip17.unwrapEvent(event, sk);
-		if (rumor.kind !== CHAT_MESSAGE_KIND || rumor.pubkey !== peerPub) return null;
+		if (rumor.kind !== CHAT_MESSAGE_KIND || rumor.pubkey !== contactPub) return null;
 		return {
 			id: event.id,
 			ts: rumor.created_at,
@@ -40,7 +40,7 @@ export function unwrapFromPeer(
 
 /** Never rejects on a relay failure; `ok` lists only the relays that accepted the event. */
 export async function publish(
-	pool: PhonePool,
+	pool: PhoneFriendPool,
 	relays: string[],
 	event: NostrEvent,
 ): Promise<{ ok: string[] }> {
@@ -58,10 +58,10 @@ function inboxFilter(pub: string, cursor: number) {
 
 /** Dedupes within this batch too, since each relay returns its own copy of a wrap. */
 export async function fetchNew(
-	pool: PhonePool,
+	pool: PhoneFriendPool,
 	relays: string[],
 	sk: Uint8Array,
-	peerPub: string,
+	contactPub: string,
 	seen: Seen,
 	now: () => number = () => Math.floor(Date.now() / 1000),
 ): Promise<{ messages: Message[]; seen: Seen }> {
@@ -74,7 +74,7 @@ export async function fetchNew(
 	for (const event of events) {
 		if (known.has(event.id)) continue;
 		known.add(event.id);
-		const message = unwrapFromPeer(event, sk, peerPub);
+		const message = unwrapFromContact(event, sk, contactPub);
 		if (message) messages.push(message);
 	}
 	messages.sort((a, b) => a.ts - b.ts);
@@ -85,10 +85,10 @@ export async function fetchNew(
 }
 
 export function subscribe(
-	pool: PhonePool,
+	pool: PhoneFriendPool,
 	relays: string[],
 	sk: Uint8Array,
-	peerPub: string,
+	contactPub: string,
 	seen: Seen,
 	onMessage: (message: Message, seen: Seen) => void,
 ): SubCloser {
@@ -98,7 +98,7 @@ export function subscribe(
 	return pool.subscribe(relays, inboxFilter(getPublicKey(sk), seen.cursor), {
 		onevent(event) {
 			if (known.has(event.id) || strangers.has(event.id)) return;
-			const message = unwrapFromPeer(event, sk, peerPub);
+			const message = unwrapFromContact(event, sk, contactPub);
 			if (!message) {
 				strangers.add(event.id);
 				if (strangers.size > STRANGER_ID_LIMIT) {

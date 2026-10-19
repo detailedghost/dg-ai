@@ -5,10 +5,10 @@ import {
 	LOOKBACK_SECONDS,
 	publish,
 	subscribe,
-	unwrapFromPeer,
+	unwrapFromContact,
 	wrap,
-} from "../../src/phone/chat";
-import { SEEN_ID_LIMIT } from "../../src/phone/store";
+} from "../../src/phone-friend/chat";
+import { SEEN_ID_LIMIT } from "../../src/phone-friend/store";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
@@ -18,13 +18,13 @@ function identity() {
 	return { sk, pub: getPublicKey(sk) };
 }
 
-describe("wrap and unwrapFromPeer", () => {
+describe("wrap and unwrapFromContact", () => {
 	it("returns the sent text, sender npub, and inner timestamp", () => {
 		const alice = identity();
 		const bob = identity();
 		const event = wrap("hello bob", alice.sk, bob.pub);
 
-		const message = unwrapFromPeer(event, bob.sk, alice.pub);
+		const message = unwrapFromContact(event, bob.sk, alice.pub);
 
 		expect(message?.text).toBe("hello bob");
 		expect(message?.from).toBe(nip19.npubEncode(alice.pub));
@@ -32,13 +32,13 @@ describe("wrap and unwrapFromPeer", () => {
 		expect(Math.abs((message?.ts ?? 0) - Date.now() / 1000)).toBeLessThan(5);
 	});
 
-	it("returns null for a message from someone other than the peer", () => {
+	it("returns null for a message from someone other than the contact", () => {
 		const alice = identity();
 		const bob = identity();
 		const mallory = identity();
 		const event = wrap("i am alice", mallory.sk, bob.pub);
 
-		expect(unwrapFromPeer(event, bob.sk, alice.pub)).toBeNull();
+		expect(unwrapFromContact(event, bob.sk, alice.pub)).toBeNull();
 	});
 
 	it("returns null when the wrap is not addressed to us", () => {
@@ -47,7 +47,7 @@ describe("wrap and unwrapFromPeer", () => {
 		const carol = identity();
 		const event = wrap("for carol", alice.sk, carol.pub);
 
-		expect(unwrapFromPeer(event, bob.sk, alice.pub)).toBeNull();
+		expect(unwrapFromContact(event, bob.sk, alice.pub)).toBeNull();
 	});
 
 	it("returns null for an event that is not a gift wrap", () => {
@@ -58,7 +58,7 @@ describe("wrap and unwrapFromPeer", () => {
 			alice.sk,
 		);
 
-		expect(unwrapFromPeer(note, bob.sk, alice.pub)).toBeNull();
+		expect(unwrapFromContact(note, bob.sk, alice.pub)).toBeNull();
 	});
 });
 
@@ -100,7 +100,7 @@ describe("fetchNew", () => {
 		expect(LOOKBACK_SECONDS).toBe(172800);
 	});
 
-	it("returns peer messages once, drops seen ids, and moves the cursor", async () => {
+	it("returns contact messages once, drops seen ids, and moves the cursor", async () => {
 		const alice = identity();
 		const bob = identity();
 		const pool = createFakePool();
@@ -130,7 +130,7 @@ describe("fetchNew", () => {
 		expect(messages.map((m) => m.text)).toEqual(["late"]);
 	});
 
-	it("drops non-peer messages and keeps their ids out of the saved seen list", async () => {
+	it("drops non-contact messages and keeps their ids out of the saved seen list", async () => {
 		const alice = identity();
 		const bob = identity();
 		const mallory = identity();
@@ -144,7 +144,7 @@ describe("fetchNew", () => {
 		expect(seen.ids).not.toContain(spam.id);
 	});
 
-	it("keeps a peer id seen after a stranger floods past the id limit", async () => {
+	it("keeps a contact id seen after a stranger floods past the id limit", async () => {
 		const alice = identity();
 		const bob = identity();
 		const mallory = identity();
@@ -189,7 +189,7 @@ describe("fetchNew", () => {
 });
 
 describe("subscribe", () => {
-	it("delivers each new peer message once with the updated seen state", async () => {
+	it("delivers each new contact message once with the updated seen state", async () => {
 		const alice = identity();
 		const bob = identity();
 		const pool = createFakePool();

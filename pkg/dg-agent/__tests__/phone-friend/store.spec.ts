@@ -13,13 +13,13 @@ import {
 	SEEN_ID_LIMIT,
 	writeConfig,
 	writeSeen,
-} from "../../src/phone/store";
+} from "../../src/phone-friend/store";
 
 let home: string;
 let paths: DgPaths;
 
 beforeEach(() => {
-	home = mkdtempSync(join(tmpdir(), "dg-phone-"));
+	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-"));
 	paths = resolveDgPaths({ env: { DG_HOME: home } });
 });
 
@@ -33,38 +33,38 @@ describe("loadOrCreateKey", () => {
 		const second = loadOrCreateKey(paths);
 
 		expect(Buffer.from(second).toString("hex")).toBe(Buffer.from(first).toString("hex"));
-		expect(statSync(paths.phoneKeyPath).mode & 0o777).toBe(0o600);
-		expect(statSync(paths.phoneDir).mode & 0o777).toBe(0o700);
-		expect(readFileSync(paths.phoneKeyPath, "utf8").trim()).toStartWith("nsec1");
+		expect(statSync(paths.phoneFriendKeyPath).mode & 0o777).toBe(0o600);
+		expect(statSync(paths.phoneFriendDir).mode & 0o777).toBe(0o700);
+		expect(readFileSync(paths.phoneFriendKeyPath, "utf8").trim()).toStartWith("nsec1");
 	});
 });
 
 describe("loadOrCreateKey with a corrupt key file", () => {
 	it("names the file and never echoes its contents", () => {
 		loadOrCreateKey(paths);
-		const broken = `${readFileSync(paths.phoneKeyPath, "utf8").trim()}x`;
-		writeFileSync(paths.phoneKeyPath, broken);
+		const broken = `${readFileSync(paths.phoneFriendKeyPath, "utf8").trim()}x`;
+		writeFileSync(paths.phoneFriendKeyPath, broken);
 
 		expect(() => loadOrCreateKey(paths)).toThrow(DgCliError);
 		try {
 			loadOrCreateKey(paths);
 		} catch (err) {
-			expect(String(err)).toContain(paths.phoneKeyPath);
+			expect(String(err)).toContain(paths.phoneFriendKeyPath);
 			expect(String(err)).not.toContain(broken);
 		}
 	});
 });
 
 describe("config", () => {
-	it("defaults to no peer and the three public relays", () => {
+	it("defaults to no contact and the three public relays", () => {
 		expect(readConfig(paths)).toEqual({ relays: DEFAULT_RELAYS });
 		expect(DEFAULT_RELAYS).toHaveLength(3);
 	});
 
 	it("round-trips a saved config", () => {
-		writeConfig(paths, { peer: "npub1peer", relays: ["wss://x.example"] });
+		writeConfig(paths, { contact: "npub1peer", relays: ["wss://x.example"] });
 
-		expect(readConfig(paths)).toEqual({ peer: "npub1peer", relays: ["wss://x.example"] });
+		expect(readConfig(paths)).toEqual({ contact: "npub1peer", relays: ["wss://x.example"] });
 	});
 });
 
@@ -90,7 +90,7 @@ describe("appendInbox", () => {
 		appendInbox(paths, { id: "a", ts: 1, from: "npub1x", text: "one" });
 		appendInbox(paths, { id: "b", ts: 2, from: "npub1x", text: "two" });
 
-		const lines = readFileSync(paths.phoneInboxPath, "utf8").trim().split("\n");
+		const lines = readFileSync(paths.phoneFriendInboxPath, "utf8").trim().split("\n");
 		expect(lines.map((line) => JSON.parse(line).text)).toEqual(["one", "two"]);
 	});
 });

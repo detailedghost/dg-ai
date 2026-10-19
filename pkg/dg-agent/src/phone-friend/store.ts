@@ -4,7 +4,7 @@ import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Message } from "./chat";
 
-export type PhoneConfig = { peer?: string; relays: string[] };
+export type PhoneFriendConfig = { contact?: string; relays: string[] };
 export type Seen = { cursor: number; ids: string[] };
 
 export const DEFAULT_RELAYS = [
@@ -22,30 +22,30 @@ function readJson<T>(path: string, fallback: T): T {
 
 /** Creates the 0600 nsec file on first call and reuses it after; throws if it holds anything else. */
 export function loadOrCreateKey(paths: DgPaths): Uint8Array {
-	ensurePrivateDir(paths.phoneDir);
-	if (existsSync(paths.phoneKeyPath)) {
+	ensurePrivateDir(paths.phoneFriendDir);
+	if (existsSync(paths.phoneFriendKeyPath)) {
 		try {
-			const decoded = nip19.decode(readFileSync(paths.phoneKeyPath, "utf8").trim());
+			const decoded = nip19.decode(readFileSync(paths.phoneFriendKeyPath, "utf8").trim());
 			if (decoded.type === "nsec") return decoded.data;
 		} catch {}
-		throw new DgCliError(`${paths.phoneKeyPath} does not hold a valid nsec`);
+		throw new DgCliError(`${paths.phoneFriendKeyPath} does not hold a valid nsec`);
 	}
 	const sk = generateSecretKey();
-	writeFileAtomic(paths.phoneKeyPath, `${nip19.nsecEncode(sk)}\n`, 0o600);
+	writeFileAtomic(paths.phoneFriendKeyPath, `${nip19.nsecEncode(sk)}\n`, 0o600);
 	return sk;
 }
 
-export function readConfig(paths: DgPaths): PhoneConfig {
-	return readJson<PhoneConfig>(paths.phoneConfigPath, { relays: DEFAULT_RELAYS });
+export function readConfig(paths: DgPaths): PhoneFriendConfig {
+	return readJson<PhoneFriendConfig>(paths.phoneFriendConfigPath, { relays: DEFAULT_RELAYS });
 }
 
-export function writeConfig(paths: DgPaths, config: PhoneConfig): void {
-	ensurePrivateDir(paths.phoneDir);
-	writeFileAtomic(paths.phoneConfigPath, `${JSON.stringify(config, null, 2)}\n`, 0o600);
+export function writeConfig(paths: DgPaths, config: PhoneFriendConfig): void {
+	ensurePrivateDir(paths.phoneFriendDir);
+	writeFileAtomic(paths.phoneFriendConfigPath, `${JSON.stringify(config, null, 2)}\n`, 0o600);
 }
 
 export function readSeen(paths: DgPaths): Seen {
-	return readJson<Seen>(paths.phoneSeenPath, { cursor: 0, ids: [] });
+	return readJson<Seen>(paths.phoneFriendSeenPath, { cursor: 0, ids: [] });
 }
 
 export function remember(seen: Seen, ids: string[]): Seen {
@@ -53,11 +53,11 @@ export function remember(seen: Seen, ids: string[]): Seen {
 }
 
 export function writeSeen(paths: DgPaths, seen: Seen): void {
-	ensurePrivateDir(paths.phoneDir);
-	writeFileAtomic(paths.phoneSeenPath, JSON.stringify(remember(seen, [])), 0o600);
+	ensurePrivateDir(paths.phoneFriendDir);
+	writeFileAtomic(paths.phoneFriendSeenPath, JSON.stringify(remember(seen, [])), 0o600);
 }
 
 export function appendInbox(paths: DgPaths, message: Message): void {
-	ensurePrivateDir(paths.phoneDir);
-	appendFileSync(paths.phoneInboxPath, `${JSON.stringify(message)}\n`, { mode: 0o600 });
+	ensurePrivateDir(paths.phoneFriendDir);
+	appendFileSync(paths.phoneFriendInboxPath, `${JSON.stringify(message)}\n`, { mode: 0o600 });
 }
