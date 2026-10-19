@@ -161,6 +161,7 @@ Rename the CLI to `dg-agent phone-friend` with phone verbs (number, invite, dial
 (slice 2) invite-and-dial: card.ts, invite.json, gate with call admission in time order, invite/dial commands, on needs contact or invite. 61 phone tests, relay e2e passed.
 (slice 3) credential-store-key: keys.ts mode rule, migration with read-back, grant-read listener, --session via preAction. 251 dg-agent tests; real temp-daemon e2e passed.
 (slice 4) skill-and-docs: SKILL.md and docs rewritten, skill test updated. test:all clean except known Chromium-only specs; lint:all clean.
+(slice 5, added on request) sqlite-inbox: phone-friend.db with messages (in/out, call, read_at) and state (cursor), 7-day TTL on open and insert, relay since floored at now - TTL. Replaces inbox.jsonl, seen.json, read.offset. 266 dg-agent tests; relay e2e passed.
 
 ## Agent Notes
 (slice 3) A source-run dg-daemon with a temp DG_HOME on Linux writes a keychain entry (secret-tool, service dg-server, account chat-store-kek:<hash of DG_HOME>). Clear it after any manual e2e.
