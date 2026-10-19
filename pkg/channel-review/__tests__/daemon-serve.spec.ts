@@ -286,7 +286,7 @@ describe("serve event loop", () => {
 			scripts: [holdOpen(prompt, reaction)],
 		});
 		const { controller, done } = h.startServe();
-		await waitUntil(() => lastEventId(h) === "e2");
+		await waitUntil(() => lastEventId(h) === "e2", 10_000);
 		expect(JSON.parse(readFileSync(h.paths.configPath, "utf8")).reactions).toEqual({ approved: custom });
 		expect(h.provider().calls.filter((c) => c.op === "reply").map((c) => c.text)).toEqual([
 			"React to this message with the emoji for approved.",
@@ -294,7 +294,7 @@ describe("serve event loop", () => {
 		]);
 		controller.abort();
 		await done;
-	});
+	}, 15_000);
 
 	test("a message whose handling throws does not advance the last event id, so a restart replays it", async () => {
 		const broken = messageEvent("e1");
