@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { DgCliError } from "@dg/common";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
-import { CARD_PREFIX, decodeCard, encodeCard } from "../../src/phone-friend/card";
+import { CARD_PREFIX, decodeCard, encodeCard, MAX_CARD_RELAYS } from "../../src/phone-friend/card";
 
 const npub = nip19.npubEncode(getPublicKey(generateSecretKey()));
 const card = { npub, relays: ["wss://a.example"], secret: "ab".repeat(32), exp: 2_000 };
@@ -16,6 +16,12 @@ describe("call cards", () => {
 
 		expect(text).toStartWith(CARD_PREFIX);
 		expect(decodeCard(text, 1_000)).toEqual(card);
+	});
+
+	it("accepts a relay with a port and a path", () => {
+		const withPath = { ...card, relays: ["wss://a.example:4433/nostr"] };
+
+		expect(decodeCard(encodeCard(withPath), 1_000)).toEqual(withPath);
 	});
 
 	it("ignores whitespace around a pasted card", () => {
@@ -40,6 +46,9 @@ describe("call cards", () => {
 			{ ...card, v: 1, npub: "npub1nope" },
 			{ ...card, v: 1, relays: [] },
 			{ ...card, v: 1, relays: ["http://a.example"] },
+			{ ...card, v: 1, relays: ["wss://a.example\nINJECTED"] },
+			{ ...card, v: 1, relays: ["wss://a.example extra"] },
+			{ ...card, v: 1, relays: Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`) },
 			{ ...card, v: 1, secret: "short" },
 			{ ...card, v: 1, exp: "soon" },
 		]) {

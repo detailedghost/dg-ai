@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
@@ -20,7 +20,7 @@ function readJson<T>(path: string, fallback: T): T {
 	return { ...fallback, ...JSON.parse(readFileSync(path, "utf8")) };
 }
 
-/** Creates the 0600 nsec file on first call and reuses it after; throws if it holds anything else. */
+/** Creates the 0600 nsec file once (exclusive create, so a racing writer reads the winner) and reuses it after. */
 export function loadOrCreateKey(paths: DgPaths): Uint8Array {
 	ensurePrivateDir(paths.phoneFriendDir);
 	if (existsSync(paths.phoneFriendKeyPath)) {
@@ -31,7 +31,12 @@ export function loadOrCreateKey(paths: DgPaths): Uint8Array {
 		throw new DgCliError(`${paths.phoneFriendKeyPath} does not hold a valid nsec`);
 	}
 	const sk = generateSecretKey();
-	writeFileAtomic(paths.phoneFriendKeyPath, `${nip19.nsecEncode(sk)}\n`, 0o600);
+	try {
+		writeFileSync(paths.phoneFriendKeyPath, `${nip19.nsecEncode(sk)}\n`, { mode: 0o600, flag: "wx" });
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "EEXIST") return loadOrCreateKey(paths);
+		throw err;
+	}
 	return sk;
 }
 

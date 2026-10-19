@@ -114,7 +114,9 @@ function contactHex(npub: string): string {
 
 function requireContact(config: PhoneFriendConfig): string {
 	if (!config.contact) {
-		throw new DgCliError("no contact saved; run `dg-agent phone-friend dial <card>` with a call card from the other side");
+		throw new DgCliError(
+			"no contact saved; run `dg-agent phone-friend dial <card>` with a call card from the other side",
+		);
 	}
 	return config.contact;
 }
@@ -175,8 +177,8 @@ function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
 
 function acceptCall(message: Message, deps: PhoneFriendDeps): void {
 	if (!message.call) return;
-	writeConfig(deps.paths, { ...readConfig(deps.paths), contact: message.from });
 	clearInvite(deps.paths);
+	writeConfig(deps.paths, { ...readConfig(deps.paths), contact: message.from });
 }
 
 async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; status: string }> {
@@ -193,7 +195,8 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 	const contact = config.contact ?? null;
 	if (!contact && !liveInvite(deps)) {
 		throw new DgCliError(
-			"no contact yet; run `dg-agent phone-friend invite` and give the card to the other side, or `dg-agent phone-friend dial <card>`",
+			"no contact yet; run `dg-agent phone-friend invite` and give the card to the other side, " +
+				"or `dg-agent phone-friend dial <card>`",
 		);
 	}
 	const running = livePid(deps);
@@ -235,7 +238,9 @@ export async function phoneDial(
 	firstWords: string | undefined,
 	deps: PhoneFriendDeps,
 ): Promise<void> {
-	const card = decodeCard(text, deps.now());
+	const pasted = text === "-" ? await deps.readStdin() : text;
+	if (!pasted) throw new DgCliError("no call card given");
+	const card = decodeCard(pasted, deps.now());
 	const event = ring(firstWords || "hello", await mySecretKey(deps), contactHex(card.npub), card.secret);
 	const pool = deps.createPool();
 	try {
@@ -393,7 +398,7 @@ export function registerPhoneFriendCommands(
 	phone
 		.command("dial")
 		.description("call the owner of a call card: save them as your contact and ring them")
-		.argument("<card>", "the call card from `phone-friend invite`")
+		.argument("<card>", "the call card from `phone-friend invite`, or - to read it from stdin")
 		.argument("[text]", "first words to send", "hello")
 		.action((card: string, text: string) => phoneDial(card, text, makeDeps(session)));
 

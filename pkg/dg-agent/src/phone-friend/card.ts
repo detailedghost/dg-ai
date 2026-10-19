@@ -6,6 +6,17 @@ export type Card = { npub: string; relays: string[]; secret: string; exp: number
 export const CARD_PREFIX = "dgcall1";
 const CARD_VERSION = 1;
 const SECRET_PATTERN = /^[0-9a-f]{64}$/;
+const RELAY_PATTERN = /^wss:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[\x21-\x7e]*)?$/;
+export const MAX_CARD_RELAYS = 10;
+
+function isNpub(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	try {
+		return nip19.decode(value).type === "npub";
+	} catch {
+		return false;
+	}
+}
 
 export function encodeCard(card: Card): string {
 	const body = { v: CARD_VERSION, ...card };
@@ -29,17 +40,14 @@ export function decodeCard(text: string, now: number): Card {
 	if (typeof body !== "object" || body === null) invalid("it does not decode");
 	const { v, npub, relays, secret, exp } = body;
 	if (v !== CARD_VERSION) invalid(`unknown version ${String(v)}`);
-	try {
-		if (typeof npub !== "string" || nip19.decode(npub).type !== "npub") invalid("bad npub");
-	} catch {
-		invalid("bad npub");
-	}
+	if (!isNpub(npub)) invalid("bad npub");
 	if (
 		!Array.isArray(relays) ||
 		relays.length === 0 ||
-		!relays.every((relay) => typeof relay === "string" && /^wss:\/\/[^\s/]+/.test(relay))
+		relays.length > MAX_CARD_RELAYS ||
+		!relays.every((relay) => typeof relay === "string" && RELAY_PATTERN.test(relay))
 	) {
-		invalid("relays must be wss:// URLs");
+		invalid(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	}
 	if (typeof secret !== "string" || !SECRET_PATTERN.test(secret)) invalid("bad secret");
 	if (typeof exp !== "number" || !Number.isInteger(exp)) invalid("bad expiry");

@@ -42,6 +42,8 @@ describe("phone-friend skill", () => {
 	test("sends replies through a quoted heredoc, not a shell argument", () => {
 		expect(skill).toContain(`phone-friend say - <<'MSG'`);
 		expect(skill).not.toMatch(/phone-friend say "/);
+		expect(skill).toContain(`phone-friend dial - 'hello from Grok' <<'CARD'`);
+		expect(skill).not.toMatch(/phone-friend dial '/);
 	});
 
 	test("the skills README lists phone-friend after overwatch in the table and tree", () => {

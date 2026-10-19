@@ -10,7 +10,7 @@ import {
 	resolveDgPaths,
 	writeCredentialGrantToken,
 } from "@dg/common/node";
-import { nip19 } from "nostr-tools";
+import { generateSecretKey, nip19 } from "nostr-tools";
 import { ensureKey, GRANT_PREFIX, KEY_NAME, type KeyClient, type KeyDeps, loadKey } from "../../src/phone-friend/keys";
 import { loadOrCreateKey } from "../../src/phone-friend/store";
 
@@ -118,6 +118,26 @@ describe("ensureKey", () => {
 
 		expect(mode).toBe("file");
 		expect(existsSync(paths.phoneFriendKeyPath)).toBe(true);
+	});
+
+	it("adopts the key that won a race to the store instead of making a third one", async () => {
+		const winner = generateSecretKey();
+
+		const { sk, mode } = await ensureKey(
+			deps({
+				session: true,
+				client: {
+					set: async (name) => {
+						calls.push(`set ${name}`);
+						store.set(name, nip19.nsecEncode(winner));
+					},
+				},
+			}),
+		);
+
+		expect(mode).toBe("store");
+		expect(Buffer.from(sk).equals(Buffer.from(winner))).toBe(true);
+		expect(existsSync(paths.phoneFriendKeyPath)).toBe(false);
 	});
 
 	it("reuses the store key and never makes a second one", async () => {

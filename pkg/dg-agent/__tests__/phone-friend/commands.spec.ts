@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
+import { Command } from "commander";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, type NostrEvent, nip19, nip59 } from "nostr-tools";
 import { fetchNew, ring, wrap } from "../../src/phone-friend/chat";
@@ -14,6 +15,7 @@ import {
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
+	registerPhoneFriendCommands,
 	phoneOn,
 	phoneOff,
 } from "../../src/phone-friend/commands";
@@ -186,6 +188,16 @@ describe("phoneDial", () => {
 		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"] }]);
 	});
 
+	it("reads the card from stdin when the argument is -", async () => {
+		await phoneDial("-", undefined, deps({ readStdin: async () => `${cardFor()}\n` }));
+
+		expect(readConfig(paths).contact).toBe(contactNpub);
+	});
+
+	it("rejects empty stdin for a card", async () => {
+		await expect(phoneDial("-", undefined, deps({ readStdin: async () => "" }))).rejects.toThrow("no call card");
+	});
+
 	it("sends custom first words", async () => {
 		await phoneDial(cardFor(), "hi, it is grok", deps());
 
@@ -356,5 +368,21 @@ describe("phoneSay", () => {
 
 	it("fails when no contact is saved", async () => {
 		await expect(phoneSay("ping", deps())).rejects.toBeInstanceOf(DgCliError);
+	});
+});
+
+describe("registerPhoneFriendCommands", () => {
+	it("passes the global --session to the deps of the command that runs", async () => {
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		const sessions: (string | undefined)[] = [];
+		registerPhoneFriendCommands(program, (session) => {
+			sessions.push(session);
+			return deps();
+		});
+
+		await program.parseAsync(["node", "dg-agent", "--session", "abc", "phone-friend", "number"]);
+
+		expect(sessions).toEqual(["abc"]);
+		expect(lines()).toMatchObject([{ key_store: "file" }]);
 	});
 });

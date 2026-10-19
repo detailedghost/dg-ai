@@ -99,6 +99,8 @@ export async function ensureKey(deps: KeyDeps): Promise<LoadedKey> {
 		if (client) {
 			const sk = generateSecretKey();
 			if (await putInStore(deps, client, sk)) return { sk, mode: "store" };
+			const winner = await loadKey(deps).catch(() => undefined);
+			if (winner) return winner;
 		}
 		return { sk: loadOrCreateKey(deps.paths), mode: "file" };
 	} finally {

@@ -15,7 +15,7 @@ Codex:      $dg:phone-friend
 | --- | --- |
 | `number` | Prints `{npub, contact, key_store, listener}`. |
 | `invite [--relay <url>...] [--ttl <hours>]` | Prints a one-time call card, `{card, expires_at}`. |
-| `dial <card> [text]` | Saves the card owner as your contact and rings them. |
+| `dial <card\|-> [text]` | Saves the card owner as your contact, uses the card relays, and rings them. `-` reads the card from stdin. |
 | `on` / `off` | Starts or stops the background listener. |
 | `answer` | Stays on the line and prints each new message as a JSON line. |
 | `voicemail` | Prints unread messages, then exits. |
