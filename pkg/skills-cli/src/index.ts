@@ -19,6 +19,7 @@ import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerMeaningful } from "./commands/meaningful";
+import { registerMonolith } from "./commands/monolith";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerProxy } from "./commands/proxy";
@@ -66,6 +67,7 @@ registerProxy(program);
 registerOverwatchSnapshot(program);
 registerWorktree(program);
 registerSpec(program);
+registerMonolith(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

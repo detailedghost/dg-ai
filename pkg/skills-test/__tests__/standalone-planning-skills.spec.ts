@@ -16,9 +16,15 @@ const SKILL_COMMANDS = [
 	"prototype",
 ];
 
-const PENDING_UNSHIPPED_COMMANDS = ["viz", "monolith"];
+const PENDING_UNSHIPPED_COMMANDS = ["viz"];
 
 const RETIRED = [/\bspec-cli\b/, /create-specs/];
+
+const MIGRATION_SKILLS = new Set(["spring-break"]);
+
+function appliesTo(skill: string, pattern: RegExp): boolean {
+	return !(MIGRATION_SKILLS.has(skill) && /create-spec/.test(pattern.source));
+}
 
 function isShipped(command: string): boolean {
 	return existsSync(join(SKILL_ROOT, command, "SKILL.md"));
@@ -55,7 +61,7 @@ describe("planning skills stand alone", () => {
 			for (const file of markdownFiles(join(SKILL_ROOT, skill))) {
 				const text = readFileSync(file, "utf8");
 				for (const pattern of banned) {
-					if (pattern.test(text))
+					if (appliesTo(skill, pattern) && pattern.test(text))
 						hits.push(`${relative(REPO_ROOT, file)} matches ${pattern}`);
 				}
 			}

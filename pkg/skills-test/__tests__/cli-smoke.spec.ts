@@ -4,6 +4,8 @@
  * present in CI), which exercises the same command graph the release compiles.
  */
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ENTRY = join(
@@ -53,6 +55,7 @@ describe("dg-skills CLI", () => {
 			"catchup",
 			"worktree",
 			"spec",
+			"monolith",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -111,6 +114,39 @@ describe("dg-skills CLI", () => {
 			"prototype-ref",
 		])
 			expect(out).toContain(verb);
+	});
+
+	test("monolith is registered and its help lists the helper verbs and the generator", async () => {
+		const { code, out } = await runCli(["monolith", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"bootstrap",
+			"list-terms",
+			"list-sections",
+			"validate",
+			"prune",
+			"patch-pointer",
+			"patch-agents-md",
+			"cap-report",
+			"split",
+			"detect-conflicts",
+			"apply-conflict-resolution",
+			"worktree-gen",
+		])
+			expect(out).toContain(verb);
+	});
+
+	test("monolith bootstrap runs a real operation through the source entry point", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-monolith-smoke-"));
+		try {
+			const { code, out } = await runCli(["monolith", "bootstrap", dir]);
+			expect(code).toBe(0);
+			expect(out).toBe(
+				`APPEND_MODE=0\nMONOLITH_PATH=${join(dir, ".agents", "monolith.md")}\nLIGHT_MODE=0\n`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	test("clipboard-image --help documents native capture without reading the clipboard", async () => {
