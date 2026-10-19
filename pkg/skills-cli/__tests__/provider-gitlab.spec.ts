@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { createGitlabProvider } from "../src/provider/gitlab";
 import { LOG_EXCERPT_MAX_CHARS, ProviderError, truncateLogExcerpt } from "../src/provider/types";
@@ -909,6 +909,18 @@ esac
 
 		const err = await captureError(() => createGitlabProvider().listCiFailures({ number: 7 }));
 		expect(err.code).toBe("PIPELINE_SHA_MISMATCH");
+	});
+
+	test("accepts a branch pipeline that carries the head sha on the merge request's source branch", async () => {
+		const mrJson = writeJson("guard-mr-6.json", { iid: 7, sha: HEAD_SHA, source_branch: "feature/x" });
+		const pipelinesJson = writeJson("guard-pipelines-6.json", [
+			{ id: 5400, sha: HEAD_SHA, ref: "feature/x", status: "failed" },
+			{ id: 5401, sha: HEAD_SHA, ref: "master", status: "success" },
+		]);
+		mockChain(mrJson, pipelinesJson, failingJobs(91006));
+
+		const failures = await createGitlabProvider().listCiFailures({ number: 7 });
+		expect(failures[0].executionId).toBe("5400");
 	});
 
 	test("fails closed when the merge request reports no head sha, rather than comparing empty to empty", async () => {
@@ -2040,6 +2052,33 @@ describe("postReview — failure handling", () => {
 		const deletes = readCalls(log).filter((c) => c.includes("-X DELETE"));
 		expect(deletes).toHaveLength(2);
 		expect(deletes.every((c) => /draft_notes\/\d+ -X DELETE/.test(c))).toBe(true);
+	});
+
+	test("retries bulk_publish once when a reviewer_state publish fails with a 4xx", async () => {
+		const log = callLogPath();
+		const marker = join(dirname(log), "bulk-publish-attempted");
+		fakeGlab(
+			script().replace(
+				'*"bulk_publish"*)\n    cat > /dev/null\n    exit 0',
+				`*"bulk_publish"*)\n    cat > /dev/null\n    if [ ! -e "${marker}" ]; then : > "${marker}"; echo '422 Unprocessable Entity' 1>&2; exit 1; fi\n    exit 0`,
+			),
+		);
+
+		const posted = await createGitlabProvider().postReview(ref, { verdict: "request_changes", body: "s", comments });
+
+		expect(posted.verdict).toBe("request_changes");
+		expect(readCalls(log).filter((c) => c.includes("bulk_publish"))).toHaveLength(2);
+	});
+
+	test("does not retry bulk_publish for a comment-only post or a 5xx", async () => {
+		const log = callLogPath();
+		fakeGlab(script({ failPublish: true }));
+
+		await cliFixtures.catchError(() =>
+			createGitlabProvider().postReview(ref, { verdict: "request_changes", body: "s", comments }),
+		);
+
+		expect(readCalls(log).filter((c) => c.includes("bulk_publish"))).toHaveLength(1);
 	});
 
 	test("an approve failure that is not an authorization refusal is raised, not degraded", async () => {

@@ -1,4 +1,4 @@
-import type { ShellTag } from "../utils/git";
+import { ShellError, type ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
 	type CiFailure,
@@ -410,7 +410,12 @@ async function replyToThread(
 }
 
 /** Fails closed on an absent head sha, which would reduce the pipeline assertion below to `"" === ""`. */
-async function mrHeadSha(tag: ShellTag, project: string, iid: string, hostFlags: string[]): Promise<string> {
+async function mrHead(
+	tag: ShellTag,
+	project: string,
+	iid: string,
+	hostFlags: string[],
+): Promise<{ sha: string; sourceBranch: string }> {
 	const result = await tag`api projects/${project}/merge_requests/${iid} ${hostFlags}`;
 	const raw = parseGlabJson(result.stdout.toString());
 	const sha = typeof raw.sha === "string" ? raw.sha.trim() : "";
@@ -420,13 +425,20 @@ async function mrHeadSha(tag: ShellTag, project: string, iid: string, hostFlags:
 			`merge request !${iid} reported no head sha; refusing to resolve a pipeline without one`,
 		);
 	}
-	return sha;
+	return { sha, sourceBranch: typeof raw.source_branch === "string" ? raw.source_branch.trim() : "" };
 }
 
 /** Identity is the sha and the ref together: an all-green status cannot tell this branch's pipeline from another's. */
-function selectHeadPipeline(pipelines: Array<Record<string, unknown>>, iid: string, headSha: string): string {
+function selectHeadPipeline(
+	pipelines: Array<Record<string, unknown>>,
+	iid: string,
+	head: { sha: string; sourceBranch: string },
+): string {
+	const headSha = head.sha;
 	const expectedRef = mrHeadRef(iid);
-	const matching = pipelines.filter((p) => p.sha === headSha && p.ref === expectedRef);
+	const matching = pipelines.filter(
+		(p) => p.sha === headSha && (p.ref === expectedRef || (head.sourceBranch !== "" && p.ref === head.sourceBranch)),
+	);
 	if (matching.length === 0) {
 		throw new ProviderError(
 			"PIPELINE_SHA_MISMATCH",
@@ -447,11 +459,11 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 	const project = glProjectPath(ref.repo);
 	const hostFlags = apiHostFlags(ref.repo);
 	const iid = requireMrIid(ref.number, "listCiFailures");
-	const headSha = await mrHeadSha(tag, project, iid, hostFlags);
+	const head = await mrHead(tag, project, iid, hostFlags);
 	const pipelinesResult = await tag`api projects/${project}/merge_requests/${iid}/pipelines --paginate ${hostFlags}`;
 	const pipelines = flattenPaginated<Record<string, unknown>>(parseGlabJson(pipelinesResult.stdout.toString()));
 	if (pipelines.length === 0) return [];
-	const pipelineId = selectHeadPipeline(pipelines, iid, headSha);
+	const pipelineId = selectHeadPipeline(pipelines, iid, head);
 
 	const jobsResult = await tag`api projects/${project}/pipelines/${pipelineId}/jobs --paginate ${hostFlags}`;
 	const jobs = flattenPaginated<Record<string, unknown>>(parseGlabJson(jobsResult.stdout.toString()));
@@ -582,6 +594,10 @@ function draftNoteId(stdout: string): string | undefined {
 	}
 }
 
+function isClientError(err: unknown): boolean {
+	return err instanceof ShellError && /\b4\d\d\b/.test(`${err.stderr.toString()} ${err.stdout.toString()}`);
+}
+
 function isApprovalRefusal(err: unknown): boolean {
 	return isCliErrorContaining(err, "401") || isCliErrorContaining(err, "403");
 }
@@ -612,9 +628,16 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 			...(input.body.trim() ? { note: input.body } : {}),
 			...(state ? { reviewer_state: state } : {}),
 		});
-		await tag.withInput(
-			publish,
-		)`api projects/${project}/merge_requests/${iid}/draft_notes/bulk_publish -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
+		const bulkPublish = () =>
+			tag.withInput(
+				publish,
+			)`api projects/${project}/merge_requests/${iid}/draft_notes/bulk_publish -X POST --input - -H ${JSON_CONTENT_TYPE_HEADER} ${hostFlags}`;
+		try {
+			await bulkPublish();
+		} catch (err) {
+			if (!state || !isClientError(err)) throw err;
+			await bulkPublish();
+		}
 	} catch (err) {
 		for (const draftId of draftIds) {
 			await tag`api projects/${project}/merge_requests/${iid}/draft_notes/${draftId} -X DELETE ${hostFlags}`.catch(
