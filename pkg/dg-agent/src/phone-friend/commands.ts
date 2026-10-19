@@ -14,6 +14,7 @@ import {
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
 import { decodeCard, encodeCard } from "./card";
+import { defaultKeyClients, ensureKey, type KeyDeps, loadKey } from "./keys";
 import {
 	fetchNew,
 	type Gate,
@@ -28,7 +29,6 @@ import {
 import {
 	appendInbox,
 	clearInvite,
-	loadOrCreateKey,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
@@ -38,8 +38,7 @@ import {
 	writeSeen,
 } from "./store";
 
-export type PhoneFriendDeps = {
-	paths: DgPaths;
+export type PhoneFriendDeps = KeyDeps & {
 	createPool: () => PhoneFriendPool & { close(relays: string[]): void };
 	spawnListener: (paths: DgPaths) => number;
 	isAlive: (pid: number) => boolean;
@@ -72,9 +71,11 @@ function isOurListener(pid: number): boolean {
 	return ps.status === 0 && / phone-friend __run\b/.test(ps.stdout);
 }
 
-function defaultDeps(): PhoneFriendDeps {
+function defaultDeps(session?: string): PhoneFriendDeps {
+	const paths = resolveDgPaths();
 	return {
-		paths: resolveDgPaths(),
+		paths,
+		...defaultKeyClients(paths, session),
 		createPool: () => new SimplePool({ enableReconnect: true }),
 		spawnListener: (paths) => {
 			ensurePrivateDir(paths.phoneFriendDir);
@@ -138,15 +139,24 @@ async function stopListener(pid: number, deps: PhoneFriendDeps): Promise<void> {
 	rmSync(deps.paths.phoneFriendPidPath, { force: true });
 }
 
-function myNpub(deps: PhoneFriendDeps): string {
-	return nip19.npubEncode(getPublicKey(loadOrCreateKey(deps.paths)));
+function npubOf(sk: Uint8Array): string {
+	return nip19.npubEncode(getPublicKey(sk));
+}
+
+async function myNpub(deps: PhoneFriendDeps): Promise<string> {
+	return npubOf((await ensureKey(deps)).sk);
+}
+
+async function mySecretKey(deps: PhoneFriendDeps): Promise<Uint8Array> {
+	return (await ensureKey(deps)).sk;
 }
 
 export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
+	const { sk, mode } = await ensureKey(deps);
 	printJson(deps, {
-		npub: myNpub(deps),
+		npub: npubOf(sk),
 		contact: readConfig(deps.paths).contact ?? null,
-		key_store: "file",
+		key_store: mode,
 		listener: livePid(deps) ?? null,
 	});
 }
@@ -179,7 +189,7 @@ async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; sta
 
 export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.paths);
-	const npub = myNpub(deps);
+	const npub = await myNpub(deps);
 	const contact = config.contact ?? null;
 	if (!contact && !liveInvite(deps)) {
 		throw new DgCliError(
@@ -209,7 +219,7 @@ export async function phoneInvite(
 		expiresAt: deps.now() + Math.round(hours * 3600),
 	};
 	const card = encodeCard({
-		npub: myNpub(deps),
+		npub: await myNpub(deps),
 		relays: config.relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
@@ -226,7 +236,7 @@ export async function phoneDial(
 	deps: PhoneFriendDeps,
 ): Promise<void> {
 	const card = decodeCard(text, deps.now());
-	const event = ring(firstWords || "hello", loadOrCreateKey(deps.paths), contactHex(card.npub), card.secret);
+	const event = ring(firstWords || "hello", await mySecretKey(deps), contactHex(card.npub), card.secret);
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, card.relays, event);
@@ -292,7 +302,7 @@ export async function phoneVoicemail(deps: PhoneFriendDeps): Promise<void> {
 			const { messages, seen } = await fetchNew(
 				pool,
 				config.relays,
-				loadOrCreateKey(deps.paths),
+				await mySecretKey(deps),
 				gate,
 				readSeen(deps.paths),
 				deps.now,
@@ -314,7 +324,7 @@ export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<voi
 	const contact = contactHex(requireContact(config));
 	const body = text === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : text;
 	if (!body) throw new DgCliError("message text is empty");
-	const event = wrap(body, loadOrCreateKey(deps.paths), contact);
+	const event = wrap(body, await mySecretKey(deps), contact);
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, config.relays, event);
@@ -329,11 +339,13 @@ async function phoneRun(deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.paths);
 	const gate = gateFor(config, deps);
 	if (!gate.contact && !gate.invite) requireContact(config);
+	const key = await loadKey(deps);
+	if (!key) throw new DgCliError("no phone-friend key yet; run `dg-agent phone-friend number`");
 	const pool = deps.createPool();
 	const sub = subscribe(
 		pool,
 		config.relays,
-		loadOrCreateKey(deps.paths),
+		key.sk,
 		gate,
 		readSeen(deps.paths),
 		(message, seen) => {
@@ -356,58 +368,62 @@ async function phoneRun(deps: PhoneFriendDeps): Promise<void> {
 
 export function registerPhoneFriendCommands(
 	program: Command,
-	makeDeps: () => PhoneFriendDeps = defaultDeps,
+	makeDeps: (session?: string) => PhoneFriendDeps = defaultDeps,
 ): void {
+	let session: string | undefined;
 	const phone = program
 		.command("phone-friend")
-		.description("private NIP-17 chat with one contact over public Nostr relays");
+		.description("private NIP-17 chat with one contact over public Nostr relays")
+		.hook("preAction", (_hooked, action) => {
+			session = action.optsWithGlobals<{ session?: string }>().session;
+		});
 
 	phone
 		.command("number")
 		.description("print your number (npub), your contact, and the listener state")
-		.action(() => phoneNumber(makeDeps()));
+		.action(() => phoneNumber(makeDeps(session)));
 
 	phone
 		.command("invite")
 		.description("make a one-time call card; give it to the other side so it can dial you")
 		.option("--relay <url...>", "relays to use instead of the saved ones")
 		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
-		.action((opts: { relay?: string[]; ttl?: string }) => phoneInvite(opts, makeDeps()));
+		.action((opts: { relay?: string[]; ttl?: string }) => phoneInvite(opts, makeDeps(session)));
 
 	phone
 		.command("dial")
 		.description("call the owner of a call card: save them as your contact and ring them")
 		.argument("<card>", "the call card from `phone-friend invite`")
 		.argument("[text]", "first words to send", "hello")
-		.action((card: string, text: string) => phoneDial(card, text, makeDeps()));
+		.action((card: string, text: string) => phoneDial(card, text, makeDeps(session)));
 
 	phone
 		.command("on")
 		.description("start the background listener")
-		.action(() => phoneOn(makeDeps()));
+		.action(() => phoneOn(makeDeps(session)));
 
 	phone
 		.command("off")
 		.description("stop the background listener")
-		.action(() => phoneOff(makeDeps()));
+		.action(() => phoneOff(makeDeps(session)));
 
 	phone
 		.command("answer")
 		.description("stay on the line: print new messages as JSON lines until the listener stops")
-		.action(() => phoneAnswer(makeDeps()));
+		.action(() => phoneAnswer(makeDeps(session)));
 
 	phone
 		.command("voicemail")
 		.description("print unread messages as JSON lines, then exit")
-		.action(() => phoneVoicemail(makeDeps()));
+		.action(() => phoneVoicemail(makeDeps(session)));
 
 	phone
 		.command("say")
 		.description("send one message to your contact")
 		.argument("<text>", "message text, or - to read it from stdin")
-		.action((text: string) => phoneSay(text, makeDeps()));
+		.action((text: string) => phoneSay(text, makeDeps(session)));
 
 	phone
 		.command("__run", { hidden: true })
-		.action(() => phoneRun(makeDeps()));
+		.action(() => phoneRun(makeDeps(session)));
 }

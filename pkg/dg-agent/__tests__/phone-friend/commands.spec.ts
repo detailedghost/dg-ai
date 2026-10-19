@@ -56,6 +56,10 @@ function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 		},
 		sleep: async () => {},
 		now: () => NOW,
+		sessionClient: async () => undefined,
+		grantClient: () => {
+			throw new Error("no grant in file-mode tests");
+		},
 		readStdin: async () => "from stdin\n",
 		...overrides,
 	};
