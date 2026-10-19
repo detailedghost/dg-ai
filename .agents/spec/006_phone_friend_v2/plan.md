@@ -4,7 +4,7 @@ feature_snake_case: phone_friend_v2
 date: '2026-10-19'
 version: '1.0'
 status: draft
-current_slice: 0
+current_slice: 4
 pr_strategy: single
 slices:
   - id: 1
@@ -32,7 +32,9 @@ slices:
       - pkg/dg-agent/__tests__/phone-friend/commands.spec.ts
     agents:
       primary: js
-      qa: [security, qa-code]
+      qa:
+        - security
+        - qa-code
   - id: 3
     name: credential-store-key
     depends_on:
@@ -46,7 +48,8 @@ slices:
       - pkg/dg-agent/__tests__/phone-friend/store.spec.ts
     agents:
       primary: js
-      qa: [security]
+      qa:
+        - security
   - id: 4
     name: skill-and-docs
     depends_on:
@@ -152,7 +155,12 @@ Rename the CLI to `dg-agent phone-friend` with phone verbs (number, invite, dial
 - [ ] test:all (minus Chromium), lint:all, markdownlint, pin-bootstrap-tag --check pass
 
 ## Slice Summaries
+(slice 1) rename-and-verbs: phone-friend group, number/on/off/answer/voicemail/say, paths phoneFriend*, peer->contact. 41 phone tests.
+(slice 2) invite-and-dial: card.ts, invite.json, gate with call admission in time order, invite/dial commands, on needs contact or invite. 61 phone tests, relay e2e passed.
+(slice 3) credential-store-key: keys.ts mode rule, migration with read-back, grant-read listener, --session via preAction. 251 dg-agent tests; real temp-daemon e2e passed.
+(slice 4) skill-and-docs: SKILL.md and docs rewritten, skill test updated. test:all clean except known Chromium-only specs; lint:all clean.
 
 ## Agent Notes
+(slice 3) A source-run dg-daemon with a temp DG_HOME on Linux writes a keychain entry (secret-tool, service dg-server, account chat-store-kek:<hash of DG_HOME>). Clear it after any manual e2e.
 
 ## Issues Remediation
