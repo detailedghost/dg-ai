@@ -1,30 +1,49 @@
 ---
-feature: "phone-friend Nostr chat"
+feature: phone-friend Nostr chat
 feature_snake_case: phone_friend_nostr_chat
-date: "2026-10-19"
-version: "1.0"
+date: '2026-10-19'
+version: '1.0'
 status: draft
-current_slice: 0
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
-    name: "nostr-core"
+    name: nostr-core
     depends_on: []
-    files: ["pkg/common/src/node/paths.ts","pkg/dg-agent/package.json","bun.lock","pkg/dg-agent/src/phone/chat.ts","pkg/dg-agent/src/phone/store.ts","pkg/dg-agent/__tests__/phone/chat.spec.ts","pkg/dg-agent/__tests__/phone/store.spec.ts"]
+    files:
+      - pkg/common/src/node/paths.ts
+      - pkg/dg-agent/package.json
+      - bun.lock
+      - pkg/dg-agent/src/phone/chat.ts
+      - pkg/dg-agent/src/phone/store.ts
+      - pkg/dg-agent/__tests__/phone/chat.spec.ts
+      - pkg/dg-agent/__tests__/phone/store.spec.ts
     agents:
       primary: js
-      qa: [security, qa-code]
+      qa:
+        - security
+        - qa-code
   - id: 2
-    name: "phone-cli"
-    depends_on: [1]
-    files: ["pkg/dg-agent/src/phone/commands.ts","pkg/dg-agent/src/index.ts","pkg/dg-agent/__tests__/phone/commands.spec.ts"]
+    name: phone-cli
+    depends_on:
+      - 1
+    files:
+      - pkg/dg-agent/src/phone/commands.ts
+      - pkg/dg-agent/src/index.ts
+      - pkg/dg-agent/__tests__/phone/commands.spec.ts
     agents:
       primary: js
-      qa: [qa-code]
+      qa:
+        - qa-code
   - id: 3
-    name: "phone-friend-skill"
-    depends_on: [2]
-    files: ["plugins/dg/skills/phone-friend/SKILL.md","plugins/dg/skills/README.md",".claude-plugin/plugin.json","plugins/dg/.codex-plugin/plugin.json"]
+    name: phone-friend-skill
+    depends_on:
+      - 2
+    files:
+      - plugins/dg/skills/phone-friend/SKILL.md
+      - plugins/dg/skills/README.md
+      - .claude-plugin/plugin.json
+      - plugins/dg/.codex-plugin/plugin.json
     agents:
       primary: lore
 permissions:
@@ -122,7 +141,12 @@ Grok Bots and a Claude Code session need a private chat channel. A new `dg-agent
 - [ ] After release tag: Grok Bot sends ping, Claude replies pong via Monitor, Grok scheduled listen sees pong
 
 ## Slice Summaries
+(slice 1) nostr-core: chat.ts and store.ts, phone paths in resolveDgPaths, 18 tests, commit 836ad0d.
+(slice 2) phone-cli: dg-agent phone start/stop/listen/send plus hidden __run, selfCommand hoisted to @dg/common/node (commit 88-refactor), e2e on public relays passed both ways, follow, offline. Commits eed0a79 and the refactor before it.
+(slice 3) phone-friend-skill: SKILL.md, README rows, skills-test spec, installed-skill-files list. No manifest bump (matched-set release does that).
 
 ## Agent Notes
+(slice 1) fetchNew dedupes inside one batch, because each relay returns its own copy of a wrap. The common pidfile helpers are daemon-specific (DaemonHandle), so slice 2 keeps a plain pid file in store.ts.
+(slice 3) Plan deviation: no plugin version bump; the repo bumps the matched set (10 files) in a separate chore(release) change. skills-cli demo --verify and dashboard browser tests fail locally only because no Chromium-family browser is on PATH.
 
 ## Issues Remediation
