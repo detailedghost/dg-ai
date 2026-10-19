@@ -46,7 +46,7 @@ OUT: `prNumber`, `prUrl`.
 
    `aiReviewBotNames` names the reviewers whose comments this loop
    consumes. GitHub reports `["copilot"]`. GitLab reports whatever
-   `VCS_GITLAB_AI_REVIEW_BOT` explicitly configures (comma-separated).
+   `AI_VCS_GITLAB_REVIEW_BOT` explicitly configures (comma-separated).
    Unset, empty, or `none` means no reviewer; there is no machine-specific
    default. Configured names use the bot-review flow so real findings
    remain visible.

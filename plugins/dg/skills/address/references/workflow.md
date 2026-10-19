@@ -13,7 +13,7 @@ OUT: `agents`, `extraContext`, `roundNumber`, `verdictsPath`, `includeCi` (defau
 
 ## Phase 0.25 — Worktree Cleanup
 
-Search `.agents/spec/*/plan.md` (and legacy `.agents/create-specs/*.md`) and the durable spec/sdlc dirs for a spec whose `worktree.path == pwd` or `worktree.pr_url` matches the PR:
+Search `.agents/spec/*/plan.md` and the durable spec/sdlc dirs for a spec whose `worktree.path == pwd` or `worktree.pr_url` matches the PR:
 
 ```sh
 ls "$("$DG" stash -s spec)"/*.md "$("$DG" stash -s sdlc)"/*.md 2>/dev/null
@@ -33,7 +33,7 @@ Skip when: no spec has `worktree:` block; `worktree.pr_url` empty; `pr_strategy:
    - d. `git -C "$worktree.origin_repo" worktree remove "$worktree.path"`
    - e. `git -C "$worktree.origin_repo" branch -D "$worktree.branch"`
    - f. Clear `worktree.path`/`worktree.branch` in spec (preserve `pr_url`, `origin_repo`). Commit: `chore(specs): worktree cleanup for <slug> (pr <num> merged)`.
-   - g. From the verified `worktree.origin_repo` working directory, remove the run's durable scratchpad — `$("$DG" stash -s spec)/<NNN>_<slug>-scratch.md` for a `/spec` run, `$("$DG" stash -s sdlc)/<slug>.md` plus `<slug>-scratch.md` for a bare `/sdlc` one (silent if absent; slug from `feature_snake_case` or derived from branch). Run `"$DG" stash -s` **after** relocating; it is keyed to the main worktree, so it is unchanged by moving out of the worktree. This is the only place these files get reaped before the 30-day TTL — merge is the right moment, since `/sdlc` finish.md's Hold-and-resume path still reads them until then. Print summary. Exit zero.
+   - g. From the verified `worktree.origin_repo` working directory, remove the run's durable scratchpad — `$("$DG" stash -s spec)/<NNN>_<slug>-scratch.md` for a spec run, `$("$DG" stash -s sdlc)/<slug>.md` plus `<slug>-scratch.md` for a bare `/sdlc` one (silent if absent; slug from `feature_snake_case` or derived from branch). Run `"$DG" stash -s` **after** relocating; it is keyed to the main worktree, so it is unchanged by moving out of the worktree. This is the only place these files get reaped before the 30-day TTL — merge is the right moment, since `/sdlc` finish.md's Hold-and-resume path still reads them until then. Print summary. Exit zero.
 
 GATE: cleanup complete, deferred, or aborted.
 
@@ -63,7 +63,7 @@ When `localOnly=true`: `reviewDir = $PWD`.
 
 When `localOnly=false` (PR-targeted run), resolve in order — use the first that yields a path:
 
-1. Check specs in `.agents/spec/*/plan.md` (and legacy `.agents/create-specs/*.md`) and `$("$DG" stash -s spec)/*.md` plus `$("$DG" stash -s sdlc)/*.md` for a `worktree.path` or `worktree.pr_url` that matches the current PR (same lookup as Phase 0.25 — reuse its `"$DG" stash` snippet). If found, `reviewDir = worktree.path`.
+1. Check specs in `.agents/spec/*/plan.md` and `$("$DG" stash -s spec)/*.md` plus `$("$DG" stash -s sdlc)/*.md` for a `worktree.path` or `worktree.pr_url` that matches the current PR (same lookup as Phase 0.25 — reuse its `"$DG" stash` snippet). If found, `reviewDir = worktree.path`.
 1. Get the head branch: `"$DG" address view-pr <pr>` and read `.headRefName`. Then scan `git worktree list --porcelain` for a worktree whose checked-out branch matches. If found, `reviewDir = <that worktree path>`. Works on both providers — `headRefName` is the MR's source branch on GitLab. A non-zero exit means no match: fall through to step 3.
 1. Fall back: `reviewDir = $PWD`.
 

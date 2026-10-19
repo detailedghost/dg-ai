@@ -37,7 +37,7 @@ This phase is also reached with no `--proxy` flag at all, when
 [workflow.md](workflow.md) Phase 1's `capabilities` check auto-routes
 here because the provider reports no AI review bot at all. A GitLab
 project uses the Phase 1b bot-review flow only when
-`VCS_GITLAB_AI_REVIEW_BOT` explicitly names a reviewer. Unset, empty, or
+`AI_VCS_GITLAB_REVIEW_BOT` explicitly names a reviewer. Unset, empty, or
 `none` selects this no-bot proxy route. In
 that case `backend` comes from the required
 `REVIEW_LOOP_DEFAULT_PROXY_BACKEND` environment variable instead of

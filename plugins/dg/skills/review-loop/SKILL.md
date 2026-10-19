@@ -40,7 +40,7 @@ posted back to the merge request. See
 [references/workflow.md](references/workflow.md) Phase 1 for the gate.
 
 `capabilities` names the reviewer in `aiReviewBotNames`. On GitLab that
-comes from explicit `VCS_GITLAB_AI_REVIEW_BOT` configuration (comma-separated).
+comes from explicit `AI_VCS_GITLAB_REVIEW_BOT` configuration (comma-separated).
 With that variable unset, empty, or `none`, GitLab reports no reviewer and
 uses the proxy route.
 
@@ -57,7 +57,7 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 | `--wait-timeout <sec>` | `-w <sec>` | Cap for each between-round wait. Default `1800` (30 min). On timeout the skill exits cleanly so you can re-run later. Applies to default mode and to the GitLab bot-review flow — proxy mode has no polling wait, this flag is ignored there. |
 | `--single` | `-s` | Run one round step and exit. Use when you want manual pacing between rounds. |
 | `--no-retrigger` | `-n` | Run one round, skip the re-request at the end. Implies `--single`. In proxy mode there's no separate "retrigger" step (see [Proxy mode](#proxy-mode)), so this is a no-op alias for `--single` — kept for flag parity between modes. |
-| `--skip` | `-k` | No-op exit. Use when /spec auto-invokes this and you want to bail out. |
+| `--skip` | `-k` | No-op exit. Use when a planning workflow auto-invokes this and you want to bail out. |
 | `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| cortex \| grok`, passed straight through to `/proxy`. No PR required. |
 | `--base <ref>` | `-b <ref>` | Proxy mode only. Override diff-base detection (see [Proxy mode](#proxy-mode)). |
 
