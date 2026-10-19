@@ -3,13 +3,15 @@ import { execFile } from "node:child_process";
 
 export type Run = (file: string, args: readonly string[]) => Promise<string>;
 
-export type RangeReport = {
+export type DiscoveredRange = {
   range: string;
-  source: string;
-  defaultBranch?: string;
-  lastRelease?: string | null;
-  wholeHistory?: boolean;
+  source: "provider-release" | "semver-tag" | "none";
+  defaultBranch: string;
+  lastRelease: string | null;
+  wholeHistory: boolean;
 };
+
+export type RangeReport = DiscoveredRange | { range: string; source: "explicit" };
 
 const TIMEOUT_MS = 60_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -101,8 +103,13 @@ async function hasTag(run: Run, tag: string): Promise<boolean> {
   return verified !== "";
 }
 
+export async function discoverRange(run: Run): Promise<DiscoveredRange>;
+export async function discoverRange(run: Run, explicit?: string): Promise<RangeReport>;
 export async function discoverRange(run: Run, explicit?: string): Promise<RangeReport> {
-  if (explicit) return { range: explicit, source: "explicit" };
+  if (explicit) {
+    if (explicit.startsWith("-")) throw new Error(`Invalid range "${explicit}": it must not start with "-".`);
+    return { range: explicit, source: "explicit" };
+  }
 
   await run("git", ["fetch", "--tags", "--quiet", "origin"]);
   const remoteUrl = await run("git", ["remote", "get-url", "origin"]);
@@ -117,7 +124,7 @@ export async function discoverRange(run: Run, explicit?: string): Promise<RangeR
   const head = `origin/${defaultBranch}`;
   const providerTag = await providerReleaseTag(run, gitlab);
   let tag = "";
-  let source = "none";
+  let source: DiscoveredRange["source"] = "none";
   if (await hasTag(run, providerTag)) {
     tag = providerTag;
     source = "provider-release";

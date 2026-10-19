@@ -53,6 +53,18 @@ describe("discoverRange", () => {
 	});
 });
 
+describe("discoverRange explicit range", () => {
+	test("returns an explicit range as given", async () => {
+		const report = await discoverRange(async () => "", "v1.0.0..v1.1.0");
+
+		expect(report).toEqual({ range: "v1.0.0..v1.1.0", source: "explicit" });
+	});
+
+	test("rejects an explicit range that starts with a dash", async () => {
+		await expect(discoverRange(async () => "", "--output=/tmp/x")).rejects.toThrow('must not start with "-"');
+	});
+});
+
 describe("discoverRange failures", () => {
 	const healthy: Run = async (file, args) => {
 		if (args[0] === "remote") return "https://github.com/example/repo.git";
