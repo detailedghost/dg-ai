@@ -18,7 +18,7 @@ function plant(dir: string): void {
 }
 
 function plantPlugin(home: string, marketplace = "mkt", version = "1.0.0"): void {
-	plant(join(home, ".claude", "plugins", "cache", marketplace, "dg", version));
+	plant(join(home, ".claude", "plugins", "cache", marketplace, "dg", version, "plugins", "dg"));
 }
 
 test("finds thrash in the cached dg plugin", () => {
@@ -30,7 +30,7 @@ test("finds thrash in the cached dg plugin", () => {
 test("does not follow a symlinked marketplace directory", () => {
 	const home = join(root, "home");
 	const outside = join(root, "outside");
-	plant(join(outside, "dg", "1.0.0"));
+	plant(join(outside, "dg", "1.0.0", "plugins", "dg"));
 	mkdirSync(join(home, ".claude", "plugins", "cache"), { recursive: true });
 	symlinkSync(outside, join(home, ".claude", "plugins", "cache", "linked"));
 	expect(thrashInstalled("claude", home, realSkillFs)).toBe(false);
@@ -42,7 +42,7 @@ test("returns false when the home directory has no plugin tree", () => {
 
 test("requires SKILL.md and does not treat the thrash directory itself as the skill", () => {
 	const home = join(root, "home");
-	mkdirSync(join(home, ".claude", "plugins", "cache", "mkt", "dg", "1.0.0", "skills", "thrash"), {
+	mkdirSync(join(home, ".claude", "plugins", "cache", "mkt", "dg", "1.0.0", "plugins", "dg", "skills", "thrash"), {
 		recursive: true,
 	});
 	expect(thrashInstalled("claude", home, realSkillFs)).toBe(false);
@@ -56,7 +56,7 @@ test("reports not installed when thrash exists only under another plugin", () =>
 
 test("ignores a thrash skill in a plugin not named dg", () => {
 	const home = join(root, "home");
-	plant(join(home, ".claude", "plugins", "cache", "mkt", "other", "1.0.0"));
+	plant(join(home, ".claude", "plugins", "cache", "mkt", "other", "1.0.0", "plugins", "dg"));
 	expect(thrashInstalled("claude", home, realSkillFs)).toBe(false);
 });
 
@@ -98,4 +98,10 @@ test.each(["copilot", "codex"] as const)("%s ignores a plugin skill under the cl
 	const home = join(root, "home");
 	plantPlugin(home);
 	expect(thrashInstalled(runner, home, realSkillFs)).toBe(false);
+});
+
+test("ignores a cached plugin whose skills sit outside plugins/dg", () => {
+	const home = join(root, "home");
+	plant(join(home, ".claude", "plugins", "cache", "mkt", "dg", "1.0.0"));
+	expect(thrashInstalled("claude", home, realSkillFs)).toBe(false);
 });

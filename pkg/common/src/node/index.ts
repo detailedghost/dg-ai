@@ -10,6 +10,7 @@ export * from "./oauth-loopback";
 export * from "./owner-token";
 export * from "./paths";
 export * from "./pidfile";
+export * from "./plugin-skills";
 export * from "./process";
 export * from "./scratch-paths";
 export * from "./session-tokens";

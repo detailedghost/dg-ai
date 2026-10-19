@@ -266,7 +266,7 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
 		"Agent",
 		`Read(${scratch})`,
-		"Read(~/.claude/plugins/cache/*/dg/*/skills/thrash/**)",
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
 		`Grep(${scratch})`,
 		`Glob(${scratch})`,
 		`Edit(${scratch})`,
@@ -279,7 +279,7 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		`Read(${clones})`,
 		`Grep(${clones})`,
 		`Glob(${clones})`,
-		"Read(~/.claude/plugins/cache/*/dg/*/skills/address/**)",
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)",
 		"Bash(git:*)",
 		"Bash(gh:*)",
 		"Bash(glab:*)",
@@ -570,7 +570,7 @@ function parseDeps(
 		seen.add(repo);
 	}
 	const deps = [
-		"Read(~/.claude/plugins/cache/*/dg/*/skills/deps-upgrade/**)",
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)",
 		`Bash(${homedir()}/.dg/bin/dg-skills deps-upgrade:*)`,
 		"Bash(git:*)",
 		"Bash(gh:*)",

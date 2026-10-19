@@ -185,7 +185,7 @@ describe("loadConfig deps", () => {
 	test("adds the deps-upgrade tools to the fix allowlist base", () => {
 		const tools = load().deps.allowedTools;
 		expect(tools).toContain(`Bash(${homedir()}/.dg/bin/dg-skills deps-upgrade:*)`);
-		expect(tools).toContain("Read(~/.claude/plugins/cache/*/dg/*/skills/deps-upgrade/**)");
+		expect(tools).toContain("Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)");
 		expect(tools).not.toContain(`Bash(${homedir()}/.dg/bin/dg-skills:*)`);
 		expect(tools).toContain("Bash(git:*)");
 		expect(tools).toContain("Bash(gh:*)");

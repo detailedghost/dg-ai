@@ -147,7 +147,7 @@ afterEach(() => {
 });
 
 function skill(name: "claude" | "grok"): string {
-	const dir = name === "grok" ? ".grok/skills" : ".claude/plugins/cache/mkt/dg/1.0.0/skills";
+	const dir = name === "grok" ? ".grok/skills" : ".claude/plugins/cache/mkt/dg/1.0.0/plugins/dg/skills";
 	return `${HOME}/${dir}/thrash/SKILL.md`;
 }
 

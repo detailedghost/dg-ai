@@ -1,5 +1,6 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { claudePluginSkillsDirs, realSubdirectories } from "@dg/common/node";
 import type { RunnerName } from "./types";
 
 export const CLI_TIMEOUT_MS = 60_000;
@@ -12,18 +13,8 @@ export type SkillFs = {
 
 export const realSkillFs: SkillFs = {
 	exists: existsSync,
-	readdir: (path) => {
-		try {
-			return readdirSync(path, { withFileTypes: true })
-				.filter((entry) => entry.isDirectory())
-				.map((entry) => entry.name);
-		} catch {
-			return [];
-		}
-	},
+	readdir: realSubdirectories,
 };
-
-const CLAUDE_CACHE = ".claude/plugins/cache";
 
 const FLAT_SKILL_ROOTS: Record<"codex" | "copilot", string[]> = {
 	codex: [".codex/skills", ".agents/skills"],
@@ -35,13 +26,9 @@ function hasThrash(fs: SkillFs, skillsDir: string): boolean {
 }
 
 function claudePluginHasThrash(fs: SkillFs, homedir: string): boolean {
-	const cache = join(homedir, CLAUDE_CACHE);
-	return fs.readdir(cache).some((marketplace) => {
-		const plugin = join(cache, marketplace, "dg");
-		return fs
-			.readdir(plugin)
-			.some((version) => hasThrash(fs, join(plugin, version, "skills")));
-	});
+	return claudePluginSkillsDirs(homedir, fs.readdir, fs.exists).some((dir) =>
+		hasThrash(fs, dir),
+	);
 }
 
 export function thrashInstalled(

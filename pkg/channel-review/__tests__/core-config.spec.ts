@@ -124,7 +124,7 @@ describe("loadConfig defaults", () => {
 			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
 			"Agent",
 			`Read(/${scratch}/thrash/**)`,
-			"Read(~/.claude/plugins/cache/*/dg/*/skills/thrash/**)",
+			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
 			`Grep(/${scratch}/thrash/**)`,
 			`Glob(/${scratch}/thrash/**)`,
 			`Edit(/${scratch}/thrash/**)`,
@@ -139,7 +139,7 @@ describe("loadConfig defaults", () => {
 		(key, name) => {
 			const tools = load().runner.claude[key];
 			expect(tools).toContain(
-				`Read(~/.claude/plugins/cache/*/dg/*/skills/${name}/**)`,
+				`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`,
 			);
 			expect(
 				tools.filter(
@@ -464,7 +464,7 @@ describe("loadConfig address", () => {
 			"Read(//srv/clones/**)",
 			"Grep(//srv/clones/**)",
 			"Glob(//srv/clones/**)",
-			"Read(~/.claude/plugins/cache/*/dg/*/skills/address/**)",
+			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)",
 			"Bash(git:*)",
 			"Bash(gh:*)",
 			"Bash(glab:*)",

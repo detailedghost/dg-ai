@@ -59,7 +59,7 @@ function fakeFs(files: string[]) {
 
 const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 	claude: [
-		`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/skills/thrash/SKILL.md`,
+		`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`,
 	],
 	codex: [
 		`${HOME}/.codex/skills/thrash/SKILL.md`,
@@ -300,14 +300,14 @@ describe("runner probe", () => {
 
 	test("copilot does not see a plugin skill under the claude plugin tree", async () => {
 		const { runners } = harness({
-			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/skills/thrash/SKILL.md`],
+			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
 		});
 		expect(await runners.copilot.probe()).toEqual({ ok: false, code: "CR-206" });
 	});
 
 	test("codex does not see a plugin skill under the claude plugin tree", async () => {
 		const { runners } = harness({
-			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/skills/thrash/SKILL.md`],
+			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
 		});
 		expect(await runners.codex.probe()).toEqual({ ok: false, code: "CR-206" });
 	});

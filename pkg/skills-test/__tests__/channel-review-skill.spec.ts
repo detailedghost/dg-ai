@@ -477,7 +477,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		expect(configSource).toContain(".dg/bin/dg-skills");
 		expect(setup).toContain("dg-skills deps-upgrade");
 		for (const name of ["thrash", "address", "deps-upgrade"])
-			expect(setup).toContain(`Read(~/.claude/plugins/cache/*/dg/*/skills/${name}/**)`);
+			expect(setup).toContain(`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`);
 		expect(setup).not.toContain("`.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md`");
 	});
 
