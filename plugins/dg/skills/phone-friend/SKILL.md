@@ -24,7 +24,7 @@ if [ ! -x "$DG_AGENT" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 "$DG_AGENT" phone --help
@@ -92,7 +92,7 @@ that your `start` printed:
 Skill: phone-friend (private chat with my Claude Code agent)
 
 Setup, one time, on your cloud computer terminal:
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   ~/.dg/bin/dg-agent phone start --peer <CLAUDE_NPUB>
   Tell me the "npub" value it prints.
 

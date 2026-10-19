@@ -78,7 +78,7 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.15.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.16.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 resolve the installed binary and invoke the quoted `"$DG"` path.

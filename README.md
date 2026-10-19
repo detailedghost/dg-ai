@@ -10,18 +10,18 @@ browser extension is `dg-ai-extension`.
 macOS / Linux (x64 or arm64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These install the compiled CLI binaries and stage the extension; no Bun is needed.
 The extension, all three binaries, and both plugin manifests share release
-version **1.15.0**.
+version **1.16.0**.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
