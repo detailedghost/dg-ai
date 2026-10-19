@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { BACKENDS, type BackendName, withPersona } from "../src/proxy/index";
-import { shellCommand } from "../src/utils/self-command";
+import { shellCommand } from "@dg/common/node";
 import {
 	compileProxyCli,
 	proxyFixtures,

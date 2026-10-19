@@ -1,4 +1,5 @@
 export * from "./assets";
+export * from "./bun-path";
 export * from "./cli-client";
 export * from "./credential-grants";
 export * from "./credentials-client";
@@ -12,6 +13,7 @@ export * from "./paths";
 export * from "./pidfile";
 export * from "./process";
 export * from "./scratch-paths";
+export * from "./self-command";
 export * from "./session-tokens";
 export * from "./sqlite";
 export * from "./wsl-guard";
