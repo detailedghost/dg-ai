@@ -889,7 +889,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   const path = prepare.stdout.match(/^  path:   (.+)$/m)?.[1];
   const branch = prepare.stdout.match(/^  branch: (.+)$/m)?.[1];
   expect(path).toBeTruthy();
-  expect(branch).toMatch(/^drb\/chore\/deps_update_\d{8}_\d{6}$/);
+  expect(branch).toMatch(/^chore\/deps_update_\d{8}_\d{6}$/);
   expect(git({ ...repo, dir: path! }, ["branch", "--show-current"])).toBe(branch!);
   const state = stateDir("deps-upgrade", { cwd: repo.dir });
   expect(stateDir("deps-upgrade", { cwd: path! })).toBe(state);

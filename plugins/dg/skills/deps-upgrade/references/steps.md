@@ -10,7 +10,7 @@ auto-detects the ecosystem; pass `--ecosystem <name>` to override mixed markers.
 
 `"$DG" deps-upgrade prepare`
 
-Fetches the default branch, then creates a dedicated worktree + branch through its internal worktree creator (`<prefix>deps_update_<ts>`, where `<prefix>` is `$DG_DEPS_BRANCH_PREFIX` and defaults to `drb/chore/` — the `YYYYMMDD-HHMMSS` UTC slug is normalized to underscores) based on `origin/<default>`, and resets the run's scratch snapshots (`closed-prs.txt`, `audit-before.json`, `audit-after.json`, `held-by-cooldown.jsonl`). The scratch dir is anchored to the git common dir, so it stays the same after you cd into the worktree.
+Fetches the default branch, then creates a dedicated worktree + branch through its internal worktree creator (`<prefix>deps_update_<ts>`, where `<prefix>` is `$DG_DEPS_BRANCH_PREFIX` and defaults to `chore/` — the `YYYYMMDD-HHMMSS` UTC slug is normalized to underscores) based on `origin/<default>`, and resets the run's scratch snapshots (`closed-prs.txt`, `audit-before.json`, `audit-after.json`, `held-by-cooldown.jsonl`). The scratch dir is anchored to the git common dir, so it stays the same after you cd into the worktree.
 
 `prepare` prints the worktree path and branch. **`cd` into that path now** and run every remaining step from there.
 

@@ -38,9 +38,9 @@ USAGE (run any subcommand with --help for details):
   deps-upgrade ready-when-green <pr> [--repo o/n] [--timeout-minutes N] [--interval-seconds N]`;
 
 const DEFAULT_RENOVATE_LOGIN = "renovate-bot";
-const DEFAULT_BRANCH_PREFIX = "drb/chore/";
+const DEFAULT_BRANCH_PREFIX = "chore/";
 
-/** Resolve the deps branch prefix from DG_DEPS_BRANCH_PREFIX, defaulting to drb/chore/. */
+/** Resolve the deps branch prefix from DG_DEPS_BRANCH_PREFIX, defaulting to chore/. */
 export function branchPrefix(): string {
 	return process.env.DG_DEPS_BRANCH_PREFIX || DEFAULT_BRANCH_PREFIX;
 }
@@ -1411,7 +1411,7 @@ export function buildCommand() {
 		subcommands: {
 			prepare: {
 				description:
-					"create <prefix>deps_update_<ts> worktree+branch (prefix: $DG_DEPS_BRANCH_PREFIX, default drb/chore/), clear scratch",
+					"create <prefix>deps_update_<ts> worktree+branch (prefix: $DG_DEPS_BRANCH_PREFIX, default chore/), clear scratch",
 				run: () => cmdPrepare(),
 			},
 			"list-prs": {

@@ -219,7 +219,7 @@ function glMr(
 
 const CATCH_ALL_GIT_SCRIPT = shScript(`
   *"rev-parse --abbrev-ref HEAD"*)
-    echo "drb/chore/deps_update_20260101-000000"
+    echo "chore/deps_update_20260101-000000"
     exit 0
     ;;
   *"symbolic-ref refs/remotes/origin/HEAD"*)
@@ -558,7 +558,7 @@ describe("deps-upgrade close-prs", () => {
 		const log = newCallLog();
 		const bin = glabBin(
 			shScript(`
-  *"merge_requests/12/notes"*"body=Included in combined deps branch: drb/chore/deps_update_20260101-000000"*)
+  *"merge_requests/12/notes"*"body=Included in combined deps branch: chore/deps_update_20260101-000000"*)
     exit 0
     ;;
   *"mr close 12"*)
@@ -586,7 +586,7 @@ describe("deps-upgrade close-prs", () => {
 		expect(closeIndex).toBeGreaterThanOrEqual(0);
 		expect(noteIndex).toBeLessThan(closeIndex);
 		expect(calls[noteIndex]).toContain(
-			"body=Included in combined deps branch: drb/chore/deps_update_20260101-000000",
+			"body=Included in combined deps branch: chore/deps_update_20260101-000000",
 		);
 		expect(readClosedLog(result.stateDir, result.cwd)).toEqual(["12"]);
 	});
@@ -595,7 +595,7 @@ describe("deps-upgrade close-prs", () => {
 		const log = newCallLog();
 		const bin = ghBin(
 			shScript(`
-  *"pr close 12 --comment Included in combined deps branch: drb/chore/deps_update_20260101-000000"*)
+  *"pr close 12 --comment Included in combined deps branch: chore/deps_update_20260101-000000"*)
     exit 0
     ;;`),
 		);
@@ -614,7 +614,7 @@ describe("deps-upgrade close-prs", () => {
 		expect(
 			readCalls(log).some((c) =>
 				c.includes(
-					"pr close 12 --comment Included in combined deps branch: drb/chore/deps_update_20260101-000000",
+					"pr close 12 --comment Included in combined deps branch: chore/deps_update_20260101-000000",
 				),
 			),
 		).toBe(true);
@@ -644,7 +644,7 @@ describe("deps-upgrade close-prs", () => {
 	});
 
 	test("on GitHub, the close comment reflects the real current branch and attaches to every PR closed in the batch", async () => {
-		const branch = "drb/chore/deps_update_20260815-093000";
+		const branch = "chore/deps_update_20260815-093000";
 		const log = newCallLog();
 		const bin = ghBin(
 			shScript(`
@@ -677,7 +677,7 @@ describe("deps-upgrade close-prs", () => {
 	});
 
 	test("on GitLab, the close note reflects the real current branch and attaches to every MR closed in the batch", async () => {
-		const branch = "drb/chore/deps_update_20260815-093000";
+		const branch = "chore/deps_update_20260815-093000";
 		const log = newCallLog();
 		const bin = glabBin(
 			shScript(`
@@ -2250,7 +2250,7 @@ function gitRepo(files: Record<string, string>): string {
 	}
 	cliFixtures.runGit(["add", "."], dir);
 	cliFixtures.runGit(["commit", "-q", "-m", "chore: seed"], dir);
-	cliFixtures.runGit(["checkout", "-q", "-b", "drb/chore/deps_update_test"], dir);
+	cliFixtures.runGit(["checkout", "-q", "-b", "chore/deps_update_test"], dir);
 	return realpathSync(dir);
 }
 
@@ -2844,7 +2844,7 @@ describe("integration: summary", () => {
 		const dir = cliFixtures.tmp(createdDirs, "deps-upgrade-summary-");
 		cliFixtures.initTrackedRepo(dir, "https://example.com/acme/widgets.git");
 		cliFixtures.runGit(
-			["checkout", "-q", "-b", "drb/chore/deps_update_1"],
+			["checkout", "-q", "-b", "chore/deps_update_1"],
 			dir,
 		);
 		return realpathSync(dir);
@@ -2884,10 +2884,10 @@ describe("integration: summary", () => {
 		const lines = result.stdout.split("\n");
 		expect(lines).toContain("## Run summary");
 		expect(lines).toContain("Ecosystem: npm");
-		expect(lines).toContain("Branch: drb/chore/deps_update_1");
+		expect(lines).toContain("Branch: chore/deps_update_1");
 		expect(lines).toContain("Applied: 1 dependencies, 1 GitHub Actions");
 		expect(lines).toContain(
-			"Commits on drb/chore/deps_update_1 since origin/main:",
+			"Commits on chore/deps_update_1 since origin/main:",
 		);
 		expect(
 			lines
@@ -3335,7 +3335,7 @@ describe("thrash review hardening", () => {
 		const previous = process.env.DG_DEPS_BRANCH_PREFIX;
 		try {
 			delete process.env.DG_DEPS_BRANCH_PREFIX;
-			expect(helper.branchPrefix()).toBe("drb/chore/");
+			expect(helper.branchPrefix()).toBe("chore/");
 			process.env.DG_DEPS_BRANCH_PREFIX = "me/deps/";
 			expect(helper.branchPrefix()).toBe("me/deps/");
 		} finally {

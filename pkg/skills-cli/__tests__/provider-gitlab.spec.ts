@@ -1662,12 +1662,12 @@ describe("closePullRequest — closing comment", () => {
 		);
 
 		const provider = createGitlabProvider();
-		await provider.closePullRequest({ number: 13 }, "Included in combined deps branch: drb/chore/deps");
+		await provider.closePullRequest({ number: 13 }, "Included in combined deps branch: chore/deps");
 
 		const calls = readCalls(log);
 		expect(calls).toHaveLength(2);
 		expect(calls[0]).toContain("merge_requests/13/notes");
-		expect(calls[0]).toContain("body=Included in combined deps branch: drb/chore/deps");
+		expect(calls[0]).toContain("body=Included in combined deps branch: chore/deps");
 		expect(calls[1]).toContain("mr close 13");
 	});
 

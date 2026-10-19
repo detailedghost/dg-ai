@@ -265,7 +265,7 @@ describe("deps-upgrade prepare", () => {
   expect(result.stderr).toBe("");
   const branch = result.stdout.match(/^  branch: (.+)$/m)?.[1];
   const path = result.stdout.match(/^  path:   (.+)$/m)?.[1];
-  expect(branch).toMatch(/^drb\/chore\/deps_update_\d{8}_\d{6}$/);
+  expect(branch).toMatch(/^chore\/deps_update_\d{8}_\d{6}$/);
   expect(path).toBeTruthy();
   expect(result.stdout).toBe(`Worktree ready.\n  branch: ${branch}\n  path:   ${path}\n\nRun every remaining step from inside the worktree:\n  cd ${path}\n`);
   expect(runGit(["branch", "--show-current"], path!).trim()).toBe(branch!);
@@ -317,7 +317,7 @@ describe("deps-upgrade prepare", () => {
 
  test("preserves native Git diagnostics and the actionable error when the branch is checked out elsewhere", () => {
   const { repo, root } = trackedRepo();
-  const branch = "drb/chore/deps_update_20260304_050607";
+  const branch = "chore/deps_update_20260304_050607";
   const target = expectedPath(repo, "deps_update_20260304_050607");
   const elsewhere = join(root, "elsewhere checkout");
   runGit(["worktree", "add", elsewhere, "-b", branch, "origin/main"], repo);

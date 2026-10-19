@@ -58,7 +58,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 
 | # | Step | `"$DG" deps-upgrade` subcommand | Gate |
 |---|------|------|------|
-| 1 | **Prepare** — Fetch default branch, create worktree + `<prefix>deps_update_<ts>` branch (prefix: `$DG_DEPS_BRANCH_PREFIX`, default `drb/chore/`), then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
+| 1 | **Prepare** — Fetch default branch, create worktree + `<prefix>deps_update_<ts>` branch (prefix: `$DG_DEPS_BRANCH_PREFIX`, default `chore/`), then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
 | 2 | **Discover** — List open Dependabot PRs (GitHub) or Renovate MRs (GitLab), categorize by severity | `list-prs` | Update list exists (may be empty) |
 | 3 | **Security Audit** — Run ecosystem audit, find fixable vulns | `audit` | At least one update to apply |
 | 4 | **Apply Updates** — Check each target with `cooldown <pkg> <old> <new> --cooldown-days N` first; bump to the verdict's `version` (`ok`/`fallback`), skip `held`/`unknown`. Update manifests, clean lockfile | `cooldown`, `bump-dep`, `bump-action` | Install succeeds, lockfile clean |

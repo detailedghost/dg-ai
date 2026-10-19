@@ -1377,12 +1377,12 @@ describe("closePullRequest — closing comment", () => {
 		);
 
 		const provider = createGithubProvider();
-		await provider.closePullRequest({ number: 13 }, "Included in combined deps branch: drb/chore/deps");
+		await provider.closePullRequest({ number: 13 }, "Included in combined deps branch: chore/deps");
 
 		const calls = readCalls(log);
 		expect(calls).toHaveLength(1);
 		expect(calls[0]).toContain("pr close 13");
-		expect(calls[0]).toContain("--comment Included in combined deps branch: drb/chore/deps");
+		expect(calls[0]).toContain("--comment Included in combined deps branch: chore/deps");
 	});
 
 	test("omits the flag entirely when no comment is given", async () => {
