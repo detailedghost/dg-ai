@@ -12,6 +12,7 @@ describe("cortex.buildArgs", () => {
 			"--output-format",
 			"stream-json",
 			"--no-auto-update",
+			"--sql-read-only",
 			"--dangerously-allow-all-tool-calls",
 		]);
 	});
@@ -26,6 +27,7 @@ describe("cortex.buildArgs", () => {
 			"--output-format",
 			"stream-json",
 			"--no-auto-update",
+			"--sql-read-only",
 			"--resume",
 			"sess-123",
 		]);
@@ -58,6 +60,7 @@ describe("cortex.buildArgs", () => {
 			"--output-format",
 			"stream-json",
 			"--no-auto-update",
+			"--sql-read-only",
 			"--resume",
 			"sess-1",
 			"--model",

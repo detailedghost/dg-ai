@@ -6,8 +6,8 @@
  *
  * Fresh turns pass `--dangerously-allow-all-tool-calls` so a headless run
  * never blocks on a permission prompt — the codex `-s workspace-write` /
- * opencode `--dangerously-skip-permissions` equivalent. That also leaves
- * cortex's built-in Snowflake SQL tool fully enabled (DDL/DML included).
+ * opencode `--dangerously-skip-permissions` equivalent. Every turn also passes
+ * `--sql-read-only`, so cortex's built-in Snowflake SQL tool cannot run DDL/DML.
  */
 
 import { parseJsonLines } from "./json-lines";
@@ -20,6 +20,7 @@ function buildArgs(input: BuildArgsInput): string[] {
 		"--output-format",
 		"stream-json",
 		"--no-auto-update",
+		"--sql-read-only",
 	];
 
 	// A resume already carries the session's approved posture; only a fresh
