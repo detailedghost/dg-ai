@@ -92,8 +92,12 @@ describe("phoneStart", () => {
 		expect(readConfig(paths).relays).toEqual(["wss://x.example"]);
 	});
 
-	it("rejects a start with no peer saved or given", async () => {
-		await expect(phoneStart({}, deps())).rejects.toBeInstanceOf(DgCliError);
+	it("rejects a start with no peer and names our npub so it can be shared", async () => {
+		const failure = phoneStart({}, deps());
+
+		await expect(failure).rejects.toBeInstanceOf(DgCliError);
+		const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(paths)));
+		await expect(failure).rejects.toThrow(npub);
 		expect(spawned).toBe(0);
 	});
 

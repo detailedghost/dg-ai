@@ -106,9 +106,14 @@ export async function phoneStart(
 		config.peer = opts.peer;
 	}
 	if (opts.relay?.length) config.relays = opts.relay;
-	const peer = requirePeer(config);
-	writeConfig(deps.paths, config);
 	const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(deps.paths)));
+	if (!config.peer) {
+		throw new DgCliError(
+			`no peer saved; your npub is ${npub}; run \`dg-agent phone start --peer <npub>\``,
+		);
+	}
+	const peer = config.peer;
+	writeConfig(deps.paths, config);
 	const running = livePid(deps);
 	if (running !== undefined) {
 		printJson(deps, { npub, peer, pid: running, status: "running" });
