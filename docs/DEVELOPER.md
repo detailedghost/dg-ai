@@ -132,7 +132,7 @@ provider explicitly. CLI overrides `GH_BIN` and `GLAB_BIN` select executables.
 
 This command ports the provider library into the compiled CLI; channel-review's
 verdict readers remain separate. Configure GitLab AI review identities explicitly
-with `VCS_GITLAB_AI_REVIEW_BOT`; there is no personal reviewer default.
+with `AI_VCS_GITLAB_REVIEW_BOT`; there is no personal reviewer default.
 
 #### Proxy
 
