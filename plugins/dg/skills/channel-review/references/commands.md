@@ -21,7 +21,7 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
 | `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
-| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Prints variable names only. |
+| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
 
 Flags are optional. Commands use the saved environment unless `--env` overrides
 it. Start and run accept runner and chat overrides for that invocation.
@@ -280,7 +280,7 @@ the shipped catalog exactly.
 | `CR-204` | `The review took longer than {minutes} minutes, so I stopped it. Try again with a lower ~spice.` | Lower the spice or inspect the timeout. |
 | `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
-| `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with Codex by default after a Claude limit, if Codex passes its probe. |
+| `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with the configured `runner.fallback` when it is set and passes its probe. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |

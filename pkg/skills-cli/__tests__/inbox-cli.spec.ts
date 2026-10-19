@@ -17,7 +17,6 @@ import {
 	inboxCliHarness,
 	inboxDaemonFixture,
 	mailboxFixture,
-	skillsEntry,
 } from "./inbox-cli-harness";
 
 const providers = ["protonmail", "gmail", "outlook"] as const;
@@ -552,7 +551,7 @@ describe("compiled dg-skills inbox", () => {
 			const compile = Bun.spawn(
 				[
 					process.execPath,
-					join(skillsEntry, "../../build.ts"),
+					join(import.meta.dir, "../build.ts"),
 					"--outfile",
 					executable,
 				],

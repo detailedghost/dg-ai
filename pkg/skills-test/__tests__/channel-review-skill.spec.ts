@@ -7,7 +7,9 @@ import { helpText } from "../../channel-review/src/help";
 import { RUNNER_NAMES } from "../../channel-review/src/runners/types";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
-const TARGET_VERSION = "1.15.0";
+const TARGET_VERSION: string = JSON.parse(
+	readRepoFile(".claude-plugin/plugin.json"),
+).version;
 const skillRoot = join(REPO_ROOT, "plugins/dg/skills/channel-review");
 const inboxSkillPath = join(
 	REPO_ROOT,
@@ -298,6 +300,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				"--env",
 				"--file",
 				"--follow",
+				"--keep-backup",
 				"--lines",
 				"--org",
 				"--paste",

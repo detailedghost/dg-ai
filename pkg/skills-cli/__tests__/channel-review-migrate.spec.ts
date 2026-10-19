@@ -94,29 +94,6 @@ function backups(): string[] {
 	return readdirSync(dir).filter((name) => name.startsWith(".env.bak-"));
 }
 
-const MOVED_SECRETS = [RELAY, DATADOG, SENTRY];
-
-function filesOnDisk(): { path: string; text: string }[] {
-	const found: { path: string; text: string }[] = [];
-	const walk = (current: string) => {
-		for (const name of readdirSync(current)) {
-			const path = join(current, name);
-			if (statSync(path).isDirectory()) walk(path);
-			else found.push({ path, text: readFileSync(path, "utf8") });
-		}
-	};
-	walk(dir);
-	return found;
-}
-
-function expectNoMovedSecretsOnDisk(): void {
-	for (const file of filesOnDisk()) {
-		for (const secret of MOVED_SECRETS) {
-			expect(file.text).not.toContain(secret);
-		}
-	}
-}
-
 describe("channel-review migrate-env", () => {
 	test("moves the effective duplicate value and removes every assignment to it", async () => {
 		writeFileSync(
@@ -257,42 +234,49 @@ describe("channel-review migrate-env", () => {
 		expect(h.granted).toEqual(["channel-review"]);
 	});
 
-	test("keeps a 0600 backup with moved secrets redacted", async () => {
-		await harness(["channel-review"]).run();
-		expect(backups()).toEqual([".env.bak-20261016T123456Z"]);
-		const backup = join(dir, ".env.bak-20261016T123456Z");
-		expect(readFileSync(backup, "utf8")).toBe(
-			[
-				"# local settings",
-				"DG_HOME=/fixture/dg",
-				"CHANNEL_REVIEW_RELAY_SECRET_DEV=[redacted]",
-				"CHANNEL_REVIEW_RELAY_SECRET_PROD=",
-				"export DATADOG_ACCESS_TOKEN=[redacted]",
-				"DATADOG_SITE=[redacted]",
-				`DATADOG_API_KEY=${API_KEY}`,
-				"SENTRY_AUTH_TOKEN=[redacted]",
-				"SENTRY_ORG=[redacted]",
-				"CR_ENV=dev",
-				"",
-			].join("\n"),
-		);
-		expect(statSync(backup).mode & 0o777).toBe(0o600);
-		expectNoMovedSecretsOnDisk();
+	test("deletes the backup by default once the file is rewritten", async () => {
+		const h = harness(["channel-review"]);
+		await h.run();
+		expect(backups()).toEqual([]);
+		expect(h.lines.join("\n")).not.toContain(".env.bak-");
 	});
 
-	test("redacts an older duplicate secret that the backup would otherwise keep", async () => {
-		const older = "ddpat_fixtureOlderDatadog0123456789";
-		writeFileSync(
-			join(dir, ".env"),
-			`DATADOG_ACCESS_TOKEN=${older}\nDATADOG_ACCESS_TOKEN=${DATADOG}\n`,
-			{ mode: 0o600 },
-		);
-		await harness().run();
-		const disk = filesOnDisk()
-			.map((file) => file.text)
-			.join("\n");
-		expect(disk).not.toContain(older);
-		expect(disk).not.toContain(DATADOG);
+	test("keeps a 0600 backup with the original values under --keep-backup", async () => {
+		const h = harness(["channel-review"]);
+		await h.run({ keepBackup: true });
+		expect(backups()).toEqual([".env.bak-20261016T123456Z"]);
+		const backup = join(dir, ".env.bak-20261016T123456Z");
+		expect(readFileSync(backup, "utf8")).toBe(ENV_FILE);
+		expect(statSync(backup).mode & 0o777).toBe(0o600);
+		expect(h.lines.join("\n")).toContain(`backup kept at ${backup}`);
+	});
+
+	test("never writes a backup file without --keep-backup", async () => {
+		const h = harness(["channel-review"]);
+		const before = new Set(readdirSync(dir));
+		await h.run();
+		expect(new Set(readdirSync(dir))).toEqual(before);
+	});
+
+	test("restores the original and leaves no backup when the rewrite fails", async () => {
+		const h = harness(["channel-review"], {
+			onSet: () => chmodSync(dir, 0o500),
+		});
+		try {
+			await expect(h.run()).rejects.toThrow();
+		} finally {
+			chmodSync(dir, 0o700);
+		}
+		expect(readFileSync(join(dir, ".env"), "utf8")).toBe(ENV_FILE);
+		expect(backups()).toEqual([]);
+	});
+
+	test("leaves no backup when the store write fails", async () => {
+		await expect(
+			harness([], { failSet: true }).run({ keepBackup: true }),
+		).rejects.toThrow("store unavailable");
+		expect(backups()).toEqual([]);
+		expect(readFileSync(join(dir, ".env"), "utf8")).toBe(ENV_FILE);
 	});
 
 	test("prints variable names and never values", async () => {

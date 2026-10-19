@@ -16,7 +16,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -74,7 +74,7 @@ All subcommands accept `--repo owner/repo` (defaults to the current repo) and
 
 1. Parse the summary and any flags from the invocation (natural language like
    `/file "Login page 500s under load" --label bug` maps to `create --title "..." --label bug`).
-2. Run `"$DG" file create --title <summary> [flags]`. If the underlying `gh`/`glab` call fails (not authenticated, label
+2. Run `"$DG" file create --title <summary> [flags]`, passing the title and body as single-quoted arguments (write an embedded `'` as `'\''`) so quotes, `$()` and backticks stay literal. If the underlying `gh`/`glab` call fails (not authenticated, label
    doesn't exist, etc.), report the error verbatim and what input would fix it — don't
    blindly retry.
 3. Report back: issue number, URL, labels, assignees.

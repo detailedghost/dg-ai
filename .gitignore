@@ -21,3 +21,4 @@ mutation.json
 **/reports/mutation/
 # migrate-env backups still contain credentials.
 .env.bak-*
+.no-local-zone.local

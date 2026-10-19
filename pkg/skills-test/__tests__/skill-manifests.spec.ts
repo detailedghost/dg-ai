@@ -5,7 +5,9 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { currentTag, pinBootstrapUrls, pinnedFiles } from "../../../scripts/pin-bootstrap-tag";
 import { REPO_ROOT, readRepoFile } from "./test-support";
+
 
 const CODEX_PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
 const SKILLS_DIR = join(CODEX_PLUGIN_DIR, "skills");
@@ -130,7 +132,7 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 		});
 		test(`${name}: can bootstrap without CLAUDE_PLUGIN_ROOT`, () => {
 			expect(md).toContain(
-				"https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh",
+				`https://raw.githubusercontent.com/detailedghost/dg-ai/${currentTag()}/pkg/skills-cli/bootstrap.sh`,
 			);
 			expect(md).not.toContain('SRC="${CLAUDE_PLUGIN_ROOT}/');
 		});
@@ -288,4 +290,31 @@ describe("demo verify-and-correct loop", () => {
 	test("still chooses mode/narration/voice in the browser, not in chat", () => {
 		expect(demo).toContain("Don't ask them in chat");
 	});
+});
+
+describe("bootstrap URLs are pinned to the release tag", () => {
+	const tag = currentTag();
+
+	test("the tag matches the skills-cli package version", () => {
+		const cli = JSON.parse(readRepoFile("pkg/skills-cli/package.json"));
+		expect(tag).toBe(`skills-v${cli.version}`);
+	});
+
+	for (const script of ["bootstrap.sh", "bootstrap.ps1"]) {
+		test(`${script}: downloads nothing from refs/heads/master`, () => {
+			const text = readRepoFile("pkg/skills-cli", script);
+			expect(text).not.toContain("refs/heads/master");
+			expect(text).not.toContain("dg-ai-master");
+			expect(text).toContain("refs/tags/");
+		});
+	}
+
+	for (const file of pinnedFiles()) {
+		const text = readFileSync(file, "utf8");
+		if (!/pkg\/skills-cli\/bootstrap\./.test(text)) continue;
+		test(`${relative(REPO_ROOT, file)}: no bootstrap URL points at master or another tag`, () => {
+			expect(pinBootstrapUrls(text, tag)).toBe(text);
+			expect(text).not.toContain("dg-ai/master/pkg/skills-cli/bootstrap");
+		});
+	}
 });

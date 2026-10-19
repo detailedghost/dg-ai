@@ -9,6 +9,7 @@ import {
 	renameSync,
 	rmdirSync,
 	rmSync,
+	statSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -23,10 +24,14 @@ import {
 import { emitJson } from "../utils/json";
 import { defineCommand, die, EXIT } from "../utils/legacy-command";
 import { selfCommand, shellCommand } from "../utils/self-command";
+import { BACKENDS } from "./backends";
+
+const LOCK_ABANDONED_MS = 60_000;
+const JOB_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 type JobKind = "shell" | "proxy";
 
-interface JobMeta {
+export interface JobMeta {
 	id: string;
 	command: string;
 	cwd: string;
@@ -40,9 +45,10 @@ interface JobMeta {
 }
 
 interface JobState extends JobMeta {
-	state: "running" | "done" | "unknown" | "cancelled";
+	state: "running" | "done" | "unknown" | "canceled";
 	exitCode: number | null;
 	pendingUpdate: string | null;
+	drainOutput: string | null;
 }
 
 const cmd = defineCommand({
@@ -97,11 +103,16 @@ export async function main(argv: string[]): Promise<void | number> {
 	await cmd.run(argv);
 }
 
+function assertJobId(id: string): void {
+	if (!JOB_ID_PATTERN.test(id)) die(`invalid job id: ${id}`, EXIT.USAGE);
+}
+
 async function withJobLock(
 	id: string | undefined,
 	run: () => Promise<void>,
 ): Promise<void> {
 	if (!id) return run();
+	assertJobId(id);
 	const file = scratchPath("bg", `${id}.lock`, { cwdScope: false });
 	const owner: LockOwner = {
 		pid: process.pid,
@@ -123,9 +134,10 @@ async function withJobLock(
 			if (existsSync(file)) {
 				const prior = readLockOwner(file);
 				if (prior && lockOwnerIsStale(prior)) removeLockOwner(file, prior);
+				else if (!prior && lockDirIsAbandoned(file))
+					rmSync(file, { recursive: true, force: true });
 			}
 			try {
-				// Atomic publication can replace an abandoned empty directory, never a populated owner.
 				renameSync(staging, file);
 				staged = false;
 				break;
@@ -175,6 +187,14 @@ function readLockOwner(dir: string): LockOwner | null {
 	}
 }
 
+function lockDirIsAbandoned(dir: string): boolean {
+	try {
+		return Date.now() - statSync(dir).mtimeMs > LOCK_ABANDONED_MS;
+	} catch {
+		return false;
+	}
+}
+
 function lockOwnerIsStale(owner: LockOwner): boolean {
 	try {
 		process.kill(owner.pid, 0);
@@ -189,7 +209,6 @@ function removeLockOwner(dir: string, owner: LockOwner): void {
 	try {
 		const current = readLockOwner(dir);
 		if (current?.nonce !== owner.nonce || current.pid !== owner.pid) return;
-		// Nonce-specific removal and nonrecursive rmdir cannot erase a newer owner.
 		unlinkSync(path.join(dir, `${owner.nonce}.json`));
 		rmdirSync(dir);
 	} catch (error) {
@@ -202,12 +221,12 @@ function removeLockOwner(dir: string, owner: LockOwner): void {
 	}
 }
 
-// --- subcommands -----------------------------------------------------------
 
 async function cmdRun(args: string[]): Promise<void> {
 	const [cwdOverride, rest] = extractCwd(args);
-	const command = rest.join(" ").trim();
-	if (!command) die("usage: run <command> [--cwd <dir>]", EXIT.USAGE);
+	const command = rest.length === 1 ? rest[0].trim() : "";
+	if (!command)
+		die('usage: run "<command>" [--cwd <dir>] (one quoted argument)', EXIT.USAGE);
 	emitJson(await launchJob(command, cwdOverride ?? process.cwd()));
 }
 
@@ -216,15 +235,11 @@ async function cmdList(): Promise<void> {
 	let files: string[] = [];
 	try {
 		files = readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
-	} catch {
-		// no bg dir yet → no jobs launched
-	}
+	} catch {}
 	const jobs = files
-		.map((f) =>
-			deriveState(
-				JSON.parse(readFileSync(path.join(dir, f), "utf8")) as JobMeta,
-			),
-		)
+		.map((f) => readMetaFile(path.join(dir, f)))
+		.filter((meta): meta is JobMeta => meta !== null)
+		.map(deriveState)
 		.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 	emitJson({ jobs });
 }
@@ -244,20 +259,17 @@ async function cmdPrune(args: string[]): Promise<void> {
 	let files: string[] = [];
 	try {
 		files = readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
-	} catch {
-		// no bg dir yet → nothing to prune
-	}
+	} catch {}
 
 	const removed: string[] = [];
 	const running: JobState[] = [];
 	for (const f of files) {
-		const meta = JSON.parse(readFileSync(path.join(dir, f), "utf8")) as JobMeta;
-		if (!isPathInside(meta.cwd, target)) continue;
+		const meta = readMetaFile(path.join(dir, f));
+		if (!meta || !JOB_ID_PATTERN.test(meta.id) || !isPathInside(meta.cwd, target))
+			continue;
 		const state = deriveState(meta);
-		// A live job is left alone: its records are the only way to reach it, and
-		// removing them would orphan the process with no handle to cancel it.
-		if (state.state === "running") {
-			running.push(state);
+		if (state.state !== "done" && state.state !== "canceled") {
+			if (state.state === "running") running.push(state);
 			continue;
 		}
 		for (const p of Object.values(jobPaths(meta.id))) {
@@ -280,7 +292,6 @@ async function cmdCancel(args: string[]): Promise<void> {
 
 	const meta = loadMeta(id);
 	if (!meta) {
-		// Unknown id is a graceful no-op, not an error.
 		process.stderr.write(`bg: no such job: ${id}\n`);
 		emitJson({ id, action: "cancel", result: "unknown" });
 		return;
@@ -309,9 +320,18 @@ async function cmdCancel(args: string[]): Promise<void> {
 		return;
 	}
 
-	const signal = terminateGroup(pid);
-	writeFileSync(jobPaths(id).cancelledFile, new Date().toISOString());
-	emitJson({ id, action: "cancel", result: "cancelled", signal });
+	const signal = await terminateGroup(pid);
+	if (signal === "none" || existsSync(jobPaths(id).statusFile)) {
+		emitJson({
+			id,
+			action: "cancel",
+			result: "already-finished",
+			state: deriveState(meta).state,
+		});
+		return;
+	}
+	writeFileSync(jobPaths(id).canceledFile, new Date().toISOString());
+	emitJson({ id, action: "cancel", result: "canceled", signal });
 }
 
 async function cmdUpdate(args: string[]): Promise<void> {
@@ -333,15 +353,13 @@ async function cmdUpdate(args: string[]): Promise<void> {
 	}
 
 	const state = deriveState(meta);
-	if (state.state === "cancelled") {
-		process.stderr.write(`bg: job ${id} was cancelled; not resuming.\n`);
-		emitJson({ id, action: "update", result: "cancelled-job" });
+	if (state.state === "canceled") {
+		process.stderr.write(`bg: job ${id} was canceled; not resuming.\n`);
+		emitJson({ id, action: "update", result: "canceled-job" });
 		return;
 	}
 
 	if (state.state === "running") {
-		// Can't resume a session mid-run; record the context and let the job's
-		// completion hook (drain) resume with it once the current run finishes.
 		const pending = appendPending(id, context);
 		process.stderr.write(
 			`bg: job ${id} still running — queued this context; the session resumes with it when the job finishes.\n`,
@@ -367,10 +385,9 @@ async function cmdDrain(args: string[]): Promise<void> {
 	}
 	const paths = jobPaths(id);
 
-	if (existsSync(paths.cancelledFile)) {
-		// A cancelled job's queued context is dropped, not resumed.
+	if (existsSync(paths.canceledFile)) {
 		rmSync(paths.pendingFile, { force: true });
-		emitJson({ id, action: "drain", result: "cancelled" });
+		emitJson({ id, action: "drain", result: "canceled" });
 		return;
 	}
 
@@ -385,7 +402,6 @@ async function cmdDrain(args: string[]): Promise<void> {
 	emitJson({ id, action: "drain", ...(await resumeSession(meta, "")) });
 }
 
-// --- launch ----------------------------------------------------------------
 
 async function launchJob(
 	command: string,
@@ -396,7 +412,6 @@ async function launchJob(
 	const paths = jobPaths(id);
 	const proxyBackend = backend ?? parseProxyBackend(command);
 	const kind: JobKind = proxyBackend ? "proxy" : detectKind(command);
-	// The gate keeps even an immediately finishing command behind durable metadata.
 	const child = spawn(
 		"sh",
 		["-c", `read -r gate || exit 1; ${buildInner(command, paths, kind, id)}`],
@@ -433,12 +448,11 @@ async function launchJob(
 			throw new Error(
 				"Could not establish the detached background process identity",
 			);
-		writeFileSync(paths.metaFile, JSON.stringify(meta, null, 2));
+		writeFileAtomic(paths.metaFile, JSON.stringify(meta, null, 2));
 		writeFileSync(
 			paths.identityFile,
 			JSON.stringify({ pid, started: identity?.started }),
 		);
-		// A pid becomes usable only after its identity has been published.
 		writeFileSync(paths.pidFile, String(pid));
 		await new Promise<void>((resolve, reject) => {
 			if (!child.stdin)
@@ -452,7 +466,13 @@ async function launchJob(
 		throw error;
 	}
 	child.unref();
-	return { ...meta, state: "running", exitCode: null, pendingUpdate: null };
+	return {
+		...meta,
+		state: "running",
+		exitCode: null,
+		pendingUpdate: null,
+		drainOutput: null,
+	};
 }
 
 function buildInner(
@@ -461,13 +481,12 @@ function buildInner(
 	kind: JobKind,
 	id: string,
 ): string {
-	const base = `( ${command} ) > ${sq(paths.logFile)} 2>&1; printf '%s' "$?" > ${sq(paths.statusFile)}`;
+	const base = `( ${command} ) > ${shellCommand([paths.logFile])} 2>&1; printf '%s' "$?" > ${shellCommand([paths.statusFile])}`;
 	if (kind !== "proxy") return base;
 	const drain = shellCommand(selfCommand(["proxy", "background", "drain", id]));
-	return `${base}; ${drain} > /dev/null 2>&1 || true`;
+	return `${base}; ${drain} > ${shellCommand([paths.drainFile])} 2>&1 || true`;
 }
 
-// --- resume ----------------------------------------------------------------
 
 async function resumeSession(
 	meta: JobMeta,
@@ -494,7 +513,14 @@ async function resumeSession(
 	if (!prompt)
 		return { result: "nothing-to-send", message: "no context to resume with" };
 
-	const args = [backend, "--resume", sessionId, "--prompt", prompt];
+	const args = [
+		backend,
+		"--resume",
+		sessionId,
+		"--prompt",
+		prompt,
+		...carriedFlags(meta.command),
+	];
 	const resumeCmd = shellCommand(
 		process.env.BG_PROXY_HELPER
 			? [process.env.BG_PROXY_HELPER, ...args]
@@ -509,6 +535,15 @@ async function resumeSession(
 		newJobId: job.id,
 		newJobLog: job.logFile,
 	};
+}
+
+function carriedFlags(command: string): string[] {
+	const words = shellWords(command);
+	return ["--model", "--effort"].flatMap((flag) => {
+		const index = words.lastIndexOf(flag);
+		const value = words[index + 1];
+		return index !== -1 && value !== undefined ? [flag, value] : [];
+	});
 }
 
 function extractSessionId(logFile: string): string | null {
@@ -526,24 +561,23 @@ function extractSessionId(logFile: string): string | null {
 			const obj = JSON.parse(line) as { sessionId?: unknown };
 			if (typeof obj.sessionId === "string" && obj.sessionId)
 				return obj.sessionId;
-		} catch {
-			// not a JSON line → keep scanning
-		}
+		} catch {}
 	}
 	return null;
 }
-
-// --- state derivation ------------------------------------------------------
 
 function deriveState(meta: JobMeta): JobState {
 	const paths = jobPaths(meta.id);
 	const pendingUpdate = existsSync(paths.pendingFile)
 		? readFileSync(paths.pendingFile, "utf8").trim() || null
 		: null;
-	const base = { ...meta, pendingUpdate };
+	const drainOutput = existsSync(paths.drainFile)
+		? readFileSync(paths.drainFile, "utf8").trim() || null
+		: null;
+	const base = { ...meta, pendingUpdate, drainOutput };
 
-	if (existsSync(paths.cancelledFile))
-		return { ...base, state: "cancelled", exitCode: null };
+	if (existsSync(paths.canceledFile))
+		return { ...base, state: "canceled", exitCode: null };
 	if (existsSync(paths.statusFile)) {
 		const raw = readFileSync(paths.statusFile, "utf8").trim();
 		const code = raw === "" ? Number.NaN : Number.parseInt(raw, 10);
@@ -559,8 +593,7 @@ function deriveState(meta: JobMeta): JobState {
 	return { ...base, state: "unknown", exitCode: null };
 }
 
-// Durable launcherPid is deliberately never a fallback: rebooted pids can be reused.
-function readPid(meta: JobMeta): number | null {
+export function readPid(meta: JobMeta): number | null {
 	try {
 		const raw = readFileSync(meta.pidFile, "utf8").trim();
 		if (!/^[0-9]+$/.test(raw)) return null;
@@ -584,10 +617,7 @@ function readPid(meta: JobMeta): number | null {
 				!/^[0-9]+$/.test(recorded.started))
 		)
 			return null;
-		if (
-			process.platform === "linux" &&
-			(!recorded.started || recorded.started !== processIdentity(pid)?.started)
-		)
+		if (!recorded.started || recorded.started !== processIdentity(pid)?.started)
 			return null;
 		return pid;
 	} catch {
@@ -621,21 +651,19 @@ function isAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (err) {
-		// ESRCH → gone; EPERM → alive but not ours (still counts as running)
 		return (err as NodeJS.ErrnoException).code === "EPERM";
 	}
 }
 
-function terminateGroup(pid: number): string {
+export async function terminateGroup(pid: number): Promise<string> {
 	const identity = processIdentity(pid);
 	if (
 		pid <= 1 ||
 		pid === process.pid ||
 		pid === process.ppid ||
-		(process.platform === "linux" &&
-			(!identity ||
-				identity.group !== pid ||
-				identity.group === processIdentity(process.pid)?.group))
+		!identity ||
+		identity.group !== pid ||
+		identity.group === processIdentity(process.pid)?.group
 	) {
 		throw new Error(
 			"Refusing to signal a process without its own detached process group",
@@ -645,23 +673,22 @@ function terminateGroup(pid: number): string {
 		process.kill(-pid, "SIGTERM");
 	} catch (err) {
 		if ((err as NodeJS.ErrnoException).code === "ESRCH") return "none";
+		throw err;
 	}
 
 	const termDeadline = Date.now() + 2000;
 	while (Date.now() < termDeadline) {
 		if (!isAlive(-pid)) return "SIGTERM";
-		Bun.sleepSync(50);
+		await Bun.sleep(50);
 	}
 
 	try {
 		process.kill(-pid, "SIGKILL");
-	} catch {
-		// group already gone between the poll and the escalation
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
 	}
 	return "SIGKILL";
 }
-
-// --- job kind + paths ------------------------------------------------------
 
 function detectKind(command: string): JobKind {
 	return parseProxyBackend(command) ? "proxy" : "shell";
@@ -672,16 +699,8 @@ function effectiveKind(meta: JobMeta): JobKind {
 }
 
 function parseProxyBackend(command: string): string | undefined {
-	// Only identify command words; quoted prompt text must not classify a shell job.
 	const words = shellWords(command);
-	const backends = new Set([
-		"codex",
-		"copilot",
-		"pi",
-		"opencode",
-		"cortex",
-		"grok",
-	]);
+	const backends = new Set(Object.keys(BACKENDS));
 	for (let i = 0; i < words.length - 1; i++) {
 		if (
 			path.basename(words[i]).match(/^proxy-helper(?:\.sh)?$/) &&
@@ -740,14 +759,14 @@ interface JobPaths {
 	pidFile: string;
 	metaFile: string;
 	pendingFile: string;
-	cancelledFile: string;
+	canceledFile: string;
+	drainFile: string;
 	identityFile: string;
 }
 
 function jobPaths(id: string): JobPaths {
 	const p = (suffix: string) =>
 		statePath("bg", `${id}.${suffix}`, { cwdScope: false });
-	// pid stays ephemeral: a pid surviving a reboot can be recycled and read as "running".
 	const ephemeral = (suffix: string) =>
 		scratchPath("bg", `${id}.${suffix}`, { cwdScope: false });
 	return {
@@ -757,15 +776,29 @@ function jobPaths(id: string): JobPaths {
 		identityFile: ephemeral("identity.json"),
 		metaFile: p("meta.json"),
 		pendingFile: p("pending"),
-		cancelledFile: p("cancelled"),
+		canceledFile: p("canceled"),
+		drainFile: p("drain.log"),
 	};
 }
 
 function loadMeta(id: string | undefined): JobMeta | null {
 	if (!id) return null;
-	const metaFile = jobPaths(id).metaFile;
-	if (!existsSync(metaFile)) return null;
-	return JSON.parse(readFileSync(metaFile, "utf8")) as JobMeta;
+	assertJobId(id);
+	return readMetaFile(jobPaths(id).metaFile);
+}
+
+function readMetaFile(file: string): JobMeta | null {
+	try {
+		return JSON.parse(readFileSync(file, "utf8")) as JobMeta;
+	} catch {
+		return null;
+	}
+}
+
+function writeFileAtomic(file: string, data: string): void {
+	const staging = `${file}.${randomUUID()}.tmp`;
+	writeFileSync(staging, data);
+	renameSync(staging, file);
 }
 
 function appendPending(id: string, context: string): string {
@@ -774,8 +807,6 @@ function appendPending(id: string, context: string): string {
 	return readFileSync(file, "utf8").trim();
 }
 
-// --- arg helpers -----------------------------------------------------------
-
 function extractCwd(args: string[]): [string | undefined, string[]] {
 	const idx = args.indexOf("--cwd");
 	if (idx === -1) return [undefined, args];
@@ -783,8 +814,4 @@ function extractCwd(args: string[]): [string | undefined, string[]] {
 	if (!dir || dir.startsWith("-"))
 		die("--cwd requires a directory argument", EXIT.USAGE);
 	return [dir, args.filter((_, i) => i !== idx && i !== idx + 1)];
-}
-
-function sq(s: string): string {
-	return `'${s.replace(/'/g, `'\\''`)}'`;
 }

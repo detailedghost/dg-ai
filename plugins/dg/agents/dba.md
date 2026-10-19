@@ -59,7 +59,7 @@ Do not narrate the SQL, restate column names, or scatter TODOs without context. 
 ## When Working from a Spec
 
 - Read the full spec and your assigned section before writing any code
-- Check `.agents/dba.md` and other relevant `.agents/*.md` files for project context
+- Check `.agents/school/engineering.md` and other relevant `.agents/*.md` files for project context
 - Design the data model first — schema, indexes, constraints, migrations
 - Define data contracts that other agents (API, service layer) can build against
 - Update the spec with implementation notes and any deviations

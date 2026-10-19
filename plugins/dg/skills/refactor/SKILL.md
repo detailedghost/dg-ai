@@ -1,6 +1,6 @@
 ---
 name: refactor
-description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 5 high-leverage refactor candidates (or accepts your own), then drops into a /grill-me design conversation on the chosen one. Hands off to /kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
+description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 4 high-leverage refactor candidates (or accepts your own), then drops into a /grill-me design conversation on the chosen one. Hands off to /kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
 ---
 
 Resolve the CLI before using the commands below:
@@ -12,7 +12,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -42,6 +42,6 @@ Surface architectural friction and propose **deepening opportunities** — refac
 
 1. **Domain context** — read project context files and architecture vocabulary.
 2. **Explore** — launch Explore agent on scope path. Returns 5–10 friction areas ranked by impact.
-3. **Present candidates** — synthesize into exactly 5; present via `AskUserQuestion` (single-select). **GATE:** user picks one or supplies their own via "Other."
+3. **Present candidates** — synthesize into exactly 4; present via `AskUserQuestion` (single-select, 2–4 options plus the automatic "Other"). **GATE:** user picks one or supplies their own via "Other."
 4. **Design conversation** — invoke `/grill-me` with chosen candidate. **GATE:** Final Summary confirmed.
 5. **Hand-off** — write design summary; ask: park the build (`/kick`) or print only. **GATE:** summary file written.

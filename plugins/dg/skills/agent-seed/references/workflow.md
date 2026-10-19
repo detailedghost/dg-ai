@@ -38,6 +38,7 @@ Execute steps in order. Do not skip steps. Report progress after each.
     <!-- Any agent may add entries. Prune the oldest lines when the file passes 100 lines. -->
     ```
 - Create `.agents/paths.md` if not present — this is a repo-specific file/directory lookup table that agents read before exploring the codebase. See templates.md for the template. Populate it during Step 5 using detected project structure.
+- Ask once: "Check in `.agents/` instead of ignoring it?" If the answer is yes, skip the `.gitignore` entry below.
 - **Add `.agents/` to `.gitignore`** — local agent workspace, not project source:
   - If `.gitignore` exists, append `.agents/` if not already present
   - If `.gitignore` does not exist, create it with just `.agents/`
@@ -109,13 +110,14 @@ AGENTS.md is the primary authority. It carries conventions + routes to all conte
 
 After all seed commits are staged/committed:
 
-1. **Tag the current commit** as `agent-seed/YYYY-MM-DD` (today's date). This preserves a reference to the old structure — the `.bak` files are recoverable via `git show agent-seed/YYYY-MM-DD:.agents/references/CLAUDE.md.bak`.
-2. **Remove all `.md.bak` files** from `.agents/references/` (e.g. `CLAUDE.md.bak`, `AGENTS.md.bak`).
-3. **Commit the removal** with message: `chore: remove seed backup files`
+1. **Commit the backups.** `.agents/` is ignored, so force-add them: `git add -f .agents/references/*.md.bak && git commit -m "chore(agents): back up CLAUDE.md before seed"`.
+2. **Tag that commit** as `agent-seed/YYYY-MM-DD` (today's date). This preserves a reference to the old structure — the `.bak` files are recoverable via `git show agent-seed/YYYY-MM-DD:.agents/references/CLAUDE.md.bak`.
+3. **Remove all `.md.bak` files** from `.agents/references/` with `git rm -f` (e.g. `CLAUDE.md.bak`, `AGENTS.md.bak`).
+4. **Commit the removal** with message: `chore: remove seed backup files`
 
 If the tag `agent-seed/YYYY-MM-DD` already exists (re-run on the same day), append a sequence suffix: `agent-seed/YYYY-MM-DD.2`, `.3`, etc.
 
-> **GATE:** Tag exists. Backup files removed and committed.
+> **GATE:** Backups committed and tagged. Backup files removed and committed.
 
 ## Step 9 — Report & Offer Cleanup
 

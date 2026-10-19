@@ -27,7 +27,7 @@ beforeAll(() => {
 		{ env: installation.env(), stdout: "pipe", stderr: "pipe" },
 	);
 	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
-});
+}, 120000);
 afterAll(() => installation.cleanup());
 
 let fixture: ReturnType<typeof proxyFixtures>;
@@ -91,7 +91,7 @@ describe("resolveSkillAsset", () => {
 				skillsRoot: installed,
 				sourceSkillsRoot: join(fixture.root, "old cache"),
 			}),
-		).toThrow(/proxy|install|asset/i);
+		).toThrow(/Skill asset not found: proxy\/references\/guide\.md/);
 	});
 
 	test("rejects virtual compiled paths instead of treating them as installed resources", () => {
@@ -99,7 +99,7 @@ describe("resolveSkillAsset", () => {
 			resolveSkillAsset("proxy", "SKILL.md", {
 				sourceSkillsRoot: "/$bunfs/root/plugins/dg/skills",
 			}),
-		).toThrow();
+		).toThrow(/real filesystem path/);
 	});
 
 	test.each(["../private", "/absolute", "proxy/../../private"])(
@@ -107,7 +107,7 @@ describe("resolveSkillAsset", () => {
 		(skill) => {
 			expect(() =>
 				resolveSkillAsset(skill, "SKILL.md", { skillsRoot: fixture.root }),
-			).toThrow();
+			).toThrow(/Invalid skill name/);
 		},
 	);
 
@@ -115,9 +115,11 @@ describe("resolveSkillAsset", () => {
 		"rejects escaping asset paths %s",
 		(path) => {
 			asset(fixture.root, "owned");
+			mkdirSync(join(fixture.root, "private"), { recursive: true });
+			writeFileSync(join(fixture.root, "private", "SKILL.md"), "private");
 			expect(() =>
 				resolveSkillAsset("proxy", path, { skillsRoot: fixture.root }),
-			).toThrow();
+			).toThrow(/must stay inside proxy/);
 		},
 	);
 

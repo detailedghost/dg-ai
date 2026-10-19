@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const repo = join(import.meta.dir, "../../..");
@@ -21,6 +21,33 @@ const publicFiles = [
 	...skillFiles,
 	...filesUnder(join(repo, "pkg/skills-cli/src")),
 ];
+
+const LOCAL_TERMS_FILE = ".no-local-zone.local";
+
+function localTerms(): RegExp | null {
+	const file = join(repo, LOCAL_TERMS_FILE);
+	if (!existsSync(file)) return null;
+	const terms = readFileSync(file, "utf8")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "" && !line.startsWith("#"))
+		.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	return terms.length > 0 ? new RegExp(terms.join("|"), "i") : null;
+}
+
+const PRIVATE_PATTERN = new RegExp(
+	[
+		"/home/(?!user\\b|runner\\b|<)[a-z_][a-z0-9_-]*/",
+		"/Users/(?!user\\b|runner\\b|<)[A-Za-z_][\\w.-]*/",
+		"[A-Za-z]:\\\\Users\\\\(?!user\\b|<)[\\w.-]+",
+		"~/scripts/",
+		"\\b[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b",
+		"\\b(?:ghp|gho|ghs|github_pat|glpat|xox[abprs])[-_][A-Za-z0-9_-]{16,}",
+		"\\bAKIA[0-9A-Z]{16}\\b",
+		"\\bsk-[A-Za-z0-9]{20,}",
+	].join("|"),
+	"i",
+);
 
 function matches(files: string[], pattern: RegExp): string[] {
 	return files.flatMap((file) =>
@@ -80,11 +107,34 @@ describe("public skill distribution", () => {
 	test("contains no private machine paths or work configuration", () => {
 		expect(publicFiles.length).toBeGreaterThan(0);
 		expect(
-			matches(
-				publicFiles,
-				/jasperridge|JRDEV|dburgos|\/home\/detailedghost|clockify-sync|~\/scripts\//i,
-			),
+			matches(publicFiles, PRIVATE_PATTERN),
 		).toEqual([]);
+	});
+
+	test("contains none of the terms in the optional local list", () => {
+		const terms = localTerms();
+		if (terms) expect(matches(publicFiles, terms)).toEqual([]);
+	});
+
+	test.each([
+		"/home/alice/project",
+		"/Users/alice/Documents",
+		"C:\\Users\\alice\\file",
+		"~/scripts/ai/run.ts",
+		"alice@corp.test",
+		"ghp_abcdefghijklmnopqrstuvwxyz0123",
+		"AKIAABCDEFGHIJKLMNOP",
+	])("flags %s as private", (line) => {
+		expect(PRIVATE_PATTERN.test(line)).toBe(true);
+	});
+
+	test.each([
+		"/home/user/project",
+		"/mnt/c/Users/<user>/Downloads",
+		"noreply@anthropic.com",
+		"someone@example.com",
+	])("allows %s", (line) => {
+		expect(PRIVATE_PATTERN.test(line)).toBe(false);
 	});
 
 	test("does not invoke removed helpers in code or skill references", () => {

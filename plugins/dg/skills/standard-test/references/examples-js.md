@@ -114,7 +114,7 @@ export function renderWithProviders(ui: React.ReactElement) {
   };
 }
 
-// in every test file — RTL v14: always call userEvent.setup() before the render
+// in every test file — user-event v14: always call userEvent.setup() before the render
 import { renderWithProviders } from '../test-utils/render';
 import userEvent from '@testing-library/user-event';
 

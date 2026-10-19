@@ -9,8 +9,7 @@ export function applyConnectionPragmas(
 	busyTimeoutMs: number = DEFAULT_BUSY_TIMEOUT_MS,
 ): void {
 	db.run(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
-	// A first-open WAL lock upgrade can return SQLITE_BUSY without invoking SQLite's
-	// busy handler. Retry that upgrade within the same bounded connection timeout.
+	const pause = new Int32Array(new SharedArrayBuffer(4));
 	const deadline = Date.now() + busyTimeoutMs;
 	for (;;) {
 		try {
@@ -19,7 +18,7 @@ export function applyConnectionPragmas(
 		} catch (error) {
 			if (!(error instanceof Error) || !("code" in error) ||
 				error.code !== "SQLITE_BUSY" || Date.now() >= deadline) throw error;
-			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+			Atomics.wait(pause, 0, 0, 10);
 		}
 	}
 	db.run("PRAGMA foreign_keys = ON");

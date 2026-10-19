@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { pi } from "../src/proxy/backends/pi";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "hello world", ...overrides };
-}
+import { makeInput } from "./proxy-fixtures";
 
 function sessionEvent(id: string): string {
 	return JSON.stringify({ type: "session", id });
@@ -17,12 +13,6 @@ function messageEndEvent(text: string, role = "assistant"): string {
 		message: { role, content: [{ type: "text", text }] },
 	});
 }
-
-describe("pi.bin", () => {
-	test("is the pi binary name", () => {
-		expect(pi.bin).toBe("pi");
-	});
-});
 
 describe("pi.buildArgs", () => {
 	test("builds the minimal args for a bare prompt", () => {
@@ -169,9 +159,3 @@ describe("pi.parseEvents", () => {
 	});
 });
 
-describe("pi.install", () => {
-	test("provides an npm install hint and command for the pi package", () => {
-		expect(pi.install.hint).toBe("npm package @earendil-works/pi-coding-agent");
-		expect(pi.install.command).toBe("npm install -g @earendil-works/pi-coding-agent");
-	});
-});

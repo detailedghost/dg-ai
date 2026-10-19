@@ -1,57 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emitJson, escapeJsonString } from "../src/utils/json";
-
-// ── escapeJsonString ──────────────────────────────────────────────────────────
-
-describe("escapeJsonString", () => {
-	test("plain text passes through unchanged", () => {
-		expect(escapeJsonString("hello world")).toBe("hello world");
-	});
-
-	test("backslash is doubled", () => {
-		expect(escapeJsonString("a\\b")).toBe("a\\\\b");
-	});
-
-	test("double-quote is escaped", () => {
-		expect(escapeJsonString('say "hi"')).toBe('say \\"hi\\"');
-	});
-
-	test("newline becomes \\n", () => {
-		expect(escapeJsonString("line1\nline2")).toBe("line1\\nline2");
-	});
-
-	test("carriage return becomes \\r", () => {
-		expect(escapeJsonString("a\rb")).toBe("a\\rb");
-	});
-
-	test("tab becomes \\t", () => {
-		expect(escapeJsonString("a\tb")).toBe("a\\tb");
-	});
-
-	test("control characters below 0x20 become \\uXXXX", () => {
-		// U+0001 (SOH)
-		expect(escapeJsonString("")).toBe("\\u0001");
-		// U+001F (US)
-		expect(escapeJsonString("")).toBe("\\u001f");
-	});
-
-	test("empty string returns empty string", () => {
-		expect(escapeJsonString("")).toBe("");
-	});
-
-	test("output is valid inside a JSON string literal", () => {
-		const input = 'line1\nline2\t"quoted"\\path';
-		const escaped = escapeJsonString(input);
-		const parsed = JSON.parse(`"${escaped}"`);
-		expect(parsed).toBe(input);
-	});
-
-	test("unicode above 0x1F passes through unchanged", () => {
-		expect(escapeJsonString("café 日本語")).toBe("café 日本語");
-	});
-});
-
-// ── emitJson ──────────────────────────────────────────────────────────────────
+import { emitJson } from "../src/utils/json";
 
 describe("emitJson", () => {
 	test("writes pretty-printed JSON followed by newline to stdout", () => {

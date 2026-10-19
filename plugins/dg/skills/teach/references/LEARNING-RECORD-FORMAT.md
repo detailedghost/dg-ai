@@ -18,7 +18,7 @@ That is the whole format. The value is recording _that_ this is now known and _w
 
 Only add these when they genuinely help. Most records won't need them.
 
-- **Status** frontmatter (`active | superseded by LR-NNNN`) — when an earlier understanding is replaced.
+- **Status** frontmatter (`active | superseded by LR-NNNN`, where `LR-0001` means the file `0001-<name>.md`) — when an earlier understanding is replaced.
 - **Evidence** — how the user demonstrated understanding (question answered, exercise completed, prior experience cited).
 - **Implications** — what this unlocks or rules out. Worth recording when non-obvious.
 

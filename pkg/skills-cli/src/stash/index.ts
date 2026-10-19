@@ -1,6 +1,14 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { agentsPath, agentsRoot, scratchDir, scratchRoot, stateDir, stateRoot, uniqueName } from "@dg/common/node";
+import {
+	agentsPath,
+	agentsRoot,
+	scratchDir,
+	scratchRoot,
+	stateDir,
+	stateRoot,
+	uniqueName,
+} from "@dg/common/node";
 
 /** Choose ephemeral scratch, durable project state, or current/main worktree artifacts. */
 export type StashKind = "scratch" | "state" | "agents" | "main";
@@ -58,7 +66,9 @@ function expandShort(argv: string[]): string[] {
 		const valueFlag = letters.indexOf("C");
 		const booleans = valueFlag === -1 ? letters : letters.slice(0, valueFlag);
 		if (!booleans.every((l) => SHORT_BOOLEAN.has(l))) return [arg];
-		return [...booleans.map((l) => `-${l}`), ...(valueFlag === -1 ? [] : ["-C"])];
+		if (valueFlag === -1) return booleans.map((l) => `-${l}`);
+		const attached = letters.slice(valueFlag + 1).join("");
+		return [...booleans.map((l) => `-${l}`), "-C", ...(attached ? [attached] : [])];
 	});
 }
 
@@ -82,8 +92,11 @@ export function parseArgs(argv: string[]): StashArgs {
 			const value = args[++i];
 			if (!value) throw new Error(`${arg} requires a directory`);
 			parsed.dir = value;
-		} else if (arg.startsWith("--dir=")) parsed.dir = arg.slice("--dir=".length);
-		else if (arg.startsWith("-") && arg !== "-") throw new Error(`unknown flag ${arg}`);
+		} else if (arg.startsWith("--dir=")) {
+			const value = arg.slice("--dir=".length);
+			if (!value) throw new Error("--dir requires a directory");
+			parsed.dir = value;
+		} else if (arg.startsWith("-") && arg !== "-") throw new Error(`unknown flag ${arg}`);
 		else positional.push(arg);
 	}
 	if (chosen.size > 1) throw new Error("choose one of --scratch, --state, --agents, --main");
@@ -115,12 +128,8 @@ export function resolveStash(args: StashArgs): StashResult {
 	if (repoLocal && args.global) throw new Error("--global cannot be used with --agents or --main");
 
 	if (args.root) {
-		const root = repoLocal
-			? agentsRoot({ cwd, main: args.kind === "main" })
-			: args.kind === "state"
-				? stateRoot()
-				: scratchRoot();
-		return { path: root };
+		if (repoLocal) return { path: agentsRoot({ cwd, main: args.kind === "main" }) };
+		return { path: args.kind === "state" ? stateRoot() : scratchRoot() };
 	}
 
 	if (!args.tool) throw new Error("missing <tool>");

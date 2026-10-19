@@ -1,8 +1,3 @@
-// Renders and wires stacked PR/MR chains for the chain skill.
-// Real dependencies (one layer per merge step) get the arrow-chain "Stack" block;
-// independent siblings (no dependency at all) get a separate flat "Related PRs"
-// list — arrows are never overloaded to mean "any order".
-
 import { spawnSync } from "node:child_process";
 import { getProvider } from "../provider/index";
 import {
@@ -14,17 +9,15 @@ import {
 } from "../provider/types";
 import { EXIT } from "../utils/legacy-command";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
 /** Mutually independent refs at one position in a dependency chain. */
 export type Layer = string[];
 
 /** Presentation and target options shared by rendering and provider updates. */
 export interface RenderOptions {
-	target?: string; // what the tip of the chain merges into, default "main"
-	mark?: string; // ref to bold as "this PR"
-	independent?: string[]; // bystander refs with no dependency relationship at all
-	repo?: string; // "owner/repo" — prefixes bare numeric refs for cross-repo autolinking
+	target?: string;
+	mark?: string;
+	independent?: string[];
+	repo?: string;
 }
 
 /** A proposed retarget or a documented reason the base must stay unchanged. */
@@ -42,8 +35,6 @@ type GhExec = (
 
 const NATIVE_STACK_UNSUPPORTED = "NATIVE_STACK_UNSUPPORTED";
 
-// ── Ref parsing / formatting ─────────────────────────────────────────────────
-
 /** Split a comma-separated layer, trimming whitespace and dropping empty refs. */
 export function parseLayerArg(arg: string): Layer {
 	return arg
@@ -54,7 +45,7 @@ export function parseLayerArg(arg: string): Layer {
 
 /** Qualify bare numbers for provider autolinking while preserving branch and explicit refs. */
 export function formatRef(ref: string, repo?: string): string {
-	if (ref.startsWith("#") || ref.includes("#")) return ref;
+	if (ref.includes("#")) return ref;
 	if (/^\d+$/.test(ref)) return repo ? `${repo}#${ref}` : `#${ref}`;
 	return ref;
 }
@@ -77,8 +68,6 @@ function toPrRef(ref: string): PrRef {
 	if (slug.length === 0) return { number: parseRefNumber(numeric) };
 	return { repo: parseRepoRef(slug), number: parseRefNumber(numeric) };
 }
-
-// ── Rendering ─────────────────────────────────────────────────────────────────
 
 /** Render layers base-first as a single arrow-separated dependency line. */
 export function renderChainLine(
@@ -153,8 +142,6 @@ export function renderStack(layers: Layer[], opts: RenderOptions = {}): string {
 	return sections.join("\n\n");
 }
 
-// ── Idempotent PR-body merge ──────────────────────────────────────────────────
-
 const MARK_START = "<!-- /chain:start -->";
 const MARK_END = "<!-- /chain:end -->";
 
@@ -175,8 +162,6 @@ export function upsertManagedBlock(body: string, managedText: string): string {
 	const sep = body.trim().length > 0 ? "\n\n" : "";
 	return `${body}${sep}${managedText}\n`;
 }
-
-// ── Base-retarget planning ────────────────────────────────────────────────────
 
 /** Retarget only adjacent singleton layers; document wider dependencies without mutation. */
 export function planBaseActions(layers: Layer[]): BaseAction[] {
@@ -239,13 +224,11 @@ export function renderPlan(
 	return lines.join("\n");
 }
 
-// ── Native GitHub stack linking (gh stack link) ──────────────────────────────
-
 /** Native-link eligibility and argv, with an explicit unsupported-provider signal. */
 export interface NativeStackPlan {
 	eligible: boolean;
-	reason?: string; // set when eligible is false
-	args?: string[]; // the `gh <args>` argv for `gh stack link`, set when eligible is true
+	reason?: string;
+	args?: string[];
 	unsupported?: boolean;
 }
 
@@ -335,8 +318,6 @@ export function applyNativeStack(
 	}
 }
 
-// ── gh execution (injectable for tests) ───────────────────────────────────────
-
 const realGhExec: GhExec = (args, input) => {
 	const proc = spawnSync(process.env.GH_BIN ?? "gh", args, {
 		encoding: "utf8",
@@ -360,8 +341,9 @@ async function resolveBaseBranch(
 }
 
 /** Apply retargets sequentially, logging individual failures and continuing the batch. */
-export async function applyBaseActions(actions: BaseAction[]): Promise<void> {
+export async function applyBaseActions(actions: BaseAction[]): Promise<number> {
 	const provider = await getProvider();
+	let failures = 0;
 	for (const a of actions) {
 		if (a.action === "skip") {
 			process.stderr.write(`chain: skip ${a.ref} — ${a.reason}\n`);
@@ -372,11 +354,19 @@ export async function applyBaseActions(actions: BaseAction[]): Promise<void> {
 			await provider.retargetPullRequest(toPrRef(a.ref), newBase);
 			process.stderr.write(`chain: retargeted ${a.ref} → base ${newBase}\n`);
 		} catch (err) {
+			failures++;
 			process.stderr.write(
 				`chain: failed to retarget ${a.ref} → ${a.newBase}: ${(err as Error).message}\n`,
 			);
 		}
 	}
+	return failures;
+}
+
+function retargetFailure(failures: number): Error {
+	return new Error(
+		`${failures} retarget(s) failed; the stack bodies describe bases the PRs do not have`,
+	);
 }
 
 /** Fetch an existing numeric PR/MR ref body through its detected provider. */
@@ -407,7 +397,7 @@ export async function applyChain(
 		);
 	}
 
-	await applyBaseActions(planBaseActions(layers));
+	const retargetFailures = await applyBaseActions(planBaseActions(layers));
 	if (nativePlan) applyNativeStack(nativePlan, layers, opts);
 
 	const allRefs = [...layers.flat(), ...(opts.independent ?? [])];
@@ -418,9 +408,8 @@ export async function applyChain(
 		await setPrBody(ref, updated);
 		process.stderr.write(`chain: updated PR body for ${ref}\n`);
 	}
+	if (retargetFailures > 0) throw retargetFailure(retargetFailures);
 }
-
-// ── CLI entry point ────────────────────────────────────────────────────────────
 
 function printHelp() {
 	process.stderr.write(
@@ -447,6 +436,14 @@ function printHelp() {
 	);
 }
 
+function flagValue(argv: string[], index: number, flag: string): string {
+	const value = argv[index];
+	if (value === undefined || value.startsWith("--")) {
+		throw new Error(`Missing value for ${flag}`);
+	}
+	return value;
+}
+
 function parseArgs(argv: string[]): {
 	layers: Layer[];
 	independent: string[];
@@ -465,9 +462,9 @@ function parseArgs(argv: string[]): {
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === "--repo") {
-			repo = argv[++i];
+			repo = flagValue(argv, ++i, a);
 		} else if (a === "--mark") {
-			mark = argv[++i];
+			mark = flagValue(argv, ++i, a);
 		} else if (a === "--target") {
 			target = argv[++i] ?? target;
 		} else if (a === "--independent") {
@@ -512,9 +509,11 @@ async function run(argv: string[]): Promise<void> {
 			process.stdout.write(`${renderPlan(layers, opts, native, nativePlan)}\n`);
 			break;
 		}
-		case "base":
-			await applyBaseActions(planBaseActions(layers));
+		case "base": {
+			const failures = await applyBaseActions(planBaseActions(layers));
+			if (failures > 0) throw retargetFailure(failures);
 			break;
+		}
 		case "apply":
 			await applyChain(layers, opts, native);
 			break;

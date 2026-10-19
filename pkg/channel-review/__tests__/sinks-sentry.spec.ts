@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
 import { loadConfig } from "../src/config";
 import { channelReviewPaths } from "../src/paths";
 import { AuthError, ConfigError, RateLimitError } from "../src/sinks/errors";

@@ -59,7 +59,7 @@ describe("the job row", () => {
 	});
 
 	it("names the source from the label, and falls back when it recognises none", () => {
-		expect(sourceFromLabel("jira-jrdev-sprint")).toBe("Jira");
+		expect(sourceFromLabel("jira-task-sprint")).toBe("Jira");
 		expect(sourceFromLabel("sentry-unresolved")).toBe("Sentry");
 		expect(sourceFromLabel("datadog-prod-errors")).toBe("Datadog");
 		expect(sourceFromLabel("nightly-backup")).toBe("Job");
@@ -206,10 +206,10 @@ describe("the feed row", () => {
 
 	it("carries a web link through to the row", () => {
 		const view = toFeedView(
-			buildFeedItem({ url: "https://example.test/JRDEV-101" }),
+			buildFeedItem({ url: "https://example.test/TASK-101" }),
 			NOW,
 		);
-		expect(view.url).toBe("https://example.test/JRDEV-101");
+		expect(view.url).toBe("https://example.test/TASK-101");
 	});
 
 	it("drops a url whose scheme a job should not be able to put in an href", () => {

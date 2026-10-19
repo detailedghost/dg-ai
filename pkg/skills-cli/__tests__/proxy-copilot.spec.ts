@@ -1,17 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { copilot } from "../src/proxy/backends/copilot";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "hello world", ...overrides };
-}
-
-describe("copilot.bin", () => {
-	test("is the copilot CLI binary name", () => {
-		expect(copilot.bin).toBe("copilot");
-	});
-});
+import { makeInput } from "./proxy-fixtures";
 
 describe("copilot.buildArgs", () => {
 	test("builds the minimal non-interactive JSON invocation for a bare prompt", () => {
@@ -130,11 +120,3 @@ describe("copilot.parseEvents", () => {
 	});
 });
 
-describe("copilot.install", () => {
-	test("provides an npm install hint and command for the @github/copilot package", () => {
-		expect(copilot.install).toEqual({
-			hint: "npm package @github/copilot",
-			command: "npm install -g @github/copilot",
-		});
-	});
-});

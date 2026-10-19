@@ -5,7 +5,7 @@ description: >-
   Copilot review on an open PR, filters its comments through a
   copilot-antagonist agent, hands accepted items to /address, and
   repeats. `--proxy <backend>` mode swaps the reviewer for a local
-  proxy-backend coding agent (codex/copilot/pi/opencode/cortex/grok) instead —
+  proxy-backend coding agent (codex/copilot/pi/opencode/grok) instead —
   no PR or GitHub Copilot access required, findings flow straight
   into /address's local code-review path. Both modes are
   fire-and-forget and capped at a few rounds by default.
@@ -40,7 +40,7 @@ posted back to the merge request. See
 [references/workflow.md](references/workflow.md) Phase 1 for the gate.
 
 `capabilities` names the reviewer in `aiReviewBotNames`. On GitLab that
-comes from explicit `VCS_GITLAB_AI_REVIEW_BOT` configuration (comma-separated).
+comes from explicit `AI_VCS_GITLAB_REVIEW_BOT` configuration (comma-separated).
 With that variable unset, empty, or `none`, GitLab reports no reviewer and
 uses the proxy route.
 
@@ -49,7 +49,7 @@ access — it reviews the current branch's diff with a local external
 coding agent instead. See [Proxy mode](#proxy-mode) below.
 
 **Usage:** `/review-loop [-r N] [-w <sec>] [-s] [-n] [-k]`
-**Usage (proxy):** `/review-loop -p <codex|copilot|pi|opencode|cortex|grok> [-b <ref>] [-r N] [-s] [-k]`
+**Usage (proxy):** `/review-loop -p <codex|copilot|pi|opencode|grok> [-b <ref>] [-r N] [-s] [-k]`
 
 | Flag | Short | Effect |
 |------|-------|--------|
@@ -57,8 +57,8 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 | `--wait-timeout <sec>` | `-w <sec>` | Cap for each between-round wait. Default `1800` (30 min). On timeout the skill exits cleanly so you can re-run later. Applies to default mode and to the GitLab bot-review flow — proxy mode has no polling wait, this flag is ignored there. |
 | `--single` | `-s` | Run one round step and exit. Use when you want manual pacing between rounds. |
 | `--no-retrigger` | `-n` | Run one round, skip the re-request at the end. Implies `--single`. In proxy mode there's no separate "retrigger" step (see [Proxy mode](#proxy-mode)), so this is a no-op alias for `--single` — kept for flag parity between modes. |
-| `--skip` | `-k` | No-op exit. Use when /spec auto-invokes this and you want to bail out. |
-| `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| cortex \| grok`, passed straight through to `/proxy`. No PR required. |
+| `--skip` | `-k` | No-op exit. Use when a planning workflow auto-invokes this and you want to bail out. |
+| `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| grok`, passed straight through to `/proxy`. No PR required. |
 | `--base <ref>` | `-b <ref>` | Proxy mode only. Override diff-base detection (see [Proxy mode](#proxy-mode)). |
 
 ### Default: auto mode
@@ -80,7 +80,7 @@ Use `--single` for manual round-by-round control, or set
 ### Proxy mode
 
 `--proxy <backend>` replaces the GitHub Copilot reviewer with a local
-`/proxy` backend (codex/copilot/pi/opencode/cortex/grok) reviewing `base..HEAD` on
+`/proxy` backend (codex/copilot/pi/opencode/grok) reviewing `base..HEAD` on
 the current branch — no PR, no `gh`, no GitHub Copilot access needed.
 
 Round shape: diff → `/proxy <backend>` reviews it and writes findings
@@ -117,7 +117,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -169,10 +169,10 @@ Default mode never reaches the Copilot-bot subcommands on GitLab —
 Phase 1's `capabilities` check routes to the bot-review flow, or to
 proxy mode when no reviewer is configured, first (see
 [references/workflow.md](references/workflow.md) Phase 1 and 1b).
-**Proxy
-mode never calls `"$DG" address`** — round counting and diff-base
+**The
+proxy-mode steps of this skill never call `"$DG" address`** — round counting and diff-base
 resolution there are plain `git`
-(see [references/proxy-workflow.md](references/proxy-workflow.md)).
+(see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/address -l` runs its own helper calls.
 
 ## General Rules
 

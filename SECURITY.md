@@ -8,7 +8,8 @@ artifact. Install the latest tag to receive them.
 
 Each binary and the extension publish their own tag. Channel-review ships
 inside the `dg-skills` binary (`skills-v*`); it has no release tag of its own.
-The skill tree and the install scripts track `master`.
+The skill tree and the install scripts install from the latest `skills-v*`
+release tag. Fixes still land on `master` first.
 
 | Artifact | Tag | Supported release |
 | --- | --- | --- |
@@ -16,12 +17,12 @@ The skill tree and the install scripts track `master`.
 | `dg-daemon` | `daemon-v*` | Latest tag |
 | `dg-agent` | `agent-v*` | Latest tag |
 | `dg-ai-extension` zip | `ext-v*` | Latest tag |
-| Skill tree (`plugins/dg/skills`) | `master` | Current `master` |
-| `pkg/skills-cli/bootstrap.sh` and `bootstrap.ps1` | `master` | Current `master` |
+| Skill tree (`plugins/dg/skills`) | `skills-v*` | Latest tag |
+| `pkg/skills-cli/bootstrap.sh` and `bootstrap.ps1` | `skills-v*` | Latest tag |
 
 `dg-skills install` refreshes the extension zip, `dg-skills`, `dg-daemon`, and
 `dg-agent`, and skips an artifact that is already current. Re-run it, or the
-bootstrap script on `master`, after a security release. The extension update
+bootstrap script from the latest `skills-v*` tag, after a security release. The extension update
 is the unpacked zip from the `ext-v*` release.
 
 Installed binary versions are recorded in `~/.dg/bin/.dg-skills.version`,

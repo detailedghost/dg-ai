@@ -10,7 +10,7 @@ import {
 	resolveEnv,
 	SENTRY_CREDENTIAL,
 } from "@dg/channel-review";
-import { type CredentialMeta, DgCliError } from "@dg/common";
+import { type CredentialMeta, DgCliError, describeError } from "@dg/common";
 import {
 	type CredentialClient,
 	createCredentialClient,
@@ -37,11 +37,18 @@ const DATADOG_TOKENS_PATH = "/personal-settings/access-tokens";
 const SENTRY_TOKENS_PATH = "/settings/account/api/auth-tokens/";
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 const LOGIN_POLL_MS = 1_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const SENTRY_TOKEN_WAIT_MS = 30_000;
+const SENTRY_TOKEN_POLL_MS = 500;
+const HOUR_MS = 3_600_000;
 const YEAR_MS = 365 * 86_400_000;
+const TOKEN_NAME_PATTERN = new RegExp(
+	`(?<![\\w-])${CONNECT_TOKEN_NAME}(?![\\w-])`,
+);
 const SENTRY_TOKEN_SCAN = `(() => {
 	for (const el of document.querySelectorAll("input, textarea, code, pre")) {
 		const text = ("value" in el && el.value) || el.textContent || "";
-		const match = text.match(/sntryu_[A-Za-z0-9_+\\/=.-]{20,}|\\b[a-f0-9]{64}\\b/);
+		const match = text.match(/sntryu_[A-Za-z0-9_+\\/=.-]{20,}/);
 		if (match) return match[0];
 	}
 	return null;
@@ -131,7 +138,7 @@ async function launchChrome(): Promise<BrowserSession> {
 		headless: false,
 	});
 	const page = context.pages()[0] ?? (await context.newPage());
-	page.setDefaultTimeout(30_000);
+	page.setDefaultTimeout(REQUEST_TIMEOUT_MS);
 	return {
 		page,
 		grantClipboard: (origin) =>
@@ -187,7 +194,11 @@ async function store(
 ): Promise<void> {
 	const client = deps.createClient(flags.session);
 	try {
-		await client.set(name, value, meta);
+		try {
+			await client.set(name, value, meta);
+		} catch (error) {
+			throw new DgCliError(`Could not store ${name}: ${describeError(error)}`);
+		}
 		deps.write(`stored ${name}`);
 		await ensureGrant(client, deps.write);
 	} finally {
@@ -204,15 +215,14 @@ async function verify(
 		const response = await deps.fetch(url, {
 			...init,
 			redirect: "error",
-			signal: AbortSignal.timeout(30_000),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
-		deps.write(
-			response.ok
-				? `verified (HTTP ${response.status})`
-				: `verification failed (HTTP ${response.status})`,
-		);
-	} catch {
-		deps.write("verification failed (network error)");
+		if (!response.ok)
+			throw new DgCliError(`verification failed (HTTP ${response.status})`);
+		deps.write(`verified (HTTP ${response.status})`);
+	} catch (error) {
+		if (error instanceof DgCliError) throw error;
+		throw new DgCliError(`verification failed (${describeError(error)})`);
 	}
 }
 
@@ -221,10 +231,19 @@ function datadogAppHost(site: string): string {
 }
 
 const DATADOG_HOST_PATTERN =
-	/(?:^|\.)(?:datadoghq\.(?:com|eu)|ddog-gov\.com)$/;
+	/^(?:[a-z0-9-]+\.)*(?:datadoghq\.(?:com|eu)|ddog-gov\.com)$/;
 
 function isDatadogHost(host: string): boolean {
-	return DATADOG_HOST_PATTERN.test(host.toLowerCase());
+	const lower = host.toLowerCase();
+	return DATADOG_HOST_PATTERN.test(lower) && hostnameOf(lower) === lower;
+}
+
+function hostnameOf(host: string): string | undefined {
+	try {
+		return new URL(`https://${host}`).hostname;
+	} catch {
+		return undefined;
+	}
 }
 
 function datadogSiteFromHost(host: string): string {
@@ -244,7 +263,9 @@ async function waitForSignIn(
 		const url = new URL(page.url());
 		if (!signedIn(url)) {
 			if (!told)
-				deps.write("Sign in in the browser window. Waiting up to 10 minutes.");
+				deps.write(
+					`Sign in in the browser window. Waiting up to ${LOGIN_TIMEOUT_MS / 60_000} minutes.`,
+				);
 			told = true;
 		} else if (!url.pathname.startsWith(path)) {
 			await page.goto(`${url.origin}${path}`);
@@ -265,6 +286,18 @@ function validate(value: string, pattern: RegExp, label: string): string {
 	return token;
 }
 
+function validateCaptured(
+	value: string,
+	pattern: RegExp,
+	label: string,
+): string {
+	try {
+		return validate(value, pattern, label);
+	} catch (error) {
+		throw new Error(describeError(error));
+	}
+}
+
 async function viaBrowser<T>(
 	deps: ConnectDeps,
 	run: (session: BrowserSession) => Promise<T>,
@@ -273,7 +306,8 @@ async function viaBrowser<T>(
 	try {
 		session = await deps.launchBrowser();
 		return await run(session);
-	} catch {
+	} catch (error) {
+		if (error instanceof DgCliError) throw error;
 		deps.write("Browser automation failed. Falling back to paste mode.");
 		return undefined;
 	} finally {
@@ -298,7 +332,9 @@ async function listDatadogTokenRows(page: UiPage): Promise<string[]> {
 		.getByRole("row")
 		.filter({ hasText: CONNECT_TOKEN_NAME })
 		.allInnerTexts();
-	return texts.map((text) => text.replace(/\s+/g, " ").trim());
+	return texts
+		.map((text) => text.replace(/\s+/g, " ").trim())
+		.filter((text) => TOKEN_NAME_PATTERN.test(text));
 }
 
 async function revokeDatadogTokens(
@@ -378,7 +414,7 @@ async function copyDatadogToken(
 			.getByRole("button", { name: /copy/i })
 			.first()
 			.click();
-		return validate(
+		return validateCaptured(
 			String(await page.evaluate("navigator.clipboard.readText()")),
 			DATADOG_TOKEN_PATTERN,
 			"Datadog access token",
@@ -394,6 +430,10 @@ async function connectDatadog(
 ): Promise<void> {
 	if (flags.site !== undefined && !isDatadogHost(flags.site))
 		throw new DgCliError("That is not a Datadog site.");
+	const flagSite =
+		flags.site === undefined
+			? undefined
+			: datadogSiteFromHost(flags.site.toLowerCase());
 	const tokensUrl = (site: string) =>
 		`https://${datadogAppHost(site)}${DATADOG_TOKENS_PATH}`;
 	const save = (value: string, site: string) =>
@@ -407,7 +447,7 @@ async function connectDatadog(
 	const captured = flags.paste
 		? undefined
 		: await viaBrowser(deps, async (session) => {
-				await session.page.goto(tokensUrl(flags.site ?? DEFAULT_DATADOG_SITE));
+				await session.page.goto(tokensUrl(flagSite ?? DEFAULT_DATADOG_SITE));
 				const url = await waitForSignIn(
 					session.page,
 					deps,
@@ -419,12 +459,12 @@ async function connectDatadog(
 				const previous = await listDatadogTokenRows(session.page);
 				await createDatadogToken(session.page);
 				const value = await copyDatadogToken(session, url.origin);
-				const site = flags.site ?? datadogSiteFromHost(url.hostname);
+				const site = flagSite ?? datadogSiteFromHost(url.hostname);
 				await save(value, site);
 				await revokeDatadogTokens(session.page, deps, previous);
 				return { value, site };
 			});
-	const site = captured?.site ?? flags.site ?? DEFAULT_DATADOG_SITE;
+	const site = captured?.site ?? flagSite ?? DEFAULT_DATADOG_SITE;
 	let value = captured?.value;
 	if (value === undefined) {
 		value = await pasteToken(
@@ -452,7 +492,7 @@ async function connectDatadog(
 					type: "search_request",
 					attributes: {
 						query: "",
-						from: now.getTime() - 3_600_000,
+						from: now.getTime() - HOUR_MS,
 						to: now.getTime(),
 						track: "trace",
 					},
@@ -467,7 +507,23 @@ function sentryOrgFromHost(host: string, base: URL): string | undefined {
 	return host.endsWith(suffix) ? host.slice(0, -suffix.length) : undefined;
 }
 
-async function createSentryToken(page: UiPage): Promise<string> {
+async function scanSentryToken(page: UiPage, deps: ConnectDeps): Promise<string> {
+	const deadline = deps.now().getTime() + SENTRY_TOKEN_WAIT_MS;
+	for (;;) {
+		const value = await page.evaluate(SENTRY_TOKEN_SCAN);
+		if (typeof value === "string") return value;
+		if (deps.now().getTime() >= deadline)
+			throw new DgCliError(
+				`Sentry did not show the new token. Revoke the ${CONNECT_TOKEN_NAME} token in Sentry and run connect again.`,
+			);
+		await deps.sleep(SENTRY_TOKEN_POLL_MS);
+	}
+}
+
+async function createSentryToken(
+	page: UiPage,
+	deps: ConnectDeps,
+): Promise<string> {
 	const create = /create new token|new token|create token/i;
 	await page
 		.getByRole("button", { name: create })
@@ -486,19 +542,30 @@ async function createSentryToken(page: UiPage): Promise<string> {
 		.getByRole("button", { name: /create token|save/i })
 		.last()
 		.click();
-	const value = await page.evaluate(SENTRY_TOKEN_SCAN);
-	return validate(
-		typeof value === "string" ? value : "",
+	return validateCaptured(
+		await scanSentryToken(page, deps),
 		SENTRY_TOKEN_PATTERN,
 		"Sentry auth token",
 	);
+}
+
+function parseSentryBase(site: string): URL {
+	let base: URL;
+	try {
+		base = new URL(site);
+	} catch {
+		throw new DgCliError("The Sentry site must be an https URL such as https://sentry.io.");
+	}
+	if (base.protocol !== "https:")
+		throw new DgCliError("The Sentry site must use https.");
+	return base;
 }
 
 async function connectSentry(
 	flags: ConnectFlags,
 	deps: ConnectDeps,
 ): Promise<void> {
-	const base = new URL(flags.site ?? DEFAULT_SENTRY_BASE);
+	const base = parseSentryBase(flags.site ?? DEFAULT_SENTRY_BASE);
 	const baseUrl = base.origin;
 	const captured = flags.paste
 		? undefined
@@ -520,7 +587,7 @@ async function connectSentry(
 						"Pass --org <slug> before creating a Sentry token.",
 					);
 				return {
-					value: await createSentryToken(session.page),
+					value: await createSentryToken(session.page, deps),
 					org,
 				};
 			});

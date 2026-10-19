@@ -72,7 +72,7 @@ describe("the dashboard page as it paints", () => {
 			fakeApi(
 				[buildJob()],
 				[
-					buildFeedItem({ url: "https://example.test/JRDEV-101" }),
+					buildFeedItem({ url: "https://example.test/TASK-101" }),
 					buildFeedItem({ id: "item-2", title: "No link", url: null }),
 				],
 			),
@@ -82,7 +82,7 @@ describe("the dashboard page as it paints", () => {
 			root.querySelectorAll<HTMLAnchorElement>(".dash__itemtitle"),
 		);
 		expect(titles[0].getAttribute("href")).toBe(
-			"https://example.test/JRDEV-101",
+			"https://example.test/TASK-101",
 		);
 		expect(titles[0].getAttribute("rel")).toBe("noopener noreferrer");
 		expect(titles[1].hasAttribute("href")).toBe(false);
@@ -435,7 +435,7 @@ describe("the dashboard page's vim mode", () => {
 		const root = await mount(
 			fakeApi(
 				[buildJob()],
-				[buildFeedItem({ url: "https://example.test/JRDEV-101" })],
+				[buildFeedItem({ url: "https://example.test/TASK-101" })],
 			),
 		);
 		click(vimToggle(root));

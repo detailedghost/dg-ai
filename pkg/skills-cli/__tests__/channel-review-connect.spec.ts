@@ -318,8 +318,69 @@ describe("channel-review connect datadog", () => {
 			pasted: DATADOG_TOKEN,
 			failSet: true,
 		});
-		await h.run("datadog");
+		await expect(h.run("datadog")).rejects.toThrow(
+			"Could not store channel-review/datadog: store failed",
+		);
+		expect(h.opened).toEqual([]);
 		expect(h.fake.actions.some((a) => a.includes("(/revoke/i)"))).toBe(false);
+	});
+
+	test("keeps a row whose token name only starts with ours out of the revoke list", async () => {
+		const h = createHarness({
+			page: {
+				urls: ["https://app.datadoghq.com/personal-settings/access-tokens"],
+				clipboard: DATADOG_TOKEN,
+				rows: [
+					"channel-review-daemon-staging created 2026-01-01",
+					"channel-review-daemon created 2026-01-02",
+				],
+			},
+		});
+		await h.run("datadog");
+		const revokes = h.fake.actions.filter(
+			(action) => action.includes("role=row") && action.includes("(/revoke/i)"),
+		);
+		expect(revokes).toHaveLength(1);
+		expect(revokes[0]).toContain("channel-review-daemon created 2026-01-02");
+	});
+
+	test("stops when the sign-in wait times out instead of falling back to paste", async () => {
+		const h = createHarness({
+			page: { urls: ["https://app.datadoghq.com/account/login"] },
+			pasted: DATADOG_TOKEN,
+		});
+		let tick = 0;
+		h.deps.now = () => new Date(NOW.getTime() + tick++ * 600_000);
+		await expect(h.run("datadog")).rejects.toThrow(
+			"Timed out waiting for sign-in.",
+		);
+		expect(h.prompts).toEqual([]);
+		expect(h.sets).toEqual([]);
+	});
+
+	test("stores the bare site when --site is an app host", async () => {
+		const h = createHarness({
+			page: {
+				urls: ["https://app.datadoghq.com/personal-settings/access-tokens"],
+				clipboard: DATADOG_TOKEN,
+			},
+		});
+		await h.run("datadog", { site: "app.datadoghq.com" });
+		expect(h.sets[0]?.meta?.site).toBe("datadoghq.com");
+		expect(h.requests[0]?.url).toBe(
+			"https://api.datadoghq.com/api/v2/error-tracking/issues/search",
+		);
+	});
+
+	test("fails the command and names the cause when verification cannot reach Datadog", async () => {
+		const h = createHarness({ pasted: DATADOG_TOKEN });
+		h.deps.fetch = async () => {
+			throw new Error("connect ECONNREFUSED");
+		};
+		await expect(h.run("datadog", { paste: true })).rejects.toThrow(
+			"verification failed (connect ECONNREFUSED)",
+		);
+		expect(h.sets).toHaveLength(1);
 	});
 
 	test("rejects a site that is not a Datadog site before any request", async () => {
@@ -327,6 +388,9 @@ describe("channel-review connect datadog", () => {
 			"datadoghq.example.net",
 			"evil-datadoghq.com",
 			"datadoghq.com.evil.net",
+			"evil.com/x.datadoghq.com",
+			"evil.com#.datadoghq.com",
+			"user@evil.com.datadoghq.com:80/x",
 		]) {
 			const h = createHarness({ pasted: DATADOG_TOKEN });
 			const error = await h
@@ -394,14 +458,15 @@ describe("channel-review connect datadog", () => {
 
 	test("paste mode opens the default browser and never launches Chrome", async () => {
 		const h = createHarness({ pasted: `${DATADOG_TOKEN}\n`, status: 403 });
-		await h.run("datadog", { paste: true });
+		await expect(h.run("datadog", { paste: true })).rejects.toThrow(
+			"verification failed (HTTP 403)",
+		);
 		expect(h.launches()).toBe(0);
 		expect(h.opened).toEqual([
 			"https://app.datadoghq.com/personal-settings/access-tokens",
 		]);
 		expect(h.prompts).toEqual(["Datadog access token: "]);
 		expect(h.sets[0]?.value).toBe(DATADOG_TOKEN);
-		expect(h.lines.at(-1)).toBe("verification failed (HTTP 403)");
 		expectNoSecret(h, DATADOG_TOKEN);
 	});
 
@@ -513,6 +578,73 @@ describe("channel-review connect sentry", () => {
 			h.lines.find((line) => line.startsWith("Browser automation failed")),
 		).not.toContain("call log");
 		expectNoSecret(h, SENTRY_TOKEN);
+	});
+
+	test("waits for the token to appear in the page before it reads it", async () => {
+		const h = createHarness({
+			page: {
+				urls: [
+					"https://example-org.sentry.io/settings/account/api/auth-tokens/",
+				],
+				domToken: SENTRY_TOKEN,
+			},
+		});
+		let scans = 0;
+		const evaluate = h.fake.session.page.evaluate;
+		h.fake.session.page.evaluate = async (expression) => {
+			scans += 1;
+			return scans < 3 ? null : evaluate(expression);
+		};
+		await h.run("sentry");
+		expect(scans).toBe(3);
+		expect(h.sets[0]?.value).toBe(SENTRY_TOKEN);
+	});
+
+	test("stops with a clear error when the token never appears and does not ask for a second token", async () => {
+		const h = createHarness({
+			page: {
+				urls: [
+					"https://example-org.sentry.io/settings/account/api/auth-tokens/",
+				],
+				domToken: null,
+			},
+			pasted: SENTRY_TOKEN,
+		});
+		let tick = 0;
+		h.deps.now = () => new Date(NOW.getTime() + tick++ * 10_000);
+		await expect(h.run("sentry")).rejects.toThrow(
+			"Sentry did not show the new token",
+		);
+		expect(h.prompts).toEqual([]);
+		expect(h.sets).toEqual([]);
+	});
+
+	test("does not take a 64-character hex string on the page as the token", async () => {
+		const h = createHarness({
+			page: {
+				urls: [
+					"https://example-org.sentry.io/settings/account/api/auth-tokens/",
+				],
+				domToken: null,
+			},
+		});
+		let tick = 0;
+		h.deps.now = () => new Date(NOW.getTime() + tick++ * 10_000);
+		await expect(h.run("sentry")).rejects.toThrow();
+		expect(h.fake.evaluations.every((e) => !e.includes("a-f0-9"))).toBe(true);
+	});
+
+	test("rejects a Sentry site that is not a valid https URL", async () => {
+		for (const site of ["sentry.io", "http://sentry.example.test"]) {
+			const h = createHarness({ pasted: SENTRY_TOKEN });
+			const error = await h
+				.run("sentry", { site, org: "example-org", paste: true })
+				.catch((caught: Error) => caught);
+			expect((error as Error).message).toContain("https");
+			expect((error as Error).name).not.toBe("TypeError");
+			expect(h.requests).toEqual([]);
+			expect(h.sets).toEqual([]);
+		}
 	});
 
 	test("asks for --org when paste mode cannot find the organization", async () => {

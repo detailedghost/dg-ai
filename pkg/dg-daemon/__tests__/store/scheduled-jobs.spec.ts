@@ -347,18 +347,18 @@ describe("ChatStore — feed items", () => {
 			const job = store.insertJob(jobInput());
 
 			const result = store.insertFeedItems(job.id, [
-				{ fingerprint: "JRDEV-812", title: "Quote export times out" },
+				{ fingerprint: "TASK-812", title: "Quote export times out" },
 				{
-					fingerprint: "JRDEV-807",
+					fingerprint: "TASK-807",
 					title: "Sprint carry-over needs an owner",
 					meta: "assigned to you",
-					url: "https://example.invalid/JRDEV-807",
+					url: "https://example.invalid/TASK-807",
 				},
 			]);
 
 			expect(result.inserted.map((entry) => entry.fingerprint)).toEqual([
-				"JRDEV-812",
-				"JRDEV-807",
+				"TASK-812",
+				"TASK-807",
 			]);
 			expect(result.duplicates).toBe(0);
 			expect(store.listFeedItems({ jobId: job.id })).toHaveLength(2);
@@ -374,7 +374,7 @@ describe("ChatStore — feed items", () => {
 			const store = await openStore(dgHome);
 			const job = store.insertJob(jobInput());
 			const first = {
-				fingerprint: "JRDEV-812",
+				fingerprint: "TASK-812",
 				title: "Quote export times out",
 			};
 
@@ -382,10 +382,10 @@ describe("ChatStore — feed items", () => {
 
 			const second = store.insertFeedItems(job.id, [
 				first,
-				{ fingerprint: "JRDEV-900", title: "New one" },
+				{ fingerprint: "TASK-900", title: "New one" },
 			]);
 			expect(second.inserted.map((entry) => entry.fingerprint)).toEqual([
-				"JRDEV-900",
+				"TASK-900",
 			]);
 			expect(second.duplicates).toBe(1);
 
@@ -420,10 +420,10 @@ describe("ChatStore — feed items", () => {
 			const job = store.insertJob(jobInput());
 			store.insertFeedItems(job.id, [
 				{
-					fingerprint: "JRDEV-812",
+					fingerprint: "TASK-812",
 					title: "Quote export times out",
 					meta: "moved to In Review",
-					url: "https://example.invalid/JRDEV-812",
+					url: "https://example.invalid/TASK-812",
 				},
 			]);
 			store.close();
@@ -441,7 +441,7 @@ describe("ChatStore — feed items", () => {
 			const [item] = reopened.listFeedItems({ jobId: job.id });
 			expect(item.title).toBe("Quote export times out");
 			expect(item.meta).toBe("moved to In Review");
-			expect(item.url).toBe("https://example.invalid/JRDEV-812");
+			expect(item.url).toBe("https://example.invalid/TASK-812");
 			reopened.close();
 		} finally {
 			cleanupDgHome(dgHome);
@@ -721,15 +721,15 @@ describe("ChatStore — migration to v8", () => {
 			);
 			before.insertFeedItems(intervalJob.id, [
 				{
-					fingerprint: "JRDEV-1",
+					fingerprint: "TASK-1",
 					title: "Quote export times out",
 					meta: "assigned to you",
-					url: "https://example.invalid/JRDEV-1",
+					url: "https://example.invalid/TASK-1",
 				},
-				{ fingerprint: "JRDEV-2", title: "Bare item" },
+				{ fingerprint: "TASK-2", title: "Bare item" },
 			]);
 			before.insertFeedItems(disabledJob.id, [
-				{ fingerprint: "JRDEV-3", title: "Untouched job's item" },
+				{ fingerprint: "TASK-3", title: "Untouched job's item" },
 			]);
 			before.close();
 
@@ -755,7 +755,7 @@ describe("ChatStore — migration to v8", () => {
 				(item) => item.title === "Quote export times out",
 			);
 			expect(withMeta?.meta).toBe("assigned to you");
-			expect(withMeta?.url).toBe("https://example.invalid/JRDEV-1");
+			expect(withMeta?.url).toBe("https://example.invalid/TASK-1");
 
 			const disabledItems = after.listFeedItems({ jobId: disabledJob.id });
 			expect(disabledItems.map((item) => item.title)).toEqual([

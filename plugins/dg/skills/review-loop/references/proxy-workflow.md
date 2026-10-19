@@ -6,7 +6,7 @@ Active when `-p`/`--proxy <backend>` is passed, or when default mode
 auto-routes here because the provider has no AI review bot (see
 Phase 0 below). No PR, no `gh`, no GitHub Copilot — the reviewer is a
 local `/proxy` backend
-(`codex | copilot | pi | opencode | cortex | grok`) reviewing the current branch's
+(`codex | copilot | pi | opencode | grok`) reviewing the current branch's
 diff. Findings land in a `.agents/code-review/*.md` file and flow
 through `/address`'s existing local-review path (`-l`/`--local`) —
 this workflow does not re-implement triage, fix, QA, commit, or
@@ -23,7 +23,7 @@ add here rather than fork it:
 
 - `-p <backend>` / `--proxy <backend>` → `proxyMode = true`,
   `backend = <backend>`. Reject unknown backends (must be one of
-  `codex`, `copilot`, `pi`, `opencode`, `cortex`, `grok` — same set `/proxy` accepts).
+  `codex`, `copilot`, `pi`, `opencode`, `grok` — same set `/proxy` accepts).
 - `-b <ref>` / `--base <ref>` → `baseOverride = <ref>`. Proxy mode
   only — this includes an auto-routed run, so it still applies with no
   `-p` flag on a provider with no AI review bot. Ignored (with a
@@ -37,7 +37,7 @@ This phase is also reached with no `--proxy` flag at all, when
 [workflow.md](workflow.md) Phase 1's `capabilities` check auto-routes
 here because the provider reports no AI review bot at all. A GitLab
 project uses the Phase 1b bot-review flow only when
-`VCS_GITLAB_AI_REVIEW_BOT` explicitly names a reviewer. Unset, empty, or
+`AI_VCS_GITLAB_REVIEW_BOT` explicitly names a reviewer. Unset, empty, or
 `none` selects this no-bot proxy route. In
 that case `backend` comes from the required
 `REVIEW_LOOP_DEFAULT_PROXY_BACKEND` environment variable instead of
@@ -58,8 +58,10 @@ OUT: `base` (git ref).
 
 1. `baseOverride` set → `base = baseOverride`. Skip to Phase 2.
 2. Otherwise resolve the fork point in this checkout:
-   `base = git merge-base HEAD "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || git rev-parse --abbrev-ref origin/HEAD | sed 's#^origin/##')"`.
-   Fall back to `origin/HEAD` if that fails.
+   `base = git merge-base HEAD "$(git rev-parse --abbrev-ref origin/HEAD)"`.
+   This is the fork point from the remote default branch, so it stays
+   fixed after `/address` pushes round commits. Never use `@{u}` or a
+   local default branch, which can be the branch's own tip or stale.
 3. When the branch was cut from an integration branch, prefer that
    integration branch as `base`, so the review covers exactly what the
    branch added.
@@ -73,7 +75,7 @@ and exit 1.
 IN: `base`.
 OUT: `roundsDone` (int), `maxRounds` (possibly clamped).
 
-1. `roundsDone = $(git log <base>..HEAD --format=%s | grep -c '(review-loop round ')`.
+1. `roundsDone = $(git log <base>..HEAD --format=%s | grep -c '(review-loop round ' || true)`.
    This is the proxy-mode equivalent of default mode's
    `count-copilot-reviews` — round count derived from external state
    (here, git history) rather than tracked separately. The marker is
@@ -100,12 +102,14 @@ OUT: terminal (exits), or loops back to Phase 3 for the next round.
 IN: `base`, `backend`.
 OUT: review file path (may be absent/empty on a dry round).
 
-1. `diff = git diff <base>`. Empty diff → print
+1. `diff = git diff <base> HEAD` (committed work only; uncommitted edits and untracked files are not reviewed). Empty diff → print
    `review-loop: no diff against <base>; nothing to review.` and exit 0
    (nothing was ever committed to review — not a round, not a
    dry-round close-out).
 2. `reviewFile = .agents/code-review/<YYYY-MM-DD-HHMMSS>-<NNN>.md`
-   (same naming convention `/address` Phase 1c already globs for).
+   (same naming convention `/address` Phase 1c already globs for;
+   `<NNN>` is a three-digit sequence that starts at `001` for each
+   timestamp second).
 3. Read [../../proxy/SKILL.md](../../proxy/SKILL.md), then invoke
    `"$DG" proxy <backend> --prompt-file <absolutePromptPath>` using its
    background and result-handling contract. Prompt: see
@@ -149,9 +153,8 @@ OUT: action `close-out` | `act`.
    review-loop: proxy backend found nothing to flag — closing loop.
    ```
 
-2. Delete `reviewFile` if it exists but is empty (avoid leaving a
-   stray empty file for `/address`'s next unrelated `-l` run to trip
-   over).
+2. Delete `reviewFile` if it exists, empty or not (avoid leaving a
+   stray file for `/address`'s next unrelated `-l` run to pick up).
 3. Exit 0. The round counter is not consumed (mirrors default mode's
    no-findings close-out — no `(review-loop round N)` marker gets
    written because `/address` never runs).

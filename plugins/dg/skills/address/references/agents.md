@@ -24,11 +24,13 @@ Inject into every fix-agent prompt:
 
 Agents receive work items as JSON and must return results as JSON — never prose, never files.
 
-- **Phase 2b** (qa-writer): `[{"commentId": N, "tested": bool, "reason": "..."}]`
-- **Phase 2c** (fix agents): `[{"commentId": N, "summary": "one-line what changed"}]`
-- **Phase 3** (QA agents): `[{"file": "path", "line": N, "severity": "critical|high|medium|low", "issue": "..."}]` or `[]` if clean.
+This file is the single schema. `id` is the item's `commentId`, `localId`, `ciId`, or Wiz `findingId`.
 
-This keeps data machine-readable through the entire pipeline. The orchestrator joins results by `commentId` — no text parsing.
+- **Phase 2b** (qa-writer): `[{"id": ID, "tested": bool, "reason": "..."}]`
+- **Phase 2c** (fix agents): `[{"id": ID, "status": "fixed|blocked", "summary": "one-line what changed"}]`
+- **Phase 3** (QA agents): `[{"file": "path", "line": N, "severity": "critical|high|medium|low", "issue": "..."}]` or `[]` if clean. The prompt overrides the persona's own report format; the agent maps its severity labels to these four values.
+
+This keeps data machine-readable through the entire pipeline. The orchestrator joins results by `id` — no text parsing.
 
 ## Agent-Set Selection
 
@@ -39,27 +41,26 @@ See `workflow.md` Phase 1b. Summary:
 
 ## File-Extension Routing (item → agent)
 
-After the agent set is fixed, route each work item to one of the selected agents by path:
+After the agent set is fixed, route each work item to one of the selected agents by path. The first matching row wins, top to bottom:
 
 | Match | Agent |
 |---|---|
+| `*.test.*`, `*.spec.*` | `qa-writer` |
+| `.yml`/`.yaml` under `.github/`, `Dockerfile`, `.tf` | `devops` |
+| `.gitlab-ci.yml` (exact, root-only) | `devops` |
+| `*.md`, `docs/**` | `lore` |
 | `.cs`, `.csproj` | `csharp` |
 | `.tsx`, `.jsx`, `.css` | `js` |
 | `.ts`, `.js`, `.mjs`, `.cjs` | `js` |
 | `.py` | `python` |
 | `.sql`, `.migration` | `dba` |
 | `.sh` | `shell` |
-| `.yml`/`.yaml` under `.github/`, `Dockerfile`, `.tf` | `devops` |
-| `.gitlab-ci.yml` (exact, root-only) | `devops` |
-| `*.test.*`, `*.spec.*` | `qa-writer` |
-| `*.md`, `docs/**` | `lore` |
 
 The `.gitlab-ci.yml` row is an exact filename match at the repo root, not a directory-prefix rule like the `.github/` row above. A relocated config file or one split via `include:` into other files is out of scope — only the root `.gitlab-ci.yml` itself is routed.
 
 Overrides:
 
-- Comment body matches `auth|crypt|secret|token|cve` (case-insensitive) → also assign `security`.
-- File matches both `shell` and `devops` (e.g. `Dockerfile`) → prefer `devops`.
+- Comment body matches `\b(auth|authz|crypto|secret|token|cve)\b` (case-insensitive) → also assign `security`.
 - No matching agent in selected set → route to closest match, else `general-purpose`.
 - Non-overlapping files → run agents in parallel.
 

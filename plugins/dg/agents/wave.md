@@ -24,7 +24,7 @@ You replace separate reviewer + qa-code agent launches during wave cycles. Focus
 - **Dead code:** Unused variables, unreachable branches, commented-out code
 - **Test fakery (blocking):** placeholder/always-true assertions (`expect(true).toBe(true)`), empty test bodies, or a test re-implementing the production logic it claims to test. Full criteria in the `standard-test` skill (`dg:standard-test`) — deep test-quality review is Phase 4, but these are reject-worthy on sight.
 - **Obvious style:** Egregious naming, missing error handling, unclosed resources
-  Skip: performance, deep security audit, test coverage analysis, style nitpicks. Those are Phase 4. (Security gate is handled by the orchestrator via diff pattern matching — you do not need to flag security concerns.)
+- **Skip:** performance, deep security audit, test coverage analysis, style nitpicks. Those are Phase 4. (Security gate is handled by the orchestrator via diff pattern matching — you do not need to flag security concerns.)
 
 ## Output Format
 

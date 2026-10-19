@@ -17,8 +17,8 @@ import {
 } from "../providers/teams-relay";
 import type { ChatEvent, ChatProvider } from "../providers/types";
 import { createAddressWorkspace } from "../address";
-import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { startAutomation } from "../automation/start";
+import { createGrantCredentialSource, resolveSecrets } from "../credentials";
 import { createRunners } from "../runners";
 import { RUNNER_NAMES, type Runner, type RunnerName } from "../runners/types";
 import { createStateStore } from "../state";
@@ -79,6 +79,7 @@ export function buildEngine({
 	log,
 	funPool,
 	platform,
+	onSaveError,
 }: {
 	config: ChannelConfig;
 	provider: ChatProvider;
@@ -89,6 +90,7 @@ export function buildEngine({
 	log: Log;
 	funPool: FunEntry[];
 	platform: PlatformSeam;
+	onSaveError?: (error: unknown) => void;
 }): {
 	engine: Engine;
 	state: ReturnType<typeof createStateStore>;
@@ -99,6 +101,7 @@ export function buildEngine({
 		undefined,
 		undefined,
 		defaultChatId,
+		onSaveError,
 	);
 	const engine = createEngine({
 		provider,
@@ -220,13 +223,17 @@ export async function serve({
 		? { ...config, runner: { ...config.runner, default: overrides.runner } }
 		: config;
 
-	const secrets = await resolveSecrets({
-		envName: env.name,
-		env: seams.env ?? process.env,
-		source: seams.credentials ?? createGrantCredentialSource(),
-	});
-	if (secrets.warning) log.warn(secrets.warning);
-	seams = { ...seams, env: secrets.env };
+	const baseEnv = seams.env ?? process.env;
+	async function refreshSecrets(): Promise<void> {
+		const secrets = await resolveSecrets({
+			envName: env.name,
+			env: baseEnv,
+			source: seams.credentials ?? createGrantCredentialSource(),
+		});
+		if (secrets.warning) log.warn(secrets.warning);
+		seams = { ...seams, env: secrets.env };
+	}
+	await refreshSecrets();
 
 	let connection: Connection;
 	let funPool: FunEntry[];
@@ -255,6 +262,8 @@ export async function serve({
 	const switcher = switchable(connection.provider);
 	const { runners, verdict } = readers(effective, seams, log);
 	let built: ReturnType<typeof buildEngine>;
+	let saveFailed = false;
+	let stopStreamsOnSaveError = () => {};
 	try {
 		built = buildEngine({
 			config: effective,
@@ -266,6 +275,11 @@ export async function serve({
 			log,
 			funPool,
 			platform,
+			onSaveError: (error) => {
+				saveFailed = true;
+				log.error(`state save failed; stopping the daemon: ${describeError(error)}`);
+				stopStreamsOnSaveError();
+			},
 		});
 	} catch (error) {
 		log.error(`state initialization failed: ${describeError(error)}`);
@@ -355,6 +369,7 @@ export async function serve({
 		const stopStreams = () => streams.abort();
 		signal.addEventListener("abort", stopStreams, { once: true });
 		if (signal.aborted) streams.abort();
+		stopStreamsOnSaveError = stopStreams;
 
 		async function pump(chatId: string): Promise<number> {
 			const streamSignal = streams.signal;
@@ -387,6 +402,7 @@ export async function serve({
 						`chat ${chatId}: the relay rejected the secret; fetching a fresh one`,
 					);
 					try {
+						await refreshSecrets();
 						const next = await connect({
 							config,
 							env,
@@ -417,7 +433,7 @@ export async function serve({
 					return status;
 				}),
 			);
-			code = codes.some((status) => status !== 0) ? 1 : 0;
+			code = saveFailed || codes.some((status) => status !== 0) ? 1 : 0;
 		} finally {
 			signal.removeEventListener("abort", stopStreams);
 			stopMaintenance();

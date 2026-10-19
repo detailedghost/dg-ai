@@ -151,6 +151,17 @@ const EMPTY_THREADS = JSON.stringify({
 });
 
 describe("local mode", () => {
+	test("diff prefixes a non-ancestor base warning with thrash", () => {
+		const repo = fixtureRepo();
+		cliFixtures.runGit(["checkout", "-q", "main"], repo);
+		cliFixtures.commitFile(repo, "other.txt", "other\n", "chore: main moves");
+		cliFixtures.runGit(["checkout", "-q", "feature"], repo);
+		const result = run(["diff", "--base", "main", "."], { cwd: repo });
+		expect(result.exitCode).toBe(EXIT.OK);
+		expect(result.stderr).toContain("thrash: warning: --base main");
+		expect(result.stderr).not.toContain("meaningful:");
+	});
+
 	test("diff accepts a file target and an explicit base without including unrelated untracked paths", () => {
 		const repo = fixtureRepo();
 		const result = run(["diff", "--base", "main", "src/a.ts"], { cwd: repo });
@@ -358,7 +369,6 @@ describe("local mode", () => {
 			join(repo, ".agents", "code-review"),
 		);
 		expect(addressFile).toMatch(/\/\d{4}-\d{2}-\d{2}-\d{6}-\d{3}\.md$/);
-		// Local ingestion belongs to the packaged host workflow; address has no --local CLI verb.
 		const workflow = readFileSync(ADDRESS_WORKFLOW, "utf8");
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
@@ -404,9 +414,10 @@ describe("remote mode via the GitHub adapter", () => {
     exit 0
     ;;`),
 		);
-		const diffFixture = join(createdDirs[0], "pr.diff");
+		const inputs = cliFixtures.tmp(createdDirs, "thrash-inputs-");
+		const diffFixture = join(inputs, "pr.diff");
 		writeFileSync(diffFixture, GH_DIFF);
-		const threadsFixture = join(createdDirs[0], "threads.json");
+		const threadsFixture = join(inputs, "threads.json");
 		writeFileSync(threadsFixture, EMPTY_THREADS);
 		const env = {
 			GH_BIN: gh.bin,
@@ -458,7 +469,7 @@ describe("remote mode via the GitHub adapter", () => {
 		expect(compiled.verdict).toBe("request_changes");
 		expect(compiled.addressFile).toBeUndefined();
 
-		const post = run(["post", PR_URL, "--review", compiled.reviewPath], {
+		const post = run(["post", PR_URL, "--review", compiled.reviewPath, "--confirm"], {
 			cwd,
 			env,
 		});
@@ -489,7 +500,6 @@ describe("remote mode via the GitHub adapter", () => {
 			"**Verdict:** Request changes. 1 critical finding found.",
 		);
 
-		// The fake provider exposes the exact body sent by thrash, as a persisted review thread.
 		writeFileSync(
 			threadsFixture,
 			JSON.stringify({
@@ -853,7 +863,7 @@ describe("remote mode via the GitLab adapter", () => {
     echo '{"id":701}'
     ;;
   *"/approve"*)
-    echo 'approval forbidden for this reviewer' >&2
+    echo 'HTTP 403: approval forbidden for this reviewer' >&2
     exit 1
     ;;
   *"api projects/acme%2Fwidgets/merge_requests/12"*)
@@ -893,7 +903,7 @@ describe("remote mode via the GitLab adapter", () => {
 		const compiled = JSON.parse(compile.stdout);
 		expect(compiled.verdict).toBe("approve");
 		expect(compiled.addressFile).toBeUndefined();
-		const post = run(["post", url, "--review", compiled.reviewPath], {
+		const post = run(["post", url, "--review", compiled.reviewPath, "--confirm"], {
 			cwd,
 			env,
 		});
@@ -1047,10 +1057,32 @@ describe("post --dry-run", () => {
 		});
 	}
 
+	test("post refuses an approve or request-changes event without --confirm", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], { cwd, env });
+		expect(post.exitCode).not.toBe(EXIT.OK);
+		expect(post.stderr.toString()).toContain("--confirm");
+		assertNoProviderCall(log, before);
+	});
+
+	test("post sends a comment-only review without --confirm", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const stored = JSON.parse(readFileSync(reviewPath, "utf8"));
+		stored.review.verdict = "comment";
+		writeFileSync(reviewPath, JSON.stringify(stored));
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], { cwd, env });
+		expect(post.stderr.toString()).not.toContain("--confirm");
+		expect(
+			cliFixtures.readCalls(log).slice(before).some((call) => call.includes("/draft_notes")),
+		).toBe(true);
+	});
+
 	test("DG_THRASH_DRY_RUN=0 still posts", () => {
 		const { env, cwd, reviewPath, log } = compiledGitlabReview();
 		const before = cliFixtures.readCalls(log).length;
-		const post = run(["post", url, "--review", reviewPath], {
+		const post = run(["post", url, "--review", reviewPath, "--confirm"], {
 			cwd,
 			env: { ...env, DG_THRASH_DRY_RUN: "0" },
 		});
@@ -1253,8 +1285,11 @@ describe("compiled thrash workflow", () => {
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
 		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/address -l`");
+		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
+			basename(String(entry)),
+		);
 		for (const legacy of ["thrash-helper", "proxy-helper", "address-helper"]) {
-			expect(Bun.which(legacy, { PATH: fixture.bin })).toBeNull();
+			expect(installed).not.toContain(legacy);
 		}
 	});
 
@@ -1307,7 +1342,7 @@ describe("compiled thrash workflow", () => {
 		expect(compile.exitCode, compile.stderr).toBe(EXIT.OK);
 		const review = JSON.parse(compile.stdout);
 		const post = execute(
-			["thrash", "post", target, "--review", review.reviewPath],
+			["thrash", "post", target, "--review", review.reviewPath, "--confirm"],
 			{ env },
 		);
 		expect(post.exitCode, post.stderr).toBe(EXIT.OK);
@@ -1362,11 +1397,11 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_PROXY_CALLS, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 const resumed = args[1] === "resume";
-const prompt = resumed ? args[3] : args[1];
+const prompt = args.at(-1);
 const session = resumed ? JSON.parse(readFileSync(process.env.FAKE_SESSION, "utf8")) : {
   id: "thrash-fixture-session", cwd: process.cwd(), path: prompt.match(/^FINDINGS_PATH: (.+)$/m)?.[1]
 };
-if (!session.path || (resumed && (args[2] !== session.id || process.cwd() !== session.cwd))) process.exit(9);
+if (!session.path || (resumed && (args.at(-2) !== session.id || process.cwd() !== session.cwd))) process.exit(9);
 writeFileSync(process.env.FAKE_SESSION, JSON.stringify(session));
 const report = { changed: "Adds a public value.", strengths: [], opportunities: [], findings: [
   { path: "src/a.ts", line: 3, tier: "high", body: resumed ? "Export the new public value." : "" }
@@ -1467,5 +1502,77 @@ console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_messag
 		expect(output).not.toHaveProperty("missing");
 		expect(fixture.readCalls()).toEqual([]);
 		expect(existsSync(join(fixture.scratch, "proxy"))).toBe(false);
+	});
+});
+
+describe("thrash review hardening", () => {
+	test("diff clears findings left by an earlier run of the same target", () => {
+		const repo = fixtureRepo();
+		const first = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		const stale = findingsFile(first, [
+			{ path: "src/a.ts", line: 2, tier: "critical", body: "Old finding." },
+		]);
+		expect(existsSync(stale)).toBe(true);
+		const second = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		expect(second.chunks[0].findingsPath).toBe(stale);
+		expect(existsSync(stale)).toBe(false);
+		const compiled = run(["compile", ".", "--diff", second.diffPath], { cwd: repo });
+		expect(compiled.exitCode).toBe(EXIT.ERR);
+		expect(compiled.stderr).toContain("has no findings file");
+	});
+
+	test("compile removes a posted file left by an earlier review of the same target", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [{ path: "src/a.ts", line: 2, tier: "low", body: "Rename." }]);
+		const output = JSON.parse(
+			run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo }).stdout,
+		);
+		const posted = output.reviewPath.replace(/\.review\.json$/, ".posted.json");
+		writeFileSync(posted, "{}");
+		const again = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(again.exitCode).toBe(EXIT.OK);
+		expect(existsSync(posted)).toBe(false);
+	});
+
+	test("local diff ignores diff.noprefix and diff.mnemonicPrefix settings", () => {
+		const repo = fixtureRepo();
+		cliFixtures.runGit(["config", "diff.noprefix", "true"], repo);
+		cliFixtures.runGit(["config", "diff.mnemonicPrefix", "true"], repo);
+		const out = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		expect(out.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
+	});
+
+	test("stack accepts --diff before the target", () => {
+		const pulls = [
+			{
+				number: 12,
+				title: "one",
+				html_url: PR_URL,
+				state: "open",
+				head: { ref: "a" },
+				base: { ref: "main" },
+			},
+		];
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"pulls --method GET"*)
+    echo '${JSON.stringify(pulls)}'
+    exit 0
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    exit 0
+    ;;`),
+		);
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const diffFixture = join(cwd, "pr.diff");
+		writeFileSync(diffFixture, GH_DIFF);
+		const result = run(["stack", "--diff", PR_URL], {
+			cwd,
+			env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture },
+		});
+		expect(result.exitCode).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout)[0]).toMatchObject({ number: 12, changed: 3 });
 	});
 });

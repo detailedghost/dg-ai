@@ -4,7 +4,6 @@ import { join, relative } from "node:path";
 import { REPO_ROOT } from "./test-support";
 
 const SKILL_ROOT = join(REPO_ROOT, "plugins", "dg", "skills");
-const STANDALONE = ["kick", "pickup", "prd", "wayfinder", "refactor", "agent-seed", "grill-me"];
 
 /** Commands and files that do not ship with dg. `.agents/spec/` is a directory, not one of these. */
 const UNSHIPPED = [
@@ -32,9 +31,10 @@ function markdownFiles(dir: string): string[] {
 }
 
 describe("planning skills stand alone", () => {
-	test("kick, pickup, prd, wayfinder, refactor, agent-seed, and grill-me do not require unshipped commands", () => {
+	test("no shipped skill requires an unshipped command", () => {
 		const hits: string[] = [];
-		for (const skill of STANDALONE) {
+		const skills = readdirSync(SKILL_ROOT).filter((name) => statSync(join(SKILL_ROOT, name)).isDirectory());
+		for (const skill of skills) {
 			for (const file of markdownFiles(join(SKILL_ROOT, skill))) {
 				const text = readFileSync(file, "utf8");
 				for (const pattern of UNSHIPPED) {
@@ -51,10 +51,10 @@ describe("planning skills stand alone", () => {
 		expect(kick).toContain("status: deferred");
 		expect(kick).toContain("/grill-me");
 		expect(kick).toContain(".agents/spec/");
-		expect(pickup).toContain("status");
+		expect(pickup).toMatch(/status: in-progress/);
 		expect(pickup).toContain("plan.md");
 		expect(pickup).toContain("context.md");
 		expect(pickup).not.toContain("execute.md");
-		expect(kick).not.toContain("plan.md](");
+		expect(kick).not.toMatch(/\]\([^)]*plan\.md[^)]*\)/);
 	});
 });

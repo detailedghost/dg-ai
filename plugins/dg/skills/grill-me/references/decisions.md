@@ -10,12 +10,12 @@ If any gate fails: skip. The Final Summary already captures it; an ADR for an ob
 
 ## Location and Numbering
 
-ADRs live in `.agents/decisions/NNNN-slug.md`. Create the directory if missing.
+ADRs live in `<adr-root>/NNNN-slug.md`. `<adr-root>` is `docs/adr` when that directory exists, and `.agents/decisions` otherwise, because agent-seed ignores `.agents/`. Create the directory if missing. When the root has an index (such as `toc.md`), add a line for the new record.
 
 To pick the next number:
 
 ```sh
-ls .agents/decisions/ 2>/dev/null | grep -E '^[0-9]{4}-' | sort | tail -1
+ls <adr-root>/ 2>/dev/null | grep -E '^[0-9]{4}-' | sort | tail -1
 ```
 
 Increment the leading number, zero-padded to 4 digits. The first ADR is `0001-...`.

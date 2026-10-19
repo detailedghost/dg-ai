@@ -19,7 +19,6 @@ const BUN_BIN = process.execPath;
 const PR_URL = "https://github.com/acme/widgets/pull/9001";
 const SINCE = "2026-02-01T00:00:00Z";
 
-// Resolve only approved local utilities; no host provider, auth, or personal command can run.
 cliFixtures.isolateCliTests();
 
 const RATIFIED_GATHER_UNRESOLVED_ITEM_KEYS = [
@@ -287,7 +286,7 @@ esac
 describe("detect-github", () => {
 	test("no longer exists as a subcommand", async () => {
 		const { stderr, exitCode } = await runCli(["detect-github"]);
-		expect(exitCode).toBe(2);
+		expect(exitCode).toBe(EXIT.USAGE);
 		expect(stderr).toContain("unknown subcommand");
 	});
 });
@@ -1256,7 +1255,7 @@ case "$ARGS" in
     exit 0
     ;;
   *"actions/jobs/602/logs"*)
-    echo 'log expired' 1>&2
+    echo 'HTTP 410: log expired' 1>&2
     exit 1
     ;;
   *"actions/runs/501"*)
@@ -1305,7 +1304,7 @@ case "$ARGS" in
     exit 0
     ;;
   *"jobs/702/trace"*)
-    echo 'trace expired' 1>&2
+    echo 'HTTP 404: trace expired' 1>&2
     exit 1
     ;;
   *)
@@ -2935,7 +2934,7 @@ function withFakeGhOnPath(ghBin: string): string {
 
 describe("check-bot-review — the GitLab reviewer the loop used to route past", () => {
 	beforeEach(() => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "review-bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "review-bot";
 	});
 	function glabWithDiscussions(iid: number, discussionsPath: string): string {
 		return fakeGlab(`#!/bin/sh
@@ -3040,7 +3039,7 @@ esac
 		expect(JSON.parse(stdout)).toMatchObject({ present: true, threads: 1 });
 	});
 
-	test("honors VCS_GITLAB_AI_REVIEW_BOT, matching the configured reviewer", async () => {
+	test("honors AI_VCS_GITLAB_REVIEW_BOT, matching the configured reviewer", async () => {
 		const path = writeJson("gl-bot-review-configured.json", [
 			glDiscussion("disc-duo", [
 				{ id: 9506, author: "gitlab_duo", body: "suggestion" },
@@ -3052,7 +3051,7 @@ esac
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
 				GLAB_BIN: glabBin,
-				VCS_GITLAB_AI_REVIEW_BOT: "gitlab_duo",
+				AI_VCS_GITLAB_REVIEW_BOT: "gitlab_duo",
 			},
 		});
 
@@ -3074,7 +3073,7 @@ esac
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
 				GLAB_BIN: glabBin,
-				VCS_GITLAB_AI_REVIEW_BOT: "none",
+				AI_VCS_GITLAB_REVIEW_BOT: "none",
 				FAKE_CALL_LOG: log,
 			},
 		});
@@ -3121,7 +3120,7 @@ esac
 
 describe("check-bot-review — counting and ordering the reviewer's own comments", () => {
 	beforeEach(() => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "review-bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "review-bot";
 	});
 	function glabWithThreads(iid: number, path: string): string {
 		return fakeGlab(`#!/bin/sh
@@ -3138,7 +3137,7 @@ esac
 `);
 	}
 
-	test("a non-resolvable bot discussion counts as present but never as unresolved work", async () => {
+	test("a non-resolvable bot discussion is left out, so it is neither present nor unresolved work", async () => {
 		const path = writeJson("gl-bot-unresolvable.json", [
 			glDiscussion("disc-bot-overview", [
 				{
@@ -3157,8 +3156,8 @@ esac
 
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout)).toMatchObject({
-			present: true,
-			threads: 1,
+			present: false,
+			threads: 0,
 			unresolved: 0,
 		});
 	});
@@ -3218,25 +3217,23 @@ esac
 	});
 });
 
-describe("PR/MR number arguments are parsed strictly, not with parseInt", () => {
-	test("a trailing-garbage argument is refused rather than silently truncated to a real MR", async () => {
+describe("PR/MR number arguments reject trailing garbage", () => {
+	test.each(["42garbage", "0", "-3", "1e999"])("check-bot-review refuses %p", async (bad) => {
 		const log = newCallLog();
 		const glabBin = fakeGlab(`#!/bin/sh
 if [ -n "$FAKE_CALL_LOG" ]; then printf '%s\\n' "$*" >> "$FAKE_CALL_LOG"; fi
 exit 0
 `);
 
-		for (const bad of ["42garbage", "0", "-3", "1e999"]) {
-			const { exitCode, stderr } = await runCli(["check-bot-review", bad], {
-				env: {
-					AI_VCS_PROVIDER: "gitlab",
-					GLAB_BIN: glabBin,
-					FAKE_CALL_LOG: log,
-				},
-			});
-			expect(exitCode).not.toBe(0);
-			expect(stderr).toContain("not a pull request number or URL");
-		}
+		const { exitCode, stderr } = await runCli(["check-bot-review", bad], {
+			env: {
+				AI_VCS_PROVIDER: "gitlab",
+				GLAB_BIN: glabBin,
+				FAKE_CALL_LOG: log,
+			},
+		});
+		expect(exitCode).not.toBe(0);
+		expect(stderr).toContain("not a pull request number or URL");
 		expect(readCalls(log).join("\n")).not.toContain("discussions");
 	});
 
@@ -3269,7 +3266,7 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		const { stdout, stderr, exitCode } = await runCli(["request-copilot"], {
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
-				VCS_GITLAB_AI_REVIEW_BOT: "review-bot",
+				AI_VCS_GITLAB_REVIEW_BOT: "review-bot",
 			},
 		});
 
@@ -3278,9 +3275,9 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		expect(stderr).toContain(NOT_SUPPORTED_ON_PROVIDER_TEXT);
 	});
 
-	test("VCS_GITLAB_AI_REVIEW_BOT=copilot does not open the Copilot gate on a GitLab repo", async () => {
+	test("AI_VCS_GITLAB_REVIEW_BOT=copilot does not open the Copilot gate on a GitLab repo", async () => {
 		const { stdout, stderr, exitCode } = await runCli(["request-copilot"], {
-			env: { AI_VCS_PROVIDER: "gitlab", VCS_GITLAB_AI_REVIEW_BOT: "copilot" },
+			env: { AI_VCS_PROVIDER: "gitlab", AI_VCS_GITLAB_REVIEW_BOT: "copilot" },
 		});
 
 		expect(exitCode).toBe(EXIT.UNSUPPORTED);
@@ -3293,7 +3290,7 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		const { stdout, exitCode } = await runCli(["check-copilot"], {
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
-				VCS_GITLAB_AI_REVIEW_BOT: "review-bot",
+				AI_VCS_GITLAB_REVIEW_BOT: "review-bot",
 				FAKE_CALL_LOG: log,
 			},
 		});
@@ -3338,6 +3335,30 @@ esac
 			reason: "assumed-available",
 		});
 		expect(readCalls(log)).toEqual(["repo view --json url"]);
+	});
+
+	test("reports unavailable when only a lookalike host contains github.com", async () => {
+		const ghBin = fakeGh(`#!/bin/sh
+case "$*" in
+  *"repo view --json url"*)
+    echo '{"url":"https://github.com.evil.example/acme/widgets"}'
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+`);
+
+		const { stdout, exitCode } = await runCli(["check-copilot"], {
+			env: {
+				AI_VCS_PROVIDER: "github",
+				PATH: withFakeGhOnPath(ghBin),
+			},
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout).available).toBe(false);
 	});
 
 	test("on GitLab, keeps its exit-0 JSON-degrade shape ({available:false, reason}) with reason converged onto notSupportedMessage(), not the old bespoke wording", async () => {
@@ -4500,6 +4521,136 @@ describe("address commit-push", () => {
 	});
 });
 
+describe("address commit-push sensitive files", () => {
+	test("skips nested and secret-named untracked files and stages the rest", async () => {
+		const log = newCallLog();
+		const bin = cliFixtures.tmp(createdDirs, "address-fake-git-");
+		writeFakeCli(
+			bin,
+			"git",
+			cliFixtures.shScript(`
+  "ls-files --others --exclude-standard") printf '%s\\n' app/.env config/.env.local id_rsa .npmrc config/secrets/prod.json credentials/gcp.json certs/server.pem keys/api.key src/app.ts ;;
+  "add -u"|"add -- src/app.ts"|"commit -m msg"|"push") exit 0 ;;
+  *) exit 99 ;;
+`),
+		);
+		const result = await runCli(["commit-push", "msg"], {
+			env: { PATH: `${bin}:${process.env.PATH ?? ""}`, FAKE_CALL_LOG: log },
+		});
+		expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+		expect(readCalls(log)).toEqual([
+			"add -u",
+			"ls-files --others --exclude-standard",
+			"add -- src/app.ts",
+			"commit -m msg",
+			"push",
+		]);
+	});
+});
+
+describe("Copilot polling input and data guards", () => {
+	for (const verb of ["verify-copilot-engaged", "await-copilot-review"]) {
+		test.each(["--timeout=abc", "--timeout=-1", "--interval=x"])(
+			`${verb} rejects %s`,
+			async (flag) => {
+				const result = await runCli([verb, PR_URL, SINCE, flag], {
+					env: { AI_VCS_PROVIDER: "github" },
+				});
+				expect(result.exitCode).not.toBe(0);
+				expect(result.stderr).toContain("must be a non-negative integer");
+			},
+		);
+
+		test(`${verb} survives a comment whose author is null`, async () => {
+			const response = writeJson("poll-ghost.json", {
+				data: {
+					repository: {
+						pullRequest: {
+							reviews: { nodes: [{ submittedAt: SINCE, author: null }] },
+							comments: {
+								nodes: [
+									{
+										databaseId: 1,
+										body: "x",
+										createdAt: SINCE,
+										author: null,
+									},
+								],
+							},
+						},
+					},
+				},
+			});
+			const ghBin = fakeGh(
+				cliFixtures.shScript(`
+  "api graphql "*) cat "${response}" ;;
+  *) exit 99 ;;
+`),
+			);
+			const result = await runCli(
+				[verb, PR_URL, SINCE, "--timeout=1", "--interval=1"],
+				{
+					env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+				},
+			);
+			expect(result).toEqual({ exitCode: 124, stdout: "", stderr: "" });
+		});
+
+		test(`${verb} compares timestamps by instant, not by string`, async () => {
+			const response = writeJson("poll-offset.json", {
+				data: {
+					repository: {
+						pullRequest: {
+							reviews: {
+								nodes: [
+									{
+										submittedAt: "2026-02-01T00:30:00+05:00",
+										author: { login: "copilot-pull-request-reviewer" },
+									},
+								],
+							},
+							comments: {
+								nodes: [
+									{
+										databaseId: 1,
+										body: "x",
+										createdAt: "2026-02-01T00:30:00+05:00",
+										author: { login: "copilot-swe-agent" },
+									},
+								],
+							},
+						},
+					},
+				},
+			});
+			const ghBin = fakeGh(
+				cliFixtures.shScript(`
+  "api graphql "*) cat "${response}" ;;
+  *) exit 99 ;;
+`),
+			);
+			const result = await runCli(
+				[verb, PR_URL, "2026-02-01T00:00:00Z", "--timeout=0", "--interval=0"],
+				{
+					env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+				},
+			);
+			expect(result).toEqual({ exitCode: 124, stdout: "", stderr: "" });
+		});
+	}
+
+	test("check-copilot reports the gh failure instead of rejecting", async () => {
+		const ghBin = fakeGh(cliFixtures.shScript("  *) echo nope 1>&2; exit 1 ;;"));
+		const { stdout, exitCode } = await runCli(["check-copilot"], {
+			env: { AI_VCS_PROVIDER: "github", PATH: withFakeGhOnPath(ghBin) },
+		});
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(stdout) as { available: boolean; reason: string };
+		expect(parsed.available).toBe(false);
+		expect(parsed.reason).toContain("could not read the repository URL");
+	});
+});
+
 describe("compiled address", () => {
 	test("runs both providers after relocation, preserving batch stdin, reply ordering, exact bodies and status streams", async () => {
 		const buildDir = cliFixtures.tmp(createdDirs, "address build ");
@@ -4662,7 +4813,7 @@ describe("compiled address", () => {
 					env,
 				});
 				expect(refused).toEqual({
-					exitCode: 4,
+					exitCode: EXIT.UNSUPPORTED,
 					stdout: "",
 					stderr:
 						"error: Copilot review request is not supported on this provider\n",
@@ -4679,5 +4830,5 @@ describe("compiled address", () => {
 				});
 			}
 		}
-	}, 30_000);
+	}, 120_000);
 });

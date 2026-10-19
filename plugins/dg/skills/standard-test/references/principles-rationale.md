@@ -18,7 +18,7 @@ Hand-built objects repeated across files drift individually; a single factory wi
 
 ## 4. Test through the module's interface, not its internals
 
-Tests that reach into private state couple to implementation. A pure refactor — same behaviour, different internals — should never break a test.
+Tests that reach into private state couple to implementation. A pure refactor — same behavior, different internals — should never break a test.
 
 ## 5. Share setup; don't copy-paste it
 
@@ -30,7 +30,7 @@ Hardcoding the formatter's output in the test silently duplicates it. When the f
 
 ## 7. Red is local-only — never commit a failing test
 
-"Document a bug by asserting the buggy output" makes a passing test that locks in wrong behaviour and reads as correct. A *red* test instead asserts the desired behaviour and fails until you fix the code — but it is a local TDD waystation, not a committed artifact. Committing a known-failing (or CI-excluded) test rots the signal: the channel fills with expected failures and no one notices a *new* one.
+"Document a bug by asserting the buggy output" makes a passing test that locks in wrong behavior and reads as correct. A *red* test instead asserts the desired behavior and fails until you fix the code — but it is a local TDD waystation, not a committed artifact. Committing a known-failing (or CI-excluded) test rots the signal: the channel fills with expected failures and no one notices a *new* one.
 
 ## 8. Name tests after the code under test, not the plan
 

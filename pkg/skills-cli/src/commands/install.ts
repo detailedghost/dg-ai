@@ -17,8 +17,9 @@ import {
 	rmSync,
 	statSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { run } from "@dg/common/node";
+import { personasDest, run, skillsInstallDest } from "@dg/common/node";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -43,6 +44,7 @@ import {
 	versionGte,
 	writeMarkerEntry,
 } from "../utils/lib";
+import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 
 function copyDir(src: string, dest: string): void {
@@ -225,7 +227,12 @@ async function installSkillsCli(): Promise<void> {
 async function installCliOnly(): Promise<void> {
 	const releases = await listReleases();
 	await installBinary(BINARIES[0], releases);
+	const skillsDest = skillsInstallDest(process.env, homedir());
+	const personas = installPackagedPersonas(skillsDest);
 	setCliOnly(true);
+	console.log(
+		`Installed ${personas.length} personas at ${personasDest(skillsDest)}.`,
+	);
 	console.log(
 		'CLI-only install: the extension, dg-daemon and dg-agent were skipped. Run "dg-skills install" to add them.',
 	);

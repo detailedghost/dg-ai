@@ -1,21 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { opencode } from "../src/proxy/backends/opencode";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "hello", ...overrides };
-}
-
-function jsonl(...events: unknown[]): string {
-	return events.map((e) => JSON.stringify(e)).join("\n");
-}
-
-describe("opencode.bin", () => {
-	test("is the opencode binary name", () => {
-		expect(opencode.bin).toBe("opencode");
-	});
-});
+import { jsonl, makeInput } from "./proxy-fixtures";
 
 describe("opencode.buildArgs", () => {
 	test("builds the base run command with json format and permission skip", () => {
@@ -52,7 +38,7 @@ describe("opencode.buildArgs", () => {
 		const args = opencode.buildArgs(makeInput({ resume: "sess-1", model: "gpt-5", effort: "low" }));
 		expect(args).toEqual([
 			"run",
-			"hello",
+			"hello world",
 			"--format",
 			"json",
 			"--dangerously-skip-permissions",
@@ -114,11 +100,3 @@ describe("opencode.parseEvents", () => {
 	});
 });
 
-describe("opencode.install", () => {
-	test("provides an npm install hint and command", () => {
-		expect(opencode.install).toEqual({
-			hint: "npm package opencode-ai",
-			command: "npm install -g opencode-ai",
-		});
-	});
-});

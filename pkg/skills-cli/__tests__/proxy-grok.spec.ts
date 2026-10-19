@@ -1,28 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { grok } from "../src/proxy/backends/grok";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "hello", ...overrides };
-}
-
-function jsonl(...events: unknown[]): string {
-	return events.map((e) => JSON.stringify(e)).join("\n");
-}
-
-describe("grok.bin", () => {
-	test("is the grok binary name", () => {
-		expect(grok.bin).toBe("grok");
-	});
-});
-
-describe("grok.install", () => {
-	test("points at the Grok Build installer", () => {
-		expect(grok.install.hint).toContain("Grok Build");
-		expect(grok.install.command).toContain("https://x.ai/cli/install.sh");
-	});
-});
+import { jsonl, makeInput } from "./proxy-fixtures";
 
 describe("grok.buildArgs", () => {
 	test("builds a headless streaming run that auto-approves tools", () => {
@@ -40,7 +19,7 @@ describe("grok.buildArgs", () => {
 		const args = grok.buildArgs(makeInput({ resume: "sess-1", model: "grok-4.7", effort: "high" }));
 		expect(args).toEqual([
 			"-p",
-			"hello",
+			"hello world",
 			"--output-format",
 			"streaming-json",
 			"--yolo",

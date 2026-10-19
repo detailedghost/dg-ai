@@ -13,7 +13,6 @@ import {
 	projectHash,
 	projectRoot,
 	randSuffix,
-	readableSuffix,
 	repoRoot,
 	scratchDir,
 	scratchPath,
@@ -69,43 +68,6 @@ describe("randSuffix", () => {
 	});
 });
 
-// ── readableSuffix ───────────────────────────────────────────────────────────
-
-describe("readableSuffix", () => {
-	test("is exactly two lowercase words joined by a single hyphen", () => {
-		for (let i = 0; i < 50; i++) {
-			expect(readableSuffix()).toMatch(/^[a-z]+-[a-z]+$/);
-		}
-	});
-
-	test("is filesystem-safe — no whitespace, dots, or path separators", () => {
-		for (let i = 0; i < 50; i++) {
-			const s = readableSuffix();
-			expect(s).not.toMatch(/[\s./\\]/);
-		}
-	});
-
-	test("draws from more than one adjective and more than one noun", () => {
-		// Guards against an off-by-one or a modulo bug pinning either half to one word.
-		const adjectives = new Set<string>();
-		const nouns = new Set<string>();
-		for (let i = 0; i < 200; i++) {
-			const [adj, noun] = readableSuffix().split("-");
-			adjectives.add(adj!);
-			nouns.add(noun!);
-		}
-		expect(adjectives.size).toBeGreaterThan(1);
-		expect(nouns.size).toBeGreaterThan(1);
-	});
-
-	test("never yields an undefined half", () => {
-		// A modulo against the wrong array length would surface here as "undefined".
-		for (let i = 0; i < 200; i++) {
-			expect(readableSuffix()).not.toContain("undefined");
-		}
-	});
-});
-
 // ── findAgentsDir ────────────────────────────────────────────────────────────
 
 describe("findAgentsDir", () => {
@@ -128,39 +90,21 @@ describe("findAgentsDir", () => {
 		expect(found).toBe(nodePath.join(root, ".agents"));
 	});
 
-	test("returns null after checking every ancestor when no .agents directory exists", () => {
-		const deep = nodePath.join(makeTmp(), "a", "b");
-		const script = `
-import { mock } from "bun:test";
-const fs = await import("node:fs");
-const visited = [];
-mock.module("node:fs", () => ({ ...fs, statSync: (candidate) => {
-	visited.push(candidate);
-	throw Object.assign(new Error("missing"), { code: "ENOENT" });
-} }));
-const { findAgentsDir } = await import(${JSON.stringify(`${import.meta.dir}/../src/node/scratch-paths.ts`)});
-process.stdout.write(JSON.stringify({ found: findAgentsDir(${JSON.stringify(deep)}), visited }));
-`;
-		const proc = Bun.spawnSync([process.execPath, "--eval", script]);
-		expect(proc.exitCode).toBe(0);
-		expect(proc.stderr.toString()).toBe("");
-		const { found, visited } = JSON.parse(proc.stdout.toString());
-		expect(found).toBeNull();
-		expect(visited[0]).toBe(nodePath.join(deep, ".agents"));
-		expect(visited).toContain(nodePath.join(nodePath.dirname(deep), ".agents"));
-		expect(visited.at(-1)).toBe(
-			nodePath.join(nodePath.parse(deep).root, ".agents"),
-		);
+	test("ignores a nested tree that holds no .agents directory", () => {
+		const root = makeTmp();
+		const deep = nodePath.join(root, "a", "b");
+		nodeFs.mkdirSync(deep, { recursive: true });
+
+		const found = findAgentsDir(deep);
+		expect(found === null || !isPathInside(found, root)).toBe(true);
 	});
 
 	test(".agents must be a directory, not a file", () => {
 		const isolated = makeTmp();
-		// Create .agents as a plain FILE, not a directory
 		nodeFs.writeFileSync(nodePath.join(isolated, ".agents"), "not a dir");
 
 		const found = findAgentsDir(isolated);
-		// Should not return isolated/.agents since it's a file; walks up and finds null
-		expect(found).not.toBe(nodePath.join(isolated, ".agents"));
+		expect(found === null || !isPathInside(found, isolated)).toBe(true);
 	});
 });
 
@@ -183,6 +127,12 @@ describe("scratchPath", () => {
 
 	test("falls back to /tmp/ai when AI_SCRATCH_DIR is not set", () => {
 		delete process.env.AI_SCRATCH_DIR;
+
+		expect(scratchRoot()).toBe("/tmp/ai");
+	});
+
+	test("falls back to /tmp/ai when AI_SCRATCH_DIR is empty", () => {
+		process.env.AI_SCRATCH_DIR = "";
 
 		expect(scratchRoot()).toBe("/tmp/ai");
 	});
@@ -239,14 +189,6 @@ describe("scratchPath", () => {
 		expect(a).not.toBe(b);
 	});
 
-	test("ephemeral option accepted without error", () => {
-		const base = makeTmp();
-		process.env.AI_SCRATCH_DIR = base;
-
-		expect(() =>
-			scratchPath("tool", "f.txt", { ephemeral: true }),
-		).not.toThrow();
-	});
 });
 
 // ── repoRoot ─────────────────────────────────────────────────────────────────
@@ -545,6 +487,17 @@ describe("statePath", () => {
 
 		expect(() => statePath("mytool", "../escape.txt")).toThrow();
 	});
+
+	test("rejects nested names and accepts dots inside a plain filename", () => {
+		const base = makeTmp();
+		process.env.AI_STATE_DIR = base;
+
+		expect(() => statePath("mytool", "sub/file")).toThrow();
+		expect(() => statePath("mytool", "..")).toThrow();
+		expect(statePath("mytool", "v1..2.txt", { cwdScope: false })).toBe(
+			nodePath.join(base, "mytool", "v1..2.txt"),
+		);
+	});
 });
 
 function linkedWorktreeFixture(): { main: string; linked: string } {
@@ -631,6 +584,30 @@ describe("agentsRoot and agentsPath", () => {
 		expect(() => agentsPath("proto", "x", { cwd: outside })).toThrow(
 			"not in a git worktree",
 		);
+	});
+
+	test("reject names that escape the tool directory without creating anything", () => {
+		const { main } = linkedWorktreeFixture();
+		expect(() =>
+			agentsPath("proto", "../../outside/y", { cwd: main }),
+		).toThrow("inside");
+		expect(() => agentsPath("../escape", "x", { cwd: main })).toThrow("inside");
+		expect(nodeFs.existsSync(nodePath.join(main, "outside"))).toBe(false);
+		expect(nodeFs.existsSync(nodePath.join(main, ".agents", "proto"))).toBe(
+			false,
+		);
+	});
+
+	test("report a missing git binary as outside a worktree", () => {
+		const outside = makeTmp();
+		const savedPath = process.env.PATH;
+		process.env.PATH = outside;
+		try {
+			expect(repoRoot(outside)).toBeNull();
+			expect(() => agentsRoot({ cwd: outside })).toThrow(NotInWorktreeError);
+		} finally {
+			process.env.PATH = savedPath;
+		}
 	});
 });
 

@@ -59,6 +59,8 @@ test("Claude exhaustion retries with Codex when it is the configured fallback an
 	expect(h.provider.dms).toHaveLength(0);
 	expect(h.replies()[0]).toMatchObject({ html: true });
 	expect(h.replies()[0]?.text).toContain('itemid="m1"');
+	expect(h.replies()[0]?.text).toContain(`<p>${PR_URL}</p>`);
+	expect(h.replies()[0]?.text).not.toContain("$review");
 	expect(h.replies()[0]?.text).toContain(
 		"Claude is out of tokens, so I'm using Codex for this review.",
 	);
@@ -241,4 +243,26 @@ test("explicit Grok exhaustion does not retry with another runner", async () => 
 	expect(h.runners.claude.runs).toHaveLength(0);
 	expect(h.runners.codex.runs).toHaveLength(0);
 	expect(h.replies().at(-1)?.text).toBe(replyText("CR-207", { agent: "grok" }));
+});
+
+test("ignores a usage-limit match on a clean exit when a verdict was posted", async () => {
+	const h = setup({ runnerScript: () => ({ ...OK_RESULT, status: 0, code: "CR-207" }) });
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.runners.codex.runs).toHaveLength(0);
+	expect(h.state.get().handled.m1?.status).toBe("done");
+	expect(h.trail("m1").at(-1)).toBe("+approved");
+	expect(h.replies().map((r) => r.text)).not.toContain(replyText("CR-207", { agent: "claude" }));
+});
+
+test("keeps a clean-exit usage-limit match when no verdict was posted", async () => {
+	const h = setup({
+		runnerScript: () => ({ ...OK_RESULT, status: 0, code: "CR-207" }),
+		verdictScript: () => "none",
+		configExtra: { runner: { fallback: null } },
+	});
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.state.get().handled.m1?.status).toBe("failed");
+	expect(h.replies().at(-1)?.text).toBe(replyText("CR-207", { agent: "claude" }));
 });

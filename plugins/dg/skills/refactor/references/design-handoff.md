@@ -2,7 +2,7 @@
 
 Covers the design conversation template, hand-off mechanics, and rules. Load after the candidate gate (Step 4).
 
-______________________________________________________________________
+---
 
 ## §4 — Design Conversation
 
@@ -20,7 +20,7 @@ During the conversation:
 
 **GATE:** Final Summary produced (purpose, deepened-module shape, dependency strategy, test plan, migration steps). User confirmed.
 
-______________________________________________________________________
+---
 
 ## §5 — Hand-off
 
@@ -30,12 +30,12 @@ Write design summary to `$("$DG" stash -s refactor <slug>.md)`, then ask via `As
 
 | Option | Effect |
 |---|---|
-| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug>`. The design summary is the request. Engineering waits. Print: `"Refactor design at $("$DG" stash -s refactor <slug>.md). Run /kick to park the build."` |
+| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug> --from $("$DG" stash -s refactor <slug>.md)`. The design summary file is the request. Engineering waits. |
 | **Just print the design** | Echo the summary path. No bundle, no commit. The user picks it up later. |
 
 **GATE:** Hand-off path printed; design summary file exists at `$("$DG" stash -s refactor <slug>.md)`.
 
-______________________________________________________________________
+---
 
 ## Rules
 

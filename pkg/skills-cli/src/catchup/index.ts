@@ -9,6 +9,19 @@ class GitFailure extends Error {
 	}
 }
 
+async function resolveUpstream(
+	capture: (args: string[]) => Promise<{ status: number; stdout: string }>,
+	branch: string,
+): Promise<{ remote: string; ref: string } | null> {
+	const read = async (key: string) => {
+		const result = await capture(["config", "--get", `branch.${branch}.${key}`]);
+		return result.status === 0 ? result.stdout.trim() : "";
+	};
+	const remote = await read("remote");
+	const ref = await read("merge");
+	return remote && ref ? { remote, ref } : null;
+}
+
 /** Run the catchup workflow; imports and help never inspect the working tree. */
 export async function main(argv: string[]): Promise<number> {
 	let push = true;
@@ -22,7 +35,7 @@ export async function main(argv: string[]): Promise<number> {
 		if (arg === "--push") push = true;
 		else if (arg === "--no-push") push = false;
 		else {
-			console.log(`Unknown flag: ${arg}`);
+			process.stderr.write(`Unknown flag: ${arg}\n`);
 			return 1;
 		}
 	}
@@ -51,15 +64,20 @@ export async function main(argv: string[]): Promise<number> {
 	let stashed = false;
 	const restore = async () => {
 		console.log("==> Restoring stash...");
-		return native(["stash", "pop"]);
+		const status = await native(["stash", "pop"]);
+		if (status === 0) stashed = false;
+		return status;
 	};
 	try {
 		const before = await query(["rev-parse", "HEAD"]);
 		const branch = await query(["branch", "--show-current"]);
-		if (
-			(await capture(["diff", "--quiet", "HEAD"])).status !== 0 ||
-			(await capture(["diff", "--cached", "--quiet"])).status !== 0
-		) {
+		if (!branch) {
+			process.stderr.write(
+				"catchup: HEAD is detached; check out a branch first.\n",
+			);
+			return 1;
+		}
+		if ((await capture(["diff", "--quiet", "HEAD"])).status !== 0) {
 			console.log("==> Stashing uncommitted changes...");
 			await checked(["stash", "push", "-m", "catchup-auto-stash"]);
 			stashed = true;
@@ -126,25 +144,27 @@ export async function main(argv: string[]): Promise<number> {
 		const after = await query(["rev-parse", "HEAD"]);
 		let reason = "";
 		let pushed = "NO";
-		const blocked = protectedPushReason(branch, base);
+		const upstream = await resolveUpstream(capture, branch);
+		const blocked = protectedPushReason(
+			upstream?.ref.replace(/^refs\/heads\//, "") ?? branch,
+			base,
+		);
 		if (!push) reason = "--no-push flag set";
 		else if (blocked) reason = blocked;
 		else if (before === after)
 			reason = "rebase did not rewrite history (HEAD unchanged)";
-		else if (
-			(
-				await capture([
-					"rev-parse",
-					"--abbrev-ref",
-					"--symbolic-full-name",
-					`${branch}@{upstream}`,
-				])
-			).status !== 0
-		)
+		else if (!upstream)
 			reason = `no upstream configured for '${branch}'`;
 		else {
 			console.log(`==> Pushing '${branch}' with --force-with-lease...`);
-			if ((await native(["push", "--force-with-lease"])) !== 0) {
+			if (
+				(await native([
+					"push",
+					"--force-with-lease",
+					upstream.remote,
+					`HEAD:${upstream.ref}`,
+				])) !== 0
+			) {
 				console.log(
 					"\n==> PUSH FAILED. The remote may have moved since you last fetched,\n    or --force-with-lease refused to overwrite unexpected commits.\n    Your local rebase succeeded; inspect 'git status' and\n    'git log @{upstream}..HEAD' before retrying manually.",
 				);
@@ -160,5 +180,10 @@ export async function main(argv: string[]): Promise<number> {
 	} catch (error) {
 		if (error instanceof GitFailure) return error.status;
 		throw error;
+	} finally {
+		if (stashed)
+			process.stderr.write(
+				"catchup: your uncommitted changes are in the stash 'catchup-auto-stash'; run 'git stash pop' to restore them.\n",
+			);
 	}
 }

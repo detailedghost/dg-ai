@@ -1,3 +1,4 @@
+import { parseJsonLines } from "./json-lines";
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
 /** Backend adapter for GitHub Copilot CLI (`copilot`), driven non-interactively via `-p` + JSON output. */
@@ -16,14 +17,7 @@ export const copilot: Backend = {
 		let sessionId: string | null = null;
 		let message = "";
 
-		for (const line of stdout.split("\n")) {
-			if (!line.trim()) continue;
-			let event: any;
-			try {
-				event = JSON.parse(line);
-			} catch {
-				continue;
-			}
+		for (const event of parseJsonLines(stdout)) {
 
 			if (event.type === "assistant.message") {
 				message = event.data?.content ?? message;

@@ -28,7 +28,9 @@ afterEach(() => {
 	for (const pid of strayPids.splice(0)) {
 		try {
 			process.kill(pid, "SIGKILL");
-		} catch {}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+		}
 	}
 	rmSync(dir, { recursive: true, force: true });
 });
@@ -432,6 +434,7 @@ setInterval(() => {}, 1000);
 		});
 		const result = await runProcess(req);
 		expect(result.timedOut).toBe(true);
+		expect(result.signal).toBe("SIGKILL");
 		expect(kills).toContainEqual([-pid, "SIGKILL"]);
 	});
 

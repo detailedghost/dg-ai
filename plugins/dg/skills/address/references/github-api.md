@@ -5,7 +5,7 @@
 ## Get Current PR
 
 ```sh
-gh pr view --json number,headRefName,url,repository
+gh pr view --json number,headRefName,url
 ```
 
 Extract owner/repo:
@@ -27,7 +27,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
         nodes {
           id
           isResolved
-          comments(first:10) {
+          comments(first:50) {
             nodes { id databaseId body path line diffHunk author{login} }
           }
         }

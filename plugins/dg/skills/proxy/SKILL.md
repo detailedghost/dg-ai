@@ -1,6 +1,6 @@
 ---
 name: proxy
-description: Delegate a coding task to an installed CLI agent (codex, copilot, pi, opencode, cortex, or grok), with persona, resume, and background support.
+description: Delegate a coding task to an installed CLI agent (codex, copilot, pi, opencode, or grok), with persona, resume, and background support.
 ---
 
 # Proxy
@@ -14,7 +14,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -22,8 +22,10 @@ fi
 Run the backend in the caller's native background task when that facility exists:
 
 ```bash
-"$DG" proxy <backend> --prompt "<task>" [flags]
+"$DG" proxy <backend> --prompt-file "<task-file>" [flags]
 ```
+
+Write the task to the file first, so quotes, `$`, and backticks in it never reach the shell.
 
 For a terminal or caller without native background tasks, prepare a plan:
 
@@ -38,13 +40,15 @@ This writes the fully briefed prompt and prints JSON containing the exact quoted
 "$DG" proxy background list
 ```
 
-Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern.
+Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
+
+The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `status` reports the job as `unknown`, and `cancel` returns `no-pid` without signaling any process.
 
 ## Flags
 
 | Flag | Behavior |
 |---|---|
-| `--list-backends` | List all six registered backend identities without running one |
+| `--list-backends` | List all five registered backend identities without running one |
 | `--prompt` | Supply the task directly; takes precedence over `--prompt-file` |
 | `--prompt-file` | Read the task from a file, keeping large prompts out of argv |
 | `--model` | Override the backend model |

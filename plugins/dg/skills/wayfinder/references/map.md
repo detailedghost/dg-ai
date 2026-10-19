@@ -6,7 +6,7 @@
 2. **Map the frontier.** Grill again, breadth first. Surface open decisions and first takeable steps. Self-serve from the code and docs. If no fog appears and one session can hold it, write no map. Ask the user to choose `/kick` or `/grill-me`.
 3. **Create the map.** `"$DG" stash -m wayfinder <slug>/map.md`. Fill Destination and Notes. Leave Decisions empty. Sketch fog.
 4. **Create sharp tickets** in `tickets/`. Number them `NNN-<slug>.md`. Set `blocked_by` in a second pass, after all files exist.
-5. **Research tickets.** Show the cost estimate when there are 3 or more. Then run one `sonnet` subagent per `research` ticket (see work.md). Each writes findings to its own ticket file.
+5. **Research tickets.** Show the cost estimate when there are 3 or more. Then run one `sonnet` subagent per `research` ticket (see work.md). Each subagent returns facts and writes no file. The main loop records each result under `## Resolution`, closes the ticket, and updates **Decisions so far**.
 6. **Stop.** Charting is one session. It resolves no ticket except research.
 
 ## map.md
@@ -39,7 +39,7 @@ Open tickets are not listed in the map. Find them by their frontmatter.
 type: research | prototype | grilling | task
 status: open | closed
 blocked_by: [NNN, NNN]
-claimed: <session id or empty>
+claimed: <session id and ISO timestamp, or empty>
 ---
 # <ticket title>
 
@@ -61,4 +61,4 @@ claimed: <session id or empty>
 
 ## Frontier query
 
-Frontier = `status: open`, empty `claimed`, and every `blocked_by` ticket is `closed`. Read the frontmatter with `rg -n '^(status|claimed|blocked_by):' <map dir>/tickets`.
+Frontier = `status: open`, every `blocked_by` ticket is `closed`, and `claimed` is empty or older than 24 hours. Read only the frontmatter with `rg -n -m3 '^(status|claimed|blocked_by):' <map dir>/tickets`. The `-m3` stops each file after its three frontmatter keys, so a `## Resolution` line cannot match.

@@ -1,3 +1,4 @@
+import { parseJsonLines } from "./json-lines";
 import type { Backend, BuildArgsInput, ParsedResult } from "./types";
 
 /**
@@ -19,14 +20,7 @@ export const pi: Backend = {
 		let sessionId: string | null = null;
 		let message = "";
 
-		for (const line of stdout.split("\n")) {
-			if (!line.trim()) continue;
-			let event: any;
-			try {
-				event = JSON.parse(line);
-			} catch {
-				continue;
-			}
+		for (const event of parseJsonLines(stdout)) {
 
 			if (event.type === "session" && sessionId === null) {
 				sessionId = event.id ?? null;

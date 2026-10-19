@@ -1,23 +1,10 @@
-import { defineCommand, EXIT } from "../utils/legacy-command";
 import { getProvider } from "../provider/index";
 import { type Issue, type ProviderKind, parseRepoRef, type RepoRef } from "../provider/types";
+import { defineCommand, EXIT } from "../utils/legacy-command";
+import { optionalOption, requireOption } from "../utils/options";
 
 function printJson(value: unknown): void {
 	process.stdout.write(`${JSON.stringify(value)}\n`);
-}
-
-function optionalOption(args: string[], name: string): string | undefined {
-	const index = args.indexOf(name);
-	if (index === -1) return undefined;
-	const value = args[index + 1];
-	if (!value) throw new Error(`${name} requires a value`);
-	return value;
-}
-
-function requireOption(args: string[], name: string): string {
-	const value = optionalOption(args, name);
-	if (value === undefined) throw new Error(`${name} requires a value`);
-	return value;
 }
 
 /** Gathers every occurrence of a repeatable flag, e.g. `--label bug --label triage` -> ["bug", "triage"]. */
@@ -57,7 +44,7 @@ function parseProviderOption(args: string[]): ProviderKind | undefined {
 }
 
 function requireNumberArg(args: string[], commandName: string): number {
-	const value = Number(args[0]);
+	const value = Number(positionals(args)[0]);
 	if (!Number.isInteger(value) || value < 1) throw new Error(`${commandName} requires a positive issue number`);
 	return value;
 }
@@ -84,7 +71,7 @@ async function cmdCreate(args: string[]): Promise<number> {
  * both, so this is a fan-out grouping, not a partition. Unlabeled issues collect under "_unlabeled".
  */
 function groupByLabel(issues: Issue[]): Record<string, Issue[]> {
-	const buckets: Record<string, Issue[]> = {};
+	const buckets: Record<string, Issue[]> = Object.create(null);
 	for (const issue of issues) {
 		const labels = issue.labels.length ? issue.labels : ["_unlabeled"];
 		for (const label of labels) {
@@ -114,8 +101,8 @@ async function cmdView(args: string[]): Promise<number> {
 	return EXIT.OK;
 }
 
-/** Strips bucket's own flags, leaving `<label> <number> [<number>...]` as plain positionals. */
-function bucketPositionals(args: string[]): string[] {
+/** Strips the shared and bucket flags, leaving plain positionals. */
+function positionals(args: string[]): string[] {
 	const out: string[] = [];
 	for (let i = 0; i < args.length; i++) {
 		const a = args[i];
@@ -132,7 +119,7 @@ function bucketPositionals(args: string[]): string[] {
 async function cmdBucket(args: string[]): Promise<number> {
 	const provider = await getProvider(parseProviderOption(args));
 	const repo = parseRepoOption(args);
-	const [label, ...numberStrs] = bucketPositionals(args);
+	const [label, ...numberStrs] = positionals(args);
 	if (!label) throw new Error("bucket requires a <label> and at least one issue number");
 	if (numberStrs.length === 0) throw new Error("bucket requires at least one issue number");
 	const numbers = numberStrs.map((s) => {
@@ -144,10 +131,16 @@ async function cmdBucket(args: string[]): Promise<number> {
 	if (args.includes("--create")) await provider.ensureLabel(label, repo);
 
 	const results: Issue[] = [];
+	const failures: string[] = [];
 	for (const number of numbers) {
-		results.push(await provider.addLabelsToIssue(number, [label], repo));
+		try {
+			results.push(await provider.addLabelsToIssue(number, [label], repo));
+		} catch (error) {
+			failures.push(`#${number}: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 	printJson(results);
+	if (failures.length) throw new Error(`bucket failed for ${failures.join("; ")}`);
 	return EXIT.OK;
 }
 

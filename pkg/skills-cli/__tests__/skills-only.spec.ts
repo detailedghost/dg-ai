@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +16,26 @@ import {
 	runSkillsOnlyInstall,
 	skillsOnlyReport,
 } from "../src/commands/skills-only";
+
+const PERSONAS = [
+	"checkpoint",
+	"copilot-antagonist",
+	"csharp",
+	"dba",
+	"devops",
+	"foreman",
+	"js",
+	"lore",
+	"python",
+	"qa-devops",
+	"qa-perf",
+	"qa-writer",
+	"reviewer",
+	"security",
+	"shell",
+	"thrash",
+	"wave",
+].map((name) => `${name}.md`);
 
 const SUMMARY =
 	"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).";
@@ -74,21 +103,65 @@ describe("skills-only helpers", () => {
 			expect(skillsOnlyReport(result)).toBe(
 				`from-repo/SKILL.md\nInstalled 1 skill files at ${dest}.\n${SUMMARY}`,
 			);
-			mkdirSync(join(repo, "plugins", "dg", "agents"), { recursive: true });
-			writeFileSync(join(repo, "plugins", "dg", "agents", "thrash.md"), "thrash persona\n");
-			const withPersona = runSkillsOnlyInstall({
+			const agents = join(repo, "plugins", "dg", "agents");
+			mkdirSync(agents, { recursive: true });
+			for (const name of PERSONAS) writeFileSync(join(agents, name), `${name} persona\n`);
+			const withPersonas = runSkillsOnlyInstall({
 				repo,
 				dest,
 				repoRoot: other,
 				env: {},
 				home: directory,
 			});
-			const persona = join(directory, "agents", "thrash.md");
-			expect(withPersona.persona).toBe(persona);
-			expect(readFileSync(persona, "utf8")).toBe("thrash persona\n");
-			expect(skillsOnlyReport(withPersona)).toContain(
-				`Installed thrash persona at ${persona}.`,
+			const installed = join(directory, "agents");
+			expect(withPersonas.personas).toEqual(PERSONAS);
+			expect(readdirSync(installed).sort()).toEqual(PERSONAS);
+			for (const name of PERSONAS) {
+				expect(readFileSync(join(installed, name), "utf8")).toBe(`${name} persona\n`);
+			}
+			expect(skillsOnlyReport(withPersonas)).toContain(
+				`Installed ${PERSONAS.length} personas at ${installed}.`,
 			);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a persona symlink before writing any skill file", () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-link-"));
+		const repo = join(directory, "repo");
+		const dest = join(directory, "out", "skills");
+		try {
+			mkdirSync(join(repo, "plugins", "dg", "skills", "one"), { recursive: true });
+			writeFileSync(join(repo, "plugins", "dg", "skills", "one", "SKILL.md"), "one\n");
+			mkdirSync(join(repo, "plugins", "dg", "agents"), { recursive: true });
+			writeFileSync(join(directory, "target.md"), "target\n");
+			symlinkSync(join(directory, "target.md"), join(repo, "plugins", "dg", "agents", "bad.md"));
+			expect(() =>
+				runSkillsOnlyInstall({ repo, dest, repoRoot: repo, env: {}, home: directory }),
+			).toThrow(/refuses symlink plugins\/dg\/agents\/bad.md/);
+			expect(existsSync(dest)).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("replaces a symlink at a persona destination without writing through it", () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-dest-link-"));
+		const repo = join(directory, "repo");
+		const dest = join(directory, "out", "skills");
+		const target = join(directory, "outside.md");
+		try {
+			mkdirSync(join(repo, "plugins", "dg", "skills", "one"), { recursive: true });
+			writeFileSync(join(repo, "plugins", "dg", "skills", "one", "SKILL.md"), "one\n");
+			mkdirSync(join(repo, "plugins", "dg", "agents"), { recursive: true });
+			writeFileSync(join(repo, "plugins", "dg", "agents", "thrash.md"), "thrash\n");
+			mkdirSync(join(directory, "out", "agents"), { recursive: true });
+			writeFileSync(target, "outside\n");
+			symlinkSync(target, join(directory, "out", "agents", "thrash.md"));
+			runSkillsOnlyInstall({ repo, dest, repoRoot: repo, env: {}, home: directory });
+			expect(readFileSync(target, "utf8")).toBe("outside\n");
+			expect(readFileSync(join(directory, "out", "agents", "thrash.md"), "utf8")).toBe("thrash\n");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

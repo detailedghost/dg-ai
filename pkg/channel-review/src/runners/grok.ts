@@ -30,8 +30,6 @@ export async function probeGrok(
 	capture: typeof runCapture,
 ): ReturnType<Runner["probe"]> {
 	try {
-		// Grok has no `login status`. `models` reports the CLI's resolved auth
-		// source before listing the catalog; exit zero alone also occurs signed out.
 		const models = await capture(path, ["models"], {
 			cwd,
 			timeoutMs: CLI_TIMEOUT_MS,

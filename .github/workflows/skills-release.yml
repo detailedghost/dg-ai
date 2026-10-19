@@ -69,7 +69,7 @@ jobs:
       - name: Build ${{ matrix.asset }}
         working-directory: pkg/skills-cli
         run: >-
-          bun build.ts
+          bun run build.ts
           --target=${{ matrix.target }}
           --outfile dist/${{ matrix.asset }}
 
@@ -150,6 +150,13 @@ jobs:
         id: ver
         working-directory: pkg/skills-cli
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Verify bootstrap URLs are pinned to this release tag
+        run: bun scripts/pin-bootstrap-tag.ts --check
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

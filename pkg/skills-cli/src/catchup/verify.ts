@@ -19,6 +19,19 @@ function text(path: string): string {
 	}
 }
 
+const VENDORED_DIRS = new Set(["node_modules", ".git", ".venv", "bin", "obj"]);
+
+function nodeScripts(path: string): Record<string, unknown> {
+	try {
+		const scripts = (JSON.parse(text(path)) as { scripts?: unknown }).scripts;
+		return typeof scripts === "object" && scripts !== null
+			? (scripts as Record<string, unknown>)
+			: {};
+	} catch {
+		return {};
+	}
+}
+
 function entries(path: string) {
 	try {
 		return readdirSync(path, { withFileTypes: true });
@@ -37,6 +50,7 @@ function findWithin(
 		if (matches(entry.name)) return true;
 		if (
 			entry.isDirectory() &&
+			!VENDORED_DIRS.has(entry.name) &&
 			findWithin(join(path, entry.name), matches, depth - 1)
 		)
 			return true;
@@ -95,7 +109,8 @@ export async function verifyBuild(cwd = process.cwd()): Promise<number> {
 	if (isFile(join(root, "package.json"))) {
 		detected = true;
 		const runner = Bun.which("bun") ? "bun" : "npm";
-		if (text(join(root, "package.json")).includes('"build"')) {
+		const scripts = nodeScripts(join(root, "package.json"));
+		if ("build" in scripts) {
 			await run(
 				runner,
 				["run", "build"],
@@ -103,7 +118,7 @@ export async function verifyBuild(cwd = process.cwd()): Promise<number> {
 				`[node/${runner}] BUILD FAILED.`,
 			);
 		}
-		if (!failed && text(join(root, "package.json")).includes('"test"')) {
+		if (!failed && "test" in scripts) {
 			await run(
 				runner,
 				["test"],
