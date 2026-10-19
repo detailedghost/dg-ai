@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, openSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, openSync, readFileSync, rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
 	type DgPaths,
@@ -54,6 +54,10 @@ const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 const SECRET_BYTES = 32;
 
+export function isListenerArgs(args: string[]): boolean {
+	return args.includes("phone-friend") && args.includes("__run");
+}
+
 function isOurListener(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
@@ -62,12 +66,11 @@ function isOurListener(pid: number): boolean {
 	}
 	const cmdline = `/proc/${pid}/cmdline`;
 	if (existsSync(cmdline)) {
-		const args = readFileSync(cmdline, "utf8").split("\0");
-		return args.includes("phone-friend") && args.includes("__run");
+		return isListenerArgs(readFileSync(cmdline, "utf8").split("\0"));
 	}
 	if (process.platform === "win32") return true;
 	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
-	return ps.status === 0 && / phone-friend __run\b/.test(ps.stdout);
+	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
 }
 
 function defaultDeps(session?: string, line: string = DEFAULT_LINE): PhoneFriendDeps {
@@ -80,6 +83,7 @@ function defaultDeps(session?: string, line: string = DEFAULT_LINE): PhoneFriend
 		spawnListener: (listenerLine) => {
 			ensurePrivateDir(listenerLine.dir);
 			const log = openSync(listenerLine.logPath, "a", 0o600);
+			chmodSync(listenerLine.logPath, 0o600);
 			const [command, ...args] = selfCommand(["phone-friend", "--line", listenerLine.name, "__run"]);
 			const child = spawn(command as string, args, {
 				detached: true,

@@ -15,6 +15,7 @@ import {
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
+	isListenerArgs,
 	registerPhoneFriendCommands,
 	phoneOn,
 	phoneOff,
@@ -440,5 +441,17 @@ describe("registerPhoneFriendCommands", () => {
 		expect(work.line).toBe("work");
 		expect(main.line).toBe("default");
 		expect(work.npub).not.toBe(main.npub);
+	});
+});
+
+describe("isListenerArgs", () => {
+	it("matches the listener argv with and without --line", () => {
+		expect(isListenerArgs(["/bin/dg-agent", "phone-friend", "__run"])).toBe(true);
+		expect(isListenerArgs("/bin/dg-agent phone-friend --line work __run".split(" "))).toBe(true);
+	});
+
+	it("rejects an unrelated process that reuses the pid", () => {
+		expect(isListenerArgs(["/usr/bin/vim", "notes.txt"])).toBe(false);
+		expect(isListenerArgs(["/bin/dg-agent", "phone-friend", "number"])).toBe(false);
 	});
 });

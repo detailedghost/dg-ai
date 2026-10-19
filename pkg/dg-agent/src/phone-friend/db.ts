@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import {
 	applyConnectionPragmas,
 	ensurePrivateDir,
@@ -68,9 +68,11 @@ export class PhoneFriendDb {
 	static open(line: LinePaths, now: () => number = () => Math.floor(Date.now() / 1000)): PhoneFriendDb {
 		ensurePrivateDir(line.dir);
 		writeFileSync(line.dbPath, "", { mode: 0o600, flag: "a" });
+		chmodSync(line.dbPath, 0o600);
 		const db = new Database(line.dbPath, { strict: true, create: true, readwrite: true });
 		try {
 			applyConnectionPragmas(db);
+			db.run("PRAGMA secure_delete = ON");
 			runMigrations(db, SCHEMA);
 		} catch (err) {
 			db.close(true);

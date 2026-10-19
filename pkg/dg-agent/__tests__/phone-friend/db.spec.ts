@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
@@ -33,6 +33,21 @@ describe("PhoneFriendDb", () => {
 	it("keeps the database private in a private dir", () => {
 		expect(statSync(line.dbPath).mode & 0o777).toBe(0o600);
 		expect(statSync(line.dir).mode & 0o777).toBe(0o700);
+	});
+
+	it("makes an existing database private again when it opens", () => {
+		inbox.close();
+		chmodSync(line.dbPath, 0o644);
+		inbox = PhoneFriendDb.open(line, () => now);
+		expect(statSync(line.dbPath).mode & 0o777).toBe(0o600);
+	});
+
+	it("zeroes deleted rows, so a moved key leaves no bytes behind", () => {
+		inbox.set("nsec", "nsec1secretsecretsecret");
+		inbox.unset("nsec");
+		inbox.close();
+		expect(readFileSync(line.dbPath).includes("nsec1secretsecretsecret")).toBe(false);
+		inbox = PhoneFriendDb.open(line, () => now);
 	});
 
 	it("returns each unread incoming message once, oldest first, and marks it read", () => {
