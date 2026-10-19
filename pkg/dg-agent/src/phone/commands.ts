@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
@@ -45,9 +45,13 @@ function isOurListener(pid: number): boolean {
 		return false;
 	}
 	const cmdline = `/proc/${pid}/cmdline`;
-	if (!existsSync(cmdline)) return true;
-	const args = readFileSync(cmdline, "utf8").split("\0");
-	return args.includes("phone") && args.includes("__run");
+	if (existsSync(cmdline)) {
+		const args = readFileSync(cmdline, "utf8").split("\0");
+		return args.includes("phone") && args.includes("__run");
+	}
+	if (process.platform === "win32") return true;
+	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
+	return ps.status === 0 && / phone __run\b/.test(ps.stdout);
 }
 
 function defaultDeps(): PhoneDeps {

@@ -151,15 +151,18 @@ describe("fetchNew", () => {
 		const pool = createFakePool();
 		await publish(pool, ["wss://a.example"], wrap("real", alice.sk, bob.pub));
 		const first = await fetchNew(pool, RELAYS, bob.sk, alice.pub, { cursor: 0, ids: [] });
+		const junk = wrap("x", mallory.sk, bob.pub);
 		for (let i = 0; i < SEEN_ID_LIMIT + 1; i += 1) {
-			pool.events.push({ ...wrap("x", mallory.sk, bob.pub) });
+			pool.events.push({ ...junk, id: i.toString(16).padStart(64, "0"), pubkey: "0".repeat(64) });
 		}
 
 		const second = await fetchNew(pool, RELAYS, bob.sk, alice.pub, first.seen);
+		const third = await fetchNew(pool, RELAYS, bob.sk, alice.pub, second.seen);
 
 		expect(first.messages.map((m) => m.text)).toEqual(["real"]);
 		expect(second.messages).toEqual([]);
-	}, 60000);
+		expect(third.messages).toEqual([]);
+	});
 
 	it("sorts messages by inner timestamp", async () => {
 		const alice = identity();
