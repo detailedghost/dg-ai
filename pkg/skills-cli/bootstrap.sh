@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
 #       install only the dg-skills CLI (checksum-verified like the default path).
@@ -114,27 +114,57 @@ copy_personas() {
   return 0
 }
 
+REPO="detailedghost/dg-ai"
+PER_PAGE=100
+PAGE_CAP=10
+releases=""
+tag=""
+
+resolve_release() {
+  [ -n "${tag}" ] && return
+  page=1
+  while [ -z "${tag}" ] && [ "${page}" -le "${PAGE_CAP}" ]; do
+    batch=$(curl -fsSL -H "User-Agent: dg-ai" \
+      "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
+    releases="${releases}${batch}"
+    tag=$(printf '%s' "${batch}" |
+      grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
+      head -1 |
+      sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+    batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
+    [ "${batch_count}" -lt "${PER_PAGE}" ] && break
+    page=$((page + 1))
+  done
+
+  if [ -z "${tag}" ]; then
+    scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
+    echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
+    exit 1
+  fi
+}
+
 skills_tree_source() {
   if [ -n "${DG_SKILLS_SOURCE:-}" ]; then
-    printf '%s\n' "$DG_SKILLS_SOURCE"
+    SKILLS_SRC="$DG_SKILLS_SOURCE"
     return
   fi
   script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
   repo=$(CDPATH= cd -- "$script_dir/../.." && pwd)
   if [ -d "$repo/plugins/dg/skills" ]; then
-    printf '%s\n' "$repo/plugins/dg/skills"
+    SKILLS_SRC="$repo/plugins/dg/skills"
     return
   fi
   if [ -d "plugins/dg/skills" ]; then
-    printf '%s\n' "$(pwd)/plugins/dg/skills"
+    SKILLS_SRC="$(pwd)/plugins/dg/skills"
     return
   fi
   tmp=$(mktemp -d)
   archive="${tmp}/dg-ai.tar.gz"
+  resolve_release
   curl -fsSL -H "User-Agent: dg-ai" \
-    "https://github.com/detailedghost/dg-ai/archive/refs/heads/master.tar.gz" -o "$archive"
+    "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
   tar -xzf "$archive" -C "$tmp"
-  printf '%s\n' "${tmp}/dg-ai-master/plugins/dg/skills"
+  SKILLS_SRC="${tmp}/dg-ai-${tag}/plugins/dg/skills"
 }
 
 if [ "$SKILLS_ONLY" = "1" ]; then
@@ -143,14 +173,14 @@ if [ "$SKILLS_ONLY" = "1" ]; then
     exit 1
   fi
   dest="${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
-  copy_skill_tree "$(skills_tree_source)" "$dest"
+  skills_tree_source
+  copy_skill_tree "${SKILLS_SRC}" "$dest"
   if [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
     echo "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
     exit 0
   fi
 fi
 
-REPO="detailedghost/dg-ai"
 BIN_DIR="${DG_HOME:-${HOME}/.dg}/bin"
 DEST="${BIN_DIR}/dg-skills"
 
@@ -174,30 +204,7 @@ aarch64 | arm64) cpu="arm64" ;;
 esac
 asset="dg-skills-${osname}-${cpu}"
 
-PER_PAGE=100
-PAGE_CAP=10
-
-releases=""
-tag=""
-page=1
-while [ -z "${tag}" ] && [ "${page}" -le "${PAGE_CAP}" ]; do
-  batch=$(curl -fsSL -H "User-Agent: dg-ai" \
-    "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
-  releases="${releases}${batch}"
-  tag=$(printf '%s' "${batch}" |
-    grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
-    head -1 |
-    sed -E 's/.*"(skills-v[^"]*)".*/\1/')
-  batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
-  [ "${batch_count}" -lt "${PER_PAGE}" ] && break
-  page=$((page + 1))
-done
-
-if [ -z "${tag}" ]; then
-  scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
-  echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
-  exit 1
-fi
+resolve_release
 
 url=$(printf '%s' "${releases}" |
   grep -oE "https://[^\"]+/download/${tag}/${asset}" |
@@ -311,10 +318,10 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   trap 'rm -rf "${tmpdir}"' EXIT
   archive="${tmpdir}/dg-ai.tar.gz"
   curl -fsSL -H "User-Agent: dg-ai" \
-    "https://github.com/${REPO}/archive/refs/heads/master.tar.gz" -o "${archive}"
+    "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   tar -xzf "${archive}" -C "${tmpdir}"
-  for skill in "${tmpdir}/dg-ai-master/plugins/dg/skills"/*/; do
+  for skill in "${tmpdir}/dg-ai-${tag}/plugins/dg/skills"/*/; do
     if [ "${CLI_ONLY}" = "1" ] && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
       continue
     fi

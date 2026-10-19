@@ -561,7 +561,7 @@ describe("bootstrap.sh --skills-only", () => {
 		}
 	});
 
-	test("outside a checkout the only fetch is the source archive", async () => {
+	test("outside a checkout the only fetches are the release lookup and the tag archive", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-remote-"));
 		const script = join(directory, "bootstrap.sh");
 		const curlLog = join(directory, "curl.log");
@@ -579,9 +579,10 @@ describe("bootstrap.sh --skills-only", () => {
 			);
 			expect(result.code).not.toBe(0);
 			const fetched = readFileSync(curlLog, "utf8");
-			expect(fetched).toContain("archive/refs/heads/master.tar.gz");
+			expect(fetched).toContain("archive/refs/tags/skills-v9.9.9.tar.gz");
+			expect(fetched).not.toContain("refs/heads/master");
 			expect(fetched).not.toContain("dg-skills-");
-			expect(fetched).not.toContain("/releases");
+			expect(fetched.match(/\/releases\?/g)).toHaveLength(1);
 			expect(existsSync(join(directory, "out"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

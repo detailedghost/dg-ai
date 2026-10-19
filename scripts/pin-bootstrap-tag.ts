@@ -6,10 +6,17 @@ export const BOOTSTRAP_URL =
 	/(raw\.githubusercontent\.com\/detailedghost\/dg-ai\/)(master|skills-v\d+\.\d+\.\d+[\w.-]*)(\/pkg\/skills-cli\/bootstrap\.(?:sh|ps1))/g;
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const ROOTS = ["README.md", "docs", "plugins/dg/skills"];
+const ROOTS = [
+	"README.md",
+	"docs",
+	"plugins/dg/skills",
+	"pkg/skills-cli/bootstrap.sh",
+	"pkg/skills-cli/bootstrap.ps1",
+];
+const SCRIPTS = /\.(?:sh|ps1)$/;
 
 function markdownFiles(path: string): string[] {
-	if (path.endsWith(".md")) return [path];
+	if (path.endsWith(".md") || SCRIPTS.test(path)) return [path];
 	return readdirSync(path, { withFileTypes: true }).flatMap((entry) =>
 		entry.isDirectory() || entry.name.endsWith(".md")
 			? markdownFiles(join(path, entry.name))

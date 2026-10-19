@@ -300,6 +300,15 @@ describe("bootstrap URLs are pinned to the release tag", () => {
 		expect(tag).toBe(`skills-v${cli.version}`);
 	});
 
+	for (const script of ["bootstrap.sh", "bootstrap.ps1"]) {
+		test(`${script}: downloads nothing from refs/heads/master`, () => {
+			const text = readRepoFile("pkg/skills-cli", script);
+			expect(text).not.toContain("refs/heads/master");
+			expect(text).not.toContain("dg-ai-master");
+			expect(text).toContain("refs/tags/");
+		});
+	}
+
 	for (const file of pinnedFiles()) {
 		const text = readFileSync(file, "utf8");
 		if (!/pkg\/skills-cli\/bootstrap\./.test(text)) continue;
