@@ -16,12 +16,12 @@ function err(stdout: string): string {
 describe("parseFeedLines", () => {
 	it("reads one item per line, keyed by id", () => {
 		const items = ok(
-			'{"id":"JRDEV-812","title":"Quote export times out"}\n' +
-				'{"id":"JRDEV-807","title":"Sprint carry-over needs an owner"}\n',
+			'{"id":"TASK-812","title":"Quote export times out"}\n' +
+				'{"id":"TASK-807","title":"Sprint carry-over needs an owner"}\n',
 		);
 		expect(items).toEqual([
-			{ fingerprint: "JRDEV-812", title: "Quote export times out" },
-			{ fingerprint: "JRDEV-807", title: "Sprint carry-over needs an owner" },
+			{ fingerprint: "TASK-812", title: "Quote export times out" },
+			{ fingerprint: "TASK-807", title: "Sprint carry-over needs an owner" },
 		]);
 	});
 
