@@ -9,6 +9,7 @@ export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subs
 export const GIFT_WRAP_KIND = 1059;
 export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
+const QUERY_MAX_WAIT_MS = 8000;
 
 export function wrap(text: string, sk: Uint8Array, peerPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: peerPub }, text);
@@ -59,7 +60,9 @@ export async function fetchNew(
 	now: () => number = () => Math.floor(Date.now() / 1000),
 ): Promise<{ messages: Message[]; seen: Seen }> {
 	const startedAt = now();
-	const events = await pool.querySync(relays, inboxFilter(getPublicKey(sk), seen.cursor));
+	const events = await pool.querySync(relays, inboxFilter(getPublicKey(sk), seen.cursor), {
+		maxWait: QUERY_MAX_WAIT_MS,
+	});
 	const known = new Set(seen.ids);
 	const fresh = events.filter((event) => {
 		if (known.has(event.id)) return false;

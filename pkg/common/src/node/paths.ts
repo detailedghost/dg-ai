@@ -27,6 +27,7 @@ export type DgPaths = {
 	phoneConfigPath: string;
 	phoneInboxPath: string;
 	phoneSeenPath: string;
+	phoneReadOffsetPath: string;
 	phonePidPath: string;
 	phoneLogPath: string;
 };
@@ -62,6 +63,7 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		phoneConfigPath: path.join(phoneDir, "config.json"),
 		phoneInboxPath: path.join(phoneDir, "inbox.jsonl"),
 		phoneSeenPath: path.join(phoneDir, "seen.json"),
+		phoneReadOffsetPath: path.join(phoneDir, "read.offset"),
 		phonePidPath: path.join(phoneDir, "listener.pid"),
 		phoneLogPath: path.join(phoneDir, "listener.log"),
 	};
