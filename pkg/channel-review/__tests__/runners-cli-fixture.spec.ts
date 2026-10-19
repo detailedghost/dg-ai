@@ -147,8 +147,8 @@ afterEach(() => {
 });
 
 function skill(name: "claude" | "grok"): string {
-	const dir = name === "grok" ? ".grok" : ".claude";
-	return `${HOME}/${dir}/skills/thrash/SKILL.md`;
+	const dir = name === "grok" ? ".grok/skills" : ".claude/plugins/cache/mkt/dg/1.0.0/skills";
+	return `${HOME}/${dir}/thrash/SKILL.md`;
 }
 
 function config(extra: Record<string, unknown> = {}) {
@@ -163,7 +163,13 @@ function config(extra: Record<string, unknown> = {}) {
 function fakeFs(files: string[]) {
 	return {
 		exists: (path: string) => files.some((file) => file === path || file.startsWith(`${path}/`)),
-		readdir: () => [] as string[],
+		readdir: (path: string) => [
+			...new Set(
+				files
+					.filter((file) => file.startsWith(`${path}/`))
+					.map((file) => file.slice(path.length + 1).split("/")[0]),
+			),
+		],
 	};
 }
 

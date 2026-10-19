@@ -20,6 +20,7 @@ const skillFiles = filesUnder(join(repo, "plugins/dg/skills"));
 const publicFiles = [
 	...skillFiles,
 	...filesUnder(join(repo, "pkg/skills-cli/src")),
+	...filesUnder(join(repo, "pkg/channel-review/src")),
 ];
 
 const LOCAL_TERMS_FILE = ".no-local-zone.local";
@@ -41,6 +42,7 @@ const PRIVATE_PATTERN = new RegExp(
 		"/Users/(?!user\\b|runner\\b|<)[A-Za-z_][\\w.-]*/",
 		"[A-Za-z]:\\\\Users\\\\(?!user\\b|<)[\\w.-]+",
 		"~/scripts/",
+		"(?:~|\\$HOME|\\$\\{HOME\\}|\\$\\{homedir\\(\\)\\}|\\$\\{os\\.homedir\\(\\)\\})/\\.claude/skills/",
 		"\\b[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b",
 		"\\b(?:ghp|gho|ghs|github_pat|glpat|xox[abprs])[-_][A-Za-z0-9_-]{16,}",
 		"\\bAKIA[0-9A-Z]{16}\\b",
@@ -111,6 +113,11 @@ describe("public skill distribution", () => {
 		).toEqual([]);
 	});
 
+	test("includes the channel-review sources in the scanned files", () => {
+		const scanned = publicFiles.map((file) => relative(repo, file));
+		expect(scanned).toContain("pkg/channel-review/src/config.ts");
+	});
+
 	test("contains none of the terms in the optional local list", () => {
 		const terms = localTerms();
 		if (terms) expect(matches(publicFiles, terms)).toEqual([]);
@@ -121,6 +128,11 @@ describe("public skill distribution", () => {
 		"/Users/alice/Documents",
 		"C:\\Users\\alice\\file",
 		"~/scripts/ai/run.ts",
+		"Read(~/.claude/skills/thrash/**)",
+		"see ~/.claude/skills/grill-me/SKILL.md",
+		"${homedir()}/.claude/skills/thrash",
+		"$HOME/.claude/skills/x",
+		"${HOME}/.claude/skills/x",
 		"alice@corp.test",
 		"ghp_abcdefghijklmnopqrstuvwxyz0123",
 		"AKIAABCDEFGHIJKLMNOP",
@@ -133,6 +145,8 @@ describe("public skill distribution", () => {
 		"/mnt/c/Users/<user>/Downloads",
 		"noreply@anthropic.com",
 		"someone@example.com",
+		"../grill-me/SKILL.md",
+		"plugins/dg/skills/thrash/SKILL.md",
 	])("allows %s", (line) => {
 		expect(PRIVATE_PATTERN.test(line)).toBe(false);
 	});

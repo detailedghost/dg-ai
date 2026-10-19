@@ -452,22 +452,21 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				expect(configSource).toMatch(new RegExp(`\\b${segment}\\b`));
 			}
 		for (const rule of [
-			"Bash(<home>/scripts/bin/thrash-helper:*)",
+			"Bash(<home>/.dg/bin/dg-skills thrash:*)",
 			"Read(//<scratch>/thrash/**)",
-			"Read(~/.claude/skills/thrash/**)",
 			"Grep(//<scratch>/thrash/**)",
 			"Glob(//<scratch>/thrash/**)",
 			"Edit(//<scratch>/thrash/**)",
 		])
 			expect(setup).toContain(rule);
 		expect(setup).not.toContain("<home>/scripts/**");
+		expect(setup).not.toMatch(/scripts\/bin|-helper|~\/\.claude\/skills/);
 		for (const rule of [
 			"Edit(//<clones>/**)",
 			"Read(//<clones>/**)",
 			"Grep(//<clones>/**)",
 			"Glob(//<clones>/**)",
-			"Read(~/.claude/skills/address/**)",
-			"Bash(<home>/scripts/bin/address-helper:*)",
+			"Bash(<home>/.dg/bin/dg-skills address:*)",
 		])
 			expect(setup).toContain(rule);
 		const address = /addressAllowedTools \?\? \[([\s\S]*?)\];/.exec(configSource)?.[1] ?? "";
@@ -475,6 +474,11 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			expect(setup).toContain(`\`${tool}\``);
 		expect(/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1]).toBe("60");
 		expect(setup).toContain("`<home>/code/bot`");
+		expect(configSource).toContain(".dg/bin/dg-skills");
+		expect(setup).toContain("dg-skills deps-upgrade");
+		for (const name of ["thrash", "address", "deps-upgrade"])
+			expect(setup).toContain(`Read(~/.claude/plugins/cache/*/dg/*/skills/${name}/**)`);
+		expect(setup).not.toContain("`.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md`");
 	});
 
 	test("setup.md documents chats, the shared queue, and the per-chat status fields", () => {

@@ -50,4 +50,13 @@ describe("the released packages ship as one matched set", () => {
 
 		expect(reported).toBe(packageVersion("dg-daemon"));
 	});
+
+	test("both plugin manifests carry the released package version", () => {
+		const claude = JSON.parse(readRepoFile(".claude-plugin", "plugin.json"));
+		const codex = JSON.parse(
+			readRepoFile("plugins", "dg", ".codex-plugin", "plugin.json"),
+		);
+		expect(claude.version).toBe(packageVersion("skills-cli"));
+		expect(codex.version).toBe(packageVersion("skills-cli"));
+	});
 });
