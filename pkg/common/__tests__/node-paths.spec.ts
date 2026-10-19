@@ -88,10 +88,8 @@ describe("resolveDgPaths", () => {
 	const PHONE_FIELDS = [
 		"phoneFriendKeyPath",
 		"phoneFriendConfigPath",
-		"phoneFriendInboxPath",
-		"phoneFriendSeenPath",
+		"phoneFriendDbPath",
 		"phoneFriendInvitePath",
-		"phoneFriendReadOffsetPath",
 		"phoneFriendPidPath",
 		"phoneFriendLogPath",
 	] as const;

@@ -1,19 +1,16 @@
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
-import type { Invite, Message } from "./chat";
+import type { Invite } from "./chat";
 
 export type PhoneFriendConfig = { contact?: string; relays: string[] };
-export type Seen = { cursor: number; ids: string[] };
 
 export const DEFAULT_RELAYS = [
 	"wss://relay.damus.io",
 	"wss://nos.lol",
 	"wss://relay.primal.net",
 ];
-/** Caps the persisted seen-id list so the file does not grow forever. */
-export const SEEN_ID_LIMIT = 2000;
 
 function readJson<T>(path: string, fallback: T): T {
 	if (!existsSync(path)) return fallback;
@@ -47,24 +44,6 @@ export function readConfig(paths: DgPaths): PhoneFriendConfig {
 export function writeConfig(paths: DgPaths, config: PhoneFriendConfig): void {
 	ensurePrivateDir(paths.phoneFriendDir);
 	writeFileAtomic(paths.phoneFriendConfigPath, `${JSON.stringify(config, null, 2)}\n`, 0o600);
-}
-
-export function readSeen(paths: DgPaths): Seen {
-	return readJson<Seen>(paths.phoneFriendSeenPath, { cursor: 0, ids: [] });
-}
-
-export function remember(seen: Seen, ids: string[]): Seen {
-	return { cursor: seen.cursor, ids: [...seen.ids, ...ids].slice(-SEEN_ID_LIMIT) };
-}
-
-export function writeSeen(paths: DgPaths, seen: Seen): void {
-	ensurePrivateDir(paths.phoneFriendDir);
-	writeFileAtomic(paths.phoneFriendSeenPath, JSON.stringify(remember(seen, [])), 0o600);
-}
-
-export function appendInbox(paths: DgPaths, message: Message): void {
-	ensurePrivateDir(paths.phoneFriendDir);
-	appendFileSync(paths.phoneFriendInboxPath, `${JSON.stringify(message)}\n`, { mode: 0o600 });
 }
 
 export function readInvite(paths: DgPaths): Invite | undefined {

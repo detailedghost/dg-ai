@@ -20,7 +20,6 @@ import {
 	phoneOff,
 } from "../../src/phone-friend/commands";
 import {
-	appendInbox,
 	DEFAULT_RELAYS,
 	loadOrCreateKey,
 	readConfig,
@@ -28,6 +27,7 @@ import {
 	writeConfig,
 } from "../../src/phone-friend/store";
 import { decodeCard, encodeCard } from "../../src/phone-friend/card";
+import { Inbox } from "../../src/phone-friend/inbox";
 import { createFakePool, type FakePool } from "./fake-pool";
 
 let home: string;
@@ -36,7 +36,7 @@ let out: string[];
 let spawned: number;
 let alive: Set<number>;
 let pool: FakePool;
-const NOW = 1_800_000_000;
+const NOW = Math.floor(Date.now() / 1000);
 const contactSk = generateSecretKey();
 const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
 
@@ -65,6 +65,19 @@ function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 		readStdin: async () => "from stdin\n",
 		...overrides,
 	};
+}
+
+function stored(message: { id: string; ts: number; from: string; text: string }): void {
+	const inbox = Inbox.open(paths, () => NOW);
+	inbox.add(message, "in", message.from);
+	inbox.close();
+}
+
+function history() {
+	const inbox = Inbox.open(paths, () => NOW);
+	const all = inbox.history();
+	inbox.close();
+	return all;
 }
 
 function pair(): void {
@@ -198,6 +211,12 @@ describe("phoneDial", () => {
 		await expect(phoneDial("-", undefined, deps({ readStdin: async () => "" }))).rejects.toThrow("no call card");
 	});
 
+	it("saves the ring in the history as an outgoing call", async () => {
+		await phoneDial(cardFor(), "hi", deps());
+
+		expect(history()).toMatchObject([{ text: "hi", direction: "out", call: true, contact: contactNpub }]);
+	});
+
 	it("sends custom first words", async () => {
 		await phoneDial(cardFor(), "hi, it is grok", deps());
 
@@ -293,7 +312,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 	it("reads only the inbox when the listener runs", async () => {
 		pair();
 		await phoneOn(deps());
-		appendInbox(paths, { id: "x", ts: 1, from: contactNpub, text: "from listener" });
+		stored({ id: "x", ts: NOW, from: contactNpub, text: "from listener" });
 		out = [];
 
 		await phoneVoicemail(deps());
@@ -310,7 +329,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		const follow = deps({
 			sleep: async () => {
 				ticks += 1;
-				if (ticks === 1) appendInbox(paths, { id: "y", ts: 2, from: contactNpub, text: "live" });
+				if (ticks === 1) stored({ id: "y", ts: NOW, from: contactNpub, text: "live" });
 				if (ticks === 2) alive.clear();
 			},
 		});
@@ -336,6 +355,17 @@ describe("phoneSay", () => {
 		const [result] = lines() as { id: string; relays_ok: string[] }[];
 		expect(result.relays_ok).toEqual(readConfig(paths).relays);
 		expect(pool.events[0]?.id).toBe(result.id);
+	});
+
+	it("saves the sent message in the history, never as unread", async () => {
+		pair();
+
+		await phoneSay("ping", deps());
+
+		expect(history()).toMatchObject([{ text: "ping", direction: "out", contact: contactNpub }]);
+		out = [];
+		await phoneVoicemail(deps({ spawnListener: () => 1 }));
+		expect(lines().filter((line) => (line as { text?: string }).text === "ping")).toEqual([]);
 	});
 
 	it("reads the text from stdin when the argument is -", async () => {

@@ -9,7 +9,7 @@ import {
 	unwrapIncoming,
 	wrap,
 } from "../../src/phone-friend/chat";
-import { SEEN_ID_LIMIT } from "../../src/phone-friend/store";
+import { MESSAGE_TTL_SECONDS } from "../../src/phone-friend/inbox";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
@@ -101,6 +101,16 @@ describe("fetchNew", () => {
 		expect(LOOKBACK_SECONDS).toBe(172800);
 	});
 
+	it("never queries further back than the message ttl, even with an old cursor", async () => {
+		const bob = identity();
+		const pool = createFakePool();
+		const now = 1_800_000_000;
+
+		await fetchNew(pool, RELAYS, bob.sk, { contact: identity().pub }, { cursor: 0, ids: [] }, () => now);
+
+		expect(pool.filters[0]?.since).toBe(now - MESSAGE_TTL_SECONDS);
+	});
+
 	it("returns contact messages once, drops seen ids, and moves the cursor", async () => {
 		const alice = identity();
 		const bob = identity();
@@ -153,7 +163,7 @@ describe("fetchNew", () => {
 		await publish(pool, ["wss://a.example"], wrap("real", alice.sk, bob.pub));
 		const first = await fetchNew(pool, RELAYS, bob.sk, { contact: alice.pub }, { cursor: 0, ids: [] });
 		const junk = wrap("x", mallory.sk, bob.pub);
-		for (let i = 0; i < SEEN_ID_LIMIT + 1; i += 1) {
+		for (let i = 0; i < 2001; i += 1) {
 			pool.events.push({ ...junk, id: i.toString(16).padStart(64, "0"), pubkey: "0".repeat(64) });
 		}
 

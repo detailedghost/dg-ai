@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
+import { existsSync, openSync, readFileSync, rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
 	type DgPaths,
@@ -14,6 +14,7 @@ import {
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
 import { decodeCard, encodeCard } from "./card";
+import { Inbox } from "./inbox";
 import { defaultKeyClients, ensureKey, type KeyDeps, loadKey } from "./keys";
 import {
 	fetchNew,
@@ -27,15 +28,12 @@ import {
 	wrap,
 } from "./chat";
 import {
-	appendInbox,
 	clearInvite,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
-	readSeen,
 	writeConfig,
 	writeInvite,
-	writeSeen,
 } from "./store";
 
 export type PhoneFriendDeps = KeyDeps & {
@@ -241,12 +239,15 @@ export async function phoneDial(
 	const pasted = text === "-" ? await deps.readStdin() : text;
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
-	const event = ring(firstWords || "hello", await mySecretKey(deps), contactHex(card.npub), card.secret);
+	const sk = await mySecretKey(deps);
+	const words = firstWords || "hello";
+	const event = ring(words, sk, contactHex(card.npub), card.secret);
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, card.relays, event);
 		if (ok.length === 0) throw new DgCliError("no relay accepted the call");
 		writeConfig(deps.paths, { ...readConfig(deps.paths), contact: card.npub, relays: card.relays });
+		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: words, call: true }, card.npub);
 		if (livePid(deps) !== undefined) await spawnOrRestart(deps);
 		printJson(deps, { contact: card.npub, id: event.id, relays_ok: ok });
 	} finally {
@@ -261,67 +262,72 @@ export async function phoneOff(deps: PhoneFriendDeps): Promise<void> {
 	printJson(deps, { pid: pid ?? null, status: "off" });
 }
 
-function printUnread(deps: PhoneFriendDeps): void {
-	const { phoneFriendInboxPath, phoneFriendReadOffsetPath } = deps.paths;
-	if (!existsSync(phoneFriendInboxPath)) return;
-	const size = statSync(phoneFriendInboxPath).size;
-	const saved = existsSync(phoneFriendReadOffsetPath)
-		? Number(readFileSync(phoneFriendReadOffsetPath, "utf8"))
-		: 0;
-	const offset = Number.isInteger(saved) && saved >= 0 && saved <= size ? saved : 0;
-	if (size === offset) return;
-	const unread = Buffer.alloc(size - offset);
-	const fd = openSync(phoneFriendInboxPath, "r");
-	try {
-		readSync(fd, unread, 0, unread.length, offset);
-	} finally {
-		closeSync(fd);
-	}
-	const end = unread.lastIndexOf(0x0a) + 1;
-	if (end === 0) return;
-	deps.write(unread.subarray(0, end).toString("utf8"));
-	writeFileAtomic(phoneFriendReadOffsetPath, String(offset + end), 0o600);
+function printUnread(inbox: Inbox, deps: PhoneFriendDeps): void {
+	for (const message of inbox.takeUnread()) printJson(deps, message);
+}
+
+function openInbox(deps: PhoneFriendDeps): Inbox {
+	return Inbox.open(deps.paths, deps.now);
 }
 
 export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
 	if (livePid(deps) === undefined) {
 		throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
 	}
-	for (;;) {
-		printUnread(deps);
-		await deps.sleep(FOLLOW_POLL_MS);
-		if (livePid(deps) === undefined) {
-			printUnread(deps);
-			throw new DgCliError("the phone-friend listener stopped");
+	const inbox = openInbox(deps);
+	try {
+		for (;;) {
+			printUnread(inbox, deps);
+			await deps.sleep(FOLLOW_POLL_MS);
+			if (livePid(deps) === undefined) {
+				printUnread(inbox, deps);
+				throw new DgCliError("the phone-friend listener stopped");
+			}
 		}
+	} finally {
+		inbox.close();
 	}
 }
 
 export async function phoneVoicemail(deps: PhoneFriendDeps): Promise<void> {
-	if (livePid(deps) === undefined) {
-		const config = readConfig(deps.paths);
-		const gate = gateFor(config, deps);
-		if (!gate.contact && !gate.invite) requireContact(config);
-		const pool = deps.createPool();
-		try {
-			const { messages, seen } = await fetchNew(
-				pool,
-				config.relays,
-				await mySecretKey(deps),
-				gate,
-				readSeen(deps.paths),
-				deps.now,
-			);
-			for (const message of messages) {
-				appendInbox(deps.paths, message);
-				acceptCall(message, deps);
+	const inbox = openInbox(deps);
+	try {
+		if (livePid(deps) === undefined) {
+			const config = readConfig(deps.paths);
+			const gate = gateFor(config, deps);
+			if (!gate.contact && !gate.invite) requireContact(config);
+			const pool = deps.createPool();
+			try {
+				const { messages, seen } = await fetchNew(
+					pool,
+					config.relays,
+					await mySecretKey(deps),
+					gate,
+					inbox.seen(),
+					deps.now,
+				);
+				for (const message of messages) {
+					inbox.add(message, "in", message.from);
+					acceptCall(message, deps);
+				}
+				inbox.setCursor(seen.cursor);
+			} finally {
+				pool.close(config.relays);
 			}
-			writeSeen(deps.paths, seen);
-		} finally {
-			pool.close(config.relays);
 		}
+		printUnread(inbox, deps);
+	} finally {
+		inbox.close();
 	}
-	printUnread(deps);
+}
+
+function saveSent(deps: PhoneFriendDeps, sent: Message, contact: string): void {
+	const inbox = openInbox(deps);
+	try {
+		inbox.add(sent, "out", contact);
+	} finally {
+		inbox.close();
+	}
 }
 
 export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<void> {
@@ -329,11 +335,13 @@ export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<voi
 	const contact = contactHex(requireContact(config));
 	const body = text === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : text;
 	if (!body) throw new DgCliError("message text is empty");
-	const event = wrap(body, await mySecretKey(deps), contact);
+	const sk = await mySecretKey(deps);
+	const event = wrap(body, sk, contact);
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, config.relays, event);
 		if (ok.length === 0) throw new DgCliError("no relay accepted the message");
+		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: body }, config.contact as string);
 		printJson(deps, { id: event.id, relays_ok: ok });
 	} finally {
 		pool.close(config.relays);
@@ -346,16 +354,17 @@ async function phoneRun(deps: PhoneFriendDeps): Promise<void> {
 	if (!gate.contact && !gate.invite) requireContact(config);
 	const key = await loadKey(deps);
 	if (!key) throw new DgCliError("no phone-friend key yet; run `dg-agent phone-friend number`");
+	const inbox = openInbox(deps);
 	const pool = deps.createPool();
 	const sub = subscribe(
 		pool,
 		config.relays,
 		key.sk,
 		gate,
-		readSeen(deps.paths),
+		inbox.seen(),
 		(message, seen) => {
-			appendInbox(deps.paths, message);
-			writeSeen(deps.paths, seen);
+			inbox.add(message, "in", message.from);
+			inbox.setCursor(seen.cursor);
 			acceptCall(message, deps);
 		},
 		deps.now,
@@ -363,6 +372,7 @@ async function phoneRun(deps: PhoneFriendDeps): Promise<void> {
 	const shutdown = () => {
 		sub.close();
 		pool.close(config.relays);
+		inbox.close();
 		if (readPid(deps.paths) === process.pid) rmSync(deps.paths.phoneFriendPidPath, { force: true });
 		process.exit(0);
 	};

@@ -1,10 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
-import { remember, type Seen } from "./store";
+import { MESSAGE_TTL_SECONDS } from "./inbox";
 
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
 export type Invite = { secret: string; expiresAt: number };
+export type Seen = { cursor: number; ids: string[] };
 /** Who may get through: the saved contact, or a first caller who holds the invite secret. */
 export type Gate = { contact?: string; invite?: Invite };
 
@@ -91,12 +92,16 @@ export async function publish(
 	return { ok: relays.filter((_, i) => results[i]?.status === "fulfilled") };
 }
 
-function inboxFilter(pub: string, cursor: number) {
+function inboxFilter(pub: string, cursor: number, now: number) {
 	return {
 		kinds: [GIFT_WRAP_KIND],
 		"#p": [pub],
-		since: Math.max(0, cursor - LOOKBACK_SECONDS),
+		since: Math.max(0, cursor - LOOKBACK_SECONDS, now - MESSAGE_TTL_SECONDS),
 	};
+}
+
+function remember(seen: Seen, cursor: number, ids: string[]): Seen {
+	return { cursor, ids: [...seen.ids, ...ids] };
 }
 
 function nowSeconds(): number {
@@ -113,7 +118,7 @@ export async function fetchNew(
 	now: () => number = nowSeconds,
 ): Promise<{ messages: Message[]; seen: Seen; gate: Gate }> {
 	const startedAt = now();
-	const events = await pool.querySync(relays, inboxFilter(getPublicKey(sk), seen.cursor), {
+	const events = await pool.querySync(relays, inboxFilter(getPublicKey(sk), seen.cursor, startedAt), {
 		maxWait: QUERY_MAX_WAIT_MS,
 	});
 	const known = new Set(seen.ids);
@@ -135,7 +140,7 @@ export async function fetchNew(
 	}
 	return {
 		messages,
-		seen: remember({ ...seen, cursor: startedAt }, messages.map((message) => message.id)),
+		seen: remember(seen, startedAt, messages.map((message) => message.id)),
 		gate: current,
 	};
 }
@@ -153,7 +158,7 @@ export function subscribe(
 	let current = gate;
 	const known = new Set(seen.ids);
 	const strangers = new Set<string>();
-	return pool.subscribe(relays, inboxFilter(getPublicKey(sk), seen.cursor), {
+	return pool.subscribe(relays, inboxFilter(getPublicKey(sk), seen.cursor, now()), {
 		onevent(event) {
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			const rumor = open(event, sk);
@@ -167,7 +172,7 @@ export function subscribe(
 			}
 			known.add(event.id);
 			current = admitted.gate;
-			state = remember({ ...state, cursor: now() }, [event.id]);
+			state = remember(state, now(), [event.id]);
 			onMessage(admitted.message, state, current);
 		},
 	});

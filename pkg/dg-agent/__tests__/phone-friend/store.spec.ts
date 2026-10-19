@@ -5,14 +5,10 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import {
-	appendInbox,
 	DEFAULT_RELAYS,
 	loadOrCreateKey,
 	readConfig,
-	readSeen,
-	SEEN_ID_LIMIT,
 	writeConfig,
-	writeSeen,
 } from "../../src/phone-friend/store";
 
 let home: string;
@@ -65,32 +61,5 @@ describe("config", () => {
 		writeConfig(paths, { contact: "npub1peer", relays: ["wss://x.example"] });
 
 		expect(readConfig(paths)).toEqual({ contact: "npub1peer", relays: ["wss://x.example"] });
-	});
-});
-
-describe("seen", () => {
-	it("defaults to cursor 0 and no ids", () => {
-		expect(readSeen(paths)).toEqual({ cursor: 0, ids: [] });
-	});
-
-	it("keeps only the newest ids past the limit", () => {
-		const ids = Array.from({ length: SEEN_ID_LIMIT + 5 }, (_, i) => `id${i}`);
-
-		writeSeen(paths, { cursor: 7, ids });
-
-		const seen = readSeen(paths);
-		expect(seen.cursor).toBe(7);
-		expect(seen.ids).toHaveLength(SEEN_ID_LIMIT);
-		expect(seen.ids[0]).toBe("id5");
-	});
-});
-
-describe("appendInbox", () => {
-	it("appends one JSON line per message", () => {
-		appendInbox(paths, { id: "a", ts: 1, from: "npub1x", text: "one" });
-		appendInbox(paths, { id: "b", ts: 2, from: "npub1x", text: "two" });
-
-		const lines = readFileSync(paths.phoneFriendInboxPath, "utf8").trim().split("\n");
-		expect(lines.map((line) => JSON.parse(line).text)).toEqual(["one", "two"]);
 	});
 });

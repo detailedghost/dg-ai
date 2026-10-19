@@ -25,11 +25,8 @@ export type DgPaths = {
 	phoneFriendDir: string;
 	phoneFriendKeyPath: string;
 	phoneFriendConfigPath: string;
-	phoneFriendInboxPath: string;
-	phoneFriendSeenPath: string;
+	phoneFriendDbPath: string;
 	phoneFriendInvitePath: string;
-	/** Byte offset already printed by `listen`, so the next call tails phoneFriendInboxPath from there. */
-	phoneFriendReadOffsetPath: string;
 	phoneFriendPidPath: string;
 	phoneFriendLogPath: string;
 };
@@ -63,10 +60,8 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		phoneFriendDir,
 		phoneFriendKeyPath: path.join(phoneFriendDir, "key"),
 		phoneFriendConfigPath: path.join(phoneFriendDir, "config.json"),
-		phoneFriendInboxPath: path.join(phoneFriendDir, "inbox.jsonl"),
-		phoneFriendSeenPath: path.join(phoneFriendDir, "seen.json"),
+		phoneFriendDbPath: path.join(phoneFriendDir, "phone-friend.db"),
 		phoneFriendInvitePath: path.join(phoneFriendDir, "invite.json"),
-		phoneFriendReadOffsetPath: path.join(phoneFriendDir, "read.offset"),
 		phoneFriendPidPath: path.join(phoneFriendDir, "listener.pid"),
 		phoneFriendLogPath: path.join(phoneFriendDir, "listener.log"),
 	};
