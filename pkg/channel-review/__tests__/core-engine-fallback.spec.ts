@@ -244,3 +244,25 @@ test("explicit Grok exhaustion does not retry with another runner", async () => 
 	expect(h.runners.codex.runs).toHaveLength(0);
 	expect(h.replies().at(-1)?.text).toBe(replyText("CR-207", { agent: "grok" }));
 });
+
+test("ignores a usage-limit match on a clean exit when a verdict was posted", async () => {
+	const h = setup({ runnerScript: () => ({ ...OK_RESULT, status: 0, code: "CR-207" }) });
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.runners.codex.runs).toHaveLength(0);
+	expect(h.state.get().handled.m1?.status).toBe("done");
+	expect(h.trail("m1").at(-1)).toBe("+approved");
+	expect(h.replies().map((r) => r.text)).not.toContain(replyText("CR-207", { agent: "claude" }));
+});
+
+test("keeps a clean-exit usage-limit match when no verdict was posted", async () => {
+	const h = setup({
+		runnerScript: () => ({ ...OK_RESULT, status: 0, code: "CR-207" }),
+		verdictScript: () => "none",
+		configExtra: { runner: { fallback: null } },
+	});
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.state.get().handled.m1?.status).toBe("failed");
+	expect(h.replies().at(-1)?.text).toBe(replyText("CR-207", { agent: "claude" }));
+});

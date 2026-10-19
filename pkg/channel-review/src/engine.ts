@@ -256,8 +256,20 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 	}
 
+	async function verdictPosted(
+		target: Target,
+		host: PrHost,
+		since: Date,
+	): Promise<boolean> {
+		try {
+			return (await verdict.read({ url: target.url, host, since })) !== "none";
+		} catch {
+			return false;
+		}
+	}
+
 	async function execute(
-		job: Pick<JobBase, "messageId" | "chatId">,
+		job: Pick<JobBase, "messageId" | "chatId"> & { host?: PrHost },
 		target: Target,
 		run: {
 			task: RunTask;
@@ -297,6 +309,7 @@ export function createEngine(deps: EngineDeps): Engine {
 			);
 		}
 		let result: Awaited<ReturnType<Runner["run"]>>;
+		const ranAt = clock();
 		try {
 			result = await runner.run({
 				...run.task,
@@ -316,6 +329,14 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 		if (result.aborted) return "CR-205";
 		if (result.timedOut) return "CR-204";
+		if (
+			result.code === "CR-207" &&
+			result.status === 0 &&
+			run.task.task === "thrash" &&
+			job.host !== undefined &&
+			(await verdictPosted(target, job.host, ranAt))
+		)
+			return null;
 		if (result.code === "CR-207") {
 			log.warn(
 				`runner ${runner.name} reached its usage limit: ${run.task.task}`,
