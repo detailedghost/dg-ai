@@ -79,6 +79,7 @@ export function buildEngine({
 	log,
 	funPool,
 	platform,
+	onSaveError,
 }: {
 	config: ChannelConfig;
 	provider: ChatProvider;
@@ -89,6 +90,7 @@ export function buildEngine({
 	log: Log;
 	funPool: FunEntry[];
 	platform: PlatformSeam;
+	onSaveError?: (error: unknown) => void;
 }): {
 	engine: Engine;
 	state: ReturnType<typeof createStateStore>;
@@ -99,6 +101,7 @@ export function buildEngine({
 		undefined,
 		undefined,
 		defaultChatId,
+		onSaveError,
 	);
 	const engine = createEngine({
 		provider,
@@ -259,6 +262,8 @@ export async function serve({
 	const switcher = switchable(connection.provider);
 	const { runners, verdict } = readers(effective, seams, log);
 	let built: ReturnType<typeof buildEngine>;
+	let saveFailed = false;
+	let stopStreamsOnSaveError = () => {};
 	try {
 		built = buildEngine({
 			config: effective,
@@ -270,6 +275,11 @@ export async function serve({
 			log,
 			funPool,
 			platform,
+			onSaveError: (error) => {
+				saveFailed = true;
+				log.error(`state save failed; stopping the daemon: ${describeError(error)}`);
+				stopStreamsOnSaveError();
+			},
 		});
 	} catch (error) {
 		log.error(`state initialization failed: ${describeError(error)}`);
@@ -359,6 +369,7 @@ export async function serve({
 		const stopStreams = () => streams.abort();
 		signal.addEventListener("abort", stopStreams, { once: true });
 		if (signal.aborted) streams.abort();
+		stopStreamsOnSaveError = stopStreams;
 
 		async function pump(chatId: string): Promise<number> {
 			const streamSignal = streams.signal;
@@ -422,7 +433,7 @@ export async function serve({
 					return status;
 				}),
 			);
-			code = codes.some((status) => status !== 0) ? 1 : 0;
+			code = saveFailed || codes.some((status) => status !== 0) ? 1 : 0;
 		} finally {
 			signal.removeEventListener("abort", stopStreams);
 			stopMaintenance();

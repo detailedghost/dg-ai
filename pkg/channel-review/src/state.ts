@@ -347,6 +347,7 @@ export function createStateStore(
 	clock: () => Date = () => new Date(),
 	eventSaveIntervalMs = EVENT_SAVE_INTERVAL_MS,
 	legacyChatId?: string,
+	onSaveError?: (error: unknown) => void,
 ): StateStore {
 	const db = openDaemonDatabase({ dbPath: paths.dbPath, daemonDir: dirname(paths.dbPath) });
 	let row: StateRow;
@@ -388,7 +389,14 @@ export function createStateStore(
 				save();
 				return;
 			}
-			eventTimer = setTimeout(save, wait);
+			eventTimer = setTimeout(() => {
+				try {
+					save();
+				} catch (error) {
+					if (!onSaveError) throw error;
+					onSaveError(error);
+				}
+			}, wait);
 			eventTimer.unref();
 		},
 		flush() {
