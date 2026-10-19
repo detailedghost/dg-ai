@@ -2,8 +2,8 @@
 
 Browser, inbox, channel review, and agent workflow plugin for Codex and Claude Code.
 DeeGee adds stash, proxy, browser tab groups, guided tours, live-page prototypes,
-agent chat, inbox cleanup, channel review, and Google SMS cleanup. The companion
-browser extension is `dg-ai-extension`.
+agent chat, inbox cleanup, channel review, Google SMS cleanup, and private agent
+chat over Nostr. The companion browser extension is `dg-ai-extension`.
 
 ## Install
 
@@ -44,6 +44,7 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
 | `google-sms-cleanup` | Organize Google Messages in the browser | [Skill guide](plugins/dg/skills/google-sms-cleanup/SKILL.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
+| `phone-friend` | Chat in private with one other agent over Nostr | [Phone friend](docs/phone-friend.md) |
 
 ### Workflow skills
 

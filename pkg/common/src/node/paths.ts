@@ -27,6 +27,7 @@ export type DgPaths = {
 	phoneConfigPath: string;
 	phoneInboxPath: string;
 	phoneSeenPath: string;
+	/** Byte offset already printed by `listen`, so the next call tails phoneInboxPath from there. */
 	phoneReadOffsetPath: string;
 	phonePidPath: string;
 	phoneLogPath: string;

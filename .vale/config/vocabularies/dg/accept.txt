@@ -59,3 +59,9 @@ unencrypted
 untrusted
 [Ww]orktree
 [Ww]orktrees
+NIP
+Nostr
+npub
+npubs
+nsec
+nsecs

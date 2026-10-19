@@ -7,15 +7,18 @@ export type Message = { id: string; ts: number; from: string; text: string };
 export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subscribe">;
 
 export const GIFT_WRAP_KIND = 1059;
+/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
 export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
 const QUERY_MAX_WAIT_MS = 8000;
+/** Caps the live subscription's non-peer id cache so relay spam cannot grow it without bound. */
 export const STRANGER_ID_LIMIT = 10000;
 
 export function wrap(text: string, sk: Uint8Array, peerPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: peerPub }, text);
 }
 
+/** Returns null for a non-peer sender or a failed decrypt; never throws. */
 export function unwrapFromPeer(
 	event: NostrEvent,
 	sk: Uint8Array,
@@ -35,6 +38,7 @@ export function unwrapFromPeer(
 	}
 }
 
+/** Never rejects on a relay failure; `ok` lists only the relays that accepted the event. */
 export async function publish(
 	pool: PhonePool,
 	relays: string[],
@@ -52,6 +56,7 @@ function inboxFilter(pub: string, cursor: number) {
 	};
 }
 
+/** Dedupes within this batch too, since each relay returns its own copy of a wrap. */
 export async function fetchNew(
 	pool: PhonePool,
 	relays: string[],

@@ -12,6 +12,7 @@ export const DEFAULT_RELAYS = [
 	"wss://nos.lol",
 	"wss://relay.primal.net",
 ];
+/** Caps the persisted seen-id list so the file does not grow forever. */
 export const SEEN_ID_LIMIT = 2000;
 
 function readJson<T>(path: string, fallback: T): T {
@@ -19,6 +20,7 @@ function readJson<T>(path: string, fallback: T): T {
 	return { ...fallback, ...JSON.parse(readFileSync(path, "utf8")) };
 }
 
+/** Creates the 0600 nsec file on first call and reuses it after; throws if it holds anything else. */
 export function loadOrCreateKey(paths: DgPaths): Uint8Array {
 	ensurePrivateDir(paths.phoneDir);
 	if (existsSync(paths.phoneKeyPath)) {
