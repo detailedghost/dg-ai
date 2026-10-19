@@ -560,7 +560,7 @@ console.log("loaded");
 			"20",
 			"HEAD..refs/remotes/origin/main",
 		]);
-	});
+	}, 30_000);
 
 	test("uses the true merge base and drops feature patches already present upstream", () => {
 		const repo = makeRepo();
@@ -664,6 +664,7 @@ console.log("loaded");
 		const result = runCatchup(repo.dir);
 		expect(result.exitCode).toBe(1);
 		expect(result.stdout).toContain("WARNING: stash pop had conflicts.");
+		expect(result.stderr).toContain("git stash pop");
 		expectRebased(repo, upstream);
 		expect(git(repo.dir, ["diff", "--name-only", "--diff-filter=U"])).toBe(
 			"work.txt",

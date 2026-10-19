@@ -26,6 +26,18 @@ for arg in "$@"; do
   [ "${arg}" = "--skills-only" ] && SKILLS_ONLY=1
 done
 
+TMP_PATHS=""
+track_tmp() {
+  TMP_PATHS="${TMP_PATHS}${1}
+"
+}
+cleanup_tmp() {
+  printf '%s' "$TMP_PATHS" | while IFS= read -r path || [ -n "$path" ]; do
+    [ -n "$path" ] && rm -rf "$path"
+  done
+}
+trap cleanup_tmp EXIT
+
 # Copy skill directories as data. A skill is an immediate child that contains
 # SKILL.md. The same rule lives in @dg/common filesToInstall. Symlinks are
 # refused. Files are written mode 0644 and never executed.
@@ -33,8 +45,7 @@ copy_skill_tree() {
   src=$1
   dest=$2
   manifest=$(mktemp)
-  filelist=""
-  trap 'rm -f "$manifest" "$filelist"' EXIT
+  track_tmp "$manifest"
   if [ ! -d "$src" ]; then
     echo "dg-skills: no skills directory at ${src}" >&2
     exit 1
@@ -53,6 +64,7 @@ copy_skill_tree() {
     name=$(basename "$skill")
     rm -rf "${dest}/${name}"
     filelist=$(mktemp)
+    track_tmp "$filelist"
     find "$skill" -type f >"$filelist"
     while IFS= read -r file || [ -n "$file" ]; do
       [ -n "$file" ] || continue
@@ -159,6 +171,7 @@ skills_tree_source() {
     return
   fi
   tmp=$(mktemp -d)
+  track_tmp "$tmp"
   archive="${tmp}/dg-ai.tar.gz"
   resolve_release
   curl -fsSL -H "User-Agent: dg-ai" \
@@ -225,6 +238,7 @@ verify_sha256() {
     return 0
   fi
   sums_file=$(mktemp)
+  track_tmp "${sums_file}"
   if ! curl -fsSL -H "User-Agent: dg-ai" -o "${sums_file}" "${sums_url}"; then
     rm -f "${DEST}" "${sums_file}"
     echo "dg-skills: failed to download SHA256SUMS for ${tag}" >&2
@@ -264,6 +278,7 @@ verify_sha256() {
 # would otherwise say "already current" right after "installed".
 run_install() {
   log=$(mktemp)
+  track_tmp "${log}"
   set +e
   "$@" >"${log}" 2>&1
   status=$?
@@ -315,7 +330,7 @@ fi
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
   tmpdir=$(mktemp -d)
-  trap 'rm -rf "${tmpdir}"' EXIT
+  track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"
   curl -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "${archive}"

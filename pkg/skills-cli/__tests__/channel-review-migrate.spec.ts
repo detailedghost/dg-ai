@@ -251,6 +251,26 @@ describe("channel-review migrate-env", () => {
 		expect(h.lines.join("\n")).toContain(`backup kept at ${backup}`);
 	});
 
+	test("never writes a backup file without --keep-backup", async () => {
+		const h = harness(["channel-review"]);
+		const before = new Set(readdirSync(dir));
+		await h.run();
+		expect(new Set(readdirSync(dir))).toEqual(before);
+	});
+
+	test("restores the original and leaves no backup when the rewrite fails", async () => {
+		const h = harness(["channel-review"], {
+			onSet: () => chmodSync(dir, 0o500),
+		});
+		try {
+			await expect(h.run()).rejects.toThrow();
+		} finally {
+			chmodSync(dir, 0o700);
+		}
+		expect(readFileSync(join(dir, ".env"), "utf8")).toBe(ENV_FILE);
+		expect(backups()).toEqual([]);
+	});
+
 	test("leaves no backup when the store write fails", async () => {
 		await expect(
 			harness([], { failSet: true }).run({ keepBackup: true }),

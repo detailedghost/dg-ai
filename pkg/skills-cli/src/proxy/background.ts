@@ -268,8 +268,8 @@ async function cmdPrune(args: string[]): Promise<void> {
 		if (!meta || !JOB_ID_PATTERN.test(meta.id) || !isPathInside(meta.cwd, target))
 			continue;
 		const state = deriveState(meta);
-		if (state.state === "running") {
-			running.push(state);
+		if (state.state !== "done" && state.state !== "canceled") {
+			if (state.state === "running") running.push(state);
 			continue;
 		}
 		for (const p of Object.values(jobPaths(meta.id))) {

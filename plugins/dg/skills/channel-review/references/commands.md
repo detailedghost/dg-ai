@@ -21,7 +21,7 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 | `dg-skills channel-review logs` | `--env dev\|prod`, `-n, --lines <n>` (default 40), `-f, --follow` | Print the last lines of the daemon log; with `--follow`, keep printing until Ctrl+C. With no log file, print its path and `no log yet`. |
 | `dg-skills channel-review env` | Optional `dev` or `prod` | Print default env, base URL, and AWS profile; a name saves that default. |
 | `dg-skills channel-review connect` | `datadog\|sentry\|relay`; `--env dev\|prod`, `--site <site>`, `--org <slug>`, `--paste`, `--session <id>` | Store a secret in the dg credential store; see [setup](setup.md#credentials). Never prints the value. |
-| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Deletes the backup unless `--keep-backup` keeps it (mode 0600, original values). Prints variable names only. |
+| `dg-skills channel-review migrate-env` | `--file <path>`, `--dry-run`, `--keep-backup`, `--session <id>` | Move known secrets from `.env` into the credential store and delete only their lines. Writes no backup unless `--keep-backup` is set; then it writes a plain-text copy (mode 0600, original values). Prints variable names only. |
 
 Flags are optional. Commands use the saved environment unless `--env` overrides
 it. Start and run accept runner and chat overrides for that invocation.

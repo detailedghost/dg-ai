@@ -251,7 +251,8 @@ async function cmdResolveWithReply(rawArgs: string[]): Promise<void> {
 	process.stdout.write(JSON.stringify({ replied: true, resolved: threadId }) + "\n");
 }
 
-const SENSITIVE_FILE = /^\.env|^\.npmrc$|^id_|credentials|secret|\.key$|\.pem$/i;
+const SENSITIVE_NAME = /^\.env|^\.npmrc$|^id_|\.key$|\.pem$/i;
+const SENSITIVE_PATH = /credentials|secret/i;
 
 async function cmdCommitPush(args: string[]): Promise<void> {
 	if (args.length < 1) die("commit-push requires <message>");
@@ -262,7 +263,8 @@ async function cmdCommitPush(args: string[]): Promise<void> {
 	const lsResult = await git`ls-files --others --exclude-standard`;
 	const untracked = lsResult.stdout.toString().split("\n").filter(Boolean);
 	for (const f of untracked) {
-		if (SENSITIVE_FILE.test(f.split("/").at(-1) ?? f)) continue;
+		if (SENSITIVE_PATH.test(f) || SENSITIVE_NAME.test(f.split("/").at(-1) ?? f))
+			continue;
 		await git`add -- ${f}`;
 	}
 

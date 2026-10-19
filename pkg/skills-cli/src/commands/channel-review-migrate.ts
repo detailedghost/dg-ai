@@ -2,7 +2,6 @@ import {
 	existsSync,
 	lstatSync,
 	readFileSync,
-	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -195,17 +194,21 @@ export async function runMigrateEnv(
 		throw new DgCliError(
 			"The env file changed during migration; its lines were left intact. Run migrate-env again.",
 		);
-	const backup = `${file}.bak-${stamp(deps.now())}`;
-	writeFileSync(backup, original, { mode: 0o600, flag: "wx" });
-	writeFileAtomic(
-		file,
-		lines.filter((_, index) => !removed.has(index)).join("\n"),
-		originalStat.mode & 0o777,
-	);
-	if (flags.keepBackup) {
-		deps.write(`removed those lines from ${file}; backup kept at ${backup}`);
-		return;
+	const rewritten = lines.filter((_, index) => !removed.has(index)).join("\n");
+	const mode = originalStat.mode & 0o777;
+	const backup = flags.keepBackup
+		? `${file}.bak-${stamp(deps.now())}`
+		: undefined;
+	try {
+		if (backup) writeFileSync(backup, original, { mode: 0o600, flag: "wx" });
+		writeFileAtomic(file, rewritten, mode);
+	} catch (error) {
+		writeFileSync(file, original, { mode });
+		throw error;
 	}
-	unlinkSync(backup);
-	deps.write(`removed those lines from ${file}`);
+	deps.write(
+		backup
+			? `removed those lines from ${file}; backup kept at ${backup}`
+			: `removed those lines from ${file}`,
+	);
 }

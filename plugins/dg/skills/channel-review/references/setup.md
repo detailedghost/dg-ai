@@ -342,9 +342,10 @@ To move secrets that are already in `.env`, run
 without `--dry-run`. It stores `CHANNEL_REVIEW_RELAY_SECRET_DEV` and `_PROD`,
 `DATADOG_ACCESS_TOKEN` (with `DATADOG_SITE`), and `SENTRY_AUTH_TOKEN` (with
 `SENTRY_ORG` and `SENTRY_BASE_URL`). Then it deletes only those lines. It
-keeps the file mode and prints variable names only. It deletes the
-`.env.bak-<timestamp>` backup after the rewrite; `--keep-backup` keeps it
-(mode 0600) with the original values so you can undo. `DATADOG_API_KEY` and `DATADOG_APP_KEY` stay
+keeps the file mode and prints variable names only. It writes no
+backup by default; `--keep-backup` writes a plain-text
+`.env.bak-<timestamp>` copy (mode 0600) with the original values so you can
+undo. If the rewrite fails, it restores the original content. `DATADOG_API_KEY` and `DATADOG_APP_KEY` stay
 in `.env`; replace them with `connect datadog`. The default file is the `.env`
 next to the mise config in the current folder; `--file` picks another.
 Quoted values and inline comments are supported. When a moved variable is

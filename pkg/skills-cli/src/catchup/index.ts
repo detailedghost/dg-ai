@@ -63,9 +63,10 @@ export async function main(argv: string[]): Promise<number> {
 	};
 	let stashed = false;
 	const restore = async () => {
-		stashed = false;
 		console.log("==> Restoring stash...");
-		return native(["stash", "pop"]);
+		const status = await native(["stash", "pop"]);
+		if (status === 0) stashed = false;
+		return status;
 	};
 	try {
 		const before = await query(["rev-parse", "HEAD"]);

@@ -79,6 +79,7 @@ function Get-DgSkillsSource {
 		}
 	}
 	$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-skills-" + [guid]::NewGuid())
+	$script:skillsTmp = $tmp
 	New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 	$archive = Join-Path $tmp "dg-ai.zip"
 	$tag = (Resolve-DgRelease).tag_name
@@ -94,7 +95,11 @@ if ($env:DG_SKILLS_ONLY -eq "1") {
 	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST }
 		elseif ($env:DG_HOME) { Join-Path $env:DG_HOME "skills" }
 		else { Join-Path $env:USERPROFILE ".dg\skills" }
-	Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
+	try {
+		Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
+	} finally {
+		if ($script:skillsTmp) { Remove-Item -Recurse -Force $script:skillsTmp -ErrorAction SilentlyContinue }
+	}
 	if ($env:DG_SKILLS_NO_CLI -eq "1") {
 		Write-Host "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
 		exit 0
@@ -180,14 +185,17 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-	Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$($rel.tag_name).zip" -OutFile $archive
-	Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
-	$skillsDir = Join-Path $codexRoot "skills"
-	New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-	foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
-		if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
-		Copy-Item -Recurse -Force $skill.FullName $skillsDir
+	try {
+		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$($rel.tag_name).zip" -OutFile $archive
+		Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
+		$skillsDir = Join-Path $codexRoot "skills"
+		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
+			if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
+			Copy-Item -Recurse -Force $skill.FullName $skillsDir
+		}
+	} finally {
+		Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 	}
-	Remove-Item -Recurse -Force $tmpDir
 	Write-Host "Codex skills installed in $skillsDir"
 }

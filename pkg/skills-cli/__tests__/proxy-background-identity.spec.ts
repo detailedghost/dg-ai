@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readPid, terminateGroup } from "../src/proxy/background";
+import { main, readPid, terminateGroup } from "../src/proxy/background";
 import { proxyFixtures } from "./proxy-fixtures";
 
 const realPlatform = Object.getOwnPropertyDescriptor(process, "platform");
@@ -67,6 +67,41 @@ describe("background pid identity off Linux", () => {
 		const job = recordJob("offlinux", pid);
 		setPlatform("darwin");
 		expect(readPid(job as never)).toBeNull();
+	});
+
+	test("prune keeps the records of a live job whose state reads unknown", async () => {
+		const pid = detachedSleeper();
+		const job = recordJob("offlinux", pid);
+		const stateDir = join(fixture.state, "bg");
+		mkdirSync(stateDir, { recursive: true });
+		const metaFile = join(stateDir, "offlinux.meta.json");
+		writeFileSync(
+			metaFile,
+			JSON.stringify({
+				id: job.id,
+				command: ":",
+				cwd: fixture.root,
+				startedAt: new Date().toISOString(),
+				pidFile: job.pidFile,
+				launcherPid: pid,
+				kind: "command",
+			}),
+		);
+		setPlatform("darwin");
+		const write = process.stdout.write.bind(process.stdout);
+		const exit = process.exit;
+		process.stdout.write = (() => true) as typeof process.stdout.write;
+		process.exit = (() => {
+			throw new Error("exit");
+		}) as typeof process.exit;
+		try {
+			await main(["prune", "--cwd", fixture.root]).catch(() => undefined);
+		} finally {
+			process.stdout.write = write;
+			process.exit = exit;
+		}
+		expect(existsSync(metaFile)).toBe(true);
+		expect(existsSync(job.pidFile)).toBe(true);
 	});
 
 	test("terminateGroup refuses to signal and leaves the process alive", async () => {

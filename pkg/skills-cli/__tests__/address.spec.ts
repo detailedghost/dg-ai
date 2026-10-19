@@ -4529,7 +4529,7 @@ describe("address commit-push sensitive files", () => {
 			bin,
 			"git",
 			cliFixtures.shScript(`
-  "ls-files --others --exclude-standard") printf '%s\\n' app/.env config/.env.local id_rsa .npmrc certs/server.pem keys/api.key src/app.ts ;;
+  "ls-files --others --exclude-standard") printf '%s\\n' app/.env config/.env.local id_rsa .npmrc config/secrets/prod.json credentials/gcp.json certs/server.pem keys/api.key src/app.ts ;;
   "add -u"|"add -- src/app.ts"|"commit -m msg"|"push") exit 0 ;;
   *) exit 99 ;;
 `),

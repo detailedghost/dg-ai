@@ -209,7 +209,7 @@ export function registerChannelReview(program: Command): void {
 		.option("--dry-run", "list the variables that would move")
 		.option(
 			"--keep-backup",
-			"keep a 0600 .env.bak-<timestamp> copy with the original values",
+			"write a plain-text 0600 .env.bak-<timestamp> copy with the original values",
 		)
 		.option("--session <id>", "dg session to authenticate with")
 		.action(async (flags: MigrateFlags) => {
