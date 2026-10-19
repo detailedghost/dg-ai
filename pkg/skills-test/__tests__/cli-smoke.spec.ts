@@ -51,6 +51,7 @@ describe("dg-skills CLI", () => {
 			"deps-upgrade",
 			"meaningful",
 			"catchup",
+			"worktree",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -71,6 +72,13 @@ describe("dg-skills CLI", () => {
 		]) {
 			expect(out).toContain(flag);
 		}
+	});
+
+	test("worktree --help documents create, list, remove and prune without touching a repository", async () => {
+		const { code, out } = await runCli(["worktree", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["create", "list", "remove", "prune"])
+			expect(out).toContain(verb);
 	});
 
 	test("clipboard-image --help documents native capture without reading the clipboard", async () => {

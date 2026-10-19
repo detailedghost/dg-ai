@@ -1,0 +1,100 @@
+---
+name: worktree
+description: "Manage git worktrees for AI agent workflows — create, list, remove, prune. Reused by the planning and execution skills."
+---
+
+# /worktree — Git Worktree Lifecycle
+
+Front door for git worktree management. Reused by planning and execution workflows for worktree creation; permissions, frontmatter, PR and cwd restore stay in those workflows.
+
+Resolve the CLI before using the commands below:
+
+```bash
+DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
+if [ ! -x "$DG" ]; then
+  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
+    sh "$LOCAL_BOOTSTRAP"
+  else
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+  fi
+fi
+```
+
+## Usage
+
+```sh
+# create or resume a worktree+branch (slug positional)
+"$DG" worktree create <slug> [--prefix feature/] [--base <branch>] [--no-seed] [--no-resume]
+
+# list linked worktrees (STATUS: clean, dirty, ahead N, no-upstream, MISSING)
+"$DG" worktree list [--porcelain]
+
+# remove a worktree + branch (guards block by default)
+"$DG" worktree remove <slug> [--force] [--keep-branch] [--merged-ok]
+
+# clean up stale records (paths missing on disk)
+"$DG" worktree prune
+```
+
+Run `"$DG" worktree <subcommand> --help` for per-subcommand details. A bare `"$DG" worktree` prints usage on stderr and exits 1; failures exit 2.
+
+## Output contract
+
+`create` emits exactly three KEY=value lines on stdout. Consume with:
+
+```sh
+eval "$("$DG" worktree create my_feature)"
+```
+
+`WORKTREE_PATH`, `WORKTREE_BRANCH` and `WORKTREE_ORIGIN` are now in the environment. All warnings, errors and progress go to stderr, so stdout stays clean for machine consumption. Create output is eval-safe: a value made only of shell-safe characters prints raw, and any other value (spaces, quotes, `$`) is single-quoted. `list --porcelain` values are raw and never quoted; parsers split each line on the first `=`.
+
+## Working in the worktree (no session relocation)
+
+`create` only makes the worktree on disk. It never changes cwd, and the session cannot relocate into it. `EnterWorktree({path: <WORKTREE_PATH>})` refuses these paths: the `path` form accepts only worktrees registered under `<repo>/.claude/worktrees/`, and this command places worktrees at `$HOME/code/worktrees/<repo>-<slug>` (or beside origin).
+
+The session stays put. Every command that needs the worktree carries its own `cd`:
+
+```sh
+cd "$WORKTREE_PATH" && git status --porcelain
+```
+
+The shell's cwd does not persist between tool calls, so prefix every command that must run in the worktree. `ExitWorktree` has no role here; teardown goes through `"$DG" worktree remove`.
+
+## Path & branch conventions
+
+- Branch: `feature/<slug>` (override with `--prefix`; `-p` and `-b` alias `--prefix` and `--base`).
+- Path: `$HOME/code/worktrees/<repo>-<slug>` when origin is under `~/code/`, otherwise a sibling of origin (`<dirname>/<repo>-<slug>`).
+- Slugs are normalized: lowercase, `[^a-z0-9]+` becomes `_`.
+
+## Seeded files (skip with `--no-seed` or `-N`)
+
+Copied from origin into the new worktree, preserving mode:
+
+- `.env`, `.env.*`
+- `.envrc`
+- `.tool-versions`, `.nvmrc`
+- `.python-version`, `.node-version`, `.ruby-version`, `.terraform-version`
+- `.env` and `.env.*` files one and two directories down (never `node_modules`)
+
+## Remove safety guards
+
+`remove <slug>` accepts the slug or the full branch name. An ambiguous slug lists every candidate and removes nothing. These guards block by default; `--force` overrides all of them:
+
+1. Uncommitted changes or untracked files.
+2. Unpushed commits ahead of upstream (no upstream: blocked when ahead of `origin/<base>`).
+3. Branch not merged into `origin/<base>`: `git cherry` first (squash-aware), then a merged pull request lookup through the provider. A failed lookup is reported as `lookup failed` and blocks; a missing provider CLI blocks silently.
+
+A failed status or comparison check blocks removal; it never counts as clean. `--merged-ok` skips guard 3 only, as `/address` does after the provider confirms a merge. `--keep-branch` leaves the local branch (default is `git branch -D`); a failed branch delete warns and still exits 0. If `git worktree remove` fails (for example a locked worktree), the command exits 2 and keeps the worktree, directory and branch.
+
+## Resume semantics (permissive)
+
+| State | Behavior |
+|---|---|
+| Branch + path both exist | Resume, emit KEY=values |
+| Branch exists, path missing | Recreate worktree at expected path from branch HEAD |
+| Path exists, branch missing | Error — investigate manually |
+| Branch exists, path is a plain directory (not a worktree of that branch) | Error (exit 2), nothing created — investigate manually |
+| Dirty worktree on resume | Succeed — caller decides |
+
+Pass `--no-resume` to make any partial state an error.

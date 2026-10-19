@@ -266,7 +266,7 @@ describe("deps-upgrade prepare", () => {
   const branch = result.stdout.match(/^  branch: (.+)$/m)?.[1];
   const path = result.stdout.match(/^  path:   (.+)$/m)?.[1];
   expect(branch).toMatch(/^chore\/deps_update_\d{8}_\d{6}$/);
-  expect(path).toBeTruthy();
+  expect(path).toMatch(/^\//);
   expect(result.stdout).toBe(`Worktree ready.\n  branch: ${branch}\n  path:   ${path}\n\nRun every remaining step from inside the worktree:\n  cd ${path}\n`);
   expect(runGit(["branch", "--show-current"], path!).trim()).toBe(branch!);
   const probe = (cwd: string) => {
@@ -286,7 +286,7 @@ describe("deps-upgrade prepare", () => {
   const first = prepare(repo, preload);
   expect(first.exitCode).toBe(0);
   const path = first.stdout.match(/^  path:   (.+)$/m)?.[1];
-  expect(path).toBeTruthy();
+  expect(path).toMatch(/^\//);
   const head = commitFile(path!, "progress.txt", "keep progress", "feat: existing upgrade progress");
   const state = stateDir("deps-upgrade", { cwd: repo });
   const snapshots = ["closed-prs.txt", "audit-before.json", "audit-after.json", "held-by-cooldown.jsonl"];

@@ -26,6 +26,7 @@ import { registerRerun } from "./commands/rerun";
 import { registerStash } from "./commands/stash";
 import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
+import { registerWorktree } from "./commands/worktree";
 import {
 	guardExtensionCommands,
 	registerRequireExtension,
@@ -62,6 +63,7 @@ registerClipboardImage(program);
 registerProto(program);
 registerProxy(program);
 registerOverwatchSnapshot(program);
+registerWorktree(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {
