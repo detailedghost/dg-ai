@@ -170,3 +170,13 @@ Rename the CLI to `dg-agent phone-friend` with phone verbs (number, invite, dial
 (deferred, LOW) A key race between a run with a session and a run without one can make a store key and a file key. The file wins, and the next run with a session moves it.
 (deferred, LOW) On Windows, the pid check trusts any live pid, and off skips the SIGTERM handler.
 (deferred, LOW) Message text has no size cap.
+
+## Lines and SQLite settings
+
+Outcome of the lines slice:
+
+- Added `--line <name>`. Each line has its own `phone-friend.db` plus the listener pid and log. No JSON files remain.
+- Key writes run in a db transaction. The mixed-session key race is closed.
+- Review round 1 (qa-code and security on sonnet) fixed the ps fallback, file modes on open, secure_delete, and file-based replies.
+- Deferred: the shared grant prefix across lines, and clock injection in withDb.
+- E2E: two lines on one DG_HOME paired and chatted over the public relays.
