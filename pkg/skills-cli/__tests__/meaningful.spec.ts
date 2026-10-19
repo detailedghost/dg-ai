@@ -1092,7 +1092,7 @@ else if (args[1] !== "ready") process.exit(91);
   for (const call of createCalls) {
    expect(call.args).toContain(title);
    if (provider === "github") expect(call.body).toBe(body);
-   else expect(call.args[call.args.indexOf("--description") + 1]).toBe(body);
+   else expect(call.args).toContain(`--description=${body}`);
   }
   if (provider === "github") {
    const ready = runCompiled(["deps-upgrade", "ready-when-green", String(id), "--interval-seconds", "1"], repo.dir, env);

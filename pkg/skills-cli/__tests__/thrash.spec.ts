@@ -863,7 +863,7 @@ describe("remote mode via the GitLab adapter", () => {
     echo '{"id":701}'
     ;;
   *"/approve"*)
-    echo 'approval forbidden for this reviewer' >&2
+    echo 'HTTP 403: approval forbidden for this reviewer' >&2
     exit 1
     ;;
   *"api projects/acme%2Fwidgets/merge_requests/12"*)
@@ -1375,11 +1375,11 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_PROXY_CALLS, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 const resumed = args[1] === "resume";
-const prompt = resumed ? args[3] : args[1];
+const prompt = args.at(-1);
 const session = resumed ? JSON.parse(readFileSync(process.env.FAKE_SESSION, "utf8")) : {
   id: "thrash-fixture-session", cwd: process.cwd(), path: prompt.match(/^FINDINGS_PATH: (.+)$/m)?.[1]
 };
-if (!session.path || (resumed && (args[2] !== session.id || process.cwd() !== session.cwd))) process.exit(9);
+if (!session.path || (resumed && (args.at(-2) !== session.id || process.cwd() !== session.cwd))) process.exit(9);
 writeFileSync(process.env.FAKE_SESSION, JSON.stringify(session));
 const report = { changed: "Adds a public value.", strengths: [], opportunities: [], findings: [
   { path: "src/a.ts", line: 3, tier: "high", body: resumed ? "Export the new public value." : "" }

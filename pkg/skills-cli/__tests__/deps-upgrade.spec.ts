@@ -721,7 +721,7 @@ describe("deps-upgrade push-pr", () => {
 		const log = newCallLog();
 		const bin = glabBin(
 			shScript(`
-  *"mr create"*"--title chore(deps): batch dependency upgrade"*"--description combined upgrade body"*)
+  *"mr create"*"--title chore(deps): batch dependency upgrade"*"--description=combined upgrade body"*)
     echo "https://gitlab.com/acme/widgets/-/merge_requests/99"
     exit 0
     ;;
@@ -781,7 +781,7 @@ JSON
 		const log = newCallLog();
 		const bin = glabBin(
 			shScript(`
-  *"mr create"*"--title chore: custom batch title"*"--description body"*)
+  *"mr create"*"--title chore: custom batch title"*"--description=body"*)
     echo "https://gitlab.com/acme/widgets/-/merge_requests/100"
     exit 0
     ;;
@@ -847,7 +847,7 @@ JSON
 
 		expect(result.exitCode).toBe(0);
 		expect(readFileSync(capturePath, "utf8")).toContain(
-			`--description ${body}`,
+			`--description=${body}`,
 		);
 	});
 

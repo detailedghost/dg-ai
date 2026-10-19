@@ -10,7 +10,7 @@ import { isolateCliTests } from "./cli-fixtures";
 
 isolateCliTests();
 
-const ENV_KEYS = ["AI_VCS_PROVIDER", "AI_VCS_GITLAB_HOSTS", "VCS_GITLAB_AI_REVIEW_BOT"] as const;
+const ENV_KEYS = ["AI_VCS_PROVIDER", "AI_VCS_GITLAB_HOSTS", "AI_VCS_GITLAB_REVIEW_BOT"] as const;
 
 let savedEnv: Record<string, string | undefined>;
 let originalCwd: string;

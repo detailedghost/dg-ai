@@ -1255,7 +1255,7 @@ case "$ARGS" in
     exit 0
     ;;
   *"actions/jobs/602/logs"*)
-    echo 'log expired' 1>&2
+    echo 'HTTP 410: log expired' 1>&2
     exit 1
     ;;
   *"actions/runs/501"*)
@@ -1304,7 +1304,7 @@ case "$ARGS" in
     exit 0
     ;;
   *"jobs/702/trace"*)
-    echo 'trace expired' 1>&2
+    echo 'HTTP 404: trace expired' 1>&2
     exit 1
     ;;
   *)
@@ -2934,7 +2934,7 @@ function withFakeGhOnPath(ghBin: string): string {
 
 describe("check-bot-review — the GitLab reviewer the loop used to route past", () => {
 	beforeEach(() => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "review-bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "review-bot";
 	});
 	function glabWithDiscussions(iid: number, discussionsPath: string): string {
 		return fakeGlab(`#!/bin/sh
@@ -3039,7 +3039,7 @@ esac
 		expect(JSON.parse(stdout)).toMatchObject({ present: true, threads: 1 });
 	});
 
-	test("honors VCS_GITLAB_AI_REVIEW_BOT, matching the configured reviewer", async () => {
+	test("honors AI_VCS_GITLAB_REVIEW_BOT, matching the configured reviewer", async () => {
 		const path = writeJson("gl-bot-review-configured.json", [
 			glDiscussion("disc-duo", [
 				{ id: 9506, author: "gitlab_duo", body: "suggestion" },
@@ -3051,7 +3051,7 @@ esac
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
 				GLAB_BIN: glabBin,
-				VCS_GITLAB_AI_REVIEW_BOT: "gitlab_duo",
+				AI_VCS_GITLAB_REVIEW_BOT: "gitlab_duo",
 			},
 		});
 
@@ -3073,7 +3073,7 @@ esac
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
 				GLAB_BIN: glabBin,
-				VCS_GITLAB_AI_REVIEW_BOT: "none",
+				AI_VCS_GITLAB_REVIEW_BOT: "none",
 				FAKE_CALL_LOG: log,
 			},
 		});
@@ -3120,7 +3120,7 @@ esac
 
 describe("check-bot-review — counting and ordering the reviewer's own comments", () => {
 	beforeEach(() => {
-		process.env.VCS_GITLAB_AI_REVIEW_BOT = "review-bot";
+		process.env.AI_VCS_GITLAB_REVIEW_BOT = "review-bot";
 	});
 	function glabWithThreads(iid: number, path: string): string {
 		return fakeGlab(`#!/bin/sh
@@ -3137,7 +3137,7 @@ esac
 `);
 	}
 
-	test("a non-resolvable bot discussion counts as present but never as unresolved work", async () => {
+	test("a non-resolvable bot discussion is left out, so it is neither present nor unresolved work", async () => {
 		const path = writeJson("gl-bot-unresolvable.json", [
 			glDiscussion("disc-bot-overview", [
 				{
@@ -3156,8 +3156,8 @@ esac
 
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout)).toMatchObject({
-			present: true,
-			threads: 1,
+			present: false,
+			threads: 0,
 			unresolved: 0,
 		});
 	});
@@ -3266,7 +3266,7 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		const { stdout, stderr, exitCode } = await runCli(["request-copilot"], {
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
-				VCS_GITLAB_AI_REVIEW_BOT: "review-bot",
+				AI_VCS_GITLAB_REVIEW_BOT: "review-bot",
 			},
 		});
 
@@ -3275,9 +3275,9 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		expect(stderr).toContain(NOT_SUPPORTED_ON_PROVIDER_TEXT);
 	});
 
-	test("VCS_GITLAB_AI_REVIEW_BOT=copilot does not open the Copilot gate on a GitLab repo", async () => {
+	test("AI_VCS_GITLAB_REVIEW_BOT=copilot does not open the Copilot gate on a GitLab repo", async () => {
 		const { stdout, stderr, exitCode } = await runCli(["request-copilot"], {
-			env: { AI_VCS_PROVIDER: "gitlab", VCS_GITLAB_AI_REVIEW_BOT: "copilot" },
+			env: { AI_VCS_PROVIDER: "gitlab", AI_VCS_GITLAB_REVIEW_BOT: "copilot" },
 		});
 
 		expect(exitCode).toBe(EXIT.UNSUPPORTED);
@@ -3290,7 +3290,7 @@ describe("Copilot subcommands stay refused on GitLab even now that it declares a
 		const { stdout, exitCode } = await runCli(["check-copilot"], {
 			env: {
 				AI_VCS_PROVIDER: "gitlab",
-				VCS_GITLAB_AI_REVIEW_BOT: "review-bot",
+				AI_VCS_GITLAB_REVIEW_BOT: "review-bot",
 				FAKE_CALL_LOG: log,
 			},
 		});
