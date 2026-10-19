@@ -16,7 +16,7 @@ changed lines is split into chunks, each reviewed by its own `thrash` agent in p
 and merged into one review. Cost: a small diff still takes one agent pass; a large diff
 takes one per chunk. Large diffs use up to 8 agents, and every changed line outside skipped
 generated, lock, or vendored files is reviewed. All agents use the same configured `thrash` persona and
-model, so cost scales with size up to 8x. One publish. The verdict posts with no confirm unless you ask for one.
+model, so cost scales with size up to 8x. One publish. An approve or request-changes event posts only after a confirm and `post --confirm`. A comment-only review posts with no confirm.
 
 ## Usage
 
@@ -30,7 +30,7 @@ model, so cost scales with size up to 8x. One publish. The verdict posts with no
 | `--stacked` | Review every open PR in the target's stack, root first. Any PR in the stack works as the target. |
 | `-s, --spice N` | 1 to 5, default 2. Scrutiny depth, nit budget, and verdict limits. Tone never changes. |
 | `-c, --comment` | Post as comment only. No approve, no request-changes. |
-| `--confirm` | Confirm before posting. |
+| `--confirm` | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. |
 | `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
 | `-t, --min-tier <tier>` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. |
 | `-b, --base <ref>` | Local mode only. Override fork-point detection. |
@@ -120,9 +120,9 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
 4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/address -l`, then stop.
    `--dry-run`: run `export DG_THRASH_DRY_RUN=1` at the start of the run (every fresh shell),
    and in step 5 call `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
-   the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility only when `--confirm` was
-   passed. Otherwise go to step 5 now.
-5. **Post.** `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--dry-run` in report-only mode) posts and saves the result
+   the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility when `--confirm` was
+   passed or when the verdict is approve or request changes. A headless run with no user to ask (for example the channel-review daemon) treats its own request as the confirm. A comment-only review goes to step 5 now.
+5. **Post.** `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--confirm` for an approve or request-changes verdict, or `--dry-run` in report-only mode) posts and saves the result
    next to the review JSON. If `degraded` is true, say the provider refused the requested
    verdict and posted as comment (for example, an own-PR restriction); the body still states the verdict.
 6. **Tally.** `"$DG" thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
@@ -154,8 +154,7 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
    Each review JSON is its `diffPath` with `.diff` replaced by `.review.json`.
 4. `"$DG" thrash tally` on all review files plus every `statusPath`, in stack order, is the
    preview; unposted rows say so.
-   For `--dry-run`, show the unposted tally and stop. Otherwise post with no confirm,
-   unless `--confirm` was passed. Then one confirm covers the stack.
+   For `--dry-run`, show the unposted tally and stop. Otherwise one confirm covers the stack when any review approves or requests changes, or when `--confirm` was passed. Pass `--confirm` to each such post.
 5. Post in one shell loop with stdout sent to `/dev/null` (with `--dry-run` in report-only
    mode), then run `tally` again on the same files as the final report.
 
@@ -163,7 +162,7 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
 
 - Never modify tracked files. This skill reviews, it does not fix.
 - Provider writes begin at step 5. Step 4 is the whole gate: a local target
-  or `--dry-run` stops there, and `--confirm` asks first. Diff size never asks.
+  or `--dry-run` stops there, and `--confirm` or an approve or request-changes verdict asks first. Diff size never asks.
 - Do not compute the verdict yourself. `compile` owns it.
 - Do not post with `gh` or `glab` directly. The helper handles both providers.
 

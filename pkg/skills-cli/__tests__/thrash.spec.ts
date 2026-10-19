@@ -469,7 +469,7 @@ describe("remote mode via the GitHub adapter", () => {
 		expect(compiled.verdict).toBe("request_changes");
 		expect(compiled.addressFile).toBeUndefined();
 
-		const post = run(["post", PR_URL, "--review", compiled.reviewPath], {
+		const post = run(["post", PR_URL, "--review", compiled.reviewPath, "--confirm"], {
 			cwd,
 			env,
 		});
@@ -903,7 +903,7 @@ describe("remote mode via the GitLab adapter", () => {
 		const compiled = JSON.parse(compile.stdout);
 		expect(compiled.verdict).toBe("approve");
 		expect(compiled.addressFile).toBeUndefined();
-		const post = run(["post", url, "--review", compiled.reviewPath], {
+		const post = run(["post", url, "--review", compiled.reviewPath, "--confirm"], {
 			cwd,
 			env,
 		});
@@ -1057,10 +1057,32 @@ describe("post --dry-run", () => {
 		});
 	}
 
+	test("post refuses an approve or request-changes event without --confirm", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], { cwd, env });
+		expect(post.exitCode).not.toBe(EXIT.OK);
+		expect(post.stderr.toString()).toContain("--confirm");
+		assertNoProviderCall(log, before);
+	});
+
+	test("post sends a comment-only review without --confirm", () => {
+		const { env, cwd, reviewPath, log } = compiledGitlabReview();
+		const stored = JSON.parse(readFileSync(reviewPath, "utf8"));
+		stored.review.verdict = "comment";
+		writeFileSync(reviewPath, JSON.stringify(stored));
+		const before = cliFixtures.readCalls(log).length;
+		const post = run(["post", url, "--review", reviewPath], { cwd, env });
+		expect(post.stderr.toString()).not.toContain("--confirm");
+		expect(
+			cliFixtures.readCalls(log).slice(before).some((call) => call.includes("/draft_notes")),
+		).toBe(true);
+	});
+
 	test("DG_THRASH_DRY_RUN=0 still posts", () => {
 		const { env, cwd, reviewPath, log } = compiledGitlabReview();
 		const before = cliFixtures.readCalls(log).length;
-		const post = run(["post", url, "--review", reviewPath], {
+		const post = run(["post", url, "--review", reviewPath, "--confirm"], {
 			cwd,
 			env: { ...env, DG_THRASH_DRY_RUN: "0" },
 		});
@@ -1320,7 +1342,7 @@ describe("compiled thrash workflow", () => {
 		expect(compile.exitCode, compile.stderr).toBe(EXIT.OK);
 		const review = JSON.parse(compile.stdout);
 		const post = execute(
-			["thrash", "post", target, "--review", review.reviewPath],
+			["thrash", "post", target, "--review", review.reviewPath, "--confirm"],
 			{ env },
 		);
 		expect(post.exitCode, post.stderr).toBe(EXIT.OK);

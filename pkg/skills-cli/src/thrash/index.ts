@@ -332,6 +332,9 @@ async function cmdPost(args: string[]): Promise<number> {
 		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
 		return EXIT.OK;
 	}
+	if (input.verdict !== "comment" && !args.includes("--confirm")) {
+		throw new Error(`post refuses a ${input.verdict} event without --confirm; pass --confirm once the user approves it`);
+	}
 	const target = await resolveTarget(arg);
 	if (target.mode === "local") {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
@@ -478,7 +481,7 @@ const command = defineCommand({
 			run: (args, opts) => cmdCompile(args, opts),
 		},
 		post: {
-			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file> [--dry-run]. --dry-run or DG_THRASH_DRY_RUN=1 prints the review and makes no provider call",
+			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file> [--dry-run] [--confirm]. An approve or request-changes event needs --confirm; a comment-only review does not. --dry-run or DG_THRASH_DRY_RUN=1 prints the review and makes no provider call",
 			args: ["target"],
 			run: cmdPost,
 		},
