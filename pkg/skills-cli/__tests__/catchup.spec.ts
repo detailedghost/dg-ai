@@ -125,6 +125,8 @@ describe("relocated compiled catchup", () => {
 				PATH: bin,
 				HOME: home,
 				XDG_CONFIG_HOME: home,
+				DG_HOME: undefined,
+				DG_SKILLS: undefined,
 				DG_SKILLS_DIR: skills,
 				CLAUDE_PLUGIN_ROOT: dirname(skills),
 				GIT_TRACE: trace,

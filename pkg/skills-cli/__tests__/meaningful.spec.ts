@@ -965,7 +965,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
  }
 
  function runCompiled(args: readonly string[], cwd: string, env: Record<string, string> = {}, stdin?: string) {
-  const proc = Bun.spawnSync([binary, ...args], { cwd, env: { ...process.env, ...env, DG_SKILLS_DIR: skills, CLAUDE_PLUGIN_ROOT: dirname(skills), NODE_OPTIONS: undefined, BUN_OPTIONS: undefined }, stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
+  const proc = Bun.spawnSync([binary, ...args], { cwd, env: { ...process.env, ...env, DG_HOME: undefined, DG_SKILLS: undefined, DG_SKILLS_DIR: skills, CLAUDE_PLUGIN_ROOT: dirname(skills), NODE_OPTIONS: undefined, BUN_OPTIONS: undefined }, stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
   return { exitCode: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
  }
 
@@ -985,7 +985,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
    const text = readFileSync(join(skills, skill, "SKILL.md"), "utf8");
    const snippet = text.match(/```bash\n([\s\S]*?)```/)?.[1];
    expect(snippet).toBeTruthy();
-   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$DG" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
+   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$DG" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
    expect(proc.exitCode).toBe(0);
    expect(proc.stdout.toString()).toContain(`Usage: ${skill} <subcommand>`);
    expect(proc.stderr.toString()).toBe("");
