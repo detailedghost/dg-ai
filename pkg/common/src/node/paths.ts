@@ -22,6 +22,13 @@ export type DgPaths = {
 	assetsDir: string;
 	memoryDbPath: string;
 	grantsDir: string;
+	phoneDir: string;
+	phoneKeyPath: string;
+	phoneConfigPath: string;
+	phoneInboxPath: string;
+	phoneSeenPath: string;
+	phonePidPath: string;
+	phoneLogPath: string;
 };
 
 export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
@@ -33,6 +40,7 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const stateDir = env.DG_HOME ?? path.join(homeDir, ".dg");
 	const daemonDir = path.join(stateDir, "daemon");
 	const agentsDir = path.join(stateDir, "agents");
+	const phoneDir = path.join(stateDir, "phone");
 
 	return {
 		stateDir,
@@ -49,5 +57,12 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		assetsDir: path.join(agentsDir, "assets"),
 		memoryDbPath: path.join(agentsDir, "memory.db"),
 		grantsDir: path.join(stateDir, "grants"),
+		phoneDir,
+		phoneKeyPath: path.join(phoneDir, "key"),
+		phoneConfigPath: path.join(phoneDir, "config.json"),
+		phoneInboxPath: path.join(phoneDir, "inbox.jsonl"),
+		phoneSeenPath: path.join(phoneDir, "seen.json"),
+		phonePidPath: path.join(phoneDir, "listener.pid"),
+		phoneLogPath: path.join(phoneDir, "listener.log"),
 	};
 }
