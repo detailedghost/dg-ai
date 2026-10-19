@@ -3,14 +3,15 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { Inbox, MESSAGE_TTL_SECONDS } from "../../src/phone-friend/inbox";
+import { resolveDgPaths } from "@dg/common/node";
+import { MESSAGE_TTL_SECONDS, PhoneFriendDb } from "../../src/phone-friend/db";
+import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 
 const NOW = 1_800_000_000;
 let home: string;
-let paths: DgPaths;
+let line: LinePaths;
 let now: number;
-let inbox: Inbox;
+let inbox: PhoneFriendDb;
 
 function message(id: string, ts: number, text = id) {
 	return { id, ts, from: "npub1them", text };
@@ -18,9 +19,9 @@ function message(id: string, ts: number, text = id) {
 
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-inbox-"));
-	paths = resolveDgPaths({ env: { DG_HOME: home } });
+	line = linePaths(resolveDgPaths({ env: { DG_HOME: home } }));
 	now = NOW;
-	inbox = Inbox.open(paths, () => now);
+	inbox = PhoneFriendDb.open(line, () => now);
 });
 
 afterEach(() => {
@@ -28,10 +29,10 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
-describe("Inbox", () => {
+describe("PhoneFriendDb", () => {
 	it("keeps the database private in a private dir", () => {
-		expect(statSync(paths.phoneFriendDbPath).mode & 0o777).toBe(0o600);
-		expect(statSync(paths.phoneFriendDir).mode & 0o777).toBe(0o700);
+		expect(statSync(line.dbPath).mode & 0o777).toBe(0o600);
+		expect(statSync(line.dir).mode & 0o777).toBe(0o700);
 	});
 
 	it("returns each unread incoming message once, oldest first, and marks it read", () => {
@@ -79,7 +80,7 @@ describe("Inbox", () => {
 		inbox.add(message("fresh", NOW - MESSAGE_TTL_SECONDS + 60), "in", "npub1them");
 		inbox.close();
 
-		inbox = Inbox.open(paths, () => now);
+		inbox = PhoneFriendDb.open(line, () => now);
 
 		expect(inbox.history().map((m) => m.id)).toEqual(["fresh"]);
 	});
@@ -98,8 +99,18 @@ describe("Inbox", () => {
 		expect(inbox.history()).toEqual([]);
 	});
 
+	it("keeps settings as JSON, and setOnce keeps the first value", () => {
+		inbox.set("config", { relays: ["wss://x"] });
+
+		expect(inbox.get("config")).toEqual({ relays: ["wss://x"] });
+		expect(inbox.setOnce("nsec", "first")).toBe("first");
+		expect(inbox.setOnce("nsec", "second")).toBe("first");
+		inbox.unset("nsec");
+		expect(inbox.get("nsec")).toBeUndefined();
+	});
+
 	it("reports the schema version it created", () => {
-		const raw = new Database(paths.phoneFriendDbPath, { readonly: true });
+		const raw = new Database(line.dbPath, { readonly: true });
 		const { user_version } = raw.query("PRAGMA user_version").get() as { user_version: number };
 		raw.close();
 

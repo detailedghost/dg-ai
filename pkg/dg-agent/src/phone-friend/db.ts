@@ -2,12 +2,12 @@ import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
 import {
 	applyConnectionPragmas,
-	type DgPaths,
 	ensurePrivateDir,
 	type MigrationStep,
 	runMigrations,
 } from "@dg/common/node";
 import type { Message, Seen } from "./chat";
+import type { LinePaths } from "./line";
 
 export type Direction = "in" | "out";
 export type StoredMessage = Message & { direction: Direction; contact: string };
@@ -33,7 +33,7 @@ const SCHEMA: MigrationStep[] = [
 			db.run(
 				"CREATE INDEX idx_messages_unread ON messages(ts) WHERE direction = 'in' AND read_at IS NULL",
 			);
-			db.run("CREATE TABLE state (key TEXT PRIMARY KEY, value INTEGER NOT NULL) STRICT");
+			db.run("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT");
 		},
 	},
 ];
@@ -58,16 +58,17 @@ function toMessage(row: Row): Message {
 	};
 }
 
-export class Inbox {
+/** One SQLite file per line holds its settings, its key in file mode, and its messages. */
+export class PhoneFriendDb {
 	private constructor(
 		private readonly db: Database,
 		private readonly now: () => number,
 	) {}
 
-	static open(paths: DgPaths, now: () => number): Inbox {
-		ensurePrivateDir(paths.phoneFriendDir);
-		writeFileSync(paths.phoneFriendDbPath, "", { mode: 0o600, flag: "a" });
-		const db = new Database(paths.phoneFriendDbPath, { strict: true, create: true, readwrite: true });
+	static open(line: LinePaths, now: () => number = () => Math.floor(Date.now() / 1000)): PhoneFriendDb {
+		ensurePrivateDir(line.dir);
+		writeFileSync(line.dbPath, "", { mode: 0o600, flag: "a" });
+		const db = new Database(line.dbPath, { strict: true, create: true, readwrite: true });
 		try {
 			applyConnectionPragmas(db);
 			runMigrations(db, SCHEMA);
@@ -75,9 +76,9 @@ export class Inbox {
 			db.close(true);
 			throw err;
 		}
-		const inbox = new Inbox(db, now);
-		inbox.prune();
-		return inbox;
+		const opened = new PhoneFriendDb(db, now);
+		opened.prune();
+		return opened;
 	}
 
 	private cutoff(): number {
@@ -129,19 +130,43 @@ export class Inbox {
 	}
 
 	seen(): Seen {
-		const cursor = this.db.query("SELECT value FROM state WHERE key = 'cursor'").get() as
-			| { value: number }
-			| null;
 		const ids = (this.db.query("SELECT id FROM messages ORDER BY rowid").all() as { id: string }[]).map(
 			(row) => row.id,
 		);
-		return { cursor: cursor?.value ?? 0, ids };
+		return { cursor: this.get<number>("cursor") ?? 0, ids };
 	}
 
 	setCursor(cursor: number): void {
+		this.set("cursor", cursor);
+	}
+
+	get<T>(key: string): T | undefined {
+		const row = this.db.query("SELECT value FROM settings WHERE key = $key").get({ key }) as
+			| { value: string }
+			| null;
+		return row ? (JSON.parse(row.value) as T) : undefined;
+	}
+
+	set(key: string, value: unknown): void {
 		this.db
-			.query("INSERT INTO state (key, value) VALUES ('cursor', $cursor) ON CONFLICT(key) DO UPDATE SET value = $cursor")
-			.run({ cursor });
+			.query("INSERT INTO settings (key, value) VALUES ($key, $value) ON CONFLICT(key) DO UPDATE SET value = $value")
+			.run({ key, value: JSON.stringify(value) });
+	}
+
+	/** Writes only when the key is absent, so the first of two racing writers wins; returns the stored value. */
+	setOnce<T>(key: string, value: T): T {
+		this.db
+			.query("INSERT OR IGNORE INTO settings (key, value) VALUES ($key, $value)")
+			.run({ key, value: JSON.stringify(value) });
+		return this.get<T>(key) as T;
+	}
+
+	unset(key: string): void {
+		this.db.query("DELETE FROM settings WHERE key = $key").run({ key });
+	}
+
+	transaction<T>(work: () => T): T {
+		return this.db.transaction(work)();
 	}
 
 	close(): void {

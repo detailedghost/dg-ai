@@ -9,7 +9,7 @@ import {
 	unwrapIncoming,
 	wrap,
 } from "../../src/phone-friend/chat";
-import { MESSAGE_TTL_SECONDS } from "../../src/phone-friend/inbox";
+import { MESSAGE_TTL_SECONDS } from "../../src/phone-friend/db";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];

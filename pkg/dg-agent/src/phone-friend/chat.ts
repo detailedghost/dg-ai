@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
-import { MESSAGE_TTL_SECONDS } from "./inbox";
+import { MESSAGE_TTL_SECONDS } from "./db";
 
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
 export type Invite = { secret: string; expiresAt: number };

@@ -85,14 +85,6 @@ describe("resolveDgPaths", () => {
 		"logDir",
 	] as const;
 	const AGENT_FIELDS = ["sessionsDir", "assetsDir", "memoryDbPath"] as const;
-	const PHONE_FIELDS = [
-		"phoneFriendKeyPath",
-		"phoneFriendConfigPath",
-		"phoneFriendDbPath",
-		"phoneFriendInvitePath",
-		"phoneFriendPidPath",
-		"phoneFriendLogPath",
-	] as const;
 
 	it("puts every daemon path under <root>/daemon and every agent path under <root>/agents", () => {
 		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
@@ -119,13 +111,10 @@ describe("resolveDgPaths", () => {
 		}
 	});
 
-	it("puts every phone path under <root>/phone, apart from the daemon and agent trees", () => {
+	it("puts the phone-friend root under <root>/phone-friend", () => {
 		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
 
-		expect(paths.phoneFriendDir).toBe(posix.join(paths.stateDir, "phone-friend"));
-		for (const field of PHONE_FIELDS) {
-			expect(posix.dirname(paths[field])).toBe(paths.phoneFriendDir);
-		}
+		expect(paths.phoneFriendRoot).toBe(posix.join(paths.stateDir, "phone-friend"));
 	});
 
 	it("names the daemon files by the daemon, not by the harness", () => {
@@ -153,9 +142,7 @@ describe("resolveDgPaths", () => {
 		for (const field of AGENT_FIELDS) {
 			expect(win32.dirname(paths[field])).toBe(paths.agentsDir);
 		}
-		for (const field of PHONE_FIELDS) {
-			expect(win32.dirname(paths[field])).toBe(paths.phoneFriendDir);
-		}
+		expect(paths.phoneFriendRoot).toBe(win32.join(paths.stateDir, "phone-friend"));
 	});
 
 	it("honors DG_HOME as the sole root override, replacing <home>/.dg wholesale", () => {

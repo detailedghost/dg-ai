@@ -22,13 +22,7 @@ export type DgPaths = {
 	assetsDir: string;
 	memoryDbPath: string;
 	grantsDir: string;
-	phoneFriendDir: string;
-	phoneFriendKeyPath: string;
-	phoneFriendConfigPath: string;
-	phoneFriendDbPath: string;
-	phoneFriendInvitePath: string;
-	phoneFriendPidPath: string;
-	phoneFriendLogPath: string;
+	phoneFriendRoot: string;
 };
 
 export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
@@ -40,7 +34,6 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const stateDir = env.DG_HOME ?? path.join(homeDir, ".dg");
 	const daemonDir = path.join(stateDir, "daemon");
 	const agentsDir = path.join(stateDir, "agents");
-	const phoneFriendDir = path.join(stateDir, "phone-friend");
 
 	return {
 		stateDir,
@@ -57,12 +50,6 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		assetsDir: path.join(agentsDir, "assets"),
 		memoryDbPath: path.join(agentsDir, "memory.db"),
 		grantsDir: path.join(stateDir, "grants"),
-		phoneFriendDir,
-		phoneFriendKeyPath: path.join(phoneFriendDir, "key"),
-		phoneFriendConfigPath: path.join(phoneFriendDir, "config.json"),
-		phoneFriendDbPath: path.join(phoneFriendDir, "phone-friend.db"),
-		phoneFriendInvitePath: path.join(phoneFriendDir, "invite.json"),
-		phoneFriendPidPath: path.join(phoneFriendDir, "listener.pid"),
-		phoneFriendLogPath: path.join(phoneFriendDir, "listener.log"),
+		phoneFriendRoot: path.join(stateDir, "phone-friend"),
 	};
 }

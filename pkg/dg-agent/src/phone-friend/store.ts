@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
+import { PhoneFriendDb } from "./db";
+import type { LinePaths } from "./line";
 
 export type PhoneFriendConfig = { contact?: string; relays: string[] };
 
@@ -12,57 +12,90 @@ export const DEFAULT_RELAYS = [
 	"wss://relay.primal.net",
 ];
 
-function readJson<T>(path: string, fallback: T): T {
-	if (!existsSync(path)) return fallback;
-	return { ...fallback, ...JSON.parse(readFileSync(path, "utf8")) };
-}
+const CONFIG = "config";
+const INVITE = "invite";
+const FILE_KEY = "nsec";
+const KEY_IN_STORE = "key_in_store";
 
-/** Creates the 0600 nsec file once (exclusive create, so a racing writer reads the winner) and reuses it after. */
-export function loadOrCreateKey(paths: DgPaths): Uint8Array {
-	ensurePrivateDir(paths.phoneFriendDir);
-	if (existsSync(paths.phoneFriendKeyPath)) {
-		try {
-			const decoded = nip19.decode(readFileSync(paths.phoneFriendKeyPath, "utf8").trim());
-			if (decoded.type === "nsec") return decoded.data;
-		} catch {}
-		throw new DgCliError(`${paths.phoneFriendKeyPath} does not hold a valid nsec`);
-	}
-	const sk = generateSecretKey();
+export function withDb<T>(line: LinePaths, work: (db: PhoneFriendDb) => T): T {
+	const db = PhoneFriendDb.open(line);
 	try {
-		writeFileSync(paths.phoneFriendKeyPath, `${nip19.nsecEncode(sk)}\n`, { mode: 0o600, flag: "wx" });
-	} catch (err) {
-		if ((err as NodeJS.ErrnoException).code === "EEXIST") return loadOrCreateKey(paths);
-		throw err;
+		return work(db);
+	} finally {
+		db.close();
 	}
-	return sk;
 }
 
-export function readConfig(paths: DgPaths): PhoneFriendConfig {
-	return readJson<PhoneFriendConfig>(paths.phoneFriendConfigPath, { relays: DEFAULT_RELAYS });
+function decodeFileKey(line: LinePaths, value: unknown): Uint8Array {
+	try {
+		if (typeof value === "string") {
+			const decoded = nip19.decode(value);
+			if (decoded.type === "nsec") return decoded.data;
+		}
+	} catch {}
+	throw new DgCliError(`${line.dbPath} does not hold a valid nsec for line ${line.name}`);
 }
 
-export function writeConfig(paths: DgPaths, config: PhoneFriendConfig): void {
-	ensurePrivateDir(paths.phoneFriendDir);
-	writeFileAtomic(paths.phoneFriendConfigPath, `${JSON.stringify(config, null, 2)}\n`, 0o600);
+export function readFileKey(line: LinePaths): Uint8Array | undefined {
+	const stored = withDb(line, (db) => db.get<string>(FILE_KEY));
+	return stored === undefined ? undefined : decodeFileKey(line, stored);
 }
 
-export function readInvite(paths: DgPaths): Invite | undefined {
-	if (!existsSync(paths.phoneFriendInvitePath)) return undefined;
-	const { secret, expires_at } = JSON.parse(readFileSync(paths.phoneFriendInvitePath, "utf8"));
-	return typeof secret === "string" && typeof expires_at === "number"
-		? { secret, expiresAt: expires_at }
-		: undefined;
+/** Makes the file-mode key once, unless the key already lives in the store; a racing writer gets the first key. */
+export function createFileKey(line: LinePaths): Uint8Array | undefined {
+	const stored = withDb(line, (db) =>
+		db.transaction(() =>
+			db.get<boolean>(KEY_IN_STORE) ? undefined : db.setOnce(FILE_KEY, nip19.nsecEncode(generateSecretKey())),
+		),
+	);
+	return stored === undefined ? undefined : decodeFileKey(line, stored);
 }
 
-export function writeInvite(paths: DgPaths, invite: Invite): void {
-	ensurePrivateDir(paths.phoneFriendDir);
-	writeFileAtomic(
-		paths.phoneFriendInvitePath,
-		JSON.stringify({ secret: invite.secret, expires_at: invite.expiresAt }),
-		0o600,
+/** Marks the key as moved to the store and drops the file copy; refuses when a different file key exists. */
+export function markKeyInStore(line: LinePaths, sk: Uint8Array): boolean {
+	const nsec = nip19.nsecEncode(sk);
+	return withDb(line, (db) =>
+		db.transaction(() => {
+			const fileKey = db.get<string>(FILE_KEY);
+			if (fileKey !== undefined && fileKey !== nsec) return false;
+			db.set(KEY_IN_STORE, true);
+			db.unset(FILE_KEY);
+			return true;
+		}),
 	);
 }
 
-export function clearInvite(paths: DgPaths): void {
-	rmSync(paths.phoneFriendInvitePath, { force: true });
+export function isKeyInStore(line: LinePaths): boolean {
+	return withDb(line, (db) => db.get<boolean>(KEY_IN_STORE) === true);
+}
+
+export function readConfig(line: LinePaths): PhoneFriendConfig {
+	const saved = withDb(line, (db) => db.get<PhoneFriendConfig>(CONFIG));
+	return { relays: DEFAULT_RELAYS, ...saved };
+}
+
+export function writeConfig(line: LinePaths, config: PhoneFriendConfig): void {
+	withDb(line, (db) => db.set(CONFIG, config));
+}
+
+export function readInvite(line: LinePaths): Invite | undefined {
+	return withDb(line, (db) => db.get<Invite>(INVITE));
+}
+
+export function writeInvite(line: LinePaths, invite: Invite): void {
+	withDb(line, (db) => db.set(INVITE, invite));
+}
+
+export function clearInvite(line: LinePaths): void {
+	withDb(line, (db) => db.unset(INVITE));
+}
+
+/** Deletes the invite and saves the caller as the contact in one transaction. */
+export function acceptCall(line: LinePaths, contact: string): void {
+	withDb(line, (db) =>
+		db.transaction(() => {
+			db.unset(INVITE);
+			db.set(CONFIG, { relays: DEFAULT_RELAYS, ...db.get<PhoneFriendConfig>(CONFIG), contact });
+		}),
+	);
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -11,11 +11,14 @@ import {
 	writeCredentialGrantToken,
 } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
-import { ensureKey, GRANT_PREFIX, KEY_NAME, type KeyClient, type KeyDeps, loadKey } from "../../src/phone-friend/keys";
-import { loadOrCreateKey } from "../../src/phone-friend/store";
+import { ensureKey, GRANT_PREFIX, type KeyClient, type KeyDeps, keyName, loadKey } from "../../src/phone-friend/keys";
+import { type LinePaths, linePaths } from "../../src/phone-friend/line";
+import { createFileKey, markKeyInStore, readFileKey } from "../../src/phone-friend/store";
 
 let home: string;
 let paths: DgPaths;
+let line: LinePaths;
+let KEY_NAME: string;
 let store: Map<string, string>;
 let daemonUp: boolean;
 let calls: string[];
@@ -50,6 +53,7 @@ function client(overrides: Partial<KeyClient> = {}): KeyClient {
 function deps(options: { session?: boolean; client?: Partial<KeyClient> } = {}): KeyDeps {
 	return {
 		paths,
+		line,
 		sessionClient: async () => (options.session && daemonUp ? client(options.client) : undefined),
 		grantClient: () => client(options.client),
 	};
@@ -58,6 +62,8 @@ function deps(options: { session?: boolean; client?: Partial<KeyClient> } = {}):
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-keys-"));
 	paths = resolveDgPaths({ env: { DG_HOME: home } });
+	line = linePaths(paths);
+	KEY_NAME = keyName(line);
 	store = new Map();
 	daemonUp = true;
 	calls = [];
@@ -74,31 +80,32 @@ describe("ensureKey", () => {
 		expect(mode).toBe("store");
 		expect(store.get(KEY_NAME)).toBe(nip19.nsecEncode(sk));
 		expect(existsSync(credentialGrantTokenPath(paths, GRANT_PREFIX))).toBe(true);
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(false);
+		expect((readFileKey(line) !== undefined)).toBe(false);
 	});
 
-	it("writes a 0600 key file when no session exists", async () => {
+	it("keeps the key in the 0600 line database when no session exists", async () => {
 		const { mode } = await ensureKey(deps());
 
 		expect(mode).toBe("file");
-		expect(statSync(paths.phoneFriendKeyPath).mode & 0o777).toBe(0o600);
+		expect(readFileKey(line)).toBeDefined();
+		expect(statSync(line.dbPath).mode & 0o777).toBe(0o600);
 		expect(store.size).toBe(0);
 	});
 
-	it("moves a file key to the store and deletes the file after a matching read-back", async () => {
-		const original = loadOrCreateKey(paths);
+	it("moves a file key to the store and drops the file copy after a matching read-back", async () => {
+		const original = (createFileKey(line) as Uint8Array);
 
 		const { sk, mode } = await ensureKey(deps({ session: true }));
 
 		expect(mode).toBe("store");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
 		expect(store.get(KEY_NAME)).toBe(nip19.nsecEncode(original));
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(false);
+		expect((readFileKey(line) !== undefined)).toBe(false);
 		expect(calls).toEqual([`set ${KEY_NAME}`, `grant ${GRANT_PREFIX}`, `get ${KEY_NAME}`]);
 	});
 
-	it("keeps the file when the read-back does not match", async () => {
-		const original = loadOrCreateKey(paths);
+	it("keeps the file key when the read-back does not match", async () => {
+		const original = (createFileKey(line) as Uint8Array);
 
 		const { sk, mode } = await ensureKey(
 			deps({ session: true, client: { get: async () => ({ value: "nsec1wrong", meta: {}, updatedAt: "" }) } }),
@@ -106,21 +113,21 @@ describe("ensureKey", () => {
 
 		expect(mode).toBe("file");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(true);
+		expect((readFileKey(line) !== undefined)).toBe(true);
 	});
 
-	it("keeps the file when the store refuses the write", async () => {
-		loadOrCreateKey(paths);
+	it("keeps the file key when the store refuses the write", async () => {
+		(createFileKey(line) as Uint8Array);
 
 		const { mode } = await ensureKey(
 			deps({ session: true, client: { set: async () => { throw new DgCliError("refused"); } } }),
 		);
 
 		expect(mode).toBe("file");
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(true);
+		expect((readFileKey(line) !== undefined)).toBe(true);
 	});
 
-	it("adopts the key that won a race to the store instead of making a third one", async () => {
+	it("adopts the key of a run that won the race to the store instead of making a file key", async () => {
 		const winner = generateSecretKey();
 
 		const { sk, mode } = await ensureKey(
@@ -130,6 +137,7 @@ describe("ensureKey", () => {
 					set: async (name) => {
 						calls.push(`set ${name}`);
 						store.set(name, nip19.nsecEncode(winner));
+						markKeyInStore(line, winner);
 					},
 				},
 			}),
@@ -137,7 +145,7 @@ describe("ensureKey", () => {
 
 		expect(mode).toBe("store");
 		expect(Buffer.from(sk).equals(Buffer.from(winner))).toBe(true);
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(false);
+		expect((readFileKey(line) !== undefined)).toBe(false);
 	});
 
 	it("reuses the store key and never makes a second one", async () => {
@@ -154,7 +162,7 @@ describe("ensureKey", () => {
 
 		await expect(ensureKey(deps({ session: true }))).rejects.toThrow("not reachable");
 
-		expect(existsSync(paths.phoneFriendKeyPath)).toBe(false);
+		expect((readFileKey(line) !== undefined)).toBe(false);
 	});
 });
 
@@ -174,14 +182,14 @@ describe("loadKey", () => {
 		expect(calls).toEqual([`get ${KEY_NAME}`]);
 	});
 
-	it("fails when the grant exists but the store has no key", async () => {
-		writeCredentialGrantToken(paths, GRANT_PREFIX, "t".repeat(64));
+	it("fails when the line is in store mode but the store has no key", async () => {
+		markKeyInStore(line, generateSecretKey());
 
 		await expect(loadKey(deps())).rejects.toBeInstanceOf(DgCliError);
 	});
 
 	it("never puts the stored value in an error", async () => {
-		writeCredentialGrantToken(paths, GRANT_PREFIX, "t".repeat(64));
+		markKeyInStore(line, generateSecretKey());
 		store.set(KEY_NAME, "nsec1notarealkeybutsecret");
 
 		const failure = loadKey(deps());
@@ -192,9 +200,20 @@ describe("loadKey", () => {
 
 	it("reads a file key without a daemon", async () => {
 		daemonUp = false;
-		loadOrCreateKey(paths);
+		(createFileKey(line) as Uint8Array);
 
 		expect((await loadKey(deps()))?.mode).toBe("file");
-		expect(readFileSync(paths.phoneFriendKeyPath, "utf8")).toStartWith("nsec1");
+	});
+});
+
+describe("lines", () => {
+	it("gives each line its own key and its own store name", async () => {
+		const work = linePaths(paths, "work");
+		const first = await ensureKey(deps({ session: true }));
+		const second = await ensureKey({ ...deps({ session: true }), line: work });
+
+		expect(Buffer.from(first.sk).equals(Buffer.from(second.sk))).toBe(false);
+		expect(store.get(keyName(work))).toBe(nip19.nsecEncode(second.sk));
+		expect(keyName(work)).toBe("phone-friend/work/nostr-key");
 	});
 });

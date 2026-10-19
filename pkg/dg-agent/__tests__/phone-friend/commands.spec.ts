@@ -21,17 +21,20 @@ import {
 } from "../../src/phone-friend/commands";
 import {
 	DEFAULT_RELAYS,
-	loadOrCreateKey,
+	createFileKey,
+	readFileKey,
 	readConfig,
 	readInvite,
 	writeConfig,
 } from "../../src/phone-friend/store";
 import { decodeCard, encodeCard } from "../../src/phone-friend/card";
-import { Inbox } from "../../src/phone-friend/inbox";
+import { PhoneFriendDb } from "../../src/phone-friend/db";
+import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 import { createFakePool, type FakePool } from "./fake-pool";
 
 let home: string;
 let paths: DgPaths;
+let line: LinePaths;
 let out: string[];
 let spawned: number;
 let alive: Set<number>;
@@ -43,6 +46,7 @@ const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
 function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 	return {
 		paths,
+		line,
 		createPool: () => ({ ...pool, close: () => {} }),
 		spawnListener: () => {
 			spawned += 1;
@@ -68,20 +72,24 @@ function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 }
 
 function stored(message: { id: string; ts: number; from: string; text: string }): void {
-	const inbox = Inbox.open(paths, () => NOW);
+	const inbox = PhoneFriendDb.open(line, () => NOW);
 	inbox.add(message, "in", message.from);
 	inbox.close();
 }
 
 function history() {
-	const inbox = Inbox.open(paths, () => NOW);
+	const inbox = PhoneFriendDb.open(line, () => NOW);
 	const all = inbox.history();
 	inbox.close();
 	return all;
 }
 
+function myKey(): Uint8Array {
+	return (readFileKey(line) ?? createFileKey(line)) as Uint8Array;
+}
+
 function pair(): void {
-	writeConfig(paths, { contact: contactNpub, relays: DEFAULT_RELAYS });
+	writeConfig(line, { contact: contactNpub, relays: DEFAULT_RELAYS });
 }
 
 function lines(): unknown[] {
@@ -91,6 +99,7 @@ function lines(): unknown[] {
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-cli-"));
 	paths = resolveDgPaths({ env: { DG_HOME: home } });
+	line = linePaths(paths);
 	out = [];
 	spawned = 0;
 	alive = new Set();
@@ -108,7 +117,7 @@ describe("phoneOn", () => {
 		await phoneOn(deps());
 
 		expect(spawned).toBe(1);
-		const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(paths)));
+		const npub = nip19.npubEncode(getPublicKey(myKey()));
 		expect(lines()).toEqual([
 			{ npub, contact: contactNpub, pid: 4242, status: "started" },
 			{ npub, contact: contactNpub, pid: 4242, status: "running" },
@@ -152,13 +161,12 @@ describe("phoneInvite", () => {
 
 		const [{ card, expires_at }] = lines() as { card: string; expires_at: string }[];
 		const decoded = decodeCard(card, NOW);
-		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(loadOrCreateKey(paths))));
+		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(myKey())));
 		expect(decoded.relays).toEqual(["wss://x.example"]);
 		expect(decoded.exp).toBe(NOW + 24 * 3600);
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
-		expect(readInvite(paths)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
-		expect(statSync(paths.phoneFriendInvitePath).mode & 0o777).toBe(0o600);
-		expect(readConfig(paths).relays).toEqual(["wss://x.example"]);
+		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
+		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
 	});
 
 	it("makes a new secret each time", async () => {
@@ -194,7 +202,7 @@ describe("phoneDial", () => {
 	it("saves the card owner as the contact, uses its relays, and rings with the secret", async () => {
 		await phoneDial(cardFor(), undefined, deps());
 
-		expect(readConfig(paths)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		expect(readConfig(line)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
 		const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
 		expect(rumor.content).toBe("hello");
 		expect(rumor.tags).toContainEqual(["dg-call", secret]);
@@ -204,7 +212,7 @@ describe("phoneDial", () => {
 	it("reads the card from stdin when the argument is -", async () => {
 		await phoneDial("-", undefined, deps({ readStdin: async () => `${cardFor()}\n` }));
 
-		expect(readConfig(paths).contact).toBe(contactNpub);
+		expect(readConfig(line).contact).toBe(contactNpub);
 	});
 
 	it("rejects empty stdin for a card", async () => {
@@ -229,7 +237,7 @@ describe("phoneDial", () => {
 
 		await expect(phoneDial(cardFor(), undefined, deps())).rejects.toThrow("no relay");
 
-		expect(readConfig(paths).relays).not.toEqual(["wss://x.example"]);
+		expect(readConfig(line).relays).not.toEqual(["wss://x.example"]);
 	});
 
 	it("rejects an expired card", async () => {
@@ -240,16 +248,16 @@ describe("phoneDial", () => {
 describe("accepting a call", () => {
 	it("voicemail pairs the caller, clears the invite, and marks the line as a call", async () => {
 		await phoneInvite({}, deps());
-		const { secret } = readInvite(paths) as { secret: string };
-		const mine = getPublicKey(loadOrCreateKey(paths));
+		const { secret } = readInvite(line) as { secret: string };
+		const mine = getPublicKey(myKey());
 		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, mine, secret)));
 		out = [];
 
 		await phoneVoicemail(deps());
 
 		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true }]);
-		expect(readConfig(paths).contact).toBe(contactNpub);
-		expect(readInvite(paths)).toBeUndefined();
+		expect(readConfig(line).contact).toBe(contactNpub);
+		expect(readInvite(line)).toBeUndefined();
 	});
 });
 
@@ -262,8 +270,8 @@ describe("phoneNumber", () => {
 
 		await phoneNumber(deps());
 
-		const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(paths)));
-		expect(lines()).toEqual([{ npub, contact: contactNpub, key_store: "file", listener: 4242 }]);
+		const npub = nip19.npubEncode(getPublicKey(myKey()));
+		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, key_store: "file", listener: 4242 }]);
 	});
 
 	it("reports no contact and no listener before pairing", async () => {
@@ -281,7 +289,7 @@ describe("phoneOff", () => {
 		await phoneOff(deps());
 
 		expect(alive.has(4242)).toBe(false);
-		expect(existsSync(paths.phoneFriendPidPath)).toBe(false);
+		expect(existsSync(line.pidPath)).toBe(false);
 	});
 
 	it("cleans up a stale pid without error", async () => {
@@ -291,7 +299,7 @@ describe("phoneOff", () => {
 
 		await phoneOff(deps());
 
-		expect(existsSync(paths.phoneFriendPidPath)).toBe(false);
+		expect(existsSync(line.pidPath)).toBe(false);
 	});
 });
 
@@ -299,7 +307,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 	it("fetches from relays when no listener runs and prints each message once", async () => {
 		pair();
 		await phoneOn(deps({ spawnListener: () => 1 }));
-		const mine = getPublicKey(loadOrCreateKey(paths));
+		const mine = getPublicKey(myKey());
 		await Promise.allSettled(pool.publish(["wss://a"], wrap("hello", contactSk, mine)));
 		out = [];
 
@@ -353,7 +361,7 @@ describe("phoneSay", () => {
 		await phoneSay("ping", deps());
 
 		const [result] = lines() as { id: string; relays_ok: string[] }[];
-		expect(result.relays_ok).toEqual(readConfig(paths).relays);
+		expect(result.relays_ok).toEqual(readConfig(line).relays);
 		expect(pool.events[0]?.id).toBe(result.id);
 	});
 
@@ -371,7 +379,7 @@ describe("phoneSay", () => {
 	it("reads the text from stdin when the argument is -", async () => {
 		pair();
 		await phoneOn(deps());
-		const mine = getPublicKey(loadOrCreateKey(paths));
+		const mine = getPublicKey(myKey());
 		const reader = createFakePool();
 
 		await phoneSay("-", deps());
@@ -413,6 +421,24 @@ describe("registerPhoneFriendCommands", () => {
 		await program.parseAsync(["node", "dg-agent", "--session", "abc", "phone-friend", "number"]);
 
 		expect(sessions).toEqual(["abc"]);
-		expect(lines()).toMatchObject([{ key_store: "file" }]);
+		expect(lines()).toMatchObject([{ key_store: "file", line: "default" }]);
+	});
+
+	it("passes --line to the deps, so each line is its own number", async () => {
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		const seen: (string | undefined)[] = [];
+		registerPhoneFriendCommands(program, (_session, name) => {
+			seen.push(name);
+			return { ...deps(), line: linePaths(paths, name) };
+		});
+
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "--line", "work", "number"]);
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "number"]);
+
+		expect(seen).toEqual(["work", "default"]);
+		const [work, main] = lines() as { npub: string; line: string }[];
+		expect(work.line).toBe("work");
+		expect(main.line).toBe("default");
+		expect(work.npub).not.toBe(main.npub);
 	});
 });
