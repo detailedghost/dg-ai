@@ -3,7 +3,7 @@ feature: phone-friend Nostr chat
 feature_snake_case: phone_friend_nostr_chat
 date: '2026-10-19'
 version: '1.0'
-status: draft
+status: in-review
 current_slice: 3
 pr_strategy: single
 slices:
@@ -53,6 +53,10 @@ permissions:
   auto_cleanup_worktree: false
   slice_commits: true
   housekeeping_commit: true
+worktree:
+  pr_url: https://github.com/detailedghost/dg-ai/pull/39
+  path: /home/detailedghost/code/worktrees/dg-ai-phone_friend
+  branch: feature/phone_friend
 ---
 
 # phone-friend Nostr chat
