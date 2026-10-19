@@ -1,21 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
-import { fetchNew, wrap } from "../../src/phone-friend/chat";
+import { generateSecretKey, getPublicKey, type NostrEvent, nip19, nip59 } from "nostr-tools";
+import { fetchNew, ring, wrap } from "../../src/phone-friend/chat";
 import {
 	type PhoneFriendDeps,
 	phoneAnswer,
+	phoneDial,
+	phoneInvite,
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
 	phoneOn,
 	phoneOff,
 } from "../../src/phone-friend/commands";
-import { appendInbox, loadOrCreateKey, readConfig } from "../../src/phone-friend/store";
+import {
+	appendInbox,
+	DEFAULT_RELAYS,
+	loadOrCreateKey,
+	readConfig,
+	readInvite,
+	writeConfig,
+} from "../../src/phone-friend/store";
+import { decodeCard, encodeCard } from "../../src/phone-friend/card";
 import { createFakePool, type FakePool } from "./fake-pool";
 
 let home: string;
@@ -24,6 +34,7 @@ let out: string[];
 let spawned: number;
 let alive: Set<number>;
 let pool: FakePool;
+const NOW = 1_800_000_000;
 const contactSk = generateSecretKey();
 const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
 
@@ -44,9 +55,14 @@ function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 			out.push(line);
 		},
 		sleep: async () => {},
+		now: () => NOW,
 		readStdin: async () => "from stdin\n",
 		...overrides,
 	};
+}
+
+function pair(): void {
+	writeConfig(paths, { contact: contactNpub, relays: DEFAULT_RELAYS });
 }
 
 function lines(): unknown[] {
@@ -67,12 +83,12 @@ afterEach(() => {
 });
 
 describe("phoneOn", () => {
-	it("saves the contact, spawns the listener once, and prints our npub", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
-		await phoneOn({}, deps());
+	it("spawns the listener once for a saved contact and prints our npub", async () => {
+		pair();
+		await phoneOn(deps());
+		await phoneOn(deps());
 
 		expect(spawned).toBe(1);
-		expect(readConfig(paths).contact).toBe(contactNpub);
 		const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(paths)));
 		expect(lines()).toEqual([
 			{ npub, contact: contactNpub, pid: 4242, status: "started" },
@@ -81,64 +97,132 @@ describe("phoneOn", () => {
 	});
 
 	it("respawns when the saved pid is no longer alive", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		alive.clear();
 
-		await phoneOn({}, deps());
+		await phoneOn(deps());
 
 		expect(spawned).toBe(2);
 	});
 
-	it("restarts a running listener when the contact changes", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
-		const other = nip19.npubEncode(getPublicKey(generateSecretKey()));
-		let killed = 0;
+	it("starts with no contact while an invite waits for a call", async () => {
+		await phoneInvite({}, deps());
 
-		await phoneOn({ contact: other }, deps({ kill: (pid) => {
-			killed += 1;
-			alive.delete(pid);
-		} }));
+		await phoneOn(deps());
 
-		expect(killed).toBe(1);
-		expect(spawned).toBe(2);
-		expect(readConfig(paths).contact).toBe(other);
-		expect(lines().at(-1)).toMatchObject({ contact: other, status: "restarted" });
-	});
-
-	it("fails and keeps the old contact when the running listener does not stop", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
-		const other = nip19.npubEncode(getPublicKey(generateSecretKey()));
-
-		await expect(phoneOn({ contact: other }, deps({ kill: () => {} }))).rejects.toThrow("did not stop");
-
-		expect(readConfig(paths).contact).toBe(contactNpub);
 		expect(spawned).toBe(1);
+		expect(lines().at(-1)).toMatchObject({ contact: null, status: "started" });
 	});
 
-	it("saves custom relays", async () => {
-		await phoneOn({ contact: contactNpub, relay: ["wss://x.example"] }, deps());
-
-		expect(readConfig(paths).relays).toEqual(["wss://x.example"]);
-	});
-
-	it("rejects a start with no contact and names our npub so it can be shared", async () => {
-		const failure = phoneOn({}, deps());
-
-		await expect(failure).rejects.toBeInstanceOf(DgCliError);
-		const npub = nip19.npubEncode(getPublicKey(loadOrCreateKey(paths)));
-		await expect(failure).rejects.toThrow(npub);
+	it("refuses with no contact and no invite, and says how to pair", async () => {
+		await expect(phoneOn(deps())).rejects.toThrow("phone-friend invite");
 		expect(spawned).toBe(0);
 	});
 
-	it("rejects a contact that is not an npub", async () => {
-		await expect(phoneOn({ contact: "nope" }, deps())).rejects.toThrow("npub");
+	it("refuses when the only invite has expired", async () => {
+		await phoneInvite({ ttl: "1" }, deps());
+
+		await expect(phoneOn(deps({ now: () => NOW + 3601 }))).rejects.toThrow("phone-friend invite");
+	});
+});
+
+describe("phoneInvite", () => {
+	it("prints a card with our npub, the relays, and a fresh secret, and saves the invite", async () => {
+		await phoneInvite({ relay: ["wss://x.example"] }, deps());
+
+		const [{ card, expires_at }] = lines() as { card: string; expires_at: string }[];
+		const decoded = decodeCard(card, NOW);
+		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(loadOrCreateKey(paths))));
+		expect(decoded.relays).toEqual(["wss://x.example"]);
+		expect(decoded.exp).toBe(NOW + 24 * 3600);
+		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
+		expect(readInvite(paths)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
+		expect(statSync(paths.phoneFriendInvitePath).mode & 0o777).toBe(0o600);
+		expect(readConfig(paths).relays).toEqual(["wss://x.example"]);
+	});
+
+	it("makes a new secret each time", async () => {
+		await phoneInvite({}, deps());
+		await phoneInvite({}, deps());
+
+		const [first, second] = (lines() as { card: string }[]).map((l) => decodeCard(l.card, NOW).secret);
+		expect(first).not.toBe(second);
+	});
+
+	it("restarts a running listener so it sees the new invite", async () => {
+		pair();
+		await phoneOn(deps());
+
+		await phoneInvite({}, deps());
+
+		expect(spawned).toBe(2);
+	});
+
+	it("rejects a ttl that is not a positive number of hours", async () => {
+		await expect(phoneInvite({ ttl: "0" }, deps())).rejects.toThrow("ttl");
+		await expect(phoneInvite({ ttl: "abc" }, deps())).rejects.toThrow("ttl");
+	});
+});
+
+describe("phoneDial", () => {
+	const secret = "ab".repeat(32);
+
+	function cardFor(relays = ["wss://x.example"]) {
+		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100 });
+	}
+
+	it("saves the card owner as the contact, uses its relays, and rings with the secret", async () => {
+		await phoneDial(cardFor(), undefined, deps());
+
+		expect(readConfig(paths)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
+		expect(rumor.content).toBe("hello");
+		expect(rumor.tags).toContainEqual(["dg-call", secret]);
+		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"] }]);
+	});
+
+	it("sends custom first words", async () => {
+		await phoneDial(cardFor(), "hi, it is grok", deps());
+
+		expect(nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk).content).toBe("hi, it is grok");
+	});
+
+	it("keeps the old config when no relay accepts the ring", async () => {
+		pair();
+		pool = createFakePool([]);
+
+		await expect(phoneDial(cardFor(), undefined, deps())).rejects.toThrow("no relay");
+
+		expect(readConfig(paths).relays).not.toEqual(["wss://x.example"]);
+	});
+
+	it("rejects an expired card", async () => {
+		await expect(phoneDial(cardFor(), undefined, deps({ now: () => NOW + 101 }))).rejects.toThrow("expired");
+	});
+});
+
+describe("accepting a call", () => {
+	it("voicemail pairs the caller, clears the invite, and marks the line as a call", async () => {
+		await phoneInvite({}, deps());
+		const { secret } = readInvite(paths) as { secret: string };
+		const mine = getPublicKey(loadOrCreateKey(paths));
+		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, mine, secret)));
+		out = [];
+
+		await phoneVoicemail(deps());
+
+		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true }]);
+		expect(readConfig(paths).contact).toBe(contactNpub);
+		expect(readInvite(paths)).toBeUndefined();
 	});
 });
 
 describe("phoneNumber", () => {
 	it("prints our npub, the contact, the key store, and the listener pid", async () => {
 		await phoneNumber(deps());
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		out = [];
 
 		await phoneNumber(deps());
@@ -156,7 +240,8 @@ describe("phoneNumber", () => {
 
 describe("phoneOff", () => {
 	it("kills the listener and removes the pid file", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 
 		await phoneOff(deps());
 
@@ -165,7 +250,8 @@ describe("phoneOff", () => {
 	});
 
 	it("cleans up a stale pid without error", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		alive.clear();
 
 		await phoneOff(deps());
@@ -176,7 +262,8 @@ describe("phoneOff", () => {
 
 describe("phoneVoicemail and phoneAnswer", () => {
 	it("fetches from relays when no listener runs and prints each message once", async () => {
-		await phoneOn({ contact: contactNpub }, deps({ spawnListener: () => 1 }));
+		pair();
+		await phoneOn(deps({ spawnListener: () => 1 }));
 		const mine = getPublicKey(loadOrCreateKey(paths));
 		await Promise.allSettled(pool.publish(["wss://a"], wrap("hello", contactSk, mine)));
 		out = [];
@@ -188,7 +275,8 @@ describe("phoneVoicemail and phoneAnswer", () => {
 	});
 
 	it("reads only the inbox when the listener runs", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		appendInbox(paths, { id: "x", ts: 1, from: contactNpub, text: "from listener" });
 		out = [];
 
@@ -199,7 +287,8 @@ describe("phoneVoicemail and phoneAnswer", () => {
 	});
 
 	it("follows the inbox until the listener stops", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		out = [];
 		let ticks = 0;
 		const follow = deps({
@@ -222,7 +311,8 @@ describe("phoneVoicemail and phoneAnswer", () => {
 
 describe("phoneSay", () => {
 	it("publishes a wrap the contact can read and prints the accepting relays", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		out = [];
 
 		await phoneSay("ping", deps());
@@ -233,25 +323,28 @@ describe("phoneSay", () => {
 	});
 
 	it("reads the text from stdin when the argument is -", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		const mine = getPublicKey(loadOrCreateKey(paths));
 		const reader = createFakePool();
 
 		await phoneSay("-", deps());
 		reader.events.push(...pool.events);
-		const { messages } = await fetchNew(reader, ["wss://a"], contactSk, mine, { cursor: 0, ids: [] });
+		const { messages } = await fetchNew(reader, ["wss://a"], contactSk, { contact: mine }, { cursor: 0, ids: [] });
 
 		expect(messages.map((m) => m.text)).toEqual(["from stdin"]);
 	});
 
 	it("rejects empty stdin", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 
 		await expect(phoneSay("-", deps({ readStdin: async () => "" }))).rejects.toThrow("empty");
 	});
 
 	it("fails when no relay accepts the message", async () => {
-		await phoneOn({ contact: contactNpub }, deps());
+		pair();
+		await phoneOn(deps());
 		pool = createFakePool([]);
 
 		await expect(phoneSay("ping", deps())).rejects.toThrow("no relay");

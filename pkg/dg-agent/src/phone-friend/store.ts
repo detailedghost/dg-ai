@@ -1,8 +1,8 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
-import type { Message } from "./chat";
+import type { Invite, Message } from "./chat";
 
 export type PhoneFriendConfig = { contact?: string; relays: string[] };
 export type Seen = { cursor: number; ids: string[] };
@@ -60,4 +60,25 @@ export function writeSeen(paths: DgPaths, seen: Seen): void {
 export function appendInbox(paths: DgPaths, message: Message): void {
 	ensurePrivateDir(paths.phoneFriendDir);
 	appendFileSync(paths.phoneFriendInboxPath, `${JSON.stringify(message)}\n`, { mode: 0o600 });
+}
+
+export function readInvite(paths: DgPaths): Invite | undefined {
+	if (!existsSync(paths.phoneFriendInvitePath)) return undefined;
+	const { secret, expires_at } = JSON.parse(readFileSync(paths.phoneFriendInvitePath, "utf8"));
+	return typeof secret === "string" && typeof expires_at === "number"
+		? { secret, expiresAt: expires_at }
+		: undefined;
+}
+
+export function writeInvite(paths: DgPaths, invite: Invite): void {
+	ensurePrivateDir(paths.phoneFriendDir);
+	writeFileAtomic(
+		paths.phoneFriendInvitePath,
+		JSON.stringify({ secret: invite.secret, expires_at: invite.expiresAt }),
+		0o600,
+	);
+}
+
+export function clearInvite(paths: DgPaths): void {
+	rmSync(paths.phoneFriendInvitePath, { force: true });
 }

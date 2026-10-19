@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
@@ -12,14 +13,28 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
-import { fetchNew, type PhoneFriendPool, publish, subscribe, wrap } from "./chat";
+import { decodeCard, encodeCard } from "./card";
+import {
+	fetchNew,
+	type Gate,
+	type Invite,
+	type Message,
+	type PhoneFriendPool,
+	publish,
+	ring,
+	subscribe,
+	wrap,
+} from "./chat";
 import {
 	appendInbox,
+	clearInvite,
 	loadOrCreateKey,
 	type PhoneFriendConfig,
 	readConfig,
+	readInvite,
 	readSeen,
 	writeConfig,
+	writeInvite,
 	writeSeen,
 } from "./store";
 
@@ -32,11 +47,14 @@ export type PhoneFriendDeps = {
 	write: (text: string) => void;
 	sleep: (ms: number) => Promise<void>;
 	readStdin: () => Promise<string | undefined>;
+	now: () => number;
 };
 
 const FOLLOW_POLL_MS = 1000;
 const STOP_WAIT_MS = 5000;
 const MAX_SEND_BYTES = 64 * 1024;
+const DEFAULT_INVITE_HOURS = 24;
+const SECRET_BYTES = 32;
 
 function isOurListener(pid: number): boolean {
 	try {
@@ -77,6 +95,7 @@ function defaultDeps(): PhoneFriendDeps {
 		write: writeStdout,
 		sleep: (ms) => Bun.sleep(ms),
 		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
+		now: () => Math.floor(Date.now() / 1000),
 	};
 }
 
@@ -94,7 +113,7 @@ function contactHex(npub: string): string {
 
 function requireContact(config: PhoneFriendConfig): string {
 	if (!config.contact) {
-		throw new DgCliError("no contact saved; run `dg-agent phone-friend on --contact <npub>` first");
+		throw new DgCliError("no contact saved; run `dg-agent phone-friend dial <card>` with a call card from the other side");
 	}
 	return config.contact;
 }
@@ -132,35 +151,92 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	});
 }
 
-export async function phoneOn(
-	opts: { contact?: string; relay?: string[] },
-	deps: PhoneFriendDeps,
-): Promise<void> {
-	const saved = readConfig(deps.paths);
-	const config = { ...saved };
-	if (opts.contact) {
-		contactHex(opts.contact);
-		config.contact = opts.contact;
-	}
-	if (opts.relay?.length) config.relays = opts.relay;
+function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
+	const invite = readInvite(deps.paths);
+	return invite && invite.expiresAt > deps.now() ? invite : undefined;
+}
+
+function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
+	return {
+		contact: config.contact ? contactHex(config.contact) : undefined,
+		invite: liveInvite(deps),
+	};
+}
+
+function acceptCall(message: Message, deps: PhoneFriendDeps): void {
+	if (!message.call) return;
+	writeConfig(deps.paths, { ...readConfig(deps.paths), contact: message.from });
+	clearInvite(deps.paths);
+}
+
+async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; status: string }> {
+	const running = livePid(deps);
+	if (running !== undefined) await stopListener(running, deps);
+	const pid = deps.spawnListener(deps.paths);
+	writeFileAtomic(deps.paths.phoneFriendPidPath, `${pid}\n`, 0o600);
+	return { pid, status: running === undefined ? "started" : "restarted" };
+}
+
+export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
+	const config = readConfig(deps.paths);
 	const npub = myNpub(deps);
-	if (!config.contact) {
+	const contact = config.contact ?? null;
+	if (!contact && !liveInvite(deps)) {
 		throw new DgCliError(
-			`no contact saved; your npub is ${npub}; run \`dg-agent phone-friend on --contact <npub>\``,
+			"no contact yet; run `dg-agent phone-friend invite` and give the card to the other side, or `dg-agent phone-friend dial <card>`",
 		);
 	}
-	const contact = config.contact;
-	const changed = JSON.stringify(saved) !== JSON.stringify(config);
 	const running = livePid(deps);
-	if (running !== undefined && !changed) {
+	if (running !== undefined) {
 		printJson(deps, { npub, contact, pid: running, status: "running" });
 		return;
 	}
-	if (running !== undefined) await stopListener(running, deps);
+	printJson(deps, { npub, contact, ...(await spawnOrRestart(deps)) });
+}
+
+export async function phoneInvite(
+	opts: { relay?: string[]; ttl?: string },
+	deps: PhoneFriendDeps,
+): Promise<void> {
+	const hours = opts.ttl === undefined ? DEFAULT_INVITE_HOURS : Number(opts.ttl);
+	if (!Number.isFinite(hours) || hours <= 0) {
+		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
+	}
+	const config = readConfig(deps.paths);
+	if (opts.relay?.length) config.relays = opts.relay;
+	const invite = {
+		secret: randomBytes(SECRET_BYTES).toString("hex"),
+		expiresAt: deps.now() + Math.round(hours * 3600),
+	};
+	const card = encodeCard({
+		npub: myNpub(deps),
+		relays: config.relays,
+		secret: invite.secret,
+		exp: invite.expiresAt,
+	});
 	writeConfig(deps.paths, config);
-	const pid = deps.spawnListener(deps.paths);
-	writeFileAtomic(deps.paths.phoneFriendPidPath, `${pid}\n`, 0o600);
-	printJson(deps, { npub, contact, pid, status: running === undefined ? "started" : "restarted" });
+	writeInvite(deps.paths, invite);
+	if (livePid(deps) !== undefined) await spawnOrRestart(deps);
+	printJson(deps, { card, expires_at: new Date(invite.expiresAt * 1000).toISOString() });
+}
+
+export async function phoneDial(
+	text: string,
+	firstWords: string | undefined,
+	deps: PhoneFriendDeps,
+): Promise<void> {
+	const card = decodeCard(text, deps.now());
+	const event = ring(firstWords || "hello", loadOrCreateKey(deps.paths), contactHex(card.npub), card.secret);
+	const pool = deps.createPool();
+	try {
+		const { ok } = await publish(pool, card.relays, event);
+		if (ok.length === 0) throw new DgCliError("no relay accepted the call");
+		writeConfig(deps.paths, { ...readConfig(deps.paths), contact: card.npub, relays: card.relays });
+		if (livePid(deps) !== undefined) await spawnOrRestart(deps);
+		printJson(deps, { contact: card.npub, id: event.id, relays_ok: ok });
+	} finally {
+		pool.close(card.relays);
+	}
 }
 
 export async function phoneOff(deps: PhoneFriendDeps): Promise<void> {
@@ -209,17 +285,22 @@ export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
 export async function phoneVoicemail(deps: PhoneFriendDeps): Promise<void> {
 	if (livePid(deps) === undefined) {
 		const config = readConfig(deps.paths);
-		const contact = contactHex(requireContact(config));
+		const gate = gateFor(config, deps);
+		if (!gate.contact && !gate.invite) requireContact(config);
 		const pool = deps.createPool();
 		try {
 			const { messages, seen } = await fetchNew(
 				pool,
 				config.relays,
 				loadOrCreateKey(deps.paths),
-				contact,
+				gate,
 				readSeen(deps.paths),
+				deps.now,
 			);
-			for (const message of messages) appendInbox(deps.paths, message);
+			for (const message of messages) {
+				appendInbox(deps.paths, message);
+				acceptCall(message, deps);
+			}
 			writeSeen(deps.paths, seen);
 		} finally {
 			pool.close(config.relays);
@@ -246,18 +327,21 @@ export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<voi
 
 async function phoneRun(deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.paths);
-	const contact = contactHex(requireContact(config));
+	const gate = gateFor(config, deps);
+	if (!gate.contact && !gate.invite) requireContact(config);
 	const pool = deps.createPool();
 	const sub = subscribe(
 		pool,
 		config.relays,
 		loadOrCreateKey(deps.paths),
-		contact,
+		gate,
 		readSeen(deps.paths),
 		(message, seen) => {
 			appendInbox(deps.paths, message);
 			writeSeen(deps.paths, seen);
+			acceptCall(message, deps);
 		},
+		deps.now,
 	);
 	const shutdown = () => {
 		sub.close();
@@ -284,11 +368,23 @@ export function registerPhoneFriendCommands(
 		.action(() => phoneNumber(makeDeps()));
 
 	phone
+		.command("invite")
+		.description("make a one-time call card; give it to the other side so it can dial you")
+		.option("--relay <url...>", "relays to use instead of the saved ones")
+		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
+		.action((opts: { relay?: string[]; ttl?: string }) => phoneInvite(opts, makeDeps()));
+
+	phone
+		.command("dial")
+		.description("call the owner of a call card: save them as your contact and ring them")
+		.argument("<card>", "the call card from `phone-friend invite`")
+		.argument("[text]", "first words to send", "hello")
+		.action((card: string, text: string) => phoneDial(card, text, makeDeps()));
+
+	phone
 		.command("on")
 		.description("start the background listener")
-		.option("--contact <npub>", "the one npub to chat with")
-		.option("--relay <url...>", "relays to use instead of the defaults")
-		.action((opts: { contact?: string; relay?: string[] }) => phoneOn(opts, makeDeps()));
+		.action(() => phoneOn(makeDeps()));
 
 	phone
 		.command("off")

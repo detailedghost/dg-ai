@@ -90,6 +90,7 @@ describe("resolveDgPaths", () => {
 		"phoneFriendConfigPath",
 		"phoneFriendInboxPath",
 		"phoneFriendSeenPath",
+		"phoneFriendInvitePath",
 		"phoneFriendReadOffsetPath",
 		"phoneFriendPidPath",
 		"phoneFriendLogPath",
