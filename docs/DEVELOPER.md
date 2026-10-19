@@ -107,6 +107,11 @@ managed descendants also reject symlinks. A configured root may itself be a
 symlink only when its ownership, resolved target, and ancestors pass the safety
 checks. Choose owned `AI_SCRATCH_DIR` and `AI_STATE_DIR` roots when an existing
 root is unsafe; do not change a foreign directory's ownership or permissions.
+A scratch or state root, or a managed descendant, with any group or other write
+bit (mode `0022` mask) is rejected even when you own it. Only ancestors above
+the root may be group- or other-writable, and only with the sticky bit. A
+shell `umask` of `0002` or `0000` creates such directories, so create the root
+with mode `0700`, or run `chmod go-w` on it.
 Windows retains directory/symlink checks but cannot enforce POSIX ownership.
 
 #### VCS provider

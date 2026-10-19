@@ -27,4 +27,5 @@ fi
 | `-m` `--main` | `<main worktree>/.agents/<tool>` | same as `-a` |
 
 `-G --global` no bucket · `-u --unique` unique name (a given name becomes the suffix) · `-r --root` root only · `-C --dir <dir>` bucket for another dir.
+A scratch or state root with a group or other write bit (mode `0022` mask) is rejected, even when you own it. Create it with mode `0700` or run `chmod go-w` on it.
 Never build these paths by hand. Move between roots with copy + unlink, never `mv`.
