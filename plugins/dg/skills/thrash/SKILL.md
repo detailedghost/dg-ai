@@ -32,7 +32,7 @@ model, so cost scales with size up to 8x. One publish. The verdict posts with no
 | `-c, --comment` | Post as comment only. No approve, no request-changes. |
 | `--confirm` | Confirm before posting. |
 | `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
-| `-t, --min-tier <tier>` | Drop findings below this tier. Overrides the spice nit ladder. |
+| `-t, --min-tier <tier>` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. |
 | `-b, --base <ref>` | Local mode only. Override fork-point detection. |
 | `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `cortex`, `grok`) through `/proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
 

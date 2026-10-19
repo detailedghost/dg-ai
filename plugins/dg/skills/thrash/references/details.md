@@ -32,7 +32,9 @@ thrash tier emoji. Dropped duplicates still count in the tally and the verdict.
 
 Spice 1 posts no nits, 2 up to 5, 3 up to 10, 4 up to 20, 5 posts all. Overflow becomes a
 "Folded nits" list in the body. `--min-tier` replaces the ladder: `--min-tier nit` at
-spice 1 posts every nit, `--min-tier medium` at spice 5 posts none.
+spice 1 posts every nit, `--min-tier medium` at spice 5 posts none. `--min-tier` only
+changes which comments post. Every finding, posted or dropped, still counts in the tally
+and the verdict.
 
 ## Splitting a large diff
 

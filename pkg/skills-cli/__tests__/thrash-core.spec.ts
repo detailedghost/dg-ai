@@ -360,6 +360,10 @@ describe("compileReview", () => {
 		expect(onlyMedium.comments.map((c) => c.tier)).toEqual(["medium"]);
 		expect(onlyMedium.dropped.map((d) => d.reason)).toEqual(["below-min-tier", "below-min-tier"]);
 
+		const unfiltered = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 5 });
+		expect(onlyMedium.tally).toEqual(unfiltered.tally);
+		expect(onlyMedium.verdict).toBe(unfiltered.verdict);
+
 		const allNits = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 1, minTier: "nit" });
 		expect(allNits.comments.map((c) => c.tier)).toEqual(["nit", "low", "medium"]);
 	});
