@@ -16,13 +16,13 @@ if [ ! -x "$DG" ]; then
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 "$DG" channel-review --help
 ```
 
-For PowerShell, run the bundled bootstrap.ps1 through `DG_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT`, or [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1).
+For PowerShell, run the bundled bootstrap.ps1 through `DG_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT`, or [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1).
 Read [setup](references/setup.md) and [commands](references/commands.md) before
 changing config or choosing custom reactions. To set this up for a new person,
 follow [relay setup](references/relay-setup.md); start config.json from

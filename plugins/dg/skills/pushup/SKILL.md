@@ -40,7 +40,7 @@ commits already have the shape you want them reviewed in.
      if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
        sh "$LOCAL_BOOTSTRAP"
      else
-       curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+       curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
      fi
    fi
    ```
