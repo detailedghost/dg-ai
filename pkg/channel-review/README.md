@@ -31,8 +31,11 @@ Pending/running requests become failed with CR-205 during normal restart
 recovery; the in-memory queue is not reconstructed. Cursors and all automation
 state survive. Cursor-only writes coalesce for up to one second.
 
+The daemon reads relay, Datadog, and Sentry secrets from the dg credential
+store first; see the [credential store](../../docs/chat.md#credential-store).
+
 Deploy compatible `dg-daemon` and `dg-skills` binaries together: central schema
-11 is newer than older daemon builds accept. See
+12 is newer than older daemon builds accept. See
 [ADR 0018](../../docs/adr/0018-channel-review-state-in-daemon-db.md) and
 [state and recovery](../../plugins/dg/skills/channel-review/references/setup.md#state-and-recovery).
 

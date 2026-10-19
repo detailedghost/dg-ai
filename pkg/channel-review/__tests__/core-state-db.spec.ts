@@ -117,6 +117,18 @@ describe("channel-review database import", () => {
 		expect(readStateSnapshot(paths)).toEqual(legacyState());
 	});
 
+	test("reports a failed deferred event save through onSaveError", async () => {
+		const errors: unknown[] = [];
+		const stale = createStateStore(paths, undefined, 10, undefined, error => errors.push(error));
+		stores.push(stale);
+		stale.setLastEventId("chat1", "e1");
+		open().markHandled("other", "done");
+		stale.setLastEventId("chat1", "e2");
+		await Bun.sleep(40);
+		expect(errors).toHaveLength(1);
+		expect(String(errors[0])).toContain("another connection");
+	});
+
 	test("refuses a stale writer instead of overwriting another connection's changes", () => {
 		const first = open();
 		const second = open();

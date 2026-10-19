@@ -5,7 +5,11 @@ import type { DgPaths } from "./paths";
 import { applyConnectionPragmas, readSchemaVersion, runMigrations } from "./sqlite";
 import { SCHEMA_STEPS } from "./daemon-schema";
 
-export { CURRENT_SCHEMA_VERSION, SCHEMA_STEPS } from "./daemon-schema";
+export {
+	CHANNEL_REVIEW_SCHEMA_VERSION,
+	CURRENT_SCHEMA_VERSION,
+	SCHEMA_STEPS,
+} from "./daemon-schema";
 
 function ensureDaemonDir(daemonDir: string): void {
 	if (!existsSync(daemonDir)) {

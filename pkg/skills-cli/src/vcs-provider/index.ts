@@ -1,7 +1,7 @@
-import { type CommandSpec, EXIT } from "../utils/legacy-command";
 import { detectProvider } from "../provider/detect";
-import { getProvider } from "../provider/index";
+import { getProvider } from "../provider";
 import type { ProviderKind } from "../provider/types";
+import { type CommandSpec, EXIT } from "../utils/legacy-command";
 
 interface DetectOutput {
 	resolved: boolean;
@@ -83,24 +83,29 @@ function parseLimit(args: string[]): number | undefined {
 	return parsed;
 }
 
-function optionalOption(args: string[], name: string): string | undefined {
+function rawOption(args: string[], name: string): string | undefined {
 	const index = args.indexOf(name);
 	if (index === -1) return undefined;
 	const value = args[index + 1];
-	if (!value) throw new Error(`${name} requires a value`);
+	if (value === undefined) throw new Error(`${name} requires a value`);
 	return value;
 }
 
-function requireOption(args: string[], name: string): string {
-	const value = optionalOption(args, name);
-	if (!value) throw new Error(`${name} requires a value`);
+function optionalOption(args: string[], name: string): string | undefined {
+	const value = rawOption(args, name);
+	if (value === "") throw new Error(`${name} requires a value`);
+	return value;
+}
+
+function requireOption(args: string[], name: string, allowEmpty = false): string {
+	const value = rawOption(args, name);
+	if (value === undefined || (value === "" && !allowEmpty)) throw new Error(`${name} requires a value`);
 	return value;
 }
 
 function requireNumberArg(args: string[], commandName: string): number {
-	const value = Number(args[0]);
-	if (!Number.isInteger(value) || value < 1) throw new Error(`${commandName} requires a positive issue/PR number`);
-	return value;
+	if (!/^[1-9][0-9]*$/.test(args[0] ?? "")) throw new Error(`${commandName} requires a positive issue/PR number`);
+	return Number(args[0]);
 }
 
 async function cmdListPrs(args: string[]): Promise<number> {
@@ -148,7 +153,7 @@ async function cmdCreatePr(args: string[]): Promise<number> {
 			title: requireOption(args, "--title"),
 			base: requireOption(args, "--base"),
 			head: requireOption(args, "--head"),
-			body: requireOption(args, "--body"),
+			body: requireOption(args, "--body", true),
 			draft: args.includes("--draft"),
 		}),
 	);

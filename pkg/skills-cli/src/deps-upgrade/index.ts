@@ -6,10 +6,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { protectedPushReason } from "@dg/common";
 import { stateDir } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProvider } from "../provider/index";
-import { gh, git, ShellError } from "../utils/git";
+import { gh, git, remoteDefaultBranch, ShellError } from "../utils/git";
 import { defineCommand, die } from "../utils/legacy-command";
 import { createWorktree } from "./worktree-compat";
 
@@ -29,6 +30,7 @@ USAGE (run any subcommand with --help for details):
   deps-upgrade bump-action <action-ref> <from> <to> [workflow-files...]
   deps-upgrade commit <type> <scope> "<msg>" [--files a,b]
   deps-upgrade status
+  deps-upgrade summary
   deps-upgrade reset-deps --confirm
   deps-upgrade close-prs <n>...
   deps-upgrade cooldown <pkg> <old> <new> [--cooldown-days N] [--ecosystem <name>]
@@ -36,6 +38,12 @@ USAGE (run any subcommand with --help for details):
   deps-upgrade ready-when-green <pr> [--repo o/n] [--timeout-minutes N] [--interval-seconds N]`;
 
 const DEFAULT_RENOVATE_LOGIN = "renovate-bot";
+const DEFAULT_BRANCH_PREFIX = "chore/";
+
+/** Resolve the deps branch prefix from DG_DEPS_BRANCH_PREFIX, defaulting to chore/. */
+export function branchPrefix(): string {
+	return process.env.DG_DEPS_BRANCH_PREFIX || DEFAULT_BRANCH_PREFIX;
+}
 
 /** Resolve the configured Renovate author, defaulting to renovate-bot. */
 export function renovateLogin(): string {
@@ -61,7 +69,6 @@ export function scratchPaths() {
 
 type Cmd = readonly [bin: string, ...args: string[]];
 
-// Used only for non-git/gh ecosystem commands (bun, pnpm, cargo, etc.)
 async function runCommand(
 	bin: string,
 	args: string[],
@@ -206,21 +213,41 @@ export function summarizeNpmAudit(raw: string): string {
 	}
 }
 
-// govulncheck streams newline-delimited JSON
-/** Count distinct OSV findings in newline-delimited Go audit output. */
+/** Decode concatenated top-level JSON objects, indented or not; malformed tails are dropped. */
+export function decodeJsonStream(raw: string): unknown[] {
+	const values: unknown[] = [];
+	let depth = 0;
+	let start = -1;
+	let inString = false;
+	let escaped = false;
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (ch === "\\") escaped = true;
+			else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') inString = true;
+		else if (ch === "{") {
+			if (depth === 0) start = i;
+			depth++;
+		} else if (ch === "}" && depth > 0 && --depth === 0) {
+			try {
+				values.push(JSON.parse(raw.slice(start, i + 1)));
+			} catch {}
+		}
+	}
+	return values;
+}
+
+/** Count distinct OSV findings in govulncheck's JSON object stream. */
 export function summarizeGovulncheck(raw: string): string {
 	const vulns = new Set(
-		raw
-			.split("\n")
-			.filter((line) => line.trim())
-			.flatMap((line) => {
-				try {
-					const osv = JSON.parse(line)?.finding?.osv;
-					return osv ? [osv as string] : [];
-				} catch {
-					return [];
-				}
-			}),
+		decodeJsonStream(raw).flatMap((entry) => {
+			const osv = (entry as { finding?: { osv?: unknown } })?.finding?.osv;
+			return typeof osv === "string" ? [osv] : [];
+		}),
 	);
 	return `=== govulncheck ===\n  vulnerabilities: ${vulns.size}\n  ${[...vulns].join("\n  ")}`;
 }
@@ -294,7 +321,6 @@ export function summarizePipAudit(raw: string): string {
 export interface EcosystemSpec {
 	markers: ReadonlyArray<string | RegExp>;
 	lockFile: (entries: readonly string[]) => string | null;
-	manifests: (entries: readonly string[]) => string[];
 	installCommand: (entries: readonly string[]) => Cmd | null;
 	audit: { command: Cmd; summarize: (raw: string) => string };
 	auditFix: Cmd | null;
@@ -314,15 +340,29 @@ const NODE_DEP_SECTIONS = [
 export type NodeManifest = Record<string, unknown> &
 	Partial<Record<(typeof NODE_DEP_SECTIONS)[number], Record<string, string>>>;
 
-/** Resolve the root manifest and existing explicitly named workspace manifests. */
+/** Resolve the root manifest and the manifests that workspace globs match. */
 export function nodeManifests(): string[] {
 	const { workspaces } = JSON.parse(readFileSync("package.json", "utf8"));
-	const workspaceManifests = (
-		Array.isArray(workspaces) ? (workspaces as string[]) : []
-	)
-		.map((w) => path.join(w, "package.json"))
-		.filter((p) => existsSync(p));
-	return ["package.json", ...workspaceManifests];
+	const patterns: unknown[] = Array.isArray(workspaces)
+		? workspaces
+		: Array.isArray(workspaces?.packages)
+			? workspaces.packages
+			: [];
+	const strings = patterns.filter((p): p is string => typeof p === "string");
+	const manifestGlob = (p: string) =>
+		new Bun.Glob(path.posix.join(p, "package.json"));
+	const excluded = strings
+		.filter((p) => p.startsWith("!"))
+		.map((p) => manifestGlob(p.slice(1)));
+	const found = strings
+		.filter((p) => !p.startsWith("!"))
+		.flatMap((p) => [...manifestGlob(p).scanSync(".")].sort())
+		.filter(
+			(file) =>
+				!file.split("/").includes("node_modules") &&
+				!excluded.some((glob) => glob.match(file)),
+		);
+	return ["package.json", ...new Set(found)];
 }
 
 /** Replace an existing dependency version, preserving its caret/tilde prefix. */
@@ -353,14 +393,18 @@ export function bumpNodePackage(
 ): string[] {
 	const changed = nodeManifests()
 		.map((file) => {
-			const before = JSON.parse(readFileSync(file, "utf8")) as NodeManifest;
-			return { file, before, after: withBumpedVersion(before, pkg, newV) };
+			const text = readFileSync(file, "utf8");
+			const before = JSON.parse(text) as NodeManifest;
+			return { file, text, before, after: withBumpedVersion(before, pkg, newV) };
 		})
 		.filter(({ before, after }) => before !== after);
 	if (!changed.length)
 		die(`${pkg} not found in package.json or its workspaces`);
-	changed.forEach(({ file, after }) =>
-		writeFileSync(file, `${JSON.stringify(after, null, 2)}\n`),
+	changed.forEach(({ file, text, after }) =>
+		writeFileSync(
+			file,
+			`${JSON.stringify(after, null, text.match(/^[ \t]+(?=")/m)?.[0] ?? 2)}\n`,
+		),
 	);
 	return changed.map(({ file }) => file);
 }
@@ -368,19 +412,17 @@ export function bumpNodePackage(
 /** Replace a simple or inline-table Cargo version without altering unrelated text. */
 export function bumpCargoToml(src: string, pkg: string, newV: string): string {
 	const name = escapeRegex(pkg);
-	// Match simple `name = "x.y.z"` or `name = { version = "x.y.z", ... }` entries.
 	const patterns = [
-		new RegExp(`(^${name}\\s*=\\s*")[^"]+(")`, "m"),
-		new RegExp(`(^${name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")[^"]+(")`, "m"),
+		new RegExp(`(^${name}\\s*=\\s*")[^"]+(")`, "gm"),
+		new RegExp(`(^${name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")[^"]+(")`, "gm"),
 	];
-	const match = patterns.find((re) => re.test(src));
-	return match ? src.replace(match, `$1${newV}$2`) : src;
+	return patterns.reduce((out, re) => out.replace(re, `$1${newV}$2`), src);
 }
 
 /** Replace the named gem version while retaining its version operator. */
 export function bumpGemfile(src: string, pkg: string, newV: string): string {
 	const re = new RegExp(
-		`(gem\\s+['"]${escapeRegex(pkg)}['"][^\\n]*?['"](?:[~<>=!]+\\s*)?)[^'"]+(['"])`,
+		`(gem\\s+['"]${escapeRegex(pkg)}['"]\\s*,\\s*['"](?:[~<>=!]+\\s*)?)(?=\\d)[^'"]+(['"])`,
 	);
 	return src.replace(re, `$1${newV}$2`);
 }
@@ -393,7 +435,7 @@ export function bumpPythonSource(
 	newV: string,
 ): string {
 	const re = new RegExp(
-		`((?:^|\\n)\\s*["']?${escapeRegex(pkg)}["']?\\s*[=~<>]{1,2}\\s*["']?)${escapeRegex(oldV)}(["']?)`,
+		`((?:^|\\n)\\s*["']?${escapeRegex(pkg)}["']?\\s*[=~<>]{1,2}\\s*["']?)${escapeRegex(oldV)}(?![\\w.])(["']?)`,
 		"g",
 	);
 	return src.replace(re, `$1${newV}$2`);
@@ -407,7 +449,7 @@ export function bumpActionRefs(
 	toTag: string,
 ): string {
 	const re = new RegExp(
-		`(${escapeRegex(action)}(?:/[^@\\s]+)?)@(v?)${escapeRegex(fromTag)}(?=\\s|$)`,
+		`((?<![\\w./-])${escapeRegex(action)}(?:/[^@\\s]+)?)@(v?)${escapeRegex(fromTag)}(?=\\s|$)`,
 		"g",
 	);
 	return src.replace(re, (_m, ref, v) => `${ref}@${v}${toTag}`);
@@ -424,7 +466,6 @@ const nodeEcosystem = (
 ): EcosystemSpec => ({
 	markers: opts.markers,
 	lockFile: opts.lockFile,
-	manifests: () => ["package.json"],
 	installCommand: () => [eco, "install"],
 	audit: { command: opts.audit, summarize: summarizeNpmAudit },
 	auditFix: opts.auditFix,
@@ -465,7 +506,6 @@ export const ECOSYSTEMS = {
 	go: {
 		markers: ["go.mod"],
 		lockFile: () => "go.sum",
-		manifests: () => ["go.mod"],
 		installCommand: () => ["go", "mod", "tidy"],
 		audit: {
 			command: ["govulncheck", "-json", "./..."],
@@ -481,7 +521,6 @@ export const ECOSYSTEMS = {
 	rust: {
 		markers: ["Cargo.toml"],
 		lockFile: () => "Cargo.lock",
-		manifests: () => ["Cargo.toml"],
 		installCommand: () => ["cargo", "build", "--locked"],
 		audit: {
 			command: ["cargo", "audit", "--json"],
@@ -499,7 +538,6 @@ export const ECOSYSTEMS = {
 	dotnet: {
 		markers: [/\.(csproj|sln)$/],
 		lockFile: () => null,
-		manifests: csprojFiles,
 		installCommand: () => ["dotnet", "restore"],
 		audit: {
 			command: [
@@ -536,7 +574,6 @@ export const ECOSYSTEMS = {
 	ruby: {
 		markers: ["Gemfile"],
 		lockFile: () => "Gemfile.lock",
-		manifests: () => ["Gemfile"],
 		installCommand: () => ["bundle", "install"],
 		audit: {
 			command: ["bundle-audit", "check", "--format", "json"],
@@ -555,11 +592,6 @@ export const ECOSYSTEMS = {
 		markers: ["pyproject.toml", "requirements.txt"],
 		lockFile: (entries) =>
 			["poetry.lock", "uv.lock"].find((f) => entries.includes(f)) ?? null,
-		manifests: (entries) => [
-			entries.includes("pyproject.toml")
-				? "pyproject.toml"
-				: "requirements.txt",
-		],
 		installCommand: (entries) =>
 			entries.includes("uv.lock")
 				? ["uv", "sync"]
@@ -631,8 +663,6 @@ async function runInstall(eco: Ecosystem): Promise<void> {
 	if (!command) die("no python install strategy detected");
 	await mustCommand(command);
 }
-
-// --- default branch resolver --------------------------------------------
 
 const firstOutput = async (
 	bin: string,
@@ -761,23 +791,21 @@ export function timestampSlug(date: Date): string {
 	return `${iso.slice(0, 10).replace(/-/g, "")}-${iso.slice(11, 19).replace(/:/g, "")}`;
 }
 
-/** Decode legacy WORKTREE key/value output for compatibility consumers. */
-export function parseWorktreeOutput(stdout: string): Record<string, string> {
-	return Object.fromEntries(
-		stdout
-			.split("\n")
-			.map((line) => line.match(/^(WORKTREE_[A-Z]+)=(.*)$/))
-			.filter((m): m is RegExpMatchArray => m !== null)
-			.map((m) => [m[1], m[2]]),
-	);
-}
-
-// --- package cooldown ---------------------------------------------------
-
 /** Default minimum package publication age for dependency updates. */
 export const DEFAULT_COOLDOWN_DAYS = 7;
 const DAY_MS = 86_400_000;
 const STABLE_VERSION = /^v?\d+(\.\d+)*$/;
+
+/** Order dotted numeric versions; a leading v and non-numeric parts count as zero. */
+export function compareVersions(a: string, b: string): number {
+	const parts = (v: string) => v.replace(/^v/, "").split(".").map((n) => Number.parseInt(n, 10) || 0);
+	const [x, y] = [parts(a), parts(b)];
+	for (let i = 0; i < Math.max(x.length, y.length); i++) {
+		const diff = (x[i] ?? 0) - (y[i] ?? 0);
+		if (diff !== 0) return diff;
+	}
+	return 0;
+}
 
 /** Injectable registry transport; null represents unavailable metadata. */
 export type FetchJson = (url: string) => Promise<unknown>;
@@ -874,8 +902,9 @@ const rubygemsReleases: Registry = async (pkg, _v, get) => {
 
 const goReleases: Registry = async (pkg, version, get) => {
 	const encoded = pkg.replace(/[A-Z]/g, (c) => `!${c.toLowerCase()}`);
+	const tag = `v${version.replace(/^v/, "")}`;
 	const doc = (await get(
-		`https://proxy.golang.org/${encoded}/@v/${version}.info`,
+		`https://proxy.golang.org/${encoded}/@v/${tag}.info`,
 	)) as { Time?: unknown } | null;
 	return isoMap([[version, doc?.Time]]);
 };
@@ -939,18 +968,15 @@ export async function evaluateCooldown(
 	const eligible = new Date(
 		Date.parse(published) + days * DAY_MS,
 	).toISOString();
-	const floor = releases[oldVersion]
-		? Date.parse(releases[oldVersion])
-		: -Infinity;
 	const fallback = Object.entries(releases)
 		.filter(
 			([v, at]) =>
 				STABLE_VERSION.test(v) &&
-				v !== oldVersion &&
 				Date.parse(at) <= cutoff &&
-				Date.parse(at) > floor,
+				compareVersions(v, oldVersion) > 0 &&
+				compareVersions(v, version) < 0,
 		)
-		.sort(([, a], [, b]) => Date.parse(b) - Date.parse(a))[0];
+		.sort(([a], [b]) => compareVersions(b, a))[0];
 	return fallback
 		? {
 				status: "fallback",
@@ -987,8 +1013,6 @@ function parseDays(flag: string | boolean | undefined): number {
 		? n
 		: die(`--cooldown-days must be a whole number >= 0, got: ${flag}`);
 }
-
-// --- ready-when-green ---------------------------------------------------
 
 /** Delay before treating a repository with no reported checks as green. */
 export const CHECKS_GRACE_MS = 5 * 60_000;
@@ -1055,19 +1079,26 @@ async function fetchPrChecks(
 	}
 }
 
+async function refuseProtectedBranch(): Promise<void> {
+	const branch = (await git`rev-parse --abbrev-ref HEAD`).text().trim();
+	if (protectedPushReason(branch, await remoteDefaultBranch()))
+		die(
+			`refusing to run on protected branch '${branch}'; cd into the deps worktree first`,
+		);
+}
+
 function numberFlag(
 	name: string,
 	flag: string | boolean | undefined,
 	fallback: number,
+	min = 0,
 ): number {
 	if (flag === undefined) return fallback;
 	const n = Number(flag);
-	return Number.isFinite(n) && n >= 0
+	return Number.isFinite(n) && n >= min
 		? n
-		: die(`--${name} must be a number >= 0, got: ${flag}`);
+		: die(`--${name} must be a number >= ${min}, got: ${flag}`);
 }
-
-// --- subcommands --------------------------------------------------------
 
 async function cmdPrepare() {
 	const base = await resolveDefaultBranch();
@@ -1077,7 +1108,7 @@ async function cmdPrepare() {
 	const { path: wtPath, branch: wtBranch } = await createWorktree(
 		{
 			slug: `deps-update-${timestampSlug(new Date())}`,
-			prefix: "drb/chore/",
+			prefix: branchPrefix(),
 			base,
 		},
 		(text) => {
@@ -1125,11 +1156,18 @@ async function cmdListPrs() {
 	process.stdout.write(`${JSON.stringify(prs)}\n`);
 }
 
+function pullRequestNumber(value: string): number {
+	return /^[1-9]\d*$/.test(value)
+		? Number(value)
+		: die(`pull request number must be a positive integer, got: ${value}`);
+}
+
 async function cmdPrBody(args: string[]) {
 	const n = args[0];
 	if (!n) die("pr-body requires a PR number");
+	const number = pullRequestNumber(n);
 	const provider = await getProvider();
-	const body = await provider.getPullRequestBody({ number: Number(n) });
+	const body = await provider.getPullRequestBody({ number });
 	process.stdout.write(body);
 }
 
@@ -1140,7 +1178,6 @@ async function cmdAudit(args: string[]) {
 	const { stdout } = await runCommand(bin, cmdArgs, { capture: true });
 
 	const scratch = scratchPaths();
-	// snapshot for `summary`: before-snapshot if none yet, else after-snapshot
 	const target = readTextIfExists(scratch.auditBefore).trim()
 		? scratch.auditAfter
 		: scratch.auditBefore;
@@ -1167,6 +1204,7 @@ async function cmdBumpDep(args: string[]) {
 	const [pkg, oldV, newV] = positional;
 	if (!pkg || !oldV || !newV)
 		die("usage: bump-dep <pkg> <old> <new> [--files a,b] [--ecosystem <name>]");
+	await refuseProtectedBranch();
 	const eco = announcedEcosystem(flags);
 	const spec = SPECS[eco];
 
@@ -1186,12 +1224,13 @@ async function cmdBumpAction(args: string[]) {
 	const [action, fromTag, toTag, ...files] = args;
 	if (!action || !fromTag || !toTag)
 		die("usage: bump-action <action-ref> <from> <to> [workflow-files...]");
+	await refuseProtectedBranch();
 	const targets = files.length ? files : findWorkflowFiles();
 	const changed = editFiles(targets, (src) =>
 		bumpActionRefs(src, action, fromTag, toTag),
 	);
 	if (!changed.length) die("no workflow files changed — check <from> tag");
-	await git`add ${targets.filter((f) => existsSync(f))}`;
+	await git`add ${changed}`;
 	await git`commit -m ${`chore(deps): bump ${action} from ${fromTag} to ${toTag}`}`;
 }
 
@@ -1209,6 +1248,7 @@ async function cmdCommit(args: string[]) {
 	const [type, scope, ...rest] = positional;
 	if (!type || !scope || !rest.length)
 		die('usage: commit <type> <scope> "<message>" [--files a,b]');
+	await refuseProtectedBranch();
 	const files = splitList(flags.files);
 	if (files.length) await git`add ${files}`;
 	await git`commit -m ${`${type}(${scope}): ${rest.join(" ")}`}`;
@@ -1242,22 +1282,19 @@ async function cmdResetDeps(args: string[]) {
 
 async function cmdClosePrs(args: string[]) {
 	if (!args.length) die("close-prs requires at least one PR number");
+	const numbers = args.map(pullRequestNumber);
 	const branch = (await git`rev-parse --abbrev-ref HEAD`).text().trim();
 	const comment = `Included in combined deps branch: ${branch}`;
 	const provider = await getProvider();
 	const { closedLog } = scratchPaths();
-	for (const n of args) {
+	for (const n of numbers) {
 		try {
-			await provider.closePullRequest({ number: Number(n) }, comment);
+			await provider.closePullRequest({ number: n }, comment);
 			appendFileSync(closedLog, `${n}\n`);
 		} catch (e) {
-			if (e instanceof ShellError) {
-				process.stderr.write(
-					`warning: failed to close PR #${n}: ${e.message}\n`,
-				);
-			} else {
-				throw e;
-			}
+			process.stderr.write(
+				`warning: failed to close PR #${n}: ${e instanceof Error ? e.message : String(e)}\n`,
+			);
 		}
 	}
 }
@@ -1265,6 +1302,7 @@ async function cmdClosePrs(args: string[]) {
 async function cmdPushPr(args: string[]) {
 	const { positional, flags } = parseArgs(args, ["ready"]);
 	const title = positional[0] ?? "chore(deps): batch dependency upgrade";
+	await refuseProtectedBranch();
 	const body = await Bun.stdin.text();
 	await git`push -u origin HEAD`;
 	const base = await resolveDefaultBranch();
@@ -1315,16 +1353,18 @@ async function cmdReadyWhenGreen(args: string[]) {
 		die(
 			"usage: ready-when-green <pr-number|url> [--repo owner/name] [--timeout-minutes N] [--interval-seconds N]",
 		);
+	const intervalMs =
+		numberFlag("interval-seconds", flags["interval-seconds"], 30, 1) * 1000;
+	const timeoutMs =
+		numberFlag("timeout-minutes", flags["timeout-minutes"], 60) * 60_000;
 	const repoFlags =
 		typeof flags.repo === "string" ? ["--repo", flags.repo] : [];
 	const url = (await gh`pr view ${ref} ${repoFlags} --json url --jq .url`)
 		.text()
 		.trim();
 	const verdict = await pollChecks(() => fetchPrChecks(ref, repoFlags), {
-		intervalMs:
-			numberFlag("interval-seconds", flags["interval-seconds"], 30) * 1000,
-		timeoutMs:
-			numberFlag("timeout-minutes", flags["timeout-minutes"], 60) * 60_000,
+		intervalMs,
+		timeoutMs,
 		graceMs: CHECKS_GRACE_MS,
 		now: Date.now,
 		sleep: (ms) => Bun.sleep(ms),
@@ -1363,8 +1403,6 @@ async function cmdSummary() {
 	process.stdout.write(`${summary}\n`);
 }
 
-// --- entry --------------------------------------------------------------
-
 /** Build the inert legacy dispatcher for all sixteen dependency operations. */
 export function buildCommand() {
 	return defineCommand({
@@ -1373,7 +1411,7 @@ export function buildCommand() {
 		subcommands: {
 			prepare: {
 				description:
-					"create drb/chore/deps_update_<ts> worktree+branch, clear scratch",
+					"create <prefix>deps_update_<ts> worktree+branch (prefix: $DG_DEPS_BRANCH_PREFIX, default chore/), clear scratch",
 				run: () => cmdPrepare(),
 			},
 			"list-prs": {

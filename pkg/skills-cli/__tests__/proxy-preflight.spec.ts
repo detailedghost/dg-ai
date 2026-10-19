@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 import type { Backend } from "../src/proxy/backends/types";
 import { checkPreflight } from "../src/proxy/preflight";
 
-// checkPreflight only consults PATH via Bun.which — no process is spawned,
-// so real (but harmless) binary names are safe fixtures here.
 const REAL_BIN = "sh";
 const MISSING_BIN = "definitely-not-a-real-binary-xyz123";
 

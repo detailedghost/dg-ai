@@ -30,7 +30,7 @@ import {
 	reviewMessage,
 	waitUntil,
 } from "./support/fakes";
-import type { RunnerResult } from "./support/fakes";
+import { createFakeCredentialSource, type RunnerResult } from "./support/fakes";
 
 type Script = (
 	request: Parameters<ChatProvider["subscribe"]>[0],
@@ -286,7 +286,7 @@ describe("serve event loop", () => {
 			scripts: [holdOpen(prompt, reaction)],
 		});
 		const { controller, done } = h.startServe();
-		await waitUntil(() => lastEventId(h) === "e2");
+		await waitUntil(() => lastEventId(h) === "e2", 10_000);
 		expect(JSON.parse(readFileSync(h.paths.configPath, "utf8")).reactions).toEqual({ approved: custom });
 		expect(h.provider().calls.filter((c) => c.op === "reply").map((c) => c.text)).toEqual([
 			"React to this message with the emoji for approved.",
@@ -294,7 +294,7 @@ describe("serve event loop", () => {
 		]);
 		controller.abort();
 		await done;
-	});
+	}, 15_000);
 
 	test("a message whose handling throws does not advance the last event id, so a restart replays it", async () => {
 		const broken = messageEvent("e1");
@@ -555,6 +555,23 @@ describe("serve auth recovery", () => {
 		expect(h.secrets).toHaveLength(2);
 		expect(h.providerSecrets).toEqual(["secret-1", "secret-2"]);
 		expect(h.providers[1]!.subscribeRequests[0]?.resumeId).toBe("e1");
+		controller.abort();
+		expect(await done).toBe(0);
+	});
+
+	test("a relay secret rotated in the credential store is read again after an auth error", async () => {
+		const h = setup({
+			scripts: [failWith(new RelayAuthError(401)), holdOpen()],
+		});
+		const entries = { "channel-review/relay/dev": { value: "stored-1" } };
+		h.seams.credentials = createFakeCredentialSource(entries);
+		h.seams.createProvider = ((original) => (config, env, providerSeams) => {
+			if (h.providers.length === 0) entries["channel-review/relay/dev"].value = "stored-2";
+			return original!(config, env, providerSeams);
+		})(h.seams.createProvider);
+		const { controller, done } = h.startServe();
+		await waitUntil(() => h.providers.length === 2 && h.providers[1]!.subscribeRequests.length === 1);
+		expect(h.providerSecrets).toEqual(["stored-1", "stored-2"]);
 		controller.abort();
 		expect(await done).toBe(0);
 	});

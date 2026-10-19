@@ -2,7 +2,7 @@
 
 How to deepen a cluster of shallow modules safely, given its dependencies. Assumes the vocabulary in [language.md](language.md) — **module**, **interface**, **seam**, **adapter**.
 
-Verbatim from [mattpocock/skills/improve-codebase-architecture/DEEPENING.md](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/DEEPENING.md), with light wording adaptations.
+Adapted from [mattpocock/skills/improve-codebase-architecture/DEEPENING.md](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/DEEPENING.md), with light wording changes.
 
 ## Dependency categories
 
@@ -36,7 +36,7 @@ Third-party services (Stripe, Twilio, Snowflake, etc.) you don't control. The de
 - Old unit tests on shallow modules become waste once tests at the deepened module's interface exist — delete them.
 - Write new tests at the deepened module's interface. The **interface is the test surface**.
 - Tests assert on observable outcomes through the interface, not internal state.
-- Tests should survive internal refactors — they describe behaviour, not implementation. If a test has to change when the implementation changes, it's testing past the interface.
+- Tests should survive internal refactors — they describe behavior, not implementation. If a test has to change when the implementation changes, it's testing past the interface.
 
 ## Migration path (when proposing deepening to the user)
 

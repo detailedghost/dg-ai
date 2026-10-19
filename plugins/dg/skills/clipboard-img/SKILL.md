@@ -12,7 +12,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -40,6 +40,8 @@ OUTPUT="$("$DG" stash -a -u clipboard .png)"
 For the skill's `--scratch` / `-s` option, resolve `OUTPUT` with `"$DG" stash -u clipboard .png` instead. For an explicit filename, pass that literal filename as one argument. Pass `-` to write PNG bytes to stdout. The compiled command uses the system clipboard tools and requires no legacy helper on PATH.
 
 ## After Success
+
+With `-`, the PNG goes to stdout and no file exists. Skip these steps.
 
 1. Report the saved filename (printed to stdout by the script).
 1. If the user provided no arguments, mention the auto-generated filename.

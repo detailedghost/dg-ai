@@ -16,7 +16,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -63,8 +63,7 @@ one-node stack).
 
 `--native` additionally attempts `gh stack link` after base retargeting and
 before the body updates. It needs an external GitHub CLI extension providing
-that command; the legacy installation command was
-`gh extension install github/gh-stack`. The extension is optional and its
+that command. The extension is optional and its
 availability and behavior depend on that external project. A missing extension
 or failed link is reported on stderr; body updates still continue.
 

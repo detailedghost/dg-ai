@@ -34,7 +34,7 @@ Install these on every machine that runs the daemon:
   the configured Secrets Manager secret.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
 - At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
-- The thrash skill where that runner finds it. dg does not ship thrash.
+- The thrash skill where that runner finds it. The dg plugin ships `/dg:thrash` and its persona; a skills-only install copies both.
 - For `$address`: the address skill available to the selected runner,
   `dg-skills address`, and `gh` or `glab` signed in with push access.
 
@@ -51,9 +51,7 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 | copilot | `.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
 | grok | An enabled, user-invocable, unambiguous `thrash` reported by `grok inspect --json` |
 
-Grok Build uses `grok -p "/thrash …" --output-format streaming-json
---always-approve`, with `--cwd` and optional `--model`. These flags were checked
-against Grok Build 1.0.60. Install and authenticate using the
+The exact command is in [Grok runner](#grok-runner). Install and authenticate using the
 [official Grok Build instructions](https://docs.x.ai/build/overview).
 `grok login` (or `grok login --device-auth`) signs in interactively;
 headless API-key authentication uses the CLI's supported environment or model
@@ -146,12 +144,11 @@ headless flags; a few of them are not spelled out as a stable contract, so
 they are config when the CLI allows it.
 
 - The command is `grok --no-auto-update -p <prompt> --output-format <format> --always-approve --cwd <job dir>`. `--no-auto-update` skips the background updater. `--cwd` is the job directory, and the process working directory is that same path.
-- The prompt is `/thrash ...`. The readiness probe verifies skill discovery with `grok inspect --json`.
+- The prompt is `/thrash ...`. These flags were checked against Grok Build 1.0.60.
 - `runner.grok.outputFormat` is `streaming-json` (the default), `json`, or `plain`. `streaming-json` is one JSON object per line: `text` (answer chunk, field `data`), `thought` (ignored), `error` (field `message`), and `end` (field `stopReason`). The daemon appends the stream to the job log. A fast nonzero exit whose stderr, or whose `error` event, says the CLI is not signed in is CR-202. The review text itself is not parsed; thrash posts the review.
 - `runner.grok.tools` is an optional list of Grok tool ids such as `read_file` and `grep`. They are joined with commas into one `--tools` value, which replaces Grok's default tool set. Leave it unset, or set an empty list, to keep that default. A tool id must not contain a comma. This is not Claude's `Bash(git:*)` syntax.
 - `runner.grok.model` is optional and becomes `--model`.
-- There is no `grok auth status`. The probe runs `grok models` to check the resolved auth source, then `grok inspect --json` to check the skill. These utility checks submit no model prompt. Sign in with `grok login`, or use the CLI-supported API-key setup. A runtime sign-in failure reports CR-202.
-- The review probe inspects the actual scratch working directory; general status inspects user-level skills from the home directory.
+- The readiness probe is described under [Prerequisites](#prerequisites). A runtime sign-in failure reports CR-202.
 - `$address`, automatic fixes, and dependency upgrades stay on Claude.
 
 Opt-in tests in `pkg/channel-review` spawn the real CLIs. They stay skipped unless the variable is `1` and the binary is on `PATH`. From `pkg/channel-review`:
@@ -195,7 +192,7 @@ every required key with placeholder values.
 | `chat` | object | Unset | Old single-chat form with `topic` and `id`; it still works as a one-entry `chats` list. Setting both `chat` and `chats` is an error. |
 | `owner.token` | string | Required | Gate for new reviews; also supplies the owner name in errors (`!owner` gives Owner). |
 | `owner.email` | string | Required | Owner email that the relay uses when sending chat replies. |
-| `owner.senderIds` | string array | `[]` | Chat sender IDs (Teams Azure AD object IDs) that may run `$address`. Entries are trimmed and must not be empty. Reviews and help do not check it. |
+| `owner.senderIds` | string array | `[]` | Chat sender IDs (Teams Azure AD object IDs) that may run `$address` and `$emoji`. Entries are trimmed and must not be empty. Reviews and help do not check it. |
 | `runner.default` | string | `claude` | Default runner: claude, codex, copilot, or grok. |
 | `runner.fallback` | string or null | `null` | Retry a Claude review once after a usage limit. Off by default. Set `"fallback": "codex"` to turn it on, or choose copilot or grok. The fallback must pass its runner probe. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
@@ -345,8 +342,10 @@ To move secrets that are already in `.env`, run
 without `--dry-run`. It stores `CHANNEL_REVIEW_RELAY_SECRET_DEV` and `_PROD`,
 `DATADOG_ACCESS_TOKEN` (with `DATADOG_SITE`), and `SENTRY_AUTH_TOKEN` (with
 `SENTRY_ORG` and `SENTRY_BASE_URL`). Then it deletes only those lines. It
-keeps the file mode, writes a backup to `.env.bak-<timestamp>` (mode 0600),
-and prints variable names only. `DATADOG_API_KEY` and `DATADOG_APP_KEY` stay
+keeps the file mode and prints variable names only. It writes no
+backup by default; `--keep-backup` writes a plain-text
+`.env.bak-<timestamp>` copy (mode 0600) with the original values so you can
+undo. If the rewrite fails, it restores the original content. `DATADOG_API_KEY` and `DATADOG_APP_KEY` stay
 in `.env`; replace them with `connect datadog`. The default file is the `.env`
 next to the mise config in the current folder; `--file` picks another.
 Quoted values and inline comments are supported. When a moved variable is

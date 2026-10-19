@@ -10,7 +10,7 @@ It starts with zero conversation context and has its own command and file tools,
 ## Invocation
 
 ```bash
-"$DG" proxy <backend> --prompt "<template below, filled in>"
+"$DG" proxy <backend> --prompt-file <absolutePromptPath>
 ```
 
 Resolve `DG` using [../SKILL.md](../SKILL.md#runtime-and-skill-paths) in
@@ -28,8 +28,8 @@ antagonistic code review — treat every change as guilty until proven
 correct. Read only what you need; do not explore the codebase beyond
 what the diff touches and the narrow context around each changed line.
 
-Diff (base..HEAD):
-<diff, inlined verbatim or as a path to a file containing it if long>
+Diff (base..HEAD) is in this file; read it first:
+<absolute path of the diff file>
 
 For each real issue you find — correctness bugs, security flaws,
 resource leaks, broken contracts, dead code introduced by this diff,
@@ -47,7 +47,7 @@ Format — one section per finding, e.g.:
 
   ## <path>:<line>
 
-  severity: <low|medium|high>
+  severity: <low|medium|high|critical>
 
   <one paragraph: what's wrong, why, and the concrete failure case>
 
@@ -58,10 +58,10 @@ means "no findings" to the caller. Do not touch any file other than
 you are reviewing, not editing.
 ```
 
-Fill in `<diff, ...>` and `<reviewFile absolute path>` before sending.
-For large diffs, write the diff to a scratch file under
-`$("$DG" stash review-loop)/` and reference its path in the
-prompt instead of inlining it — keeps the `--prompt` argument small.
+Fill in `<absolute path of the diff file>` and `<reviewFile absolute path>`
+before writing the prompt file. Always write the diff to a scratch file under
+`$("$DG" stash review-loop)/` and write the filled template to a second
+scratch file; never put either in a shell string.
 
 ## Finding Format Contract
 

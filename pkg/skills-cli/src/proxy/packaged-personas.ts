@@ -1,3 +1,6 @@
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { personasDest } from "@dg/common/node";
 import checkpoint from "../../../../plugins/dg/agents/checkpoint.md" with { type: "text" };
 import copilotAntagonist from "../../../../plugins/dg/agents/copilot-antagonist.md" with { type: "text" };
 import csharp from "../../../../plugins/dg/agents/csharp.md" with { type: "text" };
@@ -36,3 +39,17 @@ export const packagedPersonas: Record<string, string> = {
 	thrash,
 	wave,
 };
+
+/** Write every embedded persona beside the skills directory; a link at a destination is replaced. */
+export function installPackagedPersonas(skillsDest: string): string[] {
+	const destDir = personasDest(skillsDest);
+	mkdirSync(destDir, { recursive: true });
+	const names = Object.keys(packagedPersonas).sort().map((name) => `${name}.md`);
+	for (const file of names) {
+		const to = join(destDir, file);
+		rmSync(to, { force: true });
+		writeFileSync(to, packagedPersonas[file.slice(0, -3)]);
+		chmodSync(to, 0o644);
+	}
+	return names;
+}

@@ -105,7 +105,7 @@ Append this line to `.gitignore` (create the file if missing). `.agents/` is loc
 .agents/
 ```
 
-Only add once — check before appending. Skip entirely if `.agents/` is already tracked (`git ls-files .agents/` returns results); warn the user instead. If the user opts to check in `.agents/` at Step 8, remove this line (or add `!.agents/` override) before committing.
+Only add once — check before appending. Skip entirely if `.agents/` is already tracked (`git ls-files .agents/` returns results); warn the user instead. If the user opts to check in `.agents/` at Step 3, remove this line (or add `!.agents/` override) before committing.
 
 ## .agents/paths.md Template
 

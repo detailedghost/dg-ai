@@ -8,6 +8,7 @@ import { scratchDir } from "@dg/common/node";
 import type { Backend, BuildArgsInput } from "./backends/types";
 
 const STDERR_TAIL_LENGTH = 2000;
+const MAX_ARG_BYTES = 128 * 1024 - 1;
 
 /** Create the shared private proxy scratch directory, rejecting unsafe managed paths. */
 export function proxyDir(): string {
@@ -27,6 +28,11 @@ export async function runBackend(
 	logFile: string;
 }> {
 	const args = backend.buildArgs(input);
+	const oversized = args.find((arg) => Buffer.byteLength(arg) > MAX_ARG_BYTES);
+	if (oversized !== undefined)
+		throw new Error(
+			`The ${backendName} prompt is ${Buffer.byteLength(oversized)} bytes, over the ${MAX_ARG_BYTES} byte limit for one command argument. Shorten the task or persona.`,
+		);
 	const logFile = `${proxyDir()}/${Date.now()}-${randomUUID()}-${backendName}.jsonl`;
 	writeFileSync(logFile, "", { flag: "wx", mode: 0o600 });
 	const proc = Bun.spawn([backend.bin, ...args], {

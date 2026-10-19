@@ -5,6 +5,10 @@ function record(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSliceById(value: unknown, slice: string): boolean {
+	return record(value) && (typeof value.id === "string" || typeof value.id === "number") && String(value.id) === slice;
+}
+
 /** Read YAML frontmatter from a plan or bundle directory; absent assignment returns null, invalid plans throw. */
 export function resolveSlicePrimary(spec: string, slice: string): string | null {
 	let file = resolve(spec);
@@ -18,7 +22,7 @@ export function resolveSlicePrimary(spec: string, slice: string): string | null 
 	try { parsed = Bun.YAML.parse(frontmatter[1]); }
 	catch (error) { throw new Error(`Invalid spec frontmatter in ${spec}: ${error instanceof Error ? error.message : error}`); }
 	if (!record(parsed) || !Array.isArray(parsed.slices)) throw new Error(`Spec has no slices: ${spec}`);
-	const found: unknown = parsed.slices.find((value: unknown) => record(value) && (typeof value.id === "string" || typeof value.id === "number") && String(value.id) === slice);
+	const found: unknown = parsed.slices.find((value: unknown) => isSliceById(value, slice));
 	if (!record(found)) throw new Error(`Slice not found in ${spec}: ${slice}`);
 	if (!record(found.agents) || found.agents.primary == null || found.agents.primary === "") return null;
 	if (typeof found.agents.primary !== "string") throw new Error(`Invalid primary agent for slice ${slice} in ${spec}`);

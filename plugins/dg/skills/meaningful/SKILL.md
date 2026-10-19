@@ -18,7 +18,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```
@@ -61,17 +61,10 @@ The user must select a concrete proposal before applying it. Explain that applyi
 the chosen plan rewrites this branch and pushes the resulting commits. Honor an
 existing approval for that exact plan and operation; do not ask for it again.
 
-**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the plan file formats and path formulas. **Prefer the JSON plan** (`references/helper-api.md` §Plan File Format (JSON)) over the text format whenever any group has a body — the text parser cannot represent `subject\n\nbody` without gluing or dropping it, the JSON path can. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `"$DG" meaningful apply-json <plan-file>` (or `"$DG" meaningful apply <plan-file>` for a body-less text plan). Report the backup SHA to the user. Claude `Co-Authored-By` trailers are stripped automatically by the helper either way.
+**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the JSON plan file format (§Plan File Format (JSON)) and path formulas. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `"$DG" meaningful apply-json <plan-file>`. Report the backup SHA to the user. The helper keeps every `Co-Authored-By` trailer as written.
 
 **5. On failure** — if the helper exits non-zero, report the backup SHA and recovery options. Details in [references/helper-api.md](references/helper-api.md) §Failure Recovery.
 
 ## Notes
 - Never use plain `--force`; the helper uses `--force-with-lease`.
 - Only commits on this branch (since merge base) are in scope — never reshape across the merge base.
-
-## Validation
-
-The ported real-git suite is `pkg/skills-cli/__tests__/meaningful.spec.ts`. It
-preserves the ten legacy history/backup/rollback cases and checks CLI status,
-plan schemas, literal paths/messages, attribution and inert imports in disposable
-repositories with local bare remotes and isolated durable state.

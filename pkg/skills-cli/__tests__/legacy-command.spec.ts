@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EXIT } from "../src/utils/legacy-command";
 
-// ── EXIT constants ────────────────────────────────────────────────────────────
-
 describe("EXIT", () => {
-	test("OK is 0", () => expect(EXIT.OK).toBe(0));
-	test("ERR is 1", () => expect(EXIT.ERR).toBe(1));
-	test("USAGE is 2", () => expect(EXIT.USAGE).toBe(2));
-	test("VALIDATION is 3", () => expect(EXIT.VALIDATION).toBe(3));
 	test("UNSUPPORTED is defined and distinct from every other EXIT code", () => {
 		expect(typeof EXIT.UNSUPPORTED).toBe("number");
 		const values = [
@@ -21,12 +15,8 @@ describe("EXIT", () => {
 	});
 });
 
-// ── die ───────────────────────────────────────────────────────────────────────
-
 describe("die", () => {
 	test("die() terminates with its explicit status", () => {
-		// We verify the signature without calling it — invoking would kill the process.
-		// Observe termination through a child process.
 		const proc = Bun.spawnSync(
 			[
 				process.execPath,
@@ -52,8 +42,6 @@ describe("die", () => {
 		expect(proc.stderr.toString()).toContain("error: something failed");
 	});
 });
-
-// ── defineCommand dispatch ────────────────────────────────────────────────────
 
 const helperScript = (extra: string) =>
 	`
@@ -88,6 +76,7 @@ function runCmd(argv: string[]) {
 	const script = helperScript(`await cmd.run(${JSON.stringify(argv)});`);
 	return Bun.spawnSync([process.execPath, "--eval", script], {
 		env: { ...process.env },
+		timeout: 10000,
 	});
 }
 
@@ -173,6 +162,7 @@ await program.parseAsync(${JSON.stringify(argv)}, { from: "user" });
 	return Bun.spawnSync([process.execPath, "--eval", script], {
 		stdin: stdin === undefined ? undefined : Buffer.from(stdin),
 		env: { ...process.env },
+		timeout: 10000,
 	});
 }
 

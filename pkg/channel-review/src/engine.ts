@@ -19,6 +19,7 @@ import { pruneJobLogs } from "./job-logs";
 import type { ChannelReviewPaths } from "./paths";
 import type { ChatMessage, ChatProvider, ChatReaction } from "./providers/types";
 import { capturedReactionId, REACTION_STATES, type ReactionState, transition } from "./reactions";
+import { resolveModel } from "./runners/model";
 import { RUNNER_NAMES, type RunTask, type Runner, type RunnerName } from "./runners/types";
 import { type BlockedOptions, type StateStore, prKey } from "./state";
 import {
@@ -116,6 +117,17 @@ type ReviewJob = JobBase & {
 	agent?: RunnerName;
 	model?: string;
 };
+
+const RUNNER_LABELS: Record<RunnerName, string> = {
+	claude: "Claude",
+	codex: "Codex",
+	copilot: "Copilot",
+	grok: "Grok",
+};
+
+function fallbackNotice(name: RunnerName): string {
+	return `Claude is out of tokens, so I'm using ${RUNNER_LABELS[name]} for this review.`;
+}
 
 type ReviewRunner = { runner: Runner; model?: string };
 
@@ -244,8 +256,20 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 	}
 
+	async function verdictPosted(
+		target: Target,
+		host: PrHost,
+		since: Date,
+	): Promise<boolean> {
+		try {
+			return (await verdict.read({ url: target.url, host, since })) !== "none";
+		} catch {
+			return false;
+		}
+	}
+
 	async function execute(
-		job: Pick<JobBase, "messageId" | "chatId">,
+		job: Pick<JobBase, "messageId" | "chatId"> & { host?: PrHost },
 		target: Target,
 		run: {
 			task: RunTask;
@@ -258,7 +282,7 @@ export function createEngine(deps: EngineDeps): Engine {
 		signal: AbortSignal,
 	): Promise<CrCode | null> {
 		if (signal.aborted) return "CR-205";
-		const model = run.model ?? (runner.name === "grok" ? config.runner.grok?.model : undefined);
+		const { model, source } = resolveModel(runner.name, run.model, config);
 		state.setCurrent({
 			messageId: job.messageId,
 			chatId: job.chatId,
@@ -271,17 +295,21 @@ export function createEngine(deps: EngineDeps): Engine {
 						origin: run.task.origin ?? "manual",
 						backend: runner.name,
 						model,
-						modelSource: run.model ? "requested" : model ? "configured" : "default",
+						modelSource: source,
 					} as const,
 				}
 				: {}),
 		});
 		if (run.task.task === "thrash") {
+			const modelNote = model
+				? `${source} model: ${model}`
+				: "CLI default; model unresolved";
 			log.info(
-				`Review execution: Automatic (daemon); orchestrator: ${runner.name} (${model ? `${run.model ? "requested" : "configured"} model: ${model}` : "CLI default; model unresolved"}); reviewer models are recorded per chunk.`,
+				`Review execution: Automatic (daemon); orchestrator: ${runner.name} (${modelNote}); reviewer models are recorded per chunk.`,
 			);
 		}
 		let result: Awaited<ReturnType<Runner["run"]>>;
+		const ranAt = clock();
 		try {
 			result = await runner.run({
 				...run.task,
@@ -301,6 +329,14 @@ export function createEngine(deps: EngineDeps): Engine {
 		}
 		if (result.aborted) return "CR-205";
 		if (result.timedOut) return "CR-204";
+		if (
+			result.code === "CR-207" &&
+			result.status === 0 &&
+			run.task.task === "thrash" &&
+			job.host !== undefined &&
+			(await verdictPosted(target, job.host, ranAt))
+		)
+			return null;
 		if (result.code === "CR-207") {
 			log.warn(
 				`runner ${runner.name} reached its usage limit: ${run.task.task}`,
@@ -359,7 +395,10 @@ export function createEngine(deps: EngineDeps): Engine {
 			const fallback = runners[config.runner.fallback];
 			let available = false;
 			try {
-				available = (await fallback.probe({ cwd: paths.workDir })).ok;
+				const probed = await fallback.probe({ cwd: paths.workDir });
+				available = probed.ok;
+				if (!probed.ok)
+					log.warn(`fallback ${fallback.name} is unavailable: ${probed.code}`);
 			} catch (error) {
 				log.warn(`fallback probe failed: ${describeError(error)}`);
 			}
@@ -370,7 +409,7 @@ export function createEngine(deps: EngineDeps): Engine {
 					provider.reply({
 						chatId: job.chatId,
 						html: true,
-						text: `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${escapeHtml(job.messageId)}"><p>$review ${escapeHtml(job.url)}</p></blockquote><p>Claude is out of tokens, so I'm using ${fallback.name === "codex" ? "Codex" : fallback.name === "grok" ? "Grok" : "Copilot"} for this review.</p>`,
+						text: `<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="${escapeHtml(job.messageId)}"><p>${escapeHtml(job.url)}</p></blockquote><p>${fallbackNotice(fallback.name)}</p>`,
 					}),
 				);
 				selection.runner = fallback;

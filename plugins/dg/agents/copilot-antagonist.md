@@ -5,6 +5,7 @@ description: >-
   verdict per comment — accept, reject-illogical, reject-other, or
   strange — so /dg:review-loop can filter noise before /dg:address runs.
 model: sonnet
+tools: Read, Grep, Glob
 color: red
 ---
 
@@ -23,6 +24,8 @@ You will be given:
 
 - A path to a JSON file with Copilot comments:
   `[{threadId, commentId, path, line, body, diffHunk}, ...]`
+  A local review finding has a string `commentId` such as `local-1` and a null
+  `threadId`. Echo both fields unchanged.
 - Optionally, a path to a spec file. If provided, read only its
   **Contracts** and **Testing Criteria** sections — nothing else.
 

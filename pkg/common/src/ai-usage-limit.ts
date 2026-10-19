@@ -1,10 +1,8 @@
 import { isRecord } from "./assert";
 
-// Match CLI diagnostics, rather than rate-limit words in reviewed code or diffs.
 const LIMIT_LINE =
 	/^(?:(?:API )?error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached) your (?:usage |rate |token )?limit\b|you(?:['’]re| are) out of (?:extra )?usage\b|(?:usage|token|rate) limit (?:reached|exceeded)\b|rate_limit_error\b|(?:429\b.*(?:rate_limit_error|rate.?limit|quota)|(?:insufficient_quota|quota exceeded)\b))/i;
 
-// Grok Build diagnostics: xai-org/grok-build, sampling/error.rs.
 const GROK_LIMIT_LINE =
 	/^(?:error:\s*)?(?:you['’]ve hit (?:the rate limit for your plan|your team['’]s API rate limit)\b|you['’]ve reached your free Grok Build usage limit\b|subscription:free-usage-exhausted\b|resource-exhausted:\s*Too many requests\b|Some resource has been exhausted:\s*You are sending requests too quickly\b|API error \(status 429\b|Rate limited\b)/i;
 

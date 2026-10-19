@@ -26,6 +26,7 @@ export type SecretStatus = {
 	name: string;
 	source: SecretSource;
 	expiresAt?: string;
+	expired?: true;
 };
 export type SecretKind = "relay" | "datadog" | "sentry";
 export type ResolvedSecrets = {
@@ -87,25 +88,38 @@ async function readStore(
 	}
 }
 
+function isExpired(record: CredentialRecord, now: Date): boolean {
+	const expiresAt = metaText(record, "expiresAt");
+	return expiresAt !== undefined && Date.parse(expiresAt) < now.getTime();
+}
+
 function status(
 	name: string,
 	record: CredentialRecord | undefined,
 	fallback: SecretSource,
+	expired: boolean,
 ): SecretStatus {
 	if (!record) return { name, source: fallback };
-	const { expiresAt } = record.meta;
-	return { name, source: "store", ...(expiresAt ? { expiresAt } : {}) };
+	const expiresAt = metaText(record, "expiresAt");
+	return {
+		name,
+		source: expired ? fallback : "store",
+		...(expiresAt ? { expiresAt } : {}),
+		...(expired ? { expired: true as const } : {}),
+	};
 }
 
-/** Builds the env-like map the daemon passes to its sinks and relay connect: store first, then env; values are never logged. */
+/** Env-like map for sinks and relay connect: unexpired store records first, then env. */
 export async function resolveSecrets({
 	envName,
 	env,
 	source,
+	now = () => new Date(),
 }: {
 	envName: string;
 	env: Record<string, string | undefined>;
 	source: CredentialSource;
+	now?: () => Date;
 }): Promise<ResolvedSecrets> {
 	const relayName = relayCredentialName(envName);
 	const relayEnv = localSecretName(envName);
@@ -120,9 +134,17 @@ export async function resolveSecrets({
 			env[key]?.trim() || undefined,
 		]),
 	);
-	const relay = records.get(relayName);
-	const datadog = records.get(DATADOG_CREDENTIAL);
-	const sentry = records.get(SENTRY_CREDENTIAL);
+	const at = now();
+	const expiredNames = new Set<string>();
+	const usable = (name: string): CredentialRecord | undefined => {
+		const record = records.get(name);
+		if (!record || !isExpired(record, at)) return record;
+		expiredNames.add(name);
+		return undefined;
+	};
+	const relay = usable(relayName);
+	const datadog = usable(DATADOG_CREDENTIAL);
+	const sentry = usable(SENTRY_CREDENTIAL);
 	const relayFallback = resolved[relayEnv] ? "env" : "aws";
 	const datadogFallback =
 		"headers" in datadogAuthHeaders(resolved) ? "env" : "missing";
@@ -138,13 +160,18 @@ export async function resolveSecrets({
 			metaText(sentry, "site") ?? resolved.SENTRY_BASE_URL;
 		resolved.SENTRY_ORG = metaText(sentry, "org") ?? resolved.SENTRY_ORG;
 	}
+	const expiredWarning =
+		expiredNames.size > 0
+			? `expired credentials skipped: ${[...expiredNames].join(", ")}; run dg-skills channel-review connect to renew.`
+			: undefined;
+	const allWarnings = [warning, expiredWarning].filter(Boolean).join(" ");
 	return {
 		env: resolved,
 		secrets: {
-			relay: status(relayName, relay, relayFallback),
-			datadog: status(DATADOG_CREDENTIAL, datadog, datadogFallback),
-			sentry: status(SENTRY_CREDENTIAL, sentry, sentryFallback),
+			relay: status(relayName, records.get(relayName), relayFallback, expiredNames.has(relayName)),
+			datadog: status(DATADOG_CREDENTIAL, records.get(DATADOG_CREDENTIAL), datadogFallback, expiredNames.has(DATADOG_CREDENTIAL)),
+			sentry: status(SENTRY_CREDENTIAL, records.get(SENTRY_CREDENTIAL), sentryFallback, expiredNames.has(SENTRY_CREDENTIAL)),
 		},
-		...(warning ? { warning } : {}),
+		...(allWarnings ? { warning: allWarnings } : {}),
 	};
 }

@@ -22,19 +22,19 @@ Returns JSON to stdout. Fields:
 | `ahead` | int | Number of commits ahead of base |
 | `commits[]` | array | `{sha, author, subject}` in chronological order — `author` is the human name from `.mailmap` |
 | `files[]` | array | All files touched since base — **renames appear as two entries: old path (deleted) + new path (added)** |
-| `file_authors` | object | Map of `file → [authorName, ...]` — distinct human names who touched each file; AI authors (name contains "claude") are excluded |
+| `file_authors` | object | Map of `file → [authorName, ...]` — distinct human names who touched each file; AI authors (name starts with "claude") are excluded |
 
 Stop with a message if `ahead < 2`.
 
 **`--base <ref>`**: Override the base ref. Any ref or SHA accepted by `git rev-parse`. When omitted, base is computed as `git merge-base HEAD origin/<default>` using the remote-tracking branch so a stale local main never widens the range. A stderr warning is emitted if local and remote default branches have diverged.
 
-### `apply [--base <ref>] <plan-file>`
+### `apply-json [--base <ref>] <plan-file>`
 
 ```
-"$DG" meaningful apply [--base <ref>] <plan-file>
+"$DG" meaningful apply-json [--base <ref>] <plan-file>
 ```
 
-> **Known bug**: the text parser cannot represent a `subject\n\nbody` split — a blank line ends "msg" mode (dropping any body that follows), and while in "msg" mode, body lines are glued onto the subject with a single `\n` (no paragraph break). Either the body ends up mashed onto the subject in `git log --oneline`, or it's silently dropped. **Prefer [`apply-json`](#apply-json---base-ref-plan-file) whenever a group needs a real body** — it builds the message directly from distinct fields and never touches this parser. This is a documented limitation, not a fixed one.
+Plans are JSON files with distinct `subject`/`body`/`author`/`coauthors` fields, so the commit message is assembled directly (`subject` + `"\n\n"` + body when a body is present). Co-author trailers are kept as written, including AI ones.
 
 The helper:
 
@@ -46,17 +46,7 @@ The helper:
 - **Before pushing**: asserts `git status --porcelain` is clean AND `HEAD^{tree}` matches the pre-reshape tree. On failure, hard-resets to the backup ref and exits non-zero — never pushes a mismatched reshape.
 - Force-pushes with `--force-with-lease` (or `-u origin <branch>` if no upstream).
 
-**`--base <ref>`**: Same semantics as `info --base`.
-
-### `apply-json [--base <ref>] <plan-file>`
-
-```
-"$DG" meaningful apply-json [--base <ref>] <plan-file>
-```
-
-Same pipeline as `apply` (dirty-tree refusal, file-set validation, backup capture, soft-reset, per-group commit, tree-equality guard, force-with-lease push) — the only difference is the plan format. Groups come from a JSON file with distinct `subject`/`body`/`author`/`coauthors` fields instead of a hand-parsed text block, so the commit message is assembled directly (`subject` + `"\n\n" + body` when a body is present) and never passes through the buggy text parser.
-
-**`--base <ref>`**: Same semantics as `info --base`. If omitted, the JSON plan's own top-level `"base"` field is used (see below); if both are omitted, base falls back to the default `info`/`apply` merge-base computation.
+**`--base <ref>`**: Same semantics as `info --base`. If omitted, the JSON plan's own top-level `"base"` field is used (see below); if both are omitted, base falls back to the default `info` merge-base computation.
 
 Exit codes on validation failure: malformed JSON, a missing/empty `groups` array, a group missing `subject`/`files`, or a malformed `author`/`coauthors` entry all exit `2` (USAGE) before touching the working tree. A file-set mismatch against the diff exits `1` (ERR), also before any reset.
 
@@ -74,36 +64,9 @@ The helper runs `git -c diff.renames=false diff --name-only` everywhere it compu
 
 **Bracket/glob characters in paths** — a repository may have paths like `src/items/[itemId]/details/page.tsx`. Git's pathspec matching treats `[...]` as an fnmatch glob, so a plain `git add -- <bracketed path>` matches nothing and silently stages no changes (the tree-equality guard then correctly aborts). The helper prefixes every staged path with `:(literal)` pathspec magic before `git add`, so bracketed paths are always matched literally — this applies to both `apply` and `apply-json`, no special handling needed in the plan itself.
 
-## Plan File Format (Text)
-
-Path: `$("$DG" stash -s -u meaningful .txt)`
-
-Format: one or more groups, each as `MSG:` lines, an optional `AUTHOR:` line, `FILES:`, then paths. Blank line between groups.
-
-```
-MSG: <type>(<scope>): <subject>
-<optional body lines>
-AUTHOR: Name <email>
-FILES:
-path/one
-path/two
-
-MSG: <type>(<scope>): <subject>
-FILES:
-path/three
-old/renamed/file
-new/renamed/file
-```
-
-**`AUTHOR:`** (optional) — when present, the helper commits that group with `git commit --author="Name <email>"`. When absent, the committer's default identity is used. The value must loosely match `Name <email>`; a malformed value causes an immediate error before any reset occurs.
-
-**Claude trailer stripping** — before writing each group's commit message, the helper drops any `Co-Authored-By:` trailer whose name contains "claude" (case-insensitive) or whose email is `noreply@anthropic.com`. Other co-author trailers (real humans) are preserved verbatim.
-
-**Use `apply-json` instead whenever a group needs a body** — see the bug note under [`apply`](#apply---base-ref-plan-file) above.
-
 ## Plan File Format (JSON)
 
-Path: `$("$DG" stash -s -u meaningful .json)` (same convention as the text plan).
+Path: `$("$DG" stash -s -u meaningful .json)` ().
 
 Top-level object:
 
@@ -118,9 +81,9 @@ Each group:
 |---|---|---|---|
 | `subject` | string | yes | Commit subject line, e.g. `feat(search): add query validation`. |
 | `body` | string | no | Commit body. Joined to the subject as `subject\n\nbody` — always a real paragraph break, never glued or dropped. |
-| `author` | string | no | `Name <email>` — commits with `git commit --author=...` when present, same validation as the text plan's `AUTHOR:` line. |
+| `author` | string | no | `Name <email>` — commits with `git commit --author=...` when present, `Name <email>` format. |
 | `coauthors[]` | string array | no | Each entry becomes a `Co-Authored-By: <entry>` trailer, appended as its own paragraph after the body. |
-| `files[]` | string array | yes | Files for this group. Same union-must-equal-diff rule and rename convention as the text plan. |
+| `files[]` | string array | yes | Files for this group. Union must equal the diff; see the rename convention above. |
 
 ```json
 {
@@ -150,11 +113,9 @@ Each group:
 
 A full example is saved at [references/example-plan.json](example-plan.json).
 
-**Claude trailer stripping** applies identically to the JSON path — any `coauthors` entry whose name contains "claude" or whose email is `noreply@anthropic.com` is dropped before commit, same as the text plan.
-
 ## Failure Recovery
 
-If the helper exits non-zero mid-apply (either `apply` or `apply-json`), the branch may be partially reshaped. Report the backup SHA and suggest either:
+If the helper exits non-zero mid-apply (`apply-json`), the branch may be partially reshaped. Report the backup SHA and suggest either:
 
 ```
 git reset --hard <backup-sha>

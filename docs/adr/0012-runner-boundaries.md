@@ -14,8 +14,8 @@ Date: 2026-10-16
 The Claude runner uses `claude -p`, noninteractive permission settings, and a task-specific `--allowedTools`
 list. Child environment filtering removes the configured Claude nesting and control variables; the Claude task
 can retain its OAuth token. For error fixes, the prompt asks the runner not to commit or push; channel review
-then commits, checks the branch against the expected and default branches, pushes, and opens a draft PR. Codex
-and Copilot review runners use broader bypass settings and remain experimental.
+then commits, checks the branch against the expected and default branches, pushes, and opens a draft PR. Codex,
+Copilot, and Grok review runners use broader bypass settings and remain experimental.
 
 ## Consequences
 

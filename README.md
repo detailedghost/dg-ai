@@ -10,13 +10,13 @@ browser extension is `dg-ai-extension`.
 macOS / Linux (x64 or arm64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These install the compiled CLI binaries and stage the extension; no Bun is needed.
@@ -58,12 +58,12 @@ Claude Code also accepts the bare `/<name>`.
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
+| `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
-| `proxy` | Delegate to one of six external CLI agents with persona and background support |
 | `teach` | Teach a concept across sessions |
 | `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
@@ -91,7 +91,7 @@ a fresh artifact, `--root` prints the root, and `--dir` selects another director
 The [developer guide](docs/DEVELOPER.md#wave-2a-cli-commands) lists flags, roots,
 and all ten `vcs-provider` verbs for GitHub and GitLab.
 
-`proxy` supports **codex**, **copilot**, **pi**, **opencode**, **cortex**, and
+`proxy` supports **codex**, **copilot**, **pi**, **opencode**, and
 **grok**. Install and authenticate the chosen backend separately. It accepts
 `--prompt-file`, `--resume`, and persona selection through `--subagent` or an
 explicit `--spec <plan> --slice <id>`. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`)
@@ -99,23 +99,14 @@ for persona files. `--plan` prints a quoted detached launch command; run that
 command, then inspect it with `dg-skills proxy background status <id>` or `list`.
 These packaged persona/background helpers work before the public spec/bg ports;
 they need no legacy helper. Detached launch needs a POSIX `sh`.
+Job identity comes from the Linux `/proc` start time. Elsewhere the helper fails closed: `status` shows `unknown` and `cancel` signals nothing.
 Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume rules.
 
 `dg-skills clipboard-image <dest.png>` captures through WSL (`wslpath` and
 `powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
 stdout. The clipboard skill resolves its default destination through stash.
 
-### Post-merge cutover
-
-After each migration wave merges, refresh the plugin and run `dg-skills install`
-(or `dg-skills install --cli-only`). Verify the migrated commands before manually
-repointing personal command shims and references, then remove duplicate local
-skills when their installed replacements work. This release leaves legacy files,
-personal settings, permission rules, and installed plugin caches untouched.
-Review host permissions manually with narrow command rules that retain existing
-approval prompts, including separate approval for `pw code`. Later-wave commands
-and skills remain separate prerequisites until their ports ship; this release
-adds stash, vcs-provider, proxy, and clipboard-image to the compiled CLI.
+Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.
 
 ## Supported browsers
 
@@ -131,5 +122,4 @@ adds stash, vcs-provider, proxy, and clipboard-image to the compiled CLI.
 - [Developer guide](docs/DEVELOPER.md)
 
 - [Contributing](docs/contributing.md)
-
 - [Security](SECURITY.md)

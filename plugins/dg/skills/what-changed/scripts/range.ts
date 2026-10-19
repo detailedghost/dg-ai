@@ -3,21 +3,50 @@ import { execFile } from "node:child_process";
 
 export type Run = (file: string, args: readonly string[]) => Promise<string>;
 
-export type RangeReport = {
+export type DiscoveredRange = {
   range: string;
-  source: string;
-  defaultBranch?: string;
-  lastRelease?: string | null;
-  wholeHistory?: boolean;
+  source: "provider-release" | "semver-tag" | "none";
+  defaultBranch: string;
+  lastRelease: string | null;
+  wholeHistory: boolean;
 };
 
-/** Runs a command with an argv array. Ref names never pass through a shell. */
+export type RangeReport = DiscoveredRange | { range: string; source: "explicit" };
+
+const TIMEOUT_MS = 60_000;
+const MAX_BUFFER = 64 * 1024 * 1024;
+
+/** Runs a command with an argv array. Ref names never pass through a shell. Rejects on any failure. */
 export function execRun(file: string, args: readonly string[]): Promise<string> {
-  return new Promise((resolve) => {
-    execFile(file, [...args], { encoding: "utf8" }, (error, stdout) => {
-      resolve(error ? "" : stdout.trim());
-    });
+  return new Promise((resolve, reject) => {
+    execFile(
+      file,
+      [...args],
+      { encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER },
+      (error, stdout, stderr) => {
+        if (!error) return resolve(stdout.trim());
+        const detail = stderr.trim() || error.message;
+        reject(new Error(`${file} ${args.join(" ")} failed: ${detail}`));
+      },
+    );
   });
+}
+
+async function attempt(run: Run, file: string, args: readonly string[]): Promise<string> {
+  try {
+    return await run(file, args);
+  } catch {
+    return "";
+  }
+}
+
+function remoteHost(url: string): string {
+  const match = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/]*@)?([^/:]+)/i.exec(url.trim());
+  return match ? match[1].toLowerCase() : "";
+}
+
+function isGitlabHost(host: string): boolean {
+  return host === "gitlab.com" || host.startsWith("gitlab.");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,16 +69,19 @@ function stringField(value: unknown, key: string): string {
 }
 
 async function providerDefaultBranch(run: Run, gitlab: boolean): Promise<string> {
-  if (gitlab) return stringField(parsed(await run("glab", ["repo", "view", "-F", "json"])), "default_branch");
-  const body = parsed(await run("gh", ["repo", "view", "--json", "defaultBranchRef"]));
+  if (gitlab) {
+    const body = parsed(await attempt(run, "glab", ["repo", "view", "-F", "json"]));
+    return stringField(body, "default_branch");
+  }
+  const body = parsed(await attempt(run, "gh", ["repo", "view", "--json", "defaultBranchRef"]));
   return stringField(isRecord(body) ? body.defaultBranchRef : undefined, "name");
 }
 
 async function providerReleaseTag(run: Run, gitlab: boolean): Promise<string> {
   const body = gitlab
-    ? parsed(await run("glab", ["api", "projects/:id/releases?per_page=1"]))
+    ? parsed(await attempt(run, "glab", ["api", "projects/:id/releases?per_page=1"]))
     : parsed(
-        await run("gh", [
+        await attempt(run, "gh", [
           "release",
           "list",
           "--exclude-drafts",
@@ -67,17 +99,22 @@ async function providerReleaseTag(run: Run, gitlab: boolean): Promise<string> {
 
 async function hasTag(run: Run, tag: string): Promise<boolean> {
   if (tag === "") return false;
-  const verified = await run("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`]);
+  const verified = await attempt(run, "git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`]);
   return verified !== "";
 }
 
+export async function discoverRange(run: Run): Promise<DiscoveredRange>;
+export async function discoverRange(run: Run, explicit?: string): Promise<RangeReport>;
 export async function discoverRange(run: Run, explicit?: string): Promise<RangeReport> {
-  if (explicit) return { range: explicit, source: "explicit" };
+  if (explicit) {
+    if (explicit.startsWith("-")) throw new Error(`Invalid range "${explicit}": it must not start with "-".`);
+    return { range: explicit, source: "explicit" };
+  }
 
   await run("git", ["fetch", "--tags", "--quiet", "origin"]);
   const remoteUrl = await run("git", ["remote", "get-url", "origin"]);
-  const gitlab = remoteUrl.includes("gitlab");
-  const symbolic = (await run("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).replace(
+  const gitlab = isGitlabHost(remoteHost(remoteUrl));
+  const symbolic = (await attempt(run, "git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).replace(
     /^origin\//,
     "",
   );
@@ -87,7 +124,7 @@ export async function discoverRange(run: Run, explicit?: string): Promise<RangeR
   const head = `origin/${defaultBranch}`;
   const providerTag = await providerReleaseTag(run, gitlab);
   let tag = "";
-  let source = "none";
+  let source: DiscoveredRange["source"] = "none";
   if (await hasTag(run, providerTag)) {
     tag = providerTag;
     source = "provider-release";

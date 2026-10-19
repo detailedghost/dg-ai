@@ -11,6 +11,7 @@ Treat the current directory as a teaching workspace. The state of their learning
 
 - `MISSION.md`: Why the user is interested in the topic. Use the format in [MISSION-FORMAT.md](./references/MISSION-FORMAT.md).
 - `./reference/*.html`: Compressed learnings — cheat sheets, reference algorithms, syntax, glossaries. Designed for quick reference and beautiful printing.
+- `GLOSSARY.md`: Shared terms for the topic. Use the format in [GLOSSARY-FORMAT.md](./references/GLOSSARY-FORMAT.md).
 - `RESOURCES.md`: Trusted sources and communities. Use the format in [RESOURCES-FORMAT.md](./references/RESOURCES-FORMAT.md).
 - `./learning-records/*.md`: ADR-equivalent records of what the user has learned. Titled `0001-<dash-case-name>.md`, incrementing. Use the format in [LEARNING-RECORD-FORMAT.md](./references/LEARNING-RECORD-FORMAT.md).
 - `./lessons/*.html`: Self-contained HTML lessons, one tightly-scoped thing per file. Titled `0001-<dash-case-name>.html`, incrementing. Primary unit of teaching.

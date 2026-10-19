@@ -8,7 +8,7 @@ Resolve `DG` with the [skill bootstrap](../SKILL.md#runtime-and-skill-paths) in 
 |---|---|---|---|---|---|
 | `bun.lockb` / `bun.lock` | `bun` | `bun install` | `bun audit --json` | `package.json` | `bun.lock*` |
 | `pnpm-lock.yaml` | `pnpm` | `pnpm install` | `pnpm audit --json` | `package.json` | `pnpm-lock.yaml` |
-| `yarn.lock` | `yarn` | `yarn install` | `yarn npm audit --json` | `package.json` | `yarn.lock` |
+| `yarn.lock` | `yarn` | `yarn install` | `yarn npm audit --json` (Yarn 2+ only; Yarn 1 classic is not supported) | `package.json` | `yarn.lock` |
 | `package-lock.json` | `npm` | `npm install` | `npm audit --json` | `package.json` | `package-lock.json` |
 | `go.mod` | `go` | `go mod tidy` | `govulncheck -json ./...` | `go.mod` (via `go get <pkg>@v<new>`) | `go.sum` |
 | `Cargo.toml` | `rust` | `cargo build --locked` | `cargo audit --json` | `Cargo.toml` + `cargo update -p <pkg> --precise <new>` | `Cargo.lock` |

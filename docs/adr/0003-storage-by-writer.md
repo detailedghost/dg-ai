@@ -2,6 +2,7 @@
 
 Status: Accepted
 Date: 2026-10-16
+Updated by [0018](0018-channel-review-state-in-daemon-db.md) (Proposed): channel review state moves to the shared daemon database.
 
 ## Context
 

@@ -28,6 +28,10 @@ export interface WorktreeResult {
 	origin: string;
 }
 
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 async function git(
 	cwd: string,
 	args: string[],
@@ -41,7 +45,11 @@ async function git(
 	return result.stdout;
 }
 
-function seedConfig(source: string, destination: string): void {
+function seedConfig(
+	source: string,
+	destination: string,
+	warn: (message: string) => void,
+): void {
 	const rootConfig =
 		/^(?:\.env(?:\..*)?|\.envrc|\.tool-versions|\.nvmrc|\.(?:python|node|ruby|terraform)-version)$/;
 	function visit(relative: string, depth: number): void {
@@ -50,7 +58,8 @@ function seedConfig(source: string, destination: string): void {
 			entries = readdirSync(path.join(source, relative), {
 				withFileTypes: true,
 			});
-		} catch {
+		} catch (error) {
+			warn(`could not read ${relative || "."} for seeding: ${errorMessage(error)}`);
 			return;
 		}
 		for (const entry of entries) {
@@ -59,7 +68,6 @@ function seedConfig(source: string, destination: string): void {
 			try {
 				const from = path.join(source, file);
 				const metadata = statSync(from);
-				// Bounded shell globs follow directory symlinks but exclude hidden parents.
 				if (metadata.isDirectory()) {
 					if (depth < 2 && !entry.name.startsWith(".")) visit(file, depth + 1);
 					continue;
@@ -74,8 +82,8 @@ function seedConfig(source: string, destination: string): void {
 				copyFileSync(from, to);
 				chmodSync(to, metadata.mode & 0o7777);
 				utimesSync(to, metadata.atime, metadata.mtime);
-			} catch {
-				/* Configuration seeding is best-effort, as in the create contract. */
+			} catch (error) {
+				warn(`could not seed ${file}: ${errorMessage(error)}`);
 			}
 		}
 	}
@@ -119,9 +127,7 @@ export async function createWorktree(
 			base = (await git(origin, ["symbolic-ref", "refs/remotes/origin/HEAD"]))
 				.trim()
 				.replace(/^refs\/remotes\/origin\//, "");
-		} catch {
-			/* Report the actionable create failure below. */
-		}
+		} catch {}
 		if (!base)
 			throw new Error(
 				`could not resolve origin/HEAD; run: git -C ${origin} remote set-head origin -a`,
@@ -144,9 +150,7 @@ export async function createWorktree(
 			`refs/heads/${branch}`,
 		]);
 		hasBranch = true;
-	} catch {
-		/* A missing branch is expected for a fresh create. */
-	}
+	} catch {}
 	const hasPath = existsSync(target);
 	if (options.resume === false && (hasBranch || hasPath))
 		throw new Error(
@@ -159,7 +163,11 @@ export async function createWorktree(
 				block.split("\n").includes(`branch refs/heads/${branch}`),
 			)
 			?.match(/^worktree (.+)$/m)?.[1];
-		if (existing && existing !== target) {
+		if (!existing)
+			throw new Error(
+				`path ${target} exists but branch ${branch} is not checked out there — investigate manually`,
+			);
+		if (existing !== target) {
 			warn(`branch checked out at ${existing}, not ${target} — using existing`);
 			target = existing;
 		}
@@ -173,7 +181,7 @@ export async function createWorktree(
 		} catch {
 			throw new Error(`failed to add worktree at ${target}`);
 		}
-		if (options.seed !== false) seedConfig(origin, target);
+		if (options.seed !== false) seedConfig(origin, target, warn);
 	} else if (hasPath) {
 		throw new Error(
 			`path ${target} exists but no matching branch — investigate manually`,
@@ -196,7 +204,7 @@ export async function createWorktree(
 		} catch {
 			throw new Error("failed to create worktree");
 		}
-		if (options.seed !== false) seedConfig(origin, target);
+		if (options.seed !== false) seedConfig(origin, target, warn);
 	}
 	return { path: target, branch, origin };
 }

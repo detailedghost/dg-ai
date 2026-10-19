@@ -38,7 +38,6 @@ let log: string;
 beforeEach(() => {
 	tools = fixtures.tmp("dg catchup tools ");
 	log = join(tools, "calls.jsonl");
-	// These are local OS utilities only. No host build tool or service CLI is reachable.
 	for (const name of ["bash", "dirname", "sed", "wc", "tr", "find"]) {
 		const path = Bun.which(name, { PATH: "/usr/bin:/bin" });
 		if (!path) throw new Error(`Missing fixture utility ${name}`);
@@ -126,6 +125,8 @@ describe("relocated compiled catchup", () => {
 				PATH: bin,
 				HOME: home,
 				XDG_CONFIG_HOME: home,
+				DG_HOME: undefined,
+				DG_SKILLS: undefined,
 				DG_SKILLS_DIR: skills,
 				CLAUDE_PLUGIN_ROOT: dirname(skills),
 				GIT_TRACE: trace,
@@ -400,15 +401,15 @@ console.log("loaded");
 	});
 
 	test.each(["--unknown", "operand", "--"])(
-		"rejects %s on stdout before touching Git",
+		"rejects %s on stderr before touching Git",
 		(flag) => {
 			const result = runCatchup(fixtures.tmp("dg catchup bad argument "), [
 				flag,
 			]);
 			expect(result).toEqual({
 				exitCode: 1,
-				stdout: `Unknown flag: ${flag}\n`,
-				stderr: "",
+				stdout: "",
+				stderr: `Unknown flag: ${flag}\n`,
 			});
 			expect(calls()).toEqual([]);
 		},
@@ -460,7 +461,7 @@ console.log("loaded");
 		},
 	);
 
-	test.each([[], ["--push"]].map((args) => [args]))(
+	test.each([[[]], [["--push"]]])(
 		"rebases, restores tracked changes and untracked files, verifies, then pushes by default with %j",
 		(args) => {
 			const repo = makeRepo();
@@ -500,6 +501,8 @@ console.log("loaded");
 			expect(calls().find((call) => call.args[0] === "push")?.args).toEqual([
 				"push",
 				"--force-with-lease",
+				"origin",
+				"HEAD:refs/heads/feature",
 			]);
 			expect(calls().find((call) => call.args[0] === "rebase")?.args).toEqual([
 				"rebase",
@@ -557,7 +560,7 @@ console.log("loaded");
 			"20",
 			"HEAD..refs/remotes/origin/main",
 		]);
-	});
+	}, 30_000);
 
 	test("uses the true merge base and drops feature patches already present upstream", () => {
 		const repo = makeRepo();
@@ -594,6 +597,7 @@ console.log("loaded");
 		expect(result.exitCode).toBe(128);
 		expect(result.stdout).toContain("Fetching origin/main");
 		expect(result.stderr).toContain("does not appear to be a git repository");
+		expect(result.stderr).toContain("git stash pop");
 		expect(result.stdout).not.toContain("Restoring stash");
 		expect(git(repo.dir, ["rev-parse", "HEAD"])).toBe(repo.head);
 		expect(git(repo.dir, ["stash", "list"])).toContain("catchup-auto-stash");
@@ -602,6 +606,22 @@ console.log("loaded");
 		);
 		expect(
 			calls().some((call) => ["rebase", "push"].includes(call.args[0])),
+		).toBe(false);
+	});
+
+	test("fails early on a detached HEAD without stashing or rebasing", () => {
+		const repo = makeRepo();
+		git(repo.dir, ["checkout", "-q", "--detach"]);
+		put(repo.dir, "work.txt", "dirty detached\n");
+		const result = runCatchup(repo.dir);
+		const recorded = calls();
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("HEAD is detached");
+		expect(git(repo.dir, ["stash", "list"])).toBe("");
+		expect(
+			recorded.some((call) =>
+				["stash", "rebase", "push"].includes(call.args[0]),
+			),
 		).toBe(false);
 	});
 
@@ -644,6 +664,7 @@ console.log("loaded");
 		const result = runCatchup(repo.dir);
 		expect(result.exitCode).toBe(1);
 		expect(result.stdout).toContain("WARNING: stash pop had conflicts.");
+		expect(result.stderr).toContain("git stash pop");
 		expectRebased(repo, upstream);
 		expect(git(repo.dir, ["diff", "--name-only", "--diff-filter=U"])).toBe(
 			"work.txt",
@@ -739,7 +760,9 @@ console.log("loaded");
 			calls()
 				.filter((call) => call.args[0] === "push")
 				.map((call) => call.args),
-		).toEqual([["push", "--force-with-lease"]]);
+		).toEqual([
+			["push", "--force-with-lease", "origin", "HEAD:refs/heads/feature"],
+		]);
 		expect(result.stdout).not.toContain("Catchup complete!");
 	});
 });

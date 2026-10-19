@@ -2,7 +2,7 @@
 
 Covers domain context, Explore briefing, and candidate format. Load at Step 1.
 
-______________________________________________________________________
+---
 
 ## §1 — Domain Context Read Order
 
@@ -17,7 +17,7 @@ Read in this order, skipping any that don't exist:
 
 If `.agents/monolith.md` is missing, note: `"No monolith.md found — candidate names will use file/module paths instead of domain concepts. Run /agent-seed if .agents/ itself is missing."`
 
-______________________________________________________________________
+---
 
 ## §2 — Explore Agent Brief
 
@@ -40,18 +40,18 @@ Launch the **Explore** agent on the scope path. Brief it verbatim:
 >
 > Return a list of 5–10 friction areas, ranked by impact. Use file paths + monolith.md vocabulary. Don't propose fixes yet — just surface friction.
 
-______________________________________________________________________
+---
 
 ## §3 — Candidate Format Spec
 
-Synthesize Explore findings into **exactly 5 candidates** for `AskUserQuestion` (single-select). Each candidate:
+Synthesize Explore findings into **exactly 4 candidates** for `AskUserQuestion` (single-select). Each candidate:
 
 - **header** — short concept name (≤12 chars), drawn from `monolith.md` if possible.
 - **label** — concept-level action ("merge X into Y intake module").
 - **description** — `Files: ... | Problem: ... | Solution: ... | Benefits: ...` packed into ~300 chars. Use **locality** and **leverage** when describing benefits.
 
-If fewer than 5 high-confidence candidates surfaced, fill remaining slots with `[low-confidence]`-tagged ones rather than fabricate. Note this honestly.
+If fewer than 4 high-confidence candidates surfaced, fill remaining slots with `[low-confidence]`-tagged ones rather than fabricate. Note this honestly.
 
 The user's "Other" option (always available in `AskUserQuestion`) lets them type their own refactor target. Treat it as the chosen candidate and skip to step 4.
 
-**GATE:** User picked one candidate (or supplied their own). If they decline all five with no "Other" input, exit gracefully: `"No candidate chosen. Run /refactor again or pick a different scope."`
+**GATE:** User picked one candidate (or supplied their own). If they decline all four with no "Other" input, exit gracefully: `"No candidate chosen. Run /refactor again or pick a different scope."`

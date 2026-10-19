@@ -10,11 +10,11 @@ auto-detects the ecosystem; pass `--ecosystem <name>` to override mixed markers.
 
 `"$DG" deps-upgrade prepare`
 
-Fetches the default branch, then creates a dedicated worktree + branch through its internal worktree creator (`drb/chore/deps_update_<ts>` — the `YYYYMMDD-HHMMSS` UTC slug is normalized to underscores) based on `origin/<default>`, and resets the run's scratch snapshots (`closed-prs.txt`, `audit-before.json`, `audit-after.json`, `held-by-cooldown.jsonl`). The scratch dir is anchored to the git common dir, so it stays the same after you cd into the worktree.
+Fetches the default branch, then creates a dedicated worktree + branch through its internal worktree creator (`<prefix>deps_update_<ts>`, where `<prefix>` is `$DG_DEPS_BRANCH_PREFIX` and defaults to `chore/` — the `YYYYMMDD-HHMMSS` UTC slug is normalized to underscores) based on `origin/<default>`, and resets the run's scratch snapshots (`closed-prs.txt`, `audit-before.json`, `audit-after.json`, `held-by-cooldown.jsonl`). The scratch dir is anchored to the git common dir, so it stays the same after you cd into the worktree.
 
 `prepare` prints the worktree path and branch. **`cd` into that path now** and run every remaining step from there.
 
-> **GATE:** In the worktree, on the `drb/chore/deps_update_<ts>` branch, clean working tree.
+> **GATE:** In the worktree, on the `<prefix>deps_update_<ts>` branch, clean working tree.
 
 ## Step 2: Discover
 
@@ -41,7 +41,7 @@ For fixable vulnerabilities not covered by a Dependabot PR → add to update lis
 Apply **patch/minor** first, then **major**.
 
 - Before each dependency bump, run `"$DG" deps-upgrade cooldown <pkg> <old> <new> --cooldown-days N` using the run's selected cooldown (default 7 days; `0` disables it). `ok` and `fallback` permit upgrading to the returned `version`; skip `held` and `unknown`. Keep skipped packages at the current version and include the summary's "Held by cooldown" list in the final report and PR body. GitHub Action refs use the workflow-specific update path below.
-- Per dependency: `"$DG" deps-upgrade bump-dep <pkg> <old> <new>`. Handles manifest edit, install, `git add`, and a conventional commit. Pass `--files a,b` to stage extra files (e.g. migration edits for Step 5).
+- Per dependency: `"$DG" deps-upgrade bump-dep <pkg> <old> <new>`. Handles manifest edit, install, `git add`, and a conventional commit. Pass `--files a,b` to stage extra files.
 - Per GitHub Action: `"$DG" deps-upgrade bump-action <ref> <from> <to> [workflow-files…]`. Defaults to all `.github/workflows/*.yml` files. GitHub Actions-specific by design. With no `.github/workflows` present it exits non-zero with `no workflow files changed — check <from> tag`, so skip this step on a GitLab-only repo instead of calling it and hitting a mid-run abort.
 
 If lockfile conflicts or install fails → resolve, re-run.
@@ -55,7 +55,7 @@ If lockfile conflicts or install fails → resolve, re-run.
   1. Pull the Dependabot/Renovate changelog with `"$DG" deps-upgrade pr-body <number>`. Fall back to context7 or WebSearch for deeper migration docs.
   1. Read `.agents/paths.md` (if it exists) to find source directories before grepping. Narrows the search past test fixtures, build output, `node_modules`.
   1. Grep for all usage of the bumped package within those directories.
-  1. Apply minimum necessary migration changes only. Stage them via `bump-dep --files <comma-separated>` so the migration lands in the same commit as the bump.
+  1. Apply minimum necessary migration changes only. The bump is already committed, so commit the migration separately: `"$DG" deps-upgrade commit chore deps "migrate <pkg> to <new>" --files <comma-separated>`.
 
 > **GATE:** All migration changes applied.
 
@@ -86,13 +86,39 @@ Never squash — each update stays as its own commit.
 
 > **GATE:** All committed, clean working tree.
 
-## Step 9: Close Dependabot/Renovate PRs
+## Step 9: Record History
 
-`"$DG" deps-upgrade close-prs <n> [<n>…]`
+1. Create `.agents/school/` if needed.
 
-Closes each PR/MR with the standard comment (referencing the current deps-update branch) and appends to `$("$DG" stash --state deps-upgrade closed-prs.txt)` so `summary` can list them. If a PR's update was skipped or failed → do NOT close it. Note in summary.
+1. Read or create `.agents/school/DEPS.md`.
 
-> **GATE:** Applicable PRs closed.
+1. Add a run section at the top (below "Recurring Issues"):
+
+   ```
+   ## YYYY-MM-DD
+   - package old -> new
+   - Breaking: what broke, how fixed
+   - Quirks: ecosystem workarounds
+   - Unfixed: vulnerabilities still present
+   ```
+
+1. If a breaking change or quirk is likely to recur → add to "Recurring Issues".
+
+1. Keep max 3 run sections. Delete oldest if more. Max 80 lines total.
+
+1. Commit the update with `"$DG" deps-upgrade commit docs deps "record YYYY-MM-DD batch upgrade" --files .agents/school/DEPS.md`.
+
+DEPS.md template:
+
+```markdown
+<!-- Dependency upgrade history. Keep recurring issues + last 3 runs. Max 80 lines. -->
+
+## Recurring Issues
+
+## YYYY-MM-DD
+```
+
+The history commit lands before Step 10, so `push-pr` publishes it.
 
 ## Step 10: Push & Open PR
 
@@ -143,37 +169,15 @@ place. Options: `--repo owner/name`, `--timeout-minutes N`, and
 `--interval-seconds N`. This verb uses GitHub checks; on GitLab, use the host's
 native MR pipeline/status workflow and approval rules before marking ready.
 
-## Step 11: Record History
+## Step 11: Close Dependabot/Renovate PRs
 
-1. Create `.agents/school/` if needed.
+Run this only after Step 10 returned the PR URL, so a failed push never leaves the originals closed without a replacement.
 
-1. Read or create `.agents/school/DEPS.md`.
+`"$DG" deps-upgrade close-prs <n> [<n>…]`
 
-1. Add a run section at the top (below "Recurring Issues"):
+Closes each PR/MR with the standard comment (referencing the current deps-update branch) and appends to `$("$DG" stash --state deps-upgrade closed-prs.txt)` so `summary` can list them. If a PR's update was skipped or failed → do NOT close it. Note in summary.
 
-   ```
-   ## YYYY-MM-DD
-   - package old -> new
-   - Breaking: what broke, how fixed
-   - Quirks: ecosystem workarounds
-   - Unfixed: vulnerabilities still present
-   ```
-
-1. If a breaking change or quirk is likely to recur → add to "Recurring Issues".
-
-1. Keep max 3 run sections. Delete oldest if more. Max 80 lines total.
-
-1. Commit the update with `"$DG" deps-upgrade commit docs deps "record YYYY-MM-DD batch upgrade" --files .agents/school/DEPS.md`.
-
-DEPS.md template:
-
-```markdown
-<!-- Dependency upgrade history. Keep recurring issues + last 3 runs. Max 80 lines. -->
-
-## Recurring Issues
-
-## YYYY-MM-DD
-```
+> **GATE:** Applicable PRs closed.
 
 ## Step 12: Summary
 

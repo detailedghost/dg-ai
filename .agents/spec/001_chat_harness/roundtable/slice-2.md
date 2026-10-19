@@ -39,7 +39,7 @@ scratchpad (`probe.ts`, `race.ts`).
 
 2. **[OPEN — escalate] The proof in finding 1 holds only because this box sets a non-default
    `.wslconfig`, and the fix for the default configuration directly contradicts slice 2's own
-   "bind on 127.0.0.1" security requirement.** `/mnt/c/Users/user/.wslconfig` contains
+   "bind on 127.0.0.1" security requirement.** `/mnt/c/Users/<user>/.wslconfig` contains
    `[wsl2] networkingMode=mirrored`, and `ip link` shows the `loopback0` interface that mode creates
    — i.e. Windows and WSL share the loopback namespace, which is *why* a `127.0.0.1`-only bind was
    reachable. The WSL default is NAT mode with `localhostForwarding`, whose relay is well-reported to

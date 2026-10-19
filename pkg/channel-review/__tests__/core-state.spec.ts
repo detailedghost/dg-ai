@@ -1,8 +1,8 @@
-import { channelReviewPaths, type ChannelReviewPaths } from "../src/paths";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
+import { channelReviewPaths, type ChannelReviewPaths } from "../src/paths";
 import { createStateStore as openStateStore, readStateSnapshot, prKey } from "../src/state";
 import { type TempHome, createTempHome } from "./support/fakes";
 

@@ -86,7 +86,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "$SRC" ]; then
     sh "$SRC/bootstrap.sh"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```

@@ -23,7 +23,7 @@ binaries. The skills-root README itself is not installed.
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
-| `proxy/` | Delegate to codex, copilot, pi, opencode, cortex, or grok |
+| `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
 | `pushup/` | Push a branch, open its PR, and group the PR in the browser |
 | `refactor/` | Find architectural improvements and discuss a chosen approach |
 | `rename-session/` | Suggest or apply a session name |
@@ -99,8 +99,4 @@ POSIX `sh`. The provider helper needs Git and authenticated `gh` or `glab`;
 [command reference](../../../docs/DEVELOPER.md#wave-2a-cli-commands) for its full
 inventory and configuration.
 
-After a wave merges, refresh the plugin, install the release, and verify the
-commands before manually updating personal shims/references and removing
-replaced local skills. Legacy files, personal settings, permission rules, and
-plugin caches stay untouched by this migration. Preserve host approval prompts
-and the separate approval for `pw code`; review narrow permission rules manually.
+Maintainers follow the [post-merge cutover](../../../docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.

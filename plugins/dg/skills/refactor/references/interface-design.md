@@ -30,9 +30,9 @@ Use `subagent_type="general-purpose"` for each (or a language-specific type when
 
 Prompt each sub-agent with a separate technical brief (file paths, coupling details, dependency category from [deepening.md](deepening.md), what sits behind the seam). The brief is independent of the user-facing problem-space explanation in Step 1. Give each agent a different design constraint:
 
-- **Agent 1:** "Minimize the interface — aim for 1–3 entry points max. Maximise leverage per entry point."
-- **Agent 2:** "Maximise flexibility — support many use cases and extension."
-- **Agent 3:** "Optimise for the most common caller — make the default case trivial."
+- **Agent 1:** "Minimize the interface — aim for 1–3 entry points max. Maximize leverage per entry point."
+- **Agent 2:** "Maximize flexibility — support many use cases and extension."
+- **Agent 3:** "Optimize for the most common caller — make the default case trivial."
 - **Agent 4** *(if cross-seam dependencies exist):* "Design around ports & adapters for cross-seam dependencies."
 
 Include both [language.md](language.md) vocabulary and `.agents/monolith.md` vocabulary in the brief so each sub-agent names things consistently with the architecture language and the project's domain language.
@@ -51,7 +51,7 @@ Present designs sequentially so the user can absorb each one, then compare them 
 
 - **Depth** — leverage at the interface.
 - **Locality** — where change concentrates.
-- **Seam placement** — where you can swap behaviour.
+- **Seam placement** — where you can swap behavior.
 - **Test surface** — how a test would exercise the deepened module.
 
 After comparing, **give your own recommendation**: which design you think is strongest and why. If elements from different designs would combine well, propose a hybrid. Be opinionated — the user wants a strong read, not a menu.

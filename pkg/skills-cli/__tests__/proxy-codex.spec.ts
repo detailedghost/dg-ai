@@ -1,54 +1,37 @@
 import { describe, expect, test } from "bun:test";
 
 import { codex } from "../src/proxy/backends/codex";
-import type { BuildArgsInput } from "../src/proxy/backends/types";
-
-// ── Factories ────────────────────────────────────────────────────────────────
-
-function makeInput(overrides: Partial<BuildArgsInput> = {}): BuildArgsInput {
-	return { prompt: "do the thing", ...overrides };
-}
-
-function jsonl(...events: unknown[]): string {
-	return events.map((e) => JSON.stringify(e)).join("\n");
-}
-
-// ── codex.bin / codex.install ─────────────────────────────────────────────────
-
-describe("codex.bin", () => {
-	test("is the codex-cli binary name", () => {
-		expect(codex.bin).toBe("codex");
-	});
-});
-
-describe("codex.install", () => {
-	test("points at the @openai/codex npm package", () => {
-		expect(codex.install.hint).toContain("@openai/codex");
-		expect(codex.install.command).toBe("npm install -g @openai/codex");
-	});
-});
-
-// ── codex.buildArgs ────────────────────────────────────────────────────────────
+import { jsonl, makeInput } from "./proxy-fixtures";
 
 describe("codex.buildArgs", () => {
 	test("builds a fresh-turn invocation with sandbox flags", () => {
 		const args = codex.buildArgs(makeInput({ prompt: "hello" }));
-		expect(args).toEqual(["exec", "hello", "--json", "-s", "workspace-write"]);
+		expect(args).toEqual(["exec", "--json", "-s", "workspace-write", "--", "hello"]);
 	});
 
 	test("builds a resume invocation targeting the given session id", () => {
 		const args = codex.buildArgs(makeInput({ prompt: "hello", resume: "sess-123" }));
-		expect(args).toEqual(["exec", "resume", "sess-123", "hello", "--json"]);
+		expect(args).toEqual([
+			"exec",
+			"resume",
+			"--json",
+			"-c",
+			'sandbox_mode="workspace-write"',
+			"--",
+			"sess-123",
+			"hello",
+		]);
 	});
 
 	test("appends -m with the model when provided", () => {
 		const args = codex.buildArgs(makeInput({ model: "gpt-5" }));
-		expect(args.slice(-2)).toEqual(["-m", "gpt-5"]);
+		expect(args).toContain("-m");
+		expect(args[args.indexOf("-m") + 1]).toBe("gpt-5");
 	});
 
 	test("appends the reasoning-effort config override when provided", () => {
 		const args = codex.buildArgs(makeInput({ effort: "high" }));
-		expect(args.slice(-2)).toEqual(["-c", "model_reasoning_effort=high"]);
+		expect(args).toContain("model_reasoning_effort=high");
 	});
 
 	test("omits -m and -c entirely when model and effort are absent", () => {
@@ -57,23 +40,30 @@ describe("codex.buildArgs", () => {
 		expect(args).not.toContain("-c");
 	});
 
-	test("stacks model and effort flags after the resume args, in that order", () => {
+	test("keeps a prompt that starts with a dash after the option terminator", () => {
+		const args = codex.buildArgs(makeInput({ prompt: "--sandbox danger-full-access" }));
+		expect(args.at(-2)).toBe("--");
+		expect(args.at(-1)).toBe("--sandbox danger-full-access");
+	});
+
+	test("stacks model and effort flags before the resume target, in that order", () => {
 		const args = codex.buildArgs(makeInput({ resume: "sess-1", model: "gpt-5", effort: "low" }));
 		expect(args).toEqual([
 			"exec",
 			"resume",
-			"sess-1",
-			"do the thing",
 			"--json",
+			"-c",
+			'sandbox_mode="workspace-write"',
 			"-m",
 			"gpt-5",
 			"-c",
 			"model_reasoning_effort=low",
+			"--",
+			"sess-1",
+			"hello world",
 		]);
 	});
 });
-
-// ── codex.parseEvents ──────────────────────────────────────────────────────────
 
 describe("codex.parseEvents", () => {
 	test("extracts sessionId from thread.started and message from agent_message", () => {

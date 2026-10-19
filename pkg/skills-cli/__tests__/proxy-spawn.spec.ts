@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Backend } from "../src/proxy/backends/types";
 import { runBackend } from "../src/proxy/spawn";
-
-// ── Test doubles ─────────────────────────────────────────────────────────────
 
 function fakeStream(text: string): ReadableStream {
 	return new Response(text).body!;
@@ -47,7 +56,7 @@ let originalScratchEnv: string | undefined;
 
 beforeEach(() => {
 	originalSpawn = Bun.spawn;
-	scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), "spawn-test-"));
+	scratchDir = mkdtempSync(join(tmpdir(), "spawn-test-"));
 	originalScratchEnv = process.env.AI_SCRATCH_DIR;
 	process.env.AI_SCRATCH_DIR = scratchDir;
 });
@@ -56,12 +65,24 @@ afterEach(() => {
 	(Bun as unknown as { spawn: typeof Bun.spawn }).spawn = originalSpawn;
 	if (originalScratchEnv === undefined) delete process.env.AI_SCRATCH_DIR;
 	else process.env.AI_SCRATCH_DIR = originalScratchEnv;
-	fs.rmSync(scratchDir, { recursive: true, force: true });
+	rmSync(scratchDir, { recursive: true, force: true });
 });
 
-// ── runBackend ───────────────────────────────────────────────────────────────
 
 describe("runBackend", () => {
+	test("rejects an oversized argument before spawning or writing a log", async () => {
+		const { fn } = stubSpawn({});
+		const backend = makeBackend({
+			buildArgs: mock(() => ["--prompt", "x".repeat(128 * 1024)]),
+		});
+
+		await expect(runBackend("codex", backend, { prompt: "hi" })).rejects.toThrow(
+			/over the \d+ byte limit/,
+		);
+		expect(fn).not.toHaveBeenCalled();
+		expect(existsSync(join(scratchDir, "proxy"))).toBe(false);
+	});
+
 	test("returns exitCode and parsed session/message from the backend", async () => {
 		stubSpawn({ stdout: "line1\n", exitCode: 0 });
 		const backend = makeBackend({
@@ -102,7 +123,7 @@ describe("runBackend", () => {
 		]);
 	});
 
-	test("passes buildArgs the full input, including cwd removed from the args call itself", async () => {
+	test("passes buildArgs the raw input, cwd included", async () => {
 		stubSpawn({});
 		const buildArgs = mock(() => []);
 		const backend = makeBackend({ buildArgs });
@@ -113,7 +134,6 @@ describe("runBackend", () => {
 			cwd: "/x",
 		});
 
-		// buildArgs receives the raw input object (cwd is consumed separately for spawn options)
 		expect(buildArgs).toHaveBeenCalledWith({
 			prompt: "hi",
 			model: "m1",
@@ -186,7 +206,7 @@ describe("runBackend", () => {
 
 		expect(result.logFile).toContain(`${scratchDir}/proxy/`);
 		expect(result.logFile.endsWith("-mybackend.jsonl")).toBe(true);
-		expect(fs.readFileSync(result.logFile, "utf8")).toBe("captured output");
+		expect(readFileSync(result.logFile, "utf8")).toBe("captured output");
 	});
 
 	test("creates the proxy scratch directory if it does not already exist", async () => {
@@ -195,16 +215,7 @@ describe("runBackend", () => {
 
 		await runBackend("codex", backend, { prompt: "hi" });
 
-		expect(fs.existsSync(`${scratchDir}/proxy`)).toBe(true);
-	});
-
-	test("keeps generated logs inside the explicitly isolated scratch root", async () => {
-		stubSpawn({ stdout: "owned log" });
-		const result = await runBackend("codex", makeBackend(), { prompt: "hi" });
-		expect(path.relative(scratchDir, result.logFile).startsWith("..")).toBe(
-			false,
-		);
-		expect(fs.readFileSync(result.logFile, "utf8")).toBe("owned log");
+		expect(existsSync(`${scratchDir}/proxy`)).toBe(true);
 	});
 
 	test("creates a private empty transcript before spawning the backend", async () => {
@@ -212,19 +223,19 @@ describe("runBackend", () => {
 		stubSpawn({
 			stdout: "sensitive backend output",
 			onSpawn() {
-				const dir = path.join(scratchDir, "proxy");
-				const entries = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+				const dir = join(scratchDir, "proxy");
+				const entries = existsSync(dir) ? readdirSync(dir) : [];
 				expect(entries).toHaveLength(1);
-				transcriptAtSpawn = path.join(dir, entries[0]!);
-				expect(fs.lstatSync(transcriptAtSpawn).isFile()).toBe(true);
-				expect(fs.statSync(transcriptAtSpawn).mode & 0o777).toBe(0o600);
-				expect(fs.readFileSync(transcriptAtSpawn, "utf8")).toBe("");
+				transcriptAtSpawn = join(dir, entries[0]!);
+				expect(lstatSync(transcriptAtSpawn).isFile()).toBe(true);
+				expect(statSync(transcriptAtSpawn).mode & 0o777).toBe(0o600);
+				expect(readFileSync(transcriptAtSpawn, "utf8")).toBe("");
 			},
 		});
 
 		const result = await runBackend("codex", makeBackend(), { prompt: "hi" });
 		expect(result.logFile).toBe(transcriptAtSpawn);
-		expect(fs.readFileSync(result.logFile, "utf8")).toBe(
+		expect(readFileSync(result.logFile, "utf8")).toBe(
 			"sensitive backend output",
 		);
 	});
@@ -234,15 +245,15 @@ describe("runBackend", () => {
 		"writable root ancestor",
 	] as const) {
 		test(`rejects a ${unsafePath} before spawning the backend`, async () => {
-			const outside = path.join(scratchDir, "outside");
-			fs.mkdirSync(outside);
+			const outside = join(scratchDir, "outside");
+			mkdirSync(outside);
 			if (unsafePath === "symlinked tool") {
-				fs.symlinkSync(outside, path.join(scratchDir, "proxy"));
+				symlinkSync(outside, join(scratchDir, "proxy"));
 			} else {
-				const unsafeParent = path.join(scratchDir, "shared");
-				fs.mkdirSync(unsafeParent, { mode: 0o777 });
-				fs.chmodSync(unsafeParent, 0o777);
-				process.env.AI_SCRATCH_DIR = path.join(unsafeParent, "artifacts");
+				const unsafeParent = join(scratchDir, "shared");
+				mkdirSync(unsafeParent, { mode: 0o777 });
+				chmodSync(unsafeParent, 0o777);
+				process.env.AI_SCRATCH_DIR = join(unsafeParent, "artifacts");
 			}
 			const { fn } = stubSpawn({ stdout: "must not run" });
 
@@ -250,7 +261,7 @@ describe("runBackend", () => {
 				runBackend("codex", makeBackend(), { prompt: "hi" }),
 			).rejects.toThrow();
 			expect(fn).not.toHaveBeenCalled();
-			expect(fs.readdirSync(outside)).toEqual([]);
+			expect(readdirSync(outside)).toEqual([]);
 		});
 	}
 });

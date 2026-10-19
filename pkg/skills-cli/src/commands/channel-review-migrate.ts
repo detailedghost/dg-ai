@@ -1,4 +1,9 @@
-import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parseEnv as parseDotEnv } from "node:util";
 import {
@@ -7,9 +12,13 @@ import {
 	relayCredentialName,
 	SENTRY_CREDENTIAL,
 } from "@dg/channel-review";
-import { type CredentialMeta, DgCliError, REDACTED } from "@dg/common";
+import { type CredentialMeta, DgCliError } from "@dg/common";
 import { writeFileAtomic } from "@dg/common/node";
-import { type ConnectClient, ensureGrant } from "./channel-review-connect";
+import {
+	type ConnectClient,
+	defaultConnectDeps,
+	ensureGrant,
+} from "./channel-review-connect";
 
 const MISE_CONFIGS = [".mise/config.toml", ".mise.toml", "mise.toml"];
 const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
@@ -18,6 +27,7 @@ export type MigrateFlags = {
 	file?: string;
 	dryRun?: boolean;
 	session?: string;
+	keepBackup?: boolean;
 };
 
 export type MigrateDeps = {
@@ -36,25 +46,29 @@ type Migration = {
 
 type Entry = { indices: number[]; value: string };
 
+function endOfAssignment(lines: string[], start: number, raw: string): number {
+	const quote = raw[0];
+	if (quote !== '"' && quote !== "'" && quote !== "`") return start;
+	let tail = raw.slice(1);
+	let end = start;
+	while (!tail.includes(quote)) {
+		end++;
+		if (end >= lines.length)
+			throw new DgCliError(
+				`Unterminated quoted env assignment at line ${start + 1}.`,
+			);
+		tail += `\n${lines[end]}`;
+	}
+	return end;
+}
+
 function parseEnv(lines: string[]): Map<string, Entry> {
 	const entries = new Map<string, Entry>();
 	for (let index = 0; index < lines.length; index++) {
 		const match = lines[index]?.match(ENV_LINE);
 		if (!match?.[1]) continue;
 		const start = index;
-		const raw = match[2] ?? "";
-		const quote = raw[0];
-		if (quote === '"' || quote === "'" || quote === "`") {
-			let tail = raw.slice(1);
-			while (!tail.includes(quote)) {
-				index++;
-				if (index >= lines.length)
-					throw new DgCliError(
-						`Unterminated quoted env assignment at line ${start + 1}.`,
-					);
-				tail += `\n${lines[index]}`;
-			}
-		}
+		index = endOfAssignment(lines, start, match[2] ?? "");
 		const value = parseDotEnv(lines.slice(start, index + 1).join("\n"))[
 			match[1]
 		];
@@ -110,33 +124,17 @@ function stamp(now: Date): string {
 	return now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
 }
 
-function redactAssignment(line: string): string {
-	const match = line.match(/^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-	if (!match) return REDACTED;
-	return `${match[1] ?? ""}${match[2]}=${REDACTED}`;
-}
+/** Moves known channel-review secrets from a .env file into the store. */
+export const defaultMigrateDeps: MigrateDeps = {
+	createClient: defaultConnectDeps.createClient,
+	write: defaultConnectDeps.write,
+	now: defaultConnectDeps.now,
+	cwd: () => process.cwd(),
+};
 
-function redactMovedLines(lines: string[], removed: Set<number>): string {
-	return lines
-		.map((line, index) => (removed.has(index) ? redactAssignment(line) : line))
-		.join("\n");
-}
-
-/** Replaces known secret values anywhere they remain, longest first. */
-function redactValues(text: string, secrets: readonly string[]): string {
-	const unique = [...new Set(secrets.filter((secret) => secret.length > 0))].sort(
-		(left, right) => right.length - left.length,
-	);
-	return unique.reduce(
-		(current, secret) => current.split(secret).join(REDACTED),
-		text,
-	);
-}
-
-/** Moves known channel-review secrets from a .env file into the store and deletes only their lines. The backup keeps the file shape with those values redacted. Prints names, never values. */
 export async function runMigrateEnv(
 	flags: MigrateFlags,
-	deps: MigrateDeps,
+	deps: MigrateDeps = defaultMigrateDeps,
 ): Promise<void> {
 	const file = flags.file ?? defaultEnvFile(deps.cwd());
 	if (!existsSync(file)) throw new DgCliError(`${file} does not exist.`);
@@ -196,17 +194,21 @@ export async function runMigrateEnv(
 		throw new DgCliError(
 			"The env file changed during migration; its lines were left intact. Run migrate-env again.",
 		);
-	const movedSecrets = migrations.flatMap((migration) => {
-		const value = entries.get(migration.secret)?.value;
-		return value ? [value] : [];
-	});
-	const backup = `${file}.bak-${stamp(deps.now())}`;
-	const redacted = redactValues(redactMovedLines(lines, removed), movedSecrets);
-	writeFileSync(backup, redacted, { mode: 0o600, flag: "wx" });
-	writeFileAtomic(
-		file,
-		lines.filter((_, index) => !removed.has(index)).join("\n"),
-		originalStat.mode & 0o777,
+	const rewritten = lines.filter((_, index) => !removed.has(index)).join("\n");
+	const mode = originalStat.mode & 0o777;
+	const backup = flags.keepBackup
+		? `${file}.bak-${stamp(deps.now())}`
+		: undefined;
+	try {
+		if (backup) writeFileSync(backup, original, { mode: 0o600, flag: "wx" });
+		writeFileAtomic(file, rewritten, mode);
+	} catch (error) {
+		writeFileSync(file, original, { mode });
+		throw error;
+	}
+	deps.write(
+		backup
+			? `removed those lines from ${file}; backup kept at ${backup}`
+			: `removed those lines from ${file}`,
 	);
-	deps.write(`removed those lines from ${file}; redacted backup at ${backup}`);
 }

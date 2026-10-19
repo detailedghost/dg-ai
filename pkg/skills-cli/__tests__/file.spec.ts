@@ -192,8 +192,6 @@ describe("file create — GitLab", () => {
 
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout.trim())).toMatchObject({ number: 55 });
-		// The regression this guards: a dropped empty argv element would leave "--description" glued
-		// to "--label" as its value, silently eating the label flag instead of failing loud.
 		expect(readCalls(log)[0]).toBe("issue create --title Fix widget --description= --label bug,triage --yes");
 	});
 
@@ -247,8 +245,6 @@ describe("file create — GitLab", () => {
 			env: { GLAB_BIN: glabBin, FAKE_ISSUE_JSON: issuePath },
 		});
 
-		// Reaching `issue view 65` at all is the assertion: a stale /-/issues/-only pattern
-		// reported PARSE_ERROR here even though the issue had been created.
 		expect(exitCode).toBe(0);
 		expect(JSON.parse(stdout.trim())).toMatchObject({
 			number: 65,
@@ -322,6 +318,7 @@ describe("file list", () => {
 		const call = readCalls(log)[0];
 		expect(call).toContain("--state all");
 		expect(call).toContain("--label bug");
+		expect(call).toContain("--limit 2");
 	});
 
 	test("--group-by-label buckets issues by shared label, fanning a multi-labeled issue into every bucket it belongs to", () => {
@@ -377,6 +374,7 @@ describe("file list — GitLab", () => {
 		const call = readCalls(log)[0];
 		expect(call).toContain("--all");
 		expect(call).toContain("--label bug");
+		expect(call).toContain("--per-page 2");
 	});
 });
 
@@ -467,7 +465,9 @@ describe("file bucket", () => {
 		const calls = readCalls(log);
 		expect(calls[0]).toBe("label create flaky-tests");
 		expect(calls[1]).toBe("issue edit 1 --add-label flaky-tests");
-		expect(calls[3]).toBe("issue edit 2 --add-label flaky-tests");
+		expect(calls.find((call) => call.startsWith("issue edit 2"))).toBe(
+			"issue edit 2 --add-label flaky-tests",
+		);
 	});
 
 	test("without --create, skips label creation and only attaches the (assumed-existing) label", () => {
@@ -591,7 +591,7 @@ describe("file — no resolvable provider", () => {
 
 		expect(exitCode).toBe(1);
 		expect(stdout.trim()).toBe("");
-		expect(stderr.length).toBeGreaterThan(0);
+		expect(stderr).toContain(`no "origin" remote configured`);
 	});
 });
 
@@ -603,9 +603,9 @@ describe("file dispatch and validation", () => {
 		{ args: ["bogus"], status: 2, stdout: false },
 	])("preserves usage status and streams for $args", ({ args, status, stdout }) => {
 		const { path, env } = callLogPath();
-		fakeBin("gh", shScript(""));
-		fakeBin("glab", shScript(""));
-		const result = runCli(args, { env });
+		const ghBin = fakeBin("gh", shScript(""));
+		const glabBin = fakeBin("glab", shScript(""));
+		const result = runCli(args, { env: { ...env, GH_BIN: ghBin, GLAB_BIN: glabBin } });
 		expect(result.exitCode).toBe(status);
 		expect(stdout ? result.stdout : result.stderr).toContain("Usage:");
 		expect(stdout ? result.stderr : result.stdout).toBe("");
@@ -715,5 +715,83 @@ describe.each(["github", "gitlab"] as const)("file native argument boundaries on
 		expect(calls[1].args).toEqual(provider === "github"
 			? ["issue", "edit", "71", "--add-label", "needs triage", "-R", "acme/widgets"]
 			: ["issue", "update", "71", "--label", "needs triage", "-R", "acme/widgets"]);
+	});
+});
+
+describe("file review hardening", () => {
+	test("--group-by-label keeps labels named like object members", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issuesPath = writeJson("gh-list-issues-proto.json", [
+			ghIssue(1, { labels: [{ name: "constructor" }, { name: "__proto__" }, { name: "toString" }] }),
+		]);
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue list"*)
+    cat "$FAKE_ISSUES_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const { stdout, exitCode } = runCli(["list", "--group-by-label"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUES_JSON: issuesPath },
+		});
+
+		expect(exitCode).toBe(0);
+		const buckets = JSON.parse(stdout.trim());
+		expect(Object.keys(buckets).sort()).toEqual(["__proto__", "constructor", "toString"]);
+		expect(buckets.constructor.map((i: { number: number }) => i.number)).toEqual([1]);
+	});
+
+	test("view finds the issue number after its flags", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issuePath = writeJson("gh-view-flags.json", ghIssue(5));
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue view 5"*)
+    cat "$FAKE_ISSUE_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const { stdout, exitCode } = runCli(["view", "--repo", "acme/widgets", "5"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUE_JSON: issuePath },
+		});
+
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout.trim())).toMatchObject({ number: 5 });
+	});
+
+	test("bucket reports the issues it labeled when a later issue fails", () => {
+		const repo = makeGitRepoWithOrigin("https://github.com/acme/widgets.git");
+		const issue1 = writeJson("gh-bucket-partial-1.json", ghIssue(1, { labels: [{ name: "triage" }] }));
+		const ghBin = fakeBin(
+			"gh",
+			shScript(`
+  *"issue edit 1"*)
+    exit 0
+    ;;
+  *"issue view 1"*)
+    cat "$FAKE_ISSUE_1"
+    exit 0
+    ;;
+  *"issue edit 2"*)
+    echo "gh: issue locked" >&2
+    exit 1
+    ;;`),
+		);
+
+		const { stdout, stderr, exitCode } = runCli(["bucket", "triage", "1", "2"], {
+			cwd: repo,
+			env: { GH_BIN: ghBin, FAKE_ISSUE_1: issue1 },
+		});
+
+		expect(exitCode).toBe(1);
+		expect(JSON.parse(stdout.trim()).map((r: { number: number }) => r.number)).toEqual([1]);
+		expect(stderr).toContain("#2");
+		expect(stderr).toContain("issue locked");
 	});
 });

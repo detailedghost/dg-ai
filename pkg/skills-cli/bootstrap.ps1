@@ -1,6 +1,6 @@
 # Install the compiled dg-skills CLI for Windows into %USERPROFILE%\.dg\bin.
 #
-#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/master/pkg/skills-cli/bootstrap.ps1 | iex
+#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
@@ -51,6 +51,25 @@ function Copy-DgSkillTree {
 	Write-Host "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
 }
 
+$repo = "detailedghost/dg-ai"
+$headers = @{ "User-Agent" = "dg-ai" }
+$script:rel = $null
+
+function Resolve-DgRelease {
+	if ($script:rel) { return $script:rel }
+	$perPage = 100
+	$pageCap = 10
+	$scanned = 0
+	for ($page = 1; $page -le $pageCap; $page++) {
+		$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
+		$scanned += $batch.Count
+		$script:rel = $batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+		if ($script:rel -or $batch.Count -lt $perPage) { break }
+	}
+	if (-not $script:rel) { throw "dg-skills: no skills-v* release found in the $scanned releases scanned" }
+	return $script:rel
+}
+
 function Get-DgSkillsSource {
 	if ($env:DG_SKILLS_SOURCE) { return $env:DG_SKILLS_SOURCE }
 	if ($PSScriptRoot) {
@@ -60,12 +79,13 @@ function Get-DgSkillsSource {
 		}
 	}
 	$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-skills-" + [guid]::NewGuid())
+	$script:skillsTmp = $tmp
 	New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 	$archive = Join-Path $tmp "dg-ai.zip"
-	$headers = @{ "User-Agent" = "dg-ai" }
-	Invoke-WebRequest -Headers $headers -Uri "https://github.com/detailedghost/dg-ai/archive/refs/heads/master.zip" -OutFile $archive
+	$tag = (Resolve-DgRelease).tag_name
+	Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$tag.zip" -OutFile $archive
 	Expand-Archive -Path $archive -DestinationPath $tmp -Force
-	return (Join-Path $tmp "dg-ai-master\plugins\dg\skills")
+	return (Join-Path $tmp "dg-ai-$tag\plugins\dg\skills")
 }
 
 if ($env:DG_SKILLS_ONLY -eq "1") {
@@ -75,34 +95,24 @@ if ($env:DG_SKILLS_ONLY -eq "1") {
 	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST }
 		elseif ($env:DG_HOME) { Join-Path $env:DG_HOME "skills" }
 		else { Join-Path $env:USERPROFILE ".dg\skills" }
-	Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
+	try {
+		Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
+	} finally {
+		if ($script:skillsTmp) { Remove-Item -Recurse -Force $script:skillsTmp -ErrorAction SilentlyContinue }
+	}
 	if ($env:DG_SKILLS_NO_CLI -eq "1") {
 		Write-Host "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
 		exit 0
 	}
 }
 
-$repo = "detailedghost/dg-ai"
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
 $asset = "dg-skills-windows-$arch.exe"
 $dgHome = if ($env:DG_HOME) { $env:DG_HOME } else { Join-Path $env:USERPROFILE ".dg" }
 $binDir = Join-Path $dgHome "bin"
 $dest = Join-Path $binDir "dg-skills.exe"
 
-$headers = @{ "User-Agent" = "dg-ai" }
-$perPage = 100
-$pageCap = 10
-
-$scanned = 0
-$rel = $null
-for ($page = 1; $page -le $pageCap; $page++) {
-	$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
-	$scanned += $batch.Count
-	$rel = $batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
-	if ($rel -or $batch.Count -lt $perPage) { break }
-}
-
-if (-not $rel) { throw "dg-skills: no skills-v* release found in the $scanned releases scanned" }
+$rel = Resolve-DgRelease
 
 $url = $rel.assets | Where-Object { $_.name -eq $asset } | Select-Object -ExpandProperty browser_download_url -First 1
 
@@ -175,14 +185,17 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-	Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/heads/master.zip" -OutFile $archive
-	Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
-	$skillsDir = Join-Path $codexRoot "skills"
-	New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-	foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-master\plugins\dg\skills")) {
-		if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
-		Copy-Item -Recurse -Force $skill.FullName $skillsDir
+	try {
+		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$($rel.tag_name).zip" -OutFile $archive
+		Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
+		$skillsDir = Join-Path $codexRoot "skills"
+		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
+			if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
+			Copy-Item -Recurse -Force $skill.FullName $skillsDir
+		}
+	} finally {
+		Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
 	}
-	Remove-Item -Recurse -Force $tmpDir
 	Write-Host "Codex skills installed in $skillsDir"
 }

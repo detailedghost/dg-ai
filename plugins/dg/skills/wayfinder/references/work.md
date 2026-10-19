@@ -3,7 +3,7 @@
 Resolve one ticket per session. Research tickets are the exception.
 
 1. **Load the map.** Read `map.md` only. Do not read every ticket.
-2. **Choose.** Use the ticket the user named. Else take the first frontier ticket. Claim it: set `claimed` in its frontmatter first, before any work.
+2. **Choose.** Use the ticket the user named. Else take the frontier ticket with the lowest `NNN`. Claim it: set `claimed` to your session id and the current ISO timestamp in its frontmatter first, before any work. A claim older than 24 hours is stale. Take over a stale claim, or one the user tells you to override.
 3. **Resolve by type.** Read `type` from the frontmatter.
    - grilling: `/grill-me` in the main loop on the ticket's question.
    - prototype: Build a tiny throwaway in the chat (a snippet, a short HTML file, or a CLI sketch). Link the output. Ask the human to react.

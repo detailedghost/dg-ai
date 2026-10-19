@@ -145,7 +145,3 @@ An empty `findings` array is a valid answer. Do not pad it.
 
 When the prompt gives `FINDINGS_PATH`, write that fenced block to the path with the Write
 tool, and reply with only `WROTE <path> <count> findings`. Never put the JSON in the reply.
-
-# Project context
-
-**Project-scope**: Read `.agents/school/quality.md` (if present) for project context. Add new learnings as `- [YYYY-MM-DD] description`. Max 100 lines per file; prune oldest when full.

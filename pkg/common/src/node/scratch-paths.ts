@@ -8,11 +8,6 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import {
-	adjectives,
-	animals,
-	uniqueNamesGenerator,
-} from "unique-names-generator";
 
 /** Per-cwd bucket for working artifacts, including separate linked worktrees. */
 export function cwdHash(dir: string = process.cwd()): string {
@@ -34,7 +29,7 @@ export function projectRoot(dir: string = process.cwd()): string {
 			if (first) return first.slice("worktree ".length).trim();
 		}
 	} catch {
-		// Outside git, retain the supplied cwd.
+		return dir;
 	}
 	return dir;
 }
@@ -57,23 +52,18 @@ export function randSuffix(len = 4): string {
 	return out;
 }
 
-/** Generate an adjective-animal label for human-readable artifact names. */
-export function readableSuffix(): string {
-	return uniqueNamesGenerator({
-		dictionaries: [adjectives, animals],
-		separator: "-",
-		length: 2,
-	});
-}
-
 /** Return the current worktree toplevel, or null when Git reports no checkout. */
 export function repoRoot(dir: string = process.cwd()): string | null {
-	const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
-		cwd: dir,
-		stderr: "ignore",
-	});
-	if (result.exitCode !== 0) return null;
-	return result.stdout.toString().trim() || null;
+	try {
+		const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
+			cwd: dir,
+			stderr: "ignore",
+		});
+		if (result.exitCode !== 0) return null;
+		return result.stdout.toString().trim() || null;
+	} catch {
+		return null;
+	}
 }
 
 /** Find the nearest ancestor containing an .agents directory; return null at the filesystem root. */
@@ -81,16 +71,10 @@ export function findAgentsDir(startDir?: string): string | null {
 	let d = path.resolve(startDir ?? process.cwd());
 	while (true) {
 		const candidate = path.join(d, ".agents");
-		const stat = (() => {
-			try {
-				return statSync(candidate);
-			} catch {
-				return null;
-			}
-		})();
+		const stat = statSync(candidate, { throwIfNoEntry: false });
 		if (stat?.isDirectory()) return candidate;
 		const parent = path.dirname(d);
-		if (parent === d) return null; // reached filesystem root
+		if (parent === d) return null;
 		d = parent;
 	}
 }
@@ -104,8 +88,6 @@ export function isPathInside(child: string, parent: string): boolean {
 
 /** Select the working directory and bucket scope; disabling cwdScope shares the tool directory. */
 export interface ScratchPathOptions {
-	/** Accepted for compatibility; no longer enforced. */
-	ephemeral?: boolean;
 	cwdScope?: boolean;
 	cwd?: string;
 }
@@ -114,8 +96,7 @@ const PRIVATE_DIR_MODE = 0o700;
 
 /** Resolve the configured scratch root without creating or validating it. */
 export function scratchRoot(): string {
-	// Ephemeral root for every AI tool + worktree; override with AI_SCRATCH_DIR.
-	return process.env["AI_SCRATCH_DIR"] ?? "/tmp/ai";
+	return process.env["AI_SCRATCH_DIR"] || "/tmp/ai";
 }
 
 /** Resolve AI_STATE_DIR, else the XDG state root under ai, without touching the filesystem. */
@@ -133,8 +114,9 @@ function directoryEntry(dir: string) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		try {
 			mkdirSync(dir, { mode: PRIVATE_DIR_MODE });
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		} catch (mkdirError) {
+			if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST")
+				throw mkdirError;
 		}
 		return lstatSync(dir);
 	}
@@ -164,7 +146,6 @@ function safeAncestors(
 		return;
 	}
 	if (!entry.isDirectory()) unsafeDirectory(dir);
-	// Sticky shared ancestors (such as /tmp) protect the owned entry below them.
 	if (
 		uid !== undefined &&
 		(entry.mode & 0o022) !== 0 &&
@@ -193,9 +174,7 @@ function rootedDir(
 		path.isAbsolute(relative)
 	)
 		unsafeDirectory(dir);
-	// Windows does not expose POSIX ownership; retain directory and symlink checks there.
 	const uid = process.getuid?.();
-	// The filesystem root's owner controls this tree, including remapped sandbox system directories.
 	const systemUid = lstatSync(path.parse(root).root).uid;
 	safeAncestors(path.dirname(root), uid, systemUid);
 	const entry = directoryEntry(root);
@@ -239,7 +218,7 @@ function rootedPath(
 	const dir = rootedDir(base, bucket, tool, opts, allowRootLink);
 
 	if (name) {
-		if (path.isAbsolute(name) || name.includes("..")) {
+		if (name === "." || name === ".." || path.basename(name) !== name) {
 			throw new Error(
 				`scratchPath: name must be a plain filename, got: ${name}`,
 			);
@@ -272,7 +251,7 @@ export function scratchDir(
 		cwdHash(resolveCwd(opts)),
 		tool,
 		opts,
-		process.env["AI_SCRATCH_DIR"] !== undefined,
+		!!process.env["AI_SCRATCH_DIR"],
 	);
 }
 
@@ -299,7 +278,7 @@ export function scratchPath(
 		tool,
 		name,
 		opts,
-		process.env["AI_SCRATCH_DIR"] !== undefined,
+		!!process.env["AI_SCRATCH_DIR"],
 	);
 }
 
@@ -342,12 +321,15 @@ export function agentsPath(
 	name?: string,
 	opts: { cwd?: string; main?: boolean } = {},
 ): string {
-	const dir = path.join(agentsRoot(opts), tool);
+	const root = agentsRoot(opts);
+	const dir = path.join(root, tool);
+	const full = name ? path.join(dir, name) : dir;
+	if (!isPathInside(dir, root) || !isPathInside(full, dir))
+		throw new Error(`agentsPath: path must stay inside .agents, got: ${tool}/${name ?? ""}`);
 	if (!name) {
 		mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
 		return dir;
 	}
-	const full = path.join(dir, name);
 	mkdirSync(path.dirname(full), { recursive: true, mode: PRIVATE_DIR_MODE });
 	return full;
 }

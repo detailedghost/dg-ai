@@ -1,6 +1,6 @@
 import type { Command } from "commander";
-import { commandSpec } from "../vcs-provider";
 import { registerLegacyCommand } from "../utils/legacy-command";
+import { commandSpec } from "../vcs-provider";
 
 /** Register the provider compatibility dispatcher without detecting a provider during import or registration. */
 export function registerVcsProvider(program: Command): void {

@@ -172,7 +172,7 @@ describe("channel-review status", () => {
 		for (const env of ["dev", "prod"]) {
 			const result = await run(["status", "--env", env]);
 			const body = JSON.parse(result.stdout);
-			expect(result.code).toBe(1); // Missing config; state is still reported.
+			expect(result.code).toBe(1);
 			expect(body.lastEventIds).toEqual({ chat: `${env}-cursor` });
 			expect(body.current).toMatchObject({ messageId: `${env}-request`, pid: 1234, pidStart: "start-1234" });
 		}

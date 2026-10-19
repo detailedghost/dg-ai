@@ -27,6 +27,27 @@ const playwrightMetadata: Bun.BunPlugin = {
 	},
 };
 
+const COMPILE_TARGETS = [
+	"bun-linux-x64",
+	"bun-linux-arm64",
+	"bun-darwin-x64",
+	"bun-darwin-arm64",
+	"bun-windows-x64",
+	"bun-windows-arm64",
+] as const satisfies readonly Bun.Build.CompileTarget[];
+
+function parseTarget(
+	value: string | undefined,
+): Bun.Build.CompileTarget | undefined {
+	if (value === undefined) return undefined;
+	const target = COMPILE_TARGETS.find((known) => known === value);
+	if (!target)
+		throw new Error(
+			`Unknown --target ${value}. Use one of: ${COMPILE_TARGETS.join(", ")}.`,
+		);
+	return target;
+}
+
 export async function buildSkillsCli(options: {
 	outfile: string;
 	target?: Bun.Build.CompileTarget;
@@ -39,7 +60,6 @@ export async function buildSkillsCli(options: {
 			outfile: options.outfile,
 			...(options.target ? { target: options.target } : {}),
 		},
-		// The connect flow uses Chrome's CDP transport, never the optional BiDi transport.
 		external: ["chromium-bidi", "chromium-bidi/*"],
 		plugins: [playwrightMetadata, ...(options.plugins ?? [])],
 	});
@@ -54,6 +74,6 @@ if (import.meta.main) {
 	});
 	await buildSkillsCli({
 		outfile: values.outfile ?? join(import.meta.dir, "dist/dg-skills"),
-		target: values.target as Bun.Build.CompileTarget | undefined,
+		target: parseTarget(values.target),
 	});
 }

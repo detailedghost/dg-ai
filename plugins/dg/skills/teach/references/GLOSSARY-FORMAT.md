@@ -17,7 +17,7 @@ _Avoid_: Bulking, getting big
 
 **Progressive overload**:
 Systematically increasing the demand on a muscle over time — via load, volume, or intensity.
-_Avoid_: Pushing harder, levelling up
+_Avoid_: Pushing harder, leveling up
 ```
 
 ## Rules

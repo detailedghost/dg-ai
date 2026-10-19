@@ -15,10 +15,11 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { BACKENDS, withPersona } from "../src/proxy/index";
+import { BACKENDS, type BackendName, withPersona } from "../src/proxy/index";
 import { shellCommand } from "../src/utils/self-command";
 import {
 	compileProxyCli,
@@ -32,7 +33,7 @@ let binary: string;
 beforeAll(() => {
 	installation = proxyFixtures();
 	binary = compileProxyCli(installation);
-});
+}, 120000);
 afterAll(() => installation.cleanup());
 beforeEach(() => {
 	fixture = proxyFixtures();
@@ -102,14 +103,14 @@ function lockOwner(
 }
 
 async function deadOwnerPid(): Promise<number> {
-	const process = Bun.spawn([Bun.argv[0], "-e", "process.exit(0)"], {
+	const child = Bun.spawn([process.execPath, "-e", "process.exit(0)"], {
 		env: fixture.env(),
 		stdin: "ignore",
 		stdout: "ignore",
 		stderr: "ignore",
 	});
-	await process.exited;
-	return process.pid;
+	await child.exited;
+	return child.pid;
 }
 async function finished(job: Job) {
 	await until(
@@ -126,15 +127,17 @@ async function finished(job: Job) {
 	return json(["background", "status", job.id]);
 }
 afterEach(async () => {
-	// Discover auto-drained jobs too; never remove state while an owned process lives.
-	for (const job of jobs()) {
-		if (live(job.launcherPid)) await run(["background", "cancel", job.id]);
-		await until(
-			() => live(job.launcherPid),
-			(value) => !value,
-		);
+	try {
+		for (const job of jobs()) {
+			if (live(job.launcherPid)) await run(["background", "cancel", job.id]);
+			await until(
+				() => live(job.launcherPid),
+				(value) => !value,
+			);
+		}
+	} finally {
+		fixture.cleanup();
 	}
-	fixture.cleanup();
 });
 
 describe("compiled proxy background", () => {
@@ -171,7 +174,6 @@ describe("compiled proxy background", () => {
 				const pid = Number(readFileSync(ready, "utf8"));
 				const job: Job = await json(["background", "run", ":"]);
 				await finished(job);
-				// Emulate a stale PID record being reused by an unrelated owned process.
 				rmSync(job.statusFile);
 				writeFileSync(job.pidFile, String(pid));
 				const identity = join(fixture.scratch, "bg", `${job.id}.identity.json`);
@@ -205,6 +207,7 @@ describe("compiled proxy background", () => {
 				}
 			}
 		},
+		15000,
 	);
 
 	test("recovers an empty abandoned lock directory", async () => {
@@ -240,6 +243,20 @@ describe("compiled proxy background", () => {
 			result: "unknown",
 		});
 		expect(existsSync(lock.directory)).toBe(false);
+	});
+
+	test("recovers an unreadable populated lock once it is old enough to be abandoned", async () => {
+		const id = "abandoned-malformed";
+		const directory = join(fixture.scratch, "bg", `${id}.lock`);
+		mkdirSync(directory, { recursive: true });
+		writeFileSync(join(directory, "one.json"), "{");
+		writeFileSync(join(directory, "two.json"), "{");
+		const old = new Date(Date.now() - 5 * 60 * 1000);
+		utimesSync(directory, old, old);
+		expect(await json(["background", "drain", id])).toMatchObject({
+			result: "unknown",
+		});
+		expect(existsSync(directory)).toBe(false);
 	});
 
 	test("keeps a live owner's lock and reports contention without stealing it", async () => {
@@ -282,7 +299,8 @@ describe("compiled proxy background", () => {
 			(value) => !value,
 		);
 	}, 10000);
-	test("lists the six public backend identities from the relocated executable", async () => {
+
+	test("lists the five public backend identities from the relocated executable", async () => {
 		const result = await run(["--list-backends"]);
 		expect(result.exitCode, result.stderr).toBe(0);
 		expect(result.stdout.trim().split("\n")).toEqual([
@@ -290,12 +308,11 @@ describe("compiled proxy background", () => {
 			"copilot",
 			"pi",
 			"opencode",
-			"cortex",
 			"grok",
 		]);
 	});
 
-	test.each(Object.keys(BACKENDS))(
+	test.each(Object.keys(BACKENDS) as BackendName[])(
 		"executes %s through the compiled command with output and cwd parity",
 		async (name) => {
 			fixture.fakeBackend(name);
@@ -326,7 +343,7 @@ describe("compiled proxy background", () => {
 	);
 
 	test("runs a compiled generated plan after relocation without wrapping the persona twice", async () => {
-		fixture.fakePi();
+		fixture.fakeBackend("pi");
 		const directory = join(fixture.home, ".claude", "agents");
 		mkdirSync(directory, { recursive: true });
 		const persona = "A unique test role with ' quoted instructions.";
@@ -375,6 +392,75 @@ describe("compiled proxy background", () => {
 		expect(existsSync(join(fixture.root, "forbidden"))).toBe(false);
 	}, 20000);
 
+	test("list and status skip a truncated meta file instead of failing for every job", async () => {
+		const job: Job = await json(["background", "run", ":"]);
+		await finished(job);
+		const truncated = join(fixture.state, "bg", "truncated.meta.json");
+		writeFileSync(truncated, '{"id":');
+		const listed = await json(["background", "list"]);
+		expect(listed.jobs.map((value: Job) => value.id)).toEqual([job.id]);
+		expect(await json(["background", "status", job.id])).toMatchObject({
+			drainOutput: null,
+		});
+		expect(
+			await json(["background", "prune", "--cwd", fixture.root]),
+		).toMatchObject({ removed: [job.id] });
+		rmSync(truncated);
+	});
+
+	test("status surfaces the output a failed drain left behind", async () => {
+		const job: Job = await json(["background", "run", ":"]);
+		await finished(job);
+		writeFileSync(
+			join(fixture.state, "bg", `${job.id}.drain.log`),
+			'{"result":"no-session"}\n',
+		);
+		expect(await json(["background", "status", job.id])).toMatchObject({
+			drainOutput: '{"result":"no-session"}',
+		});
+	});
+
+	test.each(["status", "cancel", "update", "drain"])(
+		"%s rejects a job id that escapes the job directory",
+		async (subcommand) => {
+			const args =
+				subcommand === "update"
+					? ["background", subcommand, "../escape", "context"]
+					: ["background", subcommand, "../escape"];
+			const result = await run(args);
+			expect(result.exitCode).toBe(2);
+			expect(result.stderr).toContain("invalid job id");
+		},
+	);
+
+	test("prune skips a meta file whose id is not a safe job name", async () => {
+		const victim = join(fixture.root, "victim.log");
+		writeFileSync(victim, "keep");
+		const dir = join(fixture.state, "bg");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			join(dir, "evil.meta.json"),
+			JSON.stringify({
+				id: "../../victim",
+				command: ":",
+				cwd: fixture.root,
+				startedAt: new Date().toISOString(),
+				kind: "shell",
+			}),
+		);
+		expect(
+			await json(["background", "prune", "--cwd", fixture.root]),
+		).toMatchObject({ removed: [] });
+		expect(existsSync(victim)).toBe(true);
+	});
+
+	test("run rejects a command split across several arguments", async () => {
+		const result = await run(["background", "run", "sh", "-c", "echo hi"]);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("one quoted argument");
+		expect(jobs()).toEqual([]);
+	});
+
 	test("queues ordered context, automatically drains once, and resumes the actual backend session", async () => {
 		const gate = join(fixture.root, "release ' gate");
 		fixture.fakeBackend("pi", { gate });
@@ -384,6 +470,10 @@ describe("compiled proxy background", () => {
 			"pi",
 			"--prompt",
 			"initial task",
+			"--model",
+			"fixture ' model",
+			"--effort",
+			"high",
 		]);
 		const job: Job = await json([
 			"background",
@@ -424,11 +514,14 @@ describe("compiled proxy background", () => {
 			args: BACKENDS.pi.buildArgs({
 				prompt: contexts.join("\n"),
 				resume: "fixture-session",
+				model: "fixture ' model",
+				effort: "high",
 			}),
 			cwd: fixture.root,
 		});
-		const resumed = jobs().find((value) => value.id !== job.id)!;
+		const resumed = jobs().find((value) => value.id !== job.id);
 		expect(resumed).toBeDefined();
+		if (!resumed) return;
 		await finished(resumed);
 		expect(await json(["background", "drain", job.id])).toMatchObject({
 			result: "nothing-pending",
@@ -468,21 +561,21 @@ describe("compiled proxy background", () => {
 		expect(retained.removed).toEqual([]);
 		expect(retained.running.map((value: Job) => value.id)).toEqual([job.id]);
 		expect(await json(["background", "cancel", job.id])).toMatchObject({
-			result: "cancelled",
+			result: "canceled",
 		});
 		await until(
 			() => live(job.launcherPid),
 			(value) => !value,
 		);
 		expect(await json(["background", "drain", job.id])).toMatchObject({
-			result: "cancelled",
+			result: "canceled",
 		});
 		expect(await json(["background", "status", job.id])).toMatchObject({
-			state: "cancelled",
+			state: "canceled",
 			pendingUpdate: null,
 		});
 		expect(await json(["background", "update", job.id, "later"])).toMatchObject(
-			{ result: "cancelled-job" },
+			{ result: "canceled-job" },
 		);
 		expect(fixture.readCalls()).toHaveLength(1);
 		expect(

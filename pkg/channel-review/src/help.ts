@@ -116,7 +116,7 @@ export function helpText(
 			"<p><b>$review</b> and <b>$thrash</b> run a review of the PR.</p>",
 			example("$review &lt;PR link&gt; ~spice 3"),
 			`<p><b>Flags</b></p>${list(REVIEW_FLAGS)}`,
-			"<p>When Claude reaches its usage limit, reviews retry once with Codex by default, if it is ready. A reply to your request tells you about the switch.</p>",
+			"<p>When Claude reaches its usage limit, a review retries once with the runner set in <code>runner.fallback</code>, if one is set and ready. A reply to your request tells you about the switch.</p>",
 			`<p><b>Re-review:</b> mention @${bot} with a ready word (${words}) and the PR link, or quote-reply to a request. This re-runs the review for any PR, not only blocked ones.</p>`,
 			reactionList(bot, REVIEW_REACTIONS, reactions),
 			LINKS,

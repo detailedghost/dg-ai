@@ -9,11 +9,11 @@ import {
 	deriveHostFromUrl,
 	extractNumberFromUrl,
 	flattenPaginated,
-	getBodyViaView,
 	hostnameFlags,
 	type Issue,
 	isAlreadyExistsError,
 	isCliErrorContaining,
+	isNotFoundError,
 	type ListIssuesOptions,
 	type ListPullRequestsOptions,
 	type ListUnresolvedThreadsOptions,
@@ -25,6 +25,7 @@ import {
 	ProviderError,
 	type PrRef,
 	type PrState,
+	type PrStateFilter,
 	type PullRequest,
 	type RepoInfo,
 	type RepoRef,
@@ -85,11 +86,16 @@ function normalizeGhPr(raw: Record<string, unknown>): PullRequest {
 	};
 }
 
+function restPrState(rawState: string | undefined, mergedAt: string | null): PrState {
+	if (mergedAt !== null) return "MERGED";
+	return rawState === "closed" ? "CLOSED" : "OPEN";
+}
+
 /** Maps `gh api repos/{owner}/{repo}/pulls` REST payloads (snake_case, no computed state) onto the normalized DTO. */
 function normalizeGhPrRest(raw: Record<string, unknown>): PullRequest {
 	const rawState = raw.state as string | undefined;
 	const mergedAt = (raw.merged_at as string | null) ?? null;
-	const state: PrState = mergedAt !== null ? "MERGED" : rawState === "closed" ? "CLOSED" : "OPEN";
+	const state = restPrState(rawState, mergedAt);
 	const head = raw.head as Record<string, unknown> | undefined;
 	const base = raw.base as Record<string, unknown> | undefined;
 	return {
@@ -164,9 +170,10 @@ function normalizeGhIssue(raw: Record<string, unknown>): Issue {
 
 const ISSUE_JSON_FIELDS = "number,title,url,state,body,labels,createdAt,comments";
 
+const GH_ISSUE_STATES = { ALL: "all", CLOSED: "closed", OPEN: "open" } as const;
+
 function issueStateFlags(opts?: ListIssuesOptions): string[] {
-	const state = normalizeIssueStateFilter(opts?.state);
-	return ["--state", state === "ALL" ? "all" : state === "CLOSED" ? "closed" : "open"];
+	return ["--state", GH_ISSUE_STATES[normalizeIssueStateFilter(opts?.state)]];
 }
 
 async function listIssues(tag: ShellTag, opts?: ListIssuesOptions, repo?: RepoRef): Promise<Issue[]> {
@@ -241,6 +248,7 @@ function normalizeGhThread(node: {
 			createdAt?: string;
 			diffHunk?: string | null;
 		}>;
+		pageInfo?: { hasNextPage?: boolean };
 	};
 }): ReviewThread {
 	const comments: ReviewComment[] = (node.comments?.nodes ?? []).map((c) => ({
@@ -263,7 +271,7 @@ function normalizeGhThread(node: {
 const LIST_THREADS_QUERY =
 	"query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){" +
 	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved path line originalLine " +
-	"comments(first:50){nodes{databaseId author{login} body createdAt diffHunk}}} pageInfo{hasNextPage endCursor}}}}}";
+	"comments(first:50){nodes{databaseId author{login} body createdAt diffHunk} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
 
 async function listUnresolvedThreads(
 	tag: ShellTag,
@@ -275,15 +283,16 @@ async function listUnresolvedThreads(
 		throw new ProviderError("NO_CURRENT_PR", "no pull request found for the current branch");
 	}
 	const numberFlag = ["-F", `number=${number}`];
+	const ownerFlags = ref?.repo
+		? ["-f", `owner=${ref.repo.owner}`, "-f", `repo=${ref.repo.repo}`]
+		: ["-F", "owner={owner}", "-F", "repo={repo}"];
 	const nodes: Array<Parameters<typeof normalizeGhThread>[0]> = [];
 	let after: string | null = null;
 	let page = 0;
 	do {
-		const afterFlag = after !== null ? ["-F", `after=${after}`] : [];
-		const ownerValue = ref?.repo ? ref.repo.owner : "{owner}";
-		const repoValue = ref?.repo ? ref.repo.repo : "{repo}";
+		const afterFlag = after !== null ? ["-f", `after=${after}`] : [];
 		const result =
-			await tag`api graphql -f query=${LIST_THREADS_QUERY} -F owner=${ownerValue} -F repo=${repoValue} ${numberFlag} ${afterFlag} ${apiHostFlags(ref?.repo)}`;
+			await tag`api graphql -f query=${LIST_THREADS_QUERY} ${ownerFlags} ${numberFlag} ${afterFlag} ${apiHostFlags(ref?.repo)}`;
 		const parsed = JSON.parse(result.stdout.toString());
 		const threadsPage = parsed?.data?.repository?.pullRequest?.reviewThreads;
 		nodes.push(...(threadsPage?.nodes ?? []));
@@ -296,6 +305,12 @@ async function listUnresolvedThreads(
 			`listUnresolvedThreads: exceeded ${MAX_LIST_PAGES} pages of review threads without reaching the end`,
 		);
 	}
+	if (nodes.some((node) => node.comments?.pageInfo?.hasNextPage)) {
+		throw new ProviderError(
+			"PAGE_LIMIT_EXCEEDED",
+			"listUnresolvedThreads: a review thread has more comments than one page can carry",
+		);
+	}
 	const threads = nodes.map(normalizeGhThread);
 	return opts?.includeResolved ? threads : threads.filter((t: ReviewThread) => !t.resolved);
 }
@@ -306,15 +321,13 @@ async function resolveThread(tag: ShellTag, threadId: string, ref?: PrRef): Prom
 	await tag`api graphql -f query=${mutation} -F threadId=${threadId} ${apiHostFlags(ref?.repo)}`;
 }
 
-async function replyToThread(
-	tag: ShellTag,
-	_threadId: string,
-	commentId: string,
-	body: string,
-	ref?: PrRef,
-): Promise<ReviewComment> {
+async function replyToThread(tag: ShellTag, thread: ReviewThread, body: string, ref?: PrRef): Promise<ReviewComment> {
 	if (ref?.number === undefined) {
 		throw new ProviderError("INVALID_ARGUMENT", "replyToThread requires a pull request number on GitHub");
+	}
+	const commentId = thread.commentId;
+	if (commentId === undefined) {
+		throw new ProviderError("INVALID_ARGUMENT", "replyToThread requires a thread with a root comment");
 	}
 	const result =
 		await tag`api repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/comments/${commentId}/replies --method POST -f body=${body} ${apiHostFlags(ref.repo)}`;
@@ -374,7 +387,9 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 			const logResult =
 				await tag`api repos/${ownerRepoPath(ref.repo)}/actions/jobs/${jobId}/logs ${apiHostFlags(ref.repo)}`;
 			logExcerpt = truncateLogExcerpt(logResult.stdout.toString());
-		} catch {}
+		} catch (err) {
+			if (!isNotFoundError(err)) throw err;
+		}
 		let configFile = "";
 		if (runId !== undefined) {
 			try {
@@ -382,7 +397,9 @@ async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 					await tag`api repos/${ownerRepoPath(ref.repo)}/actions/runs/${runId} ${apiHostFlags(ref.repo)}`;
 				const runRaw = JSON.parse(runResult.stdout.toString());
 				configFile = (runRaw.path as string) ?? "";
-			} catch {}
+			} catch (err) {
+				if (!isNotFoundError(err)) throw err;
+			}
 		}
 		results.push({
 			executionId: runId ?? jobId,
@@ -402,7 +419,7 @@ async function retargetPullRequest(tag: ShellTag, ref: PrRef, newBase: string): 
 }
 
 async function getPullRequestBody(tag: ShellTag, ref: PrRef): Promise<string> {
-	return getBodyViaView(() => viewPullRequest(tag, ref));
+	return (await viewPullRequest(tag, ref)).body;
 }
 
 async function setPullRequestBody(tag: ShellTag, ref: PrRef, body: string): Promise<void> {
@@ -437,10 +454,10 @@ async function resolveHeadOwner(tag: ShellTag, repo?: RepoRef): Promise<string> 
 	return info.owner;
 }
 
-/** GitHub's REST /pulls `state` param only accepts open/closed/all — MERGED is requested as state=all and filtered client-side below. */
+const GH_REST_STATES = { OPEN: "open", CLOSED: "closed", MERGED: "all", ALL: "all" } as const;
+
 async function restFilterFlags(tag: ShellTag, opts?: ListPullRequestsOptions, repo?: RepoRef): Promise<string[]> {
-	const state = normalizePrStateFilter(opts?.state);
-	const stateValue = state === "OPEN" ? "open" : state === "CLOSED" ? "closed" : "all";
+	const stateValue = GH_REST_STATES[normalizePrStateFilter(opts?.state)];
 	const flags: string[] = ["-F", `state=${stateValue}`];
 	if (opts?.head) {
 		const owner = await resolveHeadOwner(tag, repo);
@@ -449,21 +466,32 @@ async function restFilterFlags(tag: ShellTag, opts?: ListPullRequestsOptions, re
 	return flags;
 }
 
+function matchesStateFilter(pr: PullRequest, filter: PrStateFilter): boolean {
+	if (filter === "MERGED") return pr.merged;
+	if (filter === "CLOSED") return !pr.merged;
+	return true;
+}
+
 async function listPullRequests(tag: ShellTag, opts?: ListPullRequestsOptions, repo?: RepoRef): Promise<PullRequest[]> {
 	assertSupportedListFilters(opts);
 	const filterFlags = await restFilterFlags(tag, opts, repo);
-	const result =
-		await tag`api repos/${ownerRepoPath(repo)}/pulls --method GET --paginate -F per_page=${String(PAGE_SIZE)} ${filterFlags} ${apiHostFlags(repo)}`;
-	const raw = JSON.parse(result.stdout.toString());
-	const flat = flattenPaginated<Record<string, unknown>>(raw);
-	let all = flat.map(normalizeGhPrRest);
 	const stateFilter = normalizePrStateFilter(opts?.state);
-	if (stateFilter === "MERGED") {
-		all = all.filter((pr) => pr.merged);
-	} else if (stateFilter === "CLOSED") {
-		all = all.filter((pr) => !pr.merged);
+	const matches: PullRequest[] = [];
+	let done = false;
+	for (let page = 1; page <= MAX_LIST_PAGES && !done; page++) {
+		const result =
+			await tag`api repos/${ownerRepoPath(repo)}/pulls --method GET -F per_page=${String(PAGE_SIZE)} -F page=${String(page)} ${filterFlags} ${apiHostFlags(repo)}`;
+		const batch = flattenPaginated<Record<string, unknown>>(JSON.parse(result.stdout.toString()));
+		matches.push(...batch.map(normalizeGhPrRest).filter((pr) => matchesStateFilter(pr, stateFilter)));
+		done = batch.length < PAGE_SIZE || (opts?.limit !== undefined && matches.length >= opts.limit);
 	}
-	return opts?.limit ? all.slice(0, opts.limit) : all;
+	if (!done) {
+		throw new ProviderError(
+			"PAGE_LIMIT_EXCEEDED",
+			`listPullRequests: exceeded ${MAX_LIST_PAGES} pages of pull requests without reaching the end`,
+		);
+	}
+	return opts?.limit ? matches.slice(0, opts.limit) : matches;
 }
 
 async function fetchDiff(tag: ShellTag, ref: PrRef): Promise<string> {
@@ -480,13 +508,17 @@ const GITHUB_REVIEW_EVENTS: Record<ReviewVerdict, string> = {
 /** GitHub rejects APPROVE and REQUEST_CHANGES from the PR author with this phrase; both are retried as COMMENT. */
 const OWN_PR_NEEDLE = "your own pull request";
 
-const EMPTY_REVIEW_BODY = "Reviewed via /thrash.";
+const EMPTY_REVIEW_BODY = "Review submitted.";
 
 function toGithubReviewComment(c: ReviewCommentInput): Record<string, unknown> {
 	const onNewSide = c.newLine !== undefined;
+	const line = onNewSide ? c.newLine : c.oldLine;
+	if (line === undefined) {
+		throw new ProviderError("INVALID_ARGUMENT", `review comment on "${c.path}" needs newLine or oldLine`);
+	}
 	return {
 		path: c.path,
-		line: onNewSide ? c.newLine : c.oldLine,
+		line,
 		side: onNewSide ? "RIGHT" : "LEFT",
 		body: c.body,
 	};
@@ -534,10 +566,6 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 	}
 }
 
-async function checkAuth(tag: ShellTag): Promise<boolean> {
-	return checkAuthStatus(tag);
-}
-
 /** Create an inert GitHub adapter using GH_BIN or gh; commands validate CLI availability when invoked. */
 export function createGithubProvider(): Provider {
 	const bin = resolveGhBin();
@@ -560,7 +588,7 @@ export function createGithubProvider(): Provider {
 		viewPullRequest: (ref) => viewPullRequest(tag, ref),
 		listUnresolvedThreads: (opts, ref) => listUnresolvedThreads(tag, opts, ref),
 		resolveThread: (threadId, ref) => resolveThread(tag, threadId, ref),
-		replyToThread: (threadId, commentId, body, ref) => replyToThread(tag, threadId, commentId, body, ref),
+		replyToThread: (thread, body, ref) => replyToThread(tag, thread, body, ref),
 		listCiFailures: (ref) => listCiFailures(tag, ref),
 		fetchDiff: (ref) => fetchDiff(tag, ref),
 		postReview: (ref, input) => postReview(tag, ref, input),
@@ -574,6 +602,6 @@ export function createGithubProvider(): Provider {
 		createIssue: (input, repo) => createIssue(tag, input, repo),
 		addLabelsToIssue: (number, labels, repo) => addLabelsToIssue(tag, number, labels, repo),
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
-		checkAuth: () => checkAuth(tag),
+		checkAuth: () => checkAuthStatus(tag),
 	};
 }

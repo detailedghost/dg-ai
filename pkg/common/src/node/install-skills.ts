@@ -8,7 +8,6 @@ import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
-	lstatSync,
 	mkdirSync,
 	readdirSync,
 	rmSync,
@@ -79,29 +78,43 @@ export function installSkillTree(source: string, dest: string): string[] {
 	return files;
 }
 
-/** Skills-only install writes the thrash persona beside the skills directory. */
-export function thrashPersonaDest(skillsDest: string): string {
-	return join(dirname(skillsDest), "agents", "thrash.md");
+/** Skills-only install writes the personas beside the skills directory. */
+export function personasDest(skillsDest: string): string {
+	return join(dirname(skillsDest), "agents");
+}
+
+/** Persona files in plugins/dg/agents. Throws on a symlink so a bad source fails before any write. */
+export function listPersonaFiles(repoRoot: string): string[] {
+	const source = join(repoRoot, "plugins", "dg", "agents");
+	if (!existsSync(source)) return [];
+	const names: string[] = [];
+	for (const entry of readdirSync(source, { withFileTypes: true })) {
+		if (entry.isSymbolicLink()) {
+			throw new Error(
+				`skills-only install refuses symlink plugins/dg/agents/${entry.name}`,
+			);
+		}
+		if (entry.isFile()) names.push(entry.name);
+	}
+	return names.sort();
 }
 
 /**
- * Copy plugins/dg/agents/thrash.md so a skills-only install can load the
- * persona without the compiled binary. Missing source returns undefined.
+ * Copy every persona so a skills-only install can load them without the
+ * compiled binary. A link at a destination is replaced, never followed.
  */
-export function installThrashPersona(
+export function installPersonas(
 	repoRoot: string,
+	names: string[],
 	skillsDest: string,
-): string | undefined {
-	const source = join(repoRoot, "plugins", "dg", "agents", "thrash.md");
-	if (!existsSync(source)) return undefined;
-	if (lstatSync(source).isSymbolicLink()) {
-		throw new Error(
-			"skills-only install refuses symlink plugins/dg/agents/thrash.md",
-		);
+): string[] {
+	const destDir = personasDest(skillsDest);
+	mkdirSync(destDir, { recursive: true });
+	for (const name of names) {
+		const to = join(destDir, name);
+		rmSync(to, { force: true });
+		copyFileSync(join(repoRoot, "plugins", "dg", "agents", name), to);
+		chmodSync(to, 0o644);
 	}
-	const dest = thrashPersonaDest(skillsDest);
-	mkdirSync(dirname(dest), { recursive: true });
-	copyFileSync(source, dest);
-	chmodSync(dest, 0o644);
-	return dest;
+	return names;
 }

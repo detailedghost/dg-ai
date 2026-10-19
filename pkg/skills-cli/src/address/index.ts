@@ -207,6 +207,10 @@ async function cmdGatherCiFailures(args: string[]): Promise<void> {
 	process.stdout.write(JSON.stringify(results) + "\n");
 }
 
+function replyTarget(threadId: string, commentId: string): ReviewThread {
+	return { threadId, commentId, resolved: false, comments: [], path: "", line: null };
+}
+
 async function cmdReply(rawArgs: string[]): Promise<void> {
 	const { prArg, rest: args } = extractPrFlag(rawArgs);
 	if (args.length < 3) die("reply requires <comment_id> <thread_id> <body> [--pr=<number>]");
@@ -215,7 +219,7 @@ async function cmdReply(rawArgs: string[]): Promise<void> {
 	const body = botPrefix(args.slice(2).join(" "));
 	const provider = await getProvider();
 	const ref = { number: await getPrNumber(prArg) };
-	await provider.replyToThread(threadId, commentId, body, ref);
+	await provider.replyToThread(replyTarget(threadId, commentId), body, ref);
 }
 
 async function cmdResolve(rawArgs: string[]): Promise<void> {
@@ -242,10 +246,13 @@ async function cmdResolveWithReply(rawArgs: string[]): Promise<void> {
 	const ref = { number: await getPrNumber(prArg) };
 	const provider = await getProvider();
 
-	await provider.replyToThread(threadId, commentId, body, ref);
+	await provider.replyToThread(replyTarget(threadId, commentId), body, ref);
 	await provider.resolveThread(threadId, ref);
 	process.stdout.write(JSON.stringify({ replied: true, resolved: threadId }) + "\n");
 }
+
+const SENSITIVE_NAME = /^\.env|^\.npmrc$|^id_|\.key$|\.pem$/i;
+const SENSITIVE_PATH = /credentials|secret/i;
 
 async function cmdCommitPush(args: string[]): Promise<void> {
 	if (args.length < 1) die("commit-push requires <message>");
@@ -256,12 +263,17 @@ async function cmdCommitPush(args: string[]): Promise<void> {
 	const lsResult = await git`ls-files --others --exclude-standard`;
 	const untracked = lsResult.stdout.toString().split("\n").filter(Boolean);
 	for (const f of untracked) {
-		if (/^\.env|credentials|secret|\.key$|\.pem$/.test(f)) continue;
+		if (SENSITIVE_PATH.test(f) || SENSITIVE_NAME.test(f.split("/").at(-1) ?? f))
+			continue;
 		await git`add -- ${f}`;
 	}
 
 	await git`commit -m ${message}`;
 	await git`push`;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 type BatchItem = { commentId: number; threadId: string; summary: string };
@@ -317,16 +329,16 @@ async function cmdBatchClose(rawArgs: string[]): Promise<void> {
 			const itemErrors: string[] = [];
 
 			try {
-				await provider.replyToThread(item.threadId, String(item.commentId), body, ref);
-			} catch {
-				itemErrors.push(`reply failed for thread ${item.threadId}`);
+				await provider.replyToThread(replyTarget(item.threadId, String(item.commentId)), body, ref);
+			} catch (error) {
+				itemErrors.push(`reply failed for thread ${item.threadId}: ${errorMessage(error)}`);
 				return itemErrors;
 			}
 
 			try {
 				await provider.resolveThread(item.threadId, ref);
-			} catch {
-				itemErrors.push(`resolve failed for thread ${item.threadId}`);
+			} catch (error) {
+				itemErrors.push(`resolve failed for thread ${item.threadId}: ${errorMessage(error)}`);
 			}
 
 			return itemErrors;
@@ -336,7 +348,7 @@ async function cmdBatchClose(rawArgs: string[]): Promise<void> {
 	for (const [index, r] of results.entries()) {
 		if (r.status === "rejected") {
 			failed++;
-			const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+			const reason = errorMessage(r.reason);
 			errors.push(`${describeBatchTarget(items[index], index)} threw: ${reason}`);
 			continue;
 		}
@@ -364,17 +376,18 @@ async function cmdCheckCopilot(): Promise<void> {
 		return;
 	}
 
-	const r = await gh`repo view --json url`;
-	let isGithub = false;
 	try {
+		const r = await gh`repo view --json url`;
 		const data = JSON.parse(r.stdout.toString()) as { url: string };
-		isGithub = data.url.includes("github.com");
-	} catch {}
-
-	if (isGithub) {
-		process.stdout.write(JSON.stringify({ available: true, reason: "assumed-available" }) + "\n");
-	} else {
+		if (new URL(data.url).hostname === "github.com") {
+			process.stdout.write(JSON.stringify({ available: true, reason: "assumed-available" }) + "\n");
+			return;
+		}
 		process.stdout.write(JSON.stringify({ available: false, reason: notSupportedMessage("Copilot review") }) + "\n");
+	} catch (error) {
+		process.stdout.write(
+			JSON.stringify({ available: false, reason: `could not read the repository URL: ${errorMessage(error)}` }) + "\n",
+		);
 	}
 }
 
@@ -430,6 +443,22 @@ async function cmdRequestCopilot(args: string[]): Promise<void> {
 	}
 }
 
+function isAfter(iso: string, sinceIso: string): boolean {
+	const ms = Date.parse(iso);
+	const since = Date.parse(sinceIso);
+	return Number.isFinite(ms) && Number.isFinite(since) && ms > since;
+}
+
+function byTime(a: string, b: string): number {
+	return Date.parse(a) - Date.parse(b);
+}
+
+function nonNegativeInt(arg: string, prefix: string): number {
+	const value = Number(arg.slice(prefix.length));
+	if (!Number.isInteger(value) || value < 0) die(`${prefix}<n> must be a non-negative integer, got ${arg}`);
+	return value;
+}
+
 async function cmdVerifyCopilotEngaged(args: string[]): Promise<void> {
 	await requireCopilotBot("Copilot engagement verification");
 	if (args.length < 2) die("verify-copilot-engaged: pr_url and since_iso required");
@@ -438,8 +467,8 @@ async function cmdVerifyCopilotEngaged(args: string[]): Promise<void> {
 	let timeout = 90;
 	let interval = 8;
 	for (const arg of args.slice(2)) {
-		if (arg.startsWith("--timeout=")) timeout = parseInt(arg.slice("--timeout=".length), 10);
-		else if (arg.startsWith("--interval=")) interval = parseInt(arg.slice("--interval=".length), 10);
+		if (arg.startsWith("--timeout=")) timeout = nonNegativeInt(arg, "--timeout=");
+		else if (arg.startsWith("--interval=")) interval = nonNegativeInt(arg, "--interval=");
 		else die(`verify-copilot-engaged: unknown flag ${arg}`);
 	}
 
@@ -483,17 +512,17 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 									databaseId: number;
 									body: string;
 									createdAt: string;
-									author: { login: string };
+									author: { login: string } | null;
 								}>;
 							};
 						};
 					};
 				};
 			};
-			const comments = data.data.repository.pullRequest.comments.nodes;
+			const comments = data.data.repository.pullRequest?.comments.nodes ?? [];
 			const hit = comments
-				.filter((c) => c.author.login === "copilot-swe-agent" && c.createdAt > sinceIso)
-				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+				.filter((c) => c.author?.login === "copilot-swe-agent" && isAfter(c.createdAt, sinceIso))
+				.sort((a, b) => byTime(a.createdAt, b.createdAt))
 				.at(-1);
 
 			if (hit) {
@@ -565,7 +594,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 							databaseId: number;
 							body: string;
 							createdAt: string;
-							author: { login: string };
+							author: { login: string } | null;
 						}>;
 					};
 				};
@@ -573,9 +602,9 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 		};
 	};
 
-	const ackHit = data.data.repository.pullRequest.comments.nodes
-		.filter((c) => c.author.login === "copilot-swe-agent" && c.createdAt > sinceIso && noFindingsPattern.test(c.body))
-		.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+	const ackHit = (data.data.repository.pullRequest?.comments.nodes ?? [])
+		.filter((c) => c.author?.login === "copilot-swe-agent" && isAfter(c.createdAt, sinceIso) && noFindingsPattern.test(c.body))
+		.sort((a, b) => byTime(a.createdAt, b.createdAt))
 		.at(-1);
 
 	if (ackHit) {
@@ -600,8 +629,8 @@ async function cmdAwaitCopilotReview(args: string[]): Promise<void> {
 	let timeout = 1800;
 	let interval = 30;
 	for (const arg of args.slice(2)) {
-		if (arg.startsWith("--timeout=")) timeout = parseInt(arg.slice("--timeout=".length), 10);
-		else if (arg.startsWith("--interval=")) interval = parseInt(arg.slice("--interval=".length), 10);
+		if (arg.startsWith("--timeout=")) timeout = nonNegativeInt(arg, "--timeout=");
+		else if (arg.startsWith("--interval=")) interval = nonNegativeInt(arg, "--interval=");
 		else die(`await-copilot-review: unknown flag ${arg}`);
 	}
 
@@ -649,7 +678,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 							reviews: {
 								nodes: Array<{
 									submittedAt: string;
-									author: { login: string };
+									author: { login: string } | null;
 								}>;
 							};
 							comments: {
@@ -657,7 +686,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 									databaseId: number;
 									body: string;
 									createdAt: string;
-									author: { login: string };
+									author: { login: string } | null;
 								}>;
 							};
 						};
@@ -666,9 +695,9 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 			};
 			const pr = data.data.repository.pullRequest;
 
-			const reviewHit = pr.reviews.nodes
-				.filter((r) => r.author.login === "copilot-pull-request-reviewer" && r.submittedAt > sinceIso)
-				.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))
+			const reviewHit = (pr?.reviews.nodes ?? [])
+				.filter((r) => r.author?.login === "copilot-pull-request-reviewer" && isAfter(r.submittedAt, sinceIso))
+				.sort((a, b) => byTime(a.submittedAt, b.submittedAt))
 				.at(-1);
 
 			if (reviewHit) {
@@ -676,11 +705,11 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 				process.exit(0);
 			}
 
-			const ackHit = pr.comments.nodes
+			const ackHit = (pr?.comments.nodes ?? [])
 				.filter(
-					(c) => c.author.login === "copilot-swe-agent" && c.createdAt > sinceIso && noFindingsPattern.test(c.body),
+					(c) => c.author?.login === "copilot-swe-agent" && isAfter(c.createdAt, sinceIso) && noFindingsPattern.test(c.body),
 				)
-				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+				.sort((a, b) => byTime(a.createdAt, b.createdAt))
 				.at(-1);
 
 			if (ackHit) {
@@ -736,7 +765,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 			repository: {
 				pullRequest: {
 					reviews: {
-						nodes: Array<{ submittedAt: string; author: { login: string } }>;
+						nodes: Array<{ submittedAt: string; author: { login: string } | null }>;
 					};
 					reviewThreads: {
 						nodes: Array<{
@@ -750,7 +779,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 									path: string;
 									line: number;
 									diffHunk: string;
-									author: { login: string };
+									author: { login: string } | null;
 									createdAt: string;
 								}>;
 							};
@@ -762,9 +791,10 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 	};
 
 	const pr = data.data.repository.pullRequest;
+	if (!pr) die("fetch-copilot-review: pull request not found");
 	const latest = pr.reviews.nodes
-		.filter((r) => r.author.login === "copilot-pull-request-reviewer")
-		.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))
+		.filter((r) => r.author?.login === "copilot-pull-request-reviewer")
+		.sort((a, b) => byTime(a.submittedAt, b.submittedAt))
 		.at(-1);
 
 	if (!latest) {
@@ -773,7 +803,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 	}
 
 	const comments = pr.reviewThreads.nodes
-		.filter((t) => !t.isResolved && t.comments.nodes[0]?.author.login === "copilot-pull-request-reviewer")
+		.filter((t) => !t.isResolved && t.comments.nodes[0]?.author?.login === "copilot-pull-request-reviewer")
 		.map((t) => ({
 			threadId: t.id,
 			commentId: t.comments.nodes[0].databaseId,
@@ -807,15 +837,17 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 			repository: {
 				pullRequest: {
 					reviews: {
-						nodes: Array<{ author: { login: string }; state: string }>;
+						nodes: Array<{ author: { login: string } | null; state: string }>;
 					};
 				};
 			};
 		};
 	};
 
-	const count = data.data.repository.pullRequest.reviews.nodes.filter(
-		(r) => r.author.login === "copilot-pull-request-reviewer" && r.state !== "PENDING",
+	const pr = data.data.repository.pullRequest;
+	if (!pr) die("count-copilot-reviews: pull request not found");
+	const count = pr.reviews.nodes.filter(
+		(r) => r.author?.login === "copilot-pull-request-reviewer" && r.state !== "PENDING",
 	).length;
 
 	process.stdout.write(`${count}\n`);

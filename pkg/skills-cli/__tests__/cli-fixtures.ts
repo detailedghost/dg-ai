@@ -1,8 +1,10 @@
 import { afterEach, beforeEach } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { makeTempDir, scratchFixtures } from "./git-repo-fixtures";
+import type { ReviewThread } from "../src/provider/types";
+import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 
 /** A PATH string with every directory that resolves vcs-provider-cli filtered out. */
 export function pathWithoutVcsProviderCli(): string {
@@ -12,7 +14,7 @@ export function pathWithoutVcsProviderCli(): string {
 		.join(":");
 }
 
-/** Shared temp-dir/fixture/call-log helpers for fake-CLI adapter tests. */
+/** Create a temp dir that the caller's cleanup list removes. */
 export function tmp(createdDirs: string[], prefix: string): string {
 	const dir = makeTempDir(prefix);
 	createdDirs.push(dir);
@@ -32,9 +34,19 @@ export function callLogPath(createdDirs: string[], prefix: string): string {
 export function readCalls(path: string): string[] {
 	try {
 		return readFileSync(path, "utf8").trim().split("\n").filter(Boolean);
-	} catch {
-		return [];
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw error;
 	}
+}
+
+export async function catchError(run: () => Promise<unknown>): Promise<unknown> {
+	try {
+		await run();
+	} catch (error) {
+		return error;
+	}
+	throw new Error("expected the call to throw");
 }
 
 export function shScript(caseBody: string): string {
@@ -68,13 +80,7 @@ export function restPr(
 	};
 }
 
-export function runGit(args: string[], cwd: string): string {
-	const proc = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_COUNT: "0", GIT_DIR: undefined, GIT_WORK_TREE: undefined } });
-	if (proc.exitCode !== 0) {
-		throw new Error(`git ${args.join(" ")} failed in ${cwd}: ${proc.stderr.toString()}`);
-	}
-	return proc.stdout.toString();
-}
+export const runGit = git;
 
 export function commitFile(dir: string, name: string, content: string, message: string): string {
 	writeFileSync(join(dir, name), content);
@@ -140,7 +146,7 @@ export function isolateCliTests(): void {
    HOME: home, XDG_CONFIG_HOME: home, GH_CONFIG_DIR: home, GLAB_CONFIG_DIR: home,
    AI_SCRATCH_DIR: fixtures.tmp("dg-provider-scratch-"), AI_STATE_DIR: fixtures.tmp("dg-provider-state-"),
    PATH: bin, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_COUNT: "0",
-   GIT_TERMINAL_PROMPT: "0", GIT_CEILING_DIRECTORIES: fixtures.tmp("dg-provider-ceiling-"),
+   GIT_TERMINAL_PROMPT: "0", GIT_CEILING_DIRECTORIES: realpathSync(tmpdir()),
   });
  });
  afterEach(() => {
@@ -149,4 +155,9 @@ export function isolateCliTests(): void {
   Object.assign(process.env, savedEnv);
   fixtures.cleanup();
  });
+}
+
+/** A thread with one root comment id and no loaded comments. */
+export function reviewThread(threadId: string, commentId: string): ReviewThread {
+	return { threadId, resolved: false, comments: [], commentId, path: "", line: null };
 }
