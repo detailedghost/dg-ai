@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { protectedPushReason } from "@dg/common";
+import { escapeRegExp, protectedPushReason } from "@dg/common";
 import { stateDir } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProvider } from "../provider/index";
@@ -123,11 +123,6 @@ export function editFiles(
 			writeFileSync(file, next);
 			return file;
 		});
-}
-
-/** Quote a literal dependency or action name for regular expressions. */
-export function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Legacy parser result, retaining unrecognized flags and positional order. */
@@ -411,7 +406,7 @@ export function bumpNodePackage(
 
 /** Replace a simple or inline-table Cargo version without altering unrelated text. */
 export function bumpCargoToml(src: string, pkg: string, newV: string): string {
-	const name = escapeRegex(pkg);
+	const name = escapeRegExp(pkg);
 	const patterns = [
 		new RegExp(`(^${name}\\s*=\\s*")[^"]+(")`, "gm"),
 		new RegExp(`(^${name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")[^"]+(")`, "gm"),
@@ -422,7 +417,7 @@ export function bumpCargoToml(src: string, pkg: string, newV: string): string {
 /** Replace the named gem version while retaining its version operator. */
 export function bumpGemfile(src: string, pkg: string, newV: string): string {
 	const re = new RegExp(
-		`(gem\\s+['"]${escapeRegex(pkg)}['"]\\s*,\\s*['"](?:[~<>=!]+\\s*)?)(?=\\d)[^'"]+(['"])`,
+		`(gem\\s+['"]${escapeRegExp(pkg)}['"]\\s*,\\s*['"](?:[~<>=!]+\\s*)?)(?=\\d)[^'"]+(['"])`,
 	);
 	return src.replace(re, `$1${newV}$2`);
 }
@@ -435,7 +430,7 @@ export function bumpPythonSource(
 	newV: string,
 ): string {
 	const re = new RegExp(
-		`((?:^|\\n)\\s*["']?${escapeRegex(pkg)}["']?\\s*[=~<>]{1,2}\\s*["']?)${escapeRegex(oldV)}(?![\\w.])(["']?)`,
+		`((?:^|\\n)\\s*["']?${escapeRegExp(pkg)}["']?\\s*[=~<>]{1,2}\\s*["']?)${escapeRegExp(oldV)}(?![\\w.])(["']?)`,
 		"g",
 	);
 	return src.replace(re, `$1${newV}$2`);
@@ -449,7 +444,7 @@ export function bumpActionRefs(
 	toTag: string,
 ): string {
 	const re = new RegExp(
-		`((?<![\\w./-])${escapeRegex(action)}(?:/[^@\\s]+)?)@(v?)${escapeRegex(fromTag)}(?=\\s|$)`,
+		`((?<![\\w./-])${escapeRegExp(action)}(?:/[^@\\s]+)?)@(v?)${escapeRegExp(fromTag)}(?=\\s|$)`,
 		"g",
 	);
 	return src.replace(re, (_m, ref, v) => `${ref}@${v}${toTag}`);

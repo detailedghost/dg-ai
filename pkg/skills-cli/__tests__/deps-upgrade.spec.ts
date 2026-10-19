@@ -1877,12 +1877,6 @@ describe("text transforms", () => {
 			src,
 		);
 	});
-
-	test("escapeRegex escapes every regex metacharacter", () => {
-		const escaped = helper.escapeRegex(".*+?^${}()|[]\\");
-		expect(new RegExp(`^${escaped}$`).test(".*+?^${}()|[]\\")).toBe(true);
-		expect(helper.escapeRegex("plain-name")).toBe("plain-name");
-	});
 });
 
 describe("file helpers", () => {

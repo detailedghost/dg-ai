@@ -23,6 +23,7 @@ import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
+import { registerSpec } from "./commands/spec";
 import { registerStash } from "./commands/stash";
 import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
@@ -64,6 +65,7 @@ registerProto(program);
 registerProxy(program);
 registerOverwatchSnapshot(program);
 registerWorktree(program);
+registerSpec(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

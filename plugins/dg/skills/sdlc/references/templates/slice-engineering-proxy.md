@@ -1,0 +1,18 @@
+# Slice Engineering Template — Proxy Delegation (Yellow stage)
+
+> Read **[Slice Section]** — skip other slices. Also read `## Code Structure` (if present) — already-ratified cross-slice contracts (type shapes, module homes, error conventions). This slice delegates its engineering work to an external CLI agent via `/proxy`; you stay in the loop to drive `/proxy`, verify its output, and report back. You keep your assigned persona/agentType for this — `/proxy` only changes who writes the code, not who's accountable for it.
+>
+> 1. Build a task prompt from `{SLICE_BRIEF}` + `{TESTING_CRITERIA}`, **inlining the `## Code Structure` entries that apply to this slice** — the external backend cannot read the spec, so a convention you leave out is a convention it will violate. If `{FINDINGS}` below is non-empty, address those specifically instead of re-implementing from scratch — append them to the prompt as the concrete issues to fix.
+> 2. Set `DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"`, then run: `"$DG" proxy {PROXY_BACKEND} --prompt "<task prompt>" --subagent {PRIMARY_AGENT} --cwd <repo working directory>`
+> 3. Handle the result per `/proxy`'s own contract (its SKILL.md): missing backend → stop and report to the orchestrator; a clarifying question → answer directly if you can from `{SLICE_BRIEF}`/`{TESTING_CRITERIA}`/spec context, else ask the user via `AskUserQuestion`, then re-invoke with `--resume <sessionId>`; a model/effort rejection → ask the user how to proceed. Cap at 5 round-trips total — if still unresolved, stop and hand off as-is.
+> 4. Once `/proxy` reports the delegated work complete, verify it yourself: run this project's actual test command against `{CHANGED_FILES}`-relevant scope (whole suite if scope is unclear) and confirm it passes. Don't trust a green claim from the backend — check it.
+> 5. Run `git status` / `git diff --name-only` in the working directory to determine what actually changed — the external backend's own report of touched files may be incomplete or wrong.
+>
+> Findings: {FINDINGS}
+> Spec: {SPEC_PATH}
+> Scratchpad: {SCRATCH_PATH}
+>
+> **Exit gate — do ALL of this before you return; returning the schema IS the completion signal, never stop short of it:**
+> 1. Set `testsPass` honestly from your own verification run in step 4, not from `/proxy`'s claim.
+> 2. Populate `changedFiles` from the `git status`/`git diff --name-only` result in step 5 — the orchestrator commits exactly that list, so an omitted file is silently dropped.
+> 3. Return: `{ changedFiles: string[], testsPass: boolean, attempts?: number, securitySensitive?: boolean, deferrals: [], notes: {} }`. Leave `deferrals`/`notes` empty unless something genuinely needs orchestrator attention — do not resolve deferrals yourself, do not write the spec/scratchpad directly. Never call `AskUserQuestion` for anything outside the `/proxy` round-trip in step 3 — it can't pause a workflow.

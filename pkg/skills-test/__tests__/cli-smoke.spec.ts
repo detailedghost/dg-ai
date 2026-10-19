@@ -52,6 +52,7 @@ describe("dg-skills CLI", () => {
 			"meaningful",
 			"catchup",
 			"worktree",
+			"spec",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -78,6 +79,37 @@ describe("dg-skills CLI", () => {
 		const { code, out } = await runCli(["worktree", "--help"]);
 		expect(code).toBe(0);
 		for (const verb of ["create", "list", "remove", "prune"])
+			expect(out).toContain(verb);
+	});
+
+	test("spec is registered and its help lists every subcommand", async () => {
+		const { code, out } = await runCli(["spec", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"perms",
+			"perms-batch",
+			"next-nnn",
+			"roundtable",
+			"review",
+			"slice",
+			"context",
+			"brief",
+			"diff-bundle",
+			"audit",
+			"ready",
+			"pr-body",
+			"issues",
+			"slugify",
+			"resolve-path",
+			"validate",
+			"get",
+			"set",
+			"append-section",
+			"roster",
+			"scaffold",
+			"lint-waves",
+			"prototype-ref",
+		])
 			expect(out).toContain(verb);
 	});
 

@@ -19,7 +19,8 @@
 		"@dg/inbox": "workspace:*",
 		"commander": "^14.0.0",
 		"marked": "^18.1.0",
-		"playwright-core": "1.64.1"
+		"playwright-core": "1.64.1",
+		"yaml": "^2.9.0"
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",
