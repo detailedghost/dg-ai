@@ -1,9 +1,9 @@
 ---
 name: viz
-description: Render a board payload as a styled HTML page in a local Astro dev server. Ephemeral, environment-agnostic rendering client used by /review; one session-namespaced window per invoke, nothing persisted.
+description: Render a board payload as a styled HTML page in a local Astro dev server. Ephemeral, environment-agnostic rendering client used by /dg:review; one session-namespaced window per invoke, nothing persisted.
 ---
 
-# /viz
+# /dg:viz
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
@@ -23,7 +23,7 @@ Render a board payload as a styled HTML page in a local Astro dev server.
 ## Usage
 
 ```
-/viz [--no-open]
+/dg:viz [--no-open]
 ```
 
 `--no-open` — print URL only, skip browser  

@@ -1,13 +1,13 @@
 ---
 name: assign
-description: Pick the best-fit primary engineering agent (plus any QA agents) for a piece of work. Given a prose description — or nothing at all — recommend and print, writing nothing. Given a `/spec` spec path, write the picks into `slices[].agents` frontmatter instead, one per slice. Reads the live agent roster so picks always reflect current capability.
+description: Pick the best-fit primary engineering agent (plus any QA agents) for a piece of work. Given a prose description — or nothing at all — recommend and print, writing nothing. Given a `/dg:spec` spec path, write the picks into `slices[].agents` frontmatter instead, one per slice. Reads the live agent roster so picks always reflect current capability.
 ---
 
 # Skill: assign
 
 Pick the best-fit primary engineering agent, plus any QA agents, for a piece of work. One pass, declarative.
 
-Annotating the slices of a `/spec` spec is one *application* of that pick — the one that persists its answer — not the
+Annotating the slices of a `/dg:spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -21,19 +21,19 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 | Form                            | Effect                                                                      |
 | ------------------------------- | --------------------------------------------------------------------------- |
-| `/assign`                       | Recommend agents for the task at hand in this conversation. Writes nothing. |
-| `/assign <work description>`    | Recommend agents for the described work. Writes nothing.                    |
-| `/assign <spec-path>`           | Read spec, pick agents per slice, write back to frontmatter.                |
-| `/assign --dry-run <spec-path>` | Print the proposed YAML block. Do not write.                                |
-| `/assign --force <spec-path>`   | Re-assign even if `status: complete` or slices already have `agents:`.      |
+| `/dg:assign`                       | Recommend agents for the task at hand in this conversation. Writes nothing. |
+| `/dg:assign <work description>`    | Recommend agents for the described work. Writes nothing.                    |
+| `/dg:assign <spec-path>`           | Read spec, pick agents per slice, write back to frontmatter.                |
+| `/dg:assign --dry-run <spec-path>` | Print the proposed YAML block. Do not write.                                |
+| `/dg:assign --force <spec-path>`   | Re-assign even if `status: complete` or slices already have `agents:`.      |
 
 ## Dependency direction
 
-`/spec`, `/prd`, `/sdlc`, `/kick`, and `/polish` depend on `/assign`. `/assign` depends on none of them and never
+`/dg:spec`, `/dg:prd`, `/dg:sdlc`, `/dg:kick`, and `/dg:polish` depend on `/dg:assign`. `/dg:assign` depends on none of them and never
 requires their artifacts.
 
-This skill is the **single owner** of agent-picking. `/spec` plan-mode finalization, `/sdlc` step 3, `/pickup` (via
-`/spec -s`), and `/prd` (front-loaded) each call it with a spec path; `/polish` reuses only the heuristics table below.
+This skill is the **single owner** of agent-picking. `/dg:spec` plan-mode finalization, `/dg:sdlc` step 3, `/dg:pickup` (via
+`/dg:spec -s`), and `/dg:prd` (front-loaded) each call it with a spec path; `/dg:polish` reuses only the heuristics table below.
 Do not reimplement the pick-and-write logic elsewhere; call this.
 
 ## Dispatch
@@ -98,5 +98,5 @@ judgment.
 | Standalone-mode steps + output contract (no spec path — the default) | `references/standalone-mode.md` |
 | Spec-annotation-mode steps + output contract (spec path given) | `references/spec-mode.md` |
 | Escalating a hard call without upgrading the whole primary/effort pick | `references/edge-cases.md` |
-| Delegating a slice to an external CLI backend (`/proxy`) instead of a Claude agent | `references/edge-cases.md` |
+| Delegating a slice to an external CLI backend (`/dg:proxy`) instead of a Claude agent | `references/edge-cases.md` |
 | Handling a bad input (typo'd path, unparseable frontmatter, no `slices[]`) | `references/edge-cases.md` |

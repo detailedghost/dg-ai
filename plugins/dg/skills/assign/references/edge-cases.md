@@ -15,7 +15,7 @@ agent could *write*, not just *catch*, give it that agent as `primary` instead o
 
 Spec mode only — there is no frontmatter to record it in otherwise.
 
-`/assign` does not automatically decide when to delegate a slice to an external CLI backend via `/proxy`
+`/dg:assign` does not automatically decide when to delegate a slice to an external CLI backend via `/dg:proxy`
 (codex/copilot/pi/opencode/cortex/grok) — that's a cost/trust decision, not a content-matching pick like `js` vs `shell`.
 
 Only write `agents.proxy: <backend>` when the user explicitly asks for a slice (or the whole spec) to be delegated
@@ -26,7 +26,7 @@ agent roster check the common steps use, since codex/copilot/pi/opencode/cortex/
 name must be one of that command's output lines. Mismatch → refuse to write, list the valid names (same failure-mode
 style as an agent-name typo).
 
-`agents.primary` keeps meaning exactly what it means today — the persona `/proxy` briefs the external backend with via
+`agents.primary` keeps meaning exactly what it means today — the persona `/dg:proxy` briefs the external backend with via
 `--subagent`. `agents.proxy` is a separate execution-mode axis layered on top, not a replacement.
 
 ## Failure modes
@@ -42,5 +42,5 @@ Spec mode only:
 
 - Spec file unreadable → stop, print path.
 - Frontmatter unparseable → stop, do not guess.
-- No `slices[]` array in frontmatter → stop, this isn't a `/spec` spec.
+- No `slices[]` array in frontmatter → stop, this isn't a `/dg:spec` spec.
 - Uncommitted spec changes + manual invocation → warn but proceed (the user asked for it).

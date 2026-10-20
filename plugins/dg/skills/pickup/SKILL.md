@@ -1,13 +1,13 @@
 ---
 name: pickup
-description: Resume a parked spec bundle under .agents/spec/. Takes an optional NNN prefix or slug substring — otherwise prompts to select among status:deferred and status:in-progress bundles (numbered dirs and .agents/spec/todo/). Renumbers todo/ bundles, flips status to in-progress, then hands off to /spec -s to drive engineering.
+description: Resume a parked spec bundle under .agents/spec/. Takes an optional NNN prefix or slug substring — otherwise prompts to select among status:deferred and status:in-progress bundles (numbered dirs and .agents/spec/todo/). Renumbers todo/ bundles, flips status to in-progress, then hands off to /dg:spec -s to drive engineering.
 ---
 
-# /pickup — Resume a Parked Spec Bundle
+# /dg:pickup — Resume a Parked Spec Bundle
 
-Thin wrapper over `/spec` execute mode. Owns selection and staleness itself (its own logic,
+Thin wrapper over `/dg:spec` execute mode. Owns selection and staleness itself (its own logic,
 scanning `.agents/spec/`) and, for unnumbered `todo/` bundles, renumbering — then hands off to
-`/spec -s <NNN>_<slug>`, which resolves the bundle, sets up its own worktree, and drives `/sdlc`'s
+`/dg:spec -s <NNN>_<slug>`, which resolves the bundle, sets up its own worktree, and drives `/dg:sdlc`'s
 slice-wave.
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -17,7 +17,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Usage: `/pickup [NNN-or-substring]`.
+Usage: `/dg:pickup [NNN-or-substring]`.
 
 ## Workflow
 
@@ -34,13 +34,13 @@ Usage: `/pickup [NNN-or-substring]`.
    unconditionally, not only when step 3 moved something, and only that bundle, with any `git mv`
    rename already staged:
    `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): pick up <slug>"`.
-   Use `-f` because `/agent-seed` ignores `.agents/`. Do not add other bundles.
+   Use `-f` because `/dg:agent-seed` ignores `.agents/`. Do not add other bundles.
    If this is a re-pickup of an already `in-progress` bundle and nothing changed, skip both the
    `set` and the commit (idempotent no-op).
-5. **Hand off.** Invoke `/spec -s <NNN>_<slug>`. It reads only `context.md` + `plan.md`, creates its
-   own worktree, and drives `/sdlc`'s slice-wave through PR — see
-   [`spec/references/execute.md`](../spec/references/execute.md). `/pickup` does no worktree setup
-   of its own; that is entirely `/spec -s`'s job.
+5. **Hand off.** Invoke `/dg:spec -s <NNN>_<slug>`. It reads only `context.md` + `plan.md`, creates its
+   own worktree, and drives `/dg:sdlc`'s slice-wave through PR — see
+   [`spec/references/execute.md`](../spec/references/execute.md). `/dg:pickup` does no worktree setup
+   of its own; that is entirely `/dg:spec -s`'s job.
 
 ## Routing
 
@@ -53,9 +53,9 @@ Usage: `/pickup [NNN-or-substring]`.
 
 - Each agent reads only its relevant `.agents/school/` topic file.
 - Use TaskCreate/TaskUpdate throughout to track progress.
-- NEVER skip a gate condition — the staleness confirmation here, and every gate `/spec -s` owns
+- NEVER skip a gate condition — the staleness confirmation here, and every gate `/dg:spec -s` owns
   once handed off.
 
 ## After Exit
 
-Handled by `/spec -s` — a PR URL on success, or a stop at whichever `/sdlc` gate wasn't cleared.
+Handled by `/dg:spec -s` — a PR URL on success, or a stop at whichever `/dg:sdlc` gate wasn't cleared.

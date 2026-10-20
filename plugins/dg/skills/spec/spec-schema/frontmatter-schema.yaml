@@ -86,14 +86,14 @@ fields:
             mutability: mutable
             description: >-
               Optional external backend (codex|copilot|pi|opencode|cortex|grok) to execute this slice's Yellow/Correction
-              stages via /proxy instead of an internal agent. Value must be one of the registered
+              stages via /dg:proxy instead of an internal agent. Value must be one of the registered
               names from `dg-skills proxy --list-backends`. Omit for the default (internal agent) execution.
           proxy_skills:
             type: array
             mutability: mutable
             description: >-
-              Skill-behaviors a proxied slice needs (e.g. [db, polish]); /spec -s inlines these into the
-              /proxy prompt because /proxy injects only the persona file and can't run /db or /polish as
+              Skill-behaviors a proxied slice needs (e.g. [db, polish]); /dg:spec -s inlines these into the
+              /dg:proxy prompt because /dg:proxy injects only the persona file and can't run /db or /dg:polish as
               slash-commands.
           effort:
             type: string
@@ -241,4 +241,4 @@ fields:
     type: string
     mode_conditional: bundle-only
     mutability: immutable
-    description: Path to the bundle's plan.md (the durable spec /spec -s reads). Present only in context.md.
+    description: Path to the bundle's plan.md (the durable spec /dg:spec -s reads). Present only in context.md.

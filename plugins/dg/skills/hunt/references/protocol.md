@@ -64,7 +64,7 @@ Keep prompts under 200 words. The agent doesn't need the full story — it needs
 
 ### Dispatch (Workflow)
 
-When there are **2+ independent threads**, dispatch them as a background **Workflow** instead of hand-launching agents — invoking `/hunt` is the opt-in. For a single thread, just call the agent inline; a workflow adds no value.
+When there are **2+ independent threads**, dispatch them as a background **Workflow** instead of hand-launching agents — invoking `/dg:hunt` is the opt-in. For a single thread, just call the agent inline; a workflow adds no value.
 
 Build `threads[]` (`{ id, agentType, prompt }`) from the routing table + prompt template above, then:
 
@@ -119,7 +119,7 @@ Present findings in this format:
 - **Medium** — Strong hypothesis supported by evidence, but couldn't fully reproduce or trace the complete path. Fix is likely correct.
 - **Low** — Multiple possible causes. Need more information (logs, reproduction, environment access). List the candidates ranked by likelihood.
 
-## When to Escalate to /grill-me
+## When to Escalate to /dg:grill-me
 
 If the investigation reveals that the fix requires **design decisions** the user hasn't made:
 
@@ -127,7 +127,7 @@ If the investigation reveals that the fix requires **design decisions** the user
 - Trade-offs between multiple valid approaches
 - Scope questions (fix the symptom vs. fix the architecture)
 
-Say so explicitly: *"Root cause identified. The fix requires a design decision — recommend `/grill-me` to work through [specific question]."*
+Say so explicitly: *"Root cause identified. The fix requires a design decision — recommend `/dg:grill-me` to work through [specific question]."*
 
 Don't try to make design decisions during investigation. Diagnose, then hand off.
 

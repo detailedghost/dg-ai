@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /kick or /grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
+description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /dg:kick or /dg:grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
 ---
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -10,26 +10,26 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-# /wayfinder - Chart the Way, Then Walk It
+# /dg:wayfinder - Chart the Way, Then Walk It
 
 A loose idea is too big for one session and wrapped in fog. Find the way to the **destination** before you build. A **map** lists the decisions made and the fog left. **Tickets** are single decisions, each sized for one session. Resolve one ticket per session until no ticket and no fog remain. Then hand off.
 
-**Usage:** `/wayfinder "<loose idea>"` (chart) · `/wayfinder <map-slug> [ticket]` (work) · `/wayfinder -l` (list maps)
+**Usage:** `/dg:wayfinder "<loose idea>"` (chart) · `/dg:wayfinder <map-slug> [ticket]` (work) · `/dg:wayfinder -l` (list maps)
 
 Adapted from Matt Pocock's `wayfinder` (mattpocock/skills). The map lives in local markdown, not on an issue tracker.
 
-## When to use /wayfinder, not that
+## When to use /dg:wayfinder, not that
 
 | Signal | Skill | Why |
 |---|---|---|
-| Big, foggy, needs many sessions of decisions | `/wayfinder` | Decisions come first, across sessions |
-| One feature, shape is clear | `/kick` | Parks a build bundle without a map |
-| One design, fits one session | `/grill-me` | One interview, no map |
-| Something is broken | `/hunt` | Diagnosis, not design |
-| Only a list of open questions in this chat | `/walk` | No durable map needed |
-| Decisions are done, you want to defer the build | `/kick` | Parks a bundle |
+| Big, foggy, needs many sessions of decisions | `/dg:wayfinder` | Decisions come first, across sessions |
+| One feature, shape is clear | `/dg:kick` | Parks a build bundle without a map |
+| One design, fits one session | `/dg:grill-me` | One interview, no map |
+| Something is broken | `/dg:hunt` | Diagnosis, not design |
+| Only a list of open questions in this chat | `/dg:walk` | No durable map needed |
+| Decisions are done, you want to defer the build | `/dg:kick` | Parks a bundle |
 
-Wayfinder ends where `/kick` starts. Never build inside a map.
+Wayfinder ends where `/dg:kick` starts. Never build inside a map.
 
 ## Flags
 
@@ -50,7 +50,7 @@ Wayfinder ends where `/kick` starts. Never build inside a map.
 
 ## Where the map lives
 
-`$(~/.dg/bin/dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `~/.dg/bin/dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$(~/.dg/bin/dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `~/.dg/bin/dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/dg:agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 
@@ -71,5 +71,5 @@ Every ticket closed, **Not yet specified** empty. Then offer:
 
 | Next | When |
 |---|---|
-| `/kick "<destination>"` | Destination is a feature or a change in place. Pass the map path as input context. |
-| `/grill-me` | One design question is still open. Finish it before kicking. |
+| `/dg:kick "<destination>"` | Destination is a feature or a change in place. Pass the map path as input context. |
+| `/dg:grill-me` | One design question is still open. Finish it before kicking. |

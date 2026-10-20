@@ -48,4 +48,4 @@ For a chosen candidate, the design conversation should produce a migration plan 
 1. **Move tests to the new seam** — write at the deepened interface. Old shallow-module tests get deleted, not preserved.
 1. **Cut over** — replace shallow callers with the deep interface. Delete the old modules. Run the deletion test mentally to confirm nothing was load-bearing that the new interface doesn't cover.
 
-This path can be expressed as vertical slices in the `/kick` bundle once the design is final.
+This path can be expressed as vertical slices in the `/dg:kick` bundle once the design is final.

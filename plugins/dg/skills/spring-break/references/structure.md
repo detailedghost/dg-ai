@@ -57,7 +57,7 @@ Rules: Flat list. No sub-headings, no YAML frontmatter. One line per entry: `- [
 
 ## Spec Artifact Migration
 
-One-time per-project migration of retired `/create-spec` artifacts into `/spec`'s bundle layout.
+One-time per-project migration of retired `/create-spec` artifacts into `/dg:spec`'s bundle layout.
 Idempotent — re-running skips any bundle that already exists at its target path.
 
 ### Old → New Mapping
@@ -88,13 +88,13 @@ Idempotent — re-running skips any bundle that already exists at its target pat
   absent from `frontmatter-schema.yaml` (e.g. `prototypes_run`) directly from the frontmatter block.
 - Run `~/.dg/bin/dg-skills spec validate <bundle>/plan.md` after normalizing. Surface any remaining violations in
   the report (SKILL.md Step 6) instead of fixing them silently — some legacy fields need a human call.
-- After the move, run `~/.dg/bin/dg-skills spec context <bundle>` to produce `context.md` so `/spec -s <NNN>_<slug>`
+- After the move, run `~/.dg/bin/dg-skills spec context <bundle>` to produce `context.md` so `/dg:spec -s <NNN>_<slug>`
   can pick the bundle up.
 - If `.agents/spec/<NNN>_<slug>/plan.md` already exists, skip that bundle — already migrated, no-op.
 - While merging school learnings (SKILL.md Step 3), also drop any entries that reference the retired
-  `/create-spec` workflow — superseded by `/spec`.
+  `/create-spec` workflow — superseded by `/dg:spec`.
 - Ownership: spring-break creates spec bundles here for migration only, never edits one it didn't
-  just migrate. Ongoing bundle authoring (new specs, `plan.md`/`context.md` updates) is `/spec`'s job.
+  just migrate. Ongoing bundle authoring (new specs, `plan.md`/`context.md` updates) is `/dg:spec`'s job.
 
 ## Protected Files (do NOT touch)
 

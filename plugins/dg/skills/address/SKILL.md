@@ -1,15 +1,15 @@
 ---
 name: address
-description: Address PR review comments AND failing CI/CD checks — route fixes to agent(s), QA, document, commit, push, reply+resolve threads. (Use /catchup for merge conflicts and rebasing — not this skill.)
+description: Address PR review comments AND failing CI/CD checks — route fixes to agent(s), QA, document, commit, push, reply+resolve threads. (Use /dg:catchup for merge conflicts and rebasing — not this skill.)
 ---
 
 # Skill: Address
 
 Fix PR review comments, CI/CD failures, and local code-review findings. Test-first for code changes, QA, commit, push, reply+resolve threads.
 
-**Scope:** `/address` = review + CI + local. `/catchup` = merge conflicts and rebasing.
+**Scope:** `/dg:address` = review + CI + local. `/dg:catchup` = merge conflicts and rebasing.
 
-**Usage:** `/address [-l] [-a <agent>[,agent2,...]] [-m "<context>"] [--round N] [--verdicts <path>] [--no-ci]`
+**Usage:** `/dg:address [-l] [-a <agent>[,agent2,...]] [-m "<context>"] [--round N] [--verdicts <path>] [--no-ci]`
 
 ## Runtime and skill paths
 

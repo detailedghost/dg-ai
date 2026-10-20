@@ -26,7 +26,7 @@ calls, so there is no "cd once and stay." `ExitWorktree` has no role here either
 `EnterWorktree` *this session* performed, and this session never does, so calling it is a documented
 no-op (see `finish.md` step 8d).
 
-The helper owns all mechanics — path layout, branch naming, env-file seeding, permissive resume (re-running `/sdlc` with the same slug resumes the worktree silently), dirty-state warnings. Full surface: [worktree skill](../../worktree/SKILL.md).
+The helper owns all mechanics — path layout, branch naming, env-file seeding, permissive resume (re-running `/dg:sdlc` with the same slug resumes the worktree silently), dirty-state warnings. Full surface: [worktree skill](../../worktree/SKILL.md).
 
 > **GATE:** worktree exists, branch checked out, `WORKTREE_PATH` bound (or `-T`: on a non-default branch).
 
@@ -35,7 +35,7 @@ The helper owns all mechanics — path layout, branch naming, env-file seeding, 
 Compute paths from the launch directory — `git worktree list` returns the same result regardless of
 which of the repo's worktrees it runs from, so this needs no `cd`. These go to the **durable** root
 keyed by the main worktree: for a
-bare `/sdlc` run this ephemeral spec is the only record of `worktree.path`, so losing it to a
+bare `/dg:sdlc` run this ephemeral spec is the only record of `worktree.path`, so losing it to a
 reboot orphans the worktree, and the origin repo must resolve the same path to clean it up.
 
 ```sh
@@ -74,7 +74,7 @@ slices:
     files: ["<glob>"]
     agents: {}
 ---
-# <feature> — /sdlc run
+# <feature> — /dg:sdlc run
 
 ## Purpose
 <the brief verbatim, plus a one-paragraph derived scope>
@@ -97,22 +97,22 @@ slices:
 ## Issues Remediation
 ```
 
-Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/assign` and `~/.dg/bin/dg-skills spec get` work unchanged on the scratch file.
+Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/dg:assign` and `~/.dg/bin/dg-skills spec get` work unchanged on the scratch file.
 
 > **GATE:** spec written to scratch; frontmatter parses; `slices[]` non-empty.
 
-## Step 3 — /assign + launch gate
+## Step 3 — /dg:assign + launch gate
 
-Invoke the **`/assign` skill** on `$SPEC_PATH` — it reads the live roster and fills `slices[].agents` (primary, optional qa/effort/proxy) in the frontmatter. Do not reimplement its pick logic. Pass the path, not a prose brief: an existing file is what selects `/assign`'s spec-annotation mode, and only that mode writes the picks back for the slice-wave workflow to read.
+Invoke the **`/dg:assign` skill** on `$SPEC_PATH` — it reads the live roster and fills `slices[].agents` (primary, optional qa/effort/proxy) in the frontmatter. Do not reimplement its pick logic. Pass the path, not a prose brief: an existing file is what selects `/dg:assign`'s spec-annotation mode, and only that mode writes the picks back for the slice-wave workflow to read.
 
 Then present ONE `AskUserQuestion` — the only human gate before step 7's review:
 
 - Show the slice plan: names, dependency layers, assigned agents.
 - Show a rough token estimate: each slice runs Red + Yellow + Green + wave (+ per-slice `qa[]`) ≈ 5–8 agent calls, mostly sonnet-tier; correction rounds add more. Flag anything token-heavy per the global token-cost gate.
-- Ask to grant the run-unattended permission set (same keys as `/spec`, all-or-choose): `run_commands`, `git_push`, `gh_pr_create`, `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Write the granted booleans into the spec's `permissions:` block.
+- Ask to grant the run-unattended permission set (same keys as `/dg:spec`, all-or-choose): `run_commands`, `git_push`, `gh_pr_create`, `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Write the granted booleans into the spec's `permissions:` block.
 
 The waves run unattended — a permission not granted here means a mid-run prompt.
 
-Decline → stop cleanly: worktree + ephemeral spec are retained; re-running `/sdlc` with the same slug resumes.
+Decline → stop cleanly: worktree + ephemeral spec are retained; re-running `/dg:sdlc` with the same slug resumes.
 
 > **GATE:** every slice has `agents.primary`, permissions explicit, user approved launch.

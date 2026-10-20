@@ -3,20 +3,20 @@ name: hunt
 description: Structured codebase bug hunt and root-cause diagnosis. Triages the issue, runs parallel evidence-gathering agents, synthesizes a diagnosis report. Use when something "fails", "broke", "doesn't work", or needs diagnosis.
 ---
 
-# /hunt — Codebase Bug Hunt & Diagnosis
+# /dg:hunt — Codebase Bug Hunt & Diagnosis
 
 Cross-examine the codebase — not the user — until the root cause is found or confidently narrowed. You are a diagnostician, not an interviewer.
 
-**Usage:** `/hunt [description of the failure or issue]`
+**Usage:** `/dg:hunt [description of the failure or issue]`
 
-## When to use /hunt vs /grill-me
+## When to use /dg:hunt vs /dg:grill-me
 
 | Signal | Skill | Why |
 |--------|-------|-----|
-| Something is broken/failing/wrong | `/hunt` | Interrogate the **code** for evidence |
-| Designing something new or changing behavior | `/grill-me` | Interrogate the **user** for intent |
-| Hunt surfaces a design gap | `/hunt` → recommend `/grill-me` | Diagnosis done — now design the fix |
-| Design interview hits an existing bug | `/grill-me` → recommend `/hunt` | Pause design — diagnose first |
+| Something is broken/failing/wrong | `/dg:hunt` | Interrogate the **code** for evidence |
+| Designing something new or changing behavior | `/dg:grill-me` | Interrogate the **user** for intent |
+| Hunt surfaces a design gap | `/dg:hunt` → recommend `/dg:grill-me` | Diagnosis done — now design the fix |
+| Design interview hits an existing bug | `/dg:grill-me` → recommend `/dg:hunt` | Pause design — diagnose first |
 
 ## Reference Files (lazy-load)
 

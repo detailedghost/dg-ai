@@ -1,6 +1,6 @@
 ---
 name: what-changed
-description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /demo on the user-visible changes after the notes; an optional range argument overrides the default range.
+description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/dg:what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /dg:demo on the user-visible changes after the notes; an optional range argument overrides the default range.
 ---
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -21,7 +21,7 @@ Draft notes grounded in the code that actually belongs to the release.
 | `-t`, `--technical` (default) | Engineers | Changes by Conventional Commit type and scope, with PR numbers and links. Breaking changes and migration steps. Config and env var changes. Infra and deploy notes. Dependency bumps. |
 | `-n`, `--nontechnical` | Non-engineers | User-facing changes grouped as New, Improved, Fixed. No commit types, internal refactors, CI, chores or dependency bumps unless users can see the effect. Short plain sentences, no jargon. |
 | `-t -n` | Both | Both sections in one output, technical first. |
-| `-d`, `--demo` | Any | After the notes, demo the user-visible changes with `/demo`. See step 6. Combines with any audience flag. |
+| `-d`, `--demo` | Any | After the notes, demo the user-visible changes with `/dg:demo`. See step 6. Combines with any audience flag. |
 | `<range>` | Any | An explicit range, tag, commit or date. It overrides the default range. |
 
 With neither audience flag, use `--technical`.

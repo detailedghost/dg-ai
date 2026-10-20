@@ -110,5 +110,5 @@ One entry per decision:
 `Applies to` is written at step 3d, once slice ids exist. A decision that ends up applying to
 exactly one slice failed gate 1 in hindsight — drop it and let that slice's engineer decide.
 
-Downstream, this section is read by each slice's engineer (`/sdlc`'s `slice-engineering.md` and
+Downstream, this section is read by each slice's engineer (`/dg:sdlc`'s `slice-engineering.md` and
 `slice-engineering-proxy.md` both list it), and checked against per-slice reviews at step 5.

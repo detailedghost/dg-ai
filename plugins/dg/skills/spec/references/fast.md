@@ -1,9 +1,9 @@
 # Fast Mode — the `--fast` contract
 
 One chat, one gate. Fast mode collapses plan mode's four grill passes into one, drops every
-fan-out, replaces the `/viz` board with **built-in Claude plan mode**, and then builds the slices
+fan-out, replaces the `/dg:viz` board with **built-in Claude plan mode**, and then builds the slices
 **sequentially in the main loop** — compacting between them instead of spending a subagent wave per
-slice. The bundle is still durable, so a fast run is resumable with `/spec -s` if it is interrupted.
+slice. The bundle is still durable, so a fast run is resumable with `/dg:spec -s` if it is interrupted.
 
 `FAST_MODE = HAS(--fast | -f)`. Mutually exclusive with `-s` — if both are present, stop and ask
 which the user meant. `NO_WORKTREE = HAS(-T | --no-worktree)`, valid **only** alongside `--fast`.
@@ -47,13 +47,13 @@ the bundle will, so that approving it is approving the real artifact:
 - Any surviving code-structure decisions from F2 topic 2.
 - The token/context cost estimate, per the global token-cost gate.
 - **The permission set, spelled out in plain words** — `run_commands`, `git_push`, `gh_pr_create`,
-  `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Fast mode folds `/sdlc` setup.md
+  `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Fast mode folds `/dg:sdlc` setup.md
   Step 3's separate permission prompt into this one gate, so approval **is** the grant. If the plan
   file does not list them, that fold has not happened and you must ask separately at F6.
 
 ## F4 — `ExitPlanMode` — the only gate before code
 
-`ExitPlanMode` is fast mode's approval gate. It **replaces** plan.md step 8 entirely: no `/viz`
+`ExitPlanMode` is fast mode's approval gate. It **replaces** plan.md step 8 entirely: no `/dg:viz`
 board is rendered, `viz.md` is not read, and no `all_clear` probe runs.
 
 Rejection or requested changes → stay in plan mode, revise the plan file, exit again. Never
@@ -72,15 +72,15 @@ scaffold against an unapproved plan.
   overlap.
 - b. `~/.dg/bin/dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>` → prints
   `<bundle>` (`.agents/spec/<NNN>_<slug>/`).
-- c. `/assign <bundle>/plan.md` — fills `slices[].agents`. Not optional: F7 reads `agents.primary`
-  for its escape hatch, and a resumed `/spec -s` needs it.
+- c. `/dg:assign <bundle>/plan.md` — fills `slices[].agents`. Not optional: F7 reads `agents.primary`
+  for its escape hatch, and a resumed `/dg:spec -s` needs it.
 - d. Code-structure decisions, if F2 produced any that span more than one slice:
   `~/.dg/bin/dg-skills spec append-section <bundle>/plan.md --section "Code Structure" "<body>"`.
 - e. `~/.dg/bin/dg-skills spec perms-batch <bundle>/plan.md --grant-all` — persists the set F3 listed and F4
   approved.
 - f. `~/.dg/bin/dg-skills spec context <bundle>` → `context.md`. **Required**, not optional as it might look in a
   single-session run: it is what F7 re-orients from after each compaction.
-- g. Commit: `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): plan <slug>"` (`-f` because `/agent-seed` ignores `.agents/`).
+- g. Commit: `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): plan <slug>"` (`-f` because `/dg:agent-seed` ignores `.agents/`).
   Mandatory in worktree mode — a worktree branches off freshly fetched `origin` and cannot see an
   uncommitted bundle (see [execute.md](execute.md) § *Bundle-visibility gotcha*).
 
@@ -113,7 +113,7 @@ the main worktree rather than the cwd):
 SCRATCH_PATH="$(~/.dg/bin/dg-skills stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
-Skip `/sdlc` setup.md Step 2 (slice derivation) and Step 3 (assignment) — F2–F5 already did both.
+Skip `/dg:sdlc` setup.md Step 2 (slice derivation) and Step 3 (assignment) — F2–F5 already did both.
 Ask Step 3's permission question **only** if F3 failed to list the set.
 
 > **GATE:** on a feature branch (worktree or `-T`); `SPEC_PATH`/`SCRATCH_PATH` bound.
@@ -130,7 +130,7 @@ Per slice:
 1. **Re-orient from disk, not memory.** Read `context.md` and the slice's own blocks
    (`~/.dg/bin/dg-skills spec slice "$SPEC_PATH" <id>`). After a compaction the earlier slices are gone from
    context — that is the design, and F5f is why it is safe.
-2. **Red.** Write the failing tests from the slice's `### Contracts` first, per `/standard-test`.
+2. **Red.** Write the failing tests from the slice's `### Contracts` first, per `/dg:standard-test`.
 3. **Green.** Implement until they pass; run the project's test and lint commands.
 4. **Commit the slice** — Conventional Commits, scope required (e.g. `feat(<scope>): <slice name>`).
    Silent when `permissions.slice_commits`.
@@ -160,16 +160,16 @@ as written. Fast mode trims planning, never the end gates:
 |---|---|
 | 5 | Final review + bounded correction (max 2 rounds), commit fixes |
 | 6 | Test-name gate, then `lore` docs pass, commit docs |
-| 7 | Human review gate per `REVIEW_MODE` — `pr` (default) moves it onto the PR/MR; `-l`/`--local` keeps the **blocking** `/review`, which no permission flag can then bypass |
+| 7 | Human review gate per `REVIEW_MODE` — `pr` (default) moves it onto the PR/MR; `-l`/`--local` keeps the **blocking** `/dg:review`, which no permission flag can then bypass |
 | 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr --draft` |
 
 Fast mode trims planning, never the end gates. What `pr` mode changes is *where* the human reads
 the diff, not whether steps 5–6 hold: the agent reviews, the test-name gate and the docs pass all
 still gate step 8, exactly as in full mode.
 
-The `/spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR always opens
+The `/dg:spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR always opens
 `--draft`, the browser-open in `finish.md` step 8f runs afterward, and step 8d persists the URL to
-`worktree.pr_url` in `plan.md`. Step 8f owns the group name — [`/pushup`](../../pushup/SKILL.md)
+`worktree.pr_url` in `plan.md`. Step 8f owns the group name — [`/dg:pushup`](../../pushup/SKILL.md)
 carries the same mechanics for an ad-hoc branch, but this path never forks to it.
 
 - **Worktree mode:** print step 8d's line for the active mode. There is no `ExitWorktree` call to
@@ -177,7 +177,7 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 - **`-T` mode:** there is no worktree to leave — skip step 8d and print
   `"PR/MR opened (draft): <url>."`, adding `pr` mode's review pointer when that mode is active.
 
-> **GATE:** in `local` mode, `/review` approved first. Either mode: draft PR/MR opened, URL
+> **GATE:** in `local` mode, `/dg:review` approved first. Either mode: draft PR/MR opened, URL
 > captured, browser group opened.
 
 ## What fast mode trades away
@@ -187,15 +187,15 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 | Separate `arch` / structure / `foreman` interview passes | plan.md steps 1, 1.5, 2 |
 | Per-slice review fan-out | plan.md step 5 |
 | foreman synthesis + gaps pass | plan.md step 6 |
-| `/viz` plan-approval board | plan.md step 8, viz.md |
-| `/proxy` slice delegation | plan.md step 7c |
+| `/dg:viz` plan-approval board | plan.md step 8, viz.md |
+| `/dg:proxy` slice delegation | plan.md step 7c |
 | Parallel slice waves (Red→Yellow→Green→MiniQA) | engineering.md §4 |
 | The plan/execute session boundary | plan.md step 10 |
 
-**Use full `/spec` instead when** the feature spans more than three or four slices, touches
+**Use full `/dg:spec` instead when** the feature spans more than three or four slices, touches
 architecture across module boundaries, lands in a codebase area you have not read, or is worth an
 independent review of each slice before any code is written. Fast mode is for work you could
 already describe accurately in one sitting.
 
-An interrupted fast run is not lost: the bundle was committed at F5g, so `/spec -s <NNN>_<slug>`
+An interrupted fast run is not lost: the bundle was committed at F5g, so `/dg:spec -s <NNN>_<slug>`
 resumes it through the normal execute path (which then uses the slice-wave, not F7).

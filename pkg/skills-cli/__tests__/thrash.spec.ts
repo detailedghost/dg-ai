@@ -1286,7 +1286,7 @@ describe("compiled thrash workflow", () => {
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
-		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/address -l`");
+		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
 		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
 			basename(String(entry)),
 		);
@@ -1373,7 +1373,7 @@ describe("compiled thrash workflow", () => {
 			"utf8",
 		);
 		const template = reference.match(
-			/```text\n(You are running inside \/thrash\.[\s\S]*?)\n```/,
+			/```text\n(You are running inside \/dg:thrash\.[\s\S]*?)\n```/,
 		)?.[1];
 		expect(template).toBeDefined();
 		const prompt = template!

@@ -1,4 +1,4 @@
-# `/monolith` orchestration protocol
+# `/dg:monolith` orchestration protocol
 
 Phase-by-phase recipe for the orchestrator. The orchestrator (main agent) does no synthesis — it only dispatches agents and runs the helper. All term writing happens in the `lore` agent.
 
@@ -8,15 +8,15 @@ Helper: `~/.dg/bin/dg-skills monolith` — run it with `--help` for the full sub
 
 Inputs: `--shallow` / `-s` (bool), `--prune` (bool). They are independent.
 
-`--shallow` follows the same convention as `/kick --shallow` and `/pickup --shallow`: output under `$(~/.dg/bin/dg-skills stash -r -s)` instead of the repo, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit. Use it for first-pass scans on repos without `.agents/` infrastructure or for throwaway exploration. Resume the same shallow file by re-running `/monolith --shallow` from the same repo.
+`--shallow` follows the same convention as `/dg:kick --shallow` and `/dg:pickup --shallow`: output under `$(~/.dg/bin/dg-skills stash -r -s)` instead of the repo, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit. Use it for first-pass scans on repos without `.agents/` infrastructure or for throwaway exploration. Resume the same shallow file by re-running `/dg:monolith --shallow` from the same repo.
 
-`--shallow` ALSO reduces scan parallelism to a single Explore agent. The two behaviors are fused — you cannot have one without the other. To go full → shallow, just delete `.agents/monolith.md` and run `/monolith --shallow`. To promote shallow → full, copy `$(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md` to `.agents/monolith.md` and run `/monolith` (no flag) to refresh.
+`--shallow` ALSO reduces scan parallelism to a single Explore agent. The two behaviors are fused — you cannot have one without the other. To go full → shallow, just delete `.agents/monolith.md` and run `/dg:monolith --shallow`. To promote shallow → full, copy `$(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md` to `.agents/monolith.md` and run `/dg:monolith` (no flag) to refresh.
 
 If `--prune` is set:
 
 1. Run `~/.dg/bin/dg-skills monolith prune <MONOLITH_PATH>` where `<MONOLITH_PATH>` comes from a `bootstrap` call (also passing `--shallow` if the user did). Capture stdout (removed term names).
 2. Run `~/.dg/bin/dg-skills monolith validate <MONOLITH_PATH>`.
-3. Print "`/monolith --prune`: removed N entries" + the removed list.
+3. Print "`/dg:monolith --prune`: removed N entries" + the removed list.
 4. Exit. Do not scan, do not invoke agents.
 
 Otherwise continue with Phase 1.
@@ -44,7 +44,7 @@ EXISTING_TERMS=$(~/.dg/bin/dg-skills monolith list-terms "$MONOLITH_PATH")
 
 ## Phase 1.4 — Worktree routing
 
-Scanners search from the session cwd — for a worktree workflow (`/pickup -t`) that's usually the MAIN checkout on another branch, so the stock scan misses branch-local code. Detect a linked worktree:
+Scanners search from the session cwd — for a worktree workflow (`/dg:pickup -t`) that's usually the MAIN checkout on another branch, so the stock scan misses branch-local code. Detect a linked worktree:
 
 ```sh
 [ "$LIGHT_MODE" = "1" ] && REPO_ROOT="$ORIGIN_REPO" || REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$MONOLITH_PATH")/.." && pwd)
@@ -82,7 +82,7 @@ Set `model: "haiku"` on scanner agents — they're doing extraction (read code �
 
 ## Phase 2-3 — Scan + Consolidate (Workflow)
 
-Scanning and synthesis run as a single background **Workflow**. Invoking `/monolith`
+Scanning and synthesis run as a single background **Workflow**. Invoking `/dg:monolith`
 *is* the opt-in to the Workflow tool — no extra keyword needed. The scanner and
 `lore` prompts live inside the script (`references/scan.workflow.mjs`), so they no
 longer bloat this protocol or the orchestrator's context window. The orchestrator's
@@ -231,14 +231,14 @@ into `general` too, so the split never scatters single rows across files.
 - `0` — split written, every domain file under cap
 - `1` — every row landed in one domain, so splitting would gain nothing. Leave the file
   whole and warn: `"Vocabulary file at <bytes> bytes is over the 6 KB soft cap and is
-  single-domain. Consider /monolith --prune or hand-trim."`
+  single-domain. Consider /dg:monolith --prune or hand-trim."`
 - `2` — split written but a domain file is still over cap. Accept and warn, naming the
   domains it printed on stderr. Do not loop, and do not split a domain file again.
 
 Cross-domain sections (`Relationships`, `Flagged Ambiguities`) stay on the index,
 because they reference terms from more than one domain.
 
-**Once split, the layout is the steady state.** A later `/monolith` run appends to the
+**Once split, the layout is the steady state.** A later `/dg:monolith` run appends to the
 index as usual and Phase 4 re-splits, which is idempotent: rows return to the same
 domain files. Anything that reads the vocabulary should follow the index table rather
 than assuming every term lives in `monolith.md`.
@@ -254,7 +254,7 @@ if [ "$LIGHT_MODE" = "0" ]; then
     ~/.dg/bin/dg-skills monolith patch-pointer CLAUDE.md
     POINTER_TARGET=CLAUDE.md
   else
-    echo "warn: no AGENTS.md or CLAUDE.md found — agents won't auto-discover monolith.md. Run /agent-seed to formalize, or add a pointer by hand." >&2
+    echo "warn: no AGENTS.md or CLAUDE.md found — agents won't auto-discover monolith.md. Run /dg:agent-seed to formalize, or add a pointer by hand." >&2
     POINTER_TARGET=
   fi
 fi
@@ -276,7 +276,7 @@ Print a one-paragraph summary covering:
 End with the path to the file:
 
 - Standard: `Wrote .agents/monolith.md (<bytes> bytes).`
-- Shallow: `Wrote $(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md (<bytes> bytes, uncommitted). Re-run /monolith --shallow from this repo to refresh; promote with cp + /monolith when ready.`
+- Shallow: `Wrote $(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md (<bytes> bytes, uncommitted). Re-run /dg:monolith --shallow from this repo to refresh; promote with cp + /dg:monolith when ready.`
 
 ## Notes
 

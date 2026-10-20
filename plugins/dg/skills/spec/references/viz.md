@@ -1,7 +1,7 @@
 # viz integration — plan-verify board (plan.md step 8)
 
 Stripped descendant of its predecessor's `viz.md` — that file mapped a board primitive to every
-phase boundary; `/spec` only ever renders **one** board, the plan-approval verify at step 8. There
+phase boundary; `/dg:spec` only ever renders **one** board, the plan-approval verify at step 8. There
 is no per-phase map here.
 
 Run `~/.dg/bin/dg-skills viz doctor --json` first (see the [viz skill](../../viz/SKILL.md)); on probe failure announce

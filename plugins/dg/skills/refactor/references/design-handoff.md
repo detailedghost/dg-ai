@@ -1,4 +1,4 @@
-# /refactor Design & Hand-off Reference
+# /dg:refactor Design & Hand-off Reference
 
 Covers the design conversation template, hand-off mechanics, and rules. Load after the candidate gate (Step 4).
 
@@ -6,10 +6,10 @@ Covers the design conversation template, hand-off mechanics, and rules. Load aft
 
 ## §4 — Design Conversation
 
-Invoke `/grill-me` with the chosen candidate as the topic argument:
+Invoke `/dg:grill-me` with the chosen candidate as the topic argument:
 
 ```
-/grill-me Refactor candidate: <header>. <label>. <full description>. Walk the design tree: constraints, dependencies (classify per references/deepening.md: in-process / local-substitutable / ports-and-adapters / true-external), deepened-module shape, seam placement, what tests survive, migration path.
+/dg:grill-me Refactor candidate: <header>. <label>. <full description>. Walk the design tree: constraints, dependencies (classify per references/deepening.md: in-process / local-substitutable / ports-and-adapters / true-external), deepened-module shape, seam placement, what tests survive, migration path.
 ```
 
 During the conversation:
@@ -30,7 +30,7 @@ Write design summary to `$(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`, th
 
 | Option | Effect |
 |---|---|
-| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug> --from $(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`. The design summary file is the request. Engineering waits. |
+| **Park via `/dg:kick` (Recommended)** | Hand off to `/dg:kick <slug> --from $(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`. The design summary file is the request. Engineering waits. |
 | **Just print the design** | Echo the summary path. No bundle, no commit. The user picks it up later. |
 
 **GATE:** Hand-off path printed; design summary file exists at `$(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`.

@@ -23,7 +23,7 @@ Slice rows come from `payload.review.slices` (`{id, name, label, description?, f
 
 ## Demo attachment (`--demo`)
 
-A review board can lead with the feature actually working — pass `--demo <assets-dir>` (plus optional `--demo-caption "<text>"`) pointing at a directory of `/demo` output, conventionally `$(~/.dg/bin/dg-skills stash -G demo)/`. It renders as its own **Demo** tab, not a section above the diff:
+A review board can lead with the feature actually working — pass `--demo <assets-dir>` (plus optional `--demo-caption "<text>"`) pointing at a directory of `/dg:demo` output, conventionally `$(~/.dg/bin/dg-skills stash -G demo)/`. It renders as its own **Demo** tab, not a section above the diff:
 
 ```sh
 ~/.dg/bin/dg-skills viz review --repo "$REPO" --base "$BASE" --head "$HEAD" \
@@ -37,4 +37,4 @@ A review board can lead with the feature actually working — pass `--demo <asse
 - Omit the flag and nothing changes; the tab only exists when `payload.demo` does.
 - Screenshots alone are fine, but a short screen recording carries far more than a slideshow of stills — record one if the flow is worth watching.
 
-Run `/demo` first to produce the assets (it writes to `$(~/.dg/bin/dg-skills stash -G demo)/` and must never write into the git tree), then pass that directory here.
+Run `/dg:demo` first to produce the assets (it writes to `$(~/.dg/bin/dg-skills stash -G demo)/` and must never write into the git tree), then pass that directory here.

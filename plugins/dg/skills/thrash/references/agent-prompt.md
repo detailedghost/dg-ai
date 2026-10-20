@@ -15,7 +15,7 @@ head, the full file list, and the chunk plan. A small diff is one chunk.
 ## Template
 
 ```text
-You are running inside /thrash.
+You are running inside /dg:thrash.
 
 ANNOTATED_DIFF: <chunk annotatedPath>
 FINDINGS_PATH: <chunk findingsPath>

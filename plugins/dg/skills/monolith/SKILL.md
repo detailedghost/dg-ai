@@ -25,7 +25,7 @@ Helper CLI: `~/.dg/bin/dg-skills monolith <subcommand>` (subcommands documented 
 ## Invocation
 
 ```
-/monolith [--shallow | -s] [--prune] [--split]
+/dg:monolith [--shallow | -s] [--prune] [--split]
 ```
 
 - **default:** 3 parallel `Explore` agents → 1 `lore` writer → `.agents/monolith.md`. Patches AGENTS.md (preferred) or CLAUDE.md (fallback) with a vocabulary pointer.

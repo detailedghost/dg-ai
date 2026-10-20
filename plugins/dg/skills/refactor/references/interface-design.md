@@ -8,7 +8,7 @@ Uses the vocabulary in [language.md](language.md) — **module**, **interface**,
 
 ## When to invoke this protocol
 
-Run this only when the user wants to compare alternatives — typically after `/grill-me` has surfaced a real ambiguity in the design tree (e.g. "should this be a port or an internal seam?", "should the interface stream events or batch results?"). For obvious single-design candidates, skip.
+Run this only when the user wants to compare alternatives — typically after `/dg:grill-me` has surfaced a real ambiguity in the design tree (e.g. "should this be a port or an internal seam?", "should the interface stream events or batch results?"). For obvious single-design candidates, skip.
 
 ## Process
 
@@ -58,7 +58,7 @@ After comparing, **give your own recommendation**: which design you think is str
 
 ## Output
 
-The chosen design (single or hybrid) becomes the seed for the rest of the `/refactor` step 4 conversation. From there:
+The chosen design (single or hybrid) becomes the seed for the rest of the `/dg:refactor` step 4 conversation. From there:
 
 - The design summary written at step 5 captures the chosen interface, dependency strategy, and migration path.
-- `/kick` consumes that summary as the request when the user parks the design.
+- `/dg:kick` consumes that summary as the request when the user parks the design.

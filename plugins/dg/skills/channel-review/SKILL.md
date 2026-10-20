@@ -29,7 +29,7 @@ injection in a PR can run any command as you, so use them only on trusted PRs.
 Run the first live test on dev in a test chat with the dev bot.
 
 Teams commands are `$review` (or `$thrash`), `$address`, `$emoji`, and `$help`.
-`$address` runs Claude's `/address` on a fresh clone of the PR branch, pushes the
+`$address` runs Claude's `/dg:address` on a fresh clone of the PR branch, pushes the
 fixes, and puts the approved reaction on your message. Only senders in
 `owner.senderIds` can run it. `$emoji <slot>` sets a custom reaction from the chat.
 Send `$help $review`, `$help $address`, or `$help $emoji` for details.

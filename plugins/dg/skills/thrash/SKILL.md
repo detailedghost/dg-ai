@@ -6,10 +6,10 @@ description: >-
   approve, request-changes, or comment-only. `--spice 1-5` sets how hard the
   review looks and how many findings fail it, not its tone. `--stacked` finds every open PR in the target's
   stack and reviews them all. Pass `.` or a path instead of a URL for a local
-  review that writes findings for `/address -l`.
+  review that writes findings for `/dg:address -l`.
 ---
 
-# /thrash
+# /dg:thrash
 
 Review a diff, tier every finding, post the review with a verdict. A diff over 3000
 changed lines is split into chunks, each reviewed by its own `thrash` agent in parallel
@@ -21,8 +21,8 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 ## Usage
 
 ```
-/thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]
-/thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
+/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]
+/dg:thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
 ```
 
 | Flag | Meaning |
@@ -34,7 +34,7 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 | `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
 | `-t, --min-tier <tier>` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. |
 | `-b, --base <ref>` | Local mode only. Override fork-point detection. |
-| `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
+| `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
 
 ## Verdict rule
 
@@ -101,7 +101,7 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    dedupes against open thrash threads, applies the nit ladder, decides the verdict, and
    prints the preview plus `REVIEW_JSON=` and `VERDICT=`. Show the preview. On a rejected
    or missing file, follow the retry in `references/agent-prompt.md`.
-4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/address -l`, then stop.
+4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/dg:address -l`, then stop.
    `--dry-run`: run `export DG_THRASH_DRY_RUN=1` at the start of the run (every fresh shell),
    and in step 5 call `~/.dg/bin/dg-skills thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
    the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility when `--confirm` was

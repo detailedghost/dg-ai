@@ -20,7 +20,7 @@ Resolve the comments path with `~/.dg/bin/dg-skills stash review-loop <PR>.comme
 ## Prompt Template
 
 ```text
-You are running inside /review-loop Phase 4.
+You are running inside /dg:review-loop Phase 4.
 
 Comments JSON: <absolute comments JSON path resolved by the caller>
 Spec file: <absolute path OR the literal string "none">
@@ -38,7 +38,7 @@ system prompt. No prose, no code fences, no preamble.
 
 ## Verdict Reminder
 
-- `accept` — hand to /address
+- `accept` — hand to /dg:address
 - `reject-illogical` — reply with `reason`, then resolve
 - `reject-other` — resolve silently
 - `strange` — security-sensitive or spec-contradicting; user decides

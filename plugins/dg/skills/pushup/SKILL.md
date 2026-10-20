@@ -4,7 +4,7 @@ description: Push the current branch, open its PR, and drop that PR into a dg:br
 allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(~/.dg/bin/dg-skills:*)
 ---
 
-# /pushup — push, PR, open it
+# /dg:pushup — push, PR, open it
 
 Carries committed work from a feature branch to a PR sitting open in the browser. Assumes the
 commits already have the shape you want them reviewed in.
@@ -12,9 +12,9 @@ commits already have the shape you want them reviewed in.
 ## Usage
 
 ```
-/pushup                 # push, open a PR, open it in the "pr" tab group
-/pushup --draft         # open the PR as a draft
-/pushup --group <name>  # use a different dg:browser tab group
+/dg:pushup                 # push, open a PR, open it in the "pr" tab group
+/dg:pushup --draft         # open the PR as a draft
+/dg:pushup --group <name>  # use a different dg:browser tab group
 ```
 
 ## Steps
@@ -47,6 +47,6 @@ passive rewrite of the same claim. Say what changed and why.
 
 ## Delegation
 
-- Commits in the wrong shape → `/meaningful` first, then come back.
-- 2+ dependent PRs → `/chain`, and the batch-PR approval gate applies before opening any of them.
-- Review comments or failing checks afterwards → `/address`.
+- Commits in the wrong shape → `/dg:meaningful` first, then come back.
+- 2+ dependent PRs → `/dg:chain`, and the batch-PR approval gate applies before opening any of them.
+- Review comments or failing checks afterwards → `/dg:address`.

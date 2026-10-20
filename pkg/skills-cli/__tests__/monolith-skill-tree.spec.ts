@@ -296,6 +296,6 @@ describe("spring-break format contracts", () => {
 	});
 
 	test("it names the monolith and spring-break skills it relates to", () => {
-		expect(allText("spring-break")).toContain("/monolith --prune");
+		expect(allText("spring-break")).toContain("/dg:monolith --prune");
 	});
 });

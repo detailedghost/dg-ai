@@ -83,7 +83,7 @@ shared fixture/test harness serializes against every other slice that does the s
   scanning `.agents/spec/` for `NNN_`-prefixed directories (pre-existing non-numbered dirs coexist
   untouched).
 
-- c. Run `/assign <bundle>/plan.md` — fills `slices[].agents.primary` (+ optional `qa`) per slice
+- c. Run `/dg:assign <bundle>/plan.md` — fills `slices[].agents.primary` (+ optional `qa`) per slice
   against the live roster. Idempotent; does not touch `agents.proxy`/`proxy_skills` (step 7's job).
 
 - d. **Write pass 1.5's structure decisions into `plan.md`.** Skip entirely if step 1.5 collapsed
@@ -131,22 +131,22 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 > **GATE:** synthesis edit list produced; every `[OPEN — escalate]` item resolved to `[DECIDED]`
 > via pass 3 (or explicitly deferred by the user as an `[OPEN — roundtable]` annotation).
 
-## Step 7 — Write `plan.md`; assign `/proxy`; warn token cost
+## Step 7 — Write `plan.md`; assign `/dg:proxy`; warn token cost
 
 - a. Apply step 6's edit list + pass-3 decisions directly to `<bundle>/plan.md` (frontmatter
   `slices[]` adjustments + body section edits) via `Edit`. Annotate any deferred item inline as
   `[OPEN — roundtable] <text>`.
-- b. **Docs + human `/review` fire ONCE at the end of the whole run** — that is already
-  `/sdlc`'s default (see [execute.md](execute.md)). Do NOT embed a review/docs lifecycle per slice
-  here; plan mode does not invoke `/review` at all.
+- b. **Docs + human `/dg:review` fire ONCE at the end of the whole run** — that is already
+  `/dg:sdlc`'s default (see [execute.md](execute.md)). Do NOT embed a review/docs lifecycle per slice
+  here; plan mode does not invoke `/dg:review` at all.
 - c. Ask (batched `AskUserQuestion`, up to 4 slices per call) which slices — if any — to delegate
-  externally via `/proxy`. For each selected slice:
+  externally via `/dg:proxy`. For each selected slice:
   - Validate the backend name against `~/.dg/bin/dg-skills proxy --list-backends`
-    (same validation `/assign` uses for `agents.proxy`). Mismatch → refuse, list valid names.
+    (same validation `/dg:assign` uses for `agents.proxy`). Mismatch → refuse, list valid names.
   - Set `slices[N].agents.proxy: <backend>` via `~/.dg/bin/dg-skills spec set`.
   - Ask which skill-behaviors (e.g. `db`, `polish`) that slice's engineering will need, and set
     `slices[N].agents.proxy_skills: [...]` — see [decision-blob.md](decision-blob.md) for why `-s`
-    must inline these (the `/proxy`-injection limitation).
+    must inline these (the `/dg:proxy`-injection limitation).
 - d. **WARN (don't document)** the execution run's token/context cost: estimate per-slice agent-call
   count (Red + Yellow + Green + wave + any `qa[]`, roughly 5–8 calls per slice, mostly sonnet-tier)
   times the number of slices/layers, flag anything token-heavy per the global token-cost gate, and
@@ -157,7 +157,7 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 > **GATE:** `plan.md` reflects synthesis + pass-3 decisions; every delegated slice has
 > `agents.proxy` + `agents.proxy_skills` set; user has seen the token-cost warning.
 
-## Step 8 — `/viz` verify
+## Step 8 — `/dg:viz` verify
 
 Render `plan.md` as a `template:spec` board and block on approval. Full payload shape + the
 `~/.dg/bin/dg-skills viz wait --merge` / `all_clear` gate: [viz.md](viz.md).
@@ -170,7 +170,7 @@ acceptance, register it onto the slice:
 ~/.dg/bin/dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
-> **GATE:** `/viz` board `all_clear: true` (or terminal-mode `AskUserQuestion` approval on probe
+> **GATE:** `/dg:viz` board `all_clear: true` (or terminal-mode `AskUserQuestion` approval on probe
 > failure). Every accepted prototype registered onto its slice.
 
 ## Step 9 — Context pack
@@ -184,12 +184,12 @@ full planning history.
 
 ## Step 10 — Commit the bundle; print resume command
 
-- a. Commit unconditionally, the same way `/kick` commits a parked bundle:
-  `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): plan <slug>"` (`-f` because `/agent-seed` ignores `.agents/`). This is what
-  lets a bare `/spec "<request>"` run be resolved cross-session — `/spec -s`'s worktree-mode bundle
+- a. Commit unconditionally, the same way `/dg:kick` commits a parked bundle:
+  `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): plan <slug>"` (`-f` because `/dg:agent-seed` ignores `.agents/`). This is what
+  lets a bare `/dg:spec "<request>"` run be resolved cross-session — `/dg:spec -s`'s worktree-mode bundle
   lookup reads `$WORKTREE_ORIGIN`, which only sees committed `.agents/` state (see
   [execute.md](execute.md)'s worktree gotcha).
-- b. Print: `"Spec bundle ready at .agents/spec/<NNN>_<slug>/. Resume engineering with: /spec -s <NNN>_<slug>"`
+- b. Print: `"Spec bundle ready at .agents/spec/<NNN>_<slug>/. Resume engineering with: /dg:spec -s <NNN>_<slug>"`
 
 Do not proceed into execute mode automatically — resuming is a separate, explicit invocation (a
 new session may run it, per the read-boundary this bundle exists to create).

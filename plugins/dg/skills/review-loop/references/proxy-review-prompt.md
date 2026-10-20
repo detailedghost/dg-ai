@@ -4,7 +4,7 @@
 
 Read this only when Proxy-Mode Workflow Phase 3 fires (see
 [proxy-workflow.md](proxy-workflow.md)). The recipient is an
-**external CLI coding agent** run via `/proxy`.
+**external CLI coding agent** run via `/dg:proxy`.
 It starts with zero conversation context and has its own command and file tools, so the prompt below must be fully self-contained.
 
 ## Invocation
@@ -64,22 +64,22 @@ scratch file; never put either in a shell string.
 
 ## Finding Format Contract
 
-The format above matches what `/address` Phase 1c
+The format above matches what `/dg:address` Phase 1c
 ([../../address/references/workflow.md](../../address/references/workflow.md)) already parses out of
 `.agents/code-review/*.md` — `path`, `line`, `body`, `severity`. Do not
-invent a different shape; `/address`'s local-review ingestion is the
+invent a different shape; `/dg:address`'s local-review ingestion is the
 only consumer.
 
 ## Result Handling After Return
 
-Follow `/proxy`'s own result-handling rules ([../../proxy/SKILL.md](../../proxy/SKILL.md#result-handling))
+Follow `/dg:proxy`'s own result-handling rules ([../../proxy/SKILL.md](../../proxy/SKILL.md#result-handling))
 verbatim — backend installation guidance, success, clarifying question, `model`/`effort`
 error, `other` error. This file only supplies the review-specific
 prompt content; pass real resolved absolute paths to the backend, never literal
 shell substitutions. The background-invoke and result-handling mechanics
-are `/proxy`'s, not reimplemented here.
+are `/dg:proxy`'s, not reimplemented here.
 
 After a successful return, Proxy-Mode Workflow Phase 4 decides
-close-out vs. hand-off to `/address` based on whether `reviewFile`
+close-out vs. hand-off to `/dg:address` based on whether `reviewFile`
 exists and is non-empty — this file's job ends once the prompt has
 been sent.

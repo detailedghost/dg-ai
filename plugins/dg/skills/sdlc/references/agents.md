@@ -1,13 +1,13 @@
 # Execution Agents — Directives & Protocols
 
-Canonical agent guide for the execution lifecycle. Planning-side agent guidance (roundtable, foreman, spec review) lives in `/spec`'s references; this file covers everything execution-side.
+Canonical agent guide for the execution lifecycle. Planning-side agent guidance (roundtable, foreman, spec review) lives in `/dg:spec`'s references; this file covers everything execution-side.
 
 ## Stage roster
 
 | Stage | Agent | Model | Focus |
 |---|---|---|---|
 | Red / Green | **qa-writer** | sonnet | Failing tests from Contracts (red), coverage gaps (green) |
-| Yellow (engineering) | `slices[].agents.primary` — picked by `/assign` | per-agent pin | Full vertical slice: data → logic → API → UI |
+| Yellow (engineering) | `slices[].agents.primary` — picked by `/dg:assign` | per-agent pin | Full vertical slice: data → logic → API → UI |
 | MiniQA | **wave** + `slices[].agents.qa[]` + **security** (when slice flags `securitySensitive`) | haiku / varies | Light review + checkpoint audit |
 | Correction | responsible engineering agent or **qa-writer** | as assigned | Fix routed findings only |
 | Final review | **reviewer**, **qa-perf**, **qa-devops**, **security** | sonnet | Style, logic, coverage, perf, build, OWASP |

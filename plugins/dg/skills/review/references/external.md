@@ -116,7 +116,7 @@ gh api "repos/$OWNER/$REPO_NAME/pulls/$PR_NUMBER/reviews" --method POST --input 
 `commit_id` is `$HEAD_SHA` (the PR's `headRefOid` from step 1) — not a local ref name. GitHub
 requires a non-empty `body` for `REQUEST_CHANGES` and `COMMENT` events (empty is fine for
 `APPROVE`); if `summary` and every file-scoped note are both empty, fall back to a minimal body
-(e.g. `"Reviewed via /review -x."`) rather than let the POST 422.
+(e.g. `"Reviewed via /dg:review -x."`) rather than let the POST 422.
 
 **Off-by-one caveat:** `lineNumber` values came from the board's own diff parser
 (`ReviewSection.astro`'s `parsePatch`), which already tracks old/new line numbers correctly through

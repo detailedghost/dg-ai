@@ -32,7 +32,7 @@ Write to `$(~/.dg/bin/dg-skills stash -G viz <slug>/payload.json)` (the temp `VI
   "decisions": [{"question":"...","answer":"","rationale":"","options":["A","B"]}],
   "checklist": [{"id":"ac-1","text":"...","done":false}],
   "open_questions": ["..."],
-  "start_command": "/pickup my-slug",
+  "start_command": "/dg:pickup my-slug",
   "live_command": "…optional override for the live-update command shown when complete"
 }
 ```
@@ -41,7 +41,7 @@ Write to `$(~/.dg/bin/dg-skills stash -G viz <slug>/payload.json)` (the temp `VI
 
 **Progress bar is phase-aware.** While decisions/open-questions remain, the bar shows **Planning** progress (answered / total). Once all are resolved it flips to **Implementation** progress (phase completion) and the planning sections collapse. Drive implementation live with `~/.dg/bin/dg-skills viz phase <slug> <phase-id> <status>` — the open board refreshes in place.
 
-**Start-work banner.** When a plan's decisions are all resolved (or a spec is `complete`), the board shows a copyable start command (`start_command`, default `/pickup <slug>`) plus a live-update variant that streams phase status back into the board. Override either with `start_command` / `live_command`.
+**Start-work banner.** When a plan's decisions are all resolved (or a spec is `complete`), the board shows a copyable start command (`start_command`, default `/dg:pickup <slug>`) plus a live-update variant that streams phase status back into the board. Override either with `start_command` / `live_command`.
 
 ## recap template (adds)
 
@@ -53,7 +53,7 @@ Write to `$(~/.dg/bin/dg-skills stash -G viz <slug>/payload.json)` (the temp `VI
 }
 ```
 
-## spec template (for /spec)
+## spec template (for /dg:spec)
 
 ```json
 {
@@ -111,7 +111,7 @@ Built entirely by the CLI from two git refs — never hand-authored.
 
 `slice` is `null` only when no `--spec` was passed to `review` at all (no slice concept in play); when `--spec` was passed, unmatched files get `"other"` rather than `null`. `commitSha` is the last commit (within `base..head`) that touched the file — drives the board's "By commit" grouping tab; may be `null` if git attribution failed for that path.
 
-`seedComments` (optional) is written by `--comments <file.json>` — a JSON array of `{file, lineNumber?, side?, body}` (omit `lineNumber` for a file-scoped comment; `side` defaults to `"new"`) that the board pre-fills into `state.lineComments` on load, via the same path a human's own click would take. Used by `/review -x` to seed the reviewer agent's findings so the human triages/edits/drops them instead of retyping.
+`seedComments` (optional) is written by `--comments <file.json>` — a JSON array of `{file, lineNumber?, side?, body}` (omit `lineNumber` for a file-scoped comment; `side` defaults to `"new"`) that the board pre-fills into `state.lineComments` on load, via the same path a human's own click would take. Used by `/dg:review -x` to seed the reviewer agent's findings so the human triages/edits/drops them instead of retyping.
 
 Render mode auto-derives to `"review"` whenever `payload.review` is an object ([slug].astro's `deriveMode()`) — the board then renders full-bleed GitHub-PR chrome (`ReviewSection.astro`) instead of the standard progress-bar/section-registry layout; no other registry section applies alongside it.
 
@@ -180,7 +180,7 @@ Section `applies` when `typeof payload.graph === "object"` (diagram) or `has(pay
 
 ## discoveries (plan + recap)
 
-Collapsible sections — ideal for /hunt output. `open: true` expands on load.
+Collapsible sections — ideal for /dg:hunt output. `open: true` expands on load.
 
 ```json
 "discoveries": [{

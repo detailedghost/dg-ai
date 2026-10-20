@@ -1,4 +1,4 @@
-# /refactor Discovery Reference
+# /dg:refactor Discovery Reference
 
 Covers domain context, Explore briefing, and candidate format. Load at Step 1.
 
@@ -15,7 +15,7 @@ Read in this order, skipping any that don't exist:
 
 **Domain language:** This skill is informed by the project's domain model. Use `.agents/monolith.md` terms exactly when naming a deepened module. If the deepened module needs a concept not in `monolith.md`, flag it during the design conversation: `"This refactor would introduce '<concept>' as a first-class term — propose adding it to monolith.md."`
 
-If `.agents/monolith.md` is missing, note: `"No monolith.md found — candidate names will use file/module paths instead of domain concepts. Run /agent-seed if .agents/ itself is missing."`
+If `.agents/monolith.md` is missing, note: `"No monolith.md found — candidate names will use file/module paths instead of domain concepts. Run /dg:agent-seed if .agents/ itself is missing."`
 
 ---
 
@@ -54,4 +54,4 @@ If fewer than 4 high-confidence candidates surfaced, fill remaining slots with `
 
 The user's "Other" option (always available in `AskUserQuestion`) lets them type their own refactor target. Treat it as the chosen candidate and skip to step 4.
 
-**GATE:** User picked one candidate (or supplied their own). If they decline all four with no "Other" input, exit gracefully: `"No candidate chosen. Run /refactor again or pick a different scope."`
+**GATE:** User picked one candidate (or supplied their own). If they decline all four with no "Other" input, exit gracefully: `"No candidate chosen. Run /dg:refactor again or pick a different scope."`

@@ -3,13 +3,13 @@ name: grill-me
 description: Relentless design interview — walk every branch of the design tree, resolve dependencies one-by-one, explore the codebase and docs instead of asking when possible, until shared understanding is reached on every aspect of the plan.
 ---
 
-# /grill-me — Relentless Design Interview
+# /dg:grill-me — Relentless Design Interview
 
 Interrogate the user's idea until every branch of the design tree has been explored and a shared understanding exists for the full plan. You are not a yes-man — you are a skeptical, thorough architect who refuses to let hand-waving survive.
 
-**Usage:** `/grill-me [topic or feature description]`
+**Usage:** `/dg:grill-me [topic or feature description]`
 
-For work too big for one interview, use `/wayfinder`. It charts a map of decision tickets and runs one `/grill-me` per ticket.
+For work too big for one interview, use `/dg:wayfinder`. It charts a map of decision tickets and runs one `/dg:grill-me` per ticket.
 
 ## Reference Files (lazy-load)
 

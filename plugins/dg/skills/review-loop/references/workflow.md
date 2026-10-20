@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD033 MD041 MD060 -->
 
-# /review-loop Workflow
+# /dg:review-loop Workflow
 
 Each phase lists `IN:` (required state) and `OUT:` (produced state).
 Gates are hard stops. The skill has no persistent state — round count
@@ -67,7 +67,7 @@ OUT: `prNumber`, `prUrl`.
    is unset, fail loud: print `review-loop: REVIEW_LOOP_DEFAULT_PROXY_BACKEND is not set — set it to one of codex|copilot|pi|opencode|grok to auto-route on this provider, or pass --proxy <backend> explicitly.` and exit 1. Never guess a backend
    and never fall back to one silently. Findings reached this way are
    LOCAL-ONLY, the same as any other `--proxy` run: they surface
-   through `/address` and are never posted back to the merge request.
+   through `/dg:address` and are never posted back to the merge request.
    On a successful auto-route, hand off entirely to
    [proxy-workflow.md](proxy-workflow.md); nothing below in this file
    applies for the rest of this invocation.
@@ -100,11 +100,11 @@ IN: `aiReviewBotNames`, `maxRounds` (`--rounds N`, `REVIEW_LOOP_MAX_ROUNDS`, els
 OUT: `roundsUsed`.
 
 Round accounting, so this path is capped like the others: a round is
-consumed each time step 3 hands work to `/address`, and only then.
+consumed each time step 3 hands work to `/dg:address`, and only then.
 Waiting in step 5 consumes nothing. Derive `roundsUsed` from git, as proxy
 mode does, so a re-run or `--single` keeps the cap:
 `git log "$(git merge-base HEAD "$(git rev-parse --abbrev-ref origin/HEAD)")..HEAD" --format=%s | grep -c '(review-loop round ' || true`.
-Pass `--round <roundsUsed + 1>` to `/address` so it writes the marker. Stop when `roundsUsed` reaches
+Pass `--round <roundsUsed + 1>` to `/dg:address` so it writes the marker. Stop when `roundsUsed` reaches
 `maxRounds` and print `review-loop: <maxRounds> round(s) used; re-run
 to continue.`. Under `--single` / `--no-retrigger`, run one round and
 exit.
@@ -114,11 +114,11 @@ exit.
    branch; open one first.` and exit 0.
 1. `~/.dg/bin/dg-skills address check-bot-review` reports
    `{available, bots, present, threads, unresolved, latestAt}` for that
-   merge request. It reads the same GitLab discussions `/address`
+   merge request. It reads the same GitLab discussions `/dg:address`
    consumes, so `present` means findings really are on the MR.
 1. `present == true` and `unresolved > 0` → invoke the Skill `address`
    with no `-l`, giving it
-   `-m "<bots> is the reviewer on this merge request."`. `/address`
+   `-m "<bots> is the reviewer on this merge request."`. `/dg:address`
    gathers the threads through `gather-unresolved`, fixes, replies and
    resolves. That consumes one round. In auto mode, loop back to step 2
    for the next round; otherwise exit.
@@ -134,14 +134,14 @@ exit.
    within <timeout>s; re-run once it has.` and exit 0. Use `latestAt`
    to tell a fresh review from the one already addressed: a `latestAt`
    no newer than the previous round's is not a new review, so keep
-   waiting rather than re-running `/address` on the same threads.
+   waiting rather than re-running `/dg:address` on the same threads.
 
 Never fall through from this flow to proxy mode. A reviewer that is
 configured but silent is a wait, not an absent reviewer, and routing to
 proxy mode here is exactly the failure this flow exists to prevent: it
 would report a clean "nothing to do" while findings sit unread.
 
-GATE: `/address` ran, or the flow exited with a message naming the
+GATE: `/dg:address` ran, or the flow exited with a message naming the
 reviewer and its state.
 
 ---
@@ -214,7 +214,7 @@ actionable — close the loop cleanly.
 
    Use the `bodyExcerpt` from the helper's response.
 
-1. Exit 0. Do not invoke the antagonist, `/address`, or re-trigger.
+1. Exit 0. Do not invoke the antagonist, `/dg:address`, or re-trigger.
    The round counter is not consumed.
 
 ### 3a. Action `trigger`
@@ -235,7 +235,7 @@ actionable — close the loop cleanly.
 
    ```text
    review-loop: Copilot review requested via @copilot comment (round 1 of <maxRounds>).
-   Re-run /review-loop when the review is posted.
+   Re-run /dg:review-loop when the review is posted.
    ```
 
 1. Exit 0.
@@ -246,7 +246,7 @@ actionable — close the loop cleanly.
 
    ```text
    review-loop: awaiting Copilot re-review (round <roundsDone+1> of <maxRounds>).
-   Re-run /review-loop when it lands.
+   Re-run /dg:review-loop when it lands.
    ```
 
 1. Exit 0.
@@ -293,7 +293,7 @@ For each verdict:
 
 - `reject-illogical` →
   `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
-  (the helper adds the `🤖` prefix automatically; the text matches `/address` Phase 1.6).
+  (the helper adds the `🤖` prefix automatically; the text matches `/dg:address` Phase 1.6).
 - `reject-other` → `~/.dg/bin/dg-skills address resolve-silent <threadId>`.
 - `accept` / `strange` → keep in filtered array.
 
@@ -301,14 +301,14 @@ Write filtered array to
 `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdicts.json)`.
 
 When the filtered array has no entries (Copilot posted comments but
-every one got rejected): skip to Phase 7 with no `/address` call.
+every one got rejected): skip to Phase 7 with no `/dg:address` call.
 
 GATE: all rejects processed.
 
-## Phase 6 — Hand Off to /address
+## Phase 6 — Hand Off to /dg:address
 
 IN: filtered verdict file path, `roundNumber = roundsDone + 1`.
-OUT: `/address` exit status.
+OUT: `/dg:address` exit status.
 
 Load [../../address/SKILL.md](../../address/SKILL.md), resolving it through
 the configured personal skill root only if the sibling is unavailable. Invoke
@@ -318,18 +318,18 @@ Compute `absoluteVerdictsPath` with `~/.dg/bin/dg-skills stash review-loop <prNu
 in a shell first; pass the resulting path as one argument, not an unevaluated shell
 substitution inside a tool's argument string.
 
-`/address` handles:
+`/dg:address` handles:
 
 - The verdict file as its work list (skip gather).
 - Pausing on `strange` items via the host's question facility before fixing.
 - Its normal fix → QA → commit+push → reply+resolve flow.
 
-GATE: `/address` returns 0. Non-zero → surface the error and exit 1.
+GATE: `/dg:address` returns 0. Non-zero → surface the error and exit 1.
 The round does **not** count as consumed (no Copilot re-trigger).
 
 ## Phase 7 — Re-trigger
 
-IN: successful /address (or empty filtered array), `roundsDone`, `maxRounds`, `auto`.
+IN: successful /dg:address (or empty filtered array), `roundsDone`, `maxRounds`, `auto`.
 OUT: terminal (exits) OR `sinceIso` returned to Auto Driver.
 
 1. When `roundsDone + 1 < maxRounds`:
@@ -349,7 +349,7 @@ OUT: terminal (exits) OR `sinceIso` returned to Auto Driver.
 
      ```text
      review-loop: round <N> complete. Copilot re-review requested.
-     Re-run /review-loop when it lands.
+     Re-run /dg:review-loop when it lands.
      ```
 
      and exit 0.
@@ -440,7 +440,7 @@ suggested next command.
 | `landed` | Copilot review observed | (proceeds) | — |
 | `no-findings-ack` | Phase 3z / Auto Driver noFindings | 0 | none |
 | `engagement-timeout` | Trigger ladder all 3 tiers no engagement | 1 | Check Copilot App install; push a new commit; retry |
-| `review-timeout` | `await-copilot-review` exit 124 | 0 | Re-run `/review-loop` |
+| `review-timeout` | `await-copilot-review` exit 124 | 0 | Re-run `/dg:review-loop` |
 | `trigger-error` | `gh` returned non-zero or 5 consecutive errors | 1 | Inspect the surfaced gh stderr |
 
 ## Error Handling Summary
@@ -456,7 +456,7 @@ suggested next command.
 | Max rounds reached | Exit 0 with summary |
 | Copilot posted a no-findings acknowledgment comment | Exit 0 with close-out message (Phase 3z / Auto Driver) |
 | Antagonist returned malformed JSON | Exit 1, print raw output |
-| `/address` failed | Exit 1, no re-trigger — round not consumed |
+| `/dg:address` failed | Exit 1, no re-trigger — round not consumed |
 | Trigger ladder exhausted without engagement | Exit 1, `engagement-timeout` |
 | `await-copilot-review` timeout | Exit 0, `review-timeout` |
 | Persistent gh failure | Exit 1, `trigger-error` |

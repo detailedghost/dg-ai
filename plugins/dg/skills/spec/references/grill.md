@@ -1,18 +1,18 @@
 # Grill-me protocol pointer
 
-`/spec` does not carry its own interview methodology. The protocol is INLINED from
+`/dg:spec` does not carry its own interview methodology. The protocol is INLINED from
 [`grill-me/references/protocol.md`](../../grill-me/references/protocol.md) and
-followed in-context — the same way `/kick` Phase 1 does it. Read that file at each of plan.md's
+followed in-context — the same way `/dg:kick` Phase 1 does it. Read that file at each of plan.md's
 four grill-me passes (steps 1, 1.5, 2, 6); do not summarize or reimplement it here.
 
-**Fast mode runs ONE pass, not four.** `/spec --fast` collapses passes 1, 1.5, and 2 into a single
+**Fast mode runs ONE pass, not four.** `/dg:spec --fast` collapses passes 1, 1.5, and 2 into a single
 interview covering all three scopes, and has no pass 3 — see [fast.md](fast.md) F2. Everything
 below about protocol, main-loop interviewing, and the decision log applies unchanged to that one
 pass; only the pass count and the per-pass research personas differ.
 
 ## Four passes, four narrow scopes
 
-Unlike its predecessor's single all-branches discovery interview, `/spec` runs the protocol **four
+Unlike its predecessor's single all-branches discovery interview, `/dg:spec` runs the protocol **four
 times**, each scoped to a narrow topic so no single pass tries to converge a full-feature design
 tree on its own:
 
@@ -74,7 +74,7 @@ shape is LOCKED and must not grow a `code_structure` key, so they persist as `pl
 
 Apply the protocol's three-gate ADR test at final convergence (after pass 3) exactly as documented
 in [decisions.md](../../grill-me/references/decisions.md) — durable architectural decisions still get persisted to
-`.agents/decisions/`, `/spec` doesn't change that behavior.
+`.agents/decisions/`, `/dg:spec` doesn't change that behavior.
 
 ## Prototype escape hatch
 
@@ -83,5 +83,5 @@ four passes — most naturally in pass 1.5, where API ergonomics and state-machi
 the "I won't know until I see it" category. When accepted, build it with the prototype skill (it ships later; skip this step until then), keep the
 asset durable (`.agents/prototype/<name>/`, never `--light`), and register it onto its slice at
 plan.md step 8 via `~/.dg/bin/dg-skills spec prototype-ref` — do not invent a separate prototype-budget counter
-here; `/spec` has no multi-phase budget to track since it only has four passes total (lighter than
+here; `/dg:spec` has no multi-phase budget to track since it only has four passes total (lighter than
 its predecessor's multi-phase prototype-budget cap).

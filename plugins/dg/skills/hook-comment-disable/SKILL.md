@@ -10,7 +10,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-# /hook-comment-disable
+# /dg:hook-comment-disable
 
 Turn off the American-English hook (`american-english-hook.sh`) for this session. The hook normally blocks Edit/Write/MultiEdit when newly-written text uses a British spelling.
 

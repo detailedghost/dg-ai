@@ -1,12 +1,12 @@
 # Slice Review Template (plan.md step 5)
 
 One launch per slice, fanned out in parallel. Each launch is that slice's **assigned `agents.primary`**
-(from `/assign`, step 3) reviewing its own slice before any code is written — a design-level
+(from `/dg:assign`, step 3) reviewing its own slice before any code is written — a design-level
 sanity pass, not an implementation.
 
 ## Model/effort — sonnet default, per-slice escalate
 
-**Default: `sonnet`, medium effort**, regardless of what `/assign` picked as the slice's engineering
+**Default: `sonnet`, medium effort**, regardless of what `/dg:assign` picked as the slice's engineering
 persona — this is a review pass, not the build itself, so the model tier is decoupled from the
 primary agent's usual pin.
 

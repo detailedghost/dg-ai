@@ -4,7 +4,7 @@ The per-slice TDD pipeline runs as a background **Workflow** (`references/templa
 
 **Caller inputs.** This file is caller-agnostic; the invoking skill supplies:
 
-- `SPEC_PATH` + `SCRATCH_PATH` — `/sdlc` sets them in setup.md (`$(~/.dg/bin/dg-skills stash -s sdlc)/`); /spec and /pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, VIZ_MODE markers, QUICK_MODE) layered on top.
+- `SPEC_PATH` + `SCRATCH_PATH` — `/dg:sdlc` sets them in setup.md (`$(~/.dg/bin/dg-skills stash -s sdlc)/`); /dg:spec and /dg:pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, VIZ_MODE markers, QUICK_MODE) layered on top.
 - Commit gate — `permissions.slice_commits` from the spec frontmatter.
 - `cwd` — the working tree every agent prompt carries.
 
@@ -37,7 +37,7 @@ Workflow({
 })
 ```
 
-`<sdlc-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass it as an absolute path. Arg mapping from spec frontmatter (`~/.dg/bin/dg-skills spec get <spec> 'slices[i].<key>'` or a direct Read): `name` ← `slices[].name` (per-slice progress label `<name> (S<id>)`; falls back to `slice <id>`). `primaryAgent` ← `slices[].agents.primary` (script falls back to `general-purpose` if unset — `/assign` is responsible for a real pick before this runs). `primaryEffort` ← `slices[].agents.effort`, present only when `/assign` overrode the tier default. `proxyBackend` ← `slices[].agents.proxy` (absent for the common case). `qaAgents` ← `slices[].agents.qa[]`. `model`/`effort` ← the spec's `## Execution` section (`model:` / `effort:` lines) when present; omit otherwise.
+`<sdlc-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass it as an absolute path. Arg mapping from spec frontmatter (`~/.dg/bin/dg-skills spec get <spec> 'slices[i].<key>'` or a direct Read): `name` ← `slices[].name` (per-slice progress label `<name> (S<id>)`; falls back to `slice <id>`). `primaryAgent` ← `slices[].agents.primary` (script falls back to `general-purpose` if unset — `/dg:assign` is responsible for a real pick before this runs). `primaryEffort` ← `slices[].agents.effort`, present only when `/dg:assign` overrode the tier default. `proxyBackend` ← `slices[].agents.proxy` (absent for the common case). `qaAgents` ← `slices[].agents.qa[]`. `model`/`effort` ← the spec's `## Execution` section (`model:` / `effort:` lines) when present; omit otherwise.
 
 The script runs each slice through Red (qa-writer) → Yellow (engineering) → Green (qa-writer) → MiniQA (`wave` + any `qaAgents` + `security` when the slice flags `securitySensitive`) → up to 2 correction rounds. **Model tiering is pinned in-script** (`modelFor`): `wave` → haiku, `arch`/`design`/`dba`/`security` → opus, everything else → sonnet — mirroring each agent's own frontmatter pin. `args.model` overrides every stage's model and `args.effort` every stage's effort; the spec's `## Execution` pin is the source when present. **Effort** (`effortFor`) derives from `EFFORT_BY_MODEL` in the script — the single source of truth for the tier→effort default — unless `primaryEffort` overrides it. Each stage returns its own changed-file list; the script unions them per slice.
 

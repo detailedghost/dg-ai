@@ -77,7 +77,7 @@ If a `wait` times out, it exits non-zero, marks the board **stale**, and prints 
 
 ## Manual fallback
 
-If the loop isn't running, user says **"/viz responses ready for \<slug\>"** (the viz-skill mention keeps pickup fast) — check for `response.json` and run `merge` the same way.
+If the loop isn't running, user says **"/dg:viz responses ready for \<slug\>"** (the viz-skill mention keeps pickup fast) — check for `response.json` and run `merge` the same way.
 
 ## Stopping the loop
 

@@ -30,7 +30,7 @@
 
 ## Output
 
-The downstream readers are `/spec` plan-mode step 7 and the execution agents reading the plan. They expect exactly:
+The downstream readers are `/dg:spec` plan-mode step 7 and the execution agents reading the plan. They expect exactly:
 
 ```yaml
 slices:

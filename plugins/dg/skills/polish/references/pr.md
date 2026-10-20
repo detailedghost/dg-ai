@@ -78,7 +78,7 @@ printf '%s' "$PR_BODY" | "$DG_PROSE_CHECK_CMD"
 Order matters: `unslop` first, prose check second. `unslop` rewords, and a reword can
 reintroduce the passive voice the hook rejects.
 
-## Stacked / dependent PRs — use `/chain`
+## Stacked / dependent PRs — use `/dg:chain`
 
 When a PR depends on another (same repo or cross-repo), don't hand-roll a prose
 "depends on X" note or a one-off arrow chain — run the [chain](../../chain/SKILL.md)
@@ -100,10 +100,10 @@ owner/repo#114 → #2382 → #2383 → main
 Run `~/.dg/bin/dg-skills chain plan <layers...>` first (dry run, no `gh` calls — this is the PR-body draft to
 show at the Batch PRs approval gate), then `~/.dg/bin/dg-skills chain apply <layers...>` after approval to
 retarget bases and upsert this block into every PR in the chain. Add a
-**"superseded by #N"** banner by hand to any PR the stack replaces — `/chain` doesn't
+**"superseded by #N"** banner by hand to any PR the stack replaces — `/dg:chain` doesn't
 manage that.
 
 Default is still one PR per change — only stack when changes genuinely depend on each
 other or span repos. PRs in the same batch with no real dependency between them are
-not a stack; leave them out of `/chain` entirely (or pass them via `--independent` if
+not a stack; leave them out of `/dg:chain` entirely (or pass them via `--independent` if
 they're being linked in the same board/summary — see `~/.dg/bin/dg-skills chain --help`).

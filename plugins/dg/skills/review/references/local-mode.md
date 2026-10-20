@@ -5,7 +5,7 @@
 - **default range** (no args):
   - `head = HEAD`.
   - `base =` the branch's fork point: `git merge-base HEAD "$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || git rev-parse --abbrev-ref origin/HEAD | sed 's#^origin/##')"`. If that fails, fall back to `origin/HEAD`.
-  - **In a `/spec` worktree** (spec frontmatter has a `worktree:` block, or you're on a `feature/*` branch cut from an integration branch): prefer `base =` that integration/base branch, `head =` the feature branch tip — reviews exactly what the feature added.
+  - **In a `/dg:spec` worktree** (spec frontmatter has a `worktree:` block, or you're on a `feature/*` branch cut from an integration branch): prefer `base =` that integration/base branch, `head =` the feature branch tip — reviews exactly what the feature added.
 - The board reviews **committed** refs. Commit work first (per-slice commits are ideal); uncommitted changes won't appear. If the caller wants to review WIP, tell them to commit, or diff `HEAD` against a stash-backed ref.
 - **`--spec`:** if not passed, auto-detect an in-progress spec: the single `.agents/spec/*/plan.md` with `status: in-progress` (skip if 0 or >1). Passing it tags each file with its spec slice in the board's "By spec slice" grouping.
 

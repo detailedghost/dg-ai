@@ -3,7 +3,7 @@ name: worktree
 description: "Manage git worktrees for AI agent workflows — create, list, remove, prune. Reused by the planning and execution skills."
 ---
 
-# /worktree — Git Worktree Lifecycle
+# /dg:worktree — Git Worktree Lifecycle
 
 Front door for git worktree management. Reused by planning and execution workflows for worktree creation; permissions, frontmatter, PR and cwd restore stay in those workflows.
 
@@ -78,7 +78,7 @@ Copied from origin into the new worktree, preserving mode:
 2. Unpushed commits ahead of upstream (no upstream: blocked when ahead of `origin/<base>`).
 3. Branch not merged into `origin/<base>`: `git cherry` first (squash-aware), then a merged pull request lookup through the provider. A failed lookup is reported as `lookup failed` and blocks; a missing provider CLI blocks silently.
 
-A failed status or comparison check blocks removal; it never counts as clean. `--merged-ok` skips guard 3 only, as `/address` does after the provider confirms a merge. `--keep-branch` leaves the local branch (default is `git branch -D`); a failed branch delete warns and still exits 0. If `git worktree remove` fails (for example a locked worktree), the command exits 2 and keeps the worktree, directory and branch.
+A failed status or comparison check blocks removal; it never counts as clean. `--merged-ok` skips guard 3 only, as `/dg:address` does after the provider confirms a merge. `--keep-branch` leaves the local branch (default is `git branch -D`); a failed branch delete warns and still exits 0. If `git worktree remove` fails (for example a locked worktree), the command exits 2 and keeps the worktree, directory and branch.
 
 ## Resume semantics (permissive)
 

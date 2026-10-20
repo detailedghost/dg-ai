@@ -44,8 +44,8 @@ this exact structure.
   agent; scaffold omits `agents.proxy` in frontmatter.
 - `proxy_skills`: array of skill names (e.g. `["db", "polish"]`); scaffold omits
   `agents.proxy_skills` in frontmatter when empty/absent. These are the skill-behaviors a proxied
-  slice needs — `/spec -s` inlines them into the `/proxy` prompt because `/proxy` injects only the
-  persona file and can't run `/db` or `/polish` as slash-commands.
+  slice needs — `/dg:spec -s` inlines them into the `/dg:proxy` prompt because `/dg:proxy` injects only the
+  persona file and can't run `/db` or `/dg:polish` as slash-commands.
 - `serializing` (optional, top level): code-generator outputs. Each entry is
   `{"writes": ["<output glob>"], "when": ["<glob that triggers the generator>"]}`. A slice whose
   `files` overlap a `when` glob owns the `writes` globs for `lint-waves`. A bare string entry means
@@ -62,14 +62,14 @@ Write it to scratch — `$(~/.dg/bin/dg-skills stash -s spec <slug>-blob.json)` 
 ~/.dg/bin/dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>
 ```
 
-`lint-waves` exits non-zero when two slices in one `/sdlc` layer can touch the same path; scaffold
+`lint-waves` exits non-zero when two slices in one `/dg:sdlc` layer can touch the same path; scaffold
 runs it too and refuses (`--allow-overlap` overrides).
 
 On success it prints the created bundle's absolute path (`.agents/spec/<NNN>_<slug>/`). Do NOT
 hand-write `plan.md`/`initial.md`/`roundtable/*.md` directly at this step — that's the whole point
 of routing through the blob: deterministic expansion, not free-form prose.
 
-`agents.primary`/`effort`/`qa` are deliberately absent from the blob — `/assign` (run immediately
+`agents.primary`/`effort`/`qa` are deliberately absent from the blob — `/dg:assign` (run immediately
 after scaffold, step 3) picks those against the live agent roster. Only `proxy`/`proxy_skills` are
 plan-mode's call, since they're a delegation decision the foreman/user make during planning,
-not a capability match `/assign` can infer.
+not a capability match `/dg:assign` can infer.

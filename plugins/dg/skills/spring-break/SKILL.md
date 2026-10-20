@@ -22,7 +22,7 @@ Before starting, read [references/structure.md](references/structure.md) for the
 
 - **spring-break** owns the *structure*: which files exist, naming, format rules, line limits, dedup, pruning.
 - **Any agent** may *write learnings* to school files, as long as they follow the format in each file's header comment.
-- spring-break never *modifies* `.agents/monolith.md` — that belongs to `/monolith`. It only *reports* on staleness (see Step 7).
+- spring-break never *modifies* `.agents/monolith.md` — that belongs to `/dg:monolith`. It only *reports* on staleness (see Step 7).
 - Protected files it never touches, and `.agents/spec/`'s migration-only scope: `references/structure.md`'s "Protected Files" table and Migration Rules.
 
 ## Steps
@@ -35,4 +35,4 @@ Before starting, read [references/structure.md](references/structure.md) for the
 | 4 | **Merge Deps** | Combine deps files into DEPS.md (recurring issues + last 3 runs, 80 lines max). Skip if none. |
 | 5 | **Write & Clean** | Write topic files, delete old files and empty subdirs. |
 | 6 | **Report** | Summarize: files migrated, entries merged/pruned, files deleted, spec bundles migrated, any unresolved `plan.md` validation violations from Step 2. |
-| 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `~/.dg/bin/dg-skills monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |
+| 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `~/.dg/bin/dg-skills monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/dg:monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |

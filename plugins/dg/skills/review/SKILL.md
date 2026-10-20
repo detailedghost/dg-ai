@@ -1,9 +1,9 @@
 ---
 name: review
-description: Human-in-the-loop code review for a git range — renders a GitHub-style review board via /viz, blocks until the reviewer submits a verdict, and hands verdict + comments back to the agent. Deterministic and token-free (built from two git refs). `-x`/`--external <pr>` reviews a GitHub PR instead — the reviewer agent's findings seed the board, and the submitted verdict posts as a real PR review.
+description: Human-in-the-loop code review for a git range — renders a GitHub-style review board via /dg:viz, blocks until the reviewer submits a verdict, and hands verdict + comments back to the agent. Deterministic and token-free (built from two git refs). `-x`/`--external <pr>` reviews a GitHub PR instead — the reviewer agent's findings seed the board, and the submitted verdict posts as a real PR review.
 ---
 
-# /review
+# /dg:review
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
@@ -12,19 +12,19 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Human-in-the-loop **code review** for a git range. Renders a full-width, GitHub-style review board (via `/viz`) — file-tree nav, colorized diffs, per-line comments, per-file + overall approve / request-changes / comment — then **blocks until the reviewer submits** (re-arming on timeout, never proceeding without a verdict — same await-decision discipline as the prototype skill), and hands the verdict + comments back so the agent can act on them.
+Human-in-the-loop **code review** for a git range. Renders a full-width, GitHub-style review board (via `/dg:viz`) — file-tree nav, colorized diffs, per-line comments, per-file + overall approve / request-changes / comment — then **blocks until the reviewer submits** (re-arming on timeout, never proceeding without a verdict — same await-decision discipline as the prototype skill), and hands the verdict + comments back so the agent can act on them.
 
-Deterministic + token-free: the board is built entirely from two git refs by `~/.dg/bin/dg-skills viz` (git + Astro, zero model involvement). [`/viz`](../viz/SKILL.md) is the dumb rendering client; `/review` is the driver — resolve refs → render → **wait (loop until submitted)** → act. The wait is not optional: a rendered board with no collected verdict is an unfinished review.
+Deterministic + token-free: the board is built entirely from two git refs by `~/.dg/bin/dg-skills viz` (git + Astro, zero model involvement). [`/dg:viz`](../viz/SKILL.md) is the dumb rendering client; `/dg:review` is the driver — resolve refs → render → **wait (loop until submitted)** → act. The wait is not optional: a rendered board with no collected verdict is an unfinished review.
 
 ## Usage
 
 ```
-/review                     # default range (see references/local-mode.md for resolution)
-/review <base>..<head>      # explicit range, e.g. main..HEAD
-/review <base> <head>       # same, space-separated
-/review -x <pr>             # external: review a GitHub PR (number or URL), post verdict to GitHub
-/review -x                  # bare -x: current branch's open PR
-/review --external <url> --repo OWNER/REPO
+/dg:review                     # default range (see references/local-mode.md for resolution)
+/dg:review <base>..<head>      # explicit range, e.g. main..HEAD
+/dg:review <base> <head>       # same, space-separated
+/dg:review -x <pr>             # external: review a GitHub PR (number or URL), post verdict to GitHub
+/dg:review -x                  # bare -x: current branch's open PR
+/dg:review --external <url> --repo OWNER/REPO
 ```
 
 `--spec` and `--no-wait` are covered in `references/local-mode.md`, `--demo` in `references/board-ui.md`. `-x`/`--external` is its own mode — see `references/external.md`; it does not combine with `--spec`.
@@ -35,9 +35,9 @@ Deterministic + token-free: the board is built entirely from two git refs by `~/
 |---|---|
 | Resolve the ref/repo for a local-range review; act on approve/request_changes/comment | `references/local-mode.md` |
 | Run `-x`/`--external`: PR resolution, reviewer-agent prompt, comment seeding, verdict→GitHub field mapping | `references/external.md` |
-| Caveats: board ephemerality/namespacing, one-round-trip semantics, viz internals, `/spec`+`/sdlc` wiring | `references/details.md` |
+| Caveats: board ephemerality/namespacing, one-round-trip semantics, viz internals, `/dg:spec`+`/dg:sdlc` wiring | `references/details.md` |
 | How the tabs/slice-accordion/sticky-nav/file-tree sync actually behave | `references/board-ui.md` |
-| Attaching `/demo` output as a Demo tab (`--demo`) | `references/board-ui.md` |
+| Attaching `/dg:demo` output as a Demo tab (`--demo`) | `references/board-ui.md` |
 
 ## Flow (3 commands)
 

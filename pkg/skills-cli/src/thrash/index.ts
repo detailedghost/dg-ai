@@ -320,7 +320,7 @@ export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = p
 async function cmdPost(args: string[]): Promise<number> {
 	const arg = positional(args, "post", ["--review"]);
 	if (!isUrl(arg)) {
-		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
+		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /dg:address -l");
 	}
 	const stored = JSON.parse(readFileSync(requireOption(args, "--review"), "utf8")) as ReviewFile;
 	if (stored.target !== arg) {
@@ -337,7 +337,7 @@ async function cmdPost(args: string[]): Promise<number> {
 	}
 	const target = await resolveTarget(arg);
 	if (target.mode === "local") {
-		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /address -l");
+		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /dg:address -l");
 	}
 	const provider = await getProviderForUrl(target.url);
 	const posted = await provider.postReview(prRef(target), input);

@@ -10,16 +10,16 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-# /clipboard-img — Grab Clipboard Image
+# /dg:clipboard-img — Grab Clipboard Image
 
 Save the current clipboard image as a PNG file.
 
 **Usage:**
 
-- `/clipboard-img` — save to `$(~/.dg/bin/dg-skills stash -a -u clipboard .png)` (default)
-- `/clipboard-img --scratch` / `-s` — save to an ephemeral temp file, `$(~/.dg/bin/dg-skills stash -u clipboard .png)` (path printed to stdout)
-- `/clipboard-img photo.png` — save to a specific filename
-- `/clipboard-img -` — write raw PNG to stdout (for piping)
+- `/dg:clipboard-img` — save to `$(~/.dg/bin/dg-skills stash -a -u clipboard .png)` (default)
+- `/dg:clipboard-img --scratch` / `-s` — save to an ephemeral temp file, `$(~/.dg/bin/dg-skills stash -u clipboard .png)` (path printed to stdout)
+- `/dg:clipboard-img photo.png` — save to a specific filename
+- `/dg:clipboard-img -` — write raw PNG to stdout (for piping)
 
 ## Execution
 

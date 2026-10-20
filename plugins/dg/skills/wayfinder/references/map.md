@@ -2,8 +2,8 @@
 
 ## Chart mode steps
 
-1. **Name the destination.** Run a `/grill-me` pass in the main loop. Pin down what the map reaches: a spec, a decision to lock, or a change made in place. Scope is fixed here.
-2. **Map the frontier.** Grill again, breadth first. Surface open decisions and first takeable steps. Self-serve from the code and docs. If no fog appears and one session can hold it, write no map. Ask the user to choose `/kick` or `/grill-me`.
+1. **Name the destination.** Run a `/dg:grill-me` pass in the main loop. Pin down what the map reaches: a spec, a decision to lock, or a change made in place. Scope is fixed here.
+2. **Map the frontier.** Grill again, breadth first. Surface open decisions and first takeable steps. Self-serve from the code and docs. If no fog appears and one session can hold it, write no map. Ask the user to choose `/dg:kick` or `/dg:grill-me`.
 3. **Create the map.** `~/.dg/bin/dg-skills stash -m wayfinder <slug>/map.md`. Fill Destination and Notes. Leave Decisions empty. Sketch fog.
 4. **Create sharp tickets** in `tickets/`. Number them `NNN-<slug>.md`. Set `blocked_by` in a second pass, after all files exist.
 5. **Research tickets.** Show the cost estimate when there are 3 or more. Then run one `sonnet` subagent per `research` ticket (see work.md). Each subagent returns facts and writes no file. The main loop records each result under `## Resolution`, closes the ticket, and updates **Decisions so far**.
@@ -56,7 +56,7 @@ claimed: <session id and ISO timestamp, or empty>
 |---|---|---|
 | research | AFK | `sonnet` subagent reads docs, APIs, local sources. Returns facts. |
 | prototype | HITL | Build a tiny throwaway in the chat (a snippet, a short HTML file, or a CLI sketch). Ask the human to react. Link the asset. |
-| grilling | HITL | `/grill-me` in the main loop. The default type. |
+| grilling | HITL | `/dg:grill-me` in the main loop. The default type. |
 | task | either | Manual step that unblocks a decision. Records facts later tickets need. |
 
 ## Frontier query

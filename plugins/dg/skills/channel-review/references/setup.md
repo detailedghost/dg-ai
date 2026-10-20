@@ -64,7 +64,7 @@ checks the CLI's resolved credential source, not remote token validity or every
 model's entitlement. Sign in again if a later job reports CR-202.
 `status` inspects user-level skills from the home directory; each review rechecks
 from its actual scratch working directory. Disabled, non-user-invocable, or
-colliding `/thrash` skills report CR-206. Failed utility commands or malformed
+colliding `/dg:thrash` skills report CR-206. Failed utility commands or malformed
 inspection output report CR-203. Use `grok inspect --json` to check compatibility
 skills and plugin discovery; the probe does not assume another host's skill roots.
 See [Grok's skill guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md).
@@ -95,10 +95,10 @@ PR author's text read `~/.aws`, `~/.ssh`, or `~/.dg` and post them as a comment.
 list. It must edit code, run tests, commit, and push, so it is wider than the
 review list. `<clones>` is `address.cloneRoot`. The default rules:
 
-- `Agent` lets /address start its fix agents.
+- `Agent` lets /dg:address start its fix agents.
 - `Edit(//<clones>/**)`, `Read(//<clones>/**)`, `Grep(//<clones>/**)`, and
   `Glob(//<clones>/**)` limit file access to the job's clones.
-- `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)` lets /address read
+- `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)` lets /dg:address read
   its installed plugin skill files.
 - `Bash(git:*)`, `Bash(gh:*)`, and `Bash(glab:*)` let it commit, push, and
   reply to review threads.
@@ -114,7 +114,7 @@ a chat where you trust every member.
 
 Each `$address` job clones the PR head branch fresh into
 `<clones>/<host>-<owner>-<repo>-<message id>` with `gh repo clone` or
-`glab repo clone`, runs /address there, and deletes that one folder when the
+`glab repo clone`, runs /dg:address there, and deletes that one folder when the
 job ends, also on failure. The daemon deletes only a folder inside
 `address.cloneRoot`, never the root itself, and never your own checkouts. When
 the daemon starts after a crash, it deletes the leftover clone of each
@@ -147,7 +147,7 @@ headless flags; a few of them are not spelled out as a stable contract, so
 they are config when the CLI allows it.
 
 - The command is `grok --no-auto-update -p <prompt> --output-format <format> --always-approve --cwd <job dir>`. `--no-auto-update` skips the background updater. `--cwd` is the job directory, and the process working directory is that same path.
-- The prompt is `/thrash ...`. These flags were checked against Grok Build 1.0.60.
+- The prompt is `/dg:thrash ...`. These flags were checked against Grok Build 1.0.60.
 - `runner.grok.outputFormat` is `streaming-json` (the default), `json`, or `plain`. `streaming-json` is one JSON object per line: `text` (answer chunk, field `data`), `thought` (ignored), `error` (field `message`), and `end` (field `stopReason`). The daemon appends the stream to the job log. A fast nonzero exit whose stderr, or whose `error` event, says the CLI is not signed in is CR-202. The review text itself is not parsed; thrash posts the review.
 - `runner.grok.tools` is an optional list of Grok tool ids such as `read_file` and `grep`. They are joined with commas into one `--tools` value, which replaces Grok's default tool set. Leave it unset, or set an empty list, to keep that default. A tool id must not contain a comma. This is not Claude's `Bash(git:*)` syntax.
 - `runner.grok.model` is optional and becomes `--model`.

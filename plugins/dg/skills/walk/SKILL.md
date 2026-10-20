@@ -1,13 +1,13 @@
 ---
 name: walk
-description: 'Walk the user through every open question in the current conversation, one question at a time, each with a recommendation. Use when the user says "walk me through the open questions", "what is still open", "go through the open items", or invokes /walk. Optional topic filter: /walk <word>.'
+description: 'Walk the user through every open question in the current conversation, one question at a time, each with a recommendation. Use when the user says "walk me through the open questions", "what is still open", "go through the open items", or invokes /dg:walk. Optional topic filter: /dg:walk <word>.'
 ---
 
-# /walk — Walk the Open Questions
+# /dg:walk — Walk the Open Questions
 
 Collect every open question in this conversation. Ask them one at a time. Each one carries a recommendation. Run this in the main loop only, because only the main loop has `AskUserQuestion`.
 
-**Usage:** `/walk` (all open questions) · `/walk <filter>` (only questions that match the topic word, for example `/walk dg`)
+**Usage:** `/dg:walk` (all open questions) · `/dg:walk <filter>` (only questions that match the topic word, for example `/dg:walk dg`)
 
 ## 1. Collect
 

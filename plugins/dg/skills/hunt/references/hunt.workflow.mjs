@@ -30,7 +30,7 @@ const FINDING = {
     confidence: { enum: ["high", "medium", "low"] },
     needsDesignDecision: {
       type: "boolean",
-      description: "true if the fix requires an unmade design decision (→ /grill-me)",
+      description: "true if the fix requires an unmade design decision (→ /dg:grill-me)",
     },
   },
 }

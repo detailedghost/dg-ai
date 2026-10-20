@@ -8,9 +8,9 @@ description: Intelligently rename the current session — generates 3 candidate 
 Rename the current Claude Code session. Without an argument, reads conversation context and git signals to propose 3 candidates and applies the first. With `--pick`, you choose one. With an argument, writes the name immediately.
 
 **Usage:**
-- `/rename-session` — generate candidates, auto-apply the best one
-- `/rename-session --pick` — same but prompt to choose from 3 options
-- `/rename-session my custom name` — write directly, no generation
+- `/dg:rename-session` — generate candidates, auto-apply the best one
+- `/dg:rename-session --pick` — same but prompt to choose from 3 options
+- `/dg:rename-session my custom name` — write directly, no generation
 
 ## Steps
 
