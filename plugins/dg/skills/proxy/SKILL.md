@@ -12,6 +12,8 @@ Resolve the compiled CLI before invoking it:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor bg proxy.
+
 Run the backend in the caller's native background task when that facility exists:
 
 ```bash

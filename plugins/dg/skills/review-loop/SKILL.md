@@ -117,6 +117,8 @@ Resolve the compiled CLI before running any command:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor address proxy stash vcs-provider.
+
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the
 host's existing narrow approvals for the specific operation and honor permission

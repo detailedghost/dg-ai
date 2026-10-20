@@ -65,6 +65,7 @@ describe("dg-skills CLI", () => {
 			"jot",
 			"bg",
 			"sniff",
+			"doctor",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -415,6 +416,49 @@ describe("dg-skills CLI", () => {
 		expect(code).toBe(0);
 		for (const cmd of ["capture", "set", "show"]) {
 			expect(out).toContain(cmd);
+		}
+	});
+	test("doctor --help documents --json and selected items without running a check", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		try {
+			const { code, out } = await runCli(["doctor", "--help"], { HOME: home });
+			expect(code).toBe(0);
+			expect(out).toContain("--json");
+			expect(out).toContain("item");
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("doctor exits 2 for an unknown item", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		try {
+			const { code } = await runCli(["doctor", "no-such-item"], { HOME: home });
+			expect(code).toBe(2);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("doctor --json prints a report for jot from an isolated home", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		mkdirSync(join(home, "scratch"), { mode: 0o700 });
+		mkdirSync(join(home, "state"), { mode: 0o700 });
+		try {
+			const { code, out } = await runCli(["doctor", "jot", "--json"], {
+				HOME: home,
+				AI_SCRATCH_DIR: join(home, "scratch"),
+				AI_STATE_DIR: join(home, "state"),
+			});
+			expect([0, 1]).toContain(code);
+			const report = JSON.parse(out) as {
+				items: { item: string; checks: unknown[] }[];
+				ok: boolean;
+			};
+			expect(report.items.some((entry) => entry.item === "jot")).toBe(true);
+			expect(report.ok).toBe(code === 0);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 });

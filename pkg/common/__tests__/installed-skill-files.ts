@@ -35,6 +35,7 @@ export const INSTALLED_SKILL_FILES = [
 	"deps-upgrade/SKILL.md",
 	"deps-upgrade/references/ecosystems.md",
 	"deps-upgrade/references/steps.md",
+	"doctor/SKILL.md",
 	"file/SKILL.md",
 	"find-work/SKILL.md",
 	"find-work/references/discover.workflow.mjs",

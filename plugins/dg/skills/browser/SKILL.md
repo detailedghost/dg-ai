@@ -18,6 +18,8 @@ self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor install batch-open launch demo.
+
 On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 `Invoke-Expression`.
 

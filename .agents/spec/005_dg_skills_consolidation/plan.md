@@ -1105,21 +1105,21 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 31 — w4-doctor
 
 #### Engineering
-- [ ] Add a shared doctor runner: each command declares its checks next to its code (`{ id, run }` returning ok, warn or fail, one detail line and a Fix line with the exact command to run); one runner prints them and sets the exit code.
-- [ ] `dg-skills doctor` checks everything; `dg-skills doctor <item>` checks one item; `--json` prints the same result for agents. Exit 0 when all pass or only warn, 1 when any check fails.
-- [ ] Shared checks: installed dg-skills version matches the plugin version, the dg plugin is installed, packaged skill files exist, scratch and state roots are writable.
-- [ ] Per-item checks for every shipped item: required tools and versions (git, gh/glab, bun, claude/codex), required credentials exist (metadata only, never decrypt), daemon and extension pairing for `--ext` items, unslop installed for polish, and the allow rules the item needs (read-only check of settings).
-- [ ] Ship the `/dg:doctor` skill: run doctor, explain each failure in plain words, and walk the user through the Fix lines. Add one line to every packaged skill: run `~/.dg/bin/dg-skills doctor <item>` when the skill fails.
-- [ ] Doctor only reads and reports: it never fixes anything itself, never decrypts credentials, never edits settings, and never starts the daemon or a browser.
-- [ ] Move the remaining `proxy background` references (thrash agent-prompt, review-loop proxy-review-prompt, pkg/skills-cli/README.md) to `bg` verbs.
+- [x] Add a shared doctor runner: each command declares its checks next to its code (`{ id, run }` returning ok, warn or fail, one detail line and a Fix line with the exact command to run); one runner prints them and sets the exit code.
+- [x] `dg-skills doctor` checks everything; `dg-skills doctor <item>` checks one item; `--json` prints the same result for agents. Exit 0 when all pass or only warn, 1 when any check fails.
+- [x] Shared checks: installed dg-skills version matches the plugin version, the dg plugin is installed, packaged skill files exist, scratch and state roots are writable.
+- [x] Per-item checks for every shipped item: required tools and versions (git, gh/glab, bun, claude/codex), required credentials exist (metadata only, never decrypt), daemon and extension pairing for `--ext` items, unslop installed for polish, and the allow rules the item needs (read-only check of settings).
+- [x] Ship the `/dg:doctor` skill: run doctor, explain each failure in plain words, and walk the user through the Fix lines. Add one line to every packaged skill: run `~/.dg/bin/dg-skills doctor <item>` when the skill fails.
+- [x] Doctor only reads and reports: it never fixes anything itself, never decrypts credentials, never edits settings, and never starts the daemon or a browser.
+- [x] Move the remaining `proxy background` references (thrash agent-prompt, review-loop proxy-review-prompt, pkg/skills-cli/README.md) to `bg` verbs.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Each check reports ok, warn and fail with fake tools, fake versions and isolated HOME; `--json` shape is stable; exit codes 0 and 1; no daemon, browser or credential decrypt starts.
-- [ ] A coverage guard fails when a registered dg-skills command has no doctor checks, or a packaged skill lacks the doctor line.
+- [x] Each check reports ok, warn and fail with fake tools, fake versions and isolated HOME; `--json` shape is stable; exit codes 0 and 1; no daemon, browser or credential decrypt starts.
+- [x] A coverage guard fails when a registered dg-skills command has no doctor checks, or a packaged skill lacks the doctor line.
 
 #### Acceptance Criteria
-- [ ] A stale installed binary, a missing tool and a missing credential each produce a clear Fix line; every shipped item is covered.
+- [x] A stale installed binary, a missing tool and a missing credential each produce a clear Fix line; every shipped item is covered.
 
 ### Slice 19 — w4-release
 
@@ -1413,6 +1413,7 @@ Superseded: viz and review no longer ship (commit fc16957). Original summary: `d
 - Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, list, status, cancel, kill, update, drain, prune) and re-executes the real installed binary for drains and resumes. A relative `--cwd` is stored as an absolute path, and prune removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` now routes through the same dispatcher. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz`, and the cls browser close probes `~/.dg/bin/dg-skills pw --help` and skips with a note when it fails.
 - Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) with compiled-safe self-dispatch, cwd-contained prune and no caller process-group signals. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship; stat has no --viz and hands lanes to dg:overwatch; cls skips pw cleanup when pw is missing. cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
 - Slice 18 (w4-sniff-nope-find-work): `dg-skills sniff` ports sniff-cli with names-only secret and config inventory, the legacy exit status 1 and the `$HOME/code` env default. The sniff, nope and find-work skills ship; sniff drops `--viz`; find-work prompts use the dg bootstrap, `dg-skills vcs-provider` and `dg-skills worktree` routing and keep the human selection and PR-opening gates. Fixtures and examples carry no private names or paths.
+- Slice 31 (w4-doctor): `dg-skills doctor [<item>...] [--json]` runs a shared item (plugin installed, binary version vs plugin version, writable roots) and per-item checks declared in src/<item>/doctor.ts for every registered command: tools and minimum versions, optional credentials by name, daemon and extension pairing (pinned origin in the daemon config), unslop for polish, and the `Bash(~/.dg/bin/dg-skills <sub>:*)` allow rule. Exit 0 pass or warn, 1 fail, 2 unknown item. The /dg:doctor skill walks through Fix lines; every skill that calls dg-skills names its doctor items. A coverage guard enforces checks, the allow-rule check and the skill line.
 
 ## Agent Notes
 
@@ -1478,6 +1479,10 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 18, qa-writer) Skill-tree private-name scans strip the public bootstrap URL (github.com/detailedghost/dg-ai/...) before matching.
 - (slice 18, qa-code) Open LOW items for the final review: the shell-block `#` comment guard misses `cmd #note`; sniff `repo` is `..` when run as `sniff ..`; CLOUD_PERM rows keep the full role ARN (legacy parity).
 - (slice 18, orchestrator) The full skills-cli suite passes alone (2746 tests, about 10 minutes). Under parallel agent load it took 77 minutes and showed 4 transient failures.
+- (slice 31, js) Doctor lives in pkg/skills-cli/src/doctor/{types,probes,checks,shared,runner,registry}.ts; each item exports <camel>Checks from src/<item>/doctor.ts and registry.ts lists them. Later ports add their item there; doctor-coverage.spec.ts fails otherwise.
+- (slice 31, js) Extension pairing has no completed-pairing record; doctor reads `pinnedOrigin` from the daemon config.json (set on the first extension handshake). pairing.json is only the pending code.
+- (slice 31, js) The bootstrap Fix keeps the install mode: it adds --cli-only only when the cli-only marker exists. scratchRoot and stateRoot in @dg/common/node accept an optional env.
+- (slice 31, orchestrator) Open for the final review: the coverage guard does not check that a skill's doctor line names the subcommands it really calls; missing-credential-by-name needs a fake daemon credential socket to test end to end.
 
 ## Issues Remediation
 

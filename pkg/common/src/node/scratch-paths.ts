@@ -109,16 +109,19 @@ export interface ScratchPathOptions {
 const PRIVATE_DIR_MODE = 0o700;
 
 /** Resolve the configured scratch root without creating or validating it. */
-export function scratchRoot(): string {
-	return process.env["AI_SCRATCH_DIR"] || "/tmp/ai";
+export function scratchRoot(env: NodeJS.ProcessEnv = process.env): string {
+	return env["AI_SCRATCH_DIR"] || "/tmp/ai";
 }
 
 /** Resolve AI_STATE_DIR, else the XDG state root under ai, without touching the filesystem. */
-export function stateRoot(): string {
-	const explicit = process.env["AI_STATE_DIR"];
+export function stateRoot(
+	env: NodeJS.ProcessEnv = process.env,
+	home: string = homedir(),
+): string {
+	const explicit = env["AI_STATE_DIR"];
 	if (explicit) return explicit;
-	const xdg = process.env["XDG_STATE_HOME"];
-	return path.join(xdg || path.join(homedir(), ".local", "state"), "ai");
+	const xdg = env["XDG_STATE_HOME"];
+	return path.join(xdg || path.join(home, ".local", "state"), "ai");
 }
 
 function directoryEntry(dir: string) {

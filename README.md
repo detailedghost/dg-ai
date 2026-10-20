@@ -107,9 +107,9 @@ and all ten `vcs-provider` verbs for GitHub and GitLab.
 `--prompt-file`, `--resume`, and persona selection through `--subagent` or an
 explicit `--spec <plan> --slice <id>`. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`)
 for persona files. `--plan` prints a quoted detached launch command; run that
-command, then inspect it with `dg-skills proxy background status <id>` or `list`.
-These packaged persona/background helpers work before the public spec/bg ports;
-they need no legacy helper. Detached launch needs a POSIX `sh`.
+command, then inspect it with `dg-skills bg status <id>` or `list`.
+The `spec` and `bg` commands are public and `proxy` uses them directly, so
+it needs no legacy helper. Detached launch needs a POSIX `sh`.
 Job identity comes from the Linux `/proc` start time. Elsewhere the helper fails closed: `status` shows `unknown` and `cancel` signals nothing.
 Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume rules.
 

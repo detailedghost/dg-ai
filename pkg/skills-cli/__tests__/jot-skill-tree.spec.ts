@@ -1,32 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { flagsTable, skillText, usageLine, walk } from "./skill-tree-helpers";
 import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 
 const JOT = join(SOURCE_SKILLS, "jot");
 const VERBS = ["add", "ls", "read", "kind", "done", "kick", "kick-list", "kick-take"];
-const FLAG = /(?<![\w-])(--[a-z][a-z-]*|-[A-Za-z])(?![\w-])/g;
-
-function walk(dir: string): string[] {
-	return readdirSync(dir)
-		.sort()
-		.flatMap((name) => {
-			const path = join(dir, name);
-			return statSync(path).isDirectory() ? walk(path) : [path];
-		});
-}
 
 function skill(): string {
-	return readFileSync(join(JOT, "SKILL.md"), "utf8");
-}
-
-function cells(row: string): string[] {
-	return row
-		.trim()
-		.replace(/^\|/, "")
-		.replace(/\|$/, "")
-		.split(/(?<!\\)\|/)
-		.map((cell) => cell.trim());
+	return skillText("jot");
 }
 
 describe("packaged jot skill tree", () => {
@@ -72,19 +54,13 @@ describe("packaged jot skill tree", () => {
 
 	test("documents the legacy flags in a four-column Flags table and the Usage line", () => {
 		const text = skill();
-		const lines = text.split("\n");
-		const usage = lines.find((line) => line.startsWith("**Usage:**"));
-		expect(usage).toBeDefined();
-		const start = lines.indexOf("## Flags");
-		expect(start).toBeGreaterThan(-1);
-		const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
-		const rows = lines.slice(start + 1, end === -1 ? undefined : end).filter((line) => line.startsWith("|"));
-		expect(cells(rows[0] ?? "")).toEqual(["Flag", "Short", "Effect", "Default"]);
-		const documented = new Set(
-			rows.slice(2).flatMap((row) => cells(row).slice(0, 2).flatMap((cell) => [...cell.matchAll(FLAG)].map((m) => m[1]))),
-		);
+		const usage = usageLine(text);
+		expect(usage).not.toBe("");
+		const table = flagsTable(text);
+		expect(table).not.toBeNull();
+		expect(table?.header).toEqual(["Flag", "Short", "Effect", "Default"]);
 		for (const flag of ["--save", "-s", "--previous", "-p", "--kick", "-k"]) {
-			expect(documented.has(flag)).toBe(true);
+			expect(table?.documented.has(flag)).toBe(true);
 			expect(usage).toContain(flag);
 		}
 		expect(text).toContain("-kp");

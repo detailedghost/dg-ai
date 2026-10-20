@@ -14,6 +14,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor sniff stash.
+
 ## Usage
 
 **Usage:** `/dg:sniff [path] [--gaps] [-o]`

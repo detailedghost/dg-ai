@@ -14,6 +14,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor worktree.
+
 ## Usage
 
 **Usage:** `/dg:worktree create <slug> [-p <prefix>] [-b <branch>] [-N] [--no-resume] | list [--porcelain] | remove <slug> [--force] [--keep-branch] [--merged-ok] | prune`

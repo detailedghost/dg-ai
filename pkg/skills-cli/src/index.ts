@@ -14,6 +14,7 @@ import { registerChannelReview } from "./commands/channel-review";
 import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCredentials } from "./commands/credentials";
 import { registerDemo } from "./commands/demo";
+import { registerDoctor } from "./commands/doctor";
 import { registerDepsUpgrade } from "./commands/deps-upgrade";
 import { registerFile } from "./commands/file";
 import { registerInbox } from "./commands/inbox";
@@ -74,6 +75,7 @@ registerMonolith(program);
 registerJot(program);
 registerBg(program);
 registerSniff(program);
+registerDoctor(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

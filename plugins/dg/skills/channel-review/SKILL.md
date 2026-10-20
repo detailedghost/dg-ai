@@ -14,6 +14,8 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 ~/.dg/bin/dg-skills channel-review --help
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor channel-review.
+
 For PowerShell, use [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1).
 Read [setup](references/setup.md) and [commands](references/commands.md) before
 changing config or choosing custom reactions. To set this up for a new person,

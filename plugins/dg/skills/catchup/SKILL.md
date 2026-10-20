@@ -31,6 +31,8 @@ command. Shell variables do not persist between tool calls:
 ~/.dg/bin/dg-skills catchup
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor catchup.
+
 For a local-only catchup, use `~/.dg/bin/dg-skills catchup --no-push` after the same resolution.
 `~/.dg/bin/dg-skills catchup --help` prints usage without inspecting Git or running build tools.
 Run from the intended repository or worktree.

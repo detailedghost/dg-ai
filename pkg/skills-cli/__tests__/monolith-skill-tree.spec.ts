@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import {
 	HELPER_SUBCOMMANDS,
@@ -7,6 +7,7 @@ import {
 	TEMPLATE_ASSET,
 	TERM_SECTIONS,
 } from "./monolith-fixtures";
+import { walk } from "./skill-tree-helpers";
 import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 
 const SKILLS = ["monolith", "spring-break"] as const;
@@ -38,16 +39,6 @@ const KNOWN_MONOLITH_CALLS = new Set<string>([
 	...HELPER_SUBCOMMANDS,
 	"worktree-gen",
 ]);
-
-function walk(dir: string): string[] {
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir)
-		.sort()
-		.flatMap((name) => {
-			const path = join(dir, name);
-			return statSync(path).isDirectory() ? walk(path) : [path];
-		});
-}
 
 const trees = SKILLS.map((skill) => ({
 	skill,

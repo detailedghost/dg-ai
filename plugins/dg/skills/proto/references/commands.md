@@ -1,5 +1,7 @@
 # Commands and recovery
 
+If a step fails, run ~/.dg/bin/dg-skills doctor proto.
+
 ## Extension precondition
 
 Gate this skill before scrape on the installer marker used by

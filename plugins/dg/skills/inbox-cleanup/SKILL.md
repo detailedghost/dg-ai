@@ -14,6 +14,8 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 ~/.dg/bin/dg-skills inbox --help
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor inbox.
+
 For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
 

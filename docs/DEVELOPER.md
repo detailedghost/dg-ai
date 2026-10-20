@@ -162,7 +162,7 @@ dg-skills proxy codex --plan --prompt-file task.md --subagent reviewer
 
 `--plan` saves the briefed prompt and prints `{plan, backend, planFile, command}`.
 Execute the exact quoted `command` to launch a detached job, then use
-`dg-skills proxy background status <id>` or `list`. `update <id> <context>` queues
+`dg-skills bg status <id>` or `list`. `update <id> <context>` queues
 context or resumes a completed session; `cancel <id>` stops the owned job.
 The packaged background commands also include `run`, `drain`, `kill`, and `prune`;
 they work without the later public bg command. Detached launch needs POSIX `sh`;

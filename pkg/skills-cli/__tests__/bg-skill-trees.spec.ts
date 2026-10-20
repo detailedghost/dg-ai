@@ -5,94 +5,33 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	statSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { mergeEnv } from "./module-call";
-import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
+import { splitFrontmatter } from "./spec-fixtures";
+import {
+	FLAG,
+	SHELL_LANGS,
+	codeSpans,
+	fences,
+	flagsTable,
+	skillDir,
+	skillText,
+	treeText,
+	usageLine,
+	walk,
+} from "./skill-tree-helpers";
 
-const FLAG = /(?<![\w-])(--[a-z][a-z-]*|-[A-Za-z])(?![\w-])/g;
+function requiredFlagsTable(text: string) {
+	const table = flagsTable(text);
+	expect(table).not.toBeNull();
+	return table as NonNullable<ReturnType<typeof flagsTable>>;
+}
+
 const BG_VERBS = ["run", "list", "status", "cancel", "kill", "update", "prune"];
-const SHELL_LANGS = ["sh", "bash", "zsh", "shell"];
-
-interface Fence {
-	lang: string;
-	body: string;
-}
-
-function walk(dir: string): string[] {
-	return readdirSync(dir)
-		.sort()
-		.flatMap((name) => {
-			const path = join(dir, name);
-			return statSync(path).isDirectory() ? walk(path) : [path];
-		});
-}
-
-function skillDir(name: string): string {
-	return join(SOURCE_SKILLS, name);
-}
-
-function skillText(name: string): string {
-	return readFileSync(join(skillDir(name), "SKILL.md"), "utf8");
-}
-
-function treeText(name: string): string {
-	return walk(skillDir(name))
-		.map((path) => readFileSync(path, "utf8"))
-		.join("\n");
-}
-
-function fences(text: string): Fence[] {
-	return [...text.matchAll(/```([\w-]*)\n([\s\S]*?)```/g)].map((match) => ({
-		lang: match[1] ?? "",
-		body: match[2] ?? "",
-	}));
-}
-
-function cells(row: string): string[] {
-	return row
-		.trim()
-		.replace(/^\|/, "")
-		.replace(/\|$/, "")
-		.split(/(?<!\\)\|/)
-		.map((cell) => cell.trim());
-}
-
-function flagsTable(text: string) {
-	const lines = text.split("\n");
-	const start = lines.indexOf("## Flags");
-	expect(start).toBeGreaterThan(-1);
-	const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
-	const rows = lines
-		.slice(start + 1, end === -1 ? undefined : end)
-		.filter((line) => line.startsWith("|"));
-	const documented = new Set(
-		rows.slice(2).flatMap((row) =>
-			cells(row)
-				.slice(0, 2)
-				.flatMap((cell) => [...cell.matchAll(FLAG)].map((match) => match[1])),
-		),
-	);
-	return { header: cells(rows[0] ?? ""), documented };
-}
-
-function usageLine(text: string): string {
-	return text.split("\n").find((line) => line.startsWith("**Usage:**")) ?? "";
-}
-
-function codeSpans(text: string): string[] {
-	const inFences = fences(text).flatMap(({ body }) => body.split("\n"));
-	const inline = [
-		...text.replace(/```[\s\S]*?```/g, "").matchAll(/`([^`\n]+)`/g),
-	].map((match) => match[1] ?? "");
-	return [...inFences, ...inline].map((span) =>
-		span.trim().replace(/^\$ /, ""),
-	);
-}
 
 describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 	test("is named for the skill and carries no host-only frontmatter keys", () => {
@@ -117,7 +56,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 		const text = skillText(name);
 		const usage = usageLine(text);
 		expect(usage).not.toBe("");
-		const { header, documented } = flagsTable(text);
+		const { header, documented } = requiredFlagsTable(text);
 		expect(header).toEqual(["Flag", "Short", "Effect", "Default"]);
 		for (const flag of [...usage.matchAll(FLAG)].map((match) => match[1]))
 			expect(documented.has(flag)).toBe(true);
@@ -189,7 +128,7 @@ describe("packaged bg skill", () => {
 
 	test("documents the workflow opt-in flag", () => {
 		const text = skillText("bg");
-		const { documented } = flagsTable(text);
+		const { documented } = requiredFlagsTable(text);
 		for (const flag of ["-w", "--workflow"]) {
 			expect(documented.has(flag)).toBe(true);
 			expect(usageLine(text)).toContain(flag);
@@ -251,7 +190,7 @@ describe("packaged cls skill", () => {
 	});
 
 	test("documents the legacy flags", () => {
-		const { documented } = flagsTable(skillText("cls"));
+		const { documented } = requiredFlagsTable(skillText("cls"));
 		for (const flag of ["--force", "--keep-branch", "--keep-assets"]) {
 			expect(documented.has(flag)).toBe(true);
 			expect(usageLine(skillText("cls"))).toContain(flag);
@@ -323,7 +262,7 @@ describe("packaged stat skill", () => {
 
 	test("documents --overwatch as its only flag", () => {
 		const text = skillText("stat");
-		const { documented } = flagsTable(text);
+		const { documented } = requiredFlagsTable(text);
 		expect([...documented]).toEqual(["--overwatch"]);
 		expect(
 			[...usageLine(text).matchAll(FLAG)].map((match) => match[1]),
@@ -371,7 +310,7 @@ describe("packaged proxy skill background calls", () => {
 		expect(text).toContain("~/.dg/bin/dg-skills bg status");
 		expect(text).not.toContain("proxy background");
 		expect(text).toContain("one quoted argument");
-		expect(flagsTable(text).header).toEqual([
+		expect(requiredFlagsTable(text).header).toEqual([
 			"Flag",
 			"Short",
 			"Effect",

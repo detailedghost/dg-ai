@@ -10,6 +10,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor stash.
+
 # /dg:wayfinder - Chart the Way, Then Walk It
 
 A loose idea is too big for one session and wrapped in fog. Find the way to the **destination** before you build. A **map** lists the decisions made and the fog left. **Tickets** are single decisions, each sized for one session. Resolve one ticket per session until no ticket and no fog remain. Then hand off.

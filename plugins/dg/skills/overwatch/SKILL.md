@@ -25,6 +25,8 @@ if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension overwa
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor require-extension overwatch-snapshot.
+
 Before using any Overwatch command, make sure this chat has a dg session. If it
 does not, run this first from the chat's working directory:
 
