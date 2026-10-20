@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { flagsTable, skillText, usageLine, walk } from "./skill-tree-helpers";
+import {
+	fences,
+	flagsTable,
+	hasShellComment,
+	SHELL_LANGS,
+	skillText,
+	treeFiles,
+	usageLine,
+	walk,
+} from "./skill-tree-helpers";
 import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 
 const JOT = join(SOURCE_SKILLS, "jot");
@@ -92,5 +101,13 @@ describe("packaged jot skill tree", () => {
 			expect([name, /\$\(stash /.test(text)]).toEqual([name, false]);
 			expect([name, /scripts\/bin/.test(text)]).toEqual([name, false]);
 		}
+	});
+
+	test("shell blocks carry no hash comments", () => {
+		for (const { file, text } of treeFiles("jot"))
+			for (const { lang, body } of fences(text))
+				if (SHELL_LANGS.includes(lang))
+					for (const line of body.split("\n"))
+						expect([file, line, hasShellComment(line)]).toEqual([file, line, false]);
 	});
 });

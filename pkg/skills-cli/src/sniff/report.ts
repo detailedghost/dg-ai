@@ -1,4 +1,4 @@
-import { basename, relative } from "node:path";
+import { basename, resolve } from "node:path";
 import {
 	extractCompose,
 	extractDockerfile,
@@ -139,7 +139,7 @@ export function buildReport(root: string): SniffReport {
 	const counts: Record<string, number> = {};
 	for (const r of requirements) counts[r.type] = (counts[r.type] ?? 0) + 1;
 	return {
-		repo: basename(relative(process.cwd(), root) || process.cwd()),
+		repo: basename(resolve(root)) || resolve(root),
 		total: requirements.length,
 		gaps: requirements.filter((r) => r.gaps.length > 0).length,
 		counts,

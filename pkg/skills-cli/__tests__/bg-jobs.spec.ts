@@ -482,6 +482,19 @@ describe("dg-skills bg prune", () => {
 		});
 		expect(existsSync(victim)).toBe(true);
 	});
+
+	test("list skips a meta file whose id is not a safe job name and still lists the rest", async () => {
+		const base = world.dir();
+		const tree = world.mkdir(join(base, "repo"));
+		const job = await world.launch("exit 0", tree);
+		await world.settled(job.id, tree);
+		writeFileSync(
+			join(world.state, "bg", "evil.meta.json"),
+			JSON.stringify({ id: "../../evil", command: ":", cwd: base, kind: "shell" }),
+		);
+		const listed = await world.json<{ jobs: { id: string }[] }>(["list"], base);
+		expect(listed.jobs.map((value) => value.id)).toEqual([job.id]);
+	});
 });
 
 describe("dg-skills bg help", () => {

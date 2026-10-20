@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO_ROOT } from "./test-support";
@@ -42,6 +49,25 @@ async function runCli(args: string[]): Promise<string> {
 	const out = await new Response(proc.stdout).text();
 	await proc.exited;
 	return out;
+}
+
+const WAVE_4_SKILLS = [
+	"jot",
+	"bg",
+	"cls",
+	"stat",
+	"sniff",
+	"find-work",
+	"thrash",
+	"review-loop",
+];
+
+function treeTexts(dir: string): string[] {
+	return readdirSync(dir).flatMap((entry) => {
+		const path = join(dir, entry);
+		if (statSync(path).isDirectory()) return treeTexts(path);
+		return /\.(md|mjs)$/.test(entry) ? [readFileSync(path, "utf8")] : [];
+	});
 }
 
 function skillsCallingCli(): string[] {
@@ -104,6 +130,22 @@ describe("doctor coverage guard", () => {
 			const named = DOCTOR_LINE.exec(text)?.[1]?.split(" ") ?? [];
 			for (const item of named)
 				expect([name, item, covered.has(item)]).toEqual([name, item, true]);
+		}
+	});
+
+	test("the doctor line of each wave 4 skill names every registered command its tree calls", () => {
+		for (const name of WAVE_4_SKILLS) {
+			const dir = join(SKILLS_DIR, name);
+			const named = DOCTOR_LINE.exec(readFileSync(join(dir, "SKILL.md"), "utf8"))?.[1]?.split(" ") ?? [];
+			const called = new Set(
+				treeTexts(dir).flatMap((text) =>
+					[...text.matchAll(/dg-skills ([a-z][a-z-]*)/g)].map((match) => match[1] ?? ""),
+				),
+			);
+			const missing = [...called].filter(
+				(sub) => registered.includes(sub) && !named.includes(sub),
+			);
+			expect([name, missing]).toEqual([name, []]);
 		}
 	});
 

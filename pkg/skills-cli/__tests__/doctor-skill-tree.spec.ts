@@ -7,6 +7,7 @@ import {
 	firstCallIndex,
 	flagsTable,
 	FLAG,
+	hasShellComment,
 	SHELL_LANGS,
 	skillDir,
 	skillText,
@@ -80,7 +81,7 @@ describe("packaged doctor skill tree", () => {
 			for (const { lang, body } of fences(text))
 				if (SHELL_LANGS.includes(lang))
 					for (const line of body.split("\n"))
-						expect([file, line.trimStart().startsWith("#")]).toEqual([file, false]);
+						expect([file, line, hasShellComment(line)]).toEqual([file, line, false]);
 	});
 
 	test("leaves no private path or local zone behind", () => {

@@ -61,11 +61,12 @@ Nits never fail a review. `--comment` replaces the event. Spice never moves a ti
 First run: install or refresh the compiled CLI when it is missing or too old. Every later call uses the literal path:
 
 ```bash
-~/.dg/bin/dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run ||
+~/.dg/bin/dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run &&
+  ~/.dg/bin/dg-skills bg --help >/dev/null 2>&1 ||
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proxy thrash.
+If a step fails, run ~/.dg/bin/dg-skills doctor bg proxy thrash.
 
 A binary whose `thrash` help lacks `--dry-run` is stale: re-run the bootstrap once, then stop with an error rather than run it.
 

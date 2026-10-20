@@ -23,6 +23,8 @@ import {
 } from "@dg/common/node";
 import { INDEX_FILE, type JotLayout } from "./layout";
 
+const MAX_NAME_ATTEMPTS = 20;
+
 export type JotKind = "note" | "save";
 
 export interface JotEntry {
@@ -98,20 +100,34 @@ export function jotName(): string {
 	return `jot-${readableSuffix()}-${randSuffix(6)}`;
 }
 
-/** Writes a laid-out jot into `dir` and returns the path of the file or folder. */
+/** Writes a laid-out jot into `dir` and returns its path; throws EEXIST when the name is taken. */
 export function writeJot(dir: string, name: string, layout: JotLayout): string {
 	mkdirSync(dir, { recursive: true });
 	if ("single" in layout) {
 		const file = path.join(dir, `${name}.md`);
-		writeFileSync(file, layout.single);
+		writeFileSync(file, layout.single, { flag: "wx" });
 		return file;
 	}
 	const folder = path.join(dir, name);
-	mkdirSync(folder, { recursive: true });
+	mkdirSync(folder);
 	for (const part of layout.parts)
 		writeFileSync(path.join(folder, part.file), part.body);
 	writeFileSync(path.join(folder, INDEX_FILE), layout.index);
 	return folder;
+}
+
+export function writeNewJot(dir: string, layout: JotLayout): string {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return writeJot(dir, jotName(), layout);
+		} catch (error) {
+			if (
+				(error as NodeJS.ErrnoException).code !== "EEXIST" ||
+				attempt >= MAX_NAME_ATTEMPTS
+			)
+				throw error;
+		}
+	}
 }
 
 export function listEntries(): JotEntry[] {

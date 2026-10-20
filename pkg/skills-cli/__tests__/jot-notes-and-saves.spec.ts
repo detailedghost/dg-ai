@@ -8,6 +8,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { layoutJot } from "../src/jot/layout";
+import { writeJot } from "../src/jot/store";
 import { CAP, jotWorld, section, tree } from "./jot-fixtures";
 
 setDefaultTimeout(60_000);
@@ -416,5 +418,38 @@ describe("jot read, kind and done", () => {
 		const run = await world.jot(["read", outside], main);
 		expect(run.exitCode).toBe(1);
 		expect(existsSync(outside)).toBe(true);
+	});
+});
+
+describe("jot name collisions", () => {
+	test("writing a taken single-file name throws EEXIST and keeps the first body", () => {
+		const dir = world.tmp("jot-collide-");
+		writeJot(dir, "jot-same-name", layoutJot("# first\n"));
+		expect(() => writeJot(dir, "jot-same-name", layoutJot("# second\n"))).toThrow(
+			expect.objectContaining({ code: "EEXIST" }),
+		);
+		expect(readFileSync(join(dir, "jot-same-name.md"), "utf8")).toBe("# first\n");
+	});
+
+	test("writing a taken split-folder name throws EEXIST and adds no part to it", () => {
+		const dir = world.tmp("jot-collide-");
+		const split = layoutJot(`# big\n\n${section("a", 1200)}${section("b", 1200)}`);
+		writeJot(dir, "jot-same-name", split);
+		const before = tree(join(dir, "jot-same-name"));
+		expect(() => writeJot(dir, "jot-same-name", split)).toThrow(
+			expect.objectContaining({ code: "EEXIST" }),
+		);
+		expect(tree(join(dir, "jot-same-name"))).toEqual(before);
+	});
+
+	test("parallel adds each keep their own body", async () => {
+		const { main } = world.repo();
+		const runs = await Promise.all(
+			Array.from({ length: 6 }, (_, i) => world.jot(["add"], main, `# parallel ${i}\n`)),
+		);
+		const paths = runs.map((run) => run.stdout.trim());
+		expect(new Set(paths).size).toBe(6);
+		const bodies = paths.map((file) => readFileSync(file, "utf8")).sort();
+		expect(bodies).toEqual(Array.from({ length: 6 }, (_, i) => `# parallel ${i}\n`));
 	});
 });

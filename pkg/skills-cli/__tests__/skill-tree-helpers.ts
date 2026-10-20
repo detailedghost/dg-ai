@@ -48,6 +48,11 @@ export function fences(text: string): Fence[] {
 	}));
 }
 
+export function hasShellComment(line: string): boolean {
+	const bare = line.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, "");
+	return /(^|\s)#(?!!)/.test(bare);
+}
+
 export function cells(row: string): string[] {
 	return row
 		.trim()

@@ -3,7 +3,6 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
-	writeSync,
 } from "node:fs";
 import path from "node:path";
 import { writeStdout } from "@dg/common/node";
@@ -22,12 +21,11 @@ import {
 import { INDEX_FILE, layoutJot, titleOf } from "./layout";
 import {
 	ensureRepoIgnore,
-	jotName,
 	listEntries,
 	noteWriteDir,
 	resolveJot,
 	saveWriteDir,
-	writeJot,
+	writeNewJot,
 } from "./store";
 
 const DEFAULT_LS_LIMIT = 10;
@@ -68,7 +66,7 @@ export const jotSpec: CommandSpec = {
 				const layout = layoutJot(await Bun.stdin.text());
 				const dir = save ? saveWriteDir() : noteWriteDir();
 				if (save) ensureRepoIgnore(dir);
-				await writeStdout(`${writeJot(dir, jotName(), layout)}\n`);
+				await writeStdout(`${writeNewJot(dir, layout)}\n`);
 			},
 		},
 
@@ -179,6 +177,8 @@ export const jotSpec: CommandSpec = {
 					throw new Error("missing id or text; run kick-list");
 				if (!existsSync(file))
 					throw new Error(`no checkpoint matches "${query}"; run kick-list`);
+				let taken = "";
+				let kept = false;
 				try {
 					await updateCheckpointFile(file, (content) => {
 						const {
@@ -186,13 +186,15 @@ export const jotSpec: CommandSpec = {
 							content: next,
 							leftover,
 						} = removeSection(content, query);
-						writeSync(1, removed.text);
-						if (leftover === "preamble")
-							process.stderr.write(
-								`kept ${file}: it has text besides the CLI header\n`,
-							);
+						taken = removed.text;
+						kept = leftover === "preamble";
 						return leftover === "none" ? null : next;
 					});
+					await writeStdout(taken);
+					if (kept)
+						process.stderr.write(
+							`kept ${file}: it has text besides the CLI header\n`,
+						);
 				} catch (error) {
 					if (!(error instanceof AmbiguousQueryError)) throw error;
 					await writeStdout(error.hits.map(kickRow).join(""));

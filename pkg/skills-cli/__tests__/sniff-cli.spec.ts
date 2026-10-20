@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
 	FAKE,
@@ -123,6 +124,15 @@ describe("dg-skills sniff inventory output", () => {
 			(await world.sniff([basename(root)], join(root, ".."))).stdout,
 		);
 		expect(report.repo).toBe(basename(root));
+	});
+
+	test("names the scanned directory, never .., when the path is the parent", async () => {
+		const root = world.repo(secretBearingTree());
+		const inner = join(root, "inner");
+		mkdirSync(inner);
+		const report = parse((await world.sniff([".."], inner)).stdout);
+		expect(report.repo).toBe(basename(root));
+		expect(report.requirements.length).toBeGreaterThan(0);
 	});
 
 	test("ignores arguments after the path", async () => {

@@ -18,6 +18,7 @@ import {
 	codeSpans,
 	fences,
 	flagsTable,
+	hasShellComment,
 	skillDir,
 	skillText,
 	treeText,
@@ -106,7 +107,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 			for (const { lang, body } of fences(text))
 				if (SHELL_LANGS.includes(lang))
 					for (const line of body.split("\n"))
-						expect([file, line, /(^|\s)#(\s|$)/.test(line)]).toEqual([
+						expect([file, line, hasShellComment(line)]).toEqual([
 							file,
 							line,
 							false,

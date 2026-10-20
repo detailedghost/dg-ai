@@ -807,6 +807,7 @@ function readMetaFile(file: string): JobMeta | null {
 		if (
 			!isRecord(meta) ||
 			typeof meta.id !== "string" ||
+			!JOB_ID_PATTERN.test(meta.id) ||
 			typeof meta.cwd !== "string"
 		)
 			return null;
