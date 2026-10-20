@@ -345,10 +345,32 @@ slices:
       primary: js
       qa:
         - qa-code
+  - id: 31
+    name: w4-doctor
+    depends_on:
+      - 18
+    files:
+      - pkg/skills-cli/src/commands/doctor.ts
+      - pkg/skills-cli/src/doctor/**
+      - pkg/skills-cli/src/commands/*.ts
+      - pkg/skills-cli/__tests__/doctor*.spec.ts
+      - plugins/dg/skills/doctor/**
+      - plugins/dg/skills/*/SKILL.md
+      - plugins/dg/skills/thrash/references/agent-prompt.md
+      - plugins/dg/skills/review-loop/references/proxy-review-prompt.md
+      - pkg/skills-cli/README.md
+      - pkg/skills-cli/src/index.ts
+      - pkg/skills-test/__tests__/cli-smoke.spec.ts
+      - pkg/skills-test/__tests__/doctor-coverage.spec.ts
+      - pkg/common/__tests__/installed-skill-files.ts
+    agents:
+      primary: js
+      qa:
+        - qa-code
   - id: 19
     name: w4-release
     depends_on:
-      - 18
+      - 31
     files:
       - pkg/*/package.json
       - .claude-plugin/plugin.json

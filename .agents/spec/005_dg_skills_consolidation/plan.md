@@ -359,10 +359,32 @@ slices:
       primary: js
       qa:
         - qa-code
+  - id: 31
+    name: w4-doctor
+    depends_on:
+      - 18
+    files:
+      - pkg/skills-cli/src/commands/doctor.ts
+      - pkg/skills-cli/src/doctor/**
+      - pkg/skills-cli/src/commands/*.ts
+      - pkg/skills-cli/__tests__/doctor*.spec.ts
+      - plugins/dg/skills/doctor/**
+      - plugins/dg/skills/*/SKILL.md
+      - plugins/dg/skills/thrash/references/agent-prompt.md
+      - plugins/dg/skills/review-loop/references/proxy-review-prompt.md
+      - pkg/skills-cli/README.md
+      - pkg/skills-cli/src/index.ts
+      - pkg/skills-test/__tests__/cli-smoke.spec.ts
+      - pkg/skills-test/__tests__/doctor-coverage.spec.ts
+      - pkg/common/__tests__/installed-skill-files.ts
+    agents:
+      primary: js
+      qa:
+        - qa-code
   - id: 19
     name: w4-release
     depends_on:
-      - 18
+      - 31
     files:
       - pkg/*/package.json
       - .claude-plugin/plugin.json
@@ -661,6 +683,7 @@ These requirements apply to every port; each slice below adds its specific behav
 - Use current APIs, not legacy idioms: `Bun.$`, `Bun.file`/`Bun.write`, `Bun.spawn`, `node:util` `parseArgs`, `fetch`, `AbortSignal.timeout` and the current gh/glab REST and GraphQL endpoints. Before porting a helper, search `pkg/common` and earlier waves; call or extend the shared one instead of copying the legacy version. Behavior parity still wins over a newer API where they differ.
 
 - Every packaged skill that takes flags documents them in a `## Flags` table (Flag | Short | Effect | Default) plus a **Usage:** line, matching what the skill and its dg-skills command accept; a skills-test guard enforces it. Shipped in Wave 3 (5127a44); each later wave's new skills and the dg:proto, dg:demo and erd flag tables must pass the guard.
+- Every dg-skills command and packaged skill ships doctor checks (slice 31 builds the runner in Wave 4). Each later port adds checks for its new item; a coverage guard enforces it.
 
 - User verification requirement (2026-10-17): before notifying the user that migrated skills are ready to move to, obtain an actual independent Claude compatibility review of the packaged skills against selected legacy inputs. Verify namespaced discovery from a relocated plugin, lazy resources, native approvals, delegated/resume flows, command parity, and remaining cutover gates; preserve evidence and disclose unexecuted scenarios. Claude manifest validation alone is insufficient. No local settings/shim/cutover changes are authorized. External model review currently requires specific payload consent following automatic approval rejection; never claim that review ran.
 
@@ -675,7 +698,7 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 | 2a | 1–4 | feature/dg-skills-w2a | default branch containing Wave 1 | 1.15.0 |
 | 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | none (merged without a bump; slice 10 shipped in Wave 3) |
 | 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.16.0 (shipped) |
-| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.17.0 |
+| 4 | 16–19, 31 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.17.0 |
 | 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.18.0 |
 | 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.19.0 |
 | 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.20.0 |
@@ -690,6 +713,8 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 
 User history override (2026-10-17): the current Wave 2b review PR must contain one commit. The completed slices 5–9 were consolidated locally into b79344e21522c139202eb3a231ea9421cfb70dce with an identical Git tree; backup `refs/heads/backup/dg-skills-w2b-before-squash-20261017` retains original slice commits. Historical per-slice SHAs below remain evidence references. Include slice 10, review corrections, and docs in the same final Wave 2b commit before publication. Earlier published wave branches remain untouched. Publishing still follows completion and the retained fallback prerequisite.
 **User scope decisions (2026-10-20):**
+- Doctor (user decision 2026-10-20): every item gets doctor checks. Slice 31 (w4-doctor) ships the runner, `dg-skills doctor [<item>] [--json]`, the `/dg:doctor` skill and checks for every shipped item in Wave 4, before the release slice 19. Later waves add checks for their items.
+- `pw --ext` (user decision 2026-10-20, slice 25): drive and read the user's real browser through the extension, with read verbs so an agent can see what the user is on. Small scope, per-action approvals, redaction, no code execution.
 - viz and review are dropped from dg. Slice 14 work is removed from Wave 3 (slice 14 leaves `slices[]`; slice 15 depends on slice 13). `/viz verify` in spec plan mode (step 8) is replaced by a built-in plan-mode approval (`EnterPlanMode`/`ExitPlanMode`), keeping the gate. `-l`/`--local` and `REVIEW_MODE` are removed from sdlc and spec because they needed the review board; the human review is always on the draft PR.
 - lineage and clockout are retired fully: not ported, and listed for deletion at the manual cutover. Slice 22 (w5-lineage) is dropped entirely and slice 23 now depends on slice 21. Slice 19 is release-only (renamed w4-release, no clockout port).
 - Matched versions: Wave 3 shipped 1.16.0, so Wave 4 = 1.17.0, Wave 5 = 1.18.0, Wave 6 = 1.19.0, Wave 7 = 1.20.0.
@@ -1077,6 +1102,25 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 #### Acceptance Criteria
 - [ ] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
 
+### Slice 31 — w4-doctor
+
+#### Engineering
+- [ ] Add a shared doctor runner: each command declares its checks next to its code (`{ id, run }` returning ok, warn or fail, one detail line and a Fix line with the exact command to run); one runner prints them and sets the exit code.
+- [ ] `dg-skills doctor` checks everything; `dg-skills doctor <item>` checks one item; `--json` prints the same result for agents. Exit 0 when all pass or only warn, 1 when any check fails.
+- [ ] Shared checks: installed dg-skills version matches the plugin version, the dg plugin is installed, packaged skill files exist, scratch and state roots are writable.
+- [ ] Per-item checks for every shipped item: required tools and versions (git, gh/glab, bun, claude/codex), required credentials exist (metadata only, never decrypt), daemon and extension pairing for `--ext` items, unslop installed for polish, and the allow rules the item needs (read-only check of settings).
+- [ ] Ship the `/dg:doctor` skill: run doctor, explain each failure in plain words, and walk the user through the Fix lines. Add one line to every packaged skill: run `~/.dg/bin/dg-skills doctor <item>` when the skill fails.
+- [ ] Doctor only reads and reports: it never fixes anything itself, never decrypts credentials, never edits settings, and never starts the daemon or a browser.
+- [ ] Move the remaining `proxy background` references (thrash agent-prompt, review-loop proxy-review-prompt, pkg/skills-cli/README.md) to `bg` verbs.
+
+#### Testing Criteria
+##### Contracts
+- [ ] Each check reports ok, warn and fail with fake tools, fake versions and isolated HOME; `--json` shape is stable; exit codes 0 and 1; no daemon, browser or credential decrypt starts.
+- [ ] A coverage guard fails when a registered dg-skills command has no doctor checks, or a packaged skill lacks the doctor line.
+
+#### Acceptance Criteria
+- [ ] A stale installed binary, a missing tool and a missing credential each produce a clear Fix line; every shipped item is covered.
+
 ### Slice 19 — w4-release
 
 #### Engineering
@@ -1166,6 +1210,10 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 - [ ] Port pw (pw, pw-daemon, pw-code) to `dg-skills pw`
 - [ ] Expand compile spike to local fixture open/snapshot/close, daemon self-reexec/browser discovery and owned registry identity; retain stop-and-ask packaging gate.
 - [ ] `dg-skills pw` also serves local demos (slice 27): Chromium video recording, light/dark before/after screenshots, and the overlay from the shared tour-overlay module.
+- [ ] `dg-skills pw --ext` drives the user's real browser through the extension. Write verbs: `open`, `click`, `fill`. Read verbs: `current` (active tab URL and title plus open tabs), `snapshot` (accessibility tree and visible text on stdout, same shape as plain `pw snapshot`), `screenshot` (visible tab saved to scratch, path printed), `selection` (selected text), `console` (recent errors and warnings). No code execution.
+- [ ] `--ext` safety: read verbs never change the page and ask once per call, naming the tab; write verbs need their own approval; output redacts password fields and token-like values and is size-capped; browser settings and other extensions' pages are blocked with a clear message. Chromium only. The extension feature and its wider permission ship in this slice with security QA.
+- [ ] `dg:demo --local --attach-pr` uses `pw --ext` for the GitHub upload; with neither the extension nor a saved login ready, it hands over the files and the PR link with no PR change. Plain `pw` stays the default for headless runs, recording, mocking and isolated runs.
+- [ ] Ship doctor checks for pw and pw --ext (Playwright browser present, extension paired).
 - [ ] Keep pw code an explicit separately approved action with documented manual narrow permission rules; normal CLI continues refusing run-code. Never change installed permission rules or silently include code in blanket grants.
 
 #### Testing Criteria
