@@ -30,14 +30,14 @@ Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_INSTALL_CODEX = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
@@ -52,14 +52,14 @@ the marker `~/.dg/cli-only`. Run it before the plugin skills, so their
 bootstrap gate sees `dg-skills` and skips the full install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_CLI_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 `DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
@@ -107,14 +107,14 @@ otherwise `~/.dg/skills`.
 Without a checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_SKILLS_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
@@ -162,11 +162,11 @@ if [ ! -x ~/.dg/bin/dg-skills ]; then
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 # Windows PowerShell:
-# irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+# irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set

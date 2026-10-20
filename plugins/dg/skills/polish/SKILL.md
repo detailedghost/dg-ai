@@ -13,7 +13,7 @@ The PR flow calls the `dg-skills chain` helper. First run: install or refresh th
 
 ```bash
 ~/.dg/bin/dg-skills chain --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor polish chain.

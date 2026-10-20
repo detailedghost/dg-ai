@@ -1125,11 +1125,11 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 #### Engineering
 - [ ] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
-- [ ] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
+- [x] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
+- [x] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
 
 #### Acceptance Criteria
 - [ ] Matched Wave 4 draft base/head/URL for slices 16–19 persisted.
