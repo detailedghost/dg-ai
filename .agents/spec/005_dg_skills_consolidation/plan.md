@@ -723,6 +723,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Slice 12 committed 715efc1, with the plugin cache locator fix 6a85adc. Next: slice 13.
 - Slice 13 committed 4b43f09. Next: slice 14.
 - Slice 14 committed 28a247b. Next: slice 15 (Wave 3 release).
+- Wave 3 DRAFT PR (2026-10-20): [#40](https://github.com/detailedghost/dg-ai/pull/40), branch feature/dg_skills_w3, base master. Slices 10-15 committed, plus all-wave skill invocation fixes (literal ~/.dg/bin/dg-skills calls, /dg:<name> names, plugin cache locator). This spec copy in the Wave 3 branch is now canonical; the old local feature/skills_import copy is superseded. Open before Wave 4: package arch, design and qa-code agents and use dg:<agent> names (user approved); channel-review runners/index.ts bare /thrash|/address|/deps-upgrade; docs/AGENT-INSTALL.md "$DG" calls.
 
 ## Wave Progress
 
