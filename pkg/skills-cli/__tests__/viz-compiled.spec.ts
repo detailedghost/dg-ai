@@ -17,7 +17,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { shellCommand } from "../src/utils/self-command";
 import { mergeEnv } from "./module-call";
 import {
 	freePort,
@@ -478,14 +477,15 @@ describe("dg-skills viz wait", () => {
 		expect(run.stderr).toContain("invalid --timeout");
 	});
 
-	test("a timeout exits 1 and prints an installed-binary resume command, never the legacy script path", async () => {
+	test("a timeout exits 1 and prints an unquoted literal-path resume command, never the legacy script path", async () => {
 		const slug = seed({});
 		const run = await viz(["wait", slug, "--timeout", "1"]);
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain(`timed out after 1s`);
 		expect(run.stderr).toContain(
-			`resume with: ${shellCommand([binary, "viz", "wait", slug, "--resume"])}`,
+			`resume with: ~/.dg/bin/dg-skills viz wait ${slug} --resume\n`,
 		);
+		expect(run.stderr).not.toContain("'");
 		expect(run.stderr).not.toContain("viz-cli");
 		expect(run.stderr).not.toContain("/scripts/bin");
 		expect(run.stderr).not.toMatch(/\/home\/detailedghost/);

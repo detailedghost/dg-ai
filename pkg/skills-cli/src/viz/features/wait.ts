@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { selfCommand, shellCommand } from "../../utils/self-command";
 import { flagValue } from "../args";
 import { sessionDir } from "../config";
 import { die } from "../io";
@@ -81,7 +80,7 @@ export async function cmdWait(rest: string[]): Promise<void> {
 	}
 	process.stderr.write("\n");
 	markStale(slug);
-	const resume = shellCommand(selfCommand(["viz", "wait", slug, "--resume"]));
+	const resume = `~/.dg/bin/dg-skills viz wait ${slug} --resume`;
 	die(
 		`timed out after ${timeout}s — all_clear not reached for ${slug}\n  resume with: ${resume}`,
 	);

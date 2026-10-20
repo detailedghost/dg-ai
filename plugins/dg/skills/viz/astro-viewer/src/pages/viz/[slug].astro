@@ -216,7 +216,7 @@ const startCommand = payload.start_command as string | undefined
 const liveCommand =
   payload.live_command ??
   (startCommand && payload.template === 'plan'
-    ? `${startCommand} — as each phase moves, run: dg-skills viz phase ${slug} <phase-id> <status>`
+    ? `${startCommand} — as each phase moves, run: ~/.dg/bin/dg-skills viz phase ${slug} <phase-id> <status>`
     : undefined)
 
 // M10: board state changes every render (decisions, phases, tracks) — match boards.ts/

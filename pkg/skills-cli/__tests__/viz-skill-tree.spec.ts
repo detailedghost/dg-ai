@@ -95,6 +95,15 @@ describe("viz skill document", () => {
 		expect(text).toContain("~/.dg/bin/dg-skills viz");
 	});
 
+	test("the board prints its live-update command as the literal unquoted path", () => {
+		const page = readFileSync(
+			join(VIZ, "astro-viewer/src/pages/viz/[slug].astro"),
+			"utf8",
+		);
+		expect(page).toContain("run: ~/.dg/bin/dg-skills viz phase ${slug}");
+		expect(page).not.toMatch(/run: dg-skills/);
+	});
+
 	test("every reference it routes to ships with the skill", () => {
 		const text = skill();
 		const links = [
