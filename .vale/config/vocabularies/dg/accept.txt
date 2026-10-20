@@ -50,7 +50,13 @@ blockquotes
 CLIs
 cooldown
 MRs
+NIP
 noninteractive
+Nostr
+npub
+npubs
+nsec
+nsecs
 OAuth
 PRs
 rollout
@@ -59,9 +65,3 @@ unencrypted
 untrusted
 [Ww]orktree
 [Ww]orktrees
-NIP
-Nostr
-npub
-npubs
-nsec
-nsecs

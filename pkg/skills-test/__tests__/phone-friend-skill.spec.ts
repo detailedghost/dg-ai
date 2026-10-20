@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { REPO_ROOT, readRepoFile } from "./test-support";
+import { readRepoFile } from "./test-support";
 
-const skill = readFileSync(join(REPO_ROOT, "plugins/dg/skills/phone-friend/SKILL.md"), "utf8");
+const skill = readRepoFile("plugins/dg/skills/phone-friend/SKILL.md");
 
 describe("phone-friend skill", () => {
 	test("frontmatter carries only the kebab-case name and description", () => {
