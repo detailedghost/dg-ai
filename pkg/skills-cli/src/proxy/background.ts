@@ -18,12 +18,13 @@ import {
 	isPathInside,
 	randSuffix,
 	scratchPath,
+	selfCommand,
+	shellCommand,
 	statePath,
 	stateRoot,
 } from "@dg/common/node";
 import { emitJson } from "../utils/json";
 import { defineCommand, die, EXIT } from "../utils/legacy-command";
-import { selfCommand, shellCommand } from "../utils/self-command";
 import { BACKENDS } from "./backends";
 
 const LOCK_ABANDONED_MS = 60_000;

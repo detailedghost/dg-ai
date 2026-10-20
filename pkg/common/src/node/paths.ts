@@ -22,6 +22,7 @@ export type DgPaths = {
 	assetsDir: string;
 	memoryDbPath: string;
 	grantsDir: string;
+	phoneFriendRoot: string;
 };
 
 export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
@@ -49,5 +50,6 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		assetsDir: path.join(agentsDir, "assets"),
 		memoryDbPath: path.join(agentsDir, "memory.db"),
 		grantsDir: path.join(stateDir, "grants"),
+		phoneFriendRoot: path.join(stateDir, "phone-friend"),
 	};
 }

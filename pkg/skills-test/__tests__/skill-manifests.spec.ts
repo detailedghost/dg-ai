@@ -143,7 +143,7 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 });
 
 describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
-	const harnessSkills = skillsMentioning("dg-agent");
+	const harnessSkills = skillsMentioning('"$DG_AGENT" recv');
 
 	test("at least one skill exposes the chat harness", () => {
 		expect(harnessSkills.length).toBeGreaterThan(0);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { selfCommand, shellCommand } from "../src/utils/self-command";
+import { selfCommand, shellCommand } from "@dg/common/node";
 import { proxyFixtures } from "./proxy-fixtures";
 
 let fixture: ReturnType<typeof proxyFixtures>;
