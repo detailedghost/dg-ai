@@ -481,7 +481,9 @@ slices:
       - pkg/skills-cli/src/commands/prototype.ts
       - pkg/skills-cli/src/prototype/**
       - pkg/skills-cli/__tests__/prototype*.spec.ts
-      - plugins/dg/skills/prototype/**
+      - plugins/dg/skills/proto/**
+      - pkg/skills-cli/src/commands/proto.ts
+      - pkg/skills-test/__tests__/proto-skill.spec.ts
       - pkg/skills-cli/src/index.ts
       - pkg/skills-test/__tests__/cli-smoke.spec.ts
       - pkg/skills-cli/__tests__/prototype/**
@@ -658,7 +660,7 @@ These requirements apply to every port; each slice below adds its specific behav
 - Dependency manifests and `bun.lock` belong to the first consuming slice. Shared fixture/generator/manifest writes serialize through this bundle's dependency chain. Required static resources live under the owning skill; a compiled binary uses real installed paths, never `/$bunfs` or `import.meta.dir` as a filesystem locator. External runtimes remain documented where existing workflows require them (a browser for pw).
 - Use current APIs, not legacy idioms: `Bun.$`, `Bun.file`/`Bun.write`, `Bun.spawn`, `node:util` `parseArgs`, `fetch`, `AbortSignal.timeout` and the current gh/glab REST and GraphQL endpoints. Before porting a helper, search `pkg/common` and earlier waves; call or extend the shared one instead of copying the legacy version. Behavior parity still wins over a newer API where they differ.
 
-- Every packaged skill that takes flags documents them in a `## Flags` table (Flag | Short | Effect | Default) plus a **Usage:** line, matching what the skill and its dg-skills command accept; a skills-test guard enforces it.
+- Every packaged skill that takes flags documents them in a `## Flags` table (Flag | Short | Effect | Default) plus a **Usage:** line, matching what the skill and its dg-skills command accept; a skills-test guard enforces it. Shipped in Wave 3 (5127a44); each later wave's new skills and the dg:proto, dg:demo and erd flag tables must pass the guard.
 
 - User verification requirement (2026-10-17): before notifying the user that migrated skills are ready to move to, obtain an actual independent Claude compatibility review of the packaged skills against selected legacy inputs. Verify namespaced discovery from a relocated plugin, lazy resources, native approvals, delegated/resume flows, command parity, and remaining cutover gates; preserve evidence and disclose unexecuted scenarios. Claude manifest validation alone is insufficient. No local settings/shim/cutover changes are authorized. External model review currently requires specific payload consent following automatic approval rejection; never claim that review ran.
 
@@ -696,6 +698,10 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - dg:demo (slice 27): local is the default mode. `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output. Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes, from one shared overlay module used by the extension and `dg-skills pw`, with a test that one plan yields the same overlay in both modes. `--ext` uses the extension (its review/walkthrough/video choices and the upload-and-receipt flow stay as planned). `--attach-pr` works in both modes: local mode uploads via pw with a saved GitHub login state, else hands over files plus the PR link with no PR change; GitLab stays unsupported with no change. Owned-artifact cleanup applies to both. Slice 27 depends on slice 25. Behavior change: plain `/dg:demo` becomes local; extension users add `--ext`.
 - New Migration Contract line: every packaged skill that takes flags documents them in a `## Flags` table plus a **Usage:** line, enforced by a skills-test guard.
 - `spec roster` falls back to the packaged `dg:<name>` personas on a plugin-only install; it shipped in Wave 3.
+- Plan approval gate (user decision 2026-10-20, supersedes the built-in plan-mode approval above): wherever a packaged skill had a `/viz` or `/review` approval step (spec plan mode step 8, and the kick, prd and pickup paths that run it), the agent prints a readable view of the full plan in the terminal, then asks with `AskUserQuestion`: Approve (continue) or Rework (the user says what to change, the agent revises plan.md and shows the plan again, looping until Approve). The gate blocks; nothing after it runs before Approve. Spec fast mode keeps built-in plan mode. Shipped as a Wave 3 commit.
+- Plan view format (user decision 2026-10-20): the terminal view is simple, not a raw dump of plan.md. A "👀 Check these" list comes first, right after the title. Then short sections as clean bulleted lists: Purpose, Scope in/out, each slice (what it builds, how it is tested), risks, open questions. Plain words, short lines, no dense paragraphs or long tables. Each item the user should double-check starts with 👀: assumptions, [ASSUMED] contracts, risky or one-way decisions, open questions, external or security impact, behavior changes. plan.md stays the full durable spec. The template lives in the spec skill's references and kick, prd and pickup reuse it; a skills-test guard covers it.
+- dg:proto merges the local /prototype port and the extension flow into one skill (slice 26). Local is the default: the terminal app for logic and state questions, UI variations with `-n` or `-o` on one route served by `dg-skills prototype serve`, the clickable plan walkthrough, and `-c` resume. `--ext` runs today's extension flow (app-native variations on a live page, then review, approve and rework). Both modes share one plan and variation format. No viz: content the legacy prototype routed through /viz (prose, tables, compare cards) renders on the prototype-serve page. Behavior change: plain `/dg:proto` becomes local and extension users add `--ext`; this goes in the Wave 6 PR body and the skill's Flags table. The user's local `prototype` skill goes on the cutover delete list.
+- erd (slice 21) becomes the easy way to graph anything with Mermaid, not only database ERDs. It emits `erDiagram` for schemas, `flowchart` for workflows and import or code graphs, `sequenceDiagram` for call or message flows, plus `stateDiagram` and `classDiagram` where they fit. The type comes from the request or from `--type er|flow|sequence|state|class`. Default output is Markdown with fenced mermaid blocks, which GitHub renders in PRs and issues. `--html` writes one self-contained HTML file that renders the Mermaid with a pinned mermaid version from cdn.jsdelivr.net, with light and dark themes, and opens it locally (WSL: through explorer.exe). No Cytoscape and no viz board.
 
 - Wave 3 IN PROGRESS (2026-10-19): worktree ~/code/worktrees/dg-dg_skills_w3, branch feature/dg_skills_w3, base origin/master 9c1d002 (after #38 and the history rewrite). Wave 2b merged without slice 10, so slice 10 ships in Wave 3. Slice 10 committed 5e78267. Next: slice 11.
 - Slice 11 committed 8af1c80. Next: slice 12.
@@ -710,7 +716,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Prerequisite Wave 1: reconciled onto fetched origin/master 537f8ba; import 3c2a9cf and installer inventory fixes 523f1b5/44aa3f0. Ready for review [#27](https://github.com/detailedghost/dg-ai/pull/27), branch feature/dg-skills-w1, base feature/review_daemon_integration (retargeted beneath #26), head 44aa3f073162db5fdcfa794ea010e35ee6019697. Installer suites 26 pass; common inventory test 5 pass. Browser grouped open completed. Worktree retained at ~/code/dg/.worktrees/dg-skills-w1.
 - Wave 2a COMPLETE: slices 1–4, last committed slice4 plus review/docs/test follow-through; worktree ~/code/dg/.worktrees/dg-skills-w2a; actual branch feature/dg_skills_w2a; base feature/dg-skills-w1; head 0052265. Ready for review [#28](https://github.com/detailedghost/dg-ai/pull/28) (user requested promotion on 2026-10-17). All four final reviewers clean after one correction round. Final `bun run test:all`: 5,062 pass, 0 fail; all eight `lint:all` packages pass. Compiled external-cwd operations, private artifacts, six backends, provider parity, privacy/version/test-name/whitespace gates pass. Matched release1.15.0; native Windows runtime remains untested/documented. PR directly records dependency on #27; chain will register stack in Wave2b after slice7 ships. Browser grouped open completed.
 - Wave2b IN PROGRESS: slices5–10, worktree ~/code/dg/.worktrees/dg-skills-w2b, actual branch feature/dg_skills_w2b, base feature/dg_skills_w2a, initial head0052265; Slices5–9 committed ff75474/f9b205a/2d7cadc/f55483c/6c6c302, current head b79344e21522c139202eb3a231ea9421cfb70dce (one consolidated commit above Wave2a; original five slice commits retained in local backup); next slice 10, waiting for required fallback content on origin/master (user confirmed prerequisite retained). Native stack #30: #26→#27→#28, bases and ready state verified after user-requested prerequisite insertion. Do not recreate finished PRs. Slice10 still gates on fetched review-model-fallback content.
-- Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback) and the plan scope edits above.
+- Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback), 5127a44 (flags documentation and the skill-flags guard), the plan scope edits above (docs(spec) commit after 5127a44), and the plan approval gate in the spec skill (feat(skills) commit after it).
 
 ## Roundtable Decisions
 
@@ -762,7 +768,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 ### Static assets
 - **Decision:** Non-code resources stay with their owning skill and load lazily via the shared real-path locator; executable server/domain code stays in compiled source modules.
-- **Home:** `plugins/dg/skills/spec/spec-schema/**`, `plugins/dg/skills/{monolith,prototype,skill-publish}/**`.
+- **Home:** `plugins/dg/skills/spec/spec-schema/**`, `plugins/dg/skills/{monolith,proto,skill-publish}/**`.
 - **Rationale:** Installed resources can move independently of the self-contained CLI and retain relative cross-skill links.
 - **Alternatives:** Legacy home/scripts paths — absent after cutover; source-tree schema glob — contradicts the previously selected owning-skill home.
 - **Applies to:** slices 12, 13, 26, 29.
@@ -1104,13 +1110,19 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 21 — w5-erd-eli5
 
 #### Engineering
-- [ ] Port erd-cli to `dg-skills erd`; move erd and eli5. ERD ships Markdown output only: no viz board and no Cytoscape board.
+- [ ] Port erd-cli to `dg-skills erd`; move erd and eli5. erd becomes the easy way to graph anything with Mermaid: `erDiagram` for schemas, `flowchart` for workflows and import or code graphs, `sequenceDiagram` for call or message flows, plus `stateDiagram` and `classDiagram` where they fit. No Cytoscape and no viz board.
+- [ ] Pick the diagram type from the request, or set it with `--type er|flow|sequence|state|class`. Default output is Markdown with fenced mermaid blocks, which GitHub renders in PRs and issues.
+- [ ] `--html` writes one self-contained HTML file that renders the Mermaid with a pinned mermaid version from cdn.jsdelivr.net, with light and dark themes, and opens it locally (WSL: through explorer.exe).
+- [ ] erd/SKILL.md carries a **Usage:** line and a full `## Flags` table (Flag | Short | Effect | Default) covering `--type` and `--html`.
 - [ ] Use compiled current-binary db dispatch for introspection and raw CLI wrapper preserving existing hard-failure exit 1.
 - [ ] Port sanitized synthetic ERD code-graph/database/evidence fixtures without live connections.
 
 #### Testing Criteria
 ##### Contracts
 - [ ] Run compiled external-cwd live-schema handoff with fake child dependency and static fixture/orchestration suites.
+- [ ] Golden Mermaid output per diagram type (er, flow, sequence, state, class).
+- [ ] Syntax check of the generated Mermaid: a parse check with the mermaid package in tests, or a strict structural check if that is too heavy. The slice owner picks.
+- [ ] The `--html` file has no external assets other than the pinned mermaid script from cdn.jsdelivr.net.
 
 #### Acceptance Criteria
 - [ ] ERD consumes frozen slice-20 schema contract and never requires bare db or scripts checkout.
@@ -1166,16 +1178,23 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 26 — w6-prototype
 
 #### Engineering
-- [ ] Rewrite prototype-cli (sh) in TypeScript; port prototype-ui-cli.ts and prototype-serve to `dg-skills prototype`; vendor prototype-components/ in the skill
-- [ ] Map old entrypoints to prototype <selection/decision>, prototype ui and prototype serve, disambiguating wait; preserve existing proto.
+- [ ] Rewrite prototype-cli (sh) in TypeScript; port prototype-ui-cli.ts and prototype-serve to `dg-skills prototype`; vendor prototype-components/ in the skill.
+- [ ] Merge the local /prototype port and the existing extension dg:proto into ONE skill, `plugins/dg/skills/proto/` (the name stays `dg:proto`; no separate `plugins/dg/skills/prototype`). Local is the default: the terminal app for logic and state questions, UI variations with `-n` or `-o` on one route served by `dg-skills prototype serve`, the clickable plan walkthrough, and `-c` resume. `--ext` runs today's extension flow: app-native variations on a live page, then review, approve and rework. Both modes share one plan and variation format.
+- [ ] No viz: content the legacy prototype routed through /viz (prose, tables, compare cards) renders on the prototype-serve page.
+- [ ] Map old entrypoints to prototype <selection/decision>, prototype ui and prototype serve, disambiguating wait; preserve the existing extension proto command behind `--ext`.
 - [ ] Move executable server TS into src/prototype; keep copyable HTML/WebMCP/components assets under skill and return real installed paths.
+- [ ] Behavior change: plain `/dg:proto` becomes local and extension users add `--ext`. Record it in the Wave 6 PR body and in the skill's Flags table. Add the user's local `prototype` skill to the cutover delete list.
+- [ ] proto/SKILL.md carries a **Usage:** line and a full `## Flags` table (Flag | Short | Effect | Default) covering `--ext`, `-n`, `-o`, `-c` and every other real flag.
 
 #### Testing Criteria
 ##### Contracts
 - [ ] Run compiled pinned-cwd regression, reject/timeout/consumed-sentinel cleanup, server teardown and UI/server self-dispatch with isolated roots.
+- [ ] Compiled smoke from an outside folder with no legacy scripts, for each mode. Local covers the logic, UI and walkthrough routes. `--ext` covers the plan handoff to the extension through fakes.
+- [ ] The skills-test flags guard passes for proto/SKILL.md.
 
 #### Acceptance Criteria
 - [ ] Legacy timeout status 1 remains; no executable vendored server requires old library/source runtime.
+- [ ] One dg:proto skill, two modes, one plan and variation format; no viz dependency.
 
 ### Slice 27 — w6-demo-merge-release
 

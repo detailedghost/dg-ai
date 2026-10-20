@@ -467,7 +467,9 @@ slices:
       - pkg/skills-cli/src/commands/prototype.ts
       - pkg/skills-cli/src/prototype/**
       - pkg/skills-cli/__tests__/prototype*.spec.ts
-      - plugins/dg/skills/prototype/**
+      - plugins/dg/skills/proto/**
+      - pkg/skills-cli/src/commands/proto.ts
+      - pkg/skills-test/__tests__/proto-skill.spec.ts
       - pkg/skills-cli/src/index.ts
       - pkg/skills-test/__tests__/cli-smoke.spec.ts
       - pkg/skills-cli/__tests__/prototype/**
