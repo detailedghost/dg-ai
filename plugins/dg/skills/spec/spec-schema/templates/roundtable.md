@@ -6,7 +6,7 @@ All agents launch in parallel. Each receives the user-approved plan path **and**
 
 Each agent runs a mini grill-me-style sub-interview against the **orchestrator** (not the user). The orchestrator answers from the discovery context bundle, the plan, and the codebase. Only when an answer requires user-only intent does the agent escalate.
 
-1. **Read the discovery context bundle FIRST** (`/tmp/ai/create-spec/<cwd-hash>/<feature_snake_case>-roundtable-context.md`, where `<cwd-hash>` is the 8-char sha1 prefix of the orchestrator's `$PWD` — the orchestrator passes the resolved path in your launch prompt). Every `[DECIDED]` and `[ASSUMED]` from Phase 1 is settled — do not re-litigate. Recommendations that contradict a `[DECIDED]` item will be dropped by the orchestrator's pre-triage.
+1. **Read the discovery context bundle FIRST** (`$(~/.dg/bin/dg-skills stash spec <feature_snake_case>-roundtable-context.md)` — the orchestrator passes the resolved path in your launch prompt). Every `[DECIDED]` and `[ASSUMED]` from Phase 1 is settled — do not re-litigate. Recommendations that contradict a `[DECIDED]` item will be dropped by the orchestrator's pre-triage.
 2. **Read the plan** at `<plan_path>` and the relevant portion of the codebase for your domain.
 3. **Sub-interview the orchestrator.** Form 1–4 targeted questions per concern area. Ask the orchestrator (the calling agent) by emitting them in your transcript as `Q: …`. The orchestrator will respond inline with `A: …` from discovery context + code reads. Use 1–3 rounds max — you are critiquing, not redesigning.
 4. **Record** each interview turn as `[DECIDED — sub]` (orchestrator answered conclusively), `[ASSUMED — sub]` (best-effort answer, low confidence), or `[OPEN — escalate]` (only the user can answer).

@@ -751,7 +751,10 @@ describe("dg-skills spec roundtable", () => {
 		]);
 		expect(run.exitCode).toBe(0);
 		const directory = outputsDir(run.stdout);
-		expect(directory.startsWith(context.scratch)).toBe(true);
+		expect(directory.startsWith(join(context.scratch, "spec", "roundtable"))).toBe(
+			true,
+		);
+		expect(directory).not.toContain("spec-cli");
 		expect(basename(directory)).toBe(`plan-p3b-${FIXED_STAMP}`);
 		for (const agent of ["reviewer", "qa-perf", "security"]) {
 			expect(readFileSync(join(directory, `${agent}.md`), "utf8")).toStartWith(

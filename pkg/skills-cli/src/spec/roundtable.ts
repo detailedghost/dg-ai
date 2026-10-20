@@ -22,7 +22,7 @@ import {
 
 const AGENT_TIMEOUT_MS = 600_000;
 const DEFAULT_AGENTS = "reviewer,qa-perf,security";
-const LEGACY_SCRATCH_TOOL = "spec-cli";
+const SCRATCH_TOOL = "spec";
 
 const SECTION_NAMES: Record<string, string> = {
 	reviewer: "Reviewer",
@@ -162,7 +162,7 @@ export async function roundtableCommand(args: string[]): Promise<number> {
 	const template = await readText(templatePath);
 	if (agents === "") agents = DEFAULT_AGENTS;
 
-	const scratchRoot = scratchDir(LEGACY_SCRATCH_TOOL, { cwdScope: false });
+	const scratchRoot = scratchDir(SCRATCH_TOOL, { cwdScope: false });
 	const outDir = `${scratchRoot}/roundtable/${basename(target, ".md")}-p${phase}-${localStamp()}`;
 	mkdirSync(outDir, { recursive: true });
 

@@ -217,7 +217,7 @@ fields:
     type: string
     mode_conditional: parked-only
     mutability: mutable
-    description: Path to the canonical /tmp/ai/create-spec/<cwd-hash>/ plan file backing this parked spec.
+    description: Path to the canonical plan file, under the `~/.dg/bin/dg-skills stash -s spec` bucket, backing this parked spec.
 
   # ---- Captured-context (free-form, append-only) -----------------------
   resolved_open_questions:
