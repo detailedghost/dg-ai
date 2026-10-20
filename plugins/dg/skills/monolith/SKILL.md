@@ -24,6 +24,8 @@ Helper CLI: `~/.dg/bin/dg-skills monolith <subcommand>` (subcommands documented 
 
 ## Invocation
 
+**Usage:** `/dg:monolith [--shallow | -s] [--prune] [--split]`
+
 ```
 /dg:monolith [--shallow | -s] [--prune] [--split]
 ```
@@ -32,6 +34,14 @@ Helper CLI: `~/.dg/bin/dg-skills monolith <subcommand>` (subcommands documented 
 - **`--shallow` / `-s`:** uncommitted single-agent scan under `$(~/.dg/bin/dg-skills stash -s monolith)`, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit — exact path formula and the shallow↔full promote/demote commands are in `references/protocol.md` Phase 0 (mandatory read anyway, see above).
 - **`--prune`:** delegate to `~/.dg/bin/dg-skills monolith prune`; remove rows whose `_src:_` paths no longer exist; then exit. Honors `--shallow` for path selection.
 - **`--split`:** delegate to `~/.dg/bin/dg-skills monolith split`; partition the file into `.agents/monolith/<domain>.md` and leave an index; then exit. Runs on demand even when the file is under cap. Honors `--shallow` for path selection.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--shallow` | `-s` | Uncommitted single-agent scan under the stash path. No `.agents/` prerequisite and no commit. | off |
+| `--prune` | none | Remove rows whose `_src:_` paths no longer exist, then exit. | off |
+| `--split` | none | Partition the file into `.agents/monolith/<domain>.md` with an index, then exit. | off |
 
 ## Phases
 

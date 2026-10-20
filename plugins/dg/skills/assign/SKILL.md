@@ -27,6 +27,17 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 | `/dg:assign --dry-run <spec-path>` | Print the proposed YAML block. Do not write.                                |
 | `/dg:assign --force <spec-path>`   | Re-assign even if `status: complete` or slices already have `agents:`.      |
 
+**Usage:** `/dg:assign [--dry-run] [--force] [<spec-path> | <work description>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--dry-run` | none | Spec mode only. Print the proposed YAML block and do not write it. | off |
+| `--force` | none | Spec mode only. Re-assign even if `status: complete` or slices already have `agents:`. | off |
+| `<spec-path>` | none | A spec file. Picks agents per slice and writes them to the frontmatter. | none (standalone mode) |
+| `<work description>` | none | Recommend agents for the described work. Writes nothing. | the current conversation |
+
 ## Dependency direction
 
 `/dg:spec`, `/dg:prd`, `/dg:sdlc`, `/dg:kick`, and `/dg:polish` depend on `/dg:assign`. `/dg:assign` depends on none of them and never

@@ -18,7 +18,14 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Usage: `/dg:kick [feature-name] [--from <path>]`.
+**Usage:** `/dg:kick [feature-name] [--from <path>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `<feature-name>` | none | Working-title seed folded into the request handed to `/dg:spec`. | empty |
+| `--from <path>` | none | Read the file at `<path>` as the request text. The interview still runs, seeded with the file. | off |
 
 ## Routing
 

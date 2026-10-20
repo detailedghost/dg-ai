@@ -32,8 +32,16 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 `dg:<name>`; `dg-skills proxy` embeds them), so use those when the host has none.
 
 ## Args
+
+**Usage:** `/dg:meaningful [--dry-run]`
 - *(none)*: full flow — gather, propose, pick, apply, force-push-lease.
 - `--dry-run`: stop after presenting the chosen plan; do not reset, commit, or push.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--dry-run` | none | Stop after presenting the chosen plan. Do not reset, commit, or push. | off |
 
 ## Preconditions
 - Not on `main`/`master`.

@@ -18,17 +18,17 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Usage: `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] "<request>"`.
+**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] "<request>"`.
 
 ## Flags
 
-| Flag | Modes | Effect |
-|---|---|---|
-| `"<request>"` | plan, fast | The feature request, plain prose. Required unless `-s` is given. |
-| *(no flag)* | plan | Full 10-step pipeline → durable bundle → stops. Resume separately with `-s`. |
-| `--fast`, `-f` | fast | Plan and build in one chat. One grill pass, no fan-out, built-in Claude plan mode is the single approval gate; slices build sequentially in the main loop with a compaction between each. All end gates kept. |
-| `-s <NNN>_<slug>` | execute | Build an existing bundle. Always creates a worktree. |
-| `-T`, `--no-worktree` | fast only | Build in the current checkout instead of a worktree; creates `feature/<slug>` first if on the default branch. Invalid with `-s` and with bare plan mode. |
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `"<request>"` | none | The feature request, plain prose. Required unless `-s` is given. Plan and fast modes. | none |
+| `(no flag)` | none | Plan mode: full 10-step pipeline, then a durable bundle, then stop. Resume separately with `-s`. | plan mode |
+| `--fast` | `-f` | Fast mode: plan and build in one chat. One grill pass, no fan-out, built-in Claude plan mode is the single approval gate. Slices build sequentially in the main loop with a compaction between each. All end gates kept. | off |
+| none | `-s <NNN>_<slug>` | Execute mode: build an existing bundle. Always creates a worktree. | off |
+| `--no-worktree` | `-T` | Fast mode only: build in the current checkout instead of a worktree. Creates `feature/<slug>` first if on the default branch. Invalid with `-s` and with bare plan mode. | off (worktree) |
 
 `--fast` and `-s` are mutually exclusive — both present → ask which was meant.
 

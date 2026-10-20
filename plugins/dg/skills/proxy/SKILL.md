@@ -39,18 +39,20 @@ The packaged background pattern proves a job's identity from its Linux `/proc` s
 
 ## Flags
 
-| Flag | Behavior |
-|---|---|
-| `--list-backends` | List all five registered backend identities without running one |
-| `--prompt` | Supply the task directly; takes precedence over `--prompt-file` |
-| `--prompt-file` | Read the task from a file, keeping large prompts out of argv |
-| `--model` | Override the backend model |
-| `--effort` | Override its reasoning or thinking effort |
-| `--subagent` | Brief the backend with the named configured agent persona |
-| `--spec` and `--slice` | Resolve the persona from an explicit plan file's assigned primary agent |
-| `--cwd` | Choose the backend's working directory |
-| `--resume` | Continue an existing session without reinjecting its persona |
-| `--plan` / `-p` | Resolve the persona, save the briefed prompt, and print a launch command without running the backend |
+**Usage:** `/dg:proxy <backend> (--prompt <text> | --prompt-file <path>) [--model <name>] [--effort <level>] [--subagent <name>] [--cwd <dir>] [--resume <session>] [--plan | -p]`
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--list-backends` | none | List all five registered backend identities without running one. | off |
+| `--prompt <text>` | none | Supply the task directly. Takes precedence over `--prompt-file`. | none |
+| `--prompt-file <path>` | none | Read the task from a file, keeping large prompts out of argv. | none |
+| `--model <name>` | none | Override the backend model. | backend default |
+| `--effort <level>` | none | Override its reasoning or thinking effort. | backend default |
+| `--subagent <name>` | none | Brief the backend with the named configured agent persona. | none |
+| `--spec <path>` and `--slice <id>` | none | Resolve the persona from an explicit plan file's assigned primary agent. | none |
+| `--cwd <dir>` | none | Choose the backend's working directory. | current directory |
+| `--resume <session>` | none | Continue an existing session without reinjecting its persona. | off |
+| `--plan` | `-p` | Resolve the persona, save the briefed prompt, and print a launch command without running the backend. | off |
 
 The task must use `--prompt` or `--prompt-file`; a positional task is not accepted. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`) to relocate agent persona Markdown files; lookup retains the existing personal agent-directory fallback. Planning always resolves the persona and emits a fresh execution, including when `--resume` was supplied to the planning call. For a session continuation, pass `--resume` to an actual execution.
 

@@ -51,6 +51,18 @@ repository's `origin`. Both providers support every subcommand below. Run
 Don't file both for the same request unless the user asks — pick one based on the
 signal above.
 
+**Usage:** `/dg:file "<summary>" [--body <text>] [--label <name>]... [--assignee <user>]... [--repo owner/repo] [--provider github|gitlab]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--body <text>` | none | Issue body. | empty |
+| `--label <name>` | none | Add a label. Repeat for more labels. | none |
+| `--assignee <user>` | none | Assign a user. Repeat for more users. | none |
+| `--repo owner/repo` | none | Target repository. | current repo |
+| `--provider github\|gitlab` | none | Target provider. | auto-detected |
+
 ## Subcommands
 
 | Subcommand | Does |

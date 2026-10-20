@@ -16,14 +16,14 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Usage: `/dg:sdlc "<feature brief>" [-T|--no-worktree]`.
+**Usage:** `/dg:sdlc "<feature brief>" [-T|--no-worktree]`.
 
-## Arguments
+## Flags
 
-| Flag | Effect |
-|---|---|
-| `"<feature brief>"` | Required. The feature to build, plain prose. If missing, ask for it (one question) before anything else. |
-| `-T`, `--no-worktree` | Opt OUT of worktree mode: run in the current repo. If on the default branch, create `feature/<slug>` first — never build on main. |
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `"<feature brief>"` | none | Required. The feature to build, plain prose. If missing, ask for it (one question) before anything else. | none |
+| `--no-worktree` | `-T` | Opt out of worktree mode: run in the current repo. If on the default branch, create `feature/<slug>` first, never build on main. | off (worktree) |
 
 `WORKTREE_MODE = NOT(NO_WORKTREE)`. Worktree is the default, matching `/dg:spec`.
 

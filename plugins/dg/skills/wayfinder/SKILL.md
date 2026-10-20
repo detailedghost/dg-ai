@@ -33,11 +33,11 @@ Wayfinder ends where `/dg:kick` starts. Never build inside a map.
 
 ## Flags
 
-| Flag | Effect |
-|---|---|
-| `"<idea>"` | Chart mode. Create a new map. |
-| `<map-slug> [ticket]` | Work mode. Resolve one ticket, or the next frontier ticket. |
-| `-l`, `--list` | List maps with open-ticket and fog counts. Read only. |
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `"<idea>"` | none | Chart mode. Create a new map. | none |
+| `<map-slug> [ticket]` | none | Work mode. Resolve one ticket, or the next frontier ticket. | none |
+| `--list` | `-l` | List maps with open-ticket and fog counts. Read only. | off |
 
 ## Routing
 

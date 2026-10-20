@@ -25,16 +25,20 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 /dg:thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--stacked` | Review every open PR in the target's stack, root first. Any PR in the stack works as the target. |
-| `-s, --spice N` | 1 to 5, default 2. Scrutiny depth, nit budget, and verdict limits. Tone never changes. |
-| `-c, --comment` | Post as comment only. No approve, no request-changes. |
-| `--confirm` | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. |
-| `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
-| `-t, --min-tier <tier>` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. |
-| `-b, --base <ref>` | Local mode only. Override fork-point detection. |
-| `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
+**Usage:** `/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]` · `/dg:thrash . | <path> [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--stacked` | none | Review every open PR in the target's stack, root first. Any PR in the stack works as the target. | off |
+| `--spice N` | `-s` | 1 to 5. Scrutiny depth, nit budget, and verdict limits. Tone never changes. | `2` |
+| `--comment` | `-c` | Post as comment only. No approve, no request-changes. | off |
+| `--confirm` | none | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. | off |
+| `--dry-run` | `-n` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. | off |
+| `--min-tier <tier>` | `-t` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. | spice ladder |
+| `--base <ref>` | `-b` | Local mode only. Override fork-point detection. | detected fork point |
+| `--proxy <backend>` | none | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. | off (host agents) |
 
 ## Verdict rule
 

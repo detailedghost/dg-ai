@@ -67,14 +67,14 @@ leave the thread open.
 
 ## Flags
 
-| Flag | Description |
-|------|-------------|
-| `-l, --local` | Address only the latest `.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md`. Skip PR/MR threads and CI. |
-| `-a` | Comma-separated agent list. Omit → auto-pick. |
-| `-m` | Extra context passed to fix agents. |
-| `--round N` | Tag commit `(review-loop round N)`. |
-| `--verdicts <path>` | Pre-filtered verdict JSON (skip triage). Pauses on `strange` items. |
-| `--no-ci` | Skip CI gathering. |
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--local` | `-l` | Address only the latest `.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md`. Skip PR/MR threads and CI. | off |
+| none | `-a <agent>[,agent2,...]` | Comma-separated agent list. | auto-pick |
+| none | `-m "<context>"` | Extra context passed to fix agents. | none |
+| `--round N` | none | Tag the commit `(review-loop round N)`. | none |
+| `--verdicts <path>` | none | Pre-filtered verdict JSON that skips triage. Pauses on `strange` items. | triage runs |
+| `--no-ci` | none | Skip CI gathering. | off (CI is gathered) |
 
 Bare args treated as agent list. All replies prefixed `🤖 ` by `~/.dg/bin/dg-skills address` — never construct it yourself.
 Set `ADDRESS_BOT_PREFIX="[bot] "` on a host that mangles emoji. Both markers, plus the legacy `[bot] ` on

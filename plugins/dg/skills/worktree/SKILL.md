@@ -16,6 +16,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 ## Usage
 
+**Usage:** `/dg:worktree create <slug> [-p <prefix>] [-b <branch>] [-N] [--no-resume] | list [--porcelain] | remove <slug> [--force] [--keep-branch] [--merged-ok] | prune`
+
 ```sh
 # create or resume a worktree+branch (slug positional)
 ~/.dg/bin/dg-skills worktree create <slug> [--prefix feature/] [--base <branch>] [--no-seed] [--no-resume]
@@ -31,6 +33,19 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 ```
 
 Run `~/.dg/bin/dg-skills worktree <subcommand> --help` for per-subcommand details. A bare `~/.dg/bin/dg-skills worktree` prints usage on stderr and exits 1; failures exit 2.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--prefix <str>` | `-p` | create: branch prefix. | `feature/` |
+| `--base <branch>` | `-b` | create: base branch. | `origin/HEAD` |
+| `--no-seed` | `-N` | create: skip copying `.env`, `.envrc`, `.tool-versions` and similar files. | off |
+| `--no-resume` | none | create: error if the branch or path already exists. | off |
+| `--porcelain` | `-p` | list: machine-readable output. | off |
+| `--force` | `-f` | remove: override all safety guards (uncommitted changes, unpushed commits, unmerged branch). | off |
+| `--keep-branch` | `-k` | remove: remove the worktree and keep the local branch. | off |
+| `--merged-ok` | `-m` | remove: skip only the merged-into-base guard. | off |
 
 ## Output contract
 

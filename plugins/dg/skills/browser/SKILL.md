@@ -33,6 +33,21 @@ source and needs Bun from https://bun.sh.)
 
 ## Commands
 
+**Usage:** `/dg:browser install [chrome|firefox] [--local]` · `batch-open [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `demo [--print] <script.json>`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--local` | none | install: build the extension from source. | off (download the release) |
+| `--group <name>` | `-g` | batch-open and launch: tab group name. | `PRs` |
+| `--repo owner/repo` | none | batch-open: repository for bare PR numbers. | current repo |
+| `--print` | none | batch-open and demo: print the URLs without opening them. | off |
+| `--browser <key>` | none | launch: Chromium browser to start. | first launchable browser |
+| `--list` | none | launch: list detected browsers. | off |
+| `--dry-run` | none | launch: show what would run without starting the browser. | off |
+
+
 - `install [chrome|firefox] [--local]` — stage the extension for a one-time load
   **and** refresh the compiled `dg-skills` binary. Downloads the CI-built
   extension zip from the latest `ext-v*` release (or builds locally with

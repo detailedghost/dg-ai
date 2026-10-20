@@ -9,6 +9,12 @@ Batch-apply all open Dependabot PRs (GitHub) or Renovate MRs (GitLab) into a sin
 
 **Usage:** `/dg:deps-upgrade [--cooldown-days N]` — only upgrade to versions published at least N days ago (default 7, `0` turns it off). Pass the same N to every `cooldown` call.
 
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--cooldown-days N` | none | Only upgrade to versions published at least N days ago. `0` turns the cooldown off. | `7` |
+
 **Keep it light.** Each step is mechanical. Do not over-explain, do not speculate, do not refactor unrelated code. Read only the files you need. Produce minimal diffs.
 
 Before starting, read these reference files:

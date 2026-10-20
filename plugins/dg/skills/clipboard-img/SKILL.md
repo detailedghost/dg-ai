@@ -14,12 +14,20 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 Save the current clipboard image as a PNG file.
 
-**Usage:**
+**Usage:** `/dg:clipboard-img [--scratch | -s | <dest.png> | -]`
 
 - `/dg:clipboard-img` — save to `$(~/.dg/bin/dg-skills stash -a -u clipboard .png)` (default)
 - `/dg:clipboard-img --scratch` / `-s` — save to an ephemeral temp file, `$(~/.dg/bin/dg-skills stash -u clipboard .png)` (path printed to stdout)
 - `/dg:clipboard-img photo.png` — save to a specific filename
 - `/dg:clipboard-img -` — write raw PNG to stdout (for piping)
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--scratch` | `-s` | Save to an ephemeral temp file and print its path. | off |
+| `<dest.png>` | none | Save to this filename. | a unique repo artifact path |
+| `-` | none | Write the raw PNG to stdout. | off |
 
 ## Execution
 

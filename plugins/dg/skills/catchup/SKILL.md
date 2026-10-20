@@ -10,6 +10,16 @@ the build and tests, and push the rewritten branch with `--force-with-lease`.
 Invoke `/dg:catchup`; pass `--no-push` to skip publishing. `--push` remains a
 compatibility option, and the last push option wins.
 
+**Usage:** `/dg:catchup [--no-push | --push]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--no-push` | none | Rebase and verify, then stop without publishing. | off |
+| `--push` | none | Publish with `--force-with-lease` after verification. Kept for compatibility. | on |
+
+
 ## Runtime
 
 Resolve the compiled CLI in every fresh shell, delegated execution, and resumed

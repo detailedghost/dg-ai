@@ -11,11 +11,20 @@ commits already have the shape you want them reviewed in.
 
 ## Usage
 
+**Usage:** `/dg:pushup [--draft] [--group <name>]`
+
 ```
 /dg:pushup                 # push, open a PR, open it in the "pr" tab group
 /dg:pushup --draft         # open the PR as a draft
 /dg:pushup --group <name>  # use a different dg:browser tab group
 ```
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--draft` | none | Open the PR as a draft. | off |
+| `--group <name>` | none | Use a different dg:browser tab group. | `pr` |
 
 ## Steps
 

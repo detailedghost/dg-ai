@@ -51,15 +51,17 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 **Usage:** `/dg:review-loop [-r N] [-w <sec>] [-s] [-n] [-k]`
 **Usage (proxy):** `/dg:review-loop -p <codex|copilot|pi|opencode|grok> [-b <ref>] [-r N] [-s] [-k]`
 
-| Flag | Short | Effect |
-|------|-------|--------|
-| `--rounds N` | `-r N` | Override the default round cap (2 for both modes). Also settable via `REVIEW_LOOP_MAX_ROUNDS`. |
-| `--wait-timeout <sec>` | `-w <sec>` | Cap for each between-round wait. Default `1800` (30 min). On timeout the skill exits cleanly so you can re-run later. Applies to default mode and to the GitLab bot-review flow — proxy mode has no polling wait, this flag is ignored there. |
-| `--single` | `-s` | Run one round step and exit. Use when you want manual pacing between rounds. |
-| `--no-retrigger` | `-n` | Run one round, skip the re-request at the end. Implies `--single`. In proxy mode there's no separate "retrigger" step (see [Proxy mode](#proxy-mode)), so this is a no-op alias for `--single` — kept for flag parity between modes. |
-| `--skip` | `-k` | No-op exit. Use when a planning workflow auto-invokes this and you want to bail out. |
-| `--proxy <backend>` | `-p <backend>` | Switch to proxy mode: `<backend>` is one of `codex \| copilot \| pi \| opencode \| grok`, passed straight through to `/dg:proxy`. No PR required. |
-| `--base <ref>` | `-b <ref>` | Proxy mode only. Override diff-base detection (see [Proxy mode](#proxy-mode)). |
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--rounds N` | `-r` | Override the round cap. Also settable via `REVIEW_LOOP_MAX_ROUNDS`. | `2` |
+| `--wait-timeout <sec>` | `-w` | Cap for each between-round wait. On timeout the skill exits cleanly so you can re-run later. Applies to default mode and the GitLab bot-review flow. Proxy mode has no polling wait and ignores it. | `1800` |
+| `--single` | `-s` | Run one round step and exit. Use for manual pacing between rounds. | off |
+| `--no-retrigger` | `-n` | Run one round and skip the re-request at the end. Implies `--single`. In proxy mode it is a no-op alias for `--single`. | off |
+| `--skip` | `-k` | No-op exit. Use when a planning workflow auto-invokes this and you want to bail out. | off |
+| `--proxy <backend>` | `-p` | Switch to proxy mode. `<backend>` is one of `codex`, `copilot`, `pi`, `opencode`, `grok`, passed straight through to `/dg:proxy`. No PR required. | off (Copilot review) |
+| `--base <ref>` | `-b` | Proxy mode only. Override diff-base detection. | detected base |
 
 ### Default: auto mode
 

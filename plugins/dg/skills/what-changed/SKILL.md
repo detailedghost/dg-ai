@@ -16,13 +16,15 @@ Draft notes grounded in the code that actually belongs to the release.
 
 ## Flags
 
-| Flag | Audience | Content |
-|------|----------|---------|
-| `-t`, `--technical` (default) | Engineers | Changes by Conventional Commit type and scope, with PR numbers and links. Breaking changes and migration steps. Config and env var changes. Infra and deploy notes. Dependency bumps. |
-| `-n`, `--nontechnical` | Non-engineers | User-facing changes grouped as New, Improved, Fixed. No commit types, internal refactors, CI, chores or dependency bumps unless users can see the effect. Short plain sentences, no jargon. |
-| `-t -n` | Both | Both sections in one output, technical first. |
-| `-d`, `--demo` | Any | After the notes, demo the user-visible changes with `/dg:demo`. See step 6. Combines with any audience flag. |
-| `<range>` | Any | An explicit range, tag, commit or date. It overrides the default range. |
+**Usage:** `/dg:what-changed [-t | --technical] [-n | --nontechnical] [-d | --demo] [<range>]`
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--technical` | `-t` | Engineers. Changes by Conventional Commit type and scope, with PR numbers and links. Breaking changes and migration steps. Config and env var changes. Infra and deploy notes. Dependency bumps. | on when no audience flag is given |
+| `--nontechnical` | `-n` | Non-engineers. User-facing changes grouped as New, Improved, Fixed. No commit types, internal refactors, CI, chores or dependency bumps unless users can see the effect. Short plain sentences, no jargon. | off |
+| `-t -n` | none | Both sections in one output, technical first. | off |
+| `--demo` | `-d` | After the notes, demo the user-visible changes with `/dg:demo`. See step 6. Combines with any audience flag. | off |
+| `<range>` | none | An explicit range, tag, commit or date. It overrides the default range. | the range from `scripts/range.ts` |
 
 With neither audience flag, use `--technical`.
 

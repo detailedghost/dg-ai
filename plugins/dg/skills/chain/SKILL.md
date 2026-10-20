@@ -48,6 +48,18 @@ hard-coding one tool, so every subcommand below behaves the same on both.
 | `~/.dg/bin/dg-skills chain base <layers...>` | Runs the base/target-branch retargets only. |
 | `~/.dg/bin/dg-skills chain apply <layers...>` | Retargets bases, then idempotently upserts the rendered block into every PR/MR's body. Safe to re-run. |
 
+**Usage:** `/dg:chain <render|plan|base|apply> <layers...> [--target <branch>] [--mark <ref>] [--repo owner/repo] [--independent ref1,ref2] [--native]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--target <branch>` | none | Branch the chain merges into. | `main` |
+| `--mark <ref>` | none | Bold this ref as "this PR" in the legend. | none |
+| `--repo owner/repo` | none | Repository for bare PR numbers. | current repo |
+| `--independent ref1,ref2` | none | Bystander PRs with no dependency. They render in a separate list. | none |
+| `--native` | none | `plan` and `apply` only. Also link the chain through `gh stack link`. Needs the external extension. | off |
+
 `--independent ref1,ref2` lists bystander PRs/MRs that have no dependency relationship at
 all — they render under a separate `## Related PRs (independent — mergeable in any
 order)` heading, never with an arrow. `--mark <ref>` bolds that ref as "this PR" in the
