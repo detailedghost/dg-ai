@@ -8,6 +8,11 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+	adjectives,
+	animals,
+	uniqueNamesGenerator,
+} from "unique-names-generator";
 
 /** Per-cwd bucket for working artifacts, including separate linked worktrees. */
 export function cwdHash(dir: string = process.cwd()): string {
@@ -50,6 +55,15 @@ export function randSuffix(len = 4): string {
 		out += chars[idx];
 	}
 	return out;
+}
+
+/** Generate an adjective-animal name such as `brave-otter` for human-readable filenames. */
+export function readableSuffix(): string {
+	return uniqueNamesGenerator({
+		dictionaries: [adjectives, animals],
+		separator: "-",
+		length: 2,
+	});
 }
 
 /** Return the current worktree toplevel, or null when Git reports no checkout. */

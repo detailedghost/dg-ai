@@ -17,6 +17,7 @@ import { registerDepsUpgrade } from "./commands/deps-upgrade";
 import { registerFile } from "./commands/file";
 import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
+import { registerJot } from "./commands/jot";
 import { registerLaunch } from "./commands/launch";
 import { registerMeaningful } from "./commands/meaningful";
 import { registerMonolith } from "./commands/monolith";
@@ -68,6 +69,7 @@ registerOverwatchSnapshot(program);
 registerWorktree(program);
 registerSpec(program);
 registerMonolith(program);
+registerJot(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

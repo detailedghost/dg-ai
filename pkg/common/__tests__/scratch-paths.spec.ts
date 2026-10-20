@@ -13,6 +13,7 @@ import {
 	projectHash,
 	projectRoot,
 	randSuffix,
+	readableSuffix,
 	repoRoot,
 	scratchDir,
 	scratchPath,
@@ -65,6 +66,19 @@ describe("randSuffix", () => {
 		const b = randSuffix(8);
 		// With 36^8 ≈ 2.8e12 possibilities the chance of collision is negligible
 		expect(a).not.toBe(b);
+	});
+});
+
+describe("readableSuffix", () => {
+	test("is two lowercase words joined by one hyphen", () => {
+		for (let i = 0; i < 50; i++) {
+			expect(readableSuffix()).toMatch(/^[a-z]+-[a-z]+$/);
+		}
+	});
+
+	test("varies across calls", () => {
+		const seen = new Set(Array.from({ length: 30 }, () => readableSuffix()));
+		expect(seen.size).toBeGreaterThan(1);
 	});
 });
 

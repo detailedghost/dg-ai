@@ -1037,16 +1037,16 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 16 — w4-jot
 
 #### Engineering
-- [ ] Port jot-cli.ts and jot-checkpoint.ts to `dg-skills jot`
-- [ ] Consume complete shared fs API and preserve linked-worktree state-write precedence.
-- [ ] Preserve kick/kick-list/kick-take checkpoint semantics and repair CheckpointSection's missing status property to satisfy TypeScript.
+- [x] Port jot-cli.ts and jot-checkpoint.ts to `dg-skills jot`
+- [x] Consume complete shared fs API and preserve linked-worktree state-write precedence.
+- [x] Preserve kick/kick-list/kick-take checkpoint semantics and repair CheckpointSection's missing status property to satisfy TypeScript.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Port cap/split, linked-worktree, checkpoint --file/replace/ambiguity/last-section and lock/atomic-write behaviors.
+- [x] Port cap/split, linked-worktree, checkpoint --file/replace/ambiguity/last-section and lock/atomic-write behaviors.
 
 #### Acceptance Criteria
-- [ ] Durable saves do not mutate the main checkout from a linked worktree and existing markdown/stdout stays compatible.
+- [x] Durable saves do not mutate the main checkout from a linked worktree and existing markdown/stdout stays compatible.
 
 ### Slice 17 — w4-bg-cls-stat
 
@@ -1361,6 +1361,7 @@ channel-review defaults now use one `Bash(~/.dg/bin/dg-skills <sub>:*)` grant ea
 ### Slice 14 — w3-viz-review (28a247b, dropped 2026-10-20)
 
 Superseded: viz and review no longer ship (commit fc16957). Original summary: `dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
+- Slice 16 (w4-jot): `dg-skills jot` ports jot-cli and jot-checkpoint (add, ls, read, kind, done, kick, kick-list, kick-take) through registerLegacyCommand, with legacy flags, output and exit codes. The packaged `/dg:jot` skill has a Usage line, a Flags table and full `~/.dg/bin/dg-skills jot` calls. `readableSuffix` moved into `@dg/common/node` scratch-paths. Tests drive the CLI only, from source and from the compiled binary, with isolated roots and a linked worktree.
 
 ## Agent Notes
 
@@ -1413,6 +1414,10 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 12, js) spec front-matter edits use the yaml package Document API to keep comments and key order; Bun.YAML cannot.
 - (slice 13, js) Bun.Glob brace patterns containing * match nothing; scan pattern and */pattern as separate globs.
 - (slice 13, js) Slice 15 must add monolith and spring-break to the README skill index along with the version bump.
+- (slice 16, js) jot notes use scratchDir('jot'), linked-worktree saves use stateDir('jot'), main-checkout saves use agentsPath('jot', undefined, {main:true}); read paths never create directories. Checkpoint writes use common writeFileAtomic.
+- (slice 16, qa-writer) jot-fixtures.ts (jotWorld) empties HOME, scratch and state roots after each test. cli-smoke runCli accepts optional env and stdin for real-operation smoke tests.
+- (slice 16, orchestrator) Smoke tests that run jot from the repo cwd also see the checkout's real .agents/jot saves; use `jot ls -n` or a non-git cwd.
+- (slice 16, qa-code) Open LOW items for the final review: parallel `jot add` calls can collide on the same generated name (writeFileSync without 'wx'); kick-take prints the section before the atomic write commits. Both match legacy behavior.
 
 ## Issues Remediation
 

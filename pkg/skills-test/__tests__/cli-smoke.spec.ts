@@ -17,10 +17,16 @@ const ENTRY = join(
 	"index.ts",
 );
 
-async function runCli(args: string[]): Promise<{ code: number; out: string }> {
+async function runCli(
+	args: string[],
+	env: Record<string, string | undefined> = {},
+	stdin?: string,
+): Promise<{ code: number; out: string }> {
 	const proc = Bun.spawn(["bun", ENTRY, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
+		stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
+		env: { ...process.env, ...env },
 	});
 	const out = await new Response(proc.stdout).text();
 	const code = await proc.exited;
@@ -56,6 +62,7 @@ describe("dg-skills CLI", () => {
 			"worktree",
 			"spec",
 			"monolith",
+			"jot",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -146,6 +153,41 @@ describe("dg-skills CLI", () => {
 			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("jot is registered and its help lists every subcommand", async () => {
+		const { code, out } = await runCli(["jot", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"add",
+			"ls",
+			"read",
+			"kind",
+			"done",
+			"kick",
+			"kick-list",
+			"kick-take",
+		])
+			expectListed(out, verb);
+	});
+
+	test("jot add and ls run a real note round trip in isolated roots", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-jot-smoke-"));
+		try {
+			const env = {
+				HOME: root,
+				AI_SCRATCH_DIR: join(root, "scratch"),
+				AI_STATE_DIR: join(root, "state"),
+			};
+			const added = await runCli(["jot", "add"], env, "# smoke note\n");
+			expect(added.code).toBe(0);
+			expect(added.out.trim().startsWith(join(root, "scratch", "jot"))).toBe(true);
+			const listed = await runCli(["jot", "ls", "-n"], env);
+			expect(listed.code).toBe(0);
+			expect(listed.out).toMatch(/^note\t0m\tjot-[a-z]+-[a-z]+\tsmoke note\n$/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
