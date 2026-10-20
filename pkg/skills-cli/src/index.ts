@@ -26,6 +26,7 @@ import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
+import { registerSniff } from "./commands/sniff";
 import { registerSpec } from "./commands/spec";
 import { registerStash } from "./commands/stash";
 import { registerThrash } from "./commands/thrash";
@@ -72,6 +73,7 @@ registerSpec(program);
 registerMonolith(program);
 registerJot(program);
 registerBg(program);
+registerSniff(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

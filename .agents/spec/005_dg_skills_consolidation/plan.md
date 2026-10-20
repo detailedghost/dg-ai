@@ -1091,16 +1091,16 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 18 — w4-sniff-nope-find-work
 
 #### Engineering
-- [ ] Port sniff-cli.ts; move nope and find-work with no home paths ($HOME/code is allowed as an env default)
-- [ ] Rewrite find-work embedded prompts with bootstrap/provider routing and existing human selection/PR-opening gates.
-- [ ] Sanitize tests/examples beyond narrow regex, including work registry fixture and nope private-home example; preserve actual sniff status 1.
+- [x] Port sniff-cli.ts; move nope and find-work with no home paths ($HOME/code is allowed as an env default)
+- [x] Rewrite find-work embedded prompts with bootstrap/provider routing and existing human selection/PR-opening gates.
+- [x] Sanitize tests/examples beyond narrow regex, including work registry fixture and nope private-home example; preserve actual sniff status 1.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Assert real stdout/stderr excludes fake env/Terraform/Docker/CI secret values; cover root errors and empty inventory.
+- [x] Assert real stdout/stderr excludes fake env/Terraform/Docker/CI secret values; cover root errors and empty inventory.
 
 #### Acceptance Criteria
-- [ ] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
+- [x] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
 
 ### Slice 31 — w4-doctor
 
@@ -1412,6 +1412,7 @@ Superseded: viz and review no longer ship (commit fc16957). Original summary: `d
 - Slice 16 (w4-jot): `dg-skills jot` ports jot-cli and jot-checkpoint (add, ls, read, kind, done, kick, kick-list, kick-take) through registerLegacyCommand, with legacy flags, output and exit codes. The packaged `/dg:jot` skill has a Usage line, a Flags table and full `~/.dg/bin/dg-skills jot` calls. `readableSuffix` moved into `@dg/common/node` scratch-paths. Tests drive the CLI only, from source and from the compiled binary, with isolated roots and a linked worktree.
 - Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, list, status, cancel, kill, update, drain, prune) and re-executes the real installed binary for drains and resumes. A relative `--cwd` is stored as an absolute path, and prune removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` now routes through the same dispatcher. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz`, and the cls browser close probes `~/.dg/bin/dg-skills pw --help` and skips with a note when it fails.
 - Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) with compiled-safe self-dispatch, cwd-contained prune and no caller process-group signals. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship; stat has no --viz and hands lanes to dg:overwatch; cls skips pw cleanup when pw is missing. cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
+- Slice 18 (w4-sniff-nope-find-work): `dg-skills sniff` ports sniff-cli with names-only secret and config inventory, the legacy exit status 1 and the `$HOME/code` env default. The sniff, nope and find-work skills ship; sniff drops `--viz`; find-work prompts use the dg bootstrap, `dg-skills vcs-provider` and `dg-skills worktree` routing and keep the human selection and PR-opening gates. Fixtures and examples carry no private names or paths.
 
 ## Agent Notes
 
@@ -1473,6 +1474,10 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 17, js) cls has no allowed-tools frontmatter; approvals come from the user's configured grants.
 - (slice 17, qa-writer) bg-jobs.spec.ts 'drain applies queued context once' failed in about 2 of 12 loaded full-file runs. Watch it in CI.
 - (slice 17, orchestrator) bg meta records without a string id and cwd are skipped by list and prune.
+- (slice 18, qa-writer) pkg/skills-cli/__tests__/skill-tree-helpers.ts holds shared fences, cells, flagsTable and walk helpers; only sniff uses it so far. Point the jot, bg and monolith skill-tree specs at it in slice 31.
+- (slice 18, qa-writer) Skill-tree private-name scans strip the public bootstrap URL (github.com/detailedghost/dg-ai/...) before matching.
+- (slice 18, qa-code) Open LOW items for the final review: the shell-block `#` comment guard misses `cmd #note`; sniff `repo` is `..` when run as `sniff ..`; CLOUD_PERM rows keep the full role ARN (legacy parity).
+- (slice 18, orchestrator) The full skills-cli suite passes alone (2746 tests, about 10 minutes). Under parallel agent load it took 77 minutes and showed 4 transient failures.
 
 ## Issues Remediation
 

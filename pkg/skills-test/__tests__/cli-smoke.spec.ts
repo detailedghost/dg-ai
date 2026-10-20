@@ -4,7 +4,7 @@
  * present in CI), which exercises the same command graph the release compiles.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -64,6 +64,7 @@ describe("dg-skills CLI", () => {
 			"monolith",
 			"jot",
 			"bg",
+			"sniff",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -187,6 +188,53 @@ describe("dg-skills CLI", () => {
 			const listed = await runCli(["jot", "ls", "-n"], env);
 			expect(listed.code).toBe(0);
 			expect(listed.out).toMatch(/^note\t0m\tjot-[a-z]+-[a-z]+\tsmoke note\n$/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("sniff --help documents the path argument without scanning", async () => {
+		const { code, out } = await runCli(["sniff", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("sniff");
+		expect(out.toLowerCase()).toContain("usage");
+		expect(() => JSON.parse(out)).toThrow();
+	});
+
+	test("sniff lists secret names from a disposable tree and never their values", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-sniff-smoke-"));
+		try {
+			const fake = "fake-smoke-secret-5d2c9a";
+			const tree = join(root, "app");
+			mkdirSync(tree);
+			writeFileSync(
+				join(tree, ".env"),
+				`SMOKE_API_TOKEN=${fake}\nSMOKE_HOST=h\n`,
+			);
+			const env = { HOME: root };
+			const ran = await runCli(["sniff", tree], env);
+			expect(ran.code).toBe(0);
+			expect(ran.out).not.toContain(fake);
+			const report = JSON.parse(ran.out) as {
+				requirements: { type: string; name: string }[];
+			};
+			expect(
+				report.requirements.map((row) => `${row.type}:${row.name}`).sort(),
+			).toEqual(["CONFIG:SMOKE_HOST", "SECRET:SMOKE_API_TOKEN"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("sniff reports an empty inventory with 0 and a missing path with 1", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-sniff-smoke-"));
+		try {
+			const empty = await runCli(["sniff", root], { HOME: root });
+			expect(empty.code).toBe(0);
+			expect(JSON.parse(empty.out).total).toBe(0);
+			const ran = await runCli(["sniff", join(root, "absent")], { HOME: root });
+			expect(ran.code).toBe(1);
+			expect(ran.out).toBe("");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
