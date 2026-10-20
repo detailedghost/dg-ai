@@ -100,20 +100,22 @@ describe("migrated monolith and spring-break skill trees", () => {
 	);
 
 	test.each(trees)(
-		"$skill bootstraps the CLI before any quoted call",
+		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/DG="\$\{DG_HOME:-\$HOME\/\.dg\}\/bin\/dg-skills"/,
+				/~\/\.dg\/bin\/dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+curl/,
 			);
 		},
 	);
 
-	test("every dg-skills call is quoted and every monolith verb exists", () => {
+	test("every dg-skills call uses the literal path and every monolith verb exists", () => {
 		const called = new Set<string>();
 		for (const { files } of trees)
 			for (const file of files) {
-				expect(file.text).not.toMatch(/(?<!")\$DG(?![A-Za-z_"])/);
-				for (const match of file.text.matchAll(/"\$DG" monolith ([a-z-]+)/g))
+				expect(file.text).not.toMatch(/\$\{?DG\b/);
+				for (const match of file.text.matchAll(
+					/~\/\.dg\/bin\/dg-skills monolith ([a-z][a-z-]*)/g,
+				))
 					called.add(match[1] ?? "");
 			}
 		for (const verb of REQUIRED_MONOLITH_CALLS)
@@ -129,7 +131,7 @@ describe("migrated monolith and spring-break skill trees", () => {
 			"utf8",
 		);
 		expect(protocol).toMatch(
-			/"\$DG" monolith worktree-gen "\$REPO_ROOT" --mode "\$M"[\s\S]*?--monolith-path "\$MONOLITH_PATH"[\s\S]*?--staging-path/,
+			/~\/\.dg\/bin\/dg-skills monolith worktree-gen "\$REPO_ROOT" --mode "\$M"[\s\S]*?--monolith-path "\$MONOLITH_PATH"[\s\S]*?--staging-path/,
 		);
 	});
 
@@ -276,16 +278,16 @@ describe("spring-break format contracts", () => {
 			"Preserve `NNN` from the old filename. Never renumber.",
 		);
 		expect(text).toContain("skip that bundle");
-		expect(text).toMatch(/"\$DG" spec validate/);
-		expect(text).toMatch(/"\$DG" spec context/);
-		expect(text).toMatch(/"\$DG" spec set/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills spec validate/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills spec context/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills spec set/);
 	});
 
 	test("the steps migrate spec bundles, validate them and run the monolith health check without editing monolith.md", () => {
 		const text = skillMd("spring-break");
-		expect(text).toMatch(/"\$DG" spec validate/);
-		expect(text).toMatch(/"\$DG" spec context/);
-		expect(text).toMatch(/"\$DG" monolith prune [^\n]*--dry-run/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills spec validate/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills spec context/);
+		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills monolith prune [^\n]*--dry-run/);
 		expect(text).toContain("Do NOT auto-modify monolith.md");
 		expect(text).toContain("monolith-conflicts.md");
 		expect(text).toContain(

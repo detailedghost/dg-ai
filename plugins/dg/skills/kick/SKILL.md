@@ -11,18 +11,11 @@ per-slice review, synthesis, `/viz` verify, context pack) unmodified, then appli
 addition: flip the resulting bundle's `status` to `deferred` and commit it, instead of continuing
 into execute mode.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Usage: `/kick [feature-name] [--from <path>]`.
@@ -45,7 +38,7 @@ Verify `.agents/` structure exists (AGENTS.md, `.agents/school/`, `.agents/refer
    clarifying question — `/kick` does not duplicate that ask. This runs the full pipeline and ends
    with a bundle at `.agents/spec/<NNN>_<slug>/` (`plan.md` + `context.md`).
 2. Capture `<NNN>_<slug>` from the bundle path `/spec` prints at plan.md step 10.
-3. `"$DG" spec set .agents/spec/<NNN>_<slug>/plan.md status deferred` — /kick's only deviation from a
+3. `~/.dg/bin/dg-skills spec set .agents/spec/<NNN>_<slug>/plan.md status deferred` — /kick's only deviation from a
    plain `/spec` plan-mode run.
 4. Commit the bundle (`/spec` plan mode already committed it at step 10; this second commit is for
    /kick's own `status: deferred` edit, so it can't be lost to a stash/clean):

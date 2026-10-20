@@ -122,9 +122,9 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 	});
 
 	for (const { name, md } of cliSkills) {
-		test(`${name}: resolves the binary under DG_HOME, not a hardcoded ~/.dg`, () => {
+		test(`${name}: calls the literal ~/.dg/bin path, not a shell variable`, () => {
 			expect(md).not.toMatch(/="\$HOME\/\.dg\/bin\//);
-			expect(md).not.toMatch(/="~\/\.dg\/bin\//);
+			expect(md).not.toMatch(/\bDG="/);
 		});
 		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
 			expect(md).toContain("skills-cli");
@@ -156,16 +156,8 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 		});
 
 		test(`${name}: gates its bootstrap on the dg-agent binary, not on dg-skills`, () => {
-			const gated = [
-				...md.matchAll(/if\s*\[\s*!\s*-x\s*"\$\{?(\w+)\}?"\s*\]/g),
-			].map((match) => match[1]);
-			expect(gated.length).toBeGreaterThan(0);
-
-			for (const variable of gated) {
-				const assigned = new RegExp(`${variable}="([^"]+)"`).exec(md)?.[1];
-				expect(assigned).toBeDefined();
-				expect(assigned?.endsWith("/dg-agent")).toBe(true);
-			}
+			expect(md).toMatch(/\[ -x ~\/\.dg\/bin\/dg-agent \] \|\|\n\s+curl/);
+			expect(md).not.toMatch(/dg-skills \S+ --help [^\n]*\|\|\n\s+curl/);
 		});
 
 		test(`${name}: names both release tags its two binaries ship under`, () => {
@@ -207,7 +199,7 @@ describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
 	test("new walkthroughs open in the extension editor", () => {
-		expect(demo).toContain('"$DG" demo --edit /tmp/ai/demo/tour.md');
+		expect(demo).toContain('~/.dg/bin/dg-skills demo --edit /tmp/ai/demo/tour.md');
 	});
 
 	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {

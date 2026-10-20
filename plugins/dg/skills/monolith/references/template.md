@@ -68,7 +68,7 @@ The exact skeleton `lore` writes (or appends to) at `.agents/monolith.md`.
 
 ## Token budget
 
-- **Total file ≤ 6 KB** (~1.5k tokens). Verified by `"$DG" monolith cap-report`.
+- **Total file ≤ 6 KB** (~1.5k tokens). Verified by `~/.dg/bin/dg-skills monolith cap-report`.
 - **Soft cap: 40 rows per term section, ~6 KB per file.** Touching either cap makes the helper split the file into `.agents/monolith/<domain>.md`, one per domain, and rewrite `monolith.md` as an index. Rows are never deleted to fit.
 
 ## Style rules (lore agent prompt)

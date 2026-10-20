@@ -9,18 +9,11 @@ Run a feature brief through the full build pipeline with no spec prerequisite. `
 
 **This skill owns the execution lifecycle.** The slice-wave workflow, execution templates, and stage references live here; `/spec` and `/pickup` reference them instead of carrying copies. For planning-heavy work (discovery interview, roundtable, durable spec in `.agents/spec/`), route to `/spec`.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills worktree --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Usage: `/sdlc "<feature brief>" [-T|--no-worktree] [-l|--local]`.
@@ -35,7 +28,7 @@ Usage: `/sdlc "<feature brief>" [-T|--no-worktree] [-l|--local]`.
 
 `WORKTREE_MODE = NOT(NO_WORKTREE)`. Worktree is the default, matching `/spec`.
 
-`REVIEW_MODE = local if (-l|--local) else pr`. `pr` is the default. Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews it on the provider after the run ends — `/address` collects the comments in a later session. `-l` restores the old blocking gate, which runs before step 8 pushes anything. Either way step 8 creates the PR/MR through `"$DG" vcs-provider`, so a GitLab remote gets an MR without a second code path.
+`REVIEW_MODE = local if (-l|--local) else pr`. `pr` is the default. Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews it on the provider after the run ends — `/address` collects the comments in a later session. `-l` restores the old blocking gate, which runs before step 8 pushes anything. Either way step 8 creates the PR/MR through `~/.dg/bin/dg-skills vcs-provider`, so a GitLab remote gets an MR without a second code path.
 
 ## Pipeline
 
@@ -48,7 +41,7 @@ Usage: `/sdlc "<feature brief>" [-T|--no-worktree] [-l|--local]`.
 | 5 | Final review + bounded correction; commit fixes | references/finish.md |
 | 6 | Test-name gate, then docs (lore); commit docs | references/finish.md |
 | 7 | Human review gate — `pr` mode: skipped (the review moves to the PR/MR). `local` mode: BLOCKING `/review` | references/finish.md |
-| 8 | Push + `"$DG" vcs-provider create-pr` (draft in `pr` mode) | references/finish.md |
+| 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr` (draft in `pr` mode) | references/finish.md |
 
 Follow steps strictly in order. NEVER skip a gate condition.
 
@@ -64,7 +57,7 @@ Follow steps strictly in order. NEVER skip a gate condition.
 
 ## Ephemeral spec (the input bridge)
 
-`/sdlc` takes a bare brief, but the slice-wave workflow reads each slice's agents out of `slices[]` frontmatter, so the picks have to land on disk — which is why step 3 needs `/assign`'s spec-annotation mode, not a bare recommendation. Step 2 synthesizes a throwaway spec at `$("$DG" stash -s sdlc <slug>.md)` carrying just enough structure for those tools to bite on. It is scratch, never a deliverable:
+`/sdlc` takes a bare brief, but the slice-wave workflow reads each slice's agents out of `slices[]` frontmatter, so the picks have to land on disk — which is why step 3 needs `/assign`'s spec-annotation mode, not a bare recommendation. Step 2 synthesizes a throwaway spec at `$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)` carrying just enough structure for those tools to bite on. It is scratch, never a deliverable:
 
 - NEVER write it into `.agents/spec/` (durable specs stay `/spec`'s job) or anywhere inside an installed skills directory.
 - No cleanup step needed — `/cleanup`'s 30-day state TTL walker prunes it when stale.

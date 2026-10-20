@@ -16,15 +16,8 @@ Fix PR review comments, CI/CD failures, and local code-review findings. Test-fir
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills address --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Repeat this resolution in every fresh shell, including delegated execution and
@@ -83,7 +76,7 @@ leave the thread open.
 | `--verdicts <path>` | Pre-filtered verdict JSON (skip triage). Pauses on `strange` items. |
 | `--no-ci` | Skip CI gathering. |
 
-Bare args treated as agent list. All replies prefixed `🤖 ` by `"$DG" address` — never construct it yourself.
+Bare args treated as agent list. All replies prefixed `🤖 ` by `~/.dg/bin/dg-skills address` — never construct it yourself.
 Set `ADDRESS_BOT_PREFIX="[bot] "` on a host that mangles emoji. Both markers, plus the legacy `[bot] ` on
 replies already posted, count as bot replies on read.
 
@@ -91,4 +84,4 @@ replies already posted, count as bot replies on read.
 
 - [references/workflow.md](references/workflow.md) — phases, I/O, gates
 - [references/agents.md](references/agents.md) — roster + file-extension routing
-- [references/github-api.md](references/github-api.md) — human reference; runtime uses `"$DG" address`
+- [references/github-api.md](references/github-api.md) — human reference; runtime uses `~/.dg/bin/dg-skills address`

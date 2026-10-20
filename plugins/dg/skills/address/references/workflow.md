@@ -1,6 +1,6 @@
 # Workflow
 
-IN/OUT per phase. Gates = hard stops. Resolve `DG` using [../SKILL.md](../SKILL.md#runtime-and-skill-paths) before commands in each fresh shell.
+IN/OUT per phase. Gates = hard stops.
 
 ## Phase 0 — Parse Args
 
@@ -16,14 +16,14 @@ OUT: `agents`, `extraContext`, `roundNumber`, `verdictsPath`, `includeCi` (defau
 Search `.agents/spec/*/plan.md` and the durable spec/sdlc dirs for a spec whose `worktree.path == pwd` or `worktree.pr_url` matches the PR:
 
 ```sh
-ls "$("$DG" stash -s spec)"/*.md "$("$DG" stash -s sdlc)"/*.md 2>/dev/null
+ls "$(~/.dg/bin/dg-skills stash -s spec)"/*.md "$(~/.dg/bin/dg-skills stash -s sdlc)"/*.md 2>/dev/null
 ```
 
-`"$DG" stash -s` buckets by the **main worktree**, so it resolves the same from the worktree and from the origin repo — which is what makes step 3g below able to find what the run wrote.
+`~/.dg/bin/dg-skills stash -s` buckets by the **main worktree**, so it resolves the same from the worktree and from the origin repo — which is what makes step 3g below able to find what the run wrote.
 
 Skip when: no spec has `worktree:` block; `worktree.pr_url` empty; `pr_strategy: cross-repo`.
 
-1. `"$DG" address view-pr "$worktree.pr_url"` — prints the PR/MR as JSON on both providers. Read the normalized `.merged` boolean, not `.state`, so the same check works for a GitHub PR and a GitLab MR. A non-zero exit means the lookup failed: skip the cleanup rather than treating the failure as a state.
+1. `~/.dg/bin/dg-skills address view-pr "$worktree.pr_url"` — prints the PR/MR as JSON on both providers. Read the normalized `.merged` boolean, not `.state`, so the same check works for a GitHub PR and a GitLab MR. A non-zero exit means the lookup failed: skip the cleanup rather than treating the failure as a state.
 1. `.merged == false` → continue.
 1. `.merged == true`:
    - a. `git -C "$worktree.path" status --porcelain` non-empty → print instructions, exit non-zero.
@@ -33,7 +33,7 @@ Skip when: no spec has `worktree:` block; `worktree.pr_url` empty; `pr_strategy:
    - d. `git -C "$worktree.origin_repo" worktree remove "$worktree.path"`
    - e. `git -C "$worktree.origin_repo" branch -D "$worktree.branch"`
    - f. Clear `worktree.path`/`worktree.branch` in spec (preserve `pr_url`, `origin_repo`). Commit: `chore(specs): worktree cleanup for <slug> (pr <num> merged)`.
-   - g. From the verified `worktree.origin_repo` working directory, remove the run's durable scratchpad — `$("$DG" stash -s spec)/<NNN>_<slug>-scratch.md` for a spec run, `$("$DG" stash -s sdlc)/<slug>.md` plus `<slug>-scratch.md` for a bare `/sdlc` one (silent if absent; slug from `feature_snake_case` or derived from branch). Run `"$DG" stash -s` **after** relocating; it is keyed to the main worktree, so it is unchanged by moving out of the worktree. This is the only place these files get reaped before the 30-day TTL — merge is the right moment, since `/sdlc` finish.md's Hold-and-resume path still reads them until then. Print summary. Exit zero.
+   - g. From the verified `worktree.origin_repo` working directory, remove the run's durable scratchpad — `$(~/.dg/bin/dg-skills stash -s spec)/<NNN>_<slug>-scratch.md` for a spec run, `$(~/.dg/bin/dg-skills stash -s sdlc)/<slug>.md` plus `<slug>-scratch.md` for a bare `/sdlc` one (silent if absent; slug from `feature_snake_case` or derived from branch). Run `~/.dg/bin/dg-skills stash -s` **after** relocating; it is keyed to the main worktree, so it is unchanged by moving out of the worktree. This is the only place these files get reaped before the 30-day TTL — merge is the right moment, since `/sdlc` finish.md's Hold-and-resume path still reads them until then. Print summary. Exit zero.
 
 GATE: cleanup complete, deferred, or aborted.
 
@@ -43,7 +43,7 @@ IN: `localOnly`.
 
 Run in parallel:
 
-1. `"$DG" address probe` — provider auth failure non-fatal when `localOnly=true`; warn and continue.
+1. `~/.dg/bin/dg-skills address probe` — provider auth failure non-fatal when `localOnly=true`; warn and continue.
 1. `checkpoint` agent: `"Return OK"` (probes the host's configured delegation facility). Honor existing session authorization; do not add permissions.
 
 GATE: probe fails AND `localOnly=false` → stop.
@@ -63,8 +63,8 @@ When `localOnly=true`: `reviewDir = $PWD`.
 
 When `localOnly=false` (PR-targeted run), resolve in order — use the first that yields a path:
 
-1. Check specs in `.agents/spec/*/plan.md` and `$("$DG" stash -s spec)/*.md` plus `$("$DG" stash -s sdlc)/*.md` for a `worktree.path` or `worktree.pr_url` that matches the current PR (same lookup as Phase 0.25 — reuse its `"$DG" stash` snippet). If found, `reviewDir = worktree.path`.
-1. Get the head branch: `"$DG" address view-pr <pr>` and read `.headRefName`. Then scan `git worktree list --porcelain` for a worktree whose checked-out branch matches. If found, `reviewDir = <that worktree path>`. Works on both providers — `headRefName` is the MR's source branch on GitLab. A non-zero exit means no match: fall through to step 3.
+1. Check specs in `.agents/spec/*/plan.md` and `$(~/.dg/bin/dg-skills stash -s spec)/*.md` plus `$(~/.dg/bin/dg-skills stash -s sdlc)/*.md` for a `worktree.path` or `worktree.pr_url` that matches the current PR (same lookup as Phase 0.25 — reuse its `~/.dg/bin/dg-skills stash` snippet). If found, `reviewDir = worktree.path`.
+1. Get the head branch: `~/.dg/bin/dg-skills address view-pr <pr>` and read `.headRefName`. Then scan `git worktree list --porcelain` for a worktree whose checked-out branch matches. If found, `reviewDir = <that worktree path>`. Works on both providers — `headRefName` is the MR's source branch on GitLab. A non-zero exit means no match: fall through to step 3.
 1. Fall back: `reviewDir = $PWD`.
 
 De-duplicate: if `reviewDir == $PWD`, glob only once.
@@ -77,11 +77,11 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 ### 1a. Comment items (skip when `localOnly=true`)
 
 - `verdictsPath` set: read `{commentId, threadId, verdict, reason}[]`; fetch context via `gather-unresolved`; merge by `commentId`. Tag `source:"comment"`.
-- Otherwise: `"$DG" address gather-unresolved` → `{threadId, commentId, path, line, body, diffHunk, author, mode}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
+- Otherwise: `~/.dg/bin/dg-skills address gather-unresolved` → `{threadId, commentId, path, line, body, diffHunk, author, mode}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
 
 ### 1b. CI items (skip when `localOnly=true` or `includeCi=false`)
 
-`"$DG" address gather-ci-failures` → `{ciId, source:"ci", name, conclusion, runId, jobId, workflowFile, url, logExcerpt}[]`. Same shape on GitHub Actions and GitLab pipelines. `conclusion` is lowercase (e.g. `"failure"`) on both providers — the provider-neutral contract, not GitHub's old ALL-CAPS GraphQL vocabulary (e.g. `"FAILURE"`) from the pre-migration `statusCheckRollup` call.
+`~/.dg/bin/dg-skills address gather-ci-failures` → `{ciId, source:"ci", name, conclusion, runId, jobId, workflowFile, url, logExcerpt}[]`. Same shape on GitHub Actions and GitLab pipelines. `conclusion` is lowercase (e.g. `"failure"`) on both providers — the provider-neutral contract, not GitHub's old ALL-CAPS GraphQL vocabulary (e.g. `"FAILURE"`) from the pre-migration `statusCheckRollup` call.
 
 ### 1d. Wiz items (skip when `localOnly=true`)
 
@@ -102,7 +102,7 @@ GATE: `workList` empty → stop.
 
 Skip when no comment items have `mode="explain"`.
 
-For each: read `path`+`diffHunk` for context; compose grounded explanation (cite code, not speculation); `"$DG" address resolve-with-reply <commentId> <threadId> "<explanation>"`. Drop from `workList`.
+For each: read `path`+`diffHunk` for context; compose grounded explanation (cite code, not speculation); `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "<explanation>"`. Drop from `workList`.
 
 GATE: all calls succeeded. `workList` empty after → stop.
 
@@ -126,8 +126,8 @@ Skip when `verdictsPath` set.
 
 For each `reject-*` item:
 
-- `source=="comment"`, `reject-illogical`: `"$DG" address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
-- `source=="comment"`, `reject-other`: `"$DG" address resolve-with-reply <commentId> <threadId> "Thanks — declining. <reason>"`
+- `source=="comment"`, `reject-illogical`: `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
+- `source=="comment"`, `reject-other`: `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — declining. <reason>"`
 - `source=="local-review"`: drop silently; print `[local-review] rejected: <localId> — <reason>`.
 
 Drop all `reject-*` from `workList`.
@@ -160,7 +160,7 @@ Runs when any item has `verdict="strange"`. Ask through the host's question faci
 
 - **Accept** — keep in workList.
 - **Skip** — drop, leave thread open.
-- **Resolve silently** — `"$DG" address resolve-silent <threadId>` (local-review: drop only, no helper call).
+- **Resolve silently** — `~/.dg/bin/dg-skills address resolve-silent <threadId>` (local-review: drop only, no helper call).
 
 GATE: no `strange` items undecided.
 
@@ -228,7 +228,7 @@ Use `fix(<scope>): <description>` with a scope from the repo's recent commits:
 Pass the message as one quoted argument with real newlines (the helper joins its arguments and does not expand `\n`). Add the attribution trailer only when the host's instructions require one.
 
 ```sh
-"$DG" address commit-push "<subject>
+~/.dg/bin/dg-skills address commit-push "<subject>
 
 <trailer, if the host requires one>"
 ```
@@ -248,7 +248,7 @@ for item in workList where source=="comment":
   else: emit {commentId, threadId, summary: match.summary}
 ```
 
-`"$DG" address batch-close '<JSON>'` → `{"total":N,"succeeded":N,"failed":0}`.
+`~/.dg/bin/dg-skills address batch-close '<JSON>'` → `{"total":N,"succeeded":N,"failed":0}`.
 
 `commentId` is the original review comment. On GitHub the helper posts to
 `pulls/{pr}/comments/{commentId}/replies`, verifies the response's `in_reply_to_id`, and only then resolves
@@ -259,7 +259,7 @@ GATE: invalid JSON → stop. `failed > 0` → stop.
 
 Wiz: inline Wiz threads close like any comment item. `source=="wiz"` summary findings get no reply; Wiz re-scans on push. After the push, re-check the Wiz checks and `list_sast_findings` for the changed paths, and report any finding still open.
 
-Fallback: individual `"$DG" address reply <comment_id> <thread_id> <body>` + `"$DG" address resolve <thread_id>` per item. Resolve only after
+Fallback: individual `~/.dg/bin/dg-skills address reply <comment_id> <thread_id> <body>` + `~/.dg/bin/dg-skills address resolve <thread_id>` per item. Resolve only after
 the reply command succeeds.
 
 ## Phase 7 — Local Review Cleanup
@@ -284,7 +284,7 @@ GATE: none — best-effort. A failed `rm` prints a warning and does not stop the
 
 ## Compiled Address Commands
 
-`"$DG" address` — run through the host's existing narrow approvals, honoring already granted session permission. All replies auto-prefixed
+`~/.dg/bin/dg-skills address` — run through the host's existing narrow approvals, honoring already granted session permission. All replies auto-prefixed
 `🤖`; idempotent. `ADDRESS_BOT_PREFIX` overrides the marker for hosts that mangle emoji — set it to
 `[bot]` for a plain-ASCII fallback. Reads accept `🤖`, the override, and the legacy `[bot]`, so replies
 posted before the emoji switch still register as bot replies.
@@ -315,11 +315,11 @@ host approval rules.
 | `fetch-copilot-review` | Latest Copilot review and unresolved comments |
 | `count-copilot-reviews` | Count Copilot reviews for round accounting |
 
-Every row above is a subcommand of `"$DG" address`. The six Copilot-only
+Every row above is a subcommand of `~/.dg/bin/dg-skills address`. The six Copilot-only
 operations (`request-copilot`, `verify-copilot-engaged`, `await-copilot-review`,
 `check-no-findings`, `fetch-copilot-review`, `count-copilot-reviews`) refuse an
 unsupported provider before validating their arguments. `check-copilot` retains
-its availability JSON instead. `"$DG" address batch-close -` reads its JSON payload from stdin;
+its availability JSON instead. `~/.dg/bin/dg-skills address batch-close -` reads its JSON payload from stdin;
 its `{total,succeeded,failed}` tally includes per-item failures. For GitLab
 thread mutations use `--pr=<number>` when targeting an MR other than the current
 branch's MR; pass the same target to both reply and resolve.

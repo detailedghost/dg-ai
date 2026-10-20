@@ -126,15 +126,15 @@ describe("channel-review skill distribution", () => {
 		expect(front).toMatch(/^name: channel-review$/m);
 	});
 
-	test("the bootstrap block is the inbox-cleanup block with only the final help line changed", () => {
-		const ours = bootstrapBlock(readSkill()).split("\n");
-		const theirs = bootstrapBlock(readFileSync(inboxSkillPath, "utf8")).split(
-			"\n",
-		);
-		expect(ours.length).toBeGreaterThan(5);
-		expect(ours.slice(0, -2)).toEqual(theirs.slice(0, -2));
-		expect(ours.at(-1)).toBe(theirs.at(-1));
-		expect(ours.at(-2)).toMatch(/"\$DG" channel-review --help/);
+	test("the bootstrap block gates on channel-review help, installs only the CLI, and ends with the help line", () => {
+		const block = bootstrapBlock(readSkill()).split("\n");
+		expect(block).toEqual([
+			"```sh",
+			"~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||",
+			expect.stringMatching(/bootstrap\.sh \| sh -s -- --cli-only$/),
+			"~/.dg/bin/dg-skills channel-review --help",
+			"```",
+		]);
 	});
 
 	test("SKILL.md and references name the shipped CLI, commands, and vocabulary", () => {
@@ -325,7 +325,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		]);
 		const lines = content()
 			.split("\n")
-			.filter((line) => /(?:dg-skills|"\$DG")\s+channel-review/.test(line));
+			.filter((line) => /dg-skills\s+channel-review/.test(line));
 		expect(lines.length).toBeGreaterThan(5);
 		for (const line of lines) {
 			const sub = /channel-review\s+([a-z-]+)(?:\s+([a-z]+))?/.exec(line);

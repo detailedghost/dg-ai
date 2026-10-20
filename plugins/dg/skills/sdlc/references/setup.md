@@ -7,13 +7,13 @@ Derive `slug` from the brief: a 2–5 word snake_case working title. The helper 
 **If `-T`/`--no-worktree`:** skip the worktree. If the current branch is the repo default, `git switch -c feature/<slug>` — never build on main. Otherwise stay on the current branch.
 
 ```sh
-eval "$("$DG" worktree create "$slug")"
+eval "$(~/.dg/bin/dg-skills worktree create "$slug")"
 # binds WORKTREE_PATH, WORKTREE_BRANCH, WORKTREE_ORIGIN — branch feature/<slug> off latest origin/(main|master)
 ```
 
 The session does not relocate into the worktree — `EnterWorktree({path: <WORKTREE_PATH>})` looks
 like the tool for that, but it refuses this path: its `path` form only accepts a worktree registered
-under `<repo>/.claude/worktrees/`, and `"$DG" worktree create` places its worktrees at
+under `<repo>/.claude/worktrees/`, and `~/.dg/bin/dg-skills worktree create` places its worktrees at
 `$HOME/code/worktrees/<repo>-<slug>` (or a sibling of origin) instead. Being a real linked worktree
 (`git worktree list` shows it) is not what `EnterWorktree` checks — the location is, and this fails
 it. Full detail, including the verbatim refusal, is in the [worktree skill](../../worktree/SKILL.md)'s
@@ -39,7 +39,7 @@ bare `/sdlc` run this ephemeral spec is the only record of `worktree.path`, so l
 reboot orphans the worktree, and the origin repo must resolve the same path to clean it up.
 
 ```sh
-SPEC_PATH="$("$DG" stash -s sdlc <slug>.md)"; SCRATCH_PATH="$("$DG" stash -s sdlc <slug>-scratch.md)"; touch "$SCRATCH_PATH"
+SPEC_PATH="$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)"; SCRATCH_PATH="$(~/.dg/bin/dg-skills stash -s sdlc <slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
 If `SPEC_PATH` already exists with `status: in-progress` (a resumed run), skip derivation — read it, report which slices are already committed, and continue from step 3 or 4 as appropriate.
@@ -97,7 +97,7 @@ slices:
 ## Issues Remediation
 ```
 
-Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/assign` and `"$DG" spec get` work unchanged on the scratch file.
+Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/assign` and `~/.dg/bin/dg-skills spec get` work unchanged on the scratch file.
 
 > **GATE:** spec written to scratch; frontmatter parses; `slices[]` non-empty.
 

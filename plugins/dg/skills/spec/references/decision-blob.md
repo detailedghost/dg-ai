@@ -1,9 +1,9 @@
-# Decision Blob — input to `"$DG" spec scaffold --from-json`
+# Decision Blob — input to `~/.dg/bin/dg-skills spec scaffold --from-json`
 
 Plan-mode step 3: after the two grill-me passes (steps 1–2) converge, the **foreman** agent
 emits this compact JSON. It replaces the old hand-written spec
 template — instead of hand-writing `plan.md` prose, foreman emits structured data and
-`"$DG" spec scaffold` expands it deterministically into the bundle (`plan.md` frontmatter + body
+`~/.dg/bin/dg-skills spec scaffold` expands it deterministically into the bundle (`plan.md` frontmatter + body
 skeleton, `initial.md`, one `roundtable/slice-<N>.md` shell per slice).
 
 **LOCK the shape** (keys, nesting, types) — do not redesign or rename fields; `scaffold` parses
@@ -55,11 +55,11 @@ this exact structure.
 
 ## Producing the blob
 
-Write it to scratch — `$("$DG" stash -s spec <slug>-blob.json)` — then run:
+Write it to scratch — `$(~/.dg/bin/dg-skills stash -s spec <slug>-blob.json)` — then run:
 
 ```sh
-"$DG" spec lint-waves <blob-path>
-"$DG" spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>
+~/.dg/bin/dg-skills spec lint-waves <blob-path>
+~/.dg/bin/dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>
 ```
 
 `lint-waves` exits non-zero when two slices in one `/sdlc` layer can touch the same path; scaffold

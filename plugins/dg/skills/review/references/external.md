@@ -1,7 +1,7 @@
 # External PR review (`-x` / `--external`)
 
 Full step-by-step for reviewing a **GitHub PR** instead of a local range. Same board, same
-`"$DG" viz review` + wait loop as the default mode — only the subject (a PR, not your own
+`~/.dg/bin/dg-skills viz review` + wait loop as the default mode — only the subject (a PR, not your own
 working tree) and the last step (post to GitHub, not act-locally) differ.
 
 ## 1. Resolve the PR
@@ -26,7 +26,7 @@ REPO=$(git rev-parse --show-toplevel)
 
 `gh pr view` accepts a bare number or a full URL identically — no separate URL-parsing needed.
 `--repo` disambiguates which GitHub repo `gh` targets; it does **not** let you review a PR outside
-the repo you're standing in — `"$DG" viz review --repo <path>` needs real local git objects, so `-x`
+the repo you're standing in — `~/.dg/bin/dg-skills viz review --repo <path>` needs real local git objects, so `-x`
 only works on PRs against the current local clone (or a fork of it).
 
 ## 2. Make the head reachable, then render
@@ -36,7 +36,7 @@ git -C "$REPO" fetch origin "pull/$PR_NUMBER/head"     # works for fork PRs too 
 git -C "$REPO" cat-file -e "$BASE_SHA" 2>/dev/null || git -C "$REPO" fetch origin   # base staleness fallback
 ```
 
-Now `$BASE_SHA`/`$HEAD_SHA` are exactly `--base`/`--head` for `"$DG" viz review` (step 4) — no
+Now `$BASE_SHA`/`$HEAD_SHA` are exactly `--base`/`--head` for `~/.dg/bin/dg-skills viz review` (step 4) — no
 extra ref resolution needed.
 
 ## 3. Reviewer agent → findings
@@ -64,16 +64,16 @@ single file+line as:
 ```
 
 Extract the fenced ```json array from the agent's returned text — that is the whole parsing step,
-no prose-scraping. Write it to a scratch file, e.g. `$("$DG" stash review x-$PR_NUMBER-comments.json)`.
+no prose-scraping. Write it to a scratch file, e.g. `$(~/.dg/bin/dg-skills stash review x-$PR_NUMBER-comments.json)`.
 
 ## 4. Render + wait (reuses the existing machinery unchanged)
 
 ```sh
-out=$("$DG" viz review --repo "$REPO" --base "$BASE_SHA" --head "$HEAD_SHA" --comments "$COMMENTS_FILE")
+out=$(~/.dg/bin/dg-skills viz review --repo "$REPO" --base "$BASE_SHA" --head "$HEAD_SHA" --comments "$COMMENTS_FILE")
 SLUG=$(printf '%s' "$out" | sed -n 's#.*/viz/\([^/]*\)/payload.*#\1#p')
 # Launch in the BACKGROUND (Bash `run_in_background: true`); relaunch on a non-zero exit.
-"$DG" viz wait "$SLUG" --resume --timeout 3600
-review_result=$("$DG" viz get "$SLUG" review_result --require-fresh "$HEAD_SHA")
+~/.dg/bin/dg-skills viz wait "$SLUG" --resume --timeout 3600
+review_result=$(~/.dg/bin/dg-skills viz get "$SLUG" review_result --require-fresh "$HEAD_SHA")
 ```
 
 Same mandatory-wait discipline as the default mode (SKILL.md's Flow section) — a timeout is not an

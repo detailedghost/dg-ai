@@ -82,6 +82,6 @@ The protocol's prototype escape hatch (`protocol.md` §"Prototype escape hatch")
 four passes — most naturally in pass 1.5, where API ergonomics and state-machine shapes are exactly
 the "I won't know until I see it" category. When accepted, build it with the prototype skill (it ships later; skip this step until then), keep the
 asset durable (`.agents/prototype/<name>/`, never `--light`), and register it onto its slice at
-plan.md step 8 via `"$DG" spec prototype-ref` — do not invent a separate prototype-budget counter
+plan.md step 8 via `~/.dg/bin/dg-skills spec prototype-ref` — do not invent a separate prototype-budget counter
 here; `/spec` has no multi-phase budget to track since it only has four passes total (lighter than
 its predecessor's multi-phase prototype-budget cap).

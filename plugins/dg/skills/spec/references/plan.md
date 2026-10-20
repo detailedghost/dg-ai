@@ -21,7 +21,7 @@ research persona for this pass, not the interviewer — a subagent has no `AskUs
 cannot meet this step's gate. See [grill.md](grill.md) § *Interview passes run in the MAIN LOOP*
 for the relay contract that applies if you do delegate a leg.
 
-Derive the working `feature` name and `<slug>` (via `"$DG" spec slugify`) from this pass if not
+Derive the working `feature` name and `<slug>` (via `~/.dg/bin/dg-skills spec slugify`) from this pass if not
 already given.
 
 > **GATE:** pass 1's design-tree branches (architecture scope) resolved, zero `[OPEN]`, all
@@ -65,19 +65,19 @@ shared fixture/test harness serializes against every other slice that does the s
 (see [decision-blob.md](decision-blob.md)).
 
 > **GATE:** pass 2's design-tree branches (slice ordering) resolved, zero `[OPEN]`, all `[ASSUMED]`
-> confirmed, and `"$DG" spec lint-waves <blob>` exits 0 (run it on the drafted blob; fix every
+> confirmed, and `~/.dg/bin/dg-skills spec lint-waves <blob>` exits 0 (run it on the drafted blob; fix every
 > reported overlap with a `depends_on` edge before step 3).
 
 ## Step 3 — Decision blob → scaffold → assign
 
 - a. foreman emits the compact JSON decision blob per [decision-blob.md](decision-blob.md),
   derived from passes 1 and 2's decision logs. Write it to
-  `$("$DG" stash -s spec <slug>-blob.json)`. Pass 1.5's structure decisions do
+  `$(~/.dg/bin/dg-skills stash -s spec <slug>-blob.json)`. Pass 1.5's structure decisions do
   **not** go in the blob — its shape is LOCKED and must not grow a `code_structure` key; they land
   in sub-step d below.
-  Run `"$DG" spec lint-waves <blob-path>` on it before sub-step b and fix every overlap.
+  Run `~/.dg/bin/dg-skills spec lint-waves <blob-path>` on it before sub-step b and fix every overlap.
 
-- b. Run `"$DG" spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>`. It runs
+- b. Run `~/.dg/bin/dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>`. It runs
   `lint-waves` first and refuses on overlap (`--allow-overlap` overrides; do not use it). Prints the
   created bundle's absolute path — this is `<bundle>` for every step below. Computes `<NNN>` by
   scanning `.agents/spec/` for `NNN_`-prefixed directories (pre-existing non-numbered dirs coexist
@@ -93,7 +93,7 @@ shared fixture/test harness serializes against every other slice that does the s
   in `Applies to` — and append it:
 
   ```sh
-  "$DG" spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
+  ~/.dg/bin/dg-skills spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
   ```
 
   The heading is created at end-of-file if absent; multi-line text is fine (quote at the call
@@ -141,9 +141,9 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
   here; plan mode does not invoke `/review` at all.
 - c. Ask (batched `AskUserQuestion`, up to 4 slices per call) which slices — if any — to delegate
   externally via `/proxy`. For each selected slice:
-  - Validate the backend name against `"$DG" proxy --list-backends`
+  - Validate the backend name against `~/.dg/bin/dg-skills proxy --list-backends`
     (same validation `/assign` uses for `agents.proxy`). Mismatch → refuse, list valid names.
-  - Set `slices[N].agents.proxy: <backend>` via `"$DG" spec set`.
+  - Set `slices[N].agents.proxy: <backend>` via `~/.dg/bin/dg-skills spec set`.
   - Ask which skill-behaviors (e.g. `db`, `polish`) that slice's engineering will need, and set
     `slices[N].agents.proxy_skills: [...]` — see [decision-blob.md](decision-blob.md) for why `-s`
     must inline these (the `/proxy`-injection limitation).
@@ -160,14 +160,14 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 ## Step 8 — `/viz` verify
 
 Render `plan.md` as a `template:spec` board and block on approval. Full payload shape + the
-`"$DG" viz wait --merge` / `all_clear` gate: [viz.md](viz.md).
+`~/.dg/bin/dg-skills viz wait --merge` / `all_clear` gate: [viz.md](viz.md).
 
 If the plan-approval board (or an earlier step) surfaced a hands-on validation need, build it with the
 prototype skill (it ships later; skip this step until then) — keep the asset durable (`.agents/prototype/<name>/`, never `--light`/`/tmp`). On
 acceptance, register it onto the slice:
 
 ```sh
-"$DG" spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
+~/.dg/bin/dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
 > **GATE:** `/viz` board `all_clear: true` (or terminal-mode `AskUserQuestion` approval on probe
@@ -175,7 +175,7 @@ acceptance, register it onto the slice:
 
 ## Step 9 — Context pack
 
-Run `"$DG" spec context <bundle>`. Writes `<bundle>/context.md` — a frontmatter-first tidy pack
+Run `~/.dg/bin/dg-skills spec context <bundle>`. Writes `<bundle>/context.md` — a frontmatter-first tidy pack
 projecting `plan.md`'s frontmatter (see the schema's bundle-only `bundle`/`plan_path` fields) plus
 `paths.md` + inferred `school/*.md` in the body. This is the file execute mode reads instead of the
 full planning history.

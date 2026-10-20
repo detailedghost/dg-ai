@@ -1238,10 +1238,12 @@ describe("compiled thrash workflow", () => {
 	test("relocated instructions bootstrap local diff and preserve the address handoff from an external cwd", () => {
 		const repo = fixtureRepo();
 		const skill = readFileSync(join(skills, "thrash", "SKILL.md"), "utf8");
-		const bootstrap = skill.match(/```bash\n(DG=[\s\S]*?)\n```/)?.[1];
+		const bootstrap = skill.match(
+			/```bash\n(~\/\.dg\/bin\/dg-skills thrash --help[\s\S]*?)\n```/,
+		)?.[1];
 		expect(bootstrap).toBeDefined();
 		const proc = Bun.spawnSync(
-			["sh", "-c", `${bootstrap}\n"$DG" thrash diff "$TARGET"`],
+			["sh", "-c", `${bootstrap}\n~/.dg/bin/dg-skills thrash diff "$TARGET"`],
 			{
 				cwd: fixture.root,
 				env: fixture.env({ TARGET: repo, DG_SKILLS_DIR: skills }),

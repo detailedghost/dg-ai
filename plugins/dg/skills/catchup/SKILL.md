@@ -16,20 +16,13 @@ Resolve the compiled CLI in every fresh shell, delegated execution, and resumed
 command. Shell variables do not persist between tool calls:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG" catchup
+~/.dg/bin/dg-skills catchup --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+~/.dg/bin/dg-skills catchup
 ```
 
-For a local-only catchup, use `"$DG" catchup --no-push` after the same resolution.
-`"$DG" catchup --help` prints usage without inspecting Git or running build tools.
+For a local-only catchup, use `~/.dg/bin/dg-skills catchup --no-push` after the same resolution.
+`~/.dg/bin/dg-skills catchup --help` prints usage without inspecting Git or running build tools.
 Run from the intended repository or worktree.
 
 Honor the host's existing narrow approvals and permissions already granted in

@@ -85,12 +85,14 @@ describe("vendored viz viewer allowlist", () => {
 describe("viz skill document", () => {
 	const skill = () => readFileSync(join(VIZ, "SKILL.md"), "utf8");
 
-	test("has the viz name, no host-specific keys and the bootstrap with quoted DG calls", () => {
+	test("has the viz name, no host-specific keys and the first-run bootstrap with literal-path calls", () => {
 		const text = skill();
 		expect(text).toMatch(/^name: viz$/m);
 		expect(text).not.toMatch(/^(argument-hint|user-invocable):/m);
-		expect(text).toMatch(/DG="\$\{DG_HOME:-\$HOME\/\.dg\}\/bin\/dg-skills"/);
-		expect(text).toContain('"$DG" viz');
+		expect(text).toMatch(
+			/~\/\.dg\/bin\/dg-skills viz --help >\/dev\/null 2>&1 \|\|\n\s+curl/,
+		);
+		expect(text).toContain("~/.dg/bin/dg-skills viz");
 	});
 
 	test("every reference it routes to ships with the skill", () => {
@@ -138,12 +140,12 @@ describe("review skill", () => {
 			);
 	});
 
-	test("drives the board through quoted compiled viz calls", () => {
+	test("drives the board through literal-path compiled viz calls", () => {
 		const all = textFiles(REVIEW)
 			.map((path) => readFileSync(path, "utf8"))
 			.join("\n");
-		expect(all).toContain('"$DG" viz review');
-		expect(all).toMatch(/"\$DG" viz (review-)?wait/);
+		expect(all).toContain("~/.dg/bin/dg-skills viz review");
+		expect(all).toMatch(/~\/\.dg\/bin\/dg-skills viz (review-)?wait/);
 	});
 
 	test("links to the viz skill relatively", () => {

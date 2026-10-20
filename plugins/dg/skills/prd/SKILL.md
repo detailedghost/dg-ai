@@ -20,18 +20,11 @@ A thin composition of two existing skills. `/prd` is the **handoff** point on th
 
 `/prd` does not duplicate any pipeline logic — it runs `/kick`, then relocates + grants permissions.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Usage: `/prd [feature-name]`.
@@ -63,7 +56,7 @@ Don't restate kick's semantics here.
    settle execution permissions now: list all six keys, ask one yes/no ("Grant all?"); on "No, let
    me choose", fall through to the granular `multiSelect`. Write the resulting six-key
    `permissions:` block via
-   `"$DG" spec perms-batch .agents/spec/todo/<prd-slug>/plan.md --grant-all` (or `--from-scratch`
+   `~/.dg/bin/dg-skills spec perms-batch .agents/spec/todo/<prd-slug>/plan.md --grant-all` (or `--from-scratch`
    after writing the granular answers). `/pickup`/`/spec -s` see the block and skip their own
    permission ask, so the handoff runs with zero setup.
 5. **Fold the commit.** The relocate + assign + permissions steps edited the just-committed bundle.

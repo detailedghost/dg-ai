@@ -10,15 +10,8 @@ description: Render and wire a batch of PRs/MRs as a clean unicode-arrow stack w
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills chain --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Repeat this resolution in every fresh shell, including resumed and delegated
@@ -37,7 +30,7 @@ configuration, and pass real absolute instruction paths to delegates.
 The plugin ships its personas in `agents/` (Claude Code loads them as
 `dg:<name>`; `dg-skills proxy` embeds them), so use those when the host has none.
 
-Run `"$DG" chain --help` for the full usage.
+Run `~/.dg/bin/dg-skills chain --help` for the full usage.
 
 A **layer** is one ref, or a comma-separated set of mutually-independent refs
 (`"101,102"`). Positional layers form a dependency chain, base-first:
@@ -50,10 +43,10 @@ hard-coding one tool, so every subcommand below behaves the same on both.
 
 | Subcommand | Does |
 |---|---|
-| `"$DG" chain render <layers...>` | Prints the rendered block only — paste it wherever needed (a board note, a manual PR edit). |
-| `"$DG" chain plan <layers...>` | Dry run: rendered block + which base retargets would happen, with no provider calls. Show the full output before applying the plan. |
-| `"$DG" chain base <layers...>` | Runs the base/target-branch retargets only. |
-| `"$DG" chain apply <layers...>` | Retargets bases, then idempotently upserts the rendered block into every PR/MR's body. Safe to re-run. |
+| `~/.dg/bin/dg-skills chain render <layers...>` | Prints the rendered block only — paste it wherever needed (a board note, a manual PR edit). |
+| `~/.dg/bin/dg-skills chain plan <layers...>` | Dry run: rendered block + which base retargets would happen, with no provider calls. Show the full output before applying the plan. |
+| `~/.dg/bin/dg-skills chain base <layers...>` | Runs the base/target-branch retargets only. |
+| `~/.dg/bin/dg-skills chain apply <layers...>` | Retargets bases, then idempotently upserts the rendered block into every PR/MR's body. Safe to re-run. |
 
 `--independent ref1,ref2` lists bystander PRs/MRs that have no dependency relationship at
 all — they render under a separate `## Related PRs (independent — mergeable in any
@@ -69,18 +62,18 @@ or failed link is reported on stderr; body updates still continue.
 
 Only linear, single-repo chains qualify (every layer a single ref, no
 `owner/repo#N` refs, no `--repo`). Fan-out layers and cross-repo chains skip native
-linking with a reason and still update the markdown block. `"$DG" chain plan
+linking with a reason and still update the markdown block. `~/.dg/bin/dg-skills chain plan
 <layers...> --native` reports eligibility without calling `gh`. GitLab has no
-native stacking capability: `"$DG" chain apply <layers...> --native` refuses with
+native stacking capability: `~/.dg/bin/dg-skills chain apply <layers...> --native` refuses with
 status 4 before any mutation, while the corresponding plan explains the skip.
 
 ## Workflow
 
-1. Run `"$DG" chain plan <layers...> [--native]` and show its full output,
+1. Run `~/.dg/bin/dg-skills chain plan <layers...> [--native]` and show its full output,
    including the rendered body and base changes, before apply.
 2. Confirm that the host's required approval covers those mutations, honoring
    existing session grants. If approval is still required, obtain it for this
-   concrete plan. Run `"$DG" chain apply <layers...> [--native]` within that scope.
+   concrete plan. Run `~/.dg/bin/dg-skills chain apply <layers...> [--native]` within that scope.
 3. Report any skipped or failed operation. Retarget failures are logged and later
    retargets continue. Body fetching or writing stops on the first failure;
    earlier updates remain. Re-running replaces only the managed marker block and

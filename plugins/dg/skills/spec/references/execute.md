@@ -27,7 +27,7 @@ mode step 9 never ran), stop and tell the user to finish plan mode first — do 
 context pack from the sprawl files.
 
 An execution agent reads a slice's `prototype` asset **only if that slice's frontmatter has a
-`prototype` key** (`slices[N].prototype.path` + `.variant`, set by `"$DG" spec prototype-ref`). Do
+`prototype` key** (`slices[N].prototype.path` + `.variant`, set by `~/.dg/bin/dg-skills spec prototype-ref`). Do
 not inject a prototype reference into a slice's brief when it has none.
 
 ## 2. Worktree — reuse `/sdlc` setup.md Step 1 verbatim
@@ -39,7 +39,7 @@ create the worktree and work in it exactly as that step describes. The session i
 launch directory — it does not relocate — so every command that touches the worktree from here on
 carries its own `cd "$WORKTREE_PATH" && …` prefix.
 
-**Bundle-visibility gotcha:** `"$DG" worktree create` branches off a freshly fetched `origin/<base>` — it
+**Bundle-visibility gotcha:** `~/.dg/bin/dg-skills worktree create` branches off a freshly fetched `origin/<base>` — it
 does not carry uncommitted `.agents/` changes into the new worktree (it prints exactly this
 warning: `"uncommitted .agents/ changes won't be visible in the worktree until merged"`). Plan
 mode now commits the bundle unconditionally (plan.md step 10), but an older or manually-edited
@@ -47,7 +47,7 @@ bundle may still be ahead of `origin`, so **resolve the bundle against `$WORKTRE
 fresh worktree copy** — the same pattern its predecessor used for its own NNN scan.
 
 ```sh
-SPEC_PATH="$("$DG" stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
+SPEC_PATH="$(~/.dg/bin/dg-skills stash -C "$WORKTREE_ORIGIN" -m spec)/<NNN>_<slug>/plan.md"
 ```
 
 This means per-slice `plan.md` writes (current_slice, `## Slice Summaries`, `## Agent Notes`) land
@@ -63,7 +63,7 @@ reboot must not destroy the run's own notes, and the origin repo has to resolve 
 after the worktree is gone, which is what lets `/address` clean it up at merge:
 
 ```sh
-SCRATCH_PATH="$("$DG" stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
+SCRATCH_PATH="$(~/.dg/bin/dg-skills stash -s spec <NNN>_<slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
 ## 4. SKIP setup.md Step 2 — no slice-derivation, no ephemeral spec
@@ -74,7 +74,7 @@ spec `/sdlc`'s machinery reads and writes. Also skip setup.md Step 3's launch-ga
 half (already done) — but still show the token-cost/permissions confirmation it describes if
 `permissions:` in `plan.md` is empty (a bundle scaffolded straight from `scaffold` has no
 `permissions:` block yet; plan mode doesn't set one). Persist the granted keys with
-`"$DG" spec perms-batch <bundle>/plan.md --grant-all` (or `--from-scratch <slug>` after writing the
+`~/.dg/bin/dg-skills spec perms-batch <bundle>/plan.md --grant-all` (or `--from-scratch <slug>` after writing the
 granular answers) — the same command `/prd` documents for pre-granting permissions.
 
 ## 5. Drive the slice-wave
@@ -99,7 +99,7 @@ review + correction, test-name gate + docs) exactly as written.
 ## 6. Human review gate, then direct PR/MR launch (the last item)
 
 Run `finish.md` **steps 7–8** exactly as written, including step 8's `/spec` deltas (draft
-unconditionally, `"$DG" batch-open` afterward, dependent-PR/MR `"$DG" chain plan`/`"$DG" chain apply`
+unconditionally, `~/.dg/bin/dg-skills batch-open` afterward, dependent-PR/MR `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply`
 handling). [`/pushup`](../../pushup/SKILL.md) runs the same push → PR → browser-open mechanics for
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.

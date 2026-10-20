@@ -24,7 +24,7 @@ live-refresh poller. Normal boards poll `/api/status` every 2.5s and swap
 live-updating plan/review boards, but for a one-shot doc it just causes the page
 to appear to reload whenever anything re-touches `payload.json`. `static` skips
 the poller entirely. Omit it (default `false`) for any board driven live via
-`"$DG" viz track/respond/merge`.
+`~/.dg/bin/dg-skills viz track/respond/merge`.
 
 ## Block types
 

@@ -21,7 +21,7 @@ Spec mode only — there is no frontmatter to record it in otherwise.
 Only write `agents.proxy: <backend>` when the user explicitly asks for a slice (or the whole spec) to be delegated
 externally during this invocation (e.g. "delegate the migration slice to codex").
 
-Validate the backend name by running `"$DG" proxy --list-backends` — not the
+Validate the backend name by running `~/.dg/bin/dg-skills proxy --list-backends` — not the
 agent roster check the common steps use, since codex/copilot/pi/opencode/cortex/grok aren't Claude agents. The
 name must be one of that command's output lines. Mismatch → refuse to write, list the valid names (same failure-mode
 style as an agent-name typo).
@@ -35,7 +35,7 @@ A missing spec file is not one of them — no spec is the default path.
 
 - Path-shaped argument with no such file → stop, print the path (dispatch rule 3).
 - Agent name typo'd into a pick → refuse, list valid names.
-- `proxy` backend name typo'd (not in `"$DG" proxy --list-backends` output) → refuse, list valid names.
+- `proxy` backend name typo'd (not in `~/.dg/bin/dg-skills proxy --list-backends` output) → refuse, list valid names.
 - `--dry-run`/`--force` with no spec path → stop, they have no meaning outside spec mode.
 
 Spec mode only:

@@ -3,18 +3,11 @@ name: wayfinder
 description: Chart a piece of work too big for one session as a map of decision tickets, then resolve them one per session until the way to the destination is clear. Planning only - it ends in a decision set that /kick or /grill-me takes over. Use for a loose, foggy, multi-session idea, or to resume a map. Adapted from mattpocock/skills.
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 # /wayfinder - Chart the Way, Then Walk It
@@ -53,11 +46,11 @@ Wayfinder ends where `/kick` starts. Never build inside a map.
 | Name destination, sketch fog, create tickets | Chart mode | [references/map.md](references/map.md) |
 | Claim, resolve, record, graduate fog | Work mode | [references/work.md](references/work.md) |
 | Map file and ticket file formats | Both | [references/map.md](references/map.md) |
-| List maps (`-l`) | Here | For each directory under `$("$DG" stash -m wayfinder)/`, print the slug, the count of tickets with `status: open`, and the fog count. The fog count is the number of non-blank lines under `## Not yet specified` in `map.md`. |
+| List maps (`-l`) | Here | For each directory under `$(~/.dg/bin/dg-skills stash -m wayfinder)/`, print the slug, the count of tickets with `status: open`, and the fog count. The fog count is the number of non-blank lines under `## Not yet specified` in `map.md`. |
 
 ## Where the map lives
 
-`$("$DG" stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `"$DG" stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
+`$(~/.dg/bin/dg-skills stash -m wayfinder)/<slug>/` holds `map.md` and `tickets/NNN-<slug>.md`. Get the path from `~/.dg/bin/dg-skills stash`. Never build it by hand. `-m` resolves to `<main worktree>/.agents/wayfinder`, inside the repo. Commit the map like a spec bundle, with `git add -f`, because `/agent-seed` ignores `.agents/`. For a session handoff, append a `## Handoff` section to `map.md` with the next ticket title and what is still fog. Do not call a separate jot command.
 
 ## Rules
 

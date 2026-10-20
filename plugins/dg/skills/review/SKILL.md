@@ -5,23 +5,16 @@ description: Human-in-the-loop code review for a git range — renders a GitHub-
 
 # /review
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills viz --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Human-in-the-loop **code review** for a git range. Renders a full-width, GitHub-style review board (via `/viz`) — file-tree nav, colorized diffs, per-line comments, per-file + overall approve / request-changes / comment — then **blocks until the reviewer submits** (re-arming on timeout, never proceeding without a verdict — same await-decision discipline as the prototype skill), and hands the verdict + comments back so the agent can act on them.
 
-Deterministic + token-free: the board is built entirely from two git refs by `"$DG" viz` (git + Astro, zero model involvement). [`/viz`](../viz/SKILL.md) is the dumb rendering client; `/review` is the driver — resolve refs → render → **wait (loop until submitted)** → act. The wait is not optional: a rendered board with no collected verdict is an unfinished review.
+Deterministic + token-free: the board is built entirely from two git refs by `~/.dg/bin/dg-skills viz` (git + Astro, zero model involvement). [`/viz`](../viz/SKILL.md) is the dumb rendering client; `/review` is the driver — resolve refs → render → **wait (loop until submitted)** → act. The wait is not optional: a rendered board with no collected verdict is an unfinished review.
 
 ## Usage
 
@@ -50,32 +43,32 @@ Deterministic + token-free: the board is built entirely from two git refs by `"$
 
 ```sh
 # 1. Build + render the board (deterministic, no tokens). Capture the namespaced slug.
-out=$("$DG" viz review --repo "$REPO" --base "$BASE" --head "$HEAD" ${SPEC:+--spec "$SPEC"} ${DEMO:+--demo "$DEMO"})
+out=$(~/.dg/bin/dg-skills viz review --repo "$REPO" --base "$BASE" --head "$HEAD" ${SPEC:+--spec "$SPEC"} ${DEMO:+--demo "$DEMO"})
 SLUG=$(printf '%s' "$out" | sed -n 's#.*/viz/\([^/]*\)/payload.*#\1#p')   # from VIZ_PATH
 # (share the VIZ_URL with the reviewer; on mobile it must be opened in a browser at claude.ai/code, not the Claude app)
 
 # 1b. ARM THE GATE — discard any verdict from a previous round, then prove none is readable.
 #     A submitted verdict lives in the session dir and can survive a re-render, so skipping this
 #     lets the PREVIOUS round's approve satisfy this round's wait. See "Verdict staleness" below.
-rm -f "${VIZ_DIR:-$("$DG" stash -G viz)}/$SLUG/response.json"
-"$DG" viz get "$SLUG" review_result >/dev/null 2>&1 \
+rm -f "${VIZ_DIR:-$(~/.dg/bin/dg-skills stash -G viz)}/$SLUG/response.json"
+~/.dg/bin/dg-skills viz get "$SLUG" review_result >/dev/null 2>&1 \
   && { echo "GATE NOT ARMED: a verdict is still readable for $SLUG — do not wait on it"; exit 1; }
 
 # 2. WAIT for the reviewer to click "Submit review". Launch this in the BACKGROUND
 #    (Bash `run_in_background: true`) — the harness re-invokes you when it exits, so you
 #    do not burn foreground tool calls holding a timer. `wait` exits 0 on submit and
 #    non-zero on timeout; a timeout is NOT "done", so relaunch it.
-"$DG" viz wait "$SLUG" --resume --timeout 3600
+~/.dg/bin/dg-skills viz wait "$SLUG" --resume --timeout 3600
 
 # 3. Read the submitted review — only after step 2 exited 0.
-"$DG" viz get "$SLUG" review_result --require-fresh "$(git rev-parse HEAD)"
+~/.dg/bin/dg-skills viz get "$SLUG" review_result --require-fresh "$(git rev-parse HEAD)"
 ```
 
-> **Wait is mandatory.** After rendering you MUST NOT proceed to step 3, act on the change, summarize, or end your turn until `review_result` is present. The only ways out are: (a) the reviewer submits a verdict, (b) the caller passed `--no-wait`, or (c) the user explicitly tells you to stop — and in cases (b) and (c) you must release the marker with `"$DG" viz dismiss "$SLUG"`. A timeout is **not** an exit; relaunch the wait. Never fabricate or assume a verdict.
+> **Wait is mandatory.** After rendering you MUST NOT proceed to step 3, act on the change, summarize, or end your turn until `review_result` is present. The only ways out are: (a) the reviewer submits a verdict, (b) the caller passed `--no-wait`, or (c) the user explicitly tells you to stop — and in cases (b) and (c) you must release the marker with `~/.dg/bin/dg-skills viz dismiss "$SLUG"`. A timeout is **not** an exit; relaunch the wait. Never fabricate or assume a verdict.
 >
-> Backgrounding is safe because it cannot fail silently: `"$DG" viz review` sets an `.awaiting-verdict` marker at render time, and until a successful `get review_result` clears it (or you `dismiss` it), the `review-wait-guard` Stop hook blocks turn-end and `pr-confirm-hook` denies `git push` / `gh pr create`. If a background wake is ever missed, you get stopped rather than shipping unreviewed. The marker self-expires after 24h so an abandoned board traps nothing permanently.
+> Backgrounding is safe because it cannot fail silently: `~/.dg/bin/dg-skills viz review` sets an `.awaiting-verdict` marker at render time, and until a successful `get review_result` clears it (or you `dismiss` it), the `review-wait-guard` Stop hook blocks turn-end and `pr-confirm-hook` denies `git push` / `gh pr create`. If a background wake is ever missed, you get stopped rather than shipping unreviewed. The marker self-expires after 24h so an abandoned board traps nothing permanently.
 >
-> A foreground `until "$DG" viz wait …; do …; done` loop still works if you prefer it, but budget for it: each iteration blocks a tool call for its full timeout.
+> A foreground `until ~/.dg/bin/dg-skills viz wait …; do …; done` loop still works if you prefer it, but budget for it: each iteration blocks a tool call for its full timeout.
 
 `review_result` shape: `{ verdict: "approve" | "request_changes" | "comment", summary, fileApprovals: [{path, approved}], lineComments: [{file, side, lineNumber, body}] }`.
 
@@ -89,7 +82,7 @@ rm -f "${VIZ_DIR:-$("$DG" stash -G viz)}/$SLUG/response.json"
 So a verdict is only trustworthy when it was submitted **after** the gate was armed for the current head. Do not eyeball that — make `get` prove it:
 
 ```sh
-"$DG" viz get "$SLUG" review_result --require-fresh "$(git rev-parse HEAD)"
+~/.dg/bin/dg-skills viz get "$SLUG" review_result --require-fresh "$(git rev-parse HEAD)"
 ```
 
 `--require-fresh` refuses to print the verdict unless the board was rendered for that exact commit **and** the response post-dates the render marker. It fails loudly rather than handing back something stale, so there is nothing left to cross-check by hand. If it reports a **board defect** (the stored head is not a resolved sha), the board predates the fix that resolves refs at render time — re-render it rather than falling back to a manual check.

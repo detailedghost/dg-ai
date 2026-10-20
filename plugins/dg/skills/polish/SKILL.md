@@ -7,6 +7,15 @@ description: Quality-cleanup verify step — reviews changed code for reuse, sim
 
 Quality-only cleanup pass over the current diff, meant to run as a verify step (e.g. after implementation work, before a final review). Finds and fixes, doesn't just report. Unlike a single generalist pass, this skill delegates: each file group goes to the subagent that actually owns that language, and a dedicated judgment call decides what's worth touching before anything gets applied.
 
+## CLI
+
+The PR flow calls the `dg-skills chain` helper. First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+
+```bash
+~/.dg/bin/dg-skills chain --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+```
+
 ## Scope
 
 - No args: `git diff --name-only $(git merge-base HEAD origin/<default-branch>)` (fall back to working-tree diff if the branch has no upstream base, or to `git status --short` paths if there's no diff at all — e.g. mid-edit on uncommitted work).

@@ -12,7 +12,6 @@ through `/address`'s existing local-review path (`-l`/`--local`) —
 this workflow does not re-implement triage, fix, QA, commit, or
 cleanup; it only produces the file and calls `/address -l`.
 
-Resolve `DG` from [../SKILL.md](../SKILL.md#runtime-and-skill-paths) in each fresh shell.
 Each phase lists `IN:` (required state) and `OUT:` (produced state), as
 in [workflow.md](workflow.md). Gates are hard stops.
 
@@ -111,7 +110,7 @@ OUT: review file path (may be absent/empty on a dry round).
    `<NNN>` is a three-digit sequence that starts at `001` for each
    timestamp second).
 3. Read [../../proxy/SKILL.md](../../proxy/SKILL.md), then invoke
-   `"$DG" proxy <backend> --prompt-file <absolutePromptPath>` using its
+   `~/.dg/bin/dg-skills proxy <backend> --prompt-file <absolutePromptPath>` using its
    background and result-handling contract. Prompt: see
    [proxy-review-prompt.md](proxy-review-prompt.md) — it carries the
    diff and `reviewFile` path, and instructs the backend to write
@@ -128,7 +127,7 @@ OUT: review file path (may be absent/empty on a dry round).
      `logFile`, exit 1.
    - `exitCode: 0` and the backend asks a clarifying question instead
      of reviewing → answer directly if known, else ask the user, then
-     re-invoke `"$DG" proxy <backend> --resume <sessionId> --prompt-file <answerPath>`. Cap at 5 round-trips (same
+     re-invoke `~/.dg/bin/dg-skills proxy <backend> --resume <sessionId> --prompt-file <answerPath>`. Cap at 5 round-trips (same
      cap `/proxy` documents) before giving up and treating it as a
      dry round.
 
@@ -227,7 +226,7 @@ Distinct exit messages, same format as default mode's:
 | --- | --- | --- | --- |
 | `no-diff` | Phase 3, empty diff against base | 0 | Commit work first |
 | `dry-round` | Phase 4a, backend found nothing | 0 | none |
-| `backend-missing` | `"$DG" proxy` returns backend installation guidance | 1 | Install the backend, or pick another |
+| `backend-missing` | `~/.dg/bin/dg-skills proxy` returns backend installation guidance | 1 | Install the backend, or pick another |
 | `proxy-error` | `/proxy` non-zero, `likelyCause: "other"` | 1 | Inspect `stderrTail` / `logFile` |
 | `address-failed` | Phase 5, `/address` non-zero | 1 | Inspect `/address`'s surfaced error |
 | `max-rounds-reached` | Phase 2, `roundsDone >= maxRounds` | 0 | Raise `-r`/`--rounds` or investigate manually |

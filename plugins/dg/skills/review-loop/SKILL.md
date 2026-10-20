@@ -67,7 +67,7 @@ coding agent instead. See [Proxy mode](#proxy-mode) below.
 trigger → verify Copilot engaged → wait for review → antagonist →
 `/address` → re-trigger → verify → wait → …, up to `--rounds N`
 (default 2). Between rounds the skill polls GitHub directly via
-`"$DG" address await-copilot-review` — its internal provider polling uses
+`~/.dg/bin/dg-skills address await-copilot-review` — its internal provider polling uses
 no LLM tokens while waiting.
 
 If Copilot doesn't engage within 5 min of a trigger, the skill escalates:
@@ -114,15 +114,8 @@ renders a local review board and hands the verdict back to the agent.
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills address --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Repeat this resolution in every fresh shell, including delegated execution and
@@ -145,13 +138,13 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 ## Helper
 
 Provider capability checks go through
-`"$DG" vcs-provider capabilities`. Use the compiled entrypoint with the
+`~/.dg/bin/dg-skills vcs-provider capabilities`. Use the compiled entrypoint with the
 host's existing narrow approvals and session authorization.
 
 Review-thread and bot-review operations go through
-`"$DG" address` (the same compiled command `/address` uses), subject to
+`~/.dg/bin/dg-skills address` (the same compiled command `/address` uses), subject to
 the same host approvals.
-`"$DG" address` is no longer GitHub-only — its review-thread,
+`~/.dg/bin/dg-skills address` is no longer GitHub-only — its review-thread,
 bot-review and CI-failure subcommands work against GitLab too — but the
 seven Copilot-bot subcommands this skill calls on it below are gated on
 Copilot specifically, not on merely having some reviewer: six refuse
@@ -173,7 +166,7 @@ Phase 1's `capabilities` check routes to the bot-review flow, or to
 proxy mode when no reviewer is configured, first (see
 [references/workflow.md](references/workflow.md) Phase 1 and 1b).
 **The
-proxy-mode steps of this skill never call `"$DG" address`** — round counting and diff-base
+proxy-mode steps of this skill never call `~/.dg/bin/dg-skills address`** — round counting and diff-base
 resolution there are plain `git`
 (see [references/proxy-workflow.md](references/proxy-workflow.md)). The hand-off to `/address -l` runs its own helper calls.
 

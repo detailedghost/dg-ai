@@ -10,18 +10,11 @@ Pick the best-fit primary engineering agent, plus any QA agents, for a piece of 
 Annotating the slices of a `/spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 ## Invocation
@@ -63,8 +56,8 @@ without a spec path is an error, not a no-op.
 
 ### Common — pick the agents
 
-1. **Load roster.** Run `"$DG" spec roster` — one call, emits the live capability list as compact `name<TAB>description`
-   lines (`"$DG" spec roster --full` appends each agent's first prose paragraph). Prefer this over globbing
+1. **Load roster.** Run `~/.dg/bin/dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
+   lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). Prefer this over globbing
    the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
    - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`shell` or no assignment +

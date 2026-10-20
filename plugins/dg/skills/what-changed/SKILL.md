@@ -3,18 +3,11 @@ name: what-changed
 description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /demo on the user-visible changes after the notes; an optional range argument overrides the default range.
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 # What Changed
@@ -57,7 +50,7 @@ If the range holds no commits, say that nothing has merged since the last releas
 6. With `--demo`, after the notes:
    1. List the user-visible changes from the range as demo candidates, one per PR, each with its PR number and one line on what to show. Skip CI, chores, refactors, dependency bumps and changes with no visible effect.
    2. Ask the user which candidates to demo. Invoke the `demo` skill once per chosen PR with the PR number as its argument, one at a time, and let it run its own confirmation and format prompts. Pass `--attach-pr` only when the user asks for it.
-   3. Save the notes as `what-changed-notes.md` in `$("$DG" stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
+   3. Save the notes as `what-changed-notes.md` in `$(~/.dg/bin/dg-skills stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
    4. On WSL, also copy the notes and the videos to `/mnt/c/Users/<user>/Downloads`.
    5. Print the full notes in chat, with the path of every saved file.
    - The final combined video always starts with an introduction title card.

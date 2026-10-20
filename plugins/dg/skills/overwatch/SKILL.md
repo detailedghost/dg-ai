@@ -20,24 +20,16 @@ Bootstrap once if needed; the installer pulls `dg-agent` from `agent-v*` and
 `dg-daemon` from `daemon-v*`:
 
 ```bash
-DG_SKILLS="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ -x "$DG_SKILLS" ]; then "$DG_SKILLS" require-extension overwatch || exit 1; fi
-DG_AGENT="${DG_HOME:-$HOME/.dg}/bin/dg-agent"
-if [ ! -x "$DG_AGENT" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension overwatch || exit 1; fi
+[ -x ~/.dg/bin/dg-agent ] ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Before using any Overwatch command, make sure this chat has a dg session. If it
 does not, run this first from the chat's working directory:
 
 ```bash
-"$DG_AGENT" start --agent-identity <name>
+~/.dg/bin/dg-agent start --agent-identity <name>
 ```
 
 Use `overwatch-board` as the stable identity for the authoritative publisher.
@@ -52,7 +44,7 @@ running with a bounded blocking timeout so status reports and board actions are
 processed continuously.
 
 ```bash
-"$DG_AGENT" overwatch set <chat> --task "<task>" --stage <review|ci|e2e|merge|done> --mr "<!number>" --eta "<eta>" --next "<what you need>" --url "<claude session url>"
+~/.dg/bin/dg-agent overwatch set <chat> --task "<task>" --stage <review|ci|e2e|merge|done> --mr "<!number>" --eta "<eta>" --next "<what you need>" --url "<claude session url>"
 ```
 
 Leave out optional fields that do not apply. Use `--background` for a background
@@ -64,9 +56,9 @@ Update a lane whenever its status changes, and use these lifecycle
 commands when appropriate:
 
 ```bash
-"$DG_AGENT" overwatch merged <mr> "<title>"
-"$DG_AGENT" overwatch launch --go-live <iso> --go-no-go <iso>
-"$DG_AGENT" overwatch remove <chat>
+~/.dg/bin/dg-agent overwatch merged <mr> "<title>"
+~/.dg/bin/dg-agent overwatch launch --go-live <iso> --go-no-go <iso>
+~/.dg/bin/dg-agent overwatch remove <chat>
 ```
 
 After every successful `set`, `merged`, `launch`, or `remove` mutation, mark the
@@ -77,7 +69,7 @@ same way.
 Open or focus the live board with:
 
 ```bash
-"$DG_AGENT" overwatch open
+~/.dg/bin/dg-agent overwatch open
 ```
 
 ## Handle board actions
@@ -88,7 +80,7 @@ stops the loop as an error.
 
 ```bash
 while true; do
-  if received="$("$DG_AGENT" recv --block --timeout 30000)"; then
+  if received="$(~/.dg/bin/dg-agent recv --block --timeout 30000)"; then
     process_overwatch_message "$received"
   else
     status=$?
@@ -109,7 +101,7 @@ actions have this shape:
 
 Relay the action and note to the named chat without rewriting them. When the
 chat name is also its agent identity, use
-`"$DG_AGENT" send --to <chat> <message>`.
+`~/.dg/bin/dg-agent send --to <chat> <message>`.
 If this chat owns that lane, handle the action directly.
 
 ## Publish the phone snapshot
@@ -117,7 +109,7 @@ If this chat owns that lane, handle the action directly.
 Render at most once every two minutes:
 
 ```bash
-"$DG_AGENT" overwatch snapshot --json | dg-skills overwatch-snapshot --input - --throttle-key board
+~/.dg/bin/dg-agent overwatch snapshot --json | dg-skills overwatch-snapshot --input - --throttle-key board
 ```
 
 If the command prints `throttled`, record its reported retry time and continue

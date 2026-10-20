@@ -89,7 +89,7 @@ Decisions live in the grill-me decision log through steps 1.5–3, then get writ
 **after** scaffold (plan.md step 3d) via:
 
 ```sh
-"$DG" spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
+~/.dg/bin/dg-skills spec append-section <bundle>/plan.md --section "Code Structure" "<body>"
 ```
 
 `append-section` creates the heading at end-of-file when absent and takes multi-line text (quote at

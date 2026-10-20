@@ -33,16 +33,8 @@ commits already have the shape you want them reviewed in.
    does not pre-approve, so Claude Code asks before each one:
 
    ```sh
-   DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-   if [ ! -x "$DG" ]; then
-     PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
-     LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-     if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-       sh "$LOCAL_BOOTSTRAP"
-     else
-       curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-     fi
-   fi
+   ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
+     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
    Report which group you used.

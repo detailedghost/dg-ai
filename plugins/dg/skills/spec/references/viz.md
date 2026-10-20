@@ -4,7 +4,7 @@ Stripped descendant of its predecessor's `viz.md` — that file mapped a board p
 phase boundary; `/spec` only ever renders **one** board, the plan-approval verify at step 8. There
 is no per-phase map here.
 
-Run `"$DG" viz doctor --json` first (see the [viz skill](../../viz/SKILL.md)); on probe failure announce
+Run `~/.dg/bin/dg-skills viz doctor --json` first (see the [viz skill](../../viz/SKILL.md)); on probe failure announce
 "running in terminal mode" and fall back to a plain `AskUserQuestion` approval instead of the board.
 
 > **Residual threat:** board-approval is a UX gate hardened against CSRF + naive/cross-user
@@ -103,9 +103,9 @@ so the approver sees what was traded away, not just what was picked.
 ## Render + block
 
 ```sh
-"$DG" viz --input payload.json --no-open
+~/.dg/bin/dg-skills viz --input payload.json --no-open
 # grab VIZ_SLUG from the printed VIZ_PATH, same pattern every other loop uses
-"$DG" viz wait "$VIZ_SLUG" --merge --resume
+~/.dg/bin/dg-skills viz wait "$VIZ_SLUG" --merge --resume
 ```
 
 Proceed only once `all_clear: true`. On approval, continue to step 9. On a requested change,

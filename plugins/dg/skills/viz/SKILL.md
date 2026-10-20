@@ -5,25 +5,18 @@ description: Render a board payload as a styled HTML page in a local Astro dev s
 
 # /viz
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills viz --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Render a board payload as a styled HTML page in a local Astro dev server.
 
-**Prerequisite.** The viewer runs on Bun, which is not bundled with `dg-skills`. Install it from https://bun.sh if `"$DG" viz doctor` reports a missing Bun. The first render runs `bun install` once in this skill's `astro-viewer/` directory; the viewer location comes from the installed skill (`VIZ_SKILL_DIR` overrides it).
+**Prerequisite.** The viewer runs on Bun, which is not bundled with `dg-skills`. Install it from https://bun.sh if `~/.dg/bin/dg-skills viz doctor` reports a missing Bun. The first render runs `bun install` once in this skill's `astro-viewer/` directory; the viewer location comes from the installed skill (`VIZ_SKILL_DIR` overrides it).
 
-**Ephemeral + environment-agnostic.** All files live in the temp `VIZ_DIR` (default `$("$DG" stash -G viz)`) — no repo or git needed. Nothing persists; the board is in-flight only.
+**Ephemeral + environment-agnostic.** All files live in the temp `VIZ_DIR` (default `$(~/.dg/bin/dg-skills stash -G viz)`) — no repo or git needed. Nothing persists; the board is in-flight only.
 
 **One window per invoke.** The slug is namespaced by session id, so concurrent chats never collide. Re-rendering in the same chat reuses that window (idempotent).
 
@@ -41,7 +34,7 @@ Render a board payload as a styled HTML page in a local Astro dev server.
 | Task | Read |
 |---|---|
 | Running CLI commands programmatically (render, wait, merge, annotate, list, clean, stop, review) | `references/cli.md` |
-| Rendering the GitHub-PR style code-review board (`"$DG" viz review`/`wait`/`review-wait`) | `references/cli.md` |
+| Rendering the GitHub-PR style code-review board (`~/.dg/bin/dg-skills viz review`/`wait`/`review-wait`) | `references/cli.md` |
 | Full payload field reference, or the minimal payload shape + `template`/`mode` distinction | `references/payload-schema.md` |
 | Rendering a free-form explainer (prose, formulas, code, tables) instead of a plan/spec/review board | `references/doc-schema.md` |
 | Running the blocking decision/open-questions loop, or handling thread entries after `wait --merge`; review-submit round-trip | `references/loop-protocol.md` |
@@ -52,7 +45,7 @@ All sections are defined in `astro-viewer/src/sections/registry.ts`. Each sectio
 
 ## Foreman integration
 
-At plan finalization: ask `Render in browser? [y/N]`. If yes, write payload and call `"$DG" viz --input`. The board is in-flight only — the persisted spec artifact is still just the spec `.md`, never the viz output.
+At plan finalization: ask `Render in browser? [y/N]`. If yes, write payload and call `~/.dg/bin/dg-skills viz --input`. The board is in-flight only — the persisted spec artifact is still just the spec `.md`, never the viz output.
 
 ## Known limitation
 

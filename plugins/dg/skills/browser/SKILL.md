@@ -14,25 +14,17 @@ self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
 (downloads the binary for your platform from the latest `skills-v*` release):
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-On Windows PowerShell, run the local `bootstrap.ps1` through
-`$env:CLAUDE_PLUGIN_ROOT` when available; otherwise pipe the repository's raw
-`bootstrap.ps1` to `Invoke-Expression`.
+On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
+`Invoke-Expression`.
 
 Then run every command through it:
 
 ```bash
-"$DG" <command> <args>
+~/.dg/bin/dg-skills <command> <args>
 ```
 
 `install` refreshes both the extension and the `dg-skills` binary, so re-running

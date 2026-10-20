@@ -10,18 +10,11 @@ scanning `.agents/spec/`) and, for unnumbered `todo/` bundles, renumbering — t
 `/spec -s <NNN>_<slug>`, which resolves the bundle, sets up its own worktree, and drives `/sdlc`'s
 slice-wave.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Usage: `/pickup [NNN-or-substring]`.
@@ -34,10 +27,10 @@ Usage: `/pickup [NNN-or-substring]`.
 2. **Staleness check.** `references/loading.md` — compare the bundle's `plan.md` `date` against
    `git log` activity on its slices' `files[]` globs; warn and confirm before proceeding if stale.
 3. **Renumber (todo/ bundles only).** If the selected bundle is `.agents/spec/todo/<slug>/`:
-   `nnn=$("$DG" spec next-nnn --home .agents/spec)`, then
+   `nnn=$(~/.dg/bin/dg-skills spec next-nnn --home .agents/spec)`, then
    `git mv .agents/spec/todo/<slug> .agents/spec/<nnn>_<slug>`. A bundle already under a numbered
    `.agents/spec/<NNN>_<slug>/` dir needs no move.
-4. **Flip status + commit.** `"$DG" spec set <bundle>/plan.md status in-progress`, then commit —
+4. **Flip status + commit.** `~/.dg/bin/dg-skills spec set <bundle>/plan.md status in-progress`, then commit —
    unconditionally, not only when step 3 moved something, and only that bundle, with any `git mv`
    rename already staged:
    `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): pick up <slug>"`.

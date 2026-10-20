@@ -1,6 +1,6 @@
 # Steps 5–8 — Review, Docs, Human Gate, PR/MR
 
-Sections 5–8 are the canon for `/spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `"$DG" batch-open` afterward.
+Sections 5–8 are the canon for `/spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `~/.dg/bin/dg-skills batch-open` afterward.
 
 `REVIEW_MODE` runs through both remaining gates. It is `pr` unless the caller passed `-l`/`--local`, and it decides only *where the human reviews* — never whether the agent reviews in step 5 or the gates in step 6 hold.
 
@@ -68,7 +68,7 @@ Always echo the verdict + a concise digest of the comments before proceeding.
 - c. **Create:** run
 
   ```sh
-  "$DG" vcs-provider create-pr \
+  ~/.dg/bin/dg-skills vcs-provider create-pr \
     --title "<title>" --base "<base>" --head "<branch>" --body "<body>" [--draft]
   ```
 
@@ -84,10 +84,10 @@ Always echo the verdict + a concise digest of the comments before proceeding.
   - `pr`: `"PR/MR opened (draft): <url>. Review it there — /address picks up the comments. Worktree retained at <path>."`
   - `local`: `"PR/MR opened: <url>. Worktree retained at <path> for /address."`
 
-- e. The ephemeral spec + scratchpad stay in `$("$DG" stash -s sdlc)/` — `/address` removes them when the PR/MR merges (Phase 0.25 step 3g), and `/cleanup`'s 30-day walker catches any that never merge. No manual cleanup, and do **not** delete them at open: step 5's reviewers, `local` mode's Hold-and-resume path, and `pr` mode's later `/address` session all still read them.
+- e. The ephemeral spec + scratchpad stay in `$(~/.dg/bin/dg-skills stash -s sdlc)/` — `/address` removes them when the PR/MR merges (Phase 0.25 step 3g), and `/cleanup`'s 30-day walker catches any that never merge. No manual cleanup, and do **not** delete them at open: step 5's reviewers, `local` mode's Hold-and-resume path, and `pr` mode's later `/address` session all still read them.
 
-- f. **Open it:** run `"$DG" batch-open --group open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands grouped in the browser without a separate ask. Applies to every PR/MR this step opens, `/spec` included. In `pr` mode this is also how the human gets to the review, so it is not optional there.
+- f. **Open it:** run `~/.dg/bin/dg-skills batch-open --group open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands grouped in the browser without a separate ask. Applies to every PR/MR this step opens, `/spec` included. In `pr` mode this is also how the human gets to the review, so it is not optional there.
 
-- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/spec`'s multi-slice runs can produce, since unlike `/sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `"$DG" chain plan`/`"$DG" chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on`/dependency-layer data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
+- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/spec`'s multi-slice runs can produce, since unlike `/sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on`/dependency-layer data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
 
 > **GATE:** URL captured; in `WORKTREE_MODE`: cwd back at `origin_repo`, worktree intact. In `pr` mode this is also where the run ends — the human review happens on the PR/MR afterward.

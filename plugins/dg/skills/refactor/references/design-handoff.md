@@ -26,14 +26,14 @@ During the conversation:
 
 Compute the slug from the header: lowercase it, replace each run of characters outside `a-z` and `0-9` with `_`, then trim leading and trailing underscores.
 
-Write design summary to `$("$DG" stash -s refactor <slug>.md)`, then ask via `AskUserQuestion`:
+Write design summary to `$(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`, then ask via `AskUserQuestion`:
 
 | Option | Effect |
 |---|---|
-| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug> --from $("$DG" stash -s refactor <slug>.md)`. The design summary file is the request. Engineering waits. |
+| **Park via `/kick` (Recommended)** | Hand off to `/kick <slug> --from $(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`. The design summary file is the request. Engineering waits. |
 | **Just print the design** | Echo the summary path. No bundle, no commit. The user picks it up later. |
 
-**GATE:** Hand-off path printed; design summary file exists at `$("$DG" stash -s refactor <slug>.md)`.
+**GATE:** Hand-off path printed; design summary file exists at `$(~/.dg/bin/dg-skills stash -s refactor <slug>.md)`.
 
 ---
 

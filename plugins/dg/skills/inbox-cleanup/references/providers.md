@@ -1,10 +1,10 @@
 # Provider setup
 
-Run commands through the compiled DG path established by the skill. Start a
+Run commands through the compiled `~/.dg/bin/dg-skills` binary. Start a
 daemon session with the installed companion binary:
 
 ```sh
-"${DG_HOME:-$HOME/.dg}/bin/dg-agent" start --open
+~/.dg/bin/dg-agent start --open
 ```
 
 `dg-agent start` prints one bootstrap URL:
@@ -37,10 +37,10 @@ Profile names select accounts with --account-profile NAME in workflow commands.
 The separate --profile NAME workflow flag chooses a saved routing policy.
 
 ```sh
-"$DG" inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
+~/.dg/bin/dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
   --auth-mode browser --session SESSION_ID
-"$DG" inbox profile get personal --session SESSION_ID
-"$DG" inbox profile list --session SESSION_ID
+~/.dg/bin/dg-skills inbox profile get personal --session SESSION_ID
+~/.dg/bin/dg-skills inbox profile list --session SESSION_ID
 ```
 
 Use --json JSON or --file PATH for a complete validated profile. Useful settings
@@ -75,7 +75,7 @@ plugin's broader Firefox features may require a newer Firefox. Bootstrap
 `dg-skills install firefox` for the Firefox build.
 
 ```sh
-"$DG" inbox profile set proton --provider protonmail --account-hint 0 \
+~/.dg/bin/dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
   --session SESSION_ID
 ```
 
@@ -136,7 +136,7 @@ browser or device-code login; a confidential client uses a registered loopback
 redirect and a secret referenced through --client-secret-env.
 
 ```sh
-"$DG" inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
+~/.dg/bin/dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
   --tenant-id organizations --auth-mode device-code --session SESSION_ID
 ```
 

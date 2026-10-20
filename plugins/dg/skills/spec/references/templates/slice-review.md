@@ -29,7 +29,7 @@ human instead of burning tokens on a bigger review model.
 > Review this slice (`<name>`, files: `<files>`) for: **feasibility** (can it be implemented
 > independently within its declared `depends_on`?), **completeness** (missing acceptance criteria
 > or Contracts gaps?), **risk** (integration risk with sibling slices — same-layer slices MUST
-> touch disjoint files — `"$DG" spec lint-waves` already checked the globs, so this is the second
+> touch disjoint files — `~/.dg/bin/dg-skills spec lint-waves` already checked the globs, so this is the second
 > line of defense: look for overlap the globs cannot show, such as a generator run or shared
 > fixture), **ambiguity** (any `[ASSUMED]` item from the decision log that needs
 > tightening before engineering starts), and **structure conformance** (if `plan.md` has a

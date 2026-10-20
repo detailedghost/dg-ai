@@ -10,14 +10,13 @@ It starts with zero conversation context and has its own command and file tools,
 ## Invocation
 
 ```bash
-"$DG" proxy <backend> --prompt-file <absolutePromptPath>
+~/.dg/bin/dg-skills proxy <backend> --prompt-file <absolutePromptPath>
 ```
 
-Resolve `DG` using [../SKILL.md](../SKILL.md#runtime-and-skill-paths) in
-each fresh shell. Read [../../proxy/SKILL.md](../../proxy/SKILL.md) for its
+Read [../../proxy/SKILL.md](../../proxy/SKILL.md) for its
 background execution contract: use the host's native background task when
 available, otherwise request `--plan` and execute its exact emitted `command`.
-Use `"$DG" proxy background status <id>` to inspect a packaged background job.
+Use `~/.dg/bin/dg-skills proxy background status <id>` to inspect a packaged background job.
 Do not pass `--subagent`/`--spec` — this is a one-off review task.
 
 ## Prompt Template
@@ -60,7 +59,7 @@ you are reviewing, not editing.
 
 Fill in `<absolute path of the diff file>` and `<reviewFile absolute path>`
 before writing the prompt file. Always write the diff to a scratch file under
-`$("$DG" stash review-loop)/` and write the filled template to a second
+`$(~/.dg/bin/dg-skills stash review-loop)/` and write the filled template to a second
 scratch file; never put either in a shell string.
 
 ## Finding Format Contract

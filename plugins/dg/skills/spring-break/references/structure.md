@@ -73,7 +73,7 @@ Idempotent — re-running skips any bundle that already exists at its target pat
 .agents/spec/
   <NNN>_<slug>/
     plan.md       <- moved verbatim from .agents/create-specs/<NNN>_<slug>.md
-    context.md    <- synthesized via `"$DG" spec context <bundle>`
+    context.md    <- synthesized via `~/.dg/bin/dg-skills spec context <bundle>`
   todo/
     <slug>/       <- moved from .agents/todo/<NNN>_<slug>.md
 ```
@@ -84,11 +84,11 @@ Idempotent — re-running skips any bundle that already exists at its target pat
   `initial.md`/`roundtable/` sprawl to reconstruct.
 - Preserve `NNN` from the old filename. Never renumber.
 - Normalize known legacy quirks before validating: coerce a non-integer `current_slice` (e.g.
-  `current_slice: done`) via `"$DG" spec set <bundle>/plan.md current_slice 0`, and strip fields
+  `current_slice: done`) via `~/.dg/bin/dg-skills spec set <bundle>/plan.md current_slice 0`, and strip fields
   absent from `frontmatter-schema.yaml` (e.g. `prototypes_run`) directly from the frontmatter block.
-- Run `"$DG" spec validate <bundle>/plan.md` after normalizing. Surface any remaining violations in
+- Run `~/.dg/bin/dg-skills spec validate <bundle>/plan.md` after normalizing. Surface any remaining violations in
   the report (SKILL.md Step 6) instead of fixing them silently — some legacy fields need a human call.
-- After the move, run `"$DG" spec context <bundle>` to produce `context.md` so `/spec -s <NNN>_<slug>`
+- After the move, run `~/.dg/bin/dg-skills spec context <bundle>` to produce `context.md` so `/spec -s <NNN>_<slug>`
   can pick the bundle up.
 - If `.agents/spec/<NNN>_<slug>/plan.md` already exists, skip that bundle — already migrated, no-op.
 - While merging school learnings (SKILL.md Step 3), also drop any entries that reference the retired

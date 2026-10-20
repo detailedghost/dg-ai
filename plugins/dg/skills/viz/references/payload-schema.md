@@ -1,6 +1,6 @@
 # Viz Payload Schema
 
-Write to `$("$DG" stash -G viz <slug>/payload.json)` (the temp `VIZ_DIR`). viz is **ephemeral and environment-agnostic** — everything lives in the temp dir, nothing is persisted (`--keep` is deprecated/ignored).
+Write to `$(~/.dg/bin/dg-skills stash -G viz <slug>/payload.json)` (the temp `VIZ_DIR`). viz is **ephemeral and environment-agnostic** — everything lives in the temp dir, nothing is persisted (`--keep` is deprecated/ignored).
 
 ## Required fields
 
@@ -15,11 +15,11 @@ Write to `$("$DG" stash -G viz <slug>/payload.json)` (the temp `VIZ_DIR`). viz i
 }
 ```
 
-`template` is an **optional hint** — the board derives its render mode (`planning` / `implementation` / `recap`) from payload state. `template: "recap"` forces recap/read-only; `template: "spec"` enables spec sections (slices, contracts, roundtable) and blocks `"$DG" viz phase`.
+`template` is an **optional hint** — the board derives its render mode (`planning` / `implementation` / `recap`) from payload state. `template: "recap"` forces recap/read-only; `template: "spec"` enables spec sections (slices, contracts, roundtable) and blocks `~/.dg/bin/dg-skills viz phase`.
 
 `session_id` records which Claude Code session produced the plan (shown in the header). The render command auto-stamps it (from `$CLAUDE_SESSION_ID` or the newest transcript in the cwd's project dir) when absent — set it explicitly to override.
 
-`static` (optional boolean, default `false`) disables the live-refresh poller. Non-static boards poll `/api/status` every 2.5s and swap `#viz-main` (or full-reload) on any payload/tracks mtime change — correct for boards driven live via `"$DG" viz track/respond/merge`, but for a read-only explainer/diagnosis board it makes the page appear to reload whenever anything re-touches `payload.json`. Set `"static": true` on those to opt out entirely.
+`static` (optional boolean, default `false`) disables the live-refresh poller. Non-static boards poll `/api/status` every 2.5s and swap `#viz-main` (or full-reload) on any payload/tracks mtime change — correct for boards driven live via `~/.dg/bin/dg-skills viz track/respond/merge`, but for a read-only explainer/diagnosis board it makes the page appear to reload whenever anything re-touches `payload.json`. Set `"static": true` on those to opt out entirely.
 
 **Sections are registry-driven.** Every field below is rendered when present; the registry's `applies(payload)` determines which sections appear in the TOC and board.
 
@@ -39,7 +39,7 @@ Write to `$("$DG" stash -G viz <slug>/payload.json)` (the temp `VIZ_DIR`). viz i
 
 `phases[].status`: `pending | in_progress | done | partial | blocked | skipped`. `in_progress` marks a phase as actively being implemented (pulsing dot, highlighted row, counted as half-done in the bar). `phases[].agents` (`{primary, qa[]}`) renders assigned-agent chips on the phase.
 
-**Progress bar is phase-aware.** While decisions/open-questions remain, the bar shows **Planning** progress (answered / total). Once all are resolved it flips to **Implementation** progress (phase completion) and the planning sections collapse. Drive implementation live with `"$DG" viz phase <slug> <phase-id> <status>` — the open board refreshes in place.
+**Progress bar is phase-aware.** While decisions/open-questions remain, the bar shows **Planning** progress (answered / total). Once all are resolved it flips to **Implementation** progress (phase completion) and the planning sections collapse. Drive implementation live with `~/.dg/bin/dg-skills viz phase <slug> <phase-id> <status>` — the open board refreshes in place.
 
 **Start-work banner.** When a plan's decisions are all resolved (or a spec is `complete`), the board shows a copyable start command (`start_command`, default `/pickup <slug>`) plus a live-update variant that streams phase status back into the board. Override either with `start_command` / `live_command`.
 
@@ -74,7 +74,7 @@ Write to `$("$DG" stash -G viz <slug>/payload.json)` (the temp `VIZ_DIR`). viz i
 }
 ```
 
-Spec payloads are an **in-flight visualization only** — render ephemerally (default `$("$DG" stash -G viz)`), never `--keep`. The spec is a live view while work is in flight, not a persisted final artifact.
+Spec payloads are an **in-flight visualization only** — render ephemerally (default `$(~/.dg/bin/dg-skills stash -G viz)`), never `--keep`. The spec is a live view while work is in flight, not a persisted final artifact.
 
 `spec_status.status`: `draft | in-progress | complete | deferred | blocked | abandoned`. The spec template also renders `risks`, `decisions`, `checklist`, `open_questions`, `open_questions_resolved` (shared with plan/recap).
 
@@ -82,7 +82,7 @@ Spec payloads are an **in-flight visualization only** — render ephemerally (de
 
 `contracts[].sliceId` (optional): the `id` of the slice this contract documents. When set, the slice card shows a **contract →** jump-link and the contract shows a **slice** back-link — bidirectional navigation so agents jump straight from a work item to its API shape.
 
-## review template (for `"$DG" viz review`)
+## review template (for `~/.dg/bin/dg-skills viz review`)
 
 Built entirely by the CLI from two git refs — never hand-authored.
 
@@ -126,7 +126,7 @@ Render mode auto-derives to `"review"` whenever `payload.review` is an object ([
 }
 ```
 
-Read it back with `"$DG" viz get <slug> review_result` after `wait`/`review-wait` returns (`all_clear` flips true as soon as a review is submitted — a review payload has no decisions/approval/permissions to gate on). See `loop-protocol.md` for the full submit round-trip.
+Read it back with `~/.dg/bin/dg-skills viz get <slug> review_result` after `wait`/`review-wait` returns (`all_clear` flips true as soon as a review is submitted — a review payload has no decisions/approval/permissions to gate on). See `loop-protocol.md` for the full submit round-trip.
 
 ## lineage (plan + recap)
 
@@ -251,17 +251,17 @@ Surfaces error entries and/or blocked phases as a prominent callout.
 
 ## Payload (minimal)
 
-Write to `$("$DG" stash -G viz <slug>/payload.json)`:
+Write to `$(~/.dg/bin/dg-skills stash -G viz <slug>/payload.json)`:
 ```json
 {"template":"plan","slug":"my-slug","title":"...","date":"2026-06-17","phases":[...],"decisions":[{"question":"...","answer":"","options":["A","B"]}]}
 ```
 
 **Two separate axes — don't conflate them.** `template` is an **authored input** (what you write into payload.json); `mode` is a **derived render state** the board computes from payload content and is never written by hand.
 
-Authorable `template` values: `plan` (default), `recap`, `spec`. `review` is not authorable either — `"$DG" viz review` mints its own payload with a `review` object via a separate code path that bypasses the `template` gate entirely.
+Authorable `template` values: `plan` (default), `recap`, `spec`. `review` is not authorable either — `~/.dg/bin/dg-skills viz review` mints its own payload with a `review` object via a separate code path that bypasses the `template` gate entirely.
 
 Derived `mode` (computed by `deriveMode()`, in this precedence order):
-- `review` — `payload.review` is an object (set only by `"$DG" viz review`)
+- `review` — `payload.review` is an object (set only by `~/.dg/bin/dg-skills viz review`)
 - `recap` — `template: "recap"`, or all phases terminal
 - `planning` — unanswered decisions or open questions exist
 - `implementation` — decisions resolved + phases present and not all terminal
@@ -272,4 +272,4 @@ Full field reference: `references/payload-schema.md`.
 
 Phase status `in_progress` foregrounds the live "Implementation Timeline"; `phases[].agents {primary, qa[]}` shows who's assigned. Once decisions are resolved, the planning sections collapse and the board flips to implementation view.
 
-**Source-of-truth matters for implementation tracking.** A `plan` board *is* its own truth — drive its implementation live with `"$DG" viz phase` (mutates the ephemeral payload). A `spec` board is just an in-flight *view* of a durable spec file; its implementation status must be written back to that file, so `"$DG" viz phase` refuses spec payloads (it would split-brain against the file).
+**Source-of-truth matters for implementation tracking.** A `plan` board *is* its own truth — drive its implementation live with `~/.dg/bin/dg-skills viz phase` (mutates the ephemeral payload). A `spec` board is just an in-flight *view* of a durable spec file; its implementation status must be written back to that file, so `~/.dg/bin/dg-skills viz phase` refuses spec payloads (it would split-brain against the file).

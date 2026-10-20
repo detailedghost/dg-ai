@@ -1,6 +1,6 @@
 # Performance
 
-- **Worktree-aware.** On a linked git worktree the scan routes through `"$DG" monolith worktree-gen` (absolute `SCAN_ROOT`) so branch-local code is scanned, not the main checkout. See protocol Phase 1.4.
+- **Worktree-aware.** On a linked git worktree the scan routes through `~/.dg/bin/dg-skills monolith worktree-gen` (absolute `SCAN_ROOT`) so branch-local code is scanned, not the main checkout. See protocol Phase 1.4.
 - **Stack-aware scanner routing.** Detect the dominant language at the start of Phase 2 and dispatch language-specialist sub-agents (`python`, `js`, `csharp`, `dba`, etc.) instead of the generalist `Explore` whenever a single language dominates. Specialists know the idioms — they extract richer vocabulary in fewer tokens. Polyglot repos fall back to `Explore`. See `references/protocol.md` Phase 1.5 for the routing table.
 - **Haiku for extraction, Sonnet for synthesis.** Scanner agents do TSV extraction (read code → emit lines) — `model: "haiku"` is sufficient and ~3-5× cheaper. `lore` stays on Sonnet because consolidation is real synthesis.
 - **Single-pass parallelism.** The Workflow runs all three scanners concurrently (capped at the runtime's slot limit) then hands off to `lore` — deterministic dispatch, no manual fan-out to forget.

@@ -73,7 +73,7 @@ const trees = SPEC_SKILLS_TREES.map((skill) => ({
 }));
 
 const callers = trees.filter(({ files }) =>
-	files.some((file) => file.text.includes('"$DG"')),
+	files.some((file) => file.text.includes("~/.dg/bin/dg-skills")),
 );
 
 function skillMd(skill: string): string {
@@ -120,12 +120,14 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		},
 	);
 
-	test("every dg-skills spec call is quoted and names a real subcommand", () => {
+	test("every dg-skills spec call uses the literal path and names a real subcommand", () => {
 		const called = new Set<string>();
 		for (const { files } of trees)
 			for (const file of files) {
-				expect(file.text).not.toMatch(/(?<!")\$DG(?![A-Za-z_"])/);
-				for (const match of file.text.matchAll(/"\$DG" spec ([a-z-]+)/g))
+				expect(file.text).not.toMatch(/\$\{?DG\b/);
+				for (const match of file.text.matchAll(
+					/~\/\.dg\/bin\/dg-skills spec ([a-z][a-z-]*)/g,
+				))
 					called.add(match[1] ?? "");
 			}
 		for (const verb of REQUIRED_VERBS) expect(called.has(verb)).toBe(true);
@@ -154,10 +156,10 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 	});
 
 	test.each(callers)(
-		"$skill bootstraps the CLI before any quoted call",
+		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/DG="\$\{DG_HOME:-\$HOME\/\.dg\}\/bin\/dg-skills"/,
+				/~\/\.dg\/bin\/dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+curl/,
 			);
 		},
 	);

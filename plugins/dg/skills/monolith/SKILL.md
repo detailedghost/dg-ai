@@ -8,18 +8,11 @@ disable-model-invocation: true
 
 Extract a project's native vocabulary and write it to `.agents/monolith.md` so every agent (and human) speaks the same language. Lean by design: ~6 KB per file, table format, append-only. Once the vocabulary outgrows 6 KB it splits into `.agents/monolith/<domain>.md`, one file per domain, and `monolith.md` becomes the index — so an agent loads the domain it is working in, not the whole glossary.
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills monolith --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Before starting, read these reference files:
@@ -27,7 +20,7 @@ Before starting, read these reference files:
 - [references/protocol.md](references/protocol.md) — phase-by-phase orchestration, agent prompts, conflict handling
 - [references/template.md](references/template.md) — exact `monolith.md` skeleton + section rules
 
-Helper CLI: `"$DG" monolith <subcommand>` (subcommands documented via `--help`). The scan workflow and template ship in this skill's `references/` and are resolved from the installed skill, never from user-local files.
+Helper CLI: `~/.dg/bin/dg-skills monolith <subcommand>` (subcommands documented via `--help`). The scan workflow and template ship in this skill's `references/` and are resolved from the installed skill, never from user-local files.
 
 ## Invocation
 
@@ -36,17 +29,17 @@ Helper CLI: `"$DG" monolith <subcommand>` (subcommands documented via `--help`).
 ```
 
 - **default:** 3 parallel `Explore` agents → 1 `lore` writer → `.agents/monolith.md`. Patches AGENTS.md (preferred) or CLAUDE.md (fallback) with a vocabulary pointer.
-- **`--shallow` / `-s`:** uncommitted single-agent scan under `$("$DG" stash -s monolith)`, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit — exact path formula and the shallow↔full promote/demote commands are in `references/protocol.md` Phase 0 (mandatory read anyway, see above).
-- **`--prune`:** delegate to `"$DG" monolith prune`; remove rows whose `_src:_` paths no longer exist; then exit. Honors `--shallow` for path selection.
-- **`--split`:** delegate to `"$DG" monolith split`; partition the file into `.agents/monolith/<domain>.md` and leave an index; then exit. Runs on demand even when the file is under cap. Honors `--shallow` for path selection.
+- **`--shallow` / `-s`:** uncommitted single-agent scan under `$(~/.dg/bin/dg-skills stash -s monolith)`, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit — exact path formula and the shallow↔full promote/demote commands are in `references/protocol.md` Phase 0 (mandatory read anyway, see above).
+- **`--prune`:** delegate to `~/.dg/bin/dg-skills monolith prune`; remove rows whose `_src:_` paths no longer exist; then exit. Honors `--shallow` for path selection.
+- **`--split`:** delegate to `~/.dg/bin/dg-skills monolith split`; partition the file into `.agents/monolith/<domain>.md` and leave an index; then exit. Runs on demand even when the file is under cap. Honors `--shallow` for path selection.
 
 ## Phases
 
-1. **Bootstrap** — `"$DG" monolith bootstrap .` to create `.agents/` if missing and detect APPEND_MODE.
-2. **Existing terms** — if APPEND_MODE=1, run `"$DG" monolith list-terms` to capture known terms (passed to scanners as a "focus on what's missing" hint).
+1. **Bootstrap** — `~/.dg/bin/dg-skills monolith bootstrap .` to create `.agents/` if missing and detect APPEND_MODE.
+2. **Existing terms** — if APPEND_MODE=1, run `~/.dg/bin/dg-skills monolith list-terms` to capture known terms (passed to scanners as a "focus on what's missing" hint).
 3. **Scan + Consolidate** — one background **Workflow** (`references/scan.workflow.mjs`): scanners (haiku, parallel — 3 in default, 1 in `--shallow`) → `lore` synthesis. `lore` is the only writer (both modes — never the main agent) and writes to a staging path `.agents/monolith.md.new`. See `references/protocol.md` Phase 2-3 for the args.
-4. **Resolve conflicts** — `"$DG" monolith detect-conflicts` against the staging file. Interactive: `AskUserQuestion` per conflict. Non-interactive (or `MONOLITH_NONINTERACTIVE=1`): `apply-conflict-resolution` keeps existing rows and logs candidates to `.agents/school/monolith-conflicts.md`. Then promote staging → live. (Interactive — stays in the orchestrator, outside the workflow.)
-5. **Post-process** — `"$DG" monolith validate` → `cap-report` → `split` when over cap → `patch-agents-md .agents/AGENTS.md`.
+4. **Resolve conflicts** — `~/.dg/bin/dg-skills monolith detect-conflicts` against the staging file. Interactive: `AskUserQuestion` per conflict. Non-interactive (or `MONOLITH_NONINTERACTIVE=1`): `apply-conflict-resolution` keeps existing rows and logs candidates to `.agents/school/monolith-conflicts.md`. Then promote staging → live. (Interactive — stays in the orchestrator, outside the workflow.)
+5. **Post-process** — `~/.dg/bin/dg-skills monolith validate` → `cap-report` → `split` when over cap → `patch-agents-md .agents/AGENTS.md`.
 6. **Report** — print a one-paragraph summary: terms added, conflicts resolved (and how), ambiguities flagged, relationships emitted, and the domain files written if the file was split.
 
 ## Rules

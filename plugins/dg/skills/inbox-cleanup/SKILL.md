@@ -5,30 +5,16 @@ description: Review and clean Proton Mail, Gmail, or Outlook through dg-skills, 
 
 # Inbox cleanup
 
-The default executable is ~/.dg/bin/dg-skills; DG_HOME overrides its home.
-Bootstrap the installed compiled CLI once; it needs no Bun at runtime:
+The executable is `~/.dg/bin/dg-skills`.
+On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
-  LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG" inbox --help
+~/.dg/bin/dg-skills inbox --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+~/.dg/bin/dg-skills inbox --help
 ```
 
-Claude Code sets `CLAUDE_PLUGIN_ROOT` to the installed plugin directory. Other
-agent runtimes can set `DG_PLUGIN_ROOT` to that same checkout so the snippet
-uses the bundled `bootstrap.sh`. When neither variable points at the script,
-the snippet downloads `bootstrap.sh` from the repository.
-
-For PowerShell, use the bundled bootstrap.ps1 through `DG_PLUGIN_ROOT` or
-`CLAUDE_PLUGIN_ROOT`, or the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
+For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
 
 Profiles and OAuth caches use dg-ai's encrypted database. Explicit fixture

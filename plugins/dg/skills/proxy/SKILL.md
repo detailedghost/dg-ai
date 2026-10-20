@@ -8,21 +8,14 @@ description: Delegate a coding task to an installed CLI agent (codex, copilot, p
 Resolve the compiled CLI before invoking it:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills proxy --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Run the backend in the caller's native background task when that facility exists:
 
 ```bash
-"$DG" proxy <backend> --prompt-file "<task-file>" [flags]
+~/.dg/bin/dg-skills proxy <backend> --prompt-file "<task-file>" [flags]
 ```
 
 Write the task to the file first, so quotes, `$`, and backticks in it never reach the shell.
@@ -30,17 +23,17 @@ Write the task to the file first, so quotes, `$`, and backticks in it never reac
 For a terminal or caller without native background tasks, prepare a plan:
 
 ```bash
-"$DG" proxy <backend> --plan --prompt-file "<task-file>" [flags]
+~/.dg/bin/dg-skills proxy <backend> --plan --prompt-file "<task-file>" [flags]
 ```
 
 This writes the fully briefed prompt and prints JSON containing the exact quoted background `command`. Execute that command to launch the job; do not reconstruct it from its parts. It returns a job record with `id`, `logFile`, and `statusFile`. The backend runs detached, so the launch returns promptly. Inspect it with:
 
 ```bash
-"$DG" proxy background status "<id>"
-"$DG" proxy background list
+~/.dg/bin/dg-skills proxy background status "<id>"
+~/.dg/bin/dg-skills proxy background list
 ```
 
-Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
+Read the completed job's log for the final proxy JSON result. Use `~/.dg/bin/dg-skills proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
 
 The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `status` reports the job as `unknown`, and `cancel` returns `no-pid` without signaling any process.
 

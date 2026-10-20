@@ -23,18 +23,18 @@ Slice rows come from `payload.review.slices` (`{id, name, label, description?, f
 
 ## Demo attachment (`--demo`)
 
-A review board can lead with the feature actually working — pass `--demo <assets-dir>` (plus optional `--demo-caption "<text>"`) pointing at a directory of `/demo` output, conventionally `$("$DG" stash -G demo)/`. It renders as its own **Demo** tab, not a section above the diff:
+A review board can lead with the feature actually working — pass `--demo <assets-dir>` (plus optional `--demo-caption "<text>"`) pointing at a directory of `/demo` output, conventionally `$(~/.dg/bin/dg-skills stash -G demo)/`. It renders as its own **Demo** tab, not a section above the diff:
 
 ```sh
-"$DG" viz review --repo "$REPO" --base "$BASE" --head "$HEAD" \
-  --demo $("$DG" stash -G demo) --demo-caption "Adding a child from the tree, then removing it"
+~/.dg/bin/dg-skills viz review --repo "$REPO" --base "$BASE" --head "$HEAD" \
+  --demo $(~/.dg/bin/dg-skills stash -G demo) --demo-caption "Adding a child from the tree, then removing it"
 ```
 
 - Picks the first `*.mp4`/`*.webm` as the video, `poster.*` as its poster frame, and every other image as a screenshot — labels are humanized from filenames (`01-add-child-row.png` → "add child row"), so name the files for the moment they capture.
 - Assets are copied into the Astro `public/demo-assets/<slug>/` dir because session dirs sit outside the Astro project and a browser won't load `file://` subresources into an `http://` page. Idempotent per slug, so the request-changes re-render loop replaces rather than accumulates.
 - The video renders `controls` only — never autoplay, so opening a board can't ambush the reviewer with sound.
-- **A newly-named asset 404s until the viz server restarts.** The Astro dev server resolves `public/` against a listing built at boot, so a file whose *name* it has not seen before is missing even though `stageDemoAssets` copied it and `ls` shows it there. Re-rendering does not help; `"$DG" viz stop` then re-render does. Verify with `curl -o /dev/null -w '%{http_code}'` per asset rather than trusting the payload's screenshot count — the count comes from the staging dir, not from anything the browser could load.
+- **A newly-named asset 404s until the viz server restarts.** The Astro dev server resolves `public/` against a listing built at boot, so a file whose *name* it has not seen before is missing even though `stageDemoAssets` copied it and `ls` shows it there. Re-rendering does not help; `~/.dg/bin/dg-skills viz stop` then re-render does. Verify with `curl -o /dev/null -w '%{http_code}'` per asset rather than trusting the payload's screenshot count — the count comes from the staging dir, not from anything the browser could load.
 - Omit the flag and nothing changes; the tab only exists when `payload.demo` does.
 - Screenshots alone are fine, but a short screen recording carries far more than a slideshow of stills — record one if the flow is worth watching.
 
-Run `/demo` first to produce the assets (it writes to `$("$DG" stash -G demo)/` and must never write into the git tree), then pass that directory here.
+Run `/demo` first to produce the assets (it writes to `$(~/.dg/bin/dg-skills stash -G demo)/` and must never write into the git tree), then pass that directory here.
