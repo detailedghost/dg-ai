@@ -113,15 +113,21 @@ describe("invite", () => {
 
 describe("claimStart", () => {
 	it("lets one command start the listener until it releases the claim", () => {
-		expect(claimStart(line, 1_000)).toBe(true);
-		expect(claimStart(line, 1_001)).toBe(false);
-		releaseStart(line);
-		expect(claimStart(line, 1_002)).toBe(true);
+		const token = claimStart(line, 1_000) as string;
+		expect(token).toBeDefined();
+		expect(claimStart(line, 1_001)).toBeUndefined();
+		releaseStart(line, token);
+		expect(claimStart(line, 1_002)).toBeDefined();
 	});
 
-	it("takes over a claim left by a command that died", () => {
-		expect(claimStart(line, 1_000)).toBe(true);
-		expect(claimStart(line, 1_000 + START_CLAIM_SECONDS)).toBe(true);
+	it("takes over a claim left by a command that died, and the stale holder cannot clear it", () => {
+		const stale = claimStart(line, 1_000) as string;
+		const fresh = claimStart(line, 1_000 + START_CLAIM_SECONDS);
+		expect(fresh).toBeDefined();
+		expect(fresh).not.toBe(stale);
+
+		releaseStart(line, stale);
+		expect(claimStart(line, 1_000 + START_CLAIM_SECONDS)).toBeUndefined();
 	});
 });
 

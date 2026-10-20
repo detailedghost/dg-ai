@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -128,7 +128,19 @@ describe("phoneOn", () => {
 		pair();
 		await phoneOn(deps());
 
-		expect(claimStart(line, NOW)).toBe(true);
+		expect(claimStart(line, NOW)).toBeDefined();
+	});
+
+	it("stops the new listener when the pid file cannot be written", async () => {
+		pair();
+		const killed: number[] = [];
+		const spawnListener = () => {
+			mkdirSync(line.pidPath);
+			return 77;
+		};
+
+		await expect(phoneOn(deps({ spawnListener, kill: (pid) => killed.push(pid) }))).rejects.toThrow();
+		expect(killed).toEqual([77]);
 	});
 
 	it("spawns the listener once for a saved contact and prints our npub", async () => {

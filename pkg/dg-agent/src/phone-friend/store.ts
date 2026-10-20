@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
@@ -99,20 +100,28 @@ export function clearInvite(line: LinePaths): void {
 	withDb(line, (db) => db.unset(INVITE));
 }
 
-/** Claims the right to start this line's listener, so two commands cannot each spawn one. */
-export function claimStart(line: LinePaths, now: number): boolean {
+type StartClaim = { at: number; token: string };
+
+/** Claims the right to start this line's listener; returns the claim token, or undefined while another command holds it. */
+export function claimStart(line: LinePaths, now: number): string | undefined {
 	return withDb(line, (db) =>
 		db.transaction(() => {
-			const held = db.get<number>(STARTING);
-			if (held !== undefined && held > now - START_CLAIM_SECONDS) return false;
-			db.set(STARTING, now);
-			return true;
+			const held = db.get<StartClaim>(STARTING);
+			if (held && held.at > now - START_CLAIM_SECONDS) return undefined;
+			const token = randomUUID();
+			db.set(STARTING, { at: now, token });
+			return token;
 		}),
 	);
 }
 
-export function releaseStart(line: LinePaths): void {
-	withDb(line, (db) => db.unset(STARTING));
+/** Drops the claim only if it is still ours, so a stale holder cannot clear a newer claim. */
+export function releaseStart(line: LinePaths, token: string): void {
+	withDb(line, (db) =>
+		db.transaction(() => {
+			if (db.get<StartClaim>(STARTING)?.token === token) db.unset(STARTING);
+		}),
+	);
 }
 
 /** Deletes the invite and saves the caller as the contact in one transaction. */

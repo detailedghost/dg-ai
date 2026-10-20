@@ -191,20 +191,27 @@ function acceptCall(message: Message, deps: PhoneFriendDeps): void {
 }
 
 async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; status: string }> {
-	for (let waited = 0; !claimStart(deps.line, deps.now()); waited += 100) {
+	let token = claimStart(deps.line, deps.now());
+	for (let waited = 0; token === undefined; waited += 100) {
 		if (waited >= STOP_WAIT_MS) {
 			throw new DgCliError("another phone-friend command is starting the listener on this line; try again");
 		}
 		await deps.sleep(100);
+		token = claimStart(deps.line, deps.now());
 	}
 	try {
 		const running = livePid(deps);
 		if (running !== undefined) await stopListener(running, deps);
 		const pid = deps.spawnListener(deps.line);
-		writeFileAtomic(deps.line.pidPath, `${pid}\n`, 0o600);
+		try {
+			writeFileAtomic(deps.line.pidPath, `${pid}\n`, 0o600);
+		} catch (err) {
+			deps.kill(pid);
+			throw err;
+		}
 		return { pid, status: running === undefined ? "started" : "restarted" };
 	} finally {
-		releaseStart(deps.line);
+		releaseStart(deps.line, token);
 	}
 }
 
