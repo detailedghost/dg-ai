@@ -3112,16 +3112,6 @@
 		}
 	},
 	{
-		"id": "roster-no-agents-dir",
-		"args": ["roster"],
-		"expect": {
-			"status": 2,
-			"stdout": "",
-			"stderr": "spec-cli: agents dir not found; checked AGENTS_DIR, CODEX_HOME/agents, ~/.codex/agents, ~/.claude/agents\n",
-			"tree": {}
-		}
-	},
-	{
 		"id": "roster-empty-dir",
 		"args": ["roster"],
 		"env": {

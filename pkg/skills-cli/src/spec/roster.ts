@@ -1,9 +1,9 @@
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { qualifiedAgent } from "../proxy/packaged-personas";
+import { packagedPersonas, qualifiedAgent } from "../proxy/packaged-personas";
 import { die, isDirectory, isFile, readText, records, say } from "./shared";
 
-function agentsDir(): string {
+function agentsDir(): string | undefined {
 	const explicit = process.env.AGENTS_DIR;
 	if (explicit) return explicit;
 	const home = process.env.HOME ?? homedir();
@@ -12,9 +12,7 @@ function agentsDir(): string {
 		return `${codexHome}/agents`;
 	for (const candidate of [`${home}/.codex/agents`, `${home}/.claude/agents`])
 		if (isDirectory(candidate)) return candidate;
-	return die(
-		"agents dir not found; checked AGENTS_DIR, CODEX_HOME/agents, ~/.codex/agents, ~/.claude/agents",
-	);
+	return undefined;
 }
 
 const trim = (text: string): string => text.replace(/^\s+|\s+$/g, "");
@@ -131,9 +129,19 @@ function tomlRow(fallback: string, lines: string[], full: boolean): string {
 	return `${name}\t${description}${full && paragraph !== "" ? `\t${paragraph}` : ""}\n`;
 }
 
+function sayRow(row: string): void {
+	const tab = row.indexOf("\t");
+	say(`${qualifiedAgent(row.slice(0, tab))}${row.slice(tab)}`);
+}
+
 export async function rosterCommand(args: string[]): Promise<number> {
 	const full = args[0] === "--full";
 	const dir = agentsDir();
+	if (dir === undefined) {
+		for (const name of Object.keys(packagedPersonas).sort())
+			sayRow(markdownRow(name, records(packagedPersonas[name] ?? ""), full));
+		return 0;
+	}
 	if (!isDirectory(dir)) die(`agents dir not found: ${dir}`);
 	const names = readdirSync(dir)
 		.filter((name) => !name.startsWith(".") && isFile(`${dir}/${name}`))
@@ -148,8 +156,7 @@ export async function rosterCommand(args: string[]): Promise<number> {
 		const row = file.endsWith(".toml")
 			? tomlRow(file.slice(0, -5), lines, full)
 			: markdownRow(file.slice(0, -3), lines, full);
-		const tab = row.indexOf("\t");
-		say(`${qualifiedAgent(row.slice(0, tab))}${row.slice(tab)}`);
+		sayRow(row);
 	}
 	return 0;
 }

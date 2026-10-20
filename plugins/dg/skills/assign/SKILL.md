@@ -57,8 +57,8 @@ without a spec path is an error, not a no-op.
 ### Common — pick the agents
 
 1. **Load roster.** Run `~/.dg/bin/dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
-   lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). Prefer this over globbing
-   the agents directory and reading each file.
+   lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
+   Prefer this over globbing the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
    - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`dg:shell` or no assignment +
      warning) only if nothing fits.
