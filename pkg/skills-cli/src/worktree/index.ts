@@ -4,7 +4,7 @@ import { prune } from "./prune";
 import { remove } from "./remove";
 import { WorktreeError } from "./shared";
 
-export const USAGE = `worktree-cli — git worktree lifecycle for AI agent workflows
+export const USAGE = `dg-skills worktree — git worktree lifecycle for AI agent workflows
 
 USAGE
   dg-skills worktree <subcommand> [args]
@@ -33,7 +33,7 @@ const SUBCOMMANDS = new Map<string, (args: string[]) => Promise<number>>([
 	["prune", prune],
 ]);
 
-/** Dispatch a worktree subcommand; failures print `worktree-cli: <message>` and return 2. */
+/** Dispatch a worktree subcommand; failures print `dg-skills worktree: <message>` and return 2. */
 export async function main(argv: string[]): Promise<number> {
 	const [sub, ...rest] = argv;
 	if (sub === undefined) {
@@ -51,7 +51,7 @@ export async function main(argv: string[]): Promise<number> {
 		return await handler(rest);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		process.stderr.write(`worktree-cli: ${message}\n`);
+		process.stderr.write(`dg-skills worktree: ${message}\n`);
 		return 2;
 	}
 }

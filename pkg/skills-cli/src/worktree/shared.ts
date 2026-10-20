@@ -1,6 +1,6 @@
 import { runCapture } from "@dg/common/node";
 
-/** A failure the dispatcher reports as `worktree-cli: <message>` with exit 2. */
+/** A failure the dispatcher reports as `dg-skills worktree: <message>` with exit 2. */
 export class WorktreeError extends Error {}
 
 export function fail(message: string): never {
@@ -10,7 +10,7 @@ export function fail(message: string): never {
 export const infoLine = (message: string): string => `${message}\n`;
 
 export const warnLine = (message: string): string =>
-	`worktree-cli: ${message}\n`;
+	`dg-skills worktree: ${message}\n`;
 
 export function info(message: string): void {
 	process.stderr.write(infoLine(message));

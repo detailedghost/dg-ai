@@ -1112,7 +1112,7 @@ async function cmdPrepare() {
 	).catch((error: unknown) => {
 		const message = error instanceof Error ? error.message : String(error);
 		die(
-			`worktree-cli create failed:\n${diagnostics.join("")}worktree-cli: ${message}\n`,
+			`dg-skills worktree create failed:\n${diagnostics.join("")}dg-skills worktree: ${message}\n`,
 		);
 	});
 

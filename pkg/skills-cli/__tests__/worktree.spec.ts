@@ -187,13 +187,17 @@ describe("worktree top-level dispatch", () => {
 		expect(result.stdout).toBe("");
 		expect(result.stderr).toContain("create");
 		expect(result.stderr).toContain("remove");
+		expect(result.stderr).toStartWith("dg-skills worktree — ");
+		expect(result.stderr).not.toContain("worktree-cli");
 	});
 
 	test("an unknown subcommand names it and exits 2", async () => {
 		const { repo } = trackedRepo();
 		const result = await worktree(["bogus"], repo);
 		expect(result.exitCode).toBe(2);
-		expect(result.stderr).toContain("unknown subcommand: bogus");
+		expect(result.stderr).toBe(
+			"dg-skills worktree: unknown subcommand: bogus (try --help)\n",
+		);
 	});
 
 	test("an inherited object property name is an unknown subcommand", async () => {
