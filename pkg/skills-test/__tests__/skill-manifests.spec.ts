@@ -84,6 +84,22 @@ describe("Codex marketplace", () => {
 	});
 });
 
+describe("Claude Code marketplace", () => {
+	const marketplace = JSON.parse(
+		readRepoFile(".claude-plugin", "marketplace.json"),
+	);
+
+	test("publishes unslop from a pinned GitHub commit", () => {
+		const unslop = marketplace.plugins.find(
+			(plugin: { name: string }) => plugin.name === "unslop",
+		);
+		expect(unslop?.source.source).toBe("github");
+		expect(unslop?.source.repo).toBe("theclaymethod/unslop");
+		expect(unslop?.source.sha).toMatch(/^[0-9a-f]{40}$/);
+		expect(unslop?.skills).toEqual(["./"]);
+	});
+});
+
 describe("each shared skill directory", () => {
 	test("there is at least one skill", () => {
 		expect(skillDirs.length).toBeGreaterThan(0);

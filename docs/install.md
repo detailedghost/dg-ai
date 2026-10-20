@@ -5,7 +5,11 @@
 ```text
 /plugin marketplace add ~/code/dg
 /plugin install dg@detailedghost
+/plugin install unslop@detailedghost
 ```
+
+The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop` skill, which `/dg:polish` calls
+when present.
 
 **Standalone — one command installs the `dg-skills`, `dg-daemon` and `dg-agent` binaries
 _and_ the browser extension** (compiled binaries, no Bun needed):

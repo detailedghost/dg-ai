@@ -56,13 +56,13 @@ table rows and line length, and the file is litter afterward. Stdin sidesteps bo
 
 ### De-slop the draft before it goes out
 
-When the `unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check.
+When the `/unslop:unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check. Install it with `/plugin install unslop@detailedghost`.
 
-Otherwise run the `unslop` skill over the draft body as `cleanup`, then apply the suggestions you
+Otherwise run `/unslop:unslop` over the draft body as `cleanup`, then apply the suggestions you
 agree with. The 4-sentence cap makes a body short, not human: "This PR introduces a
 comprehensive refactor" fits the budget and still reads as generated.
 
-Use `cleanup`, not bare `unslop` or `rewrite`. Those rewrite the prose in one pass and
+Use `cleanup`, not bare `/unslop:unslop` or `rewrite`. Those rewrite the prose in one pass and
 will happily spend a fifth sentence, which breaks the cap above. `cleanup` returns
 reviewable suggestions and leaves the sentence count yours to hold. Add `--report` when
 you only want the tells listed.

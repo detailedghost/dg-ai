@@ -41,6 +41,14 @@ describe("polish skill ships publicly", () => {
 		expect(existsSync(join(POLISH_DIR, link ?? ""))).toBe(true);
 	});
 
+	test("calls the upstream unslop skill and skips it when absent", () => {
+		const text = markdownFiles(POLISH_DIR)
+			.map((f) => readFileSync(f, "utf8"))
+			.join("\n");
+		expect(text).toContain("/unslop:unslop");
+		expect(text).toMatch(/not installed, skip/);
+	});
+
 	test("runs the prose check through a configurable external command", () => {
 		const text = markdownFiles(POLISH_DIR)
 			.map((f) => readFileSync(f, "utf8"))
