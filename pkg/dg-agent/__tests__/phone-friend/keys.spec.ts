@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +80,7 @@ describe("ensureKey", () => {
 		expect(mode).toBe("store");
 		expect(store.get(KEY_NAME)).toBe(nip19.nsecEncode(sk));
 		expect(existsSync(credentialGrantTokenPath(paths, GRANT_PREFIX))).toBe(true);
-		expect((readFileKey(line) !== undefined)).toBe(false);
+		expect(readFileKey(line)).toBeUndefined();
 	});
 
 	it("keeps the key in the 0600 line database when no session exists", async () => {
@@ -93,19 +93,19 @@ describe("ensureKey", () => {
 	});
 
 	it("moves a file key to the store and drops the file copy after a matching read-back", async () => {
-		const original = (createFileKey(line) as Uint8Array);
+		const original = createFileKey(line) as Uint8Array;
 
 		const { sk, mode } = await ensureKey(deps({ session: true }));
 
 		expect(mode).toBe("store");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
 		expect(store.get(KEY_NAME)).toBe(nip19.nsecEncode(original));
-		expect((readFileKey(line) !== undefined)).toBe(false);
+		expect(readFileKey(line)).toBeUndefined();
 		expect(calls).toEqual([`set ${KEY_NAME}`, `grant ${GRANT_PREFIX}`, `get ${KEY_NAME}`]);
 	});
 
 	it("keeps the file key when the read-back does not match", async () => {
-		const original = (createFileKey(line) as Uint8Array);
+		const original = createFileKey(line) as Uint8Array;
 
 		const { sk, mode } = await ensureKey(
 			deps({ session: true, client: { get: async () => ({ value: "nsec1wrong", meta: {}, updatedAt: "" }) } }),
@@ -113,18 +113,25 @@ describe("ensureKey", () => {
 
 		expect(mode).toBe("file");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
-		expect((readFileKey(line) !== undefined)).toBe(true);
+		expect(readFileKey(line)).toBeDefined();
 	});
 
 	it("keeps the file key when the store refuses the write", async () => {
-		(createFileKey(line) as Uint8Array);
+		createFileKey(line);
 
-		const { mode } = await ensureKey(
-			deps({ session: true, client: { set: async () => { throw new DgCliError("refused"); } } }),
-		);
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			const { mode } = await ensureKey(
+				deps({ session: true, client: { set: async () => { throw new DgCliError("refused"); } } }),
+			);
 
-		expect(mode).toBe("file");
-		expect((readFileKey(line) !== undefined)).toBe(true);
+			expect(mode).toBe("file");
+			expect(String(stderr.mock.calls[0]?.[0])).toContain("did not take the key");
+			expect(String(stderr.mock.calls[0]?.[0])).toContain("refused");
+		} finally {
+			stderr.mockRestore();
+		}
+		expect(readFileKey(line)).toBeDefined();
 	});
 
 	it("adopts the key of a run that won the race to the store instead of making a file key", async () => {
@@ -145,7 +152,7 @@ describe("ensureKey", () => {
 
 		expect(mode).toBe("store");
 		expect(Buffer.from(sk).equals(Buffer.from(winner))).toBe(true);
-		expect((readFileKey(line) !== undefined)).toBe(false);
+		expect(readFileKey(line)).toBeUndefined();
 	});
 
 	it("reuses the store key and never makes a second one", async () => {
@@ -162,7 +169,7 @@ describe("ensureKey", () => {
 
 		await expect(ensureKey(deps({ session: true }))).rejects.toThrow("not reachable");
 
-		expect((readFileKey(line) !== undefined)).toBe(false);
+		expect(readFileKey(line)).toBeUndefined();
 	});
 });
 
@@ -200,7 +207,7 @@ describe("loadKey", () => {
 
 	it("reads a file key without a daemon", async () => {
 		daemonUp = false;
-		(createFileKey(line) as Uint8Array);
+		createFileKey(line);
 
 		expect((await loadKey(deps()))?.mode).toBe("file");
 	});

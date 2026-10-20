@@ -23,6 +23,16 @@ export function encodeCard(card: Card): string {
 	return CARD_PREFIX + Buffer.from(JSON.stringify(body)).toString("base64url");
 }
 
+/** Checks a relay list against the rules every card must meet. */
+export function isCardRelays(relays: unknown): relays is string[] {
+	return (
+		Array.isArray(relays) &&
+		relays.length > 0 &&
+		relays.length <= MAX_CARD_RELAYS &&
+		relays.every((relay) => typeof relay === "string" && RELAY_PATTERN.test(relay))
+	);
+}
+
 function invalid(reason: string): never {
 	throw new DgCliError(`not a valid phone-friend call card: ${reason}`);
 }
@@ -41,16 +51,9 @@ export function decodeCard(text: string, now: number): Card {
 	const { v, npub, relays, secret, exp } = body;
 	if (v !== CARD_VERSION) invalid(`unknown version ${String(v)}`);
 	if (!isNpub(npub)) invalid("bad npub");
-	if (
-		!Array.isArray(relays) ||
-		relays.length === 0 ||
-		relays.length > MAX_CARD_RELAYS ||
-		!relays.every((relay) => typeof relay === "string" && RELAY_PATTERN.test(relay))
-	) {
-		invalid(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
-	}
+	if (!isCardRelays(relays)) invalid(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	if (typeof secret !== "string" || !SECRET_PATTERN.test(secret)) invalid("bad secret");
 	if (typeof exp !== "number" || !Number.isInteger(exp)) invalid("bad expiry");
 	if (exp <= now) throw new DgCliError("this call card has expired; ask for a new one");
-	return { npub: npub as string, relays: relays as string[], secret, exp };
+	return { npub: npub as string, relays, secret, exp };
 }

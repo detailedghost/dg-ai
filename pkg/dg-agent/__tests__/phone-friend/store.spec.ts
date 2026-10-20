@@ -93,18 +93,24 @@ describe("config", () => {
 
 describe("invite", () => {
 	it("round-trips and clears", () => {
-		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 });
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, DEFAULT_RELAYS);
 
 		expect(readInvite(line)).toEqual({ secret: "ab".repeat(32), expiresAt: 99 });
 		clearInvite(line);
 		expect(readInvite(line)).toBeUndefined();
 	});
+
+	it("saves the card relays with the invite and keeps the contact", () => {
+		writeConfig(line, { contact: "npub1contact", relays: DEFAULT_RELAYS });
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, ["wss://x.example"]);
+
+		expect(readConfig(line)).toEqual({ contact: "npub1contact", relays: ["wss://x.example"] });
+	});
 });
 
 describe("acceptCall", () => {
 	it("clears the invite and saves the caller, keeping the relays", () => {
-		writeConfig(line, { relays: ["wss://x.example"] });
-		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 });
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, ["wss://x.example"]);
 
 		acceptCall(line, "npub1caller");
 

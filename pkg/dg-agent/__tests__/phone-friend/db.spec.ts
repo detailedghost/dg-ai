@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
@@ -47,6 +47,7 @@ describe("PhoneFriendDb", () => {
 		inbox.unset("nsec");
 		inbox.close();
 		expect(readFileSync(line.dbPath).includes("nsec1secretsecretsecret")).toBe(false);
+		expect(existsSync(`${line.dbPath}-wal`)).toBe(false);
 		inbox = PhoneFriendDb.open(line, () => now);
 	});
 

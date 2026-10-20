@@ -13,7 +13,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
-import { decodeCard, encodeCard } from "./card";
+import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS } from "./card";
 import { PhoneFriendDb } from "./db";
 import { DEFAULT_LINE, type LinePaths, linePaths } from "./line";
 import { defaultKeyClients, ensureKey, type KeyDeps, loadKey } from "./keys";
@@ -68,7 +68,10 @@ function isOurListener(pid: number): boolean {
 	if (existsSync(cmdline)) {
 		return isListenerArgs(readFileSync(cmdline, "utf8").split("\0"));
 	}
-	if (process.platform === "win32") return true;
+	if (process.platform === "win32") {
+		const task = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8" });
+		return task.status === 0 && /"(dg-agent|bun)(\.exe)?"/i.test(task.stdout);
+	}
 	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
 	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
 }
@@ -218,20 +221,21 @@ export async function phoneInvite(
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
 	}
-	const config = readConfig(deps.line);
-	if (opts.relay?.length) config.relays = opts.relay;
+	const relays = opts.relay?.length ? opts.relay : readConfig(deps.line).relays;
+	if (!isCardRelays(relays)) {
+		throw new DgCliError(`--relay must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
+	}
 	const invite = {
 		secret: randomBytes(SECRET_BYTES).toString("hex"),
 		expiresAt: deps.now() + Math.round(hours * 3600),
 	};
 	const card = encodeCard({
 		npub: await myNpub(deps),
-		relays: config.relays,
+		relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
 	});
-	writeConfig(deps.line, config);
-	writeInvite(deps.line, invite);
+	writeInvite(deps.line, invite, relays);
 	if (livePid(deps) !== undefined) await spawnOrRestart(deps);
 	printJson(deps, { card, expires_at: new Date(invite.expiresAt * 1000).toISOString() });
 }
@@ -337,7 +341,8 @@ function saveSent(deps: PhoneFriendDeps, sent: Message, contact: string): void {
 
 export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.line);
-	const contact = contactHex(requireContact(config));
+	const contactNpub = requireContact(config);
+	const contact = contactHex(contactNpub);
 	const body = text === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : text;
 	if (!body) throw new DgCliError("message text is empty");
 	const sk = await mySecretKey(deps);
@@ -346,7 +351,7 @@ export async function phoneSay(text: string, deps: PhoneFriendDeps): Promise<voi
 	try {
 		const { ok } = await publish(pool, config.relays, event);
 		if (ok.length === 0) throw new DgCliError("no relay accepted the message");
-		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: body }, config.contact as string);
+		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: body }, contactNpub);
 		printJson(deps, { id: event.id, relays_ok: ok });
 	} finally {
 		pool.close(config.relays);

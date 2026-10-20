@@ -83,7 +83,10 @@ async function putInStore(deps: KeyDeps, client: KeyClient, sk: Uint8Array): Pro
 		await client.grant(GRANT_PREFIX);
 		if (!Buffer.from(await readStore(deps)).equals(Buffer.from(sk))) return false;
 		return markKeyInStore(deps.line, sk);
-	} catch {
+	} catch (err) {
+		process.stderr.write(
+			`phone-friend: the dg credential store did not take the key, so it stays in the line database: ${describeError(err)}\n`,
+		);
 		return false;
 	}
 }

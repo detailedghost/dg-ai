@@ -82,8 +82,14 @@ export function readInvite(line: LinePaths): Invite | undefined {
 	return withDb(line, (db) => db.get<Invite>(INVITE));
 }
 
-export function writeInvite(line: LinePaths, invite: Invite): void {
-	withDb(line, (db) => db.set(INVITE, invite));
+/** Saves the invite and the relays its card names in one transaction. */
+export function writeInvite(line: LinePaths, invite: Invite, relays: string[]): void {
+	withDb(line, (db) =>
+		db.transaction(() => {
+			db.set(CONFIG, { ...db.get<PhoneFriendConfig>(CONFIG), relays });
+			db.set(INVITE, invite);
+		}),
+	);
 }
 
 export function clearInvite(line: LinePaths): void {

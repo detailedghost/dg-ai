@@ -25,7 +25,12 @@ export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 		},
 		async querySync(_relays, filter) {
 			pool.filters.push(filter);
-			return pool.events.filter((event) => event.created_at >= (filter.since ?? 0));
+			return pool.events.filter(
+				(event) =>
+					event.created_at >= (filter.since ?? 0) &&
+					(!filter.kinds || filter.kinds.includes(event.kind)) &&
+					(!filter["#p"] || event.tags.some((tag) => tag[0] === "p" && filter["#p"]?.includes(tag[1] as string))),
+			);
 		},
 		subscribe(_relays, filter, params: SubscribeManyParams) {
 			pool.filters.push(filter);

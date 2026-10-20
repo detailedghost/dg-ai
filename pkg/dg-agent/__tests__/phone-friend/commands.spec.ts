@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -58,8 +58,8 @@ function deps(overrides: Partial<PhoneFriendDeps> = {}): PhoneFriendDeps {
 		kill: (pid) => {
 			alive.delete(pid);
 		},
-		write: (line) => {
-			out.push(line);
+		write: (text) => {
+			out.push(text);
 		},
 		sleep: async () => {},
 		now: () => NOW,
@@ -94,7 +94,7 @@ function pair(): void {
 }
 
 function lines(): unknown[] {
-	return out.join("").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+	return out.join("").trim().split("\n").filter(Boolean).map((row) => JSON.parse(row));
 }
 
 beforeEach(() => {
@@ -168,6 +168,15 @@ describe("phoneInvite", () => {
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
 		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
+	});
+
+	it("refuses relays that the other side could not dial, and saves nothing", async () => {
+		const tooMany = Array.from({ length: 11 }, (_, i) => `wss://r${i}.example`);
+
+		for (const relay of [["http://x.example"], ["wss://x.example/ bad"], tooMany]) {
+			await expect(phoneInvite({ relay }, deps())).rejects.toThrow("--relay must be 1 to 10 wss:// URLs");
+		}
+		expect(readInvite(line)).toBeUndefined();
 	});
 
 	it("makes a new secret each time", async () => {
@@ -373,8 +382,8 @@ describe("phoneSay", () => {
 
 		expect(history()).toMatchObject([{ text: "ping", direction: "out", contact: contactNpub }]);
 		out = [];
-		await phoneVoicemail(deps({ spawnListener: () => 1 }));
-		expect(lines().filter((line) => (line as { text?: string }).text === "ping")).toEqual([]);
+		await phoneVoicemail(deps());
+		expect(lines().filter((row) => (row as { text?: string }).text === "ping")).toEqual([]);
 	});
 
 	it("reads the text from stdin when the argument is -", async () => {
