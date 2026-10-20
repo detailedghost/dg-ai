@@ -48,14 +48,14 @@ function thrashArgs(request: ArgvRequest): string {
 }
 
 function claudePrompt(request: ArgvRequest): string {
-	if (request.task === "thrash") return `/thrash ${thrashArgs(request)}`;
+	if (request.task === "thrash") return `/dg:thrash ${thrashArgs(request)}`;
 	if (request.task === "fix") {
 		return `Fix the error described in the JSON file at ${request.reportPath}. Make the smallest change that fixes the root cause and add a regression test. Do not commit or push.`;
 	}
 	if (request.task === "deps") {
-		return `/deps-upgrade --cooldown-days ${request.cooldownDays}`;
+		return `/dg:deps-upgrade --cooldown-days ${request.cooldownDays}`;
 	}
-	return `/address${request.noCi ? " --no-ci" : ""}`;
+	return `/dg:address${request.noCi ? " --no-ci" : ""}`;
 }
 
 const SPECS: Record<RunnerName, Spec> = {

@@ -351,7 +351,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.claude,
 			"-p",
-			`/thrash ${URL} -s 3 -c`,
+			`/dg:thrash ${URL} -s 3 -c`,
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -364,7 +364,7 @@ describe("runner run argv", () => {
 	test("claude omits -s and -c when neither is set", async () => {
 		const h = harness();
 		await h.runners.claude.run(runRequest());
-		expect(h.processes[0]?.argv[2]).toBe(`/thrash ${URL}`);
+		expect(h.processes[0]?.argv[2]).toBe(`/dg:thrash ${URL}`);
 	});
 
 	test("claude uses a configured allowlist and path", async () => {
@@ -386,7 +386,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.claude,
 			"-p",
-			"/address",
+			"/dg:address",
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -399,7 +399,7 @@ describe("runner run argv", () => {
 	test("claude passes --no-ci to /address when asked", async () => {
 		const h = harness();
 		await h.runners.claude.run({ ...runRequest(), task: "address", noCi: true });
-		expect(h.processes[0]?.argv[2]).toBe("/address --no-ci");
+		expect(h.processes[0]?.argv[2]).toBe("/dg:address --no-ci");
 	});
 
 	test("claude runs the fix prompt with the untrusted-report note and the fix tools", async () => {
@@ -440,7 +440,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			"/bin/claude",
 			"-p",
-			"/deps-upgrade --cooldown-days 3",
+			"/dg:deps-upgrade --cooldown-days 3",
 			"--add-dir",
 			config.automation.cloneRoot,
 			"--permission-prompts",
