@@ -118,10 +118,12 @@ Then `Workflow({ scriptPath: SCOPED })`. Skip the Build-args table above.
 
 ```
 Workflow({
-  scriptPath: "<skills>/monolith/references/scan.workflow.mjs",
+  scriptPath: "<monolith-skill-dir>/references/scan.workflow.mjs",
   args: { mode, existingTerms, existingFileContent, monolithPath, stagingPath, agentTypes, template }
 })
 ```
+
+`<monolith-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass the script as an absolute path.
 
 The workflow runs scanners (haiku, parallel) → `lore` (synthesis) and writes the
 full updated file to `stagingPath`. It returns `{ staged, stagingPath, summary }`.

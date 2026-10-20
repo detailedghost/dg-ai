@@ -85,7 +85,7 @@ Read ONLY `context.md` + `plan.md` — never `initial.md`/`roundtable/*`. Set `S
 reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (this bundle's `slices[]` + `/dg:assign` already
 ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and
 [sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the human review gate and the
-direct PR/MR launch — draft always, then `~/.dg/bin/dg-skills batch-open`, per `finish.md` step 8's `/dg:spec` deltas). `finish.md`'s `REVIEW_MODE` decides where that human review
+direct PR/MR launch — draft always, then a best-effort `~/.dg/bin/dg-skills batch-open` (on failure, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas). `finish.md`'s `REVIEW_MODE` decides where that human review
 lands: `pr` by default, so the run ends at a draft PR/MR and the human reviews it on the provider;
 `-l`/`--local` puts the blocking `/dg:review` board back ahead of the push. `/dg:spec` passes the flag
 straight through — it owns no separate copy of the decision.

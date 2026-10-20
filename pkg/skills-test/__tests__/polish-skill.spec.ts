@@ -31,12 +31,14 @@ describe("polish skill ships publicly", () => {
 		}
 	});
 
-	test("vendors pr-body guidance and links it relatively", () => {
-		const files = markdownFiles(POLISH_DIR);
-		const vendored = files.filter((f) => /pr-(body|style)/i.test(f));
-		expect(vendored.length).toBeGreaterThan(0);
+	test("links the one shared pr-body style guide relatively instead of keeping a copy", () => {
+		expect(existsSync(join(POLISH_DIR, "references", "pr-body-style.md"))).toBe(
+			false,
+		);
 		const skill = readFileSync(join(POLISH_DIR, "SKILL.md"), "utf8");
-		expect(skill).toMatch(/\]\((?!https?:|\/)[^)]*pr-(body|style)[^)]*\)/i);
+		const link = /\]\((\.\.\/[^)]*pr-body-style\.md)\)/.exec(skill)?.[1];
+		expect(link).toBeDefined();
+		expect(existsSync(join(POLISH_DIR, link ?? ""))).toBe(true);
 	});
 
 	test("runs the prose check through a configurable external command", () => {

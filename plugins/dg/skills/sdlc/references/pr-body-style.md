@@ -20,12 +20,19 @@ No marketing adjectives, no passive voice, no filler ("all of", "in order to").
 
 ## Self-check before you open or edit a PR/MR
 
-The same rules cover GitHub and GitLab. Before step 8c, read the draft body once.
+The same rules cover GitHub and GitLab. Before you create or edit the PR/MR, read the draft body once.
 
 - Rewrite every passive sentence.
 - Drop filler words and marketing adjectives.
 - Split any sentence longer than about 25 words.
 - Replace every unexpanded template placeholder with real text.
 
-If the host runs a prose check when a PR/MR is created or edited, run the same scan on the draft
-first. Catching a finding here means the create call is never blocked and retried afterward.
+Then run the scan on the draft body. Set `DG_PROSE_CHECK_CMD` to the executable that reads the
+body from stdin. Leave it unset to skip the check.
+
+```sh
+printf '%s' "$PR_BODY" | "$DG_PROSE_CHECK_CMD"
+```
+
+Exit 0 means clean. A nonzero exit prints the findings. Fix them in the draft, then re-run the
+check. Catching a finding here means a configured PR hook never blocks the create call.

@@ -59,7 +59,6 @@ export const INSTALLED_SKILL_FILES = [
 	"polish/SKILL.md",
 	"polish/references/after-polish.md",
 	"polish/references/dimensions.md",
-	"polish/references/pr-body-style.md",
 	"polish/references/pr.md",
 	"prd/SKILL.md",
 	"proto/SKILL.md",

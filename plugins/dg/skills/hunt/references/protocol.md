@@ -70,7 +70,7 @@ Build `threads[]` (`{ id, agentType, prompt }`) from the routing table + prompt 
 
 ```
 Workflow({
-  scriptPath: "<skills>/hunt/references/hunt.workflow.mjs",
+  scriptPath: "<hunt-skill-dir>/references/hunt.workflow.mjs",
   args: {
     threads,                       // ≤3
     monolithHint: "<the monolith.md line, or ''>",
@@ -78,6 +78,8 @@ Workflow({
   }
 })
 ```
+
+`<hunt-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass the script as an absolute path.
 
 `args` contract: `threads` is `[{ id, agentType, prompt }]`, each self-contained; the script keeps only the first 3. `monolithHint` is appended to every prompt, or `''` when there is no `monolith.md`. `verify` defaults to `true`.
 

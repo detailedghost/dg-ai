@@ -99,7 +99,7 @@ review + correction, test-name gate + docs) exactly as written.
 ## 6. Human review gate, then direct PR/MR launch (the last item)
 
 Run `finish.md` **steps 7–8** exactly as written, including step 8's `/dg:spec` deltas (draft
-unconditionally, `~/.dg/bin/dg-skills batch-open` afterward, dependent-PR/MR `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply`
+unconditionally, a best-effort `~/.dg/bin/dg-skills batch-open` afterward (on failure, print the PR URL and continue), dependent-PR/MR `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply`
 handling). [`/dg:pushup`](../../pushup/SKILL.md) runs the same push → PR → browser-open mechanics for
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.
@@ -131,7 +131,7 @@ more weight here than it did behind a local board.
   step 8d's line for the active mode.
 
 > **GATE:** in `local` mode, `/dg:review` approved first. Either mode: draft PR/MR opened and
-> batch-opened in the browser; URL captured; cwd still at `$WORKTREE_ORIGIN`; worktree intact for
+> batch-opened in the browser (or its URL printed when that fails); URL captured; cwd still at `$WORKTREE_ORIGIN`; worktree intact for
 > `/dg:address`.
 
 ## Scope note

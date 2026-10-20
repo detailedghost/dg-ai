@@ -71,7 +71,7 @@ no prose-scraping. Write it to a scratch file, e.g. `$(~/.dg/bin/dg-skills stash
 ```sh
 out=$(~/.dg/bin/dg-skills viz review --repo "$REPO" --base "$BASE_SHA" --head "$HEAD_SHA" --comments "$COMMENTS_FILE")
 SLUG=$(printf '%s' "$out" | sed -n 's#.*/viz/\([^/]*\)/payload.*#\1#p')
-# Launch in the BACKGROUND (Bash `run_in_background: true`); relaunch on a non-zero exit.
+# Run in the FOREGROUND unless the optional wait-guard hooks are installed (see SKILL.md); relaunch on a non-zero exit.
 ~/.dg/bin/dg-skills viz wait "$SLUG" --resume --timeout 3600
 review_result=$(~/.dg/bin/dg-skills viz get "$SLUG" review_result --require-fresh "$HEAD_SHA")
 ```
@@ -99,7 +99,7 @@ Field mapping, `review_result` → GitHub's `POST /pulls/{n}/reviews`:
 | `lineComments[]` where `scope:"file"` | folded into `body` | GitHub's review API has no clean anchorless-per-file slot in `comments[]` — append `**{file}:**\n{body}` after the summary instead |
 | `fileApprovals[]` | *(not sent)* | board-only progress tracking (viewed state), no GitHub equivalent |
 
-Note the schema in `references/payload-schema.md` lists a `fileApprovals[].comment` field — that
+Note the schema in the viz skill's [payload-schema.md](../../viz/references/payload-schema.md) lists a `fileApprovals[].comment` field — that
 field does not actually exist in the current board implementation (`ReviewSection.astro`'s
 `FileApproval` is `{path, viewed}` only). Per-file notes live in `lineComments[]` with
 `scope:"file"`, mapped per the table above — treat that as the source of truth over the schema doc

@@ -54,10 +54,11 @@ rm -f "${VIZ_DIR:-$(~/.dg/bin/dg-skills stash -G viz)}/$SLUG/response.json"
 ~/.dg/bin/dg-skills viz get "$SLUG" review_result >/dev/null 2>&1 \
   && { echo "GATE NOT ARMED: a verdict is still readable for $SLUG — do not wait on it"; exit 1; }
 
-# 2. WAIT for the reviewer to click "Submit review". Launch this in the BACKGROUND
-#    (Bash `run_in_background: true`) — the harness re-invokes you when it exits, so you
-#    do not burn foreground tool calls holding a timer. `wait` exits 0 on submit and
-#    non-zero on timeout; a timeout is NOT "done", so relaunch it.
+# 2. WAIT for the reviewer to click "Submit review". Run it in the FOREGROUND unless the
+#    optional review-wait-guard and pr-confirm hooks are on; with them you may launch it
+#    in the BACKGROUND (Bash `run_in_background: true`) and the harness re-invokes you on
+#    exit. `wait` exits 0 on submit and non-zero on timeout; a timeout is NOT "done", so
+#    relaunch it.
 ~/.dg/bin/dg-skills viz wait "$SLUG" --resume --timeout 3600
 
 # 3. Read the submitted review — only after step 2 exited 0.
@@ -66,9 +67,7 @@ rm -f "${VIZ_DIR:-$(~/.dg/bin/dg-skills stash -G viz)}/$SLUG/response.json"
 
 > **Wait is mandatory.** After rendering you MUST NOT proceed to step 3, act on the change, summarize, or end your turn until `review_result` is present. The only ways out are: (a) the reviewer submits a verdict, (b) the caller passed `--no-wait`, or (c) the user explicitly tells you to stop — and in cases (b) and (c) you must release the marker with `~/.dg/bin/dg-skills viz dismiss "$SLUG"`. A timeout is **not** an exit; relaunch the wait. Never fabricate or assume a verdict.
 >
-> Backgrounding is safe because it cannot fail silently: `~/.dg/bin/dg-skills viz review` sets an `.awaiting-verdict` marker at render time, and until a successful `get review_result` clears it (or you `dismiss` it), the `review-wait-guard` Stop hook blocks turn-end and `pr-confirm-hook` denies `git push` / `gh pr create`. If a background wake is ever missed, you get stopped rather than shipping unreviewed. The marker self-expires after 24h so an abandoned board traps nothing permanently.
->
-> A foreground `until ~/.dg/bin/dg-skills viz wait …; do …; done` loop still works if you prefer it, but budget for it: each iteration blocks a tool call for its full timeout.
+> `~/.dg/bin/dg-skills viz review` sets an `.awaiting-verdict` marker at render time. A successful `get review_result` (or `dismiss`) clears it, and it self-expires after 24h. The optional `review-wait-guard` Stop hook and `pr-confirm-hook` read that marker: while it stands, they block turn-end and deny `git push` and PR creation. This plugin does not ship those hooks. **Without them, run the wait in the foreground** (one foreground `viz wait`, or an `until ~/.dg/bin/dg-skills viz wait …; do …; done` loop). A missed background wake would end the review with no verdict, and nothing would stop you. Background the wait only when you have both hooks installed. A foreground wait blocks one tool call for its full timeout, so budget for it.
 
 `review_result` shape: `{ verdict: "approve" | "request_changes" | "comment", summary, fileApprovals: [{path, approved}], lineComments: [{file, side, lineNumber, body}] }`.
 

@@ -52,4 +52,4 @@ Names only — the full per-dimension criteria, examples, and out-of-scope redir
 | Full per-dimension criteria/examples, and the out-of-scope redirect table (correctness/security/test-coverage/reformatting/design-decision handoffs) | [references/dimensions.md](references/dimensions.md) |
 | Know what runs after polish finishes (code-review pass, then opening a PR) | [references/after-polish.md](references/after-polish.md) |
 | Write the PR description (4-sentence limit, table/bullet/demo-video shape, `unslop` de-slop pass, prose check, stacked-PR arrow chain, cross-repo links) | [references/pr.md](references/pr.md) |
-| Check a PR body for plain English, active voice, and short sentences before `gh` or `glab` blocks it | [references/pr-body-style.md](references/pr-body-style.md) |
+| Check a PR body for plain English, active voice, and short sentences before `gh` or `glab` blocks it | [pr-body-style.md](../sdlc/references/pr-body-style.md) |

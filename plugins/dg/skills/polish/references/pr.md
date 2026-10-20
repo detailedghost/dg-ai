@@ -56,7 +56,9 @@ table rows and line length, and the file is litter afterward. Stdin sidesteps bo
 
 ### De-slop the draft before it goes out
 
-Run the `unslop` skill over the draft body as `cleanup`, then apply the suggestions you
+When the `unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check.
+
+Otherwise run the `unslop` skill over the draft body as `cleanup`, then apply the suggestions you
 agree with. The 4-sentence cap makes a body short, not human: "This PR introduces a
 comprehensive refactor" fits the budget and still reads as generated.
 
@@ -66,7 +68,7 @@ reviewable suggestions and leaves the sentence count yours to hold. Add `--repor
 you only want the tells listed.
 
 Then run the prose check on the final text. It is a separate gate for passive voice
-and wordiness ([pr-body-style.md](pr-body-style.md)). Set `DG_PROSE_CHECK_CMD` to the
+and wordiness ([pr-body-style.md](../../sdlc/references/pr-body-style.md)). Set `DG_PROSE_CHECK_CMD` to the
 executable that scans stdin, or leave it unset to skip the check. Your host can wire the
 same command to its PR and MR create and edit calls, so clearing it first saves a
 rejected call:

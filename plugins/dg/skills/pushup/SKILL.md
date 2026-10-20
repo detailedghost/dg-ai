@@ -37,7 +37,7 @@ commits already have the shape you want them reviewed in.
      curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
-   Report which group you used.
+   Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
 
 ## PR body rules
 
