@@ -272,26 +272,10 @@ slices:
       primary: js
       qa:
         - qa-code
-  - id: 14
-    name: w3-viz-review
-    depends_on:
-      - 13
-    files:
-      - pkg/skills-cli/src/commands/viz.ts
-      - pkg/skills-cli/src/viz/**
-      - pkg/skills-cli/__tests__/viz*.spec.ts
-      - plugins/dg/skills/viz/**
-      - plugins/dg/skills/review/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
-    agents:
-      primary: js
-      qa:
-        - qa-code
   - id: 15
     name: w3-release
     depends_on:
-      - 14
+      - 13
     files:
       - pkg/*/package.json
       - .claude-plugin/plugin.json
@@ -362,16 +346,10 @@ slices:
       qa:
         - qa-code
   - id: 19
-    name: w4-clockout-release
+    name: w4-release
     depends_on:
       - 18
     files:
-      - pkg/skills-cli/src/commands/clockout.ts
-      - pkg/skills-cli/src/clockout/**
-      - pkg/skills-cli/__tests__/clockout*.spec.ts
-      - plugins/dg/skills/clockout/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
       - pkg/*/package.json
       - .claude-plugin/plugin.json
       - plugins/dg/.codex-plugin/plugin.json
@@ -383,10 +361,9 @@ slices:
       - pkg/skills-test/__tests__/release-versions.spec.ts
       - bun.lock
     agents:
-      primary: js
+      primary: lore
       qa:
-        - qa-code
-        - security
+        - qa-devops
   - id: 20
     name: w5-db
     depends_on:
@@ -423,26 +400,10 @@ slices:
       primary: js
       qa:
         - qa-code
-  - id: 22
-    name: w5-lineage
-    depends_on:
-      - 21
-    files:
-      - pkg/skills-cli/src/commands/lineage.ts
-      - pkg/skills-cli/src/lineage/**
-      - pkg/skills-cli/__tests__/lineage*.spec.ts
-      - plugins/dg/skills/lineage/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
-      - pkg/skills-cli/__tests__/lineage-test-helpers.ts
-    agents:
-      primary: js
-      qa:
-        - qa-code
   - id: 23
     name: w5-ticket
     depends_on:
-      - 22
+      - 21
     files:
       - plugins/dg/skills/ticket/**
       - pkg/skills-cli/src/commands/credentials.ts
@@ -517,6 +478,7 @@ slices:
   - id: 27
     name: w6-demo-merge-release
     depends_on:
+      - 25
       - 26
     files:
       - plugins/dg/skills/demo/**
@@ -553,6 +515,9 @@ slices:
       - pkg/extension/__tests__/recording-db.spec.ts
       - pkg/extension/__tests__/background-recording.spec.ts
       - pkg/extension/__tests__/demo-tour-review.spec.ts
+      - pkg/common/src/tour-overlay.ts
+      - pkg/common/__tests__/tour-overlay.spec.ts
+      - pkg/skills-cli/src/pw/**
     agents:
       primary: js
       qa:

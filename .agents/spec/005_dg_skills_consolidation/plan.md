@@ -286,26 +286,10 @@ slices:
       primary: js
       qa:
         - qa-code
-  - id: 14
-    name: w3-viz-review
-    depends_on:
-      - 13
-    files:
-      - pkg/skills-cli/src/commands/viz.ts
-      - pkg/skills-cli/src/viz/**
-      - pkg/skills-cli/__tests__/viz*.spec.ts
-      - plugins/dg/skills/viz/**
-      - plugins/dg/skills/review/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
-    agents:
-      primary: js
-      qa:
-        - qa-code
   - id: 15
     name: w3-release
     depends_on:
-      - 14
+      - 13
     files:
       - pkg/*/package.json
       - .claude-plugin/plugin.json
@@ -376,16 +360,10 @@ slices:
       qa:
         - qa-code
   - id: 19
-    name: w4-clockout-release
+    name: w4-release
     depends_on:
       - 18
     files:
-      - pkg/skills-cli/src/commands/clockout.ts
-      - pkg/skills-cli/src/clockout/**
-      - pkg/skills-cli/__tests__/clockout*.spec.ts
-      - plugins/dg/skills/clockout/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
       - pkg/*/package.json
       - .claude-plugin/plugin.json
       - plugins/dg/.codex-plugin/plugin.json
@@ -397,10 +375,9 @@ slices:
       - pkg/skills-test/__tests__/release-versions.spec.ts
       - bun.lock
     agents:
-      primary: js
+      primary: lore
       qa:
-        - qa-code
-        - security
+        - qa-devops
   - id: 20
     name: w5-db
     depends_on:
@@ -437,26 +414,10 @@ slices:
       primary: js
       qa:
         - qa-code
-  - id: 22
-    name: w5-lineage
-    depends_on:
-      - 21
-    files:
-      - pkg/skills-cli/src/commands/lineage.ts
-      - pkg/skills-cli/src/lineage/**
-      - pkg/skills-cli/__tests__/lineage*.spec.ts
-      - plugins/dg/skills/lineage/**
-      - pkg/skills-cli/src/index.ts
-      - pkg/skills-test/__tests__/cli-smoke.spec.ts
-      - pkg/skills-cli/__tests__/lineage-test-helpers.ts
-    agents:
-      primary: js
-      qa:
-        - qa-code
   - id: 23
     name: w5-ticket
     depends_on:
-      - 22
+      - 21
     files:
       - plugins/dg/skills/ticket/**
       - pkg/skills-cli/src/commands/credentials.ts
@@ -531,6 +492,7 @@ slices:
   - id: 27
     name: w6-demo-merge-release
     depends_on:
+      - 25
       - 26
     files:
       - plugins/dg/skills/demo/**
@@ -567,6 +529,9 @@ slices:
       - pkg/extension/__tests__/recording-db.spec.ts
       - pkg/extension/__tests__/background-recording.spec.ts
       - pkg/extension/__tests__/demo-tour-review.spec.ts
+      - pkg/common/src/tour-overlay.ts
+      - pkg/common/__tests__/tour-overlay.spec.ts
+      - pkg/skills-cli/src/pw/**
     agents:
       primary: js
       qa:
@@ -662,12 +627,11 @@ Move every remaining user-authored skill from ~/.claude/skills into the public d
 ### Included
 - Waves 2a-7: git/PR, spec/planning, session, data, browser, and skill tooling skills plus their CLIs
 - Shell CLIs (spec-cli, worktree-cli, prototype-cli, catchup.sh, test-live-*.sh) and the sync tools rewritten in TypeScript
-- viz astro-viewer vendored inside the viz skill
-- db, ticket, clockout read credentials from dg-skills credentials
+- db and ticket read credentials from dg-skills credentials
 - User demo features merged into dg:demo; dg-skills sync with targets copilot, opencode, codex, claude, pi, grok
 - One draft PR per wave (2a, 2b, 3, 4, 5, 6, 7); each wave branches from the previous wave's branch
 - Extension-assisted authenticated GitHub inline attachment upload after recording preview, with a receipt consumed by an explicit later demo action
-- unslop (user decision 2026-10-18): vendor the MIT skill tree with its upstream license notice and port its Python scripts to a `dg-skills unslop` Bun subcommand in slice 29
+- unslop (user decision 2026-10-20, replaces 2026-10-18): no vendoring and no Python port; it installs from the upstream repo through the `unslop` marketplace entry, and `/dg:polish` calls `/unslop:unslop` when installed
 - Consolidation pass (user decision 2026-10-18): every port uses current Bun and Node APIs and reuses `pkg/common` helpers instead of carrying legacy copies; slice 30 removes duplicates left across waves
 ### Excluded
 - Wave 1 (done in 9a0bb9a)
@@ -677,6 +641,9 @@ Move every remaining user-authored skill from ~/.claude/skills into the public d
 - Tools with no skill: pr-merge-sweep, code-clean, gh-time, sql-fmt, daily-prune and other hooks
 - Editing ~/.claude/settings.json or any permission rule (manual cutover step for the user)
 - Local cutover in ~/.claude and ~/scripts (manual, after each merge)
+- viz and review (user decision 2026-10-20): dropped from dg; the viz and review skills, the `dg-skills viz` command and the vendored astro-viewer do not ship
+- lineage and clockout (user decision 2026-10-20): retired fully, not ported; both are listed for deletion at the manual cutover
+- unslop vendoring and a `dg-skills unslop` Python port (user decision 2026-10-20)
 
 ## Migration Contracts
 
@@ -688,8 +655,10 @@ These requirements apply to every port; each slice below adds its specific behav
 - Register the command and update source smoke coverage. At wave publication, build the binary and exercise real operations from an external cwd with relocated installed plugin assets and no legacy scripts on PATH; `--help` alone is insufficient. Help must not start a daemon/browser, connect to a service or decrypt credentials.
 - Migrate complete skill trees including lazy references, scripts, delegated prompts and generated resume commands. Strip host-specific `argument-hint`/`user-invocable` keys; use the browser skill's bootstrap and quoted `"$DG" <command>` calls. Cross-skill links are relative. Update the canonical skill index at the owning wave's release. Retain installed host approval semantics.
 - Keep the no-local-zone scan green from slice 1 and extend its local-skill literal ban in slice 10. Scan migrated code/prose for bare removed commands and scriptsRoot dependencies too. This scan is separate from configured runtime reads of remaining local skills; portable paths derive from the configured source root/home. Vendor only reviewed generic source/assets/notices and synthetic fixtures; never screenshots, recordings, caches, user profiles, credentials or work identifiers from the legacy tool tree.
-- Dependency manifests and `bun.lock` belong to the first consuming slice. Shared fixture/generator/manifest writes serialize through this bundle's dependency chain. Required static resources live under the owning skill; a compiled binary uses real installed paths, never `/$bunfs` or `import.meta.dir` as a filesystem locator. External runtimes remain documented where existing workflows require them (Bun for the Astro viewer, a browser for pw, and optional Python/parser for lineage).
+- Dependency manifests and `bun.lock` belong to the first consuming slice. Shared fixture/generator/manifest writes serialize through this bundle's dependency chain. Required static resources live under the owning skill; a compiled binary uses real installed paths, never `/$bunfs` or `import.meta.dir` as a filesystem locator. External runtimes remain documented where existing workflows require them (a browser for pw).
 - Use current APIs, not legacy idioms: `Bun.$`, `Bun.file`/`Bun.write`, `Bun.spawn`, `node:util` `parseArgs`, `fetch`, `AbortSignal.timeout` and the current gh/glab REST and GraphQL endpoints. Before porting a helper, search `pkg/common` and earlier waves; call or extend the shared one instead of copying the legacy version. Behavior parity still wins over a newer API where they differ.
+
+- Every packaged skill that takes flags documents them in a `## Flags` table (Flag | Short | Effect | Default) plus a **Usage:** line, matching what the skill and its dg-skills command accept; a skills-test guard enforces it.
 
 - User verification requirement (2026-10-17): before notifying the user that migrated skills are ready to move to, obtain an actual independent Claude compatibility review of the packaged skills against selected legacy inputs. Verify namespaced discovery from a relocated plugin, lazy resources, native approvals, delegated/resume flows, command parity, and remaining cutover gates; preserve evidence and disclose unexecuted scenarios. Claude manifest validation alone is insufficient. No local settings/shim/cutover changes are authorized. External model review currently requires specific payload consent following automatic approval rejection; never claim that review ran.
 
@@ -702,22 +671,32 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 | Wave | Eligible slices | Proposed branch | PR base while predecessor is open | Draft version target |
 | --- | --- | --- | --- | --- |
 | 2a | 1–4 | feature/dg-skills-w2a | default branch containing Wave 1 | 1.15.0 |
-| 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | 1.16.0 |
-| 3 | 11–15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.17.0 |
-| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.18.0 |
-| 5 | 20–24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.19.0 |
-| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.20.0 |
-| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.21.0 |
+| 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | none (merged without a bump; slice 10 shipped in Wave 3) |
+| 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.16.0 (shipped) |
+| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.17.0 |
+| 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.18.0 |
+| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.19.0 |
+| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.20.0 |
 
 1. Fetch/rebase against the current default branch and confirm Wave 1's required content is present before engineering. If Wave 1 is not merged, use its actual open branch as Wave 2a's base and chain it explicitly. Reconcile current versions rather than reverting a newer release to these draft targets; preserve one monotonic matched-set bump per wave.
 2. Resolve the committed bundle from its origin and read only `context.md` + `plan.md`. Create the execution worktree from the required wave base/head, including predecessor changes; a fresh worktree from the default branch alone is insufficient for later waves. Resume uses the recorded actual branch/head and the first incomplete slice, never recreates a finished wave's PR or replays commits blindly.
-3. Cap eligible slices at the current wave's final id even when later dependencies are satisfied. Keep same-layer file disjointness and the declared serial chain. At the endpoint run sdlc final agent review/correction, test-name gate, docs and all required wave tests once for that wave. Respect the execute invocation's review mode (`pr` default; local review if selected).
+3. Cap eligible slices at the current wave's final id even when later dependencies are satisfied. Keep same-layer file disjointness and the declared serial chain. At the endpoint run sdlc final agent review/correction, test-name gate, docs and all required wave tests once for that wave. The human review happens on the draft PR; there is no local review mode.
 4. Open exactly one draft PR for that wave, capture its URL/base/head, batch-open it through dg:browser, and update the dependent stack with chain plan/apply when that command has shipped. Wave 2a records its dependency directly; Wave 2b supplies chain and registers the whole stack. Keep all worktrees for subsequent review. A PR-opening instruction in a release slice is this orchestrator checkpoint, never a command side effect.
 5. Record the checkpoint under `## Wave Progress`: wave id, slice range/last committed slice, worktree path, actual branch/base, commit SHA, review/test outcome and draft URL. Commit slice work according to execution grants. The final wave closes the bundle; do not create an eighth aggregate PR. Finish/docs run once per independently delivered wave, never per slice.
 6. Start the next wave from its predecessor's committed head while open; after a predecessor merges, reconcile the actual default branch and retarget through chain. Gate slice 10 on the required review-model-fallback content after fetching/rebasing; do not infer merge solely from a branch name that may be deleted or squash-merged.
 7. Leave local settings, permission rules, legacy shims and local skill deletion for the user's post-merge cutover. No planning approval grants engineering execution permissions; the execution launch retains its normal permission gate.
 
 User history override (2026-10-17): the current Wave 2b review PR must contain one commit. The completed slices 5–9 were consolidated locally into b79344e21522c139202eb3a231ea9421cfb70dce with an identical Git tree; backup `refs/heads/backup/dg-skills-w2b-before-squash-20261017` retains original slice commits. Historical per-slice SHAs below remain evidence references. Include slice 10, review corrections, and docs in the same final Wave 2b commit before publication. Earlier published wave branches remain untouched. Publishing still follows completion and the retained fallback prerequisite.
+**User scope decisions (2026-10-20):**
+- viz and review are dropped from dg. Slice 14 work is removed from Wave 3 (slice 14 leaves `slices[]`; slice 15 depends on slice 13). `/viz verify` in spec plan mode (step 8) is replaced by a built-in plan-mode approval (`EnterPlanMode`/`ExitPlanMode`), keeping the gate. `-l`/`--local` and `REVIEW_MODE` are removed from sdlc and spec because they needed the review board; the human review is always on the draft PR.
+- lineage and clockout are retired fully: not ported, and listed for deletion at the manual cutover. Slice 22 (w5-lineage) is dropped entirely and slice 23 now depends on slice 21. Slice 19 is release-only (renamed w4-release, no clockout port).
+- Matched versions: Wave 3 shipped 1.16.0, so Wave 4 = 1.17.0, Wave 5 = 1.18.0, Wave 6 = 1.19.0, Wave 7 = 1.20.0.
+- erd (slice 21) ships Markdown output only, with no viz board. stat (slice 17) has no `--viz`.
+- unslop is not vendored and has no Python port. It installs from the upstream repo through the `unslop` marketplace entry (`/plugin install unslop@detailedghost`). Slice 29 shrinks accordingly.
+- dg:demo (slice 27): local is the default mode. `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output. Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes, from one shared overlay module used by the extension and `dg-skills pw`, with a test that one plan yields the same overlay in both modes. `--ext` uses the extension (its review/walkthrough/video choices and the upload-and-receipt flow stay as planned). `--attach-pr` works in both modes: local mode uploads via pw with a saved GitHub login state, else hands over files plus the PR link with no PR change; GitLab stays unsupported with no change. Owned-artifact cleanup applies to both. Slice 27 depends on slice 25. Behavior change: plain `/dg:demo` becomes local; extension users add `--ext`.
+- New Migration Contract line: every packaged skill that takes flags documents them in a `## Flags` table plus a **Usage:** line, enforced by a skills-test guard.
+- `spec roster` falls back to the packaged `dg:<name>` personas on a plugin-only install; it shipped in Wave 3.
+
 - Wave 3 IN PROGRESS (2026-10-19): worktree ~/code/worktrees/dg-dg_skills_w3, branch feature/dg_skills_w3, base origin/master 9c1d002 (after #38 and the history rewrite). Wave 2b merged without slice 10, so slice 10 ships in Wave 3. Slice 10 committed 5e78267. Next: slice 11.
 - Slice 11 committed 8af1c80. Next: slice 12.
 - Slice 12 committed 715efc1, with the plugin cache locator fix 6a85adc. Next: slice 13.
@@ -731,6 +710,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Prerequisite Wave 1: reconciled onto fetched origin/master 537f8ba; import 3c2a9cf and installer inventory fixes 523f1b5/44aa3f0. Ready for review [#27](https://github.com/detailedghost/dg-ai/pull/27), branch feature/dg-skills-w1, base feature/review_daemon_integration (retargeted beneath #26), head 44aa3f073162db5fdcfa794ea010e35ee6019697. Installer suites 26 pass; common inventory test 5 pass. Browser grouped open completed. Worktree retained at ~/code/dg/.worktrees/dg-skills-w1.
 - Wave 2a COMPLETE: slices 1–4, last committed slice4 plus review/docs/test follow-through; worktree ~/code/dg/.worktrees/dg-skills-w2a; actual branch feature/dg_skills_w2a; base feature/dg-skills-w1; head 0052265. Ready for review [#28](https://github.com/detailedghost/dg-ai/pull/28) (user requested promotion on 2026-10-17). All four final reviewers clean after one correction round. Final `bun run test:all`: 5,062 pass, 0 fail; all eight `lint:all` packages pass. Compiled external-cwd operations, private artifacts, six backends, provider parity, privacy/version/test-name/whitespace gates pass. Matched release1.15.0; native Windows runtime remains untested/documented. PR directly records dependency on #27; chain will register stack in Wave2b after slice7 ships. Browser grouped open completed.
 - Wave2b IN PROGRESS: slices5–10, worktree ~/code/dg/.worktrees/dg-skills-w2b, actual branch feature/dg_skills_w2b, base feature/dg_skills_w2a, initial head0052265; Slices5–9 committed ff75474/f9b205a/2d7cadc/f55483c/6c6c302, current head b79344e21522c139202eb3a231ea9421cfb70dce (one consolidated commit above Wave2a; original five slice commits retained in local backup); next slice 10, waiting for required fallback content on origin/master (user confirmed prerequisite retained). Native stack #30: #26→#27→#28, bases and ready state verified after user-requested prerequisite insertion. Do not recreate finished PRs. Slice10 still gates on fetched review-model-fallback content.
+- Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback) and the plan scope edits above.
 
 ## Roundtable Decisions
 
@@ -750,14 +730,14 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - **Home:** `pkg/skills-cli/src/commands/*.ts`, `pkg/skills-cli/src/utils/legacy-command.ts`, domain helpers in `src/<command>/`.
 - **Rationale:** The existing commander application remains the single binary without rewriting every parser's behavior.
 - **Alternatives:** Separate binaries — rejected by the recorded single-binary choice; universal parser normalization — rejected by the user's exit-parity decision.
-- **Applies to:** slices 1–3, 5–9, 11–14, 16–22, 24–29.
+- **Applies to:** slices 1–3, 5–9, 11–13, 16–18, 20, 21, 24–29.
 
 ### Shared filesystem and process contracts
 - **Decision:** Port the complete reusable filesystem surface except scriptsRoot to common; adapt legacy git over runCapture while retaining ShellError, streams, status and redaction.
 - **Home:** `pkg/common/src/node/scratch-paths.ts`, `pkg/skills-cli/src/utils/git.ts`, `pkg/skills-cli/src/provider/**`.
 - **Rationale:** Existing consumers rely on cwd/project scoping and untrimmed process results, not only root strings.
 - **Alternatives:** Local copies in every port — drift in state paths; indiscriminate common run() — loses status/stream compatibility.
-- **Applies to:** slices 1–3, 5–9, 11–13, 16–22, 24–29.
+- **Applies to:** slices 1–3, 5–9, 11–13, 16–18, 20, 21, 24–29.
 
 ### Catchup verification seam
 - **Decision:** Slice 9 exports `verifyBuild(cwd?: string): Promise<number>` from `src/catchup/verify.ts`, detects the repository root while preserving each legacy tool's caller/root cwd, routes merged build-tool output to stdout, and returns the aggregate verification status. Registration and help remain inert; the compiled command has no sibling-shell dependency.
@@ -769,7 +749,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - **Home:** `pkg/skills-cli/src/utils/skill-assets.ts`, `pkg/skills-cli/src/utils/self-command.ts` (slice 3 owns initial implementation/tests).
 - **Rationale:** A compiled virtual module path cannot locate external assets or reexecute a source entrypoint.
 - **Alternatives:** Per-port import.meta fallbacks — fail after relocation; a new runtime package — unnecessary for these CLI-only seams.
-- **Applies to:** slices 3, 11–14, 17, 21–22, 25–29.
+- **Applies to:** slices 3, 11–13, 17, 21, 25–29.
 
 ### Early compatibility and sequential handoffs
 - **Decision:** Package proxy persona/background and deps-upgrade worktree-create behavior with their first consumers; later public commands reuse those internals through declared sequential ownership.
@@ -782,24 +762,24 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 ### Static assets
 - **Decision:** Non-code resources stay with their owning skill and load lazily via the shared real-path locator; executable server/domain code stays in compiled source modules.
-- **Home:** `plugins/dg/skills/spec/spec-schema/**`, `plugins/dg/skills/{monolith,viz,lineage,prototype,skill-publish}/**`.
+- **Home:** `plugins/dg/skills/spec/spec-schema/**`, `plugins/dg/skills/{monolith,prototype,skill-publish}/**`.
 - **Rationale:** Installed resources can move independently of the self-contained CLI and retain relative cross-skill links.
 - **Alternatives:** Legacy home/scripts paths — absent after cutover; source-tree schema glob — contradicts the previously selected owning-skill home.
-- **Applies to:** slices 12–14, 22, 26, 29.
+- **Applies to:** slices 12, 13, 26, 29.
 
 ### Credential consumers
-- **Decision:** Clockout/db use internal credential get/list to read value and metadata without changing resolveCredential; ticket uses opt-in metadata-only `credentials list --meta` while default list output stays stable.
-- **Home:** `pkg/skills-cli/src/{clockout,db}/**`, `pkg/skills-cli/src/commands/credentials.ts`, `plugins/dg/skills/ticket/**`.
+- **Decision:** db uses internal credential get/list to read value and metadata without changing resolveCredential; ticket uses opt-in metadata-only `credentials list --meta` while default list output stays stable.
+- **Home:** `pkg/skills-cli/src/db/**`, `pkg/skills-cli/src/commands/credentials.ts`, `plugins/dg/skills/ticket/**`.
 - **Rationale:** Existing records already contain non-secret metadata; resolveCredential and default CLI list intentionally project it away.
 - **Alternatives:** Expand secret-bearing CLI output — violates the credential contract; legacy config fallback — explicitly excluded; shared client API expansion — unnecessary.
-- **Applies to:** slices 19, 20, 23.
+- **Applies to:** slices 20, 23.
 
 ### Public skill and hook integration
 - **Decision:** Use quoted compiled commands, relative cross-skill resources and portable configured runtime roots; excluded hooks remain externally configured executable paths.
 - **Home:** `plugins/dg/skills/**`, `pkg/skills-test/__tests__/no-local-zone.spec.ts`.
 - **Rationale:** Public skills cannot depend on this machine's private files or mutate installed plugin caches.
 - **Alternatives:** Scanner exceptions for private literals — defeats the public-repo boundary; vendor personal hooks — outside scope.
-- **Applies to:** slices 1, 3, 5–19, 21–30.
+- **Applies to:** slices 1, 3, 5–13, 15–19, 21, 23–30.
 
 
 ### Slice 1 — w2a-foundation-stash
@@ -996,7 +976,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 #### Engineering
 - [x] Rewrite spec-cli (77K POSIX sh) in TypeScript as `dg-skills spec` with every subcommand (slugify, scaffold, lint-waves, context, slice, set, append-section, perms-batch, prototype-ref, ...)
 - [x] Vendor the spec schema and templates under plugins/dg/skills/spec/spec-schema
-- [x] Move spec, sdlc, assign; vendor or drop sdlc's ~/scripts reference docs; spec references ../grill-me, ../viz, ../sdlc
+- [x] Move spec, sdlc, assign; vendor or drop sdlc's ~/scripts reference docs; spec references ../grill-me, ../sdlc
 - [x] Keep schema under plugins/dg/skills/spec/spec-schema per settled owning-skill contract, including frontmatter YAML and both roundtable/spec-review templates; inventory all dispatch arms.
 - [x] Add YAML parsing dependencies before use; define real installed skill-dir lookup/override and lazy resource loading, never compiled import.meta virtual-path fallback.
 - [x] Write final grill-me relative pointer and vendor required sdlc PR-style guidance; remove obsolete private permission-rule explanation.
@@ -1027,37 +1007,23 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 #### Acceptance Criteria
 - [x] No monolith operation requires user-local workflow/template/helper files; actual generator status 1 remains preserved.
 
-### Slice 14 — w3-viz-review
+### Slice 14 — dropped
 
-#### Engineering
-- [x] Port viz-cli to `dg-skills viz`; vendor astro-viewer under plugins/dg/skills/viz/astro-viewer/ without node_modules and .pw; install on first run; VIZ_SKILL_DIR from the skill dir
-- [x] Fix the path at viz-cli/features/wait.ts:90
-- [x] Move review skill
-- [x] Vendor allowlisted viewer source/assets/manifest/canonical lock only; exclude private public/demo-assets screenshots/videos and generated caches.
-- [x] Use real installed skill-dir lookup; retain VIZ_DIR/PORT isolation, lazy startup and actionable external-Bun prerequisite; update every emitted command.
-- [x] Add a slice-owned test harness invoking vendored viewer suites so workspace test:all executes security/result tests.
-
-#### Testing Criteria
-##### Contracts
-- [x] Run viewer XSS/review/all_clear/result tests plus relocated compiled render/wait, cold install failure, concurrent start and mismatched-server cases.
-- [x] Create a viz-owned workspace test harness under __tests__/viz*.spec.ts that actually invokes the vendored viewer suites; no package.json script mutation needed merely to discover those tests.
-
-#### Acceptance Criteria
-- [x] No binary work evidence ships and real rendering works outside checkout without legacy runtime paths.
+Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Nothing remains to port; see the commit fc16957 for the removal.
 
 ### Slice 15 — w3-release
 
 #### Engineering
-- [ ] review-loop references ../review; bump to 1.17.0; open the Wave 3 draft PR
+- [ ] review-loop no longer references the dropped review skill; the matched version is 1.16.0; open the Wave 3 draft PR
 - [ ] Ship required polish workflow/PR-style material now (within declared ownership), leaving final inventory/hook cleanup to slice 30.
 - [ ] Validate complete Wave 3 cross-skill references, matched version/docs and manual cutover/runtime prerequisite instructions.
-- Orchestrator decisions (2026-10-19): Wave 2b never bumped, so master is 1.15.0; bump every package, plugin manifest and DG_DAEMON_PACKAGE_VERSION together to 1.16.0 (the next matched version), not 1.17.0, and extend release-versions.spec.ts so every package and manifest must match. Then run `bun scripts/pin-bootstrap-tag.ts` so every bootstrap URL points at skills-v1.16.0, and keep `--check` green. Add worktree, spec, sdlc, assign, monolith, spring-break, viz, review and polish to the README skill index and docs/install.md where skills are listed, with Bun as the viz runtime prerequisite. The orchestrator opens the draft PR; do not push or open it.
+- Orchestrator decisions (2026-10-19): Wave 2b never bumped, so master is 1.15.0; bump every package, plugin manifest and DG_DAEMON_PACKAGE_VERSION together to 1.16.0 (the next matched version), not 1.17.0, and extend release-versions.spec.ts so every package and manifest must match. Then run `bun scripts/pin-bootstrap-tag.ts` so every bootstrap URL points at skills-v1.16.0, and keep `--check` green. Add worktree, spec, sdlc, assign, monolith, spring-break and polish to the README skill index and docs/install.md where skills are listed. The orchestrator opens the draft PR; do not push or open it.
 - [ ] When first publishing polish, already use configurable external prose-check execution and relative vendored pr-body guidance so the public-data scan passes; slice 30 owns final inventory/maintenance refinements.
 
 #### Testing Criteria
 ##### Contracts
 - [ ] bun run test:all and bun run lint:all green
-- [ ] Run viewer suites and compiled relocated scaffold/validate/monolith/viz functional smoke plus version gates.
+- [ ] Run compiled relocated scaffold/validate/monolith functional smoke plus version gates.
 
 #### Acceptance Criteria
 - [ ] Wave 3 draft base/head/URL for slices 11–15 persisted; spec/sdlc flows do not require future-wave skills or local copies.
@@ -1089,7 +1055,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 - [ ] Run compiled queued-context/drain/resume and detachment/cancel/prune tests; assert /repo containment excludes /repo-other.
 
 #### Acceptance Criteria
-- [ ] Stat --viz/--overwatch and cls degrade safely without pw; no legacy files are deleted during port.
+- [ ] Stat (no `--viz`; `--overwatch` only) and cls degrade safely without pw; no legacy files are deleted during port.
 
 ### Slice 18 — w4-sniff-nope-find-work
 
@@ -1105,20 +1071,18 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 #### Acceptance Criteria
 - [ ] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
 
-### Slice 19 — w4-clockout-release
+### Slice 19 — w4-release
 
 #### Engineering
-- [ ] Port clockout-cli.ts; read credential clockout/clockify (value = API key; meta workspaceId, region, timeZone) via internal credential client.get; remove the hard-coded clockify-sync .env path
-- [ ] Bump to 1.18.0; open the Wave 4 draft PR
-- [ ] Read clockout/clockify with internal credential get to retain metadata; validate workspace/region/timeZone and close client.
-- [ ] Use explicit timezone override then credential timezone then default consistently across preparation/verification; reject obsolete env-file fallback with migration guidance.
+- [ ] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
+- [ ] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Use fake HTTP for missing-confirm no-write, readonly preview, exact totals, pending duplicate submit, DST and secret redaction; preserve verify exit 2.
+- [ ] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
 
 #### Acceptance Criteria
-- [ ] Separate apply-versus-submit approval stays intact; matched Wave 4 draft base/head/URL for slices 16–19 persisted.
+- [ ] Matched Wave 4 draft base/head/URL for slices 16–19 persisted.
 
 ### Slice 20 — w5-db
 
@@ -1132,7 +1096,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 #### Testing Criteria
 ##### Contracts
 - [ ] Use fake credentials/engines to cover password/JWT/SSO, invalid/absent metadata, output/truncation, --write/query files and cleanup/redaction.
-- [ ] Freeze schema JSON shape for ERD/lineage and compiled external-cwd behavior.
+- [ ] Freeze schema JSON shape for ERD and compiled external-cwd behavior.
 
 #### Acceptance Criteria
 - [ ] No legacy config fallback or secret output; compiled database functionality meets recorded packaging gate before continuing.
@@ -1140,7 +1104,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 ### Slice 21 — w5-erd-eli5
 
 #### Engineering
-- [ ] Port erd-cli to `dg-skills erd`; move erd and eli5
+- [ ] Port erd-cli to `dg-skills erd`; move erd and eli5. ERD ships Markdown output only: no viz board and no Cytoscape board.
 - [ ] Use compiled current-binary db dispatch for introspection and raw CLI wrapper preserving existing hard-failure exit 1.
 - [ ] Port sanitized synthetic ERD code-graph/database/evidence fixtures without live connections.
 
@@ -1150,21 +1114,6 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 #### Acceptance Criteria
 - [ ] ERD consumes frozen slice-20 schema contract and never requires bare db or scripts checkout.
-
-### Slice 22 — w5-lineage
-
-#### Engineering
-- [ ] Port lineage-*.ts to `dg-skills lineage`; vendor lineage-vendor/*.js; rewrite lineage-sql-shim.py in TypeScript if possible, else vendor it
-- [ ] Scrub work data
-- [ ] Retain permitted Python parser fallback unless TypeScript spike proves parity; use LINEAGE_PYTHON/python3 with openlineage_sql prerequisite and helpful missing-runtime errors.
-- [ ] Resolve JS/Python assets lazily from installed skill, retain licenses/escaping, replace bare db spawns and make resolver repository-neutral.
-
-#### Testing Criteria
-##### Contracts
-- [ ] Port helper-supported synthetic manifest/SQL/DB-unavailable/render suites and compiled offline snapshot outside checkout.
-
-#### Acceptance Criteria
-- [ ] Help works without optional assets/runtime and no private virtualenv/warehouse defaults remain.
 
 ### Slice 23 — w5-ticket
 
@@ -1187,7 +1136,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 #### Engineering
 - [ ] Rewrite test-live-setup.sh and test-live-cleanup.sh in TypeScript as `dg-skills test-live setup|cleanup`
-- [ ] Bump to 1.19.0; open the Wave 5 draft PR
+- [ ] Bump to 1.18.0; open the Wave 5 draft PR
 - [ ] Preserve actual positional environments/overrides and exit-1 shell parity; GitLab unsupported must precede patch/push.
 - [ ] Scope recoverable setup/cleanup state by repository/worktree/branch and patch commit; parse state as data and remove only owned changes, preserving later/preexisting commits.
 
@@ -1204,6 +1153,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 - [ ] Spike first: compile playwright-core into the binary; if it fails, stop and ask
 - [ ] Port pw (pw, pw-daemon, pw-code) to `dg-skills pw`
 - [ ] Expand compile spike to local fixture open/snapshot/close, daemon self-reexec/browser discovery and owned registry identity; retain stop-and-ask packaging gate.
+- [ ] `dg-skills pw` also serves local demos (slice 27): Chromium video recording, light/dark before/after screenshots, and the overlay from the shared tour-overlay module.
 - [ ] Keep pw code an explicit separately approved action with documented manual narrow permission rules; normal CLI continues refusing run-code. Never change installed permission rules or silently include code in blanket grants.
 
 #### Testing Criteria
@@ -1230,9 +1180,12 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 ### Slice 27 — w6-demo-merge-release
 
 #### Engineering
-- [ ] Extend dg:demo with --attach-pr <ref>, light/dark before/after screenshots and owned cleanup; use the extension-assisted upload/receipt contract below. GitLab attachment reports unsupported before any mutation.
+- [ ] Local is the default dg:demo mode (behavior change: plain /dg:demo becomes local; extension users add --ext). `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output.
+- [ ] Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes. Move the overlay styles/rendering into one shared module (`pkg/common/src/tour-overlay.ts`) used by both the extension and `dg-skills pw`.
+- [ ] `--ext` uses the extension: its review/walkthrough/video choices and the upload-and-receipt flow below stay as planned.
+- [ ] `--attach-pr <ref>` works in both modes. Local mode uploads via pw with a saved GitHub login state, else hands over the files plus the PR link with no PR change. In `--ext` mode use the extension-assisted upload/receipt contract below. GitLab attachment reports unsupported before any mutation. Owned-artifact cleanup applies to both modes.
 - [ ] Drop the repo-specific recipes (no work data); keep prose that the demo workflow parity spec asserts
-- [ ] Bump to 1.20.0; open the Wave 6 draft PR
+- [ ] Bump to 1.19.0; open the Wave 6 draft PR
 - [ ] Extend existing registerDemo/TourScript with optional attachment {requestId,pullRequestUrl}; preserve readable Markdown/marker/editor/recorded planMarkdown roundtrip. Add explicit preview Upload to GitHub PR using existing IDB Blob and authenticated validated GitHub PR tab; do not upload on handoff/preview alone.
 - [ ] Preserve start-screen stop contract, stage screenshots before handoff, and clean only per-run owned artifacts against a pre-run baseline; never delete all git-status paths.
 - [ ] Start with a controlled real synthetic WebM upload spike proving current GitHub native-widget/signed-policy transport and final user-attachments URL; failed spike blocks feature with evidence. No giant runtime/base64 payloads, cookie export, new daemon/ChatFrame/SessionBootstrap or provider upload API.
@@ -1244,6 +1197,8 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 #### Testing Criteria
 ##### Contracts
 - [ ] Retain setup secrecy/verify/parity tests and add light/dark before/after, owned cleanup and GitLab unsupported-no-change coverage.
+- [ ] Shared-module test: one TourScript plan yields the same overlay (styles and rendered spotlight and text boxes) in the extension and in `dg-skills pw`.
+- [ ] Local mode: default selection without `--ext`, pw recording with fake browser boundary, saved-login upload, and no-login hand-off that leaves the PR unchanged.
 - [ ] Cover metadata roundtrip, old plans, preview-no-upload, origin/PR/account/navigation validation, expiry/failure/retry, bounded messages/secret exclusion and repeated receipt consumption preserving unrelated PR text; add security QA.
 - [ ] Roundtrip old/new plans, markers, editor drafts and stored recordings; prove preview has no upload, retries retain media/receipt, wrong origin/PR and expired policy fail actionably, and no giant message/base64 transfer or cookie export occurs.
 - [ ] Run a real authenticated upload with synthetic media to establish transport; fake adapter tests cover failure/retry/receipt/body-update cases. Keep setup secrecy, bounded verify and playback approval parity.
@@ -1281,12 +1236,11 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 - [ ] Audit/split canonical plugin skills; remove automatic local shim repair and avoid writes to installed caches; explicit local mode must remain bounded.
 - [ ] Make plugin publish an additive update preserving existing dg manifests/other skills; refuse self-moves/destructive destination replacement.
 - [ ] Load schema/registry assets from owning installed skill; add AJV/generation dependencies only if actual port requires them.
-- [ ] Vendor unslop as `plugins/dg/skills/unslop` with the upstream MIT notice and author credit; port its scripts to `dg-skills unslop <verb>` in Bun TypeScript and rewrite SKILL.md calls to `"$DG" unslop ...`; no Python runtime required.
+- [ ] unslop needs no work here: it installs from the upstream repo through the marketplace entry shipped in Wave 3, and `/dg:polish` calls `/unslop:unslop`. No vendoring and no Python port.
 
 #### Testing Criteria
 ##### Contracts
 - [ ] Use synthetic compiled analyze/validate/generate outside checkout; verify existing plugin survives, no unrelated HOME/bin writes and leak/injection/ship protections hold.
-- [ ] Port the unslop script fixtures; each `unslop` verb matches the Python output on the same synthetic input.
 
 #### Acceptance Criteria
 - [ ] Canonical plugin maintenance works without local skill paths and cannot replace the whole dg plugin.
@@ -1295,7 +1249,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 #### Engineering
 - [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (vendor pr-body-style.md into the skill; hook remains a configured external executable)
-- [ ] Bump to 1.21.0; open the Wave 7 draft PR
+- [ ] Bump to 1.20.0; open the Wave 7 draft PR
 - [ ] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
 - [ ] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
 - [ ] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.
@@ -1310,7 +1264,7 @@ Slice 8's internal create handoff exports `CreateWorktreeOptions { slug: string;
 
 ## Demo Attachment Contract
 
-Wave 6 extends the existing demo command and extension recording review. Add optional TourScript `attachment: {requestId: string, pullRequestUrl: string}` with a generated request id and canonical HTTPS GitHub PR URL. Preserve it through readable plan frontmatter, parse/format, marker validation, editor draft conversion and recorded planMarkdown. Existing plans and recordings without it remain valid. `demo --attach-pr <ref>` resolves the target through the provider and rejects unsupported GitLab before handoff.
+Wave 6 extends the existing demo command and extension recording review. This contract describes the `--ext` mode; local mode (the default) uploads through `dg-skills pw` as slice 27 describes. Add optional TourScript `attachment: {requestId: string, pullRequestUrl: string}` with a generated request id and canonical HTTPS GitHub PR URL. Preserve it through readable plan frontmatter, parse/format, marker validation, editor draft conversion and recorded planMarkdown. Existing plans and recordings without it remain valid. `demo --attach-pr <ref>` resolves the target through the provider and rejects unsupported GitLab before handoff.
 
 The original CLI opens the extension editor and exits. Playback still uses the existing start screen; the agent stops at handoff. The existing post-recording review page displays the exact target and adds an explicit Upload to GitHub PR action after preview. Reuse its IndexedDB Blob and existing runtime/scripting validation patterns for the authenticated GitHub tab. Prove the actual browser upload flow first with synthetic media; signed prepare/finalize is a transport candidate, not a promised public endpoint. Failed proof is an engineering blocker to report, not authority to silently substitute a different artifact host.
 
@@ -1385,9 +1339,9 @@ channel-review defaults now use one `Bash(~/.dg/bin/dg-skills <sub>:*)` grant ea
 ### Slice 13 — w3-monolith-spring-break (4b43f09)
 
 `dg-skills monolith` replaces monolith-helper (eleven verbs) and monolith-worktree-gen; the monolith and spring-break skills ship. Generator assets resolve through resolveSkillAsset, so the plugin cache works without DG_SKILLS_DIR; legacy exit codes kept. grill-me's relative monolith pointer from slice 12 now resolves. 151 monolith tests, 707 skills-test tests pass; lint:all green.
-### Slice 14 — w3-viz-review (28a247b)
+### Slice 14 — w3-viz-review (28a247b, dropped 2026-10-20)
 
-`dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
+Superseded: viz and review no longer ship (commit fc16957). Original summary: `dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
 
 ## Agent Notes
 
@@ -1436,12 +1390,10 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 11, js) Create output is eval-safe; `list --porcelain` values stay raw and parsers split on the first `=`.
 - (slice 11, orchestrator) A fix agent ran biome over all of pkg/skills-cli/src; the format-only changes were reverted. Agents must not format files they did not change.
 - (slice 12, js) A marketplace install caches the whole repo; skills are at cache/<m>/dg/<v>/plugins/dg/skills, and Bash commands get no CLAUDE_PLUGIN_ROOT. Use claudePluginSkillsDirs from @dg/common/node for any installed-asset lookup.
-- (slice 12, js) Links to skills shipped in a later wave must be plain text; standalone-planning-skills.spec.ts allows only same-wave pending links (viz, monolith).
+- (slice 12, js) Links to skills shipped in a later wave must be plain text; standalone-planning-skills.spec.ts allows only same-wave pending links (monolith).
 - (slice 12, js) spec front-matter edits use the yaml package Document API to keep comments and key order; Bun.YAML cannot.
 - (slice 13, js) Bun.Glob brace patterns containing * match nothing; scan pattern and */pattern as separate globs.
 - (slice 13, js) Slice 15 must add monolith and spring-break to the README skill index along with the version bump.
-- (slice 14, js) The real Astro viewer test only runs with DG_VIZ_REAL_VIEWER=1; run it at each wave-end smoke.
-- (slice 14, js) Bun stays an external prerequisite for the viz viewer.
 
 ## Issues Remediation
 
