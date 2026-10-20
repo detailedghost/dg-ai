@@ -1,0 +1,454 @@
+---
+import Icon from '../components/Icon.astro'
+import type { ErdPayload } from '../types.ts'
+
+interface Props {
+  payload: ErdPayload
+}
+const { payload } = Astro.props
+
+// Local shapes mirror erd-graph.ts's ArchitectureGraph fields — ArchitectureGraph
+// itself stays an index-signature-only type in types.ts (viz side is a loose
+// contract, not a full re-export of the erd skill's types).
+interface CodeNode {
+  id: string
+  label: string
+}
+interface CodeEdge {
+  from: string
+  to: string
+}
+interface DbColumn {
+  name: string
+  dataType: string
+  isPrimaryKey?: boolean
+  isForeignKey?: boolean
+}
+interface DbNode {
+  id: string
+  label: string
+  columns: DbColumn[]
+}
+interface DbEdge {
+  from: string
+  to: string
+}
+
+const codeNodes = (payload.graph?.codeNodes as CodeNode[] | undefined) ?? []
+const codeEdges = (payload.graph?.codeEdges as CodeEdge[] | undefined) ?? []
+const dbNodes = (payload.graph?.dbNodes as DbNode[] | undefined) ?? []
+const dbEdges = (payload.graph?.dbEdges as DbEdge[] | undefined) ?? []
+const scope = payload.scope
+const generatedAt = payload.generatedAt
+
+const graphData = JSON.stringify({ codeNodes, codeEdges, dbNodes, dbEdges }).replace(/</g, '\\u003c')
+---
+
+<section id='cytoscape'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='squares-2x2' class='h-5 w-5 text-accent' />
+    Diagram
+  </h2>
+
+  {(scope || generatedAt) && (
+    <p class='cyto-caption'>
+      {scope && <span>{scope}</span>}
+      {scope && generatedAt && <span> · </span>}
+      {generatedAt && <span>generated {generatedAt}</span>}
+    </p>
+  )}
+
+  <div class='cyto-panels'>
+    {codeNodes.length > 0 && (
+      <div class='cyto-panel'>
+        <h3 class='cyto-panel-title'>Code Flow</h3>
+        <div class='cyto-flow-wrap'>
+          <div class='cyto-flow-cy'></div>
+        </div>
+      </div>
+    )}
+
+    {dbNodes.length > 0 && (
+      <div class='cyto-panel'>
+        <h3 class='cyto-panel-title'>Database Schema</h3>
+        <div class='cyto-er-wrap'>
+          <div class='cyto-er-cy'></div>
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+
+<!-- embed graph data for client island; is:inline prevents Astro from treating this as a module script -->
+<script is:inline type="application/json" id="cyto-data" set:html={graphData}></script>
+
+<style>
+  .cyto-caption {
+    margin: -0.5rem 0 1rem;
+    font-size: 12.5px;
+    color: #64748b;
+  }
+  .cyto-panels {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .cyto-panel-title {
+    margin: 0 0 0.5rem;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+  }
+  .cyto-flow-wrap,
+  .cyto-er-wrap {
+    height: 420px;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e0e7ff;
+  }
+  .cyto-flow-wrap {
+    overflow: auto;
+  }
+  .cyto-er-wrap {
+    overflow: auto;
+  }
+  :global(.dark) .cyto-flow-wrap,
+  :global(.dark) .cyto-er-wrap {
+    background: radial-gradient(circle at 28% 18%, #15263f, #0a111e 72%);
+    border-color: #2b3a52;
+  }
+  .cyto-flow-cy,
+  .cyto-er-cy {
+    width: 100%;
+    height: 100%;
+  }
+  .cyto-error-banner {
+    padding: 0.75rem 1rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: #b91c1c;
+    background: #fef2f2;
+    border-bottom: 1px solid #fecaca;
+  }
+  :global(.dark) .cyto-error-banner {
+    color: #fca5a5;
+    background: #2a0f0f;
+    border-bottom-color: #5c1f1f;
+  }
+  .cyto-error-pre {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .cyto-er-cy :global(.er-card) {
+    width: 190px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1.5px solid #6366f1;
+    background: #f5f3ff;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  }
+  :global(.dark) .cyto-er-cy :global(.er-card) {
+    border-color: #3aa0ff;
+    background: #0e1b2e;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  .cyto-er-cy :global(.er-card-head) {
+    background: #e0e7ff;
+    color: #312e81;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 6px 10px;
+    border-bottom: 1.5px solid #6366f1;
+  }
+  :global(.dark) .cyto-er-cy :global(.er-card-head) {
+    background: #15263f;
+    color: #e6f1ff;
+    border-bottom-color: #3aa0ff;
+  }
+  .cyto-er-cy :global(.er-card-row) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    color: #312e81;
+    border-top: 1px solid #ddd6fe;
+  }
+  :global(.dark) .cyto-er-cy :global(.er-card-row) {
+    color: #cfe0f5;
+    border-top-color: #1c2c44;
+  }
+  .cyto-er-cy :global(.er-card-col) {
+    flex: 1;
+  }
+  .cyto-er-cy :global(.er-card-type) {
+    opacity: 0.55;
+  }
+  .cyto-er-cy :global(.er-badge) {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .cyto-er-cy :global(.er-badge.pk) {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  :global(.dark) .cyto-er-cy :global(.er-badge.pk) {
+    background: #3a2d05;
+    color: #ffd13a;
+  }
+  .cyto-er-cy :global(.er-badge.fk) {
+    background: #e0f2fe;
+    color: #075985;
+  }
+  :global(.dark) .cyto-er-cy :global(.er-badge.fk) {
+    background: #0e2138;
+    color: #4cc9f0;
+  }
+</style>
+
+<script>
+  import cytoscape from 'cytoscape'
+  import cytoscapeDagre from 'cytoscape-dagre'
+  // No shipped types beyond the plugin's own ambient .d.ts (no Core augmentation) — `as any` bridges the gap.
+  import nodeHtmlLabel from 'cytoscape-node-html-label'
+
+  cytoscape.use(cytoscapeDagre as any)
+  ;(nodeHtmlLabel as any)(cytoscape)
+
+  interface CodeNode {
+    id: string
+    label: string
+  }
+  interface CodeEdge {
+    from: string
+    to: string
+  }
+  interface DbColumn {
+    name: string
+    dataType: string
+    isPrimaryKey?: boolean
+    isForeignKey?: boolean
+  }
+  interface DbNode {
+    id: string
+    label: string
+    columns: DbColumn[]
+  }
+  interface DbEdge {
+    from: string
+    to: string
+  }
+  interface GraphData {
+    codeNodes: CodeNode[]
+    codeEdges: CodeEdge[]
+    dbNodes: DbNode[]
+    dbEdges: DbEdge[]
+  }
+
+  const ERROR_COPY = 'Diagram failed to render — raw source below'
+
+  function isDark(): boolean {
+    return document.documentElement.classList.contains('dark')
+  }
+
+  function escHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  function showError(wrap: HTMLElement, raw: unknown) {
+    const banner = document.createElement('div')
+    banner.className = 'cyto-error-banner'
+    banner.textContent = ERROR_COPY
+    const pre = document.createElement('pre')
+    pre.className = 'cyto-error-pre'
+    pre.textContent = JSON.stringify(raw, null, 2)
+    wrap.innerHTML = ''
+    wrap.appendChild(banner)
+    wrap.appendChild(pre)
+  }
+
+  function buildFlowStyle(dark: boolean) {
+    return [
+      {
+        selector: 'node',
+        style: {
+          shape: 'rectangle',
+          label: 'data(label)',
+          'font-size': 12,
+          'font-family': 'ui-monospace, monospace',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          color: dark ? '#e6f1ff' : '#312e81',
+          width: 'label',
+          height: 'label',
+          padding: '14px',
+          'text-wrap': 'wrap',
+          'text-max-width': 150,
+          'border-width': 2,
+          'background-color': dark ? '#15263f' : '#eef2ff',
+          'border-color': dark ? '#3aa0ff' : '#6366f1',
+        },
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: 2.5,
+          'line-color': dark ? '#4cc9f0' : '#6366f1',
+          'target-arrow-color': dark ? '#4cc9f0' : '#6366f1',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 1.1,
+        },
+      },
+    ] as any
+  }
+
+  function buildErStyle(dark: boolean) {
+    return [
+      {
+        selector: 'node',
+        style: {
+          shape: 'round-rectangle',
+          'background-opacity': 0,
+          'border-opacity': 0,
+          width: 190,
+          height: (n: any) => 34 + n.data('rows') * 22,
+        },
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: 2.5,
+          'line-color': dark ? '#4cc9f0' : '#6366f1',
+          'target-arrow-color': dark ? '#4cc9f0' : '#6366f1',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 1.1,
+        },
+      },
+    ] as any
+  }
+
+  const dataEl = document.getElementById('cyto-data')
+  const data: GraphData = dataEl?.textContent
+    ? JSON.parse(dataEl.textContent)
+    : { codeNodes: [], codeEdges: [], dbNodes: [], dbEdges: [] }
+
+  function initFlow() {
+    const wrap = document.querySelector<HTMLElement>('.cyto-flow-wrap')
+    const canvas = document.querySelector<HTMLElement>('.cyto-flow-cy')
+    if (!wrap || !canvas) return null
+    try {
+      const elements = [
+        ...data.codeNodes.map((n) => ({ data: { id: n.id, label: n.label } })),
+        ...data.codeEdges.map((e, i) => ({ data: { id: `ce-${i}`, source: e.from, target: e.to } })),
+      ]
+      const cy = cytoscape({
+        container: canvas,
+        elements,
+        style: buildFlowStyle(isDark()),
+        layout: {
+          name: 'dagre',
+          rankDir: 'LR',
+          nodeSep: 32,
+          rankSep: 90,
+        } as any,
+        wheelSensitivity: 0.5,
+        minZoom: 0.2,
+        maxZoom: 3,
+      })
+      cy.one('layoutstop', () => cy.fit(undefined, 40))
+      return cy
+    } catch (err) {
+      console.error('[cytoscape-section] flow panel failed to render', err)
+      showError(wrap, { codeNodes: data.codeNodes, codeEdges: data.codeEdges })
+      return null
+    }
+  }
+
+  function initEr() {
+    const wrap = document.querySelector<HTMLElement>('.cyto-er-wrap')
+    const canvas = document.querySelector<HTMLElement>('.cyto-er-cy')
+    if (!wrap || !canvas) return null
+    try {
+      const nodeById = new Map(data.dbNodes.map((n) => [n.id, n]))
+      const elements = [
+        ...data.dbNodes.map((n) => ({ data: { id: n.id, rows: n.columns.length } })),
+        ...data.dbEdges.map((e, i) => ({ data: { id: `de-${i}`, source: e.from, target: e.to } })),
+      ]
+      const cy = cytoscape({
+        container: canvas,
+        elements,
+        style: buildErStyle(isDark()),
+        layout: {
+          name: 'dagre',
+          rankDir: 'LR',
+          nodeSep: 50,
+          rankSep: 130,
+        } as any,
+        wheelSensitivity: 0.5,
+        minZoom: 0.2,
+        maxZoom: 3,
+      })
+      ;(cy as any).nodeHtmlLabel([
+        {
+          query: 'node',
+          halign: 'center',
+          valign: 'center',
+          halignBox: 'center',
+          valignBox: 'center',
+          tpl: (d: { id: string }) => {
+            const table = nodeById.get(d.id)
+            if (!table) return ''
+            const rows = table.columns
+              .map(
+                (c) => `
+              <div class="er-card-row">
+                <span class="er-card-col">${escHtml(c.name)}</span>
+                <span class="er-card-type">${escHtml(c.dataType)}</span>
+                ${c.isPrimaryKey ? '<span class="er-badge pk">PK</span>' : ''}
+                ${c.isForeignKey ? '<span class="er-badge fk">FK</span>' : ''}
+              </div>`,
+              )
+              .join('')
+            return `<div class="er-card"><div class="er-card-head">${escHtml(table.label)}</div>${rows}</div>`
+          },
+        },
+      ])
+      cy.one('layoutstop', () => cy.fit(undefined, 40))
+      return cy
+    } catch (err) {
+      console.error('[cytoscape-section] er panel failed to render', err)
+      showError(wrap, { dbNodes: data.dbNodes, dbEdges: data.dbEdges })
+      return null
+    }
+  }
+
+  const flowCy = initFlow()
+  const erCy = initEr()
+
+  // Reacts to the app's real #theme-toggle flipping <html class="dark">, matching
+  // LineageSection.astro's MutationObserver pattern (defensive: covers any other
+  // toggle source too, not just the button).
+  let lastDark = isDark()
+  new MutationObserver(() => {
+    const nowDark = isDark()
+    if (nowDark !== lastDark) {
+      lastDark = nowDark
+      flowCy?.style(buildFlowStyle(nowDark)).update()
+      erCy?.style(buildErStyle(nowDark)).update()
+    }
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+</script>

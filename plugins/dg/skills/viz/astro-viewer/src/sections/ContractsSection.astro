@@ -1,0 +1,30 @@
+---
+import ContractBlock from '../components/ContractBlock.astro'
+import Icon from '../components/Icon.astro'
+
+interface Props {
+  payload: any
+  mode: string
+}
+const { payload } = Astro.props
+const contracts: any[] = payload.contracts ?? []
+const contractAnchor = (sliceId: any) => `contract-${String(sliceId)}`
+---
+
+<section id='contracts'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='server' class='h-5 w-5 text-accent' /> Contracts
+  </h2>
+  {contracts.map((c: any) => (
+    <ContractBlock
+      slice={c.slice}
+      endpoints={c.endpoints ?? []}
+      requestFields={c.requestFields ?? []}
+      successResponse={c.successResponse}
+      errorResponses={c.errorResponses ?? []}
+      interfaces={c.interfaces ?? []}
+      anchorId={c.sliceId !== undefined ? contractAnchor(c.sliceId) : undefined}
+      sliceHref={c.sliceId !== undefined ? `#slice-${String(c.sliceId)}` : undefined}
+    />
+  ))}
+</section>

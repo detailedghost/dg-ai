@@ -1,0 +1,102 @@
+---
+import type { Phase } from '../types'
+
+interface Props {
+  phases: Phase[]
+}
+const { phases } = Astro.props
+
+const dotClass: Record<string, string> = {
+  pending: 'bg-mid',
+  in_progress: 'bg-progress',
+  done: 'bg-accent',
+  partial: 'bg-signal',
+  blocked: 'bg-risk',
+  skipped: 'bg-rule',
+}
+const badgeClass: Record<string, string> = {
+  pending: 'bg-panel-2 text-mid',
+  in_progress: 'bg-progress-soft text-progress',
+  done: 'bg-accent-soft text-accent',
+  partial: 'bg-signal-soft text-signal',
+  blocked: 'bg-risk-soft text-risk',
+  skipped: 'bg-panel-2 text-mid',
+}
+const statusLabel: Record<string, string> = {
+  pending: 'not started',
+  in_progress: 'implementing',
+  done: 'done',
+  partial: 'partial',
+  blocked: 'blocked',
+  skipped: 'skipped',
+}
+const fallbackBadge = 'bg-panel-2 text-mid'
+
+function agentChips(p: Phase): { label: string; primary: boolean }[] {
+  const chips: { label: string; primary: boolean }[] = []
+  if (p.agents?.primary) chips.push({ label: p.agents.primary, primary: true })
+  for (const qa of p.agents?.qa ?? []) chips.push({ label: qa, primary: false })
+  return chips
+}
+
+const inProgress = phases.filter((p) => p.status === 'in_progress').length
+const doneCount = phases.filter((p) => p.status === 'done').length
+---
+
+<!-- Flex-based chain: a fixed-width dot gutter keeps every dot (and the connector) on one vertical axis, regardless of dot/content height. -->
+{(inProgress > 0 || doneCount > 0) && (
+  <p class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-mid">
+    <span><span class="font-bold text-accent">{doneCount}</span> done</span>
+    {inProgress > 0 && (
+      <span><span class="font-bold text-progress">{inProgress}</span> implementing</span>
+    )}
+    <span><span class="font-bold text-mid">{phases.length - doneCount - inProgress}</span> not started</span>
+  </p>
+)}
+<ol class="space-y-0">
+  {
+    phases.map((p, i) => (
+      <li class="relative flex gap-4 pb-8 last:pb-0">
+        {i < phases.length - 1 && (
+          <span
+            class="absolute left-[8px] top-6 bottom-0 w-px -translate-x-1/2 bg-rule"
+            aria-hidden="true"
+          />
+        )}
+        <span class="relative z-10 flex w-4 shrink-0 justify-center">
+          <span
+            class={`mt-1 h-4 w-4 rounded-full ring-4 ring-ground ${dotClass[p.status] ?? 'bg-mid'} ${p.status === 'in_progress' ? 'animate-pulse' : ''}`}
+          />
+        </span>
+        <div class={`min-w-0 flex-1 ${p.status === 'in_progress' ? 'rounded border border-progress-soft bg-progress-soft/40 px-3 py-2' : ''}`}>
+          <div class="flex flex-wrap items-baseline gap-2">
+            <span class="font-mono text-xs text-mid">{String(i + 1).padStart(2, '0')}</span>
+            <span class="font-display font-semibold text-ink">{p.label}</span>
+            <span
+              class={`rounded px-1.5 py-0.5 font-mono text-[0.66rem] font-bold uppercase tracking-wide ${badgeClass[p.status] ?? fallbackBadge}`}
+            >
+              {statusLabel[p.status] ?? p.status}
+            </span>
+          </div>
+          {p.description && <p class="mt-1 text-sm text-ink-2">{p.description}</p>}
+          {agentChips(p).length > 0 && (
+            <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span class="font-mono text-[0.62rem] uppercase tracking-wide text-mid">agents</span>
+              {agentChips(p).map((c) => (
+                <span
+                  class={`rounded px-1.5 py-0.5 font-mono text-[11px] ${c.primary ? 'bg-accent-soft text-accent' : 'bg-panel-2 text-mid'}`}
+                  title={c.primary ? 'primary engineer' : 'QA'}
+                >
+                  {c.label}
+                </span>
+              ))}
+            </div>
+          )}
+          {p.dependencies && p.dependencies.length > 0 && (
+            <p class="mt-0.5 text-xs text-mid">→ depends on: {p.dependencies.join(', ')}</p>
+          )}
+        </div>
+      </li>
+    ))
+  }
+</ol>

@@ -1,0 +1,124 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-viz-sections/NOTES.md
+// Variant B: grouped by evidence type into small labeled tables.
+import Icon from "../../components/Icon.astro"
+
+interface EvidenceRecord {
+  type: string
+  ref: string
+  detail?: string
+}
+interface Props {
+  evidence: EvidenceRecord[]
+}
+const { evidence } = Astro.props
+
+const groups = new Map<string, EvidenceRecord[]>()
+for (const e of evidence) {
+  if (!groups.has(e.type)) groups.set(e.type, [])
+  groups.get(e.type)!.push(e)
+}
+
+const LABEL_BY_TYPE: Record<string, string> = {
+  "db-table": "DB Tables",
+  "db-column": "DB Columns",
+  "file": "Files",
+}
+---
+
+<section id="evidence-proto">
+  <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-gray-200">
+    <Icon name="magnifying-glass" class="h-5 w-5 text-indigo-500" />
+    Evidence <span class="evidence-proto-count">({evidence.length})</span>
+  </h2>
+
+  <div class="evidence-proto-groups">
+    {Array.from(groups.entries()).map(([type, rows]) => (
+      <div class="evidence-proto-group">
+        <h3 class="evidence-proto-group-title">
+          {LABEL_BY_TYPE[type] ?? type} <span class="evidence-proto-group-count">{rows.length}</span>
+        </h3>
+        <table class="evidence-proto-table">
+          <tbody>
+            {rows.map((e) => (
+              <tr>
+                <td class="evidence-proto-td-ref"><code>{e.ref}</code></td>
+                <td class="evidence-proto-td-detail">{e.detail ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .evidence-proto-count {
+    font-weight: 400;
+    color: #9ca3af;
+    font-size: 0.875rem;
+  }
+  .evidence-proto-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .evidence-proto-group-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  :global(.dark) .evidence-proto-group-title {
+    color: #9ca3af;
+  }
+  .evidence-proto-group-count {
+    font-size: 0.625rem;
+    background: #f3f4f6;
+    color: #6b7280;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+  }
+  :global(.dark) .evidence-proto-group-count {
+    background: #1f2937;
+    color: #9ca3af;
+  }
+  .evidence-proto-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  :global(.dark) .evidence-proto-table {
+    border-color: #1f2937;
+  }
+  .evidence-proto-table tr {
+    border-bottom: 1px solid #f3f4f6;
+  }
+  :global(.dark) .evidence-proto-table tr {
+    border-bottom-color: #111827;
+  }
+  .evidence-proto-table tr:last-child { border-bottom: none; }
+  .evidence-proto-table td {
+    padding: 0.45rem 0.75rem;
+    vertical-align: top;
+  }
+  .evidence-proto-td-ref {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    color: #374151;
+    white-space: nowrap;
+  }
+  :global(.dark) .evidence-proto-td-ref {
+    color: #d1d5db;
+  }
+  .evidence-proto-td-detail {
+    color: #9ca3af;
+  }
+</style>

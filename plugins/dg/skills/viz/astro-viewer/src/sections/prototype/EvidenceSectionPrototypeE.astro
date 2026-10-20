@@ -1,0 +1,138 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-viz-sections/NOTES.md
+// Variant E: card grid, one card per evidence record, with summary count chips.
+import Icon from "../../components/Icon.astro"
+
+interface EvidenceRecord {
+  type: string
+  ref: string
+  detail?: string
+}
+interface Props {
+  evidence: EvidenceRecord[]
+}
+const { evidence } = Astro.props
+
+const counts = new Map<string, number>()
+for (const e of evidence) counts.set(e.type, (counts.get(e.type) ?? 0) + 1)
+
+const LABEL_BY_TYPE: Record<string, string> = {
+  "db-table": "DB Tables",
+  "db-column": "DB Columns",
+  "file": "Files",
+}
+---
+
+<section id="evidence-proto">
+  <h2 class="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-gray-200">
+    <Icon name="magnifying-glass" class="h-5 w-5 text-indigo-500" />
+    Evidence <span class="evidence-proto-count">({evidence.length})</span>
+  </h2>
+
+  <div class="evidence-proto-chips">
+    {Array.from(counts.entries()).map(([type, n]) => (
+      <span class={`evidence-proto-chip evidence-proto-chip--${type}`}>
+        {LABEL_BY_TYPE[type] ?? type} · {n}
+      </span>
+    ))}
+  </div>
+
+  <div class="evidence-proto-grid">
+    {evidence.map((e) => (
+      <div class={`evidence-proto-card evidence-proto-card--${e.type}`}>
+        <div class="evidence-proto-card-type">{e.type}</div>
+        <code class="evidence-proto-card-ref">{e.ref}</code>
+        {e.detail && <p class="evidence-proto-card-detail">{e.detail}</p>}
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .evidence-proto-count {
+    font-weight: 400;
+    color: #9ca3af;
+    font-size: 0.875rem;
+  }
+  .evidence-proto-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .evidence-proto-chip {
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+  :global(.dark) .evidence-proto-chip {
+    background: #1f2937;
+    color: #9ca3af;
+  }
+  .evidence-proto-chip--db-table,
+  .evidence-proto-chip--db-column {
+    background: #ecfdf5;
+    color: #059669;
+  }
+  :global(.dark) .evidence-proto-chip--db-table,
+  :global(.dark) .evidence-proto-chip--db-column {
+    background: #052e21;
+    color: #34d399;
+  }
+  .evidence-proto-chip--file {
+    background: #eef2ff;
+    color: #4f46e5;
+  }
+  :global(.dark) .evidence-proto-chip--file {
+    background: #1e1b4b;
+    color: #818cf8;
+  }
+
+  .evidence-proto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+  }
+  .evidence-proto-card {
+    border: 1px solid #e5e7eb;
+    border-left-width: 3px;
+    border-radius: 8px;
+    padding: 0.65rem 0.8rem;
+    background: #fff;
+  }
+  :global(.dark) .evidence-proto-card {
+    border-color: #1f2937;
+    background: #0f172a;
+  }
+  .evidence-proto-card--db-table,
+  .evidence-proto-card--db-column {
+    border-left-color: #059669;
+  }
+  .evidence-proto-card--file {
+    border-left-color: #4f46e5;
+  }
+  .evidence-proto-card-type {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9ca3af;
+    margin-bottom: 0.25rem;
+  }
+  .evidence-proto-card-ref {
+    display: block;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.8125rem;
+    color: #374151;
+    word-break: break-word;
+  }
+  :global(.dark) .evidence-proto-card-ref {
+    color: #d1d5db;
+  }
+  .evidence-proto-card-detail {
+    margin: 0.35rem 0 0;
+    font-size: 0.75rem;
+    color: #9ca3af;
+  }
+</style>

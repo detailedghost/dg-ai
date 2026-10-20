@@ -16,7 +16,7 @@ const SKILL_COMMANDS = [
 	"prototype",
 ];
 
-const PENDING_UNSHIPPED_COMMANDS = ["viz"];
+const PENDING_UNSHIPPED_COMMANDS: string[] = [];
 
 const RETIRED = [/\bspec-cli\b/, /create-specs/];
 

@@ -1,0 +1,20 @@
+---
+import Icon from '../components/Icon.astro'
+import ResolvedQuestions from '../components/ResolvedQuestions.astro'
+
+interface Props {
+  payload: any
+  mode: string
+  inPlanning: boolean
+  collapsed?: boolean
+}
+const { payload, collapsed } = Astro.props
+---
+
+<details id='resolved-questions' open={!collapsed} class='group'>
+  <summary class='mb-4 flex cursor-pointer list-none items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='check-circle' class='h-5 w-5 text-accent' /> Resolved Questions
+    <Icon name='chevron-down' class='ml-auto h-4 w-4 text-mid transition-transform group-open:rotate-180' />
+  </summary>
+  <ResolvedQuestions items={payload.open_questions_resolved ?? []} />
+</details>

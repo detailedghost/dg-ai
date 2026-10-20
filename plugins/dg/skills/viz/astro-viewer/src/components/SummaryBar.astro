@@ -1,0 +1,22 @@
+---
+interface Props {
+  pct: number
+  label?: string
+}
+const { pct, label } = Astro.props
+const clamped = Math.max(0, Math.min(100, pct ?? 0))
+function barColorFor(p: number): string {
+  if (p < 33) return 'bg-risk'
+  if (p < 67) return 'bg-signal'
+  return 'bg-accent'
+}
+const barColor = barColorFor(clamped)
+const displayLabel = label ?? `${clamped}% complete`
+---
+
+<div class="my-4 flex items-center gap-3">
+  <div class="h-3 flex-1 overflow-hidden rounded-full bg-panel-2">
+    <div class={`h-full rounded-full ${barColor}`} style={`width: ${clamped}%`}></div>
+  </div>
+  <span class="w-28 shrink-0 text-sm font-medium text-ink-2">{displayLabel}</span>
+</div>

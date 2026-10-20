@@ -1,0 +1,121 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-diagram-shapes-schema/NOTES.md
+// erDiagram box shape is fixed in Mermaid — only relationship-line styling
+// is adjustable, and only by post-processing the rendered SVG's
+// .relationshipLine elements (Mermaid's er config has no line-style knobs).
+interface Props {
+  diagram: string
+  /** CSS rules scoped into the rendered SVG via an injected <style>, targeting .relationshipLine etc. */
+  lineOverrideCss?: string
+}
+const { diagram, lineOverrideCss = '' } = Astro.props
+const srcJson = JSON.stringify(diagram)
+const cssJson = JSON.stringify(lineOverrideCss)
+---
+
+<div class="er-conn-proto-wrap">
+  <script is:inline type="application/json" class="er-conn-proto-src" set:html={srcJson}></script>
+  <script is:inline type="application/json" class="er-conn-proto-css" set:html={cssJson}></script>
+  <div class="er-conn-proto-canvas"></div>
+</div>
+
+<style>
+  .er-conn-proto-wrap {
+    border-radius: 10px;
+    overflow: auto;
+    background: #ffffff;
+    border: 1px solid #e0e7ff;
+    padding: 1.25rem;
+    min-height: 340px;
+  }
+  :global(.dark) .er-conn-proto-wrap {
+    background: radial-gradient(circle at 28% 18%, #15263f, #0a111e 72%);
+    border-color: #2b3a52;
+  }
+  .er-conn-proto-canvas {
+    display: flex;
+    justify-content: center;
+  }
+  .er-conn-proto-canvas :global(svg) {
+    max-width: 100%;
+    height: auto;
+  }
+</style>
+
+<script>
+  import mermaid from "mermaid"
+
+  function isDark() {
+    return document.documentElement.classList.contains("dark")
+  }
+
+  function initMermaid() {
+    const dark = isDark()
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: dark ? "dark" : "base",
+      securityLevel: "loose",
+      themeVariables: dark
+        ? {
+            background: "#0a111e",
+            primaryColor: "#15263f",
+            primaryBorderColor: "#3aa0ff",
+            primaryTextColor: "#e6f1ff",
+            lineColor: "#4cc9f0",
+            secondaryColor: "#0e2138",
+            tertiaryColor: "#111c2e",
+          }
+        : {
+            background: "#ffffff",
+            primaryColor: "#eef2ff",
+            primaryBorderColor: "#6366f1",
+            primaryTextColor: "#312e81",
+            lineColor: "#6366f1",
+            secondaryColor: "#e0e7ff",
+            tertiaryColor: "#f5f3ff",
+          },
+    })
+  }
+
+  async function renderAll() {
+    initMermaid()
+    const wraps = document.querySelectorAll<HTMLElement>(".er-conn-proto-wrap")
+    let i = 0
+    for (const wrap of wraps) {
+      const srcEl = wrap.querySelector<HTMLElement>(".er-conn-proto-src")
+      const cssEl = wrap.querySelector<HTMLElement>(".er-conn-proto-css")
+      const canvas = wrap.querySelector<HTMLElement>(".er-conn-proto-canvas")
+      const src = srcEl?.textContent ? JSON.parse(srcEl.textContent) : ""
+      const overrideCss = cssEl?.textContent ? JSON.parse(cssEl.textContent) : ""
+      if (!canvas || !src) continue
+      try {
+        const { svg } = await mermaid.render(`er-conn-proto-svg-${i++}-${isDark() ? "d" : "l"}`, src)
+        canvas.innerHTML = svg
+        if (overrideCss) {
+          const svgEl = canvas.querySelector("svg")
+          if (svgEl) {
+            const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style")
+            styleEl.textContent = overrideCss
+            svgEl.appendChild(styleEl)
+          }
+        }
+      } catch (err) {
+        canvas.textContent = "render failed — see console"
+        console.error("[mermaid-er-conn-proto]", err)
+      }
+    }
+  }
+
+  renderAll()
+
+  // Defensive: re-render if the dark/light class toggles without a full page
+  // reload (the page-level popstate->reload handler is the primary path).
+  let lastDark = isDark()
+  new MutationObserver(() => {
+    const nowDark = isDark()
+    if (nowDark !== lastDark) {
+      lastDark = nowDark
+      renderAll()
+    }
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+</script>

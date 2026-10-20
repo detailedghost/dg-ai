@@ -1,0 +1,19 @@
+---
+import DiscoveryBlock from '../components/DiscoveryBlock.astro'
+import Icon from '../components/Icon.astro'
+
+interface Props {
+  payload: any
+  mode: string
+}
+const { payload } = Astro.props
+---
+
+<section id='discoveries'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='magnifying-glass' class='h-5 w-5 text-accent' /> Discoveries
+  </h2>
+  {(payload.discoveries ?? []).map((d: any) => (
+    <DiscoveryBlock label={d.label} summary={d.summary} findings={d.findings ?? []} open={d.open ?? false} />
+  ))}
+</section>

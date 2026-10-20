@@ -1,0 +1,254 @@
+---
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import Base from '../../layouts/Base.astro'
+import BoardView from '../../components/BoardView.astro'
+import ResponseForm from '../../components/ResponseForm.astro'
+import { isEmpty } from '../../lib/payload.ts'
+import { computeGates, tokenFilePath } from '../../lib/respond-core.ts'
+import { registry } from '../../sections/registry.ts'
+
+// Canonical rule lives in validateSlug in the dg-skills viz module — keep in parity.
+const SLUG_RE = /^[A-Za-z0-9._-]+$/
+function isValidSlug(s: string | undefined): s is string {
+  return (
+    typeof s === 'string' &&
+    SLUG_RE.test(s) &&
+    s !== '.' &&
+    s !== '..' &&
+    /[A-Za-z0-9]/.test(s)
+  )
+}
+
+const { slug } = Astro.params
+
+if (!isValidSlug(slug)) {
+  return new Response(
+    `<!doctype html><html><body style="font-family:monospace;padding:2rem;color:#374151">
+      <h2 style="color:#dc2626">viz: invalid slug</h2>
+      <p>The requested slug is not valid. Must match <code>^[A-Za-z0-9._-]+$</code>, contain at least one alphanumeric character, and not be <code>.</code> or <code>..</code>.</p>
+    </body></html>`,
+    { status: 400, headers: { 'Content-Type': 'text/html' } },
+  )
+}
+
+const VIZ_DIR = process.env.VIZ_DIR ?? `${process.env.AI_SCRATCH_DIR ?? '/tmp/ai'}/viz`
+
+const payloadPath = `${VIZ_DIR}/${slug}/payload.json`
+let payload: any = null
+try {
+  payload = JSON.parse(readFileSync(payloadPath, 'utf-8'))
+} catch {
+  // payload stays null — 404 rendered below
+}
+
+if (!payload) {
+  return new Response(
+    `<!doctype html><html><body style="font-family:monospace;padding:2rem;color:#374151">
+      <h2 style="color:#dc2626">viz: payload not found</h2>
+      <p>No payload found for this session.</p>
+      <p>Run <code>dg-skills viz --input &lt;path&gt;</code> to generate one.</p>
+    </body></html>`,
+    { status: 404, headers: { 'Content-Type': 'text/html' } },
+  )
+}
+
+// Overlay tracks/*.json sidecars onto payload.tracks (ENOENT-safe — mid-rename skipped).
+const tracksDir = `${VIZ_DIR}/${slug}/tracks`
+const sidecarTracks: Record<string, unknown>[] = []
+try {
+  const files = readdirSync(tracksDir).filter((f) => f.endsWith('.json'))
+  for (const file of files) {
+    try {
+      const raw = readFileSync(`${tracksDir}/${file}`, 'utf-8')
+      sidecarTracks.push(JSON.parse(raw) as Record<string, unknown>)
+    } catch {
+      // ENOENT or parse error on a single file — skip, do not 500
+    }
+  }
+} catch {
+  // tracksDir absent — no sidecars yet
+}
+if (sidecarTracks.length > 0) {
+  const baseById = new Map<string, Record<string, unknown>>(
+    ((payload.tracks ?? []) as Record<string, unknown>[]).map((t) => [t.id as string, t]),
+  )
+  for (const sc of sidecarTracks) {
+    baseById.set(sc.id as string, { ...(baseById.get(sc.id as string) ?? {}), ...sc })
+  }
+  payload.tracks = Array.from(baseById.values())
+} else if (!Array.isArray(payload.tracks)) {
+  // leave payload.tracks unchanged if no sidecars and it's already set (or absent)
+}
+
+// Derive render mode from payload state — template is now just an optional hint.
+const decisions = payload.decisions ?? []
+const openQs = payload.open_questions ?? []
+const phases = payload.phases ?? []
+
+const pendingDecisions = decisions.filter((d: any) => isEmpty(d.answer))
+const hasRespond = pendingDecisions.length > 0 || openQs.length > 0
+
+const allPhasesTerminal =
+  phases.length > 0 &&
+  phases.every((p: any) => ['done', 'skipped', 'blocked'].includes(p.status))
+
+function deriveMode(): string {
+  if (payload.review) return 'review'
+  if (payload.template === 'recap' || payload.mode === 'recap' || allPhasesTerminal) return 'recap'
+  if (hasRespond) return 'planning'
+  if (phases.length > 0) return 'implementation'
+  return 'planning'
+}
+const mode = deriveMode()
+
+// Build TOC from the registry — single source of truth.
+// Review boards own their whole chrome full-bleed (see BoardView's isReview
+// branch) and have no in-page anchors for a TOC to link to, so skip it.
+const toc =
+  mode === 'review'
+    ? []
+    : registry
+        .filter((entry) => entry.applies(payload as Record<string, unknown>))
+        .map(({ id, label, icon }) => ({ id, label, icon }))
+
+// Items still awaiting a response — drives the left-hand activity rail.
+const pendingDecisionItems = decisions
+  .map((d: any, i: number) => ({
+    index: i,
+    question: d.question,
+    options: d.options ?? [],
+    multiple: !!d.multiple,
+    thread: d.thread ?? [],
+    inDiscussion: (d.thread ?? []).length > 0,
+  }))
+  .filter((_: any, i: number) => isEmpty(decisions[i]?.answer))
+
+// Read per-board nonce from .token sidecar (minted by render.ts).
+const tokenPath = tokenFilePath(`${VIZ_DIR}/${slug}`)
+const vizNonce = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : ''
+
+let savedAnswers: { type: string; index: number; answer: string }[] = []
+// Skip the savedAnswers overlay when .token exists — board state is only authoritative
+// after merge.ts validates the HMAC. An unauthenticated read here could mislead the
+// operator into thinking approvals are complete before merge.ts runs (SEC-2 concern).
+if (!existsSync(tokenPath)) {
+  try {
+    const resp = JSON.parse(readFileSync(`${VIZ_DIR}/${slug}/response.json`, 'utf-8'))
+    savedAnswers = resp.answers ?? []
+  } catch {
+    // no pending response
+  }
+}
+// The activity rail shows only live gates — whatever is blocking the agent right now,
+// per the same computeGates() the CLI's wait loop trusts. An item is present while it
+// blocks and gone once it clears; there is no per-item "answered" state to go stale.
+const gates = computeGates(payload as Record<string, unknown>)
+const discussionIndices = new Set(
+  pendingDecisionItems.filter((d: any) => d.inDiscussion).map((d: any) => d.index),
+)
+
+// Read-only explainer boards opt out of the poller, so nothing here is live or answerable.
+const isStaticBoard = payload.static === true
+
+const allGates = [
+  ...(gates.approvalBlocks
+    ? [{ kind: 'approval' as const, label: 'Approval required', index: 0, anchor: 'approval' }]
+    : []),
+  ...(gates.permissionsBlock
+    ? [
+        {
+          kind: 'permission' as const,
+          label:
+            gates.permissionsUngranted === 1
+              ? '1 permission to grant'
+              : `${gates.permissionsUngranted} permissions to grant`,
+          index: 0,
+          anchor: 'permissions',
+        },
+      ]
+    : []),
+  ...(gates.roundtableBlocks
+    ? [
+        {
+          kind: 'recommendation' as const,
+          label:
+            gates.recommendationsPending === 1
+              ? '1 recommendation to triage'
+              : `${gates.recommendationsPending} recommendations to triage`,
+          index: 0,
+          anchor: 'roundtable',
+        },
+      ]
+    : []),
+  ...(gates.nextStepsBlocks
+    ? [
+        {
+          kind: 'next_steps' as const,
+          label: gates.nextStepsFeedbackPending
+            ? 'Next steps feedback pending'
+            : 'Next steps need approval',
+          index: 0,
+          anchor: 'next-steps',
+        },
+      ]
+    : []),
+  ...gates.pendingDecisions.map((d) => ({
+    kind: 'decision' as const,
+    label: d.question,
+    index: d.index,
+    inDiscussion: discussionIndices.has(d.index),
+    anchor: 'respond',
+  })),
+  ...(openQs as string[]).map((q, i) => ({
+    kind: 'open_question' as const,
+    label: q,
+    index: i,
+    anchor: 'respond',
+  })),
+]
+const waiting = isStaticBoard ? [] : allGates
+
+if (hasRespond && mode !== 'review') {
+  toc.push({ id: 'respond', label: 'Respond', icon: 'arrow-right-circle' })
+}
+
+const startCommand = payload.start_command as string | undefined
+const liveCommand =
+  payload.live_command ??
+  (startCommand && payload.template === 'plan'
+    ? `${startCommand} — as each phase moves, run: dg-skills viz phase ${slug} <phase-id> <status>`
+    : undefined)
+
+// M10: board state changes every render (decisions, phases, tracks) — match boards.ts/
+// status.ts's no-store contract on the normal 200 path, not just the 400/404 error ones.
+Astro.response.headers.set('Cache-Control', 'no-store')
+---
+
+<Base
+  title={payload.title}
+  subtitle={payload.subtitle}
+  template={payload.template}
+  date={payload.date}
+  toc={toc}
+  waiting={mode === 'review' ? [] : waiting}
+  hideWaiting={mode === 'review'}
+  hideFooter={mode === 'review'}
+  sessionId={payload.session_id}
+  isStatic={payload.static === true}
+>
+  <span data-viz-nonce={vizNonce} data-viz-slug={slug} class='hidden' />
+  <BoardView
+    payload={payload}
+    mode={mode}
+    startCommand={startCommand}
+    liveCommand={liveCommand}
+  />
+  {hasRespond && (
+    <ResponseForm
+      slug={payload.slug}
+      openQuestions={openQs}
+      pendingDecisions={pendingDecisionItems}
+      savedAnswers={savedAnswers}
+    />
+  )}
+</Base>

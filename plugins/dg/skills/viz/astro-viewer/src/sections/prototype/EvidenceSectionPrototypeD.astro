@@ -1,0 +1,93 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-viz-sections/NOTES.md
+// Variant D: dense terminal/log-style single-line-per-record view.
+import Icon from "../../components/Icon.astro"
+
+interface EvidenceRecord {
+  type: string
+  ref: string
+  detail?: string
+}
+interface Props {
+  evidence: EvidenceRecord[]
+}
+const { evidence } = Astro.props
+
+const GLYPH_BY_TYPE: Record<string, string> = {
+  "db-table": "◪",
+  "db-column": "▸",
+  "file": "◆",
+}
+---
+
+<section id="evidence-proto">
+  <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-gray-200">
+    <Icon name="magnifying-glass" class="h-5 w-5 text-indigo-500" />
+    Evidence <span class="evidence-proto-count">({evidence.length})</span>
+  </h2>
+
+  <div class="evidence-proto-log">
+    {evidence.map((e, i) => (
+      <div class="evidence-proto-log-line">
+        <span class="evidence-proto-log-num">{String(i + 1).padStart(2, '0')}</span>
+        <span class={`evidence-proto-log-glyph evidence-proto-log-glyph--${e.type}`}>{GLYPH_BY_TYPE[e.type] ?? '•'}</span>
+        <span class="evidence-proto-log-type">{e.type}</span>
+        <span class="evidence-proto-log-ref">{e.ref}</span>
+        {e.detail && <span class="evidence-proto-log-detail">{e.detail}</span>}
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .evidence-proto-count {
+    font-weight: 400;
+    color: #9ca3af;
+    font-size: 0.875rem;
+  }
+  .evidence-proto-log {
+    background: #0a0f1a;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 0.75rem 0;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75rem;
+    overflow-x: auto;
+  }
+  .evidence-proto-log-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.2rem 1rem;
+    white-space: nowrap;
+  }
+  .evidence-proto-log-line:hover {
+    background: #101827;
+  }
+  .evidence-proto-log-num {
+    color: #374151;
+  }
+  .evidence-proto-log-glyph {
+    color: #6b7280;
+  }
+  .evidence-proto-log-glyph--db-table,
+  .evidence-proto-log-glyph--db-column {
+    color: #34d399;
+  }
+  .evidence-proto-log-glyph--file {
+    color: #818cf8;
+  }
+  .evidence-proto-log-type {
+    color: #6b7280;
+    min-width: 5.5rem;
+  }
+  .evidence-proto-log-ref {
+    color: #e5e7eb;
+    min-width: 15rem;
+  }
+  .evidence-proto-log-detail {
+    color: #4b5563;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>

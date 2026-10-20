@@ -1,0 +1,159 @@
+---
+import Icon from '../components/Icon.astro'
+import type { Approval } from '../types.ts'
+
+interface Props {
+  payload: Record<string, unknown>
+  mode: string
+}
+const { payload } = Astro.props
+
+const approval = (payload.approval ?? {}) as Approval
+const prompt = approval.prompt ?? 'Approve this plan to begin the next phase?'
+
+// SSR persisted state: once merged, payload.approved is true/false. Render the decided state so
+// a reload/region-swap of a settled board never shows live buttons again.
+const approved = payload.approved as boolean | undefined
+const decided = approved === true || approved === false
+
+// Paste-able resume message shown after approval. Prefer an authored start_command; otherwise a
+// natural-language nudge keyed on the title so the user can drop it straight into Claude Code.
+const startCmd = payload.start_command as string | undefined
+const title = (payload.title as string) ?? 'this plan'
+const resumeCmd = startCmd ?? `The "${title}" plan was approved in viz — pick the work back up and continue with the next phase.`
+---
+
+<section id='approval'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='check-circle' class='h-5 w-5 text-accent' />
+    Approval
+  </h2>
+
+  <div class='rounded border border-rule bg-panel p-5'>
+    <p class='mb-6 text-sm text-ink-2'>{prompt}</p>
+
+    {approved === true && (
+      <div class='mb-4 rounded border-l-[3px] border-accent bg-accent-soft px-4 py-3'>
+        <p class='text-sm font-medium text-accent'>Approved — pick the work back up:</p>
+        <div class='mt-3 flex flex-wrap items-start gap-2'>
+          <code class='flex-1 rounded bg-panel px-2 py-1 font-mono text-xs text-ink-2 ring-1 ring-rule'>{resumeCmd}</code>
+          <button type='button' data-copy-text={resumeCmd} title='Copy resume message' class='shrink-0 rounded px-2 py-1 text-xs text-mid transition-colors hover:bg-accent-soft hover:text-accent'>Copy</button>
+        </div>
+        <p class='mt-1.5 text-xs text-mid'>Paste this into Claude Code to continue.</p>
+      </div>
+    )}
+    {approved === false && (
+      <div class='mb-4 rounded border-l-[3px] border-risk bg-risk-soft px-4 py-3 text-sm text-risk'>
+        Plan rejected — the next phase will not begin until the plan is revised.
+      </div>
+    )}
+
+    {!decided && (
+      <div>
+        <div id='approval-result' class='hidden mb-4 rounded border-l-[3px] border-accent bg-accent-soft px-4 py-3'>
+          <p class='text-sm font-medium text-accent'>Approved — pick the work back up:</p>
+          <div class='mt-3 flex flex-wrap items-start gap-2'>
+            <code class='flex-1 rounded bg-panel px-2 py-1 font-mono text-xs text-ink-2 ring-1 ring-rule'>{resumeCmd}</code>
+            <button type='button' data-copy-text={resumeCmd} title='Copy resume message' class='shrink-0 rounded px-2 py-1 text-xs text-mid transition-colors hover:bg-accent-soft hover:text-accent'>Copy</button>
+          </div>
+          <p class='mt-1.5 text-xs text-mid'>Paste this into Claude Code to continue.</p>
+        </div>
+
+        <div id='approval-error' class='hidden mb-4 rounded border-l-[3px] border-risk bg-risk-soft px-4 py-3 text-sm text-risk'></div>
+
+        <div id='approval-buttons' class='flex items-center gap-3'>
+          <button
+            type='button'
+            data-approval-answer='approved'
+            class='inline-flex items-center gap-1.5 rounded bg-accent px-4 py-2 text-sm font-medium text-on-fill hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ring-offset-panel'
+          >
+            <Icon name='check-circle' class='h-4 w-4' />
+            Approve
+          </button>
+          <button
+            type='button'
+            data-approval-answer='rejected'
+            class='inline-flex items-center gap-1.5 rounded border border-rule bg-panel px-4 py-2 text-sm font-medium text-ink-2 hover:bg-panel-2 focus:outline-none focus:ring-2 focus:ring-mid focus:ring-offset-2 ring-offset-panel'
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+
+<script>
+  // Delegate on document, not the buttons: refreshRegions() swaps viz-main's innerHTML on every
+  // payload rev, orphaning any per-node listeners. document is never replaced. slug/nonce re-read
+  // per click since the [data-viz-*] carriers also live inside the swapped region.
+  import { readVizMeta, respond, signAnswers } from '../lib/respond-client.ts'
+
+  const RECEIVED_HOLD_MS = 1200 // visible "Received ✓" dwell before settling
+
+  function hold(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  async function submitApproval(answer: 'approved' | 'rejected') {
+    const { slug, nonce } = readVizMeta()
+    const buttons = document.querySelectorAll<HTMLButtonElement>('[data-approval-answer]')
+    const clickedBtn = document.querySelector<HTMLButtonElement>(`[data-approval-answer="${answer}"]`)
+    const errorEl = document.getElementById('approval-error')
+    const setDisabled = (state: boolean) => { for (const b of buttons) b.disabled = state }
+
+    // Phase 1 — Received: disable immediately, mark clicked button
+    setDisabled(true)
+    const originalLabel = clickedBtn?.innerHTML ?? ''
+    if (clickedBtn) {
+      clickedBtn.innerHTML = '✓ Received'
+      clickedBtn.style.opacity = '1'
+      clickedBtn.style.background = '#1f6f6b'
+      clickedBtn.style.color = '#fff'
+      clickedBtn.style.borderColor = '#1f6f6b'
+    }
+
+    try {
+      const answers = [{ type: 'approval', index: 0, answer }]
+      const hmac = await signAnswers(slug, answers)
+      // Phase 2 — Hold: POST and minimum dwell run concurrently; we wait for both
+      const [res] = await Promise.all([respond(slug, nonce, hmac, answers), hold(RECEIVED_HOLD_MS)])
+
+      // Phase 3 — server merged; trigger a full region refresh so SSR-rendered settled state loads.
+      if (res.ok) {
+        await (window as unknown as { vizRefresh?: (ids?: string[]) => Promise<void> }).vizRefresh?.()
+      } else {
+        if (clickedBtn) clickedBtn.innerHTML = originalLabel
+        if (clickedBtn) {
+          clickedBtn.style.background = ''
+          clickedBtn.style.color = ''
+          clickedBtn.style.borderColor = ''
+        }
+        const msg = await res.text()
+        if (errorEl) {
+          errorEl.textContent = `Error ${res.status}: ${msg}`
+          errorEl.classList.remove('hidden')
+        }
+        setDisabled(false)
+      }
+    } catch (err) {
+      if (clickedBtn) clickedBtn.innerHTML = originalLabel
+      if (clickedBtn) {
+        clickedBtn.style.background = ''
+        clickedBtn.style.color = ''
+        clickedBtn.style.borderColor = ''
+      }
+      if (errorEl) {
+        errorEl.textContent = String(err)
+        errorEl.classList.remove('hidden')
+      }
+      setDisabled(false)
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-approval-answer]')
+    if (!btn) return
+    submitApproval(btn.dataset.approvalAnswer as 'approved' | 'rejected')
+  })
+</script>

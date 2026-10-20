@@ -1,0 +1,22 @@
+---
+import Icon from '../components/Icon.astro'
+import ScopeTable from '../components/ScopeTable.astro'
+
+interface Props {
+  payload: any
+  mode: string
+}
+const { payload } = Astro.props
+const scope = payload.scope ?? {}
+---
+
+<section id='scope'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='document-text' class='h-5 w-5 text-accent' /> Scope
+  </h2>
+  <ScopeTable
+    inScope={scope.inScope ?? []}
+    outOfScope={scope.outOfScope ?? []}
+    assumptions={scope.assumptions ?? []}
+  />
+</section>

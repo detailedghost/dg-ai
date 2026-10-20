@@ -1,0 +1,27 @@
+---
+import Icon from './Icon.astro'
+
+interface Props {
+  title: string
+  open?: boolean
+  count?: number
+}
+const { title, open = false, count } = Astro.props
+---
+
+<details open={open || undefined} class="group my-3 overflow-hidden rounded border border-rule bg-panel">
+  <summary class="flex cursor-pointer select-none items-center justify-between px-4 py-3 hover:bg-panel-2">
+    <span class="flex items-center gap-2 font-display text-sm font-semibold text-ink">
+      <Icon name="chevron-right" class="h-3 w-3 text-mid transition-transform duration-150 group-open:rotate-90" />
+      {title}
+    </span>
+    {count !== undefined && (
+      <span class="rounded-full bg-panel-2 px-2 py-0.5 font-mono text-xs text-mid">
+        {count}
+      </span>
+    )}
+  </summary>
+  <div class="border-t border-rule-soft px-4 py-4">
+    <slot />
+  </div>
+</details>

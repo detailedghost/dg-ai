@@ -1,0 +1,7 @@
+# Notes
+
+- All boards render full-width. The board is ephemeral (lives under the viz temp dir), namespaced by session — concurrent reviews don't collide.
+- One round-trip per board (submit → done); it's not an iterative thread. "One round-trip" refers to board reuse, not the wait — you still block until that one submit lands (looping past timeouts). For another review cycle after changes, run `/review` again on the updated range.
+- `/viz` renders and collects; it has no idea what a "review" means. All the driving logic — ref resolution, blocking, verdict routing — lives here. Treat the board as a passive surface: render it, then wait on it.
+- Internals (backchannel, HMAC signing, payload schema): see `../../viz/references/{cli.md,loop-protocol.md,payload-schema.md}` — don't duplicate that here.
+- **Wired into `/spec` and `/sdlc`:** this is the engine for their human-review gates (`spec/references/plan.md` step 7; `sdlc/references/finish.md` step 7) — same `review → wait → review_result` contract, with a text-only `AskUserQuestion` fallback when viz is unavailable. Keep them in sync. **`finish.md` step 7 only reaches this skill in `REVIEW_MODE = local`** (`/sdlc -l`, forwarded by `/spec`). The default `pr` mode skips step 7 entirely and lets the human review the draft PR/MR on the provider, so a change to the local-board contract no longer touches the default execution path. `plan.md` step 7 is unaffected — that board reviews the *plan*, not a diff.

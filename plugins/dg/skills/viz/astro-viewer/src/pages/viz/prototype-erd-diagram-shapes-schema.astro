@@ -1,0 +1,135 @@
+---
+// PROTOTYPE — throwaway route, see .agents/prototype/erd-diagram-shapes-schema/NOTES.md
+// Answers: what connector/line treatment should the /erd DB-schema (erDiagram)
+// use? Box shape is fixed in Mermaid's erDiagram, so only relationship-line
+// styling varies here. Companion to prototype-erd-diagram-shapes-flowchart.astro.
+import Base from '../../layouts/Base.astro'
+import PrototypeSwitcher from '../../components/PrototypeSwitcher.astro'
+import MermaidErConnectorPrototype from '../../sections/prototype/MermaidErConnectorPrototype.astro'
+
+const VARIANTS = ['A', 'B', 'C']
+const LABELS = {
+  A: 'Baseline — default crow’s-foot lines',
+  B: 'Bold — thicker, colored per relationship',
+  C: 'Confidence-coded — dashed = inferred FK',
+}
+const variant = (Astro.url.searchParams.get('variant') ?? 'A').toUpperCase()
+const current = VARIANTS.includes(variant) ? variant : 'A'
+
+const BASE_ENTITIES = `
+  USERS {
+    int id
+    string email
+    string name
+  }
+  ORDERS {
+    int id
+    int user_id
+    string status
+    datetime created_at
+  }
+  LINE_ITEMS {
+    int id
+    int order_id
+    int product_id
+    int quantity
+  }
+  PRODUCTS {
+    int id
+    string sku
+    string title
+  }`
+
+// A and B use Mermaid's default "identifying" (solid) relationship line for
+// everything. C swaps the PRODUCTS<->LINE_ITEMS link to "non-identifying"
+// (Mermaid's native `..` line syntax) to mark it as a naming-convention
+// *inferred* FK rather than a confirmed one — no CSS hack needed for that,
+// Mermaid already renders `..` as dashed.
+const DIAGRAMS: Record<string, string> = {
+  A: `erDiagram
+  USERS ||--o{ ORDERS : places
+  ORDERS ||--|{ LINE_ITEMS : contains
+  PRODUCTS ||--o{ LINE_ITEMS : "referenced by"
+${BASE_ENTITIES}`,
+  B: `erDiagram
+  USERS ||--o{ ORDERS : places
+  ORDERS ||--|{ LINE_ITEMS : contains
+  PRODUCTS ||--o{ LINE_ITEMS : "referenced by"
+${BASE_ENTITIES}`,
+  C: `erDiagram
+  USERS ||--o{ ORDERS : places
+  ORDERS ||--|{ LINE_ITEMS : contains
+  PRODUCTS ||..o{ LINE_ITEMS : "referenced by (inferred)"
+${BASE_ENTITIES}`,
+}
+
+// Only B needs a post-render CSS override (thickness + per-relationship color).
+// Verified against Mermaid 11.16's actual erDiagram SVG output: relationship
+// paths carry class "er.relationshipLine" (rendered as ".er .relationshipLine"
+// in the compiled stylesheet, but as plain SVG elements they get class
+// "relationshipLine"); there are exactly 3 in this sample, in source order.
+const LINE_CSS: Record<string, string> = {
+  A: '',
+  B: `
+    .relationshipLine { stroke-width: 3px !important; }
+    .relationshipLine:nth-of-type(1) { stroke: #f59e0b !important; }
+    .relationshipLine:nth-of-type(2) { stroke: #22d3ee !important; }
+    .relationshipLine:nth-of-type(3) { stroke: #a78bfa !important; }
+  `,
+  C: '',
+}
+---
+
+<Base title="/erd diagram shapes — schema" subtitle="Connector styling, DB schema (erDiagram)" template="system">
+  <div class="space-y-6">
+    <p class="proto-banner">
+      🧪 Prototype route — Mermaid's erDiagram entity boxes are a fixed shape,
+      so only relationship-line styling is explored here. Companion prototype
+      covers box shapes + connectors on the code/import-graph (flowchart) side.
+    </p>
+
+    <h2 class="theme-proto-heading">{LABELS[current]}</h2>
+
+    <MermaidErConnectorPrototype diagram={DIAGRAMS[current]} lineOverrideCss={LINE_CSS[current]} />
+  </div>
+
+  <PrototypeSwitcher
+    variants={VARIANTS}
+    current={current}
+    prototypeName="erd-diagram-shapes-schema"
+    labels={LABELS}
+    basePath="/api"
+  />
+</Base>
+
+<style>
+  .proto-banner {
+    font-size: 0.8125rem;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    margin: 0;
+  }
+  :global(.dark) .proto-banner {
+    color: #fbbf24;
+    background: #422006;
+    border-color: #78350f;
+  }
+  .theme-proto-heading {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+  }
+  :global(.dark) .theme-proto-heading {
+    color: #e5e7eb;
+  }
+</style>
+
+<script>
+  window.addEventListener('popstate', () => {
+    location.reload()
+  })
+</script>

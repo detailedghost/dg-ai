@@ -28,6 +28,7 @@ import { registerSpec } from "./commands/spec";
 import { registerStash } from "./commands/stash";
 import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
+import { registerViz } from "./commands/viz";
 import { registerWorktree } from "./commands/worktree";
 import {
 	guardExtensionCommands,
@@ -68,6 +69,7 @@ registerOverwatchSnapshot(program);
 registerWorktree(program);
 registerSpec(program);
 registerMonolith(program);
+registerViz(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

@@ -56,6 +56,7 @@ describe("dg-skills CLI", () => {
 			"worktree",
 			"spec",
 			"monolith",
+			"viz",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -147,6 +148,31 @@ describe("dg-skills CLI", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	test("viz --help lists every verb without starting a viewer", async () => {
+		const { code, out } = await runCli(["viz", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"render",
+			"doctor",
+			"get",
+			"wait",
+			"review-wait",
+			"merge",
+			"phase",
+			"next-steps",
+			"annotate",
+			"review",
+			"link",
+			"track",
+			"list",
+			"dismiss",
+			"clean",
+			"stop",
+		])
+			expect(out).toContain(verb);
+		expect(out).not.toContain("viz-cli");
 	});
 
 	test("clipboard-image --help documents native capture without reading the clipboard", async () => {

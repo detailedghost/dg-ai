@@ -1,0 +1,153 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-viz-sections/NOTES.md
+// Answers: what should the /erd Mermaid diagram section look like in /viz?
+import Icon from "../../components/Icon.astro"
+
+interface Props {
+  diagram: string
+  brokenDiagram: string
+  title?: string
+  caption?: string
+}
+const { diagram, brokenDiagram, title = "Diagram", caption } = Astro.props
+
+const goodSrc = JSON.stringify(diagram)
+const badSrc = JSON.stringify(brokenDiagram)
+---
+
+<section id="mermaid-proto">
+  <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-gray-200">
+    <Icon name="chart-bar" class="h-5 w-5 text-indigo-500" />
+    {title}
+    <button type="button" id="mermaid-proto-break-toggle" class="mermaid-proto-break-btn">
+      simulate broken diagram
+    </button>
+  </h2>
+
+  {caption && <p class="mermaid-proto-caption">{caption}</p>}
+
+  <div class="mermaid-proto-wrap">
+    <div id="mermaid-proto-canvas" class="mermaid-proto-canvas"></div>
+    <div id="mermaid-proto-error" class="mermaid-proto-error" hidden>
+      <div class="mermaid-proto-error-banner">
+        ⚠ Diagram failed to render — showing raw source instead.
+      </div>
+      <pre id="mermaid-proto-raw" class="mermaid-proto-raw"></pre>
+    </div>
+  </div>
+</section>
+
+<script is:inline type="application/json" id="mermaid-proto-good" set:html={goodSrc}></script>
+<script is:inline type="application/json" id="mermaid-proto-bad" set:html={badSrc}></script>
+
+<style>
+  .mermaid-proto-break-btn {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: normal;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid #3a2d05;
+    background: #201804;
+    color: #ffd13a;
+    cursor: pointer;
+  }
+  .mermaid-proto-break-btn:hover { background: #2c2206; }
+  h2:has(.mermaid-proto-break-btn) { justify-content: flex-start; }
+
+  .mermaid-proto-caption {
+    margin: -0.5rem 0 0.75rem;
+    font-size: 0.8125rem;
+    color: #9ca3af;
+  }
+
+  .mermaid-proto-wrap {
+    border-radius: 10px;
+    overflow: auto;
+    background: radial-gradient(circle at 28% 18%, #15263f, #0a111e 72%);
+    border: 1px solid #2b3a52;
+    padding: 1rem;
+    min-height: 240px;
+  }
+  .mermaid-proto-canvas {
+    display: flex;
+    justify-content: center;
+  }
+  .mermaid-proto-canvas :global(svg) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .mermaid-proto-error-banner {
+    color: #ffae42;
+    background: #2c2206;
+    border: 1px solid #4a3a0a;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.8125rem;
+    margin-bottom: 0.75rem;
+  }
+  .mermaid-proto-raw {
+    color: #cfe0f5;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+
+<script>
+  import mermaid from "mermaid"
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "dark",
+    securityLevel: "loose",
+    themeVariables: {
+      background: "#0a111e",
+      primaryColor: "#15263f",
+      primaryBorderColor: "#3aa0ff",
+      primaryTextColor: "#e6f1ff",
+      lineColor: "#4cc9f0",
+      secondaryColor: "#0e2138",
+      tertiaryColor: "#111c2e",
+    },
+  })
+
+  const canvas = document.getElementById("mermaid-proto-canvas")
+  const errorBox = document.getElementById("mermaid-proto-error")
+  const rawBox = document.getElementById("mermaid-proto-raw")
+  const toggle = document.getElementById("mermaid-proto-break-toggle")
+
+  const goodSrc = JSON.parse(document.getElementById("mermaid-proto-good")?.textContent ?? '""') as string
+  const badSrc = JSON.parse(document.getElementById("mermaid-proto-bad")?.textContent ?? '""') as string
+
+  let broken = false
+  let renderCount = 0
+
+  async function renderDiagram() {
+    if (!canvas || !errorBox || !rawBox) return
+    const src = broken ? badSrc : goodSrc
+    try {
+      const id = `mermaid-proto-svg-${renderCount++}`
+      const { svg } = await mermaid.render(id, src)
+      canvas.innerHTML = svg
+      canvas.hidden = false
+      errorBox.hidden = true
+    } catch (err) {
+      canvas.hidden = true
+      errorBox.hidden = false
+      rawBox.textContent = src
+      console.error("[mermaid-proto] render failed", err)
+    }
+  }
+
+  toggle?.addEventListener("click", () => {
+    broken = !broken
+    toggle.textContent = broken ? "show valid diagram" : "simulate broken diagram"
+    renderDiagram()
+  })
+
+  renderDiagram()
+</script>

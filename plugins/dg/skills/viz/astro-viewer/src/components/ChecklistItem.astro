@@ -1,0 +1,24 @@
+---
+interface Props {
+  id: string
+  text: string
+  done: boolean
+}
+const { id, text, done } = Astro.props
+---
+
+<div class="flex items-center gap-3 bg-panel px-4 py-2.5">
+  <span
+    class={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${done ? 'border-accent bg-accent' : 'border-rule bg-panel-2'}`}
+  >
+    {done && (
+      <svg class="h-3 w-3 text-on-fill" viewBox="0 0 12 12" fill="none">
+        <path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    )}
+  </span>
+  <span class={`flex-1 text-sm ${done ? 'text-mid line-through' : 'text-ink-2'}`}>
+    {text}
+  </span>
+  <code class="shrink-0 font-mono text-xs text-mid">{id}</code>
+</div>

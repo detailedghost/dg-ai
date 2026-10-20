@@ -1,0 +1,35 @@
+---
+interface Props {
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  title: string
+  body: string
+}
+const { severity, title, body } = Astro.props
+
+const borderBg: Record<string, string> = {
+  low: 'border-progress bg-progress-soft',
+  medium: 'border-signal bg-signal-soft',
+  high: 'border-risk bg-risk-soft',
+  critical: 'border-risk bg-risk-soft',
+}
+const badge: Record<string, string> = {
+  low: 'bg-progress-soft text-progress',
+  medium: 'bg-signal-soft text-signal',
+  high: 'bg-risk-soft text-risk',
+  critical: 'bg-risk text-on-fill',
+}
+---
+
+<div
+  class={`my-3 rounded border-l-[3px] p-4 ${borderBg[severity] ?? 'border-rule bg-panel-2'}`}
+>
+  <div class="mb-1 flex items-center gap-2">
+    <span
+      class={`rounded px-1.5 py-0.5 font-mono text-xs font-bold uppercase ${badge[severity] ?? 'bg-panel-2 text-mid'}`}
+    >
+      {severity}
+    </span>
+    <span class="font-display font-semibold text-ink">{title}</span>
+  </div>
+  <p class="text-sm text-ink-2">{body}</p>
+</div>

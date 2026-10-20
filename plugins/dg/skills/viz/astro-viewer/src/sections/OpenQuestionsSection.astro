@@ -1,0 +1,19 @@
+---
+import Icon from '../components/Icon.astro'
+import OpenQuestion from '../components/OpenQuestion.astro'
+
+interface Props {
+  payload: any
+  mode: string
+}
+const { payload } = Astro.props
+---
+
+<section id='open-questions'>
+  <h2 class='mb-4 flex items-center gap-2 border-b-2 border-ink pb-3 font-display text-lg font-semibold text-ink'>
+    <Icon name='question-mark-circle' class='h-5 w-5 text-signal' /> Open Questions
+  </h2>
+  {(payload.open_questions ?? []).map((q: string, i: number) => (
+    <OpenQuestion index={i + 1} text={q} />
+  ))}
+</section>

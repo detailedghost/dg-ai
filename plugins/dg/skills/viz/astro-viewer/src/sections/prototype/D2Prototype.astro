@@ -1,0 +1,59 @@
+---
+// PROTOTYPE — throwaway, see .agents/prototype/erd-renderer-comparison/NOTES.md
+// Displays pre-rendered D2 SVGs (computed server-side in the page frontmatter
+// via ../../lib/renderD2.ts) — no client JS needed, the SVG is already static
+// markup by the time this component renders.
+interface Props {
+  schemaSvg: string
+  flowSvg: string
+}
+const { schemaSvg, flowSvg } = Astro.props
+---
+
+<div class="d2-proto-grid">
+  <div class="d2-proto-panel">
+    <h3 class="d2-proto-panel-title">DB schema</h3>
+    <div class="d2-proto-canvas" set:html={schemaSvg} />
+  </div>
+  <div class="d2-proto-panel">
+    <h3 class="d2-proto-panel-title">Code / import graph</h3>
+    <div class="d2-proto-canvas" set:html={flowSvg} />
+  </div>
+</div>
+
+<style>
+  .d2-proto-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 900px) {
+    .d2-proto-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .d2-proto-panel {
+    border-radius: 10px;
+    overflow: hidden;
+    background: radial-gradient(circle at 28% 18%, #15263f, #0a111e 72%);
+    border: 1px solid #2b3a52;
+    padding: 1.25rem;
+  }
+  .d2-proto-panel-title {
+    margin: 0 0 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #8fb4dd;
+  }
+  .d2-proto-canvas {
+    display: flex;
+    justify-content: center;
+    overflow: auto;
+  }
+  .d2-proto-canvas :global(svg) {
+    max-width: 100%;
+    height: auto;
+  }
+</style>

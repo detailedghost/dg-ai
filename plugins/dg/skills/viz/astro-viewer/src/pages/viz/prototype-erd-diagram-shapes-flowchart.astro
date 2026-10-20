@@ -1,0 +1,208 @@
+---
+// PROTOTYPE — throwaway route, see .agents/prototype/erd-diagram-shapes-flowchart/NOTES.md
+// Answers: what box shapes + connector styles should the /erd code/import
+// graph (flowchart) use? Sibling to prototype-erd-diagram-shapes-schema.astro,
+// which covers the erDiagram side (connector-only — box shape is fixed there).
+import Base from '../../layouts/Base.astro'
+import PrototypeSwitcher from '../../components/PrototypeSwitcher.astro'
+import MermaidRawPrototype from '../../sections/prototype/MermaidRawPrototype.astro'
+
+const VARIANTS = ['A', 'B', 'C', 'D', 'E']
+const LABELS = {
+  A: 'Minimal rounded, plain arrows',
+  B: 'Shape-coded by kind, confidence edges',
+  C: 'UML-sharp rectangles, labeled arrows',
+  D: 'Subgraph-grouped',
+  E: 'Circles + diamonds',
+}
+const variant = (Astro.url.searchParams.get('variant') ?? 'A').toUpperCase()
+const current = VARIANTS.includes(variant) ? variant : 'A'
+
+const DIAGRAMS: Record<string, string> = {
+  A: `graph LR
+  CLI(CLI)
+  Resolve(Resolve)
+  CodeGraph(Code Graph)
+  ImportGraph(Import Graph)
+  Postgres(Postgres)
+  SchemaLive(Schema Live)
+  SchemaStatic(Schema Static)
+  MergeGraph(Merge Graph)
+  Render(Render)
+  Persist(Persist)
+  Doc(architecture.md)
+
+  CLI --> Resolve
+  Resolve --> CodeGraph
+  Resolve --> ImportGraph
+  Postgres --> SchemaLive
+  CodeGraph --> MergeGraph
+  ImportGraph --> MergeGraph
+  SchemaLive --> MergeGraph
+  SchemaStatic --> MergeGraph
+  MergeGraph --> Render
+  Render --> Persist
+  Persist --> Doc`,
+
+  B: `graph LR
+  CLI([CLI])
+  Resolve(Resolve)
+  CodeGraph[Code Graph]
+  ImportGraph[Import Graph]
+  Postgres[(Postgres)]
+  SchemaLive[Schema Live]
+  SchemaStatic[Schema Static]
+  MergeGraph{{Merge Graph}}
+  Render[Render]
+  Persist[Persist]
+  Doc[/architecture.md/]
+
+  CLI --> Resolve
+  Resolve --> CodeGraph
+  Resolve --> ImportGraph
+  Postgres --> SchemaLive
+  CodeGraph --> MergeGraph
+  ImportGraph --> MergeGraph
+  SchemaLive --> MergeGraph
+  SchemaStatic -.-> MergeGraph
+  MergeGraph --> Render
+  Render --> Persist
+  Persist --> Doc`,
+
+  C: `graph LR
+  CLI[CLI]
+  Resolve[Resolve]
+  CodeGraph[Code Graph]
+  ImportGraph[Import Graph]
+  Postgres[Postgres]
+  SchemaLive[Schema Live]
+  SchemaStatic[Schema Static]
+  MergeGraph[Merge Graph]
+  Render[Render]
+  Persist[Persist]
+  Doc[architecture.md]
+
+  CLI -->|invokes| Resolve
+  Resolve -->|walks| CodeGraph
+  Resolve -->|scans| ImportGraph
+  Postgres -->|introspects| SchemaLive
+  CodeGraph -->|feeds| MergeGraph
+  ImportGraph -->|feeds| MergeGraph
+  SchemaLive -->|feeds| MergeGraph
+  SchemaStatic -->|feeds| MergeGraph
+  MergeGraph -->|renders| Render
+  Render -->|writes| Persist
+  Persist -->|produces| Doc`,
+
+  D: `graph LR
+  subgraph cli[CLI Layer]
+    CLI(CLI)
+    Resolve(Resolve)
+  end
+  subgraph generators[Generators]
+    CodeGraph(Code Graph)
+    ImportGraph(Import Graph)
+    SchemaLive(Schema Live)
+    SchemaStatic(Schema Static)
+    Postgres(Postgres)
+  end
+  subgraph output[Output]
+    MergeGraph(Merge Graph)
+    Render(Render)
+    Persist(Persist)
+    Doc(architecture.md)
+  end
+
+  CLI --> Resolve
+  Postgres --> SchemaLive
+  Resolve ==> CodeGraph
+  Resolve ==> ImportGraph
+  CodeGraph --> MergeGraph
+  ImportGraph --> MergeGraph
+  SchemaLive --> MergeGraph
+  SchemaStatic --> MergeGraph
+  MergeGraph ==> Render
+  Render --> Persist
+  Persist --> Doc`,
+
+  E: `graph LR
+  CLI((CLI))
+  Resolve(Resolve)
+  CodeGraph[Code Graph]
+  ImportGraph[Import Graph]
+  Postgres((Postgres))
+  SchemaLive[Schema Live]
+  SchemaStatic[Schema Static]
+  MergeGraph{Merge Graph}
+  Render[/Render/]
+  Persist[/Persist/]
+  Doc[/architecture.md/]
+
+  CLI --> Resolve
+  Resolve ==> CodeGraph
+  Resolve ==> ImportGraph
+  Postgres ==> SchemaLive
+  CodeGraph ==> MergeGraph
+  ImportGraph ==> MergeGraph
+  SchemaLive ==> MergeGraph
+  SchemaStatic -.-> MergeGraph
+  MergeGraph ==> Render
+  Render --> Persist
+  Persist --> Doc`,
+}
+---
+
+<Base title="/erd diagram shapes — flowchart" subtitle="Box shapes + connector styles, code/import graph" template="system">
+  <div class="space-y-6">
+    <p class="proto-banner">
+      🧪 Prototype route — sample module-dependency graph modeling /erd's own
+      pipeline. Only box shapes / connector styles change per variant; same
+      nodes, same edges. Companion prototype covers the DB-schema (erDiagram)
+      side, where only connector styling is adjustable.
+    </p>
+
+    <h2 class="theme-proto-heading">{LABELS[current]}</h2>
+
+    <MermaidRawPrototype diagram={DIAGRAMS[current]} />
+  </div>
+
+  <PrototypeSwitcher
+    variants={VARIANTS}
+    current={current}
+    prototypeName="erd-diagram-shapes-flowchart"
+    labels={LABELS}
+    basePath="/api"
+  />
+</Base>
+
+<style>
+  .proto-banner {
+    font-size: 0.8125rem;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    margin: 0;
+  }
+  :global(.dark) .proto-banner {
+    color: #fbbf24;
+    background: #422006;
+    border-color: #78350f;
+  }
+  .theme-proto-heading {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+  }
+  :global(.dark) .theme-proto-heading {
+    color: #e5e7eb;
+  }
+</style>
+
+<script>
+  window.addEventListener('popstate', () => {
+    location.reload()
+  })
+</script>
