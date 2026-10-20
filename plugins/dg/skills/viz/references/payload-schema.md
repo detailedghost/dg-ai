@@ -130,7 +130,7 @@ Read it back with `"$DG" viz get <slug> review_result` after `wait`/`review-wait
 
 ## lineage (plan + recap)
 
-A cytoscape-rendered node-edge graph — provenance-honest data lineage for a Snowflake/dbt identifier (written by `/lineage`). Solid edges are proven, dashed are inferred.
+A cytoscape-rendered node-edge graph — provenance-honest data lineage for a Snowflake/dbt identifier. Solid edges are proven, dashed are inferred.
 
 ```json
 "lineage": {
@@ -151,7 +151,7 @@ Section `applies` when `typeof payload.lineage === "object"`. Read-only display 
 
 ## erd (plan + recap)
 
-Code/import flowchart + DB schema ER diagram (`graph`, rendered by `CytoscapeSection.astro`) plus a grouped evidence trail (`evidence`, rendered by `EvidenceSection.astro`) — written by `/erd`.
+Code/import flowchart + DB schema ER diagram (`graph`, rendered by `CytoscapeSection.astro`) plus a grouped evidence trail (`evidence`, rendered by `EvidenceSection.astro`).
 
 ```json
 {

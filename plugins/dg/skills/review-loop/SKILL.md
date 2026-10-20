@@ -97,6 +97,9 @@ like `--single`.
 See [references/proxy-workflow.md](references/proxy-workflow.md) for
 the full phase breakdown.
 
+For a human reviewer on the same branch, use [/review](../review/SKILL.md). It
+renders a local review board and hands the verdict back to the agent.
+
 ## Reference Files (lazy-load)
 
 | File | When to read |
@@ -117,7 +120,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 ```

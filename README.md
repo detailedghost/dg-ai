@@ -10,18 +10,18 @@ browser extension is `dg-ai-extension`.
 macOS / Linux (x64 or arm64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These install the compiled CLI binaries and stage the extension; no Bun is needed.
 The extension, all three binaries, and both plugin manifests share release
-version **1.15.0**.
+version **1.16.0**.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
@@ -53,22 +53,32 @@ Claude Code also accepts the bare `/<name>`.
 | Skill | Use |
 | --- | --- |
 | `agent-seed` | Set up a project's `.agents/` folder and a minimal `CLAUDE.md` |
+| `assign` | Pick the best-fit agent for a piece of work or for each spec slice |
 | `clipboard-img` | Save the clipboard image as a PNG |
 | `grill-me` | Interview the user about a design until every branch is resolved |
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
+| `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |
+| `polish` | Clean up a diff for reuse, simplification, and hygiene, then apply the fixes |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
+| `review` | Review a git range on a local board and hand the verdict back |
+| `review-loop` | Loop Copilot or a local backend over a branch and address the findings |
+| `sdlc` | Run a feature brief through worktree, slice waves, review, and a draft PR |
+| `spec` | Plan a durable feature spec or execute one |
+| `spring-break` | Consolidate `.agents/school/` into topic clusters |
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `teach` | Teach a concept across sessions |
+| `viz` | Render a board as a local HTML page; needs [Bun](https://bun.sh) installed |
 | `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
+| `worktree` | Create, list, remove, and prune git worktrees |
 
 ### Stash, providers, and proxy
 

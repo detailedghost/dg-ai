@@ -15,7 +15,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 "$DG" install
@@ -54,7 +54,7 @@ if (-not (Test-Path $dg)) {
  if ($localBootstrap -and (Test-Path $localBootstrap)) {
   & $localBootstrap
  } else {
-  irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.ps1 | iex
+  irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
  }
 }
 & $dg install
@@ -80,7 +80,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 "$DG" install
@@ -106,7 +106,7 @@ if [ ! -x "$DG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.15.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 "$DG" install
