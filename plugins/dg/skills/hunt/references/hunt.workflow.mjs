@@ -46,7 +46,7 @@ const VERDICT = {
 
 phase("Investigate")
 
-const modelFor = (a) => (a === "security" || a === "dba" ? "opus" : "sonnet")
+const modelFor = (a) => (/^(dg:)?(security|dba)$/.test(a || "") ? "opus" : "sonnet")
 
 const results = await pipeline(
   threads,

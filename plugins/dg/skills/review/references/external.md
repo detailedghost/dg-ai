@@ -41,7 +41,7 @@ extra ref resolution needed.
 
 ## 3. Reviewer agent → findings
 
-Launch the `reviewer` agent ("The Nitpicker") **in the
+Launch the `dg:reviewer` agent ("The Nitpicker") **in the
 foreground** — its findings gate the next step, so don't fan it into the background. Give it the
 range and ask for its normal report *plus* one machine-readable block:
 

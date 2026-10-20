@@ -6,11 +6,11 @@ import { resolveSkillAsset } from "../utils/skill-assets";
 import { listVocabularyTerms } from "./helper";
 
 const LANG_AGENT_MAP: Record<string, string> = {
-	csharp: "csharp",
-	dotnet: "csharp",
-	typescript: "typescript",
-	javascript: "typescript",
-	python: "python",
+	csharp: "dg:csharp",
+	dotnet: "dg:csharp",
+	typescript: "dg:js",
+	javascript: "dg:js",
+	python: "dg:python",
 	go: "go",
 	rust: "rust",
 	java: "java",

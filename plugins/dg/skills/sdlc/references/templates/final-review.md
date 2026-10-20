@@ -1,6 +1,6 @@
 # Final Review Templates
 
-Launch **reviewer**, **qa-perf**, **qa-devops**, **security** in parallel. Each receives the full spec and changed-file list.
+Launch **dg:reviewer**, **dg:qa-perf**, **dg:qa-devops**, **dg:security** in parallel. Each receives the full spec and changed-file list.
 
 ## All Reviewers (same template, different agent type)
 

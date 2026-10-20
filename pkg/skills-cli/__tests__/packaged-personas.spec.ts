@@ -12,15 +12,18 @@ import { resolvePersona } from "../src/proxy/persona";
 const AGENTS = join(import.meta.dir, "../../../plugins/dg/agents");
 
 const PERSONAS = [
+	"arch",
 	"checkpoint",
 	"copilot-antagonist",
 	"csharp",
 	"dba",
+	"design",
 	"devops",
 	"foreman",
 	"js",
 	"lore",
 	"python",
+	"qa-code",
 	"qa-devops",
 	"qa-perf",
 	"qa-writer",
@@ -41,6 +44,21 @@ describe("packaged personas", () => {
 		expect(Object.keys(packagedPersonas).sort()).toEqual(PERSONAS);
 		for (const name of PERSONAS) {
 			expect(packagedPersonas[name]).toBe(readFileSync(join(AGENTS, `${name}.md`), "utf8"));
+		}
+	});
+
+	test("resolvePersona accepts the dg: plugin prefix", async () => {
+		const home = mkdtempSync(join(tmpdir(), "persona-prefix-"));
+		const previous = process.env.HOME;
+		process.env.HOME = home;
+		try {
+			expect(await resolvePersona({ subagent: "dg:foreman" })).toBe(
+				readFileSync(join(AGENTS, "foreman.md"), "utf8"),
+			);
+		} finally {
+			if (previous === undefined) delete process.env.HOME;
+			else process.env.HOME = previous;
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 
@@ -74,7 +92,7 @@ describe("installPackagedPersonas", () => {
 		rmSync(directory, { recursive: true, force: true });
 	});
 
-	test("writes all 17 personas beside the skills directory", () => {
+	test("writes all 20 personas beside the skills directory", () => {
 		const written = installPackagedPersonas(join(directory, "skills"));
 		expect(written).toEqual(PERSONAS.map((name) => `${name}.md`));
 		const installed = join(directory, "agents");

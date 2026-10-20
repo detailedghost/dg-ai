@@ -27,7 +27,7 @@ mode's planning topics at once:
 3. **Ordering** — slice boundaries, `depends_on` graph, acceptance-criteria gaps (pass 2).
 
 Interview in the main loop; delegate only research legs, and only when the request needs
-reconnaissance a few `Read`/`grep` calls cannot cover. There is no `arch`/`foreman` persona hop
+reconnaissance a few `Read`/`grep` calls cannot cover. There is no `dg:arch`/`dg:foreman` persona hop
 in fast mode — that tiering is what full plan mode buys and fast mode trades away.
 
 Converge on one branch list covering all three topics. Fast mode has no pass 3, so a branch left
@@ -159,7 +159,7 @@ as written. Fast mode trims planning, never the end gates:
 | Step | Kept as |
 |---|---|
 | 5 | Final review + bounded correction (max 2 rounds), commit fixes |
-| 6 | Test-name gate, then `lore` docs pass, commit docs |
+| 6 | Test-name gate, then `dg:lore` docs pass, commit docs |
 | 7 | Human review gate per `REVIEW_MODE` — `pr` (default) moves it onto the PR/MR; `-l`/`--local` keeps the **blocking** `/dg:review`, which no permission flag can then bypass |
 | 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr --draft` |
 
@@ -184,7 +184,7 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 
 | Dropped | Full-mode home |
 |---|---|
-| Separate `arch` / structure / `foreman` interview passes | plan.md steps 1, 1.5, 2 |
+| Separate `dg:arch` / structure / `dg:foreman` interview passes | plan.md steps 1, 1.5, 2 |
 | Per-slice review fan-out | plan.md step 5 |
 | foreman synthesis + gaps pass | plan.md step 6 |
 | `/dg:viz` plan-approval board | plan.md step 8, viz.md |

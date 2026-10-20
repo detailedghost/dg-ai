@@ -174,7 +174,7 @@ describe("compiled dg-skills spec from a relocated plugin", () => {
 		]);
 		expect(dry.exitCode).toBe(0);
 		expect(dry.stdout).toContain(
-			"[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<",
+			"[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<",
 		);
 		expect(dry.stdout).toContain(`full spec at \`${plan}\``);
 		const live = await compiled([
@@ -186,8 +186,8 @@ describe("compiled dg-skills spec from a relocated plugin", () => {
 			"reviewer,security",
 		]);
 		expect(live.exitCode).toBe(0);
-		expect(live.stdout).toContain("### reviewer\n\nreviewed by reviewer\n");
-		expect(live.stdout).toContain("### security\n\nreviewed by security\n");
+		expect(live.stdout).toContain("### reviewer\n\nreviewed by dg:reviewer\n");
+		expect(live.stdout).toContain("### security\n\nreviewed by dg:security\n");
 	});
 
 	test("a marketplace install locates the schema from HOME alone", async () => {

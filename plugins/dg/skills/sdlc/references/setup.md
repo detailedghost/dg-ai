@@ -44,7 +44,7 @@ SPEC_PATH="$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)"; SCRATCH_PATH="$(~/.d
 
 If `SPEC_PATH` already exists with `status: in-progress` (a resumed run), skip derivation — read it, report which slices are already committed, and continue from step 3 or 4 as appropriate.
 
-**Slice derivation — one foreman pass.** Launch `foreman` (`fable`, xhigh effort) in **Slice plan** mode, briefed with the brief plus instructions to scan the repo for the modules/conventions the feature touches. It returns a slice plan; it does NOT write files. Relay any `⚑ RATIFY` items before you write the spec. Rules for the plan:
+**Slice derivation — one foreman pass.** Launch `dg:foreman` (`fable`, xhigh effort) in **Slice plan** mode, briefed with the brief plus instructions to scan the repo for the modules/conventions the feature touches. It returns a slice plan; it does NOT write files. Relay any `⚑ RATIFY` items before you write the spec. Rules for the plan:
 
 - **Default to ONE slice.** Split only when the work has clearly separable vertical slices; when unsure, don't split.
 - Per slice: `id` (1-based), `name` (kebab), a 2–4 sentence brief, `files` (globs the slice owns), `depends_on` (slice ids), an Engineering checklist, and Testing Criteria opening with `### Contracts` (inputs, outputs, error shapes).

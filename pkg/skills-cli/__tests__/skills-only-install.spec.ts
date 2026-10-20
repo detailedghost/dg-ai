@@ -25,15 +25,18 @@ const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const BOOTSTRAP = join(import.meta.dir, "..", "bootstrap.sh");
 const PERSONAS = [
+	"arch",
 	"checkpoint",
 	"copilot-antagonist",
 	"csharp",
 	"dba",
+	"design",
 	"devops",
 	"foreman",
 	"js",
 	"lore",
 	"python",
+	"qa-code",
 	"qa-devops",
 	"qa-perf",
 	"qa-writer",

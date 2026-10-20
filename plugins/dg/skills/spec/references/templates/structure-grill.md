@@ -44,10 +44,10 @@ surfaces.
 a research report, not an interview (see [../grill.md](../grill.md) § *Interview passes run in the
 MAIN LOOP*). The agent below is the **research** persona, not the interviewer.
 
-**Research delegation: the repo's dominant language agent (`js` / `python` / `csharp` / …) at
+**Research delegation: the repo's dominant language agent (`dg:js` / `dg:python` / `dg:csharp` / …) at
 `sonnet`, medium effort.** Idiom knowledge is what this pass needs; arch's seam knowledge was
-already spent in pass 1. When no dominant language is obvious, continue with `arch` (it holds pass
-1's context). Do **not** use `foreman` — wrong skill set — and do not spend a second
+already spent in pass 1. When no dominant language is obvious, continue with `dg:arch` (it holds pass
+1's context). Do **not** use `dg:foreman` — wrong skill set — and do not spend a second
 `fable`/`xhigh` pass here; the hard architecture calls happened in step 1.
 
 Research legs must honour the global *Reuse before building* and *Shared utilities, not local ones*

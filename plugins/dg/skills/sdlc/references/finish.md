@@ -6,7 +6,7 @@ Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md
 
 ## Step 5 — Final review + correction
 
-Derive the changed-file list: `git diff --name-only $(git merge-base HEAD origin/<base-branch>)`. Launch **reviewer**, **qa-perf**, **qa-devops**, **security** in parallel (template: `templates/final-review.md`). Each reads `## Issues Remediation`. **Include in the briefing:** `SPEC_PATH` + `SCRATCH_PATH` — reviewers may read the scratchpad for ephemeral context in addition to the spec's `## Agent Notes`.
+Derive the changed-file list: `git diff --name-only $(git merge-base HEAD origin/<base-branch>)`. Launch **dg:reviewer**, **dg:qa-perf**, **dg:qa-devops**, **dg:security** in parallel (template: `templates/final-review.md`). Each reads `## Issues Remediation`. **Include in the briefing:** `SPEC_PATH` + `SCRATCH_PATH` — reviewers may read the scratchpad for ephemeral context in addition to the spec's `## Agent Notes`.
 
 > **GATE:** all reviewers reported.
 
@@ -25,7 +25,7 @@ No findings → step 6. Before routing, read Issues Remediation. Exact duplicate
 
 **Test-name gate** (`/dg:standard-test` rules 7-8). Scan committed test files for TDD-scaffolding markers — fail the gate if any test **filename** or `describe`/suite label still carries `red`/`green`/`slice-N`/plan markers (e.g. `*.red.*`, `*.green.*`, `red_*`, `green_*`). Rename/consolidate to a name that mirrors the code under test (red+green pairs merge into one committed file). A committed test that still says "red"/"green" is a review red flag — fix it before anything ships.
 
-**Docs.** Launch **lore** (template: `templates/lore.md`) on the changed-file list. Gate: no public API/function without a doc comment; README updated if the public interface changed. Commit (`docs(<scope>): …`, silent if `permissions.housekeeping_commit`). Docs run right before the human gate so the reviewer sees them in the diff.
+**Docs.** Launch **dg:lore** (template: `templates/lore.md`) on the changed-file list. Gate: no public API/function without a doc comment; README updated if the public interface changed. Commit (`docs(<scope>): …`, silent if `permissions.housekeeping_commit`). Docs run right before the human gate so the reviewer sees them in the diff.
 
 > **GATE:** test names clean, docs committed.
 

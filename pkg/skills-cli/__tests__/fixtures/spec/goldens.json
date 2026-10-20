@@ -3095,6 +3095,23 @@
 		}
 	},
 	{
+		"id": "roster-namespaces-plugin-agents",
+		"args": ["roster"],
+		"env": {
+			"AGENTS_DIR": "{root}/agents"
+		},
+		"files": {
+			"agents/reviewer.md": "---\nname: reviewer\ndescription: Reviews code\n---\n\nBody.\n",
+			"agents/custom.md": "---\nname: custom\ndescription: Local only\n---\n\nBody.\n"
+		},
+		"expect": {
+			"status": 0,
+			"stdout": "custom\tLocal only\ndg:reviewer\tReviews code\n",
+			"stderr": "",
+			"tree": {}
+		}
+	},
+	{
 		"id": "roster-no-agents-dir",
 		"args": ["roster"],
 		"expect": {
@@ -3128,7 +3145,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for performance implications: **query patterns** (N+1 risks, unbounded queries), **data volume** (pagination, batch limits), **concurrency** (blocking calls, thread safety), **memory** (large object graphs, caching), **API design** (chatty vs chunky, payload sizes). API-shape trade-offs (chatty vs chunky, batch vs stream) are `[PROTOTYPE]` candidates when the ergonomics aren't obvious from the plan.\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n### security\n\n[DRY] claude -p --agent security --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for security: **auth** (missing auth on endpoints, privilege escalation), **input validation** (injection vectors), **data exposure** (sensitive fields, PII logging), **secrets** (hardcoded values, missing encryption), **dependencies** (known CVEs), **OWASP Top 10**. Output uses `(CWE if applicable)` in the rationale. Security findings are almost never `[PROTOTYPE]` — prefer `[AREA]` (clear fix) or `[OPEN — escalate]` (policy decision).\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent dg:qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for performance implications: **query patterns** (N+1 risks, unbounded queries), **data volume** (pagination, batch limits), **concurrency** (blocking calls, thread safety), **memory** (large object graphs, caching), **API design** (chatty vs chunky, payload sizes). API-shape trade-offs (chatty vs chunky, batch vs stream) are `[PROTOTYPE]` candidates when the ergonomics aren't obvious from the plan.\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n### security\n\n[DRY] claude -p --agent dg:security --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for security: **auth** (missing auth on endpoints, privilege escalation), **input validation** (injection vectors), **data exposure** (sensitive fields, PII logging), **secrets** (hardcoded values, missing encryption), **dependencies** (known CVEs), **OWASP Top 10**. Output uses `(CWE if applicable)` in the rationale. Security findings are almost never `[PROTOTYPE]` — prefer `[AREA]` (clear fix) or `[OPEN — escalate]` (policy decision).\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -3141,7 +3158,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **query patterns**, **data volume**, **async/concurrency**, **memory**, **API design**. Output: `N. [PERFORMANCE] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **completeness**, **internal consistency**, **contract quality**, **testability**, **ambiguity** (unresolved `[ASSUMED]`?). Output: `N. [AREA] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### security\n\n[DRY] claude -p --agent security --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **auth**, **input validation**, **data exposure**, **secrets**, **dependencies**, **OWASP Top 10**. Output: `N. [SECURITY] recommendation — rationale (CWE if applicable)`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent dg:qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **query patterns**, **data volume**, **async/concurrency**, **memory**, **API design**. Output: `N. [PERFORMANCE] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **completeness**, **internal consistency**, **contract quality**, **testability**, **ambiguity** (unresolved `[ASSUMED]`?). Output: `N. [AREA] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### security\n\n[DRY] claude -p --agent dg:security --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **auth**, **input validation**, **data exposure**, **secrets**, **dependencies**, **OWASP Top 10**. Output: `N. [SECURITY] recommendation — rationale (CWE if applicable)`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -3154,7 +3171,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for performance implications: **query patterns** (N+1 risks, unbounded queries), **data volume** (pagination, batch limits), **concurrency** (blocking calls, thread safety), **memory** (large object graphs, caching), **API design** (chatty vs chunky, payload sizes). API-shape trade-offs (chatty vs chunky, batch vs stream) are `[PROTOTYPE]` candidates when the ergonomics aren't obvious from the plan.\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n### security\n\n[DRY] claude -p --agent security --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for security: **auth** (missing auth on endpoints, privilege escalation), **input validation** (injection vectors), **data exposure** (sensitive fields, PII logging), **secrets** (hardcoded values, missing encryption), **dependencies** (known CVEs), **OWASP Top 10**. Output uses `(CWE if applicable)` in the rationale. Security findings are almost never `[PROTOTYPE]` — prefer `[AREA]` (clear fix) or `[OPEN — escalate]` (policy decision).\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent dg:qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for performance implications: **query patterns** (N+1 risks, unbounded queries), **data volume** (pagination, batch limits), **concurrency** (blocking calls, thread safety), **memory** (large object graphs, caching), **API design** (chatty vs chunky, payload sizes). API-shape trade-offs (chatty vs chunky, batch vs stream) are `[PROTOTYPE]` candidates when the ergonomics aren't obvious from the plan.\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n### security\n\n[DRY] claude -p --agent dg:security --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for security: **auth** (missing auth on endpoints, privilege escalation), **input validation** (injection vectors), **data exposure** (sensitive fields, PII logging), **secrets** (hardcoded values, missing encryption), **dependencies** (known CVEs), **OWASP Top 10**. Output uses `(CWE if applicable)` in the rationale. Security findings are almost never `[PROTOTYPE]` — prefer `[AREA]` (clear fix) or `[OPEN — escalate]` (policy decision).\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -3175,7 +3192,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### reviewer\n\n[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 3b, 2026-01-15T09:30Z)\n\n### reviewer\n\n[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Run the **sub-interview protocol** above. Review the draft plan at `{root}/plan.md` for: **architecture** (are vertical slices well-bounded? dependency graph sound?), **feasibility** (can each slice be implemented independently?), **completeness** (missing acceptance criteria? gaps in scope?), **risk** (integration risks between slices? migration concerns?). State-machine-shaped slices are prime `[PROTOTYPE]` candidates.\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p3b-20260115-093045_\n",
 			"stderr": "spec-cli: warning: --phase 2 is deprecated; use --phase 3b (prose roundtable moved post-approval)\n",
 			"tree": {}
 		}
@@ -3196,7 +3213,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### ghost\n\n[SKIP] no template section for agent=ghost in {templates}/spec-review.md\n\n### qa-devops\n\n[SKIP] no template section for agent=qa-devops in {templates}/spec-review.md\n\n### security\n\n[DRY] claude -p --agent security --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **auth**, **input validation**, **data exposure**, **secrets**, **dependencies**, **OWASP Top 10**. Output: `N. [SECURITY] recommendation — rationale (CWE if applicable)`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### ghost\n\n[SKIP] no template section for agent=ghost in {templates}/spec-review.md\n\n### qa-devops\n\n[SKIP] no template section for agent=qa-devops in {templates}/spec-review.md\n\n### security\n\n[DRY] claude -p --agent dg:security --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **auth**, **input validation**, **data exposure**, **secrets**, **dependencies**, **OWASP Top 10**. Output: `N. [SECURITY] recommendation — rationale (CWE if applicable)`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -3216,7 +3233,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### reviewer\n\nreviewed by reviewer\n\n### security\n\nreviewed by security\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
+			"stdout": "## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### reviewer\n\nreviewed by dg:reviewer\n\n### security\n\nreviewed by dg:security\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -3240,7 +3257,7 @@
 			"stdout": "",
 			"stderr": "appended to {root}/plan.md\n",
 			"tree": {
-				"plan.md": "# plan\n\n## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### reviewer\n\nreviewed by reviewer\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n"
+				"plan.md": "# plan\n\n## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### reviewer\n\nreviewed by dg:reviewer\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n"
 			}
 		}
 	},
@@ -3301,7 +3318,7 @@
 			"stdout": "",
 			"stderr": "appended to {root}/plan.md\n",
 			"tree": {
-				"plan.md": "# plan\n\n## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **query patterns**, **data volume**, **async/concurrency**, **memory**, **API design**. Output: `N. [PERFORMANCE] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **completeness**, **internal consistency**, **contract quality**, **testability**, **ambiguity** (unresolved `[ASSUMED]`?). Output: `N. [AREA] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n"
+				"plan.md": "# plan\n\n## Roundtable Findings (phase 5, 2026-01-15T09:30Z)\n\n### qa-perf\n\n[DRY] claude -p --agent dg:qa-perf --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **query patterns**, **data volume**, **async/concurrency**, **memory**, **API design**. Output: `N. [PERFORMANCE] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n### reviewer\n\n[DRY] claude -p --agent dg:reviewer --permission-mode plan --output-format text <<<\n[Common directives.] Read `paths.md` and full spec at `{root}/plan.md`. Review for: **completeness**, **internal consistency**, **contract quality**, **testability**, **ambiguity** (unresolved `[ASSUMED]`?). Output: `N. [AREA] recommendation — rationale`. If clean: \"no recommendations\".\n>>>\n\n_Outputs: {scratch}/<bucket>/roundtable/plan-p5-20260115-093045_\n"
 			}
 		}
 	},

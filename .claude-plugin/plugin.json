@@ -23,15 +23,18 @@
 		"./plugins/dg/skills"
 	],
 	"agents": [
+		"./plugins/dg/agents/arch.md",
 		"./plugins/dg/agents/checkpoint.md",
 		"./plugins/dg/agents/copilot-antagonist.md",
 		"./plugins/dg/agents/csharp.md",
 		"./plugins/dg/agents/dba.md",
+		"./plugins/dg/agents/design.md",
 		"./plugins/dg/agents/devops.md",
 		"./plugins/dg/agents/foreman.md",
 		"./plugins/dg/agents/js.md",
 		"./plugins/dg/agents/lore.md",
 		"./plugins/dg/agents/python.md",
+		"./plugins/dg/agents/qa-code.md",
 		"./plugins/dg/agents/qa-devops.md",
 		"./plugins/dg/agents/qa-perf.md",
 		"./plugins/dg/agents/qa-writer.md",

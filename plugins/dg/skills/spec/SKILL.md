@@ -52,11 +52,11 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 |---|---|---|
 | 1 | arch `/dg:grill-me` the request `[fable, xhigh]` | references/plan.md, references/grill.md |
 | 1.5 | Structure `/dg:grill-me` — code-surface contracts `[lang agent, sonnet]` | references/templates/structure-grill.md |
-| 2 | foreman `/dg:grill-me` on ordering/gaps `[fable, xhigh]` | references/plan.md, references/grill.md |
-| 3 | foreman emits decision blob → `~/.dg/bin/dg-skills spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
+| 2 | `dg:foreman` `/dg:grill-me` on ordering/gaps `[fable, xhigh]` | references/plan.md, references/grill.md |
+| 3 | `dg:foreman` emits decision blob → `~/.dg/bin/dg-skills spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
 | 4 | Checkpoint — bundle now has one `roundtable/slice-<N>.md` per slice | references/plan.md |
 | 5 | Per-slice review fan-out (`sonnet` default, per-slice opt-in escalate) | references/plan.md, references/templates/slice-review.md |
-| 6 | foreman synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
+| 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
 | 7 | Write `plan.md`; assign `/dg:proxy` slices; WARN token/context cost | references/plan.md |
 | 8 | `/dg:viz` verify (`template:spec`, blocks on Confirm); register accepted prototype assets (the prototype skill ships later) | references/plan.md, references/viz.md |
 | 9 | `~/.dg/bin/dg-skills spec context <bundle>` assembles `context.md` | references/plan.md |

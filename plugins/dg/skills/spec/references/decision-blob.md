@@ -1,6 +1,6 @@
 # Decision Blob — input to `~/.dg/bin/dg-skills spec scaffold --from-json`
 
-Plan-mode step 3: after the two grill-me passes (steps 1–2) converge, the **foreman** agent
+Plan-mode step 3: after the two grill-me passes (steps 1–2) converge, the **dg:foreman** agent
 emits this compact JSON. It replaces the old hand-written spec
 template — instead of hand-writing `plan.md` prose, foreman emits structured data and
 `~/.dg/bin/dg-skills spec scaffold` expands it deterministically into the bundle (`plan.md` frontmatter + body

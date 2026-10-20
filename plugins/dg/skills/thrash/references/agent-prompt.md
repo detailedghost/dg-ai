@@ -1,6 +1,6 @@
 # Launching the `thrash` agent
 
-Use the host's native agent facility with its configured `thrash` persona, a short
+Use the host's native agent facility with its configured `dg:thrash` persona, a short
 review description, and the template below. Resolve the persona through the host
 registry or explicitly configured `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`. If those
 have no thrash persona, read `<skills-directory>/../agents/thrash.md`. The

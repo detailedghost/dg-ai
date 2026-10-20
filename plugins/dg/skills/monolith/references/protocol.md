@@ -1,6 +1,6 @@
 # `/dg:monolith` orchestration protocol
 
-Phase-by-phase recipe for the orchestrator. The orchestrator (main agent) does no synthesis — it only dispatches agents and runs the helper. All term writing happens in the `lore` agent.
+Phase-by-phase recipe for the orchestrator. The orchestrator (main agent) does no synthesis — it only dispatches agents and runs the helper. All term writing happens in the `dg:lore` agent.
 
 Helper: `~/.dg/bin/dg-skills monolith` — run it with `--help` for the full subcommand list.
 
@@ -72,19 +72,19 @@ ls *.csproj *.sln 2>/dev/null | head -1 | grep -q . && STACK="$STACK csharp"
 
 | Scanner | Polyglot | python repo | js/ts repo | csharp repo | DB-heavy add-on |
 |---|---|---|---|---|---|
-| Domain vocabulary | `Explore` | `python` | `js` | `csharp` | swap to `dba` if SQL/migrations dominate |
+| Domain vocabulary | `Explore` | `dg:python` | `dg:js` | `dg:csharp` | swap to `dg:dba` if SQL/migrations dominate |
 | Naming + patterns | `Explore` | `Explore` | `Explore` | `Explore` | n/a (language-agnostic) |
-| Concepts + relationships | `Explore` | `python` | `js` | `csharp` | `dba` if FK/ORM relationships are the headline |
+| Concepts + relationships | `Explore` | `dg:python` | `dg:js` | `dg:csharp` | `dg:dba` if FK/ORM relationships are the headline |
 
-**Rule of thumb:** if `STACK` contains exactly one language token, use that language's agent for Domain + Concepts. If it contains 2+, use `Explore`. Naming + Patterns always uses `Explore`. If `dba` is in `STACK` AND a relationally-modelled DB is the architectural center, prefer `dba` for Concepts.
+**Rule of thumb:** if `STACK` contains exactly one language token, use that language's agent for Domain + Concepts. If it contains 2+, use `Explore`. Naming + Patterns always uses `Explore`. If `dg:dba` is in `STACK` AND a relationally-modelled DB is the architectural center, prefer `dg:dba` for Concepts.
 
-Set `model: "haiku"` on scanner agents — they're doing extraction (read code → emit TSV), not deep reasoning. Sonnet stays for `lore` (synthesis).
+Set `model: "haiku"` on scanner agents — they're doing extraction (read code → emit TSV), not deep reasoning. Sonnet stays for `dg:lore` (synthesis).
 
 ## Phase 2-3 — Scan + Consolidate (Workflow)
 
 Scanning and synthesis run as a single background **Workflow**. Invoking `/dg:monolith`
 *is* the opt-in to the Workflow tool — no extra keyword needed. The scanner and
-`lore` prompts live inside the script (`references/scan.workflow.mjs`), so they no
+`dg:lore` prompts live inside the script (`references/scan.workflow.mjs`), so they no
 longer bloat this protocol or the orchestrator's context window. The orchestrator's
 only job here is to assemble `args` and call the tool.
 
@@ -125,16 +125,16 @@ Workflow({
 
 `<monolith-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass the script as an absolute path.
 
-The workflow runs scanners (haiku, parallel) → `lore` (synthesis) and writes the
+The workflow runs scanners (haiku, parallel) → `dg:lore` (synthesis) and writes the
 full updated file to `stagingPath`. It returns `{ staged, stagingPath, summary }`.
-`lore` is the only writer in both full and `--shallow` modes; the orchestrator never
+`dg:lore` is the only writer in both full and `--shallow` modes; the orchestrator never
 writes term tables itself.
 
 If it returns `staged: false` (empty scan), report "no new vocabulary found" and
 skip to Phase 5 — there is nothing to promote.
 
 **Self-containment guarantee:** the script passes the template and existing-file
-content *inline* into the `lore` prompt and never references the skill directory, so
+content *inline* into the `dg:lore` prompt and never references the skill directory, so
 no sub-agent reads `SKILL.md` and trips the `disable-model-invocation` guard.
 
 Once the workflow returns with `staged: true`, continue to Phase 3.5 against
@@ -206,7 +206,7 @@ set -e
 ### 4c. Domain split (cap exit `1` or `2`)
 
 A vocabulary that outgrows the cap has earned more room. Do not delete rows to fit, and
-do not ask `lore` to pick "lowest-signal" entries — partition deterministically instead:
+do not ask `dg:lore` to pick "lowest-signal" entries — partition deterministically instead:
 
 ```sh
 set +e

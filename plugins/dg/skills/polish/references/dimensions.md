@@ -35,6 +35,6 @@
 ## Out of scope (redirect instead of doing it here)
 
 - Correctness bugs, security issues, logic errors → the "reviewer" sub agent for bug checking and the "security" agent for security concerns
-- Missing test coverage, always-passing assertions → `standard-test` skill / `qa-writer` agent.
+- Missing test coverage, always-passing assertions → `standard-test` skill / `dg:qa-writer` agent.
 - Re-formatting untouched code, or fighting an auto-running formatter/pre-commit hook on the same files → don't duplicate the hook's job or re-run it under a different name. Hygiene (dimension 7) covers lint-clean/import-tidy state of the diffed files themselves, not a whole-file/whole-repo reformat.
 - Anything requiring a design decision (renaming a public API, changing a data model) → surface it as a suggestion in the summary, don't apply it unasked.

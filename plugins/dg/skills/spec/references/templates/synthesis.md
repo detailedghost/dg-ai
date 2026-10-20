@@ -1,6 +1,6 @@
 # Synthesis Template (plan.md step 6)
 
-One launch: **foreman**, `[fable, xhigh]`. Runs after all `roundtable/slice-<N>.md` files
+One launch: **dg:foreman**, `[fable, xhigh]`. Runs after all `roundtable/slice-<N>.md` files
 are populated (step 5).
 
 ## Launch prompt

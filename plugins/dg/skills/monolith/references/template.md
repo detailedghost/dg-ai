@@ -1,6 +1,6 @@
 # `monolith.md` template
 
-The exact skeleton `lore` writes (or appends to) at `.agents/monolith.md`.
+The exact skeleton `dg:lore` writes (or appends to) at `.agents/monolith.md`.
 
 ## Skeleton
 

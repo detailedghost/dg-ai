@@ -60,11 +60,11 @@ without a spec path is an error, not a no-op.
    lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). Prefer this over globbing
    the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
-   - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`shell` or no assignment +
+   - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`dg:shell` or no assignment +
      warning) only if nothing fits.
-   - `qa` — zero or more. Add `qa-code` for non-trivial logic, `qa-perf` for hot paths / large data, `qa-devops` for
-     CI/Docker/Terraform touches, `qa-writer` for test-authoring work, `reviewer` for cross-cutting refactors,
-     `security` for auth/secrets/crypto/PII.
+   - `qa` — zero or more. Add `dg:qa-code` for non-trivial logic, `dg:qa-perf` for hot paths / large data, `dg:qa-devops` for
+     CI/Docker/Terraform touches, `dg:qa-writer` for test-authoring work, `dg:reviewer` for cross-cutting refactors,
+     `dg:security` for auth/secrets/crypto/PII.
    - `effort` — leave unset unless this work needs to deviate from `primary`'s model-tier default. The default itself
      lives in one place, `EFFORT_BY_MODEL` in [`sdlc/references/templates/slice-wave.workflow.js`](../sdlc/references/templates/slice-wave.workflow.js) (currently
      `haiku→low, sonnet→medium, opus→xhigh`) — the workflow applies it automatically when `effort` is absent, so
@@ -79,16 +79,16 @@ Then run the mode-specific steps for whichever mode `Dispatch` picked — see Ro
 
 Match the work against roster descriptions. Strong signals beat weak ones:
 
-- C# / .NET / EF Core / Dapper → `csharp`
-- Python / Flask / SQLAlchemy / pandas / pytest → `python`
-- TypeScript / React / Next.js / Node / Jest → `js`
-- Bash / ZSH / POSIX scripts / shell automation → `shell`
-- Terraform / Docker / GitHub Actions / AWS / CI-CD → `devops`
-- Snowflake / migrations / schema design / query tuning → `dba`
-- Docs / README / Mermaid / ADRs → `lore`
-- Architecture deep-dives (rare, usually as QA not primary) → `arch`
+- C# / .NET / EF Core / Dapper → `dg:csharp`
+- Python / Flask / SQLAlchemy / pandas / pytest → `dg:python`
+- TypeScript / React / Next.js / Node / Jest → `dg:js`
+- Bash / ZSH / POSIX scripts / shell automation → `dg:shell`
+- Terraform / Docker / GitHub Actions / AWS / CI-CD → `dg:devops`
+- Snowflake / migrations / schema design / query tuning → `dg:dba`
+- Docs / README / Mermaid / ADRs → `dg:lore`
+- Architecture deep-dives (rare, usually as QA not primary) → `dg:arch`
 
-Work that's clearly QA-only (writing tests against existing code) takes `qa-writer` as **primary**, not as QA. Use
+Work that's clearly QA-only (writing tests against existing code) takes `dg:qa-writer` as **primary**, not as QA. Use
 judgment.
 
 ## Routing

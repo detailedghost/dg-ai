@@ -105,7 +105,7 @@ renders a local review board and hands the verdict back to the agent.
 | File | When to read |
 |------|-------------|
 | [references/workflow.md](references/workflow.md) | Default (GitHub) mode — always, when `--proxy` is absent. Phase-by-phase IN/OUT and gates. |
-| [references/antagonist-prompt.md](references/antagonist-prompt.md) | Default mode only — when launching the `copilot-antagonist` agent in the Act phase. |
+| [references/antagonist-prompt.md](references/antagonist-prompt.md) | Default mode only — when launching the `dg:copilot-antagonist` agent in the Act phase. |
 | [references/proxy-workflow.md](references/proxy-workflow.md) | Proxy mode — always, when `--proxy` is present, or when default mode auto-routes here (no AI review bot on this provider). Phase-by-phase IN/OUT and gates. |
 | [references/proxy-review-prompt.md](references/proxy-review-prompt.md) | Proxy mode only — when invoking `/dg:proxy` for a review round. |
 

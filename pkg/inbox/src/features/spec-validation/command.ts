@@ -33,6 +33,9 @@ const knownAgents = new Set([
 	"wave",
 ]);
 
+const isKnownAgent = (name: string): boolean =>
+	knownAgents.has(name.replace(/^dg:/, ""));
+
 export async function validateSpecCommand(context: CliContext): Promise<void> {
 	const specPath = getStringFlag(
 		context.args.flags,
@@ -69,11 +72,11 @@ export async function validateSpecCommand(context: CliContext): Promise<void> {
 		if (!slice.hasAgents || !slice.primary) {
 			errors.push(`${label}: agents.primary is required`);
 		}
-		if (slice.primary && !knownAgents.has(slice.primary)) {
+		if (slice.primary && !isKnownAgent(slice.primary)) {
 			errors.push(`${label}: unknown primary agent ${slice.primary}`);
 		}
 		for (const agent of slice.qa) {
-			if (!knownAgents.has(agent)) {
+			if (!isKnownAgent(agent)) {
 				errors.push(`${label}: unknown qa agent ${agent}`);
 			}
 		}

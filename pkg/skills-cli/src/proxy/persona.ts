@@ -1,9 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { packagedPersonas } from "./packaged-personas";
+import { bareAgent, packagedPersonas } from "./packaged-personas";
 import { resolveSlicePrimary } from "./spec-persona";
 
-async function readAgentPersona(name: string): Promise<string> {
+async function readAgentPersona(requested: string): Promise<string> {
+	const name = bareAgent(requested);
 	if (!/^[\w-]+$/.test(name)) throw new Error(`Invalid agent persona name: ${name}`);
 	const home = process.env.HOME ?? homedir();
 	const directory = process.env.DG_PERSONAS_DIR ?? process.env.DG_AGENTS_DIR ?? join(home, ".claude", "agents");

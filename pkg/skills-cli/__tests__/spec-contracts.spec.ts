@@ -758,7 +758,7 @@ describe("dg-skills spec roundtable", () => {
 		expect(basename(directory)).toBe(`plan-p3b-${FIXED_STAMP}`);
 		for (const agent of ["reviewer", "qa-perf", "security"]) {
 			expect(readFileSync(join(directory, `${agent}.md`), "utf8")).toStartWith(
-				`[DRY] claude -p --agent ${agent} --permission-mode plan --output-format text <<<\n`,
+				`[DRY] claude -p --agent dg:${agent} --permission-mode plan --output-format text <<<\n`,
 			);
 		}
 	});

@@ -34,14 +34,14 @@ Pick the agent type that matches the thread's domain:
 
 | Domain | Agent type | When |
 |--------|-----------|------|
-| Database schema, queries, migrations | `dba` | Schema mismatch, query failure, migration issue |
-| CI/CD, pipeline, build, deploy | `qa-devops` | "Fails on the pipeline", build errors, deploy issues |
-| Test failures, logic correctness | `reviewer` | Wrong output, assertion failures, coverage gaps |
-| Security, auth, access control | `security` | Permission errors, token issues, vuln investigation |
-| Python runtime, library issues | `python` | Python stack traces, import errors, dependency issues |
-| JS/TS runtime, bundling, React | `js` | JS errors, build tool issues, frontend bugs |
-| C#/.NET runtime issues | `csharp` | .NET exceptions, EF Core issues |
-| Shell/infra/environment | `shell` | Path issues, permissions, env var problems |
+| Database schema, queries, migrations | `dg:dba` | Schema mismatch, query failure, migration issue |
+| CI/CD, pipeline, build, deploy | `dg:qa-devops` | "Fails on the pipeline", build errors, deploy issues |
+| Test failures, logic correctness | `dg:reviewer` | Wrong output, assertion failures, coverage gaps |
+| Security, auth, access control | `dg:security` | Permission errors, token issues, vuln investigation |
+| Python runtime, library issues | `dg:python` | Python stack traces, import errors, dependency issues |
+| JS/TS runtime, bundling, React | `dg:js` | JS errors, build tool issues, frontend bugs |
+| C#/.NET runtime issues | `dg:csharp` | .NET exceptions, EF Core issues |
+| Shell/infra/environment | `dg:shell` | Path issues, permissions, env var problems |
 | General codebase exploration | `Explore` | Domain unclear, or need broad file discovery |
 
 **Default to `Explore` only when no domain-specific agent fits.** Domain agents carry expertise that Explore doesn't. These domain agent types come from the user's own setup, not from this plugin. When the type is not installed, use `general-purpose` for the thread.
@@ -83,7 +83,7 @@ Workflow({
 
 `args` contract: `threads` is `[{ id, agentType, prompt }]`, each self-contained; the script keeps only the first 3. `monolithHint` is appended to every prompt, or `''` when there is no `monolith.md`. `verify` defaults to `true`.
 
-Threads carry an optional `model` (the script pins `security`/`dba` → opus, all other domains → sonnet, and Verify → sonnet, since unpinned workflow agents would inherit the session Opus). The script runs each thread (`Investigate`) then, by default, an adversarial **Verify** pass: a skeptic re-opens the cited lines and returns `confirmed: true|false`. It returns `{ findings: [{ threadId, rootCause, evidence, confidence, needsDesignDecision, verified }] }`. Every finding carries its `threadId`. `verified` is `null` when `verify` is `false`, and `{ confirmed: false, note: "verifier failed" }` when the verifier agent fails. Structured output — the orchestrator never parses prose. Set `verify: false` only for a fast, low-stakes pass.
+Threads carry an optional `model` (the script pins `dg:security`/`dg:dba` → opus, all other domains → sonnet, and Verify → sonnet, since unpinned workflow agents would inherit the session Opus). The script runs each thread (`Investigate`) then, by default, an adversarial **Verify** pass: a skeptic re-opens the cited lines and returns `confirmed: true|false`. It returns `{ findings: [{ threadId, rootCause, evidence, confidence, needsDesignDecision, verified }] }`. Every finding carries its `threadId`. `verified` is `null` when `verify` is `false`, and `{ confirmed: false, note: "verifier failed" }` when the verifier agent fails. Structured output — the orchestrator never parses prose. Set `verify: false` only for a fast, low-stakes pass.
 
 ## Phase 3 — Synthesize
 

@@ -104,7 +104,7 @@ const sub = (tpl, slice, extra = {}) =>
     .replaceAll("{CHANGED_FILES}", (extra.changedFiles || []).join("\n"))
     .replaceAll("{FINDINGS}", extra.findings || "")
     .replaceAll("{PROXY_BACKEND}", slice.proxyBackend || "")
-    .replaceAll("{PRIMARY_AGENT}", slice.primaryAgent || "general-purpose");
+    .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primaryAgent || "general-purpose"));
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
 const blockingDeferral = (ds) => (ds || []).some((d) => d.type === "SPEC" || d.type === "TEST");
@@ -114,10 +114,39 @@ const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slic
 
 // Tier the fan-out (unpinned workflow agents else inherit session Opus). Mirrors each named
 // agent's own frontmatter pin (its agent definition file) since opts.model overrides it here.
+const PLUGIN_AGENTS = new Set([
+  "arch",
+  "checkpoint",
+  "copilot-antagonist",
+  "csharp",
+  "dba",
+  "design",
+  "devops",
+  "foreman",
+  "js",
+  "lore",
+  "python",
+  "qa-code",
+  "qa-devops",
+  "qa-perf",
+  "qa-writer",
+  "reviewer",
+  "security",
+  "shell",
+  "thrash",
+  "wave",
+]);
+const bareAgent = (a) => a.replace(/^dg:/, "");
+const typeFor = (a) => (PLUGIN_AGENTS.has(bareAgent(a)) ? `dg:${bareAgent(a)}` : a);
 const FABLE_AGENTS = new Set(["arch", "design", "foreman"]);
 const OPUS_AGENTS = new Set(["dba", "security"]);
-const modelFor = (a) =>
-  modelOverride || (a === "wave" ? "haiku" : FABLE_AGENTS.has(a) ? "fable" : OPUS_AGENTS.has(a) ? "opus" : "sonnet");
+const modelFor = (a) => {
+  const name = bareAgent(a);
+  return (
+    modelOverride ||
+    (name === "wave" ? "haiku" : FABLE_AGENTS.has(name) ? "fable" : OPUS_AGENTS.has(name) ? "opus" : "sonnet")
+  );
+};
 // Delegation-table effort default per model tier; primaryEffort from /assign wins when set.
 const EFFORT_BY_MODEL = { haiku: "low", sonnet: "medium", opus: "xhigh", fable: "medium" };
 const effortFor = (a, override) => override || effortOverride || EFFORT_BY_MODEL[modelFor(a)];
@@ -131,7 +160,7 @@ const results = await pipeline(
       phase: phaseFor(slice),
       model: modelFor("qa-writer"),
       effort: effortFor("qa-writer"),
-      agentType: "qa-writer",
+      agentType: typeFor("qa-writer"),
       schema: RED,
     }).then((r) => ({
       slice,
@@ -156,7 +185,7 @@ const results = await pipeline(
       phase: phaseFor(slice),
       model: modelFor(slice.primaryAgent || "general-purpose"),
       effort: effortFor(slice.primaryAgent || "general-purpose", slice.primaryEffort),
-      agentType: slice.primaryAgent || "general-purpose",
+      agentType: typeFor(slice.primaryAgent || "general-purpose"),
       schema: YELLOW,
     }).then((y) => ({
       ...st,
@@ -183,7 +212,7 @@ const results = await pipeline(
       phase: phaseFor(slice),
       model: modelFor("qa-writer"),
       effort: effortFor("qa-writer"),
-      agentType: "qa-writer",
+      agentType: typeFor("qa-writer"),
       schema: GREEN,
     }).then((g) => ({
       ...st,
@@ -209,7 +238,7 @@ const results = await pipeline(
         summary: "blocked on deferral — orchestrator must resolve",
       };
     const slice = st.slice;
-    const reviewers = uniq(["wave", ...(slice.qaAgents || []), st.securitySensitive ? "security" : null]);
+    const reviewers = uniq(["wave", ...(slice.qaAgents || []), st.securitySensitive ? "security" : null].map((a) => a && bareAgent(a)));
     let residual = [];
     let deadReviewers = [];
     let round = 0;
@@ -228,7 +257,7 @@ const results = await pipeline(
                 phase: phaseFor(slice),
                 model: modelFor(rv),
                 effort: effortFor(rv),
-                agentType: rv,
+                agentType: typeFor(rv),
                 schema: QA,
               },
             ),
@@ -262,7 +291,7 @@ const results = await pipeline(
                   owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose",
                   owner === "qa-writer" ? undefined : slice.primaryEffort,
                 ),
-                agentType: owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose",
+                agentType: typeFor(owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose"),
                 schema: YELLOW,
               },
             );

@@ -10,13 +10,13 @@ The bundle is the source of truth once it exists (step 3 onward) — write findi
 compact aggressively. Before step 3, working state is the in-context grill-me decision log (see
 [grill.md](grill.md)); there is no file to compact against yet.
 
-## Step 1 — arch grill-me `[fable, xhigh]`
+## Step 1 — `dg:arch` grill-me `[fable, xhigh]`
 
 Run grill-me pass 1 (protocol inlined per [grill.md](grill.md)) against the user's request — scoped
 to architecture placement, integration points, risk areas. Follow `protocol.md`'s Session Startup +
 Interview Rounds.
 
-**Interview in the main loop; delegate only the research.** `arch` (`fable`, `xhigh`) is the
+**Interview in the main loop; delegate only the research.** `dg:arch` (`fable`, `xhigh`) is the
 research persona for this pass, not the interviewer — a subagent has no `AskUserQuestion` and
 cannot meet this step's gate. See [grill.md](grill.md) § *Interview passes run in the MAIN LOOP*
 for the relay contract that applies if you do delegate a leg.
@@ -48,10 +48,10 @@ surviving branch into step 1.
 > **GATE:** either the collapse summary is printed, or every admitted branch is `[DECIDED]` with
 > its alternatives recorded and every `[ASSUMED]` confirmed.
 
-## Step 2 — foreman grill-me `[fable, xhigh]`
+## Step 2 — `dg:foreman` grill-me `[fable, xhigh]`
 
 Grill-me pass 2 — scoped to work ordering: vertical slice boundaries, the dependency graph, and any
-scope/acceptance-criteria gaps the earlier passes didn't cover. **foreman** (`fable`,
+scope/acceptance-criteria gaps the earlier passes didn't cover. **dg:foreman** (`fable`,
 `xhigh`) is the research persona; the interview stays in the main loop as in step 1.
 
 Reads passes 1 and 1.5's decision logs as settled context; does not re-litigate `[DECIDED]` items.
@@ -122,7 +122,7 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 
 ## Step 6 — Synthesis `[fable, xhigh]` + grill-me gaps pass
 
-- a. Launch **foreman**, `fable`, effort `xhigh`, per
+- a. Launch **dg:foreman**, `fable`, effort `xhigh`, per
   [templates/synthesis.md](templates/synthesis.md) — folds all slice findings into a proposed
   `plan.md` edit list, surfaces cross-slice conflicts, collects `[OPEN — escalate]` items.
 - b. If synthesis surfaced any `[OPEN — escalate]` items, run grill-me pass 3 (see

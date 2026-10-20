@@ -49,7 +49,7 @@ const byName: Record<string, string> = {
 }
 
 function iconFor(agent: string): string | null {
-  const n = (agent ?? '').toLowerCase().trim()
+  const n = (agent ?? '').toLowerCase().trim().replace(/^dg:/, '')
   if (byName[n]) return byName[n]
   if (n.includes('design')) return 'palette'
   if (n.includes('qa') || n.includes('test')) return 'flask-conical'

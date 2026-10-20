@@ -46,7 +46,7 @@ If any fail, print the reason and stop. Do not attempt to clean up the user's wo
 
 **1. Gather** — run `~/.dg/bin/dg-skills meaningful info`. If `ahead < 2`, stop. Load [references/helper-api.md](references/helper-api.md) for the full JSON schema and field descriptions.
 
-**2. Propose** — spawn a `reviewer` subagent using the host's configured persona to read per-commit diffs and return ≥3 distinct regrouping options. Load [references/proposal-format.md](references/proposal-format.md) for the exact subagent brief and `=== Option N ===` block format before briefing the subagent. Pass the full `info` JSON including `commits[].author` and `file_authors` so the subagent can assign authorship per group.
+**2. Propose** — spawn a `dg:reviewer` subagent using the host's configured persona to read per-commit diffs and return ≥3 distinct regrouping options. Load [references/proposal-format.md](references/proposal-format.md) for the exact subagent brief and `=== Option N ===` block format before briefing the subagent. Pass the full `info` JSON including `commits[].author` and `file_authors` so the subagent can assign authorship per group.
 
 **3. Present** — use the host's user-question interface with each option as a choice: label = one-line option title, description = tradeoff sentence, preview = MSG subjects + file counts per group.
 

@@ -7,7 +7,7 @@ call.
 
 This works cleanly when the hard call is *detection/judgment* — the higher-tier `qa` agent flags it, the primary applies
 the fix. It's a weaker fit when the hard call is *implementation itself* (e.g. a security-sensitive algorithm, not just
-a security-sensitive line) — a `sonnet` primary can burn both correction rounds re-attempting a fix a `security`/`opus`
+a security-sensitive line) — a `sonnet` primary can burn both correction rounds re-attempting a fix a `dg:security`/`opus`
 reviewer keeps rejecting, surfacing only as a deferral at the end. If the hard part is something only a higher-tier
 agent could *write*, not just *catch*, give it that agent as `primary` instead of routing it through `qa`.
 
@@ -16,7 +16,7 @@ agent could *write*, not just *catch*, give it that agent as `primary` instead o
 Spec mode only — there is no frontmatter to record it in otherwise.
 
 `/dg:assign` does not automatically decide when to delegate a slice to an external CLI backend via `/dg:proxy`
-(codex/copilot/pi/opencode/cortex/grok) — that's a cost/trust decision, not a content-matching pick like `js` vs `shell`.
+(codex/copilot/pi/opencode/cortex/grok) — that's a cost/trust decision, not a content-matching pick like `dg:js` vs `dg:shell`.
 
 Only write `agents.proxy: <backend>` when the user explicitly asks for a slice (or the whole spec) to be delegated
 externally during this invocation (e.g. "delegate the migration slice to codex").

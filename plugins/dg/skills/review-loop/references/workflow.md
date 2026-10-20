@@ -272,7 +272,7 @@ OUT: verdict file path `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdi
      `.agents/spec/<NNN>_<slug>/plan.md`. Skip when not found.
    - Otherwise skip spec context.
 
-1. Launch the `copilot-antagonist` agent with the Prompt Template in
+1. Launch the `dg:copilot-antagonist` agent with the Prompt Template in
    [antagonist-prompt.md](antagonist-prompt.md), filling its comments
    JSON and spec paths.
 

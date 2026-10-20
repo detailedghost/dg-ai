@@ -12,7 +12,7 @@ description: >-
 # /dg:thrash
 
 Review a diff, tier every finding, post the review with a verdict. A diff over 3000
-changed lines is split into chunks, each reviewed by its own `thrash` agent in parallel
+changed lines is split into chunks, each reviewed by its own `dg:thrash` agent in parallel
 and merged into one review. Cost: a small diff still takes one agent pass; a large diff
 takes one per chunk. Large diffs use up to 8 agents, and every changed line outside skipped
 generated, lock, or vendored files is reviewed. All agents use the same configured `thrash` persona and
@@ -91,7 +91,7 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    `contextPath`, `chunks`, `skipped`, `stats`, `untracked`. Each chunk has
    `id`, `label`, `annotatedPath`, `findingsPath`. A diff at or under the threshold is
    one chunk. Zero chunks → say "nothing to review" and stop. Warn on `untracked` paths.
-2. **Review.** Launch one `thrash` agent per chunk, all in one message, per
+2. **Review.** Launch one `dg:thrash` agent per chunk, all in one message, per
    `references/agent-prompt.md`. Each writes its `findingsPath` itself and replies with
    one `WROTE` line. Never pull its JSON into context. Never ask the user about size.
    With `--proxy <backend>`, start one background `~/.dg/bin/dg-skills proxy` job per chunk instead,

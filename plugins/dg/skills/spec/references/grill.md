@@ -37,7 +37,7 @@ the only pass that can end without asking anything: see its self-collapse rule.
 ## Interview passes run in the MAIN LOOP, not a subagent
 
 `AskUserQuestion` is main-loop only. A subagent cannot interview anyone, so **delegating a grill-me
-pass to `arch`/`foreman` produces a self-serve research pass, not an interview** — the gates
+pass to `dg:arch`/`dg:foreman` produces a self-serve research pass, not an interview** — the gates
 below ("all `[ASSUMED]` confirmed", "the user explicitly confirms the summary") are then unmeetable
 and get silently skipped.
 
@@ -57,7 +57,7 @@ So, for each of the four passes:
   public API or behaviour change, or a product decision. If a child's report shows it made such a
   call, say so plainly and put the question to the user.
 
-Applies hardest to pass 1 (`arch`), whose entire scope is surfacing decisions the human owns.
+Applies hardest to pass 1 (`dg:arch`), whose entire scope is surfacing decisions the human owns.
 
 ## Decision log carries forward, no JSON hand-back
 

@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { qualifiedAgent } from "../proxy/packaged-personas";
 import { die, isDirectory, isFile, readText, records, say } from "./shared";
 
 function agentsDir(): string {
@@ -144,11 +145,11 @@ export async function rosterCommand(args: string[]): Promise<number> {
 	if (files.length === 0) die(`no .toml or .md agent files found in: ${dir}`);
 	for (const file of files) {
 		const lines = records(await readText(`${dir}/${file}`));
-		say(
-			file.endsWith(".toml")
-				? tomlRow(file.slice(0, -5), lines, full)
-				: markdownRow(file.slice(0, -3), lines, full),
-		);
+		const row = file.endsWith(".toml")
+			? tomlRow(file.slice(0, -5), lines, full)
+			: markdownRow(file.slice(0, -3), lines, full);
+		const tab = row.indexOf("\t");
+		say(`${qualifiedAgent(row.slice(0, tab))}${row.slice(tab)}`);
 	}
 	return 0;
 }

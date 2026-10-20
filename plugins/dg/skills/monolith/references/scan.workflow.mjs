@@ -225,6 +225,6 @@ Write the full updated file to ${stagingPath} (the staging path — NEVER write
 to ${monolithPath} directly). Return a one-line summary of how many rows you
 wrote per section.`
 
-const summary = await agent(LORE_PROMPT, { label: 'consolidate', phase: 'Consolidate', model: 'sonnet', agentType: 'lore' })
+const summary = await agent(LORE_PROMPT, { label: 'consolidate', phase: 'Consolidate', model: 'sonnet', agentType: 'dg:lore' })
 
 return { staged: true, stagingPath, summary }

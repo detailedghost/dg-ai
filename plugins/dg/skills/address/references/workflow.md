@@ -44,7 +44,7 @@ IN: `localOnly`.
 Run in parallel:
 
 1. `~/.dg/bin/dg-skills address probe` — provider auth failure non-fatal when `localOnly=true`; warn and continue.
-1. `checkpoint` agent: `"Return OK"` (probes the host's configured delegation facility). Honor existing session authorization; do not add permissions.
+1. `dg:checkpoint` agent: `"Return OK"` (probes the host's configured delegation facility). Honor existing session authorization; do not add permissions.
 
 GATE: probe fails AND `localOnly=false` → stop.
 
@@ -113,7 +113,7 @@ Skip when `verdictsPath` set. CI and Wiz items bypass (pass through unchanged). 
 Input: `source=="comment" && mode=="fix"` + all `source=="local-review"` items.
 
 1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`.
-1. Launch `copilot-antagonist`:
+1. Launch `dg:copilot-antagonist`:
    > Evaluate these review findings. Return ONLY the array your persona defines:
    > `[{"commentId":<commentId>,"threadId":<threadId>,"verdict":"accept|reject-illogical|reject-other|strange","reason":"<why>"}]`
 1. Validate all `commentId` values present + verdicts valid. Merge back by `commentId` (a `local-N` value is a `localId`). Reconstitute with CI items.
@@ -138,10 +138,10 @@ GATE: all `resolve-with-reply` calls succeeded (local rejects never block). `wor
 
 Skip if `agents` is 1–2 items. Run when null or 3+.
 
-Launch `foreman` with `model: sonnet` (a routing pick, not a planning call):
+Launch `dg:foreman` with `model: sonnet` (a routing pick, not a planning call):
 
 > Return ONLY a JSON array of agent names from: `js csharp python dba security shell devops qa-writer lore`.
-> Items: `{workList JSON}`. Route `ci` items by `workflowFile` (→ devops for `.yml`) or `logExcerpt` extension. Include `devops` when CI items exist.
+> Items: `{workList JSON}`. Route `ci` items by `workflowFile` (→ dg:devops for `.yml`) or `logExcerpt` extension. Include `dg:devops` when CI items exist.
 
 Append `extraContext` if set. Parse → `agents`.
 
@@ -168,7 +168,7 @@ GATE: no `strange` items undecided.
 
 Skip if no files match `*.test.*`, `*.spec.*`, `*_test.*`, `test_*.*`, `tests/**`, `__tests__/**`.
 
-Launch `qa-writer`:
+Launch `dg:qa-writer`:
 
 > Write tests reproducing each issue. No production code changes.
 > Items: `{workList JSON}`
@@ -190,7 +190,7 @@ Route items per `agents.md`. Per-agent prompts:
 > Items: `{JSON}`
 > Return ONLY: `[{"id":"<ciId>","status":"fixed"|"blocked","summary":"<what/why>"}]`
 
-**Wiz (`source=="wiz"` or `wiz:true`):** route by path per `agents.md`, plus `security` for secrets and CVEs.
+**Wiz (`source=="wiz"` or `wiz:true`):** route by path per `agents.md`, plus `dg:security` for secrets and CVEs.
 
 > Fix these Wiz findings at the root cause, following the Wiz remediation. Upgrade or replace a vulnerable package, never pin a known-bad version. Remove a leaked secret from code and say it must be rotated. Never suppress a rule or add an ignore unless the item says the user approved it.
 > Items: `{JSON}`
@@ -200,7 +200,7 @@ Append `extraContext` if set. Merge all into `fixResults` as `{itemId, source, s
 
 ## Phase 3 — QA (max 3 cycles)
 
-Parallel: `reviewer` (quality/logic), `qa-devops` (build/tests), `qa-perf` (perf/allocs). Fixes are uncommitted here, so pass the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard`.
+Parallel: `dg:reviewer` (quality/logic), `dg:qa-devops` (build/tests), `dg:qa-perf` (perf/allocs). Fixes are uncommitted here, so pass the union of `git diff --name-only HEAD` and `git ls-files --others --exclude-standard`.
 
 > Review these files. This prompt overrides your persona's report format. Return ONLY the JSON array defined in `agents.md` (Response Format, Phase 3), or `[]` if clean. Map your own severity labels to `critical|high|medium|low`.
 
@@ -210,7 +210,7 @@ GATE: 3 failures → stop, report, do not commit.
 
 ## Phase 4 — Document
 
-Skip unless `docs/**`, `*.md`, or public API signatures changed. Launch `lore` on affected files only.
+Skip unless `docs/**`, `*.md`, or public API signatures changed. Launch `dg:lore` on affected files only.
 
 ## Phase 5 — Commit + Push
 

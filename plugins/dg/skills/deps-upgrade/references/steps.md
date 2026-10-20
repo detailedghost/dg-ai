@@ -70,8 +70,8 @@ If lockfile conflicts or install fails → resolve, re-run.
 
 Launch in parallel if available:
 
-- **qa-devops** — verify build is clean, no new warnings, CI pipeline valid.
-- **security** — re-run `~/.dg/bin/dg-skills deps-upgrade audit` and diff vulnerabilities before/after.
+- **dg:qa-devops** — verify build is clean, no new warnings, CI pipeline valid.
+- **dg:security** — re-run `~/.dg/bin/dg-skills deps-upgrade audit` and diff vulnerabilities before/after.
 
 If findings → fix and re-verify. If agents unavailable → skip.
 

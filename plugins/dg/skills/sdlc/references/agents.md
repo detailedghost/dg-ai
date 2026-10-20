@@ -6,13 +6,13 @@ Canonical agent guide for the execution lifecycle. Planning-side agent guidance 
 
 | Stage | Agent | Model | Focus |
 |---|---|---|---|
-| Red / Green | **qa-writer** | sonnet | Failing tests from Contracts (red), coverage gaps (green) |
+| Red / Green | **dg:qa-writer** | sonnet | Failing tests from Contracts (red), coverage gaps (green) |
 | Yellow (engineering) | `slices[].agents.primary` — picked by `/dg:assign` | per-agent pin | Full vertical slice: data → logic → API → UI |
-| MiniQA | **wave** + `slices[].agents.qa[]` + **security** (when slice flags `securitySensitive`) | haiku / varies | Light review + checkpoint audit |
-| Correction | responsible engineering agent or **qa-writer** | as assigned | Fix routed findings only |
-| Final review | **reviewer**, **qa-perf**, **qa-devops**, **security** | sonnet | Style, logic, coverage, perf, build, OWASP |
-| Docs | **lore** | sonnet | Doc comments, README |
-| Full-audit | **wave** | haiku | Checkbox audit |
+| MiniQA | **dg:wave** + `slices[].agents.qa[]` + **dg:security** (when slice flags `securitySensitive`) | haiku / varies | Light review + checkpoint audit |
+| Correction | responsible engineering agent or **dg:qa-writer** | as assigned | Fix routed findings only |
+| Final review | **dg:reviewer**, **dg:qa-perf**, **dg:qa-devops**, **dg:security** | sonnet | Style, logic, coverage, perf, build, OWASP |
+| Docs | **dg:lore** | sonnet | Doc comments, README |
+| Full-audit | **dg:wave** | haiku | Checkbox audit |
 
 Model/effort tiering for wave stages is pinned in-script (`modelFor` / `EFFORT_BY_MODEL` in `templates/slice-wave.workflow.js` — the single source of truth for the tier→effort default); `slices[].agents.effort` overrides per slice.
 

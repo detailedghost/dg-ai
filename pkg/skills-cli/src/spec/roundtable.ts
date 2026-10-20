@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { escapeRegExp } from "@dg/common";
 import { scratchDir } from "@dg/common/node";
+import { qualifiedAgent } from "../proxy/packaged-personas";
 import { schemaAsset } from "./schema";
 import {
 	abspath,
@@ -73,7 +74,8 @@ async function runAgent(
 	dryRun: boolean,
 ): Promise<void> {
 	const out = `${outDir}/${agent}.md`;
-	const preview = `claude -p --agent ${agent} --permission-mode plan --output-format text`;
+	const agentName = qualifiedAgent(agent);
+	const preview = `claude -p --agent ${agentName} --permission-mode plan --output-format text`;
 	if (dryRun) {
 		writeFileSync(out, `[DRY] ${preview} <<<\n${prompt}\n>>>\n`);
 		return;
@@ -86,7 +88,7 @@ async function runAgent(
 				"claude",
 				"-p",
 				"--agent",
-				agent,
+				agentName,
 				"--permission-mode",
 				"plan",
 				"--output-format",
