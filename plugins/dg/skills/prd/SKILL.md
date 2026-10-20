@@ -38,7 +38,7 @@ Don't restate kick's semantics here.
 ## Workflow
 
 1. **Kick.** Invoke the `/dg:kick` skill with the same argument. It runs `/dg:spec` plan mode (grill-me →
-   roundtable → `/dg:assign` → synthesis → plan-mode approval → context pack) and parks the resulting bundle
+   roundtable → `/dg:assign` → synthesis → plan approval gate → context pack) and parks the resulting bundle
    at `.agents/spec/<NNN>_<slug>/` with `status: deferred`, committed. Capture `<NNN>_<slug>` — that
    is `<prd-slug>` below (the bundle's own `feature_snake_case`, not necessarily the raw
    `<feature-name>` argument verbatim).

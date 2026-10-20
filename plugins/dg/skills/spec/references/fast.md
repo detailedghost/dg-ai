@@ -185,7 +185,7 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 | Separate `dg:arch` / structure / `dg:foreman` interview passes | plan.md steps 1, 1.5, 2 |
 | Per-slice review fan-out | plan.md step 5 |
 | foreman synthesis + gaps pass | plan.md step 6 |
-| Plan-mode approval after the bundle is written | plan.md step 8 |
+| Plan approval gate after the bundle is written | plan.md step 8 |
 | `/dg:proxy` slice delegation | plan.md step 7c |
 | Parallel slice waves (Red→Yellow→Green→MiniQA) | engineering.md §4 |
 | The plan/execute session boundary | plan.md step 10 |

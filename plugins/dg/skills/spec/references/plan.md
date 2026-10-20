@@ -156,13 +156,15 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 > **GATE:** `plan.md` reflects synthesis + pass-3 decisions; every delegated slice has
 > `agents.proxy` + `agents.proxy_skills` set; user has seen the token-cost warning.
 
-## Step 8 — Plan-mode approval
+## Step 8 — Plan approval gate
 
-Call `EnterPlanMode`, write the approval summary into the plan file named in the plan-mode system
-message, then call `ExitPlanMode` and block on the answer. The summary carries the bundle path, the
-purpose, one line per slice (`id`, `name`, `depends_on`, delegated backend if any), any
-`[OPEN — roundtable]` annotations, and the token-cost warning from step 7. Rejection or requested
-changes → stay in plan mode, revise `<bundle>/plan.md` with the user, update the summary, exit again.
+Print a readable view of the full plan in the terminal, laid out as in
+[templates/plan-view.md](templates/plan-view.md): a `👀 Check these` list first, then short bulleted sections,
+with 👀 on every line the user should double-check. Include each `[OPEN — roundtable]` annotation and the
+token-cost warning from step 7. Then ask with `AskUserQuestion`: **Approve** (continue to step 9) or **Rework**
+(the user says what to change; revise `<bundle>/plan.md`, print the view again, ask again, and loop until Approve).
+Nothing after this step runs before Approve. `/dg:kick`, `/dg:prd` and `/dg:pickup` reach this gate through plan
+mode and reuse the same view.
 
 If plan approval (or an earlier step) surfaced a hands-on validation need, build it with the
 prototype skill (it ships later; skip this step until then) — keep the asset durable (`.agents/prototype/<name>/`, never `--light`/`/tmp`). On
@@ -172,7 +174,7 @@ acceptance, register it onto the slice:
 ~/.dg/bin/dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
-> **GATE:** plan approved via `ExitPlanMode`. Every accepted prototype registered onto its slice.
+> **GATE:** user chose Approve at the plan approval gate. Every accepted prototype registered onto its slice.
 
 ## Step 9 — Context pack
 

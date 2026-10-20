@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Plan or execute a durable feature spec bundle. Plan mode (`/dg:spec "<request>"`) runs interview → roundtable → synthesize → durable bundle under .agents/spec/ → plan-mode approval → tidy context pack. Fast mode (`/dg:spec --fast "<request>"`) plans and builds in one chat — built-in plan mode as the single gate, then sequential slices. Execute mode (`/dg:spec -s <NNN>_<slug>`) reads only the tidy pack + plan.md and drives /dg:sdlc's slice-wave.
+description: Plan or execute a durable feature spec bundle. Plan mode (`/dg:spec "<request>"`) runs interview → roundtable → synthesize → durable bundle under .agents/spec/ → plan approval gate → tidy context pack. Fast mode (`/dg:spec --fast "<request>"`) plans and builds in one chat — built-in plan mode as the single gate, then sequential slices. Execute mode (`/dg:spec -s <NNN>_<slug>`) reads only the tidy pack + plan.md and drives /dg:sdlc's slice-wave.
 ---
 
 # /dg:spec — Plan or Execute a Durable Feature Bundle
@@ -58,7 +58,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | 5 | Per-slice review fan-out (`sonnet` default, per-slice opt-in escalate) | references/plan.md, references/templates/slice-review.md |
 | 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
 | 7 | Write `plan.md`; assign `/dg:proxy` slices; WARN token/context cost | references/plan.md |
-| 8 | Plan-mode approval (`EnterPlanMode` → `ExitPlanMode`, blocks on approval); register accepted prototype assets (the prototype skill ships later) | references/plan.md |
+| 8 | Plan approval gate (readable plan view in the terminal, then `AskUserQuestion` Approve or Rework, blocks on Approve); register accepted prototype assets (the prototype skill ships later) | references/plan.md |
 | 9 | `~/.dg/bin/dg-skills spec context <bundle>` assembles `context.md` | references/plan.md |
 | 10 | Commit bundle; print resume command `/dg:spec -s <NNN>_<slug>` | references/plan.md |
 
@@ -75,7 +75,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | F7 | Slices sequentially in this chat — red → green → commit → compact | references/fast.md |
 | F8 | `finish.md` 5–8 — final review, docs, draft PR/MR | [sdlc finish.md](../sdlc/references/finish.md) |
 
-Fast mode drops the roundtable fan-out, the synthesis pass, the plan-mode approval step, `/dg:proxy` delegation,
+Fast mode drops the roundtable fan-out, the synthesis pass, the plan approval gate, `/dg:proxy` delegation,
 and the parallel slice waves. It keeps every end gate. Reach for full plan mode when the feature
 spans more than three or four slices or touches unfamiliar architecture.
 
@@ -94,7 +94,7 @@ the PR/MR URL into `plan.md`, restoring cwd).
 | File | When to read |
 |---|---|
 | [references/fast.md](references/fast.md) | The `--fast` contract — F1–F8: built-in plan mode → one grill pass → `ExitPlanMode` gate → scaffold + commit → worktree/`-T` → sequential main-loop slices with compaction between → `finish.md` 5–8. Read at fast-mode entry; do NOT read plan.md in this mode. |
-| [references/plan.md](references/plan.md) | Plan-mode orchestration — the 10-step pipeline (grill → roundtable → scaffold → per-slice review → synthesize → write plan.md → plan-mode approval → context pack → commit + print resume cmd). Read at plan-mode entry. |
+| [references/plan.md](references/plan.md) | Plan-mode orchestration — the 10-step pipeline (grill → roundtable → scaffold → per-slice review → synthesize → write plan.md → plan approval gate → context pack → commit + print resume cmd). Read at plan-mode entry. |
 | [references/decision-blob.md](references/decision-blob.md) | The compact-JSON contract the foreman emits for `scaffold --from-json`. Read before step 3 of plan.md. |
 | [references/execute.md](references/execute.md) | The `-s` contract — read ONLY `context.md` + `plan.md`; set `SPEC_PATH`/`SCRATCH_PATH`; reuse `/dg:sdlc` worktree setup, SKIP its slice-derivation/ephemeral-spec, drive engineering.md 4.1–4.3 → finish.md 5–8, where §6 adds the `/dg:spec` bookkeeping. Read at execute-mode entry. |
 | [references/grill.md](references/grill.md) | Thin pointer: grill-me protocol is INLINED from the [grill-me protocol](../grill-me/references/protocol.md), followed in-context; each of the four passes scoped to its narrow topic; decision log carries as context (no JSON hand-back). Read at plan.md steps 1/1.5/2/6. |
@@ -106,8 +106,8 @@ the PR/MR URL into `plan.md`, restoring cwd).
 
 - Use TaskCreate/TaskUpdate to track pipeline steps in every mode.
 - Each agent reads only its relevant `.agents/school/` topic file.
-- NEVER skip a gate condition (plan approval, per-slice triage, `ExitPlanMode` approval in plan and
-  fast modes). There is no in-run human code-review gate — the review moves onto the PR/MR — but
+- NEVER skip a gate condition (the plan approval gate in plan mode, per-slice triage, `ExitPlanMode` approval in
+  fast mode). There is no in-run human code-review gate — the review moves onto the PR/MR — but
   every gate above still holds.
 - **Bundle dirs are ALWAYS named `{NNN}_<slug>`** — zero-padded 3-digit prefix + slugified
   description (e.g. `001_vela_dashboard_favorites`). `~/.dg/bin/dg-skills spec scaffold` enforces this
