@@ -1,13 +1,13 @@
 ---
 name: kick
-description: Defer a feature build — run /dg:spec's full plan-mode pipeline (grill-me, roundtable, spec-write, /dg:viz verify, context pack), flip the resulting bundle's status to deferred, and exit without executing. Use when you want to do the thinking now and the engineering later. Resume with /dg:pickup.
+description: Defer a feature build — run /dg:spec's full plan-mode pipeline (grill-me, roundtable, spec-write, plan-mode approval, context pack), flip the resulting bundle's status to deferred, and exit without executing. Use when you want to do the thinking now and the engineering later. Resume with /dg:pickup.
 ---
 
 # /dg:kick — Plan Now, Build Later
 
 Thin wrapper over `/dg:spec` plan mode. Runs `/dg:spec`'s full plan-mode pipeline
 ([references/plan.md](../spec/references/plan.md), steps 1–10 — [/dg:grill-me](../grill-me/SKILL.md), scaffold + `/dg:assign`,
-per-slice review, synthesis, `/dg:viz` verify, context pack) unmodified, then applies /dg:kick's one
+per-slice review, synthesis, plan-mode approval, context pack) unmodified, then applies /dg:kick's one
 addition: flip the resulting bundle's `status` to `deferred` and commit it, instead of continuing
 into execute mode.
 

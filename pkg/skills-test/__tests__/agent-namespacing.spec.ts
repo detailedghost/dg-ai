@@ -45,8 +45,6 @@ const BARE_AGENT = new RegExp(
 const NOT_AN_AGENT = new Set([
 	"channel-review/references/setup.md",
 	"deps-upgrade/references/ecosystems.md",
-	"viz/references/cli.md",
-	"viz/references/payload-schema.md",
 ]);
 
 function loadTierMap(): {

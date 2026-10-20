@@ -8,7 +8,6 @@ const SKILL_ROOT = join(REPO_ROOT, "plugins", "dg", "skills");
 const SKILL_COMMANDS = [
 	"spec",
 	"assign",
-	"viz",
 	"create-spec",
 	"spring-break",
 	"monolith",

@@ -329,20 +329,14 @@ Do not broadly allowlist the binary to bypass those prompts. Later-wave public
 commands and their skills remain separate dependencies until their ports land.
 
 Wave 3 adds `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`,
-`viz`, `review`, and `polish`; `review-loop` now links `review`. Install Bun
-before using `viz`: it is not bundled, and the first render runs `bun install`
-once in the skill's `astro-viewer/` directory. Set `DG_PROSE_CHECK_CMD` to run a
-prose check on PR bodies from `polish`; leave it unset to skip. After the merge,
-smoke `scaffold`, `validate`, `monolith`, and `viz` from outside the checkout
-with the installed plugin tree.
+and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
+`polish`; leave it unset to skip. After the merge, smoke `scaffold`, `validate`,
+and `monolith` from outside the checkout with the installed plugin tree.
 
 Wave 3 adds `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`,
-`viz`, `review`, and `polish`; `review-loop` now links `review`. Install Bun
-before using `viz`: it is not bundled, and the first render runs `bun install`
-once in the skill's `astro-viewer/` directory. Set `DG_PROSE_CHECK_CMD` to run a
-prose check on PR bodies from `polish`; leave it unset to skip. After the merge,
-smoke `scaffold`, `validate`, `monolith`, and `viz` from outside the checkout
-with the installed plugin tree.
+and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
+`polish`; leave it unset to skip. After the merge, smoke `scaffold`, `validate`,
+and `monolith` from outside the checkout with the installed plugin tree.
 
 ## Cross-package integration checklist
 

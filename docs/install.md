@@ -67,8 +67,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `stash`, `proxy` | Yes — proxy needs the selected external backend installed and authenticated |
 | `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
 | `channel-review` | Yes |
-| `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
-| `viz` | Yes — needs [Bun](https://bun.sh) installed; the first render runs `bun install` once |
+| `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
 | `google-sms-cleanup` | Yes — instruction-only |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |

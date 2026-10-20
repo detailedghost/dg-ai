@@ -1,7 +1,7 @@
 # Fast Mode — the `--fast` contract
 
 One chat, one gate. Fast mode collapses plan mode's four grill passes into one, drops every
-fan-out, replaces the `/dg:viz` board with **built-in Claude plan mode**, and then builds the slices
+fan-out, uses **built-in Claude plan mode** as its one approval gate, and then builds the slices
 **sequentially in the main loop** — compacting between them instead of spending a subagent wave per
 slice. The bundle is still durable, so a fast run is resumable with `/dg:spec -s` if it is interrupted.
 
@@ -53,8 +53,7 @@ the bundle will, so that approving it is approving the real artifact:
 
 ## F4 — `ExitPlanMode` — the only gate before code
 
-`ExitPlanMode` is fast mode's approval gate. It **replaces** plan.md step 8 entirely: no `/dg:viz`
-board is rendered, `viz.md` is not read, and no `all_clear` probe runs.
+`ExitPlanMode` is fast mode's approval gate. It **replaces** plan.md step 8 entirely.
 
 Rejection or requested changes → stay in plan mode, revise the plan file, exit again. Never
 scaffold against an unapproved plan.
@@ -160,11 +159,11 @@ as written. Fast mode trims planning, never the end gates:
 |---|---|
 | 5 | Final review + bounded correction (max 2 rounds), commit fixes |
 | 6 | Test-name gate, then `dg:lore` docs pass, commit docs |
-| 7 | Human review gate per `REVIEW_MODE` — `pr` (default) moves it onto the PR/MR; `-l`/`--local` keeps the **blocking** `/dg:review`, which no permission flag can then bypass |
+| 7 | Human review moves onto the PR/MR — no blocking gate |
 | 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr --draft` |
 
-Fast mode trims planning, never the end gates. What `pr` mode changes is *where* the human reads
-the diff, not whether steps 5–6 hold: the agent reviews, the test-name gate and the docs pass all
+Fast mode trims planning, never the end gates. The human reads the diff on the PR/MR, but
+not whether steps 5–6 hold: the agent reviews, the test-name gate and the docs pass all
 still gate step 8, exactly as in full mode.
 
 The `/dg:spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR always opens
@@ -172,13 +171,12 @@ The `/dg:spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR
 `worktree.pr_url` in `plan.md`. Step 8f owns the group name — [`/dg:pushup`](../../pushup/SKILL.md)
 carries the same mechanics for an ad-hoc branch, but this path never forks to it.
 
-- **Worktree mode:** print step 8d's line for the active mode. There is no `ExitWorktree` call to
+- **Worktree mode:** print step 8d's line. There is no `ExitWorktree` call to
   make — the session never relocated out of the launch directory (see setup.md Step 1).
 - **`-T` mode:** there is no worktree to leave — skip step 8d and print
-  `"PR/MR opened (draft): <url>."`, adding `pr` mode's review pointer when that mode is active.
+  `"PR/MR opened (draft): <url>. Review it there — /dg:address picks up the comments."`
 
-> **GATE:** in `local` mode, `/dg:review` approved first. Either mode: draft PR/MR opened, URL
-> captured, browser group opened.
+> **GATE:** draft PR/MR opened, URL captured, browser group opened.
 
 ## What fast mode trades away
 
@@ -187,7 +185,7 @@ carries the same mechanics for an ad-hoc branch, but this path never forks to it
 | Separate `dg:arch` / structure / `dg:foreman` interview passes | plan.md steps 1, 1.5, 2 |
 | Per-slice review fan-out | plan.md step 5 |
 | foreman synthesis + gaps pass | plan.md step 6 |
-| `/dg:viz` plan-approval board | plan.md step 8, viz.md |
+| Plan-mode approval after the bundle is written | plan.md step 8 |
 | `/dg:proxy` slice delegation | plan.md step 7c |
 | Parallel slice waves (Red→Yellow→Green→MiniQA) | engineering.md §4 |
 | The plan/execute session boundary | plan.md step 10 |

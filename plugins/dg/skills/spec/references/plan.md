@@ -136,9 +136,8 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 - a. Apply step 6's edit list + pass-3 decisions directly to `<bundle>/plan.md` (frontmatter
   `slices[]` adjustments + body section edits) via `Edit`. Annotate any deferred item inline as
   `[OPEN — roundtable] <text>`.
-- b. **Docs + human `/dg:review` fire ONCE at the end of the whole run** — that is already
-  `/dg:sdlc`'s default (see [execute.md](execute.md)). Do NOT embed a review/docs lifecycle per slice
-  here; plan mode does not invoke `/dg:review` at all.
+- b. **Docs fire ONCE at the end of the whole run** — that is already `/dg:sdlc`'s default
+  (see [execute.md](execute.md)). Do NOT embed a review/docs lifecycle per slice here.
 - c. Ask (batched `AskUserQuestion`, up to 4 slices per call) which slices — if any — to delegate
   externally via `/dg:proxy`. For each selected slice:
   - Validate the backend name against `~/.dg/bin/dg-skills proxy --list-backends`
@@ -157,12 +156,15 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 > **GATE:** `plan.md` reflects synthesis + pass-3 decisions; every delegated slice has
 > `agents.proxy` + `agents.proxy_skills` set; user has seen the token-cost warning.
 
-## Step 8 — `/dg:viz` verify
+## Step 8 — Plan-mode approval
 
-Render `plan.md` as a `template:spec` board and block on approval. Full payload shape + the
-`~/.dg/bin/dg-skills viz wait --merge` / `all_clear` gate: [viz.md](viz.md).
+Call `EnterPlanMode`, write the approval summary into the plan file named in the plan-mode system
+message, then call `ExitPlanMode` and block on the answer. The summary carries the bundle path, the
+purpose, one line per slice (`id`, `name`, `depends_on`, delegated backend if any), any
+`[OPEN — roundtable]` annotations, and the token-cost warning from step 7. Rejection or requested
+changes → stay in plan mode, revise `<bundle>/plan.md` with the user, update the summary, exit again.
 
-If the plan-approval board (or an earlier step) surfaced a hands-on validation need, build it with the
+If plan approval (or an earlier step) surfaced a hands-on validation need, build it with the
 prototype skill (it ships later; skip this step until then) — keep the asset durable (`.agents/prototype/<name>/`, never `--light`/`/tmp`). On
 acceptance, register it onto the slice:
 
@@ -170,8 +172,7 @@ acceptance, register it onto the slice:
 ~/.dg/bin/dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
-> **GATE:** `/dg:viz` board `all_clear: true` (or terminal-mode `AskUserQuestion` approval on probe
-> failure). Every accepted prototype registered onto its slice.
+> **GATE:** plan approved via `ExitPlanMode`. Every accepted prototype registered onto its slice.
 
 ## Step 9 — Context pack
 

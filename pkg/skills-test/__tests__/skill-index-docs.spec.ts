@@ -10,8 +10,6 @@ const WAVE_3_SKILLS = [
 	"assign",
 	"monolith",
 	"spring-break",
-	"viz",
-	"review",
 	"polish",
 ] as const;
 
@@ -32,12 +30,19 @@ describe("skill indexes list every Wave 3 skill", () => {
 		});
 	}
 
-	test("docs/install.md states Bun as the viz runtime prerequisite", () => {
-		const install = readRepoFile("docs", "install.md");
-		const vizLine = install
-			.split("\n")
-			.find((line) => line.includes("`viz`") && /bun/i.test(line));
-		expect(vizLine).toBeDefined();
+	test("viz and review are not packaged or indexed", () => {
+		for (const skill of ["viz", "review"]) {
+			expect(
+				existsSync(join(REPO_ROOT, "plugins", "dg", "skills", skill)),
+			).toBe(false);
+			for (const parts of [
+				["README.md"],
+				["docs", "install.md"],
+				["plugins", "dg", "skills", "README.md"],
+			]) {
+				expect(indexesSkill(readRepoFile(...parts), skill)).toBe(false);
+			}
+		}
 	});
 
 	test("every indexed Wave 3 skill ships a SKILL.md", () => {

@@ -4,7 +4,7 @@ The per-slice TDD pipeline runs as a background **Workflow** (`references/templa
 
 **Caller inputs.** This file is caller-agnostic; the invoking skill supplies:
 
-- `SPEC_PATH` + `SCRATCH_PATH` — `/dg:sdlc` sets them in setup.md (`$(~/.dg/bin/dg-skills stash -s sdlc)/`); /dg:spec and /dg:pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, VIZ_MODE markers, QUICK_MODE) layered on top.
+- `SPEC_PATH` + `SCRATCH_PATH` — `/dg:sdlc` sets them in setup.md (`$(~/.dg/bin/dg-skills stash -s sdlc)/`); /dg:spec and /dg:pickup pass their durable spec + scratchpad, with their own deltas (cross-repo setup, QUICK_MODE) layered on top.
 - Commit gate — `permissions.slice_commits` from the spec frontmatter.
 - `cwd` — the working tree every agent prompt carries.
 

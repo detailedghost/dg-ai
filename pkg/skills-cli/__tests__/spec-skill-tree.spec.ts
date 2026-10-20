@@ -48,7 +48,7 @@ const SCHEMA_FIELDS = [
 	"plan_path",
 ];
 
-const PENDING_SAME_WAVE_SKILLS = ["viz", "monolith"];
+const PENDING_SAME_WAVE_SKILLS = ["monolith"];
 
 function files(skill: string): string[] {
 	const out: string[] = [];
@@ -178,12 +178,12 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		expect(missing).toEqual([]);
 	});
 
-	test("spec points at grill-me, viz and sdlc relatively", () => {
+	test("spec points at grill-me and sdlc relatively", () => {
 		const text = trees
 			.find((tree) => tree.skill === "spec")
 			?.files.map((file) => file.text)
 			.join("\n");
-		for (const sibling of ["grill-me", "viz", "sdlc"])
+		for (const sibling of ["grill-me", "sdlc"])
 			expect(text).toContain(`../${sibling}`);
 	});
 

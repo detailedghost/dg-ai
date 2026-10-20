@@ -9,7 +9,6 @@ The usage line in `SKILL.md` carries these forms; keep it in sync with this tabl
 
 **Not supported:**
 
-- `--viz` — selection is a single `AskUserQuestion`, not a multi-phase board sequence.
 - `-l`/`--light`, `-a`/`--all` — no light-mode bundle path exists under `/dg:spec`'s model (see
   `/dg:kick`'s `references/args.md`). `/dg:spec --fast` is a lighter *pipeline*, not a lighter bundle, and
   a parked bundle already has its plan — so there is nothing for `/dg:pickup` to forward it to.

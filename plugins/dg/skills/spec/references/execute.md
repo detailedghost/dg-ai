@@ -96,7 +96,7 @@ skill's behavior has to be spelled out in the prompt text itself (see
 Then run [`sdlc/references/finish.md`](../../sdlc/references/finish.md) **steps 5–6** (final
 review + correction, test-name gate + docs) exactly as written.
 
-## 6. Human review gate, then direct PR/MR launch (the last item)
+## 6. Direct PR/MR launch (the last item)
 
 Run `finish.md` **steps 7–8** exactly as written, including step 8's `/dg:spec` deltas (draft
 unconditionally, a best-effort `~/.dg/bin/dg-skills batch-open` afterward (on failure, print the PR URL and continue), dependent-PR/MR `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply`
@@ -104,33 +104,18 @@ handling). [`/dg:pushup`](../../pushup/SKILL.md) runs the same push → PR → b
 an ad-hoc branch. Do not fork to it here: it drops the PR-body template, the permission gating, and
 the worktree bookkeeping that step 8 owns.
 
-`finish.md`'s `REVIEW_MODE` decides how much of step 7 runs. `/dg:spec` sets no policy of its own —
-it forwards `-l`/`--local` and follows whatever the mode says.
-
-### `REVIEW_MODE = pr` (default)
-
-Step 7 is skipped. Go straight to step 8, which opens the PR/MR as a draft. The run ends there and
-the human reviews on the provider; `/dg:address` picks up the comments in a later session. `/dg:spec`
-still passes `SPEC_PATH` (for `## Slice Summaries`) and the `<base>..<head>` range into the PR body
-assembly step 8b describes — the body is the reviewer's only briefing in this mode, so it carries
-more weight here than it did behind a local board.
-
-### `REVIEW_MODE = local` (`-l`)
-
-- **On `review_result.verdict == approve`** → proceed to step 8. `/dg:spec` doesn't re-review; it
-  passes `SPEC_PATH` and the range into step 8b as above.
-- **Any other verdict** (`request_changes` / `comment` / Hold) → handle per `finish.md` step 7's
-  routing; step 8 never runs on these.
-
-### Both modes
+Step 7 has no blocking gate. Go straight to step 8, which opens the PR/MR as a draft. The run ends
+there and the human reviews on the provider; `/dg:address` picks up the comments in a later session.
+`/dg:spec` still passes `SPEC_PATH` (for `## Slice Summaries`) and the `<base>..<head>` range into the
+PR body assembly step 8b describes — the body is the reviewer's only briefing.
 
 - **After step 8 captures the URL** → apply its `/dg:spec` delta for bookkeeping: persist the URL to
   `worktree.pr_url` in `plan.md` if it carries a worktree block (not the ephemeral spec step 8d
   otherwise writes to), leave the worktree intact for `/dg:address` — no `ExitWorktree` call is needed
   since the session never relocated out of `$WORKTREE_ORIGIN` (see setup.md Step 1) — then print
-  step 8d's line for the active mode.
+  step 8d's line.
 
-> **GATE:** in `local` mode, `/dg:review` approved first. Either mode: draft PR/MR opened and
+> **GATE:** draft PR/MR opened and
 > batch-opened in the browser (or its URL printed when that fails); URL captured; cwd still at `$WORKTREE_ORIGIN`; worktree intact for
 > `/dg:address`.
 

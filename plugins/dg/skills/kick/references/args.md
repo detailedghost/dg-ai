@@ -14,7 +14,6 @@ something to be aware of when substring-matching in `/dg:pickup`.
 
 **Not supported:**
 
-- `--viz` — `/dg:spec` plan mode already renders its one board at step 8 unconditionally.
 - `-l`/`--light` — every `/dg:spec` bundle lives under `.agents/spec/`, `--fast` included, so there is
   no throwaway bundle path to park. `/dg:kick` is a *defer* verb and `/dg:spec --fast` a *build-now* one,
   so `--fast` is not forwardable either — a kicked bundle is picked up later via `/dg:pickup`.

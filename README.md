@@ -65,7 +65,6 @@ Claude Code also accepts the bare `/<name>`.
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
-| `review` | Review a git range on a local board and hand the verdict back |
 | `review-loop` | Loop Copilot or a local backend over a branch and address the findings |
 | `sdlc` | Run a feature brief through worktree, slice waves, review, and a draft PR |
 | `spec` | Plan a durable feature spec or execute one |
@@ -73,7 +72,6 @@ Claude Code also accepts the bare `/<name>`.
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `teach` | Teach a concept across sessions |
-| `viz` | Render a board as a local HTML page; needs [Bun](https://bun.sh) installed |
 | `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |

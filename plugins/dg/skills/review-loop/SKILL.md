@@ -97,9 +97,6 @@ like `--single`.
 See [references/proxy-workflow.md](references/proxy-workflow.md) for
 the full phase breakdown.
 
-For a human reviewer on the same branch, use [/dg:review](../review/SKILL.md). It
-renders a local review board and hands the verdict back to the agent.
-
 ## Reference Files (lazy-load)
 
 | File | When to read |

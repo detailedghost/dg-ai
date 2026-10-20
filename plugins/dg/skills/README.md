@@ -40,8 +40,6 @@ binaries. The skills-root README itself is not installed.
 | `assign/` | Pick the best-fit engineering agent for work or spec slices |
 | `monolith/` | Consolidate a codebase's vocabulary into `.agents/monolith.md` |
 | `spring-break/` | Consolidate `.agents/school/` into topic clusters |
-| `viz/` | Render a board as a local HTML page (needs Bun) |
-| `review/` | Review a git range on a local board and return the verdict |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
 
@@ -82,8 +80,6 @@ skills/
   assign/
   monolith/
   spring-break/
-  viz/
-  review/
   review-loop/
   polish/
 ```
@@ -106,7 +102,7 @@ and skills marked `requires: [extension]`: browser, chat, demo, overwatch, and
 proto. It includes stash, proxy, clipboard-img, and other skills without that
 requirement. Live inbox profiles still need dg-daemon; Google SMS cleanup needs
 Messages for Web through the host's browser tools. Instructions that refer to
-later-wave skills still need those skills separately until their ports ship. `viz` also needs Bun installed.
+later-wave skills still need those skills separately until their ports ship.
 
 Stash supports scratch, state, current-worktree, and main-worktree scopes.
 Clipboard capture needs WSL's `wslpath` and `powershell.exe`, Wayland's `wl-paste`,
