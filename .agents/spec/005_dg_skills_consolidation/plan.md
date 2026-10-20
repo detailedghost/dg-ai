@@ -1051,17 +1051,17 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 17 — w4-bg-cls-stat
 
 #### Engineering
-- [ ] Port bg-helper.ts to `dg-skills bg`; move bg, cls, stat, proxy skills; exclude the orphan legacy stat-cli.test.ts from the port (no stat-cli.ts); leave the legacy source untouched
-- [ ] Use compiled-safe bg self-dispatch and migrated proxy recognition; reuse/replace slice-3 background compatibility internals through explicit handoff.
-- [ ] Keep stat prose-only with provider/bg/worktree calls and terminal-only cleanup; make cls browser close optional before Wave 6 pw availability.
-- [ ] Retain live jobs/main-checkout scratch; never signal caller process group or prune sibling-path jobs.
+- [x] Port bg-helper.ts to `dg-skills bg`; move bg, cls, stat, proxy skills; exclude the orphan legacy stat-cli.test.ts from the port (no stat-cli.ts); leave the legacy source untouched
+- [x] Use compiled-safe bg self-dispatch and migrated proxy recognition; reuse/replace slice-3 background compatibility internals through explicit handoff.
+- [x] Keep stat prose-only with provider/bg/worktree calls and terminal-only cleanup; make cls browser close optional before Wave 6 pw availability.
+- [x] Retain live jobs/main-checkout scratch; never signal caller process group or prune sibling-path jobs.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Run compiled queued-context/drain/resume and detachment/cancel/prune tests; assert /repo containment excludes /repo-other.
+- [x] Run compiled queued-context/drain/resume and detachment/cancel/prune tests; assert /repo containment excludes /repo-other.
 
 #### Acceptance Criteria
-- [ ] Stat (no `--viz`; `--overwatch` only) and cls degrade safely without pw; no legacy files are deleted during port.
+- [x] Stat (no `--viz`; `--overwatch` only) and cls degrade safely without pw; no legacy files are deleted during port.
 
 ### Slice 18 — w4-sniff-nope-find-work
 
@@ -1362,6 +1362,8 @@ channel-review defaults now use one `Bash(~/.dg/bin/dg-skills <sub>:*)` grant ea
 
 Superseded: viz and review no longer ship (commit fc16957). Original summary: `dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
 - Slice 16 (w4-jot): `dg-skills jot` ports jot-cli and jot-checkpoint (add, ls, read, kind, done, kick, kick-list, kick-take) through registerLegacyCommand, with legacy flags, output and exit codes. The packaged `/dg:jot` skill has a Usage line, a Flags table and full `~/.dg/bin/dg-skills jot` calls. `readableSuffix` moved into `@dg/common/node` scratch-paths. Tests drive the CLI only, from source and from the compiled binary, with isolated roots and a linked worktree.
+- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, list, status, cancel, kill, update, drain, prune) and re-executes the real installed binary for drains and resumes. A relative `--cwd` is stored as an absolute path, and prune removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` now routes through the same dispatcher. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz`, and the cls browser close probes `~/.dg/bin/dg-skills pw --help` and skips with a note when it fails.
+- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) with compiled-safe self-dispatch, cwd-contained prune and no caller process-group signals. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship; stat has no --viz and hands lanes to dg:overwatch; cls skips pw cleanup when pw is missing. cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
 
 ## Agent Notes
 
@@ -1418,6 +1420,11 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 16, qa-writer) jot-fixtures.ts (jotWorld) empties HOME, scratch and state roots after each test. cli-smoke runCli accepts optional env and stdin for real-operation smoke tests.
 - (slice 16, orchestrator) Smoke tests that run jot from the repo cwd also see the checkout's real .agents/jot saves; use `jot ls -n` or a non-git cwd.
 - (slice 16, qa-code) Open LOW items for the final review: parallel `jot add` calls can collide on the same generated name (writeFileSync without 'wx'); kick-take prints the section before the atomic write commits. Both match legacy behavior.
+- (slice 17, orchestrator) `proxy background` remains a working alias of `bg`. thrash agent-prompt, review-loop proxy-review-prompt, docs/DEVELOPER.md and pkg/skills-cli/README.md still say `proxy background`; move them to `bg` verbs in the doctor or release slice.
+- (slice 17, js) The skill-manifests guard treats any SKILL.md that contains the literal `dg-agent` as a chat-harness skill, so stat names the dg:overwatch skill instead of the dg-agent binary.
+- (slice 17, js) cls has no allowed-tools frontmatter; approvals come from the user's configured grants.
+- (slice 17, qa-writer) bg-jobs.spec.ts 'drain applies queued context once' failed in about 2 of 12 loaded full-file runs. Watch it in CI.
+- (slice 17, orchestrator) bg meta records without a string id and cwd are skipped by list and prune.
 
 ## Issues Remediation
 

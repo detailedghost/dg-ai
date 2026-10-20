@@ -7,6 +7,7 @@
 import { Command } from "commander";
 import { registerAddress } from "./commands/address";
 import { registerBatchOpen } from "./commands/batch-open";
+import { registerBg } from "./commands/bg";
 import { registerCatchup } from "./commands/catchup";
 import { registerChain } from "./commands/chain";
 import { registerChannelReview } from "./commands/channel-review";
@@ -70,6 +71,7 @@ registerWorktree(program);
 registerSpec(program);
 registerMonolith(program);
 registerJot(program);
+registerBg(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

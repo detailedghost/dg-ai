@@ -63,6 +63,7 @@ describe("dg-skills CLI", () => {
 			"spec",
 			"monolith",
 			"jot",
+			"bg",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -186,6 +187,41 @@ describe("dg-skills CLI", () => {
 			const listed = await runCli(["jot", "ls", "-n"], env);
 			expect(listed.code).toBe(0);
 			expect(listed.out).toMatch(/^note\t0m\tjot-[a-z]+-[a-z]+\tsmoke note\n$/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("bg is registered and its help lists every job verb", async () => {
+		const { code, out } = await runCli(["bg", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["run", "list", "prune", "status", "cancel", "update"])
+			expectListed(out, verb);
+	});
+
+	test("bg run, list and prune run a real detached job in isolated roots", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-bg-smoke-"));
+		try {
+			const env = {
+				HOME: root,
+				AI_SCRATCH_DIR: join(root, "scratch"),
+				AI_STATE_DIR: join(root, "state"),
+			};
+			const started = await runCli(["bg", "run", "echo smoke", "--cwd", root], env);
+			expect(started.code).toBe(0);
+			const job = JSON.parse(started.out) as { id: string; logFile: string; state: string };
+			expect(job.state).toBe("running");
+			expect(job.logFile.startsWith(join(root, "state"))).toBe(true);
+			let status = { state: "running" };
+			for (let i = 0; i < 200 && status.state === "running"; i++) {
+				await Bun.sleep(25);
+				status = JSON.parse((await runCli(["bg", "status", job.id], env)).out);
+			}
+			expect(status).toMatchObject({ state: "done", exitCode: 0 });
+			const listed = JSON.parse((await runCli(["bg", "list"], env)).out) as { jobs: { id: string }[] };
+			expect(listed.jobs.map((value) => value.id)).toEqual([job.id]);
+			const pruned = JSON.parse((await runCli(["bg", "prune", "--cwd", root], env)).out);
+			expect(pruned.removed).toEqual([job.id]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
