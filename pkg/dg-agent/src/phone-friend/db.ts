@@ -168,7 +168,7 @@ export class PhoneFriendDb {
 	}
 
 	transaction<T>(work: () => T): T {
-		return this.db.transaction(work)();
+		return this.db.transaction(work).immediate();
 	}
 
 	close(): void {

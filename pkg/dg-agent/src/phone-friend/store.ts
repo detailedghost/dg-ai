@@ -16,6 +16,9 @@ const CONFIG = "config";
 const INVITE = "invite";
 const FILE_KEY = "nsec";
 const KEY_IN_STORE = "key_in_store";
+const STARTING = "listener_starting";
+/** A start claim older than this belongs to a command that died while starting the listener. */
+export const START_CLAIM_SECONDS = 30;
 
 export function withDb<T>(line: LinePaths, work: (db: PhoneFriendDb) => T): T {
 	const db = PhoneFriendDb.open(line);
@@ -94,6 +97,22 @@ export function writeInvite(line: LinePaths, invite: Invite, relays: string[]): 
 
 export function clearInvite(line: LinePaths): void {
 	withDb(line, (db) => db.unset(INVITE));
+}
+
+/** Claims the right to start this line's listener, so two commands cannot each spawn one. */
+export function claimStart(line: LinePaths, now: number): boolean {
+	return withDb(line, (db) =>
+		db.transaction(() => {
+			const held = db.get<number>(STARTING);
+			if (held !== undefined && held > now - START_CLAIM_SECONDS) return false;
+			db.set(STARTING, now);
+			return true;
+		}),
+	);
+}
+
+export function releaseStart(line: LinePaths): void {
+	withDb(line, (db) => db.unset(STARTING));
 }
 
 /** Deletes the invite and saves the caller as the contact in one transaction. */

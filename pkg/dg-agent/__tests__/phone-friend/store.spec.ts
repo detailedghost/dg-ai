@@ -8,6 +8,9 @@ import { generateSecretKey, nip19 } from "nostr-tools";
 import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 import {
 	acceptCall,
+	claimStart,
+	releaseStart,
+	START_CLAIM_SECONDS,
 	clearInvite,
 	createFileKey,
 	DEFAULT_RELAYS,
@@ -105,6 +108,20 @@ describe("invite", () => {
 		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, ["wss://x.example"]);
 
 		expect(readConfig(line)).toEqual({ contact: "npub1contact", relays: ["wss://x.example"] });
+	});
+});
+
+describe("claimStart", () => {
+	it("lets one command start the listener until it releases the claim", () => {
+		expect(claimStart(line, 1_000)).toBe(true);
+		expect(claimStart(line, 1_001)).toBe(false);
+		releaseStart(line);
+		expect(claimStart(line, 1_002)).toBe(true);
+	});
+
+	it("takes over a claim left by a command that died", () => {
+		expect(claimStart(line, 1_000)).toBe(true);
+		expect(claimStart(line, 1_000 + START_CLAIM_SECONDS)).toBe(true);
 	});
 });
 

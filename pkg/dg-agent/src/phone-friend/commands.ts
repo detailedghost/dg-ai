@@ -30,6 +30,8 @@ import {
 } from "./chat";
 import {
 	acceptCall as saveCaller,
+	claimStart,
+	releaseStart,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
@@ -69,8 +71,9 @@ function isOurListener(pid: number): boolean {
 		return isListenerArgs(readFileSync(cmdline, "utf8").split("\0"));
 	}
 	if (process.platform === "win32") {
-		const task = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8" });
-		return task.status === 0 && /"(dg-agent|bun)(\.exe)?"/i.test(task.stdout);
+		const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`;
+		const ps = spawnSync("powershell", ["-NoProfile", "-Command", query], { encoding: "utf8" });
+		return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
 	}
 	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
 	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
@@ -188,11 +191,21 @@ function acceptCall(message: Message, deps: PhoneFriendDeps): void {
 }
 
 async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; status: string }> {
-	const running = livePid(deps);
-	if (running !== undefined) await stopListener(running, deps);
-	const pid = deps.spawnListener(deps.line);
-	writeFileAtomic(deps.line.pidPath, `${pid}\n`, 0o600);
-	return { pid, status: running === undefined ? "started" : "restarted" };
+	for (let waited = 0; !claimStart(deps.line, deps.now()); waited += 100) {
+		if (waited >= STOP_WAIT_MS) {
+			throw new DgCliError("another phone-friend command is starting the listener on this line; try again");
+		}
+		await deps.sleep(100);
+	}
+	try {
+		const running = livePid(deps);
+		if (running !== undefined) await stopListener(running, deps);
+		const pid = deps.spawnListener(deps.line);
+		writeFileAtomic(deps.line.pidPath, `${pid}\n`, 0o600);
+		return { pid, status: running === undefined ? "started" : "restarted" };
+	} finally {
+		releaseStart(deps.line);
+	}
 }
 
 export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {

@@ -22,6 +22,7 @@ import {
 } from "../../src/phone-friend/commands";
 import {
 	DEFAULT_RELAYS,
+	claimStart,
 	createFileKey,
 	readFileKey,
 	readConfig,
@@ -112,6 +113,24 @@ afterEach(() => {
 });
 
 describe("phoneOn", () => {
+	it("waits for another command that is starting the listener, then gives up", async () => {
+		pair();
+		claimStart(line, NOW);
+		let spawned = 0;
+
+		await expect(phoneOn(deps({ spawnListener: () => ++spawned }))).rejects.toThrow(
+			"another phone-friend command is starting the listener",
+		);
+		expect(spawned).toBe(0);
+	});
+
+	it("releases its start claim, so the next start does not wait", async () => {
+		pair();
+		await phoneOn(deps());
+
+		expect(claimStart(line, NOW)).toBe(true);
+	});
+
 	it("spawns the listener once for a saved contact and prints our npub", async () => {
 		pair();
 		await phoneOn(deps());
