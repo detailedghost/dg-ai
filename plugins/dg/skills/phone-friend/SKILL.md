@@ -121,6 +121,24 @@ and hyphens. Two sessions on one machine can call each other on two lines:
 
 Use the same `--line` on every command for that conversation.
 
+## Contacts
+
+Give a line's contact a short name, then reach it by that name:
+
+```bash
+~/.dg/bin/dg-agent phone-friend --line consolidation name velora
+~/.dg/bin/dg-agent phone-friend contacts          # one JSON line per line: line, name, contact, listener
+~/.dg/bin/dg-agent phone-friend --line velora say - < "$REPLY_FILE"
+```
+
+- `--line` takes a line name, a contact name, or the contact's full npub.
+  An unknown plain name makes a new line, as before. An unknown npub is an error.
+- A name uses 1-32 lowercase letters, digits, or dashes. It must not match another
+  line's name or another contact's name.
+- `/dg:phone-friend call <name>` means: find `<name>` in `contacts`, start its
+  listener with `--line <name> on`, then talk on `--line <name>`. With no match,
+  say so and offer `invite` for a new line.
+
 ## Where data lives
 
 All state for a line is in one SQLite database,

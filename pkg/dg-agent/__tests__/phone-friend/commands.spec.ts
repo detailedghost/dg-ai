@@ -12,7 +12,9 @@ import {
 	phoneAnswer,
 	phoneDial,
 	phoneCard,
+	phoneContacts,
 	phoneInvite,
+	phoneName,
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
@@ -313,13 +315,40 @@ describe("phoneNumber", () => {
 		await phoneNumber(deps());
 
 		const npub = nip19.npubEncode(getPublicKey(myKey()));
-		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, key_store: "file", listener: 4242 }]);
+		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, name: null, key_store: "file", listener: 4242 }]);
 	});
 
 	it("reports no contact and no listener before pairing", async () => {
 		await phoneNumber(deps());
 
 		expect(lines()).toMatchObject([{ contact: null, listener: null }]);
+	});
+});
+
+describe("phoneName and phoneContacts", () => {
+	it("names the contact and lists it with its line and listener", async () => {
+		pair();
+		await phoneOn(deps());
+		out = [];
+
+		phoneName("velora", deps());
+		phoneContacts(deps());
+
+		expect(lines()).toEqual([
+			{ line: "default", name: "velora", contact: contactNpub },
+			{ line: "default", name: "velora", contact: contactNpub, listener: 4242 },
+		]);
+		expect(readConfig(line).name).toBe("velora");
+	});
+
+	it("refuses a name with no contact, a bad name, or a name another line uses", () => {
+		expect(() => phoneName("velora", deps())).toThrow("no contact saved");
+		pair();
+		expect(() => phoneName("Velora!", deps())).toThrow("lowercase");
+		const other = linePaths(paths, "work");
+		writeConfig(other, { contact: contactNpub, name: "velora", relays: DEFAULT_RELAYS });
+		expect(() => phoneName("velora", deps())).toThrow("already used by line work");
+		expect(() => phoneName("work", deps())).toThrow("already used by line work");
 	});
 });
 

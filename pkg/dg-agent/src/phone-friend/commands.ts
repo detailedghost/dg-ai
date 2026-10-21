@@ -15,7 +15,7 @@ import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS } from "./card";
 import { PhoneFriendDb } from "./db";
-import { DEFAULT_LINE, type LinePaths, linePaths } from "./line";
+import { DEFAULT_LINE, isLineName, type LinePaths } from "./line";
 import { defaultKeyClients, ensureKey, type KeyDeps, loadKey } from "./keys";
 import {
 	fetchNew,
@@ -31,10 +31,12 @@ import {
 import {
 	acceptCall as saveCaller,
 	claimStart,
+	listLines,
 	releaseStart,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
+	resolveLine,
 	writeConfig,
 	writeInvite,
 } from "./store";
@@ -83,7 +85,7 @@ function defaultDeps(session?: string, line: string = DEFAULT_LINE): PhoneFriend
 	const paths = resolveDgPaths();
 	return {
 		paths,
-		line: linePaths(paths, line),
+		line: resolveLine(paths, line),
 		...defaultKeyClients(paths, session),
 		createPool: () => new SimplePool({ enableReconnect: true }),
 		spawnListener: (listenerLine) => {
@@ -174,10 +176,38 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 		line: deps.line.name,
 		npub: npubOf(sk),
 		contact: readConfig(deps.line).contact ?? null,
+		name: readConfig(deps.line).name ?? null,
 		key_store: mode,
 		listener: livePid(deps) ?? null,
 		...(invite ? { card_expires_at: expiresAt(invite) } : {}),
 	});
+}
+
+export function phoneName(name: string, deps: PhoneFriendDeps): void {
+	if (!isLineName(name)) {
+		throw new DgCliError(`a contact name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
+	}
+	const config = readConfig(deps.line);
+	const contact = requireContact(config);
+	const taken = listLines(deps.paths).find(
+		(line) => line.name !== deps.line.name && (line.name === name || readConfig(line).name === name),
+	);
+	if (taken) throw new DgCliError(`"${name}" is already used by line ${taken.name}`);
+	writeConfig(deps.line, { ...config, name });
+	printJson(deps, { line: deps.line.name, name, contact });
+}
+
+export function phoneContacts(deps: PhoneFriendDeps): void {
+	for (const line of listLines(deps.paths)) {
+		const config = readConfig(line);
+		const pid = readPid(line);
+		printJson(deps, {
+			line: line.name,
+			name: config.name ?? null,
+			contact: config.contact ?? null,
+			listener: pid !== undefined && deps.isAlive(pid) ? pid : null,
+		});
+	}
 }
 
 export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
@@ -440,7 +470,11 @@ export function registerPhoneFriendCommands(
 	const phone = program
 		.command("phone-friend")
 		.description("private NIP-17 chat with one contact over public Nostr relays")
-		.option("--line <name>", "which of your numbers to use; each line has its own key and contact", DEFAULT_LINE)
+		.option(
+			"--line <name>",
+			"which of your numbers to use: a line name, a contact name, or a contact npub; each line has its own key and contact",
+			DEFAULT_LINE,
+		)
 		.hook("preAction", (_hooked, action) => {
 			({ session, line } = action.optsWithGlobals<{ session?: string; line?: string }>());
 		});
@@ -449,6 +483,17 @@ export function registerPhoneFriendCommands(
 		.command("number")
 		.description("print your number (npub), your contact, and the listener state")
 		.action(() => phoneNumber(makeDeps(session, line)));
+
+	phone
+		.command("name")
+		.description("save a name for this line's contact, so --line <name> reaches it")
+		.argument("<name>", "1-32 lowercase letters, digits, or dashes")
+		.action((name: string) => phoneName(name, makeDeps(session, line)));
+
+	phone
+		.command("contacts")
+		.description("list every line with its contact name, npub, and listener")
+		.action(() => phoneContacts(makeDeps(session, line)));
 
 	phone
 		.command("card")
