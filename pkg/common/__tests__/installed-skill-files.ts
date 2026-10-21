@@ -41,6 +41,7 @@ export const INSTALLED_SKILL_FILES = [
 	"inbox-cleanup/SKILL.md",
 	"inbox-cleanup/references/providers.md",
 	"inbox-cleanup/references/workflow.md",
+	"jobs/SKILL.md",
 	"kick/SKILL.md",
 	"kick/references/args.md",
 	"meaningful/SKILL.md",
