@@ -1,4 +1,4 @@
-import { escapeHtml, NIT_LADDER, SPICE_DEFAULT, VERDICT_LIMITS } from "@dg/common";
+import { escapeHtml, NIT_LADDER, SPICE_DEFAULT, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
 import type { ReactionState } from "./reactions";
 import { EFFORT_LEVELS, RUNNER_NAMES } from "./runners/types";
 import type { HelpTopic } from "./trigger";
@@ -43,17 +43,20 @@ const REVIEW_FLAGS: readonly Row[] = [
 	["~fun", "add a GIF or emoji to the result"],
 ];
 
-const TIER_NAMES = { critical: "💀 critical", high: "🔥 high", medium: "⚠️ medium", low: "🧹 low", nit: "🔬 nit" } as const;
+function nitsPosted(nits: number): string {
+	if (nits === 0) return "posts no nits";
+	if (Number.isFinite(nits)) return `posts up to ${nits} nits`;
+	return "posts every nit";
+}
 
 function spiceLevel([level, limits]: [string, (typeof VERDICT_LIMITS)[number]]): string {
 	const fails = Object.entries(limits)
 		.map(([tier, limit]) => {
-			const name = TIER_NAMES[tier as keyof typeof TIER_NAMES];
+			const name = `${TIER_EMOJI[tier as keyof typeof TIER_EMOJI]} ${tier}`;
 			return limit === 0 ? `any ${name}` : `more than ${limit} ${name}`;
 		})
 		.join(", ");
-	const nits = NIT_LADDER[Number(level)] ?? 0;
-	const posted = nits === 0 ? "posts no nits" : Number.isFinite(nits) ? `posts up to ${nits} nits` : "posts every nit";
+	const posted = nitsPosted(NIT_LADDER[Number(level)] ?? 0);
 	const fallback = Number(level) === SPICE_DEFAULT ? " (default)" : "";
 	return `<li><code>${level}</code>${fallback}: requests changes on ${fails}; ${posted}</li>`;
 }

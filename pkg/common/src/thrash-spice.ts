@@ -19,3 +19,11 @@ export const VERDICT_LIMITS: Record<number, Partial<Record<"critical" | "high" |
 	4: { critical: 0, high: 0, medium: 2 },
 	5: { critical: 0, high: 0, medium: 0, low: 4 },
 };
+
+export const TIER_EMOJI: Record<"critical" | "high" | "medium" | "low" | "nit", string> = {
+	critical: "💀",
+	high: "🔥",
+	medium: "⚠️",
+	low: "🧹",
+	nit: "🔬",
+};

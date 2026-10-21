@@ -1,5 +1,5 @@
 import path from "node:path";
-import { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, VERDICT_LIMITS } from "@dg/common";
+import { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
 import {
 	isFileComment,
 	type PostedReview,
@@ -13,14 +13,6 @@ import {
 export const TIERS = ["critical", "high", "medium", "low", "nit"] as const;
 export type Tier = (typeof TIERS)[number];
 
-export const TIER_EMOJI: Record<Tier, string> = {
-	critical: "💀",
-	high: "🔥",
-	medium: "⚠️",
-	low: "🧹",
-	nit: "🔬",
-};
-
 export const TIER_LABEL: Record<Tier, string> = {
 	critical: "Critical",
 	high: "High",
@@ -29,7 +21,7 @@ export const TIER_LABEL: Record<Tier, string> = {
 	nit: "Nit",
 };
 
-export { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, VERDICT_LIMITS } from "@dg/common";
+export { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
 
 /** Changed lines per review chunk; a diff above this is split. */
 export const LARGE_DIFF_LINES = 3000;
