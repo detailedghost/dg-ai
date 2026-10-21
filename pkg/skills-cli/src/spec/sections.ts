@@ -1,6 +1,7 @@
 import {
 	awkEquals,
 	awkNumber,
+	deny,
 	die,
 	flagValue,
 	joinRecords,
@@ -202,8 +203,13 @@ function addIssueRow(text: string, row: string): string {
 	return joinRecords(out);
 }
 
-function resolveIssueRows(text: string, id: string, note: string): string {
+function resolveIssueRows(
+	text: string,
+	id: string,
+	note: string,
+): string | null {
 	const out: string[] = [];
+	let resolved = false;
 	let inSection = false;
 	for (const line of records(text)) {
 		if (line.startsWith("## Issues Remediation")) {
@@ -217,13 +223,14 @@ function resolveIssueRows(text: string, id: string, note: string): string {
 				/\| *(open|in[ _-]?progress|deferred) *\|/,
 				() => "| resolved |",
 			);
+			resolved ||= row !== line;
 			if (note !== "") row = row.replace(/ *\|\s*$/, () => ` (${note}) |`);
 			out.push(row);
 			continue;
 		}
 		out.push(line);
 	}
-	return joinRecords(out);
+	return resolved ? joinRecords(out) : null;
 }
 
 interface IssueFlags {
@@ -292,7 +299,9 @@ export async function issuesCommand(args: string[]): Promise<number> {
 			);
 			const id = values["--id"] ?? "";
 			if (id === "") die("issues resolve requires --id");
-			replaceText(spec, resolveIssueRows(text, id, values["--note"] ?? ""));
+			const resolved = resolveIssueRows(text, id, values["--note"] ?? "");
+			if (resolved === null) deny(`no open issue with id ${id}`);
+			replaceText(spec, resolved);
 			say(`resolved issue #${id}\n`);
 			return 0;
 		}

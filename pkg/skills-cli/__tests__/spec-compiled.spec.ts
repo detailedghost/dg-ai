@@ -30,6 +30,7 @@ const scaffold = goldens.find((golden) => golden.id === "scaffold-from-blob");
 if (!scaffold) throw new Error("scaffold-from-blob golden is missing");
 
 const BUNDLE = ".agents/spec/001_auth_rewrite";
+const FIXTURE_BUNDLE = ".agents/fixture/001_auth_rewrite";
 
 let context: SpecContext;
 let binary: string;
@@ -112,6 +113,21 @@ beforeAll(() => {
 		join(context.root, "blob.json"),
 		scaffold.files?.["blob.json"] ?? "",
 	);
+	const fixture = Bun.spawnSync(
+		[
+			binary,
+			"spec",
+			"scaffold",
+			"--home",
+			".agents/fixture",
+			"--slug",
+			"Auth Rewrite!",
+			"--from-json",
+			"blob.json",
+		],
+		{ cwd: context.root, env: installedEnv(), stdout: "pipe", stderr: "pipe" },
+	);
+	if (fixture.exitCode !== 0) throw new Error(fixture.stderr.toString());
 }, 240_000);
 
 afterAll(() => disposeSpecContext(context));
@@ -146,7 +162,7 @@ describe("compiled dg-skills spec from a relocated plugin", () => {
 	});
 
 	test("validate accepts the scaffolded plan using only the installed schema", async () => {
-		const plan = join(context.root, BUNDLE, "plan.md");
+		const plan = join(context.root, FIXTURE_BUNDLE, "plan.md");
 		const run = await compiled(["validate", plan]);
 		expect(run.stdout).toBe(`${plan}: ok\n`);
 		expect(run.exitCode).toBe(0);
@@ -162,7 +178,7 @@ describe("compiled dg-skills spec from a relocated plugin", () => {
 	});
 
 	test("roundtable runs the installed templates with a claude-only PATH", async () => {
-		const plan = join(context.root, BUNDLE, "plan.md");
+		const plan = join(context.root, FIXTURE_BUNDLE, "plan.md");
 		const dry = await compiled([
 			"roundtable",
 			plan,
@@ -191,7 +207,7 @@ describe("compiled dg-skills spec from a relocated plugin", () => {
 	});
 
 	test("a marketplace install locates the schema from HOME alone", async () => {
-		const plan = join(context.root, BUNDLE, "plan.md");
+		const plan = join(context.root, FIXTURE_BUNDLE, "plan.md");
 		const run = await compiled(["validate", plan], {
 			HOME: marketplaceHome,
 			DG_SKILLS_DIR: undefined,

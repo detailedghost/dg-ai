@@ -288,10 +288,14 @@ export async function prototypeRefCommand(args: string[]): Promise<number> {
 	const plan = `${bundle}/plan.md`;
 	needFile(plan);
 	needFile(path);
+	const index = Number(slice) - 1;
+	const parsed = parseYaml(frontmatterOf(await readText(plan)));
+	const slices = parsed.ok ? lookup(parsed.value, ["slices"]) : undefined;
+	if (!Array.isArray(slices) || index >= slices.length)
+		die(`slice ${slice} does not exist in ${plan}`);
 	const destRel = `prototype/slice_${slice}_${basename(path)}`;
 	mkdirSync(`${bundle}/prototype`, { recursive: true });
 	copyFileSync(path, `${bundle}/${destRel}`);
-	const index = Number(slice) - 1;
 	await setField(plan, `slices[${index}].prototype.path`, destRel);
 	await setField(plan, `slices[${index}].prototype.variant`, variant);
 	say(`${plan}: recorded prototype for slice ${slice} -> ${destRel}\n`);

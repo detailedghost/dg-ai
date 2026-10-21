@@ -287,7 +287,8 @@ export async function diffBundleCommand(args: string[]): Promise<number> {
 		"-z",
 		`${stripNewlines(mergeBase.stdout)}..HEAD`,
 	]);
-	const changed = (diff?.stdout ?? "")
+	if (diff === null || diff.status !== 0) die(`git diff failed against ${base}`);
+	const changed = diff.stdout
 		.split("\0")
 		.filter((name) => name !== "");
 	if (changed.length === 0) {
@@ -342,8 +343,12 @@ export async function readyCommand(args: string[]): Promise<number> {
 	const entry = sliceEntries(frontmatterOf(await readText(spec))).find(
 		(slice) => slice.id !== undefined && awkEquals(String(slice.id), target),
 	);
-	const raw = entry?.dependsOn;
-	const deps = (Array.isArray(raw) ? raw : []).map(String);
+	const listed = (raw: unknown) => (Array.isArray(raw) ? raw : []);
+	const deps = [
+		...new Set(
+			[...listed(entry?.depends_on), ...listed(entry?.dependsOn)].map(String),
+		),
+	];
 	if (deps.length === 0) {
 		say(`slice ${target} has no dependencies — ready\n`);
 		return 0;

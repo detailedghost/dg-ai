@@ -102,16 +102,28 @@ describe("monolith bootstrap", () => {
 		const run = await helper(["bootstrap", "."]);
 		expect(run.exitCode).toBe(0);
 		expect(run.stdout).toBe(
-			`APPEND_MODE=0\nMONOLITH_PATH=${live}\nLIGHT_MODE=0\n`,
+			`APPEND_MODE=0\nMONOLITH_PATH='${live}'\nLIGHT_MODE=0\n`,
 		);
 		expect(existsSync(join(context.root, ".agents"))).toBe(true);
+	});
+
+	test("emits values a shell evaluates back to the original paths", async () => {
+		const quoted = join(context.root, "it's here");
+		mkdirSync(quoted, { recursive: true });
+		const run = await helper(["bootstrap", quoted]);
+		const probe = Bun.spawnSync(
+			["sh", "-c", `eval "$1" && printf %s "$MONOLITH_PATH"`, "sh", run.stdout],
+		);
+		expect(probe.stdout.toString()).toBe(
+			join(quoted, ".agents", "monolith.md"),
+		);
 	});
 
 	test("reports append mode once the live file exists", async () => {
 		write(BILLING_VOCABULARY);
 		const run = await helper(["bootstrap", context.root]);
 		expect(run.stdout).toBe(
-			`APPEND_MODE=1\nMONOLITH_PATH=${live}\nLIGHT_MODE=0\n`,
+			`APPEND_MODE=1\nMONOLITH_PATH='${live}'\nLIGHT_MODE=0\n`,
 		);
 	});
 
@@ -142,11 +154,11 @@ describe("monolith bootstrap", () => {
 		expect(first.stdout).toBe(
 			[
 				"APPEND_MODE=0",
-				`MONOLITH_PATH=${path}`,
+				`MONOLITH_PATH='${path}'`,
 				"LIGHT_MODE=1",
-				`LIGHT_DIR=${dir}`,
-				`ORIGIN_REPO=${context.root}`,
-				"SLUG=work tree",
+				`LIGHT_DIR='${dir}'`,
+				`ORIGIN_REPO='${context.root}'`,
+				"SLUG='work tree'",
 				"",
 			].join("\n"),
 		);
@@ -159,7 +171,7 @@ describe("monolith bootstrap", () => {
 	test("--shallow outside a repository falls back to the anonymous slug", async () => {
 		const run = await helper(["bootstrap", "--shallow"]);
 		expect(run.exitCode).toBe(0);
-		expect(run.stdout).toContain("ORIGIN_REPO=\n");
+		expect(run.stdout).toContain("ORIGIN_REPO=''\n");
 		expect(run.stdout).toContain("SLUG=anonymous\n");
 	});
 });
@@ -308,6 +320,29 @@ describe("monolith prune", () => {
 		expect(run.stdout).toBe(`Gone\t${join(context.base, "no.cs")}\n`);
 	});
 
+	test("ignores index links that point outside the monolith directory", async () => {
+		const outside = join(context.root, "outside.md");
+		const outsideText = vocabulary([
+			{ section: "Domain Terms", term: "Victim", src: "gone/missing.cs" },
+		]);
+		writeTree(context.root, {
+			"outside.md": outsideText,
+			".agents/monolith.md": [
+				"# Project Vocabulary",
+				"",
+				"## Vocabulary by domain",
+				"",
+				"| Domain | File | Terms |",
+				"|--------|------|-------|",
+				"| escape | [../outside.md](../outside.md) | 1 |",
+				"",
+			].join("\n"),
+		});
+		const run = await helper(["prune", live]);
+		expect(run.stdout).not.toContain("Victim");
+		expect(readFileSync(outside, "utf8")).toBe(outsideText);
+	});
+
 	test("leaves rows outside the term sections alone", async () => {
 		write([], { trailing: "## Relationships\n\n| **X** | _src:_ gone.cs |" });
 		const run = await helper(["prune", live]);
@@ -407,7 +442,9 @@ describe("monolith cap-report", () => {
 				definition: "x".repeat(200),
 			})),
 		);
-		expect((await helper(["cap-report", live])).exitCode).toBe(1);
+		const run = await helper(["cap-report", live]);
+		expect(byteLength(live)).toBeGreaterThan(SOFT_CAP_BYTES);
+		expect(run.exitCode).toBe(1);
 	});
 });
 
@@ -733,6 +770,38 @@ describe("monolith conflicts", () => {
 		expect(run.exitCode).toBe(0);
 		expect(readFileSync(staging, "utf8")).toBe(before);
 		expect(existsSync(log)).toBe(false);
+	});
+
+	test("leaves prose and rows outside the term sections alone", async () => {
+		const { staging, conflicts, log } = resolution();
+		const prose = "An **Invoice** belongs to exactly one **Ledger**.";
+		const foreign = "| **Invoice** | not a term row |";
+		writeFileSync(
+			staging,
+			[
+				"## Domain Terms",
+				"",
+				newRow,
+				"",
+				"## Relationships",
+				"",
+				prose,
+				foreign,
+				"",
+			].join("\n"),
+		);
+		writeFileSync(conflicts, tsv());
+		const run = await helper([
+			"apply-conflict-resolution",
+			staging,
+			conflicts,
+			log,
+		]);
+		expect(run.exitCode).toBe(0);
+		const text = readFileSync(staging, "utf8");
+		expect(text).toContain(oldRow);
+		expect(text).toContain(prose);
+		expect(text).toContain(foreign);
 	});
 
 	test("conflict lines with fewer than four columns are ignored", async () => {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { scratchDir } from "@dg/common/node";
 import { die, EXIT } from "../utils/legacy-command";
@@ -11,11 +11,11 @@ const LANG_AGENT_MAP: Record<string, string> = {
 	typescript: "dg:js",
 	javascript: "dg:js",
 	python: "dg:python",
-	go: "go",
-	rust: "rust",
-	java: "java",
-	kotlin: "java",
-	ruby: "ruby",
+	go: "general-purpose",
+	rust: "general-purpose",
+	java: "general-purpose",
+	kotlin: "general-purpose",
+	ruby: "general-purpose",
 };
 
 const LANG_MARKERS: Array<[string[], string]> = [
@@ -113,7 +113,10 @@ function readExistingTerms(monolithPath: string): string {
 	try {
 		if (!statSync(monolithPath).isFile()) return "";
 		return listVocabularyTerms(monolithPath).join("\n").trimEnd();
-	} catch {
+	} catch (error) {
+		process.stderr.write(
+			`warn: could not read existing terms from ${monolithPath}: ${error instanceof Error ? error.message : String(error)}\n`,
+		);
 		return "";
 	}
 }
@@ -263,10 +266,10 @@ export function worktreeGen(argv: string[]): number {
 		);
 		ok = false;
 	}
-	if (!ok)
-		process.stderr.write(
-			`warn: generated script may be malformed: ${outputPath}\n`,
-		);
+	if (!ok) {
+		rmSync(outputPath, { force: true });
+		die(`generated script may be malformed: ${outputPath}`);
+	}
 
 	process.stdout.write(`${outputPath}\n`);
 	return EXIT.OK;

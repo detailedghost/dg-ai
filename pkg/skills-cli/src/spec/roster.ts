@@ -15,8 +15,6 @@ function agentsDir(): string | undefined {
 	return undefined;
 }
 
-const trim = (text: string): string => text.replace(/^\s+|\s+$/g, "");
-
 function joinWords(current: string, word: string): string {
 	return current === "" ? word : `${current} ${word}`;
 }
@@ -64,7 +62,7 @@ function markdownRow(name: string, lines: string[], full: boolean): string {
 }
 
 function unquote(raw: string): string {
-	let value = trim(raw);
+	let value = raw.trim();
 	if (value.startsWith('"""'))
 		return value.replace(/^"""/, "").replace(/"""\s*$/, "");
 	if (/^"/.test(value) && /"\s*$/.test(value))
@@ -82,11 +80,11 @@ function tomlRow(fallback: string, lines: string[], full: boolean): string {
 	let inInstructions = false;
 	let paragraphDone = false;
 	const addDescription = (text: string) => {
-		const line = trim(text);
+		const line = text.trim();
 		if (line !== "") description = joinWords(description, line);
 	};
 	const addParagraph = (text: string) => {
-		const line = trim(text);
+		const line = text.trim();
 		if (line === "") {
 			if (paragraph !== "") paragraphDone = true;
 			return;

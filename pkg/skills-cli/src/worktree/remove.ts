@@ -106,7 +106,11 @@ async function isBranchMerged(
 	return !unmerged || (await mergedPullRequestExists(repo, branch));
 }
 
-async function checkCleanAndPushed(repo: string, path: string): Promise<void> {
+async function checkCleanAndPushed(
+	repo: string,
+	path: string,
+	mergedOk: boolean,
+): Promise<void> {
 	const status = await git(path, ["status", "--porcelain"]);
 	if (!status.ok)
 		fail("could not read worktree status. Use --force to override.");
@@ -126,16 +130,13 @@ async function checkCleanAndPushed(repo: string, path: string): Promise<void> {
 			);
 		return;
 	}
+	if (!mergedOk) return;
 	const base = await originBase(repo);
 	if (!base) return;
-	const head = await git(path, ["rev-list", "--count", "HEAD"]);
-	if (!head.ok)
+	const cherry = await git(path, ["cherry", `origin/${base}`, "HEAD"]);
+	if (!cherry.ok)
 		fail("could not count branch commits. Use --force to override.");
-	const baseCount = await git(path, ["rev-list", "--count", `origin/${base}`]);
-	if (
-		Number.parseInt(head.stdout, 10) >
-		(baseCount.ok ? Number.parseInt(baseCount.stdout, 10) : 0)
-	)
+	if (cherry.stdout.split("\n").some((line) => line.startsWith("+")))
 		fail(
 			`branch has no upstream and is ahead of origin/${base}. Use --force to override.`,
 		);
@@ -167,7 +168,7 @@ export async function remove(args: string[]): Promise<number> {
 	info(`target: ${path} (branch ${branch})`);
 
 	if (!options.force) {
-		if (existsSync(path)) await checkCleanAndPushed(repo, path);
+		if (existsSync(path)) await checkCleanAndPushed(repo, path, options.mergedOk);
 		if (!options.mergedOk) {
 			const base = await originBase(repo);
 			if (!base)

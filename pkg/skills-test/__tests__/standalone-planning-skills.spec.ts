@@ -15,8 +15,6 @@ const SKILL_COMMANDS = [
 	"prototype",
 ];
 
-const PENDING_UNSHIPPED_COMMANDS: string[] = [];
-
 const RETIRED = [/\bspec-cli\b/, /create-specs/];
 
 const MIGRATION_SKILLS = new Set(["spring-break"]);
@@ -31,10 +29,9 @@ function isShipped(command: string): boolean {
 
 function bannedPatterns(): RegExp[] {
 	return [
-		...SKILL_COMMANDS.filter(
-			(command) =>
-				!isShipped(command) && !PENDING_UNSHIPPED_COMMANDS.includes(command),
-		).map((command) => new RegExp(`(?<![\\w.])/${command}\\b`)),
+		...SKILL_COMMANDS.filter((command) => !isShipped(command)).map(
+			(command) => new RegExp(`(?<![\\w.])/${command}\\b`),
+		),
 		...RETIRED,
 	];
 }
@@ -66,10 +63,6 @@ describe("planning skills stand alone", () => {
 			}
 		}
 		expect(hits).toEqual([]);
-	});
-
-	test("pending allowances name only commands that have not shipped yet", () => {
-		expect(PENDING_UNSHIPPED_COMMANDS.filter(isShipped)).toEqual([]);
 	});
 
 	test("kick and pickup describe the bundle they write and hand off to the shipped skills", () => {

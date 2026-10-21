@@ -49,11 +49,9 @@ describe("polish skill ships publicly", () => {
 		expect(text).toMatch(/not installed, skip/);
 	});
 
-	test("runs the prose check through a configurable external command", () => {
-		const text = markdownFiles(POLISH_DIR)
-			.map((f) => readFileSync(f, "utf8"))
-			.join("\n");
-		expect(text).toMatch(/DG_[A-Z_]*PROSE[A-Z_]*|prose[- ]check/i);
-		expect(text).toMatch(/configur|environment variable|\$\{?DG_/i);
+	test("runs the prose check through the DG_PROSE_CHECK_CMD external command", () => {
+		const text = readFileSync(join(POLISH_DIR, "references", "pr.md"), "utf8");
+		expect(text).toContain("Set `DG_PROSE_CHECK_CMD`");
+		expect(text).toContain(`printf '%s' "$PR_BODY" | "$DG_PROSE_CHECK_CMD"`);
 	});
 });

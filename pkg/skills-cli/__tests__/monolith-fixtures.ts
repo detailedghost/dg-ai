@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { mergeEnv } from "./module-call";
 import {
 	baseEnv,
 	collectRun,
@@ -10,7 +11,6 @@ import {
 	type SpecRun,
 } from "./spec-fixtures";
 
-export const MONOLITH_ENTRY = SPEC_ENTRY;
 export const MONOLITH_REFERENCES = join(
 	SOURCE_SKILLS,
 	"monolith",
@@ -114,18 +114,13 @@ export function monolithEnv(
 	context: SpecContext,
 	extra: Record<string, string | undefined> = {},
 ): Record<string, string> {
-	const env: Record<string, string | undefined> = {
+	return mergeEnv({
 		...baseEnv(context),
 		DG_SKILLS_DIR: SOURCE_SKILLS,
 		SCRIPTS_ROOT: undefined,
 		MONOLITH_NONINTERACTIVE: undefined,
 		...extra,
-	};
-	return Object.fromEntries(
-		Object.entries(env).filter(
-			(entry): entry is [string, string] => entry[1] !== undefined,
-		),
-	);
+	});
 }
 
 export interface MonolithOptions {
@@ -144,7 +139,7 @@ export function runMonolith(
 				process.execPath,
 				"--preload",
 				SPEC_FIXED_DATE_PRELOAD,
-				MONOLITH_ENTRY,
+				SPEC_ENTRY,
 				"monolith",
 				...args,
 			],

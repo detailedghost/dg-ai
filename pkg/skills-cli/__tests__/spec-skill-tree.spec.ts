@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
 	SOURCE_SKILLS,
 	SPEC_SKILLS_TREES,
@@ -47,8 +47,6 @@ const SCHEMA_FIELDS = [
 	"bundle",
 	"plan_path",
 ];
-
-const PENDING_SAME_WAVE_SKILLS = ["monolith"];
 
 function files(skill: string): string[] {
 	const out: string[] = [];
@@ -159,19 +157,17 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/~\/\.dg\/bin\/dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+curl/,
+				/~\/\.dg\/bin\/dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\s+curl/,
 			);
 		},
 	);
 
-	test("every relative link resolves, except links to skills that ship later in this wave", () => {
+	test("every relative link resolves", () => {
 		const missing: string[] = [];
 		for (const { files } of trees)
 			for (const file of files) {
 				for (const match of file.text.matchAll(/\]\((\.{1,2}\/[^)#\s]+)/g)) {
 					const target = resolve(dirname(file.path), match[1] ?? "");
-					const owner = relative(SOURCE_SKILLS, target).split(sep)[0] ?? "";
-					if (PENDING_SAME_WAVE_SKILLS.includes(owner)) continue;
 					if (!existsSync(target)) missing.push(`${file.name} -> ${match[1]}`);
 				}
 			}

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { cwdHash } from "@dg/common/node";
 import {
@@ -244,12 +251,12 @@ describe("monolith worktree-gen agent routing", () => {
 		["a pyproject", { "pyproject.toml": "" }, "dg:python"],
 		["a setup.py", { "setup.py": "" }, "dg:python"],
 		["a requirements file", { "requirements.txt": "" }, "dg:python"],
-		["a go module", { "go.mod": "" }, "go"],
-		["a Cargo manifest", { "Cargo.toml": "" }, "rust"],
-		["a pom", { "pom.xml": "" }, "java"],
-		["a gradle build", { "build.gradle": "" }, "java"],
-		["a kotlin gradle build", { "build.gradle.kts": "" }, "java"],
-		["a Gemfile", { Gemfile: "" }, "ruby"],
+		["a go module", { "go.mod": "" }, "general-purpose"],
+		["a Cargo manifest", { "Cargo.toml": "" }, "general-purpose"],
+		["a pom", { "pom.xml": "" }, "general-purpose"],
+		["a gradle build", { "build.gradle": "" }, "general-purpose"],
+		["a kotlin gradle build", { "build.gradle.kts": "" }, "general-purpose"],
+		["a Gemfile", { Gemfile: "" }, "general-purpose"],
 	];
 
 	test.each(routed)(
@@ -370,6 +377,58 @@ describe("monolith worktree-gen status and errors", () => {
 		expect(run.stderr).toContain("SEARCH_HIERARCHY anchor not found");
 		expect(run.stdout).toBe("");
 	});
+
+	test("a scan workflow whose args destructure cannot be stripped exits 1 and leaves no script", async () => {
+		const skills = join(context.base, "drifted destructure");
+		cpSync(join(SOURCE_SKILLS, "monolith"), join(skills, "monolith"), {
+			recursive: true,
+		});
+		const scan = join(skills, "monolith", "references", "scan.workflow.mjs");
+		writeFileSync(
+			scan,
+			readFileSync(scan, "utf8").replace(
+				/\nconst \{\n[\s\S]*?\n\} = args \|\| \{\}\n/,
+				"\nconst { mode } = args || {}\n",
+			),
+		);
+		const out = join(context.base, "bad-scan.mjs");
+		const run = await runMonolith(
+			context,
+			["worktree-gen", worktree, "--out", out],
+			{ env: { DG_SKILLS_DIR: skills } },
+		);
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("generated script may be malformed");
+		expect(run.stdout).toBe("");
+		expect(existsSync(out)).toBe(false);
+	});
+
+	test.skipIf(process.getuid?.() === 0)(
+		"an unreadable domain file warns on stderr and still generates",
+		async () => {
+			const domain = join(worktree, ".agents", "monolith", "billing.md");
+			writeTree(worktree, {
+				".agents/monolith/billing.md": vocabulary(BILLING_VOCABULARY),
+				".agents/monolith.md": [
+					"# Project Vocabulary",
+					"",
+					"## Vocabulary by domain",
+					"",
+					"| Domain | File | Terms |",
+					"|--------|------|-------|",
+					"| billing | [monolith/billing.md](monolith/billing.md) | 6 |",
+					"",
+				].join("\n"),
+			});
+			chmodSync(domain, 0o000);
+			const { run, out } = await generate([]);
+			chmodSync(domain, 0o644);
+			expect(run.exitCode).toBe(0);
+			expect(run.stderr).toContain("warn:");
+			expect(run.stderr).toContain(".agents/monolith.md");
+			expect(parseGeneratedScan(readFileSync(out, "utf8")).existingTerms).toBe("");
+		},
+	);
 
 	test("generation never reads user-local workflow, template or helper files", async () => {
 		const decoy = join(context.base, "decoy home");

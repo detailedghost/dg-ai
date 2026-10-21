@@ -1,4 +1,5 @@
 import {
+	appendFileSync,
 	existsSync,
 	mkdirSync,
 	readFileSync,
@@ -9,6 +10,7 @@ import {
 import path from "node:path";
 import { projectHash, repoRoot, stateRoot } from "@dg/common/node";
 import { die, EXIT, type SubcommandSpec } from "../utils/legacy-command";
+import { shellValue } from "../worktree/shared";
 
 const TERM_SECTIONS = [
 	"Domain Terms",
@@ -142,6 +144,11 @@ function resolveVocabularyFiles(file: string): {
 		const link = line.match(/\]\(([^)]+)\)/);
 		if (!link) continue;
 		const resolved = path.resolve(path.dirname(abs), link[1]);
+		const within = path.relative(path.dirname(abs), resolved);
+		if (within.startsWith("..") || path.isAbsolute(within)) {
+			process.stderr.write(`warn: ignoring index link outside monolith directory: ${link[1]}\n`);
+			continue;
+		}
 		if (existsSync(resolved)) files.push(resolved);
 	}
 
@@ -178,11 +185,11 @@ function cmdBootstrap(args: string[]): number {
 		process.stdout.write(
 			`APPEND_MODE=${existsSync(monolithPath) ? "1" : "0"}\n`,
 		);
-		process.stdout.write(`MONOLITH_PATH=${monolithPath}\n`);
+		process.stdout.write(`MONOLITH_PATH=${shellValue(monolithPath)}\n`);
 		process.stdout.write("LIGHT_MODE=1\n");
-		process.stdout.write(`LIGHT_DIR=${lightDir}\n`);
-		process.stdout.write(`ORIGIN_REPO=${origin ?? ""}\n`);
-		process.stdout.write(`SLUG=${slug}\n`);
+		process.stdout.write(`LIGHT_DIR=${shellValue(lightDir)}\n`);
+		process.stdout.write(`ORIGIN_REPO=${shellValue(origin ?? "")}\n`);
+		process.stdout.write(`SLUG=${shellValue(slug)}\n`);
 		return EXIT.OK;
 	}
 
@@ -196,7 +203,7 @@ function cmdBootstrap(args: string[]): number {
 	const monolithPath = path.join(agentsDir, DEFAULT_MONOLITH_REL);
 
 	process.stdout.write(`APPEND_MODE=${existsSync(monolithPath) ? "1" : "0"}\n`);
-	process.stdout.write(`MONOLITH_PATH=${abspath(monolithPath)}\n`);
+	process.stdout.write(`MONOLITH_PATH=${shellValue(abspath(monolithPath))}\n`);
 	process.stdout.write("LIGHT_MODE=0\n");
 	return EXIT.OK;
 }
@@ -734,15 +741,20 @@ function cmdApplyConflictResolution(args: string[]): number {
 	}
 	logEntry += "\n";
 
-	const existing = readFileSync(logPath, "utf8");
-	writeFileSync(logPath, existing + logEntry);
+	appendFileSync(logPath, logEntry);
 
-	const stagingLines = readFileSync(staging, "utf8").split("\n");
-	const result = stagingLines.map((line) => {
-		if (!line.includes("**")) return line;
-		const term = extractBoldTerm(line);
-		return (term ? oldForTerm.get(term) : undefined) ?? line;
-	});
+	let inTermSection = false;
+	const result = readFileSync(staging, "utf8")
+		.split("\n")
+		.map((line) => {
+			if (line.startsWith("## ")) {
+				inTermSection = TERM_SECTIONS_SET.has(line.slice(3).trimEnd());
+				return line;
+			}
+			if (!inTermSection || !isTermRow(line)) return line;
+			const term = extractBoldTerm(line);
+			return (term ? oldForTerm.get(term) : undefined) ?? line;
+		});
 
 	writeFileSync(staging, result.join("\n"));
 	return EXIT.OK;

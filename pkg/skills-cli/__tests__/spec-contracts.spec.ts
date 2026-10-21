@@ -562,6 +562,30 @@ describe("dg-skills spec permissions", () => {
 		expect(run.stderr).toContain("file not found");
 	});
 
+	test("perms reads an unterminated answer from stdin instead of treating it as end of input", async () => {
+		put("spec.md", "---\nstatus: draft\n---\n# t\n");
+		const run = await spec(["perms", "spec.md"], { stdin: "y" });
+		expect(run.exitCode).toBe(0);
+		expect(run.stdout).toContain("set to true");
+	});
+
+	test("--from-file skips keys that would write malformed YAML and applies the rest", async () => {
+		put("spec.md", "---\nstatus: draft\n---\n# t\n");
+		put("grants.perms", "foo: bar=true\ngit_push=true\n");
+		const run = await spec([
+			"perms-batch",
+			"spec.md",
+			"--from-file",
+			"grants.perms",
+		]);
+		expect(run.exitCode).toBe(0);
+		expect(run.stderr).toContain("foo: bar");
+		expect(splitFrontmatter(read("spec.md")).data).toEqual({
+			status: "draft",
+			permissions: { git_push: true },
+		});
+	});
+
 	test("--from-file without a path is a usage error, not a crash", async () => {
 		put("spec.md", "---\nstatus: draft\n---\n# t\n");
 		const run = await spec(["perms-batch", "spec.md", "--from-file"]);
@@ -809,17 +833,46 @@ describe("dg-skills spec roundtable", () => {
 	});
 });
 
-describe("dg-skills spec legacy status parity", () => {
-	test("ready reads only dependsOn, so the depends_on edge scaffold writes never blocks", async () => {
+describe("dg-skills spec defects the TypeScript port must not carry over", () => {
+	test("ready blocks a slice whose depends_on dependency is not committed", async () => {
 		put("spec.md", SPEC);
 		initRepo(context.root);
 		const run = await spec(["ready", "spec.md", "2"]);
-		expect(run.exitCode).toBe(0);
-		expect(run.stdout).toBe("slice 2 has no dependencies — ready\n");
+		expect(run.exitCode).toBe(1);
+		expect(run.stdout).toBe("slice 2 BLOCKED by uncommitted deps: 1\n");
 	});
-});
 
-describe("dg-skills spec defects the TypeScript port must not carry over", () => {
+	test("diff-bundle fails instead of reporting no changes when git diff fails", async () => {
+		put("spec.md", SPEC);
+		runFixtureGit(["init", "-q", "-b", "main"], context.root);
+		runFixtureGit(["add", "spec.md"], context.root);
+		runFixtureGit(["commit", "-q", "-m", "init"], context.root);
+		const bin = join(context.base, "failing git bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(
+			join(bin, "git"),
+			`#!/bin/sh\ncase "$1" in diff) exit 128;; esac\nexec ${Bun.which("git")} "$@"\n`,
+		);
+		chmodSync(join(bin, "git"), 0o755);
+		const run = await spec(["diff-bundle", "spec.md"], {
+			env: { PATH: `${bin}:${process.env.PATH}` },
+		});
+		expect(run.exitCode).not.toBe(0);
+		expect(run.stdout).not.toContain("no changes");
+	});
+
+	test("issues resolve fails and leaves the spec unchanged when no open issue matches", async () => {
+		const text =
+			"---\nstatus: draft\n---\n\n## Issues Remediation\n\n| # | Slice | From | Severity | Status | Description |\n|---|---|---|---|---|---|\n| 1 | 1 | qa | med | resolved | done |\n";
+		put("spec.md", text);
+		for (const id of ["9", "1"]) {
+			const run = await spec(["issues", "resolve", "spec.md", "--id", id]);
+			expect(run.exitCode).toBe(1);
+			expect(run.stdout).not.toContain("resolved issue");
+			expect(read("spec.md")).toBe(text);
+		}
+	});
+
 	test("ready requires every dependency written as a YAML block list", async () => {
 		put(
 			"spec.md",
@@ -872,6 +925,24 @@ describe("dg-skills spec defects the TypeScript port must not carry over", () =>
 			"a",
 		]);
 		expect(run.exitCode).toBe(2);
+		expect(read("bundle/plan.md")).toBe(SPEC);
+		expect(existsSync(join(context.root, "bundle/prototype"))).toBe(false);
+	});
+
+	test("prototype-ref leaves no copied asset when the slice does not exist", async () => {
+		put("bundle/plan.md", SPEC);
+		put("proto.html", "<p>x</p>");
+		const run = await spec([
+			"prototype-ref",
+			"bundle",
+			"--slice",
+			"9",
+			"--path",
+			"proto.html",
+			"--variant",
+			"a",
+		]);
+		expect(run.exitCode).not.toBe(0);
 		expect(read("bundle/plan.md")).toBe(SPEC);
 		expect(existsSync(join(context.root, "bundle/prototype"))).toBe(false);
 	});

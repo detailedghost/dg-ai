@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { REPO_ROOT } from "./test-support";
 
 const PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
@@ -28,12 +28,15 @@ function files(dir: string): string[] {
 }
 
 const LAUNCH_FILES = files(SKILLS_DIR).map((path) => ({
-	name: relative(SKILLS_DIR, path),
+	name: relative(SKILLS_DIR, path).split(sep).join("/"),
 	text: readFileSync(path, "utf8"),
 }));
 
 const NAMES = AGENTS.join("|");
-const BACKTICK_NAMES = AGENTS.filter((name) => name !== "thrash").join("|");
+const AGENTS_SHARING_A_SKILL_NAME = ["thrash"];
+const BACKTICK_NAMES = AGENTS.filter(
+	(name) => !AGENTS_SHARING_A_SKILL_NAME.includes(name),
+).join("|");
 const BARE_AGENT = new RegExp(
 	[
 		`(?<![\\w:/.-])\`(${BACKTICK_NAMES})\`(?![\\w:/-])`,
@@ -53,8 +56,13 @@ function loadTierMap(): {
 	plugin: Set<string>;
 } {
 	const source = readFileSync(SLICE_WAVE, "utf8");
-	const start = source.indexOf("const PLUGIN_AGENTS");
-	const end = source.indexOf("// Delegation-table effort default");
+	const startMarker = "const PLUGIN_AGENTS";
+	const endMarker = "// Delegation-table effort default";
+	const start = source.indexOf(startMarker);
+	const end = source.indexOf(endMarker);
+	if (start < 0) throw new Error(`marker not found in slice-wave: ${startMarker}`);
+	if (end <= start)
+		throw new Error(`marker not found after ${startMarker}: ${endMarker}`);
 	const block = source.slice(start, end);
 	return new Function(
 		"modelOverride",

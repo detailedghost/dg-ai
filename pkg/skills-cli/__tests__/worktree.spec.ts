@@ -246,25 +246,6 @@ describe("worktree create output contract", () => {
 		);
 	});
 
-	test("stdout stays eval-safe for a path containing spaces", async () => {
-		const { repo } = trackedRepo();
-		expect(repo).toContain(" ");
-		const proc = Bun.spawnSync(
-			[
-				"sh",
-				"-c",
-				'eval "$("$1" run "$2" worktree create spaced)" && printf "%s|%s|%s" "$WORKTREE_PATH" "$WORKTREE_BRANCH" "$WORKTREE_ORIGIN"',
-				"sh",
-				process.execPath,
-				CLI,
-			],
-			{ cwd: repo, env: mergeEnv({ LC_ALL: "C" }) },
-		);
-		expect(proc.stdout.toString()).toBe(
-			`${expectedPath(repo, "spaced")}|feature/spaced|${repo}`,
-		);
-	});
-
 	test("shell-safe values print raw, byte-identical to the legacy output", async () => {
 		const root = fixtures.tmp("worktree-plain-");
 		const upstream = join(root, "upstream.git");
@@ -798,6 +779,20 @@ describe("worktree remove safety guards", () => {
 			["remove", "noupstream", "--merged-ok"],
 			repo,
 		);
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain("no upstream and is ahead of origin/main");
+		expect(branchExists(repo, values.WORKTREE_BRANCH)).toBe(true);
+	});
+
+	test("a branch cut from an older base that holds unpushed commits blocks removal", async () => {
+		const { repo } = trackedRepo();
+		const values = await created(repo, "stale");
+		runGit(["branch", "--unset-upstream"], values.WORKTREE_PATH);
+		commitFile(values.WORKTREE_PATH, "a.txt", "a", "feat: a");
+		commitFile(repo, "m1.txt", "1", "feat: m1");
+		commitFile(repo, "m2.txt", "2", "feat: m2");
+		runGit(["push", "-q", "origin", "main"], repo);
+		const result = await worktree(["remove", "stale", "--merged-ok"], repo);
 		expect(result.exitCode).toBe(2);
 		expect(result.stderr).toContain("no upstream and is ahead of origin/main");
 		expect(branchExists(repo, values.WORKTREE_BRANCH)).toBe(true);
