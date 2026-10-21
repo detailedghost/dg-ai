@@ -1627,6 +1627,10 @@ describe("postReview — file comments", () => {
     echo >> "$FAKE_STDIN_CAPTURE.threads"
     ${thread}
     ;;
+  *"api user --jq"*)
+    echo review-bot
+    exit 0
+    ;;
   *"--paginate"*)
     echo 55
     exit 0
@@ -1716,6 +1720,10 @@ describe("postReview — file comments", () => {
 		const calls = readCalls(log);
 		expect(calls).toContain("api repos/acme/widgets/pulls/12/reviews/55 --method DELETE");
 		expect(calls.filter((c) => c === "api repos/acme/widgets/pulls/12/reviews --method POST --input -")).toHaveLength(2);
+		expect(calls).toContain("api user --jq .login");
+		expect(
+			calls.some((c) => c.includes('.user.login == "review-bot"') && c.includes("--paginate")),
+		).toBe(true);
 	});
 });
 

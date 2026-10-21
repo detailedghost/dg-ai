@@ -531,8 +531,11 @@ function reviewsPath(ref: PrRef): string {
 	return `repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/reviews`;
 }
 
+/** Only this bot's own stale pending review, never a human's draft review on the same PR. */
 async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
-	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${'.[] | select(.state == "PENDING") | .id'} ${apiHostFlags(ref.repo)}`;
+	const whoami = await tag`api user --jq ${".login"} ${apiHostFlags(ref.repo)}`;
+	const login = whoami.stdout.toString().trim();
+	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${`.[] | select(.state == "PENDING" and .user.login == "${login}") | .id`} ${apiHostFlags(ref.repo)}`;
 	for (const id of listed.stdout.toString().split("\n").filter(Boolean)) {
 		await tag`api ${reviewsPath(ref)}/${id} --method DELETE ${apiHostFlags(ref.repo)}`;
 	}
