@@ -40,7 +40,12 @@ const raw = await parallel(
   ),
 )
 
-const merged = raw.filter(Boolean).flatMap((r) => r.items || [])
+const answered = raw.filter(Boolean)
+const silent = raw.length - answered.length
+if (silent > 0) log(`${silent} of ${raw.length} scanners returned nothing.`)
+if (raw.length > 0 && answered.length === 0) throw new Error('All discovery scanners returned nothing.')
+
+const merged = answered.flatMap((r) => r.items || [])
 
 const byKey = new Map()
 for (const it of merged) {

@@ -21,7 +21,7 @@ Discovery runs as a background **Workflow** (`references/discover.workflow.mjs`)
 | pr-backlog | Open PRs with unresolved review comments | 3 | Explore |
 | codebase-scan | reviewer pass on recently-changed files | 3 | dg:reviewer |
 
-```
+```js
 Workflow({
   scriptPath: "<skill-dir>/references/discover.workflow.mjs",
   args: { scanners: [{ key, agentType, prompt }, ...] }   // prompts from discovery-prompts.md
@@ -87,7 +87,7 @@ cd "<origin-repo>" && eval "$(~/.dg/bin/dg-skills worktree create "<slug>" --pre
 
 Execution runs as a background **Workflow** (`references/execute.workflow.mjs`). Read `references/execution-template.md` once, pass its body raw as `template`, and pass one entry per selected item — the script fills `{PLACEHOLDER}` tokens and dispatches all items concurrently (`model: "sonnet"`, set in-script):
 
-```
+```js
 Workflow({
   scriptPath: "<skill-dir>/references/execute.workflow.mjs",
   args: {
@@ -153,20 +153,22 @@ Then ask via `AskUserQuestion` (single-select):
 
 If *Choose*: follow up with a second `AskUserQuestion` (`multiSelect: true`) listing each non-failed item by title. Only selected items proceed to PR creation.
 
-For each approved item, write the title and body to files through quoted heredocs, so text from issues, TODO comments and agent output never reaches the shell as code. `create-pr` has no file option, so pass the files with command substitution, which does not re-expand its output:
+For each approved item, write the title and body to files with the Write tool, so text from issues, TODO comments and agent output never reaches the shell as code. Never put that text in a heredoc or on a command line. `create-pr` has no file option, so pass the files with command substitution, which does not re-expand its output.
+
+1. Get two file paths. Replace `<slug>` with the branch name after its last `/`:
 
 ```sh
-TITLE_FILE=$(mktemp) && cat > "$TITLE_FILE" <<'EOF'
-<item title>
-EOF
-BODY_FILE=$(mktemp) && cat > "$BODY_FILE" <<'EOF'
-<pr_body_draft>
-EOF
-~/.dg/bin/dg-skills vcs-provider create-pr --draft --head "<branch>" --base "<default-branch>" --title "$(cat "$TITLE_FILE")" --body "$(cat "$BODY_FILE")"
-rm -f "$TITLE_FILE" "$BODY_FILE"
+~/.dg/bin/dg-skills stash find-work "pr-title-<slug>.txt"
+~/.dg/bin/dg-skills stash find-work "pr-body-<slug>.md"
 ```
 
-Run all of it in one Bash call, and replace `<branch>` and `<default-branch>` with literal values.
+2. Call the Write tool once for each path. Write the item title to the first path and `<pr_body_draft>` to the second.
+3. Open the draft PR. Replace `<branch>`, `<default-branch>`, `<title-path>` and `<body-path>` with literal values:
+
+```sh
+~/.dg/bin/dg-skills vcs-provider create-pr --draft --head "<branch>" --base "<default-branch>" --title "$(cat "<title-path>")" --body "$(cat "<body-path>")"
+rm -f "<title-path>" "<body-path>"
+```
 
 If the human flags that two or more approved items actually depend on each other
 (rare — items normally branch independently off default), run the `/dg:chain` skill on

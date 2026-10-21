@@ -15,8 +15,6 @@ export const channelReviewChecks: DoctorCheck[] = [
 		required: true,
 		why: "channel-review runs reviews through a coding agent",
 	}),
-	...credentialChecks([DATADOG_CREDENTIAL, SENTRY_CREDENTIAL], {
-		required: false,
-	}),
+	...credentialChecks([DATADOG_CREDENTIAL, SENTRY_CREDENTIAL]),
 	allowRuleCheck("channel-review"),
 ];

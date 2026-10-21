@@ -1,7 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claudePluginSkillsDirs } from "@dg/common/node";
-import { versionGte } from "../utils/lib";
+import { compareVersions, versionGte } from "../utils/lib";
 
 export const CLI_PATH = "~/.dg/bin/dg-skills";
 const VERSION = /\d+\.\d+(?:\.\d+)?/;
@@ -73,27 +73,30 @@ export function allowRuleFor(sub: string): string {
 	return `Bash(${CLI_PATH} ${sub}:*)`;
 }
 
-export function readAllowRules(home: string): string[] {
+export type AllowRules = { rules: string[] } | { error: string };
+
+export function readAllowRules(home: string): AllowRules {
+	let text: string;
 	try {
-		const settings = JSON.parse(
-			readFileSync(join(home, ".claude", "settings.json"), "utf8"),
-		);
-		const allow = settings?.permissions?.allow;
-		return Array.isArray(allow)
-			? allow.filter((rule): rule is string => typeof rule === "string")
-			: [];
-	} catch {
-		return [];
+		text = readFileSync(join(home, ".claude", "settings.json"), "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { rules: [] };
+		return { error: (error as Error).message };
+	}
+	try {
+		const allow = JSON.parse(text)?.permissions?.allow;
+		return {
+			rules: Array.isArray(allow)
+				? allow.filter((rule): rule is string => typeof rule === "string")
+				: [],
+		};
+	} catch (error) {
+		return { error: (error as Error).message };
 	}
 }
 
 export function hasAllowRule(rules: readonly string[], sub: string): boolean {
 	return rules.includes(allowRuleFor(sub)) || rules.includes(`Bash(${CLI_PATH}:*)`);
-}
-
-function compareVersions(a: string, b: string): number {
-	if (versionGte(a, b) && versionGte(b, a)) return 0;
-	return versionGte(a, b) ? 1 : -1;
 }
 
 export interface PluginInstall {

@@ -1,19 +1,20 @@
 import {
 	chmodSync,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	realpathSync,
 	rmSync,
-	statSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { scratchFixtures } from "./git-repo-fixtures";
+import { CLI_ENTRY, runCli } from "./module-call";
 import { SOURCE_SKILLS } from "./spec-fixtures";
 
-export const DOCTOR_ENTRY = join(import.meta.dir, "../src/index.ts");
 export const INSTALLED_VERSION: string = JSON.parse(
 	readFileSync(join(import.meta.dir, "../package.json"), "utf8"),
 ).version;
@@ -51,7 +52,7 @@ export interface DoctorCheck {
 	id: string;
 	status: CheckStatus;
 	detail: string;
-	fix?: string | null;
+	fix: string | null;
 }
 
 export interface DoctorItem {
@@ -87,7 +88,9 @@ export function snapshotTree(dir: string): Record<string, string> {
 	const visit = (path: string) => {
 		for (const name of readdirSync(path).sort()) {
 			const full = join(path, name);
-			if (statSync(full).isDirectory()) {
+			const stat = lstatSync(full);
+			if (stat.isSymbolicLink()) out[full] = `link:${readlinkSync(full)}`;
+			else if (stat.isDirectory()) {
 				out[`${full}/`] = "dir";
 				visit(full);
 			} else out[full] = readFileSync(full).toString("base64");
@@ -95,8 +98,8 @@ export function snapshotTree(dir: string): Record<string, string> {
 	};
 	try {
 		visit(dir);
-	} catch {
-		return out;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
 	return out;
 }
@@ -185,19 +188,10 @@ export function doctorWorld() {
 		args: string[],
 		extra: Record<string, string | undefined> = {},
 	): Promise<DoctorRun> {
-		const proc = Bun.spawn([process.execPath, "run", DOCTOR_ENTRY, ...args], {
+		return runCli([process.execPath, "run", CLI_ENTRY], args, {
 			cwd: home,
 			env: env(extra),
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
 		});
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		return { stdout, stderr, exitCode };
 	}
 
 	async function report(

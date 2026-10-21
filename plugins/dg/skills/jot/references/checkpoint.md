@@ -2,6 +2,8 @@
 
 One section per checkpoint in `~/doc/checkpoint.md`. The CLI creates `~/doc/` and the file, appends the section, and writes by temp file plus rename under a lock. It never edits another section. `--replace` swaps only the section with the same id. `kick-take` prints a section, then removes only that section; the file is deleted when no section remains and only the CLI header is left.
 
+The id format is `YYYY-MM-DD HHMM — <project> — <title>`. The em dash (`—`) is required as the separator. A hyphen (`-` or `--`) makes the CLI reject the id.
+
 The CLI rejects a section with a bad id, a second `## ` heading, or a missing line or sub-section.
 
 ```markdown

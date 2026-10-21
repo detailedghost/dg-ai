@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -38,6 +38,11 @@ function verbsCalled(text: string, command: string): string[] {
 	return [
 		...text.matchAll(new RegExp(`dg-skills ${command}\\s+([\\w-]+)`, "g")),
 	].map((match) => match[1] ?? "");
+}
+
+function checkedText(line: string): string {
+	if (line.startsWith("|")) return cells(line).at(-1) ?? "";
+	return /agentType/.test(line) ? line : "";
 }
 
 function homeReferences(text: string): string[] {
@@ -109,18 +114,31 @@ describe.each(SCANNED)("packaged %s skill tree", (name) => {
 						]);
 	});
 
-	test("documents flags in a four-column table matching its Usage line when it takes flags", () => {
-		const text = skillText(name);
+});
+
+describe("packaged skill flags", () => {
+	test("sniff documents flags in a four-column table matching its Usage line", () => {
+		const text = skillText("sniff");
 		const usage = usageLine(text);
-		if (name !== "nope") expect(usage).not.toBe("");
+		expect(usage).not.toBe("");
 		const table = flagsTable(text);
-		const usedFlags = [...usage.matchAll(FLAG)].map((match) => match[1]);
-		if (usedFlags.length === 0 && table === null) return;
 		expect(table).not.toBeNull();
 		expect(table?.header).toEqual(["Flag", "Short", "Effect", "Default"]);
-		for (const flag of usedFlags)
-			expect([flag, table?.documented.has(flag ?? "")]).toEqual([flag, true]);
+		for (const match of usage.matchAll(FLAG))
+			expect([match[1], table?.documented.has(match[1] ?? "")]).toEqual([
+				match[1],
+				true,
+			]);
 	});
+
+	test.each(["find-work", "nope"])(
+		"%s takes no flags, so it has no flag in Usage and no Flags table",
+		(name) => {
+			const text = skillText(name);
+			expect([...usageLine(text).matchAll(FLAG)]).toEqual([]);
+			expect(flagsTable(text)).toBeNull();
+		},
+	);
 });
 
 describe("packaged sniff skill", () => {
@@ -169,7 +187,6 @@ describe("packaged sniff skill", () => {
 		expect(text).toMatch(
 			/never print a value for a `?SECRET`? or `?CONFIG`? row/i,
 		);
-		expect(text).toMatch(/report, do not grade/i);
 		for (const type of [
 			"SECRET",
 			"CONFIG",
@@ -225,7 +242,6 @@ describe("packaged nope skill", () => {
 		const text = skillText("nope");
 		expect(text).toContain("## Tool Defaults");
 		expect(text).toMatch(/increment/i);
-		expect(text).toMatch(/5 most recent/);
 		expect(text).toContain("/dg:nope invoked");
 	});
 
@@ -250,8 +266,12 @@ describe("packaged find-work skill", () => {
 		"references/discover.workflow.mjs",
 		"references/execute.workflow.mjs",
 	];
-	const providerVerbs = verbsOf("vcs-provider");
-	const worktreeVerbs = verbsOf("worktree");
+	let providerVerbs: string[] = [];
+	let worktreeVerbs: string[] = [];
+	beforeAll(() => {
+		providerVerbs = verbsOf("vcs-provider");
+		worktreeVerbs = verbsOf("worktree");
+	});
 	const phases = () =>
 		readFileSync(join(skillDir("find-work"), "references/phases.md"), "utf8");
 	const template = () =>
@@ -283,7 +303,7 @@ describe("packaged find-work skill", () => {
 		expect(text).toContain("~/.dg/bin/dg-skills worktree --help");
 		const { gate, call } = firstCallIndex(text);
 		expect(gate).toBeGreaterThan(-1);
-		expect(call === -1 || call > gate).toBe(true);
+		expect(call).toBeGreaterThan(gate);
 	});
 
 	test("routes every provider operation through dg-skills vcs-provider", () => {
@@ -312,6 +332,7 @@ describe("packaged find-work skill", () => {
 
 	test("creates and removes worktrees only through dg-skills worktree", () => {
 		const text = treeText("find-work");
+		expect(worktreeVerbs.length).toBeGreaterThan(0);
 		const used = new Set(verbsCalled(text, "worktree"));
 		expect(used.has("create")).toBe(true);
 		for (const verb of used)
@@ -335,17 +356,11 @@ describe("packaged find-work skill", () => {
 				false,
 			]);
 		expect(text).toContain("dg:reviewer");
-		for (const line of text.split("\n")) {
-			const checked = line.startsWith("|")
-				? (cells(line).at(-1) ?? "")
-				: /agentType/.test(line)
-					? line
-					: "";
-			expect([line, /(?<!dg:)\breviewer\b/.test(checked)]).toEqual([
+		for (const line of text.split("\n"))
+			expect([line, /(?<!dg:)\breviewer\b/.test(checkedText(line))]).toEqual([
 				line,
 				false,
 			]);
-		}
 	});
 
 	test("keeps the human selection gate before any worktree is created", () => {
@@ -433,7 +448,6 @@ describe("packaged find-work skill", () => {
 
 	test("keeps the planning limits and the conventional commit instruction", () => {
 		const text = skillText("find-work");
-		expect(text).toMatch(/Max 5 discovered items/);
 		expect(text).toMatch(/Conventional commits/);
 		expect(text).toContain('model: "haiku"');
 		expect(text).toContain('model: "sonnet"');

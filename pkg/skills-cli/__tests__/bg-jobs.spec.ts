@@ -6,7 +6,6 @@ import {
 	setDefaultTimeout,
 	test,
 } from "bun:test";
-import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -16,7 +15,14 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { shellCommand } from "@dg/common/node";
-import { BG_ENTRY, type BgJob, bgWorld, isLive, until } from "./bg-fixtures";
+import { CLI_ENTRY } from "./module-call";
+import {
+	type BgJob,
+	bgWorld,
+	isLive,
+	killQuietly,
+	until,
+} from "./bg-fixtures";
 
 setDefaultTimeout(60_000);
 
@@ -45,7 +51,7 @@ function proxyJob(sessionId: string, sleepSeconds = 0) {
 		command: shellCommand([
 			process.execPath,
 			"run",
-			BG_ENTRY,
+			CLI_ENTRY,
 			"proxy",
 			"codex",
 			"--prompt",
@@ -73,6 +79,12 @@ describe("dg-skills bg run and status", () => {
 			state: "done",
 			exitCode: 0,
 		});
+	});
+
+	test("status without an id is a usage error", async () => {
+		const result = await world.bg(["status"], world.dir());
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain("usage: status <id>");
 	});
 
 	test("captures stdout and stderr into the log file", async () => {
@@ -130,7 +142,7 @@ describe("dg-skills bg run and status", () => {
 			world.dir(),
 		);
 		expect(result.exitCode).toBe(1);
-		expect(result.stderr).toContain("bg run");
+		expect(result.stderr).toContain(`not a directory: ${missing}`);
 		expect(world.jobs().filter((job) => job.state === "running")).toEqual([]);
 	});
 
@@ -266,16 +278,15 @@ describe("dg-skills bg update", () => {
 		const cwd = world.dir();
 		const { command, env } = proxyJob("sess-drain");
 		const job = await world.launch(command, cwd, [], env);
-		await world.settled(job.id, cwd, undefined, 60_000);
 		await until(
-			() => world.json(["status", job.id], cwd),
-			(value) => value.drainOutput !== null,
-			60_000,
+			() => isLive(job.launcherPid),
+			(live) => !live,
 		);
-		writeFileSync(
-			join(world.state, "bg", `${job.id}.pending`),
-			"queued while running\n",
-		);
+		expect(await world.json(["status", job.id], cwd)).toMatchObject({
+			state: "done",
+			drainOutput: expect.stringContaining("nothing-pending"),
+		});
+		writeFileSync(world.files(job.id).pendingFile, "queued while running\n");
 		const drained = await world.json<{ result: string; newJobId: string }>(
 			["drain", job.id],
 			cwd,
@@ -373,10 +384,10 @@ describe("dg-skills bg prune", () => {
 			logFile: join(stateDir, "crashed-1.log"),
 			statusFile: join(stateDir, "crashed-1.status"),
 			pidFile: join(world.scratch, "bg", "crashed-1.pid"),
-			launcherPid: spawnSync(process.execPath, ["-e", ""]).pid,
+			launcherPid: 2_147_483_646,
 			kind: "shell",
 		};
-		writeFileSync(join(stateDir, "crashed-1.meta.json"), JSON.stringify(meta));
+		writeFileSync(world.files("crashed-1").metaFile, JSON.stringify(meta));
 		expect((await world.json(["status", "crashed-1"], base)).state).toBe(
 			"unknown",
 		);
@@ -432,9 +443,7 @@ describe("dg-skills bg prune", () => {
 		const job = await world.launch("sleep 30", tree);
 		const pid = Number(readFileSync(job.pidFile, "utf8"));
 		try {
-			rmSync(join(world.scratch, "bg", `${job.id}.identity.json`), {
-				force: true,
-			});
+			rmSync(world.files(job.id).identityFile, { force: true });
 			expect((await world.json(["status", job.id], base)).state).toBe(
 				"unknown",
 			);
@@ -448,13 +457,8 @@ describe("dg-skills bg prune", () => {
 			expect(world.jobs().map((value) => value.id)).toEqual([job.id]);
 			expect(isLive(pid)).toBe(true);
 		} finally {
-			try {
-				process.kill(-pid, "SIGKILL");
-			} catch {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {}
-			}
+			killQuietly(-pid);
+			killQuietly(pid);
 		}
 	});
 

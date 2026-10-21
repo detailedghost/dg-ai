@@ -18,8 +18,13 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { shellCommand } from "@dg/common/node";
-import { BACKENDS } from "../src/proxy/index";
-import { type BgJob, bgWorld, isLive, until } from "./bg-fixtures";
+import {
+	type BgJob,
+	bgWorld,
+	isLive,
+	killQuietly,
+	until,
+} from "./bg-fixtures";
 import {
 	compileProxyCli,
 	proxyFixtures,
@@ -73,18 +78,28 @@ describe("compiled dg-skills bg detachment", () => {
 			`${shellCommand([binary, "bg", "run", "sleep 30"])} > ${shellCommand([out])} || exit 1\n: > ${shellCommand([ready])}\nsleep 30`,
 		);
 		const { child, exited } = inOwnGroup(caller);
-		await until(() => existsSync(ready), Boolean);
-		const job = JSON.parse(readFileSync(out, "utf8")) as BgJob;
-		process.kill(-(child.pid as number), "SIGKILL");
-		await exited;
-		await Bun.sleep(300);
-		expect(isLive(job.launcherPid)).toBe(true);
-		expect((await world.json(["status", job.id], dir)).state).toBe("running");
-		await world.json(["cancel", job.id], dir);
-		await until(
-			() => isLive(job.launcherPid),
-			(live) => !live,
-		);
+		const groupPid = child.pid;
+		if (!groupPid) throw new Error("caller script did not start");
+		let job: BgJob | undefined;
+		try {
+			await until(() => existsSync(ready), Boolean);
+			job = JSON.parse(readFileSync(out, "utf8")) as BgJob;
+			killQuietly(-groupPid);
+			await exited;
+			await Bun.sleep(300);
+			expect(isLive(job.launcherPid)).toBe(true);
+			expect((await world.json(["status", job.id], dir)).state).toBe(
+				"running",
+			);
+			await world.json(["cancel", job.id], dir);
+			await until(
+				() => isLive(job?.launcherPid ?? 0),
+				(live) => !live,
+			);
+		} finally {
+			if (job) await world.bg(["cancel", job.id], dir).catch(() => null);
+			killQuietly(-groupPid);
+		}
 	});
 
 	test("cancel signals only the job's own group and leaves its caller running", async () => {
@@ -155,7 +170,7 @@ describe("compiled dg-skills bg detachment", () => {
 			rmSync(job.statusFile, { force: true });
 			writeFileSync(job.pidFile, String(pid));
 			writeFileSync(
-				join(world.scratch, "bg", `${job.id}.identity.json`),
+				world.files(job.id).identityFile,
 				JSON.stringify({ pid }),
 			);
 			expect(await world.json(["cancel", job.id], dir)).toMatchObject({
@@ -283,12 +298,18 @@ describe("compiled dg-skills bg proxy jobs", () => {
 			(value) => value.length === 2,
 		);
 		expect(calls[1]).toEqual({
-			args: BACKENDS.pi.buildArgs({
-				prompt: contexts.join("\n"),
-				resume: "fixture-session",
-				model: "m ' x",
-				effort: "high",
-			}),
+			args: [
+				"--print",
+				contexts.join("\n"),
+				"--mode",
+				"json",
+				"--resume",
+				"fixture-session",
+				"--model",
+				"m ' x",
+				"--thinking",
+				"high",
+			],
 			cwd: installation.root,
 		});
 		const settled = await until(

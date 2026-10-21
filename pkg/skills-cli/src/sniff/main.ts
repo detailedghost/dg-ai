@@ -12,7 +12,7 @@ Exit status: 0 on success, 1 when the path is missing or not a directory.
 `;
 
 /** Print the inventory for argv[0] (default "."); legacy root errors exit 1 with no stdout. */
-export function main(argv: string[]): number | undefined {
+export function main(argv: string[]): number {
 	const target = argv[0] ?? ".";
 	if (target === "--help" || target === "-h") {
 		process.stdout.write(USAGE);
@@ -27,5 +27,5 @@ export function main(argv: string[]): number | undefined {
 		return 1;
 	}
 	process.stdout.write(`${JSON.stringify(buildReport(target), null, 2)}\n`);
-	return undefined;
+	return 0;
 }

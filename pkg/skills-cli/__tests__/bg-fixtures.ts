@@ -6,10 +6,9 @@ import {
 	rmSync,
 } from "node:fs";
 import { join } from "node:path";
+import { jobFiles } from "../src/bg";
 import { scratchFixtures } from "./git-repo-fixtures";
-import { mergeEnv } from "./module-call";
-
-export const BG_ENTRY = join(import.meta.dir, "../src/index.ts");
+import { CLI_ENTRY, mergeEnv, runCli } from "./module-call";
 
 export interface BgRun {
 	stdout: string;
@@ -47,6 +46,14 @@ export function isLive(pid: number): boolean {
 	}
 }
 
+export function killQuietly(pid: number, signal: NodeJS.Signals = "SIGKILL") {
+	try {
+		process.kill(pid, signal);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+	}
+}
+
 export async function until<T>(
 	read: () => T | Promise<T>,
 	ready: (value: T) => boolean,
@@ -58,13 +65,16 @@ export async function until<T>(
 		await Bun.sleep(25);
 		value = await read();
 	}
-	if (!ready(value)) throw new Error("condition did not settle before timeout");
+	if (!ready(value))
+		throw new Error(
+			`condition did not settle within ${timeoutMs}ms; last value: ${JSON.stringify(value)}`,
+		);
 	return value;
 }
 
 /** Isolated HOME, scratch and state roots plus disposable directories for `dg-skills bg`. */
 export function bgWorld(
-	command: string[] = [process.execPath, "run", BG_ENTRY],
+	command: string[] = [process.execPath, "run", CLI_ENTRY],
 ) {
 	const fixtures = scratchFixtures();
 	const home = fixtures.tmp("bg-home-");
@@ -89,19 +99,7 @@ export function bgWorld(
 		cwd: string,
 		extra: Record<string, string | undefined> = {},
 	): Promise<BgRun> {
-		const proc = Bun.spawn([...command, "bg", ...args], {
-			cwd,
-			env: env(extra),
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		return { stdout, stderr, exitCode };
+		return runCli(command, ["bg", ...args], { cwd, env: env(extra) });
 	}
 
 	async function json<T = BgJob>(
@@ -156,8 +154,16 @@ export function bgWorld(
 		}
 	}
 
+	function files(id: string) {
+		return jobFiles(id, {
+			state: join(state, "bg"),
+			scratch: join(scratch, "bg"),
+		});
+	}
+
 	return {
 		fixtures,
+		files,
 		home,
 		scratch,
 		state,

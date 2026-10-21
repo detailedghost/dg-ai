@@ -27,8 +27,8 @@ import { stashChecks } from "../stash/doctor";
 import { thrashChecks } from "../thrash/doctor";
 import { vcsProviderChecks } from "../vcs-provider/doctor";
 import { worktreeChecks } from "../worktree/doctor";
-import { SHARED_ITEM, sharedChecks } from "./shared";
 import type { DoctorRegistry } from "./runner";
+import { SHARED_ITEM, sharedChecks } from "./shared";
 
 export const DOCTOR_REGISTRY: DoctorRegistry = {
 	[SHARED_ITEM]: sharedChecks,

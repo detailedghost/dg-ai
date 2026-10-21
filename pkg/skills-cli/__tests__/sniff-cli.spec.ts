@@ -4,11 +4,12 @@ import { basename, join } from "node:path";
 import {
 	FAKE,
 	FAKE_VALUES,
-	SNIFF_ENTRY,
 	type SniffJson,
 	secretBearingTree,
 	sniffWorld,
 } from "./sniff-fixtures";
+
+import { CLI_ENTRY } from "./module-call";
 
 const world = sniffWorld();
 afterAll(() => world.cleanup());
@@ -253,7 +254,7 @@ describe("sniff module imports", () => {
 	}
 
 	test("the domain module imports without scanning, printing or exiting", async () => {
-		const loaded = await exportsOf(join(SNIFF_ENTRY, "../sniff/index.ts"));
+		const loaded = await exportsOf(join(CLI_ENTRY, "../sniff/index.ts"));
 		expect(loaded.exitCode).toBe(0);
 		expect(loaded.stderr).toBe("");
 		for (const name of ["sniff", "buildReport", "walkFiles", "classifyEnvKey"])
@@ -261,7 +262,7 @@ describe("sniff module imports", () => {
 	});
 
 	test("the command module exports registerSniff and imports inertly", async () => {
-		const loaded = await exportsOf(join(SNIFF_ENTRY, "../commands/sniff.ts"));
+		const loaded = await exportsOf(join(CLI_ENTRY, "../commands/sniff.ts"));
 		expect(loaded.exitCode).toBe(0);
 		expect(loaded.stderr).toBe("");
 		expect(loaded.names).toContain("registerSniff");

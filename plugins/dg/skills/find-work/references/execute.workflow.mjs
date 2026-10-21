@@ -20,25 +20,30 @@ const RESULT = {
   },
 }
 
-const fill = (it) =>
-  template
-    .replaceAll('{ITEM_TITLE}', it.title || '')
-    .replaceAll('{ITEM_SOURCE}', it.source || '')
-    .replaceAll('{ITEM_ID}', it.id || '')
-    .replaceAll('{ITEM_DESCRIPTION}', it.description || '')
-    .replaceAll('{ITEM_FILE}', it.file || '')
-    .replaceAll('{ITEM_LINE}', String(it.line || ''))
-    .replaceAll('{JIRA_TICKET}', it.jira || '')
-    .replaceAll('{DEFAULT_BRANCH}', it.defaultBranch || '')
-    .replaceAll('{WORKTREE_PATH}', it.worktreePath || '')
-    .replaceAll('{BRANCH_NAME}', it.branch || '')
+const fill = (it) => {
+  const values = {
+    ITEM_TITLE: it.title || '',
+    ITEM_SOURCE: it.source || '',
+    ITEM_ID: it.id || '',
+    ITEM_DESCRIPTION: it.description || '',
+    ITEM_FILE: it.file || '',
+    ITEM_LINE: String(it.line || ''),
+    JIRA_TICKET: it.jira || '',
+    DEFAULT_BRANCH: it.defaultBranch || '',
+    WORKTREE_PATH: it.worktreePath || '',
+    BRANCH_NAME: it.branch || '',
+  }
+  return template.replace(/\{(\w+)\}/g, (token, key) => values[key] ?? token)
+}
 
 phase('Execute')
 
 const results = await parallel(
   items.map((it) => () => {
     const opts = { label: `exec:${(it.title || 'item').slice(0, 30)}`, phase: 'Execute', model: 'sonnet', schema: RESULT }
-    return agent(fill(it), opts).then((r) => ({ item: it.title, ...(r || { status: 'failed', summary: '', error: 'no result' }) }))
+    return agent(fill(it), opts)
+      .then((r) => ({ item: it.title, ...(r || { status: 'failed', summary: '', error: 'no result' }) }))
+      .catch((e) => ({ item: it.title, status: 'failed', summary: '', error: String((e && e.message) || e) }))
   }),
 )
 

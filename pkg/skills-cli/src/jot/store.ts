@@ -2,6 +2,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	type Stats,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -143,7 +144,13 @@ export function listEntries(): JotEntry[] {
 		for (const f of names) {
 			if (!f.startsWith("jot-")) continue;
 			const full = path.join(dir, f);
-			const stat = statSync(full);
+			let stat: Stats;
+			try {
+				stat = statSync(full);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
 			if (stat.isDirectory()) {
 				const index = path.join(full, INDEX_FILE);
 				if (existsSync(index))

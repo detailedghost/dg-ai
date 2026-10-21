@@ -7,9 +7,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { git, scratchFixtures } from "./git-repo-fixtures";
-import { mergeEnv } from "./module-call";
+import { CLI_ENTRY, mergeEnv, runCli } from "./module-call";
 
-export const JOT_ENTRY = join(import.meta.dir, "../src/index.ts");
 export const CAP = 2048;
 export const ID_A = "2026-10-13 1432 — sample-portal — retire demo";
 export const ID_B = "2026-10-13 1500 — scripts — jot modes";
@@ -26,7 +25,7 @@ export interface JotRepo {
 }
 
 export function jotWorld(
-	command: string[] = [process.execPath, "run", JOT_ENTRY],
+	command: string[] = [process.execPath, "run", CLI_ENTRY],
 ) {
 	const fixtures = scratchFixtures();
 	const home = fixtures.tmp("jot-home-");
@@ -52,19 +51,7 @@ export function jotWorld(
 		stdin?: string,
 		extra: Record<string, string | undefined> = {},
 	): Promise<JotRun> {
-		const proc = Bun.spawn([...command, "jot", ...args], {
-			cwd,
-			env: env(extra),
-			stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		return { stdout, stderr, exitCode };
+		return runCli(command, ["jot", ...args], { cwd, env: env(extra), stdin });
 	}
 
 	function repo(options: { agents?: boolean } = {}): JotRepo {
@@ -91,12 +78,17 @@ export function jotWorld(
 		jot,
 		repo,
 		tmp: fixtures.tmp,
-		cleanup() {
+		reset() {
 			fixtures.cleanup();
 			for (const dir of [home, scratch, state]) {
 				rmSync(dir, { recursive: true, force: true });
 				mkdirSync(dir, { mode: 0o700 });
 			}
+		},
+		cleanup() {
+			fixtures.cleanup();
+			for (const dir of [home, scratch, state])
+				rmSync(dir, { recursive: true, force: true });
 		},
 	};
 }

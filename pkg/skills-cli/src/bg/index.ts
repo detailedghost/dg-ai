@@ -1,1 +1,1 @@
-export { bgSpec, readPid, terminateGroup } from "./jobs";
+export { bgSpec, jobFiles, readPid, terminateGroup } from "./jobs";

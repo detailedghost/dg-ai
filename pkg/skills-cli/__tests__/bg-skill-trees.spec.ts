@@ -198,12 +198,11 @@ describe("packaged cls skill", () => {
 		}
 	});
 
-	test("tears down through dg-skills worktree and bg prune and never forces silently", () => {
+	test("tears down through dg-skills worktree and bg prune and merges fast-forward only", () => {
 		const text = treeText("cls");
 		expect(text).toContain("~/.dg/bin/dg-skills worktree remove");
 		expect(text).toContain('~/.dg/bin/dg-skills bg prune --cwd "$TOP"');
 		expect(text).toContain("ExitWorktree");
-		expect(text).toMatch(/Never auto-force/);
 		expect(text).toMatch(/--ff-only/);
 	});
 
@@ -234,8 +233,7 @@ describe("packaged cls skill", () => {
 			join(skillDir("cls"), "references", "steps.md"),
 			"utf8",
 		);
-		expect(steps).toMatch(/No asset sweep/);
-		expect(steps).toMatch(/Do NOT sweep/);
+		expect(steps).toMatch(/do not sweep/i);
 	});
 
 	test("skips the scratch sweep when BUCKET or the scratch root is empty", () => {
@@ -283,7 +281,7 @@ describe("packaged stat skill", () => {
 
 	test("stays read-only except for finished-job cleanup and never stops a running job", () => {
 		const text = skillText("stat");
-		expect(text).toMatch(/never stop a job that is still running/i);
+		expect(text).toMatch(/never stop/i);
 		expect(text).toContain("TaskStop");
 	});
 

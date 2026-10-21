@@ -2,19 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-	bareSlash,
-	fences,
+	expectNamespacedSlashOnly,
+	expectNoShellComments,
+	expectPlainFrontmatter,
+	FLAG,
 	firstCallIndex,
 	flagsTable,
-	FLAG,
-	hasShellComment,
-	SHELL_LANGS,
 	skillDir,
 	skillText,
 	treeFiles,
 	usageLine,
 } from "./skill-tree-helpers";
-import { splitFrontmatter } from "./spec-fixtures";
 
 const NAME = "doctor";
 
@@ -24,19 +22,11 @@ describe("packaged doctor skill tree", () => {
 	});
 
 	test("is named doctor and carries no host-only frontmatter keys", () => {
-		const { data } = splitFrontmatter(skillText(NAME)) as {
-			data: Record<string, unknown>;
-		};
-		expect(data.name).toBe(NAME);
-		expect(String(data.description).length).toBeGreaterThan(0);
-		expect(data).not.toHaveProperty("argument-hint");
-		expect(data).not.toHaveProperty("user-invocable");
+		expectPlainFrontmatter(NAME);
 	});
 
 	test("names itself with the namespaced slash form and never the bare one", () => {
-		const text = skillText(NAME);
-		expect(text).toContain("/dg:doctor");
-		expect(text).not.toMatch(bareSlash(NAME));
+		expectNamespacedSlashOnly(NAME);
 	});
 
 	test("carries a Usage line and a four-column Flags table covering its flags", () => {
@@ -77,11 +67,7 @@ describe("packaged doctor skill tree", () => {
 	});
 
 	test("shell blocks carry no hash comments", () => {
-		for (const { file, text } of treeFiles(NAME))
-			for (const { lang, body } of fences(text))
-				if (SHELL_LANGS.includes(lang))
-					for (const line of body.split("\n"))
-						expect([file, line, hasShellComment(line)]).toEqual([file, line, false]);
+		expectNoShellComments(NAME);
 	});
 
 	test("leaves no private path or local zone behind", () => {

@@ -16,6 +16,7 @@ import {
 import path from "node:path";
 import { isRecord } from "@dg/common";
 import {
+	isAlive,
 	isPathInside,
 	randSuffix,
 	scratchPath,
@@ -30,6 +31,10 @@ import { emitJson } from "../utils/json";
 import { type CommandSpec, die, EXIT } from "../utils/legacy-command";
 
 const LOCK_ABANDONED_MS = 60_000;
+const LOCK_TIMEOUT_MS = 5000;
+const LOCK_POLL_MS = 20;
+const TERM_GRACE_MS = 2000;
+const TERM_POLL_MS = 50;
 const JOB_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 type JobKind = "shell" | "proxy";
@@ -52,6 +57,17 @@ interface JobState extends JobMeta {
 	exitCode: number | null;
 	pendingUpdate: string | null;
 	drainOutput: string | null;
+}
+
+export interface JobPaths {
+	logFile: string;
+	statusFile: string;
+	pidFile: string;
+	metaFile: string;
+	pendingFile: string;
+	canceledFile: string;
+	drainFile: string;
+	identityFile: string;
 }
 
 export const bgSpec: CommandSpec = {
@@ -119,7 +135,7 @@ async function withJobLock(
 	};
 	const staging = `${file}.${owner.nonce}.tmp`;
 	let staged = false;
-	const deadline = Date.now() + 5000;
+	const deadline = Date.now() + LOCK_TIMEOUT_MS;
 	try {
 		mkdirSync(staging, { mode: 0o700 });
 		staged = true;
@@ -144,12 +160,18 @@ async function withJobLock(
 			}
 			if (Date.now() >= deadline)
 				throw new Error(`Background job ${id} is busy; retry the operation`);
-			await Bun.sleep(20);
+			await Bun.sleep(LOCK_POLL_MS);
 		}
 		try {
 			await run();
 		} finally {
-			removeLockOwner(file, owner);
+			try {
+				removeLockOwner(file, owner);
+			} catch (error) {
+				process.stderr.write(
+					`bg: could not release the lock for job ${id}: ${(error as Error).message}\n`,
+				);
+			}
 		}
 	} finally {
 		if (staged) rmSync(staging, { recursive: true, force: true });
@@ -227,22 +249,35 @@ async function cmdRun(args: string[]): Promise<void> {
 			'usage: run "<command>" [--cwd <dir>] (one quoted argument)',
 			EXIT.USAGE,
 		);
-	emitJson(
-		await launchJob(command, path.resolve(cwdOverride ?? process.cwd())),
-	);
+	const cwd = path.resolve(cwdOverride ?? process.cwd());
+	if (!isDirectory(cwd)) die(`not a directory: ${cwd}`, EXIT.ERR);
+	emitJson(await launchJob(command, cwd));
+}
+
+function isDirectory(dir: string): boolean {
+	try {
+		return statSync(dir).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+function metaFileNames(dir: string): string[] {
+	try {
+		return readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw error;
+	}
 }
 
 async function cmdList(): Promise<void> {
 	const dir = path.join(stateRoot(), "bg");
-	let files: string[] = [];
-	try {
-		files = readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
-	} catch {}
-	const jobs = files
+	const jobs = metaFileNames(dir)
 		.map((f) => readMetaFile(path.join(dir, f)))
 		.filter((meta): meta is JobMeta => meta !== null)
 		.map(deriveState)
-		.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+		.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 	emitJson({ jobs });
 }
 
@@ -259,14 +294,10 @@ async function cmdPrune(args: string[]): Promise<void> {
 	target = path.resolve(target);
 
 	const dir = path.join(stateRoot(), "bg");
-	let files: string[] = [];
-	try {
-		files = readdirSync(dir).filter((f) => f.endsWith(".meta.json"));
-	} catch {}
 
 	const removed: string[] = [];
 	const running: JobState[] = [];
-	for (const f of files) {
+	for (const f of metaFileNames(dir)) {
 		const meta = readMetaFile(path.join(dir, f));
 		if (
 			!meta ||
@@ -292,6 +323,7 @@ async function cmdPrune(args: string[]): Promise<void> {
 }
 
 async function cmdStatus(args: string[]): Promise<void> {
+	if (!args[0]) die("usage: status <id>", EXIT.USAGE);
 	const meta = loadMeta(args[0]);
 	if (!meta) die(`unknown job: ${args[0]}`, EXIT.ERR);
 	emitJson(deriveState(meta));
@@ -421,7 +453,7 @@ async function launchJob(
 	const id = `${Date.now()}-${randSuffix()}`;
 	const paths = jobPaths(id);
 	const proxyBackend = backend ?? parseProxyBackend(command);
-	const kind: JobKind = proxyBackend ? "proxy" : detectKind(command);
+	const kind: JobKind = proxyBackend ? "proxy" : "shell";
 	const child = spawn(
 		"sh",
 		["-c", `read -r gate || exit 1; ${buildInner(command, paths, kind, id)}`],
@@ -461,7 +493,7 @@ async function launchJob(
 		writeFileAtomic(paths.metaFile, JSON.stringify(meta, null, 2));
 		writeFileSync(
 			paths.identityFile,
-			JSON.stringify({ pid, started: identity?.started }),
+			JSON.stringify({ pid, started: identity.started }),
 		);
 		writeFileSync(paths.pidFile, String(pid));
 		await new Promise<void>((resolve, reject) => {
@@ -483,6 +515,7 @@ async function launchJob(
 		} else {
 			child.kill();
 		}
+		for (const file of Object.values(paths)) rmSync(file, { force: true });
 		throw error;
 	}
 	child.unref();
@@ -513,7 +546,7 @@ async function resumeSession(
 ): Promise<Record<string, unknown>> {
 	const paths = jobPaths(meta.id);
 	const backend = meta.proxyBackend ?? parseProxyBackend(meta.command);
-	const sessionId = extractSessionId(jobPaths(meta.id).logFile);
+	const sessionId = extractSessionId(paths.logFile);
 	const queued = existsSync(paths.pendingFile)
 		? readFileSync(paths.pendingFile, "utf8").trim()
 		: "";
@@ -689,17 +722,9 @@ function recordedPidAlive(meta: JobMeta): boolean {
 	}
 }
 
-function isAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (err) {
-		return (err as NodeJS.ErrnoException).code === "EPERM";
-	}
-}
-
 export async function terminateGroup(pid: number): Promise<string> {
 	const identity = processIdentity(pid);
+	if (pid > 1 && !identity && !isAlive(pid)) return "none";
 	if (
 		pid <= 1 ||
 		pid === process.pid ||
@@ -719,10 +744,10 @@ export async function terminateGroup(pid: number): Promise<string> {
 		throw err;
 	}
 
-	const termDeadline = Date.now() + 2000;
+	const termDeadline = Date.now() + TERM_GRACE_MS;
 	while (Date.now() < termDeadline) {
 		if (!isAlive(-pid)) return "SIGTERM";
-		await Bun.sleep(50);
+		await Bun.sleep(TERM_POLL_MS);
 	}
 
 	try {
@@ -796,22 +821,13 @@ function shellWords(command: string): string[] {
 	return words;
 }
 
-interface JobPaths {
-	logFile: string;
-	statusFile: string;
-	pidFile: string;
-	metaFile: string;
-	pendingFile: string;
-	canceledFile: string;
-	drainFile: string;
-	identityFile: string;
-}
-
-function jobPaths(id: string): JobPaths {
-	const p = (suffix: string) =>
-		statePath("bg", `${id}.${suffix}`, { cwdScope: false });
+export function jobFiles(
+	id: string,
+	dirs: { state: string; scratch: string },
+): JobPaths {
+	const p = (suffix: string) => path.join(dirs.state, `${id}.${suffix}`);
 	const ephemeral = (suffix: string) =>
-		scratchPath("bg", `${id}.${suffix}`, { cwdScope: false });
+		path.join(dirs.scratch, `${id}.${suffix}`);
 	return {
 		logFile: p("log"),
 		statusFile: p("status"),
@@ -822,6 +838,14 @@ function jobPaths(id: string): JobPaths {
 		canceledFile: p("canceled"),
 		drainFile: p("drain.log"),
 	};
+}
+
+function jobPaths(id: string): JobPaths {
+	const name = `${id}.log`;
+	return jobFiles(id, {
+		state: path.dirname(statePath("bg", name, { cwdScope: false })),
+		scratch: path.dirname(scratchPath("bg", name, { cwdScope: false })),
+	});
 }
 
 function loadMeta(id: string | undefined): JobMeta | null {

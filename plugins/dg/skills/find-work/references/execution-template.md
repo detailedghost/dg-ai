@@ -19,7 +19,7 @@ Fill this template per-item and pass to each worktree agent.
 
 ## Prompt Template
 
-```
+```markdown
 You are a focused implementation agent working in an isolated git worktree.
 Your single task: **{ITEM_TITLE}**
 

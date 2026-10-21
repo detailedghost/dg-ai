@@ -48,10 +48,16 @@ export function walkFiles(root: string, maxDepth = 6): string[] {
 	return out;
 }
 
+export function warn(message: string): void {
+	process.stderr.write(`sniff: ${message}\n`);
+}
+
 export function readText(path: string): string | null {
 	try {
 		return readFileSync(path, "utf8");
-	} catch {
+	} catch (error) {
+		const { code, message } = error as NodeJS.ErrnoException;
+		if (code !== "ENOENT") warn(`could not read ${path}: ${message}`);
 		return null;
 	}
 }

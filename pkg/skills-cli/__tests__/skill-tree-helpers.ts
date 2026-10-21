@@ -1,9 +1,10 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { expect } from "bun:test";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { SOURCE_SKILLS } from "./spec-fixtures";
+import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 
 export const FLAG = /(?<![\w-])(--[a-z][a-z-]*|-[A-Za-z])(?![\w-])/g;
-export const SHELL_LANGS = ["sh", "bash", "zsh", "shell"];
+export const SHELL_LANGS = ["sh", "bash", "zsh", "shell", "powershell", ""];
 
 export interface Fence {
 	lang: string;
@@ -11,6 +12,7 @@ export interface Fence {
 }
 
 export function walk(dir: string): string[] {
+	if (!existsSync(dir)) return [];
 	return readdirSync(dir)
 		.sort()
 		.flatMap((name) => {
@@ -96,6 +98,34 @@ export function codeSpans(text: string): string[] {
 
 export function bareSlash(skill: string): RegExp {
 	return new RegExp(`(?<![\\w./~:$<>-])/${skill}(?![\\w:/-])`);
+}
+
+export function expectNoShellComments(name: string): void {
+	for (const { file, text } of treeFiles(name))
+		for (const { lang, body } of fences(text))
+			if (SHELL_LANGS.includes(lang))
+				for (const line of body.split("\n"))
+					expect([file, line, hasShellComment(line)]).toEqual([
+						file,
+						line,
+						false,
+					]);
+}
+
+export function expectNamespacedSlashOnly(name: string): void {
+	const text = skillText(name);
+	expect(text).toContain(`/dg:${name}`);
+	expect(text).not.toMatch(bareSlash(name));
+}
+
+export function expectPlainFrontmatter(name: string): void {
+	const { data } = splitFrontmatter(skillText(name)) as {
+		data: Record<string, unknown>;
+	};
+	expect(data.name).toBe(name);
+	expect(String(data.description).length).toBeGreaterThan(0);
+	expect(data).not.toHaveProperty("argument-hint");
+	expect(data).not.toHaveProperty("user-invocable");
 }
 
 export function firstCallIndex(text: string): { gate: number; call: number } {

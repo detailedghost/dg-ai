@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	statSync,
+	symlinkSync,
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
@@ -15,7 +17,8 @@ import { CAP, jotWorld, section, tree } from "./jot-fixtures";
 setDefaultTimeout(60_000);
 
 const world = jotWorld();
-afterEach(() => world.cleanup());
+afterEach(() => world.reset());
+afterAll(() => world.cleanup());
 
 function baseName(path: string): string {
 	return basename(path.trim()).replace(/\.md$/, "");
@@ -95,7 +98,7 @@ describe("jot add cap and split", () => {
 		expect(body.length).toBeLessThan(CAP);
 		const run = await world.jot(["add"], main, body);
 		expect(run.exitCode).toBe(1);
-		expect(run.stderr).toContain("B > 2048 B");
+		expect(run.stderr).toContain(`B > ${CAP} B`);
 	});
 
 	test("an empty body fails with the fix", async () => {
@@ -129,7 +132,7 @@ describe("jot add cap and split", () => {
 		expect(index).toContain("- 01  Context  ");
 		expect(index).toContain("- 02  Open threads  ");
 		for (const file of readdirSync(folder))
-			expect(statSizeOf(join(folder, file))).toBeLessThanOrEqual(CAP);
+			expect(statSync(join(folder, file)).size).toBeLessThanOrEqual(CAP);
 	});
 
 	test("a section that alone passes the cap fails naming the section", async () => {
@@ -149,10 +152,6 @@ describe("jot add cap and split", () => {
 		expect(run.stderr).toContain("index is");
 	});
 });
-
-function statSizeOf(path: string): number {
-	return Buffer.byteLength(readFileSync(path, "utf8"));
-}
 
 describe("jot add --save placement and linked worktrees", () => {
 	test("a main checkout with .agents saves under .agents/jot with a self-ignore", async () => {
@@ -316,10 +315,25 @@ describe("jot ls", () => {
 		expect(title).toBe(`${"t".repeat(77)}...`);
 	});
 
+	test("skips a dangling entry instead of failing the listing", async () => {
+		const { main } = world.repo();
+		await world.jot(["add"], main, "# kept\n");
+		const bucketName = readdirSync(join(world.scratch, "jot"))[0];
+		expect(bucketName).toBeDefined();
+		const bucket = join(world.scratch, "jot", bucketName ?? "");
+		symlinkSync(join(bucket, "absent"), join(bucket, "jot-dangling.md"));
+		const run = await world.jot(["ls"], main);
+		expect(run.exitCode).toBe(0);
+		expect(run.stdout).toContain("kept");
+		expect(run.stdout).not.toContain("jot-dangling");
+	});
+
 	test("ignores a folder without an index", async () => {
 		const { main } = world.repo();
 		await world.jot(["add"], main, "# n\n");
-		const bucket = join(world.scratch, "jot", readdirSync(join(world.scratch, "jot"))[0] ?? "");
+		const bucketName = readdirSync(join(world.scratch, "jot"))[0];
+		expect(bucketName).toBeDefined();
+		const bucket = join(world.scratch, "jot", bucketName ?? "");
 		const stray = join(bucket, "jot-stray-dir");
 		mkdirSync(stray);
 		writeFileSync(join(stray, "01-x.md"), "x");

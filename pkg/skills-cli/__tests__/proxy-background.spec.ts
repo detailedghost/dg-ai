@@ -50,14 +50,8 @@ interface Job {
 	exitCode: number | null;
 	pendingUpdate: string | null;
 }
-const ALIAS_VERBS = new Set(["run", "status", "cancel"]);
 const run = (args: string[]) =>
-	runProxyProcess(
-		args[0] === "background" && !ALIAS_VERBS.has(args[1] ?? "")
-			? [binary, "bg", ...args.slice(1)]
-			: [binary, "proxy", ...args],
-		fixture,
-	);
+	runProxyProcess([binary, "proxy", ...args], fixture);
 async function json(args: string[]) {
 	const result = await run(args);
 	expect(result.exitCode, result.stderr).toBe(0);
@@ -390,7 +384,6 @@ describe("compiled proxy background", () => {
 		expect(fixture.readCalls()).toEqual([]);
 		expect(plan.command).not.toMatch(/\$bunfs|~BUN|\/src\/index/);
 		expect(plan.command).toContain(shellCommand([binary, "bg", "run"]));
-		expect(plan.command).not.toContain("'background'");
 		const launched = await runProxyProcess(
 			["/bin/sh", "-c", plan.command],
 			fixture,

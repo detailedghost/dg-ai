@@ -1,3 +1,34 @@
+import { join } from "node:path";
+
+export const CLI_ENTRY = join(import.meta.dir, "../src/index.ts");
+
+export interface CliRun {
+	stdout: string;
+	stderr: string;
+	exitCode: number;
+}
+
+/** Spawn `command` plus `args` with piped output; `stdin` ignored unless given. */
+export async function runCli(
+	command: readonly string[],
+	args: readonly string[],
+	options: { cwd: string; env: Record<string, string>; stdin?: string },
+): Promise<CliRun> {
+	const proc = Bun.spawn([...command, ...args], {
+		cwd: options.cwd,
+		env: options.env,
+		stdin: options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { stdout, stderr, exitCode };
+}
+
 /**
  * Test-only helpers for exercising env-dependent code (PATH scans,
  * CLAUDE_PLUGIN_ROOT, DG_VERIFY_BROWSER) in a fully controlled environment.

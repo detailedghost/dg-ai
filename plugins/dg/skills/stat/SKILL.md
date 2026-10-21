@@ -40,7 +40,7 @@ if [ -n "$b" ]; then
   prs=$(~/.dg/bin/dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
 fi
 echo "PRS=${prs:-[]}"
-jobs=$(~/.dg/bin/dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or (.cwd|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
+jobs=$(~/.dg/bin/dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
 echo "JOBS=${jobs:-[]}"
 echo "WORKTREES=$(~/.dg/bin/dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
 ```

@@ -55,7 +55,7 @@ function sourceRank(source: string): number {
 export function mergeRequirements(reqs: Requirement[]): Requirement[] {
 	const groups = new Map<string, Requirement[]>();
 	for (const r of reqs) {
-		const key = `${r.type} ${r.name}`;
+		const key = `${r.type} ${r.name} ${r.type === "CLOUD_PERM" ? (r.value ?? "") : ""}`;
 		const existing = groups.get(key);
 		if (existing) existing.push(r);
 		else groups.set(key, [r]);
@@ -85,12 +85,14 @@ export function mergeRequirements(reqs: Requirement[]): Requirement[] {
 			const pins = [
 				...new Map(
 					group
-						.filter((r) => r.value)
-						.map((r) => [r.where.split(":")[0], r] as const),
+						.filter((r) => r.value && !RANGE_PIN.test(r.value))
+						.map(
+							(r) =>
+								[`${r.where.split(":")[0]} ${numericPrefix(r.value)}`, r] as const,
+						),
 				).values(),
 			];
-			const allExact = pins.every((p) => !RANGE_PIN.test(p.value ?? ""));
-			if (pins.length > 1 && allExact) {
+			if (pins.length > 1) {
 				const versions = new Set(pins.map((p) => numericPrefix(p.value)));
 				gaps.push({
 					kind: "drifted",
@@ -119,7 +121,8 @@ export function sortRequirements(reqs: Requirement[]): Requirement[] {
 		const aType = TYPE_ORDER.indexOf(a.type);
 		const bType = TYPE_ORDER.indexOf(b.type);
 		if (aType !== bType) return aType - bType;
-		return a.name.localeCompare(b.name);
+		if (a.name === b.name) return 0;
+		return a.name < b.name ? -1 : 1;
 	});
 }
 

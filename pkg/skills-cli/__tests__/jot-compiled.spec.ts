@@ -1,6 +1,16 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	setDefaultTimeout,
+	test,
+} from "bun:test";
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
+import { buildCompiledBinary } from "./compiled-binary";
 import { checkpointBody, ID_A, jotWorld, section } from "./jot-fixtures";
 
 setDefaultTimeout(60_000);
@@ -11,15 +21,11 @@ let cwd: string;
 let only: Record<string, string>;
 
 beforeAll(() => {
+	command.push(buildCompiledBinary());
+}, 240_000);
+
+beforeEach(() => {
 	const base = world.tmp("jot-compiled-");
-	const binary = join(base, "moved ' install", "dg-skills");
-	mkdirSync(join(binary, ".."), { recursive: true });
-	const build = Bun.spawnSync(
-		[process.execPath, join(import.meta.dir, "../build.ts"), "--outfile", binary],
-		{ stdout: "pipe", stderr: "pipe" },
-	);
-	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
-	command.push(binary);
 	const bin = join(base, "git only");
 	mkdirSync(bin, { recursive: true });
 	const git = Bun.which("git");
@@ -27,8 +33,9 @@ beforeAll(() => {
 	symlinkSync(git, join(bin, "git"));
 	only = { PATH: bin };
 	cwd = world.repo().main;
-}, 240_000);
+});
 
+afterEach(() => world.reset());
 afterAll(() => world.cleanup());
 
 describe("compiled dg-skills jot from an external cwd", () => {

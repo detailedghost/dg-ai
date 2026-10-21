@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import {
 	classifyEnvKey,
@@ -17,6 +17,7 @@ import {
 	sortRequirements,
 	walkFiles,
 } from "../src/sniff";
+import { readText } from "../src/sniff/walk";
 import { FAKE, requirement, sniffWorld } from "./sniff-fixtures";
 
 const world = sniffWorld();
@@ -33,7 +34,6 @@ describe("walkFiles", () => {
 	test("does not follow symbolic links out of the tree", () => {
 		const outside = world.tree({ "Dockerfile": "FROM alpine:3.20\n" });
 		const root = world.tree({ "keep/Dockerfile": "FROM alpine:3.20\n" });
-		mkdirSync(join(root, "keep"), { recursive: true });
 		symlinkSync(outside, join(root, "linked"), "dir");
 		expect(
 			walkFiles(root).filter((f) => f.endsWith("Dockerfile")),
@@ -558,6 +558,7 @@ describe("mergeRequirements", () => {
 			pin("dockerfile", "Dockerfile:1", "20-alpine"),
 			pin("nvmrc", ".nvmrc:1", "20"),
 		]);
+		expect(merged?.gaps[0]).toMatchObject({ kind: "drifted" });
 		expect(merged?.gaps[0]?.detail).not.toContain("conflicting pins");
 	});
 
@@ -650,7 +651,7 @@ describe("sortRequirements", () => {
 	});
 
 	test("orders the seven types as the skill renders them, then by name", () => {
-		const order: Requirement["type"][] = [
+		const shuffled: Requirement["type"][] = [
 			"REGISTRY",
 			"TOOLCHAIN",
 			"NETWORK",
@@ -660,7 +661,7 @@ describe("sortRequirements", () => {
 			"SECRET",
 		];
 		const sorted = sortRequirements([
-			...order.map((type) => row(type, "b", false)),
+			...shuffled.map((type) => row(type, "b", false)),
 			row("SECRET", "a", false),
 		]);
 		expect(sorted.map((r) => `${r.type}:${r.name}`)).toEqual([
@@ -716,5 +717,167 @@ describe("sniff", () => {
 			source: "secrets-mgr",
 			phase: ["dev", "run"],
 		});
+	});
+});
+
+describe("extractor edge cases", () => {
+	test("ignores commented workflow lines", () => {
+		const root = world.tree({
+			".github/workflows/ci.yml":
+				"# role-to-assume: arn:aws:iam::1:role/old\n  # key: ${{ secrets.OLD }}\n  key: ${{ secrets.LIVE }}\n",
+		});
+		expect(scan(root, extractWorkflows).map((r) => r.name)).toEqual(["LIVE"]);
+	});
+
+	test("reads every terraform name on one line", () => {
+		const root = world.tree({
+			"main.tf":
+				'container_environment = [{ name = "A", value = "1" }, { name = "B", value = "2" }]\n',
+		});
+		expect(scan(root, extractTerraform).map((r) => r.name)).toEqual(["A", "B"]);
+	});
+
+	test("reads every ENV pair on a Dockerfile line and keeps quoted values out", () => {
+		const root = world.tree({
+			Dockerfile: [
+				"ENV A=1 B_TOKEN=2",
+				'ENV C="x y=z"',
+				"ENV LEGACY value",
+				"",
+			].join("\n"),
+		});
+		expect(
+			scan(root, extractDockerfile)
+				.filter((r) => r.type !== "TOOLCHAIN")
+				.map((r) => r.name),
+		).toEqual(["A", "B_TOKEN", "C", "LEGACY"]);
+	});
+
+	test("does not report the scratch base as a toolchain", () => {
+		const root = world.tree({ Dockerfile: "FROM scratch\nFROM alpine:3.20\n" });
+		expect(scan(root, extractDockerfile).map((r) => r.name)).toEqual(["alpine"]);
+	});
+
+	test("reads published compose ports with a host address and ignores other list items", () => {
+		const root = world.tree({
+			"compose.yaml": [
+				"services:",
+				"  web:",
+				"    ports:",
+				'      - "127.0.0.1:8080:80"',
+				"      - 9000-9010:90",
+				"    volumes:",
+				"      - 1:2",
+				"",
+			].join("\n"),
+		});
+		expect(
+			scan(root, extractCompose)
+				.filter((r) => r.type === "NETWORK")
+				.map((r) => r.name),
+		).toEqual([":8080 published", ":9000 published"]);
+	});
+
+	test("reads mise inline-table and quoted-key pins", () => {
+		const root = world.tree({
+			"mise.toml": [
+				"[tools]",
+				'node = { version = "20" }',
+				'"npm:pnpm" = "9"',
+				"",
+			].join("\n"),
+		});
+		expect(
+			scan(root, extractToolchain).map((r) => [r.name, r.value]),
+		).toEqual([
+			["node", "20"],
+			["npm:pnpm", "9"],
+		]);
+	});
+
+	test("writes a stderr note when package.json cannot be parsed", () => {
+		const root = world.tree({ "package.json": "{ not json" });
+		const write = process.stderr.write.bind(process.stderr);
+		let seen = "";
+		process.stderr.write = ((chunk: string) => {
+			seen += chunk;
+			return true;
+		}) as typeof process.stderr.write;
+		try {
+			expect(scan(root, extractToolchain)).toEqual([]);
+		} finally {
+			process.stderr.write = write;
+		}
+		expect(seen).toContain("could not parse package.json");
+	});
+
+	test("writes a stderr note when a file cannot be read for a reason other than absence", () => {
+		const root = world.tree({ ".env/inner": "A=1\n" });
+		const write = process.stderr.write.bind(process.stderr);
+		let seen = "";
+		process.stderr.write = ((chunk: string) => {
+			seen += chunk;
+			return true;
+		}) as typeof process.stderr.write;
+		try {
+			expect(readText(join(root, ".env"))).toBeNull();
+			expect(readText(join(root, "missing"))).toBeNull();
+		} finally {
+			process.stderr.write = write;
+		}
+		expect(seen).toContain("could not read");
+		expect(seen.match(/could not read/g)).toHaveLength(1);
+	});
+});
+
+describe("mergeRequirements pins and permissions", () => {
+	const pin = (where: string, value: string, source = "dockerfile") =>
+		requirement({ type: "TOOLCHAIN", name: "node", value, source, where });
+
+	test("keeps IAM resources that share a local name apart", () => {
+		const merged = mergeRequirements([
+			requirement({
+				type: "CLOUD_PERM",
+				name: "this",
+				value: "aws_iam_role",
+				source: "terraform",
+				where: "main.tf:1",
+			}),
+			requirement({
+				type: "CLOUD_PERM",
+				name: "this",
+				value: "aws_iam_role_policy",
+				source: "terraform",
+				where: "main.tf:5",
+			}),
+		]);
+		expect(merged.map((r) => r.value).sort()).toEqual([
+			"aws_iam_role",
+			"aws_iam_role_policy",
+		]);
+	});
+
+	test("flags conflicting stages inside one Dockerfile", () => {
+		const [merged] = mergeRequirements([
+			pin("Dockerfile:1", "18"),
+			pin("Dockerfile:9", "20"),
+		]);
+		expect(merged?.gaps[0]?.detail).toContain("conflicting pins");
+	});
+
+	test("compares exact pins even when another source pins a range", () => {
+		const [merged] = mergeRequirements([
+			pin("Dockerfile:1", "20"),
+			pin(".nvmrc:1", "18", "nvmrc"),
+			pin("package.json:4", ">=18", "package.json"),
+		]);
+		expect(merged?.gaps[0]?.detail).toContain("conflicting pins");
+	});
+
+	test("sorts names by plain code point order", () => {
+		const names = ["b", "B", "a"].map((name) =>
+			requirement({ type: "SECRET", name }),
+		);
+		expect(sortRequirements(names).map((r) => r.name)).toEqual(["B", "a", "b"]);
 	});
 });

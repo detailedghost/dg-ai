@@ -21,16 +21,19 @@ async function runCli(
 	args: string[],
 	env: Record<string, string | undefined> = {},
 	stdin?: string,
-): Promise<{ code: number; out: string }> {
+): Promise<{ code: number; out: string; err: string }> {
 	const proc = Bun.spawn(["bun", ENTRY, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
 		env: { ...process.env, ...env },
 	});
-	const out = await new Response(proc.stdout).text();
-	const code = await proc.exited;
-	return { code, out };
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, out, err };
 }
 
 function expectListed(out: string, verb: string): void {
@@ -216,6 +219,7 @@ describe("dg-skills CLI", () => {
 			const ran = await runCli(["sniff", tree], env);
 			expect(ran.code).toBe(0);
 			expect(ran.out).not.toContain(fake);
+			expect(ran.err).not.toContain(fake);
 			const report = JSON.parse(ran.out) as {
 				requirements: { type: string; name: string }[];
 			};
@@ -418,6 +422,7 @@ describe("dg-skills CLI", () => {
 			expect(out).toContain(cmd);
 		}
 	});
+
 	test("doctor --help documents --json and selected items without running a check", async () => {
 		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
 		try {
@@ -442,9 +447,9 @@ describe("dg-skills CLI", () => {
 
 	test("doctor --json prints a report for jot from an isolated home", async () => {
 		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
-		mkdirSync(join(home, "scratch"), { mode: 0o700 });
-		mkdirSync(join(home, "state"), { mode: 0o700 });
 		try {
+			mkdirSync(join(home, "scratch"), { mode: 0o700 });
+			mkdirSync(join(home, "state"), { mode: 0o700 });
 			const { code, out } = await runCli(["doctor", "jot", "--json"], {
 				HOME: home,
 				AI_SCRATCH_DIR: join(home, "scratch"),

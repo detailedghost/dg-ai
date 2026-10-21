@@ -25,7 +25,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor sniff stash.
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--gaps` | none | Print only the `⚠` rows, each with its full gap detail. | off (full table) |
-| `-o` | `-o` | Also write the table to `$(~/.dg/bin/dg-skills stash -a sniff <repo>.md)`. | off (terminal only) |
+| `-o` | none | Also write the table to `$(~/.dg/bin/dg-skills stash -a sniff <repo>.md)`. | off (terminal only) |
 
 The CLI takes only the path. The skill applies `--gaps` and `-o` when it renders the table.
 
@@ -54,15 +54,15 @@ The CLI takes only the path. The skill applies `--gaps` and `-o` when it renders
 
 ## Render
 
-```
+```text
 shop-api · 9 items · ⚠ 2 gaps
 
-  TYPE       NAME                    PHASE  SOURCE        WHERE                GAP
-⚠ SECRET     SERVICE_API_TOKEN       run    secrets-mgr   deploy/main.tf:95    undocumented
-⚠ TOOLCHAIN  dotnet 10.0.100         dev    mise          mise.toml:2          drifted
-  CONFIG     APP_AUTH_DOMAIN         run    tfc-varset    deploy/main.tf:41
-  NETWORK    :8080 ingress           run    dockerfile    Dockerfile:52
-  REGISTRY   registry.example.test   build  nuget.config  nuget.config:4
+  TYPE       NAME                     PHASE         SOURCE       WHERE                          GAP
+⚠ SECRET     SERVICE_API_TOKEN        run           secrets-mgr  deploy/main.tf:95              undocumented
+⚠ TOOLCHAIN  dotnet 10.0.100          dev           mise         mise.toml:2                    drifted
+  CONFIG     APP_AUTH_DOMAIN          run           tfc-varset   deploy/main.tf:41
+  NETWORK    :8080 ingress            run           dockerfile   Dockerfile:52
+  REGISTRY   registry.example.test    build         nuget.config nuget.config:4
 ```
 
 - Seven types, always these: `SECRET`, `CONFIG`, `CLOUD_PERM`, `SERVICE`, `NETWORK`, `TOOLCHAIN`, `REGISTRY`.

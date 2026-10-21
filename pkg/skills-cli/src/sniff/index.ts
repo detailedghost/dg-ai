@@ -1,4 +1,14 @@
-export * from "./extract";
+export {
+	classifyEnvKey,
+	extractCompose,
+	extractDockerfile,
+	extractEnv,
+	extractRegistries,
+	extractTerraform,
+	extractToolchain,
+	extractWorkflows,
+	parseEnvFile,
+} from "./extract";
 export { main, USAGE } from "./main";
 export {
 	buildReport,

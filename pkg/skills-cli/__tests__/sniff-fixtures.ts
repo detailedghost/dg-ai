@@ -2,9 +2,7 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Requirement } from "../src/sniff";
 import { git, scratchFixtures } from "./git-repo-fixtures";
-import { mergeEnv } from "./module-call";
-
-export const SNIFF_ENTRY = join(import.meta.dir, "../src/index.ts");
+import { CLI_ENTRY, mergeEnv, runCli } from "./module-call";
 
 export const FAKE = {
 	envSecret: "fake-env-secret-4f9a1c7e",
@@ -99,7 +97,7 @@ export function requirement(overrides: Partial<Requirement> = {}): Requirement {
 }
 
 export function sniffWorld(
-	command: string[] = [process.execPath, "run", SNIFF_ENTRY],
+	command: string[] = [process.execPath, "run", CLI_ENTRY],
 ) {
 	const fixtures = scratchFixtures();
 	const home = fixtures.tmp("sniff-home-");
@@ -136,19 +134,7 @@ export function sniffWorld(
 		cwd: string,
 		extra: Record<string, string | undefined> = {},
 	): Promise<SniffRun> {
-		const proc = Bun.spawn([...command, "sniff", ...args], {
-			cwd,
-			env: env(extra),
-			stdin: "ignore",
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		]);
-		return { stdout, stderr, exitCode };
+		return runCli(command, ["sniff", ...args], { cwd, env: env(extra) });
 	}
 
 	return {

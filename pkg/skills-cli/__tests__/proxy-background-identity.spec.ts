@@ -121,6 +121,10 @@ describe("background pid identity off Linux", () => {
 		expect(() => process.kill(pid, 0)).toThrow();
 	});
 
+	test("terminateGroup reports none for a process that already exited", async () => {
+		expect(await terminateGroup(2_147_483_646)).toBe("none");
+	});
+
 	test("terminateGroup refuses a process that leads no group of its own", async () => {
 		setPlatform("darwin");
 		await expect(terminateGroup(process.pid)).rejects.toThrow(

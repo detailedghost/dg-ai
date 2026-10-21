@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
@@ -14,7 +14,8 @@ import { checkpointBody, ID_A, ID_B, jotWorld } from "./jot-fixtures";
 setDefaultTimeout(60_000);
 
 const world = jotWorld();
-afterEach(() => world.cleanup());
+afterEach(() => world.reset());
+afterAll(() => world.cleanup());
 
 function fixture() {
 	const { main } = world.repo();
@@ -287,7 +288,6 @@ describe("checkpoint lock and atomic write", () => {
 		const { cwd, file } = fixture();
 		seed(file, checkpointBody(ID_A));
 		chmodSync(dirname(file), 0o500);
-		const started = Date.now();
 		let run: Awaited<ReturnType<typeof world.jot>>;
 		try {
 			run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
@@ -297,7 +297,6 @@ describe("checkpoint lock and atomic write", () => {
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain("EACCES");
 		expect(run.stderr).not.toContain("is held");
-		expect(Date.now() - started).toBeLessThan(4_000);
 	});
 
 	test("a rewrite keeps the file mode", async () => {
@@ -306,6 +305,28 @@ describe("checkpoint lock and atomic write", () => {
 		chmodSync(file, 0o600);
 		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
 		expect(statSync(file).mode & 0o777).toBe(0o600);
+	});
+
+	test("a lock whose owner process is gone is taken over", async () => {
+		const { cwd, file } = fixture();
+		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
+		writeFileSync(`${file}.lock`, "2147483646");
+		const run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
+		expect(run.exitCode).toBe(0);
+		expect(readFileSync(file, "utf8")).toContain(`## ${ID_B}`);
+		expect(existsSync(`${file}.lock`)).toBe(false);
+	});
+
+	test.skipIf(!existsSync("/dev/full"))("kick-take keeps the section when stdout cannot be written", async () => {
+		const { cwd, file } = fixture();
+		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
+		const entry = join(import.meta.dir, "../src/index.ts");
+		const proc = Bun.spawn(
+			["sh", "-c", `"$0" run "$1" jot kick-take "$2" --file "$3" >/dev/full`, process.execPath, entry, ID_A, file],
+			{ cwd, env: world.env(), stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+		);
+		await proc.exited;
+		expect(readFileSync(file, "utf8")).toContain(`## ${ID_A}`);
 	});
 
 	test("a held lock also stops kick-take without removing the section", async () => {

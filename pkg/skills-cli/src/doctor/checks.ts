@@ -26,16 +26,34 @@ import {
 	warn,
 } from "./types";
 
-const INSTALL_TOOL: Record<string, string> = {
-	git: "sudo apt-get install -y git",
-	gh: "sudo apt-get install -y gh",
-	glab: "brew install glab",
-	bun: "curl -fsSL https://bun.sh/install | bash",
-	claude: "npm install -g @anthropic-ai/claude-code",
-	codex: "npm install -g @openai/codex",
-	copilot: "npm install -g @github/copilot",
-	"wl-paste": "sudo apt-get install -y wl-clipboard",
-	xclip: "sudo apt-get install -y xclip",
+type ToolInstall = Partial<Record<NodeJS.Platform | "any", string>>;
+
+const INSTALL_TOOL: Record<string, ToolInstall> = {
+	git: {
+		linux: "sudo apt-get install -y git",
+		darwin: "brew install git",
+		win32: "winget install Git.Git",
+	},
+	gh: {
+		linux: "sudo apt-get install -y gh",
+		darwin: "brew install gh",
+		win32: "winget install GitHub.cli",
+	},
+	glab: {
+		linux: "brew install glab",
+		darwin: "brew install glab",
+		win32: "winget install GLab.GLab",
+	},
+	bun: {
+		linux: "curl -fsSL https://bun.sh/install | bash",
+		darwin: "curl -fsSL https://bun.sh/install | bash",
+		win32: 'powershell -c "irm bun.sh/install.ps1 | iex"',
+	},
+	claude: { any: "npm install -g @anthropic-ai/claude-code" },
+	codex: { any: "npm install -g @openai/codex" },
+	copilot: { any: "npm install -g @github/copilot" },
+	"wl-paste": { linux: "sudo apt-get install -y wl-clipboard" },
+	xclip: { linux: "sudo apt-get install -y xclip" },
 };
 
 export const PLUGIN_INSTALL = "claude plugin install dg@detailedghost";
@@ -48,23 +66,50 @@ export interface ToolSpec {
 	min?: string;
 }
 
-export function installCommand(tool: string): string {
-	return INSTALL_TOOL[tool] ?? `command -v ${tool}`;
+function installHint(tool: string, platform: NodeJS.Platform): string | null {
+	const entry = INSTALL_TOOL[tool];
+	return entry?.[platform] ?? entry?.any ?? null;
 }
 
-export function upgradeCommand(tool: string): string {
-	const install = INSTALL_TOOL[tool];
-	return install?.startsWith("sudo apt-get install -y ")
-		? install.replace("install -y", "install --only-upgrade -y")
-		: (install ?? `command -v ${tool}`);
+function noHint(tool: string): string {
+	return `install ${tool} for this platform and put it on PATH`;
+}
+
+export function installCommand(
+	tool: string,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	return installHint(tool, platform) ?? noHint(tool);
+}
+
+export function upgradeCommand(
+	tool: string,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	const install = installHint(tool, platform);
+	if (!install) return noHint(tool);
+	return install
+		.replace("sudo apt-get install -y ", "sudo apt-get install --only-upgrade -y ")
+		.replace("brew install ", "brew upgrade ")
+		.replace("winget install ", "winget upgrade ");
 }
 
 export const isCliOnly = (ctx: DoctorContext): boolean =>
 	existsSync(join(ctx.paths.stateDir, "cli-only"));
 
-export function bootstrapCommand(version: string, ctx: DoctorContext): string {
-	const script = `curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v${version}/pkg/skills-cli/bootstrap.sh | sh`;
-	return isCliOnly(ctx) ? `${script} -s -- --cli-only` : script;
+export function bootstrapCommand(
+	version: string,
+	ctx: DoctorContext,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	const base = `https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v${version}/pkg/skills-cli`;
+	const cliOnly = isCliOnly(ctx);
+	if (platform === "win32") {
+		const script = `irm ${base}/bootstrap.ps1 | iex`;
+		return cliOnly ? `$env:DG_CLI_ONLY = "1"; ${script}` : script;
+	}
+	const script = `curl -fsSL ${base}/bootstrap.sh | sh`;
+	return cliOnly ? `${script} -s -- --cli-only` : script;
 }
 
 interface ToolProbe {
@@ -184,7 +229,13 @@ export function allowRuleCheck(sub: string): DoctorCheck {
 		id: "allow-rule",
 		run(ctx) {
 			const rule = allowRuleFor(sub);
-			if (hasAllowRule(readAllowRules(ctx.home), sub))
+			const allowed = readAllowRules(ctx.home);
+			if ("error" in allowed)
+				return warn(
+					`cannot read ~/.claude/settings.json: ${allowed.error}`,
+					"jq . ~/.claude/settings.json",
+				);
+			if (hasAllowRule(allowed.rules, sub))
 				return ok(`allow rule present for ${CLI_PATH} ${sub}`);
 			return warn(
 				`~/.claude/settings.json has no allow rule for ${CLI_PATH} ${sub}, so Claude asks before each call`,
@@ -194,11 +245,7 @@ export function allowRuleCheck(sub: string): DoctorCheck {
 	};
 }
 
-export function credentialChecks(
-	names: string[],
-	options: { required: boolean },
-): DoctorCheck[] {
-	const level = options.required ? fail : warn;
+export function credentialChecks(names: string[]): DoctorCheck[] {
 	return names.map((name) => ({
 		id: `credential-${name.replaceAll("/", "-")}`,
 		async run(ctx) {
@@ -209,7 +256,7 @@ export function credentialChecks(
 					stored.fix,
 				);
 			if (stored.names.includes(name)) return ok(`credential ${name} is stored`);
-			return level(
+			return warn(
 				`credential ${name} is not stored`,
 				`${CLI_PATH} credentials set ${name}`,
 			);
@@ -225,7 +272,7 @@ function storedCredentialNames(ctx: DoctorContext): Promise<CredentialNames> {
 	return ctx.memo("credential-names", async () => {
 		const handle = readPidFile(ctx.paths);
 		if (!handle) return { error: "dg-daemon is not running", fix: DAEMON_START };
-		if (!(await isDaemonLive(handle)))
+		if (!(await ctx.memo("daemon-live", () => isDaemonLive(handle))))
 			return { error: "dg-daemon is not answering", fix: DAEMON_START };
 		const client = createCredentialClient({ paths: ctx.paths, env: ctx.env });
 		try {

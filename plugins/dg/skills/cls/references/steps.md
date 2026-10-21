@@ -1,5 +1,7 @@
 # Step 2A: Harness worktree (EnterWorktree session)
 
+Shell variables do not persist between Bash calls. Each block below reads `MAIN`, `DEFAULT`, `BRANCH`, `CAME_FROM`, or `TOP`. Start every block with those names set as literals copied from the `detect.md` output. Or rerun the `detect.md` block in the same call.
+
 The `ExitWorktree` tool restores the session cwd **and** removes the worktree and branch in one shot. Use it instead of the CLI.
 
 1. Close any live browser first (Step 3, browser part). Assets inside the worktree vanish with it, but a running browser process must be stopped on purpose.
@@ -102,6 +104,10 @@ wt_branches=$(git -C "$MAIN" worktree list --porcelain \
 for b in $(printf '%s\n%s\n' "$gone" "$merged" | sort -u); do
   [ -n "$b" ] || continue
   [ "$b" = "$DEFAULT" ] && continue
+  case " $(printf '%s' "$gone" | tr '\n' ' ') " in
+    *" $b "*) ;;
+    *) [ "$(git -C "$MAIN" rev-parse "refs/heads/$b")" = "$(git -C "$MAIN" rev-parse "refs/heads/$DEFAULT")" ] && { echo "skipped (no commits of its own): $b"; continue; } ;;
+  esac
   [ "$b" = "$BRANCH" ] && continue
   printf '%s\n' "$wt_branches" | grep -qxF "$b" && { echo "protected (worktree): $b"; continue; }
   err=$(git -C "$MAIN" branch -d "$b" 2>&1) && { echo "deleted: $b"; continue; }
@@ -113,7 +119,7 @@ for b in $(printf '%s\n%s\n' "$gone" "$merged" | sort -u); do
 done
 ```
 
-`gone` holds branches whose remote tracking branch is gone (merged-PR leftovers). `merged` holds branches fully merged into the default branch. `wt_branches` holds branches checked out in any worktree (git refuses to delete these anyway). The candidates are the unique union of `gone` and `merged`, minus `$DEFAULT`, minus `$BRANCH` (the branch you started on, in case you did not switch), minus everything in `wt_branches`.
+`gone` holds branches whose remote tracking branch is gone (merged-PR leftovers). `merged` holds branches fully merged into the default branch. `wt_branches` holds branches checked out in any worktree (git refuses to delete these anyway). A `merged` branch whose tip equals the tip of `$DEFAULT` has no commits of its own, such as a branch made for a planned task. Skip it unless it is also in `gone`, and list it in the report so the user can confirm. The candidates are the unique union of `gone` and `merged`, minus `$DEFAULT`, minus `$BRANCH` (the branch you started on, in case you did not switch), minus everything in `wt_branches`.
 
 Collect the RISKY branches and ask before any `-D`. Skip the protected ones and never `-D` them. After the loop, if any RISKY branches were collected, show each one's tip sha and local-only commit count:
 
@@ -127,7 +133,7 @@ Then ask the user whether to `git branch -D` them one by one. Force-delete only 
 
 Skip this whole step if `--keep-assets` was passed.
 
-**Browser (optional).** The browser close needs `~/.dg/bin/dg-skills pw`. It ships with a later release, so skip the close with a note when the probe fails. Do not guess a close verb: when the probe passes, read `~/.dg/bin/dg-skills pw --help` and use the close command it lists. A scratch session is bound to the directory it opened in, so run the close from the worktree before it is removed.
+**Browser (optional).** The browser close needs `~/.dg/bin/dg-skills pw`. Use the close verb only when the `pw --help` probe passes. When the probe fails, skip the close and add a note to the report. Do not guess a close verb: when the probe passes, read `~/.dg/bin/dg-skills pw --help` and use the close command it lists. A scratch session is bound to the directory it opened in, so run the close from the worktree before it is removed.
 
 ```sh
 if ~/.dg/bin/dg-skills pw --help >/dev/null 2>&1; then
@@ -166,6 +172,7 @@ Caveat: the bucket is keyed to the *cwd where the tool ran*. This catches assets
 This runs even under `--keep-assets` (it is statusline state, not scratch). It does not run on the Step 2C path (no worktree was removed). The statusline reads a directory path from `~/.claude/.cc-focus-<sid>` and then `~/.claude/.cc-focus`. If one points at the worktree you just removed, the statusline would show a deleted dir. Rewrite it to `$MAIN` so it snaps to the main repo and its branch:
 
 ```sh
+: "${TOP:?TOP is empty: set it from detect.md}" "${MAIN:?MAIN is empty: set it from detect.md}"
 for ff in "$HOME/.claude/.cc-focus" "$HOME"/.claude/.cc-focus-*; do
   [ -f "$ff" ] || continue
   cur=$(cat "$ff" 2>/dev/null)

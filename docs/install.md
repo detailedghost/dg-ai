@@ -72,7 +72,8 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
 | `channel-review` | Yes |
 | `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
-| `jot`, `bg`, `cls`, `stat`, `sniff`, `nope`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
+| `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
+| `nope` | No CLI needed — it calls no CLI and no other skill |
 | `google-sms-cleanup` | Yes — instruction-only |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |

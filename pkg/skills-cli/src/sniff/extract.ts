@@ -1,7 +1,7 @@
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
 import { isRecord } from "@dg/common";
 import type { Gap, Phase, ReqType, Requirement } from "./types";
-import { locate, readText } from "./walk";
+import { locate, readText, warn } from "./walk";
 
 const SECRET_NAME =
 	/(TOKEN|SECRET|PASSWORD|PASSWD|_PASS$|PRIVATE_KEY|API_?KEY|_KEY$|CONN_STR|CONNECTION_STRING|CREDENTIAL|_DSN$)/;
@@ -100,6 +100,7 @@ export function extractWorkflows(root: string, files: string[]): Requirement[] {
 		/\.github\/workflows\/[^/]+\.ya?ml$/.test(f),
 	);
 	eachLine(workflows, (raw, line, file) => {
+		if (raw.trimStart().startsWith("#")) return;
 		const where = locate(root, file, line);
 
 		for (const m of raw.matchAll(/secrets\.([A-Z][A-Z0-9_]*)/g)) {
@@ -174,12 +175,11 @@ export function extractTerraform(root: string, files: string[]): Requirement[] {
 			if (mode !== null) {
 				depth +=
 					(raw.match(/\[/g) || []).length - (raw.match(/\]/g) || []).length;
-				const named = /name\s*=\s*"([^"]+)"/.exec(raw)?.[1];
-				if (named) {
+				for (const named of raw.matchAll(/name\s*=\s*"([^"]+)"/g)) {
 					out.push(
 						row({
 							type: mode === "secret" ? "SECRET" : "CONFIG",
-							name: named,
+							name: named[1] as string,
 							phase: ["run"],
 							source: mode === "secret" ? "secrets-mgr" : "tfc-varset",
 							where,
@@ -247,6 +247,17 @@ function parseFrom(raw: string): { image: string; alias?: string } | null {
 	return { image, alias };
 }
 
+const QUOTED = /"(?:[^"\\]|\\.)*"|'[^']*'/g;
+
+function envKeys(raw: string): string[] {
+	const rest = /^\s*ENV\s+(.+)$/i.exec(raw)?.[1]?.replace(QUOTED, '""');
+	if (!rest) return [];
+	const pairs = [...rest.matchAll(/(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=/g)];
+	if (pairs.length > 0) return pairs.map((pair) => pair[1] as string);
+	const legacy = /^([A-Za-z_][A-Za-z0-9_]*)\s/.exec(rest)?.[1];
+	return legacy ? [legacy] : [];
+}
+
 function splitImage(image: string): { name: string; tag?: string } {
 	const [ref = image] = image.split("@");
 	const colon = ref.lastIndexOf(":");
@@ -285,8 +296,7 @@ export function extractDockerfile(
 			);
 		}
 
-		const env = /^\s*ENV\s+([A-Z_][A-Z0-9_]*)[=\s]/i.exec(raw)?.[1];
-		if (env) {
+		for (const env of envKeys(raw)) {
 			out.push(
 				row({
 					type: classifyEnvKey(env),
@@ -301,7 +311,12 @@ export function extractDockerfile(
 		const from = parseFrom(raw);
 		if (from?.alias) stages.add(from.alias.toLowerCase());
 		const image = from?.image;
-		if (image && !image.startsWith("$") && !stages.has(image.toLowerCase())) {
+		if (
+			image &&
+			!image.startsWith("$") &&
+			image.toLowerCase() !== "scratch" &&
+			!stages.has(image.toLowerCase())
+		) {
 			const { name, tag } = splitImage(image);
 			out.push(
 				row({
@@ -339,6 +354,7 @@ export function extractCompose(root: string, files: string[]): Requirement[] {
 		if (text === null) continue;
 
 		let inServices = false;
+		let inPorts = false;
 		let serviceIndent: string | null = null;
 		text.split("\n").forEach((raw, i) => {
 			const where = locate(root, f, i + 1);
@@ -349,6 +365,12 @@ export function extractCompose(root: string, files: string[]): Requirement[] {
 			}
 			if (/^[A-Za-z]/.test(raw)) inServices = false;
 			if (!inServices) return;
+
+			if (/^\s+ports:\s*$/.test(raw)) {
+				inPorts = true;
+				return;
+			}
+			if (inPorts && !/^\s*(-|#|$)/.test(raw)) inPorts = false;
 
 			const key = /^(\s+)([A-Za-z0-9._-]+):\s*$/.exec(raw);
 			serviceIndent ??= key?.[1] ?? null;
@@ -365,7 +387,11 @@ export function extractCompose(root: string, files: string[]): Requirement[] {
 				);
 			}
 
-			const port = /^\s*-\s*["']?(\d+):(\d+)/.exec(raw)?.[1];
+			const port = inPorts
+				? /^\s*-\s*["']?(?:\d{1,3}(?:\.\d{1,3}){3}:)?(\d+)(?:-\d+)?:\d+/.exec(
+						raw,
+					)?.[1]
+				: undefined;
 			if (port) {
 				out.push(
 					row({
@@ -428,8 +454,12 @@ export function extractToolchain(root: string, files: string[]): Requirement[] {
 				}
 				if (/^\[/.test(raw)) inTools = false;
 				if (!inTools) return;
-				const tool = /^\s*([A-Za-z0-9_.-]+)\s*=\s*["']([^"']+)["']/.exec(raw);
-				if (tool?.[1]) push(tool[1], tool[2], "mise", f, i + 1);
+				const tool =
+					/^\s*["']?([A-Za-z0-9_.:@/-]+)["']?\s*=\s*(?:["']([^"']+)["']|\{[^}]*\bversion\s*=\s*["']([^"']+)["'])/.exec(
+						raw,
+					);
+				const version = tool?.[2] ?? tool?.[3];
+				if (tool?.[1] && version) push(tool[1], version, "mise", f, i + 1);
 			});
 		}
 
@@ -449,7 +479,11 @@ export function extractToolchain(root: string, files: string[]): Requirement[] {
 			let engines: unknown;
 			try {
 				engines = (JSON.parse(text) as { engines?: unknown }).engines;
-			} catch {}
+			} catch (error) {
+				warn(
+					`could not parse ${relative(root, f)}: ${(error as Error).message}; its engines pins are missing`,
+				);
+			}
 			if (isRecord(engines)) {
 				const start = Math.max(
 					lines.findIndex((l) => /"engines"\s*:/.test(l)),

@@ -23,6 +23,7 @@ import {
 	ensureRepoIgnore,
 	listEntries,
 	noteWriteDir,
+	type JotKind,
 	resolveJot,
 	saveWriteDir,
 	writeNewJot,
@@ -40,6 +41,12 @@ function fileOption(args: string[]): { file: string; rest: string[] } {
 	const file = args[at + 1];
 	if (!file) throw new Error("--file needs a path");
 	return { file, rest: args.filter((_, i) => i !== at && i !== at + 1) };
+}
+
+function lsKind(args: string[]): JotKind | null {
+	if (flag(args, "-s", "--save")) return "save";
+	if (flag(args, "-n", "--note")) return "note";
+	return null;
 }
 
 function kickRow(s: { id: string; summary: string }): string {
@@ -74,11 +81,7 @@ export const jotSpec: CommandSpec = {
 			description:
 				"Index, newest first: kind, age, name, title. -s saves, -n notes, --all no limit.",
 			async run(args) {
-				const only = flag(args, "-s", "--save")
-					? "save"
-					: flag(args, "-n", "--note")
-						? "note"
-						: null;
+				const only = lsKind(args);
 				const now = Date.now();
 				const rows = listEntries().filter((e) => !only || e.kind === only);
 				const shown = args.includes("--all")
@@ -86,7 +89,14 @@ export const jotSpec: CommandSpec = {
 					: rows.slice(0, DEFAULT_LS_LIMIT);
 				let out = "";
 				for (const e of shown) {
-					const title = titleOf(readFileSync(e.file, "utf8"));
+					let text: string;
+					try {
+						text = readFileSync(e.file, "utf8");
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+						throw error;
+					}
+					const title = titleOf(text);
 					out += `${e.kind}\t${formatAge(now - e.mtimeMs)}\t${e.name}\t${title}\n`;
 				}
 				if (out) await writeStdout(out);
@@ -177,20 +187,18 @@ export const jotSpec: CommandSpec = {
 					throw new Error("missing id or text; run kick-list");
 				if (!existsSync(file))
 					throw new Error(`no checkpoint matches "${query}"; run kick-list`);
-				let taken = "";
 				let kept = false;
 				try {
-					await updateCheckpointFile(file, (content) => {
+					await updateCheckpointFile(file, async (content) => {
 						const {
 							removed,
 							content: next,
 							leftover,
 						} = removeSection(content, query);
-						taken = removed.text;
+						await writeStdout(removed.text);
 						kept = leftover === "preamble";
 						return leftover === "none" ? null : next;
 					});
-					await writeStdout(taken);
 					if (kept)
 						process.stderr.write(
 							`kept ${file}: it has text besides the CLI header\n`,

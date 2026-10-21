@@ -8,6 +8,7 @@ import {
 } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
+import { buildCompiledBinary } from "./compiled-binary";
 import {
 	FAKE_VALUES,
 	type SniffJson,
@@ -24,19 +25,7 @@ let emptyPath: Record<string, string>;
 
 beforeAll(() => {
 	const base = world.tmp("sniff-compiled-");
-	const binary = join(base, "moved ' install", "dg-skills");
-	mkdirSync(join(binary, ".."), { recursive: true });
-	const build = Bun.spawnSync(
-		[
-			process.execPath,
-			join(import.meta.dir, "../build.ts"),
-			"--outfile",
-			binary,
-		],
-		{ stdout: "pipe", stderr: "pipe" },
-	);
-	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
-	command.push(binary);
+	command.push(buildCompiledBinary());
 	const bin = join(base, "empty bin");
 	mkdirSync(bin, { recursive: true });
 	emptyPath = { PATH: bin };

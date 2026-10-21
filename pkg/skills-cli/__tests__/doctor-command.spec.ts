@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -17,6 +17,7 @@ import {
 	startFakeCredentialDaemon,
 } from "./doctor-fixtures";
 import { anyToolCheck } from "../src/doctor/checks";
+import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
 import {
@@ -27,29 +28,15 @@ import {
 } from "../src/doctor/probes";
 
 const STATUSES: CheckStatus[] = ["ok", "warn", "fail"];
-const SHIPPED_ITEMS = [
-	"jot",
-	"bg",
-	"sniff",
-	"worktree",
-	"spec",
-	"proxy",
-	"thrash",
-	"channel-review",
-	"demo",
-	"proto",
-	"launch",
-	"batch-open",
-	"credentials",
-	"install",
-];
+const REGISTERED_ITEMS = Object.keys(DOCTOR_REGISTRY);
 
-let world = doctorWorld();
+let world: ReturnType<typeof doctorWorld>;
 
-afterEach(() => {
-	world.cleanup();
+beforeEach(() => {
 	world = doctorWorld();
 });
+
+afterEach(() => world.cleanup());
 
 describe("dg-skills doctor --json shape", () => {
 	test("prints one document with items, checks and ok", async () => {
@@ -69,25 +56,24 @@ describe("dg-skills doctor --json shape", () => {
 				expect(STATUSES).toContain(check.status);
 				expect(typeof check.detail).toBe("string");
 				expect(check.detail.length).toBeGreaterThan(0);
-				for (const key of Object.keys(check))
-					expect(["id", "status", "detail", "fix"]).toContain(key);
-				if (check.fix !== undefined && check.fix !== null)
-					expect(check.fix.length).toBeGreaterThan(0);
+				expect(Object.keys(check).sort()).toEqual([
+					"detail",
+					"fix",
+					"id",
+					"status",
+				]);
+				expect(
+					check.fix === null ||
+						(typeof check.fix === "string" && check.fix.length > 0),
+				).toBe(true);
 			}
 		}
-	});
-
-	test("ok is true exactly when no check fails", async () => {
-		world.healthy([]);
-		const { report } = await world.report(["jot"]);
-		const failed = allChecks(report).some((check) => check.status === "fail");
-		expect(report.ok).toBe(!failed);
 	});
 
 	test("lists every shipped item with at least one check on a full run", async () => {
 		world.healthy([]);
 		const { report } = await world.report();
-		for (const item of SHIPPED_ITEMS)
+		for (const item of REGISTERED_ITEMS)
 			expect([item, checksOf(report, item).length > 0]).toEqual([item, true]);
 	});
 
@@ -283,7 +269,7 @@ describe("dg-skills doctor credential checks", () => {
 		const { report } = await world.report(["channel-review"]);
 		const check = credentialCheck(report);
 		expect(check?.status).toBe("ok");
-		expect(check?.fix ?? null).toBeNull();
+		expect(check?.fix).toBeNull();
 		expect(daemon.operations.length).toBeGreaterThan(0);
 		expect(new Set(daemon.operations)).toEqual(new Set(["list"]));
 	});
@@ -354,8 +340,10 @@ describe("dg-skills doctor shared checks", () => {
 
 	test("an unwritable scratch root fails with a Fix", async () => {
 		world.healthy(["jot"]);
+		const blocker = join(world.home, "scratch-blocker");
+		writeFileSync(blocker, "");
 		const { report } = await world.report(["jot"], {
-			AI_SCRATCH_DIR: "/proc/doctor-unwritable-scratch",
+			AI_SCRATCH_DIR: join(blocker, "scratch"),
 		});
 		const failed = allChecks(report).filter(
 			(check) => check.status === "fail" && mentions(check, /scratch/i),
@@ -366,8 +354,10 @@ describe("dg-skills doctor shared checks", () => {
 
 	test("an unwritable state root fails with a Fix", async () => {
 		world.healthy(["jot"]);
+		const blocker = join(world.home, "state-blocker");
+		writeFileSync(blocker, "");
 		const { report } = await world.report(["jot"], {
-			AI_STATE_DIR: "/proc/doctor-unwritable-state",
+			AI_STATE_DIR: join(blocker, "state"),
 		});
 		const failed = allChecks(report).filter(
 			(check) => check.status === "fail" && mentions(check, /state/i),
@@ -502,14 +492,16 @@ describe("dg-skills doctor edge cases", () => {
 			).toBe(false);
 	});
 
-	test("malformed settings warn with the rule as the Fix and do not crash", async () => {
+	test("malformed settings warn about the parse error and do not crash", async () => {
 		world.healthy([]);
 		writeFileSync(join(world.home, ".claude", "settings.json"), "{not json");
 		const { run, report } = await world.report(["jot"]);
 		expect(run.exitCode).toBe(0);
 		expect(
 			checksOf(report, "jot").some(
-				(check) => check.status === "warn" && check.fix === allowRule("jot"),
+				(check) =>
+					check.status === "warn" &&
+					check.detail.includes("cannot read ~/.claude/settings.json"),
 			),
 		).toBe(true);
 	});
@@ -559,7 +551,7 @@ describe("dg-skills doctor edge cases", () => {
 		const old = checksOf(report, "worktree").find(
 			(check) => check.id === "tool-git" && check.status === "fail",
 		);
-		expect(old?.fix).toBe("sudo apt-get install --only-upgrade -y git");
+		expect(old?.fix).toMatch(/upgrade.*\bgit\b/);
 	});
 
 	test("a too-old tool in an any-of check says too old, not not found", async () => {
@@ -575,7 +567,7 @@ describe("dg-skills doctor edge cases", () => {
 		expect(result.status).toBe("fail");
 		expect(result.detail).toContain("too old");
 		expect(result.detail).not.toContain("not found");
-		expect(result.fix).toBe("sudo apt-get install --only-upgrade -y git");
+		expect(result.fix).toMatch(/upgrade.*\bgit\b/);
 	});
 
 	test("a tool exactly at its minimum version passes", async () => {

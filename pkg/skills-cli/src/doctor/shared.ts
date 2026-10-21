@@ -1,4 +1,4 @@
-import { scratchRoot, stateRoot } from "@dg/common/node";
+import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
 import { installedPlugins, isOlder, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
@@ -17,8 +17,8 @@ function rootCheck(
 			return fail(
 				`${label} root ${path} cannot be used: ${result.reason}`,
 				result.kind === "not-directory"
-					? `mv '${result.at}' '${result.at}.old' && mkdir -p '${path}'`
-					: `chmod u+rwx '${result.at}'`,
+					? `mv ${shellCommand([result.at, `${result.at}.old`])} && mkdir -p ${shellCommand([path])}`
+					: `chmod u+rwx ${shellCommand([result.at])}`,
 			);
 		},
 	};

@@ -22,7 +22,7 @@ You picked the wrong tool. Reset and use the correct defaults.
 ## Never
 
 - `find`, `grep`, `ls`, `cat`, `head`, `tail` via Bash when any tool above fits
-- generate your own json reader, use `jq` instead
+- Do not write your own JSON reader; use `jq`.
 - Regex with `.*`/`\d+`/`\s+` in fff grep — search bare identifiers
 - More than 2 grep variations before reading a file
 

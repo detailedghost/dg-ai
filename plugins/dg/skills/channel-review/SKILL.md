@@ -9,7 +9,8 @@ The executable is `~/.dg/bin/dg-skills`.
 On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
-~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 ||
+~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 &&
+  ~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ~/.dg/bin/dg-skills channel-review --help
 ```

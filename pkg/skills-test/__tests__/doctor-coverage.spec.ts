@@ -30,25 +30,31 @@ let home = "";
 let registered: string[] = [];
 let covered = new Map<string, number>();
 let allowRuleItems = new Set<string>();
+let trees = new Map<string, string[]>();
 
-function parseReport(text: string): Report {
+function parseReport(run: { out: string; err: string }): Report {
 	try {
-		return JSON.parse(text) as Report;
+		return JSON.parse(run.out) as Report;
 	} catch {
-		return { items: [] };
+		throw new Error(`doctor --json printed no report; stderr: ${run.err}`);
 	}
 }
 
-async function runCli(args: string[]): Promise<string> {
+async function runCli(
+	args: string[],
+): Promise<{ out: string; err: string }> {
 	const proc = Bun.spawn([process.execPath, "run", ENTRY, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
 		env: { ...process.env, HOME: home, DG_HOME: undefined },
 	});
-	const out = await new Response(proc.stdout).text();
-	await proc.exited;
-	return out;
+	const [out, err] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { out, err };
 }
 
 function treeTexts(dir: string): string[] {
@@ -60,27 +66,34 @@ function treeTexts(dir: string): string[] {
 }
 
 function doctorLineItems(name: string): string[] | null {
-	for (const text of treeTexts(join(SKILLS_DIR, name))) {
+	for (const text of trees.get(name) ?? []) {
 		const named = DOCTOR_LINE.exec(text)?.[1];
 		if (named) return named.split(" ");
 	}
 	return null;
 }
 
-function skillsCallingCli(): string[] {
+function skillNames(): string[] {
 	return readdirSync(SKILLS_DIR)
 		.filter((name) => existsSync(join(SKILLS_DIR, name, "SKILL.md")))
-		.filter((name) =>
-			treeTexts(join(SKILLS_DIR, name)).some((text) => text.includes(CLI_PATH)),
-		)
-		.filter((name) => name !== "doctor")
 		.sort();
+}
+
+function skillsCallingCli(): string[] {
+	return skillNames().filter(
+		(name) =>
+			name !== "doctor" &&
+			(trees.get(name) ?? []).some((text) => text.includes(CLI_PATH)),
+	);
 }
 
 beforeAll(async () => {
 	home = mkdtempSync(join(tmpdir(), "doctor-coverage-home-"));
+	trees = new Map(
+		skillNames().map((name) => [name, treeTexts(join(SKILLS_DIR, name))]),
+	);
 	const help = await runCli(["--help"]);
-	registered = [...help.matchAll(/^  ([a-z][a-z-]*)(?: |$)/gm)]
+	registered = [...help.out.matchAll(/^  ([a-z][a-z-]*)(?: |$)/gm)]
 		.map((match) => match[1] ?? "")
 		.filter((name) => !NOT_ITEMS.has(name));
 	const report = parseReport(await runCli(["doctor", "--json"]));
@@ -128,10 +141,9 @@ describe("doctor coverage guard", () => {
 
 	test("the doctor line of each skill names every registered command its tree calls", () => {
 		for (const name of skillsCallingCli()) {
-			const dir = join(SKILLS_DIR, name);
 			const named = doctorLineItems(name) ?? [];
 			const called = new Set(
-				treeTexts(dir).flatMap((text) =>
+				(trees.get(name) ?? []).flatMap((text) =>
 					[...text.matchAll(/dg-skills ([a-z][a-z-]*)/g)].map((match) => match[1] ?? ""),
 				),
 			);
@@ -143,14 +155,13 @@ describe("doctor coverage guard", () => {
 	});
 
 	test("instruction-only skills that never call dg-skills get no doctor line", () => {
-		for (const name of ["grill-me", "walk", "teach", "standard-test", "wait-what"]) {
-			const file = join(SKILLS_DIR, name, "SKILL.md");
-			expect([name, existsSync(file)]).toEqual([name, true]);
-			expect([name, DOCTOR_LINE.test(readFileSync(file, "utf8"))]).toEqual([
-				name,
-				false,
-			]);
-		}
+		const callers = skillsCallingCli();
+		const instructionOnly = skillNames().filter(
+			(name) => name !== "doctor" && !callers.includes(name),
+		);
+		expect(instructionOnly.length).toBeGreaterThan(0);
+		for (const name of instructionOnly)
+			expect([name, doctorLineItems(name)]).toEqual([name, null]);
 	});
 
 	test("the doctor skill is packaged", () => {

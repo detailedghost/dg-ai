@@ -2,19 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
-	bareSlash,
-	fences,
+	expectNamespacedSlashOnly,
+	expectNoShellComments,
+	expectPlainFrontmatter,
 	flagsTable,
-	hasShellComment,
-	SHELL_LANGS,
+	skillDir,
 	skillText,
-	treeFiles,
 	usageLine,
 	walk,
 } from "./skill-tree-helpers";
-import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 
-const JOT = join(SOURCE_SKILLS, "jot");
+const JOT = skillDir("jot");
 const VERBS = ["add", "ls", "read", "kind", "done", "kick", "kick-list", "kick-take"];
 
 function skill(): string {
@@ -28,11 +26,7 @@ describe("packaged jot skill tree", () => {
 	});
 
 	test("SKILL.md is named jot and carries no host-only frontmatter keys", () => {
-		const { data } = splitFrontmatter(skill()) as { data: Record<string, unknown> };
-		expect(data.name).toBe("jot");
-		expect(String(data.description).length).toBeGreaterThan(0);
-		expect(data).not.toHaveProperty("argument-hint");
-		expect(data).not.toHaveProperty("user-invocable");
+		expectPlainFrontmatter("jot");
 	});
 
 	test("every dg-skills call uses the literal installed path and a real subcommand", () => {
@@ -77,9 +71,7 @@ describe("packaged jot skill tree", () => {
 	});
 
 	test("names itself with the namespaced slash form and never the bare one", () => {
-		const text = skill();
-		expect(text).toContain("/dg:jot");
-		expect(text).not.toMatch(bareSlash("jot"));
+		expectNamespacedSlashOnly("jot");
 	});
 
 	test("keeps the 2 KB cap and the checkpoint paths in the prose", () => {
@@ -105,10 +97,6 @@ describe("packaged jot skill tree", () => {
 	});
 
 	test("shell blocks carry no hash comments", () => {
-		for (const { file, text } of treeFiles("jot"))
-			for (const { lang, body } of fences(text))
-				if (SHELL_LANGS.includes(lang))
-					for (const line of body.split("\n"))
-						expect([file, line, hasShellComment(line)]).toEqual([file, line, false]);
+		expectNoShellComments("jot");
 	});
 });

@@ -1,15 +1,14 @@
 import {
-	closeSync,
 	existsSync,
 	mkdirSync,
-	openSync,
 	readFileSync,
 	rmSync,
 	statSync,
+	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { writeFileAtomic } from "@dg/common/node";
+import { isAlive, writeFileAtomic } from "@dg/common/node";
 
 const PREAMBLE = "# Checkpoints\n";
 const ID_PATTERN = /^\d{4}-\d{2}-\d{2} \d{4} — .+ — .+$/;
@@ -159,29 +158,45 @@ export function removeSection(
 		throw new Error(`no checkpoint matches "${query}"; run kick-list`);
 	if (hits.length > 1) throw new AmbiguousQueryError(query, hits);
 	const rest = sections.filter((s) => s !== removed.text);
-	const leftover =
-		rest.length > 0
-			? "sections"
-			: preamble.trim() === PREAMBLE.trim()
-				? "none"
-				: "preamble";
-	return { removed, content: joinFile(preamble, rest), leftover };
+	return {
+		removed,
+		content: joinFile(preamble, rest),
+		leftover: leftoverOf(preamble, rest),
+	};
+}
+
+function leftoverOf(
+	preamble: string,
+	rest: string[],
+): "none" | "preamble" | "sections" {
+	if (rest.length > 0) return "sections";
+	return preamble.trim() === PREAMBLE.trim() ? "none" : "preamble";
 }
 
 export function readCheckpointFile(file: string): string {
 	return existsSync(file) ? readFileSync(file, "utf8") : "";
 }
 
-async function withLock<T>(file: string, fn: () => T): Promise<T> {
+function lockOwnerGone(lock: string): boolean {
+	try {
+		const pid = Number.parseInt(readFileSync(lock, "utf8"), 10);
+		return Number.isSafeInteger(pid) && pid > 1 && !isAlive(pid);
+	} catch {
+		return false;
+	}
+}
+
+async function withLock<T>(file: string, fn: () => T | Promise<T>): Promise<T> {
 	const lock = `${file}.lock`;
 	let held = false;
 	for (let i = 0; i < LOCK_TRIES && !held; i++) {
 		try {
-			closeSync(openSync(lock, "wx"));
+			writeFileSync(lock, String(process.pid), { flag: "wx" });
 			held = true;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			await Bun.sleep(100);
+			if (lockOwnerGone(lock)) rmSync(lock, { force: true });
+			else await Bun.sleep(100);
 		}
 	}
 	if (!held)
@@ -189,7 +204,7 @@ async function withLock<T>(file: string, fn: () => T): Promise<T> {
 			`${lock} is held; remove it if no other session is writing`,
 		);
 	try {
-		return fn();
+		return await fn();
 	} finally {
 		rmSync(lock, { force: true });
 	}
@@ -198,11 +213,11 @@ async function withLock<T>(file: string, fn: () => T): Promise<T> {
 /** Applies transform to the file under a lock; a null result deletes it. */
 export async function updateCheckpointFile(
 	file: string,
-	transform: (content: string) => string | null,
+	transform: (content: string) => string | null | Promise<string | null>,
 ): Promise<void> {
 	mkdirSync(path.dirname(file), { recursive: true });
-	await withLock(file, () => {
-		const next = transform(readCheckpointFile(file));
+	await withLock(file, async () => {
+		const next = await transform(readCheckpointFile(file));
 		if (next === null) {
 			rmSync(file, { force: true });
 			return;
