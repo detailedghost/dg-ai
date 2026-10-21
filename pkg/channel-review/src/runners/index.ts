@@ -1,6 +1,6 @@
 import { spawn as spawnProcess } from "node:child_process";
 import { homedir } from "node:os";
-import { isAiUsageLimit } from "@dg/common";
+import { describeError, isAiUsageLimit } from "@dg/common";
 import { runCapture } from "@dg/common/node";
 import type { ChannelConfig } from "../config";
 import { grokAuthFailure, probeGrok } from "./grok";
@@ -164,7 +164,9 @@ const defaultStartSsoLogin = (profile: string): void => {
 		stdio: "ignore",
 		env: process.env,
 	});
-	child.on("error", () => {});
+	child.on("error", (error) => {
+		process.stderr.write(`startSsoLogin: could not spawn aws sso login: ${describeError(error)}\n`);
+	});
 	child.unref();
 };
 
