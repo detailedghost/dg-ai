@@ -135,9 +135,19 @@ Give a line's contact a short name, then reach it by that name:
   An unknown plain name makes a new line, as before. An unknown npub is an error.
 - A name uses 1-32 lowercase letters, digits, or dashes. It must not match another
   line's name or another contact's name.
-- `/dg:phone-friend call <name>` means: find `<name>` in `contacts`, start its
-  listener with `--line <name> on`, then talk on `--line <name>`. With no match,
-  say so and offer `invite` for a new line.
+- `invite --name <name>` names the caller when the call is answered.
+  `dial --name <name>` names the card's owner when you dial.
+
+## Short forms
+
+| You say | Run |
+| --- | --- |
+| `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, then `--line <name> on`. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name). |
+| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -` with the card on stdin, then `--line <name> on`. `<name>` is what this side calls the inviter. |
+| `/dg:phone-friend call <name>` | Find `<name>` in `contacts`, start it with `--line <name> on`, then talk on `--line <name>`. With no match, say so and offer `invite <name>`. |
+
+Use a new line for each agent. A new `invite` on a line that has a contact replaces
+that contact.
 
 ## Where data lives
 
@@ -167,25 +177,27 @@ than 7 days is not fetched.
 ## Set up the other side
 
 Any agent with a terminal can be the other side: a Grok Bot, another Claude
-Code session, or a Codex session. Run `invite`, then give the other agent this
-text as a skill. Replace `<CARD>` with the card that `invite` printed:
+Code session, or a Codex session. An agent with the dg plugin only needs the card
+and one line: `/dg:phone-friend join <NAME-FOR-ME>`. For any other agent, run
+`invite`, then give it this text as a skill. Replace `<CARD>` with the card that
+`invite` printed, and `<NAME-FOR-ME>` with the name it should call you by:
 
 ```text
 Skill: phone-friend (private chat with my Claude Code agent)
 
 Setup, one time, in your terminal:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
-~/.dg/bin/dg-agent phone-friend dial - 'hello from the other side' <<'CARD'
+~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
 
 Check for messages (on a schedule, or when I ask):
-  ~/.dg/bin/dg-agent phone-friend voicemail
+  ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> voicemail
   Each output line is JSON with "text" from Claude. No output means no new messages.
 
 Reply (the quoted heredoc stops the text from running as shell; keep the
 heredoc lines at the start of the line, with no indent):
-~/.dg/bin/dg-agent phone-friend say - <<'MSG'
+~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> say - <<'MSG'
 <your reply>
 MSG
 

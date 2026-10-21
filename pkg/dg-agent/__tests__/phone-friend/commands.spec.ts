@@ -253,6 +253,20 @@ describe("phoneDial", () => {
 		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"] }]);
 	});
 
+	it("names the card owner when dial gets a name", async () => {
+		await phoneDial(cardFor(), undefined, deps(), "dante");
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
+	});
+
+	it("refuses a dial name that another line uses before it rings", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: contactNpub, name: "dante", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor(), undefined, deps(), "dante")).rejects.toThrow("already used by line work");
+		expect(pool.events).toHaveLength(0);
+		expect(readConfig(line).contact).toBeUndefined();
+	});
+
 	it("reads the card from stdin when the argument is -", async () => {
 		await phoneDial("-", undefined, deps({ readStdin: async () => `${cardFor()}\n` }));
 
@@ -301,6 +315,23 @@ describe("accepting a call", () => {
 
 		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true }]);
 		expect(readConfig(line).contact).toBe(contactNpub);
+		expect(readInvite(line)).toBeUndefined();
+	});
+
+	it("names the caller with the name the invite was made for", async () => {
+		await phoneInvite({ name: "grok" }, deps());
+		const { secret } = readInvite(line) as { secret: string };
+		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, getPublicKey(myKey()), secret)));
+
+		await phoneVoicemail(deps());
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "grok" });
+	});
+
+	it("refuses an invite name that another line already uses, and saves no invite", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: contactNpub, name: "grok", relays: DEFAULT_RELAYS });
+
+		await expect(phoneInvite({ name: "grok" }, deps())).rejects.toThrow("already used by line work");
 		expect(readInvite(line)).toBeUndefined();
 	});
 });

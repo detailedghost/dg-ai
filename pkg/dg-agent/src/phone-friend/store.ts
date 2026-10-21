@@ -151,12 +151,18 @@ export function releaseStart(line: LinePaths, token: string): void {
 	);
 }
 
-/** Deletes the invite and saves the caller as the contact in one transaction. */
+/** Deletes the invite and saves the caller as the contact, with the invite's name, in one transaction. */
 export function acceptCall(line: LinePaths, contact: string): void {
 	withDb(line, (db) =>
 		db.transaction(() => {
+			const name = db.get<Invite>(INVITE)?.name;
 			db.unset(INVITE);
-			db.set(CONFIG, { relays: DEFAULT_RELAYS, ...db.get<PhoneFriendConfig>(CONFIG), contact });
+			db.set(CONFIG, {
+				relays: DEFAULT_RELAYS,
+				...db.get<PhoneFriendConfig>(CONFIG),
+				contact,
+				...(name ? { name } : {}),
+			});
 		}),
 	);
 }

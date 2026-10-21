@@ -183,16 +183,20 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	});
 }
 
-export function phoneName(name: string, deps: PhoneFriendDeps): void {
+function requireFreeName(name: string, deps: PhoneFriendDeps): void {
 	if (!isLineName(name)) {
 		throw new DgCliError(`a contact name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
 	}
-	const config = readConfig(deps.line);
-	const contact = requireContact(config);
 	const taken = listLines(deps.paths).find(
 		(line) => line.name !== deps.line.name && (line.name === name || readConfig(line).name === name),
 	);
 	if (taken) throw new DgCliError(`"${name}" is already used by line ${taken.name}`);
+}
+
+export function phoneName(name: string, deps: PhoneFriendDeps): void {
+	const config = readConfig(deps.line);
+	const contact = requireContact(config);
+	requireFreeName(name, deps);
 	writeConfig(deps.line, { ...config, name });
 	printJson(deps, { line: deps.line.name, name, contact });
 }
@@ -284,9 +288,10 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 }
 
 export async function phoneInvite(
-	opts: { relay?: string[]; ttl?: string },
+	opts: { relay?: string[]; ttl?: string; name?: string },
 	deps: PhoneFriendDeps,
 ): Promise<void> {
+	if (opts.name !== undefined) requireFreeName(opts.name, deps);
 	const hours = opts.ttl === undefined ? DEFAULT_INVITE_HOURS : Number(opts.ttl);
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
@@ -298,6 +303,7 @@ export async function phoneInvite(
 	const invite = {
 		secret: randomBytes(SECRET_BYTES).toString("hex"),
 		expiresAt: deps.now() + Math.round(hours * 3600),
+		...(opts.name === undefined ? {} : { name: opts.name }),
 	};
 	const card = encodeCard({
 		npub: await myNpub(deps),
@@ -314,7 +320,9 @@ export async function phoneDial(
 	text: string,
 	firstWords: string | undefined,
 	deps: PhoneFriendDeps,
+	name?: string,
 ): Promise<void> {
+	if (name !== undefined) requireFreeName(name, deps);
 	const pasted = text === "-" ? await deps.readStdin() : text;
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
@@ -325,7 +333,12 @@ export async function phoneDial(
 	try {
 		const { ok } = await publish(pool, card.relays, event);
 		if (ok.length === 0) throw new DgCliError("no relay accepted the call");
-		writeConfig(deps.line, { ...readConfig(deps.line), contact: card.npub, relays: card.relays });
+		writeConfig(deps.line, {
+			...readConfig(deps.line),
+			contact: card.npub,
+			relays: card.relays,
+			...(name === undefined ? {} : { name }),
+		});
 		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: words, call: true }, card.npub);
 		if (livePid(deps) !== undefined) await spawnOrRestart(deps);
 		printJson(deps, { contact: card.npub, id: event.id, relays_ok: ok });
@@ -505,14 +518,18 @@ export function registerPhoneFriendCommands(
 		.description("make a one-time call card; give it to the other side so it can dial you")
 		.option("--relay <url...>", "relays to use instead of the saved ones")
 		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
-		.action((opts: { relay?: string[]; ttl?: string }) => phoneInvite(opts, makeDeps(session, line)));
+		.option("--name <name>", "name to give the contact once the call is answered")
+		.action((opts: { relay?: string[]; ttl?: string; name?: string }) => phoneInvite(opts, makeDeps(session, line)));
 
 	phone
 		.command("dial")
 		.description("call the owner of a call card: save them as your contact and ring them")
 		.argument("<card>", "the call card from `phone-friend invite`, or - to read it from stdin")
 		.argument("[text]", "first words to send", "hello")
-		.action((card: string, text: string) => phoneDial(card, text, makeDeps(session, line)));
+		.option("--name <name>", "name to give the card's owner as your contact")
+		.action((card: string, text: string, opts: { name?: string }) =>
+			phoneDial(card, text, makeDeps(session, line), opts.name),
+		);
 
 	phone
 		.command("on")
