@@ -1,6 +1,6 @@
 ---
 name: file
-description: File, list, and organize an issue on the current repo's git provider (GitHub or GitLab) — bugs, tech debt, follow-ups tied to the codebase itself. Use when the user says "file an issue", "open a GitHub/GitLab issue", "track this as a bug", "what issues are open", or /dg:file. Not for Jira project-planning tickets — that's /ticket.
+description: File, list, and organize an issue on the current repo's git provider (GitHub or GitLab) — bugs, tech debt, follow-ups tied to the codebase itself. Use when the user says "file an issue", "open a GitHub/GitLab issue", "track this as a bug", "what issues are open", or /dg:file. Not for Jira project-planning tickets — that's /dg:ticket.
 ---
 
 # /dg:file — File a Git-Provider Issue
@@ -42,12 +42,12 @@ The shared VCS provider layer uses `gh` or `glab`, detected from the current
 repository's `origin`. Both providers support every subcommand below. Run
 `~/.dg/bin/dg-skills file --help` for the full usage.
 
-## /dg:file vs /ticket
+## /dg:file vs /dg:ticket
 
 | Signal | Skill | Why |
 |---|---|---|
 | "File a bug / track this in the repo's issue tracker" | `/dg:file` | GitHub Issues or GitLab Issues, tied to this codebase |
-| "Make a ticket / plan this as a story or task" | `/ticket` | Jira project-planning and sprints |
+| "Make a ticket / plan this as a story or task" | `/dg:ticket` | Jira project-planning and sprints |
 | Unsure which | `/dg:file` | Cheaper default — a repo issue can always be linked from a Jira ticket later, not the reverse |
 
 Don't file both for the same request unless the user asks — pick one based on the

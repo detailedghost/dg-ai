@@ -18,6 +18,8 @@ the literal path, so each Bash call works alone:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor credentials.
+
 If a step fails, run `~/.dg/bin/dg-skills doctor credentials`.
 
 ## Usage
