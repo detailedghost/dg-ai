@@ -48,7 +48,7 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 | --- | --- |
 | claude | `.claude/plugins/cache/<marketplace>/dg/<version>/plugins/dg/skills/thrash/SKILL.md` |
 | codex | `.codex/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
-| copilot | `.copilot/skills/thrash/SKILL.md` |
+| copilot | `.copilot/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
 | grok | An enabled, user-invocable, unambiguous `thrash` reported by `grok inspect --json` |
 
 The exact command is in [Grok runner](#grok-runner). Install and authenticate using the
