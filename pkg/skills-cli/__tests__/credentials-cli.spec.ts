@@ -187,6 +187,40 @@ describe("dg-skills credentials", () => {
 		});
 	});
 
+	test("list --meta prints every stored field, not just the summary projection", async () => {
+		const cli = fakeCli({
+			list: [
+				{
+					name: "ticket/jira",
+					meta: {
+						site: "example.atlassian.net",
+						cloudId: "fixture-cloud-id",
+						project: "FIX",
+						assignee: "fixture@example.com",
+						sprintField: "customfield_10020",
+						issueTypes: '{"Story":"1"}',
+					},
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+			],
+		});
+		await cli.run(["list", "--meta"]);
+		expect(JSON.parse(cli.lines[0]).credentials).toEqual([
+			{
+				name: "ticket/jira",
+				meta: {
+					site: "example.atlassian.net",
+					cloudId: "fixture-cloud-id",
+					project: "FIX",
+					assignee: "fixture@example.com",
+					sprintField: "customfield_10020",
+					issueTypes: '{"Story":"1"}',
+				},
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			},
+		]);
+	});
+
 	test("list shows grants without tokens", async () => {
 		const grant = {
 			prefix: "channel-review",
