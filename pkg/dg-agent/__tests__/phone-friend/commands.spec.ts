@@ -11,6 +11,7 @@ import {
 	type PhoneFriendDeps,
 	phoneAnswer,
 	phoneDial,
+	phoneCard,
 	phoneInvite,
 	phoneNumber,
 	phoneSay,
@@ -319,6 +320,36 @@ describe("phoneNumber", () => {
 		await phoneNumber(deps());
 
 		expect(lines()).toMatchObject([{ contact: null, listener: null }]);
+	});
+});
+
+describe("phoneCard", () => {
+	it("prints the open card again with the same secret, relays, and expiry", async () => {
+		await phoneInvite({ relay: ["wss://x.example"] }, deps());
+		const [first] = lines() as { card: string; expires_at: string }[];
+		out = [];
+
+		await phoneCard(deps());
+
+		expect(lines()).toEqual([first]);
+	});
+
+	it("shows the open card's expiry in phoneNumber, and hides it once no card is open", async () => {
+		await phoneInvite({ ttl: "1" }, deps());
+		out = [];
+
+		await phoneNumber(deps());
+		await phoneNumber(deps({ now: () => NOW + 3601 }));
+
+		const [open, expired] = lines() as Record<string, unknown>[];
+		expect(open.card_expires_at).toBe(new Date((NOW + 3600) * 1000).toISOString());
+		expect(expired).not.toHaveProperty("card_expires_at");
+	});
+
+	it("refuses with no open card and says how to make one", async () => {
+		await expect(phoneCard(deps())).rejects.toThrow("phone-friend invite");
+		await phoneInvite({ ttl: "1" }, deps());
+		await expect(phoneCard(deps({ now: () => NOW + 3601 }))).rejects.toThrow("no open call card");
 	});
 });
 

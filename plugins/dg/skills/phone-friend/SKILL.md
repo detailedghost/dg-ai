@@ -38,6 +38,10 @@ Make a one-time **call card** and give it to the other side:
   dials it becomes your contact.
 - A new `invite` while you have a contact is how you change contacts. The next
   call on it replaces the old contact.
+- To show your number again so the other side can call in, run
+  `~/.dg/bin/dg-agent phone-friend card`. It prints the open card again, with the
+  same secret and expiry. With no open card, run `invite` to make a new one.
+  `number` shows `card_expires_at` while a card is open.
 
 When the other side dials, the first message has `"call": true`. From then on,
 only that contact gets through. Messages from anyone else are dropped.

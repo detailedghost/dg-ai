@@ -163,15 +163,35 @@ async function mySecretKey(deps: PhoneFriendDeps): Promise<Uint8Array> {
 	return (await ensureKey(deps)).sk;
 }
 
+function expiresAt(invite: Invite): string {
+	return new Date(invite.expiresAt * 1000).toISOString();
+}
+
 export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	const { sk, mode } = await ensureKey(deps);
+	const invite = liveInvite(deps);
 	printJson(deps, {
 		line: deps.line.name,
 		npub: npubOf(sk),
 		contact: readConfig(deps.line).contact ?? null,
 		key_store: mode,
 		listener: livePid(deps) ?? null,
+		...(invite ? { card_expires_at: expiresAt(invite) } : {}),
 	});
+}
+
+export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
+	const invite = liveInvite(deps);
+	if (!invite) {
+		throw new DgCliError("no open call card on this line; run `dg-agent phone-friend invite` to make one");
+	}
+	const card = encodeCard({
+		npub: await myNpub(deps),
+		relays: readConfig(deps.line).relays,
+		secret: invite.secret,
+		exp: invite.expiresAt,
+	});
+	printJson(deps, { card, expires_at: expiresAt(invite) });
 }
 
 function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
@@ -257,7 +277,7 @@ export async function phoneInvite(
 	});
 	writeInvite(deps.line, invite, relays);
 	if (livePid(deps) !== undefined) await spawnOrRestart(deps);
-	printJson(deps, { card, expires_at: new Date(invite.expiresAt * 1000).toISOString() });
+	printJson(deps, { card, expires_at: expiresAt(invite) });
 }
 
 export async function phoneDial(
@@ -429,6 +449,11 @@ export function registerPhoneFriendCommands(
 		.command("number")
 		.description("print your number (npub), your contact, and the listener state")
 		.action(() => phoneNumber(makeDeps(session, line)));
+
+	phone
+		.command("card")
+		.description("print the open call card again, so the other side can dial in before it expires")
+		.action(() => phoneCard(makeDeps(session, line)));
 
 	phone
 		.command("invite")
