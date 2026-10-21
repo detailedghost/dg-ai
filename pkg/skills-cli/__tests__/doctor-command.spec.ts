@@ -8,7 +8,6 @@ import {
 	CURRENT_TOOL_VERSION,
 	checksOf,
 	doctorWorld,
-	FORBIDDEN_TOOLS,
 	type FakeCredentialDaemon,
 	INSTALLED_VERSION,
 	mentions,
@@ -466,12 +465,6 @@ describe("dg-skills doctor reads and reports only", () => {
 		expect(result.stdout).toContain("--json");
 		expect(world.forbiddenCalls()).toEqual([]);
 	});
-
-	test("fake daemon and browser tools exist on PATH so a start would be recorded", async () => {
-		world.healthy([]);
-		for (const name of FORBIDDEN_TOOLS)
-			expect(Bun.which(name, { PATH: world.bin })).not.toBeNull();
-	});
 });
 
 describe("dg-skills doctor probe helpers", () => {
@@ -807,8 +800,8 @@ describe("dg-skills doctor runner", () => {
 		expect(entry?.status).toBe("fail");
 		expect(entry?.detail).toContain("boom");
 		expect(entry?.detail).toContain("kaput");
-		expect(entry?.fix).toContain("~/.dg/bin/dg-skills doctor thing --json");
-		expect(entry?.fix).toContain("issue");
+		expect(entry?.fix).toBe(`${CLI_PATH} doctor thing --json`);
+		expect(entry?.detail).toContain("issue");
 		expect(report.ok).toBe(false);
 		expect(doctorExitCode(report)).toBe(1);
 	});

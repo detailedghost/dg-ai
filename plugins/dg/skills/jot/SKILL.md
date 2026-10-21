@@ -45,14 +45,14 @@ A save written from a linked worktree always goes to state, so it never changes 
 | Command | Effect |
 | --- | --- |
 | `~/.dg/bin/dg-skills jot add [-s] <<'EOF'` | Read the body from stdin and print the new path. |
-| `~/.dg/bin/dg-skills jot ls [-s|-n] [--all]` | List kind, age, name and title, newest first, 10 rows. |
+| `~/.dg/bin/dg-skills jot ls [-s or -n] [--all]` | List kind, age, name and title, newest first, 10 rows. |
 | `~/.dg/bin/dg-skills jot read <name>` | Print the body. A split jot prints its index. |
 | `~/.dg/bin/dg-skills jot read <name>/<NN>` | Print one part of a split jot. |
-| `~/.dg/bin/dg-skills jot kind <path|name>` | Print `note` or `save`. |
+| `~/.dg/bin/dg-skills jot kind <path or name>` | Print `note` or `save`. |
 | `~/.dg/bin/dg-skills jot done <name>` | Remove the jot. |
 | `~/.dg/bin/dg-skills jot kick [--replace] [--file <p>]` | Read a section from stdin and print its id. |
 | `~/.dg/bin/dg-skills jot kick-list [--file <p>]` | Print id and summary rows. |
-| `~/.dg/bin/dg-skills jot kick-take <id|text> [--file <p>]` | Print the section, then remove it. Several matches remove nothing. |
+| `~/.dg/bin/dg-skills jot kick-take <id or text> [--file <p>]` | Print the section, then remove it. Several matches remove nothing. |
 
 **Cap:** 2048 B per jot file; checkpoint sections have no cap. Over the cap, `add` splits at each `## ` into `<name>/NN-<slug>.md` plus `00-index.md`. One section over the cap fails; shorten it and retry.
 

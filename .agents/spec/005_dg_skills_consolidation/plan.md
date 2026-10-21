@@ -1125,7 +1125,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 19 — w4-release
 
 #### Engineering
-- [ ] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
+- [x] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
 - [x] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
@@ -1133,7 +1133,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 - [x] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
 
 #### Acceptance Criteria
-- [ ] Matched Wave 4 draft base/head/URL for slices 16–19 persisted.
+- [x] Matched Wave 4 draft base/head/URL for slices 16–19 persisted (PR #41, feature/dg_skills_w4 onto feature/dg_skills_w3).
 
 ### Slice 20 — w5-db
 
@@ -1411,8 +1411,7 @@ channel-review defaults now use one `Bash(~/.dg/bin/dg-skills <sub>:*)` grant ea
 
 Superseded: viz and review no longer ship (commit fc16957). Original summary: `dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
 - Slice 16 (w4-jot): `dg-skills jot` ports jot-cli and jot-checkpoint (add, ls, read, kind, done, kick, kick-list, kick-take) through registerLegacyCommand, with legacy flags, output and exit codes. The packaged `/dg:jot` skill has a Usage line, a Flags table and full `~/.dg/bin/dg-skills jot` calls. `readableSuffix` moved into `@dg/common/node` scratch-paths. Tests drive the CLI only, from source and from the compiled binary, with isolated roots and a linked worktree.
-- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, list, status, cancel, kill, update, drain, prune) and re-executes the real installed binary for drains and resumes. A relative `--cwd` is stored as an absolute path, and prune removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` now routes through the same dispatcher. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz`, and the cls browser close probes `~/.dg/bin/dg-skills pw --help` and skips with a note when it fails.
-- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) with compiled-safe self-dispatch, cwd-contained prune and no caller process-group signals. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship; stat has no --viz and hands lanes to dg:overwatch; cls skips pw cleanup when pw is missing. cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
+- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) and re-executes the real installed binary for drains and resumes, with no caller process-group signals. A relative `--cwd` is stored as an absolute path, and prune resolves a relative `--cwd` and removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz` and hands lanes to dg:overwatch. cls skips browser cleanup with a note when `pw --help` fails, and cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
 - Slice 18 (w4-sniff-nope-find-work): `dg-skills sniff` ports sniff-cli with names-only secret and config inventory, the legacy exit status 1 and the `$HOME/code` env default. The sniff, nope and find-work skills ship; sniff drops `--viz`; find-work prompts use the dg bootstrap, `dg-skills vcs-provider` and `dg-skills worktree` routing and keep the human selection and PR-opening gates. Fixtures and examples carry no private names or paths.
 - Slice 31 (w4-doctor): `dg-skills doctor [<item>...] [--json]` runs a shared item (plugin installed, binary version vs plugin version, writable roots) and per-item checks declared in src/<item>/doctor.ts for every registered command: tools and minimum versions, optional credentials by name, daemon and extension pairing (pinned origin in the daemon config), unslop for polish, and the `Bash(~/.dg/bin/dg-skills <sub>:*)` allow rule. Exit 0 pass or warn, 1 fail, 2 unknown item. The /dg:doctor skill walks through Fix lines; every skill that calls dg-skills names its doctor items. A coverage guard enforces checks, the allow-rule check and the skill line.
 

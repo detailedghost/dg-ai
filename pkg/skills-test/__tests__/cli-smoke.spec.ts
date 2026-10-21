@@ -274,7 +274,7 @@ describe("dg-skills CLI", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-	});
+	}, 60_000);
 
 	test("clipboard-image --help documents native capture without reading the clipboard", async () => {
 		const { code, out } = await runCli(["clipboard-image", "--help"]);

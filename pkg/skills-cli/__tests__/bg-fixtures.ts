@@ -135,8 +135,9 @@ export function bgWorld(
 		cwd: string,
 		ready: (job: BgJob) => boolean = (job) =>
 			job.state === "done" || job.state === "canceled",
+		timeoutMs?: number,
 	): Promise<BgJob> {
-		return until(() => json(["status", id], cwd), ready);
+		return until(() => json(["status", id], cwd), ready, timeoutMs);
 	}
 
 	function dir(prefix = "bg-dir-"): string {
@@ -149,8 +150,9 @@ export function bgWorld(
 			return readdirSync(root)
 				.filter((name) => name.endsWith(".meta.json"))
 				.map((name) => JSON.parse(readFileSync(join(root, name), "utf8")));
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+			throw error;
 		}
 	}
 

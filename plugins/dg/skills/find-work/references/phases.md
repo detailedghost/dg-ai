@@ -74,10 +74,10 @@ Load `references/execution-template.md`.
 For each selected item, **before launching the agent**:
 
 1. Slugify the item title: lowercase, non-alnum → `_`, trim, max 40 chars. Example: `"Fix null check in auth"` → `fix_null_check_in_auth`.
-2. Create the worktree and branch from the origin default branch. The `find-work-` prefix marks origin so cleanup tooling can identify the branches:
+2. Create the worktree and branch from the origin default branch. The `find-work-` prefix marks origin so cleanup tooling can identify the branches. Shell variables do not persist between Bash calls, so replace `<origin-repo>`, `<default-branch>` and `<slug>` with the literal values from Phase 0 and step 1:
 
 ```sh
-cd "$ORIGIN_REPO" && eval "$(~/.dg/bin/dg-skills worktree create "$slug" --prefix feature/find-work- --base "$DEFAULT_BRANCH" --no-resume)"
+cd "<origin-repo>" && eval "$(~/.dg/bin/dg-skills worktree create "<slug>" --prefix feature/find-work- --base "<default-branch>" --no-resume)"
 ```
 
 3. If the command exits non-zero because the branch or path already exists, append a short numeric suffix (`_2`, `_3`, …) to the slug and run it again until it succeeds. No prompts — /dg:find-work is fire-and-forget.
@@ -153,7 +153,20 @@ Then ask via `AskUserQuestion` (single-select):
 
 If *Choose*: follow up with a second `AskUserQuestion` (`multiSelect: true`) listing each non-failed item by title. Only selected items proceed to PR creation.
 
-For each approved item, run `~/.dg/bin/dg-skills vcs-provider create-pr --draft --head <branch> --base <default-branch> --title "<item title>" --body "<pr_body_draft>"`.
+For each approved item, write the title and body to files through quoted heredocs, so text from issues, TODO comments and agent output never reaches the shell as code. `create-pr` has no file option, so pass the files with command substitution, which does not re-expand its output:
+
+```sh
+TITLE_FILE=$(mktemp) && cat > "$TITLE_FILE" <<'EOF'
+<item title>
+EOF
+BODY_FILE=$(mktemp) && cat > "$BODY_FILE" <<'EOF'
+<pr_body_draft>
+EOF
+~/.dg/bin/dg-skills vcs-provider create-pr --draft --head "<branch>" --base "<default-branch>" --title "$(cat "$TITLE_FILE")" --body "$(cat "$BODY_FILE")"
+rm -f "$TITLE_FILE" "$BODY_FILE"
+```
+
+Run all of it in one Bash call, and replace `<branch>` and `<default-branch>` with literal values.
 
 If the human flags that two or more approved items actually depend on each other
 (rare — items normally branch independently off default), run the `/dg:chain` skill on

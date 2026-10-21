@@ -44,7 +44,7 @@ const merged = raw.filter(Boolean).flatMap((r) => r.items || [])
 
 const byKey = new Map()
 for (const it of merged) {
-  const key = it.id ? `id:${it.id}` : `loc:${it.file || ''}:${it.line || 0}`
+  const key = it.id ? `id:${it.id}` : `loc:${it.file || ''}:${it.line || 0}:${it.title || ''}`
   const prev = byKey.get(key)
   if (!prev || (it.description || '').length > (prev.description || '').length) byKey.set(key, { ...prev, ...it })
 }

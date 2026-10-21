@@ -24,6 +24,7 @@ import {
 import { INDEX_FILE, type JotLayout } from "./layout";
 
 const MAX_NAME_ATTEMPTS = 20;
+const JOT_NAME_PATTERN = /^jot-[A-Za-z0-9-]+$/;
 
 export type JotKind = "note" | "save";
 
@@ -93,7 +94,7 @@ function nameTaken(name: string): boolean {
 }
 
 export function jotName(): string {
-	for (let attempt = 0; attempt < 20; attempt++) {
+	for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
 		const name = `jot-${readableSuffix()}`;
 		if (!nameTaken(name)) return name;
 	}
@@ -168,6 +169,8 @@ export function resolveJot(ref: string): {
 	isFolder: boolean;
 } {
 	const name = path.basename(ref).replace(/\.md$/, "");
+	if (!JOT_NAME_PATTERN.test(name))
+		throw new Error(`no jot named ${ref}; run dg-skills jot ls`);
 	for (const { kind, dir } of readDirs()) {
 		if (
 			path.isAbsolute(ref) &&

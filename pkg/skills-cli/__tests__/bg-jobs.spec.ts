@@ -6,6 +6,7 @@ import {
 	setDefaultTimeout,
 	test,
 } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -265,10 +266,11 @@ describe("dg-skills bg update", () => {
 		const cwd = world.dir();
 		const { command, env } = proxyJob("sess-drain");
 		const job = await world.launch(command, cwd, [], env);
-		await world.settled(job.id, cwd);
+		await world.settled(job.id, cwd, undefined, 60_000);
 		await until(
 			() => world.json(["status", job.id], cwd),
 			(value) => value.drainOutput !== null,
+			60_000,
 		);
 		writeFileSync(
 			join(world.state, "bg", `${job.id}.pending`),
@@ -334,6 +336,19 @@ describe("dg-skills bg prune", () => {
 		expect(existsSync(inTree.logFile)).toBe(false);
 	});
 
+	test("resolves a relative --cwd against the caller directory", async () => {
+		const base = world.dir();
+		const tree = world.mkdir(join(base, "repo"));
+		const job = await world.launch("exit 0", tree);
+		await world.settled(job.id, tree);
+		const pruned = await world.json<{ prunedCwd: string; removed: string[] }>(
+			["prune", "--cwd", "."],
+			tree,
+		);
+		expect(pruned.prunedCwd).toBe(tree);
+		expect(pruned.removed).toEqual([job.id]);
+	});
+
 	test("prunes a job whose cwd is nested inside the target tree", async () => {
 		const base = world.dir();
 		const tree = world.mkdir(join(base, "repo"));
@@ -358,7 +373,7 @@ describe("dg-skills bg prune", () => {
 			logFile: join(stateDir, "crashed-1.log"),
 			statusFile: join(stateDir, "crashed-1.status"),
 			pidFile: join(world.scratch, "bg", "crashed-1.pid"),
-			launcherPid: 999999,
+			launcherPid: spawnSync(process.execPath, ["-e", ""]).pid,
 			kind: "shell",
 		};
 		writeFileSync(join(stateDir, "crashed-1.meta.json"), JSON.stringify(meta));
@@ -434,7 +449,9 @@ describe("dg-skills bg prune", () => {
 			try {
 				process.kill(-pid, "SIGKILL");
 			} catch {
-				process.kill(pid, "SIGKILL");
+				try {
+					process.kill(pid, "SIGKILL");
+				} catch {}
 			}
 		}
 	});

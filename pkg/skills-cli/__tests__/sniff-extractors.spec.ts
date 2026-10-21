@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import {
 	classifyEnvKey,
 	extractCompose,
@@ -28,6 +30,16 @@ function scan(
 }
 
 describe("walkFiles", () => {
+	test("does not follow symbolic links out of the tree", () => {
+		const outside = world.tree({ "Dockerfile": "FROM alpine:3.20\n" });
+		const root = world.tree({ "keep/Dockerfile": "FROM alpine:3.20\n" });
+		mkdirSync(join(root, "keep"), { recursive: true });
+		symlinkSync(outside, join(root, "linked"), "dir");
+		expect(
+			walkFiles(root).filter((f) => f.endsWith("Dockerfile")),
+		).toEqual([join(root, "keep", "Dockerfile")]);
+	});
+
 	test("skips dot-directories so nested worktrees are not counted twice", () => {
 		const root = world.tree({
 			Dockerfile: "FROM alpine:3.20\n",
@@ -209,6 +221,16 @@ describe("extractWorkflows", () => {
 		);
 	});
 
+	test("skips an OIDC role given as an expression", () => {
+		const root = world.tree({
+			".github/workflows/ci.yml":
+				"          role-to-assume: ${{ secrets.AWS_ROLE }}\n",
+		});
+		expect(
+			scan(root, extractWorkflows).filter((r) => r.type === "CLOUD_PERM"),
+		).toEqual([]);
+	});
+
 	test("ignores the ambient GITHUB_TOKEN", () => {
 		const root = world.tree({
 			".github/workflows/ci.yml": "token: ${{ secrets.GITHUB_TOKEN }}\n",
@@ -338,6 +360,33 @@ describe("extractDockerfile", () => {
 		expect(found.find((r) => r.name === "alpine")?.value).toBeUndefined();
 	});
 
+	test("skips FROM flags and stage aliases and never reports a stage as an image", () => {
+		const root = world.tree({
+			Dockerfile: [
+				"FROM --platform=$BUILDPLATFORM node:20 AS build",
+				"FROM build AS test",
+				"FROM --platform=linux/amd64 registry.example.test:5000/base/app@sha256:abc123 AS final",
+				"FROM Build",
+			].join("\n"),
+		});
+		const toolchain = scan(root, extractDockerfile).filter(
+			(r) => r.type === "TOOLCHAIN",
+		);
+		expect(toolchain.map((r) => [r.name, r.value])).toEqual([
+			["node", "20"],
+			["registry.example.test:5000/base/app", undefined],
+		]);
+	});
+
+	test("does not read a registry port as an image tag", () => {
+		const root = world.tree({
+			Dockerfile: "FROM localhost:5000/team/app\n",
+		});
+		expect(
+			scan(root, extractDockerfile).find((r) => r.type === "TOOLCHAIN"),
+		).toMatchObject({ name: "localhost:5000/team/app", value: undefined });
+	});
+
 	test("treats a localhost image prefix as a registry", () => {
 		const root = world.tree({ Dockerfile: "FROM localhost:5000/team/app:1\n" });
 		expect(
@@ -365,6 +414,19 @@ describe("extractCompose", () => {
 		expect(found.find((r) => r.type === "NETWORK")?.name).toBe(
 			":5432 published",
 		);
+	});
+
+	test("finds services in four-space and tab indented files", () => {
+		const four = world.tree({
+			"compose.yaml": "services:\n    web:\n        ports:\n            - \"80:80\"\n    db:\n",
+		});
+		expect(
+			scan(four, extractCompose)
+				.filter((r) => r.type === "SERVICE")
+				.map((r) => r.name),
+		).toEqual(["web", "db"]);
+		const tabbed = world.tree({ "compose.yaml": "services:\n\tweb:\n" });
+		expect(scan(tabbed, extractCompose).map((r) => r.name)).toEqual(["web"]);
 	});
 
 	test("reads compose.yaml as well as docker-compose.yml", () => {
@@ -405,6 +467,16 @@ describe("extractToolchain", () => {
 			"package.json": '{\n  "scripts": {\n    "node": "node x.js"\n  }\n}\n',
 		});
 		expect(scan(root, extractToolchain)).toEqual([]);
+	});
+
+	test("reads a one-line engines block without leaking later keys", () => {
+		const root = world.tree({
+			"package.json":
+				'{\n  "engines": { "node": ">=18" },\n  "scripts": {\n    "build": "tsc"\n  }\n}\n',
+		});
+		expect(
+			scan(root, extractToolchain).map((r) => [r.name, r.value, r.where]),
+		).toEqual([["node", ">=18", "package.json:2"]]);
 	});
 
 	test("skips an empty .nvmrc", () => {
@@ -479,6 +551,14 @@ describe("mergeRequirements", () => {
 			pin("global.json", "global.json:3", "9.0.100"),
 		]);
 		expect(merged?.gaps[0]?.detail).toContain("conflicting pins");
+	});
+
+	test("treats a Docker tag and an .nvmrc pin of the same version as consistent", () => {
+		const [merged] = mergeRequirements([
+			pin("dockerfile", "Dockerfile:1", "20-alpine"),
+			pin("nvmrc", ".nvmrc:1", "20"),
+		]);
+		expect(merged?.gaps[0]?.detail).not.toContain("conflicting pins");
 	});
 
 	test("ignores repeated range constraints, which are expected per module", () => {

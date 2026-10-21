@@ -50,9 +50,10 @@ interface Job {
 	exitCode: number | null;
 	pendingUpdate: string | null;
 }
+const ALIAS_VERBS = new Set(["run", "status", "cancel"]);
 const run = (args: string[]) =>
 	runProxyProcess(
-		args[0] === "background"
+		args[0] === "background" && !ALIAS_VERBS.has(args[1] ?? "")
 			? [binary, "bg", ...args.slice(1)]
 			: [binary, "proxy", ...args],
 		fixture,

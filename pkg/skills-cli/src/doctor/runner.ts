@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { resolveDgPaths } from "@dg/common/node";
 import pkg from "../../package.json" with { type: "json" };
+import { CLI_PATH } from "./probes";
 import { SHARED_ITEM } from "./shared";
 import type {
 	CheckReport,
@@ -56,8 +57,8 @@ async function runCheck(
 		return {
 			id: check.id,
 			status: "fail",
-			detail: `check ${check.id} threw: ${error instanceof Error ? error.message : String(error)}`,
-			fix: `~/.dg/bin/dg-skills doctor ${item} --json, then file an issue with its output`,
+			detail: `check ${check.id} threw: ${error instanceof Error ? error.message : String(error)}; file an issue with the output of the fix command`,
+			fix: `${CLI_PATH} doctor ${item} --json`,
 		};
 	}
 }

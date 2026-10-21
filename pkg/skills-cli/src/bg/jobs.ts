@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	appendFileSync,
@@ -250,6 +250,7 @@ async function cmdPrune(args: string[]): Promise<void> {
 		die(`unknown prune flag: ${args[i]}`, EXIT.USAGE);
 	}
 	if (!target) die("usage: prune --cwd <dir>", EXIT.USAGE);
+	target = path.resolve(target);
 
 	const dir = path.join(stateRoot(), "bg");
 	let files: string[] = [];
@@ -443,7 +444,7 @@ async function launchJob(
 	};
 	try {
 		const identity = processIdentity(pid);
-		if (process.platform === "linux" && (!identity || identity.group !== pid))
+		if (!identity || identity.group !== pid)
 			throw new Error(
 				"Could not establish the detached background process identity",
 			);
@@ -502,7 +503,7 @@ async function resumeSession(
 ): Promise<Record<string, unknown>> {
 	const paths = jobPaths(meta.id);
 	const backend = meta.proxyBackend ?? parseProxyBackend(meta.command);
-	const sessionId = extractSessionId(meta.logFile);
+	const sessionId = extractSessionId(jobPaths(meta.id).logFile);
 	const queued = existsSync(paths.pendingFile)
 		? readFileSync(paths.pendingFile, "utf8").trim()
 		: "";
@@ -599,7 +600,7 @@ function deriveState(meta: JobMeta): JobState {
 
 export function readPid(meta: JobMeta): number | null {
 	try {
-		const raw = readFileSync(meta.pidFile, "utf8").trim();
+		const raw = readFileSync(jobPaths(meta.id).pidFile, "utf8").trim();
 		if (!/^[0-9]+$/.test(raw)) return null;
 		const pid = Number(raw);
 		if (
@@ -618,7 +619,7 @@ export function readPid(meta: JobMeta): number | null {
 		if (
 			recorded.started !== undefined &&
 			(typeof recorded.started !== "string" ||
-				!/^[0-9]+$/.test(recorded.started))
+				!/^[0-9A-Za-z: ]+$/.test(recorded.started))
 		)
 			return null;
 		if (!recorded.started || recorded.started !== processIdentity(pid)?.started)
@@ -629,10 +630,17 @@ export function readPid(meta: JobMeta): number | null {
 	}
 }
 
-function processIdentity(
+export function processIdentity(
 	pid: number,
 ): { group: number; started: string } | null {
-	if (process.platform !== "linux") return null;
+	return process.platform === "linux"
+		? procIdentity(pid)
+		: psIdentity(pid);
+}
+
+function procIdentity(
+	pid: number,
+): { group: number; started: string } | null {
 	try {
 		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
 		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
@@ -648,6 +656,23 @@ function processIdentity(
 	} catch {
 		return null;
 	}
+}
+
+function psIdentity(
+	pid: number,
+): { group: number; started: string } | null {
+	if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+	const result = spawnSync(
+		"ps",
+		["-o", "pgid=", "-o", "lstart=", "-p", String(pid)],
+		{ encoding: "utf8", env: { ...process.env, LC_ALL: "C" } },
+	);
+	if (result.status !== 0) return null;
+	const match = /^\s*([0-9]+)\s+(\S.*?)\s*$/.exec(result.stdout);
+	if (!match) return null;
+	const group = Number(match[1]);
+	if (!Number.isSafeInteger(group) || group <= 0) return null;
+	return { group, started: match[2].replace(/\s+/g, " ") };
 }
 
 function recordedPidAlive(meta: JobMeta): boolean {

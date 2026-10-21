@@ -37,23 +37,25 @@ This runs when `KIND=mainrepo`, there is no `<slug>` argument, and `CAME_FROM` i
 1. **Guard, already on default:** if `CAME_FROM` is `DEFAULT`, stop at once. Never delete the default branch.
 2. **Guard, clean working tree:** run `git -C "$MAIN" status --porcelain`. If the output is not empty, refuse to switch and ask the user to stash, commit, or pass `--force` on purpose. Never auto-discard a dirty tree.
 3. **Switch first:** `git -C "$MAIN" switch "$DEFAULT"`. You cannot delete the branch you are on.
-4. **Delete the branch:**
+4. **Fast-forward `$DEFAULT` to origin.** Item 3 landed on `$DEFAULT` with a clean tree (the guard in item 2), so refresh it before the delete. Otherwise `git branch -d` checks against a stale `$DEFAULT` and reports branches merged on the remote as unmerged:
 
    ```sh
-   git -C "$MAIN" branch -d "$CAME_FROM"
-   ```
-
-   `git branch -d` refuses if the branch has unmerged commits. If it refuses, relay the exact error and **ask** whether to force-delete with `-D`. Re-run with `git branch -D "$CAME_FROM"` only if the user confirms or `--force` was already passed. Never auto-force.
-5. **Fast-forward `$DEFAULT` to origin.** Step 3 landed on `$DEFAULT` with a clean tree (the step 2 guard), so refresh it so it does not lag merged PRs:
-
-   ```sh
+   : "${MAIN:?MAIN is empty: set it from detect.md}" "${DEFAULT:?DEFAULT is empty: set it from detect.md}"
    git -C "$MAIN" fetch --prune origin
    git -C "$MAIN" merge --ff-only "origin/$DEFAULT"
    ```
 
    Use `--ff-only`. If the branches diverged, skip and note it. Never force. Report the outcome: fast-forwarded `<old>..<new>`, already current, or skipped because diverged.
-6. **No asset sweep.** The main repo's scratch may belong to ongoing work. Do not sweep it. Skip Steps 3 and 3b on this path (there is no detached worktree path in a focus file to repoint).
-7. **Prune stale branches** (Step 2E). The switch landed on `$DEFAULT` in step 3, so the precondition is met. Run 2E now.
+5. **Delete the branch:**
+
+   ```sh
+   : "${MAIN:?MAIN is empty: set it from detect.md}" "${CAME_FROM:?CAME_FROM is empty: set it from detect.md}"
+   git -C "$MAIN" branch -d "$CAME_FROM"
+   ```
+
+   `git branch -d` refuses if the branch has unmerged commits. If it refuses, relay the exact error and **ask** whether to force-delete with `-D`. Re-run with `git branch -D "$CAME_FROM"` only if the user confirms or `--force` was already passed. Never auto-force.
+6. **No asset sweep.** The main repo's scratch may belong to ongoing work. Do not sweep it. Skip the asset sweep (Step 3) and Step 3b on this path (there is no detached worktree path in a focus file to repoint).
+7. **Prune stale branches** (Step 2E). The switch in item 3 landed on `$DEFAULT`, so the precondition is met. Run 2E now.
 8. Report per Step 4.
 
 ## Step 2D: Land on the default branch (shared final stage)
@@ -61,6 +63,7 @@ This runs when `KIND=mainrepo`, there is no `<slug>` argument, and `CAME_FROM` i
 This runs at the end of Steps 2A and 2B, after the worktree and its branch are gone and the session is back in `$MAIN`. It does not run after Step 2C (already switched there).
 
 ```sh
+: "${MAIN:?MAIN is empty: set it from detect.md}"
 CURRENT_MAIN_BRANCH=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)
 MAIN_DIRTY=$(git -C "$MAIN" status --porcelain)
 ```
@@ -72,6 +75,7 @@ MAIN_DIRTY=$(git -C "$MAIN" status --porcelain)
 **Always fast-forward `$DEFAULT` to origin** when `MAIN_DIRTY` is empty (both the already-there and just-switched cases). After a merged PR, the local default otherwise lags origin and serves stale code to later sessions and agents:
 
 ```sh
+: "${MAIN:?MAIN is empty: set it from detect.md}" "${DEFAULT:?DEFAULT is empty: set it from detect.md}"
 git -C "$MAIN" fetch --prune origin
 git -C "$MAIN" merge --ff-only "origin/$DEFAULT"
 ```
@@ -86,30 +90,30 @@ Do NOT delete main-repo branches here. The worktree branch was already removed b
 
 If `--keep-branch` was passed, skip all deletions, report the candidates that would have been removed, and stop.
 
-**Build the candidate set:**
+**Build the candidates and process each one:**
 
 ```sh
+: "${MAIN:?MAIN is empty: set it from detect.md}" "${DEFAULT:?DEFAULT is empty: set it from detect.md}" "${BRANCH:?BRANCH is empty: set it from detect.md}"
 gone=$(git -C "$MAIN" for-each-ref --format '%(refname:short) %(upstream:track)' refs/heads \
          | awk '$2=="[gone]"{print $1}')
 merged=$(git -C "$MAIN" branch --merged "$DEFAULT" --format '%(refname:short)')
 wt_branches=$(git -C "$MAIN" worktree list --porcelain \
                 | awk '/^branch /{sub(/^refs\/heads\//,"",$2); print $2}')
+for b in $(printf '%s\n%s\n' "$gone" "$merged" | sort -u); do
+  [ -n "$b" ] || continue
+  [ "$b" = "$DEFAULT" ] && continue
+  [ "$b" = "$BRANCH" ] && continue
+  printf '%s\n' "$wt_branches" | grep -qxF "$b" && { echo "protected (worktree): $b"; continue; }
+  err=$(git -C "$MAIN" branch -d "$b" 2>&1) && { echo "deleted: $b"; continue; }
+  case "$err" in
+    *"not fully merged"*) echo "RISKY (local-only commits): $b" ;;
+    *"used by worktree"*|*"checked out"*) echo "protected (worktree): $b" ;;
+    *) echo "skipped: $b -- $err" ;;
+  esac
+done
 ```
 
-`gone` holds branches whose remote tracking branch is gone (merged-PR leftovers). `merged` holds branches fully merged into the default branch. `wt_branches` holds branches checked out in any worktree (git refuses to delete these anyway).
-
-Candidates are the unique union of `gone` and `merged`, minus `$DEFAULT`, minus `$BRANCH` (the branch you started on, in case you did not switch), minus everything in `wt_branches`.
-
-**Process each candidate:**
-
-```sh
-err=$(git -C "$MAIN" branch -d "$b" 2>&1) && { echo "deleted: $b"; continue; }
-case "$err" in
-  *"not fully merged"*) echo "RISKY (local-only commits): $b" ;;
-  *"used by worktree"*|*"checked out"*) echo "protected (worktree): $b" ;;
-  *) echo "skipped: $b -- $err" ;;
-esac
-```
+`gone` holds branches whose remote tracking branch is gone (merged-PR leftovers). `merged` holds branches fully merged into the default branch. `wt_branches` holds branches checked out in any worktree (git refuses to delete these anyway). The candidates are the unique union of `gone` and `merged`, minus `$DEFAULT`, minus `$BRANCH` (the branch you started on, in case you did not switch), minus everything in `wt_branches`.
 
 Collect the RISKY branches and ask before any `-D`. Skip the protected ones and never `-D` them. After the loop, if any RISKY branches were collected, show each one's tip sha and local-only commit count:
 

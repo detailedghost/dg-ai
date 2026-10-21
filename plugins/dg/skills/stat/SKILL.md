@@ -77,13 +77,13 @@ After the table, stop finished background work and drop its records. A job is fi
 
 | Substrate | How |
 |---|---|
-| `~/.dg/bin/dg-skills bg` job (`state` is `done`, `canceled` or `unknown`) | One call: `~/.dg/bin/dg-skills bg prune --cwd "$PWD"`. It removes the records of every finished job in this tree and leaves `running` jobs in `running[]`. It matches whole path segments, like the filter in section 1 |
+| `~/.dg/bin/dg-skills bg` job (`state` is `done` or `canceled`) | One call: `~/.dg/bin/dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
 | Claude Code background Agent or Bash shell that reports completed, failed, or timed out | The main loop calls `TaskStop` once for each finished task it listed in the table. `TaskStop` on a task that already ended is harmless |
 | Workflow | Not killable as one process. Report it finished; stop nothing |
 
 Rules:
 
-- Clean only rows that show a terminal state. When a row's state is unclear, treat it as running and leave it.
+- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `~/.dg/bin/dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `~/.dg/bin/dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
 - Subagents cannot call `TaskStop`. Only the main loop does. A subagent reports the finished tasks and stops there.
 - The Total ignores cleaned jobs.
 - Report what was cleaned in one line under the table: `Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.` Print nothing when nothing finished.

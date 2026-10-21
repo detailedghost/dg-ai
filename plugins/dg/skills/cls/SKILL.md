@@ -22,7 +22,7 @@ Thin orchestration over `~/.dg/bin/dg-skills worktree remove` (linked worktrees,
 
 **Usage:** `/dg:cls [<slug>] [--force] [--keep-branch] [--keep-assets]`
 
-With no arguments, `/dg:cls` closes out the worktree the session is in. From the main repo it switches to the default branch and deletes the branch you came from. It always lands on the default branch and fast-forwards it to origin (`--ff-only`), so the local default never lags merged PRs. It always prunes stale branches too: it safe-deletes the clearly safe ones and asks before force-deleting any with local-only commits.
+With no arguments, `/dg:cls` closes out the worktree the session is in. From the main repo it switches to the default branch and deletes the branch you came from. By default it lands on the default branch and fast-forwards it to origin (`--ff-only`), so the local default does not lag merged PRs. By default it also prunes stale branches: it safe-deletes the clearly safe ones and asks before force-deleting any with local-only commits. A dirty main repo, `--keep-branch`, or a checkout that is not on the default branch skips these steps; see Step 2D and 2E in `references/steps.md`.
 
 ## Flags
 

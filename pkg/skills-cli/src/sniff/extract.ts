@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { isRecord } from "@dg/common";
 import type { Gap, Phase, ReqType, Requirement } from "./types";
 import { locate, readText } from "./walk";
 
@@ -116,7 +117,7 @@ export function extractWorkflows(root: string, files: string[]): Requirement[] {
 		}
 
 		const role = /role-to-assume:\s*["']?([^"'\s]+)/.exec(raw)?.[1];
-		if (role) {
+		if (role && !role.startsWith("${{")) {
 			out.push(
 				row({
 					type: "CLOUD_PERM",
@@ -236,6 +237,23 @@ export function extractTerraform(root: string, files: string[]): Requirement[] {
 	return out;
 }
 
+function parseFrom(raw: string): { image: string; alias?: string } | null {
+	const match = /^\s*FROM\s+(.+?)\s*$/i.exec(raw);
+	if (!match?.[1]) return null;
+	const tokens = match[1].split(/\s+/).filter((t) => !t.startsWith("--"));
+	const image = tokens[0];
+	if (!image) return null;
+	const alias = tokens[1]?.toLowerCase() === "as" ? tokens[2] : undefined;
+	return { image, alias };
+}
+
+function splitImage(image: string): { name: string; tag?: string } {
+	const [ref = image] = image.split("@");
+	const colon = ref.lastIndexOf(":");
+	if (colon <= ref.lastIndexOf("/")) return { name: ref };
+	return { name: ref.slice(0, colon), tag: ref.slice(colon + 1) };
+}
+
 export function extractDockerfile(
 	root: string,
 	files: string[],
@@ -244,7 +262,13 @@ export function extractDockerfile(
 	const dockerfiles = files.filter((p) =>
 		/(^|\/)Dockerfile(\.[A-Za-z0-9_-]+)?$/.test(p),
 	);
+	let stageFile = "";
+	let stages = new Set<string>();
 	eachLine(dockerfiles, (raw, line, file) => {
+		if (file !== stageFile) {
+			stageFile = file;
+			stages = new Set();
+		}
 		const where = locate(root, file, line);
 
 		const expose = /^\s*EXPOSE\s+(\d+)/i.exec(raw)?.[1];
@@ -274,14 +298,16 @@ export function extractDockerfile(
 			);
 		}
 
-		const image = /^\s*FROM\s+(\S+)/i.exec(raw)?.[1];
-		if (image && !image.startsWith("$")) {
-			const tagged = image.split(":");
+		const from = parseFrom(raw);
+		if (from?.alias) stages.add(from.alias.toLowerCase());
+		const image = from?.image;
+		if (image && !image.startsWith("$") && !stages.has(image.toLowerCase())) {
+			const { name, tag } = splitImage(image);
 			out.push(
 				row({
 					type: "TOOLCHAIN",
-					name: tagged[0] ?? image,
-					value: tagged.length > 1 ? tagged[tagged.length - 1] : undefined,
+					name,
+					value: tag,
 					phase: ["build"],
 					source: "dockerfile",
 					where,
@@ -313,6 +339,7 @@ export function extractCompose(root: string, files: string[]): Requirement[] {
 		if (text === null) continue;
 
 		let inServices = false;
+		let serviceIndent: string | null = null;
 		text.split("\n").forEach((raw, i) => {
 			const where = locate(root, f, i + 1);
 
@@ -323,7 +350,9 @@ export function extractCompose(root: string, files: string[]): Requirement[] {
 			if (/^[A-Za-z]/.test(raw)) inServices = false;
 			if (!inServices) return;
 
-			const service = /^ {2}([A-Za-z0-9._-]+):\s*$/.exec(raw)?.[1];
+			const key = /^(\s+)([A-Za-z0-9._-]+):\s*$/.exec(raw);
+			serviceIndent ??= key?.[1] ?? null;
+			const service = key?.[1] === serviceIndent ? key?.[2] : undefined;
 			if (service) {
 				out.push(
 					row({
@@ -417,20 +446,23 @@ export function extractToolchain(root: string, files: string[]): Requirement[] {
 		}
 
 		if (base === "package.json") {
-			let inEngines = false;
-			lines.forEach((raw, i) => {
-				if (/"engines"\s*:\s*\{/.test(raw)) {
-					inEngines = true;
-					return;
+			let engines: unknown;
+			try {
+				engines = (JSON.parse(text) as { engines?: unknown }).engines;
+			} catch {}
+			if (isRecord(engines)) {
+				const start = Math.max(
+					lines.findIndex((l) => /"engines"\s*:/.test(l)),
+					0,
+				);
+				for (const [key, value] of Object.entries(engines)) {
+					if (typeof value !== "string") continue;
+					const at = lines.findIndex(
+						(l, i) => i >= start && l.includes(`"${key}"`),
+					);
+					push(key, value, "package.json", f, (at < 0 ? start : at) + 1);
 				}
-				if (!inEngines) return;
-				if (/\}/.test(raw)) {
-					inEngines = false;
-					return;
-				}
-				const engine = /"([A-Za-z0-9_-]+)"\s*:\s*"([^"]+)"/.exec(raw);
-				if (engine?.[1]) push(engine[1], engine[2], "package.json", f, i + 1);
-			});
+			}
 		}
 
 		if (base === "pyproject.toml") {

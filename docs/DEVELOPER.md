@@ -164,8 +164,7 @@ dg-skills proxy codex --plan --prompt-file task.md --subagent reviewer
 Execute the exact quoted `command` to launch a detached job, then use
 `dg-skills bg status <id>` or `list`. `update <id> <context>` queues
 context or resumes a completed session; `cancel <id>` stops the owned job.
-The packaged background commands also include `run`, `drain`, `kill`, and `prune`;
-they work without the later public bg command. Detached launch needs POSIX `sh`;
+`run`, `drain`, `kill`, and `prune` are `dg-skills bg` subcommands too. Detached launch needs POSIX `sh`;
 native Windows execution still needs validation. Result JSON includes the log path,
 exit code, and backend session ID when available. See the
 [proxy skill](../plugins/dg/skills/proxy/SKILL.md) for failure and resume handling.

@@ -411,6 +411,15 @@ describe("jot read, kind and done", () => {
 		expect((await world.jot(["ls"], main)).stdout).toBe("");
 	});
 
+	test("done rejects a parent-directory reference and removes nothing", async () => {
+		const { main } = world.repo();
+		const name = await splitSave(main);
+		const run = await world.jot(["done", ".."], main);
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("no jot named ..");
+		expect((await world.jot(["read", name], main)).exitCode).toBe(0);
+	});
+
 	test("an absolute path outside the jot directories is not resolved", async () => {
 		const { main } = world.repo();
 		const outside = join(world.tmp("jot-outside-"), "jot-fake.md");

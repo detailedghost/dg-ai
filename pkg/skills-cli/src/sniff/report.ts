@@ -13,6 +13,10 @@ import { walkFiles } from "./walk";
 
 const RANGE_PIN = /[~^><*|]|\bx\b/;
 
+function numericPrefix(value: string | undefined): string | undefined {
+	return /^[0-9]+(?:\.[0-9]+)*/.exec(value ?? "")?.[0] ?? value;
+}
+
 const SOURCE_PRIORITY = [
 	"secrets-mgr",
 	"tfc-varset",
@@ -87,7 +91,7 @@ export function mergeRequirements(reqs: Requirement[]): Requirement[] {
 			];
 			const allExact = pins.every((p) => !RANGE_PIN.test(p.value ?? ""));
 			if (pins.length > 1 && allExact) {
-				const versions = new Set(pins.map((p) => p.value));
+				const versions = new Set(pins.map((p) => numericPrefix(p.value)));
 				gaps.push({
 					kind: "drifted",
 					detail:

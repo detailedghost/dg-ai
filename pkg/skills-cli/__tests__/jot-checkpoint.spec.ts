@@ -283,13 +283,17 @@ describe("checkpoint lock and atomic write", () => {
 		expect(existsSync(`${file}.lock`)).toBe(true);
 	});
 
-	test("an unwritable checkpoint directory reports the real error without waiting", async () => {
+	test.skipIf(process.getuid?.() === 0)("an unwritable checkpoint directory reports the real error without waiting", async () => {
 		const { cwd, file } = fixture();
 		seed(file, checkpointBody(ID_A));
 		chmodSync(dirname(file), 0o500);
 		const started = Date.now();
-		const run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
-		chmodSync(dirname(file), 0o700);
+		let run: Awaited<ReturnType<typeof world.jot>>;
+		try {
+			run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
+		} finally {
+			chmodSync(dirname(file), 0o700);
+		}
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain("EACCES");
 		expect(run.stderr).not.toContain("is held");

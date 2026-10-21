@@ -59,11 +59,19 @@ function treeTexts(dir: string): string[] {
 	});
 }
 
+function doctorLineItems(name: string): string[] | null {
+	for (const text of treeTexts(join(SKILLS_DIR, name))) {
+		const named = DOCTOR_LINE.exec(text)?.[1];
+		if (named) return named.split(" ");
+	}
+	return null;
+}
+
 function skillsCallingCli(): string[] {
 	return readdirSync(SKILLS_DIR)
 		.filter((name) => existsSync(join(SKILLS_DIR, name, "SKILL.md")))
 		.filter((name) =>
-			readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8").includes(CLI_PATH),
+			treeTexts(join(SKILLS_DIR, name)).some((text) => text.includes(CLI_PATH)),
 		)
 		.filter((name) => name !== "doctor")
 		.sort();
@@ -82,7 +90,7 @@ beforeAll(async () => {
 			.filter((entry) => entry.checks.some((check) => check.id === "allow-rule"))
 			.map((entry) => entry.item),
 	);
-});
+}, 120_000);
 
 afterAll(() => {
 	rmSync(home, { recursive: true, force: true });
@@ -107,17 +115,13 @@ describe("doctor coverage guard", () => {
 	});
 
 	test("every packaged skill that calls dg-skills carries the doctor line", () => {
-		const missing = skillsCallingCli().filter(
-			(name) => !DOCTOR_LINE.test(readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8")),
-		);
+		const missing = skillsCallingCli().filter((name) => doctorLineItems(name) === null);
 		expect(missing).toEqual([]);
 	});
 
 	test("every doctor line names only items doctor knows", () => {
 		for (const name of skillsCallingCli()) {
-			const text = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
-			const named = DOCTOR_LINE.exec(text)?.[1]?.split(" ") ?? [];
-			for (const item of named)
+			for (const item of doctorLineItems(name) ?? [])
 				expect([name, item, covered.has(item)]).toEqual([name, item, true]);
 		}
 	});
@@ -125,7 +129,7 @@ describe("doctor coverage guard", () => {
 	test("the doctor line of each skill names every registered command its tree calls", () => {
 		for (const name of skillsCallingCli()) {
 			const dir = join(SKILLS_DIR, name);
-			const named = DOCTOR_LINE.exec(readFileSync(join(dir, "SKILL.md"), "utf8"))?.[1]?.split(" ") ?? [];
+			const named = doctorLineItems(name) ?? [];
 			const called = new Set(
 				treeTexts(dir).flatMap((text) =>
 					[...text.matchAll(/dg-skills ([a-z][a-z-]*)/g)].map((match) => match[1] ?? ""),

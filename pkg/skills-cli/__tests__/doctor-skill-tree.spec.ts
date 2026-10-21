@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import {
 	bareSlash,
 	fences,
@@ -90,6 +90,5 @@ describe("packaged doctor skill tree", () => {
 			expect([file, /~\/\.claude\/skills\//.test(text)]).toEqual([file, false]);
 			expect([file, /scripts\/bin/.test(text)]).toEqual([file, false]);
 		}
-		expect(relative(skillDir(NAME), join(skillDir(NAME), "SKILL.md"))).toBe("SKILL.md");
 	});
 });

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
 const SKIP_DIRS = new Set([
@@ -28,12 +28,13 @@ export function walkFiles(root: string, maxDepth = 6): string[] {
 		}
 		for (const entry of entries) {
 			const full = join(dir, entry);
-			let st: ReturnType<typeof statSync>;
+			let st: ReturnType<typeof lstatSync>;
 			try {
-				st = statSync(full);
+				st = lstatSync(full);
 			} catch {
 				continue;
 			}
+			if (st.isSymbolicLink()) continue;
 			if (st.isDirectory()) {
 				if (SKIP_DIRS.has(entry)) continue;
 				if (entry.startsWith(".") && !KEEP_DOT_DIRS.has(entry)) continue;

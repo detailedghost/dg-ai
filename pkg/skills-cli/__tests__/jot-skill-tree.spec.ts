@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
+	bareSlash,
 	fences,
 	flagsTable,
 	hasShellComment,
@@ -78,7 +79,7 @@ describe("packaged jot skill tree", () => {
 	test("names itself with the namespaced slash form and never the bare one", () => {
 		const text = skill();
 		expect(text).toContain("/dg:jot");
-		expect(text).not.toMatch(/(?<![\w./~:$<>-])\/jot(?![\w:/-])/);
+		expect(text).not.toMatch(bareSlash("jot"));
 	});
 
 	test("keeps the 2 KB cap and the checkpoint paths in the prose", () => {
