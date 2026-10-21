@@ -1,6 +1,6 @@
 {
 	"name": "@dg/skills-cli",
-	"version": "1.16.0",
+	"version": "1.17.0",
 	"private": true,
 	"type": "module",
 	"description": "CLI framework for dg AI skills (browser, demo, and future skills).",
@@ -19,7 +19,8 @@
 		"@dg/inbox": "workspace:*",
 		"commander": "^14.0.0",
 		"marked": "^18.1.0",
-		"playwright-core": "1.64.1"
+		"playwright-core": "1.64.1",
+		"yaml": "^2.9.0"
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",

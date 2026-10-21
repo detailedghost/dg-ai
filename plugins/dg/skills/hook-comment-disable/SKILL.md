@@ -3,21 +3,14 @@ name: hook-comment-disable
 description: Disable the American-English PostToolUse hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-# /hook-comment-disable
+# /dg:hook-comment-disable
 
 Turn off the American-English hook (`american-english-hook.sh`) for this session. The hook normally blocks Edit/Write/MultiEdit when newly-written text uses a British spelling.
 
@@ -26,10 +19,10 @@ Turn off the American-English hook (`american-english-hook.sh`) for this session
 Writes a session-scoped marker file:
 
 ```
-$("$DG" stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
+$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
 ```
 
-The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$("$DG" stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
+The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$(~/.dg/bin/dg-skills stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
 
 ## Mandatory user-permission gate
 
@@ -46,17 +39,17 @@ The user has chosen to gate this skill behind explicit consent precisely so that
    - **Keep enforcement on** — abort, no changes.
 4. Only on explicit "Disable" answer:
    ```sh
-   touch "$("$DG" stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+   touch "$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
    ```
 5. Confirm to the user that the marker was written, including the path so they can `rm` it manually if they change their mind mid-session.
 
 ## Re-enabling
 
 ```sh
-rm -f "$("$DG" stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+rm -f "$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
 ```
 
-Or wait for reboot (`$("$DG" stash -r)` cleared).
+Or wait for reboot (`$(~/.dg/bin/dg-skills stash -r)` cleared).
 
 ## When to suggest this skill
 

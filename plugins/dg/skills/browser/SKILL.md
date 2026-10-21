@@ -14,25 +14,17 @@ self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
 (downloads the binary for your platform from the latest `skills-v*` release):
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-On Windows PowerShell, run the local `bootstrap.ps1` through
-`$env:CLAUDE_PLUGIN_ROOT` when available; otherwise pipe the repository's raw
-`bootstrap.ps1` to `Invoke-Expression`.
+On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
+`Invoke-Expression`.
 
 Then run every command through it:
 
 ```bash
-"$DG" <command> <args>
+~/.dg/bin/dg-skills <command> <args>
 ```
 
 `install` refreshes both the extension and the `dg-skills` binary, so re-running
@@ -40,6 +32,21 @@ it keeps the CLI current. (The `--local` dev path builds the extension from
 source and needs Bun from https://bun.sh.)
 
 ## Commands
+
+**Usage:** `/dg:browser install [chrome|firefox] [--local]` · `batch-open [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `demo [--print] <script.json>`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--local` | none | install: build the extension from source. | off (download the release) |
+| `--group <name>` | `-g` | batch-open and launch: tab group name. | `PRs` |
+| `--repo owner/repo` | none | batch-open: repository for bare PR numbers. | current repo |
+| `--print` | none | batch-open and demo: print the URLs without opening them. | off |
+| `--browser <key>` | none | launch: Chromium browser to start. | first launchable browser |
+| `--list` | none | launch: list detected browsers. | off |
+| `--dry-run` | none | launch: show what would run without starting the browser. | off |
+
 
 - `install [chrome|firefox] [--local]` — stage the extension for a one-time load
   **and** refresh the compiled `dg-skills` binary. Downloads the CI-built

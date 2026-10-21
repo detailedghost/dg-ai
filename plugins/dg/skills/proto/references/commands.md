@@ -26,32 +26,15 @@ the current browser profile. If scrape times out, report:
 
 ## CLI bootstrap
 
-Use a freshly compiled binary in a development checkout; otherwise use the
-installed binary and bootstrap it once if missing:
+Use the installed binary at `~/.dg/bin/dg-skills`; install or refresh it when it
+is missing or too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-SRC=""
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&
-  [ -f "$CLAUDE_PLUGIN_ROOT/pkg/skills-cli/package.json" ]; then
-  SRC="$CLAUDE_PLUGIN_ROOT/pkg/skills-cli"
-elif [ -f "$PWD/pkg/skills-cli/package.json" ]; then
-  SRC="$PWD/pkg/skills-cli"
-fi
-if [ -n "$SRC" ]; then
-  ( cd "$SRC" && bun run build ) && DG="$SRC/dist/dg-skills"
-fi
-if [ ! -x "$DG" ]; then
-  if [ -n "$SRC" ]; then
-    sh "$SRC/bootstrap.sh"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills proto --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-On Windows PowerShell, use the checkout's `bootstrap.ps1` when a local source
-tree was found; otherwise pipe the repository's raw `bootstrap.ps1` to
+On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 `Invoke-Expression`.
 
 If extension source changed in a dev checkout, also rebuild the extension and
@@ -64,7 +47,7 @@ Warn about authenticated/private page inspection and obtain explicit
 confirmation first when applicable. Then run:
 
 ```bash
-STYLE_GUIDE="$("$DG" proto scrape "$URL")"
+STYLE_GUIDE="$(~/.dg/bin/dg-skills proto scrape "$URL")"
 SLUG="$(basename "$(dirname "$STYLE_GUIDE")")"
 PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
@@ -79,7 +62,7 @@ Write the approved ProtoPlan to `$PLAN`, then invoke plant from the target
 project root:
 
 ```bash
-( cd "$TARGET_ROOT" && "$DG" proto plant "$PLAN" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto plant "$PLAN" )
 ```
 
 The command clears the prior same-slug verdict before opening the browser and
@@ -96,7 +79,7 @@ Do not poll Downloads independently or fabricate a Verdict.
 After an approved export and only from the target project root, run:
 
 ```bash
-( cd "$TARGET_ROOT" && "$DG" proto cleanup "$SLUG" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto cleanup "$SLUG" )
 ```
 
 Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes

@@ -1,0 +1,244 @@
+---
+# Authoritative schema for spec frontmatter consumed by `dg-skills spec`.
+#
+# `dg-skills spec validate <spec>` checks each field against this schema's
+# `type`, `mutability` and `mode_conditional` rules; `get` and `set` drive
+# off the same file. Never hand-edit spec frontmatter; go through
+# `dg-skills spec`. Mutability: immutable=set-once-at-creation,
+# mutable=may be rewritten, append-only=array fields where items are added but
+# never removed. mode_conditional: standard | worktree-only | cross-repo-only |
+# light-only | parked-only | bundle-only.
+
+fields:
+  # ---- Identity ----------------------------------------------------------
+  feature:
+    type: string
+    mutability: immutable
+    description: Canonical feature slug (snake_case). Spec-creation sets this.
+
+  feature_snake_case:
+    type: string
+    mutability: immutable
+    description: Optional explicit snake_case form when `feature` is human-readable.
+
+  date:
+    type: string
+    mutability: immutable
+    description: ISO-8601 date the spec was created (YYYY-MM-DD).
+
+  version:
+    type: string
+    mutability: mutable
+    description: Spec document version. Free-form (e.g. "1.0", "1.0.0").
+
+  # ---- Lifecycle state ---------------------------------------------------
+  status:
+    type: string
+    mutability: mutable
+    enum:
+      - draft
+      - in-progress
+      - complete
+      - deferred
+      - blocked
+      - abandoned
+    description: Lifecycle status. Phase doc gates flip this.
+
+  current_slice:
+    type: integer
+    mutability: mutable
+    description: Index of the slice currently being engineered (0 = not started).
+
+  # ---- Slices ------------------------------------------------------------
+  slices:
+    type: array
+    mutability: mixed
+    description: Engineering slices. Items are immutable structurally; `agents.*` is mutable.
+    item_schema:
+      id:
+        type:
+          - integer
+          - string
+        mutability: immutable
+        description: Slice identifier (typically 1-based integer).
+      name:
+        type: string
+        mutability: immutable
+        description: Human-readable slice name.
+      depends_on:
+        type: array
+        mutability: immutable
+        description: 'Slice ids this slice depends on. Canonical key (legacy: blockedBy, dependsOn).'
+      files:
+        type: array
+        mutability: immutable
+        description: Globs of files this slice owns (used by diff-bundle).
+      agents:
+        type: object
+        mutability: mutable
+        fields:
+          primary:
+            type: string
+            mutability: mutable
+            description: Primary engineering agent assigned to the slice.
+          proxy:
+            type: string
+            mutability: mutable
+            description: >-
+              Optional external backend (codex|copilot|pi|opencode|cortex|grok) to execute this slice's Yellow/Correction
+              stages via /dg:proxy instead of an internal agent. Value must be one of the registered
+              names from `dg-skills proxy --list-backends`. Omit for the default (internal agent) execution.
+          proxy_skills:
+            type: array
+            mutability: mutable
+            description: >-
+              Skill-behaviors a proxied slice needs (e.g. [db, polish]); /dg:spec -s inlines these into the
+              /dg:proxy prompt because /dg:proxy injects only the persona file and can't run /db or /dg:polish as
+              slash-commands.
+          effort:
+            type: string
+            mutability: mutable
+            description: 'Primary agent reasoning effort: low|medium|xhigh (defaults per model tier if unset).'
+          qa:
+            type: array
+            mutability: mutable
+            description: QA agents assigned to review the slice.
+      prototype:
+        type: object
+        mutability: mutable
+        description: Accepted /prototype asset for this slice, recorded by `dg-skills spec prototype-ref`.
+        fields:
+          path: {type: string, mutability: mutable}
+          variant: {type: string, mutability: mutable}
+
+  # ---- Permissions -------------------------------------------------------
+  permissions:
+    type: object
+    mutability: mutable
+    description: Phase-0b permission grants. Toggled via `dg-skills spec perms`/`perms-batch`.
+    fields:
+      run_commands: {type: boolean, mutability: mutable}
+      git_push: {type: boolean, mutability: mutable}
+      gh_pr_create: {type: boolean, mutability: mutable}
+      auto_cleanup_worktree: {type: boolean, mutability: mutable}
+      slice_commits: {type: boolean, mutability: mutable}
+      housekeeping_commit: {type: boolean, mutability: mutable}
+
+  # ---- Tooling -----------------------------------------------------------
+  tools:
+    type: object
+    mutability: mutable
+    description: 'MCP/tool selection for this spec. Canonical key (legacy: mcp_tools).'
+    fields:
+      file_search: {type: string, mutability: mutable}
+      docs: {type: string, mutability: mutable}
+      default: {type: array, mutability: mutable}
+
+  # ---- PR strategy / repos ----------------------------------------------
+  pr_strategy:
+    type: string
+    mutability: mutable
+    enum:
+      - single
+      - cross-repo
+      - none
+    description: 'PR strategy: single (one repo), cross-repo (multi-repo), none.'
+
+  repos:
+    type: object
+    mode_conditional: cross-repo-only
+    mutability: mixed
+    description: Per-repo metadata for cross-repo specs. Keys are repo slugs.
+    item_schema:
+      src: {type: string, mutability: immutable}
+      worktree: {type: string, mutability: immutable}
+      branch: {type: string, mutability: immutable}
+      base: {type: string, mutability: immutable}
+      slices: {type: array, mutability: immutable}
+      pr_url: {type: string, mutability: mutable}
+
+  deploy_order:
+    type: array
+    mode_conditional: cross-repo-only
+    mutability: mutable
+    description: Ordered list of repo slugs for cross-repo deploy sequencing.
+
+  # ---- Worktree mode -----------------------------------------------------
+  worktree:
+    type: object
+    mode_conditional: worktree-only
+    mutability: mixed
+    description: Worktree metadata. Present only in worktree-mode specs.
+    fields:
+      path: {type: string, mutability: immutable}
+      branch: {type: string, mutability: immutable}
+      origin_repo: {type: string, mutability: immutable}
+      pr_url: {type: string, mutability: mutable}
+      cleaned: {type: boolean, mutability: mutable}
+
+  origin_repo:
+    type: string
+    mode_conditional: light-only
+    mutability: immutable
+    description: Path of the origin repo for light-mode specs (no worktree).
+
+  # ---- Parked-spec fields (todo/) ---------------------------------------
+  parked_reason:
+    type: string
+    mode_conditional: parked-only
+    mutability: mutable
+    description: Why the spec is deferred.
+
+  resume_after:
+    type: string
+    mode_conditional: parked-only
+    mutability: mutable
+    description: Condition or date after which the spec can be picked up.
+
+  depends_on_specs:
+    type: array
+    mode_conditional: parked-only
+    mutability: mutable
+    description: Other specs that must complete before this one resumes.
+
+  predecessor:
+    type: string
+    mode_conditional: parked-only
+    mutability: immutable
+    description: Spec or feature that precedes this one.
+
+  predecessor_pr:
+    type: string
+    mode_conditional: parked-only
+    mutability: immutable
+    description: PR URL of the predecessor.
+
+  canonical_plan:
+    type: string
+    mode_conditional: parked-only
+    mutability: mutable
+    description: Path to the canonical plan file, under the `~/.dg/bin/dg-skills stash -s spec` bucket, backing this parked spec.
+
+  # ---- Captured-context (free-form, append-only) -----------------------
+  resolved_open_questions:
+    type: map
+    mutability: append-only
+    description: Free-form record of design questions resolved during spec lifecycle; agents append, never overwrite.
+
+  references:
+    type: map
+    mutability: append-only
+    description: Cross-spec or external-doc references; agents append, never overwrite.
+
+  # ---- Bundle layout (context.md only) ----------------------------------
+  bundle:
+    type: string
+    mode_conditional: bundle-only
+    mutability: immutable
+    description: Absolute path to the .agents/spec/<NNN>_<slug>/ bundle dir. Present only in context.md.
+
+  plan_path:
+    type: string
+    mode_conditional: bundle-only
+    mutability: immutable
+    description: Path to the bundle's plan.md (the durable spec /dg:spec -s reads). Present only in context.md.

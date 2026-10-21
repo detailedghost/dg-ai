@@ -1,20 +1,13 @@
 ---
 name: what-changed
-description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /demo on the user-visible changes after the notes; an optional range argument overrides the default range.
+description: Draft release notes or a changelog from a repository's tags, merged pull requests, and commits for a requested release or range. Supports technical notes for engineers and non-technical notes for non-engineers. Use when asked what changed or what shipped, for "/dg:what-changed", "release notes", "technical release notes", "non-technical release notes", "changelog", or to prepare release copy; publishing is a separate action. Flags: -t/--technical (default), -n/--nontechnical, or both; -d/--demo runs /dg:demo on the user-visible changes after the notes; an optional range argument overrides the default range.
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 # What Changed
@@ -23,13 +16,15 @@ Draft notes grounded in the code that actually belongs to the release.
 
 ## Flags
 
-| Flag | Audience | Content |
-|------|----------|---------|
-| `-t`, `--technical` (default) | Engineers | Changes by Conventional Commit type and scope, with PR numbers and links. Breaking changes and migration steps. Config and env var changes. Infra and deploy notes. Dependency bumps. |
-| `-n`, `--nontechnical` | Non-engineers | User-facing changes grouped as New, Improved, Fixed. No commit types, internal refactors, CI, chores or dependency bumps unless users can see the effect. Short plain sentences, no jargon. |
-| `-t -n` | Both | Both sections in one output, technical first. |
-| `-d`, `--demo` | Any | After the notes, demo the user-visible changes with `/demo`. See step 6. Combines with any audience flag. |
-| `<range>` | Any | An explicit range, tag, commit or date. It overrides the default range. |
+**Usage:** `/dg:what-changed [-t | --technical] [-n | --nontechnical] [-d | --demo] [<range>]`
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--technical` | `-t` | Engineers. Changes by Conventional Commit type and scope, with PR numbers and links. Breaking changes and migration steps. Config and env var changes. Infra and deploy notes. Dependency bumps. | on when no audience flag is given |
+| `--nontechnical` | `-n` | Non-engineers. User-facing changes grouped as New, Improved, Fixed. No commit types, internal refactors, CI, chores or dependency bumps unless users can see the effect. Short plain sentences, no jargon. | off |
+| `-t -n` | none | Both sections in one output, technical first. | off |
+| `--demo` | `-d` | After the notes, demo the user-visible changes with `/dg:demo`. See step 6. Combines with any audience flag. | off |
+| `<range>` | none | An explicit range, tag, commit or date. It overrides the default range. | the range from `scripts/range.ts` |
 
 With neither audience flag, use `--technical`.
 
@@ -57,7 +52,7 @@ If the range holds no commits, say that nothing has merged since the last releas
 6. With `--demo`, after the notes:
    1. List the user-visible changes from the range as demo candidates, one per PR, each with its PR number and one line on what to show. Skip CI, chores, refactors, dependency bumps and changes with no visible effect.
    2. Ask the user which candidates to demo. Invoke the `demo` skill once per chosen PR with the PR number as its argument, one at a time, and let it run its own confirmation and format prompts. Pass `--attach-pr` only when the user asks for it.
-   3. Save the notes as `what-changed-notes.md` in `$("$DG" stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
+   3. Save the notes as `what-changed-notes.md` in `$(~/.dg/bin/dg-skills stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
    4. On WSL, also copy the notes and the videos to `/mnt/c/Users/<user>/Downloads`.
    5. Print the full notes in chat, with the path of every saved file.
    - The final combined video always starts with an introduction title card.

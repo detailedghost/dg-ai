@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD033 MD041 MD060 -->
 
-# Launching the `copilot-antagonist` Agent
+# Launching the `dg:copilot-antagonist` Agent
 
-Resolve the full `copilot-antagonist` contract from the host's configured
+Resolve the full `dg:copilot-antagonist` contract from the host's configured
 personas or explicit `DG_PERSONAS_DIR` / `DG_AGENTS_DIR`, else the packaged
 `dg:copilot-antagonist` persona. If unavailable,
 report the missing persona rather than inventing its verdict rules.
@@ -10,19 +10,17 @@ This file is the **launch recipe** — read it only when Phase 4 fires.
 
 ## Agent Launch
 
-Launch the configured `copilot-antagonist` persona through the host's
+Launch the configured `dg:copilot-antagonist` persona through the host's
 delegation facility with description "filter copilot comments" and the prompt
 below. Read only the named persona and the lazy instructions needed for this
 phase; no full conversation context.
 
-Resolve the comments path with `"$DG" stash review-loop <PR>.comments.json`
-after resolving `DG` from [../SKILL.md](../SKILL.md#runtime-and-skill-paths)
-in the current shell. Fill the path into the prompt before delegation.
+Resolve the comments path with `~/.dg/bin/dg-skills stash review-loop <PR>.comments.json`. Fill the path into the prompt before delegation.
 
 ## Prompt Template
 
 ```text
-You are running inside /review-loop Phase 4.
+You are running inside /dg:review-loop Phase 4.
 
 Comments JSON: <absolute comments JSON path resolved by the caller>
 Spec file: <absolute path OR the literal string "none">
@@ -40,7 +38,7 @@ system prompt. No prose, no code fences, no preamble.
 
 ## Verdict Reminder
 
-- `accept` — hand to /address
+- `accept` — hand to /dg:address
 - `reject-illogical` — reply with `reason`, then resolve
 - `reject-other` — resolve silently
 - `strange` — security-sensitive or spec-contradicting; user decides

@@ -62,7 +62,7 @@ in [setup](setup.md#configuration).
 | `!owner` | Owner gate set by `owner.token`; the examples use `!owner`. | Without the gate, ignore the message. |
 | `$review` | Request a review. | Without a command, ignore the message. |
 | `$thrash` | Same as `$review`. | Without a command, ignore the message. |
-| `$address` | Run `/address` on the PR, then react approved on your message. | With `$review` or `$thrash` in the same message: CR-105. Sender not allowed: CR-106. |
+| `$address` | Run `/dg:address` on the PR, then react approved on your message. | With `$review` or `$thrash` in the same message: CR-105. Sender not allowed: CR-106. |
 | `$emoji <slot>` | Set the custom emoji for a reaction slot from a reaction in the chat. | No slot or an unknown slot: reply with the slot list. Sender not allowed: CR-107. |
 | `$help` | Reply with usage text and run nothing; needs the owner gate and no link. | Without the gate, ignore the message. |
 
@@ -96,7 +96,7 @@ default. For example: `$review https://github.com/example/project/pull/42 ~agent
 ### Address flags
 
 `$help $address` lists these flags and the address reactions. `$address` runs
-the Claude `/address` skill on a fresh clone of the PR head branch. The skill
+the Claude `/dg:address` skill on a fresh clone of the PR head branch. The skill
 fixes review comments and failing CI, commits, pushes, and replies to the
 review threads. Any PR on an allowed host works, except a PR from a fork.
 Claude always runs it; review-only flags such as `~spice` are ignored. On
@@ -108,7 +108,7 @@ message. Post a ready word to request a re-review.
 | --- | --- | --- |
 | `$address` | Fix review comments and failing CI on the PR, then push. | Sender not allowed: CR-106. |
 | PR or MR URL | HTTPS GitHub PR or GitLab MR link on an allowed host. | No PR link: CR-101. Host outside the allowlist: CR-104. Fork: CR-305. |
-| `~no-ci` | Pass `--no-ci` to `/address`: fix review comments only. | Optional. |
+| `~no-ci` | Pass `--no-ci` to `/dg:address`: fix review comments only. | Optional. |
 | `$review` or `$thrash` | Not allowed in an `$address` message. | CR-105, and nothing runs. |
 
 GitHub defaults to github.com; GitLab defaults to gitlab.com. `hosts.github` and
@@ -214,7 +214,7 @@ pass preflight against the service's reaction list.
 | Warning sign | Failure | `reactions.failure` | `26a0_warningsign` |
 
 An `$address` job uses the same flow: eyes when seen, stopwatch while
-`/address` runs, check mark when it is addressed, and
+`/dg:address` runs, check mark when it is addressed, and
 the warning sign on failure. The help reply shows a captured custom reaction
 as its name in colons, such as `:loading:` for `loading;0-cus-d20-<32hex>`,
 because Teams strips emoji elements from bot messages.
@@ -285,7 +285,7 @@ the shipped catalog exactly.
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |
 | `CR-304` | `I couldn't read which pull requests are stacked on this one, so I didn't review anything. Try again without ~stacked.` | Retry without ~stacked or repair stack metadata. |
-| `CR-305` | `That pull request comes from a fork, and I can't push to a fork, so I didn't address it.` | Run `/address` by hand, or move the branch into the main repository. |
+| `CR-305` | `That pull request comes from a fork, and I can't push to a fork, so I didn't address it.` | Run `/dg:address` by hand, or move the branch into the main repository. |
 | `CR-306` | `I couldn't clone the pull request branch on {owner}'s computer, so I didn't address it. Check that the branch still exists, then try again.` | Check the branch, the clone root, and the daemon log. |
 | `CR-401` | `I found no allowed repository for this error, so I didn't try a fix. Ask {owner} to add the service under errorWatch.repos.` | Add the service under `errorWatch.repos`. |
 | `CR-402` | `The hourly limit for automatic fixes is reached, so this fix waits. I try again on the next poll.` | Wait for the next poll, or raise `errorWatch.autoFix.maxPerHour`. |
@@ -316,7 +316,7 @@ addresses, and long tokens from the text and caps it at 400 characters.
 
 Review attribution is recorded in the compiled and published review. Jobs run by this
 daemon, including explicit Teams requests and readiness events, say `Automatic (daemon)`.
-A direct user CLI `/thrash` defaults to `Manual (CLI)`. Both show the reviewing backend
+A direct user CLI `/dg:thrash` defaults to `Manual (CLI)`. Both show the reviewing backend
 and model evidence for each distinct worker model. The daemon's `~model` selects the
 orchestrator; native thrash workers can use a different configured model. CLI defaults
 and unresolved aliases are labeled as such. Current-job status carries `execution` with

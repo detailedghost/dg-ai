@@ -3,21 +3,14 @@ name: stash
 description: "Print an absolute path for a scratch, state, or worktree-local file. Use when a skill or task needs somewhere to write drafts, run state, handoffs, or per-repo agent artifacts."
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-`"$DG" stash <tool> [name]` prints one absolute path and creates its parent. No name prints the dir.
+`~/.dg/bin/dg-skills stash <tool> [name]` prints one absolute path and creates its parent. No name prints the dir.
 
 | Flag | Root | Lives |
 |---|---|---|

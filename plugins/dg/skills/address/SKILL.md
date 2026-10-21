@@ -1,30 +1,23 @@
 ---
 name: address
-description: Address PR review comments AND failing CI/CD checks — route fixes to agent(s), QA, document, commit, push, reply+resolve threads. (Use /catchup for merge conflicts and rebasing — not this skill.)
+description: Address PR review comments AND failing CI/CD checks — route fixes to agent(s), QA, document, commit, push, reply+resolve threads. (Use /dg:catchup for merge conflicts and rebasing — not this skill.)
 ---
 
 # Skill: Address
 
 Fix PR review comments, CI/CD failures, and local code-review findings. Test-first for code changes, QA, commit, push, reply+resolve threads.
 
-**Scope:** `/address` = review + CI + local. `/catchup` = merge conflicts and rebasing.
+**Scope:** `/dg:address` = review + CI + local. `/dg:catchup` = merge conflicts and rebasing.
 
-**Usage:** `/address [-l] [-a <agent>[,agent2,...]] [-m "<context>"] [--round N] [--verdicts <path>] [--no-ci]`
+**Usage:** `/dg:address [-l] [-a <agent>[,agent2,...]] [-m "<context>"] [--round N] [--verdicts <path>] [--no-ci]`
 
 ## Runtime and skill paths
 
 Resolve the compiled CLI before running any command:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills address --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Repeat this resolution in every fresh shell, including delegated execution and
@@ -74,16 +67,16 @@ leave the thread open.
 
 ## Flags
 
-| Flag | Description |
-|------|-------------|
-| `-l, --local` | Address only the latest `.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md`. Skip PR/MR threads and CI. |
-| `-a` | Comma-separated agent list. Omit → auto-pick. |
-| `-m` | Extra context passed to fix agents. |
-| `--round N` | Tag commit `(review-loop round N)`. |
-| `--verdicts <path>` | Pre-filtered verdict JSON (skip triage). Pauses on `strange` items. |
-| `--no-ci` | Skip CI gathering. |
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--local` | `-l` | Address only the latest `.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md`. Skip PR/MR threads and CI. | off |
+| none | `-a <agent>[,agent2,...]` | Comma-separated agent list. | auto-pick |
+| none | `-m "<context>"` | Extra context passed to fix agents. | none |
+| `--round N` | none | Tag the commit `(review-loop round N)`. | none |
+| `--verdicts <path>` | none | Pre-filtered verdict JSON that skips triage. Pauses on `strange` items. | triage runs |
+| `--no-ci` | none | Skip CI gathering. | off (CI is gathered) |
 
-Bare args treated as agent list. All replies prefixed `🤖 ` by `"$DG" address` — never construct it yourself.
+Bare args treated as agent list. All replies prefixed `🤖 ` by `~/.dg/bin/dg-skills address` — never construct it yourself.
 Set `ADDRESS_BOT_PREFIX="[bot] "` on a host that mangles emoji. Both markers, plus the legacy `[bot] ` on
 replies already posted, count as bot replies on read.
 
@@ -91,4 +84,4 @@ replies already posted, count as bot replies on read.
 
 - [references/workflow.md](references/workflow.md) — phases, I/O, gates
 - [references/agents.md](references/agents.md) — roster + file-extension routing
-- [references/github-api.md](references/github-api.md) — human reference; runtime uses `"$DG" address`
+- [references/github-api.md](references/github-api.md) — human reference; runtime uses `~/.dg/bin/dg-skills address`

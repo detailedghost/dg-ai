@@ -1,18 +1,17 @@
 <!-- markdownlint-disable MD013 MD033 MD041 MD060 -->
 
-# /review-loop Proxy-Mode Workflow
+# /dg:review-loop Proxy-Mode Workflow
 
 Active when `-p`/`--proxy <backend>` is passed, or when default mode
 auto-routes here because the provider has no AI review bot (see
 Phase 0 below). No PR, no `gh`, no GitHub Copilot — the reviewer is a
-local `/proxy` backend
+local `/dg:proxy` backend
 (`codex | copilot | pi | opencode | grok`) reviewing the current branch's
 diff. Findings land in a `.agents/code-review/*.md` file and flow
-through `/address`'s existing local-review path (`-l`/`--local`) —
+through `/dg:address`'s existing local-review path (`-l`/`--local`) —
 this workflow does not re-implement triage, fix, QA, commit, or
-cleanup; it only produces the file and calls `/address -l`.
+cleanup; it only produces the file and calls `/dg:address -l`.
 
-Resolve `DG` from [../SKILL.md](../SKILL.md#runtime-and-skill-paths) in each fresh shell.
 Each phase lists `IN:` (required state) and `OUT:` (produced state), as
 in [workflow.md](workflow.md). Gates are hard stops.
 
@@ -23,7 +22,7 @@ add here rather than fork it:
 
 - `-p <backend>` / `--proxy <backend>` → `proxyMode = true`,
   `backend = <backend>`. Reject unknown backends (must be one of
-  `codex`, `copilot`, `pi`, `opencode`, `grok` — same set `/proxy` accepts).
+  `codex`, `copilot`, `pi`, `opencode`, `grok` — same set `/dg:proxy` accepts).
 - `-b <ref>` / `--base <ref>` → `baseOverride = <ref>`. Proxy mode
   only — this includes an auto-routed run, so it still applies with no
   `-p` flag on a provider with no AI review bot. Ignored (with a
@@ -60,7 +59,7 @@ OUT: `base` (git ref).
 2. Otherwise resolve the fork point in this checkout:
    `base = git merge-base HEAD "$(git rev-parse --abbrev-ref origin/HEAD)"`.
    This is the fork point from the remote default branch, so it stays
-   fixed after `/address` pushes round commits. Never use `@{u}` or a
+   fixed after `/dg:address` pushes round commits. Never use `@{u}` or a
    local default branch, which can be the branch's own tip or stale.
 3. When the branch was cut from an integration branch, prefer that
    integration branch as `base`, so the review covers exactly what the
@@ -79,7 +78,7 @@ OUT: `roundsDone` (int), `maxRounds` (possibly clamped).
    This is the proxy-mode equivalent of default mode's
    `count-copilot-reviews` — round count derived from external state
    (here, git history) rather than tracked separately. The marker is
-   the same `(review-loop round N)` suffix `/address --round N`
+   the same `(review-loop round N)` suffix `/dg:address --round N`
    already appends to commits, so both modes share one convention.
 2. When `noRetrigger == true` (i.e. `-n`/`--no-retrigger`):
    `maxRounds = min(maxRounds, roundsDone + 1)`.
@@ -107,32 +106,32 @@ OUT: review file path (may be absent/empty on a dry round).
    (nothing was ever committed to review — not a round, not a
    dry-round close-out).
 2. `reviewFile = .agents/code-review/<YYYY-MM-DD-HHMMSS>-<NNN>.md`
-   (same naming convention `/address` Phase 1c already globs for;
+   (same naming convention `/dg:address` Phase 1c already globs for;
    `<NNN>` is a three-digit sequence that starts at `001` for each
    timestamp second).
 3. Read [../../proxy/SKILL.md](../../proxy/SKILL.md), then invoke
-   `"$DG" proxy <backend> --prompt-file <absolutePromptPath>` using its
+   `~/.dg/bin/dg-skills proxy <backend> --prompt-file <absolutePromptPath>` using its
    background and result-handling contract. Prompt: see
    [proxy-review-prompt.md](proxy-review-prompt.md) — it carries the
    diff and `reviewFile` path, and instructs the backend to write
    findings there directly (or write nothing on a clean diff).
-4. Follow `/proxy`'s existing result-handling rules verbatim — do not
+4. Follow `/dg:proxy`'s existing result-handling rules verbatim — do not
    reinvent them here:
    - Exit 1 with `backend`, `bin`, and `installCommand` → tell the user,
      show `installCommand`, exit 1.
      Do not fall back to another backend.
    - `exitCode != 0`, `likelyCause` `"model"`/`"effort"` → ask the user
      (through the host's question facility) retry-default / different value / abort, same
-     as `/proxy` itself specifies.
+     as `/dg:proxy` itself specifies.
    - `exitCode != 0`, `likelyCause` `"other"` → show `stderrTail` +
      `logFile`, exit 1.
    - `exitCode: 0` and the backend asks a clarifying question instead
      of reviewing → answer directly if known, else ask the user, then
-     re-invoke `"$DG" proxy <backend> --resume <sessionId> --prompt-file <answerPath>`. Cap at 5 round-trips (same
-     cap `/proxy` documents) before giving up and treating it as a
+     re-invoke `~/.dg/bin/dg-skills proxy <backend> --resume <sessionId> --prompt-file <answerPath>`. Cap at 5 round-trips (same
+     cap `/dg:proxy` documents) before giving up and treating it as a
      dry round.
 
-GATE: `/proxy` returned `exitCode: 0` and control reaches Phase 4, or
+GATE: `/dg:proxy` returned `exitCode: 0` and control reaches Phase 4, or
 the workflow exited per the rules above.
 
 ## Phase 4 — Dry-Round Check
@@ -154,10 +153,10 @@ OUT: action `close-out` | `act`.
    ```
 
 2. Delete `reviewFile` if it exists, empty or not (avoid leaving a
-   stray file for `/address`'s next unrelated `-l` run to pick up).
+   stray file for `/dg:address`'s next unrelated `-l` run to pick up).
 3. Exit 0. The round counter is not consumed (mirrors default mode's
    no-findings close-out — no `(review-loop round N)` marker gets
-   written because `/address` never runs).
+   written because `/dg:address` never runs).
 
 ### 4b. Action `act`
 
@@ -165,26 +164,26 @@ Proceed to Phase 5.
 
 GATE: one of close-out / act fired.
 
-## Phase 5 — Hand Off to /address
+## Phase 5 — Hand Off to /dg:address
 
 IN: `reviewFile`, `roundNumber = roundsDone + 1`.
-OUT: `/address` exit status.
+OUT: `/dg:address` exit status.
 
 Load [../../address/SKILL.md](../../address/SKILL.md) and invoke it through
 the host's skill facility, or follow its instructions directly, with arguments
 `-l --round <roundNumber>`. Resolve a missing sibling only from the explicitly
 configured personal skill root.
 
-No `--verdicts` — `/address`'s own Phase 1.5 local-review triage
+No `--verdicts` — `/dg:address`'s own Phase 1.5 local-review triage
 handles antagonist filtering for `source: "local-review"` items; there
-is no GitHub thread to reply to or resolve, so `/address` already
+is no GitHub thread to reply to or resolve, so `/dg:address` already
 skips that step for this source (per its workflow, "CI and local skip
 this").
 
-`/address` commits with the `(review-loop round N)` marker Phase 2
+`/dg:address` commits with the `(review-loop round N)` marker Phase 2
 counts on the next invocation.
 
-GATE: `/address` returns 0.
+GATE: `/dg:address` returns 0.
 
 - Non-zero → print the surfaced error and exit 1. The round does
   **not** count as consumed (no commit was made, so Phase 2's git-log
@@ -201,7 +200,7 @@ OUT: terminal, or restarts at Phase 3 for `roundsDone + 1`.
 1. `single == true` → print:
 
    ```text
-   review-loop: round <N> complete. Re-run /review-loop -p <backend> for the next round.
+   review-loop: round <N> complete. Re-run /dg:review-loop -p <backend> for the next round.
    ```
 
    Exit 0.
@@ -213,10 +212,10 @@ OUT: terminal, or restarts at Phase 3 for `roundsDone + 1`.
 
    Exit 0.
 3. Otherwise: re-diff (`git diff <base>` against the new `HEAD` after
-   `/address`'s commit) and restart at Phase 3 for the next round —
+   `/dg:address`'s commit) and restart at Phase 3 for the next round —
    no polling wait needed since the proxy call is synchronous from
    this workflow's point of view (it runs in the background per
-   `/proxy`'s contract, but Phase 3 waits for its completion or job status).
+   `/dg:proxy`'s contract, but Phase 3 waits for its completion or job status).
 
 ## Failure surface
 
@@ -227,9 +226,9 @@ Distinct exit messages, same format as default mode's:
 | --- | --- | --- | --- |
 | `no-diff` | Phase 3, empty diff against base | 0 | Commit work first |
 | `dry-round` | Phase 4a, backend found nothing | 0 | none |
-| `backend-missing` | `"$DG" proxy` returns backend installation guidance | 1 | Install the backend, or pick another |
-| `proxy-error` | `/proxy` non-zero, `likelyCause: "other"` | 1 | Inspect `stderrTail` / `logFile` |
-| `address-failed` | Phase 5, `/address` non-zero | 1 | Inspect `/address`'s surfaced error |
+| `backend-missing` | `~/.dg/bin/dg-skills proxy` returns backend installation guidance | 1 | Install the backend, or pick another |
+| `proxy-error` | `/dg:proxy` non-zero, `likelyCause: "other"` | 1 | Inspect `stderrTail` / `logFile` |
+| `address-failed` | Phase 5, `/dg:address` non-zero | 1 | Inspect `/dg:address`'s surfaced error |
 | `max-rounds-reached` | Phase 2, `roundsDone >= maxRounds` | 0 | Raise `-r`/`--rounds` or investigate manually |
 | `base-unresolved` | Phase 1, no valid base ref | 1 | Pass `-b`/`--base <ref>` explicitly |
 
@@ -242,5 +241,5 @@ Distinct exit messages, same format as default mode's:
 | Backend not installed | Exit 1, show `installCommand` — no auto-switch |
 | Backend review round errors (`other`) | Exit 1, show `stderrTail`/`logFile` |
 | Backend finds nothing | Exit 0, dry-round close-out — round not consumed |
-| `/address -l --round N` fails | Exit 1, no loop continuation — round not consumed |
+| `/dg:address -l --round N` fails | Exit 1, no loop continuation — round not consumed |
 | Max rounds reached | Exit 0 with summary |

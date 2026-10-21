@@ -1,6 +1,6 @@
 # GitHub API Reference
 
-> **Human-only reference.** The runtime workflow uses `"$DG" address` for supported review operations and retains one native `gh` read for Wiz summary comments. Do not load this file during skill execution. It lets a maintainer compare the helper with the underlying API.
+> **Human-only reference.** The runtime workflow uses `~/.dg/bin/dg-skills address` for supported review operations and retains one native `gh` read for Wiz summary comments. Do not load this file during skill execution. It lets a maintainer compare the helper with the underlying API.
 
 ## Get Current PR
 

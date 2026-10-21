@@ -69,13 +69,13 @@ On-demand deep context (read these when you need them, not upfront):
 <!-- agent-seed:start:specs -->
 ## Specs & Learnings
 
-- **Specs:** `.agents/spec/` (feature bundles written by `/kick` and resumed by `/pickup`)
+- **Specs:** `.agents/spec/` (feature bundles written by `/dg:kick` and resumed by `/dg:pickup`)
 - **Learnings:** `.agents/school/` (topic-cluster format — any agent may write here following the format in each file's header)
 <!-- agent-seed:end:specs -->
 
 ## Agent Workflow
 
-For feature development, use `/kick "<request>"` to park a plan and `/pickup` to implement it. Both read `.agents/school/` and use `.agents/spec/`.
+For feature development, use `/dg:kick "<request>"` to park a plan and `/dg:pickup` to implement it. Both read `.agents/school/` and use `.agents/spec/`.
 ```
 
 Notes:
@@ -145,19 +145,19 @@ Rules:
 
 ## .agents/spec/ — Feature Spec Bundles
 
-Feature planning bundles written by `/kick` live under `.agents/spec/`:
+Feature planning bundles written by `/dg:kick` live under `.agents/spec/`:
 
 ```
 .agents/spec/
   <NNN>_<slug>/           # Feature bundle directory
-    plan.md               # Durable spec (read by /pickup)
-    context.md            # One-page summary (read by /pickup)
-  todo/                   # Parking area for /prd deliverables
+    plan.md               # Durable spec (read by /dg:pickup)
+    context.md            # One-page summary (read by /dg:pickup)
+  todo/                   # Parking area for /dg:prd deliverables
     <prd-slug>/
       plan.md             # PRD-parked spec
 ```
 
-`plan.md` and `context.md` are the files `/pickup` implements from. Extra notes may sit beside them; `/pickup` does not require them.
+`plan.md` and `context.md` are the files `/dg:pickup` implements from. Extra notes may sit beside them; `/dg:pickup` does not require them.
 
 ## School Stub Template
 

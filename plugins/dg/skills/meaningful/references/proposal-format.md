@@ -2,7 +2,7 @@
 
 ## Subagent Brief
 
-Spawn a subagent using the host's configured `reviewer` persona to read per-commit diffs and return ≥3 distinct regrouping options.
+Spawn a subagent using the host's configured `dg:reviewer` persona to read per-commit diffs and return ≥3 distinct regrouping options.
 
 Brief the subagent with:
 

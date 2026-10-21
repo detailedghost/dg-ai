@@ -1,45 +1,65 @@
 ---
 name: kick
-description: Defer a feature build. Interview the request with grill-me, write a parked spec bundle under .agents/spec/, and exit without implementing. Use when you want to do the thinking now and the engineering later. Resume with /pickup.
+description: Defer a feature build — run /dg:spec's full plan-mode pipeline (grill-me, roundtable, spec-write, plan approval gate, context pack), flip the resulting bundle's status to deferred, and exit without executing. Use when you want to do the thinking now and the engineering later. Resume with /dg:pickup.
 ---
 
-# /kick — Plan Now, Build Later
+# /dg:kick — Plan Now, Build Later
 
-Plan a feature and park the bundle. Do not implement it.
+Thin wrapper over `/dg:spec` plan mode. Runs `/dg:spec`'s full plan-mode pipeline
+([references/plan.md](../spec/references/plan.md), steps 1–10 — [/dg:grill-me](../grill-me/SKILL.md), scaffold + `/dg:assign`,
+per-slice review, synthesis, plan approval gate, context pack) unmodified, then applies /dg:kick's one
+addition: flip the resulting bundle's `status` to `deferred` and commit it, instead of continuing
+into execute mode.
 
-The planning steps below are the whole workflow. Interview with `/grill-me`, write the bundle, and stop.
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+
+```bash
+~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+```
+
+**Usage:** `/dg:kick [feature-name] [--from <path>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `<feature-name>` | none | Working-title seed folded into the request handed to `/dg:spec`. | empty |
+| `--from <path>` | none | Read the file at `<path>` as the request text. The interview still runs, seeded with the file. | off |
 
 ## Routing
 
 | Task | Read |
 |---|---|
-| How `<feature-name>` folds into the request | `references/args.md` |
+| How `<feature-name>` folds into the request text passed to `/dg:spec` | `references/args.md` |
 
 ## Prerequisite
 
-Verify `.agents/` exists (`AGENTS.md`, `.agents/school/`, `.agents/references/`, `.agents/paths.md`). If it is missing, run `/agent-seed` first, then return here.
+Verify `.agents/` structure exists (AGENTS.md, `.agents/school/`, `.agents/references/`,
+`.agents/paths.md`). If missing, run `/dg:agent-seed` first, then return here.
 
 ## Workflow
 
-1. Resolve the request. See `references/args.md`. With `--from <path>`, read that file as the request text. If no feature name, no request text, and no `--from` file were given, ask one clarifying question, then continue.
-2. Interview the request with `/grill-me`. Keep its decision log. Do not start a separate planning pipeline.
-3. Derive `<slug>` from the feature name the interview settled on: lowercase, replace each run of characters outside `a-z` and `0-9` with `_`, then trim leading and trailing underscores.
-4. Choose `<NNN>`. List `.agents/spec/` and take one more than the highest `NNN` prefix already there, zero-padded to 3 digits. Start at `001` when none exist. Skip `todo/`.
-5. Write `.agents/spec/<NNN>_<slug>/plan.md` and `context.md`.
-   - `plan.md` frontmatter: `status: deferred`, `date` (today, `YYYY-MM-DD`), `feature: <slug>`.
-   - Body: the decision summary, then `## Slices`. Each slice is a `### <name>` heading followed by a `files:` line (comma-separated paths or globs) and a `done when:` line. Name the owning area in the slice text when the repo makes it obvious. Otherwise the implementing agent owns it.
-   - `context.md`: one page. Decisions, non-goals, and the slice list. Enough for a later session to implement without this chat.
-6. Commit only that bundle:
+1. Invoke `/dg:spec "<request>"` (plan mode). See `references/args.md` for how `<feature-name>` (if
+   given) folds into `<request>`; if neither is available, `/dg:spec`'s own dispatch rule asks the one
+   clarifying question — `/dg:kick` does not duplicate that ask. This runs the full pipeline and ends
+   with a bundle at `.agents/spec/<NNN>_<slug>/` (`plan.md` + `context.md`).
+2. Capture `<NNN>_<slug>` from the bundle path `/dg:spec` prints at plan.md step 10.
+3. `~/.dg/bin/dg-skills spec set .agents/spec/<NNN>_<slug>/plan.md status deferred` — /dg:kick's only deviation from a
+   plain `/dg:spec` plan-mode run.
+4. Commit the bundle (`/dg:spec` plan mode already committed it at step 10; this second commit is for
+   /dg:kick's own `status: deferred` edit, so it can't be lost to a stash/clean):
    `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): park <slug> (deferred)"`.
-   Use `-f` because `/agent-seed` ignores `.agents/`, and a parked bundle must still be committed.
-7. Stop. Do not implement the slices.
+   Use `-f` because `/dg:agent-seed` ignores `.agents/`, and a parked bundle must still be committed.
+5. Do NOT invoke execute mode. Exit.
 
 ## General Rules
 
+- Each agent reads only its relevant `.agents/school/` topic file.
 - Use TaskCreate/TaskUpdate throughout to track progress.
-- Do not skip the interview or the parked commit.
-- Do not create commits for anything other than the parked bundle.
+- NEVER skip a gate condition — all of `/dg:spec` plan mode's gates apply unchanged.
+- Do NOT create commits for anything other than the parked bundle itself (step 4).
 
 ## After Exit
 
-`Spec bundle parked at .agents/spec/<NNN>_<slug>/ (status: deferred). Resume with /pickup.`
+`Spec bundle parked at .agents/spec/<NNN>_<slug>/ (status: deferred). Resume with /dg:pickup, or directly via /dg:spec -s <NNN>_<slug>.`

@@ -8,21 +8,14 @@ description: Delegate a coding task to an installed CLI agent (codex, copilot, p
 Resolve the compiled CLI before invoking it:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills proxy --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Run the backend in the caller's native background task when that facility exists:
 
 ```bash
-"$DG" proxy <backend> --prompt-file "<task-file>" [flags]
+~/.dg/bin/dg-skills proxy <backend> --prompt-file "<task-file>" [flags]
 ```
 
 Write the task to the file first, so quotes, `$`, and backticks in it never reach the shell.
@@ -30,34 +23,36 @@ Write the task to the file first, so quotes, `$`, and backticks in it never reac
 For a terminal or caller without native background tasks, prepare a plan:
 
 ```bash
-"$DG" proxy <backend> --plan --prompt-file "<task-file>" [flags]
+~/.dg/bin/dg-skills proxy <backend> --plan --prompt-file "<task-file>" [flags]
 ```
 
 This writes the fully briefed prompt and prints JSON containing the exact quoted background `command`. Execute that command to launch the job; do not reconstruct it from its parts. It returns a job record with `id`, `logFile`, and `statusFile`. The backend runs detached, so the launch returns promptly. Inspect it with:
 
 ```bash
-"$DG" proxy background status "<id>"
-"$DG" proxy background list
+~/.dg/bin/dg-skills proxy background status "<id>"
+~/.dg/bin/dg-skills proxy background list
 ```
 
-Read the completed job's log for the final proxy JSON result. Use `"$DG" proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
+Read the completed job's log for the final proxy JSON result. Use `~/.dg/bin/dg-skills proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
 
 The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `status` reports the job as `unknown`, and `cancel` returns `no-pid` without signaling any process.
 
 ## Flags
 
-| Flag | Behavior |
-|---|---|
-| `--list-backends` | List all five registered backend identities without running one |
-| `--prompt` | Supply the task directly; takes precedence over `--prompt-file` |
-| `--prompt-file` | Read the task from a file, keeping large prompts out of argv |
-| `--model` | Override the backend model |
-| `--effort` | Override its reasoning or thinking effort |
-| `--subagent` | Brief the backend with the named configured agent persona |
-| `--spec` and `--slice` | Resolve the persona from an explicit plan file's assigned primary agent |
-| `--cwd` | Choose the backend's working directory |
-| `--resume` | Continue an existing session without reinjecting its persona |
-| `--plan` / `-p` | Resolve the persona, save the briefed prompt, and print a launch command without running the backend |
+**Usage:** `/dg:proxy <backend> (--prompt <text> | --prompt-file <path>) [--model <name>] [--effort <level>] [--subagent <name>] [--cwd <dir>] [--resume <session>] [--plan | -p]`
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--list-backends` | none | List all five registered backend identities without running one. | off |
+| `--prompt <text>` | none | Supply the task directly. Takes precedence over `--prompt-file`. | none |
+| `--prompt-file <path>` | none | Read the task from a file, keeping large prompts out of argv. | none |
+| `--model <name>` | none | Override the backend model. | backend default |
+| `--effort <level>` | none | Override its reasoning or thinking effort. | backend default |
+| `--subagent <name>` | none | Brief the backend with the named configured agent persona. | none |
+| `--spec <path>` and `--slice <id>` | none | Resolve the persona from an explicit plan file's assigned primary agent. | none |
+| `--cwd <dir>` | none | Choose the backend's working directory. | current directory |
+| `--resume <session>` | none | Continue an existing session without reinjecting its persona. | off |
+| `--plan` | `-p` | Resolve the persona, save the briefed prompt, and print a launch command without running the backend. | off |
 
 The task must use `--prompt` or `--prompt-file`; a positional task is not accepted. Set `DG_PERSONAS_DIR` (or `DG_AGENTS_DIR`) to relocate agent persona Markdown files; lookup retains the existing personal agent-directory fallback. Planning always resolves the persona and emits a fresh execution, including when `--resume` was supplied to the planning call. For a session continuation, pass `--resume` to an actual execution.
 

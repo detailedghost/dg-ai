@@ -59,9 +59,7 @@ function fakeFs(files: string[]) {
 
 const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 	claude: [
-		`${HOME}/.claude/skills/thrash/SKILL.md`,
-		`${HOME}/.claude/plugins/dg/skills/thrash/SKILL.md`,
-		`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/skills/thrash/SKILL.md`,
+		`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`,
 	],
 	codex: [
 		`${HOME}/.codex/skills/thrash/SKILL.md`,
@@ -69,7 +67,6 @@ const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 	],
 	copilot: [
 		`${HOME}/.copilot/skills/thrash/SKILL.md`,
-		`${HOME}/.claude/skills/thrash/SKILL.md`,
 	],
 };
 
@@ -288,6 +285,33 @@ describe("runner probe", () => {
 		});
 	});
 
+	test.each(["claude", "copilot"] as const)(
+		"%s does not count a leftover local ~/.claude/skills/thrash as installed",
+		async (name) => {
+			const { runners } = harness({
+				files: [`${HOME}/.claude/skills/thrash/SKILL.md`],
+			});
+			expect(await runners[name].probe()).toEqual({
+				ok: false,
+				code: "CR-206",
+			});
+		},
+	);
+
+	test("copilot does not see a plugin skill under the claude plugin tree", async () => {
+		const { runners } = harness({
+			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
+		});
+		expect(await runners.copilot.probe()).toEqual({ ok: false, code: "CR-206" });
+	});
+
+	test("codex does not see a plugin skill under the claude plugin tree", async () => {
+		const { runners } = harness({
+			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
+		});
+		expect(await runners.codex.probe()).toEqual({ ok: false, code: "CR-206" });
+	});
+
 	test("checks the thrash skill only after the login check passes", async () => {
 		const { runners } = harness({
 			files: [],
@@ -327,7 +351,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.claude,
 			"-p",
-			`/thrash ${URL} -s 3 -c`,
+			`/dg:thrash ${URL} -s 3 -c`,
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -340,7 +364,7 @@ describe("runner run argv", () => {
 	test("claude omits -s and -c when neither is set", async () => {
 		const h = harness();
 		await h.runners.claude.run(runRequest());
-		expect(h.processes[0]?.argv[2]).toBe(`/thrash ${URL}`);
+		expect(h.processes[0]?.argv[2]).toBe(`/dg:thrash ${URL}`);
 	});
 
 	test("claude uses a configured allowlist and path", async () => {
@@ -362,7 +386,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.claude,
 			"-p",
-			"/address",
+			"/dg:address",
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -375,7 +399,7 @@ describe("runner run argv", () => {
 	test("claude passes --no-ci to /address when asked", async () => {
 		const h = harness();
 		await h.runners.claude.run({ ...runRequest(), task: "address", noCi: true });
-		expect(h.processes[0]?.argv[2]).toBe("/address --no-ci");
+		expect(h.processes[0]?.argv[2]).toBe("/dg:address --no-ci");
 	});
 
 	test("claude runs the fix prompt with the untrusted-report note and the fix tools", async () => {
@@ -416,7 +440,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			"/bin/claude",
 			"-p",
-			"/deps-upgrade --cooldown-days 3",
+			"/dg:deps-upgrade --cooldown-days 3",
 			"--add-dir",
 			config.automation.cloneRoot,
 			"--permission-prompts",

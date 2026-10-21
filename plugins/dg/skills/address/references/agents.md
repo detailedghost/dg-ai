@@ -4,15 +4,15 @@
 
 | Agent | Domains |
 |------------|--------------------------------------------|
-| `js` | JavaScript, TypeScript, React, Next.js, Node.js, CSS |
-| `csharp` | .NET, EF Core, NUnit, XUnit |
-| `python` | Flask, SQLAlchemy, Snowflake, pandas, dlt, boto3, pytest |
-| `dba` | Schema, queries, migrations, indexing, Snowflake |
-| `security` | Vuln fixes, auth, secrets, hardening |
-| `shell` | Shell scripts, POSIX sh, Bash/ZSH configs |
-| `devops` | GitHub Actions, Dockerfiles, Terraform, AWS, CI/CD |
-| `qa-writer`| Tests |
-| `lore` | Docs, READMEs, code comments, Mermaid |
+| `dg:js` | JavaScript, TypeScript, React, Next.js, Node.js, CSS |
+| `dg:csharp` | .NET, EF Core, NUnit, XUnit |
+| `dg:python` | Flask, SQLAlchemy, Snowflake, pandas, dlt, boto3, pytest |
+| `dg:dba` | Schema, queries, migrations, indexing, Snowflake |
+| `dg:security` | Vuln fixes, auth, secrets, hardening |
+| `dg:shell` | Shell scripts, POSIX sh, Bash/ZSH configs |
+| `dg:devops` | GitHub Actions, Dockerfiles, Terraform, AWS, CI/CD |
+| `dg:qa-writer`| Tests |
+| `dg:lore` | Docs, READMEs, code comments, Mermaid |
 
 ## Common Directives (all agents)
 
@@ -37,7 +37,7 @@ This keeps data machine-readable through the entire pipeline. The orchestrator j
 See `workflow.md` Phase 1b. Summary:
 
 - 1-2 agents via `-a` (or bare args): use as-is.
-- 0 agents OR 3+ agents: `foreman` (on `sonnet`) auto-detects.
+- 0 agents OR 3+ agents: `dg:foreman` (on `sonnet`) auto-detects.
 
 ## File-Extension Routing (item → agent)
 
@@ -45,31 +45,31 @@ After the agent set is fixed, route each work item to one of the selected agents
 
 | Match | Agent |
 |---|---|
-| `*.test.*`, `*.spec.*` | `qa-writer` |
-| `.yml`/`.yaml` under `.github/`, `Dockerfile`, `.tf` | `devops` |
-| `.gitlab-ci.yml` (exact, root-only) | `devops` |
-| `*.md`, `docs/**` | `lore` |
-| `.cs`, `.csproj` | `csharp` |
-| `.tsx`, `.jsx`, `.css` | `js` |
-| `.ts`, `.js`, `.mjs`, `.cjs` | `js` |
-| `.py` | `python` |
-| `.sql`, `.migration` | `dba` |
-| `.sh` | `shell` |
+| `*.test.*`, `*.spec.*` | `dg:qa-writer` |
+| `.yml`/`.yaml` under `.github/`, `Dockerfile`, `.tf` | `dg:devops` |
+| `.gitlab-ci.yml` (exact, root-only) | `dg:devops` |
+| `*.md`, `docs/**` | `dg:lore` |
+| `.cs`, `.csproj` | `dg:csharp` |
+| `.tsx`, `.jsx`, `.css` | `dg:js` |
+| `.ts`, `.js`, `.mjs`, `.cjs` | `dg:js` |
+| `.py` | `dg:python` |
+| `.sql`, `.migration` | `dg:dba` |
+| `.sh` | `dg:shell` |
 
 The `.gitlab-ci.yml` row is an exact filename match at the repo root, not a directory-prefix rule like the `.github/` row above. A relocated config file or one split via `include:` into other files is out of scope — only the root `.gitlab-ci.yml` itself is routed.
 
 Overrides:
 
-- Comment body matches `\b(auth|authz|crypto|secret|token|cve)\b` (case-insensitive) → also assign `security`.
+- Comment body matches `\b(auth|authz|crypto|secret|token|cve)\b` (case-insensitive) → also assign `dg:security`.
 - No matching agent in selected set → route to closest match, else `general-purpose`.
 - Non-overlapping files → run agents in parallel.
 
 ## QA Agents (Phase 3, always)
 
-- `reviewer` — quality, correctness, coverage, logic
-- `qa-devops` — build, tests
-- `qa-perf` — hotspots, allocs, async, queries
+- `dg:reviewer` — quality, correctness, coverage, logic
+- `dg:qa-devops` — build, tests
+- `dg:qa-perf` — hotspots, allocs, async, queries
 
 ## Support Agents
 
-- `wave` — combined light review + correctness + checkpoint audit
+- `dg:wave` — combined light review + correctness + checkpoint audit

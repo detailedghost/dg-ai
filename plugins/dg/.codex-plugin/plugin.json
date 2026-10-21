@@ -1,7 +1,7 @@
 {
 	"name": "dg",
-	"description": "Browser, live chat, prototypes, channel review, reviewed Proton Mail, Gmail, and Outlook cleanup, and Google Messages cleanup.",
-	"version": "1.16.0",
+	"description": "Browser, live chat, prototypes, channel review, reviewed Proton Mail, Gmail, and Outlook cleanup, Google Messages cleanup, and planning and delivery skills: spec, sdlc, assign, worktree, monolith, polish, and more.",
+	"version": "1.17.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
@@ -11,8 +11,8 @@
 	"skills": "./skills/",
 	"interface": {
 		"displayName": "DeeGee",
-		"shortDescription": "Browser, channel review, inbox, and Google Messages cleanup",
-		"longDescription": "Browser, live chat, prototypes, channel review, reviewed Proton Mail, Gmail, and Outlook cleanup, and Google Messages cleanup.",
+		"shortDescription": "Browser, channel review, inbox cleanup, specs, and delivery skills",
+		"longDescription": "Browser, live chat, prototypes, channel review, reviewed Proton Mail, Gmail, and Outlook cleanup, Google Messages cleanup, and planning and delivery skills: spec, sdlc, assign, worktree, monolith, polish, and more.",
 		"developerName": "detailedghost",
 		"category": "Productivity",
 		"capabilities": [

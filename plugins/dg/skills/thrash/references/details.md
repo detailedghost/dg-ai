@@ -71,7 +71,7 @@ works while those paths sit inside its folder; otherwise `compile` asks you to r
 prints `{ dryRun: true, url, requestedVerdict, review }` and returns. It does not detect
 the provider, call `gh` or `glab`, or write `.posted.json`. It still refuses a local target
 and a review compiled for another URL. Because it skips provider detection, a URL on an
-unsupported host previews cleanly even though a real `post` would fail. `/thrash -n` exports the variable at the start of the
+unsupported host previews cleanly even though a real `post` would fail. `/dg:thrash -n` exports the variable at the start of the
 run and passes the flag, so report-only is safe even when a step runs by mistake.
 
 ## Stacks with merged or closed PRs
@@ -92,7 +92,7 @@ tallies as "merged (context only, not reviewed)". A closed unmerged PR tallies a
 `.` or a path resolves the repo root, then diffs the working tree against the fork point
 (merge-base with the upstream or default branch, `--base` to override), scoped to the
 path. Untracked files are skipped and listed. The same split and merge apply. `compile` writes
-`<root>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md` in the shape `/address -l` parses,
+`<root>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md` in the shape `/dg:address -l` parses,
 with tiers mapped to its severities: critical and high → high, medium → medium, low and
 nit → low. Unanchored findings are terminal-only in this mode. Nothing posts.
 

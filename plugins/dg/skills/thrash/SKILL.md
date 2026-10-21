@@ -6,13 +6,13 @@ description: >-
   approve, request-changes, or comment-only. `--spice 1-5` sets how hard the
   review looks and how many findings fail it, not its tone. `--stacked` finds every open PR in the target's
   stack and reviews them all. Pass `.` or a path instead of a URL for a local
-  review that writes findings for `/address -l`.
+  review that writes findings for `/dg:address -l`.
 ---
 
-# /thrash
+# /dg:thrash
 
 Review a diff, tier every finding, post the review with a verdict. A diff over 3000
-changed lines is split into chunks, each reviewed by its own `thrash` agent in parallel
+changed lines is split into chunks, each reviewed by its own `dg:thrash` agent in parallel
 and merged into one review. Cost: a small diff still takes one agent pass; a large diff
 takes one per chunk. Large diffs use up to 8 agents, and every changed line outside skipped
 generated, lock, or vendored files is reviewed. All agents use the same configured `thrash` persona and
@@ -21,20 +21,24 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 ## Usage
 
 ```
-/thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]
-/thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
+/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]
+/dg:thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--stacked` | Review every open PR in the target's stack, root first. Any PR in the stack works as the target. |
-| `-s, --spice N` | 1 to 5, default 2. Scrutiny depth, nit budget, and verdict limits. Tone never changes. |
-| `-c, --comment` | Post as comment only. No approve, no request-changes. |
-| `--confirm` | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. |
-| `-n, --dry-run` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. |
-| `-t, --min-tier <tier>` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. |
-| `-b, --base <ref>` | Local mode only. Override fork-point detection. |
-| `--proxy <backend>` | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. |
+**Usage:** `/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]` · `/dg:thrash . | <path> [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--stacked` | none | Review every open PR in the target's stack, root first. Any PR in the stack works as the target. | off |
+| `--spice N` | `-s` | 1 to 5. Scrutiny depth, nit budget, and verdict limits. Tone never changes. | `2` |
+| `--comment` | `-c` | Post as comment only. No approve, no request-changes. | off |
+| `--confirm` | none | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. | off |
+| `--dry-run` | `-n` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. | off |
+| `--min-tier <tier>` | `-t` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. | spice ladder |
+| `--base <ref>` | `-b` | Local mode only. Override fork-point detection. | detected fork point |
+| `--proxy <backend>` | none | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. | off (host agents) |
 
 ## Verdict rule
 
@@ -54,33 +58,17 @@ Nits never fail a review. `--comment` replaces the event. Spice never moves a ti
 
 ## Runtime and skill paths
 
-Resolve the compiled CLI before running any command:
+First run: install or refresh the compiled CLI when it is missing or too old. Every later call uses the literal path:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-dg_bootstrap() {
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-}
-dg_has_thrash() {
-  case "$("$DG" thrash --help 2>/dev/null)" in *--dry-run*) return 0 ;; esac
-  return 1
-}
-if [ ! -x "$DG" ] || ! dg_has_thrash; then
-  dg_bootstrap
-  dg_has_thrash || { echo "dg-skills at $DG is missing thrash post --dry-run; update it with the bootstrap above" >&2; exit 1; }
-fi
+~/.dg/bin/dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-`DG_HOME` moves the whole install, binary included. A binary whose `thrash` help lacks
-`--dry-run` is stale: re-bootstrap once, then stop with that error rather than run it.
+A binary whose `thrash` help lacks `--dry-run` is stale: re-run the bootstrap once, then stop with an error rather than run it.
 
-Repeat this resolution in every fresh shell, including delegated execution and
-resumed commands; shell variables do not persist between tool calls. Use the
+Every call works alone in a fresh shell, including delegated execution and
+resumed commands. Use the
 host's existing narrow approvals for the specific operation and honor permission
 already granted in this session. Do not edit permission files or assume that the
 compiled binary grants blanket approval to its subcommands.
@@ -96,36 +84,36 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 
 ## Helper
 
-Every provider and git call goes through `"$DG" thrash`. Its five subcommands are
+Every provider and git call goes through `~/.dg/bin/dg-skills thrash`. Its five subcommands are
 `stack`, `diff`, `compile`, `post`, and `tally`. The flags above describe this
 skill's orchestration: chunk scheduling and `--proxy` are handled by the calling
 agent, while the helper writes the chunk plan, compiles findings, and publishes.
 
 ## Flow
 
-1. **Diff.** `"$DG" thrash diff "$TARGET" ${BASE:+--base "$BASE"}` prints JSON with `diffPath`,
+1. **Diff.** `~/.dg/bin/dg-skills thrash diff "$TARGET" ${BASE:+--base "$BASE"}` prints JSON with `diffPath`,
    `contextPath`, `chunks`, `skipped`, `stats`, `untracked`. Each chunk has
    `id`, `label`, `annotatedPath`, `findingsPath`. A diff at or under the threshold is
    one chunk. Zero chunks → say "nothing to review" and stop. Warn on `untracked` paths.
-2. **Review.** Launch one `thrash` agent per chunk, all in one message, per
+2. **Review.** Launch one `dg:thrash` agent per chunk, all in one message, per
    `references/agent-prompt.md`. Each writes its `findingsPath` itself and replies with
    one `WROTE` line. Never pull its JSON into context. Never ask the user about size.
-   With `--proxy <backend>`, start one background `"$DG" proxy` job per chunk instead,
+   With `--proxy <backend>`, start one background `~/.dg/bin/dg-skills proxy` job per chunk instead,
    per the "Proxy backend" section of that file, and wait for every job to finish.
-3. **Compile.** `"$DG" thrash compile "$TARGET" --diff "$diffPath" --spice N [--min-tier t]
+3. **Compile.** `~/.dg/bin/dg-skills thrash compile "$TARGET" --diff "$diffPath" --spice N [--min-tier t]
    [--comment]`. It merges every chunk's findings, dedupes them, validates anchors,
    dedupes against open thrash threads, applies the nit ladder, decides the verdict, and
    prints the preview plus `REVIEW_JSON=` and `VERDICT=`. Show the preview. On a rejected
    or missing file, follow the retry in `references/agent-prompt.md`.
-4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/address -l`, then stop.
+4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/dg:address -l`, then stop.
    `--dry-run`: run `export DG_THRASH_DRY_RUN=1` at the start of the run (every fresh shell),
-   and in step 5 call `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
+   and in step 5 call `~/.dg/bin/dg-skills thrash post "$TARGET" --review "$REVIEW_JSON" --dry-run`. It prints
    the review it would post and makes no provider call; the env var makes any `post` a no-op too. Confirm through the host's user-question facility when `--confirm` was
    passed or when the verdict is approve or request changes. A headless run with no user to ask (for example the channel-review daemon) treats its own request as the confirm. A comment-only review goes to step 5 now.
-5. **Post.** `"$DG" thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--confirm` for an approve or request-changes verdict, or `--dry-run` in report-only mode) posts and saves the result
+5. **Post.** `~/.dg/bin/dg-skills thrash post "$TARGET" --review "$REVIEW_JSON"` (plus `--confirm` for an approve or request-changes verdict, or `--dry-run` in report-only mode) posts and saves the result
    next to the review JSON. If `degraded` is true, say the provider refused the requested
    verdict and posted as comment (for example, an own-PR restriction); the body still states the verdict.
-6. **Tally.** `"$DG" thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
+6. **Tally.** `~/.dg/bin/dg-skills thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
    findings per tier, inline count, and Approve, Request changes or Comment. Show it
    verbatim as the final report.
 
@@ -141,7 +129,7 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
 
 `--stacked` runs the same steps across the stack, keeping per-PR output out of context:
 
-1. `"$DG" thrash stack "$TARGET" --diff` walks every PR in the stack, open, merged or closed,
+1. `~/.dg/bin/dg-skills thrash stack "$TARGET" --diff` walks every PR in the stack, open, merged or closed,
    root first, and prints one row per PR with `number`, `url`, `state` and `reviewed`.
    Only **open** PRs are reviewed: their rows add `diffPath`, `contextPath`, `chunks`,
    `skipped` and `changed`, and each context file lists the merged PRs as context.
@@ -152,7 +140,7 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
    all `WROTE` replies.
 3. Compile every PR in one shell loop with stdout sent to `/dev/null`; errors still show.
    Each review JSON is its `diffPath` with `.diff` replaced by `.review.json`.
-4. `"$DG" thrash tally` on all review files plus every `statusPath`, in stack order, is the
+4. `~/.dg/bin/dg-skills thrash tally` on all review files plus every `statusPath`, in stack order, is the
    preview; unposted rows say so.
    For `--dry-run`, show the unposted tally and stop. Otherwise one confirm covers the stack when any review approves or requests changes, or when `--confirm` was passed. Pass `--confirm` to each such post.
 5. Post in one shell loop with stdout sent to `/dev/null` (with `--dry-run` in report-only

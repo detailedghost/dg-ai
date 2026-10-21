@@ -34,14 +34,14 @@ Pick the agent type that matches the thread's domain:
 
 | Domain | Agent type | When |
 |--------|-----------|------|
-| Database schema, queries, migrations | `dba` | Schema mismatch, query failure, migration issue |
-| CI/CD, pipeline, build, deploy | `qa-devops` | "Fails on the pipeline", build errors, deploy issues |
-| Test failures, logic correctness | `reviewer` | Wrong output, assertion failures, coverage gaps |
-| Security, auth, access control | `security` | Permission errors, token issues, vuln investigation |
-| Python runtime, library issues | `python` | Python stack traces, import errors, dependency issues |
-| JS/TS runtime, bundling, React | `js` | JS errors, build tool issues, frontend bugs |
-| C#/.NET runtime issues | `csharp` | .NET exceptions, EF Core issues |
-| Shell/infra/environment | `shell` | Path issues, permissions, env var problems |
+| Database schema, queries, migrations | `dg:dba` | Schema mismatch, query failure, migration issue |
+| CI/CD, pipeline, build, deploy | `dg:qa-devops` | "Fails on the pipeline", build errors, deploy issues |
+| Test failures, logic correctness | `dg:reviewer` | Wrong output, assertion failures, coverage gaps |
+| Security, auth, access control | `dg:security` | Permission errors, token issues, vuln investigation |
+| Python runtime, library issues | `dg:python` | Python stack traces, import errors, dependency issues |
+| JS/TS runtime, bundling, React | `dg:js` | JS errors, build tool issues, frontend bugs |
+| C#/.NET runtime issues | `dg:csharp` | .NET exceptions, EF Core issues |
+| Shell/infra/environment | `dg:shell` | Path issues, permissions, env var problems |
 | General codebase exploration | `Explore` | Domain unclear, or need broad file discovery |
 
 **Default to `Explore` only when no domain-specific agent fits.** Domain agents carry expertise that Explore doesn't. These domain agent types come from the user's own setup, not from this plugin. When the type is not installed, use `general-purpose` for the thread.
@@ -64,13 +64,13 @@ Keep prompts under 200 words. The agent doesn't need the full story — it needs
 
 ### Dispatch (Workflow)
 
-When there are **2+ independent threads**, dispatch them as a background **Workflow** instead of hand-launching agents — invoking `/hunt` is the opt-in. For a single thread, just call the agent inline; a workflow adds no value.
+When there are **2+ independent threads**, dispatch them as a background **Workflow** instead of hand-launching agents — invoking `/dg:hunt` is the opt-in. For a single thread, just call the agent inline; a workflow adds no value.
 
 Build `threads[]` (`{ id, agentType, prompt }`) from the routing table + prompt template above, then:
 
 ```
 Workflow({
-  scriptPath: "<skills>/hunt/references/hunt.workflow.mjs",
+  scriptPath: "<hunt-skill-dir>/references/hunt.workflow.mjs",
   args: {
     threads,                       // ≤3
     monolithHint: "<the monolith.md line, or ''>",
@@ -79,9 +79,11 @@ Workflow({
 })
 ```
 
+`<hunt-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass the script as an absolute path.
+
 `args` contract: `threads` is `[{ id, agentType, prompt }]`, each self-contained; the script keeps only the first 3. `monolithHint` is appended to every prompt, or `''` when there is no `monolith.md`. `verify` defaults to `true`.
 
-Threads carry an optional `model` (the script pins `security`/`dba` → opus, all other domains → sonnet, and Verify → sonnet, since unpinned workflow agents would inherit the session Opus). The script runs each thread (`Investigate`) then, by default, an adversarial **Verify** pass: a skeptic re-opens the cited lines and returns `confirmed: true|false`. It returns `{ findings: [{ threadId, rootCause, evidence, confidence, needsDesignDecision, verified }] }`. Every finding carries its `threadId`. `verified` is `null` when `verify` is `false`, and `{ confirmed: false, note: "verifier failed" }` when the verifier agent fails. Structured output — the orchestrator never parses prose. Set `verify: false` only for a fast, low-stakes pass.
+Threads carry an optional `model` (the script pins `dg:security`/`dg:dba` → opus, all other domains → sonnet, and Verify → sonnet, since unpinned workflow agents would inherit the session Opus). The script runs each thread (`Investigate`) then, by default, an adversarial **Verify** pass: a skeptic re-opens the cited lines and returns `confirmed: true|false`. It returns `{ findings: [{ threadId, rootCause, evidence, confidence, needsDesignDecision, verified }] }`. Every finding carries its `threadId`. `verified` is `null` when `verify` is `false`, and `{ confirmed: false, note: "verifier failed" }` when the verifier agent fails. Structured output — the orchestrator never parses prose. Set `verify: false` only for a fast, low-stakes pass.
 
 ## Phase 3 — Synthesize
 
@@ -119,7 +121,7 @@ Present findings in this format:
 - **Medium** — Strong hypothesis supported by evidence, but couldn't fully reproduce or trace the complete path. Fix is likely correct.
 - **Low** — Multiple possible causes. Need more information (logs, reproduction, environment access). List the candidates ranked by likelihood.
 
-## When to Escalate to /grill-me
+## When to Escalate to /dg:grill-me
 
 If the investigation reveals that the fix requires **design decisions** the user hasn't made:
 
@@ -127,7 +129,7 @@ If the investigation reveals that the fix requires **design decisions** the user
 - Trade-offs between multiple valid approaches
 - Scope questions (fix the symptom vs. fix the architecture)
 
-Say so explicitly: *"Root cause identified. The fix requires a design decision — recommend `/grill-me` to work through [specific question]."*
+Say so explicitly: *"Root cause identified. The fix requires a design decision — recommend `/dg:grill-me` to work through [specific question]."*
 
 Don't try to make design decisions during investigation. Diagnose, then hand off.
 

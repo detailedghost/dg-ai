@@ -1238,10 +1238,12 @@ describe("compiled thrash workflow", () => {
 	test("relocated instructions bootstrap local diff and preserve the address handoff from an external cwd", () => {
 		const repo = fixtureRepo();
 		const skill = readFileSync(join(skills, "thrash", "SKILL.md"), "utf8");
-		const bootstrap = skill.match(/```bash\n(DG=[\s\S]*?)\n```/)?.[1];
+		const bootstrap = skill.match(
+			/```bash\n(~\/\.dg\/bin\/dg-skills thrash --help[\s\S]*?)\n```/,
+		)?.[1];
 		expect(bootstrap).toBeDefined();
 		const proc = Bun.spawnSync(
-			["sh", "-c", `${bootstrap}\n"$DG" thrash diff "$TARGET"`],
+			["sh", "-c", `${bootstrap}\n~/.dg/bin/dg-skills thrash diff "$TARGET"`],
 			{
 				cwd: fixture.root,
 				env: fixture.env({ TARGET: repo, DG_SKILLS_DIR: skills }),
@@ -1284,7 +1286,7 @@ describe("compiled thrash workflow", () => {
 		expect(workflow).toContain(
 			"<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md",
 		);
-		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/address -l`");
+		expect(skill).toContain("report `ADDRESS_FILE=` and offer `/dg:address -l`");
 		const installed = readdirSync(skills, { recursive: true }).map((entry) =>
 			basename(String(entry)),
 		);
@@ -1371,7 +1373,7 @@ describe("compiled thrash workflow", () => {
 			"utf8",
 		);
 		const template = reference.match(
-			/```text\n(You are running inside \/thrash\.[\s\S]*?)\n```/,
+			/```text\n(You are running inside \/dg:thrash\.[\s\S]*?)\n```/,
 		)?.[1];
 		expect(template).toBeDefined();
 		const prompt = template!

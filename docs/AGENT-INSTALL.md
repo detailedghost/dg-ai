@@ -30,14 +30,14 @@ Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_INSTALL_CODEX = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
@@ -52,14 +52,14 @@ the marker `~/.dg/cli-only`. Run it before the plugin skills, so their
 bootstrap gate sees `dg-skills` and skips the full install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_CLI_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 `DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
@@ -75,7 +75,7 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `dg-skills require-extension <skill>` check at the top of `chat` and
   `overwatch`, stop with: the command needs the dg-ai-extension, and
   `dg-skills install` adds it.
-- To add the extension later, run `"$DG" install`. It installs the extension,
+- To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension,
   `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
 
@@ -107,14 +107,14 @@ otherwise `~/.dg/skills`.
 Without a checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_SKILLS_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
@@ -156,18 +156,17 @@ which fetches `dg-daemon` and `dg-agent` too, stages the extension, and prints t
 unpacked** path:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
+if [ ! -x ~/.dg/bin/dg-skills ]; then
   PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
   LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
   fi
 fi
 # Windows PowerShell:
-# irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+# irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set
@@ -176,9 +175,9 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
 - No Bun needed at runtime — the binary is self-contained. Bun is only required
   for the `--local` source build.
-- Re-run `"$DG" install` anytime to update the extension, `dg-skills` and
+- Re-run `~/.dg/bin/dg-skills install` anytime to update the extension, `dg-skills` and
   `dg-daemon` and `dg-agent` together; each is skipped when already current. For Firefox:
-  `"$DG" install firefox`. Default target is **chrome** (also serves
+  `~/.dg/bin/dg-skills install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
 - The chat skill runs `~/.dg/bin/dg-agent`, released separately under
   `agent-v*`, and `dg-agent start` launches `~/.dg/bin/dg-daemon` (released under
@@ -213,13 +212,13 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-"$DG" launch --browser brave --group "PRs" <refs...>
+~/.dg/bin/dg-skills launch --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 3 — Verify
 
 ```bash
-"$DG" --help
+~/.dg/bin/dg-skills --help
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-review`. Then confirm

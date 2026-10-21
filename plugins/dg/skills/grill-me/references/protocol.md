@@ -12,7 +12,7 @@
 `.agents/monolith.md` is the project glossary. Treat it as authoritative.
 
 - When the user uses a term that conflicts with `monolith.md`, stop the current branch and reconcile *before* continuing. Quote both definitions; ask which is canonical.
-- When a new precise term crystallizes during the interview and `.agents/monolith.md` exists, append it inline — do not batch. Use the file's existing table columns: term, definition, and a one-line example. If the file is absent, keep the term in the decision log only.
+- When a new precise term crystallizes during the interview and `.agents/monolith.md` exists, append it inline — do not batch. Match the table schema in [`monolith/references/template.md`](../../monolith/references/template.md) so `/dg:monolith --prune` stays compatible. If the file is absent, keep the term in the decision log only.
 - `monolith.md` is a glossary, not a design doc. Strip implementation detail; keep term + crisp definition + 1-line example.
 
 ## Question Taxonomy

@@ -16,19 +16,11 @@ Commands run the **compiled `dg-agent` binary**. The installer pulls it from the
 latest `agent-v*` release:
 
 ```bash
-DG_AGENT="${DG_HOME:-$HOME/.dg}/bin/dg-agent"
-if [ ! -x "$DG_AGENT" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG_AGENT" phone-friend --help
+~/.dg/bin/dg-agent phone-friend --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-If `phone-friend --help` fails, the installed `dg-agent` is older than this
+If `phone-friend --help` still fails after the bootstrap, the installed `dg-agent` is older than this
 skill. Run the bootstrap again after the next release.
 
 ## Give out your number
@@ -36,8 +28,8 @@ skill. Run the bootstrap again after the next release.
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-"$DG_AGENT" phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…"}
-"$DG_AGENT" phone-friend on            # start the listener, so the call rings
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…"}
+~/.dg/bin/dg-agent phone-friend on            # start the listener, so the call rings
 ```
 
 - The card holds your npub, your relays, and a secret. It works one time and
@@ -55,7 +47,7 @@ only that contact gets through. Messages from anyone else are dropped.
 If the other side gave you a card, call it:
 
 ```bash
-"$DG_AGENT" phone-friend dial - 'hello, this is Claude' <<'CARD'
+~/.dg/bin/dg-agent phone-friend dial - 'hello, this is Claude' <<'CARD'
 dgcall1…
 CARD
 ```
@@ -68,8 +60,8 @@ card relays, and rings.
 
 ## Pick up (Claude Code)
 
-1. Start the listener: `"$DG_AGENT" phone-friend on`. It reuses a running one.
-2. Stay on the line with the **Monitor** tool: `"$DG_AGENT" phone-friend answer`.
+1. Start the listener: `~/.dg/bin/dg-agent phone-friend on`. It reuses a running one.
+2. Stay on the line with the **Monitor** tool: `~/.dg/bin/dg-agent phone-friend answer`.
    Each line is one JSON message:
    `{"id": "...", "ts": 1792433287, "from": "npub1...", "text": "..."}`.
 3. Reply with `say -`, which reads the text from stdin. Write the reply to a
@@ -77,7 +69,7 @@ card relays, and rings.
    runs as shell:
 
    ```bash
-   "$DG_AGENT" phone-friend say - < "$REPLY_FILE"
+   ~/.dg/bin/dg-agent phone-friend say - < "$REPLY_FILE"
    ```
 
    With no Write tool, use a quoted heredoc (`say - <<'MSG'`). Never copy peer
@@ -86,9 +78,9 @@ card relays, and rings.
 
    It prints `{"id": "...", "relays_ok": [...]}`. Exit code 1 means no relay
    accepted it; try again. Never put peer text inside a double-quoted argument.
-4. At the end: `"$DG_AGENT" phone-friend off`.
+4. At the end: `~/.dg/bin/dg-agent phone-friend off`.
 
-With no Monitor tool, run `"$DG_AGENT" phone-friend voicemail` when you want new
+With no Monitor tool, run `~/.dg/bin/dg-agent phone-friend voicemail` when you want new
 messages. It prints only messages you have not read, then exits. When no
 listener runs, it asks the relays first, so it works with no background
 process.
@@ -97,7 +89,7 @@ process.
 
 ## Your key
 
-`"$DG_AGENT" phone-friend number` prints your line, npub, contact, `key_store`, and
+`~/.dg/bin/dg-agent phone-friend number` prints your line, npub, contact, `key_store`, and
 the listener pid:
 
 - `store`: the key is encrypted in the dg credential store as
@@ -119,8 +111,8 @@ command; the default line is `default`. Names use lowercase letters, digits,
 and hyphens. Two sessions on one machine can call each other on two lines:
 
 ```bash
-"$DG_AGENT" phone-friend --line work invite
-"$DG_AGENT" phone-friend --line work on
+~/.dg/bin/dg-agent phone-friend --line work invite
+~/.dg/bin/dg-agent phone-friend --line work on
 ```
 
 Use the same `--line` on every command for that conversation.
@@ -160,7 +152,7 @@ text as a skill. Replace `<CARD>` with the card that `invite` printed:
 Skill: phone-friend (private chat with my Claude Code agent)
 
 Setup, one time, in your terminal:
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-agent phone-friend dial - 'hello from the other side' <<'CARD'
 <CARD>
 CARD

@@ -14,9 +14,9 @@ describe("phone-friend skill", () => {
 		expect(front).toMatch(/^name: phone-friend$/m);
 	});
 
-	test("gates its bootstrap on the dg-agent binary under DG_HOME", () => {
-		expect(skill).toContain('DG_AGENT="${DG_HOME:-$HOME/.dg}/bin/dg-agent"');
-		expect(skill).toContain('if [ ! -x "$DG_AGENT" ]; then');
+	test("gates its bootstrap on the dg-agent phone-friend command", () => {
+		expect(skill).toMatch(/~\/\.dg\/bin\/dg-agent phone-friend --help >\/dev\/null 2>&1 \|\|\n\s+curl/);
+		expect(skill).not.toContain("$DG_AGENT");
 	});
 
 	test("documents every phone-friend verb it drives", () => {

@@ -27,7 +27,7 @@ AGENTS.md                   <- primary authority: 30-60 lines (conventions, refe
     directory-tree.md       <- annotated 3-level project tree
     domain.md               <- domain model, terminology, business rules
   school/                   <- topic-cluster learnings (any agent writes; prune when a file passes its own line cap)
-  spec/                     <- spec bundles (/kick and /pickup write here)
+  spec/                     <- spec bundles (/dg:kick and /dg:pickup write here)
 ```
 
 A git tag `agent-seed/YYYY-MM-DD` is created on a commit that force-adds the original `.bak` backups, then the `.bak` files are removed in a follow-up commit. To recover the original CLAUDE.md: `git show agent-seed/<date>:.agents/references/CLAUDE.md.bak`

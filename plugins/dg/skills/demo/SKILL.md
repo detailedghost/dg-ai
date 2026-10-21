@@ -66,33 +66,16 @@ those values in a fill action.
 
 ## Step 2 — Open it in the extension
 
-Write the plan to `/tmp/ai/demo/tour.md`. Resolve `$DG` first — in a dev checkout,
-compile the local source so the demo (and the verify pass below) exercise the latest
-code rather than a stale released binary:
+Write the plan to `/tmp/ai/demo/tour.md`. First run: install or refresh the CLI when it is missing or too old. In a dev checkout,
+rebuild and reinstall `~/.dg/bin/dg-skills` so the demo and the verify pass below use
+the latest code:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-SRC=""
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&
-  [ -f "$CLAUDE_PLUGIN_ROOT/pkg/skills-cli/package.json" ]; then
-  SRC="$CLAUDE_PLUGIN_ROOT/pkg/skills-cli"
-elif [ -f "$PWD/pkg/skills-cli/package.json" ]; then
-  SRC="$PWD/pkg/skills-cli"
-fi
-if [ -n "$SRC" ]; then
-  ( cd "$SRC" && bun run build ) && DG="$SRC/dist/dg-skills"   # dev: freshly-compiled
-fi
-if [ ! -x "$DG" ]; then
-  if [ -n "$SRC" ]; then
-    sh "$SRC/bootstrap.sh"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills demo --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-On Windows PowerShell use the checkout's `bootstrap.ps1`, or pipe the repository's raw
-`bootstrap.ps1` to `Invoke-Expression`.
+On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to `Invoke-Expression`.
 
 ### Verify, then correct, then repeat — bounded
 
@@ -100,7 +83,7 @@ Before handing the plan to the user, walk it yourself in a real throwaway browse
 you are the first one to hit a bad selector or an unrecorded navigation, not them:
 
 ```bash
-"$DG" demo --verify /tmp/ai/demo/tour.md
+~/.dg/bin/dg-skills demo --verify /tmp/ai/demo/tour.md
 ```
 
 This prints `{"ok": boolean, "findings": [...]}` to stdout. Each finding names a step
@@ -119,7 +102,7 @@ user rather than looping forever or handing off a plan you know is broken. A cle
 Run **one** command — no `--video` flag, because the mode is chosen in the browser:
 
 ```bash
-"$DG" demo --edit /tmp/ai/demo/tour.md
+~/.dg/bin/dg-skills demo --edit /tmp/ai/demo/tour.md
 ```
 
 This opens `startUrl` with the tour in a `_demo` marker and shows the **start screen**,
@@ -159,7 +142,7 @@ Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every recorded video do
 alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
 
 ```bash
-"$DG" rerun <path-to>.demo.md
+~/.dg/bin/dg-skills rerun <path-to>.demo.md
 # add --video to record the replay
 ```
 

@@ -46,9 +46,9 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 
 | Runner | Thrash locations relative to the user's home |
 | --- | --- |
-| claude | `.claude/skills/thrash/SKILL.md` or a nested `skills/thrash/SKILL.md` under `.claude/plugins` |
+| claude | `.claude/plugins/cache/<marketplace>/dg/<version>/plugins/dg/skills/thrash/SKILL.md` |
 | codex | `.codex/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
-| copilot | `.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md` |
+| copilot | `.copilot/skills/thrash/SKILL.md` |
 | grok | An enabled, user-invocable, unambiguous `thrash` reported by `grok inspect --json` |
 
 The exact command is in [Grok runner](#grok-runner). Install and authenticate using the
@@ -64,7 +64,7 @@ checks the CLI's resolved credential source, not remote token validity or every
 model's entitlement. Sign in again if a later job reports CR-202.
 `status` inspects user-level skills from the home directory; each review rechecks
 from its actual scratch working directory. Disabled, non-user-invocable, or
-colliding `/thrash` skills report CR-206. Failed utility commands or malformed
+colliding `/dg:thrash` skills report CR-206. Failed utility commands or malformed
 inspection output report CR-203. Use `grok inspect --json` to check compatibility
 skills and plugin discovery; the probe does not assume another host's skill roots.
 See [Grok's skill guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md).
@@ -74,11 +74,12 @@ writes the text the runner reads, so a prompt injection must not reach a shell
 or your secrets. Each rule has one job. `<scratch>` is `AI_SCRATCH_DIR` or
 `/tmp/ai`. An absolute path in a rule needs the leading `//`.
 
-- `Bash(<home>/scripts/bin/thrash-helper:*)` lets thrash call its helper and
-  nothing else in the scripts folder.
+- `Bash(<home>/.dg/bin/dg-skills thrash:*)` lets thrash call its `dg-skills`
+  subcommand and nothing else in the `dg-skills` binary.
 - `Agent` lets thrash start its reviewer subagents.
 - `Read(//<scratch>/thrash/**)` lets thrash read its own working files.
-- `Read(~/.claude/skills/thrash/**)` lets thrash read its skill files.
+- `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)` lets thrash read its
+  installed plugin skill files.
 - `Grep(//<scratch>/thrash/**)` and `Glob(//<scratch>/thrash/**)` let thrash
   search those working files.
 - `Edit(//<scratch>/thrash/**)` lets thrash write its findings file before it
@@ -94,13 +95,15 @@ PR author's text read `~/.aws`, `~/.ssh`, or `~/.dg` and post them as a comment.
 list. It must edit code, run tests, commit, and push, so it is wider than the
 review list. `<clones>` is `address.cloneRoot`. The default rules:
 
-- `Agent` lets /address start its fix agents.
+- `Agent` lets /dg:address start its fix agents.
 - `Edit(//<clones>/**)`, `Read(//<clones>/**)`, `Grep(//<clones>/**)`, and
   `Glob(//<clones>/**)` limit file access to the job's clones.
-- `Read(~/.claude/skills/address/**)` lets /address read its skill files.
+- `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)` lets /dg:address read
+  its installed plugin skill files.
 - `Bash(git:*)`, `Bash(gh:*)`, and `Bash(glab:*)` let it commit, push, and
   reply to review threads.
-- `Bash(<home>/scripts/bin/address-helper:*)` lets it call its helper.
+- `Bash(<home>/.dg/bin/dg-skills address:*)` lets it call its `dg-skills`
+  subcommand.
 - `Bash(bun:*)`, `Bash(npm:*)`, `Bash(npx:*)`, `Bash(dotnet:*)`,
   `Bash(python:*)`, and `Bash(pytest:*)` let it build and test.
 
@@ -111,7 +114,7 @@ a chat where you trust every member.
 
 Each `$address` job clones the PR head branch fresh into
 `<clones>/<host>-<owner>-<repo>-<message id>` with `gh repo clone` or
-`glab repo clone`, runs /address there, and deletes that one folder when the
+`glab repo clone`, runs /dg:address there, and deletes that one folder when the
 job ends, also on failure. The daemon deletes only a folder inside
 `address.cloneRoot`, never the root itself, and never your own checkouts. When
 the daemon starts after a crash, it deletes the leftover clone of each
@@ -144,7 +147,7 @@ headless flags; a few of them are not spelled out as a stable contract, so
 they are config when the CLI allows it.
 
 - The command is `grok --no-auto-update -p <prompt> --output-format <format> --always-approve --cwd <job dir>`. `--no-auto-update` skips the background updater. `--cwd` is the job directory, and the process working directory is that same path.
-- The prompt is `/thrash ...`. These flags were checked against Grok Build 1.0.60.
+- The prompt is `/dg:thrash ...`. These flags were checked against Grok Build 1.0.60.
 - `runner.grok.outputFormat` is `streaming-json` (the default), `json`, or `plain`. `streaming-json` is one JSON object per line: `text` (answer chunk, field `data`), `thought` (ignored), `error` (field `message`), and `end` (field `stopReason`). The daemon appends the stream to the job log. A fast nonzero exit whose stderr, or whose `error` event, says the CLI is not signed in is CR-202. The review text itself is not parsed; thrash posts the review.
 - `runner.grok.tools` is an optional list of Grok tool ids such as `read_file` and `grep`. They are joined with commas into one `--tools` value, which replaces Grok's default tool set. Leave it unset, or set an empty list, to keep that default. A tool id must not contain a comma. This is not Claude's `Bash(git:*)` syntax.
 - `runner.grok.model` is optional and becomes `--model`.
@@ -197,8 +200,8 @@ every required key with placeholder values.
 | `runner.fallback` | string or null | `null` | Retry a Claude review once after a usage limit. Off by default. Set `"fallback": "codex"` to turn it on, or choose copilot or grok. The fallback must pass its runner probe. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
-| `runner.claude.allowedTools` | string array | `Bash(<home>/scripts/bin/thrash-helper:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |
-| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `<home>/scripts/bin/address-helper`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
+| `runner.claude.allowedTools` | string array | `Bash(<home>/.dg/bin/dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |
+| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `<home>/.dg/bin/dg-skills address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
 | `runner.grok.model` | string | Unset | Optional `--model` for the Grok CLI. |
 | `runner.grok.tools` | string array | Unset | Optional Grok tool ids, comma-joined into `--tools`. Empty leaves the CLI default. See Grok runner. |
 | `runner.grok.outputFormat` | string | `streaming-json` | `plain`, `json`, or `streaming-json`. |
@@ -281,7 +284,7 @@ to a `bot/fix/*` branch.
 | `deps.ciTimeoutMinutes` | number | `60` | How long the daemon waits for CI on a draft PR before it reports a timeout. |
 | `deps.cooldownDays` | whole number | `7` | The skill only upgrades to versions published at least this many days ago. |
 | `deps.branchPrefix` | string | `chore/deps-update-` | Branch prefix of upgrade PRs. A repo with an open PR on this prefix is skipped. |
-| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, and the deps-upgrade skill and helper | Tools the upgrade agent may use. |
+| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(<home>/.dg/bin/dg-skills deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
 | `deps.schedule.every` | string | `week` | Default cadence: `day` or `week`. |
 | `deps.schedule.day` | string | `mon` | Default weekday for `week`: `mon` to `sun`. |
 | `deps.schedule.window` | string | `02:00-05:00` | Default local-time window, `HH:MM-HH:MM`. It may cross midnight. |

@@ -19,42 +19,33 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 `skills-v*`):
 
 ```bash
-DG_SKILLS="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ -x "$DG_SKILLS" ]; then "$DG_SKILLS" require-extension chat || exit 1; fi
-DG_AGENT="${DG_HOME:-$HOME/.dg}/bin/dg-agent"
-if [ ! -x "$DG_AGENT" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension chat || exit 1; fi
+[ -x ~/.dg/bin/dg-agent ] ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 The gate tests `dg-agent`, **not** `dg-skills`. A machine that has already used
 `browser`, `demo` or `proto` already has `dg-skills`, so gating on that binary
 would short-circuit and `dg-agent` would never arrive.
 
-On Windows PowerShell, run the local `bootstrap.ps1` through
-`$env:CLAUDE_PLUGIN_ROOT` when available; otherwise pipe the repository's raw
-`bootstrap.ps1` to `Invoke-Expression`.
+On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
+`Invoke-Expression`.
 
 Then run every command through it:
 
 ```bash
-"$DG_AGENT" <command> <args>
+~/.dg/bin/dg-agent <command> <args>
 ```
 
 ## The loop
 
 ```bash
-"$DG_AGENT" start --open              # register a session, open the chat page
-"$DG_AGENT" progress --state running  # tell the human you are working
-"$DG_AGENT" send "Looking at it now." # say something
-"$DG_AGENT" progress --state awaiting-input
-"$DG_AGENT" recv --block              # wait for their reply
-"$DG_AGENT" close                     # finish the session
+~/.dg/bin/dg-agent start --open              # register a session, open the chat page
+~/.dg/bin/dg-agent progress --state running  # tell the human you are working
+~/.dg/bin/dg-agent send "Looking at it now." # say something
+~/.dg/bin/dg-agent progress --state awaiting-input
+~/.dg/bin/dg-agent recv --block              # wait for their reply
+~/.dg/bin/dg-agent close                     # finish the session
 ```
 
 `recv` prints one JSON object per call and acknowledges the message only after

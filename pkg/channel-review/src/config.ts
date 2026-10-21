@@ -263,10 +263,10 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	const claude = section(rec, "claude", "runner", ["path", "allowedTools", "addressAllowedTools"]);
 	const scratch = `/${process.env.AI_SCRATCH_DIR ?? "/tmp/ai"}/thrash/**`;
 	const allowedTools = claude.allowedTools ?? [
-		`Bash(${homedir()}/scripts/bin/thrash-helper:*)`,
+		`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
 		"Agent",
 		`Read(${scratch})`,
-		"Read(~/.claude/skills/thrash/**)",
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
 		`Grep(${scratch})`,
 		`Glob(${scratch})`,
 		`Edit(${scratch})`,
@@ -279,11 +279,11 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		`Read(${clones})`,
 		`Grep(${clones})`,
 		`Glob(${clones})`,
-		"Read(~/.claude/skills/address/**)",
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)",
 		"Bash(git:*)",
 		"Bash(gh:*)",
 		"Bash(glab:*)",
-		`Bash(${homedir()}/scripts/bin/address-helper:*)`,
+		`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
 		"Bash(bun:*)",
 		"Bash(npm:*)",
 		"Bash(npx:*)",
@@ -570,8 +570,8 @@ function parseDeps(
 		seen.add(repo);
 	}
 	const deps = [
-		"Read(~/.claude/skills/deps-upgrade/**)",
-		`Bash(${homedir()}/scripts/bin/deps-upgrade-helper:*)`,
+		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)",
+		`Bash(${homedir()}/.dg/bin/dg-skills deps-upgrade:*)`,
 		"Bash(git:*)",
 		"Bash(gh:*)",
 	];

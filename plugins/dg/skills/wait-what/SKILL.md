@@ -1,10 +1,10 @@
 ---
 name: wait-what
-description: "Stop. That last message did not land: re-pitch it with context, in plain words and the project's own vocabulary. Use when the user says \"wait what\", \"I am lost\", \"back up\", \"re-pitch that\", or invokes /wait-what."
+description: "Stop. That last message did not land: re-pitch it with context, in plain words and the project's own vocabulary. Use when the user says \"wait what\", \"I am lost\", \"back up\", \"re-pitch that\", or invokes /dg:wait-what."
 disable-model-invocation: true
 ---
 
-# /wait-what — Re-pitch the Last Message
+# /dg:wait-what — Re-pitch the Last Message
 
 The user is lost. Your last message assumed context they do not have. Stop forward work and
 re-pitch it. Do not run tools that change state in this turn.

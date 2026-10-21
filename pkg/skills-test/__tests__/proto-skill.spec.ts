@@ -78,7 +78,7 @@ describe("proto skill", () => {
 		const commands = skillFile("references/commands.md");
 		const contracts = skillFile("references/contracts.md");
 
-		expect(commands).toContain("${DG_HOME:-$HOME/.dg}/bin/dg-skills");
+		expect(commands).toContain("~/.dg/bin/dg-skills");
 		expect(commands).toContain("pkg/skills-cli");
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("browser-batch-installed");

@@ -117,17 +117,87 @@ describe("loadConfig defaults", () => {
 		).toEqual({ github: ["ghe.corp.example"], gitlab: ["git.corp.example"] });
 	});
 
-	test("builds the claude allowedTools default from the home directory", () => {
+	test("builds the claude allowedTools default around the dg-skills thrash subcommand", () => {
 		const scratch = process.env.AI_SCRATCH_DIR ?? "/tmp/ai";
-		expect(load().runner.claude.allowedTools).toEqual([
-			`Bash(${homedir()}/scripts/bin/thrash-helper:*)`,
+		const tools = load().runner.claude.allowedTools;
+		expect(tools).toEqual([
+			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
 			"Agent",
 			`Read(/${scratch}/thrash/**)`,
-			"Read(~/.claude/skills/thrash/**)",
+			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
 			`Grep(/${scratch}/thrash/**)`,
 			`Glob(/${scratch}/thrash/**)`,
 			`Edit(/${scratch}/thrash/**)`,
 		]);
+	});
+
+	test.each([
+		["allowedTools", "thrash"],
+		["addressAllowedTools", "address"],
+	] as const)(
+		"grants %s a plugin-cache Read for the %s skill only",
+		(key, name) => {
+			const tools = load().runner.claude[key];
+			expect(tools).toContain(
+				`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`,
+			);
+			expect(
+				tools.filter(
+					(tool) =>
+						tool.includes("/skills/") && !tool.includes(`/skills/${name}/`),
+				),
+			).toEqual([]);
+		},
+	);
+
+	test("grants one Bash rule per dg-skills subcommand to each default list", () => {
+		const claude = load().runner.claude;
+		const grants = (tools: string[]) =>
+			tools.filter((tool) =>
+				tool.startsWith(`Bash(${homedir()}/.dg/bin/dg-skills`),
+			);
+		expect(grants(claude.allowedTools)).toEqual([
+			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
+		]);
+		expect(grants(claude.addressAllowedTools)).toEqual([
+			`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
+		]);
+	});
+
+	test("keeps an explicit allowedTools override untouched", () => {
+		const custom = ["Bash(echo:*)"];
+		expect(
+			load({ runner: { claude: { allowedTools: custom } } }).runner.claude
+				.allowedTools,
+		).toEqual(custom);
+	});
+
+	test("keeps an explicit addressAllowedTools override untouched", () => {
+		const custom = ["Bash(echo:*)"];
+		expect(
+			load({ runner: { claude: { addressAllowedTools: custom } } }).runner
+				.claude.addressAllowedTools,
+		).toEqual(custom);
+	});
+
+	test("keeps an explicit deps.allowedTools override untouched", () => {
+		const custom = ["Bash(echo:*)"];
+		expect(load({ deps: { allowedTools: custom } }).deps.allowedTools).toEqual(
+			custom,
+		);
+	});
+
+	test("grants no bare dg-skills, legacy helper or local skill path by default", () => {
+		const { allowedTools, addressAllowedTools } = load().runner.claude;
+		const all = [
+			...allowedTools,
+			...addressAllowedTools,
+			...load().deps.allowedTools,
+		];
+		expect(
+			all.filter((tool) => /scripts\/bin|-helper|\.claude\/skills/.test(tool)),
+		).toEqual([]);
+		expect(all).not.toContain(`Bash(${homedir()}/.dg/bin/dg-skills:*)`);
 	});
 
 	test("does not allow arbitrary scripts or unscoped Read by default", () => {
@@ -386,7 +456,7 @@ describe("loadConfig address", () => {
 		expect(config.owner.senderIds).toEqual([]);
 	});
 
-	test("builds the address allowlist from the clone root and the home directory", () => {
+	test("builds the address allowlist from the clone root and the dg-skills address subcommand", () => {
 		const tools = load({ address: { cloneRoot: "/srv/clones" } }).runner.claude.addressAllowedTools;
 		expect(tools).toEqual([
 			"Agent",
@@ -394,11 +464,11 @@ describe("loadConfig address", () => {
 			"Read(//srv/clones/**)",
 			"Grep(//srv/clones/**)",
 			"Glob(//srv/clones/**)",
-			"Read(~/.claude/skills/address/**)",
+			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)",
 			"Bash(git:*)",
 			"Bash(gh:*)",
 			"Bash(glab:*)",
-			`Bash(${homedir()}/scripts/bin/address-helper:*)`,
+			`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
 			"Bash(bun:*)",
 			"Bash(npm:*)",
 			"Bash(npx:*)",

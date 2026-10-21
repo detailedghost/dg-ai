@@ -19,13 +19,16 @@ import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
 import { registerLaunch } from "./commands/launch";
 import { registerMeaningful } from "./commands/meaningful";
+import { registerMonolith } from "./commands/monolith";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
+import { registerSpec } from "./commands/spec";
 import { registerStash } from "./commands/stash";
 import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
+import { registerWorktree } from "./commands/worktree";
 import {
 	guardExtensionCommands,
 	registerRequireExtension,
@@ -62,6 +65,9 @@ registerClipboardImage(program);
 registerProto(program);
 registerProxy(program);
 registerOverwatchSnapshot(program);
+registerWorktree(program);
+registerSpec(program);
+registerMonolith(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

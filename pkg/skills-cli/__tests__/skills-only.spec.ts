@@ -18,15 +18,18 @@ import {
 } from "../src/commands/skills-only";
 
 const PERSONAS = [
+	"arch",
 	"checkpoint",
 	"copilot-antagonist",
 	"csharp",
 	"dba",
+	"design",
 	"devops",
 	"foreman",
 	"js",
 	"lore",
 	"python",
+	"qa-code",
 	"qa-devops",
 	"qa-perf",
 	"qa-writer",

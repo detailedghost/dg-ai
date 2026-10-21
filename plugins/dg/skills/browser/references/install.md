@@ -9,16 +9,9 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG" install
+~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+~/.dg/bin/dg-skills install
 ```
 
 The installer copies the extension to a Windows-native directory:
@@ -46,16 +39,7 @@ Run:
 ```powershell
 $dg = Join-Path $env:USERPROFILE ".dg\bin\dg-skills.exe"
 if (-not (Test-Path $dg)) {
- $localBootstrap = if ($env:CLAUDE_PLUGIN_ROOT) {
-  Join-Path $env:CLAUDE_PLUGIN_ROOT "pkg\skills-cli\bootstrap.ps1"
- } else {
-  $null
- }
- if ($localBootstrap -and (Test-Path $localBootstrap)) {
-  & $localBootstrap
- } else {
-  irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
- }
+ irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 }
 & $dg install
 ```
@@ -74,16 +58,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG" install
+~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+~/.dg/bin/dg-skills install
 ```
 
 The installer copies the extension to:
@@ -100,16 +77,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
-"$DG" install
+~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+~/.dg/bin/dg-skills install
 ```
 
 The installer copies the extension to:

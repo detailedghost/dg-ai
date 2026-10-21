@@ -1,0 +1,9 @@
+# Performance
+
+- **Worktree-aware.** On a linked git worktree the scan routes through `~/.dg/bin/dg-skills monolith worktree-gen` (absolute `SCAN_ROOT`) so branch-local code is scanned, not the main checkout. See protocol Phase 1.4.
+- **Stack-aware scanner routing.** Detect the dominant language at the start of Phase 2 and dispatch language-specialist sub-agents (`dg:python`, `dg:js`, `dg:csharp`, `dg:dba`, etc.) instead of the generalist `Explore` whenever a single language dominates. Specialists know the idioms — they extract richer vocabulary in fewer tokens. Polyglot repos fall back to `Explore`. See `references/protocol.md` Phase 1.5 for the routing table.
+- **Haiku for extraction, Sonnet for synthesis.** Scanner agents do TSV extraction (read code → emit lines) — `model: "haiku"` is sufficient and ~3-5× cheaper. `dg:lore` stays on Sonnet because consolidation is real synthesis.
+- **Single-pass parallelism.** The Workflow runs all three scanners concurrently (capped at the runtime's slot limit) then hands off to `dg:lore` — deterministic dispatch, no manual fan-out to forget.
+- **Helper subcommands are POSIX sh, ~50 ms each.** Validation, cap-report, prune all run locally — no agent token spend.
+- **TSV intermediate format.** Scanners emit terse TSV instead of prose; `dg:lore` consumes the TSV directly. Keeps the input to the synthesis pass under ~3 KB even for large repos.
+- **File-search hierarchy in scanner prompts.** Every scanner prompt mandates: (1) `mcp__fff__find_files`, `mcp__fff__grep`, `mcp__fff__multi_grep` first — frecency-ranked, fastest. (2) `rg ...` via Bash if fff-ai misses or is unavailable. (3) Built-in `Grep`/`Glob` only as last resort. Scanners explicitly forbidden from using `find`/`cat`/`head`/`tail` for searching. Cuts scanner wall time substantially on large repos.

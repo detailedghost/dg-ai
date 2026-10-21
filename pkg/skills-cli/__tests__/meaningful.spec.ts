@@ -842,7 +842,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
    const text = readFileSync(join(skills, skill, "SKILL.md"), "utf8");
    const snippet = text.match(/```bash\n([\s\S]*?)```/)?.[1];
    expect(snippet).toBeTruthy();
-   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$DG" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
+   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec ~/.dg/bin/dg-skills "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
    expect(proc.exitCode).toBe(0);
    expect(proc.stdout.toString()).toContain(`Usage: ${skill} <subcommand>`);
    expect(proc.stderr.toString()).toBe("");

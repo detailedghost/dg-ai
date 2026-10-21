@@ -5,7 +5,11 @@
 ```text
 /plugin marketplace add ~/code/dg
 /plugin install dg@detailedghost
+/plugin install unslop@detailedghost
 ```
+
+The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop` skill, which `/dg:polish` calls
+when present.
 
 **Standalone — one command installs the `dg-skills`, `dg-daemon` and `dg-agent` binaries
 _and_ the browser extension** (compiled binaries, no Bun needed):
@@ -15,13 +19,13 @@ macOS / Linux (x64 or arm64):
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -46,14 +50,14 @@ not start a full install.
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Windows, in PowerShell:
 
 ```powershell
 $env:DG_CLI_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -67,6 +71,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `stash`, `proxy` | Yes — proxy needs the selected external backend installed and authenticated |
 | `clipboard-img` | Yes — needs a native WSL, Wayland, or X11 clipboard tool |
 | `channel-review` | Yes |
+| `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
 | `google-sms-cleanup` | Yes — instruction-only |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
@@ -110,14 +115,14 @@ when the binary is not running inside this repository.
 macOS / Linux, without a local checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
 ```
 
 Windows, in PowerShell:
 
 ```powershell
 $env:DG_SKILLS_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -143,14 +148,14 @@ To install the same skills directly into `$CODEX_HOME/skills` without the Codex
 plugin, opt in while bootstrapping:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 PowerShell standalone installation:
 
 ```powershell
 $env:DG_INSTALL_CODEX = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 The standalone path copies the skills to `$CODEX_HOME/skills` (or

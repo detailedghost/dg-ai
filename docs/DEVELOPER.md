@@ -306,7 +306,7 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 | `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
 | skill tree | the repository itself | tracked in `master` |
 
-The four released packages and both plugin manifests share version 1.16.0.
+The four released packages and both plugin manifests share version 1.17.0.
 Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
 `@dg/common` stays at 1.0.0; it is not part of this matched release set.
 Each workflow publishes its own tag. `dg-skills install` refreshes the extension
@@ -327,6 +327,16 @@ or installed plugin caches. Review narrow host command permissions separately;
 retain existing approval semantics, including separate approval for `pw code`.
 Do not broadly allowlist the binary to bypass those prompts. Later-wave public
 commands and their skills remain separate dependencies until their ports land.
+
+Wave 3 adds `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`,
+and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
+`polish`; leave it unset to skip. After the merge, smoke `scaffold`, `validate`,
+and `monolith` from outside the checkout with the installed plugin tree.
+
+Wave 3 adds `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`,
+and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
+`polish`; leave it unset to skip. After the merge, smoke `scaffold`, `validate`,
+and `monolith` from outside the checkout with the installed plugin tree.
 
 ## Cross-package integration checklist
 

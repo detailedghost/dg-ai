@@ -126,15 +126,15 @@ describe("channel-review skill distribution", () => {
 		expect(front).toMatch(/^name: channel-review$/m);
 	});
 
-	test("the bootstrap block is the inbox-cleanup block with only the final help line changed", () => {
-		const ours = bootstrapBlock(readSkill()).split("\n");
-		const theirs = bootstrapBlock(readFileSync(inboxSkillPath, "utf8")).split(
-			"\n",
-		);
-		expect(ours.length).toBeGreaterThan(5);
-		expect(ours.slice(0, -2)).toEqual(theirs.slice(0, -2));
-		expect(ours.at(-1)).toBe(theirs.at(-1));
-		expect(ours.at(-2)).toMatch(/"\$DG" channel-review --help/);
+	test("bootstrap block gates on help, installs the CLI only, ends with the help line", () => {
+		const block = bootstrapBlock(readSkill()).split("\n");
+		expect(block).toEqual([
+			"```sh",
+			"~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||",
+			expect.stringMatching(/bootstrap\.sh \| sh -s -- --cli-only$/),
+			"~/.dg/bin/dg-skills channel-review --help",
+			"```",
+		]);
 	});
 
 	test("SKILL.md and references name the shipped CLI, commands, and vocabulary", () => {
@@ -325,7 +325,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 		]);
 		const lines = content()
 			.split("\n")
-			.filter((line) => /(?:dg-skills|"\$DG")\s+channel-review/.test(line));
+			.filter((line) => /dg-skills\s+channel-review/.test(line));
 		expect(lines.length).toBeGreaterThan(5);
 		for (const line of lines) {
 			const sub = /channel-review\s+([a-z-]+)(?:\s+([a-z]+))?/.exec(line);
@@ -452,22 +452,21 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				expect(configSource).toMatch(new RegExp(`\\b${segment}\\b`));
 			}
 		for (const rule of [
-			"Bash(<home>/scripts/bin/thrash-helper:*)",
+			"Bash(<home>/.dg/bin/dg-skills thrash:*)",
 			"Read(//<scratch>/thrash/**)",
-			"Read(~/.claude/skills/thrash/**)",
 			"Grep(//<scratch>/thrash/**)",
 			"Glob(//<scratch>/thrash/**)",
 			"Edit(//<scratch>/thrash/**)",
 		])
 			expect(setup).toContain(rule);
 		expect(setup).not.toContain("<home>/scripts/**");
+		expect(setup).not.toMatch(/scripts\/bin|-helper|~\/\.claude\/skills/);
 		for (const rule of [
 			"Edit(//<clones>/**)",
 			"Read(//<clones>/**)",
 			"Grep(//<clones>/**)",
 			"Glob(//<clones>/**)",
-			"Read(~/.claude/skills/address/**)",
-			"Bash(<home>/scripts/bin/address-helper:*)",
+			"Bash(<home>/.dg/bin/dg-skills address:*)",
 		])
 			expect(setup).toContain(rule);
 		const address = /addressAllowedTools \?\? \[([\s\S]*?)\];/.exec(configSource)?.[1] ?? "";
@@ -475,6 +474,11 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			expect(setup).toContain(`\`${tool}\``);
 		expect(/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1]).toBe("60");
 		expect(setup).toContain("`<home>/code/bot`");
+		expect(configSource).toContain(".dg/bin/dg-skills");
+		expect(setup).toContain("dg-skills deps-upgrade");
+		for (const name of ["thrash", "address", "deps-upgrade"])
+			expect(setup).toContain(`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`);
+		expect(setup).not.toContain("`.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md`");
 	});
 
 	test("setup.md documents chats, the shared queue, and the per-chat status fields", () => {

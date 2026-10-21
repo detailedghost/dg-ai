@@ -4,18 +4,27 @@ description: Push the current branch, open its PR, and drop that PR into a dg:br
 allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(~/.dg/bin/dg-skills:*)
 ---
 
-# /pushup — push, PR, open it
+# /dg:pushup — push, PR, open it
 
 Carries committed work from a feature branch to a PR sitting open in the browser. Assumes the
 commits already have the shape you want them reviewed in.
 
 ## Usage
 
+**Usage:** `/dg:pushup [--draft] [--group <name>]`
+
 ```
-/pushup                 # push, open a PR, open it in the "pr" tab group
-/pushup --draft         # open the PR as a draft
-/pushup --group <name>  # use a different dg:browser tab group
+/dg:pushup                 # push, open a PR, open it in the "pr" tab group
+/dg:pushup --draft         # open the PR as a draft
+/dg:pushup --group <name>  # use a different dg:browser tab group
 ```
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--draft` | none | Open the PR as a draft. | off |
+| `--group <name>` | none | Use a different dg:browser tab group. | `pr` |
 
 ## Steps
 
@@ -33,19 +42,11 @@ commits already have the shape you want them reviewed in.
    does not pre-approve, so Claude Code asks before each one:
 
    ```sh
-   DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-   if [ ! -x "$DG" ]; then
-     PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
-     LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
-     if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-       sh "$LOCAL_BOOTSTRAP"
-     else
-       curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-     fi
-   fi
+   ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
+     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
-   Report which group you used.
+   Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
 
 ## PR body rules
 
@@ -55,6 +56,6 @@ passive rewrite of the same claim. Say what changed and why.
 
 ## Delegation
 
-- Commits in the wrong shape → `/meaningful` first, then come back.
-- 2+ dependent PRs → `/chain`, and the batch-PR approval gate applies before opening any of them.
-- Review comments or failing checks afterwards → `/address`.
+- Commits in the wrong shape → `/dg:meaningful` first, then come back.
+- 2+ dependent PRs → `/dg:chain`, and the batch-PR approval gate applies before opening any of them.
+- Review comments or failing checks afterwards → `/dg:address`.

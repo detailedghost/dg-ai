@@ -35,6 +35,14 @@ binaries. The skills-root README itself is not installed.
 | `walk/` | Resolve open questions one at a time |
 | `wayfinder/` | Map large work into decision tickets |
 | `what-changed/` | Draft release notes from tags, requests, and commits |
+| `worktree/` | Create, list, remove, and prune git worktrees for agent workflows |
+| `spec/` | Plan or execute a durable feature spec bundle |
+| `sdlc/` | Run a feature brief through slice waves to a draft PR |
+| `assign/` | Pick the best-fit engineering agent for work or spec slices |
+| `monolith/` | Consolidate a codebase's vocabulary into `.agents/monolith.md` |
+| `spring-break/` | Consolidate `.agents/school/` into topic clusters |
+| `review-loop/` | Loop an antagonistic review over a branch and address findings |
+| `polish/` | Clean up a diff for quality, then apply the fixes |
 
 ## Structure
 
@@ -68,6 +76,14 @@ skills/
   walk/
   wayfinder/
   what-changed/
+  worktree/
+  spec/
+  sdlc/
+  assign/
+  monolith/
+  spring-break/
+  review-loop/
+  polish/
 ```
 
 Each folder contains `SKILL.md` and may include `references/`, scripts, or other
@@ -78,10 +94,10 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.16.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.17.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
-resolve the installed binary and invoke the quoted `"$DG"` path.
+check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.
 
 `dg-skills install --cli-only` skips the extension, pairing, dg-daemon, dg-agent,
 and skills marked `requires: [extension]`: browser, chat, demo, overwatch, and

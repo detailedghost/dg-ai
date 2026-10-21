@@ -1,5 +1,6 @@
 export * from "./ai-usage-limit";
 export * from "./assert";
+export * from "./agent-name";
 export * from "./connection-drop";
 export * from "./redact";
 export * from "./async";
@@ -13,6 +14,7 @@ export * from "./pairing";
 export * from "./plan-format";
 export * from "./protected-branch";
 export * from "./proto-format";
+export * from "./regex";
 export * from "./serial-queue";
 export * from "./session-connect";
 export * from "./skill-files";

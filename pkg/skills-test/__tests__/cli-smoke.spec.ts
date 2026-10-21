@@ -4,6 +4,8 @@
  * present in CI), which exercises the same command graph the release compiles.
  */
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ENTRY = join(
@@ -51,6 +53,9 @@ describe("dg-skills CLI", () => {
 			"deps-upgrade",
 			"meaningful",
 			"catchup",
+			"worktree",
+			"spec",
+			"monolith",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -70,6 +75,77 @@ describe("dg-skills CLI", () => {
 			"--dir",
 		]) {
 			expect(out).toContain(flag);
+		}
+	});
+
+	test("worktree --help documents create, list, remove and prune without touching a repository", async () => {
+		const { code, out } = await runCli(["worktree", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["create", "list", "remove", "prune"])
+			expect(out).toContain(verb);
+	});
+
+	test("spec is registered and its help lists every subcommand", async () => {
+		const { code, out } = await runCli(["spec", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"perms",
+			"perms-batch",
+			"next-nnn",
+			"roundtable",
+			"review",
+			"slice",
+			"context",
+			"brief",
+			"diff-bundle",
+			"audit",
+			"ready",
+			"pr-body",
+			"issues",
+			"slugify",
+			"resolve-path",
+			"validate",
+			"get",
+			"set",
+			"append-section",
+			"roster",
+			"scaffold",
+			"lint-waves",
+			"prototype-ref",
+		])
+			expect(out).toContain(verb);
+	});
+
+	test("monolith is registered and its help lists the helper verbs and the generator", async () => {
+		const { code, out } = await runCli(["monolith", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"bootstrap",
+			"list-terms",
+			"list-sections",
+			"validate",
+			"prune",
+			"patch-pointer",
+			"patch-agents-md",
+			"cap-report",
+			"split",
+			"detect-conflicts",
+			"apply-conflict-resolution",
+			"worktree-gen",
+		])
+			expect(out).toContain(verb);
+	});
+
+	test("monolith bootstrap runs a real operation through the source entry point", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-monolith-smoke-"));
+		try {
+			const { code, out } = await runCli(["monolith", "bootstrap", dir]);
+			expect(code).toBe(0);
+			expect(out).toBe(
+				`APPEND_MODE=0\nMONOLITH_PATH=${join(dir, ".agents", "monolith.md")}\nLIGHT_MODE=0\n`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 

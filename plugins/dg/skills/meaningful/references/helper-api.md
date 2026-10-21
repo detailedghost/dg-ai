@@ -1,13 +1,13 @@
 # meaningful-helper API Reference
 
-Command: `"$DG" meaningful`. Resolve `DG` using [the runtime setup](../SKILL.md#runtime-and-skill-paths) in every fresh shell before running the examples below.
+Command: `~/.dg/bin/dg-skills meaningful`.
 
 ## Subcommands
 
 ### `info [--base <ref>]`
 
 ```
-"$DG" meaningful info [--base <ref>]
+~/.dg/bin/dg-skills meaningful info [--base <ref>]
 ```
 
 Returns JSON to stdout. Fields:
@@ -31,7 +31,7 @@ Stop with a message if `ahead < 2`.
 ### `apply-json [--base <ref>] <plan-file>`
 
 ```
-"$DG" meaningful apply-json [--base <ref>] <plan-file>
+~/.dg/bin/dg-skills meaningful apply-json [--base <ref>] <plan-file>
 ```
 
 Plans are JSON files with distinct `subject`/`body`/`author`/`coauthors` fields, so the commit message is assembled directly (`subject` + `"\n\n"` + body when a body is present). Co-author trailers are kept as written, including AI ones.
@@ -53,7 +53,7 @@ Exit codes on validation failure: malformed JSON, a missing/empty `groups` array
 ### `abort`
 
 ```
-"$DG" meaningful abort <backup-sha>
+~/.dg/bin/dg-skills meaningful abort <backup-sha>
 ```
 
 Restores branch to backup SHA. Use after a failed `apply` if the user prefers this over `git reset --hard <backup>`.
@@ -66,7 +66,7 @@ The helper runs `git -c diff.renames=false diff --name-only` everywhere it compu
 
 ## Plan File Format (JSON)
 
-Path: `$("$DG" stash -s -u meaningful .json)` ().
+Path: `$(~/.dg/bin/dg-skills stash -s -u meaningful .json)` ().
 
 Top-level object:
 
@@ -124,7 +124,7 @@ git reset --hard <backup-sha>
 or:
 
 ```
-"$DG" meaningful abort <backup-sha>
+~/.dg/bin/dg-skills meaningful abort <backup-sha>
 ```
 
 The tree-equality guard hard-resets automatically on mismatch before exiting, so the branch is restored to the backup ref in that case. Validation failures (bad plan schema, file-set mismatch) exit before any reset happens at all — HEAD is untouched, no recovery needed.

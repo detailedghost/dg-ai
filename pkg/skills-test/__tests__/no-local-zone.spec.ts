@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 
 const repo = join(import.meta.dir, "../../..");
 
@@ -20,6 +20,7 @@ const skillFiles = filesUnder(join(repo, "plugins/dg/skills"));
 const publicFiles = [
 	...skillFiles,
 	...filesUnder(join(repo, "pkg/skills-cli/src")),
+	...filesUnder(join(repo, "pkg/channel-review/src")),
 ];
 
 const LOCAL_TERMS_FILE = ".no-local-zone.local";
@@ -35,28 +36,38 @@ function localTerms(): RegExp | null {
 	return terms.length > 0 ? new RegExp(terms.join("|"), "i") : null;
 }
 
+const EMAIL_PART =
+	"\\b[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b";
+
+const NON_EMAIL_PARTS = [
+	"/home/(?!user\\b|runner\\b|<)[a-z_][a-z0-9_-]*/",
+	"/Users/(?!user\\b|runner\\b|<)[A-Za-z_][\\w.-]*/",
+	"[A-Za-z]:\\\\Users\\\\(?!user\\b|<)[\\w.-]+",
+	"~/scripts/",
+	"(?:~|\\$HOME|\\$\\{HOME\\}|\\$\\{homedir\\(\\)\\}|\\$\\{os\\.homedir\\(\\)\\})/\\.claude/skills/",
+	"\\b(?:ghp|gho|ghs|github_pat|glpat|xox[abprs])[-_][A-Za-z0-9_-]{16,}",
+	"\\bAKIA[0-9A-Z]{16}\\b",
+	"\\bsk-[A-Za-z0-9]{20,}",
+];
+
 const PRIVATE_PATTERN = new RegExp(
-	[
-		"/home/(?!user\\b|runner\\b|<)[a-z_][a-z0-9_-]*/",
-		"/Users/(?!user\\b|runner\\b|<)[A-Za-z_][\\w.-]*/",
-		"[A-Za-z]:\\\\Users\\\\(?!user\\b|<)[\\w.-]+",
-		"~/scripts/",
-		"\\b[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b",
-		"\\b(?:ghp|gho|ghs|github_pat|glpat|xox[abprs])[-_][A-Za-z0-9_-]{16,}",
-		"\\bAKIA[0-9A-Z]{16}\\b",
-		"\\bsk-[A-Za-z0-9]{20,}",
-	].join("|"),
+	[...NON_EMAIL_PARTS, EMAIL_PART].join("|"),
 	"i",
 );
+const LOCKFILE_PATTERN = new RegExp(NON_EMAIL_PARTS.join("|"), "i");
 
 function matches(files: string[], pattern: RegExp): string[] {
-	return files.flatMap((file) =>
-		readFileSync(file, "utf8")
+	return files.flatMap((file) => {
+		const filePattern =
+			pattern === PRIVATE_PATTERN && basename(file) === "bun.lock"
+				? LOCKFILE_PATTERN
+				: pattern;
+		return readFileSync(file, "utf8")
 			.split("\n")
 			.flatMap((line, index) =>
-				pattern.test(line) ? [`${relative(repo, file)}:${index + 1}`] : [],
-			),
-	);
+				filePattern.test(line) ? [`${relative(repo, file)}:${index + 1}`] : [],
+			);
+	});
 }
 
 function legacyInvocation(commands: string[]): RegExp {
@@ -111,6 +122,11 @@ describe("public skill distribution", () => {
 		).toEqual([]);
 	});
 
+	test("includes the channel-review sources in the scanned files", () => {
+		const scanned = publicFiles.map((file) => relative(repo, file));
+		expect(scanned).toContain("pkg/channel-review/src/config.ts");
+	});
+
 	test("contains none of the terms in the optional local list", () => {
 		const terms = localTerms();
 		if (terms) expect(matches(publicFiles, terms)).toEqual([]);
@@ -121,6 +137,11 @@ describe("public skill distribution", () => {
 		"/Users/alice/Documents",
 		"C:\\Users\\alice\\file",
 		"~/scripts/ai/run.ts",
+		"Read(~/.claude/skills/thrash/**)",
+		"see ~/.claude/skills/grill-me/SKILL.md",
+		"${homedir()}/.claude/skills/thrash",
+		"$HOME/.claude/skills/x",
+		"${HOME}/.claude/skills/x",
 		"alice@corp.test",
 		"ghp_abcdefghijklmnopqrstuvwxyz0123",
 		"AKIAABCDEFGHIJKLMNOP",
@@ -133,6 +154,8 @@ describe("public skill distribution", () => {
 		"/mnt/c/Users/<user>/Downloads",
 		"noreply@anthropic.com",
 		"someone@example.com",
+		"../grill-me/SKILL.md",
+		"plugins/dg/skills/thrash/SKILL.md",
 	])("allows %s", (line) => {
 		expect(PRIVATE_PATTERN.test(line)).toBe(false);
 	});

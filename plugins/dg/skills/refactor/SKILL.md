@@ -1,23 +1,16 @@
 ---
 name: refactor
-description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 4 high-leverage refactor candidates (or accepts your own), then drops into a /grill-me design conversation on the chosen one. Hands off to /kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
+description: Find architectural deepening opportunities in the current codebase. Walks the code, surfaces 4 high-leverage refactor candidates (or accepts your own), then drops into a /dg:grill-me design conversation on the chosen one. Hands off to /dg:kick when the design converges. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable.
 ---
 
-Resolve the CLI before using the commands below:
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-DG="${DG_HOME:-$HOME/.dg}/bin/dg-skills"
-if [ ! -x "$DG" ]; then
-  LOCAL_BOOTSTRAP="${CLAUDE_PLUGIN_ROOT:-}/pkg/skills-cli/bootstrap.sh"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
-    sh "$LOCAL_BOOTSTRAP"
-  else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
-  fi
-fi
+~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-# /refactor — Codebase Architecture Improvement
+# /dg:refactor — Codebase Architecture Improvement
 
 Surface architectural friction and propose **deepening opportunities** — refactors that turn shallow modules into deep ones. Goal: testability, locality, AI-navigability.
 
@@ -25,8 +18,8 @@ Surface architectural friction and propose **deepening opportunities** — refac
 
 | Form | Effect |
 |---|---|
-| `/refactor` | Walk the current working directory. |
-| `/refactor <path>` | Scope the walk to `<path>` (relative to cwd or absolute). |
+| `/dg:refactor` | Walk the current working directory. |
+| `/dg:refactor <path>` | Scope the walk to `<path>` (relative to cwd or absolute). |
 
 ## References (lazy-load)
 
@@ -43,5 +36,5 @@ Surface architectural friction and propose **deepening opportunities** — refac
 1. **Domain context** — read project context files and architecture vocabulary.
 2. **Explore** — launch Explore agent on scope path. Returns 5–10 friction areas ranked by impact.
 3. **Present candidates** — synthesize into exactly 4; present via `AskUserQuestion` (single-select, 2–4 options plus the automatic "Other"). **GATE:** user picks one or supplies their own via "Other."
-4. **Design conversation** — invoke `/grill-me` with chosen candidate. **GATE:** Final Summary confirmed.
-5. **Hand-off** — write design summary; ask: park the build (`/kick`) or print only. **GATE:** summary file written.
+4. **Design conversation** — invoke `/dg:grill-me` with chosen candidate. **GATE:** Final Summary confirmed.
+5. **Hand-off** — write design summary; ask: park the build (`/dg:kick`) or print only. **GATE:** summary file written.

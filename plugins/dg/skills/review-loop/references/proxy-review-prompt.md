@@ -4,20 +4,19 @@
 
 Read this only when Proxy-Mode Workflow Phase 3 fires (see
 [proxy-workflow.md](proxy-workflow.md)). The recipient is an
-**external CLI coding agent** run via `/proxy`.
+**external CLI coding agent** run via `/dg:proxy`.
 It starts with zero conversation context and has its own command and file tools, so the prompt below must be fully self-contained.
 
 ## Invocation
 
 ```bash
-"$DG" proxy <backend> --prompt-file <absolutePromptPath>
+~/.dg/bin/dg-skills proxy <backend> --prompt-file <absolutePromptPath>
 ```
 
-Resolve `DG` using [../SKILL.md](../SKILL.md#runtime-and-skill-paths) in
-each fresh shell. Read [../../proxy/SKILL.md](../../proxy/SKILL.md) for its
+Read [../../proxy/SKILL.md](../../proxy/SKILL.md) for its
 background execution contract: use the host's native background task when
 available, otherwise request `--plan` and execute its exact emitted `command`.
-Use `"$DG" proxy background status <id>` to inspect a packaged background job.
+Use `~/.dg/bin/dg-skills proxy background status <id>` to inspect a packaged background job.
 Do not pass `--subagent`/`--spec` — this is a one-off review task.
 
 ## Prompt Template
@@ -60,27 +59,27 @@ you are reviewing, not editing.
 
 Fill in `<absolute path of the diff file>` and `<reviewFile absolute path>`
 before writing the prompt file. Always write the diff to a scratch file under
-`$("$DG" stash review-loop)/` and write the filled template to a second
+`$(~/.dg/bin/dg-skills stash review-loop)/` and write the filled template to a second
 scratch file; never put either in a shell string.
 
 ## Finding Format Contract
 
-The format above matches what `/address` Phase 1c
+The format above matches what `/dg:address` Phase 1c
 ([../../address/references/workflow.md](../../address/references/workflow.md)) already parses out of
 `.agents/code-review/*.md` — `path`, `line`, `body`, `severity`. Do not
-invent a different shape; `/address`'s local-review ingestion is the
+invent a different shape; `/dg:address`'s local-review ingestion is the
 only consumer.
 
 ## Result Handling After Return
 
-Follow `/proxy`'s own result-handling rules ([../../proxy/SKILL.md](../../proxy/SKILL.md#result-handling))
+Follow `/dg:proxy`'s own result-handling rules ([../../proxy/SKILL.md](../../proxy/SKILL.md#result-handling))
 verbatim — backend installation guidance, success, clarifying question, `model`/`effort`
 error, `other` error. This file only supplies the review-specific
 prompt content; pass real resolved absolute paths to the backend, never literal
 shell substitutions. The background-invoke and result-handling mechanics
-are `/proxy`'s, not reimplemented here.
+are `/dg:proxy`'s, not reimplemented here.
 
 After a successful return, Proxy-Mode Workflow Phase 4 decides
-close-out vs. hand-off to `/address` based on whether `reviewFile`
+close-out vs. hand-off to `/dg:address` based on whether `reviewFile`
 exists and is non-empty — this file's job ends once the prompt has
 been sent.
