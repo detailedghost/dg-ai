@@ -75,7 +75,7 @@ the latest code:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor demo rerun.
+If a step fails, run ~/.dg/bin/dg-skills doctor demo install rerun.
 
 On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to `Invoke-Expression`.
 

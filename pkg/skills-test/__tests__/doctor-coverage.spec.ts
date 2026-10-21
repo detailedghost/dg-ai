@@ -51,17 +51,6 @@ async function runCli(args: string[]): Promise<string> {
 	return out;
 }
 
-const WAVE_4_SKILLS = [
-	"jot",
-	"bg",
-	"cls",
-	"stat",
-	"sniff",
-	"find-work",
-	"thrash",
-	"review-loop",
-];
-
 function treeTexts(dir: string): string[] {
 	return readdirSync(dir).flatMap((entry) => {
 		const path = join(dir, entry);
@@ -133,8 +122,8 @@ describe("doctor coverage guard", () => {
 		}
 	});
 
-	test("the doctor line of each wave 4 skill names every registered command its tree calls", () => {
-		for (const name of WAVE_4_SKILLS) {
+	test("the doctor line of each skill names every registered command its tree calls", () => {
+		for (const name of skillsCallingCli()) {
 			const dir = join(SKILLS_DIR, name);
 			const named = DOCTOR_LINE.exec(readFileSync(join(dir, "SKILL.md"), "utf8"))?.[1]?.split(" ") ?? [];
 			const called = new Set(

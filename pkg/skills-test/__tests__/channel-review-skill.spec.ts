@@ -126,11 +126,11 @@ describe("channel-review skill distribution", () => {
 		expect(front).toMatch(/^name: channel-review$/m);
 	});
 
-	test("the bootstrap block gates on channel-review help, installs only the CLI, and ends with the help line", () => {
+	test("the bootstrap block gates on the newest subcommand it calls, installs only the CLI, and ends with the help line", () => {
 		const block = bootstrapBlock(readSkill()).split("\n");
 		expect(block).toEqual([
 			"```sh",
-			"~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||",
+			"~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 ||",
 			expect.stringMatching(/bootstrap\.sh \| sh -s -- --cli-only$/),
 			"~/.dg/bin/dg-skills channel-review --help",
 			"```",

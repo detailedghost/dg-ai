@@ -24,7 +24,7 @@ if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension chat |
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor require-extension.
+If a step fails, run ~/.dg/bin/dg-skills doctor require-extension install.
 
 The gate tests `dg-agent`, **not** `dg-skills`. A machine that has already used
 `browser`, `demo` or `proto` already has `dg-skills`, so gating on that binary
