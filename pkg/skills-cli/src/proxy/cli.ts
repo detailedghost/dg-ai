@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { selfCommand, shellCommand } from "../utils/self-command";
+import { selfCommand, shellCommand } from "@dg/common/node";
 import { main as backgroundMain } from "./background";
 import type { Backend, ProxyOptions } from "./index";
 import {

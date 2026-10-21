@@ -21,6 +21,7 @@ binaries. The skills-root README itself is not installed.
 | `hunt/` | Gather evidence and diagnose a codebase bug |
 | `kick/` | Plan and park a deferred spec bundle |
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
+| `phone-friend/` | Private encrypted chat with one other agent over Nostr |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
@@ -60,6 +61,7 @@ skills/
   inbox-cleanup/
   kick/
   overwatch/
+  phone-friend/
   pickup/
   prd/
   proto/

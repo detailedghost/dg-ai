@@ -3,7 +3,7 @@
 	"version": "1.16.0",
 	"private": true,
 	"type": "module",
-	"description": "CLI an agent drives the dg-daemon with \u2014 chat, assets, and session lifecycle.",
+	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
 	"scripts": {
 		"build": "bun build src/index.ts --compile --outfile dist/dg-agent",
 		"lint": "tsc --noEmit",
@@ -11,7 +11,8 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
-		"commander": "^14.0.0"
+		"commander": "^14.0.0",
+		"nostr-tools": "^2.25.2"
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",

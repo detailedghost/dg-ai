@@ -53,6 +53,7 @@ export const INSTALLED_SKILL_FILES = [
 	"monolith/references/scan.workflow.mjs",
 	"monolith/references/template.md",
 	"overwatch/SKILL.md",
+	"phone-friend/SKILL.md",
 	"pickup/SKILL.md",
 	"pickup/references/args.md",
 	"pickup/references/loading.md",
