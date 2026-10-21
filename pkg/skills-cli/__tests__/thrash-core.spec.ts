@@ -30,6 +30,7 @@ import {
 	VERDICT_LIMITS,
 	relativePlanPath,
 	resolvePlanPath,
+	reviewTrigger,
 } from "../src/thrash/core";
 
 const FIXTURE = `diff --git a/src/a.ts b/src/a.ts
@@ -291,7 +292,28 @@ describe("decideVerdict", () => {
 	});
 });
 
+describe("reviewTrigger", () => {
+	test.each([
+		['{"origin":"daemon","backend":"claude"}', "daemon"],
+		['{"origin":"manual"}', "manual"],
+		["{}", "manual"],
+		["not json", "manual"],
+		[undefined, "manual"],
+	] as const)("reads %p as %s", (context, trigger) => {
+		expect(reviewTrigger(context)).toBe(trigger);
+	});
+});
+
 describe("compileReview", () => {
+	test.each([
+		["daemon", "**Trigger:** Automatic (daemon)"],
+		["manual", "**Trigger:** Manual (CLI)"],
+		[undefined, "**Trigger:** Manual (CLI)"],
+	] as const)("the body names the %s trigger", (trigger, line) => {
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, trigger });
+		expect(review.body).toContain(line);
+	});
+
 	test("posts anchored findings as rendered comments sorted by path and line", () => {
 		const review = compileReview(
 			FILES,

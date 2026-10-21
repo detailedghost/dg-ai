@@ -131,6 +131,18 @@ export interface CompileOptions {
 	commentOnly: boolean;
 	existing: ReviewThread[];
 	coverage?: Coverage;
+	trigger?: ReviewTrigger;
+}
+
+export type ReviewTrigger = "daemon" | "manual";
+
+/** Reads the review origin from THRASH_EXECUTION_CONTEXT; anything unreadable is manual. */
+export function reviewTrigger(context: string | undefined): ReviewTrigger {
+	try {
+		return (JSON.parse(context ?? "") as { origin?: unknown }).origin === "daemon" ? "daemon" : "manual";
+	} catch {
+		return "manual";
+	}
 }
 
 export interface CompiledReview {
@@ -145,6 +157,7 @@ export interface CompiledReview {
 	unanchored: Finding[];
 	dropped: DroppedFinding[];
 	coverage?: Coverage;
+	trigger: ReviewTrigger;
 	body: string;
 }
 
@@ -808,6 +821,8 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 		...renderAlert("WARNING", "Opportunities", review.opportunities),
 		...renderFindingsTable(review.comments),
 		`${counts.join(" · ")} · **Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}.`,
+		"",
+		`**Trigger:** ${review.trigger === "daemon" ? "Automatic (daemon)" : "Manual (CLI)"}`,
 	];
 	if (review.coverage) lines.push(...renderCoverage(review.coverage));
 	if (duplicates > 0) {
@@ -874,6 +889,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		unanchored,
 		dropped,
 		coverage: opts.coverage,
+		trigger: opts.trigger ?? "manual",
 	};
 	return { ...compiled, body: renderBody(compiled) };
 }
