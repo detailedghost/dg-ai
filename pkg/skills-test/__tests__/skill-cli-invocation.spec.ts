@@ -65,6 +65,7 @@ describe("packaged skills call the CLI by its literal path", () => {
 			"chat",
 			"demo",
 			"inbox-cleanup",
+			"jobs",
 			"overwatch",
 			"phone-friend",
 			"proto",
