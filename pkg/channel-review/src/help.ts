@@ -1,4 +1,4 @@
-import { escapeHtml } from "@dg/common";
+import { escapeHtml, NIT_LADDER, SPICE_DEFAULT, VERDICT_LIMITS } from "@dg/common";
 import type { ReactionState } from "./reactions";
 import { EFFORT_LEVELS, RUNNER_NAMES } from "./runners/types";
 import type { HelpTopic } from "./trigger";
@@ -42,6 +42,23 @@ const REVIEW_FLAGS: readonly Row[] = [
 	["~stacked", "also review the PRs stacked on this one"],
 	["~fun", "add a GIF or emoji to the result"],
 ];
+
+const TIER_NAMES = { critical: "💀 critical", high: "🔥 high", medium: "⚠️ medium", low: "🧹 low", nit: "🔬 nit" } as const;
+
+function spiceLevel([level, limits]: [string, (typeof VERDICT_LIMITS)[number]]): string {
+	const fails = Object.entries(limits)
+		.map(([tier, limit]) => {
+			const name = TIER_NAMES[tier as keyof typeof TIER_NAMES];
+			return limit === 0 ? `any ${name}` : `more than ${limit} ${name}`;
+		})
+		.join(", ");
+	const nits = NIT_LADDER[Number(level)] ?? 0;
+	const posted = nits === 0 ? "posts no nits" : Number.isFinite(nits) ? `posts up to ${nits} nits` : "posts every nit";
+	const fallback = Number(level) === SPICE_DEFAULT ? " (default)" : "";
+	return `<li><code>${level}</code>${fallback}: requests changes on ${fails}; ${posted}</li>`;
+}
+
+const SPICE_LEVELS = `<p><b>Spice levels</b> set how hard the review looks and how many findings fail it. The tone never changes.</p><ul>${Object.entries(VERDICT_LIMITS).map(spiceLevel).join("")}</ul>`;
 
 const ADDRESS_FLAGS: readonly Row[] = [
 	["~no-ci", "fix review comments only, skip failing CI checks"],
@@ -122,6 +139,7 @@ export function helpText(
 			"<p><b>$review</b> and <b>$thrash</b> run a review of the PR.</p>",
 			example("$review &lt;PR link&gt; ~spice 3"),
 			`<p><b>Flags</b></p>${list(REVIEW_FLAGS)}`,
+			SPICE_LEVELS,
 			defaultModel
 				? `<p><b>Default model:</b> <code>${escapeHtml(defaultModel)}</code>. Use ~model to pick a different one.</p>`
 				: "",

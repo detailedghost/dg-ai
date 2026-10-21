@@ -68,8 +68,8 @@ in [setup](setup.md#configuration).
 
 ### Review flags
 
-`$help $review` (or `$help $thrash`) lists these flags, the re-review rules, and
-the review reactions.
+`$help $review` (or `$help $thrash`) lists these flags, what each spice level
+fails on and how many nits it posts, the re-review rules, and the review reactions.
 
 | Token | Meaning | Missing or invalid input |
 | --- | --- | --- |

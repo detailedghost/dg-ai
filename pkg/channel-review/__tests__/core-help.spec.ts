@@ -75,6 +75,14 @@ describe("helpText review", () => {
 		).toContain("<b>Default model:</b> <code>arn:aws:bedrock:x&lt;y</code>");
 	});
 
+	test("explains every spice level from the verdict limits and the nit ladder", () => {
+		const html = review();
+		expect(html).toContain("<b>Spice levels</b>");
+		expect(html).toContain("<li><code>1</code>: requests changes on any 💀 critical, more than 4 🔥 high; posts no nits</li>");
+		expect(html).toContain("<li><code>2</code> (default): requests changes on any 💀 critical, more than 1 🔥 high; posts up to 5 nits</li>");
+		expect(html).toContain("<li><code>5</code>: requests changes on any 💀 critical, any 🔥 high, any ⚠️ medium, more than 4 🧹 low; posts every nit</li>");
+	});
+
 	test("escapes the ready words", () => {
 		const html = helpText(
 			"Review Bot",
