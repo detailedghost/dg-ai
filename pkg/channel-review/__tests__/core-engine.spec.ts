@@ -770,6 +770,7 @@ describe("engine stacked review", () => {
 			{ number: 12, url: pr(12), outcome: "changes_requested" },
 		];
 		expect(h.replies().map((r) => r.text)).toEqual([formatStackSummary(rows)]);
+		expect(h.replies().every((r) => r.html === true)).toBe(true);
 		expect(h.trail("m1").at(-1)).toBe("+failure");
 	});
 
@@ -784,11 +785,11 @@ describe("engine stacked review", () => {
 		expect(h.replies()).toHaveLength(1);
 		expect(h.trail("m1").at(-1)).toBe("+changesRequested");
 		expect(h.trail("sent-1")).toEqual([]);
-		const lines = reply.split("\n").slice(1);
-		expect(lines).toEqual([
-			`${VERDICT_LABELS.approved.emoji} #10 ${pr(10)}`,
-			`${VERDICT_LABELS.changes_requested.emoji} #11 ${pr(11)}`,
-			`${VERDICT_LABELS.approved.emoji} #12 ${pr(12)}`,
+		const items = reply.match(/<li>.*?<\/li>/g);
+		expect(items).toEqual([
+			`<li><a href="${pr(10)}">r#10</a>: ${VERDICT_LABELS.approved.emoji} approved</li>`,
+			`<li><a href="${pr(11)}">r#11</a>: ${VERDICT_LABELS.changes_requested.emoji} changes requested</li>`,
+			`<li><a href="${pr(12)}">r#12</a>: ${VERDICT_LABELS.approved.emoji} approved</li>`,
 		]);
 	});
 
@@ -810,7 +811,7 @@ describe("engine stacked review", () => {
 		await h.engine.handle(reviewMessage("m1", pr(10), tokens));
 		await h.engine.idle();
 		expect(h.replies()).toHaveLength(1);
-		expect(h.replies()[0]?.text).toStartWith("Stacked review:");
+		expect(h.replies()[0]?.text).toStartWith("<p>Stacked review:");
 	});
 
 	test("fails the whole job with CR-304 and zero runs when the stack cannot be read", async () => {
@@ -829,7 +830,7 @@ describe("engine stacked review", () => {
 		await h.engine.idle();
 		expect(h.runner.runs.map((r) => (r.task === "thrash" ? r.url : undefined))).toEqual([pr(10)]);
 		expect(h.replies()).toHaveLength(1);
-		expect(h.replies()[0]?.text).toStartWith("Stacked review:");
+		expect(h.replies()[0]?.text).toStartWith("<p>Stacked review:");
 		expect(h.replies()[0]?.text).toContain(pr(10));
 	});
 
@@ -1130,7 +1131,7 @@ describe("engine fun", () => {
 		await h.engine.handle(reviewMessage("m1", pr(10), "~stacked ~fun"));
 		await h.engine.idle();
 		expect(h.replies()).toHaveLength(1);
-		expect(h.replies()[0]?.text).toStartWith("Stacked review:");
+		expect(h.replies()[0]?.text).toStartWith("<p>Stacked review:");
 		expect(h.replies()[0]?.card?.body[0]?.url).toBe(
 			(gif as { url: string }).url,
 		);
@@ -1172,5 +1173,30 @@ describe("job outcome log", () => {
 		expect(
 			h.log.lines.some((l) => l.level === "info" && l.message.startsWith("message m1 failed: CR-201")),
 		).toBe(true);
+	});
+});
+
+describe("engine owner-token trigger on a blocked PR", () => {
+	const options = { comment: false, fun: false };
+	const block = (h: EngineHarness): void =>
+		h.state.markBlocked(PR_URL, "old", options, CHAT_ID);
+
+	test("reviews it like any other PR and clears the block on approval", async () => {
+		const h = setup();
+		block(h);
+		await h.engine.handle(reviewMessage("m2"));
+		expect(h.trail("m2")[0]).toBe("+pending");
+		await h.engine.idle();
+		expect(h.runner.runs).toHaveLength(1);
+		expect(h.trail("m2")).toEqual([...FULL_TRAIL, "+approved"]);
+		expect(h.state.get().blocked).toEqual({});
+	});
+
+	test("refreshes the block with the new message id on changes_requested", async () => {
+		const h = setup({ verdictScript: () => "changes_requested" });
+		block(h);
+		await h.engine.handle(reviewMessage("m2"));
+		await h.engine.idle();
+		expect(h.state.get().blocked[PR_URL]).toMatchObject({ messageId: "m2" });
 	});
 });

@@ -247,10 +247,11 @@ export function createEngine(deps: EngineDeps): Engine {
 		text: string,
 		outcome: ReturnType<typeof outcomeOf>,
 		fun: boolean,
+		html = false,
 	): Promise<void> {
 		const entry = fun ? pickFun(funPool, funVerdictFor(outcome), random) : undefined;
-		const body = entry ? decorateReply({ text, entry }) : { text };
-		await attempt("reply", () => provider.reply({ chatId, ...body }));
+		const body = entry ? decorateReply({ text, entry, html }) : { text };
+		await attempt("reply", () => provider.reply({ chatId, ...body, ...(html && { html }) }));
 	}
 
 	async function fail(job: Job, code: CrCode, agent: string): Promise<void> {
@@ -527,7 +528,7 @@ export function createEngine(deps: EngineDeps): Engine {
 		log.info(`message ${job.messageId} stacked review done: ${aggregate}, ${rows.length} PRs`);
 		state.markHandled(job.messageId, aggregate === "failure" ? "failed" : "done", job.chatId);
 		await move(job.chatId, job.messageId, aggregate);
-		await post(job.chatId, formatStackSummary(rows), aggregate, job.fun);
+		await post(job.chatId, formatStackSummary(rows), aggregate, job.fun, true);
 	}
 
 	async function address(job: AddressJob, signal: AbortSignal): Promise<void> {
