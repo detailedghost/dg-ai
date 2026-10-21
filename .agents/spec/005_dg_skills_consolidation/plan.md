@@ -4,7 +4,7 @@ feature_snake_case: dg_skills_consolidation
 date: '2026-10-16'
 version: '1.1'
 status: in-progress
-current_slice: 10
+current_slice: 20
 pr_strategy: single
 slices:
   - id: 1
@@ -742,6 +742,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Wave 2a COMPLETE: slices 1–4, last committed slice4 plus review/docs/test follow-through; worktree ~/code/dg/.worktrees/dg-skills-w2a; actual branch feature/dg_skills_w2a; base feature/dg-skills-w1; head 0052265. Ready for review [#28](https://github.com/detailedghost/dg-ai/pull/28) (user requested promotion on 2026-10-17). All four final reviewers clean after one correction round. Final `bun run test:all`: 5,062 pass, 0 fail; all eight `lint:all` packages pass. Compiled external-cwd operations, private artifacts, six backends, provider parity, privacy/version/test-name/whitespace gates pass. Matched release1.15.0; native Windows runtime remains untested/documented. PR directly records dependency on #27; chain will register stack in Wave2b after slice7 ships. Browser grouped open completed.
 - Wave2b IN PROGRESS: slices5–10, worktree ~/code/dg/.worktrees/dg-skills-w2b, actual branch feature/dg_skills_w2b, base feature/dg_skills_w2a, initial head0052265; Slices5–9 committed ff75474/f9b205a/2d7cadc/f55483c/6c6c302, current head b79344e21522c139202eb3a231ea9421cfb70dce (one consolidated commit above Wave2a; original five slice commits retained in local backup); next slice 10, waiting for required fallback content on origin/master (user confirmed prerequisite retained). Native stack #30: #26→#27→#28, bases and ready state verified after user-requested prerequisite insertion. Do not recreate finished PRs. Slice10 still gates on fetched review-model-fallback content.
 - Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback), 5127a44 (flags documentation and the skill-flags guard), b94dac7 and 4937df8 (plan scope edits above), and 71c05ab (plan approval gate in the spec skill).
+- Wave 4 DRAFT PR (2026-10-20): [#41](https://github.com/detailedghost/dg-ai/pull/41), branch feature/dg_skills_w4, base feature/dg_skills_w3, worktree ~/code/worktrees/dg-dg_skills_w4. Slices 16, 17, 18, 31 (doctor) and 19 committed: 3cd14c7, d9d1efa, d036e22 (plan), a871dec, 0475991, 46ed4fe, plus final review fixes 8ed5443. Version 1.17.0. test:all and lint:all green in 8 packages. Next: Wave 5 (slices 20, 21, 23, 24) from this head after review.
 
 ## Roundtable Decisions
 
