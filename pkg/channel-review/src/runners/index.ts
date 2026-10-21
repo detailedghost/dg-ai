@@ -65,7 +65,10 @@ const SPECS: Record<RunnerName, Spec> = {
 			path,
 			"-p",
 			claudePrompt(request),
-			...(request.model ? ["--model", request.model] : []),
+			...claudeModel(request, config),
+			...(request.task === "thrash" && request.effort
+				? ["--effort", request.effort]
+				: []),
 			...(request.task === "fix"
 				? ["--append-system-prompt", UNTRUSTED_REPORT_NOTE]
 				: []),
@@ -114,7 +117,7 @@ const SPECS: Record<RunnerName, Spec> = {
 				path,
 				"--no-auto-update",
 				"-p",
-				`/thrash ${thrashArgs(request)}`,
+				`/dg:thrash ${thrashArgs(request)}`,
 				"--output-format",
 				grok?.outputFormat ?? "streaming-json",
 				"--always-approve",
@@ -134,6 +137,23 @@ export function runnerCommand(
 	config: ChannelConfig,
 ): string[] {
 	return SPECS[name].argv(bin, request, config);
+}
+
+function claudeModel(request: ArgvRequest, config: ChannelConfig): string[] {
+	const model = request.task === "thrash"
+		? resolveModel("claude", request.model, config).model
+		: request.model;
+	return model ? ["--model", model] : [];
+}
+
+function bedrockEnv(config: ChannelConfig): Record<string, string> {
+	const bedrock = config.runner.claude.bedrock;
+	if (!bedrock) return {};
+	return {
+		CLAUDE_CODE_USE_BEDROCK: "1",
+		AWS_REGION: bedrock.region,
+		...(bedrock.profile ? { AWS_PROFILE: bedrock.profile } : {}),
+	};
 }
 
 function claudeTools(request: ArgvRequest, config: ChannelConfig): string[] {
@@ -206,6 +226,7 @@ export function createRunners(
 								model,
 								modelSource: source,
 							}),
+							...(name === "claude" ? bedrockEnv(config) : {}),
 						}
 						: {},
 					timeoutMs: request.timeoutMs,

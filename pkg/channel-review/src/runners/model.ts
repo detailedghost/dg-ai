@@ -12,6 +12,10 @@ export function resolveModel(
 	config: ChannelConfig,
 ): ResolvedModel {
 	if (requested) return { model: requested, source: "requested" };
-	const model = name === "grok" ? config.runner.grok?.model : undefined;
+	const configured: Partial<Record<RunnerName, string>> = {
+		claude: config.runner.claude.bedrock?.model,
+		grok: config.runner.grok?.model,
+	};
+	const model = configured[name];
 	return { model, source: model ? "configured" : "default" };
 }

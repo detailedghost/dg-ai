@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -37,4 +37,25 @@ export function claudePluginSkillsDirs(
 		const skills = join(plugin, newest, "plugins", "dg", "skills");
 		return exists(skills) ? [skills] : [];
 	});
+}
+
+/** dg skills directories inside local directory marketplaces, where Claude loads plugin skills from source. */
+export function claudeDirectoryMarketplaceSkillsDirs(
+	homeDir: string,
+	readText: (path: string) => string = (path) => readFileSync(path, "utf8"),
+	exists: (path: string) => boolean = existsSync,
+): string[] {
+	let marketplaces: Record<string, { source?: { source?: string; path?: string } }>;
+	try {
+		marketplaces = JSON.parse(readText(join(homeDir, ".claude", "plugins", "known_marketplaces.json")));
+	} catch {
+		return [];
+	}
+	return Object.values(marketplaces ?? {})
+		.flatMap(({ source }) =>
+			source?.source === "directory" && typeof source.path === "string"
+				? [join(source.path, "plugins", "dg", "skills")]
+				: [],
+		)
+		.filter(exists);
 }

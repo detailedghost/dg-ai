@@ -79,6 +79,7 @@ the review reactions.
 | `~comment` | Pass thrash's comment option. | Optional. |
 | `~agent claude\|codex\|copilot\|grok` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
 | `~model <name>` | Pass a model name to the selected runner. | Missing or malformed name: CR-108. |
+| `~effort low\|medium\|high\|xhigh\|max` | Pass an effort level to a Claude review. Other runners ignore it. | Missing or unknown level: CR-109. |
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
 
@@ -274,6 +275,7 @@ the shipped catalog exactly.
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-107` | `Only {owner} can run $emoji, so I didn't change anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-108` | `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.` | Provide a valid model name. |
+| `CR-109` | `The ~effort level must be low, medium, high, xhigh, or max, so I didn't review this. Fix the level and try again.` | Use one of the five levels. |
 | `CR-201` | `I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.` | Install the runner or correct its executable path. |
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |

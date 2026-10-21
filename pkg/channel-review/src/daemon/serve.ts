@@ -293,6 +293,11 @@ export async function serve({
 			seams.probeTimeoutMs ?? SERVE_PROBE_TIMEOUT_MS,
 			log,
 		);
+		if (!config.runner.claude.allowedTools.some((tool) => tool.includes("dg-skills thrash"))) {
+			log.warn(
+				"runner.claude.allowedTools has no rule for dg-skills thrash, so /dg:thrash cannot run and Claude reviews fail; remove the override to use the defaults",
+			);
+		}
 
 		if (signal.aborted) return 0;
 		try {

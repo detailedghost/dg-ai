@@ -30,6 +30,16 @@ describe("parseTrigger", () => {
 			).toEqual({ kind: "error", code: "CR-108" });
 		},
 	);
+	test.each(["low", "medium", "high", "xhigh", "max"])("reads ~effort %s", (effort) => {
+		expect(
+			parseTrigger(`!owner $review ${GITHUB_URL} ~effort ${effort}`, OPTIONS),
+		).toMatchObject({ kind: "run", effort });
+	});
+	test.each(["", "extreme", "~comment"])("rejects invalid or missing effort: %s", (effort) => {
+		expect(
+			parseTrigger(`!owner $review ${GITHUB_URL} ~effort ${effort}`, OPTIONS),
+		).toEqual({ kind: "error", code: "CR-109" });
+	});
 	test("returns run with url, host, spice, comment and no agent from Teams HTML with an at-mention and a link", () => {
 		const html = `<p><at>Review Bot</at> !owner $review <a href="${GITHUB_URL}">the PR</a> ~spice 3 ~comment</p>`;
 		const result = parseTrigger(html, OPTIONS);

@@ -65,6 +65,16 @@ describe("helpText review", () => {
 		expect(html).not.toContain("~no-ci");
 	});
 
+	test("lists every agent and effort level and shows the default model only when one is set", () => {
+		const html = review();
+		expect(html).toContain("~agent claude|codex|copilot|grok");
+		expect(html).toContain("~effort low|medium|high|xhigh|max");
+		expect(html).not.toContain("Default model");
+		expect(
+			helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "review", false, "arn:aws:bedrock:x<y"),
+		).toContain("<b>Default model:</b> <code>arn:aws:bedrock:x&lt;y</code>");
+	});
+
 	test("escapes the ready words", () => {
 		const html = helpText(
 			"Review Bot",

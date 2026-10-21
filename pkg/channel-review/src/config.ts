@@ -13,6 +13,7 @@ import {
 	requireStringArray,
 } from "@dg/common";
 import {
+	claudeDirectoryMarketplaceSkillsDirs,
 	ensurePrivateDir,
 	resolveDgPaths,
 	type SystemSeams,
@@ -118,7 +119,12 @@ export type ChannelConfig = {
 		fallback: Exclude<RunnerName, "claude"> | null;
 		timeoutMinutes: number;
 		addressTimeoutMinutes: number;
-		claude: { path?: string; allowedTools: string[]; addressAllowedTools: string[] };
+		claude: {
+			path?: string;
+			allowedTools: string[];
+			addressAllowedTools: string[];
+			bedrock?: { model: string; region: string; profile?: string };
+		};
 		codex?: { path?: string };
 		copilot?: { path?: string };
 		grok?: {
@@ -244,7 +250,7 @@ function wholeDays(value: unknown, path: string): number {
 	return value;
 }
 
-function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
+function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["runner"] {
 	const rec = section(raw, "runner", "", [
 		"default",
 		"fallback",
@@ -260,13 +266,20 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	const timeout = minutes(rec.timeoutMinutes ?? 30, "runner.timeoutMinutes");
 	const addressTimeout = minutes(rec.addressTimeoutMinutes ?? 60, "runner.addressTimeoutMinutes");
 
-	const claude = section(rec, "claude", "runner", ["path", "allowedTools", "addressAllowedTools"]);
+	const claude = section(rec, "claude", "runner", [
+		"path",
+		"allowedTools",
+		"addressAllowedTools",
+		"bedrock",
+	]);
 	const scratch = `/${process.env.AI_SCRATCH_DIR ?? "/tmp/ai"}/thrash/**`;
 	const allowedTools = claude.allowedTools ?? [
 		`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
+		"Bash(~/.dg/bin/dg-skills thrash:*)",
 		"Agent",
 		`Read(${scratch})`,
 		"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
+		...claudeDirectoryMarketplaceSkillsDirs(home).map((dir) => `Read(/${dir}/thrash/**)`),
 		`Grep(${scratch})`,
 		`Glob(${scratch})`,
 		`Edit(${scratch})`,
@@ -307,10 +320,21 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 			path: optionalText(claude, "path", "runner.claude"),
 			allowedTools,
 			addressAllowedTools,
+			bedrock: parseBedrock(claude),
 		},
 		codex: binary("codex"),
 		copilot: binary("copilot"),
 		grok: parseGrok(rec),
+	};
+}
+
+function parseBedrock(claude: Rec): ChannelConfig["runner"]["claude"]["bedrock"] {
+	if (claude.bedrock === undefined) return undefined;
+	const bedrock = section(claude, "bedrock", "runner.claude", ["model", "region", "profile"]);
+	return {
+		model: required(bedrock, "model", "runner.claude.bedrock"),
+		region: required(bedrock, "region", "runner.claude.bedrock"),
+		profile: optionalText(bedrock, "profile", "runner.claude.bedrock"),
 	};
 }
 
@@ -692,7 +716,7 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 			email: owner.email,
 			senderIds: senderIds.map((id) => id.trim()),
 		},
-		runner: parseRunner(raw, address.cloneRoot),
+		runner: parseRunner(raw, address.cloneRoot, seams.homeDir ?? homedir()),
 		reactions,
 		relay: {
 			appName,

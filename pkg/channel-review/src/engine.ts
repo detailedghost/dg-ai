@@ -20,7 +20,7 @@ import type { ChannelReviewPaths } from "./paths";
 import type { ChatMessage, ChatProvider, ChatReaction } from "./providers/types";
 import { capturedReactionId, REACTION_STATES, type ReactionState, transition } from "./reactions";
 import { resolveModel } from "./runners/model";
-import { RUNNER_NAMES, type RunTask, type Runner, type RunnerName } from "./runners/types";
+import { type Effort, RUNNER_NAMES, type RunTask, type Runner, type RunnerName } from "./runners/types";
 import { type BlockedOptions, type StateStore, prKey } from "./state";
 import {
 	type StackRow,
@@ -116,6 +116,7 @@ type ReviewJob = JobBase & {
 	stacked: boolean;
 	agent?: RunnerName;
 	model?: string;
+	effort?: Effort;
 };
 
 const RUNNER_LABELS: Record<RunnerName, string> = {
@@ -249,6 +250,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				fun: job.fun,
 				agent: job.agent,
 				model: job.model,
+				effort: job.effort,
 			};
 			state.markBlocked(target.url, job.messageId, options, job.chatId);
 		} else if (state.get().blocked[key] && (typeof outcome === "string" || outcome.code === "CR-302")) {
@@ -374,6 +376,7 @@ export function createEngine(deps: EngineDeps): Engine {
 						origin: "daemon",
 						url: target.url,
 						spice: job.spice,
+						effort: job.effort,
 						comment: job.comment,
 					},
 					cwd: paths.workDir,
@@ -697,6 +700,7 @@ export function createEngine(deps: EngineDeps): Engine {
 					fun: quoted.fun,
 					agent: quoted.agent,
 					model: quoted.model,
+					effort: quoted.effort,
 				}
 			: { comment: false, fun: false };
 	}
@@ -744,6 +748,7 @@ export function createEngine(deps: EngineDeps): Engine {
 				fun: trigger.fun,
 				agent: trigger.agent,
 				model: trigger.model,
+				effort: trigger.effort,
 			};
 		}
 
@@ -798,6 +803,7 @@ export function createEngine(deps: EngineDeps): Engine {
 						config.reactions,
 						job.help,
 						config.address.allowAnySender,
+						resolveModel(config.runner.default, undefined, config).model,
 					),
 					html: true,
 				}),

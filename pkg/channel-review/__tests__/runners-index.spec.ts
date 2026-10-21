@@ -329,7 +329,7 @@ describe("runner run argv", () => {
 		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
 		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
 		expect(h.processes[0]?.argv).toEqual([
-			"/opt/grok", "--no-auto-update", "-p", `/thrash ${URL} -s 4 -c`,
+			"/opt/grok", "--no-auto-update", "-p", `/dg:thrash ${URL} -s 4 -c`,
 			"--output-format", "streaming-json", "--always-approve", "--cwd", "/work",
 			"--model", "grok-4.6",
 		]);
@@ -473,7 +473,7 @@ describe("runner run argv", () => {
 			PATHS.grok,
 			"--no-auto-update",
 			"-p",
-			`/thrash ${URL} -s 2 -c`,
+			`/dg:thrash ${URL} -s 2 -c`,
 			"--output-format",
 			"streaming-json",
 			"--always-approve",
@@ -498,7 +498,7 @@ describe("runner run argv", () => {
 			"/opt/grok",
 			"--no-auto-update",
 			"-p",
-			`/thrash ${URL}`,
+			`/dg:thrash ${URL}`,
 			"--output-format",
 			"json",
 			"--always-approve",
@@ -980,6 +980,37 @@ describe("runner attribution", () => {
 		await runners.grok.run(runRequest({ model: "requested-model" }));
 		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "configured-model", modelSource: "configured" });
 		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "requested-model", modelSource: "requested" });
+	});
+	test("Claude reviews through Bedrock with the configured model and lets an explicit request override it", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2", profile: "sb" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest());
+		await runners.claude.run(runRequest({ model: "requested-model" }));
+		expect(processes[0]!.argv).toContain("bedrock-model");
+		expect(processes[1]!.argv).toContain("requested-model");
+		expect(processes[1]!.argv).not.toContain("bedrock-model");
+		expect(processes[0]!.env).toMatchObject({ CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: "us-east-2", AWS_PROFILE: "sb" });
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "bedrock-model", modelSource: "configured" });
+	});
+	test("Claude passes ~effort to reviews only", async () => {
+		const { runners, processes } = harness();
+		await runners.claude.run(runRequest({ effort: "xhigh" }));
+		await runners.claude.run(runRequest());
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--effort") + 1]).toBe("xhigh");
+		expect(processes[1]!.argv).not.toContain("--effort");
+	});
+	test("Claude keeps Bedrock off for tasks other than review", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest({ task: "address", noCi: false }));
+		expect(processes[0]!.argv).not.toContain("bedrock-model");
+		expect(processes[0]!.env).toEqual({});
+	});
+	test("Claude omits the profile when Bedrock sets none", async () => {
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }) });
+		await runners.claude.run(runRequest());
+		expect(processes[0]!.env).not.toHaveProperty("AWS_PROFILE");
 	});
 	test.each([
 		...RUNNER_NAMES,

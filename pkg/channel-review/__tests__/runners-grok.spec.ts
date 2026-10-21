@@ -67,6 +67,14 @@ test.each([
 	});
 });
 
+test("accepts the dg plugin thrash when another thrash shares its name", async () => {
+	const skills = [
+		{ ...THRASH, collidesWith: "thrash", invocableAs: "user:thrash" },
+		{ ...THRASH, collidesWith: "thrash", invocableAs: "dg:thrash" },
+	];
+	expect(await harness({ skills }).probe()).toEqual({ ok: true });
+});
+
 test.each([
 	{ models: result("", 1) },
 	{ banner: "unrecognized auth status" },
