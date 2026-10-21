@@ -10,7 +10,6 @@ import {
 import type { Sleep } from "./sleep";
 import { createSseParser, SseOverflowError, type SseFrame } from "./sse";
 
-const IDLE_MS = 45_000;
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_CAP_MS = 60_000;
 const BACKOFF_JITTER = 0.2;
@@ -23,6 +22,7 @@ type SubscribeDeps = {
 	random: () => number;
 	log: Log;
 	botName: string;
+	idleMs: number;
 };
 
 function sender(value: unknown): ChatSender {
@@ -84,7 +84,7 @@ function toChatEvent(frame: SseFrame, log: Log): ChatEvent | undefined {
 	};
 }
 
-export function createSubscribe({ client, sleep, random, log, botName }: SubscribeDeps) {
+export function createSubscribe({ client, sleep, random, log, botName, idleMs }: SubscribeDeps) {
 	const jitter = (ms: number): number =>
 		ms * (1 + (random() * 2 - 1) * BACKOFF_JITTER);
 
@@ -120,13 +120,13 @@ export function createSubscribe({ client, sleep, random, log, botName }: Subscri
 				try {
 					next = await Promise.race([
 						reader.read(),
-						sleep(IDLE_MS, idle.signal).then((): typeof IDLE => IDLE),
+						sleep(idleMs, idle.signal).then((): typeof IDLE => IDLE),
 					]);
 				} finally {
 					idle.abort();
 				}
 				if (next === IDLE) {
-					log.warn("no events or pings for 45 s; reconnecting");
+					log.warn(`events stream idle for ${Math.round(idleMs / 1000)} s, reconnecting`);
 					connection.abort();
 					return;
 				}

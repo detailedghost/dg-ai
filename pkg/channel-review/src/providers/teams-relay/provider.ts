@@ -35,7 +35,14 @@ export function createTeamsRelayProvider(
 	const reactions = createReactions({ client, sleep, now });
 	return {
 		resolveChat: (query) => resolveChat(client, query, env.botName),
-		subscribe: createSubscribe({ client, sleep, random, log, botName: env.botName }),
+		subscribe: createSubscribe({
+			client,
+			sleep,
+			random,
+			log,
+			botName: env.botName,
+			idleMs: config.relay.streamIdleSeconds * 1000,
+		}),
 		react: reactions.react,
 		unreact: reactions.unreact,
 		reply: (request) => reply(client, config.owner.email, request),

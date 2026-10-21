@@ -132,6 +132,7 @@ export type ChannelConfig = {
 	reactions: typeof REACTION_DEFAULTS;
 	relay: {
 		appName: string;
+		streamIdleSeconds: number;
 		secret: { id: string; key: string; region: string };
 	};
 	fun: { pool?: FunEntry[] };
@@ -245,6 +246,9 @@ function wholeDays(value: unknown, path: string): number {
 	return value;
 }
 
+const DEFAULT_STREAM_IDLE_SECONDS = 45;
+const MIN_STREAM_IDLE_SECONDS = 15;
+const MAX_STREAM_IDLE_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
 
@@ -670,10 +674,21 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 		reactions[key] = text(reactionsRaw, key, "reactions", REACTION_DEFAULTS[key]);
 	}
 
-	const relay = section(raw, "relay", "", ["appName", "secret"]);
+	const relay = section(raw, "relay", "", ["appName", "secret", "streamIdleSeconds"]);
 	const appName = required(relay, "appName", "relay");
 	if (relay.secret === undefined) fail("relay.secret is required");
 	const secret = section(relay, "secret", "relay", ["id", "key", "region"]);
+	const streamIdleSeconds = relay.streamIdleSeconds ?? DEFAULT_STREAM_IDLE_SECONDS;
+	if (
+		typeof streamIdleSeconds !== "number" ||
+		!Number.isInteger(streamIdleSeconds) ||
+		streamIdleSeconds < MIN_STREAM_IDLE_SECONDS ||
+		streamIdleSeconds > MAX_STREAM_IDLE_SECONDS
+	) {
+		fail(
+			`relay.streamIdleSeconds must be a whole number from ${MIN_STREAM_IDLE_SECONDS} to ${MAX_STREAM_IDLE_SECONDS}`,
+		);
+	}
 
 	const funRaw = section(raw, "fun", "", ["pool"]);
 	let pool: FunEntry[] | undefined;
@@ -711,6 +726,7 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 		reactions,
 		relay: {
 			appName,
+			streamIdleSeconds,
 			secret: {
 				id: required(secret, "id", "relay.secret"),
 				key: required(secret, "key", "relay.secret"),

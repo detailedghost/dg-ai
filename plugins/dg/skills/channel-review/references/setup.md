@@ -209,6 +209,7 @@ every required key with placeholder values.
 | `runner.<name>.path` | string | Unset | Optional executable path for claude, codex, copilot, or grok; otherwise uses PATH. |
 | `reactions.*` | strings | See [reaction defaults](commands.md#reactions) | Override `pending`, `inProgress`, `changesRequested`, `approved`, `comment`, or `failure`. |
 | `relay.*` | `appName` string; `secret` object | Required: `appName`, `secret.id`, `secret.key`, `secret.region` | Application name registered with the relay, and where the relay secret lives: the AWS Secrets Manager secret `id`, the JSON `key` inside it, and its `region`. Config never holds the secret value. |
+| `relay.streamIdleSeconds` | number | `45` | Whole seconds, 15 to 600. If a chat's event stream sends no bytes for this long, the daemon drops it and reconnects with the last event ID. Any byte counts, including SSE comment lines such as `: ping`. Comment lines never reach the handler. |
 | `fun.pool` | entry array | Shipped pool | Optional pool override with at least eight entries; see [pool rules](commands.md#fun). |
 | `rereview.phrases` | string array | `ready`, `fixed`, `addressed`, `updated`, `ptal`, `re-review`, `good to go` | Readiness phrases for blocked PRs. |
 | `hosts.github` | string array | `[]` | Add GitHub Enterprise hosts to the built-in github.com allowlist. |
