@@ -13,7 +13,7 @@ export const GROK_OUTPUT_FORMATS = ["plain", "json", "streaming-json"] as const;
 
 export type GrokOutputFormat = (typeof GROK_OUTPUT_FORMATS)[number];
 
-type RunnerCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-207" | "CR-209">;
+type RunnerCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-207" | "CR-208" | "CR-209">;
 
 type ProbeCode = Extract<CrCode, "CR-201" | "CR-202" | "CR-203" | "CR-206">;
 

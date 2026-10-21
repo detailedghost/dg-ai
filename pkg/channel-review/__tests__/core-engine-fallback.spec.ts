@@ -153,6 +153,20 @@ test.each(["CR-203", "CR-204", "CR-205"] as const)(
 	},
 );
 
+test("does not fall back after an expired Bedrock SSO session", async () => {
+	const h = setup({
+		runnerScript: () => ({ ...OK_RESULT, status: 1, code: "CR-208" }),
+	});
+	await h.engine.handle(reviewMessage("m1"));
+	await h.engine.idle();
+	expect(h.runner.runs).toHaveLength(1);
+	expect(h.runners.codex.probeCalls).toBe(0);
+	expect(h.runners.codex.runs).toHaveLength(0);
+	expect(h.replies().at(-1)?.text).toBe(
+		replyText("CR-208", { agent: "claude", owner: "Owner" }),
+	);
+});
+
 test("stop during the fallback probe prevents a second run", async () => {
 	const h = setup();
 	const gate = deferred<void>();

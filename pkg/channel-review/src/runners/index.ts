@@ -1,3 +1,4 @@
+import { spawn as spawnProcess } from "node:child_process";
 import { homedir } from "node:os";
 import { isAiUsageLimit } from "@dg/common";
 import { runCapture } from "@dg/common/node";
@@ -21,6 +22,7 @@ const AUTH_FAILURE: Record<Exclude<RunnerName, "grok">, RegExp> = {
 	copilot:
 		/^error:\s.*(?:invalid api key|not logged in|authentication failed|401 unauthorized)/im,
 };
+const SSO_EXPIRED_RE = /aws sso login|sso session.*(?:expired|invalid)|expiredtoken|security token.*expired/i;
 const BEDROCK_FAILURE_RE = /throttlingexception|too many requests|accessdeniedexception|is not authorized|validationexception.*model|model.*not found|inference profile.*not found/i;
 const AUTH_INFERENCE_WINDOW_MS = 60_000;
 const UNTRUSTED_REPORT_NOTE =
@@ -35,6 +37,7 @@ type RunnerSeams = {
 	now?: () => number;
 	runCapture?: typeof runCapture;
 	runProcess?: (request: ProcessRequest) => Promise<ProcessResult>;
+	startSsoLogin?: (profile: string) => void;
 };
 
 type Spec = {
@@ -155,6 +158,15 @@ function bedrockEnv(config: ChannelConfig): Record<string, string> {
 	};
 }
 
+const defaultStartSsoLogin = (profile: string): void => {
+	const child = spawnProcess("aws", ["sso", "login", "--profile", profile], {
+		detached: true,
+		stdio: "ignore",
+		env: process.env,
+	});
+	child.unref();
+};
+
 function claudeTools(request: ArgvRequest, config: ChannelConfig): string[] {
 	if (request.task === "thrash") return config.runner.claude.allowedTools;
 	if (request.task === "fix") return config.errorWatch.autoFix.allowedTools;
@@ -178,12 +190,14 @@ export function createRunners(
 	const now = seams.now ?? Date.now;
 	const capture = seams.runCapture ?? runCapture;
 	const spawn = seams.runProcess ?? runProcess;
+	const startSsoLogin = seams.startSsoLogin ?? defaultStartSsoLogin;
 
 	const locate = (name: RunnerName) =>
 		configuredPath(config, name) ?? which(name) ?? undefined;
 
 	const create = (name: RunnerName): Runner => {
 		const spec = SPECS[name];
+		let ssoLoginInFlight = false;
 		return {
 			name,
 			async probe(options) {
@@ -243,6 +257,7 @@ export function createRunners(
 				const evidence = name === "claude"
 					? `${stderrTail}\n${stdoutTail ?? ""}`
 					: stderrTail;
+				if (name === "claude" && outcome.status === 0) ssoLoginInFlight = false;
 				if (code) return { ...outcome, code };
 				if (
 					!outcome.aborted &&
@@ -250,6 +265,23 @@ export function createRunners(
 					isAiUsageLimit(`${outputTail ?? ""}\n${stdoutTail ?? ""}\n${stderrTail}`)
 				) {
 					return { ...outcome, code: "CR-207" };
+				}
+				if (
+					name === "claude" &&
+					config.runner.claude.bedrock &&
+					SSO_EXPIRED_RE.test(evidence)
+				) {
+					const profile = config.runner.claude.bedrock.profile;
+					if (
+						profile &&
+						!outcome.aborted &&
+						!outcome.timedOut &&
+						!ssoLoginInFlight
+					) {
+						ssoLoginInFlight = true;
+						startSsoLogin(profile);
+					}
+					return { ...outcome, code: "CR-208" };
 				}
 				if (
 					name === "claude" &&
