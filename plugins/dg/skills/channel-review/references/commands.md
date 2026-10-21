@@ -274,6 +274,7 @@ the shipped catalog exactly.
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-107` | `Only {owner} can run $emoji, so I didn't change anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-108` | `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.` | Provide a valid model name. |
+| `CR-109` | `Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.` | Wait for running jobs to finish, then post the request again. Raise `runner.concurrency` to drain the queue faster. |
 | `CR-201` | `I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.` | Install the runner or correct its executable path. |
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |

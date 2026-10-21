@@ -657,6 +657,16 @@ describe("createTeamsRelayProvider subscribe", () => {
 		).toEqual(["e1", "e2"]);
 	});
 
+	test("logs each reconnect", async () => {
+		const harness = createHarness({
+			handlers: [sseResponse([messageFrame("e1")]), sseResponse([messageFrame("e2")], { end: false })],
+		});
+		const drain = startDrain(harness);
+		await waitUntil(() => drain.events.length === 2);
+		await drain.stop();
+		expect(harness.lines().some((line) => line.startsWith("events stream reconnecting in"))).toBe(true);
+	});
+
 	test("yields gap and keeps the last known id until a replayed event updates it", async () => {
 		const harness = createHarness({
 			handlers: [

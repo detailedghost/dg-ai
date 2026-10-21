@@ -215,6 +215,7 @@ export function createSubscribe({ client, sleep, random, log, botName }: Subscri
 				connection.abort();
 			}
 			if (signal.aborted) return;
+			log.info(`events stream reconnecting in ${Math.round(delay)} ms`);
 			await sleepUnlessAborted(delay, signal);
 		}
 	};
