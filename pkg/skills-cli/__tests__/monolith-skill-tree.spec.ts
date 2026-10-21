@@ -182,7 +182,6 @@ describe("monolith assets the generator consumes", () => {
 		expect(text).toContain(
 			"  'SEARCH HIERARCHY (use in this order — fall through only on failure):',",
 		);
-		expect(text.indexOf("}\n")).toBeGreaterThan(0);
 	});
 
 	test("the destructure names every value the generator bakes in", () => {

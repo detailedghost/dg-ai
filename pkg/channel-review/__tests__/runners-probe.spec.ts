@@ -88,12 +88,6 @@ test.each([".codex", ".agents"])("codex finds thrash under %s/skills", (dir) => 
 	expect(thrashInstalled("codex", home, realSkillFs)).toBe(true);
 });
 
-test("codex does not look inside the claude plugin tree", () => {
-	const home = join(root, "home");
-	plantPlugin(home);
-	expect(thrashInstalled("codex", home, realSkillFs)).toBe(false);
-});
-
 test.each(["copilot", "codex"] as const)("%s ignores a plugin skill under the claude plugin tree", (runner) => {
 	const home = join(root, "home");
 	plantPlugin(home);

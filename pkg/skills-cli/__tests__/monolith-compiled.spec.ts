@@ -19,7 +19,7 @@ import {
 	type SpecRun,
 } from "./spec-fixtures";
 
-const BILLING_TERMS = "Invoice\nLedger\nPayee\nSvc suffix\nOutbox\nSaga";
+const BILLING_TERMS = BILLING_VOCABULARY.map((row) => row.term).join("\n");
 
 let context: SpecContext;
 let binary: string;
@@ -113,9 +113,9 @@ describe("compiled dg-skills monolith worktree-gen from a relocated plugin", () 
 		const consts = parseGeneratedScan(readFileSync(out, "utf8"));
 		expect(consts.existingTerms).toBe(BILLING_TERMS);
 		expect(consts.agentTypes).toEqual({
-			domain: "go",
+			domain: "general-purpose",
 			naming: "Explore",
-			concept: "go",
+			concept: "general-purpose",
 		});
 		expect(consts.SCAN_ROOT).toBe(worktree);
 		expect(consts.template).toBe(
@@ -202,12 +202,21 @@ describe("compiled dg-skills monolith worktree-gen from a relocated plugin", () 
 });
 
 describe("compiled dg-skills monolith helper operations", () => {
-	const live = () => join(worktree, ".agents", "monolith.md");
+	let helperTree: string;
+	const live = () => join(helperTree, ".agents", "monolith.md");
+
+	beforeAll(() => {
+		helperTree = join(context.base, "helper work");
+		writeTree(helperTree, {
+			".agents/monolith.md": vocabulary(BILLING_VOCABULARY),
+			"go.mod": "module example\n",
+		});
+	});
 
 	test("bootstrap, list-terms, validate and cap-report run with only the binary", async () => {
-		const bootstrap = await compiled(["bootstrap", worktree]);
+		const bootstrap = await compiled(["bootstrap", helperTree]);
 		expect(bootstrap.stdout).toBe(
-			`APPEND_MODE=1\nMONOLITH_PATH=${live()}\nLIGHT_MODE=0\n`,
+			`APPEND_MODE=1\nMONOLITH_PATH='${live()}'\nLIGHT_MODE=0\n`,
 		);
 		const terms = await compiled(["list-terms", live()]);
 		expect(terms.stdout).toBe(`${BILLING_TERMS}\n`);
@@ -245,7 +254,7 @@ describe("compiled dg-skills monolith helper operations", () => {
 	});
 
 	test("helper exit statuses survive the binary", async () => {
-		const missing = await compiled(["list-terms", join(worktree, "absent.md")]);
+		const missing = await compiled(["list-terms", join(helperTree, "absent.md")]);
 		expect(missing.exitCode).toBe(1);
 		const unknown = await compiled(["bogus"]);
 		expect(unknown.exitCode).toBe(2);

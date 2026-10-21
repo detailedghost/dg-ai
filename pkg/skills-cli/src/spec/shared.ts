@@ -135,7 +135,7 @@ export function utcMinute(now: Date = new Date()): string {
 	return `${now.toISOString().slice(0, 16)}Z`;
 }
 
-/** Read one newline-terminated line from stdin; null when input ends first. */
+/** Read one line from stdin; null when input ends before any data. */
 export async function readStdinLine(): Promise<string | null> {
 	const reader = Bun.stdin.stream().getReader();
 	const decoder = new TextDecoder();
@@ -143,7 +143,7 @@ export async function readStdinLine(): Promise<string | null> {
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
-			if (done) return null;
+			if (done) return buffer === "" ? null : buffer;
 			buffer += decoder.decode(value, { stream: true });
 			const newline = buffer.indexOf("\n");
 			if (newline >= 0) return buffer.slice(0, newline);

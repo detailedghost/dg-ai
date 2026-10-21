@@ -6,8 +6,8 @@ version: '1.1'
 status: draft
 current_slice: 0
 pr_strategy: single
-bundle: ~/code/worktrees/dg-skills_import/.agents/spec/005_dg_skills_consolidation
-plan_path: ~/code/worktrees/dg-skills_import/.agents/spec/005_dg_skills_consolidation/plan.md
+bundle: .agents/spec/005_dg_skills_consolidation
+plan_path: .agents/spec/005_dg_skills_consolidation/plan.md
 slices:
   - id: 1
     name: w2a-foundation-stash

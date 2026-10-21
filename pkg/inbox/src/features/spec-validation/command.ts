@@ -1,3 +1,4 @@
+import { bareAgent } from "@dg/common";
 import { existsSync } from "node:fs";
 import { getStringFlag } from "../../cli/args";
 import type { CliContext } from "../../cli/context";
@@ -34,7 +35,7 @@ const knownAgents = new Set([
 ]);
 
 const isKnownAgent = (name: string): boolean =>
-	knownAgents.has(name.replace(/^dg:/, ""));
+	knownAgents.has(bareAgent(name));
 
 export async function validateSpecCommand(context: CliContext): Promise<void> {
 	const specPath = getStringFlag(

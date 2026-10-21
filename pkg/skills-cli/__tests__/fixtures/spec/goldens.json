@@ -1209,7 +1209,7 @@
 		}
 	},
 	{
-		"id": "ready-snake-case-depends-on-is-not-read",
+		"id": "ready-snake-case-depends-on-blocks",
 		"args": ["ready", "plan.md", "3"],
 		"files": {
 			"plan.md": "---\nfeature: \"Auth Rewrite\"\nfeature_snake_case: auth_rewrite\ndate: \"2026-01-15\"\nversion: \"1.0\"\nstatus: draft\ncurrent_slice: 0\npr_strategy: single\nslices:\n  - id: 1\n    name: \"Domain model\"\n    depends_on: []\n    files: [\"src/model/**\", \"docs/model.md\"]\n    agents:\n      primary: csharp\n      effort: high\n      qa: [qa-perf, security]\n  - id: 2\n    name: \"API handlers\"\n    depends_on: [1]\n    files: [\"src/api/**\"]\n    agents:\n      primary: go\n      proxy: codex\n      proxy_skills: [db]\n  - id: 3\n    name: \"Docs\"\n    depends_on: [1, 2]\n    files: [\"docs/**\"]\n---\n\n# Auth Rewrite\n\n## Purpose\nRewrite auth with a security focus and no N+1 queries.\n\n## Scope\n### Included\n- tokens\n### Excluded\n- sso\n\n### Slice 1 — Domain model\n\n#### Engineering\n- [ ] Add model\n- [x] Add schema\n\n#### Testing Criteria\n##### Contracts\n- [ ] Model round-trips\n\n#### Acceptance Criteria\n- [ ] Given a user, when saved, then readable\n\n### Slice 2 — API handlers\n\n#### Engineering\n- [ ] Add handlers\n\n#### Testing Criteria\n##### Contracts\n- [x] Handler returns 200\n\n#### Acceptance Criteria\n- [x] Endpoint documented\n\n### Slice 3 — Docs\n\n#### Engineering\n- [x] Write docs\n\n## Slice Summaries\n\n### Slice 1 — Domain model (abc1234)\nDone with the model.\n\n## Agent Notes\n\n- (slice 1) note one\n\n## Issues Remediation\n\n| id | slice | from | severity | status | description |\n|----|-------|------|----------|--------|-------------|\n| 1 | 1 | reviewer | high | open | Missing index |\n| 2 | 2 | qa-perf | med | resolved | N+1 query |\n| 3 | 2 | security | low | deferred | Rotate keys |\n"
@@ -1220,8 +1220,8 @@
 			["commit", "-q", "-m", "chore: initial"]
 		],
 		"expect": {
-			"status": 0,
-			"stdout": "slice 3 has no dependencies — ready\n",
+			"status": 1,
+			"stdout": "slice 3 BLOCKED by uncommitted deps: 1 2\n",
 			"stderr": "",
 			"tree": {
 				"plan.md": "---\nfeature: \"Auth Rewrite\"\nfeature_snake_case: auth_rewrite\ndate: \"2026-01-15\"\nversion: \"1.0\"\nstatus: draft\ncurrent_slice: 0\npr_strategy: single\nslices:\n  - id: 1\n    name: \"Domain model\"\n    depends_on: []\n    files: [\"src/model/**\", \"docs/model.md\"]\n    agents:\n      primary: csharp\n      effort: high\n      qa: [qa-perf, security]\n  - id: 2\n    name: \"API handlers\"\n    depends_on: [1]\n    files: [\"src/api/**\"]\n    agents:\n      primary: go\n      proxy: codex\n      proxy_skills: [db]\n  - id: 3\n    name: \"Docs\"\n    depends_on: [1, 2]\n    files: [\"docs/**\"]\n---\n\n# Auth Rewrite\n\n## Purpose\nRewrite auth with a security focus and no N+1 queries.\n\n## Scope\n### Included\n- tokens\n### Excluded\n- sso\n\n### Slice 1 — Domain model\n\n#### Engineering\n- [ ] Add model\n- [x] Add schema\n\n#### Testing Criteria\n##### Contracts\n- [ ] Model round-trips\n\n#### Acceptance Criteria\n- [ ] Given a user, when saved, then readable\n\n### Slice 2 — API handlers\n\n#### Engineering\n- [ ] Add handlers\n\n#### Testing Criteria\n##### Contracts\n- [x] Handler returns 200\n\n#### Acceptance Criteria\n- [x] Endpoint documented\n\n### Slice 3 — Docs\n\n#### Engineering\n- [x] Write docs\n\n## Slice Summaries\n\n### Slice 1 — Domain model (abc1234)\nDone with the model.\n\n## Agent Notes\n\n- (slice 1) note one\n\n## Issues Remediation\n\n| id | slice | from | severity | status | description |\n|----|-------|------|----------|--------|-------------|\n| 1 | 1 | reviewer | high | open | Missing index |\n| 2 | 2 | qa-perf | med | resolved | N+1 query |\n| 3 | 2 | security | low | deferred | Rotate keys |\n"
@@ -3068,7 +3068,7 @@
 		}
 	},
 	{
-		"id": "roster-home-codex-dir",
+		"id": "roster-home-codex-wins-over-claude",
 		"args": ["roster"],
 		"files": {
 			"{home}/.codex/agents/alpha.md": "---\nname: alpha\ndescription: Alpha does the first thing\n---\n\nAlpha prose paragraph one\ncontinues here.\n\nSecond paragraph ignored.\n",

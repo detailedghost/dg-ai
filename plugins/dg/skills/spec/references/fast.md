@@ -162,10 +162,6 @@ as written. Fast mode trims planning, never the end gates:
 | 7 | Human review moves onto the PR/MR — no blocking gate |
 | 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr --draft` |
 
-Fast mode trims planning, never the end gates. The human reads the diff on the PR/MR, but
-not whether steps 5–6 hold: the agent reviews, the test-name gate and the docs pass all
-still gate step 8, exactly as in full mode.
-
 The `/dg:spec` deltas in [execute.md](execute.md) §6 apply unchanged: the PR/MR always opens
 `--draft`, the browser-open in `finish.md` step 8f runs afterward, and step 8d persists the URL to
 `worktree.pr_url` in `plan.md`. Step 8f owns the group name — [`/dg:pushup`](../../pushup/SKILL.md)

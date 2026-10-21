@@ -12,6 +12,8 @@ import {
 	warn,
 } from "./shared";
 
+const PERMISSION_KEY = /^[a-z_]+$/;
+
 const GRANT_ALL_KEYS = [
 	"run_commands",
 	"git_push",
@@ -122,6 +124,10 @@ export async function permsBatchCommand(args: string[]): Promise<number> {
 		const value = line.slice(equals + 1);
 		if (!TRUE_VALUES.has(value) && !FALSE_VALUES.has(value)) {
 			warn(`skipping non-boolean value for ${key}: ${value}`);
+			continue;
+		}
+		if (!PERMISSION_KEY.test(key)) {
+			warn(`skipping invalid permission key: ${key}`);
 			continue;
 		}
 		text = withPermission(text, key, String(TRUE_VALUES.has(value)));

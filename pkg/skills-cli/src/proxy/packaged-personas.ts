@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { bareAgent, PLUGIN_AGENT_PREFIX } from "@dg/common";
 import { personasDest } from "@dg/common/node";
 import arch from "../../../../plugins/dg/agents/arch.md" with { type: "text" };
 import checkpoint from "../../../../plugins/dg/agents/checkpoint.md" with { type: "text" };
@@ -45,12 +46,6 @@ export const packagedPersonas: Record<string, string> = {
 	thrash,
 	wave,
 };
-
-export const PLUGIN_AGENT_PREFIX = "dg:";
-
-export function bareAgent(name: string): string {
-	return name.startsWith(PLUGIN_AGENT_PREFIX) ? name.slice(PLUGIN_AGENT_PREFIX.length) : name;
-}
 
 /** The name Claude Code gives a plugin agent; other names pass through unchanged. */
 export function qualifiedAgent(name: string): string {

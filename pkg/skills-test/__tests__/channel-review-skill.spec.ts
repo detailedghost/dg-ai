@@ -126,7 +126,7 @@ describe("channel-review skill distribution", () => {
 		expect(front).toMatch(/^name: channel-review$/m);
 	});
 
-	test("the bootstrap block gates on channel-review help, installs only the CLI, and ends with the help line", () => {
+	test("bootstrap block gates on help, installs the CLI only, ends with the help line", () => {
 		const block = bootstrapBlock(readSkill()).split("\n");
 		expect(block).toEqual([
 			"```sh",

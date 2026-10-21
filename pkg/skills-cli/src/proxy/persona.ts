@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bareAgent, packagedPersonas } from "./packaged-personas";
+import { bareAgent } from "@dg/common";
+import { packagedPersonas } from "./packaged-personas";
 import { resolveSlicePrimary } from "./spec-persona";
 
 async function readAgentPersona(requested: string): Promise<string> {

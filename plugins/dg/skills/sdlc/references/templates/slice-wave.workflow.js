@@ -246,21 +246,14 @@ const results = await pipeline(
       const reviews = await parallel(
         reviewers.map(
           (rv) => () =>
-            agent(
-              sub(
-                rv === "wave" ? templates.wave : sub(templates.wave, slice, { changedFiles: st.changedFiles }),
-                slice,
-                { changedFiles: st.changedFiles },
-              ),
-              {
-                label: `${rv}:${slice.id}#${round}`,
-                phase: phaseFor(slice),
-                model: modelFor(rv),
-                effort: effortFor(rv),
-                agentType: typeFor(rv),
-                schema: QA,
-              },
-            ),
+            agent(sub(templates.wave, slice, { changedFiles: st.changedFiles }), {
+              label: `${rv}:${slice.id}#${round}`,
+              phase: phaseFor(slice),
+              model: modelFor(rv),
+              effort: effortFor(rv),
+              agentType: typeFor(rv),
+              schema: QA,
+            }),
         ),
       );
       // Which reviewers returned nothing at all, before filter(Boolean) makes them indistinguishable

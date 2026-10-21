@@ -1,5 +1,6 @@
 export * from "./ai-usage-limit";
 export * from "./assert";
+export * from "./agent-name";
 export * from "./connection-drop";
 export * from "./redact";
 export * from "./async";
