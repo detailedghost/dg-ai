@@ -5,7 +5,7 @@ perform authoritative validation.
 
 ## StyleGuide
 
-`proto scrape` returns the stable path to this browser-authored value:
+`proto --ext scrape` returns the stable path to this browser-authored value:
 
 ```jsonc
 {

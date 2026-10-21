@@ -1,5 +1,5 @@
 ---
 interface:
-  display_name: Live Page Prototype
-  short_description: Prototype and compare live page variations
-  default_prompt: Use $proto to prototype variations on a live application page.
+  display_name: Prototype
+  short_description: Prototype locally or compare variations in a live page
+  default_prompt: Use $proto to prototype this idea locally, or add --ext to compare variations in a live application page.

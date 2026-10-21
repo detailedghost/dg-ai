@@ -41,7 +41,7 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | --- | --- | --- |
 | `browser` | Open and group tabs; launch a browser | [Browser](docs/browser.md) |
 | `demo` | Play and record a guided tour | [Tours and prototypes](docs/demo-and-proto.md) |
-| `proto` | Compare designs inside a live page | [Tours and prototypes](docs/demo-and-proto.md) |
+| `proto` | Prototype locally, or compare designs inside a live page with `--ext` | [Tours and prototypes](docs/demo-and-proto.md) |
 | `chat` | Talk to a person or another agent; keep agent memory | [Chat](docs/chat.md) |
 | `overwatch` | Track work across parallel chats | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |

@@ -1,4 +1,6 @@
-# Commands and recovery
+# Extension commands and recovery
+
+These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
 
 ## Extension precondition
 
@@ -13,8 +15,8 @@ if [ ! -f "$INSTALL_MARKER" ]; then
 fi
 ```
 
-This is the proto skill's own precondition. Do not delegate to another prototype
-skill and do not attempt scrape when the marker is absent.
+This is the extension flow's own precondition. When the marker is absent, stop and
+tell the user; do not attempt scrape and do not fall back to the local mode unasked.
 
 The marker proves the installer completed, not that the extension is enabled in
 the current browser profile. If scrape times out, report:
@@ -30,7 +32,7 @@ Use the installed binary at `~/.dg/bin/dg-skills`; install or refresh it when it
 is missing or too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
-~/.dg/bin/dg-skills proto --help >/dev/null 2>&1 ||
+~/.dg/bin/dg-skills proto --ext --help >/dev/null 2>&1 ||
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
@@ -47,7 +49,7 @@ Warn about authenticated/private page inspection and obtain explicit
 confirmation first when applicable. Then run:
 
 ```bash
-STYLE_GUIDE="$(~/.dg/bin/dg-skills proto scrape "$URL")"
+STYLE_GUIDE="$(~/.dg/bin/dg-skills proto --ext scrape "$URL")"
 SLUG="$(basename "$(dirname "$STYLE_GUIDE")")"
 PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
@@ -62,7 +64,7 @@ Write the approved ProtoPlan to `$PLAN`, then invoke plant from the target
 project root:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto plant "$PLAN" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext plant "$PLAN" )
 ```
 
 The command clears the prior same-slug verdict before opening the browser and
@@ -86,7 +88,7 @@ Do not poll Downloads independently or fabricate a Verdict.
 After an approve with no notes and only from the target project root, run:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto cleanup "$SLUG" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext cleanup "$SLUG" )
 ```
 
 Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes

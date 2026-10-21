@@ -58,7 +58,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | 5 | Per-slice review fan-out (`sonnet` default, per-slice opt-in escalate) | references/plan.md, references/templates/slice-review.md |
 | 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
 | 7 | Write `plan.md`; assign `/dg:proxy` slices; WARN token/context cost | references/plan.md |
-| 8 | Plan approval gate (readable plan view in the terminal, then `AskUserQuestion` Approve or Rework, blocks on Approve); register accepted prototype assets (the prototype skill ships later) | references/plan.md |
+| 8 | Plan approval gate (readable plan view in the terminal, then `AskUserQuestion` Approve or Rework, blocks on Approve); register accepted prototype assets (built with `/dg:proto`) | references/plan.md |
 | 9 | `~/.dg/bin/dg-skills spec context <bundle>` assembles `context.md` | references/plan.md |
 | 10 | Commit bundle; print resume command `/dg:spec -s <NNN>_<slug>` | references/plan.md |
 
