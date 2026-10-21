@@ -15,7 +15,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { shellCommand } from "../src/utils/self-command";
+import { shellCommand } from "@dg/common/node";
 import { BG_ENTRY, type BgJob, bgWorld, isLive, until } from "./bg-fixtures";
 
 setDefaultTimeout(60_000);
@@ -435,7 +435,9 @@ describe("dg-skills bg prune", () => {
 			rmSync(join(world.scratch, "bg", `${job.id}.identity.json`), {
 				force: true,
 			});
-			expect((await world.json(["status", job.id], base)).state).toBe("unknown");
+			expect((await world.json(["status", job.id], base)).state).toBe(
+				"unknown",
+			);
 			expect(isLive(pid)).toBe(true);
 
 			const pruned = await world.json<{ removed: string[] }>(
@@ -507,7 +509,12 @@ describe("dg-skills bg prune", () => {
 		await world.settled(job.id, tree);
 		writeFileSync(
 			join(world.state, "bg", "evil.meta.json"),
-			JSON.stringify({ id: "../../evil", command: ":", cwd: base, kind: "shell" }),
+			JSON.stringify({
+				id: "../../evil",
+				command: ":",
+				cwd: base,
+				kind: "shell",
+			}),
 		);
 		const listed = await world.json<{ jobs: { id: string }[] }>(["list"], base);
 		expect(listed.jobs.map((value) => value.id)).toEqual([job.id]);

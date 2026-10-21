@@ -21,6 +21,7 @@ binaries. The skills-root README itself is not installed.
 | `hunt/` | Gather evidence and diagnose a codebase bug |
 | `kick/` | Plan and park a deferred spec bundle |
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
+| `phone-friend/` | Private encrypted chat with one other agent over Nostr |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
@@ -68,6 +69,7 @@ skills/
   inbox-cleanup/
   kick/
   overwatch/
+  phone-friend/
   pickup/
   prd/
   proto/
@@ -108,7 +110,7 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.17.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.18.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.

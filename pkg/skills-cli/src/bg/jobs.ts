@@ -14,19 +14,20 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { isRecord } from "@dg/common";
 import {
 	isPathInside,
 	randSuffix,
 	scratchPath,
+	selfCommand,
+	shellCommand,
 	statePath,
 	stateRoot,
 	writeFileAtomic,
 } from "@dg/common/node";
-import { isRecord } from "@dg/common";
 import { BACKENDS } from "../proxy/backends";
 import { emitJson } from "../utils/json";
 import { type CommandSpec, die, EXIT } from "../utils/legacy-command";
-import { selfCommand, shellCommand } from "../utils/self-command";
 
 const LOCK_ABANDONED_MS = 60_000;
 const JOB_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -222,8 +223,13 @@ async function cmdRun(args: string[]): Promise<void> {
 	const [cwdOverride, rest] = extractCwd(args);
 	const command = rest.length === 1 ? rest[0].trim() : "";
 	if (!command)
-		die('usage: run "<command>" [--cwd <dir>] (one quoted argument)', EXIT.USAGE);
-	emitJson(await launchJob(command, path.resolve(cwdOverride ?? process.cwd())));
+		die(
+			'usage: run "<command>" [--cwd <dir>] (one quoted argument)',
+			EXIT.USAGE,
+		);
+	emitJson(
+		await launchJob(command, path.resolve(cwdOverride ?? process.cwd())),
+	);
 }
 
 async function cmdList(): Promise<void> {
@@ -262,7 +268,11 @@ async function cmdPrune(args: string[]): Promise<void> {
 	const running: JobState[] = [];
 	for (const f of files) {
 		const meta = readMetaFile(path.join(dir, f));
-		if (!meta || !JOB_ID_PATTERN.test(meta.id) || !isPathInside(meta.cwd, target))
+		if (
+			!meta ||
+			!JOB_ID_PATTERN.test(meta.id) ||
+			!isPathInside(meta.cwd, target)
+		)
 			continue;
 		const state = deriveState(meta);
 		if (state.state === "running") {
@@ -633,14 +643,10 @@ export function readPid(meta: JobMeta): number | null {
 export function processIdentity(
 	pid: number,
 ): { group: number; started: string } | null {
-	return process.platform === "linux"
-		? procIdentity(pid)
-		: psIdentity(pid);
+	return process.platform === "linux" ? procIdentity(pid) : psIdentity(pid);
 }
 
-function procIdentity(
-	pid: number,
-): { group: number; started: string } | null {
+function procIdentity(pid: number): { group: number; started: string } | null {
 	try {
 		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
 		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
@@ -658,9 +664,7 @@ function procIdentity(
 	}
 }
 
-function psIdentity(
-	pid: number,
-): { group: number; started: string } | null {
+function psIdentity(pid: number): { group: number; started: string } | null {
 	if (!Number.isSafeInteger(pid) || pid <= 0) return null;
 	const result = spawnSync(
 		"ps",

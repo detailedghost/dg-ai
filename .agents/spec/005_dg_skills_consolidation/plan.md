@@ -697,11 +697,11 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 | --- | --- | --- | --- | --- |
 | 2a | 1–4 | feature/dg-skills-w2a | default branch containing Wave 1 | 1.15.0 |
 | 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | none (merged without a bump; slice 10 shipped in Wave 3) |
-| 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.16.0 (shipped) |
-| 4 | 16–19, 31 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.17.0 |
-| 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.18.0 |
-| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.19.0 |
-| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.20.0 |
+| 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.17.0 |
+| 4 | 16–19, 31 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.18.0 |
+| 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.19.0 |
+| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.20.0 |
+| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.21.0 |
 
 1. Fetch/rebase against the current default branch and confirm Wave 1's required content is present before engineering. If Wave 1 is not merged, use its actual open branch as Wave 2a's base and chain it explicitly. Reconcile current versions rather than reverting a newer release to these draft targets; preserve one monotonic matched-set bump per wave.
 2. Resolve the committed bundle from its origin and read only `context.md` + `plan.md`. Create the execution worktree from the required wave base/head, including predecessor changes; a fresh worktree from the default branch alone is insufficient for later waves. Resume uses the recorded actual branch/head and the first incomplete slice, never recreates a finished wave's PR or replays commits blindly.
@@ -717,7 +717,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - `pw --ext` (user decision 2026-10-20, slice 25): drive and read the user's real browser through the extension, with read verbs so an agent can see what the user is on. Small scope, per-action approvals, redaction, no code execution.
 - viz and review are dropped from dg. Slice 14 work is removed from Wave 3 (slice 14 leaves `slices[]`; slice 15 depends on slice 13). `/viz verify` in spec plan mode (step 8) is replaced by a built-in plan-mode approval (`EnterPlanMode`/`ExitPlanMode`), keeping the gate. `-l`/`--local` and `REVIEW_MODE` are removed from sdlc and spec because they needed the review board; the human review is always on the draft PR.
 - lineage and clockout are retired fully: not ported, and listed for deletion at the manual cutover. Slice 22 (w5-lineage) is dropped entirely and slice 23 now depends on slice 21. Slice 19 is release-only (renamed w4-release, no clockout port).
-- Matched versions: Wave 3 shipped 1.16.0, so Wave 4 = 1.17.0, Wave 5 = 1.18.0, Wave 6 = 1.19.0, Wave 7 = 1.20.0.
+- Matched versions: master shipped skills-v1.16.0 from #39 (phone-friend), so Wave 3 = 1.17.0, Wave 4 = 1.18.0, Wave 5 = 1.19.0, Wave 6 = 1.20.0, Wave 7 = 1.21.0.
 - erd (slice 21) ships Markdown output only, with no viz board. stat (slice 17) has no `--viz`.
 - unslop is not vendored and has no Python port. It installs from the upstream repo through the `unslop` marketplace entry (`/plugin install unslop@detailedghost`). Slice 29 shrinks accordingly.
 - dg:demo (slice 27): local is the default mode. `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output. Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes, from one shared overlay module used by the extension and `dg-skills pw`, with a test that one plan yields the same overlay in both modes. `--ext` uses the extension (its review/walkthrough/video choices and the upload-and-receipt flow stay as planned). `--attach-pr` works in both modes: local mode uploads via pw with a saved GitHub login state, else hands over files plus the PR link with no PR change; GitLab stays unsupported with no change. Owned-artifact cleanup applies to both. Slice 27 depends on slice 25. Behavior change: plain `/dg:demo` becomes local; extension users add `--ext`.
@@ -742,7 +742,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Wave 2a COMPLETE: slices 1–4, last committed slice4 plus review/docs/test follow-through; worktree ~/code/dg/.worktrees/dg-skills-w2a; actual branch feature/dg_skills_w2a; base feature/dg-skills-w1; head 0052265. Ready for review [#28](https://github.com/detailedghost/dg-ai/pull/28) (user requested promotion on 2026-10-17). All four final reviewers clean after one correction round. Final `bun run test:all`: 5,062 pass, 0 fail; all eight `lint:all` packages pass. Compiled external-cwd operations, private artifacts, six backends, provider parity, privacy/version/test-name/whitespace gates pass. Matched release1.15.0; native Windows runtime remains untested/documented. PR directly records dependency on #27; chain will register stack in Wave2b after slice7 ships. Browser grouped open completed.
 - Wave2b IN PROGRESS: slices5–10, worktree ~/code/dg/.worktrees/dg-skills-w2b, actual branch feature/dg_skills_w2b, base feature/dg_skills_w2a, initial head0052265; Slices5–9 committed ff75474/f9b205a/2d7cadc/f55483c/6c6c302, current head b79344e21522c139202eb3a231ea9421cfb70dce (one consolidated commit above Wave2a; original five slice commits retained in local backup); next slice 10, waiting for required fallback content on origin/master (user confirmed prerequisite retained). Native stack #30: #26→#27→#28, bases and ready state verified after user-requested prerequisite insertion. Do not recreate finished PRs. Slice10 still gates on fetched review-model-fallback content.
 - Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback), 5127a44 (flags documentation and the skill-flags guard), b94dac7 and 4937df8 (plan scope edits above), and 71c05ab (plan approval gate in the spec skill).
-- Wave 4 DRAFT PR (2026-10-20): [#41](https://github.com/detailedghost/dg-ai/pull/41), branch feature/dg_skills_w4, base feature/dg_skills_w3, worktree ~/code/worktrees/dg-dg_skills_w4. Slices 16, 17, 18, 31 (doctor) and 19 committed: 3cd14c7, d9d1efa, d036e22 (plan), a871dec, 0475991, 46ed4fe, plus final review fixes 8ed5443. Version 1.17.0. test:all and lint:all green in 8 packages. Next: Wave 5 (slices 20, 21, 23, 24) from this head after review.
+- Wave 4 DRAFT PR (2026-10-20): [#41](https://github.com/detailedghost/dg-ai/pull/41), branch feature/dg_skills_w4, base feature/dg_skills_w3, worktree ~/code/worktrees/dg-dg_skills_w4. Slices 16, 17, 18, 31 (doctor) and 19 committed: 3cd14c7, d9d1efa, d036e22 (plan), a871dec, 0475991, 46ed4fe, plus final review fixes 8ed5443. Version 1.18.0 after the master merge, because master shipped skills-v1.16.0. test:all and lint:all green in 8 packages. Next: Wave 5 (slices 20, 21, 23, 24) from this head after review.
 
 ## Roundtable Decisions
 
@@ -1125,12 +1125,12 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 19 — w4-release
 
 #### Engineering
-- [x] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
+- [x] Bump every package and plugin manifest to the next matched version, 1.18.0; open the Wave 4 draft PR
 - [x] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
 ##### Contracts
-- [x] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
+- [x] bun run test:all and bun run lint:all green; release-versions guard passes at 1.18.0.
 
 #### Acceptance Criteria
 - [x] Matched Wave 4 draft base/head/URL for slices 16–19 persisted (PR #41, feature/dg_skills_w4 onto feature/dg_skills_w3).
@@ -1193,7 +1193,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 #### Engineering
 - [ ] Rewrite test-live-setup.sh and test-live-cleanup.sh in TypeScript as `dg-skills test-live setup|cleanup`
-- [ ] Bump to 1.18.0; open the Wave 5 draft PR
+- [ ] Bump to 1.19.0; open the Wave 5 draft PR
 - [ ] Preserve actual positional environments/overrides and exit-1 shell parity; GitLab unsupported must precede patch/push.
 - [ ] Scope recoverable setup/cleanup state by repository/worktree/branch and patch commit; parse state as data and remove only owned changes, preserving later/preexisting commits.
 
@@ -1253,7 +1253,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 - [ ] `--ext` uses the extension: its review/walkthrough/video choices and the upload-and-receipt flow below stay as planned.
 - [ ] `--attach-pr <ref>` works in both modes. Local mode uploads via pw with a saved GitHub login state, else hands over the files plus the PR link with no PR change. In `--ext` mode use the extension-assisted upload/receipt contract below. GitLab attachment reports unsupported before any mutation. Owned-artifact cleanup applies to both modes.
 - [ ] Drop the repo-specific recipes (no work data); keep prose that the demo workflow parity spec asserts
-- [ ] Bump to 1.19.0; open the Wave 6 draft PR
+- [ ] Bump to 1.20.0; open the Wave 6 draft PR
 - [ ] Extend existing registerDemo/TourScript with optional attachment {requestId,pullRequestUrl}; preserve readable Markdown/marker/editor/recorded planMarkdown roundtrip. Add explicit preview Upload to GitHub PR using existing IDB Blob and authenticated validated GitHub PR tab; do not upload on handoff/preview alone.
 - [ ] Preserve start-screen stop contract, stage screenshots before handoff, and clean only per-run owned artifacts against a pre-run baseline; never delete all git-status paths.
 - [ ] Start with a controlled real synthetic WebM upload spike proving current GitHub native-widget/signed-policy transport and final user-attachments URL; failed spike blocks feature with evidence. No giant runtime/base64 payloads, cookie export, new daemon/ChatFrame/SessionBootstrap or provider upload API.
@@ -1317,7 +1317,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 #### Engineering
 - [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (vendor pr-body-style.md into the skill; hook remains a configured external executable)
-- [ ] Bump to 1.20.0; open the Wave 7 draft PR
+- [ ] Bump to 1.21.0; open the Wave 7 draft PR
 - [ ] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
 - [ ] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
 - [ ] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.

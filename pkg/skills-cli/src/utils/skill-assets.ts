@@ -1,8 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { claudePluginSkillsDirs } from "@dg/common/node";
-import { isVirtualBunPath } from "./bun-path";
+import { claudePluginSkillsDirs, isVirtualBunPath } from "@dg/common/node";
 
 /** Select explicit/configured/source skill roots; a selected root suppresses default fallback discovery. */
 export interface SkillAssetOptions {

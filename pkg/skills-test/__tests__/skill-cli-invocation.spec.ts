@@ -59,13 +59,14 @@ describe("packaged skills call the CLI by its literal path", () => {
 		).toEqual([]);
 	});
 
-	test("every bootstrap block gates on the installed binary and passes --cli-only unless the skill needs the extension", () => {
-		const needsExtension = [
+	test("every bootstrap block gates on the installed binary and passes --cli-only unless the skill needs dg-agent or the extension", () => {
+		const needsFullInstall = [
 			"browser",
 			"chat",
 			"demo",
 			"inbox-cleanup",
 			"overwatch",
+			"phone-friend",
 			"proto",
 			"pushup",
 		];
@@ -75,7 +76,7 @@ describe("packaged skills call the CLI by its literal path", () => {
 		).filter(({ name, text }) => {
 			const skill = name.split("/")[0] ?? "";
 			const cliOnly = /bootstrap\.sh \| sh -s -- --cli-only/.test(text);
-			return needsExtension.includes(skill) ? cliOnly : !cliOnly;
+			return needsFullInstall.includes(skill) ? cliOnly : !cliOnly;
 		});
 		expect(bad.map(({ name }) => name)).toEqual([]);
 	});

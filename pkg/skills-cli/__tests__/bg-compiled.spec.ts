@@ -17,8 +17,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { shellCommand } from "@dg/common/node";
 import { BACKENDS } from "../src/proxy/index";
-import { shellCommand } from "../src/utils/self-command";
 import { type BgJob, bgWorld, isLive, until } from "./bg-fixtures";
 import {
 	compileProxyCli,
