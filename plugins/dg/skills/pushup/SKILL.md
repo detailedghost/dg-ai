@@ -43,7 +43,7 @@ commits already have the shape you want them reviewed in.
 
    ```sh
    ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
-     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
    Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.

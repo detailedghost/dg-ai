@@ -10,11 +10,11 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
 ~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ~/.dg/bin/dg-skills channel-review --help
 ```
 
-For PowerShell, use [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.ps1).
+For PowerShell, use [the raw bootstrap.ps1](https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1).
 Read [setup](references/setup.md) and [commands](references/commands.md) before
 changing config or choosing custom reactions. To set this up for a new person,
 follow [relay setup](references/relay-setup.md); start config.json from

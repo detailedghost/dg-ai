@@ -674,11 +674,11 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 | --- | --- | --- | --- | --- |
 | 2a | 1–4 | feature/dg-skills-w2a | default branch containing Wave 1 | 1.15.0 |
 | 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | none (merged without a bump; slice 10 shipped in Wave 3) |
-| 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.16.0 (shipped) |
-| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.17.0 |
-| 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.18.0 |
-| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.19.0 |
-| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.20.0 |
+| 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.17.0 |
+| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.18.0 |
+| 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.19.0 |
+| 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.20.0 |
+| 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.21.0 |
 
 1. Fetch/rebase against the current default branch and confirm Wave 1's required content is present before engineering. If Wave 1 is not merged, use its actual open branch as Wave 2a's base and chain it explicitly. Reconcile current versions rather than reverting a newer release to these draft targets; preserve one monotonic matched-set bump per wave.
 2. Resolve the committed bundle from its origin and read only `context.md` + `plan.md`. Create the execution worktree from the required wave base/head, including predecessor changes; a fresh worktree from the default branch alone is insufficient for later waves. Resume uses the recorded actual branch/head and the first incomplete slice, never recreates a finished wave's PR or replays commits blindly.
@@ -692,7 +692,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 **User scope decisions (2026-10-20):**
 - viz and review are dropped from dg. Slice 14 work is removed from Wave 3 (slice 14 leaves `slices[]`; slice 15 depends on slice 13). `/viz verify` in spec plan mode (step 8) is replaced by a built-in plan-mode approval (`EnterPlanMode`/`ExitPlanMode`), keeping the gate. `-l`/`--local` and `REVIEW_MODE` are removed from sdlc and spec because they needed the review board; the human review is always on the draft PR.
 - lineage and clockout are retired fully: not ported, and listed for deletion at the manual cutover. Slice 22 (w5-lineage) is dropped entirely and slice 23 now depends on slice 21. Slice 19 is release-only (renamed w4-release, no clockout port).
-- Matched versions: Wave 3 shipped 1.16.0, so Wave 4 = 1.17.0, Wave 5 = 1.18.0, Wave 6 = 1.19.0, Wave 7 = 1.20.0.
+- Matched versions: master shipped skills-v1.16.0 from #39 (phone-friend), so Wave 3 = 1.17.0, Wave 4 = 1.18.0, Wave 5 = 1.19.0, Wave 6 = 1.20.0, Wave 7 = 1.21.0.
 - erd (slice 21) ships Markdown output only, with no viz board. stat (slice 17) has no `--viz`.
 - unslop is not vendored and has no Python port. It installs from the upstream repo through the `unslop` marketplace entry (`/plugin install unslop@detailedghost`). Slice 29 shrinks accordingly.
 - dg:demo (slice 27): local is the default mode. `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output. Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes, from one shared overlay module used by the extension and `dg-skills pw`, with a test that one plan yields the same overlay in both modes. `--ext` uses the extension (its review/walkthrough/video choices and the upload-and-receipt flow stay as planned). `--attach-pr` works in both modes: local mode uploads via pw with a saved GitHub login state, else hands over files plus the PR link with no PR change; GitLab stays unsupported with no change. Owned-artifact cleanup applies to both. Slice 27 depends on slice 25. Behavior change: plain `/dg:demo` becomes local; extension users add `--ext`.
@@ -1080,12 +1080,12 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 19 — w4-release
 
 #### Engineering
-- [ ] Bump every package and plugin manifest to the next matched version, 1.17.0; open the Wave 4 draft PR
+- [ ] Bump every package and plugin manifest to the next matched version, 1.18.0; open the Wave 4 draft PR
 - [ ] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] bun run test:all and bun run lint:all green; release-versions guard passes at 1.17.0.
+- [ ] bun run test:all and bun run lint:all green; release-versions guard passes at 1.18.0.
 
 #### Acceptance Criteria
 - [ ] Matched Wave 4 draft base/head/URL for slices 16–19 persisted.
@@ -1148,7 +1148,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 #### Engineering
 - [ ] Rewrite test-live-setup.sh and test-live-cleanup.sh in TypeScript as `dg-skills test-live setup|cleanup`
-- [ ] Bump to 1.18.0; open the Wave 5 draft PR
+- [ ] Bump to 1.19.0; open the Wave 5 draft PR
 - [ ] Preserve actual positional environments/overrides and exit-1 shell parity; GitLab unsupported must precede patch/push.
 - [ ] Scope recoverable setup/cleanup state by repository/worktree/branch and patch commit; parse state as data and remove only owned changes, preserving later/preexisting commits.
 
@@ -1204,7 +1204,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 - [ ] `--ext` uses the extension: its review/walkthrough/video choices and the upload-and-receipt flow below stay as planned.
 - [ ] `--attach-pr <ref>` works in both modes. Local mode uploads via pw with a saved GitHub login state, else hands over the files plus the PR link with no PR change. In `--ext` mode use the extension-assisted upload/receipt contract below. GitLab attachment reports unsupported before any mutation. Owned-artifact cleanup applies to both modes.
 - [ ] Drop the repo-specific recipes (no work data); keep prose that the demo workflow parity spec asserts
-- [ ] Bump to 1.19.0; open the Wave 6 draft PR
+- [ ] Bump to 1.20.0; open the Wave 6 draft PR
 - [ ] Extend existing registerDemo/TourScript with optional attachment {requestId,pullRequestUrl}; preserve readable Markdown/marker/editor/recorded planMarkdown roundtrip. Add explicit preview Upload to GitHub PR using existing IDB Blob and authenticated validated GitHub PR tab; do not upload on handoff/preview alone.
 - [ ] Preserve start-screen stop contract, stage screenshots before handoff, and clean only per-run owned artifacts against a pre-run baseline; never delete all git-status paths.
 - [ ] Start with a controlled real synthetic WebM upload spike proving current GitHub native-widget/signed-policy transport and final user-attachments URL; failed spike blocks feature with evidence. No giant runtime/base64 payloads, cookie export, new daemon/ChatFrame/SessionBootstrap or provider upload API.
@@ -1268,7 +1268,7 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 #### Engineering
 - [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (vendor pr-body-style.md into the skill; hook remains a configured external executable)
-- [ ] Bump to 1.20.0; open the Wave 7 draft PR
+- [ ] Bump to 1.21.0; open the Wave 7 draft PR
 - [ ] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
 - [ ] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
 - [ ] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.

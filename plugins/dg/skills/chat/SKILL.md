@@ -21,7 +21,7 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 ```bash
 if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension chat || exit 1; fi
 [ -x ~/.dg/bin/dg-agent ] ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 The gate tests `dg-agent`, **not** `dg-skills`. A machine that has already used

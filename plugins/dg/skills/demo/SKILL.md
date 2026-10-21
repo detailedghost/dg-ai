@@ -72,7 +72,7 @@ the latest code:
 
 ```bash
 ~/.dg/bin/dg-skills demo --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to `Invoke-Expression`.

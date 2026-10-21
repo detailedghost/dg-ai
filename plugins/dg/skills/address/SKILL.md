@@ -17,7 +17,7 @@ Resolve the compiled CLI before running any command:
 
 ```bash
 ~/.dg/bin/dg-skills address --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Repeat this resolution in every fresh shell, including delegated execution and

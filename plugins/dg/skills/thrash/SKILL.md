@@ -62,7 +62,7 @@ First run: install or refresh the compiled CLI when it is missing or too old. Ev
 
 ```bash
 ~/.dg/bin/dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.16.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 A binary whose `thrash` help lacks `--dry-run` is stale: re-run the bootstrap once, then stop with an error rather than run it.
