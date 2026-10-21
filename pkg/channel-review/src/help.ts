@@ -120,14 +120,18 @@ function reactionList(
 	return `<p><b>Reactions</b> on your message</p><ul>${items.join("")}</ul>`;
 }
 
+export type HelpTextOptions = {
+	topic?: HelpTopic;
+	allowAnySender?: boolean;
+	defaultModel?: string;
+};
+
 export function helpText(
 	botName: string,
 	ownerToken: string,
 	phrases: readonly string[],
 	reactions: Record<ReactionState, string>,
-	topic: HelpTopic = "overview",
-	allowAnySender = false,
-	defaultModel?: string,
+	{ topic = "overview", allowAnySender = false, defaultModel }: HelpTextOptions = {},
 ): string {
 	const bot = escapeHtml(botName);
 	const owner = escapeHtml(ownerToken);

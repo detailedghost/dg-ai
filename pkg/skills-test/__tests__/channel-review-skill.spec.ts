@@ -272,13 +272,9 @@ describe("channel-review skill distribution", () => {
 
 describe("channel-review docs do not drift from the shipped CLI", () => {
 	test("help and runner documentation list every selectable backend", () => {
-		const reviewHelp = helpText(
-			"Review Bot",
-			"!owner",
-			["ready"],
-			REACTION_DEFAULTS,
-			"review",
-		);
+		const reviewHelp = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+			topic: "review",
+		});
 		const commands = readRef("commands.md");
 		const setup = readRef("setup.md");
 		for (const name of RUNNER_NAMES) {
@@ -366,13 +362,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 	] as const)(
 		"the $help %s section and the commands.md %s table list the same tokens",
 		(topic, heading, size) => {
-			const help = helpText(
-				"Review Bot",
-				"!owner",
-				["ready"],
-				REACTION_DEFAULTS,
-				topic,
-			);
+			const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, { topic });
 			const helpTokens = new Set(help.match(TOKEN) ?? []);
 			const documented = new Set(
 				tableRows(section(readRef("commands.md"), heading)).flatMap((cells) =>
@@ -387,13 +377,9 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 	);
 
 	test("the $help $emoji slots and the commands.md emoji slot table list the same slots", () => {
-		const help = helpText(
-			"Review Bot",
-			"!owner",
-			["ready"],
-			REACTION_DEFAULTS,
-			"emoji",
-		);
+		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+			topic: "emoji",
+		});
 		const helpSlots = [...help.matchAll(/<li><code>(\w+)<\/code>/g)].map(
 			(m) => m[1],
 		);

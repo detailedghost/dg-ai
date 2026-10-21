@@ -796,15 +796,11 @@ export function createEngine(deps: EngineDeps): Engine {
 			await attempt("reply", () =>
 				provider.reply({
 					chatId: message.chatId,
-					text: helpText(
-						botName,
-						config.owner.token,
-						config.rereview.phrases,
-						config.reactions,
-						job.help,
-						config.address.allowAnySender,
-						resolveModel(config.runner.default, undefined, config).model,
-					),
+					text: helpText(botName, config.owner.token, config.rereview.phrases, config.reactions, {
+						topic: job.help,
+						allowAnySender: config.address.allowAnySender,
+						defaultModel: resolveModel(config.runner.default, undefined, config).model,
+					}),
 					html: true,
 				}),
 			);
