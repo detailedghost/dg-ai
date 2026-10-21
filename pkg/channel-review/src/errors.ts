@@ -30,7 +30,7 @@ export const ERROR_CATALOG = {
 	"CR-207":
 		"{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.",
 	"CR-208":
-		"The AWS SSO sign-in for Bedrock expired on {owner}'s computer, so I started a new sign-in there. {owner} must approve it in the browser, then post the request again.",
+		"The AWS SSO sign-in for Bedrock expired on {owner}'s computer, so the task is not complete. {owner} must run `aws sso login` there and approve it in the browser, then post the request again.",
 	"CR-209":
 		"The Bedrock call for {agent} failed before it finished — throttled, access denied, or the model is not available in {owner}'s account — so the task is not complete. Check the Bedrock setup, then try again.",
 	"CR-301":
