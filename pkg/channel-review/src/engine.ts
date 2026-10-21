@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { createSerialQueue, describeError, escapeHtml } from "@dg/common";
+import { createChannel, describeError, escapeHtml } from "@dg/common";
 import {
 	type AddressWorkspace,
 	cloneDirName,
+	slug,
 	errorCode,
 	removeCloneDir,
 	removeLeftoverClones,
@@ -151,6 +152,8 @@ function scheduleTimer(ms: number, task: () => Promise<void>): () => void {
 	return () => clearTimeout(timer);
 }
 
+const MAX_QUEUED = 64;
+
 const RUNNER_PROCESS = new RegExp(`\\b(${RUNNER_NAMES.join("|")})\\b`, "i");
 
 export function createEngine(deps: EngineDeps): Engine {
@@ -171,13 +174,42 @@ export function createEngine(deps: EngineDeps): Engine {
 		) * 60_000;
 	const reactionState = new Map<string, ReactionState>();
 	const inFlight = new Set<string>();
-	const enqueue = createSerialQueue((err) =>
-		log.error(`job failed unexpectedly: ${describeError(err)}`),
-	);
-	let tail: Promise<void> = Promise.resolve();
+	const jobs = createChannel<() => Promise<void>>(MAX_QUEUED);
+	const controllers = new Set<AbortController>();
+	const idleWaiters: (() => void)[] = [];
+	let outstanding = 0;
 	let stopped = false;
-	let active: AbortController | null = null;
 	let pendingEmoji: PendingEmoji | null = null;
+
+	function submit(task: () => Promise<void>): void {
+		outstanding += 1;
+		const finish = (): void => {
+			outstanding -= 1;
+			if (outstanding === 0) for (const resolve of idleWaiters.splice(0)) resolve();
+		};
+		jobs
+			.send(async () => {
+				try {
+					await task();
+				} catch (err) {
+					log.error(`job failed unexpectedly: ${describeError(err)}`);
+				} finally {
+					finish();
+				}
+			})
+			.catch((err: unknown) => {
+				log.error(`job was not queued: ${describeError(err)}`);
+				finish();
+			});
+	}
+
+	async function work(): Promise<void> {
+		for await (const task of jobs) await task();
+	}
+
+	const reviewDir = (messageId: string): string => join(paths.workDir, slug(messageId));
+
+	const workers = Array.from({ length: config.runner.concurrency }, work);
 
 	async function attempt(label: string, action: () => Promise<unknown>): Promise<void> {
 		try {
@@ -283,7 +315,7 @@ export function createEngine(deps: EngineDeps): Engine {
 	): Promise<CrCode | null> {
 		if (signal.aborted) return "CR-205";
 		const { model, source } = resolveModel(runner.name, run.model, config);
-		state.setCurrent({
+		state.setRunning(job.messageId, {
 			messageId: job.messageId,
 			chatId: job.chatId,
 			url: target.url,
@@ -319,8 +351,8 @@ export function createEngine(deps: EngineDeps): Engine {
 				logPath: join(paths.jobsDir, `${run.logName}.log`),
 				signal,
 				onSpawn: (pid) => {
-					const current = state.get().current;
-					if (current) state.setCurrent({ ...current, pid, pidStart: startTime(pid) });
+					const current = state.get().running[job.messageId];
+					if (current) state.setRunning(job.messageId, { ...current, pid, pidStart: startTime(pid) });
 				},
 			});
 		} catch (err) {
@@ -376,7 +408,7 @@ export function createEngine(deps: EngineDeps): Engine {
 						spice: job.spice,
 						comment: job.comment,
 					},
-					cwd: paths.workDir,
+					cwd: reviewDir(job.messageId),
 					timeoutMs: remainingMs,
 					logName: attemptLogName,
 					model: selection.model,
@@ -548,7 +580,7 @@ export function createEngine(deps: EngineDeps): Engine {
 	async function runJob(job: Job): Promise<void> {
 		if (stopped) return;
 		const controller = new AbortController();
-		active = controller;
+		controllers.add(controller);
 		const runner =
 			runners[
 				job.kind === "address" ? "claude" : (job.agent ?? config.runner.default)
@@ -578,10 +610,11 @@ export function createEngine(deps: EngineDeps): Engine {
 			);
 			await fail(job, "CR-203", selection.runner.name);
 		} finally {
-			state.setCurrent(null);
+			state.setRunning(job.messageId, null);
 			reactionState.delete(job.messageId);
 			inFlight.delete(prKey(job.url));
-			active = null;
+			controllers.delete(controller);
+			removeCloneDir(paths.workDir, reviewDir(job.messageId), log);
 		}
 	}
 
@@ -591,7 +624,7 @@ export function createEngine(deps: EngineDeps): Engine {
 			return;
 		}
 		const controller = new AbortController();
-		active = controller;
+		controllers.add(controller);
 		try {
 			ensurePrivateDir(paths.jobsDir);
 			await job.work({
@@ -608,9 +641,9 @@ export function createEngine(deps: EngineDeps): Engine {
 		} catch (err) {
 			log.error(`repo job ${job.id} failed unexpectedly: ${describeError(err)}`);
 		} finally {
-			state.setCurrent(null);
+			state.setRunning(job.id, null);
 			inFlight.delete(job.id);
-			active = null;
+			controllers.delete(controller);
 		}
 	}
 
@@ -782,7 +815,7 @@ export function createEngine(deps: EngineDeps): Engine {
 			log.info(`message ${message.id} ignored: bot message`);
 			return;
 		}
-		if (state.get().handled[message.id]) return;
+		if (stopped || state.get().handled[message.id]) return;
 
 		const job = toJob(message);
 		if (!job) return;
@@ -823,18 +856,24 @@ export function createEngine(deps: EngineDeps): Engine {
 			state.markHandled(message.id, "done", message.chatId);
 			return;
 		}
+		if (inFlight.size >= MAX_QUEUED) {
+			log.warn(`message ${message.id} refused: ${MAX_QUEUED} jobs are already queued`);
+			state.markHandled(message.id, "failed", message.chatId);
+			await move(message.chatId, message.id, "failure");
+			reactionState.delete(message.id);
+			await post(message.chatId, replyText("CR-109", { owner }), "failure", false);
+			return;
+		}
 		inFlight.add(key);
 		state.markHandled(message.id, "pending", message.chatId);
 		await move(message.chatId, message.id, "pending");
-		tail = enqueue(() => runJob(job));
+		log.info(`message ${message.id} queued: ${job.url}`);
+		submit(() => runJob(job));
 	}
 
-	async function idle(): Promise<void> {
-		let seen: Promise<void>;
-		do {
-			seen = tail;
-			await seen;
-		} while (seen !== tail);
+	function idle(): Promise<void> {
+		if (outstanding === 0) return Promise.resolve();
+		return new Promise((resolve) => idleWaiters.push(resolve));
 	}
 
 	function maintain(): void {
@@ -849,16 +888,20 @@ export function createEngine(deps: EngineDeps): Engine {
 		maintain,
 		async recover(seam) {
 			maintain();
-			const { current, handled } = state.get();
-			if (
-				current?.pid !== undefined &&
-				current.pidStart !== undefined &&
-				seam.isAlive(current.pid) &&
-				seam.startTime(current.pid) === current.pidStart &&
-				RUNNER_PROCESS.test(seam.listArgs(current.pid)) &&
-				clock().getTime() - Date.parse(current.startedAt) < longestTimeoutMs
-			) {
-				await seam.killTree(current.pid);
+			const { current, running, handled } = state.get();
+			const orphans = new Map(Object.entries(running));
+			if (current && !orphans.has(current.messageId)) orphans.set(current.messageId, current);
+			for (const orphan of orphans.values()) {
+				if (
+					orphan.pid !== undefined &&
+					orphan.pidStart !== undefined &&
+					seam.isAlive(orphan.pid) &&
+					seam.startTime(orphan.pid) === orphan.pidStart &&
+					RUNNER_PROCESS.test(seam.listArgs(orphan.pid)) &&
+					clock().getTime() - Date.parse(orphan.startedAt) < longestTimeoutMs
+				) {
+					await seam.killTree(orphan.pid);
+				}
 			}
 			state.setCurrent(null);
 
@@ -895,16 +938,17 @@ export function createEngine(deps: EngineDeps): Engine {
 			}
 		},
 		enqueueRepo(job) {
-			if (stopped || inFlight.has(job.id)) return false;
+			if (stopped || inFlight.size >= MAX_QUEUED || inFlight.has(job.id)) return false;
 			inFlight.add(job.id);
-			tail = enqueue(() => runRepoJob({ kind: "repo", ...job }));
+			submit(() => runRepoJob({ kind: "repo", ...job }));
 			return true;
 		},
 		async stop() {
 			stopped = true;
 			clearPendingEmoji();
-			active?.abort();
-			await idle();
+			for (const controller of controllers) controller.abort();
+			jobs.close();
+			await Promise.all(workers);
 		},
 	};
 }

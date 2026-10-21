@@ -118,6 +118,7 @@ export type ChannelConfig = {
 		fallback: Exclude<RunnerName, "claude"> | null;
 		timeoutMinutes: number;
 		addressTimeoutMinutes: number;
+		concurrency: number;
 		claude: { path?: string; allowedTools: string[]; addressAllowedTools: string[] };
 		codex?: { path?: string };
 		copilot?: { path?: string };
@@ -244,12 +245,16 @@ function wholeDays(value: unknown, path: string): number {
 	return value;
 }
 
+const DEFAULT_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 8;
+
 function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 	const rec = section(raw, "runner", "", [
 		"default",
 		"fallback",
 		"timeoutMinutes",
 		"addressTimeoutMinutes",
+		"concurrency",
 		...RUNNER_NAMES,
 	]);
 	const defaultRunner = rec.default ?? "claude";
@@ -259,6 +264,15 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		requireOneOf(fallback, "runner.fallback", RUNNER_NAMES.filter((name) => name !== "claude"));
 	const timeout = minutes(rec.timeoutMinutes ?? 30, "runner.timeoutMinutes");
 	const addressTimeout = minutes(rec.addressTimeoutMinutes ?? 60, "runner.addressTimeoutMinutes");
+	const concurrency = rec.concurrency ?? DEFAULT_CONCURRENCY;
+	if (
+		typeof concurrency !== "number" ||
+		!Number.isInteger(concurrency) ||
+		concurrency < 1 ||
+		concurrency > MAX_CONCURRENCY
+	) {
+		fail(`runner.concurrency must be a whole number from 1 to ${MAX_CONCURRENCY}`);
+	}
 
 	const claude = section(rec, "claude", "runner", ["path", "allowedTools", "addressAllowedTools"]);
 	const scratch = `/${process.env.AI_SCRATCH_DIR ?? "/tmp/ai"}/thrash/**`;
@@ -303,6 +317,7 @@ function parseRunner(raw: Rec, cloneRoot: string): ChannelConfig["runner"] {
 		fallback,
 		timeoutMinutes: timeout,
 		addressTimeoutMinutes: addressTimeout,
+		concurrency,
 		claude: {
 			path: optionalText(claude, "path", "runner.claude"),
 			allowedTools,

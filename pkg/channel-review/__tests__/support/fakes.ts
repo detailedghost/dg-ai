@@ -80,6 +80,7 @@ export function minimalConfigJson(
 		owner: { token: OWNER_TOKEN, email: SENDER_EMAIL },
 		relay: { appName: APP_NAME, secret: RELAY_SECRET },
 		...extra,
+		runner: { concurrency: 1, ...(extra.runner as object | undefined) },
 	};
 }
 

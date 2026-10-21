@@ -81,6 +81,7 @@ export type PrWatchEntry = { repo: string; kind: PrWatchKind; startedAt: string 
 export type ChannelState = {
 	lastEventIds: Record<string, string>;
 	current: CurrentJob | null;
+	running: Record<string, CurrentJob>;
 	handled: Record<string, { status: HandledStatus; at: string; chatId?: string }>;
 	blocked: Record<string, BlockedEntry>;
 	issues: Record<string, IssueEntry>;
@@ -96,6 +97,7 @@ export type StateStore = {
 	flush(): void;
 	close(): void;
 	setCurrent(current: CurrentJob | null): void;
+	setRunning(messageId: string, job: CurrentJob | null): void;
 	markHandled(messageId: string, status: HandledStatus, chatId?: string): void;
 	markBlocked(
 		url: string,
@@ -281,6 +283,7 @@ function parseState(raw: unknown, legacyChatId?: string): ChannelState {
 		...raw,
 		lastEventIds: parseEventIds(raw, legacyChatId),
 		current: parseCurrent(raw.current),
+		running: validEntries(raw.running, "running", isCurrentJob),
 		handled: validEntries(raw.handled, "handled", isHandledEntry),
 		blocked: validEntries(raw.blocked, "blocked", isBlockedEntry),
 		issues: validEntries(raw.issues, "issues", isIssueEntry),
@@ -413,6 +416,13 @@ export function createStateStore(
 		},
 		setCurrent(current) {
 			state.current = current;
+			if (current === null) state.running = {};
+			save();
+		},
+		setRunning(messageId, job) {
+			if (job === null) delete state.running[messageId];
+			else state.running[messageId] = job;
+			state.current = Object.values(state.running)[0] ?? null;
 			save();
 		},
 		markHandled(messageId, status, chatId) {

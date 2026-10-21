@@ -13,6 +13,8 @@ export const ERROR_CATALOG = {
 	"CR-107": "Only {owner} can run $emoji, so I didn't change anything.",
 	"CR-108":
 		"The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.",
+	"CR-109":
+		"Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.",
 	"CR-201":
 		"I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.",
 	"CR-202":
