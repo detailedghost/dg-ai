@@ -221,13 +221,18 @@ function oneLine(text: string): string {
 	return text.replace(/\s+/g, " ").trim();
 }
 
+const OPEN_STATUS_LINE = /^- status: open$/m;
+const TWEAKS_FILE = "tweaks.json";
+
 function openRounds(priorNotes: string | undefined): string[] {
 	const section = priorNotes?.match(/^## Rounds\n([\s\S]*?)^## Verdict$/m)?.[1];
 	const blocks = (section ?? "")
 		.split(/^(?=### round-\d+$)/m)
 		.map((block) => block.trim())
 		.filter(Boolean);
-	return blocks.at(-1)?.includes("- status: open") ? blocks : [];
+	return blocks.at(-1) && OPEN_STATUS_LINE.test(blocks.at(-1) as string)
+		? blocks
+		: [];
 }
 
 function roundBlock(
@@ -260,7 +265,9 @@ function answerNotes(
 	const question = plan.question?.trim() || "_No question provided._";
 	const earlier = openRounds(priorNotes);
 	const rounds = [
-		...earlier.map((block) => block.replace("- status: open", "- status: done")),
+		...earlier.map((block) =>
+			block.replace(OPEN_STATUS_LINE, "- status: done"),
+		),
 		roundBlock(plan, verdict, earlier, tweaks),
 	];
 	return [
@@ -308,7 +315,7 @@ function answerPathList(paths: AnswerPaths): string[] {
 	return [paths.index, paths.styles, paths.preview, paths.notes];
 }
 
-async function assertAnswerTargetBelongsToPlan(
+async function readVerifiedPriorNotes(
 	plan: ProtoPlan,
 	seams: AnswerExportSeams = DEFAULT_ANSWER_EXPORT_SEAMS,
 	paths: AnswerPaths = answerPaths(plan, seams),
@@ -340,7 +347,7 @@ export async function exportApprovedAnswer(
 ): Promise<string> {
 	const seams = { ...DEFAULT_ANSWER_EXPORT_SEAMS, ...overrides };
 	const paths = answerPaths(plan, seams);
-	const priorNotes = await assertAnswerTargetBelongsToPlan(plan, seams, paths);
+	const priorNotes = await readVerifiedPriorNotes(plan, seams, paths);
 	const selected = plan.variations.find(
 		(variation) => variation.key === verdict.selectedKey,
 	);
@@ -435,7 +442,7 @@ export async function plantPrototype(
 	const plan = validateProtoRenderLimits(
 		validateProtoPlan(JSON.parse(await readFile(planPath, "utf8"))),
 	);
-	await assertAnswerTargetBelongsToPlan(plan);
+	await readVerifiedPriorNotes(plan);
 	const styleGuidePath = protoScratchPath(plan.slug, "style-guide.json");
 	const styleGuide = validateStyleGuide(
 		JSON.parse(await readFile(styleGuidePath, "utf8")),
@@ -515,7 +522,7 @@ export async function plantPrototype(
 	const json = `${JSON.stringify(verdict, null, 2)}\n`;
 	await writeFile(outputPath, json);
 	if (verdict.action === "tweak") {
-		const tweaksPath = protoScratchPath(sanitizedPlan.slug, "tweaks.json");
+		const tweaksPath = protoScratchPath(sanitizedPlan.slug, TWEAKS_FILE);
 		const tweaks = [...(await readTweaks(tweaksPath)), verdict.notes];
 		await writeFile(tweaksPath, `${JSON.stringify(tweaks, null, 2)}\n`);
 		return [
@@ -526,12 +533,15 @@ export async function plantPrototype(
 		].join("\n");
 	}
 	if (verdict.action === "reject") {
+		await rm(protoScratchPath(sanitizedPlan.slug, TWEAKS_FILE), {
+			force: true,
+		});
 		return [
 			`Prototype rejected: ${verdict.feedback}`,
 			`Rework the plan and re-plant the same slug (${verdict.slug}) for a fresh verdict.`,
 		].join("\n");
 	}
-	const tweaksPath = protoScratchPath(sanitizedPlan.slug, "tweaks.json");
+	const tweaksPath = protoScratchPath(sanitizedPlan.slug, TWEAKS_FILE);
 	const tweaks = await readTweaks(tweaksPath);
 	const answerPath = await exportApprovedAnswer(
 		sanitizedPlan,
@@ -552,12 +562,30 @@ export async function plantPrototype(
 }
 
 async function readTweaks(path: string): Promise<string[]> {
+	let raw: string;
 	try {
-		return JSON.parse(await readFile(path, "utf8")) as string[];
+		raw = await readFile(path, "utf8");
 	} catch (error) {
 		if (isMissingFile(error)) return [];
 		throw error;
 	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		throw new Error(
+			`${TWEAKS_FILE} at ${path} is not valid JSON; delete it and re-tweak`,
+		);
+	}
+	if (
+		!Array.isArray(parsed) ||
+		!parsed.every((item) => typeof item === "string")
+	) {
+		throw new Error(
+			`${TWEAKS_FILE} at ${path} must be an array of strings; delete it and re-tweak`,
+		);
+	}
+	return parsed;
 }
 
 /** Remove throwaway browser/scratch artifacts after a durable answer exists. */
