@@ -158,14 +158,25 @@ function bedrockEnv(config: ChannelConfig): Record<string, string> {
 	};
 }
 
+const SSO_LOGIN_OUTPUT_CAP = 8 * 1024;
+
 const defaultStartSsoLogin = (profile: string): void => {
 	const child = spawnProcess("aws", ["sso", "login", "--profile", profile], {
 		detached: true,
-		stdio: "ignore",
+		stdio: ["ignore", "pipe", "pipe"],
 		env: process.env,
 	});
+	let output = "";
+	const capture = (chunk: Buffer): void => {
+		output = `${output}${chunk.toString("utf8")}`.slice(-SSO_LOGIN_OUTPUT_CAP);
+	};
+	child.stdout?.on("data", capture);
+	child.stderr?.on("data", capture);
 	child.on("error", (error) => {
 		process.stderr.write(`startSsoLogin: could not spawn aws sso login: ${describeError(error)}\n`);
+	});
+	child.on("close", (code) => {
+		process.stderr.write(`startSsoLogin: aws sso login exited ${code ?? "null"}\n${output.trim()}\n`);
 	});
 	child.unref();
 };
