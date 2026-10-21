@@ -179,6 +179,10 @@ function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
 	return invite && invite.expiresAt > deps.now() ? invite : undefined;
 }
 
+function canConnect(config: PhoneFriendConfig, deps: PhoneFriendDeps): boolean {
+	return Boolean(config.contact) || liveInvite(deps) !== undefined;
+}
+
 function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
 	return {
 		contact: config.contact ? contactHex(config.contact) : undefined,
@@ -219,7 +223,7 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.line);
 	const npub = await myNpub(deps);
 	const contact = config.contact ?? null;
-	if (!contact && !liveInvite(deps)) {
+	if (!canConnect(config, deps)) {
 		throw new DgCliError(
 			"no contact yet; run `dg-agent phone-friend invite` and give the card to the other side, " +
 				"or `dg-agent phone-friend dial <card>`",
@@ -299,9 +303,17 @@ function openInbox(deps: PhoneFriendDeps): PhoneFriendDb {
 	return PhoneFriendDb.open(deps.line, deps.now);
 }
 
-export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
+export async function phoneAnswer(
+	deps: PhoneFriendDeps,
+	opts: { restart?: boolean } = {},
+): Promise<void> {
+	let restartedLastTick = false;
 	if (livePid(deps) === undefined) {
-		throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
+		if (!opts.restart || !canConnect(readConfig(deps.line), deps)) {
+			throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
+		}
+		printJson(deps, await spawnOrRestart(deps));
+		restartedLastTick = true;
 	}
 	const inbox = openInbox(deps);
 	try {
@@ -310,7 +322,21 @@ export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
 			await deps.sleep(FOLLOW_POLL_MS);
 			if (livePid(deps) === undefined) {
 				printUnread(inbox, deps);
-				throw new DgCliError("the phone-friend listener stopped");
+				if (!opts.restart) throw new DgCliError("the phone-friend listener stopped");
+				if (!canConnect(readConfig(deps.line), deps)) {
+					throw new DgCliError(
+						"the phone-friend listener stopped and there is no contact or live invite to restart it with",
+					);
+				}
+				if (restartedLastTick) {
+					throw new DgCliError(
+						`the restarted phone-friend listener died again right away; check ${deps.line.logPath}`,
+					);
+				}
+				printJson(deps, await spawnOrRestart(deps));
+				restartedLastTick = true;
+			} else {
+				restartedLastTick = false;
 			}
 		}
 	} finally {
@@ -457,7 +483,11 @@ export function registerPhoneFriendCommands(
 	phone
 		.command("answer")
 		.description("stay on the line: print new messages as JSON lines until the listener stops")
-		.action(() => phoneAnswer(makeDeps(session, line)));
+		.option(
+			"--restart",
+			"if the listener stops, restart it and keep answering (for an unattended Monitor watch)",
+		)
+		.action((opts: { restart?: boolean }) => phoneAnswer(makeDeps(session, line), opts));
 
 	phone
 		.command("voicemail")

@@ -391,6 +391,73 @@ describe("phoneVoicemail and phoneAnswer", () => {
 	it("refuses to follow when no listener runs", async () => {
 		await expect(phoneAnswer(deps())).rejects.toThrow("dg-agent phone-friend on");
 	});
+
+	it("with --restart, starts the listener itself instead of refusing", async () => {
+		pair();
+		out = [];
+
+		const stop = new Error("test stop");
+		const restart = deps({
+			sleep: async () => {
+				throw stop;
+			},
+		});
+
+		await expect(phoneAnswer(restart, { restart: true })).rejects.toBe(stop);
+
+		expect(spawned).toBe(1);
+		expect(lines()).toMatchObject([{ pid: 4242 }]);
+	});
+
+	it("with --restart, respawns the listener when it stops and keeps answering", async () => {
+		pair();
+		await phoneOn(deps());
+		out = [];
+		let ticks = 0;
+		const stop = new Error("test stop");
+		const restart = deps({
+			sleep: async () => {
+				ticks += 1;
+				if (ticks === 1) stored({ id: "y", ts: NOW, from: contactNpub, text: "live" });
+				if (ticks === 2) alive.clear();
+				if (ticks === 4) throw stop;
+			},
+		});
+
+		await expect(phoneAnswer(restart, { restart: true })).rejects.toBe(stop);
+
+		expect(spawned).toBe(2);
+		expect(lines()).toMatchObject([{ text: "live" }, { pid: 4242 }]);
+	});
+
+	it("with --restart, gives up when the respawned listener dies again right away", async () => {
+		pair();
+		await phoneOn(deps());
+		out = [];
+		let ticks = 0;
+		const flaky = deps({
+			spawnListener: () => {
+				spawned += 1;
+				return 9999;
+			},
+			sleep: async () => {
+				ticks += 1;
+				if (ticks === 1) alive.clear();
+			},
+		});
+
+		await expect(phoneAnswer(flaky, { restart: true })).rejects.toThrow("died again right away");
+
+		expect(spawned).toBe(2);
+	});
+
+	it("with --restart, still refuses when there is no contact or live invite to restart with", async () => {
+		out = [];
+
+		await expect(phoneAnswer(deps(), { restart: true })).rejects.toThrow("dg-agent phone-friend on");
+
+		expect(spawned).toBe(0);
+	});
 });
 
 describe("phoneSay", () => {
