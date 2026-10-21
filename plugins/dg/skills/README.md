@@ -19,6 +19,7 @@ binaries. The skills-root README itself is not installed.
 | `grill-me/` | Resolve a design through a structured interview |
 | `hook-comment-disable/` | Disable the American-English hook for one session with explicit approval |
 | `hunt/` | Gather evidence and diagnose a codebase bug |
+| `jobs/` | List and control the dg-daemon and channel-review daemons |
 | `kick/` | Plan and park a deferred spec bundle |
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
 | `phone-friend/` | Private encrypted chat with one other agent over Nostr |
@@ -59,6 +60,7 @@ skills/
   hook-comment-disable/
   hunt/
   inbox-cleanup/
+  jobs/
   kick/
   overwatch/
   phone-friend/
@@ -103,8 +105,10 @@ check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.
 and skills marked `requires: [extension]`: browser, chat, demo, overwatch, and
 proto. It includes stash, proxy, clipboard-img, and other skills without that
 requirement. Live inbox profiles still need dg-daemon; Google SMS cleanup needs
-Messages for Web through the host's browser tools. Instructions that refer to
-later-wave skills still need those skills separately until their ports ship.
+Messages for Web through the host's browser tools. `jobs` also needs the full
+install, since it drives `dg-daemon` directly though it has no extension
+dependency. Instructions that refer to later-wave skills still need those
+skills separately until their ports ship.
 
 Stash supports scratch, state, current-worktree, and main-worktree scopes.
 Clipboard capture needs WSL's `wslpath` and `powershell.exe`, Wayland's `wl-paste`,
