@@ -780,7 +780,10 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 	}
 	if (review.unanchored.length > 0) {
 		const count = review.unanchored.length;
-		lines.push("", `${plural(count, "finding")} named no file in this diff and ${count === 1 ? "was" : "were"} not posted.`);
+		lines.push("", `${plural(count, "finding")} named no file in this diff and ${count === 1 ? "was" : "were"} not posted:`);
+		for (const finding of review.unanchored) {
+			lines.push(`- ${TIER_EMOJI[finding.tier]} ${finding.title}`);
+		}
 	}
 	return lines.join("\n");
 }
@@ -848,6 +851,12 @@ export function toPostReviewInput(review: CompiledReview): PostReviewInput {
 	};
 }
 
+function previewLine(c: CompiledComment): string {
+	if (isFileComment(c)) return "file";
+	if (c.newLine !== undefined) return `${c.newLine} (new)`;
+	return `${c.oldLine} (old)`;
+}
+
 export function renderPreview(review: CompiledReview, target: string): string {
 	const folded = review.dropped.filter((d) => d.reason === "nit-ladder").length;
 	const duplicates = review.dropped.filter((d) => d.reason === "duplicate").length;
@@ -863,8 +872,7 @@ export function renderPreview(review: CompiledReview, target: string): string {
 		"",
 	];
 	for (const c of review.comments) {
-		const line = isFileComment(c) ? "file" : c.newLine !== undefined ? `${c.newLine} (new)` : `${c.oldLine} (old)`;
-		lines.push(`${c.path}:${line}`, `  ${c.body}`, "");
+		lines.push(`${c.path}:${previewLine(c)}`, `  ${c.body}`, "");
 	}
 	if (review.unanchored.length > 0) {
 		lines.push("Unanchored:");

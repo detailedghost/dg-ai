@@ -388,7 +388,7 @@ describe("compileReview", () => {
 		expect(bare.body).not.toContain("> [!");
 	});
 
-	test("the body lists no findings and counts line and file comments", () => {
+	test("the body lists no posted findings, but names an unanchored one, and counts line and file comments", () => {
 		const findings = [
 			{ ...finding("src/a.ts", 2, "critical"), title: "line title" },
 			{ ...finding("src/a.ts", 99, "medium"), title: "file title" },
@@ -396,9 +396,9 @@ describe("compileReview", () => {
 		];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 5 });
 		expect(review.body).not.toContain("### Findings");
-		for (const title of ["line title", "file title", "missing title"]) expect(review.body).not.toContain(title);
+		for (const title of ["line title", "file title"]) expect(review.body).not.toContain(title);
 		expect(review.body).toContain("· 1 line comment, 1 file comment");
-		expect(review.body).toContain("1 finding named no file in this diff and was not posted.");
+		expect(review.body).toContain("1 finding named no file in this diff and was not posted:\n- 🧹 missing title");
 	});
 
 	test("the nit ladder caps posted nits per spice level and folds the rest into the body", () => {
