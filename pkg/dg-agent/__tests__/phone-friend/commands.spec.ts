@@ -430,7 +430,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		expect(lines()).toMatchObject([{ text: "live" }, { pid: 4242 }]);
 	});
 
-	it("with --restart, gives up when the respawned listener dies again right away", async () => {
+	it("with --restart, gives up after repeated dead-on-arrival restarts", async () => {
 		pair();
 		await phoneOn(deps());
 		out = [];
@@ -446,9 +446,29 @@ describe("phoneVoicemail and phoneAnswer", () => {
 			},
 		});
 
-		await expect(phoneAnswer(flaky, { restart: true })).rejects.toThrow("died again right away");
+		await expect(phoneAnswer(flaky, { restart: true })).rejects.toThrow("keeps dying");
 
-		expect(spawned).toBe(2);
+		expect(spawned).toBe(4);
+	});
+
+	it("with --restart, gives up on a listener that flaps instead of restarting forever", async () => {
+		pair();
+		let ticks = 0;
+		const FLAP_PID = 5555;
+		const flapping = deps({
+			spawnListener: () => {
+				spawned += 1;
+				return FLAP_PID;
+			},
+			isAlive: (pid) => pid === FLAP_PID && ticks % 2 === 0,
+			sleep: async () => {
+				ticks += 1;
+			},
+		});
+
+		await expect(phoneAnswer(flapping, { restart: true })).rejects.toThrow("keeps dying");
+
+		expect(spawned).toBe(3);
 	});
 
 	it("with --restart, still refuses when there is no contact or live invite to restart with", async () => {

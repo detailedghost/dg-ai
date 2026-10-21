@@ -52,6 +52,8 @@ export type PhoneFriendDeps = KeyDeps & {
 
 const FOLLOW_POLL_MS = 1000;
 const STOP_WAIT_MS = 5000;
+const MAX_RESTART_ATTEMPTS = 3;
+const STABLE_TICKS_TO_RESET = 3;
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 const SECRET_BYTES = 32;
@@ -307,13 +309,17 @@ export async function phoneAnswer(
 	deps: PhoneFriendDeps,
 	opts: { restart?: boolean } = {},
 ): Promise<void> {
-	let restartedLastTick = false;
+	let restartAttempts = 0;
+	let stableTicks = 0;
+	async function restart(): Promise<void> {
+		printJson(deps, await spawnOrRestart(deps));
+	}
 	if (livePid(deps) === undefined) {
 		if (!opts.restart || !canConnect(readConfig(deps.line), deps)) {
 			throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
 		}
-		printJson(deps, await spawnOrRestart(deps));
-		restartedLastTick = true;
+		await restart();
+		restartAttempts = 1;
 	}
 	const inbox = openInbox(deps);
 	try {
@@ -328,15 +334,17 @@ export async function phoneAnswer(
 						"the phone-friend listener stopped and there is no contact or live invite to restart it with",
 					);
 				}
-				if (restartedLastTick) {
+				if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 					throw new DgCliError(
-						`the restarted phone-friend listener died again right away; check ${deps.line.logPath}`,
+						`the phone-friend listener keeps dying right after it restarts (tried ${MAX_RESTART_ATTEMPTS} times); check ${deps.line.logPath}`,
 					);
 				}
-				printJson(deps, await spawnOrRestart(deps));
-				restartedLastTick = true;
-			} else {
-				restartedLastTick = false;
+				stableTicks = 0;
+				await restart();
+				restartAttempts += 1;
+			} else if (restartAttempts > 0) {
+				stableTicks += 1;
+				if (stableTicks >= STABLE_TICKS_TO_RESET) restartAttempts = 0;
 			}
 		}
 	} finally {
