@@ -413,7 +413,7 @@ describe("proto plant command", () => {
 						"index.html",
 					),
 				);
-			} else {
+			} else if (expected.action === "reject") {
 				expect(result.stdout).toContain(expected.feedback);
 				expect(result.stdout).toMatch(/same slug|re-plant/i);
 			}
@@ -424,6 +424,80 @@ describe("proto plant command", () => {
 			).toEqual(expected);
 		});
 	}
+
+	test("walks a refine chain through tweak, approve with notes, and a final approve", async () => {
+		const url = "https://example.test/account?chain=refine";
+		const plan = buildPlan(url);
+		const harness = await plantHarness(plan);
+		const verdictFor = (verdict: Record<string, string>) =>
+			JSON.stringify({ slug: plan.slug, ts: 1_721_234_568_100, ...verdict });
+		const plant = (verdict: Record<string, string>) =>
+			runCli(["proto", "plant", harness.planPath, "--timeout", "500"], {
+				...harness.env,
+				DG_TEST_VERDICT: verdictFor(verdict),
+			});
+		const notesPath = join(
+			harness.projectRoot,
+			".agents",
+			"prototype",
+			plan.slug,
+			"NOTES.md",
+		);
+
+		const tweak = await plant({
+			action: "tweak",
+			selectedKey: "compact",
+			notes: "round the corners",
+		});
+		expect(tweak.code).toBe(0);
+		expect(tweak.stdout.split("\n")[0]).toBe(
+			"Prototype tweak requested (refine):",
+		);
+		expect(tweak.stdout).toContain("round the corners");
+		await expect(readFile(notesPath, "utf8")).rejects.toThrow();
+
+		const refine = await plant({
+			action: "approve",
+			selectedKey: "compact",
+			notes: "organize the buttons",
+		});
+		expect(refine.code).toBe(0);
+		expect(refine.stdout.split("\n")[0]).toBe(
+			"Prototype approved with notes (refine):",
+		);
+		expect(refine.stdout).toContain("Selected key: compact");
+		expect(refine.stdout).toContain("Notes: organize the buttons");
+		expect(refine.stdout).toContain(
+			"Do not run cleanup until an approve with no notes.",
+		);
+
+		const final = await plant({ action: "approve", selectedKey: "detailed" });
+		expect(final.code).toBe(0);
+		expect(final.stdout.trim()).toBe(join(dirname(notesPath), "index.html"));
+
+		const notes = await readFile(notesPath, "utf8");
+		expect(notes).toContain(
+			[
+				"### round-1",
+				"- base: none",
+				"- variants: compact detailed",
+				"- picked: compact",
+				"- note: organize the buttons",
+				"- tweaks:",
+				"  - round the corners",
+				"- status: done",
+			].join("\n"),
+		);
+		expect(notes).toContain(
+			[
+				"### round-2",
+				"- base: round-1 compact",
+				"- variants: compact detailed",
+				"- picked: detailed",
+				"- status: done",
+			].join("\n"),
+		);
+	});
 
 	test("rejects a malformed downloaded verdict instead of copying or printing it", async () => {
 		const url = "https://example.test/account?verdict=invalid";

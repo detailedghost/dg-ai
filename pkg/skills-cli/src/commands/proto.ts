@@ -217,8 +217,52 @@ function answerQuestionMarker(question: string | undefined): string {
 	return `<!-- dg-proto-question: ${encoded} -->`;
 }
 
-function answerNotes(plan: ProtoPlan, verdict: Verdict): string {
+function oneLine(text: string): string {
+	return text.replace(/\s+/g, " ").trim();
+}
+
+function openRounds(priorNotes: string | undefined): string[] {
+	const section = priorNotes?.match(/^## Rounds\n([\s\S]*?)^## Verdict$/m)?.[1];
+	const blocks = (section ?? "")
+		.split(/^(?=### round-\d+$)/m)
+		.map((block) => block.trim())
+		.filter(Boolean);
+	return blocks.at(-1)?.includes("- status: open") ? blocks : [];
+}
+
+function roundBlock(
+	plan: ProtoPlan,
+	verdict: Extract<Verdict, { action: "approve" }>,
+	earlier: string[],
+	tweaks: string[],
+): string {
+	const previousPick = earlier.at(-1)?.match(/^- picked: (.+)$/m)?.[1];
+	const number = earlier.length + 1;
+	return [
+		`### round-${number}`,
+		`- base: ${previousPick ? `round-${number - 1} ${previousPick}` : "none"}`,
+		`- variants: ${plan.variations.map((variation) => variation.key).join(" ")}`,
+		`- picked: ${verdict.selectedKey}`,
+		...(verdict.notes ? [`- note: ${oneLine(verdict.notes)}`] : []),
+		...(tweaks.length > 0
+			? ["- tweaks:", ...tweaks.map((tweak) => `  - ${oneLine(tweak)}`)]
+			: []),
+		`- status: ${verdict.notes ? "open" : "done"}`,
+	].join("\n");
+}
+
+function answerNotes(
+	plan: ProtoPlan,
+	verdict: Extract<Verdict, { action: "approve" }>,
+	priorNotes: string | undefined,
+	tweaks: string[],
+): string {
 	const question = plan.question?.trim() || "_No question provided._";
+	const earlier = openRounds(priorNotes);
+	const rounds = [
+		...earlier.map((block) => block.replace("- status: open", "- status: done")),
+		roundBlock(plan, verdict, earlier, tweaks),
+	];
 	return [
 		answerQuestionMarker(plan.question),
 		"# Prototype answer",
@@ -226,6 +270,10 @@ function answerNotes(plan: ProtoPlan, verdict: Verdict): string {
 		"## Question",
 		"",
 		question,
+		"",
+		"## Rounds",
+		"",
+		rounds.join("\n\n"),
 		"",
 		"## Verdict",
 		"",
@@ -264,13 +312,13 @@ async function assertAnswerTargetBelongsToPlan(
 	plan: ProtoPlan,
 	seams: AnswerExportSeams = DEFAULT_ANSWER_EXPORT_SEAMS,
 	paths: AnswerPaths = answerPaths(plan, seams),
-): Promise<void> {
+): Promise<string | undefined> {
 	await seams.ensureSafePaths(answerPathList(paths), false);
 	let notes: string;
 	try {
 		notes = await seams.readText(paths.notes);
 	} catch (error) {
-		if (isMissingFile(error)) return;
+		if (isMissingFile(error)) return undefined;
 		throw error;
 	}
 
@@ -279,6 +327,7 @@ async function assertAnswerTargetBelongsToPlan(
 			`Refusing to overwrite unrelated prototype answer at ${dirname(paths.notes)}: NOTES.md records a different question.`,
 		);
 	}
+	return notes;
 }
 
 /** Export the approved variation and optional preview into the target project. */
@@ -287,10 +336,11 @@ export async function exportApprovedAnswer(
 	verdict: Extract<Verdict, { action: "approve" }>,
 	previewDownloadPath: string,
 	overrides: Partial<AnswerExportSeams> = {},
+	tweaks: string[] = [],
 ): Promise<string> {
 	const seams = { ...DEFAULT_ANSWER_EXPORT_SEAMS, ...overrides };
 	const paths = answerPaths(plan, seams);
-	await assertAnswerTargetBelongsToPlan(plan, seams, paths);
+	const priorNotes = await assertAnswerTargetBelongsToPlan(plan, seams, paths);
 	const selected = plan.variations.find(
 		(variation) => variation.key === verdict.selectedKey,
 	);
@@ -323,7 +373,10 @@ export async function exportApprovedAnswer(
 	} catch (error) {
 		if (!isMissingFile(error)) throw error;
 	}
-	await seams.writeText(paths.notes, answerNotes(plan, verdict));
+	await seams.writeText(
+		paths.notes,
+		answerNotes(plan, verdict, priorNotes, tweaks),
+	);
 	return paths.index;
 }
 
@@ -461,13 +514,50 @@ export async function plantPrototype(
 	await mkdir(dirname(outputPath), { recursive: true });
 	const json = `${JSON.stringify(verdict, null, 2)}\n`;
 	await writeFile(outputPath, json);
+	if (verdict.action === "tweak") {
+		const tweaksPath = protoScratchPath(sanitizedPlan.slug, "tweaks.json");
+		const tweaks = [...(await readTweaks(tweaksPath)), verdict.notes];
+		await writeFile(tweaksPath, `${JSON.stringify(tweaks, null, 2)}\n`);
+		return [
+			"Prototype tweak requested (refine):",
+			`Selected key: ${verdict.selectedKey}`,
+			`Notes: ${verdict.notes}`,
+			`Apply the notes to variation ${verdict.selectedKey} in place in the current round: change only what the notes ask, build no new variations, keep the same slug, re-present it, and re-plant the same plan. Do not run cleanup until an approve with no notes.`,
+		].join("\n");
+	}
 	if (verdict.action === "reject") {
 		return [
 			`Prototype rejected: ${verdict.feedback}`,
 			`Rework the plan and re-plant the same slug (${verdict.slug}) for a fresh verdict.`,
 		].join("\n");
 	}
-	return exportApprovedAnswer(sanitizedPlan, verdict, previewDownloadPath);
+	const tweaksPath = protoScratchPath(sanitizedPlan.slug, "tweaks.json");
+	const tweaks = await readTweaks(tweaksPath);
+	const answerPath = await exportApprovedAnswer(
+		sanitizedPlan,
+		verdict,
+		previewDownloadPath,
+		{},
+		tweaks,
+	);
+	await rm(tweaksPath, { force: true });
+	if (!verdict.notes) return answerPath;
+	return [
+		"Prototype approved with notes (refine):",
+		`Selected key: ${verdict.selectedKey}`,
+		`Notes: ${verdict.notes}`,
+		`Exported this round to ${answerPath}.`,
+		"Build the next round from this variation: N new variations that change only what the notes ask, keep the same slug, re-present, and re-plant. Do not run cleanup until an approve with no notes.",
+	].join("\n");
+}
+
+async function readTweaks(path: string): Promise<string[]> {
+	try {
+		return JSON.parse(await readFile(path, "utf8")) as string[];
+	} catch (error) {
+		if (isMissingFile(error)) return [];
+		throw error;
+	}
 }
 
 /** Remove throwaway browser/scratch artifacts after a durable answer exists. */
@@ -537,7 +627,7 @@ export function registerProto(program: Command): void {
 		)
 		.addHelpText(
 			"after",
-			"\nRun from the target project root. A reject surfaces feedback so the agent can rework and re-plant the same slug for a fresh verdict.\n",
+			"\nRun from the target project root. A reject surfaces feedback, a tweak surfaces notes, and an approve with notes starts the next round; in each case the agent re-plants the same slug.\n",
 		)
 		.action(async (planPath: string, options: { timeout: string }) => {
 			console.log(

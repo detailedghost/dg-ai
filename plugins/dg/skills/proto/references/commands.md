@@ -68,7 +68,14 @@ project root:
 The command clears the prior same-slug verdict before opening the browser and
 blocks for a fresh Verdict. Its stdout is authoritative:
 
-- Approve prints `.agents/prototype/<slug>/index.html` after export completes.
+- Approve with no notes prints `.agents/prototype/<slug>/index.html` after export
+  completes. The chain is over.
+- Approve with notes exports the round, then prints `Prototype approved with notes
+  (refine):`, the selected key, the notes, and the instruction to build the next
+  round from that variation. Do not clean up.
+- Tweak prints `Prototype tweak requested (refine):`, the selected key, and the
+  notes. Edit that variation in place and re-plant the same plan. Nothing is
+  exported.
 - Reject prints the feedback and tells the agent to rework and re-plant the same
   slug.
 
@@ -76,7 +83,7 @@ Do not poll Downloads independently or fabricate a Verdict.
 
 ## Cleanup
 
-After an approved export and only from the target project root, run:
+After an approve with no notes and only from the target project root, run:
 
 ```bash
 ( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto cleanup "$SLUG" )

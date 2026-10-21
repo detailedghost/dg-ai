@@ -315,7 +315,7 @@ export function validateProtoRenderLimits(plan: ProtoPlan): ProtoPlan {
 	return plan;
 }
 
-/** Validate an approve or reject verdict, including its action-specific fields. */
+/** Validate an approve, reject, or tweak verdict, including its action-specific fields. */
 export function validateVerdict(value: unknown): Verdict {
 	requireRecord(value, "verdict");
 	validateProtoIdentifier(value.slug, "verdict.slug");
@@ -325,15 +325,25 @@ export function validateVerdict(value: unknown): Verdict {
 	const hasFeedback = Object.hasOwn(value, "feedback");
 	if (value.action === "approve") {
 		if (hasFeedback) fail("approve verdicts must not include feedback");
+		if (Object.hasOwn(value, "notes")) {
+			requireString(value.notes, "verdict.notes", { nonEmpty: true });
+		}
 		return value as Verdict;
 	}
 	if (value.action === "reject") {
+		if (Object.hasOwn(value, "notes")) fail("reject verdicts must not include notes");
 		if (!hasFeedback) fail("reject verdicts must include feedback");
 		requireString(value.feedback, "verdict.feedback", { nonEmpty: true });
 		return value as Verdict;
 	}
 
-	return fail('verdict.action must be "approve" or "reject"');
+	if (value.action === "tweak") {
+		if (hasFeedback) fail("tweak verdicts must not include feedback");
+		requireString(value.notes, "verdict.notes", { nonEmpty: true });
+		return value as Verdict;
+	}
+
+	return fail('verdict.action must be "approve", "reject", or "tweak"');
 }
 
 function sortKeys(value: unknown): unknown {

@@ -226,6 +226,37 @@ describe("validateVerdict", () => {
 		expect(Object.is(validateVerdict(reject), reject)).toBe(true);
 	});
 
+	it("accepts approve notes and tweak verdicts and enforces their notes rules", () => {
+		const base = { slug: "account-summary", selectedKey: "compact", ts: 1 };
+		const approveWithNotes = {
+			...base,
+			action: "approve" as const,
+			notes: "Organize the buttons.",
+		};
+		const tweak = { ...base, action: "tweak" as const, notes: "Round the corners." };
+
+		expect(validateVerdict(approveWithNotes)).toEqual(approveWithNotes);
+		expect(validateVerdict(tweak)).toEqual(tweak);
+		expect(() =>
+			validateVerdict({ ...base, action: "approve", notes: "   " }),
+		).toThrow();
+		expect(() => validateVerdict({ ...base, action: "tweak" })).toThrow();
+		expect(() =>
+			validateVerdict({ ...base, action: "tweak", notes: "  " }),
+		).toThrow();
+		expect(() =>
+			validateVerdict({ ...tweak, feedback: "Not allowed on a tweak." }),
+		).toThrow();
+		expect(() =>
+			validateVerdict({
+				...base,
+				action: "reject",
+				feedback: "Too dense.",
+				notes: "Not allowed on a reject.",
+			}),
+		).toThrow();
+	});
+
 	it("rejects an empty selection and action-specific feedback violations", () => {
 		expect(() =>
 			validateVerdict({

@@ -71,9 +71,15 @@ selects, and approves or rejects them.
 
 Do not infer a result from browser state or elapsed time.
 
-## Phase 6 — Claim verdict and run the reject loop
+## Phase 6 — Claim verdict and run the refine chain
 
-Claim only the command's returned result.
+Claim only the command's returned result. The first line of the output names the
+verdict.
+
+`approve <key>` with no notes ends the chain. `approve <key>: <note>` makes that
+variation the base of a new round. `tweak <key>: <note>` edits that variation in
+place in the current round. Reject reworks the same round. The chain also ends
+when the user says "done" or "stop".
 
 ```text
 Reject
@@ -81,18 +87,41 @@ Reject
   -> regenerate the plan at the same path with the same slug
   -> re-present the comparison for approval
   -> re-plant the same slug (the CLI clears the stale verdict first)
+
+Tweak (output starts "Prototype tweak requested (refine):")
+  -> apply the notes to that variation in place; change only what the notes ask
+  -> build no new variations and start no new round
+  -> re-present it and re-plant the same plan for a pick
+
+Approve with notes (output starts "Prototype approved with notes (refine):")
+  -> the CLI exported this round and recorded it in NOTES.md
+  -> copy the selected variation's html and css as the base
+  -> build the same number of new variations; change only what the notes ask
+     and keep everything else in the base exactly as it is
+  -> reuse the same slug and the original StyleGuide tokens
+  -> re-present the comparison for approval, then re-plant the same slug
   -> claim the fresh verdict again
-  -> Reject loops here; Approve exits the loop
+
+Approve without notes (output is the answer path)
+  -> the chain ends; go to Phase 7
 ```
 
-Never change the slug to escape a rejection. Keep reusing the original
-StyleGuide tokens and maintain meaningful structural differences.
+Never change the slug to escape a rejection or to start a round. Keep reusing the
+original StyleGuide tokens. Do not apply "structurally different" to the parts
+of a refine round that the notes leave alone. Do not run cleanup until an approve
+with no notes.
 
 ## Phase 7 — Export and Cleanup
 
-On Approve, `proto plant` exports the winning self-contained `index.html`,
-editable `styles.css`, optional completed `preview.png`, and `NOTES.md` marker
-under `.agents/prototype/<slug>/`, then prints the answer path.
+On Approve with no notes, `proto plant` exports the winning self-contained
+`index.html`, editable `styles.css`, optional completed `preview.png`, and
+`NOTES.md` marker under `.agents/prototype/<slug>/`, then prints the answer path.
+Approve with notes exports the same files for that round, so the latest pick
+always exists on disk, but the chain stays open.
+
+`NOTES.md` keeps one `round-N` section per round with its base, variants, pick,
+note, tweaks, and status. A new plant of the same slug and question continues the
+chain while the last round is `open`, and starts fresh once a round is `done`.
 
 Verify the answer and its `NOTES.md` marker before cleanup. Run `proto cleanup`
 from the same target project root to remove only Downloads and stable scratch

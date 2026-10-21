@@ -96,5 +96,46 @@ The browser authors one of these values; never write it manually:
 }
 ```
 
-Approve triggers durable export. Reject requires non-empty feedback and starts
-the same-slug generation/approval/plant loop again.
+```jsonc
+{
+  "slug": "app-example-test-account-a1b2c3d4",
+  "action": "approve",
+  "selectedKey": "task-first",
+  "notes": "Organize the buttons.",
+  "ts": 1721234568002
+}
+```
+
+```jsonc
+{
+  "slug": "app-example-test-account-a1b2c3d4",
+  "action": "tweak",
+  "selectedKey": "task-first",
+  "notes": "Round the corners.",
+  "ts": 1721234568003
+}
+```
+
+Approve triggers durable export. `notes` is optional on approve and non-empty
+when present: without it the chain ends, with it the selected variation becomes
+the base of the next round. Tweak requires non-empty `notes` and edits the
+selected variation in place without exporting. Reject requires non-empty
+feedback and starts the same-slug generation/approval/plant loop again.
+
+## NOTES.md rounds
+
+Each exported round adds a section under `## Rounds`:
+
+```text
+### round-2
+- base: round-1 C
+- variants: A B C
+- picked: B
+- note: tighten the spacing
+- tweaks:
+  - round the corners
+- status: open
+```
+
+A round with a note stays `open` until the next round starts. The round that ends
+the chain is `done`.
