@@ -20,6 +20,7 @@ const CODES: CrCode[] = [
 	"CR-205",
 	"CR-206",
 	"CR-207",
+	"CR-209",
 	"CR-301",
 	"CR-302",
 	"CR-303",
@@ -44,7 +45,7 @@ describe("ERROR_CATALOG", () => {
 		expect((template as string).trim().length).toBeGreaterThan(0);
 	});
 
-	test.each(["CR-201", "CR-202", "CR-203", "CR-206"] as CrCode[])(
+	test.each(["CR-201", "CR-202", "CR-203", "CR-206", "CR-209"] as CrCode[])(
 		"%s template carries the {agent} placeholder",
 		(code) => {
 			expect(ERROR_CATALOG[code]).toContain("{agent}");

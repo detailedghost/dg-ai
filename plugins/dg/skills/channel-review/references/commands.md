@@ -283,6 +283,7 @@ the shipped catalog exactly.
 | `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
 | `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with the configured `runner.fallback` when it is set and passes its probe. |
+| `CR-209` | `The Bedrock call for {agent} failed before it finished — throttled, access denied, or the model is not available in {owner}'s account — so the task is not complete. Check the Bedrock setup, then try again.` | Inspect the job log and the Bedrock console; fix the throttle, access, or model issue, then retry. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |

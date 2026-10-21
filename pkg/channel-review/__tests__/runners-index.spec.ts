@@ -592,6 +592,56 @@ describe("runner run result", () => {
 		},
 	);
 
+	test("Claude classifies a configured Bedrock access failure", async () => {
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "AccessDeniedException",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-209");
+	});
+
+	test("Claude leaves an access failure generic without Bedrock configuration", async () => {
+		const h = harness({
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "AccessDeniedException",
+				outputTail: "",
+			}),
+		});
+		const result = await h.runners.claude.run(runRequest());
+		expect(result.status).toBe(1);
+		expect(result.code).toBeUndefined();
+	});
+
+	test.each(["codex", "copilot", "grok"] as const)(
+		"%s does not classify a Bedrock access failure signature",
+		async (name) => {
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "AccessDeniedException",
+					outputTail: "",
+				}),
+			});
+			const result = await h.runners[name].run(runRequest());
+			expect(result.code).not.toBe("CR-209");
+		},
+	);
+
 	test.each(["timedOut", "aborted"] as const)(
 		"preserves %s when the tail also mentions a limit",
 		async (reason) => {
@@ -1000,12 +1050,24 @@ describe("runner attribution", () => {
 		expect(argv[argv.indexOf("--effort") + 1]).toBe("xhigh");
 		expect(processes[1]!.argv).not.toContain("--effort");
 	});
-	test("Claude keeps Bedrock off for tasks other than review", async () => {
+	test("Claude uses Bedrock for every task, not only review", async () => {
 		const bedrock = { model: "bedrock-model", region: "us-east-2" };
 		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
 		await runners.claude.run(runRequest({ task: "address", noCi: false }));
-		expect(processes[0]!.argv).not.toContain("bedrock-model");
-		expect(processes[0]!.env).toEqual({});
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--model") + 1]).toBe("bedrock-model");
+		expect(processes[0]!.env).toEqual({
+			CLAUDE_CODE_USE_BEDROCK: "1",
+			AWS_REGION: "us-east-2",
+		});
+	});
+	test("Claude lets an explicit model override Bedrock for tasks other than review", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest({ task: "address", noCi: false, model: "requested-model" }));
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--model") + 1]).toBe("requested-model");
+		expect(argv).not.toContain("bedrock-model");
 	});
 	test("Claude omits the profile when Bedrock sets none", async () => {
 		const { runners, processes } = harness({ config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }) });
