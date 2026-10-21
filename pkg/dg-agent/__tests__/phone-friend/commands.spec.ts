@@ -478,6 +478,48 @@ describe("phoneVoicemail and phoneAnswer", () => {
 
 		expect(spawned).toBe(0);
 	});
+
+	it("with --restart, refuses mid-loop once the invite expires with no contact saved", async () => {
+		const base = deps();
+		await phoneInvite({}, base);
+		await phoneOn(base);
+		out = [];
+		let ticks = 0;
+		const restart = deps({
+			now: () => (ticks >= 1 ? NOW + 100_000_000 : NOW),
+			sleep: async () => {
+				ticks += 1;
+				if (ticks === 1) alive.clear();
+			},
+		});
+
+		await expect(phoneAnswer(restart, { restart: true })).rejects.toThrow(
+			"no contact or live invite to restart it with",
+		);
+	});
+
+	it("with --restart, does not give up early once the listener has been stable again", async () => {
+		pair();
+		out = [];
+		let ticks = 0;
+		const STABLE_PID = 7777;
+		const stop = new Error("test stop");
+		const settling = deps({
+			spawnListener: () => {
+				spawned += 1;
+				return STABLE_PID;
+			},
+			isAlive: (pid) => pid === STABLE_PID && ticks <= 3,
+			sleep: async () => {
+				ticks += 1;
+				if (ticks === 7) throw stop;
+			},
+		});
+
+		await expect(phoneAnswer(settling, { restart: true })).rejects.toBe(stop);
+
+		expect(spawned).toBe(4);
+	});
 });
 
 describe("phoneSay", () => {

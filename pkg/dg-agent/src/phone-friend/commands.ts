@@ -311,14 +311,14 @@ export async function phoneAnswer(
 ): Promise<void> {
 	let restartAttempts = 0;
 	let stableTicks = 0;
-	async function restart(): Promise<void> {
+	async function respawn(): Promise<void> {
 		printJson(deps, await spawnOrRestart(deps));
 	}
 	if (livePid(deps) === undefined) {
 		if (!opts.restart || !canConnect(readConfig(deps.line), deps)) {
 			throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
 		}
-		await restart();
+		await respawn();
 		restartAttempts = 1;
 	}
 	const inbox = openInbox(deps);
@@ -340,7 +340,7 @@ export async function phoneAnswer(
 					);
 				}
 				stableTicks = 0;
-				await restart();
+				await respawn();
 				restartAttempts += 1;
 			} else if (restartAttempts > 0) {
 				stableTicks += 1;
@@ -490,7 +490,9 @@ export function registerPhoneFriendCommands(
 
 	phone
 		.command("answer")
-		.description("stay on the line: print new messages as JSON lines until the listener stops")
+		.description(
+			"stay on the line: print new messages as JSON lines until the listener stops, or restart it instead with --restart",
+		)
 		.option(
 			"--restart",
 			"if the listener stops, restart it and keep answering (for an unattended Monitor watch)",
