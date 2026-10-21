@@ -151,9 +151,9 @@ export function releaseStart(line: LinePaths, token: string): void {
 	);
 }
 
-/** True when another line already holds this name, by its line name or its saved contact name. */
-function nameTaken(paths: DgPaths, line: LinePaths, name: string): boolean {
-	return listLines(paths).some(
+/** The other line, if any, that already holds this name by its line name or its saved contact name. */
+export function lineClaiming(paths: DgPaths, line: LinePaths, name: string): LinePaths | undefined {
+	return listLines(paths).find(
 		(other) => other.name !== line.name && (other.name === name || readConfig(other).name === name),
 	);
 }
@@ -163,7 +163,7 @@ export function acceptCall(paths: DgPaths, line: LinePaths, contact: string): vo
 	withDb(line, (db) =>
 		db.transaction(() => {
 			const invited = db.get<Invite>(INVITE)?.name;
-			const name = invited && !nameTaken(paths, line, invited) ? invited : undefined;
+			const name = invited && !lineClaiming(paths, line, invited) ? invited : undefined;
 			db.unset(INVITE);
 			db.set(CONFIG, {
 				relays: DEFAULT_RELAYS,

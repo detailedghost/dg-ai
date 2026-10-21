@@ -31,6 +31,7 @@ import {
 import {
 	acceptCall as saveCaller,
 	claimStart,
+	lineClaiming,
 	listLines,
 	releaseStart,
 	type PhoneFriendConfig,
@@ -187,9 +188,7 @@ function requireFreeName(name: string, deps: PhoneFriendDeps): void {
 	if (!isLineName(name)) {
 		throw new DgCliError(`a contact name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
 	}
-	const taken = listLines(deps.paths).find(
-		(line) => line.name !== deps.line.name && (line.name === name || readConfig(line).name === name),
-	);
+	const taken = lineClaiming(deps.paths, deps.line, name);
 	if (taken) throw new DgCliError(`"${name}" is already used by line ${taken.name}`);
 }
 
