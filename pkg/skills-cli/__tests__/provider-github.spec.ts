@@ -1602,25 +1602,120 @@ describe("listCiFailures — fetch failures", () => {
 	});
 });
 
-describe("postReview — comment anchors", () => {
-	test("a comment with neither newLine nor oldLine is rejected with its path named", async () => {
-		fakeGh(
-			ghScript(`
-  *"pr view"*)
+describe("postReview — file comments", () => {
+	const ref = { number: 12, repo: { host: "github.com", owner: "acme", repo: "widgets" } };
+	const comments = [
+		{ path: "src/a.ts", newLine: 4, body: "line note" },
+		{ path: "src/b.ts", body: "file note" },
+	];
+
+	function fileScript(options: { refuseApprove?: boolean; failThread?: boolean; stalePending?: boolean } = {}): string {
+		const stale = options.stalePending
+			? `if [ ! -f "$FAKE_STDIN_CAPTURE.stale" ]; then : > "$FAKE_STDIN_CAPTURE.stale"; echo 'HTTP 422: User can only have one pending review per pull request' 1>&2; exit 1; fi`
+			: "";
+		const refuse = options.refuseApprove
+			? `if grep -q '"event":"APPROVE"' "$FAKE_STDIN_CAPTURE.submit"; then echo 'HTTP 422: Can not approve your own pull request' 1>&2; exit 1; fi`
+			: "";
+		const thread = options.failThread ? "echo 'GraphQL: Path could not be resolved' 1>&2; exit 1" : "echo '{\"data\":{}}'; exit 0";
+		return ghScript(`
+  *"pr view 12"*)
     echo '{"headRefOid":"abc123"}'
     exit 0
-    ;;`),
-		);
+    ;;
+  *"api graphql"*)
+    cat >> "$FAKE_STDIN_CAPTURE.threads"
+    echo >> "$FAKE_STDIN_CAPTURE.threads"
+    ${thread}
+    ;;
+  *"--paginate"*)
+    echo 55
+    exit 0
+    ;;
+  *"--method DELETE"*)
+    exit 0
+    ;;
+  *"reviews/77/events"*)
+    cat > "$FAKE_STDIN_CAPTURE.submit"
+    ${refuse}
+    echo '{"html_url":"https://github.com/acme/widgets/pull/12#pullrequestreview-77"}'
+    exit 0
+    ;;
+  *"pulls/12/reviews --method POST"*)
+    cat > "$FAKE_STDIN_CAPTURE.pending"
+    ${stale}
+    echo '{"id":77,"node_id":"PRR_77"}'
+    exit 0
+    ;;`);
+	}
 
-		const caught = await cliFixtures.catchError(() =>
-			createGithubProvider().postReview(
-				{ number: 5 },
-				{ verdict: "comment", body: "b", comments: [{ path: "src/a.ts", body: "x" }] },
-			),
-		);
+	function capture(): string {
+		const path = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = path;
+		return path;
+	}
 
-		expect((caught as ProviderError).code).toBe("INVALID_ARGUMENT");
-		expect((caught as ProviderError).message).toContain("src/a.ts");
+	test("adds file threads to a pending review, then submits it with the verdict", async () => {
+		const log = callLogPath();
+		const stdin = capture();
+		fakeGh(fileScript());
+
+		const posted = await createGithubProvider().postReview(ref, { verdict: "request_changes", body: "summary", comments });
+
+		expect(posted).toEqual({
+			url: "https://github.com/acme/widgets/pull/12#pullrequestreview-77",
+			verdict: "request_changes",
+			degraded: false,
+			commentCount: 2,
+		});
+		expect(JSON.parse(readFileSync(`${stdin}.pending`, "utf8"))).toEqual({
+			commit_id: "abc123",
+			body: "summary",
+			comments: [{ path: "src/a.ts", line: 4, side: "RIGHT", body: "line note" }],
+		});
+		const thread = JSON.parse(readFileSync(`${stdin}.threads`, "utf8"));
+		expect(thread.query).toContain("subjectType: FILE");
+		expect(thread.variables).toEqual({ reviewId: "PRR_77", path: "src/b.ts", body: "file note" });
+		expect(JSON.parse(readFileSync(`${stdin}.submit`, "utf8"))).toEqual({ event: "REQUEST_CHANGES", body: "summary" });
+		expect(readCalls(log).filter((c) => c.startsWith("api"))).toEqual([
+			"api repos/acme/widgets/pulls/12/reviews --method POST --input -",
+			"api graphql --input -",
+			"api repos/acme/widgets/pulls/12/reviews/77/events --method POST --input -",
+		]);
+	});
+
+	test("submits the pending review as COMMENT when GitHub refuses approve on the author's own PR", async () => {
+		const stdin = capture();
+		fakeGh(fileScript({ refuseApprove: true }));
+
+		const posted = await createGithubProvider().postReview(ref, { verdict: "approve", body: "summary", comments });
+
+		expect(posted).toMatchObject({ verdict: "comment", degraded: true, commentCount: 2 });
+		expect(JSON.parse(readFileSync(`${stdin}.submit`, "utf8")).event).toBe("COMMENT");
+	});
+
+	test("deletes the pending review when a file thread fails, so no half review stays behind", async () => {
+		const log = callLogPath();
+		capture();
+		fakeGh(fileScript({ failThread: true }));
+
+		await expect(
+			createGithubProvider().postReview(ref, { verdict: "comment", body: "summary", comments }),
+		).rejects.toThrow(/could not be resolved/);
+		expect(readCalls(log)).toContain("api repos/acme/widgets/pulls/12/reviews/77 --method DELETE");
+		expect(readCalls(log).some((c) => c.includes("/events"))).toBe(false);
+	});
+
+	test("clears a stale pending review left by a killed run, then posts again", async () => {
+		const log = callLogPath();
+		capture();
+		fakeGh(fileScript({ stalePending: true }));
+
+		const posted = await createGithubProvider().postReview(ref, { verdict: "comment", body: "summary", comments });
+
+		expect(posted.url).toBe("https://github.com/acme/widgets/pull/12#pullrequestreview-77");
+		const calls = readCalls(log);
+		expect(calls).toContain("api repos/acme/widgets/pulls/12/reviews/55 --method DELETE");
+		expect(calls.filter((c) => c === "api repos/acme/widgets/pulls/12/reviews --method POST --input -")).toHaveLength(2);
 	});
 });
 

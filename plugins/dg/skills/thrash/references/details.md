@@ -13,7 +13,13 @@ compiled review and handles the provider-specific publishing requests.
 
 GitHub reviews pin to the PR's head commit at post time. GitLab positions carry the MR's
 `diff_refs` SHAs. Both providers reject a comment on a line outside the diff, so `compile`
-resolves every anchor against the parsed hunks first and moves misses into the body.
+resolves every anchor against the parsed hunks first. A finding whose line misses the diff
+posts as a file-level comment on its file: on GitHub a `subjectType: FILE` thread added to a
+pending review, which is then submitted; on GitLab a draft note with `position_type: file`.
+A finding that names no file in the diff is not posted. It still counts in the tally, and
+the body says how many were not posted. The body lists no findings; every posted finding is
+a direct comment. GitHub allows one pending review per user per PR, so `post` deletes a
+stale pending review left by a killed run and tries once more.
 
 ## Own-PR fallback
 
@@ -30,8 +36,8 @@ thrash tier emoji. Dropped duplicates still count in the tally and the verdict.
 
 ## Nit ladder and `--min-tier`
 
-Spice 1 posts no nits, 2 up to 5, 3 up to 10, 4 up to 20, 5 posts all. Overflow becomes a
-"Folded nits" list in the body. `--min-tier` replaces the ladder: `--min-tier nit` at
+Spice 1 posts no nits, 2 up to 5, 3 up to 10, 4 up to 20, 5 posts all. Overflow is not
+posted; the nit count in the body shows how many folded. `--min-tier` replaces the ladder: `--min-tier nit` at
 spice 1 posts every nit, `--min-tier medium` at spice 5 posts none. `--min-tier` only
 changes which comments post. Every finding, posted or dropped, still counts in the tally
 and the verdict.
@@ -56,8 +62,7 @@ and the verdict.
 `diff` writes `<slug>.plan.json` next to the diff. `compile` reads it, requires a
 findings file for every reviewed chunk, merges them, and drops a finding that repeats the
 same path, line, side, and text, keeping the higher tier. The merged set then gets the
-usual tally, verdict, nit ladder, and thread dedupe. The body gains a "Review coverage"
-section that lists the chunks.
+usual tally, verdict, nit ladder, and thread dedupe. The body does not list the chunks.
 
 `plan.json` stores the context, annotated and findings paths relative to its own folder,
 and `compile` resolves them against the folder that holds the plan. A copied scratch
@@ -94,7 +99,8 @@ tallies as "merged (context only, not reviewed)". A closed unmerged PR tallies a
 path. Untracked files are skipped and listed. The same split and merge apply. `compile` writes
 `<root>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md` in the shape `/dg:address -l` parses,
 with tiers mapped to its severities: critical and high → high, medium → medium, low and
-nit → low. Unanchored findings are terminal-only in this mode. Nothing posts.
+nit → low. A file-level finding gets a `## path (whole file)` section. A finding with no file
+in the diff is terminal-only in this mode. Nothing posts.
 
 ## Known gaps
 

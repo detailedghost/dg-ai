@@ -346,22 +346,17 @@ describe("compileReview", () => {
 		expect(bare.body).not.toContain("> [!");
 	});
 
-	test("the findings table lists posted comments by tier with a titled icon", () => {
+	test("the body lists no findings and counts line and file comments", () => {
 		const findings = [
-			finding("src/a.ts", 3, "low"),
-			{ ...finding("src/a.ts", 2, "critical"), title: "a | b" },
-			finding("src/gone.ts", 1, "medium", "gone", "old"),
+			{ ...finding("src/a.ts", 2, "critical"), title: "line title" },
+			{ ...finding("src/a.ts", 99, "medium"), title: "file title" },
+			{ ...finding("src/missing.ts", 1, "low"), title: "missing title" },
 		];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 5 });
-		expect(review.body).toContain(
-			[
-				"| | Where | Finding |",
-				"|---|---|---|",
-				'| <span title="Critical">💀</span> | `src/a.ts:2` | a \\| b |',
-				'| <span title="Medium">⚠️</span> | `src/gone.ts:1` | medium title |',
-				'| <span title="Low">🧹</span> | `src/a.ts:3` | low title |',
-			].join("\n"),
-		);
+		expect(review.body).not.toContain("### Findings");
+		for (const title of ["line title", "file title", "missing title"]) expect(review.body).not.toContain(title);
+		expect(review.body).toContain("· 1 line comment, 1 file comment");
+		expect(review.body).toContain("1 finding named no file in this diff and was not posted.");
 	});
 
 	test("the nit ladder caps posted nits per spice level and folds the rest into the body", () => {
@@ -372,7 +367,8 @@ describe("compileReview", () => {
 			expect(review.comments).toHaveLength(cap);
 			expect(review.dropped.filter((d) => d.reason === "nit-ladder")).toHaveLength(25 - cap);
 			expect(review.tally.nit).toBe(25);
-			if (cap < 25) expect(review.body).toContain(`### Folded nits (${25 - cap})`);
+			if (cap < 25) expect(review.body).toContain(`${25} (${25 - cap} folded)`);
+			expect(review.body).not.toContain("### Folded nits");
 		}
 	});
 
@@ -412,14 +408,22 @@ describe("compileReview", () => {
 		expect(review.body).toContain("1 finding already flagged");
 	});
 
-	test("unanchored findings stay in the body and still count toward the verdict", () => {
+	test("a finding with no usable line becomes a file comment; one with no file in the diff is not posted but still counts", () => {
 		const findings = [finding("", null, "critical", "cross-file race"), finding("src/a.ts", 99, "medium")];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, NO_OPTS);
-		expect(review.comments).toHaveLength(0);
-		expect(review.unanchored).toHaveLength(2);
+		expect(review.comments.map((c) => [c.path, c.newLine, c.oldLine])).toEqual([["src/a.ts", undefined, undefined]]);
+		expect(review.unanchored.map((f) => f.body)).toEqual(["cross-file race"]);
 		expect(review.verdict).toBe("request_changes");
-		expect(review.body).toContain("### Findings without a line anchor");
-		expect(review.body).toContain("cross-file race");
+		expect(review.body).not.toContain("cross-file race");
+		expect(review.body).not.toContain("Findings without a line anchor");
+	});
+
+	test("a file comment is not reposted over an open thrash file thread", () => {
+		const existing = [{ ...thread("src/a.ts", 0, `${TIER_EMOJI.medium} **Medium** earlier`), line: null }];
+		const findings = [finding("src/a.ts", null, "medium")];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing });
+		expect(review.comments).toHaveLength(0);
+		expect(review.dropped).toEqual([{ finding: findings[0], reason: "duplicate" }]);
 	});
 
 	test("nit capping at different spice levels retains a critical verdict", () => {
@@ -449,16 +453,17 @@ describe("compileReview", () => {
 });
 
 describe("local review file", () => {
-	test("renders one /address section per anchored comment with the mapped severity", () => {
+	test("renders one /address section per posted comment with the mapped severity", () => {
 		const findings = [
 			finding("src/a.ts", 2, "critical", "c"),
 			finding("src/a.ts", 3, "nit", "n"),
-			finding("src/a.ts", null, "high"),
+			finding("src/a.ts", null, "high", "h"),
 		];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 5 });
-		expect(renderAddressFile(review)).toBe(
-			`## src/a.ts:2\n\nseverity: high\n\n${TIER_EMOJI.critical} **Critical** c\n\n## src/a.ts:3\n\nseverity: low\n\n${TIER_EMOJI.nit} **Nit** n\n`,
-		);
+		const file = renderAddressFile(review);
+		expect(file).toContain(`## src/a.ts:2\n\nseverity: high\n\n${TIER_EMOJI.critical} **Critical** c\n`);
+		expect(file).toContain(`## src/a.ts:3\n\nseverity: low\n\n${TIER_EMOJI.nit} **Nit** n\n`);
+		expect(file).toContain(`## src/a.ts (whole file)\n\nseverity: high\n\n${TIER_EMOJI.high} **High** h\n`);
 	});
 
 	test("file names match the YYYY-MM-DD-HHMMSS-NNN.md glob", () => {
@@ -559,7 +564,7 @@ describe("renderTallyTable", () => {
 		const table = renderTallyTable([
 			{ target, review, posted: { url: `${target}#r1`, verdict: "approve", degraded: false, commentCount: 2 } },
 		]);
-		expect(table).toContain("| PR | Link | 💀 | 🔥 | ⚠️ | 🧹 | 🔬 | Inline | Verdict |");
+		expect(table).toContain("| PR | Link | 💀 | 🔥 | ⚠️ | 🧹 | 🔬 | Comments | Verdict |");
 		expect(table).toContain(`| #12 | [review](${target}#r1) | 0 | 1 | 0 | 0 | 1 | 2 | Approve |`);
 	});
 
@@ -718,33 +723,11 @@ describe("mergeOutputs", () => {
 	});
 });
 
-describe("compileReview with merged chunks", () => {
-	const chunk = (id: number) => ({ id, label: `source: m${id}`, files: [`m${id}/f.ts`], changed: 2000 });
-
-	test("takes the verdict from the tally and lists every chunk", () => {
-		const review = compileReview(
-			FILES,
-			{ ...NO_SWOT, findings: [{ ...finding("src/a.ts", 2, "critical") }] },
-			{
-				spice: 2,
-				commentOnly: false,
-				existing: [],
-				coverage: { chunks: Array.from({ length: 9 }, (_, i) => chunk(i + 1)), skipped: [] },
-			},
-		);
+describe("compileReview body", () => {
+	test("has no coverage section, so a split review reads like a single one", () => {
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [{ ...finding("src/a.ts", 2, "critical") }] }, NO_OPTS);
 		expect(review.verdict).toBe("request_changes");
-		expect(review.body).toContain("### Review coverage");
-		expect(review.body).not.toContain("Partial coverage");
-		expect(review.body).toContain("9. `source: m9`");
-	});
-
-	test("approves a clean review whatever the chunk count", () => {
-		const review = compileReview(
-			FILES,
-			{ ...NO_SWOT, findings: [] },
-			{ spice: 2, commentOnly: false, existing: [], coverage: { chunks: [chunk(1), chunk(2)], skipped: [] } },
-		);
-		expect(review.verdict).toBe("approve");
+		expect(review.body).not.toContain("### Review coverage");
 	});
 });
 

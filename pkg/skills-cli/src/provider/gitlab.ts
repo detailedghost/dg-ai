@@ -24,6 +24,7 @@ import {
 	type PostedReview,
 	type PostReviewInput,
 	type Provider,
+	isFileComment,
 	ProviderError,
 	type PrRef,
 	type PullRequest,
@@ -572,7 +573,7 @@ const GITLAB_REVIEWER_STATES: Partial<Record<ReviewVerdict, string>> = {
 
 function toGitlabPosition(c: ReviewCommentInput, refs: GlDiffRefs): Record<string, unknown> {
 	return {
-		position_type: "text",
+		position_type: isFileComment(c) ? "file" : "text",
 		base_sha: refs.base_sha,
 		start_sha: refs.start_sha,
 		head_sha: refs.head_sha,

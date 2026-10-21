@@ -114,7 +114,7 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    next to the review JSON. If `degraded` is true, say the provider refused the requested
    verdict and posted as comment (for example, an own-PR restriction); the body still states the verdict.
 6. **Tally.** `~/.dg/bin/dg-skills thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
-   findings per tier, inline count, and Approve, Request changes or Comment. Show it
+   findings per tier, comment count (line and file), and Approve, Request changes or Comment. Show it
    verbatim as the final report.
 
 ## Large diffs

@@ -284,14 +284,12 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 			return parseAgentOutput(readFileSync(findingsPath, "utf8"));
 		}),
 	);
-	const splitReview = plan.chunks.length > 1 || plan.skipped.length > 0;
 	const minTierRaw = optionalOption(args, "--min-tier");
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
 		existing: await existingThreads(target),
-		coverage: splitReview ? { chunks: plan.chunks, skipped: plan.skipped } : undefined,
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
