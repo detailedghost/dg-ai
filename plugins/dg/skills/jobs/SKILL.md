@@ -31,6 +31,13 @@ print:
 ~/.dg/bin/dg-skills channel-review status --env prod
 ```
 
+`job list` reads the daemon's store directly and works with no daemon running.
+`service status` needs a live daemon and calls it over loopback; with none
+running it fails cleanly with `no live dg-daemon — services run inside it, so
+start it first` instead of starting one. Report that message as the service
+section's status, and do not start the daemon yourself to work around it —
+that is a `start` action, not part of a status check.
+
 Skip an env the human does not use. `channel-review status`'s `credentials`
 field already holds only redacted source/expiry metadata, never a secret
 value, so it is safe to show as printed. Do not read or print
