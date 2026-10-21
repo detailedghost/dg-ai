@@ -6,6 +6,7 @@ import { chainChecks } from "../chain/doctor";
 import { channelReviewChecks } from "../channel-review/doctor";
 import { clipboardImageChecks } from "../clipboard-image/doctor";
 import { credentialsChecks } from "../credentials/doctor";
+import { dbChecks } from "../db/doctor";
 import { demoChecks } from "../demo/doctor";
 import { depsUpgradeChecks } from "../deps-upgrade/doctor";
 import { fileChecks } from "../file/doctor";
@@ -35,6 +36,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	inbox: inboxChecks,
 	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,
+	db: dbChecks,
 	install: installChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,
