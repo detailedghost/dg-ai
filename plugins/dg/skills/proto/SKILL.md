@@ -120,8 +120,8 @@ Approve with notes exports the same files for that round, so the latest pick
 always exists on disk, but the chain stays open.
 
 `NOTES.md` keeps one `round-N` section per round with its base, variants, pick,
-note, tweaks, and status. A new plant of the same slug and question continues the
-chain while the last round is `open`, and starts fresh once a round is `done`.
+note, tweaks, and status. While the last round is `open`, a new plant of the
+same slug and question continues the chain. Once a round is `done`, it starts fresh.
 
 Verify the answer and its `NOTES.md` marker before cleanup. Run `proto cleanup`
 from the same target project root to remove only Downloads and stable scratch
