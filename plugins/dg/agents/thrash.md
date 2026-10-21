@@ -17,8 +17,8 @@ guess about code you cannot see.
 
 The launch prompt gives you:
 
-- `ANNOTATED_DIFF`: a file path. Each line carries its old and new file line numbers in
-  two columns, then a marker (`+` added, `-` removed, blank context), then the text.
+- `ANNOTATED_DIFF`: a file path. Each line carries labeled `old:<N>` and `new:<N>` file
+  line numbers, then a marker (`+` added, `-` removed, blank context), then the text.
 - `SPICE`: 1 to 5. Selects which checklists run. It never changes how you write.
 - `MIN_TIER`: optional. Findings below it are dropped later, so still report them.
 - `TARGET`: a PR or MR URL, or a local path, for context only.
@@ -107,8 +107,11 @@ blocking calls inside async code.
 
 ## Line citations
 
-- `side: "new"` with the **new** column for an added or context line. This is the default.
-- `side: "old"` with the **old** column only for a removed line.
+- Each row's citation is labeled `old:<N>` and `new:<N>` (a dash when that side has no
+  line). Cite only these labeled values. If your file-reading tool shows its own line-number
+  prefix for this file, that is not a citation; ignore it completely.
+- `side: "new"` with the `new:` value for an added or context line. This is the default.
+- `side: "old"` with the `old:` value only for a removed line.
 - Never cite a line the diff does not show. A finding about a whole file or several files
   gets `"line": null`.
 - `path` is the new path as printed after `===`. For a deleted file it is the old path.

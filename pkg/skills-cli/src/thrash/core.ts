@@ -275,11 +275,11 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
 
 const MARKER: Record<DiffLine["kind"], string> = { context: " ", add: "+", del: "-" };
 
-function column(value: number | undefined): string {
-	return (value === undefined ? "" : String(value)).padStart(5);
+function citation(side: Side, value: number | undefined): string {
+	return `${side}:${value ?? "-"}`;
 }
 
-/** Renders each diff line with its old and new file line numbers so a reader never has to count from a hunk header. */
+/** Renders each diff line with labeled old and new file line numbers so a reader never has to count from a hunk header. */
 export function annotateDiff(files: DiffFile[]): string {
 	const out: string[] = [];
 	for (const file of files) {
@@ -289,9 +289,10 @@ export function annotateDiff(files: DiffFile[]): string {
 			out.push("    binary file, no text diff");
 			continue;
 		}
-		out.push("  old   new");
 		for (const line of file.lines) {
-			out.push(`${column(line.oldLine)} ${column(line.newLine)} ${MARKER[line.kind]} ${line.text}`);
+			out.push(
+				`${citation("old", line.oldLine)} ${citation("new", line.newLine)} ${MARKER[line.kind]} ${line.text}`,
+			);
 		}
 		out.push("");
 	}

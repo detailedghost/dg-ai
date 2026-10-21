@@ -131,12 +131,54 @@ describe("parseUnifiedDiff", () => {
 });
 
 describe("annotateDiff", () => {
-	test("prints old and new line numbers in fixed columns with the change marker", () => {
+	test("labels old and new line numbers independently", () => {
+		const files = parseUnifiedDiff(`diff --git a/src/example.ts b/src/example.ts
+--- a/src/example.ts
++++ b/src/example.ts
+@@ -4,3 +8,3 @@
+ before
+-removed
++added
+ after
+`);
+
+		expect(annotateDiff(files)).toBe(`=== src/example.ts [modified]
+old:4 new:8   before
+old:5 new:- - removed
+old:- new:9 + added
+old:6 new:10   after
+`);
+	});
+
+	test("never renders the annotated text position as a bare line citation", () => {
+		const leadingDiff = Array.from(
+			{ length: 21 },
+			(_, index) => `diff --git a/src/leading-${index}.ts b/src/leading-${index}.ts
+--- a/src/leading-${index}.ts
++++ b/src/leading-${index}.ts
+@@ -1 +1 @@
+ leading ${index}
+`,
+		).join("");
+		const files = parseUnifiedDiff(`${leadingDiff}diff --git a/src/target.ts b/src/target.ts
+--- a/src/target.ts
++++ b/src/target.ts
+@@ -5 +9 @@
+ return target;
+`);
+		const renderedLines = annotateDiff(files).split("\n");
+		const targetIndex = renderedLines.findIndex((line) => line.endsWith("return target;"));
+		const renderedPosition = targetIndex + 1;
+		const targetLine = renderedLines[targetIndex];
+
+		expect(renderedPosition).toBeGreaterThan(60);
+		expect(targetLine).toBe("old:5 new:9   return target;");
+		expect(targetLine).not.toMatch(/^\s*\d/);
+		expect(targetLine).not.toMatch(new RegExp(`^\\s*${renderedPosition}(?:\\s|$)`));
+	});
+
+	test("prints the rename header and the binary-file notice", () => {
 		const out = annotateDiff(FILES);
-		expect(out).toContain("=== src/a.ts [modified]");
-		expect(out).toContain("    1     1   const a = 1;");
-		expect(out).toContain("          2 + const b = 3;");
-		expect(out).toContain("    2       - const b = 2;");
 		expect(out).toContain("=== new/name.ts [renamed] (renamed from old/name.ts)");
 		expect(out).toContain("binary file, no text diff");
 	});
