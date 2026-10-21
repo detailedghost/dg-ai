@@ -274,7 +274,7 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 	]);
 	const scratch = `/${process.env.AI_SCRATCH_DIR ?? "/tmp/ai"}/thrash/**`;
 	const allowedTools = claude.allowedTools ?? [
-		`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
+		`Bash(${home}/.dg/bin/dg-skills thrash:*)`,
 		"Bash(~/.dg/bin/dg-skills thrash:*)",
 		"Agent",
 		`Read(${scratch})`,
@@ -296,7 +296,7 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 		"Bash(git:*)",
 		"Bash(gh:*)",
 		"Bash(glab:*)",
-		`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
+		`Bash(${home}/.dg/bin/dg-skills address:*)`,
 		"Bash(bun:*)",
 		"Bash(npm:*)",
 		"Bash(npx:*)",
