@@ -151,11 +151,19 @@ export function releaseStart(line: LinePaths, token: string): void {
 	);
 }
 
+/** True when another line already holds this name, by its line name or its saved contact name. */
+function nameTaken(paths: DgPaths, line: LinePaths, name: string): boolean {
+	return listLines(paths).some(
+		(other) => other.name !== line.name && (other.name === name || readConfig(other).name === name),
+	);
+}
+
 /** Deletes the invite and saves the caller as the contact, with the invite's name, in one transaction. */
-export function acceptCall(line: LinePaths, contact: string): void {
+export function acceptCall(paths: DgPaths, line: LinePaths, contact: string): void {
 	withDb(line, (db) =>
 		db.transaction(() => {
-			const name = db.get<Invite>(INVITE)?.name;
+			const invited = db.get<Invite>(INVITE)?.name;
+			const name = invited && !nameTaken(paths, line, invited) ? invited : undefined;
 			db.unset(INVITE);
 			db.set(CONFIG, {
 				relays: DEFAULT_RELAYS,

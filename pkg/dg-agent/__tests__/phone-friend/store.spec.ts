@@ -26,11 +26,13 @@ import {
 } from "../../src/phone-friend/store";
 
 let home: string;
+let paths: ReturnType<typeof resolveDgPaths>;
 let line: LinePaths;
 
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-store-"));
-	line = linePaths(resolveDgPaths({ env: { DG_HOME: home } }));
+	paths = resolveDgPaths({ env: { DG_HOME: home } });
+	line = linePaths(paths);
 });
 
 afterEach(() => {
@@ -136,10 +138,27 @@ describe("acceptCall", () => {
 	it("clears the invite and saves the caller, keeping the relays", () => {
 		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, ["wss://x.example"]);
 
-		acceptCall(line, "npub1caller");
+		acceptCall(paths, line, "npub1caller");
 
 		expect(readInvite(line)).toBeUndefined();
 		expect(readConfig(line)).toEqual({ contact: "npub1caller", relays: ["wss://x.example"] });
+	});
+
+	it("carries the invite's name over to the config when it is still free", () => {
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99, name: "velora" }, DEFAULT_RELAYS);
+
+		acceptCall(paths, line, "npub1caller");
+
+		expect(readConfig(line).name).toBe("velora");
+	});
+
+	it("drops the invite's name instead of taking it from another line that claimed it since", () => {
+		writeConfig(linePaths(paths, "other"), { name: "velora", relays: DEFAULT_RELAYS });
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99, name: "velora" }, DEFAULT_RELAYS);
+
+		acceptCall(paths, line, "npub1caller");
+
+		expect(readConfig(line)).toEqual({ contact: "npub1caller", relays: DEFAULT_RELAYS });
 	});
 });
 

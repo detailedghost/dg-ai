@@ -241,7 +241,7 @@ function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
 }
 
 function acceptCall(message: Message, deps: PhoneFriendDeps): void {
-	if (message.call) saveCaller(deps.line, message.from);
+	if (message.call) saveCaller(deps.paths, deps.line, message.from);
 }
 
 async function spawnOrRestart(deps: PhoneFriendDeps): Promise<{ pid: number; status: string }> {
