@@ -716,6 +716,32 @@ describe("runner run result", () => {
 		},
 	);
 
+	test.each(["timedOut", "aborted"] as const)(
+		"a %s run that still shows the SSO expiry keeps a prior pending sign-in latched",
+		async (reason) => {
+			const profile = "bedrock-dev";
+			let run = 0;
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+				process: () => {
+					const first = run++ === 0;
+					return {
+						status: 1,
+						signal: null,
+						timedOut: !first && reason === "timedOut",
+						aborted: !first && reason === "aborted",
+						stderrTail: "The SSO session associated with this profile has expired",
+						outputTail: "",
+					};
+				},
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+			expect(h.ssoLoginCalls).toEqual([profile]);
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+			expect(h.ssoLoginCalls).toEqual([profile]);
+		},
+	);
+
 	test("Claude keeps usage-limit detection ahead of expired Bedrock SSO", async () => {
 		const h = harness({
 			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
