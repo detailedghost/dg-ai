@@ -1,5 +1,13 @@
 import path from "node:path";
-import { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
+import {
+	NIT_LADDER,
+	SPICE_DEFAULT,
+	SPICE_MAX,
+	SPICE_MIN,
+	THRASH_REVIEW_HEADING_PREFIX,
+	TIER_EMOJI,
+	VERDICT_LIMITS,
+} from "@dg/common";
 import {
 	isFileComment,
 	type PostedReview,
@@ -766,7 +774,7 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 	});
 	const spice = titled(spiceLabel(review.spice), `Spice ${review.spice} of ${SPICE_MAX}`);
 	const lines: string[] = [
-		`## Thrash review ${spice}`,
+		`${THRASH_REVIEW_HEADING_PREFIX}${spice}`,
 		"",
 		...renderAlert("NOTE", "What changed", review.changed ? [review.changed] : []),
 		...renderAlert("TIP", "Strengths", review.strengths),

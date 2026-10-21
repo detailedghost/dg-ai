@@ -1722,7 +1722,12 @@ describe("postReview — file comments", () => {
 		expect(calls.filter((c) => c === "api repos/acme/widgets/pulls/12/reviews --method POST --input -")).toHaveLength(2);
 		expect(calls).toContain("api user --jq .login");
 		expect(
-			calls.some((c) => c.includes('.user.login == "review-bot"') && c.includes("--paginate")),
+			calls.some(
+				(c) =>
+					c.includes('.user.login == "review-bot"') &&
+					c.includes('startswith("## Thrash review ")') &&
+					c.includes("--paginate"),
+			),
 		).toBe(true);
 	});
 });

@@ -27,3 +27,6 @@ export const TIER_EMOJI: Record<"critical" | "high" | "medium" | "low" | "nit", 
 	low: "🧹",
 	nit: "🔬",
 };
+
+/** Every posted or pending thrash review body starts with this; a provider adapter checks it before deleting a stale pending review, so it never deletes an unrelated draft. */
+export const THRASH_REVIEW_HEADING_PREFIX = "## Thrash review ";

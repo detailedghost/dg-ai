@@ -1,3 +1,4 @@
+import { THRASH_REVIEW_HEADING_PREFIX } from "@dg/common";
 import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
@@ -531,11 +532,18 @@ function reviewsPath(ref: PrRef): string {
 	return `repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/reviews`;
 }
 
-/** Only this bot's own stale pending review, never a human's draft review on the same PR. */
+/**
+ * Only this bot's own stale pending review, never a human's draft review on the
+ * same PR — even one under the same login, which the daemon's own account often
+ * is, since it runs under the owner's own `gh` auth. The login check alone can't
+ * tell those two apart, so this also requires the thrash heading this bot always
+ * writes into a review's body, pending or submitted.
+ */
 async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
 	const whoami = await tag`api user --jq ${".login"} ${apiHostFlags(ref.repo)}`;
 	const login = whoami.stdout.toString().trim();
-	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${`.[] | select(.state == "PENDING" and .user.login == "${login}") | .id`} ${apiHostFlags(ref.repo)}`;
+	const jq = `.[] | select(.state == "PENDING" and .user.login == "${login}" and ((.body // "") | startswith("${THRASH_REVIEW_HEADING_PREFIX}"))) | .id`;
+	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${jq} ${apiHostFlags(ref.repo)}`;
 	for (const id of listed.stdout.toString().split("\n").filter(Boolean)) {
 		await tag`api ${reviewsPath(ref)}/${id} --method DELETE ${apiHostFlags(ref.repo)}`;
 	}
