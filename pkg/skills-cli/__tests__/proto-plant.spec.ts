@@ -237,7 +237,7 @@ describe("proto plant command", () => {
 		const harness = await plantHarness(invalid);
 
 		const result = await runCli(
-			["proto", "plant", harness.planPath, "--timeout", "250"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "250"],
 			harness.env,
 		);
 
@@ -288,7 +288,7 @@ describe("proto plant command", () => {
 			const harness = await plantHarness(invalidPlan.build(url));
 
 			const result = await runCli(
-				["proto", "plant", harness.planPath, "--timeout", "250"],
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "250"],
 				harness.env,
 			);
 
@@ -317,7 +317,7 @@ describe("proto plant command", () => {
 		]);
 
 		const result = await runCli(
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			{
 				...harness.env,
 				DG_REQUIRE_STALE_REMOVED: "1",
@@ -367,7 +367,7 @@ describe("proto plant command", () => {
 		const harness = await plantHarness(plan);
 
 		const result = await runCli(
-			["proto", "plant", harness.planPath, "--timeout", "250"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "250"],
 			harness.env,
 		);
 
@@ -398,7 +398,7 @@ describe("proto plant command", () => {
 			const harness = await plantHarness(plan, JSON.stringify(expected));
 
 			const result = await runCli(
-				["proto", "plant", harness.planPath, "--timeout", "500"],
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 				harness.env,
 			);
 
@@ -432,7 +432,7 @@ describe("proto plant command", () => {
 		const verdictFor = (verdict: Record<string, string>) =>
 			JSON.stringify({ slug: plan.slug, ts: 1_721_234_568_100, ...verdict });
 		const plant = (verdict: Record<string, string>) =>
-			runCli(["proto", "plant", harness.planPath, "--timeout", "500"], {
+			runCli(["proto", "--ext", "plant", harness.planPath, "--timeout", "500"], {
 				...harness.env,
 				DG_TEST_VERDICT: verdictFor(verdict),
 			});
@@ -504,7 +504,7 @@ describe("proto plant command", () => {
 			const plan = buildPlan(`https://example.test/account?${query}`);
 			const harness = await plantHarness(plan);
 			const plant = (verdict: Record<string, string>) =>
-				runCli(["proto", "plant", harness.planPath, "--timeout", "500"], {
+				runCli(["proto", "--ext", "plant", harness.planPath, "--timeout", "500"], {
 					...harness.env,
 					DG_TEST_VERDICT: JSON.stringify({
 						slug: plan.slug,
@@ -611,7 +611,7 @@ describe("proto plant command", () => {
 		);
 
 		const result = await runCli(
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 
@@ -661,7 +661,7 @@ describe("proto plant command", () => {
 			);
 
 			const result = await runCli(
-				["proto", "plant", harness.planPath, "--timeout", "500"],
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 				harness.env,
 			);
 

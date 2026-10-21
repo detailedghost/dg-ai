@@ -84,8 +84,8 @@ describe("extension guard", () => {
 		await expect(program.parseAsync(["batch-open"], { from: "user" })).rejects.toThrow(
 			extensionRequiredMessage("dg-skills batch-open"),
 		);
-		await expect(program.parseAsync(["proto", "nested"], { from: "user" })).rejects.toThrow(
-			'dg-skills proto needs the dg-ai-extension',
+		await expect(program.parseAsync(["rerun", "nested"], { from: "user" })).rejects.toThrow(
+			'dg-skills rerun needs the dg-ai-extension',
 		);
 		expect(calls).toEqual([]);
 	});
@@ -123,7 +123,6 @@ describe("skill metadata", () => {
 			"chat",
 			"demo",
 			"overwatch",
-			"proto",
 		]);
 	});
 
@@ -132,7 +131,6 @@ describe("skill metadata", () => {
 			"batch-open",
 			"demo",
 			"launch",
-			"proto",
 			"rerun",
 		]);
 	});

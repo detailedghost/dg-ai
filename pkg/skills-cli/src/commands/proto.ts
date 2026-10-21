@@ -23,7 +23,10 @@ import {
 	validateVerdict,
 } from "@dg/common";
 import { tryOpen } from "@dg/common/node";
-import type { Command } from "commander";
+import { Command } from "commander";
+import { USAGE as PROTOTYPE_USAGE, main as runPrototype } from "../prototype";
+import { assertExtensionInstalled } from "../utils/cli-only";
+import { registerRawCommand } from "../utils/legacy-command";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
 import {
 	answerPagePath,
@@ -618,16 +621,30 @@ function timeoutValue(value: string): number {
 	return timeout;
 }
 
-/** Register the `proto scrape`, `plant`, and `cleanup` CLI commands. */
-export function registerProto(program: Command): void {
-	const proto = program
-		.command("proto")
+const EXTENSION_VERBS = ["scrape", "plant", "cleanup"];
+
+/** Handlers for the two proto modes; local is the default and the extension flow needs `--ext`. */
+export type ProtoHandlers = {
+	local(argv: string[]): Promise<number | undefined> | number | undefined;
+	extension(argv: string[]): Promise<number | undefined> | number | undefined;
+};
+
+/** Route proto arguments: no `--ext` runs the local prototype commands, `--ext` runs the extension flow. */
+export function dispatchProto(
+	argv: string[],
+	handlers: ProtoHandlers,
+): Promise<number | undefined> | number | undefined {
+	const rest = argv.filter((arg) => arg !== "--ext");
+	return (argv.includes("--ext") ? handlers.extension : handlers.local)(rest);
+}
+
+function buildExtensionProgram(): Command {
+	const proto = new Command("dg-skills proto --ext")
 		.description("prototype a live page through the dg-ai-extension")
 		.addHelpText(
 			"after",
 			"\nRun plant and cleanup from the target project root so durable answers resolve into that project's .agents/prototype directory.\n",
 		);
-
 	proto
 		.command("scrape")
 		.description("collect a page style guide into stable agent scratch")
@@ -678,4 +695,40 @@ export function registerProto(program: Command): void {
 		.action(async (slug: string) => {
 			console.log(await cleanupPrototype(slug));
 		});
+
+	return proto;
+}
+
+async function runExtension(argv: string[]): Promise<undefined> {
+	assertExtensionInstalled("dg-skills proto --ext");
+	await buildExtensionProgram().parseAsync(argv, { from: "user" });
+	return undefined;
+}
+
+function runLocal(argv: string[]): Promise<number | undefined> | number {
+	const verb = argv[0];
+	if (verb && EXTENSION_VERBS.includes(verb)) {
+		process.stderr.write(
+			`proto: "${verb}" is an extension command; add --ext (dg-skills proto --ext ${argv.join(" ")})\n`,
+		);
+		return 1;
+	}
+	if (!verb || verb === "--help" || verb === "-h") {
+		process.stdout.write(
+			`${PROTOTYPE_USAGE}\nExtension flow: dg-skills proto --ext <scrape|plant|cleanup> [--help]\n`,
+		);
+		return verb ? 0 : 1;
+	}
+	return runPrototype(argv);
+}
+
+/** Register `proto`: local prototype commands by default, the extension scrape/plant/cleanup flow behind `--ext`. */
+export function registerProto(program: Command): void {
+	registerRawCommand(program, {
+		name: "proto",
+		description:
+			"prototype locally (default) or inside a live page with --ext",
+		run: (argv) =>
+			dispatchProto(argv, { local: runLocal, extension: runExtension }),
+	});
 }
