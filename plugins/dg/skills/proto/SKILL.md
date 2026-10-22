@@ -1,9 +1,19 @@
 ---
 name: proto
 description: Build a throwaway prototype before committing to a design. Routes to a runnable terminal app (state/logic questions), UI variations toggleable from one route (five by default, set with -n, or named with -o), or a clickable walkthrough across a plan's workflows — all local by default. Pass --ext to compare UI variations directly on a live, already-running page via the dg-ai-extension instead, with no source edit and no dev server. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, or compare variants on a real live page, or says "prototype this", "show me all the workflows", "let me play with it".
+requires: [extension]
 ---
 
 # /dg:proto — Throwaway Prototype
+
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal installed path:
+
+```bash
+~/.dg/bin/dg-skills prototype --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
+```
+
+If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
@@ -110,7 +120,7 @@ The _answer_ is the only thing worth keeping from a prototype. Capture it somewh
 
 ## When a prototype feeds a planning document
 
-If the prototype's outcome is referenced by a planning document (a `/spec` spec, a `~/.claude/plans/*.md` plan, a `/prd` deliverable), it stops being throwaway for the life of that plan and becomes the **source of truth for the design and feature set** it settled. Three rules apply:
+If the prototype's outcome is referenced by a planning document (a `/dg:spec` spec, a `~/.claude/plans/*.md` plan, a `/dg:prd` deliverable), it stops being throwaway for the life of that plan and becomes the **source of truth for the design and feature set** it settled. Three rules apply:
 
 1. **Keep the asset available.** The prototype must live in the durable `$(~/.dg/bin/dg-skills prototype dir <name>)/` location — **never only in the `--light` `/tmp` sandbox**, which is wiped on reboot while the plan is still open. If it was built `--light`, promote it into `$(~/.dg/bin/dg-skills prototype dir <name>)/` before referencing it. Record its path (and the winning `?variant=` key, if a UI-variant prototype) in the planning document so downstream agents can open it.
 2. **Follow it completely.** Agents implementing a prototyped decision must reproduce the referenced prototype's design and feature set faithfully — it is the settled answer, not a loose suggestion. Do not silently drop features or re-decide look/flow the prototype already resolved.

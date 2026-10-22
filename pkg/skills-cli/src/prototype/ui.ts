@@ -7,7 +7,7 @@
  * the launching cwd (see paths.ts). A harness that resets cwd between tool
  * calls would make a fresh `prototype selection wait` resolve a different
  * directory than the one `prototype serve` is writing into. Fix: pin every
- * path resolution this command makes to ONE fixed absolute cwd (PIN_CWD),
+ * path resolution this command makes to ONE fixed absolute cwd (`pinCwd()`),
  * recorded once per session in a state file and replayed on every later
  * call — never re-derived from ambient `process.cwd()`.
  */
@@ -19,8 +19,13 @@ import { parseManifest, renderManifest } from "./manifest";
 import { reloadPath } from "./paths";
 import { type SelectionResult, selectionStatus, waitForSelection } from "./sentinel";
 
-const STATE_DIR = scratchDir("prototype-ui", { cwdScope: false });
-const PIN_CWD = join(STATE_DIR, "_cwd");
+function stateDir(): string {
+	return scratchDir("prototype-ui", { cwdScope: false });
+}
+
+function pinCwd(): string {
+	return join(stateDir(), "_cwd");
+}
 
 const DEFAULT_PORT = 4321;
 const DEFAULT_TIMEOUT_SEC = 900;
@@ -36,7 +41,7 @@ interface UiState {
 }
 
 function statePathFor(name: string): string {
-	return join(STATE_DIR, `${name}.json`);
+	return join(stateDir(), `${name}.json`);
 }
 
 function loadState(name: string): UiState | null {
@@ -50,7 +55,7 @@ function loadState(name: string): UiState | null {
 }
 
 function saveState(state: UiState): void {
-	mkdirSync(STATE_DIR, { recursive: true });
+	mkdirSync(stateDir(), { recursive: true });
 	writeFileSync(statePathFor(state.name), `${JSON.stringify(state, null, 2)}\n`);
 }
 
@@ -130,13 +135,13 @@ export async function runUi(manifestSource: string, opts: RunUiOptions): Promise
 		writeFileSync(path, `${Date.now()}\n`);
 		state = existing;
 	} else {
-		mkdirSync(PIN_CWD, { recursive: true });
-		const htmlPath = join(STATE_DIR, `${local.plan.slug}.html`);
+		mkdirSync(pinCwd(), { recursive: true });
+		const htmlPath = join(stateDir(), `${local.plan.slug}.html`);
 		writeFileSync(htmlPath, html);
 
-		const { pid, port } = await launchServer(htmlPath, local.plan.slug, opts.light, opts.port, PIN_CWD);
+		const { pid, port } = await launchServer(htmlPath, local.plan.slug, opts.light, opts.port, pinCwd());
 
-		state = { name: local.plan.slug, cwd: PIN_CWD, htmlPath, pid, port, light: opts.light };
+		state = { name: local.plan.slug, cwd: pinCwd(), htmlPath, pid, port, light: opts.light };
 		saveState(state);
 
 		if (!opts.noOpen) {

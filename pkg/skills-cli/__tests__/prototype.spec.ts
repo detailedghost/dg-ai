@@ -81,6 +81,23 @@ async function waitForServer(port: number, deadlineMs: number): Promise<void> {
 	throw new Error(`server on port ${port} never came up within ${deadlineMs}ms`);
 }
 
+function isPidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function waitUntilDead(pid: number, deadlineMs: number): Promise<void> {
+	const deadline = Date.now() + deadlineMs;
+	while (isPidAlive(pid)) {
+		if (Date.now() >= deadline) throw new Error(`pid ${pid} is still alive after ${deadlineMs}ms`);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+}
+
 describe("prototype ui — end to end", () => {
 	test("renders, serves, and reports a browser confirmation", async () => {
 		const scratch = freshDir("proto-ui-e2e-scratch-");
@@ -117,11 +134,9 @@ describe("prototype ui — end to end", () => {
 		expect(code).toBe(0);
 		expect(JSON.parse(out.trim())).toEqual({ status: "ok", variant: "A", notes: "" });
 
-		// Approve-with-no-notes ends the session: the server is torn down and its
-		// state dropped, not left running for a rework that will never come.
 		expect(existsSync(statePath)).toBe(false);
 		expect(existsSync(htmlPath)).toBe(false);
-		expect(() => process.kill(pid, 0)).toThrow();
+		await waitUntilDead(pid, 5_000);
 	}, 15_000);
 
 	test("genuinely times out (exit 1) when no decision is ever made", async () => {

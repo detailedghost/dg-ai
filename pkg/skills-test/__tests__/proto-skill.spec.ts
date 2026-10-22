@@ -34,7 +34,7 @@ describe("proto skill", () => {
 		const skill = skillFile("SKILL.md");
 		expect(skill).toMatch(/default[^.\n]*:?\s*prototype\s*\*\*locally\*\*/i);
 		expect(skill).toMatch(/\*\*`--ext`\*\*/);
-		expect(skill).not.toMatch(/^requires:/m);
+		expect(skill).toMatch(/^requires:\s*\[extension\]$/m);
 	});
 
 	test("every reference doc exists, is linked one level deep, and carries no TODO", () => {

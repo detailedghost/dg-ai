@@ -9,7 +9,7 @@ This is the right branch when the input is a **plan spanning multiple workflows*
 - "Prototype this plan." / "Show me all the workflows." / "Walk me through the feature."
 - A design seed describes 3+ distinct flows (e.g. author a thing → it appears in a list → a daemon processes it) and the open question is whether they hang together.
 - The user wants to *feel* the feature before it's specced/built, across screens, not pick between layouts of one screen.
-- The plan is typically a `/spec` bundle (`.agents/spec/<NNN>_<slug>/`), a `~/.claude/plans/*.md`, or design prose.
+- The plan is typically a `/dg:spec` bundle (`.agents/spec/<NNN>_<slug>/`), a `~/.claude/plans/*.md`, or design prose.
 
 ## Relationship to the other branches
 
@@ -57,8 +57,8 @@ Reuse the shared switcher where the project has one ([ui.md](ui.md) step 4 / `dg
 
 - **Per-screen notes.** Every workflow screen carries a notes textarea (state keyed by screen id). The user jots reactions in-context — "this step is wrong", "needs a test-run button", "reorder these". Surface a count ("2 screens noted") so it's clear notes are being captured. Mark noted screens in the nav.
 - **A fixed decision bar** with two buttons: **✓ Approve design** and **✗ Decline & rework**. There are no N variants to choose between — the decision is about the *whole plan*.
-- **On Approve** → compile a handoff (the decision + every screen's notes) and route to `/prd`: proceed to spec, folding the notes into it.
-- **On Decline** → compile the same handoff and route to a **rework loop**: revise the walkthrough against the notes, reopen, and ask again. Do **not** proceed to `/prd` until approved.
+- **On Approve** → compile a handoff (the decision + every screen's notes) and route to `/dg:prd`: proceed to spec, folding the notes into it.
+- **On Decline** → compile the same handoff and route to a **rework loop**: revise the walkthrough against the notes, reopen, and ask again. Do **not** proceed to `/dg:prd` until approved.
 
 **How the decision reaches the agent — automatic via the local server.** Serve the self-contained walkthrough with `dg-skills prototype serve` so Approve/Decline POST straight back to Claude Code (no copy-paste):
 
@@ -73,7 +73,7 @@ Reuse the shared switcher where the project has one ([ui.md](ui.md) step 4 / `dg
 ```
 
 Wire Approve/Decline to the helpers `dg-skills prototype serve` injects — `window.prototypePlanDecision(decision, notes)` — don't hand-roll the `fetch('POST /prototype-decision', ...)` call in the walkthrough's own script. The helper posts the decision, then drives the shared full-screen overlay (state pill + reload-aware subtitle) so Decline gives immediate, visible confirmation instead of an easy-to-miss status-line update. Disable both buttons on click so a pending decision can't be resubmitted while the overlay is up. The server writes the `.decision` file; `decision wait` unblocks and prints it. The agent then branches:
-- **APPROVED** → run `/prd` with the notes.
+- **APPROVED** → run `/dg:prd` with the notes.
 - **REWORK** → revise `walkthrough.html`, **write a `.changes` manifest** so the user can see what moved, then **bump the reload token** so the open tab refreshes itself, and re-arm `decision wait`:
   ```sh
   TOKEN=$(date +%s)
@@ -111,7 +111,7 @@ In `$(~/.dg/bin/dg-skills prototype dir <name>)/NOTES.md`:
 
 Give the user the open command (or route + `?screen=` keys). Await the decision — on a dev-server host via `dg-skills prototype decision wait <name>`, on a self-contained host via the pasted-back handoff block (step 4). Then branch:
 
-- **APPROVED** → fold the per-screen notes into the plan/seed and run **`/prd`** (or `/spec`). The notes are now requirements; weave them in, don't drop them.
+- **APPROVED** → fold the per-screen notes into the plan/seed and run **`/dg:prd`** (or `/dg:spec`). The notes are now requirements; weave them in, don't drop them.
 - **REWORK** → revise the walkthrough against the notes (reorder screens, fix the flagged interaction, add the missing affordance), reopen, and ask again. Loop until approved. Record each round's notes in `NOTES.md` so the rework history isn't lost.
 
 The interesting feedback is **"workflow B should come before A"** or **"the list needs to show X from the create step"** — those are flaws in the *plan*, which is the whole point.
