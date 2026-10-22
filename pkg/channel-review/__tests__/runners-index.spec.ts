@@ -37,9 +37,7 @@ beforeEach(() => {
 afterEach(() => home.cleanup());
 
 function configWith(runner: Record<string, unknown> = {}) {
-	return loadConfig(
-		writeConfigFile(home.dir, minimalConfigJson({ runner })),
-	);
+	return loadConfig(writeConfigFile(home.dir, minimalConfigJson({ runner })));
 }
 
 function fakeFs(files: string[]) {
@@ -65,11 +63,8 @@ const SKILL_ROOTS: Record<Exclude<RunnerName, "grok">, string[]> = {
 		`${HOME}/.codex/skills/thrash/SKILL.md`,
 		`${HOME}/.agents/skills/thrash/SKILL.md`,
 	],
-	copilot: [
-		`${HOME}/.copilot/skills/thrash/SKILL.md`,
-	],
+	copilot: [`${HOME}/.copilot/skills/thrash/SKILL.md`],
 };
-
 
 function harness(
 	options: {
@@ -105,10 +100,17 @@ function harness(
 				(await options.capture?.(command, args)) ?? {
 					status: 0,
 					signal: null,
-					stdout: command !== PATHS.grok ? "" : args[0] === "models"
-						? "You are logged in with example.com.\nAvailable models:"
-						: JSON.stringify({ skills: options.files === undefined
-							? [{ name: "thrash", userInvocable: true }] : [] }),
+					stdout:
+						command !== PATHS.grok
+							? ""
+							: args[0] === "models"
+								? "You are logged in with example.com.\nAvailable models:"
+								: JSON.stringify({
+										skills:
+											options.files === undefined
+												? [{ name: "thrash", userInvocable: true }]
+												: [],
+									}),
 					stderr: "",
 				}
 			);
@@ -126,7 +128,8 @@ function harness(
 				}
 			);
 		},
-		startSsoLogin: options.startSsoLogin ?? ((profile) => ssoLoginCalls.push(profile)),
+		startSsoLogin:
+			options.startSsoLogin ?? ((profile) => ssoLoginCalls.push(profile)),
 	});
 	return { runners, captures, processes, ssoLoginCalls, whichCalls };
 }
@@ -158,33 +161,53 @@ describe("runner probe", () => {
 			config: configWith({ grok: { path: "/opt/grok" } }),
 			which: () => undefined,
 			capture: (_command, args) => ({
-				status: 0, signal: null, stderr: "",
-				stdout: args[0] === "models" ? "You are logged in with example.com."
-					: JSON.stringify({ skills: [{ name: "thrash", userInvocable: true }] }),
+				status: 0,
+				signal: null,
+				stderr: "",
+				stdout:
+					args[0] === "models"
+						? "You are logged in with example.com."
+						: JSON.stringify({
+								skills: [{ name: "thrash", userInvocable: true }],
+							}),
 			}),
 		});
-		expect(await h.runners.grok.probe({ cwd: "/scratch" })).toEqual({ ok: true });
+		expect(await h.runners.grok.probe({ cwd: "/scratch" })).toEqual({
+			ok: true,
+		});
 		expect(h.whichCalls).toEqual([]);
-		expect(h.captures.map(call => [call.command, call.args, call.options])).toEqual([
+		expect(
+			h.captures.map((call) => [call.command, call.args, call.options]),
+		).toEqual([
 			["/opt/grok", ["models"], { cwd: "/scratch", timeoutMs: 60_000 }],
-			["/opt/grok", ["inspect", "--json"], { cwd: "/scratch", timeoutMs: 60_000 }],
+			[
+				"/opt/grok",
+				["inspect", "--json"],
+				{ cwd: "/scratch", timeoutMs: 60_000 },
+			],
 		]);
 	});
 
-	test.each([...RUNNER_NAMES])("%s returns ok when found, signed in, and thrash is installed", async (name) => {
-		const { runners } = harness();
-		expect(await runners[name].probe()).toEqual({ ok: true });
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s returns ok when found, signed in, and thrash is installed",
+		async (name) => {
+			const { runners } = harness();
+			expect(await runners[name].probe()).toEqual({ ok: true });
+		},
+	);
 
-	test.each([...RUNNER_NAMES])("%s returns CR-201 when the binary is not on PATH and never runs a CLI", async (name) => {
-		const h = harness({ which: () => undefined });
-		expect(await h.runners[name].probe()).toEqual({
-			ok: false,
-			code: "CR-201",
-		});
-		expect(h.captures).toEqual([]);
-		expect(h.processes).toEqual([]);
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s returns CR-201 when the binary is not on PATH and never runs a CLI",
+		async (name) => {
+			const h = harness({ which: () => undefined });
+			expect(await h.runners[name].probe()).toEqual({
+				ok: false,
+				code: "CR-201",
+			});
+			expect(h.captures).toEqual([]);
+			expect(h.processes).toEqual([]);
+		},
+	);
 
 	test("uses the configured path override without asking which", async () => {
 		const h = harness({
@@ -260,14 +283,17 @@ describe("runner probe", () => {
 		expect(h.captures).toEqual([]);
 	});
 
-	test.each([...RUNNER_NAMES])("%s returns CR-206 when no thrash/SKILL.md exists and never runs", async (name) => {
-		const h = harness({ files: [`${HOME}/.claude/skills/other/SKILL.md`] });
-		expect(await h.runners[name].probe()).toEqual({
-			ok: false,
-			code: "CR-206",
-		});
-		expect(h.processes).toEqual([]);
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s returns CR-206 when no thrash/SKILL.md exists and never runs",
+		async (name) => {
+			const h = harness({ files: [`${HOME}/.claude/skills/other/SKILL.md`] });
+			expect(await h.runners[name].probe()).toEqual({
+				ok: false,
+				code: "CR-206",
+			});
+			expect(h.processes).toEqual([]);
+		},
+	);
 
 	test.each(
 		(["claude", "codex", "copilot"] as const).flatMap((name) =>
@@ -303,14 +329,21 @@ describe("runner probe", () => {
 
 	test("copilot does not see a plugin skill under the claude plugin tree", async () => {
 		const { runners } = harness({
-			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
+			files: [
+				`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`,
+			],
 		});
-		expect(await runners.copilot.probe()).toEqual({ ok: false, code: "CR-206" });
+		expect(await runners.copilot.probe()).toEqual({
+			ok: false,
+			code: "CR-206",
+		});
 	});
 
 	test("codex does not see a plugin skill under the claude plugin tree", async () => {
 		const { runners } = harness({
-			files: [`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`],
+			files: [
+				`${HOME}/.claude/plugins/cache/mkt/dg/1.2.0/plugins/dg/skills/thrash/SKILL.md`,
+			],
 		});
 		expect(await runners.codex.probe()).toEqual({ ok: false, code: "CR-206" });
 	});
@@ -330,11 +363,21 @@ describe("runner probe", () => {
 describe("runner run argv", () => {
 	test("Grok uses installed headless flags and one slash prompt argument", async () => {
 		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
-		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
+		await h.runners.grok.run(
+			runRequest({ spice: 4, comment: true, model: "grok-4.6" }),
+		);
 		expect(h.processes[0]?.argv).toEqual([
-			"/opt/grok", "--no-auto-update", "-p", `/dg:thrash ${URL} -s 4 -c`,
-			"--output-format", "streaming-json", "--always-approve", "--cwd", "/work",
-			"--model", "grok-4.6",
+			"/opt/grok",
+			"--no-auto-update",
+			"-p",
+			`/dg:thrash ${URL} -s 4 -c`,
+			"--output-format",
+			"streaming-json",
+			"--always-approve",
+			"--cwd",
+			"/work",
+			"--model",
+			"grok-4.6",
 		]);
 	});
 
@@ -385,7 +428,11 @@ describe("runner run argv", () => {
 	test("claude runs /address with the address allowlist", async () => {
 		const config = configWith();
 		const h = harness({ config });
-		await h.runners.claude.run({ ...runRequest(), task: "address", noCi: false });
+		await h.runners.claude.run({
+			...runRequest(),
+			task: "address",
+			noCi: false,
+		});
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.claude,
 			"-p",
@@ -401,7 +448,11 @@ describe("runner run argv", () => {
 
 	test("claude passes --no-ci to /address when asked", async () => {
 		const h = harness();
-		await h.runners.claude.run({ ...runRequest(), task: "address", noCi: true });
+		await h.runners.claude.run({
+			...runRequest(),
+			task: "address",
+			noCi: true,
+		});
 		expect(h.processes[0]?.argv[2]).toBe("/dg:address --no-ci");
 	});
 
@@ -439,7 +490,11 @@ describe("runner run argv", () => {
 	test("claude runs the deps upgrade with the cooldown, the clone root and the deps tools", async () => {
 		const config = configWith();
 		const h = harness({ config });
-		await h.runners.claude.run({ ...runRequest(), task: "deps", cooldownDays: 3 });
+		await h.runners.claude.run({
+			...runRequest(),
+			task: "deps",
+			cooldownDays: 3,
+		});
 		expect(h.processes[0]?.argv).toEqual([
 			"/bin/claude",
 			"-p",
@@ -527,38 +582,48 @@ describe("runner run argv", () => {
 		]);
 	});
 
-	test.each([...RUNNER_NAMES])("%s passes cwd, timeout, log path, signal, and onSpawn to runProcess", async (name) => {
-		const h = harness();
-		const spawned: number[] = [];
-		const request = runRequest({
-			onSpawn: (pid: number) => spawned.push(pid),
-		});
-		await h.runners[name].run(request);
-		const sent = h.processes[0];
-		expect(sent).toMatchObject({
-			cwd: "/work",
-			timeoutMs: 60_000,
-			logPath: "/logs/job.log",
-		});
-		expect(sent?.signal).toBe(request.signal);
-		sent?.onSpawn?.(4242);
-		expect(spawned).toEqual([4242]);
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s passes cwd, timeout, log path, signal, and onSpawn to runProcess",
+		async (name) => {
+			const h = harness();
+			const spawned: number[] = [];
+			const request = runRequest({
+				onSpawn: (pid: number) => spawned.push(pid),
+			});
+			await h.runners[name].run(request);
+			const sent = h.processes[0];
+			expect(sent).toMatchObject({
+				cwd: "/work",
+				timeoutMs: 60_000,
+				logPath: "/logs/job.log",
+			});
+			expect(sent?.signal).toBe(request.signal);
+			sent?.onSpawn?.(4242);
+			expect(spawned).toEqual([4242]);
+		},
+	);
 });
 
 describe("runner run result", () => {
 	test.each([
 		["CR-202", "Not signed in. Run `grok login` to authenticate."],
 		["CR-207", "You’ve hit the rate limit for your plan."],
-	] as const)("Grok classifies streamed error messages as %s", async (code, message) => {
-		const h = harness({
-			process: () => ({
-				status: 1, signal: null, timedOut: false, aborted: false,
-				stderrTail: "", outputTail: JSON.stringify({ type: "error", message }),
-			}),
-		});
-		expect((await h.runners.grok.run(runRequest())).code).toBe(code);
-	});
+	] as const)(
+		"Grok classifies streamed error messages as %s",
+		async (code, message) => {
+			const h = harness({
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "",
+					outputTail: JSON.stringify({ type: "error", message }),
+				}),
+			});
+			expect((await h.runners.grok.run(runRequest())).code).toBe(code);
+		},
+	);
 
 	test.each([0, 1])(
 		"recognizes a limit on stdout even with exit status %i",
@@ -598,13 +663,37 @@ describe("runner run result", () => {
 	test("Claude restarts an expired Bedrock SSO sign-in", async () => {
 		const profile = "bedrock-dev";
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+			}),
 			process: () => ({
 				status: 1,
 				signal: null,
 				timedOut: false,
 				aborted: false,
-				stderrTail: "The SSO session associated with this profile has expired or is otherwise invalid",
+				stderrTail:
+					"The SSO session associated with this profile has expired or is otherwise invalid",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile]);
+	});
+
+	test("Claude restarts SSO sign-in on the expired-token line a live daemon logged", async () => {
+		const profile = "sb_poweruser";
+		const h = harness({
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+			}),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "",
+				stdoutTail:
+					"API Error: Could not load AWS credentials · Token is expired. To refresh this SSO session run 'aws sso login' with the corresponding profile. Check or refresh your AWS credentials and try again.",
 				outputTail: "",
 			}),
 		});
@@ -614,13 +703,16 @@ describe("runner run result", () => {
 
 	test("Claude reports expired Bedrock SSO without restarting when no profile is configured", async () => {
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2" } },
+			}),
 			process: () => ({
 				status: 1,
 				signal: null,
 				timedOut: false,
 				aborted: false,
-				stderrTail: "The SSO session associated with this profile has expired or is otherwise invalid",
+				stderrTail:
+					"The SSO session associated with this profile has expired or is otherwise invalid",
 				outputTail: "",
 			}),
 		});
@@ -632,7 +724,9 @@ describe("runner run result", () => {
 		const profile = "bedrock-dev";
 		let run = 0;
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+			}),
 			process: () => {
 				const succeeds = run++ === 2;
 				return {
@@ -640,7 +734,9 @@ describe("runner run result", () => {
 					signal: null,
 					timedOut: false,
 					aborted: false,
-					stderrTail: succeeds ? "" : "The SSO session associated with this profile has expired",
+					stderrTail: succeeds
+						? ""
+						: "The SSO session associated with this profile has expired",
 					outputTail: "",
 				};
 			},
@@ -657,7 +753,9 @@ describe("runner run result", () => {
 		const profile = "bedrock-dev";
 		let run = 0;
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+			}),
 			process: () => {
 				const current = run++;
 				if (current === 0) {
@@ -666,7 +764,8 @@ describe("runner run result", () => {
 						signal: null,
 						timedOut: false,
 						aborted: false,
-						stderrTail: "The SSO session associated with this profile has expired",
+						stderrTail:
+							"The SSO session associated with this profile has expired",
 						outputTail: "",
 					};
 				}
@@ -685,7 +784,8 @@ describe("runner run result", () => {
 					signal: null,
 					timedOut: false,
 					aborted: false,
-					stderrTail: "The SSO session associated with this profile has expired",
+					stderrTail:
+						"The SSO session associated with this profile has expired",
 					outputTail: "",
 				};
 			},
@@ -700,14 +800,23 @@ describe("runner run result", () => {
 		"Claude reports expired Bedrock SSO without restarting after a %s run",
 		async (reason) => {
 			const h = harness({
-				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				config: configWith({
+					claude: {
+						bedrock: {
+							model: "m",
+							region: "us-east-2",
+							profile: "bedrock-dev",
+						},
+					},
+				}),
 				process: () => ({
 					status: 1,
 					signal: null,
 					timedOut: false,
 					aborted: false,
 					[reason]: true,
-					stderrTail: "The SSO session associated with this profile has expired",
+					stderrTail:
+						"The SSO session associated with this profile has expired",
 					outputTail: "",
 				}),
 			});
@@ -722,7 +831,9 @@ describe("runner run result", () => {
 			const profile = "bedrock-dev";
 			let run = 0;
 			const h = harness({
-				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+				config: configWith({
+					claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+				}),
 				process: () => {
 					const first = run++ === 0;
 					return {
@@ -730,7 +841,8 @@ describe("runner run result", () => {
 						signal: null,
 						timedOut: !first && reason === "timedOut",
 						aborted: !first && reason === "aborted",
-						stderrTail: "The SSO session associated with this profile has expired",
+						stderrTail:
+							"The SSO session associated with this profile has expired",
 						outputTail: "",
 					};
 				},
@@ -744,7 +856,11 @@ describe("runner run result", () => {
 
 	test("Claude keeps usage-limit detection ahead of expired Bedrock SSO", async () => {
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+			config: configWith({
+				claude: {
+					bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" },
+				},
+			}),
 			process: () => ({
 				status: 1,
 				signal: null,
@@ -758,11 +874,22 @@ describe("runner run result", () => {
 		expect(h.ssoLoginCalls).toEqual([]);
 	});
 
-	test.each(["SSO session associated with this profile has expired", "AccessDeniedException"])(
+	test.each([
+		"SSO session associated with this profile has expired",
+		"AccessDeniedException",
+	])(
 		"a successful run whose output happens to mention %s is not misclassified",
 		async (text) => {
 			const h = harness({
-				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				config: configWith({
+					claude: {
+						bedrock: {
+							model: "m",
+							region: "us-east-2",
+							profile: "bedrock-dev",
+						},
+					},
+				}),
 				process: () => ({
 					status: 0,
 					signal: null,
@@ -780,7 +907,9 @@ describe("runner run result", () => {
 
 	test("Claude classifies a configured Bedrock access failure", async () => {
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2" } },
+			}),
 			process: () => ({
 				status: 1,
 				signal: null,
@@ -812,7 +941,9 @@ describe("runner run result", () => {
 	test("Claude reports the SSO expiry, not the access failure, when both appear", async () => {
 		const profile = "bedrock-dev";
 		const h = harness({
-			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2", profile } },
+			}),
 			process: () => ({
 				status: 1,
 				signal: null,
@@ -830,7 +961,15 @@ describe("runner run result", () => {
 		"%s does not classify Bedrock failure signatures",
 		async (name) => {
 			const h = harness({
-				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				config: configWith({
+					claude: {
+						bedrock: {
+							model: "m",
+							region: "us-east-2",
+							profile: "bedrock-dev",
+						},
+					},
+				}),
 				process: () => ({
 					status: 1,
 					signal: null,
@@ -863,18 +1002,21 @@ describe("runner run result", () => {
 			expect((await h.runners.claude.run(runRequest())).code).toBeUndefined();
 		},
 	);
-	test.each([...RUNNER_NAMES])("%s returns CR-201 without spawning when the binary is missing", async (name) => {
-		const h = harness({ which: () => undefined });
-		const result = await h.runners[name].run(runRequest());
-		expect(result).toEqual({
-			status: null,
-			signal: null,
-			timedOut: false,
-			aborted: false,
-			code: "CR-201",
-		});
-		expect(h.processes).toEqual([]);
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s returns CR-201 without spawning when the binary is missing",
+		async (name) => {
+			const h = harness({ which: () => undefined });
+			const result = await h.runners[name].run(runRequest());
+			expect(result).toEqual({
+				status: null,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				code: "CR-201",
+			});
+			expect(h.processes).toEqual([]);
+		},
+	);
 
 	test("passes status, signal, timedOut, and aborted through", async () => {
 		const h = harness({
@@ -940,24 +1082,33 @@ describe("runner run result", () => {
 	);
 
 	test.each([
-		["claude", "+ the handler prints: not logged in\n  and Not logged in appears mid-line"],
-		["codex", "diff --git a/x b/x\n+throw new Error('not logged in')\n  Not logged in"],
+		[
+			"claude",
+			"+ the handler prints: not logged in\n  and Not logged in appears mid-line",
+		],
+		[
+			"codex",
+			"diff --git a/x b/x\n+throw new Error('not logged in')\n  Not logged in",
+		],
 		["copilot", "+ 401 Unauthorized\nthe user was not logged in"],
 		["grok", "+ 401 Unauthorized\nthe user was not logged in"],
-	] as const)("%s does not infer CR-202 from auth words inside echoed diff lines", async (name, stderrTail) => {
-		const h = harness({
-			step: 5000,
-			process: () => ({
-				status: 1,
-				signal: null,
-				timedOut: false,
-				aborted: false,
-				stderrTail,
-			}),
-		});
-		const result = await h.runners[name].run(runRequest());
-		expect(result.code).toBeUndefined();
-	});
+	] as const)(
+		"%s does not infer CR-202 from auth words inside echoed diff lines",
+		async (name, stderrTail) => {
+			const h = harness({
+				step: 5000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail,
+				}),
+			});
+			const result = await h.runners[name].run(runRequest());
+			expect(result.code).toBeUndefined();
+		},
+	);
 
 	test.each(["codex", "copilot", "grok"] as const)(
 		"%s infers CR-202 from an error line the CLI prints",
@@ -1037,22 +1188,22 @@ describe("runner run result", () => {
 		expect(await h.runners.claude.probe()).toEqual({ ok: true });
 	});
 
-	test.each([
-		"error: invalid api key",
-		"error:  invalid api key",
-	])("claude infers CR-202 from an error-prefixed line %p", async (stderrTail) => {
-		const h = harness({
-			step: 1000,
-			process: () => ({
-				status: 1,
-				signal: null,
-				timedOut: false,
-				aborted: false,
-				stderrTail,
-			}),
-		});
-		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-202");
-	});
+	test.each(["error: invalid api key", "error:  invalid api key"])(
+		"claude infers CR-202 from an error-prefixed line %p",
+		async (stderrTail) => {
+			const h = harness({
+				step: 1000,
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail,
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-202");
+		},
+	);
 
 	test.each(["codex", "copilot"] as const)(
 		"%s does not infer CR-202 when the error line is not at the start",
@@ -1229,22 +1380,40 @@ describe("runner run result", () => {
 
 describe("runner attribution", () => {
 	test("Grok reports its configured model and lets an explicit request override it", async () => {
-		const { runners, processes } = harness({ config: configWith({ grok: { model: "configured-model" } }) });
+		const { runners, processes } = harness({
+			config: configWith({ grok: { model: "configured-model" } }),
+		});
 		await runners.grok.run(runRequest());
 		await runners.grok.run(runRequest({ model: "requested-model" }));
-		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "configured-model", modelSource: "configured" });
-		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "requested-model", modelSource: "requested" });
+		expect(
+			JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!),
+		).toMatchObject({ model: "configured-model", modelSource: "configured" });
+		expect(
+			JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!),
+		).toMatchObject({ model: "requested-model", modelSource: "requested" });
 	});
 	test("Claude reviews through Bedrock with the configured model and lets an explicit request override it", async () => {
-		const bedrock = { model: "bedrock-model", region: "us-east-2", profile: "sb" };
-		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		const bedrock = {
+			model: "bedrock-model",
+			region: "us-east-2",
+			profile: "sb",
+		};
+		const { runners, processes } = harness({
+			config: configWith({ claude: { bedrock } }),
+		});
 		await runners.claude.run(runRequest());
 		await runners.claude.run(runRequest({ model: "requested-model" }));
 		expect(processes[0]!.argv).toContain("bedrock-model");
 		expect(processes[1]!.argv).toContain("requested-model");
 		expect(processes[1]!.argv).not.toContain("bedrock-model");
-		expect(processes[0]!.env).toMatchObject({ CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: "us-east-2", AWS_PROFILE: "sb" });
-		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "bedrock-model", modelSource: "configured" });
+		expect(processes[0]!.env).toMatchObject({
+			CLAUDE_CODE_USE_BEDROCK: "1",
+			AWS_REGION: "us-east-2",
+			AWS_PROFILE: "sb",
+		});
+		expect(
+			JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!),
+		).toMatchObject({ model: "bedrock-model", modelSource: "configured" });
 	});
 	test("Claude passes ~effort to reviews only", async () => {
 		const { runners, processes } = harness();
@@ -1256,7 +1425,9 @@ describe("runner attribution", () => {
 	});
 	test("Claude uses Bedrock for every task, not only review", async () => {
 		const bedrock = { model: "bedrock-model", region: "us-east-2" };
-		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		const { runners, processes } = harness({
+			config: configWith({ claude: { bedrock } }),
+		});
 		await runners.claude.run(runRequest({ task: "address", noCi: false }));
 		const argv = processes[0]!.argv;
 		expect(argv[argv.indexOf("--model") + 1]).toBe("bedrock-model");
@@ -1267,8 +1438,12 @@ describe("runner attribution", () => {
 	});
 	test("Claude lets an explicit model override Bedrock's model but keeps Bedrock's transport", async () => {
 		const bedrock = { model: "bedrock-model", region: "us-east-2" };
-		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
-		await runners.claude.run(runRequest({ task: "address", noCi: false, model: "requested-model" }));
+		const { runners, processes } = harness({
+			config: configWith({ claude: { bedrock } }),
+		});
+		await runners.claude.run(
+			runRequest({ task: "address", noCi: false, model: "requested-model" }),
+		);
 		const argv = processes[0]!.argv;
 		expect(argv[argv.indexOf("--model") + 1]).toBe("requested-model");
 		expect(argv).not.toContain("bedrock-model");
@@ -1278,29 +1453,34 @@ describe("runner attribution", () => {
 		});
 	});
 	test("Claude omits the profile when Bedrock sets none", async () => {
-		const { runners, processes } = harness({ config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }) });
+		const { runners, processes } = harness({
+			config: configWith({
+				claude: { bedrock: { model: "m", region: "us-east-2" } },
+			}),
+		});
 		await runners.claude.run(runRequest());
 		expect(processes[0]!.env).not.toHaveProperty("AWS_PROFILE");
 	});
-	test.each([
-		...RUNNER_NAMES,
-	])("%s defaults to manual and passes fresh orchestration evidence only", async (name) => {
-		const { runners, processes } = harness();
-		await runners[name].run(runRequest({ origin: "daemon", model: "opus" }));
-		await runners[name].run(runRequest());
-		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
-			origin: "daemon",
-			backend: name,
-			model: "opus",
-			modelSource: "requested",
-		});
-		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
-			origin: "manual",
-			backend: name,
-			modelSource: "default",
-		});
-		expect(processes[0]!.env!.THRASH_EXECUTION_CONTEXT).not.toContain(
-			"reviewers",
-		);
-	});
+	test.each([...RUNNER_NAMES])(
+		"%s defaults to manual and passes fresh orchestration evidence only",
+		async (name) => {
+			const { runners, processes } = harness();
+			await runners[name].run(runRequest({ origin: "daemon", model: "opus" }));
+			await runners[name].run(runRequest());
+			expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+				origin: "daemon",
+				backend: name,
+				model: "opus",
+				modelSource: "requested",
+			});
+			expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toEqual({
+				origin: "manual",
+				backend: name,
+				modelSource: "default",
+			});
+			expect(processes[0]!.env!.THRASH_EXECUTION_CONTEXT).not.toContain(
+				"reviewers",
+			);
+		},
+	);
 });
