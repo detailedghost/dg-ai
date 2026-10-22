@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudePluginSkillsDirs } from "../src/node/plugin-skills";
+import { claudeDirectoryMarketplaceSkillsDirs, claudePluginSkillsDirs } from "../src/node/plugin-skills";
 
 let home: string;
 beforeEach(() => {
@@ -74,4 +74,38 @@ test("does not follow a symlinked marketplace directory", () => {
 test("skips a version whose skills directory is missing", () => {
 	mkdirSync(join(home, ".claude", "plugins", "cache", "mkt", "dg", "1.0.0"), { recursive: true });
 	expect(claudePluginSkillsDirs(home)).toEqual([]);
+});
+
+function writeKnownMarketplaces(marketplaces: unknown): void {
+	const dir = join(home, ".claude", "plugins");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "known_marketplaces.json"), JSON.stringify(marketplaces));
+}
+
+test("falls back to nothing when known_marketplaces.json is malformed", () => {
+	const dir = join(home, ".claude", "plugins");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "known_marketplaces.json"), "{not valid json");
+	expect(claudeDirectoryMarketplaceSkillsDirs(home)).toEqual([]);
+});
+
+test("filters out a directory marketplace whose skills directory does not exist", () => {
+	const source = join(home, "mkt-source");
+	mkdirSync(source, { recursive: true });
+	writeKnownMarketplaces({ mkt: { source: { source: "directory", path: source } } });
+	expect(claudeDirectoryMarketplaceSkillsDirs(home)).toEqual([]);
+});
+
+test("returns the skills directory of every valid directory marketplace", () => {
+	const aSource = join(home, "a-source");
+	const bSource = join(home, "b-source");
+	const aSkills = join(aSource, "plugins", "dg", "skills");
+	const bSkills = join(bSource, "plugins", "dg", "skills");
+	mkdirSync(aSkills, { recursive: true });
+	mkdirSync(bSkills, { recursive: true });
+	writeKnownMarketplaces({
+		a: { source: { source: "directory", path: aSource } },
+		b: { source: { source: "directory", path: bSource } },
+	});
+	expect(claudeDirectoryMarketplaceSkillsDirs(home).sort()).toEqual([aSkills, bSkills].sort());
 });
