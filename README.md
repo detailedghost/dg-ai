@@ -77,6 +77,7 @@ Claude Code also accepts the bare `/<name>`.
 | `polish` | Clean up a diff for reuse, simplification, and hygiene, then apply the fixes |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
+| `pw` | Drive a browser to open, click, fill, snapshot, and record |
 | `refactor` | Find refactor candidates and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
 | `review-loop` | Loop Copilot or a local backend over a branch and address the findings |

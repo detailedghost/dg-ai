@@ -12,7 +12,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor bg stash vcs-provider worktree.
+If a step fails, run ~/.dg/bin/dg-skills doctor bg pw stash vcs-provider worktree.
 
 Thin orchestration over `~/.dg/bin/dg-skills worktree remove` (linked worktrees, plus a defensive `ExitWorktree({action:"keep"})` first in case `/dg:sdlc` or `/dg:spec` entered one with `EnterWorktree(path=...)`) and `ExitWorktree` (harness sessions). Guards never force-remove unmerged or dirty work without asking.
 

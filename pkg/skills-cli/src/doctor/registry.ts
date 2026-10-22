@@ -21,6 +21,7 @@ import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
 import { polishChecks } from "../polish/doctor";
 import { protoChecks } from "../proto/doctor";
 import { proxyChecks } from "../proxy/doctor";
+import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
@@ -58,6 +59,8 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"clipboard-image": clipboardImageChecks,
 	proto: protoChecks,
 	proxy: proxyChecks,
+	pw: pwChecks,
+	"pw-code": pwCodeChecks,
 	"overwatch-snapshot": overwatchSnapshotChecks,
 	worktree: worktreeChecks,
 	spec: specChecks,

@@ -27,6 +27,7 @@ binaries. The skills-root README itself is not installed.
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
 | `pushup/` | Push a branch, open its PR, and group the PR in the browser |
+| `pw/` | Drive a browser to open, click, fill, snapshot, and record |
 | `refactor/` | Find architectural improvements and discuss a chosen approach |
 | `rename-session/` | Suggest or apply a session name |
 | `standard-test/` | Apply portable rules for meaningful tests |
@@ -82,6 +83,7 @@ skills/
   proto/
   proxy/
   pushup/
+  pw/
   refactor/
   rename-session/
   standard-test/

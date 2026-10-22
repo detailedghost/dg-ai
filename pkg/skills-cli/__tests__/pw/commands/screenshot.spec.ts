@@ -1,0 +1,76 @@
+import { describe, expect, test } from "bun:test";
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
+import { UsageError } from "../../../src/pw/core/args";
+import { argsFor, fakeCtx, useTempScratch } from "../../../src/pw/test-support";
+import handler, { imageType } from "../../../src/pw/commands/screenshot/run";
+import spec from "../../../src/pw/commands/screenshot/spec";
+
+const scratch = useTempScratch();
+
+describe("imageType", () => {
+	test("picks jpeg for jpg and jpeg names and png otherwise", () => {
+		expect(imageType("a.jpg")).toBe("jpeg");
+		expect(imageType("a.JPEG")).toBe("jpeg");
+		expect(imageType("a.png")).toBe("png");
+		expect(imageType("a")).toBe("png");
+	});
+});
+
+describe("screenshot handler", () => {
+	test("saves a timestamped png of the viewport in the output directory", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		const result = await handler(ctx, argsFor(spec));
+		expect(page.calls).toEqual(["screenshot png fullPage=false"]);
+		const [, file] = /\((.+)\)/.exec(String(result.result)) ?? [];
+		expect(path.dirname(file as string)).toBe(scratch.dir);
+		expect(existsSync(file as string)).toBe(true);
+		expect(result.result).toContain("Screenshot of viewport");
+	});
+
+	test("takes the full page when asked", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		const result = await handler(ctx, argsFor(spec, "--full-page", "--filename=full.png"));
+		expect(page.calls).toEqual(["screenshot png fullPage=true"]);
+		expect(result.result).toBe(`- [Screenshot of full page](${path.join(scratch.dir, "full.png")})`);
+	});
+
+	test("keeps an absolute filename where it is", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const target = path.join(scratch.dir, "elsewhere", "x.jpg");
+		await handler(ctx, argsFor(spec, `--filename=${target}`));
+		expect(existsSync(target)).toBe(true);
+	});
+
+	test("screenshots one element when a target is given", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		const result = await handler(ctx, argsFor(spec, "e7", "--filename=btn.jpg"));
+		expect(page.locator("aria-ref=e7").calls).toEqual(["screenshot jpeg"]);
+		expect(result.result).toContain("Screenshot of element");
+	});
+});
+
+describe("screenshot --color-scheme", () => {
+	test("emulates the scheme before capturing and restores it after, for before/after demo pairs", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		await handler(ctx, argsFor(spec, "--color-scheme=dark", "--filename=dark.png"));
+		expect(page.calls).toEqual([
+			'emulateMedia [{"colorScheme":"dark"}]',
+			"screenshot png fullPage=false",
+			'emulateMedia [{"colorScheme":null}]',
+		]);
+	});
+
+	test("rejects a scheme other than light or dark", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		await expect(handler(ctx, argsFor(spec, "--color-scheme=sepia"))).rejects.toThrow(UsageError);
+	});
+});
+
+describe("screenshot permissions", () => {
+	test("restricts the written file to 0600", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		await handler(ctx, argsFor(spec, "--filename=private.png"));
+		expect(statSync(path.join(scratch.dir, "private.png")).mode & 0o777).toBe(0o600);
+	});
+});

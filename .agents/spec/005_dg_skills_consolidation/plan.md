@@ -1208,22 +1208,22 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 25 — w6-pw
 
 #### Engineering
-- [ ] Spike first: compile playwright-core into the binary; if it fails, stop and ask
-- [ ] Port pw (pw, pw-daemon, pw-code) to `dg-skills pw`
-- [ ] Expand compile spike to local fixture open/snapshot/close, daemon self-reexec/browser discovery and owned registry identity; retain stop-and-ask packaging gate.
-- [ ] `dg-skills pw` also serves local demos (slice 27): Chromium video recording, light/dark before/after screenshots, and the overlay from the shared tour-overlay module.
-- [ ] `dg-skills pw --ext` drives the user's real browser through the extension. Write verbs: `open`, `click`, `fill`. Read verbs: `current` (active tab URL and title plus open tabs), `snapshot` (accessibility tree and visible text on stdout, same shape as plain `pw snapshot`), `screenshot` (visible tab saved to scratch, path printed), `selection` (selected text), `console` (recent errors and warnings). No code execution.
-- [ ] `--ext` safety: read verbs never change the page and ask once per call, naming the tab; write verbs need their own approval; output redacts password fields and token-like values and is size-capped; browser settings and other extensions' pages are blocked with a clear message. Chromium only. The extension feature and its wider permission ship in this slice with security QA.
-- [ ] `dg:demo --local --attach-pr` uses `pw --ext` for the GitHub upload; with neither the extension nor a saved login ready, it hands over the files and the PR link with no PR change. Plain `pw` stays the default for headless runs, recording, mocking and isolated runs.
-- [ ] Ship doctor checks for pw and pw --ext (Playwright browser present, extension paired).
-- [ ] Keep pw code an explicit separately approved action with documented manual narrow permission rules; normal CLI continues refusing run-code. Never change installed permission rules or silently include code in blanket grants.
+- [x] Spike first: compile playwright-core into the binary; if it fails, stop and ask
+- [x] Port pw (pw, pw-daemon, pw-code) to `dg-skills pw`
+- [x] Expand compile spike to local fixture open/snapshot/close, daemon self-reexec/browser discovery and owned registry identity; retain stop-and-ask packaging gate.
+- [ ] `dg-skills pw` also serves local demos (slice 27): Chromium video recording, light/dark before/after screenshots, and the overlay from the shared tour-overlay module. Video recording (ported) and light/dark before/after screenshots (`--color-scheme` on `pw screenshot`) are done; the shared `pkg/common/src/tour-overlay.ts` module is owned by slice 27, does not exist yet in this worktree, and so cannot be wired up from here.
+- [ ] `dg-skills pw --ext` drives the user's real browser through the extension. Write verbs: `open`, `click`, `fill`. Read verbs: `current` (active tab URL and title plus open tabs), `snapshot` (accessibility tree and visible text on stdout, same shape as plain `pw snapshot`), `screenshot` (visible tab saved to scratch, path printed), `selection` (selected text), `console` (recent errors and warnings). No code execution. CLI-side parsing, the typed request/response contract, and output rendering are built and tested against a fake transport; the actual drive-the-browser bridge (`defaultExtTransport`) is an honest stub (`ExtBridgeNotImplementedError`) until a dg-daemon frame and an extension-side handler exist. See `plugins/dg/skills/pw/references/ext-mode.md`.
+- [ ] `--ext` safety: read verbs never change the page and ask once per call, naming the tab; write verbs need their own approval; output redacts password fields and token-like values and is size-capped; browser settings and other extensions' pages are blocked with a clear message. Chromium only. The extension feature and its wider permission ship in this slice with security QA. The refusal, redaction, and approval-outcome rendering logic above is implemented and tested with fakes; it cannot ship as a live, security-reviewed feature until the extension-side bridge in the item above exists.
+- [ ] `dg:demo --local --attach-pr` uses `pw --ext` for the GitHub upload; with neither the extension nor a saved login ready, it hands over the files and the PR link with no PR change. Plain `pw` stays the default for headless runs, recording, mocking and isolated runs. Owned by slice 27 (`dg:demo`); not touched here.
+- [x] Ship doctor checks for pw and pw --ext (Playwright browser present, extension paired).
+- [x] Keep pw code an explicit separately approved action with documented manual narrow permission rules; normal CLI continues refusing run-code. Never change installed permission rules or silently include code in blanket grants.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Port nested core/command/code/e2e fixtures; explicitly execute compiled smoke, ensure close/kill-all cannot target unrelated dg-skills.
+- [x] Port nested core/command/code/e2e fixtures; explicitly execute compiled smoke, ensure close/kill-all cannot target unrelated dg-skills.
 
 #### Acceptance Criteria
-- [ ] Browser executable remains documented prerequisite; no live-user browser state or permission files changed during tests.
+- [x] Browser executable remains documented prerequisite; no live-user browser state or permission files changed during tests.
 
 ### Slice 26 — w6-prototype
 
