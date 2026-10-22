@@ -36,6 +36,33 @@ function sourceRoots(): string[] {
 	return roots;
 }
 
+/** Candidate skills-root directories in lookup order; a selected root suppresses the rest. */
+function candidateSkillsRoots(opts: SkillAssetOptions): string[] {
+	const configured =
+		opts.configuredSkillsRoot ??
+		process.env.DG_SKILLS_DIR ??
+		process.env.DG_SKILLS_DEST;
+	const selected = opts.skillsRoot ?? configured ?? opts.sourceSkillsRoot;
+	const home = process.env.HOME ?? homedir();
+	return selected
+		? [selected]
+		: [
+				join(process.env.DG_HOME ?? join(home, ".dg"), "skills"),
+				...[
+					process.env.CLAUDE_PLUGIN_ROOT,
+					process.env.CODEX_PLUGIN_ROOT,
+					process.env.DG_PLUGIN_ROOT,
+				]
+					.filter((p): p is string => !!p)
+					.flatMap((p) => [
+						join(p, "skills"),
+						join(p, "plugins", "dg", "skills"),
+					]),
+				...claudePluginSkillsDirs(home),
+				...sourceRoots(),
+			];
+}
+
 /** Resolve a real installed asset contained in its skill directory; reject traversal, escaping symlinks, and virtual paths. */
 export function resolveSkillAsset(
 	skill: string,
@@ -53,29 +80,7 @@ export function resolveSkillAsset(
 			`Skill asset path must stay inside ${skill}: ${relativePath}`,
 		);
 	}
-	const configured =
-		opts.configuredSkillsRoot ??
-		process.env.DG_SKILLS_DIR ??
-		process.env.DG_SKILLS_DEST;
-	const selected = opts.skillsRoot ?? configured ?? opts.sourceSkillsRoot;
-	const home = process.env.HOME ?? homedir();
-	const roots = selected
-		? [selected]
-		: [
-				join(process.env.DG_HOME ?? join(home, ".dg"), "skills"),
-				...[
-					process.env.CLAUDE_PLUGIN_ROOT,
-					process.env.CODEX_PLUGIN_ROOT,
-					process.env.DG_PLUGIN_ROOT,
-				]
-					.filter((p): p is string => !!p)
-					.flatMap((p) => [
-						join(p, "skills"),
-						join(p, "plugins", "dg", "skills"),
-					]),
-				...claudePluginSkillsDirs(home),
-				...sourceRoots(),
-			];
+	const roots = candidateSkillsRoots(opts);
 	for (const root of roots) {
 		if (isVirtualBunPath(root))
 			throw new Error(
@@ -95,4 +100,13 @@ export function resolveSkillAsset(
 	throw new Error(
 		`Skill asset not found: ${skill}/${relativePath}. Install the dg skills or set DG_SKILLS_DIR to the installed skills directory (searched ${roots.join(", ")}).`,
 	);
+}
+
+/** Resolve the installed dg skills root itself, for callers that enumerate every shipped skill. */
+export function resolveSkillsRoot(opts: SkillAssetOptions = {}): string | null {
+	for (const root of candidateSkillsRoots(opts)) {
+		if (isVirtualBunPath(root)) continue;
+		if (existsSync(root)) return realpathSync(root);
+	}
+	return null;
 }

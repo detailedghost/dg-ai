@@ -1280,23 +1280,23 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 28 — w7-sync
 
 #### Engineering
-- [ ] Rewrite copilot-sync, opencode claude-sync, codex-sync, codex-claude-sync and ai/sync/*.ts in TypeScript as `dg-skills sync <target>`; targets: copilot, opencode, codex, claude, pi, grok
-- [ ] Source skills from the dg plugin tree and ~/.claude/skills
-- [ ] Keep the verify subcommand
-- [ ] Keep trust/permission writes manual as recorded; document intentional parity exception and assert source/permission/settings files untouched.
-- [ ] Inventory probe/dry-run/apply/verify plus required transforms/wrappers/plugins; preserve existing sync names as thin routers and Codex-only shim routing.
-- [ ] Plugin wins duplicate migrated names with an explicit warning; do not delete local source skills. Track generated outputs for bounded target pruning and native Pi/Grok fixtures with explicit unsupported capabilities.
-- [ ] Pin native skill roots from installed primary docs: Pi ~/.pi/agent/skills and project .pi/skills; Grok ~/.grok/skills and project .grok/skills. Recheck target versions during implementation; unsupported non-skill capabilities must be reported explicitly.
+- [x] Rewrite copilot-sync, opencode claude-sync, codex-sync, codex-claude-sync and ai/sync/*.ts in TypeScript as `dg-skills sync <target>`; targets: copilot, opencode, codex, claude, pi, grok
+- [x] Source skills from the dg plugin tree and ~/.claude/skills
+- [x] Keep the verify subcommand
+- [x] Keep trust/permission writes manual as recorded; document intentional parity exception and assert source/permission/settings files untouched.
+- [x] Inventory probe/dry-run/apply/verify plus required transforms/wrappers/plugins; preserve existing sync names as thin routers and Codex-only shim routing.
+- [x] Plugin wins duplicate migrated names with an explicit warning; do not delete local source skills. Track generated outputs for bounded target pruning and native Pi/Grok fixtures with explicit unsupported capabilities.
+- [x] Pin native skill roots from installed primary docs: Pi ~/.pi/agent/skills and project .pi/skills; Grok ~/.grok/skills and project .grok/skills. Recheck target versions during implementation; unsupported non-skill capabilities must be reported explicitly.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] `dg-skills sync <target> [--dry-run|verify]` preserves the non-permission output tree for existing targets, with plugin precedence and manual trust/permission exceptions documented
-- [ ] Port the 4k lines of sync tests
-- [ ] Port isolated-home nested suites; dry-run/verify zero-write and no permission apply; fake both sources and duplicated names.
-- [ ] Recheck primary Pi/Grok versions/layouts at execution; no sync apply against live HOME.
+- [x] `dg-skills sync <target> [--dry-run|verify]` preserves the non-permission output tree for existing targets, with plugin precedence and manual trust/permission exceptions documented
+- [x] Port the 4k lines of sync tests
+- [x] Port isolated-home nested suites; dry-run/verify zero-write and no permission apply; fake both sources and duplicated names.
+- [x] Recheck primary Pi/Grok versions/layouts at execution; no sync apply against live HOME.
 
 #### Acceptance Criteria
-- [ ] Source roots are portable/configured; strict private-data wall is retained without literal banned paths in public material.
+- [x] Source roots are portable/configured; strict private-data wall is retained without literal banned paths in public material.
 
 ### Slice 29 — w7-skill-tools
 

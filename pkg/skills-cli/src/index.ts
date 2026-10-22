@@ -39,6 +39,7 @@ import { registerTestLive } from "./commands/test-live";
 import { registerThrash } from "./commands/thrash";
 import { registerVcsProvider } from "./commands/vcs-provider";
 import { registerWorktree } from "./commands/worktree";
+import { registerSync } from "./sync/cli";
 import {
 	guardExtensionCommands,
 	registerRequireExtension,
@@ -88,6 +89,7 @@ registerJot(program);
 registerBg(program);
 registerSniff(program);
 registerDoctor(program);
+registerSync(program);
 registerRequireExtension(program);
 
 program.parseAsync(process.argv).catch((err) => {

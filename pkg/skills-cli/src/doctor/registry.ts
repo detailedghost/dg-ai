@@ -28,6 +28,7 @@ import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { specChecks } from "../spec/doctor";
 import { stashChecks } from "../stash/doctor";
+import { syncChecks } from "../sync/doctor";
 import { testLiveChecks } from "../test-live/doctor";
 import { thrashChecks } from "../thrash/doctor";
 import { vcsProviderChecks } from "../vcs-provider/doctor";
@@ -72,4 +73,5 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	sniff: sniffChecks,
 	"require-extension": requireExtensionChecks,
 	polish: polishChecks,
+	sync: syncChecks,
 };

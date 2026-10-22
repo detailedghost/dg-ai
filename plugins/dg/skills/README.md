@@ -58,6 +58,11 @@ binaries. The skills-root README itself is not installed.
 | `erd/` | Generate an architecture map or any Mermaid diagram as Markdown or HTML |
 | `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg-skills test-live`) |
 | `ticket/` | File a Jira ticket from the registered project, assignee, sprint, and issue types |
+| `sync/` | Sync Claude-authored skills and agents into other AI tools (`dg-skills sync`) |
+| `copilot-sync/` | Reconcile Claude-authored skills and agents into GitHub Copilot |
+| `opencode-sync/` | Reconcile Claude-authored skills and agents into OpenCode |
+| `codex-sync/` | Reconcile a Claude-to-Codex setup after Codex's built-in Import flow |
+| `claude-sync/` | Codex's name for `codex-sync`, routed to the same Codex target |
 
 ## Structure
 
@@ -114,6 +119,11 @@ skills/
   erd/
   test-live/
   ticket/
+  sync/
+  copilot-sync/
+  opencode-sync/
+  codex-sync/
+  claude-sync/
 ```
 
 Each folder contains `SKILL.md` and may include `references/`, scripts, or other
