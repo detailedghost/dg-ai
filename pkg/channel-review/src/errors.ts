@@ -14,6 +14,8 @@ export const ERROR_CATALOG = {
 	"CR-108":
 		"The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.",
 	"CR-109":
+		"The ~effort level must be low, medium, high, xhigh, or max, so I didn't review this. Fix the level and try again.",
+	"CR-110":
 		"Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.",
 	"CR-201":
 		"I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.",
@@ -29,6 +31,10 @@ export const ERROR_CATALOG = {
 		"The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.",
 	"CR-207":
 		"{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.",
+	"CR-208":
+		"The AWS SSO sign-in for Bedrock expired on {owner}'s computer, so the task is not complete. {owner} must run `aws sso login` there and approve it in the browser, then post the request again.",
+	"CR-209":
+		"The Bedrock call for {agent} failed before it finished — throttled, access denied, or the model is not available in {owner}'s account — so the task is not complete. Check the Bedrock setup, then try again.",
 	"CR-301":
 		"The review finished, but I found no review on the pull request. Check the PR, or post the request again.",
 	"CR-302":

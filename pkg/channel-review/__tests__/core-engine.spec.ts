@@ -264,10 +264,29 @@ describe("engine help", () => {
 		expect(h.runner.runs).toEqual([]);
 		expect(h.trail("m1")).toEqual([]);
 		expect(h.replies().map((r) => r.text)).toEqual([
-			helpText("Review Bot", "!owner", h.config.rereview.phrases, h.config.reactions, topic),
+			helpText("Review Bot", "!owner", h.config.rereview.phrases, h.config.reactions, { topic }),
 		]);
 		expect(h.replies()[0]?.html).toBe(true);
 		expect(h.state.get().handled.m1?.status).toBe("done");
+	});
+
+	test("resolves the configured default model into the help text", async () => {
+		const h = setup({
+			configExtra: {
+				runner: {
+					claude: { bedrock: { model: "arn:aws:bedrock:us-east-2:1:application-inference-profile/abc", region: "us-east-2" } },
+				},
+			},
+		});
+		await h.engine.handle(buildMessage("m1", "!owner $help"));
+		await h.engine.idle();
+		expect(h.replies().map((r) => r.text)).toEqual([
+			helpText("Review Bot", "!owner", h.config.rereview.phrases, h.config.reactions, {
+				topic: "overview",
+				allowAnySender: h.config.address.allowAnySender,
+				defaultModel: "arn:aws:bedrock:us-east-2:1:application-inference-profile/abc",
+			}),
+		]);
 	});
 
 	test("ignores $help without the owner token", async () => {

@@ -182,13 +182,13 @@ describe("engine worker pool", () => {
 		expect(h.state.get().running).toEqual({});
 	});
 
-	test("refuses a request with CR-109 when the queue is full", async () => {
+	test("refuses a request with CR-110 when the queue is full", async () => {
 		const gate = deferred<RunnerResult>();
 		const h = setup({ runnerScript: () => gate.promise });
 		for (let n = 1; n <= 64; n += 1) await h.engine.handle(reviewMessage(`m${n}`, pr(n)));
 		await h.engine.handle(reviewMessage("m65", pr(65)));
 		expect(h.trail("m65")).toEqual(["+failure"]);
-		expect(h.replies().some((reply) => reply.text.startsWith("CR-109"))).toBe(true);
+		expect(h.replies().some((reply) => reply.text.startsWith("CR-110"))).toBe(true);
 		expect(h.state.get().handled.m65?.status).toBe("failed");
 		gate.resolve(OK_RESULT);
 		await h.engine.idle();

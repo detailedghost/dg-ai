@@ -1794,6 +1794,24 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 		expect(calls[0]).toBe("api projects/acme%2Fwidgets/merge_requests/7");
 	});
 
+	test("a comment with no line becomes a file-position draft note", async () => {
+		const stdinCapture = join(tmp("fake-glab-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
+		fakeGlab(reviewScript());
+
+		await createGitlabProvider().postReview(ref, {
+			verdict: "comment",
+			body: "summary",
+			comments: [{ path: "src/b.ts", body: "file note" }],
+		});
+
+		const [draft] = stdinLines(stdinCapture);
+		expect(draft).toEqual({
+			note: "file note",
+			position: { position_type: "file", base_sha: "b1", start_sha: "s1", head_sha: "h1", new_path: "src/b.ts", old_path: "src/b.ts" },
+		});
+	});
+
 	test("a failing second draft rejects without publishing the drafts already created", async () => {
 		const log = callLogPath();
 		const stdinCapture = join(tmp("fake-glab-stdin-"), "stdin.txt");

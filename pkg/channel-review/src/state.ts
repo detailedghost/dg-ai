@@ -9,7 +9,7 @@ import {
 } from "@dg/common/daemon-db";
 import { DEFAULT_BUSY_TIMEOUT_MS, ForwardOnlyVersionError, readSchemaVersion } from "@dg/common/node";
 import type { ChannelReviewPaths } from "./paths";
-import { RUNNER_NAMES, type RunnerName } from "./runners/types";
+import { EFFORT_LEVELS, type Effort, RUNNER_NAMES, type RunnerName } from "./runners/types";
 import type { PrHost } from "./verdict/types";
 
 export type HandledStatus = "pending" | "running" | "done" | "failed";
@@ -20,6 +20,7 @@ export type BlockedOptions = {
 	fun: boolean;
 	agent?: RunnerName;
 	model?: string;
+	effort?: Effort;
 };
 
 export type CurrentJob = {
@@ -181,6 +182,7 @@ function isBlockedEntry(value: unknown): value is BlockedEntry {
 		(value.options.spice === undefined || (typeof value.options.spice === "number" && Number.isFinite(value.options.spice))) &&
 		(value.options.agent === undefined || RUNNER_NAMES.includes(value.options.agent as RunnerName)) &&
 		(value.options.model === undefined || typeof value.options.model === "string") &&
+		(value.options.effort === undefined || EFFORT_LEVELS.includes(value.options.effort as Effort)) &&
 		typeof value.at === "string"
 	);
 }

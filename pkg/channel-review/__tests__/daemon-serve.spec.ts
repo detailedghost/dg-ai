@@ -188,6 +188,19 @@ describe("serve startup", () => {
 		await done;
 	});
 
+	test.each([
+		[["Bash(/old/thrash-helper:*)", "Agent"], true],
+		[undefined, false],
+	])("a claude tool list %j that cannot run dg-skills thrash warns: %s", async (allowedTools, warns) => {
+		const h = setup(allowedTools ? { configExtra: { runner: { claude: { allowedTools } } } } : {});
+		const { controller, done } = h.startServe();
+		await started(h);
+		const warnings = h.log.lines.filter((line) => line.level === "warn").map((line) => line.message);
+		expect(warnings.some((m) => m.includes("dg-skills thrash"))).toBe(warns);
+		controller.abort();
+		await done;
+	});
+
 	test("a probe that never settles is capped and does not block startup", async () => {
 		const h = setup();
 		h.runners.copilot.probe = () => new Promise(() => undefined);

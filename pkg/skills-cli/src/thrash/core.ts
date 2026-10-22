@@ -1,23 +1,25 @@
 import path from "node:path";
-import type {
-	PostedReview,
-	PostReviewInput,
-	PullRequest,
-	ReviewCommentInput,
-	ReviewThread,
-	ReviewVerdict,
+import {
+	NIT_LADDER,
+	SPICE_DEFAULT,
+	SPICE_MAX,
+	SPICE_MIN,
+	THRASH_REVIEW_HEADING_PREFIX,
+	TIER_EMOJI,
+	VERDICT_LIMITS,
+} from "@dg/common";
+import {
+	isFileComment,
+	type PostedReview,
+	type PostReviewInput,
+	type PullRequest,
+	type ReviewCommentInput,
+	type ReviewThread,
+	type ReviewVerdict,
 } from "../provider/types";
 
 export const TIERS = ["critical", "high", "medium", "low", "nit"] as const;
 export type Tier = (typeof TIERS)[number];
-
-export const TIER_EMOJI: Record<Tier, string> = {
-	critical: "💀",
-	high: "🔥",
-	medium: "⚠️",
-	low: "🧹",
-	nit: "🔬",
-};
 
 export const TIER_LABEL: Record<Tier, string> = {
 	critical: "Critical",
@@ -27,27 +29,7 @@ export const TIER_LABEL: Record<Tier, string> = {
 	nit: "Nit",
 };
 
-export const SPICE_MIN = 1;
-export const SPICE_MAX = 5;
-export const SPICE_DEFAULT = 2;
-
-/** Nits posted per spice level; anything past the cap folds into the summary. */
-export const NIT_LADDER: Record<number, number> = {
-	1: 0,
-	2: 5,
-	3: 10,
-	4: 20,
-	5: Number.POSITIVE_INFINITY,
-};
-
-/** Findings allowed per tier at each spice level; one more requests changes. */
-export const VERDICT_LIMITS: Record<number, Partial<Record<Tier, number>>> = {
-	1: { critical: 0, high: 4 },
-	2: { critical: 0, high: 1 },
-	3: { critical: 0, high: 0, medium: 4 },
-	4: { critical: 0, high: 0, medium: 2 },
-	5: { critical: 0, high: 0, medium: 0, low: 4 },
-};
+export { NIT_LADDER, SPICE_DEFAULT, SPICE_MAX, SPICE_MIN, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
 
 /** Changed lines per review chunk; a diff above this is split. */
 export const LARGE_DIFF_LINES = 3000;
@@ -130,7 +112,18 @@ export interface CompileOptions {
 	minTier?: Tier;
 	commentOnly: boolean;
 	existing: ReviewThread[];
-	coverage?: Coverage;
+	trigger?: ReviewTrigger;
+}
+
+export type ReviewTrigger = "daemon" | "manual";
+
+/** Reads the review origin from THRASH_EXECUTION_CONTEXT; anything unreadable is manual. */
+export function reviewTrigger(context: string | undefined): ReviewTrigger {
+	try {
+		return (JSON.parse(context ?? "") as { origin?: unknown }).origin === "daemon" ? "daemon" : "manual";
+	} catch {
+		return "manual";
+	}
 }
 
 export interface CompiledReview {
@@ -144,7 +137,7 @@ export interface CompiledReview {
 	comments: CompiledComment[];
 	unanchored: Finding[];
 	dropped: DroppedFinding[];
-	coverage?: Coverage;
+	trigger: ReviewTrigger;
 	body: string;
 }
 
@@ -282,11 +275,11 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
 
 const MARKER: Record<DiffLine["kind"], string> = { context: " ", add: "+", del: "-" };
 
-function column(value: number | undefined): string {
-	return (value === undefined ? "" : String(value)).padStart(5);
+function citation(side: Side, value: number | undefined): string {
+	return `${side}:${value ?? "-"}`;
 }
 
-/** Renders each diff line with its old and new file line numbers so a reader never has to count from a hunk header. */
+/** Renders each diff line with labeled old and new file line numbers so a reader never has to count from a hunk header. */
 export function annotateDiff(files: DiffFile[]): string {
 	const out: string[] = [];
 	for (const file of files) {
@@ -296,9 +289,10 @@ export function annotateDiff(files: DiffFile[]): string {
 			out.push("    binary file, no text diff");
 			continue;
 		}
-		out.push("  old   new");
 		for (const line of file.lines) {
-			out.push(`${column(line.oldLine)} ${column(line.newLine)} ${MARKER[line.kind]} ${line.text}`);
+			out.push(
+				`${citation("old", line.oldLine)} ${citation("new", line.newLine)} ${MARKER[line.kind]} ${line.text}`,
+			);
 		}
 		out.push("");
 	}
@@ -607,6 +601,13 @@ export function resolveAnchor(files: DiffFile[], finding: Finding): Anchor | nul
 	return { path: file.path, oldPath, newLine: hit.newLine, oldLine: hit.oldLine };
 }
 
+/** Maps a finding with no usable line onto its whole file, or null when the diff does not contain that file. */
+export function resolveFileAnchor(files: DiffFile[], finding: Finding): Anchor | null {
+	const file = findFile(files, finding);
+	if (!file || file.status === "binary") return null;
+	return { path: file.path, oldPath: file.oldPath !== file.path ? file.oldPath : undefined };
+}
+
 const FENCED_JSON_RE = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
 
 function extractJsonText(text: string): string {
@@ -721,7 +722,7 @@ function isThrashThread(thread: ReviewThread): boolean {
 }
 
 function isDuplicate(anchor: Anchor, existing: ReviewThread[]): boolean {
-	const line = anchor.newLine ?? anchor.oldLine;
+	const line = anchor.newLine ?? anchor.oldLine ?? null;
 	return existing.some((t) => !t.resolved && t.path === anchor.path && t.line === line && isThrashThread(t));
 }
 
@@ -753,43 +754,15 @@ function renderAlert(kind: string, heading: string, items: string[]): string[] {
 	return [`> [!${kind}]`, `> **${heading}**`, ">", ...text.map((line) => `> ${line}`), ""];
 }
 
-function renderFindingsTable(comments: CompiledComment[]): string[] {
-	if (comments.length === 0) return [];
-	const rows = [...comments]
-		.sort((a, b) => tierRank(a.tier) - tierRank(b.tier))
-		.map((c) => {
-			const where = `\`${c.path}:${c.newLine ?? c.oldLine}\``;
-			return `| ${titled(TIER_EMOJI[c.tier], TIER_LABEL[c.tier])} | ${where} | ${tableCell(c.title)} |`;
-		});
-	return ["### Findings", "", "| | Where | Finding |", "|---|---|---|", ...rows, ""];
-}
-
 function verdictLabel(verdict: ReviewVerdict): string {
 	if (verdict === "approve") return "Approve";
 	if (verdict === "request_changes") return "Request changes";
 	return "Comment";
 }
 
-const SKIPPED_LISTED = 10;
-
-function renderCoverage({ chunks, skipped }: Coverage): string[] {
-	const describe = (c: PlanChunk) =>
-		`${c.id}. \`${c.label}\`: ${plural(c.files.length, "file")}, ${c.changed} changed lines`;
-	const lines = ["", "### Review coverage", ""];
-	lines.push(
-		`This diff was reviewed in ${plural(chunks.length, "chunk")}.`,
-		"",
-	);
-	lines.push(...chunks.map(describe));
-	if (skipped.length > 0) {
-		const listed = skipped.slice(0, SKIPPED_LISTED).map((p) => `\`${p}\``);
-		const more = skipped.length > SKIPPED_LISTED ? `, and ${skipped.length - SKIPPED_LISTED} more` : "";
-		lines.push(
-			"",
-			`Skipped ${plural(skipped.length, "generated, lock or vendored file")}: ${listed.join(", ")}${more}.`,
-		);
-	}
-	return lines;
+function commentCounts(comments: CompiledComment[]): string {
+	const files = comments.filter(isFileComment).length;
+	return `${plural(comments.length - files, "line comment")}, ${plural(files, "file comment")}`;
 }
 
 function renderBody(review: Omit<CompiledReview, "body">): string {
@@ -801,29 +774,23 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 	});
 	const spice = titled(spiceLabel(review.spice), `Spice ${review.spice} of ${SPICE_MAX}`);
 	const lines: string[] = [
-		`## Thrash review ${spice}`,
+		`${THRASH_REVIEW_HEADING_PREFIX}${spice}`,
 		"",
 		...renderAlert("NOTE", "What changed", review.changed ? [review.changed] : []),
 		...renderAlert("TIP", "Strengths", review.strengths),
 		...renderAlert("WARNING", "Opportunities", review.opportunities),
-		...renderFindingsTable(review.comments),
-		`${counts.join(" · ")} · **Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}.`,
+		`${counts.join(" · ")} · **Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}. · ${commentCounts(review.comments)}`,
+		"",
+		`**Trigger:** ${review.trigger === "daemon" ? "Automatic (daemon)" : "Manual (CLI)"}`,
 	];
-	if (review.coverage) lines.push(...renderCoverage(review.coverage));
 	if (duplicates > 0) {
 		lines.push("", `${plural(duplicates, "finding")} already flagged on an open thread and not reposted.`);
 	}
 	if (review.unanchored.length > 0) {
-		lines.push("", "### Findings without a line anchor");
-		for (const f of review.unanchored) {
-			const where = f.path ? `\`${f.path}\`: ` : "";
-			lines.push(`- ${where}${renderComment(f)}`);
-		}
-	}
-	if (folded.length > 0) {
-		lines.push("", `### Folded nits (${folded.length})`);
-		for (const d of folded) {
-			lines.push(`- \`${d.finding.path}:${d.finding.line ?? ""}\` ${d.finding.body}`);
+		const count = review.unanchored.length;
+		lines.push("", `${plural(count, "finding")} named no file in this diff and ${count === 1 ? "was" : "were"} not posted:`);
+		for (const finding of review.unanchored) {
+			lines.push(`- ${TIER_EMOJI[finding.tier]} ${finding.title}`);
 		}
 	}
 	return lines.join("\n");
@@ -849,7 +816,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 			dropped.push({ finding, reason: "nit-ladder" });
 			continue;
 		}
-		const anchor = resolveAnchor(files, finding);
+		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
 		if (!anchor) {
 			unanchored.push(finding);
 			continue;
@@ -873,7 +840,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		comments,
 		unanchored,
 		dropped,
-		coverage: opts.coverage,
+		trigger: opts.trigger ?? "manual",
 	};
 	return { ...compiled, body: renderBody(compiled) };
 }
@@ -892,6 +859,12 @@ export function toPostReviewInput(review: CompiledReview): PostReviewInput {
 	};
 }
 
+function previewLine(c: CompiledComment): string {
+	if (isFileComment(c)) return "file";
+	if (c.newLine !== undefined) return `${c.newLine} (new)`;
+	return `${c.oldLine} (old)`;
+}
+
 export function renderPreview(review: CompiledReview, target: string): string {
 	const folded = review.dropped.filter((d) => d.reason === "nit-ladder").length;
 	const duplicates = review.dropped.filter((d) => d.reason === "duplicate").length;
@@ -901,14 +874,13 @@ export function renderPreview(review: CompiledReview, target: string): string {
 		`Thrash preview · ${spiceLabel(review.spice)} (${review.spice}/${SPICE_MAX}) · ${target}`,
 		`Verdict: ${verdictLabel(review.verdict).toUpperCase()} (${review.reason})`,
 		TIERS.map((tier) => `${TIER_EMOJI[tier]} ${t[tier]}`).join("  "),
-		`Posting ${plural(review.comments.length, "inline comment")}; ` +
+		`Posting ${commentCounts(review.comments)}; ` +
 			`${folded} folded, ${duplicates} duplicate, ${belowMin} below min tier, ` +
 			`${review.unanchored.length} unanchored.`,
 		"",
 	];
 	for (const c of review.comments) {
-		const line = c.newLine !== undefined ? `${c.newLine} (new)` : `${c.oldLine} (old)`;
-		lines.push(`${c.path}:${line}`, `  ${c.body}`, "");
+		lines.push(`${c.path}:${previewLine(c)}`, `  ${c.body}`, "");
 	}
 	if (review.unanchored.length > 0) {
 		lines.push("Unanchored:");
@@ -1007,9 +979,9 @@ function tallyVerdictCell(row: TallyRow): string {
 	return row.posted.degraded ? `${label} (${verdictLabel(row.review.verdict).toLowerCase()} refused)` : label;
 }
 
-/** Markdown summary of one or more reviews: PR, link, findings per tier, inline count, verdict. */
+/** Markdown summary of one or more reviews: PR, link, findings per tier, comment count, verdict. */
 export function renderTallyTable(rows: Array<TallyRow | StackStatusRow>): string {
-	const header = `| PR | Link | ${TIERS.map((t) => TIER_EMOJI[t]).join(" | ")} | Inline | Verdict |`;
+	const header = `| PR | Link | ${TIERS.map((t) => TIER_EMOJI[t]).join(" | ")} | Comments | Verdict |`;
 	const lines = [header, `|${" --- |".repeat(TIERS.length + 4)}`];
 	for (const row of rows) {
 		if (isStackStatusRow(row)) {
@@ -1025,11 +997,11 @@ export function renderTallyTable(rows: Array<TallyRow | StackStatusRow>): string
 	return `${lines.join("\n")}\n`;
 }
 
-/** One `## path:line` section per anchored comment, in the shape /address already parses. */
+/** One `## path:line` or `## path (whole file)` section per posted comment, for /address to parse. */
 export function renderAddressFile(review: CompiledReview): string {
 	const sections = review.comments.map((c) => {
-		const line = c.newLine ?? c.oldLine ?? 0;
-		return `## ${c.path}:${line}\n\nseverity: ${ADDRESS_SEVERITY[c.tier]}\n\n${c.body}\n`;
+		const where = isFileComment(c) ? `${c.path} (whole file)` : `${c.path}:${c.newLine ?? c.oldLine}`;
+		return `## ${where}\n\nseverity: ${ADDRESS_SEVERITY[c.tier]}\n\n${c.body}\n`;
 	});
 	return sections.join("\n");
 }

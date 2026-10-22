@@ -7,9 +7,13 @@ export type LinePaths = { name: string; dir: string; dbPath: string; pidPath: st
 export const DEFAULT_LINE = "default";
 const LINE_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
+export function isLineName(value: string): boolean {
+	return LINE_PATTERN.test(value);
+}
+
 /** Each line is its own number: its own key, contact, messages, and listener. */
 export function linePaths(paths: DgPaths, name: string = DEFAULT_LINE): LinePaths {
-	if (!LINE_PATTERN.test(name)) {
+	if (!isLineName(name)) {
 		throw new DgCliError(`line must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
 	}
 	const dir = join(paths.phoneFriendRoot, name);

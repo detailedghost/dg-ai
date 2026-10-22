@@ -20,4 +20,5 @@ export * from "./serial-queue";
 export * from "./session-connect";
 export * from "./skill-files";
 export * from "./slug";
+export * from "./thrash-spice";
 export * from "./types";

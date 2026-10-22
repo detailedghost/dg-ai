@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { loadConfig, REACTION_DEFAULTS, resolveEnv } from "../../channel-review/src/config";
+import {
+	loadConfig,
+	REACTION_DEFAULTS,
+	resolveEnv,
+} from "../../channel-review/src/config";
 import { ERROR_CATALOG } from "../../channel-review/src/errors";
 import { helpText } from "../../channel-review/src/help";
 import { RUNNER_NAMES } from "../../channel-review/src/runners/types";
@@ -84,7 +88,9 @@ function declaredCommands(source: string): string[] {
 
 function declaredFlags(...sources: string[]): string[] {
 	const flags = sources.flatMap((source) => [
-		...source.matchAll(/(?:\.option|new Option)\(\s*"(?:-[a-z], )?(--[a-z][a-z-]*)/g),
+		...source.matchAll(
+			/(?:\.option|new Option)\(\s*"(?:-[a-z], )?(--[a-z][a-z-]*)/g,
+		),
 	]);
 	return [...new Set(flags.map((m) => m[1]))];
 }
@@ -207,7 +213,15 @@ describe("channel-review skill distribution", () => {
 
 	test("SKILL.md names every operation and the fun-pool review wording matches the open gate", () => {
 		const skill = readSkill();
-		for (const name of ["start", "stop", "status", "logs", "run", "env", "emojis"])
+		for (const name of [
+			"start",
+			"stop",
+			"status",
+			"logs",
+			"run",
+			"env",
+			"emojis",
+		])
 			expect(skill).toMatch(new RegExp(`channel-review ${name}\\b`));
 		expect(allContent()).toMatch(
 			/reviewed by the maintainer before each release|human-approved/,
@@ -259,7 +273,9 @@ describe("channel-review skill distribution", () => {
 
 describe("channel-review docs do not drift from the shipped CLI", () => {
 	test("help and runner documentation list every selectable backend", () => {
-		const reviewHelp = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "review");
+		const reviewHelp = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+			topic: "review",
+		});
 		const commands = readRef("commands.md");
 		const setup = readRef("setup.md");
 		for (const name of RUNNER_NAMES) {
@@ -342,24 +358,35 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 
 	test.each([
 		["overview", "### Commands", 5],
-		["review", "### Review flags", 8],
+		["review", "### Review flags", 9],
 		["address", "### Address flags", 4],
-	] as const)("the $help %s section and the commands.md %s table list the same tokens", (topic, heading, size) => {
-		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, topic);
-		const helpTokens = new Set(help.match(TOKEN) ?? []);
-		const documented = new Set(
-			tableRows(section(readRef("commands.md"), heading)).flatMap((cells) =>
-				stripTicks(cells[0] ?? "").match(/^[$~]/) ? ((cells[0] ?? "").match(TOKEN) ?? []) : [],
-			),
-		);
-		expect(helpTokens.size).toBe(size);
-		expect([...documented].sort()).toEqual([...helpTokens].sort());
-	});
+	] as const)(
+		"the $help %s section and the commands.md %s table list the same tokens",
+		(topic, heading, size) => {
+			const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, { topic });
+			const helpTokens = new Set(help.match(TOKEN) ?? []);
+			const documented = new Set(
+				tableRows(section(readRef("commands.md"), heading)).flatMap((cells) =>
+					stripTicks(cells[0] ?? "").match(/^[$~]/)
+						? ((cells[0] ?? "").match(TOKEN) ?? [])
+						: [],
+				),
+			);
+			expect(helpTokens.size).toBe(size);
+			expect([...documented].sort()).toEqual([...helpTokens].sort());
+		},
+	);
 
 	test("the $help $emoji slots and the commands.md emoji slot table list the same slots", () => {
-		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "emoji");
-		const helpSlots = [...help.matchAll(/<li><code>(\w+)<\/code>/g)].map((m) => m[1]);
-		const documented = tableRows(section(readRef("commands.md"), "### Emoji command"))
+		const help = helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+			topic: "emoji",
+		});
+		const helpSlots = [...help.matchAll(/<li><code>(\w+)<\/code>/g)].map(
+			(m) => m[1],
+		);
+		const documented = tableRows(
+			section(readRef("commands.md"), "### Emoji command"),
+		)
 			.map((cells) => /^`(\w+)`/.exec(cells[0] ?? "")?.[1])
 			.filter((slot): slot is string => slot !== undefined);
 		expect(helpSlots.sort()).toEqual(Object.keys(REACTION_DEFAULTS).sort());
@@ -470,16 +497,23 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"Bash(<home>/.dg/bin/dg-skills address:*)",
 		])
 			expect(setup).toContain(rule);
-		const address = /addressAllowedTools \?\? \[([\s\S]*?)\];/.exec(configSource)?.[1] ?? "";
+		const address =
+			/addressAllowedTools \?\? \[([\s\S]*?)\];/.exec(configSource)?.[1] ?? "";
 		for (const [, tool] of address.matchAll(/"Bash\((\w+):\*\)"/g))
 			expect(setup).toContain(`\`${tool}\``);
-		expect(/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1]).toBe("60");
+		expect(
+			/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1],
+		).toBe("60");
 		expect(setup).toContain("`<home>/code/bot`");
 		expect(configSource).toContain(".dg/bin/dg-skills");
 		expect(setup).toContain("dg-skills deps-upgrade");
 		for (const name of ["thrash", "address", "deps-upgrade"])
-			expect(setup).toContain(`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`);
-		expect(setup).not.toContain("`.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md`");
+			expect(setup).toContain(
+				`Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/${name}/**)`,
+			);
+		expect(setup).not.toContain(
+			"`.copilot/skills/thrash/SKILL.md` or `.claude/skills/thrash/SKILL.md`",
+		);
 	});
 
 	test("setup.md documents chats, the shared queue, and the per-chat status fields", () => {
@@ -530,7 +564,9 @@ describe("channel-review example config and relay docs", () => {
 		const guide = readRef("relay-setup.md");
 		expect(guide).toContain("pkg/channel-review/README.md");
 		expect(guide).toContain("config.example.json");
-		expect(existsSync(join(REPO_ROOT, "pkg/channel-review/README.md"))).toBe(true);
+		expect(existsSync(join(REPO_ROOT, "pkg/channel-review/README.md"))).toBe(
+			true,
+		);
 	});
 });
 

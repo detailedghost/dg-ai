@@ -66,6 +66,7 @@ Claude Code also accepts the bare `/<name>`.
 | `grill-me` | Interview the user about a design until every branch is resolved |
 | `hook-comment-disable` | Turn off the American-English hook for one session |
 | `hunt` | Find the root cause of a bug with parallel evidence gathering |
+| `jobs` | List and control the dg-daemon and channel-review daemons |
 | `jot` | Save a short note or a session handoff; `dg-skills jot` |
 | `kick`, `pickup`, `prd` | Park a planned spec, resume it, or hand it off |
 | `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |

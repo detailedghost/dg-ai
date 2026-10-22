@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { generateSecretKey, nip19 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 import {
 	acceptCall,
@@ -19,17 +19,20 @@ import {
 	readConfig,
 	readFileKey,
 	readInvite,
+	resolveLine,
 	withDb,
 	writeConfig,
 	writeInvite,
 } from "../../src/phone-friend/store";
 
 let home: string;
+let paths: ReturnType<typeof resolveDgPaths>;
 let line: LinePaths;
 
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-phone-friend-store-"));
-	line = linePaths(resolveDgPaths({ env: { DG_HOME: home } }));
+	paths = resolveDgPaths({ env: { DG_HOME: home } });
+	line = linePaths(paths);
 });
 
 afterEach(() => {
@@ -135,9 +138,51 @@ describe("acceptCall", () => {
 	it("clears the invite and saves the caller, keeping the relays", () => {
 		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99 }, ["wss://x.example"]);
 
-		acceptCall(line, "npub1caller");
+		acceptCall(paths, line, "npub1caller");
 
 		expect(readInvite(line)).toBeUndefined();
 		expect(readConfig(line)).toEqual({ contact: "npub1caller", relays: ["wss://x.example"] });
+	});
+
+	it("carries the invite's name over to the config when it is still free", () => {
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99, name: "velora" }, DEFAULT_RELAYS);
+
+		acceptCall(paths, line, "npub1caller");
+
+		expect(readConfig(line).name).toBe("velora");
+	});
+
+	it("drops the invite's name instead of taking it from another line that claimed it since", () => {
+		writeConfig(linePaths(paths, "other"), { name: "velora", relays: DEFAULT_RELAYS });
+		writeInvite(line, { secret: "ab".repeat(32), expiresAt: 99, name: "velora" }, DEFAULT_RELAYS);
+
+		acceptCall(paths, line, "npub1caller");
+
+		expect(readConfig(line)).toEqual({ contact: "npub1caller", relays: DEFAULT_RELAYS });
+	});
+});
+
+describe("resolveLine", () => {
+	const npub = nip19.npubEncode(getPublicKey(generateSecretKey()));
+	const paths = () => resolveDgPaths({ env: { DG_HOME: home } });
+
+	it("finds a line by its name, its contact name, or its contact npub", () => {
+		writeConfig(linePaths(paths(), "consolidation"), { contact: npub, name: "velora", relays: DEFAULT_RELAYS });
+
+		expect(resolveLine(paths(), "consolidation").name).toBe("consolidation");
+		expect(resolveLine(paths(), "velora").name).toBe("consolidation");
+		expect(resolveLine(paths(), npub).name).toBe("consolidation");
+	});
+
+	it("treats an unknown name as a new line and refuses an unknown npub", () => {
+		expect(resolveLine(paths(), "fresh").name).toBe("fresh");
+		expect(() => resolveLine(paths(), npub)).toThrow("no line has contact");
+	});
+
+	it("refuses a contact that two lines share, and names both lines", () => {
+		writeConfig(linePaths(paths(), "a"), { contact: npub, relays: DEFAULT_RELAYS });
+		writeConfig(linePaths(paths(), "b"), { contact: npub, relays: DEFAULT_RELAYS });
+
+		expect(() => resolveLine(paths(), npub)).toThrow("matches lines a, b");
 	});
 });

@@ -68,8 +68,8 @@ in [setup](setup.md#configuration).
 
 ### Review flags
 
-`$help $review` (or `$help $thrash`) lists these flags, the re-review rules, and
-the review reactions.
+`$help $review` (or `$help $thrash`) lists these flags, what each spice level
+fails on and how many nits it posts, the re-review rules, and the review reactions.
 
 | Token | Meaning | Missing or invalid input |
 | --- | --- | --- |
@@ -79,6 +79,7 @@ the review reactions.
 | `~comment` | Pass thrash's comment option. | Optional. |
 | `~agent claude\|codex\|copilot\|grok` | Choose a runner for this review. | Missing or unknown runner: CR-103. |
 | `~model <name>` | Pass a model name to the selected runner. | Missing or malformed name: CR-108. |
+| `~effort low\|medium\|high\|xhigh\|max` | Pass an effort level to a Claude review. Other runners ignore it. | Missing or unknown level: CR-109. |
 | `~stacked` | Review the target and its descendants. | Unreadable stack: CR-304. |
 | `~fun` | Add a verdict-matched GIF card or emoji text to the reply. | Optional. |
 
@@ -274,7 +275,8 @@ the shipped catalog exactly.
 | `CR-106` | `Only {owner} can run $address, so I didn't run anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-107` | `Only {owner} can run $emoji, so I didn't change anything.` | Add the sender ID to `owner.senderIds`, or set `address.allowAnySender`. |
 | `CR-108` | `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens. Fix the name and try again.` | Provide a valid model name. |
-| `CR-109` | `Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.` | Wait for running jobs to finish, then post the request again. Raise `runner.concurrency` to drain the queue faster. |
+| `CR-109` | `The ~effort level must be low, medium, high, xhigh, or max, so I didn't review this. Fix the level and try again.` | Use one of the five levels. |
+| `CR-110` | `Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.` | Wait for running jobs to finish, then post the request again. Raise `runner.concurrency` to drain the queue faster. |
 | `CR-201` | `I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.` | Install the runner or correct its executable path. |
 | `CR-202` | `{agent} is not signed in on {owner}'s computer, so I didn't review this. Ask {owner} to sign in, or try ~agent claude.` | Sign in to the runner. |
 | `CR-203` | `{agent} stopped with an error before it finished, so the review is not complete. Try again, or try a different ~agent.` | Inspect the job log; retry or switch runners. |
@@ -282,6 +284,8 @@ the shipped catalog exactly.
 | `CR-205` | `The service stopped before the job finished. If you sent a request, post it again to restart it.` | Post the request again after the daemon starts. |
 | `CR-206` | `The thrash skill is not installed for {agent} on {owner}'s computer, so I didn't review this. Ask {owner} to install it, or try a different ~agent.` | Install thrash in that runner's skill roots. |
 | `CR-207` | `{agent} reached its usage or token limit, so the task is not complete. Try a different ~model or ~agent, or wait for the limit to reset.` | Reviews retry once with the configured `runner.fallback` when it is set and passes its probe. |
+| `CR-208` | The AWS SSO sign-in for Bedrock expired on {owner}'s computer, so the task is not complete. {owner} must run `aws sso login` there and approve it in the browser, then post the request again. | No fallback; the daemon starts `aws sso login` for the configured profile in the background — wait for the human to approve the browser sign-in, then re-send the request. |
+| `CR-209` | `The Bedrock call for {agent} failed before it finished — throttled, access denied, or the model is not available in {owner}'s account — so the task is not complete. Check the Bedrock setup, then try again.` | Inspect the job log and the Bedrock console; fix the throttle, access, or model issue, then retry. |
 | `CR-301` | `The review finished, but I found no review on the pull request. Check the PR, or post the request again.` | Check the PR and runner output. |
 | `CR-302` | `I couldn't open that pull request. Check that the link is right and that {owner} can see it.` | Verify the URL and repository access. |
 | `CR-303` | `The GitHub or GitLab tool for this link is missing or not signed in on {owner}'s computer. Ask {owner} to sign in, then try again.` | Install and sign in to `gh` or `glab`. |

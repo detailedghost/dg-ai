@@ -26,7 +26,8 @@ MIN_TIER: <tier or "none">
 TARGET: <URL or local path>
 
 Read ANNOTATED_DIFF, then CONTEXT. Run the checklists for SPICE per your system prompt. Classify each
-finding's tier before you write it. Cite line numbers from the annotated columns only.
+finding's tier before you write it. Cite only the labeled `old:`/`new:` values from ANNOTATED_DIFF; never a line
+number from your own file-reading tool.
 Write exactly one fenced json block with "changed", "strengths", "opportunities" and "findings" to FINDINGS_PATH.
 Reply with only: WROTE <path> <count> findings
 ```

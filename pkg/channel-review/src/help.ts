@@ -1,5 +1,6 @@
-import { escapeHtml } from "@dg/common";
+import { escapeHtml, NIT_LADDER, SPICE_DEFAULT, TIER_EMOJI, VERDICT_LIMITS } from "@dg/common";
 import type { ReactionState } from "./reactions";
+import { EFFORT_LEVELS, RUNNER_NAMES } from "./runners/types";
 import type { HelpTopic } from "./trigger";
 
 type Row = readonly [string, string];
@@ -28,15 +29,39 @@ export const EMOJI_WAIT_MINUTES = 5;
 
 const REVIEW_FLAGS: readonly Row[] = [
 	["~spice 1-5", "how strict the review is"],
-	["~model &lt;name&gt;", "pick a model for this review"],
+	[
+		"~model &lt;name&gt;",
+		"pick a model for this review: <code>opus</code>, <code>sonnet</code>, <code>haiku</code>, or a full model ID such as a Bedrock ID",
+	],
+	[`~effort ${EFFORT_LEVELS.join("|")}`, "how hard Claude thinks (Claude only)"],
 	["~comment", "post comments only, never approve or request changes"],
 	[
-		"~agent claude|codex|copilot|grok",
+		`~agent ${RUNNER_NAMES.join("|")}`,
 		"pick the reviewer (codex, copilot, and grok are experimental)",
 	],
 	["~stacked", "also review the PRs stacked on this one"],
 	["~fun", "add a GIF or emoji to the result"],
 ];
+
+function nitsPosted(nits: number): string {
+	if (nits === 0) return "posts no nits";
+	if (Number.isFinite(nits)) return `posts up to ${nits} nits`;
+	return "posts every nit";
+}
+
+function spiceLevel([level, limits]: [string, (typeof VERDICT_LIMITS)[number]]): string {
+	const fails = Object.entries(limits)
+		.map(([tier, limit]) => {
+			const name = `${TIER_EMOJI[tier as keyof typeof TIER_EMOJI]} ${tier}`;
+			return limit === 0 ? `any ${name}` : `more than ${limit} ${name}`;
+		})
+		.join(", ");
+	const posted = nitsPosted(NIT_LADDER[Number(level)] ?? 0);
+	const fallback = Number(level) === SPICE_DEFAULT ? " (default)" : "";
+	return `<li><code>${level}</code>${fallback}: requests changes on ${fails}; ${posted}</li>`;
+}
+
+const SPICE_LEVELS = `<p><b>Spice levels</b> set how hard the review looks and how many findings fail it. The tone never changes.</p><ul>${Object.entries(VERDICT_LIMITS).map(spiceLevel).join("")}</ul>`;
 
 const ADDRESS_FLAGS: readonly Row[] = [
 	["~no-ci", "fix review comments only, skip failing CI checks"],
@@ -95,13 +120,18 @@ function reactionList(
 	return `<p><b>Reactions</b> on your message</p><ul>${items.join("")}</ul>`;
 }
 
+export type HelpTextOptions = {
+	topic?: HelpTopic;
+	allowAnySender?: boolean;
+	defaultModel?: string;
+};
+
 export function helpText(
 	botName: string,
 	ownerToken: string,
 	phrases: readonly string[],
 	reactions: Record<ReactionState, string>,
-	topic: HelpTopic = "overview",
-	allowAnySender = false,
+	{ topic = "overview", allowAnySender = false, defaultModel }: HelpTextOptions = {},
 ): string {
 	const bot = escapeHtml(botName);
 	const owner = escapeHtml(ownerToken);
@@ -116,6 +146,10 @@ export function helpText(
 			"<p><b>$review</b> and <b>$thrash</b> run a review of the PR.</p>",
 			example("$review &lt;PR link&gt; ~spice 3"),
 			`<p><b>Flags</b></p>${list(REVIEW_FLAGS)}`,
+			SPICE_LEVELS,
+			defaultModel
+				? `<p><b>Default model:</b> <code>${escapeHtml(defaultModel)}</code>. Use ~model to pick a different one.</p>`
+				: "",
 			"<p>When Claude reaches its usage limit, a review retries once with the runner set in <code>runner.fallback</code>, if one is set and ready. A reply to your request tells you about the switch.</p>",
 			`<p><b>Re-review:</b> mention @${bot} with a ready word (${words}) and the PR link, or quote-reply to a request. This re-runs the review for any PR, not only blocked ones.</p>`,
 			reactionList(bot, REVIEW_REACTIONS, reactions),

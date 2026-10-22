@@ -63,7 +63,7 @@ export async function probeGrok(
 				skill.userInvocable === true &&
 				skill.disabled !== true &&
 				skill.compatibilityStatus !== "disabled" &&
-				!skill.collidesWith,
+				(!skill.collidesWith || skill.invocableAs === "dg:thrash"),
 		);
 		return installed ? { ok: true } : { ok: false, code: "CR-206" };
 	} catch (error) {

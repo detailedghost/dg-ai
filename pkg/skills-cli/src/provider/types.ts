@@ -316,6 +316,11 @@ export interface ReviewCommentInput {
 	body: string;
 }
 
+/** True for a comment on a whole file: it carries neither newLine nor oldLine. */
+export function isFileComment(c: ReviewCommentInput): boolean {
+	return c.newLine === undefined && c.oldLine === undefined;
+}
+
 /** One summary verdict and its inline comments, published together as a review. */
 export interface PostReviewInput {
 	verdict: ReviewVerdict;

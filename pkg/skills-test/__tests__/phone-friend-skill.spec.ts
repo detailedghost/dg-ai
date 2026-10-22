@@ -46,11 +46,11 @@ describe("phone-friend skill", () => {
 	});
 
 	test("sends replies through a quoted heredoc, not a shell argument", () => {
-		expect(skill).toContain(`phone-friend say - <<'MSG'`);
 		expect(skill).toContain(`phone-friend say - < "$REPLY_FILE"`);
 		expect(skill).toContain("Never copy message text into the heredoc.");
 		expect(skill).not.toMatch(/phone-friend say "/);
-		expect(skill).toContain(`phone-friend dial - 'hello from the other side' <<'CARD'`);
+		expect(skill).toContain(`phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'`);
+		expect(skill).toContain(`phone-friend --line <NAME-FOR-ME> say - <<'MSG'`);
 		expect(skill).not.toMatch(/phone-friend dial '/);
 	});
 
