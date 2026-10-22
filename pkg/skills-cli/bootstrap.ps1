@@ -1,6 +1,6 @@
 # Install the compiled dg-skills CLI for Windows into %USERPROFILE%\.dg\bin.
 #
-#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.ps1 | iex
+#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.

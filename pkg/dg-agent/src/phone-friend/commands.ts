@@ -55,6 +55,8 @@ export type PhoneFriendDeps = KeyDeps & {
 
 const FOLLOW_POLL_MS = 1000;
 const STOP_WAIT_MS = 5000;
+const MAX_RESTART_ATTEMPTS = 3;
+const STABLE_TICKS_TO_RESET = 3;
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 const SECRET_BYTES = 32;
@@ -232,6 +234,10 @@ function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
 	return invite && invite.expiresAt > deps.now() ? invite : undefined;
 }
 
+function canConnect(config: PhoneFriendConfig, deps: PhoneFriendDeps): boolean {
+	return Boolean(config.contact) || liveInvite(deps) !== undefined;
+}
+
 function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
 	return {
 		contact: config.contact ? contactHex(config.contact) : undefined,
@@ -272,7 +278,7 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 	const config = readConfig(deps.line);
 	const npub = await myNpub(deps);
 	const contact = config.contact ?? null;
-	if (!contact && !liveInvite(deps)) {
+	if (!canConnect(config, deps)) {
 		throw new DgCliError(
 			"no contact yet; run `dg-agent phone-friend invite` and give the card to the other side, " +
 				"or `dg-agent phone-friend dial <card>`",
@@ -361,9 +367,21 @@ function openInbox(deps: PhoneFriendDeps): PhoneFriendDb {
 	return PhoneFriendDb.open(deps.line, deps.now);
 }
 
-export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
+export async function phoneAnswer(
+	deps: PhoneFriendDeps,
+	opts: { restart?: boolean } = {},
+): Promise<void> {
+	let restartAttempts = 0;
+	let stableTicks = 0;
+	async function respawn(): Promise<void> {
+		printJson(deps, await spawnOrRestart(deps));
+	}
 	if (livePid(deps) === undefined) {
-		throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
+		if (!opts.restart || !canConnect(readConfig(deps.line), deps)) {
+			throw new DgCliError("the phone-friend listener is off; run `dg-agent phone-friend on`");
+		}
+		await respawn();
+		restartAttempts = 1;
 	}
 	const inbox = openInbox(deps);
 	try {
@@ -372,7 +390,23 @@ export async function phoneAnswer(deps: PhoneFriendDeps): Promise<void> {
 			await deps.sleep(FOLLOW_POLL_MS);
 			if (livePid(deps) === undefined) {
 				printUnread(inbox, deps);
-				throw new DgCliError("the phone-friend listener stopped");
+				if (!opts.restart) throw new DgCliError("the phone-friend listener stopped");
+				if (!canConnect(readConfig(deps.line), deps)) {
+					throw new DgCliError(
+						"the phone-friend listener stopped and there is no contact or live invite to restart it with",
+					);
+				}
+				if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
+					throw new DgCliError(
+						`the phone-friend listener keeps dying right after it restarts (tried ${MAX_RESTART_ATTEMPTS} times); check ${deps.line.logPath}`,
+					);
+				}
+				stableTicks = 0;
+				await respawn();
+				restartAttempts += 1;
+			} else if (restartAttempts > 0) {
+				stableTicks += 1;
+				if (stableTicks >= STABLE_TICKS_TO_RESET) restartAttempts = 0;
 			}
 		}
 	} finally {
@@ -542,8 +576,14 @@ export function registerPhoneFriendCommands(
 
 	phone
 		.command("answer")
-		.description("stay on the line: print new messages as JSON lines until the listener stops")
-		.action(() => phoneAnswer(makeDeps(session, line)));
+		.description(
+			"stay on the line: print new messages as JSON lines until the listener stops, or restart it instead with --restart",
+		)
+		.option(
+			"--restart",
+			"if the listener stops, restart it and keep answering (for an unattended Monitor watch)",
+		)
+		.action((opts: { restart?: boolean }) => phoneAnswer(makeDeps(session, line), opts));
 
 	phone
 		.command("voicemail")

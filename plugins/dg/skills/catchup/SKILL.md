@@ -27,9 +27,11 @@ command. Shell variables do not persist between tool calls:
 
 ```bash
 ~/.dg/bin/dg-skills catchup --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ~/.dg/bin/dg-skills catchup
 ```
+
+If a step fails, run ~/.dg/bin/dg-skills doctor catchup.
 
 For a local-only catchup, use `~/.dg/bin/dg-skills catchup --no-push` after the same resolution.
 `~/.dg/bin/dg-skills catchup --help` prints usage without inspecting Git or running build tools.

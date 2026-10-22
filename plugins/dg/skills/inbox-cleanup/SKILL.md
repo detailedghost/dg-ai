@@ -10,9 +10,11 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
 ~/.dg/bin/dg-skills inbox --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-skills inbox --help
 ```
+
+If a step fails, run ~/.dg/bin/dg-skills doctor inbox install.
 
 For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
