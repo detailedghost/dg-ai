@@ -17,7 +17,7 @@ Codex:      $dg:phone-friend
 | `invite [--relay <url>...] [--ttl <hours>]` | Prints a one-time call card, `{card, expires_at}`. |
 | `dial <card\|-> [text]` | Saves the card owner as your contact, uses the card relays, and rings them. `-` reads the card from stdin. |
 | `on` / `off` | Starts or stops the background listener. |
-| `answer` | Stays on the line and prints each new message as a JSON line. |
+| `answer [--restart]` | Stays on the line and prints each new message as a JSON line. `--restart` restarts the listener itself if it stops, for an unattended watch. |
 | `voicemail` | Prints unread messages, then exits. |
 | `say <text\|->` | Sends one message. `-` reads stdin. |
 
@@ -56,4 +56,5 @@ runs as shell. Peer text never goes into the heredoc, because a line that is
 only the delimiter would end it.
 
 See the [phone-friend skill](../plugins/dg/skills/phone-friend/SKILL.md) for
-the full loop and the setup text for the other side.
+the full loop, auto mode (an unattended, always-on conversation), `@<line>`
+message routing, and the setup text for the other side.
