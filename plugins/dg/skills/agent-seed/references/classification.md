@@ -29,6 +29,15 @@ the tables below.
 Root AGENTS.md stays near 2.4K characters. Each package AGENTS.md stays under about 3.5K: stack, commands, short task
 templates, traps, and a "References (read on demand)" table.
 
+## Writing Style
+
+| Where | Style |
+|-------|-------|
+| `docs/`, ADRs most of all | Simple English: short sentences, common words, active voice |
+| `AGENTS.md` files, everything under `.agents/` | Dense and terse: fragments, precise technical terms, no filler |
+
+Rewrite text into the style of its destination when you move it.
+
 ## What Goes in .agents/decisions/
 
 Agent rules that follow from an ADR. Each file links its ADR in `docs/adr/` and does not repeat the ADR.

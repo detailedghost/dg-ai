@@ -19,6 +19,9 @@ docs/
 - State only facts the repo shows: tool versions from the lock or pin files, task names from `mise.toml` or the
   build scripts, paths that exist. Use `<placeholder>` for anything you cannot find.
 - State a gap as a gap, for example "No tool lints SQL in this repo yet." Never hide it.
+- Two writing styles. `docs/`, and ADRs most of all, use simple English: short sentences, common words, active
+  voice. `AGENTS.md` files and everything under `.agents/` are dense and terse: fragments, precise technical terms,
+  no filler. State this rule in `docs/CONTRIBUTING.md`, the root `AGENTS.md` Rules, and `docs/code_review.md`.
 - Before you move text out of a file, find the tests that read that file (`git grep` the file name in test folders).
   Keep what they assert, or move the assertion with the text.
 
@@ -35,7 +38,8 @@ Plain English, short sentences. One question per section:
 1. How does it get to users? (release flow and tags)
 1. What if I am stuck?
 
-Section 4 also says where decisions live: `docs/adr/` for people, `.agents/decisions/` for agents.
+Section 4 also says where decisions live: `docs/adr/` for people, `.agents/decisions/` for agents, and the two
+writing styles: simple English for `docs/` and ADRs, dense and terse for `AGENTS.md` and `.agents/`.
 
 ## docs/code_standards.md
 
@@ -88,6 +92,8 @@ This file copies the `/dg:thrash --spice 5` review, so people, Copilot, and agen
   `[!WARNING]` Opportunities, then the tally line and the verdict.
 - **Verdict:** approve only with 0 critical, 0 high, 0 medium, and at most 4 low. Otherwise request changes.
 - **Tone:** direct and specific. Aim at the code, never at a person.
+- **Writing style:** flag an ADR or `docs/` page that is not simple English, and an `AGENTS.md` or `.agents/` file
+  with filler prose.
 
 ## .github/copilot-instructions.md
 

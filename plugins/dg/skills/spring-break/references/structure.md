@@ -122,6 +122,8 @@ Rules:
 - Find the repo tests that read these files before you move text. Keep what they assert, or move the assertion with
   the text.
 - Fix a fact the move shows to be wrong, and report it.
+- Rewrite moved text into the style of its destination: simple English (short sentences, common words, active
+  voice) for `docs/` and ADRs, dense and terse (fragments, precise terms, no filler) for `AGENTS.md` and `.agents/`.
 - Never leave an empty file or an empty folder under `.agents/`.
 
 ## Protected Files (do NOT touch)
