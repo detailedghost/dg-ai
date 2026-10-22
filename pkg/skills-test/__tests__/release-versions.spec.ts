@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { currentTag, pinnedFiles } from "../../../scripts/pin-bootstrap-tag";
 import { readRepoFile } from "./test-support";
 
-const LAST_RELEASED = "1.15.0";
+const LAST_RELEASED = "1.16.0";
 
 function parts(version: string): number[] {
 	return version.split(".").map(Number);

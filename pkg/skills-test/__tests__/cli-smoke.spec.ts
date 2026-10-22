@@ -4,7 +4,7 @@
  * present in CI), which exercises the same command graph the release compiles.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,14 +17,23 @@ const ENTRY = join(
 	"index.ts",
 );
 
-async function runCli(args: string[]): Promise<{ code: number; out: string }> {
+async function runCli(
+	args: string[],
+	env: Record<string, string | undefined> = {},
+	stdin?: string,
+): Promise<{ code: number; out: string; err: string }> {
 	const proc = Bun.spawn(["bun", ENTRY, ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
+		stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
+		env: { ...process.env, ...env },
 	});
-	const out = await new Response(proc.stdout).text();
-	const code = await proc.exited;
-	return { code, out };
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, out, err };
 }
 
 function expectListed(out: string, verb: string): void {
@@ -56,6 +65,10 @@ describe("dg-skills CLI", () => {
 			"worktree",
 			"spec",
 			"monolith",
+			"jot",
+			"bg",
+			"sniff",
+			"doctor",
 		]) {
 			expectListed(out, cmd);
 		}
@@ -148,6 +161,124 @@ describe("dg-skills CLI", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	test("jot is registered and its help lists every subcommand", async () => {
+		const { code, out } = await runCli(["jot", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of [
+			"add",
+			"ls",
+			"read",
+			"kind",
+			"done",
+			"kick",
+			"kick-list",
+			"kick-take",
+		])
+			expectListed(out, verb);
+	});
+
+	test("jot add and ls run a real note round trip in isolated roots", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-jot-smoke-"));
+		try {
+			const env = {
+				HOME: root,
+				AI_SCRATCH_DIR: join(root, "scratch"),
+				AI_STATE_DIR: join(root, "state"),
+			};
+			const added = await runCli(["jot", "add"], env, "# smoke note\n");
+			expect(added.code).toBe(0);
+			expect(added.out.trim().startsWith(join(root, "scratch", "jot"))).toBe(true);
+			const listed = await runCli(["jot", "ls", "-n"], env);
+			expect(listed.code).toBe(0);
+			expect(listed.out).toMatch(/^note\t0m\tjot-[a-z]+-[a-z]+\tsmoke note\n$/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("sniff --help documents the path argument without scanning", async () => {
+		const { code, out } = await runCli(["sniff", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("sniff");
+		expect(out.toLowerCase()).toContain("usage");
+		expect(() => JSON.parse(out)).toThrow();
+	});
+
+	test("sniff lists secret names from a disposable tree and never their values", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-sniff-smoke-"));
+		try {
+			const fake = "fake-smoke-secret-5d2c9a";
+			const tree = join(root, "app");
+			mkdirSync(tree);
+			writeFileSync(
+				join(tree, ".env"),
+				`SMOKE_API_TOKEN=${fake}\nSMOKE_HOST=h\n`,
+			);
+			const env = { HOME: root };
+			const ran = await runCli(["sniff", tree], env);
+			expect(ran.code).toBe(0);
+			expect(ran.out).not.toContain(fake);
+			expect(ran.err).not.toContain(fake);
+			const report = JSON.parse(ran.out) as {
+				requirements: { type: string; name: string }[];
+			};
+			expect(
+				report.requirements.map((row) => `${row.type}:${row.name}`).sort(),
+			).toEqual(["CONFIG:SMOKE_HOST", "SECRET:SMOKE_API_TOKEN"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("sniff reports an empty inventory with 0 and a missing path with 1", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-sniff-smoke-"));
+		try {
+			const empty = await runCli(["sniff", root], { HOME: root });
+			expect(empty.code).toBe(0);
+			expect(JSON.parse(empty.out).total).toBe(0);
+			const ran = await runCli(["sniff", join(root, "absent")], { HOME: root });
+			expect(ran.code).toBe(1);
+			expect(ran.out).toBe("");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("bg is registered and its help lists every job verb", async () => {
+		const { code, out } = await runCli(["bg", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["run", "list", "prune", "status", "cancel", "update"])
+			expectListed(out, verb);
+	});
+
+	test("bg run, list and prune run a real detached job in isolated roots", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-bg-smoke-"));
+		try {
+			const env = {
+				HOME: root,
+				AI_SCRATCH_DIR: join(root, "scratch"),
+				AI_STATE_DIR: join(root, "state"),
+			};
+			const started = await runCli(["bg", "run", "echo smoke", "--cwd", root], env);
+			expect(started.code).toBe(0);
+			const job = JSON.parse(started.out) as { id: string; logFile: string; state: string };
+			expect(job.state).toBe("running");
+			expect(job.logFile.startsWith(join(root, "state"))).toBe(true);
+			let status = { state: "running" };
+			for (let i = 0; i < 200 && status.state === "running"; i++) {
+				await Bun.sleep(25);
+				status = JSON.parse((await runCli(["bg", "status", job.id], env)).out);
+			}
+			expect(status).toMatchObject({ state: "done", exitCode: 0 });
+			const listed = JSON.parse((await runCli(["bg", "list"], env)).out) as { jobs: { id: string }[] };
+			expect(listed.jobs.map((value) => value.id)).toEqual([job.id]);
+			const pruned = JSON.parse((await runCli(["bg", "prune", "--cwd", root], env)).out);
+			expect(pruned.removed).toEqual([job.id]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}, 60_000);
 
 	test("clipboard-image --help documents native capture without reading the clipboard", async () => {
 		const { code, out } = await runCli(["clipboard-image", "--help"]);
@@ -289,6 +420,50 @@ describe("dg-skills CLI", () => {
 		expect(code).toBe(0);
 		for (const cmd of ["capture", "set", "show"]) {
 			expect(out).toContain(cmd);
+		}
+	});
+
+	test("doctor --help documents --json and selected items without running a check", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		try {
+			const { code, out } = await runCli(["doctor", "--help"], { HOME: home });
+			expect(code).toBe(0);
+			expect(out).toContain("--json");
+			expect(out).toContain("item");
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("doctor exits 2 for an unknown item", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		try {
+			const { code } = await runCli(["doctor", "no-such-item"], { HOME: home });
+			expect(code).toBe(2);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	test("doctor --json prints a report for jot from an isolated home", async () => {
+		const home = mkdtempSync(join(tmpdir(), "dg-doctor-smoke-"));
+		try {
+			mkdirSync(join(home, "scratch"), { mode: 0o700 });
+			mkdirSync(join(home, "state"), { mode: 0o700 });
+			const { code, out } = await runCli(["doctor", "jot", "--json"], {
+				HOME: home,
+				AI_SCRATCH_DIR: join(home, "scratch"),
+				AI_STATE_DIR: join(home, "state"),
+			});
+			expect([0, 1]).toContain(code);
+			const report = JSON.parse(out) as {
+				items: { item: string; checks: unknown[] }[];
+				ok: boolean;
+			};
+			expect(report.items.some((entry) => entry.item === "jot")).toBe(true);
+			expect(report.ok).toBe(code === 0);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 });

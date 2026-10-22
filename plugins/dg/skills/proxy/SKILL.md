@@ -8,9 +8,11 @@ description: Delegate a coding task to an installed CLI agent (codex, copilot, p
 Resolve the compiled CLI before invoking it:
 
 ```bash
-~/.dg/bin/dg-skills proxy --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+~/.dg/bin/dg-skills bg --help >/dev/null 2>&1 ||
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
+
+If a step fails, run ~/.dg/bin/dg-skills doctor bg proxy.
 
 Run the backend in the caller's native background task when that facility exists:
 
@@ -29,13 +31,13 @@ For a terminal or caller without native background tasks, prepare a plan:
 This writes the fully briefed prompt and prints JSON containing the exact quoted background `command`. Execute that command to launch the job; do not reconstruct it from its parts. It returns a job record with `id`, `logFile`, and `statusFile`. The backend runs detached, so the launch returns promptly. Inspect it with:
 
 ```bash
-~/.dg/bin/dg-skills proxy background status "<id>"
-~/.dg/bin/dg-skills proxy background list
+~/.dg/bin/dg-skills bg status "<id>"
+~/.dg/bin/dg-skills bg list
 ```
 
-Read the completed job's log for the final proxy JSON result. Use `~/.dg/bin/dg-skills proxy background update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `status` shows its output in `drainOutput`. `background run` takes the whole command as one quoted argument.
+Read the completed job's log for the final proxy JSON result. Use `~/.dg/bin/dg-skills bg update "<id>" "<context>"` to queue context while a job runs or resume its completed backend session; `~/.dg/bin/dg-skills bg cancel "<id>"` stops the owned job. Resumed executions use the same native or packaged background pattern. A resume repeats the job's `--model` and `--effort`. If the automatic resume fails, `~/.dg/bin/dg-skills bg status "<id>"` shows its output in `drainOutput`. `~/.dg/bin/dg-skills bg run` takes the whole command as one quoted argument. See [the bg skill](../bg/SKILL.md) for job management.
 
-The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `status` reports the job as `unknown`, and `cancel` returns `no-pid` without signaling any process.
+The packaged background pattern proves a job's identity from its Linux `/proc` start time. On other platforms it fails closed: `~/.dg/bin/dg-skills bg status "<id>"` reports the job as `unknown`, and `~/.dg/bin/dg-skills bg cancel` returns `no-pid` without signaling any process.
 
 ## Flags
 

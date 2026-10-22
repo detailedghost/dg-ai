@@ -16,7 +16,7 @@ It starts with zero conversation context and has its own command and file tools,
 Read [../../proxy/SKILL.md](../../proxy/SKILL.md) for its
 background execution contract: use the host's native background task when
 available, otherwise request `--plan` and execute its exact emitted `command`.
-Use `~/.dg/bin/dg-skills proxy background status <id>` to inspect a packaged background job.
+Use `~/.dg/bin/dg-skills bg status <id>` to inspect a packaged background job.
 Do not pass `--subagent`/`--spec` — this is a one-off review task.
 
 ## Prompt Template

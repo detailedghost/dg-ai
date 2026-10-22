@@ -66,9 +66,9 @@ Read [setup](../../plugins/dg/skills/channel-review/references/setup.md) and
 [commands](../../plugins/dg/skills/channel-review/references/commands.md) for
 prerequisites, flags, request tokens, and the exact error catalog.
 
-## Proxy background jobs
+## Background jobs
 
-`dg-skills proxy background` identifies a job by its Linux `/proc` start time.
+`dg-skills bg` identifies a job by its Linux `/proc` start time.
 On other platforms it fails closed: `status` reports the job as `unknown`, and
 `cancel` returns `no-pid` without signaling any process.
 

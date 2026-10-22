@@ -77,7 +77,7 @@ export async function main(argv: string[]): Promise<number | void> {
 	const { positionals, flags, listBackends, plan, help } = parsed;
 	if (help) {
 		console.log(
-			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nInternal background commands: run, list, prune, status, cancel, kill, update, drain",
+			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nBackground commands (see dg-skills bg): run, list, prune, status, cancel, kill, update, drain",
 		);
 		return 0;
 	}
@@ -234,7 +234,7 @@ async function runPlan(
 	if (opts.cwd) backendArgs.push("--cwd", opts.cwd);
 	const innerCommand = shellCommand(selfCommand(backendArgs));
 	const command = shellCommand(
-		selfCommand(["proxy", "background", "run", innerCommand]),
+		selfCommand(["bg", "run", innerCommand]),
 	);
 
 	console.error(`proxy: plan written -> ${planFile}`);

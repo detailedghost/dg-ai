@@ -2,6 +2,8 @@
 
 These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
 
+If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
+
 ## Extension precondition
 
 Gate this skill before scrape on the installer marker used by
@@ -33,7 +35,7 @@ is missing or too old. In a development checkout, rebuild and reinstall it first
 
 ```bash
 ~/.dg/bin/dg-skills proto --ext --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to

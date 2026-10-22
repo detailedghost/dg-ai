@@ -4,7 +4,7 @@ feature_snake_case: dg_skills_consolidation
 date: '2026-10-16'
 version: '1.1'
 status: in-progress
-current_slice: 10
+current_slice: 20
 pr_strategy: single
 slices:
   - id: 1
@@ -359,10 +359,32 @@ slices:
       primary: js
       qa:
         - qa-code
+  - id: 31
+    name: w4-doctor
+    depends_on:
+      - 18
+    files:
+      - pkg/skills-cli/src/commands/doctor.ts
+      - pkg/skills-cli/src/doctor/**
+      - pkg/skills-cli/src/commands/*.ts
+      - pkg/skills-cli/__tests__/doctor*.spec.ts
+      - plugins/dg/skills/doctor/**
+      - plugins/dg/skills/*/SKILL.md
+      - plugins/dg/skills/thrash/references/agent-prompt.md
+      - plugins/dg/skills/review-loop/references/proxy-review-prompt.md
+      - pkg/skills-cli/README.md
+      - pkg/skills-cli/src/index.ts
+      - pkg/skills-test/__tests__/cli-smoke.spec.ts
+      - pkg/skills-test/__tests__/doctor-coverage.spec.ts
+      - pkg/common/__tests__/installed-skill-files.ts
+    agents:
+      primary: js
+      qa:
+        - qa-code
   - id: 19
     name: w4-release
     depends_on:
-      - 18
+      - 31
     files:
       - pkg/*/package.json
       - .claude-plugin/plugin.json
@@ -661,6 +683,7 @@ These requirements apply to every port; each slice below adds its specific behav
 - Use current APIs, not legacy idioms: `Bun.$`, `Bun.file`/`Bun.write`, `Bun.spawn`, `node:util` `parseArgs`, `fetch`, `AbortSignal.timeout` and the current gh/glab REST and GraphQL endpoints. Before porting a helper, search `pkg/common` and earlier waves; call or extend the shared one instead of copying the legacy version. Behavior parity still wins over a newer API where they differ.
 
 - Every packaged skill that takes flags documents them in a `## Flags` table (Flag | Short | Effect | Default) plus a **Usage:** line, matching what the skill and its dg-skills command accept; a skills-test guard enforces it. Shipped in Wave 3 (5127a44); each later wave's new skills and the dg:proto, dg:demo and erd flag tables must pass the guard.
+- Every dg-skills command and packaged skill ships doctor checks (slice 31 builds the runner in Wave 4). Each later port adds checks for its new item; a coverage guard enforces it.
 
 - User verification requirement (2026-10-17): before notifying the user that migrated skills are ready to move to, obtain an actual independent Claude compatibility review of the packaged skills against selected legacy inputs. Verify namespaced discovery from a relocated plugin, lazy resources, native approvals, delegated/resume flows, command parity, and remaining cutover gates; preserve evidence and disclose unexecuted scenarios. Claude manifest validation alone is insufficient. No local settings/shim/cutover changes are authorized. External model review currently requires specific payload consent following automatic approval rejection; never claim that review ran.
 
@@ -675,7 +698,7 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 | 2a | 1–4 | feature/dg-skills-w2a | default branch containing Wave 1 | 1.15.0 |
 | 2b | 5–10 | feature/dg-skills-w2b | feature/dg-skills-w2a | none (merged without a bump; slice 10 shipped in Wave 3) |
 | 3 | 11–13, 15 | feature/dg-skills-w3 | feature/dg-skills-w2b | 1.17.0 |
-| 4 | 16–19 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.18.0 |
+| 4 | 16–19, 31 | feature/dg-skills-w4 | feature/dg-skills-w3 | 1.18.0 |
 | 5 | 20, 21, 23, 24 | feature/dg-skills-w5 | feature/dg-skills-w4 | 1.19.0 |
 | 6 | 25–27 | feature/dg-skills-w6 | feature/dg-skills-w5 | 1.20.0 |
 | 7 | 28–30 | feature/dg-skills-w7 | feature/dg-skills-w6 | 1.21.0 |
@@ -690,6 +713,8 @@ This section governs `/spec -s 005_dg_skills_consolidation` before dispatching g
 
 User history override (2026-10-17): the current Wave 2b review PR must contain one commit. The completed slices 5–9 were consolidated locally into b79344e21522c139202eb3a231ea9421cfb70dce with an identical Git tree; backup `refs/heads/backup/dg-skills-w2b-before-squash-20261017` retains original slice commits. Historical per-slice SHAs below remain evidence references. Include slice 10, review corrections, and docs in the same final Wave 2b commit before publication. Earlier published wave branches remain untouched. Publishing still follows completion and the retained fallback prerequisite.
 **User scope decisions (2026-10-20):**
+- Doctor (user decision 2026-10-20): every item gets doctor checks. Slice 31 (w4-doctor) ships the runner, `dg-skills doctor [<item>] [--json]`, the `/dg:doctor` skill and checks for every shipped item in Wave 4, before the release slice 19. Later waves add checks for their items.
+- `pw --ext` (user decision 2026-10-20, slice 25): drive and read the user's real browser through the extension, with read verbs so an agent can see what the user is on. Small scope, per-action approvals, redaction, no code execution.
 - viz and review are dropped from dg. Slice 14 work is removed from Wave 3 (slice 14 leaves `slices[]`; slice 15 depends on slice 13). `/viz verify` in spec plan mode (step 8) is replaced by a built-in plan-mode approval (`EnterPlanMode`/`ExitPlanMode`), keeping the gate. `-l`/`--local` and `REVIEW_MODE` are removed from sdlc and spec because they needed the review board; the human review is always on the draft PR.
 - lineage and clockout are retired fully: not ported, and listed for deletion at the manual cutover. Slice 22 (w5-lineage) is dropped entirely and slice 23 now depends on slice 21. Slice 19 is release-only (renamed w4-release, no clockout port).
 - Matched versions: master shipped skills-v1.16.0 from #39 (phone-friend), so Wave 3 = 1.17.0, Wave 4 = 1.18.0, Wave 5 = 1.19.0, Wave 6 = 1.20.0, Wave 7 = 1.21.0.
@@ -717,6 +742,7 @@ User history override (2026-10-17): the current Wave 2b review PR must contain o
 - Wave 2a COMPLETE: slices 1–4, last committed slice4 plus review/docs/test follow-through; worktree ~/code/dg/.worktrees/dg-skills-w2a; actual branch feature/dg_skills_w2a; base feature/dg-skills-w1; head 0052265. Ready for review [#28](https://github.com/detailedghost/dg-ai/pull/28) (user requested promotion on 2026-10-17). All four final reviewers clean after one correction round. Final `bun run test:all`: 5,062 pass, 0 fail; all eight `lint:all` packages pass. Compiled external-cwd operations, private artifacts, six backends, provider parity, privacy/version/test-name/whitespace gates pass. Matched release1.15.0; native Windows runtime remains untested/documented. PR directly records dependency on #27; chain will register stack in Wave2b after slice7 ships. Browser grouped open completed.
 - Wave2b IN PROGRESS: slices5–10, worktree ~/code/dg/.worktrees/dg-skills-w2b, actual branch feature/dg_skills_w2b, base feature/dg_skills_w2a, initial head0052265; Slices5–9 committed ff75474/f9b205a/2d7cadc/f55483c/6c6c302, current head b79344e21522c139202eb3a231ea9421cfb70dce (one consolidated commit above Wave2a; original five slice commits retained in local backup); next slice 10, waiting for required fallback content on origin/master (user confirmed prerequisite retained). Native stack #30: #26→#27→#28, bases and ready state verified after user-requested prerequisite insertion. Do not recreate finished PRs. Slice10 still gates on fetched review-model-fallback content.
 - Wave 3 also ships (2026-10-20): 9ab4c7a (dg: agents), 6f225eb (channel-review invokes /dg:<skill>), f7b6f0c (install docs), fc16957 (viz and review dropped), f4c5673 (unslop from upstream), d13f67c (spec roster fallback), 5127a44 (flags documentation and the skill-flags guard), b94dac7 and 4937df8 (plan scope edits above), and 71c05ab (plan approval gate in the spec skill).
+- Wave 4 DRAFT PR (2026-10-20): [#41](https://github.com/detailedghost/dg-ai/pull/41), branch feature/dg_skills_w4, base feature/dg_skills_w3, worktree ~/code/worktrees/dg-dg_skills_w4. Slices 16, 17, 18, 31 (doctor) and 19 are committed. Version 1.18.0 after the master merge, because master shipped skills-v1.16.0. The PR holds the commit list and run results. Next: Wave 5 (slices 20, 21, 23, 24) from this head after review.
 
 ## Roundtable Decisions
 
@@ -1037,58 +1063,77 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 16 — w4-jot
 
 #### Engineering
-- [ ] Port jot-cli.ts and jot-checkpoint.ts to `dg-skills jot`
-- [ ] Consume complete shared fs API and preserve linked-worktree state-write precedence.
-- [ ] Preserve kick/kick-list/kick-take checkpoint semantics and repair CheckpointSection's missing status property to satisfy TypeScript.
+- [x] Port jot-cli.ts and jot-checkpoint.ts to `dg-skills jot`
+- [x] Consume complete shared fs API and preserve linked-worktree state-write precedence.
+- [x] Preserve kick/kick-list/kick-take checkpoint semantics and repair CheckpointSection's missing status property to satisfy TypeScript.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Port cap/split, linked-worktree, checkpoint --file/replace/ambiguity/last-section and lock/atomic-write behaviors.
+- [x] Port cap/split, linked-worktree, checkpoint --file/replace/ambiguity/last-section and lock/atomic-write behaviors.
 
 #### Acceptance Criteria
-- [ ] Durable saves do not mutate the main checkout from a linked worktree and existing markdown/stdout stays compatible.
+- [x] Durable saves do not mutate the main checkout from a linked worktree and existing markdown/stdout stays compatible.
 
 ### Slice 17 — w4-bg-cls-stat
 
 #### Engineering
-- [ ] Port bg-helper.ts to `dg-skills bg`; move bg, cls, stat, proxy skills; exclude the orphan legacy stat-cli.test.ts from the port (no stat-cli.ts); leave the legacy source untouched
-- [ ] Use compiled-safe bg self-dispatch and migrated proxy recognition; reuse/replace slice-3 background compatibility internals through explicit handoff.
-- [ ] Keep stat prose-only with provider/bg/worktree calls and terminal-only cleanup; make cls browser close optional before Wave 6 pw availability.
-- [ ] Retain live jobs/main-checkout scratch; never signal caller process group or prune sibling-path jobs.
+- [x] Port bg-helper.ts to `dg-skills bg`; move bg, cls, stat, proxy skills; exclude the orphan legacy stat-cli.test.ts from the port (no stat-cli.ts); leave the legacy source untouched
+- [x] Use compiled-safe bg self-dispatch and migrated proxy recognition; reuse/replace slice-3 background compatibility internals through explicit handoff.
+- [x] Keep stat prose-only with provider/bg/worktree calls and terminal-only cleanup; make cls browser close optional before Wave 6 pw availability.
+- [x] Retain live jobs/main-checkout scratch; never signal caller process group or prune sibling-path jobs.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Run compiled queued-context/drain/resume and detachment/cancel/prune tests; assert /repo containment excludes /repo-other.
+- [x] Run compiled queued-context/drain/resume and detachment/cancel/prune tests; assert /repo containment excludes /repo-other.
 
 #### Acceptance Criteria
-- [ ] Stat (no `--viz`; `--overwatch` only) and cls degrade safely without pw; no legacy files are deleted during port.
+- [x] Stat (no `--viz`; `--overwatch` only) and cls degrade safely without pw; no legacy files are deleted during port.
 
 ### Slice 18 — w4-sniff-nope-find-work
 
 #### Engineering
-- [ ] Port sniff-cli.ts; move nope and find-work with no home paths ($HOME/code is allowed as an env default)
-- [ ] Rewrite find-work embedded prompts with bootstrap/provider routing and existing human selection/PR-opening gates.
-- [ ] Sanitize tests/examples beyond narrow regex, including work registry fixture and nope private-home example; preserve actual sniff status 1.
+- [x] Port sniff-cli.ts; move nope and find-work with no home paths ($HOME/code is allowed as an env default)
+- [x] Rewrite find-work embedded prompts with bootstrap/provider routing and existing human selection/PR-opening gates.
+- [x] Sanitize tests/examples beyond narrow regex, including work registry fixture and nope private-home example; preserve actual sniff status 1.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Assert real stdout/stderr excludes fake env/Terraform/Docker/CI secret values; cover root errors and empty inventory.
+- [x] Assert real stdout/stderr excludes fake env/Terraform/Docker/CI secret values; cover root errors and empty inventory.
 
 #### Acceptance Criteria
-- [ ] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
+- [x] Names-only secret/config inventory and accepted portable HOME/code default survive migration.
+
+### Slice 31 — w4-doctor
+
+#### Engineering
+- [x] Add a shared doctor runner: each command declares its checks next to its code (`{ id, run }` returning ok, warn or fail, one detail line and a Fix line with the exact command to run); one runner prints them and sets the exit code.
+- [x] `dg-skills doctor` checks everything; `dg-skills doctor <item>` checks one item; `--json` prints the same result for agents. Exit 0 when all pass or only warn, 1 when any check fails.
+- [x] Shared checks: installed dg-skills version matches the plugin version, the dg plugin is installed, packaged skill files exist, scratch and state roots are writable.
+- [x] Per-item checks for every shipped item: required tools and versions (git, gh/glab, bun, claude/codex), required credentials exist (metadata only, never decrypt), daemon and extension pairing for `--ext` items, unslop installed for polish, and the allow rules the item needs (read-only check of settings).
+- [x] Ship the `/dg:doctor` skill: run doctor, explain each failure in plain words, and walk the user through the Fix lines. Add one line to every packaged skill: run `~/.dg/bin/dg-skills doctor <item>` when the skill fails.
+- [x] Doctor only reads and reports: it never fixes anything itself, never decrypts credentials, never edits settings, and never starts the daemon or a browser.
+- [x] Move the remaining `proxy background` references (thrash agent-prompt, review-loop proxy-review-prompt, pkg/skills-cli/README.md) to `bg` verbs.
+
+#### Testing Criteria
+##### Contracts
+- [x] Each check reports ok, warn and fail with fake tools, fake versions and isolated HOME; `--json` shape is stable; exit codes 0 and 1; no daemon, browser or credential decrypt starts.
+- [x] A coverage guard fails when a registered dg-skills command has no doctor checks, or a packaged skill lacks the doctor line.
+
+#### Acceptance Criteria
+- [x] A stale installed binary, a missing tool and a missing credential each produce a clear Fix line; every shipped item is covered.
 
 ### Slice 19 — w4-release
 
 #### Engineering
-- [ ] Bump every package and plugin manifest to the next matched version, 1.18.0; open the Wave 4 draft PR
-- [ ] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
+- [x] Bump every package and plugin manifest to the next matched version, 1.18.0; open the Wave 4 draft PR
+- [x] Update the canonical skill index and docs for the Wave 4 skills (jot, bg, cls, stat, sniff, nope, find-work); clockout is not ported and is listed for deletion at the manual cutover.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] bun run test:all and bun run lint:all green; release-versions guard passes at 1.18.0.
+- [x] bun run test:all and bun run lint:all green; release-versions guard passes at 1.18.0.
 
 #### Acceptance Criteria
-- [ ] Matched Wave 4 draft base/head/URL for slices 16–19 persisted.
+- [x] Matched Wave 4 draft base/head/URL for slices 16–19 persisted (PR #41, feature/dg_skills_w4 onto feature/dg_skills_w3).
 
 ### Slice 20 — w5-db
 
@@ -1166,6 +1211,10 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 - [ ] Port pw (pw, pw-daemon, pw-code) to `dg-skills pw`
 - [ ] Expand compile spike to local fixture open/snapshot/close, daemon self-reexec/browser discovery and owned registry identity; retain stop-and-ask packaging gate.
 - [ ] `dg-skills pw` also serves local demos (slice 27): Chromium video recording, light/dark before/after screenshots, and the overlay from the shared tour-overlay module.
+- [ ] `dg-skills pw --ext` drives the user's real browser through the extension. Write verbs: `open`, `click`, `fill`. Read verbs: `current` (active tab URL and title plus open tabs), `snapshot` (accessibility tree and visible text on stdout, same shape as plain `pw snapshot`), `screenshot` (visible tab saved to scratch, path printed), `selection` (selected text), `console` (recent errors and warnings). No code execution.
+- [ ] `--ext` safety: read verbs never change the page and ask once per call, naming the tab; write verbs need their own approval; output redacts password fields and token-like values and is size-capped; browser settings and other extensions' pages are blocked with a clear message. Chromium only. The extension feature and its wider permission ship in this slice with security QA.
+- [ ] `dg:demo --local --attach-pr` uses `pw --ext` for the GitHub upload; with neither the extension nor a saved login ready, it hands over the files and the PR link with no PR change. Plain `pw` stays the default for headless runs, recording, mocking and isolated runs.
+- [ ] Ship doctor checks for pw and pw --ext (Playwright browser present, extension paired).
 - [ ] Keep pw code an explicit separately approved action with documented manual narrow permission rules; normal CLI continues refusing run-code. Never change installed permission rules or silently include code in blanket grants.
 
 #### Testing Criteria
@@ -1363,6 +1412,10 @@ channel-review defaults now use one `Bash(~/.dg/bin/dg-skills <sub>:*)` grant ea
 ### Slice 14 — w3-viz-review (28a247b, dropped 2026-10-20)
 
 Superseded: viz and review no longer ship (commit fc16957). Original summary: `dg-skills viz` replaces viz-cli (sixteen verbs); the Astro viewer source and bun.lock are vendored in plugins/dg/skills/viz (1.2 MB, no node_modules, caches, images or video), and the review skill ships. First run installs with --frozen-lockfile; a dependency hash in the install marker triggers reinstall; Bun missing or a read-only viewer dir exits 1 with an actionable message. Viewer lookup uses VIZ_SKILL_DIR, then the installed skill locator. Real-viewer run (DG_VIZ_REAL_VIEWER=1) passed 33 tests; viz specs 66 pass; skills-test 733 pass; lint:all green.
+- Slice 16 (w4-jot): `dg-skills jot` ports jot-cli and jot-checkpoint (add, ls, read, kind, done, kick, kick-list, kick-take) through registerLegacyCommand, with legacy flags, output and exit codes. The packaged `/dg:jot` skill has a Usage line, a Flags table and full `~/.dg/bin/dg-skills jot` calls. `readableSuffix` moved into `@dg/common/node` scratch-paths. Tests drive the CLI only, from source and from the compiled binary, with isolated roots and a linked worktree.
+- Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) and re-executes the real installed binary for drains and resumes, with no caller process-group signals. A relative `--cwd` is stored as an absolute path, and prune resolves a relative `--cwd` and removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz` and hands lanes to dg:overwatch. cls skips browser cleanup with a note when `pw --help` fails, and cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
+- Slice 18 (w4-sniff-nope-find-work): `dg-skills sniff` ports sniff-cli with names-only secret and config inventory, the legacy exit status 1 and the `$HOME/code` env default. The sniff, nope and find-work skills ship; sniff drops `--viz`; find-work prompts use the dg bootstrap, `dg-skills vcs-provider` and `dg-skills worktree` routing and keep the human selection and PR-opening gates. Fixtures and examples carry no private names or paths.
+- Slice 31 (w4-doctor): `dg-skills doctor [<item>...] [--json]` runs a shared item (plugin installed, binary version vs plugin version, writable roots) and per-item checks declared in src/<item>/doctor.ts for every registered command: tools and minimum versions, optional credentials by name, daemon and extension pairing (pinned origin in the daemon config), unslop for polish, and the `Bash(~/.dg/bin/dg-skills <sub>:*)` allow rule. Exit 0 pass or warn, 1 fail, 2 unknown item. The /dg:doctor skill walks through Fix lines; every skill that calls dg-skills names its doctor items. A coverage guard enforces checks, the allow-rule check and the skill line.
 
 ## Agent Notes
 
@@ -1415,9 +1468,26 @@ Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Exe
 - (slice 12, js) spec front-matter edits use the yaml package Document API to keep comments and key order; Bun.YAML cannot.
 - (slice 13, js) Bun.Glob brace patterns containing * match nothing; scan pattern and */pattern as separate globs.
 - (slice 13, js) Slice 15 must add monolith and spring-break to the README skill index along with the version bump.
+- (slice 16, js) jot notes use scratchDir('jot'), linked-worktree saves use stateDir('jot'), main-checkout saves use agentsPath('jot', undefined, {main:true}); read paths never create directories. Checkpoint writes use common writeFileAtomic.
+- (slice 16, qa-writer) jot-fixtures.ts (jotWorld) empties HOME, scratch and state roots after each test. cli-smoke runCli accepts optional env and stdin for real-operation smoke tests.
+- (slice 16, orchestrator) Smoke tests that run jot from the repo cwd also see the checkout's real .agents/jot saves; use `jot ls -n` or a non-git cwd.
+- (slice 16, qa-code) Open LOW items for the final review: parallel `jot add` calls can collide on the same generated name (writeFileSync without 'wx'); kick-take prints the section before the atomic write commits. Both match legacy behavior.
+- (slice 17, orchestrator) `proxy background` remains a working alias of `bg`. thrash agent-prompt, review-loop proxy-review-prompt, docs/DEVELOPER.md and pkg/skills-cli/README.md still say `proxy background`; move them to `bg` verbs in the doctor or release slice.
+- (slice 17, js) The skill-manifests guard treats any SKILL.md that contains the literal `dg-agent` as a chat-harness skill, so stat names the dg:overwatch skill instead of the dg-agent binary.
+- (slice 17, js) cls has no allowed-tools frontmatter; approvals come from the user's configured grants.
+- (slice 17, qa-writer) bg-jobs.spec.ts 'drain applies queued context once' failed in about 2 of 12 loaded full-file runs. Watch it in CI.
+- (slice 17, orchestrator) bg meta records without a string id and cwd are skipped by list and prune.
+- (slice 18, qa-writer) pkg/skills-cli/__tests__/skill-tree-helpers.ts holds shared fences, cells, flagsTable and walk helpers; only sniff uses it so far. Point the jot, bg and monolith skill-tree specs at it in slice 31.
+- (slice 18, qa-writer) Skill-tree private-name scans strip the public bootstrap URL (github.com/detailedghost/dg-ai/...) before matching.
+- (slice 18, qa-code) Open LOW items for the final review: the shell-block `#` comment guard misses `cmd #note`; sniff `repo` is `..` when run as `sniff ..`; CLOUD_PERM rows keep the full role ARN (legacy parity).
+- (slice 18, orchestrator) The full skills-cli suite passes alone (2746 tests, about 10 minutes). Under parallel agent load it took 77 minutes and showed 4 transient failures.
+- (slice 31, js) Doctor lives in pkg/skills-cli/src/doctor/{types,probes,checks,shared,runner,registry}.ts; each item exports <camel>Checks from src/<item>/doctor.ts and registry.ts lists them. Later ports add their item there; doctor-coverage.spec.ts fails otherwise.
+- (slice 31, js) Extension pairing has no completed-pairing record; doctor reads `pinnedOrigin` from the daemon config.json (set on the first extension handshake). pairing.json is only the pending code.
+- (slice 31, js) The bootstrap Fix keeps the install mode: it adds --cli-only only when the cli-only marker exists. scratchRoot and stateRoot in @dg/common/node accept an optional env.
+- (slice 31, orchestrator) Open for the final review: the coverage guard does not check that a skill's doctor line names the subcommands it really calls; `startFakeCredentialDaemon` and its three tests now close the missing-credential-by-name item.
 
 ## Issues Remediation
 
 ## Planning Approval
 
-Approved through the spec board at 2026-10-17T00:18:52+00:00; board all_clear was true. Board slug: 005-dg-skills-consolidation-817d1848. Revision 1.1 includes thirty normal-depth slice reviews, foreman synthesis, resolved product decisions, explicit ownership re-scaffold and the extension attachment contract. No engineering work was executed by this planning run.
+- Approved through the spec board at 2026-10-17T00:18:52+00:00; board all_clear was true. Board slug: 005-dg-skills-consolidation-817d1848. Revision 1.1 includes thirty normal-depth slice reviews, foreman synthesis, resolved product decisions, explicit ownership re-scaffold and the extension attachment contract. No engineering work was executed by this planning run.

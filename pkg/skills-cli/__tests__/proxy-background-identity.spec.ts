@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { processIdentity } from "../src/bg/jobs";
 import { main, readPid, terminateGroup } from "../src/proxy/background";
 import { proxyFixtures } from "./proxy-fixtures";
 
@@ -49,20 +50,29 @@ function detachedSleeper(): number {
 	return child.pid;
 }
 
-function recordJob(id: string, pid: number) {
+function recordJob(id: string, pid: number, started = "12345") {
 	const dir = join(fixture.scratch, "bg");
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	const pidFile = join(dir, `${id}.pid`);
 	writeFileSync(pidFile, String(pid));
 	writeFileSync(
 		join(dir, `${id}.identity.json`),
-		JSON.stringify({ pid, started: "12345" }),
+		JSON.stringify({ pid, started }),
 	);
 	return { pidFile, id };
 }
 
 describe("background pid identity off Linux", () => {
-	test("readPid returns null when start-time identity is unavailable", () => {
+	test("readPid returns the pid when the recorded start time matches", () => {
+		const pid = detachedSleeper();
+		setPlatform("darwin");
+		const identity = processIdentity(pid);
+		expect(identity?.group).toBe(pid);
+		const job = recordJob("offlinux", pid, identity?.started);
+		expect(readPid(job as never)).toBe(pid);
+	});
+
+	test("readPid returns null when the recorded start time differs", () => {
 		const pid = detachedSleeper();
 		const job = recordJob("offlinux", pid);
 		setPlatform("darwin");
@@ -104,10 +114,21 @@ describe("background pid identity off Linux", () => {
 		expect(existsSync(job.pidFile)).toBe(true);
 	});
 
-	test("terminateGroup refuses to signal and leaves the process alive", async () => {
+	test("terminateGroup signals the detached group off Linux", async () => {
 		const pid = detachedSleeper();
 		setPlatform("darwin");
-		await expect(terminateGroup(pid)).rejects.toThrow(/Refusing to signal/);
-		expect(() => process.kill(pid, 0)).not.toThrow();
+		expect(await terminateGroup(pid)).toBe("SIGTERM");
+		expect(() => process.kill(pid, 0)).toThrow();
+	});
+
+	test("terminateGroup reports none for a process that already exited", async () => {
+		expect(await terminateGroup(2_147_483_646)).toBe("none");
+	});
+
+	test("terminateGroup refuses a process that leads no group of its own", async () => {
+		setPlatform("darwin");
+		await expect(terminateGroup(process.pid)).rejects.toThrow(
+			/Refusing to signal/,
+		);
 	});
 });
