@@ -12,6 +12,7 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
@@ -148,8 +149,25 @@ beforeAll(() => {
 	);
 }, 240_000);
 
+function killRecordedServers(): void {
+	const dir = join(context.scratch, "prototype-ui");
+	if (!existsSync(dir)) return;
+	for (const file of readdirSync(dir)) {
+		if (!file.endsWith(".json")) continue;
+		try {
+			const state = JSON.parse(readFileSync(join(dir, file), "utf8")) as {
+				pid: number;
+			};
+			process.kill(state.pid, "SIGKILL");
+		} catch {
+			continue;
+		}
+	}
+}
+
 afterEach(() => {
 	for (const child of spawned.splice(0)) child.kill();
+	killRecordedServers();
 });
 
 afterAll(() => disposeSpecContext(context));
@@ -168,6 +186,10 @@ async function session(chain: string): Promise<{ pid: number; port: number }> {
 const post = (listening: number, body: unknown) =>
 	fetch(`http://127.0.0.1:${listening}/prototype-decision`, {
 		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"Sec-Fetch-Site": "same-origin",
+		},
 		body: JSON.stringify(body),
 	});
 

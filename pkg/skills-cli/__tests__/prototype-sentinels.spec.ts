@@ -3,6 +3,7 @@ import {
 	chmodSync,
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -16,6 +17,7 @@ import {
 	formatWait,
 	status,
 	wait,
+	writeSentinel,
 } from "../src/prototype/sentinels";
 import { git, makeGitRepo, makeTempDir } from "./git-repo-fixtures";
 
@@ -219,7 +221,7 @@ describe("prototype directory resolution", () => {
 		expect(dir.endsWith("/light")).toBe(true);
 	});
 
-	test.each(["", ".", "..", "a/b", "a\\b"])("rejects the name %p", (name) => {
+	test.each(["", ".", "..", "a/b", "a\\b", "..%2f..%2fx", "..%5Cx", "/abs"])("rejects the name %p", (name) => {
 		expect(() => protoDir(name, { cwd: root, light: false })).toThrow(
 			/invalid prototype name/,
 		);
@@ -240,5 +242,15 @@ describe("prototype directory resolution", () => {
 		expect(
 			readFileSync(join(durable(a, "decided"), ".selection"), "utf8"),
 		).toBe("VariantB\n");
+	});
+});
+
+describe("writeSentinel", () => {
+	test("publishes the whole file at once and leaves no temp file", () => {
+		const dir = join(root, "atomic");
+		mkdirSync(dir, { recursive: true });
+		writeSentinel(join(dir, ".selection"), "B\n");
+		expect(readFileSync(join(dir, ".selection"), "utf8")).toBe("B\n");
+		expect(readdirSync(dir)).toEqual([".selection"]);
 	});
 });

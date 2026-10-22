@@ -3,12 +3,12 @@ import {
 	mkdirSync,
 	readFileSync,
 	statSync,
-	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { injectScript } from "./inject";
 import { protoDir, type SentinelPaths, sentinelPaths } from "./paths";
+import { writeSentinel } from "./sentinels";
 
 const FAVICON_LINK = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">✏️</text></svg>',
@@ -118,7 +118,7 @@ function recordDecision(
 				{ error: 'decision must be "APPROVED" or "REWORK"' },
 				{ status: 400 },
 			);
-		writeFileSync(
+		writeSentinel(
 			paths.decision,
 			`${JSON.stringify({ decision, notes: text(body.notes) })}\n`,
 		);
@@ -132,7 +132,7 @@ function recordDecision(
 		);
 	const notes = text(body.notes);
 	if (action === "reject") {
-		writeFileSync(paths.reject, notes || "\n");
+		writeSentinel(paths.reject, notes || "\n");
 		return Response.json({ ok: true });
 	}
 	const variant = text(body.variant);
@@ -146,9 +146,32 @@ function recordDecision(
 			{ error: `variant "${variant}" not in allowed list` },
 			{ status: 400 },
 		);
-	if (notes) writeFileSync(paths.notes, notes);
-	writeFileSync(paths.selection, `${variant}\n`);
+	if (notes) writeSentinel(paths.notes, notes);
+	writeSentinel(paths.selection, `${variant}\n`);
 	return Response.json({ ok: true });
+}
+
+function rejectCrossSite(req: Request, port: number): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (
+		origin !== null &&
+		origin !== `http://localhost:${port}` &&
+		origin !== `http://127.0.0.1:${port}`
+	)
+		return Response.json({ error: "Forbidden origin" }, { status: 403 });
+	const site = req.headers.get("sec-fetch-site");
+	if (site !== "same-origin" && site !== "none")
+		return Response.json({ error: "Forbidden request" }, { status: 403 });
+	const type = (req.headers.get("content-type") ?? "")
+		.split(";")[0]
+		?.trim()
+		.toLowerCase();
+	if (type !== "application/json")
+		return Response.json(
+			{ error: "Content-Type must be application/json" },
+			{ status: 415 },
+		);
+	return undefined;
 }
 
 /** Serve one self-contained prototype page and its decision endpoints; the sentinel directory is fixed by the caller. */
@@ -168,6 +191,8 @@ export async function startServer(
 				return new Response("Forbidden", { status: 403 });
 
 			if (req.method === "POST" && url.pathname === "/prototype-decision") {
+				const refusal = rejectCrossSite(req, port);
+				if (refusal) return refusal;
 				lastActivity = Date.now();
 				let body: unknown;
 				try {

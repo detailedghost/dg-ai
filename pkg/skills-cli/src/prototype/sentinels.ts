@@ -2,6 +2,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -20,6 +21,12 @@ const POLL_MS = 200;
 
 function readTrimmed(path: string): string {
 	return readFileSync(path, "utf8").replace(/\n+$/, "");
+}
+
+export function writeSentinel(path: string, contents: string): void {
+	const temp = `${path}.${process.pid}.tmp`;
+	writeFileSync(temp, contents);
+	renameSync(temp, path);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -44,6 +51,15 @@ export function removeSentinels(...paths: string[]): void {
 }
 
 function claim(paths: SentinelPaths): WaitResult | undefined {
+	try {
+		return claimExisting(paths);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function claimExisting(paths: SentinelPaths): WaitResult | undefined {
 	if (existsSync(paths.selection)) {
 		const variant = (
 			readFileSync(paths.selection, "utf8").split("\n")[0] ?? ""
@@ -81,8 +97,8 @@ export function confirm(
 	notes = "",
 ): void {
 	mkdirSync(paths.dir, { recursive: true });
-	writeFileSync(paths.selection, `${variant}\n`);
-	if (notes) writeFileSync(paths.notes, notes);
+	if (notes) writeSentinel(paths.notes, notes);
+	writeSentinel(paths.selection, `${variant}\n`);
 }
 
 /** Report the selected variant, "rejected", or "pending" without consuming anything. */

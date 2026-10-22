@@ -55,6 +55,10 @@ async function serve(options: { idleSec?: number; onIdle?: () => void } = {}) {
 	const post = (body: unknown) =>
 		fetch(`${url}/prototype-decision`, {
 			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Sec-Fetch-Site": "same-origin",
+			},
 			body: JSON.stringify(body),
 		});
 	return { url, paths, post };
@@ -130,11 +134,93 @@ describe("prototype serve", () => {
 		for (const body of ["{", "[]", "null"]) {
 			const response = await fetch(`${url}/prototype-decision`, {
 				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Sec-Fetch-Site": "same-origin",
+				},
 				body,
 			});
 			expect(response.status).toBe(400);
 		}
 		expect((await fetch(`${url}/x`, { method: "PUT" })).status).toBe(405);
+	});
+
+	describe("cross-site protection", () => {
+		const valid = {
+			"Content-Type": "application/json",
+			"Sec-Fetch-Site": "same-origin",
+		};
+		const attempt = async (headers: Record<string, string>) => {
+			const { url, paths } = await serve();
+			const response = await fetch(`${url}/prototype-decision`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({ action: "confirm", variant: "A" }),
+			});
+			return { response, paths, url };
+		};
+
+		test("rejects a text/plain body that skips the preflight", async () => {
+			const { response, paths } = await attempt({
+				...valid,
+				"Content-Type": "text/plain",
+			});
+			expect(response.status).toBe(415);
+			expect(existsSync(paths.selection)).toBe(false);
+		});
+
+		test("rejects a foreign Origin", async () => {
+			const { response, paths } = await attempt({
+				...valid,
+				Origin: "https://evil.example",
+			});
+			expect(response.status).toBe(403);
+			expect(existsSync(paths.selection)).toBe(false);
+		});
+
+		test("rejects a local Origin on another port", async () => {
+			const { response } = await attempt({
+				...valid,
+				Origin: "http://localhost:1",
+			});
+			expect(response.status).toBe(403);
+		});
+
+		test.each(["cross-site", "same-site"])(
+			"rejects Sec-Fetch-Site %s",
+			async (site) => {
+				const { response, paths } = await attempt({
+					...valid,
+					"Sec-Fetch-Site": site,
+				});
+				expect(response.status).toBe(403);
+				expect(existsSync(paths.selection)).toBe(false);
+			},
+		);
+
+		test("rejects a missing Sec-Fetch-Site", async () => {
+			const { response } = await attempt({
+				"Content-Type": "application/json",
+			});
+			expect(response.status).toBe(403);
+		});
+
+		test.each(["localhost", "127.0.0.1"])(
+			"accepts the server's own %s Origin with a JSON charset and Sec-Fetch-Site none",
+			async (host) => {
+				const { url } = await serve();
+				const response = await fetch(`${url}/prototype-decision`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json; charset=utf-8",
+						"Sec-Fetch-Site": "none",
+						Origin: `http://${host}:${new URL(url).port}`,
+					},
+					body: JSON.stringify({ action: "confirm", variant: "A" }),
+				});
+				expect(response.status).toBe(200);
+			},
+		);
 	});
 
 	test("reports decision state without consuming it", async () => {

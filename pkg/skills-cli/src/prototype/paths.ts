@@ -18,7 +18,7 @@ export interface SentinelPaths {
 }
 
 export function assertProtoName(name: string): string {
-	if (!name || name === "." || name === ".." || /[/\\\0]/.test(name))
+	if (!name || name === "." || name === ".." || /[/\\\0]|%2f|%5c/i.test(name))
 		throw new Error(`invalid prototype name: ${JSON.stringify(name)}`);
 	return name;
 }
