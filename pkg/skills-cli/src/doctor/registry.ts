@@ -9,6 +9,7 @@ import { credentialsChecks } from "../credentials/doctor";
 import { dbChecks } from "../db/doctor";
 import { demoChecks } from "../demo/doctor";
 import { depsUpgradeChecks } from "../deps-upgrade/doctor";
+import { erdChecks } from "../erd/doctor";
 import { fileChecks } from "../file/doctor";
 import { inboxChecks } from "../inbox/doctor";
 import { installChecks } from "../install/doctor";
@@ -37,6 +38,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,
 	db: dbChecks,
+	erd: erdChecks,
 	install: installChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,

@@ -1155,22 +1155,22 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 21 — w5-erd-eli5
 
 #### Engineering
-- [ ] Port erd-cli to `dg-skills erd`; move erd and eli5. erd becomes the easy way to graph anything with Mermaid: `erDiagram` for schemas, `flowchart` for workflows and import or code graphs, `sequenceDiagram` for call or message flows, plus `stateDiagram` and `classDiagram` where they fit. No Cytoscape and no viz board.
-- [ ] Pick the diagram type from the request, or set it with `--type er|flow|sequence|state|class`. Default output is Markdown with fenced mermaid blocks, which GitHub renders in PRs and issues.
-- [ ] `--html` writes one self-contained HTML file that renders the Mermaid with a pinned mermaid version from cdn.jsdelivr.net, with light and dark themes, and opens it locally (WSL: through explorer.exe).
-- [ ] erd/SKILL.md carries a **Usage:** line and a full `## Flags` table (Flag | Short | Effect | Default) covering `--type` and `--html`.
-- [ ] Use compiled current-binary db dispatch for introspection and raw CLI wrapper preserving existing hard-failure exit 1.
-- [ ] Port sanitized synthetic ERD code-graph/database/evidence fixtures without live connections.
+- [x] Port erd-cli to `dg-skills erd`; move erd and eli5. erd becomes the easy way to graph anything with Mermaid: `erDiagram` for schemas, `flowchart` for workflows and import or code graphs, `sequenceDiagram` for call or message flows, plus `stateDiagram` and `classDiagram` where they fit. No Cytoscape and no viz board.
+- [x] Pick the diagram type from the request, or set it with `--type er|flow|sequence|state|class`. Default output is Markdown with fenced mermaid blocks, which GitHub renders in PRs and issues.
+- [x] `--html` writes one self-contained HTML file that renders the Mermaid with a pinned mermaid version from cdn.jsdelivr.net, with light and dark themes, and opens it locally (WSL: through explorer.exe).
+- [x] erd/SKILL.md carries a **Usage:** line and a full `## Flags` table (Flag | Short | Effect | Default) covering `--type` and `--html`.
+- [x] Use compiled current-binary db dispatch for introspection and raw CLI wrapper preserving existing hard-failure exit 1.
+- [x] Port sanitized synthetic ERD code-graph/database/evidence fixtures without live connections.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Run compiled external-cwd live-schema handoff with fake child dependency and static fixture/orchestration suites.
-- [ ] Golden Mermaid output per diagram type (er, flow, sequence, state, class).
-- [ ] Syntax check of the generated Mermaid: a parse check with the mermaid package in tests, or a strict structural check if that is too heavy. The slice owner picks.
-- [ ] The `--html` file has no external assets other than the pinned mermaid script from cdn.jsdelivr.net.
+- [x] Run compiled external-cwd live-schema handoff with fake child dependency and static fixture/orchestration suites.
+- [x] Golden Mermaid output per diagram type (er, flow, sequence, state, class).
+- [x] Syntax check of the generated Mermaid: a parse check with the mermaid package in tests, or a strict structural check if that is too heavy. The slice owner picks.
+- [x] The `--html` file has no external assets other than the pinned mermaid script from cdn.jsdelivr.net.
 
 #### Acceptance Criteria
-- [ ] ERD consumes frozen slice-20 schema contract and never requires bare db or scripts checkout.
+- [x] ERD consumes frozen slice-20 schema contract and never requires bare db or scripts checkout.
 
 ### Slice 23 — w5-ticket
 
