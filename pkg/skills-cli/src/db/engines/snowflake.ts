@@ -222,7 +222,7 @@ export async function sfSchema(
 	schema = "PUBLIC",
 ): Promise<DbSchemaResult> {
 	const schemaLiteral = schema.replaceAll("'", "''");
-	const schemaIdentifier = identifierForInterpolation(schema);
+	const schemaIdentifier = quoteIdentifier(schema);
 	const { rows: columnRows } = await executeAsync(
 		connection,
 		`SELECT table_name, table_schema, column_name, data_type, is_nullable
