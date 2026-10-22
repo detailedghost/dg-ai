@@ -19,6 +19,20 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 If a step fails, run ~/.dg/bin/dg-skills doctor skill-publish.
 
+## Usage
+
+**Usage:** `/dg:skill-publish analyze <cli-path> | manifest draft <cli-path> [--out <dir>] | manifest validate <manifest-path> | generate <manifest-path> [--out-dir <dir>] [--repo-owner <owner>] | plugin draft <name> --skill <slug> [--skill <slug>...] [--out <dir>] | plugin validate <manifest-path> | plugin generate <manifest-path> [--root <path>]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--out <dir>` | none | manifest draft: directory for the drafted manifest JSON. plugin draft: directory for the drafted plugin manifest JSON. | manifest draft: the CLI's own directory. plugin draft: cwd. |
+| `--out-dir <dir>` | none | generate: directory for the generated MCP server scaffold. | `<manifest-dir>/<name>-server` |
+| `--repo-owner <owner>` | none | generate: bake a GitHub-pinned self-update subcommand into the generated server. | omitted (stub `update`) |
+| `--skill <slug>` | none | plugin draft: a skill to add to the manifest; repeat the flag for more than one. | none (at least one required) |
+| `--root <path>` | none | plugin generate: the checkout's `plugins/dg` to write into. | discovered by walking up from the cwd |
+
 ## MCP server target
 
 | Phase | Command | What happens |

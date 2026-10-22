@@ -198,12 +198,19 @@ async function runPluginSecretWall(skillsDir: string): Promise<PluginWallResult>
 async function pluginHumanGate(
 	manifest: PluginManifest,
 	skillDirs: Map<string, string>,
+	pluginRoot: string,
 	skillsTmpDir: string,
 	gateWarnings: string[],
 ): Promise<boolean> {
 	process.stderr.write("\n── What will be shipped ──────────────────────────────────────────\n");
 	process.stderr.write(`  Plugin: ${manifest.name}\n`);
-	process.stderr.write(`  Skills: ${[...skillDirs.keys()].join(", ")}\n`);
+	process.stderr.write("  Skills:\n");
+	for (const dir of skillDirs.values()) {
+		const slug = basename(dir);
+		const dest = join(pluginRoot, "skills", slug);
+		const status = existsSync(dest) ? `replacing existing ${relative(pluginRoot, dest)}` : "new";
+		process.stderr.write(`    ${slug} (${status})\n`);
+	}
 	process.stderr.write("  Files:\n");
 	for (const f of listFilesRecursive(skillsTmpDir).sort()) {
 		process.stderr.write(`    ${relative(skillsTmpDir, f)}\n`);
@@ -290,7 +297,7 @@ export async function cmdPluginGenerate(args: string[]): Promise<number> {
 			return 1;
 		}
 
-		const passed = await pluginHumanGate(manifest, skillDirs, skillsTmpDir, gateWarnings);
+		const passed = await pluginHumanGate(manifest, skillDirs, pluginRoot, skillsTmpDir, gateWarnings);
 		if (!passed) return 1;
 
 		const written: string[] = [];

@@ -144,6 +144,27 @@ describe("compiled dg-skills skill-publish from an external cwd", () => {
 		expect(after).toEqual(before);
 	});
 
+	test("plugin generate: replacing an already-shipped slug announces it at the gate", async () => {
+		const repoRoot = tempDir("skill-publish-compiled-repo-replace-");
+		mkdirSync(join(repoRoot, "plugins", "dg", ".claude-plugin"), { recursive: true });
+		writeFileSync(join(repoRoot, "plugins", "dg", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "dg" }));
+		const oldDest = join(repoRoot, "plugins", "dg", "skills", "greet-skill");
+		mkdirSync(oldDest, { recursive: true });
+		writeFileSync(join(oldDest, "SKILL.md"), "---\nname: greet-skill\n---\n# old content\n");
+
+		const sourceSkill = writeFakeSkill(cwd, "greet-skill");
+		const manifestPath = join(cwd, "replace-plugin.json");
+		writeFileSync(manifestPath, JSON.stringify({ name: "test-plugin", description: "d", skills: [sourceSkill] }));
+
+		const { code, err } = await run(
+			["plugin", "generate", manifestPath, "--root", join(repoRoot, "plugins", "dg")],
+			{ input: "y\n" },
+		);
+		expect(code).toBe(0);
+		expect(err).toContain(`replacing existing ${join("skills", "greet-skill")}`);
+		expect(readFileSync(join(oldDest, "SKILL.md"), "utf-8")).toContain("A fake skill.");
+	});
+
 	test("plugin generate: a planted secret hard-blocks, with no writes anywhere", async () => {
 		const repoRoot = tempDir("skill-publish-compiled-repo-secret-");
 		mkdirSync(join(repoRoot, "plugins", "dg", ".claude-plugin"), { recursive: true });
