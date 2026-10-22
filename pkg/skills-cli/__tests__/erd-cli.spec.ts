@@ -95,6 +95,18 @@ describe("erd CLI", () => {
 		}
 	});
 
+	test("a malformed --depth value with a leading digit fails instead of silently coercing", async () => {
+		const result = await run(["generate", fixture, "--depth", "3abc"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--depth must be a non-negative integer");
+	});
+
+	test("a negative --depth value fails instead of truncating every subdirectory", async () => {
+		const result = await run(["generate", fixture, "--depth", "-1"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--depth must be a non-negative integer");
+	});
+
 	test("removed viz flags are rejected", async () => {
 		const result = await run(["generate", fixture, "--viz"]);
 		expect(result.code).toBe(1);
