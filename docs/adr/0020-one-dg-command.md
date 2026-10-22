@@ -2,6 +2,7 @@
 
 Status: Proposed
 Date: 2026-10-22
+Note: every decision below is settled. Status stays Proposed until the owner accepts the build.
 
 ## Context
 
@@ -29,10 +30,28 @@ start --env <env>` starts the daemon if it is not running, registers the `review
 missing, and starts it. `dg review stop` waits up to two minutes for a running review, then stops the service.
 The channel-review pid file goes away. `dg review run` stays for foreground debugging.
 
+The `review-<env>` service declaration carries no `envFile`. Channel review reads `runner.claude.bedrock`
+(profile and region) from its own config at every start, so a supervisor restart always picks up the current
+config instead of a snapshot that can drift out of step with it. When the AWS SSO session for that profile
+expires while the service runs unattended, the runner that hits the expiry already starts
+`aws sso login --profile <profile>` itself, once per expiry (`pkg/channel-review/src/runners/index.ts`), and
+the owner approves it in the browser. The review that hit the expiry fails with CR-208. The service does not exit, so
+the supervisor's restart loop in `pkg/dg-daemon/src/services/supervisor.ts` never engages; it restarts a
+service only when its process exits, and CR-208 is a review result, not a process exit.
+
 `dg autostart install` starts `dg-daemon` at login. It writes a systemd user unit and turns on linger on Linux
 and WSL, a launchd LaunchAgent on macOS, and a scheduled task on Windows. In WSL, it also adds a Windows login
 task that runs `wsl.exe -d <distro> --exec true`, so WSL boots and its systemd unit starts. `dg autostart
 remove` undoes all of it.
+
+The release flow moves to one tag, `dg-v<x>`, cut from the commit that builds the single `dg` binary. For two
+minor releases after the switch, every release also tags that same commit with the old prefixed tags
+(`skills-v`, `daemon-v`, `agent-v`) and the extension's `ext-v` tag, so installs, bootstrap URLs, and
+self-update that still look for the old tags keep working. An upgrade replaces the three old binaries with
+`dg` plus the `dg-skills`, `dg-daemon`, and `dg-agent` links. A rollback runs the bootstrap of an older tag,
+which installs the three separate binaries again. After the bridge, the release publishes only `dg-v`. It
+keeps publishing `ext-v` too: the extension is a separate artifact for the Chrome store channel, not one of
+the three binaries this ADR merges, and that channel still needs its own tag.
 
 ## Consequences
 
@@ -41,10 +60,16 @@ remove` undoes all of it.
 - **Good:** a crashed or hung review restarts with the supervisor's backoff, and the daemon and its reviews
   start again after a reboot.
 - **Good:** one owner for the review process, so `dg review` and `/dg:jobs` cannot disagree about its state.
+- **Good:** `review-<env>` reads `runner.claude.bedrock` from the channel-review config at every start, so
+  there is no generated `envFile` to fall out of sync with it.
 - **Bad:** a `dg-daemon` restart also restarts channel review. A review that is running ends with CR-205.
-- **Bad:** the release flow changes from four tags to one, and the release guards in
-  `pkg/skills-test/__tests__/release-triggers.spec.ts` must change with it.
+- **Bad:** the release flow changes from four tags to two, with a two-minor-release bridge that publishes all
+  five tags on one commit. The release guards in `pkg/skills-test/__tests__/release-triggers.spec.ts` change
+  twice: once to add the bridge, and again when the old three prefixed tags stop.
 - **Neutral:** skills keep calling `~/.dg/bin/dg-skills`. The link sends the call to `dg skills`.
+- **Neutral:** an expired AWS SSO session fails only the review that hit it, with CR-208. The owner approves
+  the sign-in the runner already started; `review-<env>` and the supervisor are not involved, so no restart
+  loop follows.
 
 ## Alternatives considered
 
@@ -58,14 +83,13 @@ remove` undoes all of it.
   state.
 - **Start the daemon from the shell profile.** It starts only when a shell opens, and it does not work on
   Windows.
-
-## Open questions
-
-- **Service env.** How the `review-<env>` service gets the Bedrock profile and region (an `envFile` from
-  `runner.claude.bedrock`, or the service reads the config itself), and how an expired AWS SSO session is
-  shown while the service runs unattended.
-- **Compatibility and migration.** How the four release tags become one, how an install with three binaries
-  upgrades, and how a user rolls back.
+- **A generated `envFile` for `review-<env>`.** It would drift once `runner.claude.bedrock` changes in the
+  channel-review config, so the service and the config could disagree about the profile or region.
+- **Only flag the expired SSO session, without starting sign-in.** The owner chose to have the runner start
+  `aws sso login` itself instead of just reporting the expiry.
+- **A hard cut straight to `dg-v`.** Old installs, bootstrap URLs, and self-update that still look for the
+  prefixed tags would break the day the switch ships, so every one of them would need to re-bootstrap by hand.
+- **Keep four tags forever.** It never lets the project collect on the one-version gain this ADR is for.
 
 ## Diagrams
 
@@ -86,4 +110,5 @@ flowchart LR
 - `pkg/dg-daemon/src/services/config.ts`
 - `pkg/dg-agent/src/start.ts`
 - `pkg/channel-review/src/paths.ts`
+- `pkg/channel-review/src/runners/index.ts`
 - `pkg/skills-test/__tests__/release-triggers.spec.ts`
