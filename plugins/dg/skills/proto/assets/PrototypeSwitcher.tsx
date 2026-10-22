@@ -268,6 +268,7 @@ export default function PrototypeSwitcher({
   }, []);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const sync = () => {
       const m = readMode();
       setMode(m);
@@ -327,6 +328,7 @@ export default function PrototypeSwitcher({
   }, [outcome]);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const editable = (e.target as HTMLElement).isContentEditable;
@@ -357,37 +359,26 @@ export default function PrototypeSwitcher({
 
       const closeAfter = action === "confirm" && notes.trim().length === 0;
 
-      let queued = false;
-      try {
-        queued =
-          typeof navigator.sendBeacon === "function" &&
-          navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }));
-      } catch {
-        queued = false;
-      }
-      if (queued) {
-        setOutcome(action);
-        if (closeAfter) window.setTimeout(closeTab, 2200);
-        return;
-      }
-
       setSubmitting(true);
-      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload })
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      })
         .then(async res => {
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));
             setError((body as { error?: string }).error ?? `HTTP ${res.status}`);
-            setSubmitting(false);
             return;
           }
           setOutcome(action);
           if (closeAfter) window.setTimeout(closeTab, 2200);
-          else setSubmitting(false);
         })
         .catch(err => {
           setError(err instanceof Error ? err.message : "Network error");
-          setSubmitting(false);
-        });
+        })
+        .finally(() => setSubmitting(false));
     },
     [port, basePath, prototypeName, current, variants, notes, closeTab],
   );

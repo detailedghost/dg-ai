@@ -191,6 +191,12 @@ describe("proto skill local mode", () => {
 		}
 	});
 
+	test("the React switcher re-enables its buttons on every submit outcome", () => {
+		const source = skillFile("assets/PrototypeSwitcher.tsx");
+		expect(source).toContain(".finally(() => setSubmitting(false))");
+		expect(source).not.toContain("sendBeacon");
+	});
+
 	test("ships the copyable switcher and endpoint assets", () => {
 		for (const file of [
 			"assets/PrototypeSwitcher.tsx",

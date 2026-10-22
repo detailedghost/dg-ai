@@ -23,6 +23,10 @@ The endpoint templates run `dg-skills prototype path <name>` to find the sentine
 `$DG_SKILLS_BIN` when set, else the binary installed under `$HOME/.dg/bin`. Export
 `PROTOTYPE_LIGHT=1` in the dev server's environment for a `--light` prototype.
 
+The endpoint templates accept only a same-origin JSON `POST` from `localhost`, `127.0.0.1`, or
+`[::1]`, and only a `name` that matches `[a-z0-9][a-z0-9_-]*`. Any other request gets a 4xx reply
+and writes nothing.
+
 ## Switcher props
 
 `PrototypeSwitcher.tsx` and `PrototypeSwitcher.astro` accept the same props.

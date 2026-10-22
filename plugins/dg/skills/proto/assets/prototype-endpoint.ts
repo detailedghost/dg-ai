@@ -10,6 +10,40 @@ interface ConfirmBody {
 	action?: "confirm" | "reject";
 }
 
+const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function isLocalOrigin(origin: string): boolean {
+	try {
+		const url = new URL(origin);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			LOCAL_HOSTS.has(url.hostname)
+		);
+	} catch {
+		return false;
+	}
+}
+
+function refusal(
+	header: (name: string) => string | null | undefined,
+): { status: number; error: string } | undefined {
+	const origin = header("origin");
+	if (origin != null && !isLocalOrigin(origin))
+		return { status: 403, error: "forbidden origin" };
+	const site = header("sec-fetch-site");
+	if (site !== "same-origin" && site !== "none")
+		return { status: 403, error: "forbidden request" };
+	const type = (header("content-type") ?? "").split(";")[0]?.trim().toLowerCase();
+	if (type !== "application/json")
+		return { status: 415, error: "content type must be application/json" };
+	return undefined;
+}
+
+function validName(name: unknown): name is string {
+	return typeof name === "string" && NAME.test(name);
+}
+
 const CLI =
 	process.env.DG_SKILLS_BIN ??
 	join(process.env.HOME ?? "", ".dg", "bin", "dg-skills");
@@ -29,6 +63,9 @@ function record(body: ConfirmBody): {
 	status: number;
 	body: Record<string, unknown>;
 } {
+	if (!validName(body?.name)) {
+		return { status: 400, body: { error: "invalid name" } };
+	}
 	const sentinelPath = resolveSentinelPath(body.name);
 	const protoDir = dirname(sentinelPath);
 	mkdirSync(protoDir, { recursive: true });
@@ -53,11 +90,23 @@ function record(body: ConfirmBody): {
 
 /** Express or Vite dev-server handler: `app.post("/prototype-confirm", prototypeConfirmHandler)`. */
 export async function prototypeConfirmHandler(
-	req: { body?: unknown; json?: () => Promise<unknown> },
+	req: {
+		body?: unknown;
+		json?: () => Promise<unknown>;
+		headers?: Record<string, string | string[] | undefined>;
+	},
 	res: { status(code: number): { json(value: unknown): void } },
 ): Promise<void> {
 	if (process.env.NODE_ENV === "production") {
 		res.status(404).json({ error: "not found" });
+		return;
+	}
+	const refused = refusal((name) => {
+		const value = req.headers?.[name];
+		return Array.isArray(value) ? value[0] : value;
+	});
+	if (refused) {
+		res.status(refused.status).json({ error: refused.error });
 		return;
 	}
 	const body = (
@@ -74,6 +123,10 @@ export default {
 	fetch: async (req: Request): Promise<Response> => {
 		if (process.env.NODE_ENV === "production") {
 			return Response.json({ error: "not found" }, { status: 404 });
+		}
+		const refused = refusal((name) => req.headers.get(name));
+		if (refused) {
+			return Response.json({ error: refused.error }, { status: refused.status });
 		}
 		let body: ConfirmBody;
 		try {
