@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
@@ -49,6 +49,22 @@ function log(repo: string, ref = "HEAD"): string {
 	return runGit(["log", "--oneline", ref], repo).trim();
 }
 
+function findStateFile(dir: string): string {
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			try {
+				return findStateFile(full);
+			} catch {
+				continue;
+			}
+		} else if (entry.name.endsWith(".json")) {
+			return full;
+		}
+	}
+	throw new Error(`no state file found under ${dir}`);
+}
+
 interface FakeGhOptions {
 	inProgress?: string;
 	poll?: string;
@@ -93,18 +109,16 @@ function runRow(databaseId: number, event = "workflow_dispatch"): string {
 
 function baseEnv(opts: { path: string; gitlab?: boolean }): Record<string, string> {
 	const env: Record<string, string> = {
-		PATH: opts.path,
-		HOME: tmp("test-live-home-"),
-		AI_SCRATCH_DIR: tmp("test-live-scratch-"),
-		AI_STATE_DIR: tmp("test-live-state-"),
-		GIT_CONFIG_GLOBAL: "/dev/null",
-		GIT_CONFIG_NOSYSTEM: "1",
-		GIT_CONFIG_COUNT: "0",
+		...cliFixtures.isolatedGitEnv({
+			path: opts.path,
+			home: tmp("test-live-home-"),
+			scratch: tmp("test-live-scratch-"),
+			state: tmp("test-live-state-"),
+		}),
 		GIT_AUTHOR_NAME: "T",
 		GIT_AUTHOR_EMAIL: "t@t.t",
 		GIT_COMMITTER_NAME: "T",
 		GIT_COMMITTER_EMAIL: "t@t.t",
-		GIT_TERMINAL_PROMPT: "0",
 	};
 	if (!opts.gitlab) env.AI_VCS_PROVIDER = "github";
 	return env;
@@ -382,6 +396,46 @@ describe("test-live setup — dispatch/push/watch failures", () => {
 		const cleanup = await runCli(["cleanup"], repo, env);
 		expect(cleanup.code).toBe(1);
 		expect(cleanup.stderr).toContain("push failed");
+	});
+});
+
+describe("test-live setup — commit failure", () => {
+	test("a failing pre-commit hook reverts the patched workflow file and leaves no state", async () => {
+		const { repo } = buildRepo();
+		const preSha = headSha(repo);
+		const hookPath = join(repo, ".git", "hooks", "pre-commit");
+		writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+		chmodSync(hookPath, 0o755);
+		const env = baseEnv({ path: fakeGhPath() });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("failed to commit the workflow patch");
+		expect(headSha(repo)).toBe(preSha);
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).toBe(DEPLOY_WORKFLOW);
+		expect(runGit(["status", "--porcelain"], repo).trim()).toBe("");
+
+		const cleanup = await runCli(["cleanup"], repo, env);
+		expect(cleanup.code).toBe(1);
+		expect(cleanup.stderr).toContain("no state file");
+	});
+});
+
+describe("test-live cleanup — corrupt state file", () => {
+	test("a corrupt state file dies cleanly instead of being treated as no pending patch", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(9501) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+
+		const stateFile = findStateFile(env.AI_STATE_DIR);
+		writeFileSync(stateFile, "{not valid json");
+
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).not.toContain("no state file");
+		expect(result.stderr).toContain("corrupt");
 	});
 });
 

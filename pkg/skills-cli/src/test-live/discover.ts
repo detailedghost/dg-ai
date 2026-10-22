@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "@dg/common/node";
+import { TestLiveError } from "./shared";
 
-export class TestLiveError extends Error {}
+export { TestLiveError };
 
 const EXCLUDED_KEYWORDS = ["infra", "build", "blt", "codeql", "admin"];
 
@@ -39,8 +40,8 @@ function readOverride(env: string): string | null {
 		if (!line || line.startsWith("#")) continue;
 		const eq = line.indexOf("=");
 		if (eq === -1) continue;
-		if (line.slice(0, eq) !== env) continue;
-		const overridePath = join(root, line.slice(eq + 1));
+		if (line.slice(0, eq).trim() !== env) continue;
+		const overridePath = join(root, line.slice(eq + 1).trim());
 		if (existsSync(overridePath)) {
 			process.stderr.write(`>>> Using repo override: ${overridePath}\n`);
 			return overridePath;
@@ -71,7 +72,7 @@ export function findWorkflow(env: string, workflowsDir: string): string {
 
 	const candidates = EXACT_CANDIDATES[env];
 	if (!candidates) {
-		throw new TestLiveError(`unknown env '${env}' — use 'dev', 'stage', or 'prod'`);
+		throw new TestLiveError(`unknown env '${env}' — use 'dev', 'stage', 'staging', or 'prod'`);
 	}
 
 	const exact = firstExisting(workflowsDir, candidates);

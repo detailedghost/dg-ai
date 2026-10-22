@@ -1,22 +1,13 @@
 import { readFileSync } from "node:fs";
-import { runCapture } from "@dg/common/node";
 import { currentBranch } from "../utils/git";
+import { TestLiveError } from "./discover";
+import { git, info, makeDie } from "./shared";
 import { readTestLiveState, removeTestLiveState } from "./state";
+import type { TestLiveState } from "./types";
 
 const PATCH_MARKER = "workflow_dispatch: {}  # TEST-LIVE: temporary";
 
-function die(message: string): number {
-	process.stderr.write(`test-live-cleanup: ${message}\n`);
-	return 1;
-}
-
-function info(message: string): void {
-	process.stdout.write(`>>> ${message}\n`);
-}
-
-function git(args: string[]) {
-	return runCapture("git", args, { stdin: null });
-}
+const die = makeDie("test-live-cleanup");
 
 /** A missing or unreadable workflow file is never treated as "already clean" — that would skip real recovery. */
 function workflowStillPatched(workflowPath: string): boolean {
@@ -27,9 +18,49 @@ function workflowStillPatched(workflowPath: string): boolean {
 	}
 }
 
+async function dropPatchCommit(
+	headSha: string,
+	prePatchSha: string,
+	patchCommitSha: string,
+	workflowPath: string,
+): Promise<number | undefined> {
+	if (headSha === patchCommitSha) {
+		info(`Resetting to pre-patch SHA ${prePatchSha}...`);
+		const reset = await git(["reset", "--hard", prePatchSha]);
+		if (reset.status !== 0) return die(`reset failed: ${reset.stderr.trim()}`);
+		return;
+	}
+
+	const ancestor = await git(["merge-base", "--is-ancestor", patchCommitSha, "HEAD"]);
+	if (ancestor.status !== 0) {
+		// A prior cleanup run may have rebased successfully and only failed at the push retry below;
+		// the marker's absence from the workflow file at HEAD is how we tell that apart from real data loss.
+		if (workflowStillPatched(workflowPath)) {
+			return die(
+				`the patch commit ${patchCommitSha.slice(0, 8)} is no longer in this branch's history — inspect the branch manually before retrying`,
+			);
+		}
+		info("Patch commit already dropped locally — retrying the push...");
+		return;
+	}
+
+	info(`Dropping the patch commit ${patchCommitSha.slice(0, 8)}, keeping later commits...`);
+	const rebase = await git(["rebase", "--onto", `${patchCommitSha}^`, patchCommitSha]);
+	if (rebase.status !== 0) {
+		await git(["rebase", "--abort"]);
+		return die(`rebase to drop the patch commit failed and was aborted: ${rebase.stderr.trim()}`);
+	}
+}
+
 export async function runCleanup(): Promise<number> {
 	const branch = await currentBranch();
-	const state = readTestLiveState(branch);
+	let state: TestLiveState | null;
+	try {
+		state = readTestLiveState(branch);
+	} catch (error) {
+		if (error instanceof TestLiveError) return die(error.message);
+		throw error;
+	}
 	if (!state) {
 		return die(`no state file for branch '${branch}' — nothing to clean up`);
 	}
@@ -56,30 +87,8 @@ export async function runCleanup(): Promise<number> {
 	const headSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
 
 	if (headSha !== state.prePatchSha) {
-		if (headSha === state.patchCommitSha) {
-			info(`Resetting to pre-patch SHA ${state.prePatchSha}...`);
-			const reset = await git(["reset", "--hard", state.prePatchSha]);
-			if (reset.status !== 0) return die(`reset failed: ${reset.stderr.trim()}`);
-		} else {
-			const ancestor = await git(["merge-base", "--is-ancestor", state.patchCommitSha, "HEAD"]);
-			if (ancestor.status !== 0) {
-				// A prior cleanup run may have rebased successfully and only failed at the push retry below;
-				// the marker's absence from the workflow file at HEAD is how we tell that apart from real data loss.
-				if (workflowStillPatched(state.workflowPath)) {
-					return die(
-						`the patch commit ${state.patchCommitSha.slice(0, 8)} is no longer in this branch's history — inspect the branch manually before retrying`,
-					);
-				}
-				info("Patch commit already dropped locally — retrying the push...");
-			} else {
-				info(`Dropping the patch commit ${state.patchCommitSha.slice(0, 8)}, keeping later commits...`);
-				const rebase = await git(["rebase", "--onto", `${state.patchCommitSha}^`, state.patchCommitSha]);
-				if (rebase.status !== 0) {
-					await git(["rebase", "--abort"]);
-					return die(`rebase to drop the patch commit failed and was aborted: ${rebase.stderr.trim()}`);
-				}
-			}
-		}
+		const failure = await dropPatchCommit(headSha, state.prePatchSha, state.patchCommitSha, state.workflowPath);
+		if (failure !== undefined) return failure;
 	}
 
 	const push = await git(["push", "--force-with-lease"]);

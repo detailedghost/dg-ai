@@ -82,6 +82,24 @@ export function restPr(
 
 export const runGit = git;
 
+export function isolatedGitEnv(opts: {
+	path: string;
+	home: string;
+	scratch: string;
+	state: string;
+}): Record<string, string> {
+	return {
+		PATH: opts.path,
+		HOME: opts.home,
+		AI_SCRATCH_DIR: opts.scratch,
+		AI_STATE_DIR: opts.state,
+		GIT_CONFIG_GLOBAL: "/dev/null",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_COUNT: "0",
+		GIT_TERMINAL_PROMPT: "0",
+	};
+}
+
 export function commitFile(dir: string, name: string, content: string, message: string): string {
 	writeFileSync(join(dir, name), content);
 	runGit(["add", name], dir);

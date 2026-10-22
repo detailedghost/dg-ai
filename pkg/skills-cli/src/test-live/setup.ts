@@ -4,6 +4,7 @@ import { runCapture, runNative } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { currentBranch } from "../utils/git";
 import { findWorkflow, TestLiveError } from "./discover";
+import { git, info, makeDie } from "./shared";
 import { readTestLiveState, writeTestLiveState } from "./state";
 import type { TestLiveState } from "./types";
 
@@ -20,18 +21,7 @@ interface GhRun {
 	event: string;
 }
 
-function die(message: string): number {
-	process.stderr.write(`test-live: ${message}\n`);
-	return 1;
-}
-
-function info(message: string): void {
-	process.stdout.write(`>>> ${message}\n`);
-}
-
-function git(args: string[]) {
-	return runCapture("git", args, { stdin: null });
-}
+const die = makeDie("test-live");
 
 function gh(args: string[]) {
 	return runCapture("gh", args, { stdin: null });
@@ -45,12 +35,15 @@ function parseGhRuns(stdout: string): GhRun[] {
 	try {
 		const rows = JSON.parse(stdout) as unknown;
 		return Array.isArray(rows) ? (rows as GhRun[]) : [];
-	} catch {
+	} catch (error) {
+		process.stderr.write(
+			`test-live: failed to parse gh run list output as JSON: ${error instanceof Error ? error.message : String(error)}\n`,
+		);
 		return [];
 	}
 }
 
-const ON_KEY = /^on:$/m;
+const ON_KEY = /^on:[ \t]*\r?$/m;
 
 export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_DEPS): Promise<number> {
 	const env = args[0] || "dev";
@@ -70,7 +63,13 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 		return die(`on ${branch} — run test-live from a feature branch`);
 	}
 
-	const existing = readTestLiveState(branch);
+	let existing: TestLiveState | null;
+	try {
+		existing = readTestLiveState(branch);
+	} catch (error) {
+		if (error instanceof TestLiveError) return die(error.message);
+		throw error;
+	}
 	if (existing?.patched) {
 		return die(`a test-live patch is already pending on ${branch} — run cleanup first`);
 	}
@@ -124,6 +123,7 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 		await git(["add", workflowPath]);
 		const commit = await git(["commit", "-m", "chore(ci): add workflow_dispatch for test-live [skip ci]"]);
 		if (commit.status !== 0) {
+			await git(["checkout", "HEAD", "--", workflowPath]);
 			return die(`failed to commit the workflow patch: ${commit.stderr.trim()}`);
 		}
 		patchCommitSha = (await git(["rev-parse", "HEAD"])).stdout.trim();

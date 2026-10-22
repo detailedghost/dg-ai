@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSkillsCli } from "../build";
+import * as cliFixtures from "./cli-fixtures";
 import { git as runGit } from "./git-repo-fixtures";
 
 setDefaultTimeout(60_000);
@@ -34,17 +35,13 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function isolatedEnv(cwd: string): Record<string, string> {
-	return {
-		PATH: gitOnlyBin,
-		HOME: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-home-")),
-		AI_SCRATCH_DIR: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-scratch-")),
-		AI_STATE_DIR: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-state-")),
-		GIT_CONFIG_GLOBAL: "/dev/null",
-		GIT_CONFIG_NOSYSTEM: "1",
-		GIT_CONFIG_COUNT: "0",
-		GIT_TERMINAL_PROMPT: "0",
-	};
+function isolatedEnv(): Record<string, string> {
+	return cliFixtures.isolatedGitEnv({
+		path: gitOnlyBin,
+		home: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-home-")),
+		scratch: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-scratch-")),
+		state: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-state-")),
+	});
 }
 
 describe("compiled dg-skills test-live from an external cwd, with no legacy scripts on PATH", () => {
@@ -56,7 +53,7 @@ describe("compiled dg-skills test-live from an external cwd, with no legacy scri
 
 		const proc = Bun.spawn([binary, "test-live", "setup", "dev"], {
 			cwd,
-			env: isolatedEnv(cwd),
+			env: isolatedEnv(),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
@@ -72,7 +69,7 @@ describe("compiled dg-skills test-live from an external cwd, with no legacy scri
 
 		const proc = Bun.spawn([binary, "test-live", "cleanup"], {
 			cwd,
-			env: isolatedEnv(cwd),
+			env: isolatedEnv(),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
