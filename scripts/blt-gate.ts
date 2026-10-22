@@ -38,26 +38,123 @@ export function requiredChecks(root: string, changed: string[]): string[] {
 	);
 }
 
-type CheckRun = { id: number; status: string; conclusion: string | null };
+type CheckRun = {
+	id: number;
+	status: "completed";
+	conclusion: "success" | null;
+};
+
+type SpawnSyncFn = (cmd: string[]) => {
+	success: boolean;
+	stdout: { toString(): string };
+	stderr: { toString(): string };
+};
+
+type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+
+export type GateDeps = {
+	spawnSync: SpawnSyncFn;
+	fetch: FetchFn;
+	now: () => number;
+	sleep: (ms: number) => Promise<void>;
+};
+
+const defaultDeps: GateDeps = {
+	spawnSync: (cmd) => Bun.spawnSync(cmd),
+	fetch,
+	now: Date.now,
+	sleep: Bun.sleep,
+};
+
+function changedFiles(
+	spawnSync: SpawnSyncFn,
+	baseSha: string,
+	headSha: string,
+): string[] {
+	const result = spawnSync([
+		"git",
+		"diff",
+		"--name-only",
+		`${baseSha}...${headSha}`,
+	]);
+	if (!result.success) {
+		throw new Error(
+			`git diff ${baseSha}...${headSha} failed: ${result.stderr.toString().trim()}`,
+		);
+	}
+	return result.stdout.toString().split("\n").filter(Boolean);
+}
 
 async function latestRun(
+	fetchImpl: FetchFn,
 	repo: string,
 	sha: string,
 	name: string,
 	token: string,
 ): Promise<CheckRun | undefined> {
-	const res = await fetch(
-		`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?check_name=${name}`,
-		{
-			headers: {
-				authorization: `Bearer ${token}`,
-				accept: "application/vnd.github+json",
+	let res: Response;
+	try {
+		res = await fetchImpl(
+			`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?check_name=${name}`,
+			{
+				headers: {
+					authorization: `Bearer ${token}`,
+					accept: "application/vnd.github+json",
+				},
 			},
-		},
-	);
+		);
+	} catch (err) {
+		console.log(
+			`check-runs for ${name}: network error, retrying next poll: ${(err as Error).message}`,
+		);
+		return undefined;
+	}
 	if (!res.ok) throw new Error(`check-runs for ${name}: HTTP ${res.status}`);
 	const { check_runs: runs } = (await res.json()) as { check_runs: CheckRun[] };
 	return runs.sort((a, b) => b.id - a.id)[0];
+}
+
+export type GateOptions = {
+	root: string;
+	baseSha: string;
+	headSha: string;
+	repo: string;
+	token: string;
+};
+
+export async function gate(
+	options: GateOptions,
+	deps: Partial<GateDeps> = {},
+): Promise<void> {
+	const { spawnSync, fetch: fetchImpl, now, sleep } = { ...defaultDeps, ...deps };
+	const changed = changedFiles(spawnSync, options.baseSha, options.headSha);
+	const pending = new Set(requiredChecks(options.root, changed));
+	console.log(
+		pending.size === 0
+			? "No BLT check applies to this PR."
+			: `Waiting for: ${[...pending].join(", ")}`,
+	);
+	const deadline = now() + TIMEOUT_MS;
+	while (pending.size > 0) {
+		for (const name of pending) {
+			const run = await latestRun(
+				fetchImpl,
+				options.repo,
+				options.headSha,
+				name,
+				options.token,
+			);
+			if (run?.status !== "completed") continue;
+			if (run.conclusion !== "success")
+				throw new Error(`${name} finished with ${run.conclusion}`);
+			console.log(`${name} passed`);
+			pending.delete(name);
+		}
+		if (pending.size === 0) break;
+		if (now() > deadline)
+			throw new Error(`timed out waiting for: ${[...pending].join(", ")}`);
+		await sleep(POLL_MS);
+	}
 }
 
 async function main(): Promise<void> {
@@ -67,41 +164,13 @@ async function main(): Promise<void> {
 			"BASE_SHA, HEAD_SHA, GITHUB_REPOSITORY, and GITHUB_TOKEN are required",
 		);
 	}
-	const changed = Bun.spawnSync([
-		"git",
-		"diff",
-		"--name-only",
-		`${BASE_SHA}...${HEAD_SHA}`,
-	])
-		.stdout.toString()
-		.split("\n")
-		.filter(Boolean);
-	const pending = new Set(requiredChecks(process.cwd(), changed));
-	console.log(
-		pending.size === 0
-			? "No BLT check applies to this PR."
-			: `Waiting for: ${[...pending].join(", ")}`,
-	);
-	const deadline = Date.now() + TIMEOUT_MS;
-	while (pending.size > 0) {
-		for (const name of pending) {
-			const run = await latestRun(
-				GITHUB_REPOSITORY,
-				HEAD_SHA,
-				name,
-				GITHUB_TOKEN,
-			);
-			if (run?.status !== "completed") continue;
-			if (run.conclusion !== "success")
-				throw new Error(`${name} finished with ${run.conclusion}`);
-			console.log(`${name} passed`);
-			pending.delete(name);
-		}
-		if (pending.size === 0) break;
-		if (Date.now() > deadline)
-			throw new Error(`timed out waiting for: ${[...pending].join(", ")}`);
-		await Bun.sleep(POLL_MS);
-	}
+	await gate({
+		root: process.cwd(),
+		baseSha: BASE_SHA,
+		headSha: HEAD_SHA,
+		repo: GITHUB_REPOSITORY,
+		token: GITHUB_TOKEN,
+	});
 }
 
 if (import.meta.main) await main();
