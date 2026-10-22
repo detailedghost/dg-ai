@@ -70,7 +70,7 @@ When `localOnly=false` (PR-targeted run), resolve in order — use the first tha
 De-duplicate: if `reviewDir == $PWD`, glob only once.
 
 1. Glob `<reviewDir>/.agents/code-review/YYYY-MM-DD-HHMMSS-NNN.md`; sort lexicographically; take last. No match → `localItems=[]`.
-1. Parse each distinct finding into `{localId:"local-N", source:"local-review", mode:"fix", path, line, body, severity|null, reviewFile}`. No `threadId`/`commentId`/`diffHunk`.
+1. Parse each distinct finding into `{localId:"local-N", source:"local-review", mode:"fix", path, line, body, severity|null, reviewFile}`. A heading of `## <path>:<line>` gives `line`; a heading of `## <path> (whole file)` is a file-level finding with `line:null`. No `threadId`/`commentId`/`diffHunk`.
 1. **Always print:** `[local-review] gathered N file(s) from <reviewDir>` (N=0 is fine — the log is required so a miss is visible).
 1. `localOnly=true` and no file found → stop: `"--local: no code-review file found"`.
 

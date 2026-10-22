@@ -193,7 +193,7 @@ describe("local mode", () => {
 		expect(out.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
 		expect(out.untracked).toEqual(["untracked.txt"]);
 		expect(readFileSync(out.chunks[0].annotatedPath, "utf8")).toContain(
-			"          2 + const b = 3;",
+			"old:- new:2 + const b = 3;",
 		);
 	});
 

@@ -48,7 +48,7 @@ reports CR-206 for that runner. Unused runners may fail their probes.
 | --- | --- |
 | claude | `.claude/plugins/cache/<marketplace>/dg/<version>/plugins/dg/skills/thrash/SKILL.md` |
 | codex | `.codex/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
-| copilot | `.copilot/skills/thrash/SKILL.md` |
+| copilot | `.copilot/skills/thrash/SKILL.md` or `.agents/skills/thrash/SKILL.md` |
 | grok | An enabled, user-invocable, unambiguous `thrash` reported by `grok inspect --json` |
 
 The exact command is in [Grok runner](#grok-runner). Install and authenticate using the
@@ -200,7 +200,8 @@ every required key with placeholder values.
 | `runner.fallback` | string or null | `null` | Retry a Claude review once after a usage limit. Off by default. Set `"fallback": "codex"` to turn it on, or choose copilot or grok. The fallback must pass its runner probe. |
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
-| `runner.claude.allowedTools` | string array | `Bash(<home>/.dg/bin/dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`) | Tools Claude may use. Keep it narrow; see Runner safety. |
+| `runner.claude.allowedTools` | string array | `Bash(<home>/.dg/bin/dg-skills thrash:*)` and `Bash(~/.dg/bin/dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`, and `<source>/plugins/dg/skills/thrash/**` for each local directory marketplace in `~/.claude/plugins/known_marketplaces.json`) | Tools Claude may use. Keep it narrow; see Runner safety. |
+| `runner.claude.bedrock` | object | unset | Run Claude reviews through Amazon Bedrock. Set `model` (a Bedrock model ID or inference profile ARN) and `region`. `profile` is the AWS profile and is optional. The daemon sets `CLAUDE_CODE_USE_BEDROCK`, `AWS_REGION`, and `AWS_PROFILE` for reviews only, and `model` becomes the default review model. `~model` overrides it. |
 | `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `<home>/.dg/bin/dg-skills address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
 | `runner.grok.model` | string | Unset | Optional `--model` for the Grok CLI. |
 | `runner.grok.tools` | string array | Unset | Optional Grok tool ids, comma-joined into `--tools`. Empty leaves the CLI default. See Grok runner. |

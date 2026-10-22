@@ -11,7 +11,10 @@ import {
 	type PhoneFriendDeps,
 	phoneAnswer,
 	phoneDial,
+	phoneCard,
+	phoneContacts,
 	phoneInvite,
+	phoneName,
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
@@ -250,6 +253,20 @@ describe("phoneDial", () => {
 		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"] }]);
 	});
 
+	it("names the card owner when dial gets a name", async () => {
+		await phoneDial(cardFor(), undefined, deps(), "dante");
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
+	});
+
+	it("refuses a dial name that another line uses before it rings", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: contactNpub, name: "dante", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor(), undefined, deps(), "dante")).rejects.toThrow("already used by line work");
+		expect(pool.events).toHaveLength(0);
+		expect(readConfig(line).contact).toBeUndefined();
+	});
+
 	it("reads the card from stdin when the argument is -", async () => {
 		await phoneDial("-", undefined, deps({ readStdin: async () => `${cardFor()}\n` }));
 
@@ -300,6 +317,23 @@ describe("accepting a call", () => {
 		expect(readConfig(line).contact).toBe(contactNpub);
 		expect(readInvite(line)).toBeUndefined();
 	});
+
+	it("names the caller with the name the invite was made for", async () => {
+		await phoneInvite({ name: "grok" }, deps());
+		const { secret } = readInvite(line) as { secret: string };
+		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, getPublicKey(myKey()), secret)));
+
+		await phoneVoicemail(deps());
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "grok" });
+	});
+
+	it("refuses an invite name that another line already uses, and saves no invite", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: contactNpub, name: "grok", relays: DEFAULT_RELAYS });
+
+		await expect(phoneInvite({ name: "grok" }, deps())).rejects.toThrow("already used by line work");
+		expect(readInvite(line)).toBeUndefined();
+	});
 });
 
 describe("phoneNumber", () => {
@@ -312,13 +346,70 @@ describe("phoneNumber", () => {
 		await phoneNumber(deps());
 
 		const npub = nip19.npubEncode(getPublicKey(myKey()));
-		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, key_store: "file", listener: 4242 }]);
+		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, name: null, key_store: "file", listener: 4242 }]);
 	});
 
 	it("reports no contact and no listener before pairing", async () => {
 		await phoneNumber(deps());
 
 		expect(lines()).toMatchObject([{ contact: null, listener: null }]);
+	});
+});
+
+describe("phoneName and phoneContacts", () => {
+	it("names the contact and lists it with its line and listener", async () => {
+		pair();
+		await phoneOn(deps());
+		out = [];
+
+		phoneName("velora", deps());
+		phoneContacts(deps());
+
+		expect(lines()).toEqual([
+			{ line: "default", name: "velora", contact: contactNpub },
+			{ line: "default", name: "velora", contact: contactNpub, listener: 4242 },
+		]);
+		expect(readConfig(line).name).toBe("velora");
+	});
+
+	it("refuses a name with no contact, a bad name, or a name another line uses", () => {
+		expect(() => phoneName("velora", deps())).toThrow("no contact saved");
+		pair();
+		expect(() => phoneName("Velora!", deps())).toThrow("lowercase");
+		const other = linePaths(paths, "work");
+		writeConfig(other, { contact: contactNpub, name: "velora", relays: DEFAULT_RELAYS });
+		expect(() => phoneName("velora", deps())).toThrow("already used by line work");
+		expect(() => phoneName("work", deps())).toThrow("already used by line work");
+	});
+});
+
+describe("phoneCard", () => {
+	it("prints the open card again with the same secret, relays, and expiry", async () => {
+		await phoneInvite({ relay: ["wss://x.example"] }, deps());
+		const [first] = lines() as { card: string; expires_at: string }[];
+		out = [];
+
+		await phoneCard(deps());
+
+		expect(lines()).toEqual([first]);
+	});
+
+	it("shows the open card's expiry in phoneNumber, and hides it once no card is open", async () => {
+		await phoneInvite({ ttl: "1" }, deps());
+		out = [];
+
+		await phoneNumber(deps());
+		await phoneNumber(deps({ now: () => NOW + 3601 }));
+
+		const [open, expired] = lines() as Record<string, unknown>[];
+		expect(open.card_expires_at).toBe(new Date((NOW + 3600) * 1000).toISOString());
+		expect(expired).not.toHaveProperty("card_expires_at");
+	});
+
+	it("refuses with no open card and says how to make one", async () => {
+		await expect(phoneCard(deps())).rejects.toThrow("phone-friend invite");
+		await phoneInvite({ ttl: "1" }, deps());
+		await expect(phoneCard(deps({ now: () => NOW + 3601 }))).rejects.toThrow("no open call card");
 	});
 });
 

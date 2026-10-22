@@ -73,7 +73,7 @@ test("does not count a flat local ~/.claude/skills/thrash for claude", () => {
 	expect(thrashInstalled("claude", home, realSkillFs)).toBe(false);
 });
 
-test("copilot finds only ~/.copilot/skills and ignores ~/.claude/skills", () => {
+test("copilot finds thrash under ~/.copilot/skills and ignores ~/.claude/skills", () => {
 	const claudeHome = join(root, "a");
 	plant(join(claudeHome, ".claude"));
 	expect(thrashInstalled("copilot", claudeHome, realSkillFs)).toBe(false);
@@ -82,10 +82,21 @@ test("copilot finds only ~/.copilot/skills and ignores ~/.claude/skills", () => 
 	expect(thrashInstalled("copilot", copilotHome, realSkillFs)).toBe(true);
 });
 
-test.each([".codex", ".agents"])("codex finds thrash under %s/skills", (dir) => {
+test.each([
+	["codex", ".codex"],
+	["codex", ".agents"],
+	["copilot", ".copilot"],
+	["copilot", ".agents"],
+] as const)("%s finds thrash under %s/skills", (runner, dir) => {
 	const home = join(root, "home");
 	plant(join(home, dir));
-	expect(thrashInstalled("codex", home, realSkillFs)).toBe(true);
+	expect(thrashInstalled(runner, home, realSkillFs)).toBe(true);
+});
+
+test("copilot returns false when neither personal skill root contains thrash", () => {
+	const home = join(root, "home");
+	mkdirSync(join(home, ".config"), { recursive: true });
+	expect(thrashInstalled("copilot", home, realSkillFs)).toBe(false);
 });
 
 test.each(["copilot", "codex"] as const)("%s ignores a plugin skill under the claude plugin tree", (runner) => {

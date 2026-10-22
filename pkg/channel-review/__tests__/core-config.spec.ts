@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
+	mkdirSync,
 	readFileSync,
 	statSync,
 	writeFileSync,
@@ -9,6 +10,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
+import { claudeDirectoryMarketplaceSkillsDirs } from "@dg/common/node";
 import {
 	loadConfig,
 	resolveEnv,
@@ -122,13 +124,28 @@ describe("loadConfig defaults", () => {
 		const tools = load().runner.claude.allowedTools;
 		expect(tools).toEqual([
 			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
+			"Bash(~/.dg/bin/dg-skills thrash:*)",
 			"Agent",
 			`Read(/${scratch}/thrash/**)`,
 			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
+			...claudeDirectoryMarketplaceSkillsDirs(homedir()).map((dir) => `Read(/${dir}/thrash/**)`),
 			`Grep(/${scratch}/thrash/**)`,
 			`Glob(/${scratch}/thrash/**)`,
 			`Edit(/${scratch}/thrash/**)`,
 		]);
+	});
+
+	test("allows Read of the thrash skill inside a local directory marketplace", () => {
+		const local = join(home.dir, "dg-src");
+		mkdirSync(join(local, "plugins", "dg", "skills"), { recursive: true });
+		mkdirSync(join(home.dir, ".claude", "plugins"), { recursive: true });
+		writeFileSync(
+			join(home.dir, ".claude", "plugins", "known_marketplaces.json"),
+			JSON.stringify({ mine: { source: { source: "directory", path: local } }, remote: { source: { source: "github", repo: "o/r" } } }),
+		);
+		const tools = loadConfig(writeConfigFile(home.dir, minimalConfigJson()), { homeDir: home.dir }).runner.claude.allowedTools;
+		expect(tools).toContain(`Read(/${local}/plugins/dg/skills/thrash/**)`);
+		expect(tools.filter((tool) => tool.includes("dg-src"))).toHaveLength(1);
 	});
 
 	test.each([
@@ -268,6 +285,23 @@ describe("loadConfig defaults", () => {
 		["a bad grok output format", { runner: { grok: { outputFormat: "yaml" } } }, "runner.grok.outputFormat"],
 		["a grok tool that contains a comma", { runner: { grok: { tools: ["read_file,grep"] } } }, "runner.grok.tools[0]"],
 		["an empty grok tool id", { runner: { grok: { tools: [" "] } } }, "runner.grok.tools[0]"],
+	])("rejects %s", (_name, extra, key) => {
+		expect(loadFailure(minimalConfigJson(extra)).message).toContain(key);
+	});
+
+	test("reads a claude bedrock model, region, and profile", () => {
+		const bedrock = { model: "arn:aws:bedrock:us-east-2:1:application-inference-profile/x", region: "us-east-2", profile: "sb" };
+		expect(load({ runner: { claude: { bedrock } } }).runner.claude.bedrock).toEqual(bedrock);
+	});
+
+	test("leaves claude bedrock unset by default", () => {
+		expect(load().runner.claude.bedrock).toBeUndefined();
+	});
+
+	test.each([
+		["a bedrock section without a model", { runner: { claude: { bedrock: { region: "us-east-2" } } } }, "runner.claude.bedrock.model"],
+		["a bedrock section without a region", { runner: { claude: { bedrock: { model: "m" } } } }, "runner.claude.bedrock.region"],
+		["an unknown bedrock key", { runner: { claude: { bedrock: { model: "m", region: "r", yolo: true } } } }, "runner.claude.bedrock.yolo"],
 	])("rejects %s", (_name, extra, key) => {
 		expect(loadFailure(minimalConfigJson(extra)).message).toContain(key);
 	});

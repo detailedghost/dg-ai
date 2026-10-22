@@ -1,5 +1,5 @@
 import type { CrCode } from "./errors";
-import { RUNNER_NAMES, type RunnerName } from "./runners/types";
+import { EFFORT_LEVELS, type Effort, RUNNER_NAMES, type RunnerName } from "./runners/types";
 import { canonicalPrPath } from "./state";
 import type { PrHost } from "./verdict/types";
 
@@ -12,7 +12,7 @@ export type TriggerResult =
 			kind: "error";
 			code: Extract<
 				CrCode,
-				"CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105" | "CR-108"
+				"CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105" | "CR-108" | "CR-109"
 			>;
 	  }
 	| { kind: "emoji"; slot?: string }
@@ -28,6 +28,7 @@ export type TriggerResult =
 			fun: boolean;
 			agent?: RunnerName;
 			model?: string;
+			effort?: Effort;
 	  };
 
 export type ReadinessResult =
@@ -160,6 +161,12 @@ export function parseTrigger(
 		agent = RUNNER_NAMES.find((name) => name === value);
 		if (!agent) return { kind: "error", code: "CR-103" };
 	}
+	let effort: Effort | undefined;
+	if (tokens.includes("~effort")) {
+		const value = valueAfter(tokens, "~effort");
+		effort = EFFORT_LEVELS.find((level) => level === value);
+		if (!effort) return { kind: "error", code: "CR-109" };
+	}
 	const modelIndex = tokens.indexOf("~model");
 	const model =
 		modelIndex === -1
@@ -181,6 +188,7 @@ export function parseTrigger(
 		fun: tokens.includes("~fun"),
 		...(agent === undefined ? {} : { agent }),
 		...(model === undefined ? {} : { model }),
+		...(effort === undefined ? {} : { effort }),
 	};
 }
 

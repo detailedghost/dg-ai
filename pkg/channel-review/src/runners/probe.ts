@@ -18,7 +18,7 @@ export const realSkillFs: SkillFs = {
 
 const FLAT_SKILL_ROOTS: Record<"codex" | "copilot", string[]> = {
 	codex: [".codex/skills", ".agents/skills"],
-	copilot: [".copilot/skills"],
+	copilot: [".copilot/skills", ".agents/skills"],
 };
 
 function hasThrash(fs: SkillFs, skillsDir: string): boolean {

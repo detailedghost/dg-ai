@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { DgCliError } from "@dg/common";
+import { type DgPaths, realSubdirectories } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
 import { PhoneFriendDb } from "./db";
-import type { LinePaths } from "./line";
+import { isLineName, type LinePaths, linePaths } from "./line";
 
-export type PhoneFriendConfig = { contact?: string; relays: string[] };
+export type PhoneFriendConfig = { contact?: string; name?: string; relays: string[] };
 
 export const DEFAULT_RELAYS = [
 	"wss://relay.damus.io",
@@ -82,6 +84,31 @@ export function writeConfig(line: LinePaths, config: PhoneFriendConfig): void {
 	withDb(line, (db) => db.set(CONFIG, config));
 }
 
+/** Every line that holds a database, in name order. */
+export function listLines(paths: DgPaths): LinePaths[] {
+	return realSubdirectories(paths.phoneFriendRoot)
+		.filter(isLineName)
+		.sort()
+		.map((name) => linePaths(paths, name))
+		.filter((line) => existsSync(line.dbPath));
+}
+
+/** Resolves --line from a line name, a saved contact name, or a contact npub; an unknown name is a new line. */
+export function resolveLine(paths: DgPaths, value: string): LinePaths {
+	const lines = listLines(paths);
+	if (lines.some((line) => line.name === value)) return linePaths(paths, value);
+	const matches = lines.filter((line) => {
+		const config = readConfig(line);
+		return config.name === value || config.contact === value;
+	});
+	if (matches.length > 1) {
+		throw new DgCliError(`"${value}" matches lines ${matches.map((line) => line.name).join(", ")}; pick one with --line`);
+	}
+	if (matches[0]) return matches[0];
+	if (value.startsWith("npub1")) throw new DgCliError(`no line has contact ${value}`);
+	return linePaths(paths, value);
+}
+
 export function readInvite(line: LinePaths): Invite | undefined {
 	return withDb(line, (db) => db.get<Invite>(INVITE));
 }
@@ -124,12 +151,26 @@ export function releaseStart(line: LinePaths, token: string): void {
 	);
 }
 
-/** Deletes the invite and saves the caller as the contact in one transaction. */
-export function acceptCall(line: LinePaths, contact: string): void {
+/** The other line, if any, that already holds this name by its line name or its saved contact name. */
+export function lineClaiming(paths: DgPaths, line: LinePaths, name: string): LinePaths | undefined {
+	return listLines(paths).find(
+		(other) => other.name !== line.name && (other.name === name || readConfig(other).name === name),
+	);
+}
+
+/** Deletes the invite and saves the caller as the contact, with the invite's name, in one transaction. */
+export function acceptCall(paths: DgPaths, line: LinePaths, contact: string): void {
 	withDb(line, (db) =>
 		db.transaction(() => {
+			const invited = db.get<Invite>(INVITE)?.name;
+			const name = invited && !lineClaiming(paths, line, invited) ? invited : undefined;
 			db.unset(INVITE);
-			db.set(CONFIG, { relays: DEFAULT_RELAYS, ...db.get<PhoneFriendConfig>(CONFIG), contact });
+			db.set(CONFIG, {
+				relays: DEFAULT_RELAYS,
+				...db.get<PhoneFriendConfig>(CONFIG),
+				contact,
+				...(name ? { name } : {}),
+			});
 		}),
 	);
 }

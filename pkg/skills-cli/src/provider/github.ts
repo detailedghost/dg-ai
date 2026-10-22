@@ -1,3 +1,4 @@
+import { THRASH_REVIEW_HEADING_PREFIX } from "@dg/common";
 import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
@@ -22,6 +23,7 @@ import {
 	type PostedReview,
 	type PostReviewInput,
 	type Provider,
+	isFileComment,
 	ProviderError,
 	type PrRef,
 	type PrState,
@@ -510,18 +512,63 @@ const OWN_PR_NEEDLE = "your own pull request";
 
 const EMPTY_REVIEW_BODY = "Review submitted.";
 
+const PENDING_REVIEW_NEEDLE = "one pending review";
+
+const ADD_FILE_THREAD = `mutation($reviewId: ID!, $path: String!, $body: String!) {
+  addPullRequestReviewThread(input: {pullRequestReviewId: $reviewId, path: $path, body: $body, subjectType: FILE}) { thread { id } }
+}`;
+
 function toGithubReviewComment(c: ReviewCommentInput): Record<string, unknown> {
 	const onNewSide = c.newLine !== undefined;
-	const line = onNewSide ? c.newLine : c.oldLine;
-	if (line === undefined) {
-		throw new ProviderError("INVALID_ARGUMENT", `review comment on "${c.path}" needs newLine or oldLine`);
-	}
 	return {
 		path: c.path,
-		line,
+		line: onNewSide ? c.newLine : c.oldLine,
 		side: onNewSide ? "RIGHT" : "LEFT",
 		body: c.body,
 	};
+}
+
+function reviewsPath(ref: PrRef): string {
+	return `repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/reviews`;
+}
+
+/**
+ * Only this bot's own stale pending review, never a human's draft review on the
+ * same PR — even one under the same login, which the daemon's own account often
+ * is, since it runs under the owner's own `gh` auth. The login check alone can't
+ * tell those two apart, so this also requires the thrash heading this bot always
+ * writes into a review's body, pending or submitted.
+ */
+async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
+	const whoami = await tag`api user --jq ${".login"} ${apiHostFlags(ref.repo)}`;
+	const login = whoami.stdout.toString().trim();
+	const jq = `.[] | select(.state == "PENDING" and .user.login == "${login}" and ((.body // "") | startswith("${THRASH_REVIEW_HEADING_PREFIX}"))) | .id`;
+	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${jq} ${apiHostFlags(ref.repo)}`;
+	for (const id of listed.stdout.toString().split("\n").filter(Boolean)) {
+		await tag`api ${reviewsPath(ref)}/${id} --method DELETE ${apiHostFlags(ref.repo)}`;
+	}
+}
+
+async function clearingStalePending<T>(tag: ShellTag, ref: PrRef, post: () => Promise<T>): Promise<T> {
+	try {
+		return await post();
+	} catch (err) {
+		if (!isCliErrorContaining(err, PENDING_REVIEW_NEEDLE)) throw err;
+		await deletePendingReviews(tag, ref);
+		return post();
+	}
+}
+
+async function withOwnPrFallback(
+	verdict: ReviewVerdict,
+	submit: (verdict: ReviewVerdict) => Promise<Record<string, unknown>>,
+): Promise<{ raw: Record<string, unknown>; verdict: ReviewVerdict; degraded: boolean }> {
+	try {
+		return { raw: await submit(verdict), verdict, degraded: false };
+	} catch (err) {
+		if (verdict === "comment" || !isCliErrorContaining(err, OWN_PR_NEEDLE)) throw err;
+		return { raw: await submit("comment"), verdict: "comment", degraded: true };
+	}
 }
 
 async function submitReview(
@@ -537,33 +584,56 @@ async function submitReview(
 		body: input.body.trim() || EMPTY_REVIEW_BODY,
 		comments: input.comments.map(toGithubReviewComment),
 	});
-	const result = await tag.withInput(
-		payload,
-	)`api repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/reviews --method POST --input - ${apiHostFlags(ref.repo)}`;
+	const result = await tag.withInput(payload)`api ${reviewsPath(ref)} --method POST --input - ${apiHostFlags(ref.repo)}`;
 	return JSON.parse(result.stdout.toString());
+}
+
+async function submitWithFileThreads(
+	tag: ShellTag,
+	ref: PrRef,
+	input: PostReviewInput,
+	commitId: string,
+): Promise<{ raw: Record<string, unknown>; verdict: ReviewVerdict; degraded: boolean }> {
+	const hostFlags = apiHostFlags(ref.repo);
+	const body = input.body.trim() || EMPTY_REVIEW_BODY;
+	const pendingPayload = JSON.stringify({
+		commit_id: commitId,
+		body,
+		comments: input.comments.filter((c) => !isFileComment(c)).map(toGithubReviewComment),
+	});
+	const created = await tag.withInput(pendingPayload)`api ${reviewsPath(ref)} --method POST --input - ${hostFlags}`;
+	const pending = JSON.parse(created.stdout.toString()) as { id: number; node_id: string };
+	try {
+		for (const c of input.comments.filter(isFileComment)) {
+			const thread = JSON.stringify({ query: ADD_FILE_THREAD, variables: { reviewId: pending.node_id, path: c.path, body: c.body } });
+			await tag.withInput(thread)`api graphql --input - ${hostFlags}`;
+		}
+		return await withOwnPrFallback(input.verdict, async (verdict) => {
+			const submitted = await tag.withInput(
+				JSON.stringify({ event: GITHUB_REVIEW_EVENTS[verdict], body }),
+			)`api ${reviewsPath(ref)}/${String(pending.id)}/events --method POST --input - ${hostFlags}`;
+			return JSON.parse(submitted.stdout.toString());
+		});
+	} catch (err) {
+		await tag`api ${reviewsPath(ref)}/${String(pending.id)} --method DELETE ${hostFlags}`.catch(() => undefined);
+		throw err;
+	}
 }
 
 async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Promise<PostedReview> {
 	const prResult = await tag`pr view ${String(ref.number)} ${repoFlags(ref.repo)} --json headRefOid`;
 	const { headRefOid } = JSON.parse(prResult.stdout.toString());
-	try {
-		const raw = await submitReview(tag, ref, input.verdict, input, headRefOid);
-		return {
-			url: (raw.html_url as string) ?? "",
-			verdict: input.verdict,
-			degraded: false,
-			commentCount: input.comments.length,
-		};
-	} catch (err) {
-		if (input.verdict === "comment" || !isCliErrorContaining(err, OWN_PR_NEEDLE)) throw err;
-		const raw = await submitReview(tag, ref, "comment", input, headRefOid);
-		return {
-			url: (raw.html_url as string) ?? "",
-			verdict: "comment",
-			degraded: true,
-			commentCount: input.comments.length,
-		};
-	}
+	const posted = await clearingStalePending(tag, ref, () =>
+		input.comments.some(isFileComment)
+			? submitWithFileThreads(tag, ref, input, headRefOid)
+			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)),
+	);
+	return {
+		url: (posted.raw.html_url as string) ?? "",
+		verdict: posted.verdict,
+		degraded: posted.degraded,
+		commentCount: input.comments.length,
+	};
 }
 
 /** Create an inert GitHub adapter using GH_BIN or gh; commands validate CLI availability when invoked. */

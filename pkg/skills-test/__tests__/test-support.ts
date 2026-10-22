@@ -19,6 +19,7 @@ export async function runInHarness(
 	writeFileSync(file, source);
 	try {
 		const proc = Bun.spawn(["bun", "run", file], {
+			cwd: dir,
 			env: { ...process.env, DG_HOME: undefined, DG_SKILLS: undefined, ...env },
 			stdout: "pipe",
 			stderr: "pipe",

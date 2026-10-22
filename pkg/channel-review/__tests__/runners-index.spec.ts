@@ -78,11 +78,13 @@ function harness(
 		files?: string[];
 		capture?: (command: string, args: string[]) => Capture | Promise<Capture>;
 		process?: (request: ProcessRequest) => ProcessResult;
+		startSsoLogin?: (profile: string) => void;
 		step?: number;
 	} = {},
 ) {
 	const captures: { command: string; args: string[]; options: unknown }[] = [];
 	const processes: ProcessRequest[] = [];
+	const ssoLoginCalls: string[] = [];
 	const whichCalls: string[] = [];
 	let tick = 0;
 	const step = options.step ?? 1000;
@@ -124,8 +126,9 @@ function harness(
 				}
 			);
 		},
+		startSsoLogin: options.startSsoLogin ?? ((profile) => ssoLoginCalls.push(profile)),
 	});
-	return { runners, captures, processes, whichCalls };
+	return { runners, captures, processes, ssoLoginCalls, whichCalls };
 }
 
 function runRequest(overrides: Record<string, unknown> = {}) {
@@ -329,7 +332,7 @@ describe("runner run argv", () => {
 		const h = harness({ config: configWith({ grok: { path: "/opt/grok" } }) });
 		await h.runners.grok.run(runRequest({ spice: 4, comment: true, model: "grok-4.6" }));
 		expect(h.processes[0]?.argv).toEqual([
-			"/opt/grok", "--no-auto-update", "-p", `/thrash ${URL} -s 4 -c`,
+			"/opt/grok", "--no-auto-update", "-p", `/dg:thrash ${URL} -s 4 -c`,
 			"--output-format", "streaming-json", "--always-approve", "--cwd", "/work",
 			"--model", "grok-4.6",
 		]);
@@ -473,7 +476,7 @@ describe("runner run argv", () => {
 			PATHS.grok,
 			"--no-auto-update",
 			"-p",
-			`/thrash ${URL} -s 2 -c`,
+			`/dg:thrash ${URL} -s 2 -c`,
 			"--output-format",
 			"streaming-json",
 			"--always-approve",
@@ -498,7 +501,7 @@ describe("runner run argv", () => {
 			"/opt/grok",
 			"--no-auto-update",
 			"-p",
-			`/thrash ${URL}`,
+			`/dg:thrash ${URL}`,
 			"--output-format",
 			"json",
 			"--always-approve",
@@ -589,6 +592,257 @@ describe("runner run result", () => {
 				}),
 			});
 			expect((await h.runners[name].run(runRequest())).code).toBe("CR-207");
+		},
+	);
+
+	test("Claude restarts an expired Bedrock SSO sign-in", async () => {
+		const profile = "bedrock-dev";
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "The SSO session associated with this profile has expired or is otherwise invalid",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile]);
+	});
+
+	test("Claude reports expired Bedrock SSO without restarting when no profile is configured", async () => {
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "The SSO session associated with this profile has expired or is otherwise invalid",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([]);
+	});
+
+	test("Claude starts one Bedrock SSO sign-in until a run succeeds", async () => {
+		const profile = "bedrock-dev";
+		let run = 0;
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			process: () => {
+				const succeeds = run++ === 2;
+				return {
+					status: succeeds ? 0 : 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: succeeds ? "" : "The SSO session associated with this profile has expired",
+					outputTail: "",
+				};
+			},
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile]);
+		expect((await h.runners.claude.run(runRequest())).status).toBe(0);
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile, profile]);
+	});
+
+	test("an unrelated failure after a pending SSO sign-in still clears the guard", async () => {
+		const profile = "bedrock-dev";
+		let run = 0;
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			process: () => {
+				const current = run++;
+				if (current === 0) {
+					return {
+						status: 1,
+						signal: null,
+						timedOut: false,
+						aborted: false,
+						stderrTail: "The SSO session associated with this profile has expired",
+						outputTail: "",
+					};
+				}
+				if (current === 1) {
+					return {
+						status: 1,
+						signal: null,
+						timedOut: false,
+						aborted: false,
+						stderrTail: "AccessDeniedException",
+						outputTail: "",
+					};
+				}
+				return {
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "The SSO session associated with this profile has expired",
+					outputTail: "",
+				};
+			},
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-209");
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile, profile]);
+	});
+
+	test.each(["timedOut", "aborted"] as const)(
+		"Claude reports expired Bedrock SSO without restarting after a %s run",
+		async (reason) => {
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					[reason]: true,
+					stderrTail: "The SSO session associated with this profile has expired",
+					outputTail: "",
+				}),
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+			expect(h.ssoLoginCalls).toEqual([]);
+		},
+	);
+
+	test.each(["timedOut", "aborted"] as const)(
+		"a %s run that still shows the SSO expiry keeps a prior pending sign-in latched",
+		async (reason) => {
+			const profile = "bedrock-dev";
+			let run = 0;
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+				process: () => {
+					const first = run++ === 0;
+					return {
+						status: 1,
+						signal: null,
+						timedOut: !first && reason === "timedOut",
+						aborted: !first && reason === "aborted",
+						stderrTail: "The SSO session associated with this profile has expired",
+						outputTail: "",
+					};
+				},
+			});
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+			expect(h.ssoLoginCalls).toEqual([profile]);
+			expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+			expect(h.ssoLoginCalls).toEqual([profile]);
+		},
+	);
+
+	test("Claude keeps usage-limit detection ahead of expired Bedrock SSO", async () => {
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "The SSO session associated with this profile has expired",
+				outputTail: "You've hit your usage limit",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-207");
+		expect(h.ssoLoginCalls).toEqual([]);
+	});
+
+	test.each(["SSO session associated with this profile has expired", "AccessDeniedException"])(
+		"a successful run whose output happens to mention %s is not misclassified",
+		async (text) => {
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				process: () => ({
+					status: 0,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: text,
+					outputTail: "",
+				}),
+			});
+			const result = await h.runners.claude.run(runRequest());
+			expect(result.code).toBeUndefined();
+			expect(h.ssoLoginCalls).toEqual([]);
+		},
+	);
+
+	test("Claude classifies a configured Bedrock access failure", async () => {
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "AccessDeniedException",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-209");
+	});
+
+	test("Claude leaves an access failure generic without Bedrock configuration", async () => {
+		const h = harness({
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "AccessDeniedException",
+				outputTail: "",
+			}),
+		});
+		const result = await h.runners.claude.run(runRequest());
+		expect(result.status).toBe(1);
+		expect(result.code).toBeUndefined();
+	});
+
+	test("Claude reports the SSO expiry, not the access failure, when both appear", async () => {
+		const profile = "bedrock-dev";
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "The SSO session has expired. AccessDeniedException",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile]);
+	});
+
+	test.each(["codex", "copilot", "grok"] as const)(
+		"%s does not classify Bedrock failure signatures",
+		async (name) => {
+			const h = harness({
+				config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile: "bedrock-dev" } } }),
+				process: () => ({
+					status: 1,
+					signal: null,
+					timedOut: false,
+					aborted: false,
+					stderrTail: "The SSO session has expired. AccessDeniedException",
+					outputTail: "",
+				}),
+			});
+			const result = await h.runners[name].run(runRequest());
+			expect(result.code).not.toBe("CR-208");
+			expect(result.code).not.toBe("CR-209");
 		},
 	);
 
@@ -980,6 +1234,53 @@ describe("runner attribution", () => {
 		await runners.grok.run(runRequest({ model: "requested-model" }));
 		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "configured-model", modelSource: "configured" });
 		expect(JSON.parse(processes[1]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "requested-model", modelSource: "requested" });
+	});
+	test("Claude reviews through Bedrock with the configured model and lets an explicit request override it", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2", profile: "sb" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest());
+		await runners.claude.run(runRequest({ model: "requested-model" }));
+		expect(processes[0]!.argv).toContain("bedrock-model");
+		expect(processes[1]!.argv).toContain("requested-model");
+		expect(processes[1]!.argv).not.toContain("bedrock-model");
+		expect(processes[0]!.env).toMatchObject({ CLAUDE_CODE_USE_BEDROCK: "1", AWS_REGION: "us-east-2", AWS_PROFILE: "sb" });
+		expect(JSON.parse(processes[0]!.env!.THRASH_EXECUTION_CONTEXT!)).toMatchObject({ model: "bedrock-model", modelSource: "configured" });
+	});
+	test("Claude passes ~effort to reviews only", async () => {
+		const { runners, processes } = harness();
+		await runners.claude.run(runRequest({ effort: "xhigh" }));
+		await runners.claude.run(runRequest());
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--effort") + 1]).toBe("xhigh");
+		expect(processes[1]!.argv).not.toContain("--effort");
+	});
+	test("Claude uses Bedrock for every task, not only review", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest({ task: "address", noCi: false }));
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--model") + 1]).toBe("bedrock-model");
+		expect(processes[0]!.env).toEqual({
+			CLAUDE_CODE_USE_BEDROCK: "1",
+			AWS_REGION: "us-east-2",
+		});
+	});
+	test("Claude lets an explicit model override Bedrock's model but keeps Bedrock's transport", async () => {
+		const bedrock = { model: "bedrock-model", region: "us-east-2" };
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock } }) });
+		await runners.claude.run(runRequest({ task: "address", noCi: false, model: "requested-model" }));
+		const argv = processes[0]!.argv;
+		expect(argv[argv.indexOf("--model") + 1]).toBe("requested-model");
+		expect(argv).not.toContain("bedrock-model");
+		expect(processes[0]!.env).toEqual({
+			CLAUDE_CODE_USE_BEDROCK: "1",
+			AWS_REGION: "us-east-2",
+		});
+	});
+	test("Claude omits the profile when Bedrock sets none", async () => {
+		const { runners, processes } = harness({ config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }) });
+		await runners.claude.run(runRequest());
+		expect(processes[0]!.env).not.toHaveProperty("AWS_PROFILE");
 	});
 	test.each([
 		...RUNNER_NAMES,

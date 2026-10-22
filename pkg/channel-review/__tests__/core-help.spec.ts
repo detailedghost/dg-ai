@@ -5,16 +5,12 @@ import { helpText } from "../src/help";
 const overview = () =>
 	helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS);
 const review = () =>
-	helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, "review");
+	helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, { topic: "review" });
 const address = (allowAnySender = false) =>
-	helpText(
-		"Review Bot",
-		"!owner",
-		["ready"],
-		REACTION_DEFAULTS,
-		"address",
+	helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+		topic: "address",
 		allowAnySender,
-	);
+	});
 
 describe("helpText overview", () => {
 	test("lists every command on one line and points at the per-command help", () => {
@@ -65,14 +61,31 @@ describe("helpText review", () => {
 		expect(html).not.toContain("~no-ci");
 	});
 
+	test("lists every agent and effort level and shows the default model only when one is set", () => {
+		const html = review();
+		expect(html).toContain("~agent claude|codex|copilot|grok");
+		expect(html).toContain("~effort low|medium|high|xhigh|max");
+		expect(html).not.toContain("Default model");
+		expect(
+			helpText("Review Bot", "!owner", ["ready"], REACTION_DEFAULTS, {
+				topic: "review",
+				defaultModel: "arn:aws:bedrock:x<y",
+			}),
+		).toContain("<b>Default model:</b> <code>arn:aws:bedrock:x&lt;y</code>");
+	});
+
+	test("explains every spice level from the verdict limits and the nit ladder", () => {
+		const html = review();
+		expect(html).toContain("<b>Spice levels</b>");
+		expect(html).toContain("<li><code>1</code>: requests changes on any 💀 critical, more than 4 🔥 high; posts no nits</li>");
+		expect(html).toContain("<li><code>2</code> (default): requests changes on any 💀 critical, more than 1 🔥 high; posts up to 5 nits</li>");
+		expect(html).toContain("<li><code>5</code>: requests changes on any 💀 critical, any 🔥 high, any ⚠️ medium, more than 4 🧹 low; posts every nit</li>");
+	});
+
 	test("escapes the ready words", () => {
-		const html = helpText(
-			"Review Bot",
-			"!owner",
-			["fixed <now>"],
-			REACTION_DEFAULTS,
-			"review",
-		);
+		const html = helpText("Review Bot", "!owner", ["fixed <now>"], REACTION_DEFAULTS, {
+			topic: "review",
+		});
 		expect(html).toContain("<code>fixed &lt;now&gt;</code>");
 	});
 
@@ -94,7 +107,7 @@ describe("helpText review", () => {
 			"!owner",
 			["ready"],
 			{ ...REACTION_DEFAULTS, inProgress: "partyparrot" },
-			"review",
+			{ topic: "review" },
 		);
 		expect(html).toContain(
 			"<li><code>partyparrot</code> the review is running</li>",
@@ -110,7 +123,7 @@ describe("helpText review", () => {
 				...REACTION_DEFAULTS,
 				inProgress: "<load>;0-cus-d20-0123456789abcdef0123456789abcdef",
 			},
-			"review",
+			{ topic: "review" },
 		);
 		expect(html).toContain(
 			"<li>:&lt;load&gt;: the review is running</li>",
@@ -128,7 +141,7 @@ describe("helpText review", () => {
 				...REACTION_DEFAULTS,
 				approved: "party-blob;0-wus-d8-0123456789abcdef0123456789abcdef",
 			},
-			"address",
+			{ topic: "address" },
 		);
 		expect(html).toContain(
 			"<li>:party-blob: addressed and ready for re-review</li>",
@@ -179,8 +192,7 @@ describe("helpText emoji", () => {
 			"!owner",
 			["ready"],
 			{ ...REACTION_DEFAULTS, approved: "party;0-wus-d4-0123456789abcdef0123456789abcdef" },
-			"emoji",
-			allowAnySender,
+			{ topic: "emoji", allowAnySender },
 		);
 
 	test("explains the flow with an example", () => {

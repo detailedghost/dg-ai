@@ -4,7 +4,7 @@ import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { MESSAGE_TTL_SECONDS } from "./db";
 
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
-export type Invite = { secret: string; expiresAt: number };
+export type Invite = { secret: string; expiresAt: number; name?: string };
 export type Seen = { cursor: number; ids: string[] };
 /** Who may get through: the saved contact, or a first caller who holds the invite secret. */
 export type Gate = { contact?: string; invite?: Invite };
