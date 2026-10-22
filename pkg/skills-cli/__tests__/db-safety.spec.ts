@@ -73,6 +73,15 @@ describe("classifySql", () => {
 		).toEqual({ allowed: true });
 	});
 
+	test("a trailing backslash does not escape the closing quote of a plain string", () => {
+		expect(
+			classifySql("SELECT 'a\\'; DROP TABLE users", false),
+		).toEqual({
+			allowed: false,
+			reason: "multiple statements detected — use --write to allow",
+		});
+	});
+
 	test("--write allows statements rejected by the read-safe classifier", () => {
 		expect(classifySql("SELECT id INTO archived_users FROM users", true)).toEqual({
 			allowed: true,

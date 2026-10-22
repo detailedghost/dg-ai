@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { CredentialRecord, CredentialSummary } from "@dg/common";
 import type { DbCredentialClient } from "../src/db/credentials";
 import type { PgClient } from "../src/db/engines/postgresql";
+import type { SfConnection } from "../src/db/engines/snowflake";
 import { createDbSpec, type DbDeps } from "../src/db";
 
 function credentialRecord(
@@ -23,6 +24,7 @@ function harness(options: {
 	entries?: CredentialSummary[];
 	readSqlFile?: DbDeps["readSqlFile"];
 	pgQuery?: DbDeps["pgQuery"];
+	pgExplain?: DbDeps["pgExplain"];
 }) {
 	const stdout: string[] = [];
 	const stderr: string[] = [];
@@ -42,6 +44,7 @@ function harness(options: {
 	const pgQuery =
 		options.pgQuery ??
 		mock(async () => ({ columns: ["id"], rows: [[1], [2]], totalRows: 2 }));
+	const pgExplain = options.pgExplain ?? mock(async () => "plan");
 	const spec = createDbSpec({
 		createCredentialClient: () => credentialClient,
 		readSqlFile: options.readSqlFile ?? (async () => "SELECT 1"),
@@ -49,6 +52,7 @@ function harness(options: {
 		stderr: (line) => stderr.push(line),
 		pgConnect,
 		pgQuery,
+		pgExplain,
 	});
 	return {
 		spec,
@@ -58,7 +62,52 @@ function harness(options: {
 		end,
 		pgConnect,
 		pgQuery,
+		pgExplain,
 		client,
+		credentialClient,
+	};
+}
+
+function snowflakeCredentialRecord(): CredentialRecord {
+	return {
+		value: "fixture-password",
+		meta: { engine: "snowflake", account: "acme", user: "readonly" },
+		updatedAt: "2026-01-01T00:00:00Z",
+	};
+}
+
+function snowflakeHarness(options: {
+	record?: CredentialRecord;
+	sfExplain?: DbDeps["sfExplain"];
+}) {
+	const stdout: string[] = [];
+	const stderr: string[] = [];
+	const close = mock(() => {});
+	const connection = {} as unknown as SfConnection;
+	const credentialClient: DbCredentialClient = {
+		get: mock(async () => options.record),
+		list: mock(async () => []),
+		close,
+	};
+	const sfConnect = mock(async () => connection);
+	const sfExplain = options.sfExplain ?? mock(async () => "plan");
+	const sfDestroy = mock(async () => {});
+	const spec = createDbSpec({
+		createCredentialClient: () => credentialClient,
+		stdout: (line) => stdout.push(line),
+		stderr: (line) => stderr.push(line),
+		sfConnect,
+		sfExplain,
+		sfDestroy,
+	});
+	return {
+		spec,
+		stdout,
+		stderr,
+		close,
+		sfConnect,
+		sfExplain,
+		sfDestroy,
 		credentialClient,
 	};
 }
@@ -80,6 +129,32 @@ describe("db command specification", () => {
 		expect(fixture.stdout).toEqual(['ROWS: 1/2\n{"id":"1"}']);
 		expect(fixture.close).toHaveBeenCalledTimes(1);
 		expect(fixture.end).toHaveBeenCalledTimes(1);
+	});
+
+	test("rejects a non-numeric --limit with a clear error instead of silently emptying the result", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.query?.run(
+			["my-pg", "SELECT 1", "--limit", "abc"],
+			{ json: false, help: false },
+		);
+		expect(code).toBe(1);
+		expect(fixture.stderr).toEqual([
+			"ERROR: --limit must be a non-negative integer",
+		]);
+		expect(fixture.credentialClient.get).not.toHaveBeenCalled();
+	});
+
+	test("rejects a non-numeric --max-cell with a clear error instead of truncating every cell", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.query?.run(
+			["my-pg", "SELECT 1", "--max-cell", "abc"],
+			{ json: false, help: false },
+		);
+		expect(code).toBe(1);
+		expect(fixture.stderr).toEqual([
+			"ERROR: --max-cell must be a non-negative integer",
+		]);
+		expect(fixture.credentialClient.get).not.toHaveBeenCalled();
 	});
 
 	test("blocks SELECT INTO and still closes both clients", async () => {
@@ -160,6 +235,57 @@ describe("db command specification", () => {
 			'ERROR: connection "missing" not found — available: known',
 		]);
 		expect(fixture.pgConnect).not.toHaveBeenCalled();
+	});
+
+	test("blocks a smuggled second statement in explain without --write (postgresql)", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.explain?.run(
+			["my-pg", "SELECT 1; DROP TABLE x"],
+			{ json: false, help: false },
+		);
+		expect(code).toBe(1);
+		expect(fixture.stderr).toEqual([
+			"BLOCKED: multiple statements detected — use --write to allow",
+		]);
+		expect(fixture.pgExplain).not.toHaveBeenCalled();
+		expect(fixture.end).toHaveBeenCalledTimes(1);
+	});
+
+	test("--write allows a multi-statement explain (postgresql)", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.explain?.run(
+			["my-pg", "SELECT 1; DROP TABLE x", "--write"],
+			{ json: false, help: false },
+		);
+		expect(code).toBeUndefined();
+		expect(fixture.pgExplain).toHaveBeenCalledWith(
+			fixture.client,
+			"SELECT 1; DROP TABLE x",
+		);
+	});
+
+	test("blocks a smuggled second statement in explain without --write (snowflake)", async () => {
+		const fixture = snowflakeHarness({ record: snowflakeCredentialRecord() });
+		const code = await fixture.spec.subcommands.explain?.run(
+			["my-sf", "SELECT 1; DROP TABLE x"],
+			{ json: false, help: false },
+		);
+		expect(code).toBe(1);
+		expect(fixture.stderr).toEqual([
+			"BLOCKED: multiple statements detected — use --write to allow",
+		]);
+		expect(fixture.sfExplain).not.toHaveBeenCalled();
+		expect(fixture.sfDestroy).toHaveBeenCalledTimes(1);
+	});
+
+	test("--write allows a multi-statement explain (snowflake)", async () => {
+		const fixture = snowflakeHarness({ record: snowflakeCredentialRecord() });
+		const code = await fixture.spec.subcommands.explain?.run(
+			["my-sf", "SELECT 1; DROP TABLE x", "--write"],
+			{ json: false, help: false },
+		);
+		expect(code).toBeUndefined();
+		expect(fixture.sfExplain).toHaveBeenCalled();
 	});
 
 	test("connections lists only db metadata and never reads values", async () => {

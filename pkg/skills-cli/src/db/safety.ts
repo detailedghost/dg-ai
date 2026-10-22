@@ -59,7 +59,6 @@ function scanSql(sql: string): SqlScan {
 				i++;
 				return;
 			}
-			if (sql[i] === "\\") i++;
 			i++;
 		}
 	};

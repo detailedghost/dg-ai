@@ -1,3 +1,4 @@
+import { parseNonNegativeInteger } from "@dg/common";
 import type { CommandSpec } from "../utils/legacy-command";
 import {
 	createDbCredentialClient,
@@ -104,11 +105,11 @@ function parseArgs(args: string[]): ParsedArgs {
 		const arg = args[i] ?? "";
 		if (arg === "--write") parsed.write = true;
 		else if (arg === "--limit" && i + 1 < args.length)
-			parsed.limit = Number.parseInt(args[++i] ?? "", 10);
+			parsed.limit = parseNonNegativeInteger("--limit", args[++i] ?? "");
 		else if (arg === "--format" && i + 1 < args.length)
 			parsed.format = (args[++i] ?? "") as OutputFormat;
 		else if (arg === "--max-cell" && i + 1 < args.length)
-			parsed.maxCell = Number.parseInt(args[++i] ?? "", 10);
+			parsed.maxCell = parseNonNegativeInteger("--max-cell", args[++i] ?? "");
 		else if (arg === "--schema" && i + 1 < args.length)
 			parsed.schema = args[++i] ?? "";
 		else if (arg === "-f" && i + 1 < args.length)
@@ -200,14 +201,20 @@ async function runPostgresql(
 			return;
 		}
 		if (verb === "explain") {
-			deps.stdout(formatExplain(await deps.pgExplain(client, await resolveSql(parsed, deps))));
+			const sql = await resolveSql(parsed, deps);
+			const safety = classifySql(sql, parsed.write);
+			if (!safety.allowed) {
+				deps.stderr(`BLOCKED: ${safety.reason}`);
+				return 1;
+			}
+			deps.stdout(formatExplain(await deps.pgExplain(client, sql)));
 			return;
 		}
 		deps.stdout(
 			JSON.stringify(await deps.pgSchema(client, parsed.schema || "public")),
 		);
 	} finally {
-		await client.end();
+		await client.end().catch(() => undefined);
 	}
 }
 
@@ -252,7 +259,13 @@ async function runSnowflake(
 			return;
 		}
 		if (verb === "explain") {
-			deps.stdout(formatExplain(await deps.sfExplain(client, await resolveSql(parsed, deps))));
+			const sql = await resolveSql(parsed, deps);
+			const safety = classifySql(sql, parsed.write);
+			if (!safety.allowed) {
+				deps.stderr(`BLOCKED: ${safety.reason}`);
+				return 1;
+			}
+			deps.stdout(formatExplain(await deps.sfExplain(client, sql)));
 			return;
 		}
 		deps.stdout(
