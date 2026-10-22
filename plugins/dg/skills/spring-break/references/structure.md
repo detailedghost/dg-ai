@@ -96,6 +96,34 @@ Idempotent — re-running skips any bundle that already exists at its target pat
 - Ownership: spring-break creates spec bundles here for migration only, never edits one it didn't
   just migrate. Ongoing bundle authoring (new specs, `plan.md`/`context.md` updates) is `/dg:spec`'s job.
 
+## Agent Context Budgets
+
+Every session loads these files, so each one has a budget. The target shape and templates are in the agent-seed
+skill (`references/templates.md` and `references/docs.md`).
+
+| File | Budget | Holds |
+|---|---|---|
+| `CLAUDE.md` | one line | `@AGENTS.md` |
+| `AGENTS.md` (root) | about 2.4K characters | packages table, traps-only rules that link `docs/`, references table, specs and learnings |
+| `<pkg>/AGENTS.md` | under about 3.5K characters | stack, commands, short task templates, traps, "References (read on demand)" table |
+| `.github/copilot-instructions.md` | under 4,000 characters | the `.agents/` skip rule, a pointer to `docs/code_review.md`, and that `mise.toml` defines every check |
+
+Routing for text over budget:
+
+| Text | Destination |
+|---|---|
+| Feature detail for one package (routes, env vars, jobs, entry points) | `.agents/references/<pkg>-<topic>.md` |
+| Style, tool, or naming rules | `docs/code_standards.md` (never repeated in AGENTS.md) |
+| Review rules | `docs/code_review.md` |
+| Agent rules that follow from an ADR | `.agents/decisions/<NNNN>-<slug>.md`, linking `docs/adr/<NNNN>-<slug>.md` |
+
+Rules:
+
+- Find the repo tests that read these files before you move text. Keep what they assert, or move the assertion with
+  the text.
+- Fix a fact the move shows to be wrong, and report it.
+- Never leave an empty file or an empty folder under `.agents/`.
+
 ## Protected Files (do NOT touch)
 
 | File | Owner |
