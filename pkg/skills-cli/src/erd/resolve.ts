@@ -79,7 +79,13 @@ async function defaultMatchDirNames(concept: string): Promise<ErdCandidate[]> {
 			const hits = tokens.filter((t) => basename.includes(t)).length;
 			if (hits > 0) {
 				const entryPath = `${root}/${entry}`;
-				const kind = statSync(entryPath).isDirectory() ? "dir" : "file";
+				let isDirectory: boolean;
+				try {
+					isDirectory = statSync(entryPath).isDirectory();
+				} catch {
+					continue;
+				}
+				const kind = isDirectory ? "dir" : "file";
 				candidates.push({
 					id: entryPath,
 					kind,

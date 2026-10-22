@@ -24,6 +24,8 @@ const ALLOWED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py"]
 const JS_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
 const JS_IMPORT_FROM_RE = /^\s{0,20}import\s[\s\S]{1,300}?from\s+['"]([^'"\n]{1,500})['"]/gm;
+const JS_EXPORT_FROM_RE = /^\s{0,20}export\s[\s\S]{1,300}?from\s+['"]([^'"\n]{1,500})['"]/gm;
+const JS_BARE_IMPORT_RE = /^\s{0,20}import\s+['"]([^'"\n]{1,500})['"]/gm;
 const JS_REQUIRE_RE = /^\s{0,20}(?:const|let|var)\s[\s\S]{1,200}?=\s{0,10}require\(\s*['"]([^'"\n]{1,500})['"]\s*\)/gm;
 const PY_FROM_IMPORT_RE = /^\s{0,20}from\s+([.\w]{1,300})\s+import\b/gm;
 const PY_IMPORT_RE = /^\s{0,20}import\s+([.\w]{1,300})/gm;
@@ -109,7 +111,17 @@ export function collectImportGraph(opts: CollectImportGraphOptions): CollectImpo
 	const files: { relPath: string; absPath: string }[] = [];
 
 	function walk(absDir: string, relDir: string, currentDepth: number): void {
-		const entries = fs.readdirSync(absDir, { withFileTypes: true });
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(absDir, { withFileTypes: true });
+		} catch (err) {
+			evidence.push({
+				type: "file",
+				ref: relDir,
+				detail: `skipped: could not read directory (${(err as Error).message})`,
+			});
+			return;
+		}
 
 		for (const entry of entries) {
 			const entryRelPath = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
@@ -133,6 +145,8 @@ export function collectImportGraph(opts: CollectImportGraphOptions): CollectImpo
 
 	walk(scopePath, "", 0);
 
+	const walkedRelPaths = new Set(files.map((file) => file.relPath));
+
 	for (const { relPath, absPath } of files) {
 		const ext = path.extname(relPath);
 		if (!ALLOWED_EXTENSIONS.includes(ext)) continue;
@@ -151,7 +165,9 @@ export function collectImportGraph(opts: CollectImportGraphOptions): CollectImpo
 		const content = fs.readFileSync(absPath, "utf8");
 		const lines = content.split("\n");
 		const isPython = ext === ".py";
-		const regexes = isPython ? [PY_FROM_IMPORT_RE, PY_IMPORT_RE] : [JS_IMPORT_FROM_RE, JS_REQUIRE_RE];
+		const regexes = isPython
+			? [PY_FROM_IMPORT_RE, PY_IMPORT_RE]
+			: [JS_IMPORT_FROM_RE, JS_EXPORT_FROM_RE, JS_BARE_IMPORT_RE, JS_REQUIRE_RE];
 
 		for (const re of regexes) {
 			re.lastIndex = 0;
@@ -168,6 +184,7 @@ export function collectImportGraph(opts: CollectImportGraphOptions): CollectImpo
 				if (targetSegments.some((seg) => ignoreDirs.includes(seg))) continue;
 				const targetBasename = targetSegments[targetSegments.length - 1] ?? "";
 				if (isSecretFile(targetRelPath, targetBasename, secretFilePatterns)) continue;
+				if (!walkedRelPaths.has(targetRelPath)) continue;
 
 				const lineNumber = lineNumberAt(match.index, content);
 				const lineText = lines[lineNumber - 1]?.trim() ?? "";

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import {
 	collectStaticSchema,
@@ -13,17 +13,17 @@ import {
 let scopeDir: string;
 
 beforeEach(() => {
-	scopeDir = fs.mkdtempSync(path.join(os.tmpdir(), "erd-schema-static-orm-"));
+	scopeDir = mkdtempSync(join(tmpdir(), "erd-schema-static-orm-"));
 });
 
 afterEach(() => {
-	fs.rmSync(scopeDir, { recursive: true, force: true });
+	rmSync(scopeDir, { recursive: true, force: true });
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = path.join(scopeDir, relPath);
-	fs.mkdirSync(path.dirname(abs), { recursive: true });
-	fs.writeFileSync(abs, content);
+	const abs = join(scopeDir, relPath);
+	mkdirSync(dirname(abs), { recursive: true });
+	writeFileSync(abs, content);
 	return abs;
 }
 
@@ -197,7 +197,7 @@ describe("parseEfMigrations", () => {
 		writeFile("Migrations/0001_CreateUsers.cs", EF_CREATE_USERS);
 		writeFile("Migrations/0002_CreatePosts.cs", EF_CREATE_POSTS_WITH_FK);
 
-		const { nodes, edges } = parseEfMigrations(path.join(scopeDir, "Migrations"));
+		const { nodes, edges } = parseEfMigrations(join(scopeDir, "Migrations"));
 
 		expect(nodes).toHaveLength(2);
 		const users = findNode(nodes, "Users");
@@ -263,7 +263,7 @@ public partial class AlterWidgets : Migration
 `,
 		);
 
-		const { nodes } = parseEfMigrations(path.join(scopeDir, "Migrations"));
+		const { nodes } = parseEfMigrations(join(scopeDir, "Migrations"));
 
 		const widgets = findNode(nodes, "Widgets");
 		expect(widgets).toBeDefined();
@@ -281,7 +281,7 @@ public partial class AlterWidgets : Migration
 
 		let result: ReturnType<typeof parseEfMigrations> | undefined;
 		expect(() => {
-			result = parseEfMigrations(path.join(scopeDir, "Migrations"));
+			result = parseEfMigrations(join(scopeDir, "Migrations"));
 		}).not.toThrow();
 
 		expect(findNode(result!.nodes, "Users")).toBeDefined();
@@ -293,7 +293,7 @@ public partial class AlterWidgets : Migration
 		const padding = `// padding\n${"x".repeat(DEFAULT_MAX_FILE_SIZE_BYTES + 1)}\n`;
 		writeFile("Migrations/0001_Oversized.cs", `${padding}\n${EF_CREATE_USERS}`);
 
-		const result = parseEfMigrations(path.join(scopeDir, "Migrations"));
+		const result = parseEfMigrations(join(scopeDir, "Migrations"));
 
 		expect(findNode(result.nodes, "Users")).toBeUndefined();
 		const sizeEvidence = result.evidence.find((e) => e.ref.includes("0001_Oversized.cs"));
@@ -320,7 +320,7 @@ public partial class CreateVendored : Migration
 		);
 		writeFile("Migrations/0001_CreateUsers.cs", EF_CREATE_USERS);
 
-		const { nodes } = parseEfMigrations(path.join(scopeDir, "Migrations"));
+		const { nodes } = parseEfMigrations(join(scopeDir, "Migrations"));
 
 		expect(findNode(nodes, "Vendored")).toBeUndefined();
 		expect(findNode(nodes, "Users")).toBeDefined();

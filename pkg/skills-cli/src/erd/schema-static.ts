@@ -95,12 +95,34 @@ interface ParsedTableStmt {
 	foreignKeys: ParsedForeignKey[];
 }
 
-/** `openIndex` must point at "("; returns the matching ")" index, or -1 if unbalanced. */
+/** Doubled-quote escaping only, matching this parser's SQL/C#/Prisma source quoting; returns the closing quote's index. */
+function skipQuotedSpan(content: string, openIndex: number): number {
+	const quote = content[openIndex] as string;
+	let i = openIndex + 1;
+	while (i < content.length) {
+		if (content[i] === quote) {
+			if (content[i + 1] === quote) {
+				i += 2;
+				continue;
+			}
+			return i;
+		}
+		i++;
+	}
+	return content.length - 1;
+}
+
+/** `openIndex` must point at "("; returns the matching ")" index, or -1 if unbalanced. Parens inside a quoted span (e.g. `DEFAULT 'N/A (unknown)'`) never affect depth. */
 function findMatchingParen(content: string, openIndex: number): number {
 	let depth = 0;
 	for (let i = openIndex; i < content.length; i++) {
-		if (content[i] === "(") depth++;
-		else if (content[i] === ")") {
+		const ch = content[i];
+		if (ch === "'" || ch === '"') {
+			i = skipQuotedSpan(content, i);
+			continue;
+		}
+		if (ch === "(") depth++;
+		else if (ch === ")") {
 			depth--;
 			if (depth === 0) return i;
 		}
@@ -112,8 +134,13 @@ function findMatchingParen(content: string, openIndex: number): number {
 function findMatchingBrace(content: string, openIndex: number): number {
 	let depth = 0;
 	for (let i = openIndex; i < content.length; i++) {
-		if (content[i] === "{") depth++;
-		else if (content[i] === "}") {
+		const ch = content[i];
+		if (ch === "'" || ch === '"') {
+			i = skipQuotedSpan(content, i);
+			continue;
+		}
+		if (ch === "{") depth++;
+		else if (ch === "}") {
 			depth--;
 			if (depth === 0) return i;
 		}
@@ -121,12 +148,27 @@ function findMatchingBrace(content: string, openIndex: number): number {
 	return -1;
 }
 
-/** Splits on top-level commas only, so a nested `NUMERIC(10,2)` isn't split mid-definition. */
+/** First `;` or newline at/after `fromIndex`, or end of content — used to widen a regex match to its full statement for a NOT NULL check. */
+function findStatementEnd(content: string, fromIndex: number): number {
+	const semicolon = content.indexOf(";", fromIndex);
+	const newline = content.indexOf("\n", fromIndex);
+	const candidates = [semicolon, newline].filter((index) => index !== -1);
+	return candidates.length > 0 ? Math.min(...candidates) : content.length;
+}
+
+/** Splits on top-level commas only, so a nested `NUMERIC(10,2)` or a quoted `DEFAULT 'a, b'` isn't split mid-definition. */
 function splitTopLevel(body: string): string[] {
 	const parts: string[] = [];
 	let depth = 0;
 	let current = "";
-	for (const ch of body) {
+	for (let i = 0; i < body.length; i++) {
+		const ch = body[i] as string;
+		if (ch === "'" || ch === '"') {
+			const end = skipQuotedSpan(body, i);
+			current += body.slice(i, end + 1);
+			i = end;
+			continue;
+		}
 		if (ch === "(") depth++;
 		if (ch === ")") depth--;
 		if (ch === "," && depth === 0) {
@@ -198,7 +240,7 @@ const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["
 const CREATE_TABLE_LOOSE_RE = /CREATE\s+TABLE\b/gi;
 const ALTER_ADD_COLUMN_RE =
 	/ALTER\s+TABLE\s+["`[]?(\w+)["`\]]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/gi;
-const ALTER_TABLE_LOOSE_RE = /ALTER\s+TABLE\b/gi;
+const ALTER_TABLE_LOOSE_RE = /ALTER\s+TABLE\s+["`[]?\w+["`\]]?\s+ADD\s+COLUMN\b/gi;
 
 interface ParsedFile {
 	creates: ParsedTableStmt[];
@@ -235,7 +277,7 @@ function parseSqlFileContent(content: string): ParsedFile {
 	ALTER_ADD_COLUMN_RE.lastIndex = 0;
 	for (let m = ALTER_ADD_COLUMN_RE.exec(content); m; m = ALTER_ADD_COLUMN_RE.exec(content)) {
 		strictAlterCount++;
-		const def = m[0];
+		const def = content.slice(m.index, findStatementEnd(content, m.index + m[0].length));
 		alters.push({
 			table: m[1] as string,
 			column: {
@@ -249,7 +291,7 @@ function parseSqlFileContent(content: string): ParsedFile {
 	ALTER_TABLE_LOOSE_RE.lastIndex = 0;
 	const looseAlterCount = content.match(ALTER_TABLE_LOOSE_RE)?.length ?? 0;
 	if (looseAlterCount > 0 && strictAlterCount < looseAlterCount) {
-		throw new Error("ALTER TABLE statement found but could not be parsed");
+		throw new Error("ALTER TABLE ADD COLUMN statement found but could not be parsed");
 	}
 
 	return { creates, alters };

@@ -43,7 +43,7 @@ const graph: ArchitectureGraph = {
 	dbEdges: [{ from: "public.users", to: "public.orgs", fromColumn: "org_id", toColumn: "id", confidence: "proven" }],
 	crossLinks: [],
 	evidence: [],
-	truncated: { codeNodes: 0, codeEdges: 0, dbNodes: 0 },
+	truncated: { codeNodes: 0, codeEdges: 0, dbNodes: 0, dbEdges: 0 },
 	generatedAt: new Date(0).toISOString(),
 };
 
@@ -74,6 +74,20 @@ describe("Mermaid golden output", () => {
 		expect(buildImportFlowchart(graph)).toBe(
 			'graph LR\n  src_app_ts["app.ts"]\n  src_store_ts["store.ts"]\n  src_app_ts -->|import| src_store_ts',
 		);
+	});
+
+	test("gives two raw ids that sanitize to the same characters a distinguishing suffix", () => {
+		const colliding: ArchitectureGraph = {
+			...graph,
+			codeNodes: [
+				{ id: "src/a-b.ts", label: "a-b.ts", kind: "file" },
+				{ id: "src/a_b.ts", label: "a_b.ts", kind: "file" },
+			],
+			codeEdges: [{ from: "src/a-b.ts", to: "src/a_b.ts", kind: "import", evidence: "line 1" }],
+		};
+		const diagram = buildImportFlowchart(colliding);
+		expect(diagram).toContain("src_a_b_ts[");
+		expect(diagram).toContain("src_a_b_ts_2[");
 	});
 
 	test("er", () => {

@@ -1,24 +1,24 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import { DEFAULT_MAX_FILE_SIZE_BYTES, parseDbtSources, parseSqlMigrations } from "../src/erd/schema-static";
 
 let scopeDir: string;
 
 beforeEach(() => {
-	scopeDir = fs.mkdtempSync(path.join(os.tmpdir(), "erd-schema-static-"));
+	scopeDir = mkdtempSync(join(tmpdir(), "erd-schema-static-"));
 });
 
 afterEach(() => {
-	fs.rmSync(scopeDir, { recursive: true, force: true });
+	rmSync(scopeDir, { recursive: true, force: true });
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = path.join(scopeDir, relPath);
-	fs.mkdirSync(path.dirname(abs), { recursive: true });
-	fs.writeFileSync(abs, content);
+	const abs = join(scopeDir, relPath);
+	mkdirSync(dirname(abs), { recursive: true });
+	writeFileSync(abs, content);
 	return abs;
 }
 
@@ -242,6 +242,52 @@ describe("parseSqlMigrations", () => {
 
 		expect(findNode(nodes, "vendored")).toBeUndefined();
 		expect(findNode(nodes, "users")).toBeDefined();
+	});
+
+	test("an unbalanced parenthesis inside a quoted DEFAULT literal does not truncate the CREATE TABLE body", () => {
+		writeFile(
+			"migrations/0001_create_items.sql",
+			`CREATE TABLE items (
+				id UUID PRIMARY KEY,
+				note TEXT DEFAULT 'closing)',
+				name TEXT
+			);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		const items = findNode(nodes, "items");
+		const columnNames = items?.columns.map((c) => c.name).sort();
+		expect(columnNames).toEqual(["id", "name", "note"]);
+	});
+
+	test("detects a trailing NOT NULL on an ALTER TABLE ADD COLUMN statement", () => {
+		writeFile("migrations/0001_create_widgets.sql", "CREATE TABLE widgets (id UUID PRIMARY KEY);");
+		writeFile("migrations/0002_alter_widgets.sql", "ALTER TABLE widgets ADD COLUMN sku TEXT NOT NULL;");
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		const sku = findNode(nodes, "widgets")?.columns.find((c) => c.name === "sku");
+		expect(sku?.nullable).toBe(false);
+	});
+
+	test("an ALTER TABLE ADD CONSTRAINT statement does not discard the file's CREATE TABLE data", () => {
+		writeFile(
+			"migrations/0001_create_tables.sql",
+			`CREATE TABLE orders (
+				id UUID PRIMARY KEY
+			);
+			CREATE TABLE payments (
+				id UUID PRIMARY KEY,
+				order_id UUID NOT NULL
+			);
+			ALTER TABLE payments ADD CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES orders(id);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(findNode(nodes, "orders")).toBeDefined();
+		expect(findNode(nodes, "payments")).toBeDefined();
 	});
 });
 

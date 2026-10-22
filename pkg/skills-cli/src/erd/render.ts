@@ -163,6 +163,7 @@ export function buildImportFlowchart(graph: ArchitectureGraph): string {
 	const connected = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
 	const nodes = edges.length > 0 ? graph.codeNodes.filter((node) => connected.has(node.id)) : graph.codeNodes;
 	const labels = buildLabelMap(nodes);
+	const mermaidId = createMermaidIdResolver();
 
 	const lines: string[] = ["graph LR"];
 	for (const node of nodes) {
@@ -192,7 +193,7 @@ function mermaidAttributeWord(value: string): string {
 	return /^[0-9]/.test(nonEmpty) ? `_${nonEmpty}` : nonEmpty;
 }
 
-function buildErDiagramEntity(node: DbNode): string {
+function buildErDiagramEntity(node: DbNode, mermaidId: MermaidIdResolver): string {
 	const lines = [`  ${mermaidId(node.id)} {`];
 	for (const column of node.columns) {
 		const label = `${mermaidAttributeWord(column.dataType)} ${mermaidAttributeWord(column.name)}`;
@@ -206,6 +207,7 @@ function buildErDiagramEntity(node: DbNode): string {
 export function buildSchemaErDiagram(graph: ArchitectureGraph): string {
 	if (graph.dbNodes.length === 0) return "";
 
+	const mermaidId = createMermaidIdResolver();
 	const lines: string[] = ["erDiagram"];
 	for (const edge of graph.dbEdges) {
 		const lineStyle = dbEdgeSyntax(edge.confidence);
@@ -214,16 +216,35 @@ export function buildSchemaErDiagram(graph: ArchitectureGraph): string {
 		);
 	}
 	for (const node of graph.dbNodes) {
-		lines.push(buildErDiagramEntity(node));
+		lines.push(buildErDiagramEntity(node, mermaidId));
 	}
 	return lines.join("\n");
 }
 
-/** The label carries the untrusted content instead; this only needs a stable, safe placeholder. */
-export function mermaidId(rawId: string): string {
+function sanitizeMermaidId(rawId: string): string {
 	const sanitized = rawId.replace(/[^a-zA-Z0-9_]/g, "_");
 	const nonEmpty = sanitized.length > 0 ? sanitized : "node";
 	return /^[0-9]/.test(nonEmpty) ? `node_${nonEmpty}` : nonEmpty;
+}
+
+export type MermaidIdResolver = (rawId: string) => string;
+
+/** The label carries the untrusted content instead; this only needs a stable, safe placeholder, unique within one diagram even when two raw ids sanitize to the same characters (e.g. "a-b" and "a_b"). */
+export function createMermaidIdResolver(): MermaidIdResolver {
+	const assigned = new Map<string, string>();
+	const used = new Set<string>();
+	return (rawId: string) => {
+		const existing = assigned.get(rawId);
+		if (existing !== undefined) return existing;
+		const base = sanitizeMermaidId(rawId);
+		let candidate = base;
+		for (let suffix = 2; used.has(candidate); suffix++) {
+			candidate = `${base}_${suffix}`;
+		}
+		used.add(candidate);
+		assigned.set(rawId, candidate);
+		return candidate;
+	};
 }
 
 function sequenceArrow(kind: SequenceRenderData["messages"][number]["kind"]): string {
@@ -233,6 +254,7 @@ function sequenceArrow(kind: SequenceRenderData["messages"][number]["kind"]): st
 }
 
 export function buildSequenceDiagram(data: SequenceRenderData): string {
+	const mermaidId = createMermaidIdResolver();
 	const lines = ["sequenceDiagram"];
 	for (const participant of data.participants) {
 		lines.push(`  participant ${mermaidId(participant)} as ${escapeMermaidLabel(participant)}`);
@@ -247,6 +269,7 @@ export function buildSequenceDiagram(data: SequenceRenderData): string {
 }
 
 export function buildStateDiagram(data: StateRenderData): string {
+	const mermaidId = createMermaidIdResolver();
 	const lines = ["stateDiagram-v2"];
 	for (const state of data.states) {
 		lines.push(`  state ${escapeMermaidLabel(state)} as ${mermaidId(state)}`);
@@ -267,6 +290,7 @@ function classRelation(kind: ClassRenderData["relations"][number]["kind"]): stri
 }
 
 export function buildClassDiagram(data: ClassRenderData): string {
+	const mermaidId = createMermaidIdResolver();
 	const lines = ["classDiagram"];
 	for (const item of data.classes) {
 		const id = mermaidId(item.name);
@@ -295,7 +319,7 @@ function toArchitectureGraph(code: FlowRenderData, db: ErRenderData): Architectu
 		dbEdges: db.edges,
 		crossLinks: [],
 		evidence: [],
-		truncated: { codeNodes: 0, codeEdges: 0, dbNodes: 0 },
+		truncated: { codeNodes: 0, codeEdges: 0, dbNodes: 0, dbEdges: 0 },
 		generatedAt: new Date().toISOString(),
 	};
 }
@@ -406,8 +430,8 @@ function findStaticSchemaNote(graph: ArchitectureGraph): string | undefined {
 }
 
 function buildTruncationNote(graph: ArchitectureGraph, reason: TruncationReason): string | undefined {
-	const { codeNodes, codeEdges, dbNodes } = graph.truncated;
-	const total = codeNodes + codeEdges + dbNodes;
+	const { codeNodes, codeEdges, dbNodes, dbEdges } = graph.truncated;
+	const total = codeNodes + codeEdges + dbNodes + dbEdges;
 	if (total === 0) return undefined;
 	const cause = reason === "node-cap" ? "the default node-count safety limit" : "depth cap";
 	return `> ${total} nodes/edges truncated at ${cause}.`;

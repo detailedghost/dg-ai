@@ -62,7 +62,7 @@ export interface ArchitectureGraph {
 	dbEdges: DbEdge[];
 	crossLinks: CrossLink[];
 	evidence: EvidenceRecord[];
-	truncated: { codeNodes: number; codeEdges: number; dbNodes: number };
+	truncated: { codeNodes: number; codeEdges: number; dbNodes: number; dbEdges: number };
 	generatedAt: string;
 }
 
@@ -139,6 +139,7 @@ export interface MergeGraphInput {
 function normalizeToken(raw: string): string {
 	const base = raw.replace(/\.[^./]+$/, "");
 	const lower = base.toLowerCase();
+	if (lower.endsWith("ies")) return `${lower.slice(0, -3)}y`;
 	if (lower.endsWith("es")) return lower.slice(0, -2);
 	if (lower.endsWith("s")) return lower.slice(0, -1);
 	return lower;
@@ -205,6 +206,7 @@ export function mergeGraph(parts: MergeGraphInput): ArchitectureGraph {
 			codeNodes: code.truncated.nodes,
 			codeEdges: code.truncated.edges,
 			dbNodes: db.truncated.nodes,
+			dbEdges: 0,
 		},
 		generatedAt: new Date().toISOString(),
 	};

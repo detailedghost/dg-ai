@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import { statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+import { parseNonNegativeInteger } from "@dg/common";
 import { agentsPath, isWSL, tryOpen } from "@dg/common/node";
 import { collectCodeGraph } from "./code-graph";
 import type { ArchitectureGraph, DbPartial, DiagramType, EvidenceRecord, MermaidPayload, RenderData } from "./graph";
@@ -97,6 +98,12 @@ function applyGlobalNodeCap(graph: ArchitectureGraph, depthProvided: boolean): A
 	const keptDbIds = new Set(keptDbNodes.map((n) => n.id));
 	const keptDbEdges = graph.dbEdges.filter((e) => keptDbIds.has(e.from) && keptDbIds.has(e.to));
 
+	const keptCrossLinks = graph.crossLinks.filter(
+		(link) => keptCodeIds.has(link.codeNodeId) && keptDbIds.has(link.dbNodeId),
+	);
+
+	const droppedCodeEdges = graph.codeEdges.length - keptCodeEdges.length;
+	const droppedDbEdges = graph.dbEdges.length - keptDbEdges.length;
 	const droppedTotal = droppedCodeCount + droppedDbCount;
 
 	return {
@@ -105,10 +112,13 @@ function applyGlobalNodeCap(graph: ArchitectureGraph, depthProvided: boolean): A
 		codeEdges: keptCodeEdges,
 		dbNodes: keptDbNodes,
 		dbEdges: keptDbEdges,
+		crossLinks: keptCrossLinks,
 		truncated: {
 			...graph.truncated,
 			codeNodes: graph.truncated.codeNodes + droppedCodeCount,
 			dbNodes: graph.truncated.dbNodes + droppedDbCount,
+			codeEdges: graph.truncated.codeEdges + droppedCodeEdges,
+			dbEdges: graph.truncated.dbEdges + droppedDbEdges,
 		},
 		evidence: [
 			...graph.evidence,
@@ -236,8 +246,7 @@ function parseOptions(args: string[], legacyGenerate = false): ParsedOptions {
 			}
 			i++;
 			if (arg === "--depth") {
-				const depth = Number.parseInt(value, 10);
-				if (Number.isFinite(depth)) parsed.depth = depth;
+				parsed.depth = parseNonNegativeInteger("--depth", value);
 			} else if (arg === "--out") parsed.out = value;
 			else if (arg === "--data") parsed.data = value;
 			else {

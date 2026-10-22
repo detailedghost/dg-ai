@@ -71,7 +71,17 @@ export function collectCodeGraph(opts: CollectCodeGraphOptions): CollectCodeGrap
 	let truncatedNodes = 0;
 
 	function walk(absDir: string, relDir: string, currentDepth: number): { fileCount: number } {
-		const entries = fs.readdirSync(absDir, { withFileTypes: true });
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(absDir, { withFileTypes: true });
+		} catch (err) {
+			evidence.push({
+				type: "file",
+				ref: relDir,
+				detail: `skipped: could not read directory (${(err as Error).message})`,
+			});
+			return { fileCount: 0 };
+		}
 		let fileCount = 0;
 
 		for (const entry of entries) {

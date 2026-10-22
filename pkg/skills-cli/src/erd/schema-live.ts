@@ -43,7 +43,7 @@ interface DbSchemaResponse {
 	tables: DbSchemaTable[];
 }
 
-export const DB_SHELLOUT_TIMEOUT_MS = 2000;
+export const DB_SHELLOUT_TIMEOUT_MS = 5000;
 
 export type DbRunner = (argv: string[]) => Promise<{ ok: boolean; stdout: string }>;
 
@@ -141,33 +141,61 @@ function buildResultFromResponse(conn: string, response: DbSchemaResponse): Coll
 	return { nodes, edges, evidence, usedConnection: conn };
 }
 
-async function trySchema(conn: string, runner: DbRunner): Promise<CollectLiveSchemaResult | undefined> {
+interface SchemaAttempt {
+	result?: CollectLiveSchemaResult;
+	evidence?: EvidenceRecord;
+}
+
+async function trySchema(conn: string, runner: DbRunner): Promise<SchemaAttempt> {
 	const { ok, stdout } = await runner(["schema", conn]);
-	if (!ok) return undefined;
+	if (!ok) return {};
 
 	let parsed: DbSchemaResponse;
 	try {
 		parsed = JSON.parse(stdout) as DbSchemaResponse;
-	} catch {
-		return undefined;
+	} catch (err) {
+		return {
+			evidence: {
+				type: "file",
+				ref: conn,
+				detail: `skipped: live schema response was not valid JSON (${(err as Error).message})`,
+			},
+		};
 	}
-	if (!parsed || !Array.isArray(parsed.tables)) return undefined;
+	if (!parsed || !Array.isArray(parsed.tables)) {
+		return {
+			evidence: {
+				type: "file",
+				ref: conn,
+				detail: "skipped: live schema response did not match the expected shape",
+			},
+		};
+	}
 
-	return buildResultFromResponse(conn, parsed);
+	return { result: buildResultFromResponse(conn, parsed) };
 }
 
 export async function collectLiveSchema(opts: CollectLiveSchemaOptions): Promise<CollectLiveSchemaResult> {
+	const evidence: EvidenceRecord[] = [];
 	try {
 		const runner = opts.runDb ?? runDb;
 		const candidates = opts.connNames ?? parseConnectionNames((await runner(["connections"])).stdout);
 
 		for (const conn of candidates) {
-			const result = await trySchema(conn, runner);
-			if (result) return result;
+			const attempt = await trySchema(conn, runner);
+			if (attempt.evidence) evidence.push(attempt.evidence);
+			if (attempt.result) {
+				return { ...attempt.result, evidence: [...evidence, ...attempt.result.evidence] };
+			}
 		}
 
-		return emptyResult();
-	} catch {
-		return emptyResult();
+		return { ...emptyResult(), evidence };
+	} catch (err) {
+		evidence.push({
+			type: "file",
+			ref: "live-schema",
+			detail: `skipped: live schema collection failed (${(err as Error).message})`,
+		});
+		return { ...emptyResult(), evidence };
 	}
 }
