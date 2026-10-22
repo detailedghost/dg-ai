@@ -10,7 +10,7 @@
 
 ### Test standard checklist
 
-See `docs/contributing.md`.
+See `CONTRIBUTING.md`.
 
 - [ ] Tests import real production code — no re-implemented / shadowed logic
 - [ ] No placeholder or always-true assertions, no empty test bodies

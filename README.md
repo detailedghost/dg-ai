@@ -142,5 +142,5 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 
 - [Developer guide](docs/DEVELOPER.md)
 
-- [Contributing](docs/contributing.md)
+- [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
