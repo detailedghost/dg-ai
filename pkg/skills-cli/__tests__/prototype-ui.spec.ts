@@ -135,6 +135,10 @@ function manifest(
 function decide(port: number, body: unknown) {
 	return fetch(`http://127.0.0.1:${port}/prototype-decision`, {
 		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"Sec-Fetch-Site": "same-origin",
+		},
 		body: JSON.stringify(body),
 	});
 }
@@ -378,6 +382,54 @@ describe("prototype ui", () => {
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toMatch(message);
 		expect(existsSync(join(scratch, "prototype-ui", "x.json"))).toBe(false);
+	});
+
+	describe("chain names that escape the state directory", () => {
+		const names = [
+			"../../x",
+			"/tmp/dg-abs-x",
+			"a/../../x",
+			"..%2f..%2fx",
+			"..%5c..%5cx",
+			"x\\y",
+		];
+
+		test.each(names)("ui refuses --chain=%s before writing anything", async (name) => {
+			const result = await cli([
+				"ui",
+				manifest("esc"),
+				`--chain=${name}`,
+				"--no-open",
+			]).done;
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("invalid prototype name");
+			expect(existsSync(join(root, "x.html"))).toBe(false);
+			expect(existsSync(join(root, "x.json"))).toBe(false);
+			expect(existsSync("/tmp/dg-abs-x.html")).toBe(false);
+		});
+
+		test.each(names)("ui refuses a manifest chain of %s", async (name) => {
+			const result = await cli([
+				"ui",
+				manifest("esc", JSON.stringify(name)),
+				"--no-open",
+			]).done;
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("invalid prototype name");
+			expect(existsSync(join(root, "x.html"))).toBe(false);
+		});
+
+		test.each(names)("stop refuses %s and deletes nothing", async (name) => {
+			const victim = join(root, "x.json");
+			writeFileSync(
+				victim,
+				JSON.stringify({ name: "x", sentinelDir: outside, htmlPath: victim }),
+			);
+			const result = await cli(["stop", name]).done;
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("invalid prototype name");
+			expect(existsSync(victim)).toBe(true);
+		});
 	});
 
 	test("an unknown option and a missing manifest are usage errors", async () => {

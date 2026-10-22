@@ -6,11 +6,11 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
-import { protoDir, sentinelPaths } from "./paths";
+import { assertProtoName, protoDir, sentinelPaths } from "./paths";
 import { status, type WaitResult, wait } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
@@ -36,14 +36,24 @@ function pinCwd(): string {
 	return join(stateDirectory(), "_cwd");
 }
 
+function insideStateDirectory(name: string, extension: string): string {
+	assertProtoName(name);
+	const root = resolve(stateDirectory());
+	const path = resolve(root, `${name}${extension}`);
+	if (!path.startsWith(`${root}${sep}`))
+		throw new Error(`invalid prototype name: ${JSON.stringify(name)}`);
+	return path;
+}
+
 function statePathFor(name: string): string {
-	return join(stateDirectory(), `${name}.json`);
+	return insideStateDirectory(name, ".json");
 }
 
 /** Load the recorded session for a chain key; wait, status and stop read this instead of the ambient cwd. */
 export function loadState(name: string): UiState | undefined {
+	const path = statePathFor(name);
 	try {
-		return JSON.parse(readFileSync(statePathFor(name), "utf8")) as UiState;
+		return JSON.parse(readFileSync(path, "utf8")) as UiState;
 	} catch {
 		return undefined;
 	}
@@ -177,7 +187,7 @@ export async function runUi(argv: string[]): Promise<number> {
 				"<head>\n<script>window.__protoSeries=true</script>",
 			)
 		: rendered;
-	const key = flags.chain ?? manifest.chain;
+	const key = assertProtoName(flags.chain ?? manifest.chain);
 
 	const existing = loadState(key);
 	let state: UiState;
@@ -200,7 +210,7 @@ async function startSession(
 ): Promise<UiState> {
 	const cwd = pinCwd();
 	mkdirSync(cwd, { recursive: true });
-	const htmlPath = join(stateDirectory(), `${key}.html`);
+	const htmlPath = insideStateDirectory(key, ".html");
 	writeFileSync(htmlPath, html);
 	const sentinelDir = protoDir(key, { cwd, light: flags.light });
 	clearSentinels(sentinelDir);
