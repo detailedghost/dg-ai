@@ -157,6 +157,7 @@ export const INSTALLED_SKILL_FILES = [
 	"teach/references/MISSION-FORMAT.md",
 	"teach/references/RESOURCES-FORMAT.md",
 	"teach/references/content-types.md",
+	"test-live/SKILL.md",
 	"thrash/SKILL.md",
 	"thrash/references/agent-prompt.md",
 	"thrash/references/details.md",

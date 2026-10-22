@@ -71,6 +71,7 @@ describe("dg-skills CLI", () => {
 			"doctor",
 			"db",
 			"erd",
+			"test-live",
 		]) {
 			expectListed(out, cmd);
 		}

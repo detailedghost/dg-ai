@@ -26,6 +26,7 @@ import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { specChecks } from "../spec/doctor";
 import { stashChecks } from "../stash/doctor";
+import { testLiveChecks } from "../test-live/doctor";
 import { thrashChecks } from "../thrash/doctor";
 import { vcsProviderChecks } from "../vcs-provider/doctor";
 import { worktreeChecks } from "../worktree/doctor";
@@ -39,6 +40,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	credentials: credentialsChecks,
 	db: dbChecks,
 	erd: erdChecks,
+	"test-live": testLiveChecks,
 	install: installChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,

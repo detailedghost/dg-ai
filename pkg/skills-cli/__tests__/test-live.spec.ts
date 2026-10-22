@@ -1,0 +1,405 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import * as cliFixtures from "./cli-fixtures";
+import { writeFakeCli } from "./fake-cli";
+import { git as runGit } from "./git-repo-fixtures";
+import { runSetup } from "../src/test-live/setup";
+
+const CLI = join(import.meta.dir, "../src/index.ts");
+const BUN_BIN = process.execPath;
+const BRANCH = "feature/test-branch";
+const WORKFLOW_FILE = "deploy_dev.yml";
+const DEPLOY_WORKFLOW = "name: Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps: []\n";
+
+let createdDirs: string[];
+beforeEach(() => {
+	createdDirs = [];
+});
+afterEach(() => {
+	for (const dir of createdDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+function tmp(prefix: string): string {
+	return cliFixtures.tmp(createdDirs, prefix);
+}
+
+function buildRepo(): { origin: string; repo: string } {
+	const origin = tmp("test-live-origin-");
+	runGit(["init", "-q", "--bare", "-b", "main"], origin);
+	const repo = tmp("test-live-repo-");
+	runGit(["init", "-q", "-b", "main"], repo);
+	runGit(["remote", "add", "origin", origin], repo);
+	mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+	writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), DEPLOY_WORKFLOW);
+	writeFileSync(join(repo, "README.md"), "hello\n");
+	runGit(["add", "-A"], repo);
+	runGit(["commit", "-q", "-m", "chore: init"], repo);
+	runGit(["push", "-q", "origin", "main"], repo);
+	runGit(["checkout", "-q", "-b", BRANCH], repo);
+	runGit(["push", "-q", "-u", "origin", BRANCH], repo);
+	return { origin, repo };
+}
+
+function headSha(repo: string): string {
+	return runGit(["rev-parse", "HEAD"], repo).trim();
+}
+
+function log(repo: string, ref = "HEAD"): string {
+	return runGit(["log", "--oneline", ref], repo).trim();
+}
+
+interface FakeGhOptions {
+	inProgress?: string;
+	poll?: string;
+	baseline?: string;
+	dispatchExit?: number;
+	watchExit?: number;
+}
+
+function fakeGhScript(opts: FakeGhOptions): string {
+	return cliFixtures.shScript(`  *"--status in_progress"*)
+    printf '%s\\n' '${opts.inProgress ?? "[]"}'
+    exit 0
+    ;;
+  *"--limit 10 --json databaseId,url,event"*)
+    printf '%s\\n' '${opts.poll ?? "[]"}'
+    exit 0
+    ;;
+  *"--limit 1 --json databaseId"*)
+    printf '%s\\n' '${opts.baseline ?? "[]"}'
+    exit 0
+    ;;
+  *"workflow run"*)
+    exit ${opts.dispatchExit ?? 0}
+    ;;
+  *"run watch"*)
+    exit ${opts.watchExit ?? 0}
+    ;;`);
+}
+
+/** Writes the fake gh binary and returns the mutated process.env.PATH to bake into a spawn env. */
+function fakeGhPath(opts: FakeGhOptions = {}): string {
+	const dir = tmp("test-live-fake-gh-");
+	writeFakeCli(dir, "gh", fakeGhScript(opts));
+	return process.env.PATH ?? "";
+}
+
+function runRow(databaseId: number, event = "workflow_dispatch"): string {
+	return JSON.stringify([
+		{ databaseId, event, url: `https://github.com/acme/widgets/actions/runs/${databaseId}` },
+	]);
+}
+
+function baseEnv(opts: { path: string; gitlab?: boolean }): Record<string, string> {
+	const env: Record<string, string> = {
+		PATH: opts.path,
+		HOME: tmp("test-live-home-"),
+		AI_SCRATCH_DIR: tmp("test-live-scratch-"),
+		AI_STATE_DIR: tmp("test-live-state-"),
+		GIT_CONFIG_GLOBAL: "/dev/null",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_COUNT: "0",
+		GIT_AUTHOR_NAME: "T",
+		GIT_AUTHOR_EMAIL: "t@t.t",
+		GIT_COMMITTER_NAME: "T",
+		GIT_COMMITTER_EMAIL: "t@t.t",
+		GIT_TERMINAL_PROMPT: "0",
+	};
+	if (!opts.gitlab) env.AI_VCS_PROVIDER = "github";
+	return env;
+}
+
+async function runCli(
+	args: string[],
+	cwd: string,
+	env: Record<string, string>,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+	const proc = Bun.spawn([BUN_BIN, CLI, "test-live", ...args], {
+		cwd,
+		env,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, stdout, stderr };
+}
+
+describe("test-live setup — GitLab refusal", () => {
+	test("rejects a GitLab origin before any git mutation or workflow discovery", async () => {
+		const repo = tmp("test-live-gitlab-repo-");
+		runGit(["init", "-q", "-b", BRANCH], repo);
+		runGit(["remote", "add", "origin", "git@gitlab.com:acme/widgets.git"], repo);
+		runGit(["commit", "-q", "--allow-empty", "-m", "chore: init"], repo);
+		const before = headSha(repo);
+
+		const env = baseEnv({ path: fakeGhPath(), gitlab: true });
+		const result = await runCli(["setup", "dev"], repo, env);
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("GitHub only");
+		expect(headSha(repo)).toBe(before);
+	});
+});
+
+describe("test-live setup — branch guard", () => {
+	test("refuses to run on main", async () => {
+		const { repo } = buildRepo();
+		runGit(["checkout", "-q", "main"], repo);
+		const env = baseEnv({ path: fakeGhPath() });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("run test-live from a feature branch");
+	});
+});
+
+describe("test-live setup/cleanup — happy path", () => {
+	test("patches, dispatches, watches, then cleanup drops exactly the patch commit", async () => {
+		const { origin, repo } = buildRepo();
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(1001) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		expect(setupResult.stdout).toContain("Fargate is live on dev");
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).toContain(
+			"workflow_dispatch: {}  # TEST-LIVE: temporary",
+		);
+		expect(headSha(repo)).not.toBe(preSha);
+
+		const cleanupResult = await runCli(["cleanup"], repo, env);
+		expect(cleanupResult.code, cleanupResult.stderr).toBe(0);
+		expect(headSha(repo)).toBe(preSha);
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).not.toContain(
+			"workflow_dispatch",
+		);
+		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(preSha);
+
+		const secondCleanup = await runCli(["cleanup"], repo, env);
+		expect(secondCleanup.code).toBe(1);
+		expect(secondCleanup.stderr).toContain("no state file");
+	});
+
+	test("an already-dispatchable workflow skips the patch entirely", async () => {
+		const { repo } = buildRepo();
+		writeFileSync(
+			join(repo, ".github", "workflows", WORKFLOW_FILE),
+			DEPLOY_WORKFLOW.replace("on:\n", "on:\n  workflow_dispatch: {}\n"),
+		);
+		runGit(["add", "-A"], repo);
+		runGit(["commit", "-q", "-m", "chore: already dispatchable"], repo);
+		runGit(["push", "-q"], repo);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(2002) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		expect(headSha(repo)).toBe(preSha);
+		expect(setupResult.stdout).toContain("triggering directly");
+
+		const cleanupResult = await runCli(["cleanup"], repo, env);
+		expect(cleanupResult.code, cleanupResult.stderr).toBe(0);
+		expect(cleanupResult.stdout).toContain("nothing to revert");
+		expect(headSha(repo)).toBe(preSha);
+	});
+});
+
+describe("test-live — later commits survive cleanup", () => {
+	test("a commit made after the patch is preserved, dropping only the patch commit", async () => {
+		const { origin, repo } = buildRepo();
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(3003) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		const patchSha = headSha(repo);
+		expect(patchSha).not.toBe(preSha);
+
+		writeFileSync(join(repo, "README.md"), "hello again\n");
+		runGit(["add", "-A"], repo);
+		runGit(["commit", "-q", "-m", "feat: later work"], repo);
+		const laterSha = headSha(repo);
+		expect(laterSha).not.toBe(patchSha);
+
+		const cleanupResult = await runCli(["cleanup"], repo, env);
+		expect(cleanupResult.code, cleanupResult.stderr).toBe(0);
+
+		const finalLog = log(repo);
+		expect(finalLog).toContain("feat: later work");
+		expect(finalLog).not.toContain("workflow_dispatch for test-live");
+		expect(readFileSync(join(repo, "README.md"), "utf8")).toBe("hello again\n");
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).not.toContain(
+			"workflow_dispatch",
+		);
+		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(headSha(repo));
+	});
+});
+
+describe("test-live setup — resume while a patch is pending", () => {
+	test("a second setup call refuses instead of creating a second patch commit", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4004) }) });
+
+		const first = await runCli(["setup", "dev"], repo, env);
+		expect(first.code, first.stderr).toBe(0);
+		const afterFirst = headSha(repo);
+
+		const second = await runCli(["setup", "dev"], repo, env);
+		expect(second.code).toBe(1);
+		expect(second.stderr).toContain("run cleanup first");
+		expect(headSha(repo)).toBe(afterFirst);
+		expect(log(repo).match(/workflow_dispatch for test-live/g)?.length ?? 0).toBe(1);
+	});
+});
+
+describe("test-live cleanup — refusals without data loss", () => {
+	test("no prior setup on this branch reports a missing state file", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath() });
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("no state file");
+	});
+
+	test("cleanup run from a different branch finds no state and leaves the patch branch untouched", async () => {
+		const { origin, repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(5005) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		const patchedSha = headSha(repo);
+
+		runGit(["checkout", "-q", "main"], repo);
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("no state file");
+
+		runGit(["checkout", "-q", BRANCH], repo);
+		expect(headSha(repo)).toBe(patchedSha);
+		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(patchedSha);
+	});
+
+	test("unrelated uncommitted changes block cleanup and nothing is reset or pushed", async () => {
+		const { origin, repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(6006) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		const patchedSha = headSha(repo);
+
+		writeFileSync(join(repo, "README.md"), "unrelated edit\n");
+
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("uncommitted changes");
+		expect(headSha(repo)).toBe(patchedSha);
+		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(patchedSha);
+	});
+});
+
+describe("test-live setup — concurrent/duplicate runs", () => {
+	test("warns on an in-progress run but still completes", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({
+			path: fakeGhPath({ inProgress: runRow(1), poll: runRow(7007) }),
+		});
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stderr).toContain("already in progress");
+	});
+});
+
+describe("test-live setup — dispatch/push/watch failures", () => {
+	test("a dispatch failure dies without starting a watch", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ dispatchExit: 1 }) });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("dispatch failed");
+	});
+
+	test("a watch failure surfaces the run's own exit status", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(8008), watchExit: 7 }) });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(7);
+	});
+
+	test("a push failure leaves the patch commit local and recoverable, never silently dropped", async () => {
+		const repo = tmp("test-live-no-origin-repo-");
+		runGit(["init", "-q", "-b", BRANCH], repo);
+		mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+		writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), DEPLOY_WORKFLOW);
+		runGit(["add", "-A"], repo);
+		runGit(["commit", "-q", "-m", "chore: init"], repo);
+		const preSha = headSha(repo);
+
+		const env = baseEnv({ path: fakeGhPath() });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("push failed");
+		expect(headSha(repo)).not.toBe(preSha);
+
+		const cleanup = await runCli(["cleanup"], repo, env);
+		expect(cleanup.code).toBe(1);
+		expect(cleanup.stderr).toContain("push failed");
+	});
+});
+
+describe("test-live — scoped state path", () => {
+	test("two repositories and two branches never collide on the same state file", async () => {
+		const { repo: repoA } = buildRepo();
+		const { repo: repoB } = buildRepo();
+		const sharedEnv = baseEnv({ path: fakeGhPath({ poll: runRow(9001) }) });
+
+		const first = await runCli(["setup", "dev"], repoA, sharedEnv);
+		expect(first.code, first.stderr).toBe(0);
+
+		// Same repo, a different branch: must not see repoA's feature/test-branch pending state.
+		runGit(["checkout", "-q", "-b", "feature/other-branch", "main"], repoA);
+		runGit(["push", "-q", "-u", "origin", "feature/other-branch"], repoA);
+		const second = await runCli(["setup", "dev"], repoA, sharedEnv);
+		expect(second.code, second.stderr).toBe(0);
+		expect(second.stderr).not.toContain("run cleanup first");
+
+		// A different repository, same branch name and the same state root: must not collide either.
+		const third = await runCli(["setup", "dev"], repoB, sharedEnv);
+		expect(third.code, third.stderr).toBe(0);
+		expect(third.stderr).not.toContain("run cleanup first");
+	});
+});
+
+describe("test-live setup — poll timeout", () => {
+	test("gives up and dies when a matching run never appears", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: "[]" }) });
+		const savedCwd = process.cwd();
+		const savedEnv = { ...process.env };
+		try {
+			process.chdir(repo);
+			for (const key of Object.keys(process.env)) delete process.env[key];
+			Object.assign(process.env, env);
+			const stderr: string[] = [];
+			const originalWrite = process.stderr.write.bind(process.stderr);
+			process.stderr.write = ((chunk: string | Uint8Array) => {
+				stderr.push(chunk.toString());
+				return true;
+			}) as typeof process.stderr.write;
+			try {
+				const code = await runSetup(["dev"], { pollIntervalMs: 1, pollMaxAttempts: 2 });
+				expect(code).toBe(1);
+				expect(stderr.join("")).toContain("timed out waiting for run to appear");
+			} finally {
+				process.stderr.write = originalWrite;
+			}
+		} finally {
+			process.chdir(savedCwd);
+			for (const key of Object.keys(process.env)) delete process.env[key];
+			Object.assign(process.env, savedEnv);
+		}
+	});
+});
