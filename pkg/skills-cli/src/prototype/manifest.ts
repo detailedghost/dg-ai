@@ -1,4 +1,5 @@
-import { validateProtoPlan } from "@dg/common";
+import { escapeHtml, validateProtoPlan } from "@dg/common";
+import { scriptSafeJson } from "./inject";
 
 export interface Variant {
 	key: string;
@@ -138,6 +139,28 @@ function interpolate(text: string, data: Record<string, string>): string {
 	return out;
 }
 
+function stringMap(
+	frontmatter: Record<string, unknown>,
+	key: string,
+): Record<string, string> {
+	const value = frontmatter[key];
+	if (value === undefined) return {};
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		throw new Error(`manifest: frontmatter "${key}" must be a key: value map`);
+	return value as Record<string, string>;
+}
+
+function stringList(
+	frontmatter: Record<string, unknown>,
+	key: string,
+): string[] | undefined {
+	const value = frontmatter[key];
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value))
+		throw new Error(`manifest: frontmatter "${key}" must be a list`);
+	return value as string[];
+}
+
 export function parseManifest(raw: string): ManifestData {
 	const lines = raw.split(/\r?\n/);
 	let i = 0;
@@ -178,12 +201,10 @@ export function parseManifest(raw: string): ManifestData {
 		typeof frontmatter.chain === "string" && frontmatter.chain.trim()
 			? frontmatter.chain.trim()
 			: name;
-	const data = (frontmatter.data as Record<string, string> | undefined) ?? {};
-	const labels =
-		(frontmatter.labels as Record<string, string> | undefined) ?? {};
+	const data = stringMap(frontmatter, "data");
+	const labels = stringMap(frontmatter, "labels");
 	const rejectReasons =
-		(frontmatter.reject_reasons as string[] | undefined) ??
-		DEFAULT_REJECT_REASONS;
+		stringList(frontmatter, "reject_reasons") ?? DEFAULT_REJECT_REASONS;
 	const themeRaw =
 		typeof frontmatter.theme === "string" ? frontmatter.theme : "auto";
 	const theme: ManifestData["theme"] =
@@ -208,21 +229,17 @@ export function parseManifest(raw: string): ManifestData {
 	return { name, chain, title, theme, data, labels, rejectReasons, variants };
 }
 
-function scriptSafeJson(value: unknown): string {
-	return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
 export function render(m: ManifestData): string {
 	const title = m.title ?? m.name;
 	const themeAttr = m.theme === "auto" ? "" : ` data-theme="${m.theme}"`;
 	const sections = m.variants
-		.map((v) => `<section data-variant="${v.key}">\n${v.html}\n</section>`)
+		.map((v) => `<section data-variant="${escapeHtml(v.key)}">\n${v.html}\n</section>`)
 		.join("\n");
 	const variantKeys = m.variants.map((v) => v.key);
 	const reasonChips = m.rejectReasons
 		.map(
 			(r) =>
-				`<button type="button" class="proto-chip" data-reason="${escapeAttr(r)}">${escapeText(r)}</button>`,
+				`<button type="button" class="proto-chip" data-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`,
 		)
 		.join("");
 
@@ -231,7 +248,7 @@ export function render(m: ManifestData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeText(title)}</title>
+<title>${escapeHtml(title)}</title>
 <style>
 :root{
   color-scheme: light dark;
@@ -395,13 +412,6 @@ ${sections}
 </body>
 </html>
 `;
-}
-
-function escapeText(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function escapeAttr(s: string): string {
-	return escapeText(s).replace(/"/g, "&quot;");
 }
 
 function planToManifest(raw: string): ManifestData {

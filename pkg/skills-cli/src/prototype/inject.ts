@@ -1,3 +1,7 @@
+export function scriptSafeJson(value: unknown): string {
+	return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
 export function injectScript(name: string, tools: unknown): string {
 	return `<script>
 (function() {
@@ -6,7 +10,7 @@ export function injectScript(name: string, tools: unknown): string {
     if (modelContext && typeof modelContext.registerTool === 'function') {
       function prototypeData() {
         var data = document.getElementById('prototype-data');
-        return data ? JSON.parse(data.textContent) : { name: ${JSON.stringify(name)}, variants: [], labels: {} };
+        return data ? JSON.parse(data.textContent) : { name: ${scriptSafeJson(name)}, variants: [], labels: {} };
       }
       function listVariants() {
         var data = prototypeData();
@@ -19,12 +23,12 @@ export function injectScript(name: string, tools: unknown): string {
           var data = prototypeData();
           var notes = document.querySelector('#proto-notes, #proto-decision-notes');
           var decision = await fetch('/prototype-state', { cache: 'no-store' }).then(function(r) { return r.json(); });
-          return JSON.stringify({ chain: ${JSON.stringify(name)}, round: data.name, variant: variant, label: data.labels[variant] || variant,
+          return JSON.stringify({ chain: ${scriptSafeJson(name)}, round: data.name, variant: variant, label: data.labels[variant] || variant,
             notes: notes ? notes.value : '', status: decision.status });
         },
         list_prototype_variants: function() { return JSON.stringify(listVariants()); }
       };
-      ${JSON.stringify(tools)}.forEach(function(tool) {
+      ${scriptSafeJson(tools)}.forEach(function(tool) {
         try {
           tool.execute = execute[tool.name];
           Promise.resolve(modelContext.registerTool(tool)).catch(function() {});
@@ -74,7 +78,7 @@ export function injectScript(name: string, tools: unknown): string {
     var screens = Array.isArray(manifest.screens) ? manifest.screens.filter(function(s){ return s && s.id; }) : [];
     if (!screens.length && !manifest.summary) return;
 
-    var seenKey = 'protoChangesSeen:' + ${JSON.stringify(name)};
+    var seenKey = 'protoChangesSeen:' + ${scriptSafeJson(name)};
     if (sessionStorage.getItem(seenKey) === currentToken) return;
 
     screens.forEach(function(s) {
@@ -165,7 +169,7 @@ export function injectScript(name: string, tools: unknown): string {
         var fd = new FormData(form);
         var body = {};
         fd.forEach(function(v, k) { body[k] = v; });
-        body.name = body.name || ${JSON.stringify(name)};
+        body.name = body.name || ${scriptSafeJson(name)};
         fetch('/prototype-decision', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -252,7 +256,7 @@ export function injectScript(name: string, tools: unknown): string {
     fetch('/prototype-decision', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name: ${JSON.stringify(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '' })
+      body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '' })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant); }
     });
@@ -263,7 +267,7 @@ export function injectScript(name: string, tools: unknown): string {
     fetch('/prototype-decision', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name: ${JSON.stringify(name)}, decision: normalized, notes: notes || '' })
+      body: JSON.stringify({ name: ${scriptSafeJson(name)}, decision: normalized, notes: notes || '' })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { _showDecisionOverlay(normalized === 'REWORK' ? 'rework' : 'approved', !!(notes && notes.trim())); }
     });
