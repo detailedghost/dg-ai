@@ -17,7 +17,7 @@ import { meaningfulChecks } from "../meaningful/doctor";
 import { monolithChecks } from "../monolith/doctor";
 import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
 import { polishChecks } from "../polish/doctor";
-import { protoChecks } from "../proto/doctor";
+import { protoChecks, prototypeChecks } from "../proto/doctor";
 import { proxyChecks } from "../proxy/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
@@ -51,6 +51,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"vcs-provider": vcsProviderChecks,
 	"clipboard-image": clipboardImageChecks,
 	proto: protoChecks,
+	prototype: prototypeChecks,
 	proxy: proxyChecks,
 	"overwatch-snapshot": overwatchSnapshotChecks,
 	worktree: worktreeChecks,

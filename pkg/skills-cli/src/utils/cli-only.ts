@@ -8,7 +8,6 @@ export const EXTENSION_COMMANDS = [
 	"launch",
 	"demo",
 	"rerun",
-	"proto",
 ];
 
 export const cliOnlyMarker = (): string =>

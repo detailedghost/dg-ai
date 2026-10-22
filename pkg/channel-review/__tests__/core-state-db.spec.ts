@@ -25,6 +25,7 @@ function legacyState(): ChannelState {
 	return {
 		lastEventIds: { chat1: "cursor-1", chat2: "cursor-2" },
 		current: { messageId: "running", chatId: "chat2", url: "https://github.com/example/app/pull/1", number: 1, startedAt: at, pid: 1234, pidStart: "process-start" },
+		running: {},
 		handled: Object.fromEntries((["pending", "running", "done", "failed"] as const).map(status => [status, { status, at, chatId: "chat2" }])),
 		blocked: { pr: { url: "https://github.com/example/app/pull/1", messageId: "done", chatId: "chat1", verdict: "changes_requested", options: { spice: 4, comment: true, fun: false, agent: "codex", model: "test-model" }, at } },
 		issues: { issue: { status: "fixing", firstSeen: at, at } },

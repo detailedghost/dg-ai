@@ -1,3 +1,4 @@
+import { escapeHtml } from "@dg/common";
 import type { CrCode } from "./errors";
 import type { ReactionState } from "./reactions";
 import type { Verdict } from "./verdict/types";
@@ -41,12 +42,21 @@ export function aggregateOutcome(rows: StackRow[]): ReactionOutcome {
 		);
 }
 
+function repoLabel(url: string, number: number): string {
+	const path = URL.canParse(url) ? new URL(url).pathname : "";
+	const repo = path.split(/\/(?:-\/)?(?:pull|merge_requests)\//)[0]?.split("/").filter(Boolean).at(-1);
+	return `${repo ?? ""}#${number}`;
+}
+
 export function formatStackSummary(rows: StackRow[]): string {
 	const header = `Stacked review: ${rows.length} PR${rows.length === 1 ? "" : "s"}`;
-	const lines = rows.map(({ outcome, number, url }) =>
-		typeof outcome === "string"
-			? `${VERDICT_LABELS[outcome].emoji} #${number} ${url}`
-			: `⚠️ ${outcome.code} #${number} ${url}`,
-	);
-	return [header, ...lines].join("\n");
+	const items = rows.map(({ outcome, number, url }) => {
+		const link = `<a href="${escapeHtml(url)}">${escapeHtml(repoLabel(url, number))}</a>`;
+		const verdict =
+			typeof outcome === "string"
+				? `${VERDICT_LABELS[outcome].emoji} ${VERDICT_LABELS[outcome].word}`
+				: `⚠️ ${outcome.code}`;
+		return `<li>${link}: ${verdict}</li>`;
+	});
+	return `<p>${header}</p><ul>${items.join("")}</ul>`;
 }

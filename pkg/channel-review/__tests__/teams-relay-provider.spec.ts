@@ -9,6 +9,7 @@ import {
 import type { AdaptiveCard, ChatEvent } from "../src/providers/types";
 import {
 	APP_NAME,
+	RELAY_SECRET,
 	BOT_NAME,
 	CHAT_ID,
 	createEngineHarness,
@@ -172,12 +173,18 @@ type Options = {
 	envName?: EnvName;
 	watchdogHeld?: boolean;
 	holdBackoff?: boolean;
+	streamIdleSeconds?: number;
 };
 
 function createHarness(options: Options = {}) {
 	const configPath = writeConfigFile(
 		home.dir,
-		minimalConfigJson(options.chat ? { chat: options.chat } : {}),
+		minimalConfigJson({
+			...(options.chat ? { chat: options.chat } : {}),
+			...(options.streamIdleSeconds === undefined
+				? {}
+				: { relay: { appName: APP_NAME, secret: RELAY_SECRET, streamIdleSeconds: options.streamIdleSeconds } }),
+		}),
 	);
 	const config = loadConfig(configPath);
 	const env = resolveEnv(config, options.envName);
@@ -214,7 +221,7 @@ function createHarness(options: Options = {}) {
 		log,
 		sleep: (ms: number, signal?: AbortSignal) => {
 			sleeps.push(ms);
-			if (ms === WATCHDOG_MS) {
+			if (ms === WATCHDOG_MS || ms === (options.streamIdleSeconds ?? 45) * 1000) {
 				return new Promise<void>((resolve) => {
 					pendingWatchdogs.push(resolve);
 					signal?.addEventListener(
@@ -657,6 +664,16 @@ describe("createTeamsRelayProvider subscribe", () => {
 		).toEqual(["e1", "e2"]);
 	});
 
+	test("logs each reconnect", async () => {
+		const harness = createHarness({
+			handlers: [sseResponse([messageFrame("e1")]), sseResponse([messageFrame("e2")], { end: false })],
+		});
+		const drain = startDrain(harness);
+		await waitUntil(() => drain.events.length === 2);
+		await drain.stop();
+		expect(harness.lines().some((line) => line.startsWith("events stream reconnecting in"))).toBe(true);
+	});
+
 	test("yields gap and keeps the last known id until a replayed event updates it", async () => {
 		const harness = createHarness({
 			handlers: [
@@ -760,6 +777,71 @@ describe("createTeamsRelayProvider subscribe", () => {
 			expect(harness.requests).toHaveLength(1);
 		},
 	);
+
+	test.each([
+		["a comment line", ": ping\n\n"],
+		["an event: ping frame", "event: ping\ndata:\n\n"],
+	])("%s resets the idle timer and is never yielded", async (_name, keepAlive) => {
+		let push: (text: string) => void = () => undefined;
+		const harness = createHarness({
+			handlers: [
+				(request) =>
+					new Response(
+						new ReadableStream({
+							start(controller) {
+								push = (text) => controller.enqueue(encoder.encode(text));
+								request.signal?.addEventListener(
+									"abort",
+									() => controller.error(new DOMException("aborted", "AbortError")),
+									{ once: true },
+								);
+							},
+						}),
+						{ status: 200, headers: { "content-type": "text/event-stream" } },
+					),
+			],
+		});
+		const drain = startDrain(harness);
+		await waitUntil(() => harness.pendingWatchdogCount() === 1);
+		const before = harness.sleeps.filter((ms) => ms === WATCHDOG_MS).length;
+		push(keepAlive);
+		await waitUntil(() => harness.sleeps.filter((ms) => ms === WATCHDOG_MS).length === before + 1);
+		expect(harness.pendingWatchdogCount()).toBe(1);
+		expect(harness.requests).toHaveLength(1);
+		expect(drain.events).toEqual([]);
+		push(messageFrame("e1"));
+		await waitUntil(() => drain.events.length === 1);
+		expect(harness.requests).toHaveLength(1);
+		await drain.stop();
+	});
+
+	test("logs the idle limit, aborts the fetch and reconnects with the last event id", async () => {
+		const harness = createHarness({
+			handlers: [sseResponse([messageFrame("e1")], { end: false }), sseResponse([], { end: false })],
+		});
+		const drain = startDrain(harness);
+		await waitUntil(() => drain.events.length === 1);
+		await waitUntil(() => harness.pendingWatchdogCount() === 1);
+		harness.fireWatchdog();
+		await waitUntil(() => harness.requests.length === 2);
+		expect(harness.requests[0]?.signal?.aborted).toBe(true);
+		expect(harness.requests[1]?.headers.get("last-event-id")).toBe("e1");
+		expect(harness.lines()).toContain("events stream idle for 45 s, reconnecting");
+		expect(harness.backoffs()).toHaveLength(1);
+		await drain.stop();
+		expect(harness.pendingWatchdogCount()).toBe(0);
+	});
+
+	test("uses relay.streamIdleSeconds as the idle limit", async () => {
+		const harness = createHarness({
+			streamIdleSeconds: 90,
+			handlers: [sseResponse([], { end: false })],
+		});
+		const drain = startDrain(harness);
+		await waitUntil(() => harness.sleeps.includes(90_000));
+		expect(harness.sleeps).not.toContain(WATCHDOG_MS);
+		await drain.stop();
+	});
 
 	test("keeps at most one idle timer pending while chunks arrive", async () => {
 		const frames = [messageFrame("e1"), messageFrame("e2"), messageFrame("e3")];

@@ -91,15 +91,15 @@ type PrototypePickerContracts = {
 	pickerMachine(state: PickerState, action: PickerAction): PickerState;
 	pickerVerdictKey(
 		state: PickerState,
-		action: "approve" | "reject",
+		action: "approve" | "reject" | "tweak",
 	): string | null;
 	setPrototypeCycleFlash(host: HTMLElement, active: boolean): void;
 	plantPrototype(plan: unknown): Promise<void>;
 	buildVerdict(input: {
 		slug: string;
-		action: "approve" | "reject";
+		action: "approve" | "reject" | "tweak";
 		selectedKey: string;
-		feedback?: string;
+		notes?: string;
 		ts: number;
 	}): Verdict;
 	sanitizePrototypeVariation(variation: ProtoVariation): ProtoVariation;
@@ -393,14 +393,14 @@ describe("buildVerdict", () => {
 			slug: "account-summary",
 			action: "approve",
 			selectedKey: "compact",
-			feedback: "Approve verdicts must discard this.",
+			notes: "Make the primary action clearer.",
 			ts: 1_721_234_567_890,
 		});
 		const reject = buildVerdict({
 			slug: "account-summary",
 			action: "reject",
 			selectedKey: "detailed",
-			feedback: "Reduce the density.",
+			notes: "Reduce the density.",
 			ts: 1_721_234_567_891,
 		});
 		expect(() =>
@@ -412,12 +412,37 @@ describe("buildVerdict", () => {
 			}),
 		).toThrow(/feedback/i);
 
+		const approveWithoutNotes = buildVerdict({
+			slug: "account-summary",
+			action: "approve",
+			selectedKey: "compact",
+			ts: 1_721_234_567_893,
+		});
+		const tweak = buildVerdict({
+			slug: "account-summary",
+			action: "tweak",
+			selectedKey: "compact",
+			notes: "Round the corners.",
+			ts: 1_721_234_567_894,
+		});
+		expect(() =>
+			buildVerdict({
+				slug: "account-summary",
+				action: "tweak",
+				selectedKey: "compact",
+				ts: 1_721_234_567_895,
+			}),
+		).toThrow(/notes/i);
+
 		expect(validateVerdict(approve)).toEqual({
 			slug: "account-summary",
 			action: "approve",
 			selectedKey: "compact",
+			notes: "Make the primary action clearer.",
 			ts: 1_721_234_567_890,
 		});
+		expect(approveWithoutNotes).not.toHaveProperty("notes");
+		expect(tweak).toMatchObject({ action: "tweak", notes: "Round the corners." });
 		expect(validateVerdict(reject)).toEqual({
 			slug: "account-summary",
 			action: "reject",
