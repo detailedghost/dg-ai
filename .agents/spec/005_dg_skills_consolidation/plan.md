@@ -1319,8 +1319,8 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 #### Engineering
 - [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (vendor pr-body-style.md into the skill; hook remains a configured external executable)
 - [ ] Bump to 1.21.0; open the Wave 7 draft PR
-- [ ] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
-- [ ] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
+- [x] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
+- [x] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
 - [ ] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.
 
 #### Testing Criteria

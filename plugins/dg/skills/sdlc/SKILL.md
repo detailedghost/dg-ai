@@ -61,7 +61,7 @@ Follow steps strictly in order. NEVER skip a gate condition.
 `/dg:sdlc` takes a bare brief, but the slice-wave workflow reads each slice's agents out of `slices[]` frontmatter, so the picks have to land on disk — which is why step 3 needs `/dg:assign`'s spec-annotation mode, not a bare recommendation. Step 2 synthesizes a throwaway spec at `$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)` carrying just enough structure for those tools to bite on. It is scratch, never a deliverable:
 
 - NEVER write it into `.agents/spec/` (durable specs stay `/dg:spec`'s job) or anywhere inside an installed skills directory.
-- No cleanup step needed — `/cleanup`'s 30-day state TTL walker prunes it when stale.
+- No cleanup step needed — `/dg:cleanup`'s 30-day state TTL walker prunes it when stale.
 
 ## General rules
 
