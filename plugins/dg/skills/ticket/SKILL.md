@@ -1,6 +1,7 @@
 ---
 name: ticket
 description: Create a Jira ticket via the Atlassian MCP, using the registered site, project, assignee, sprint field and issue types for this machine. Use when the user says "make a ticket", "file a Jira issue", "create a task/story/bug for X", or /dg:ticket.
+allowed-tools: Bash(~/.dg/bin/dg-skills:*), searchJiraIssuesUsingJql, lookupJiraAccountId, createJiraIssue
 ---
 
 # Skill: ticket
@@ -19,8 +20,6 @@ the literal path, so each Bash call works alone:
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor credentials.
-
-If a step fails, run `~/.dg/bin/dg-skills doctor credentials`.
 
 ## Usage
 
@@ -106,6 +105,7 @@ name) to resolve it to an id before setting the field.
 5. **Check for duplicates** — before creating, run:
    ```
    searchJiraIssuesUsingJql:
+     cloudId: <registered cloudId>
      jql: "project = <PROJECT> AND summary ~ \"<exact summary>\""
    ```
    If an issue with that exact summary already exists, do NOT create another — report the
