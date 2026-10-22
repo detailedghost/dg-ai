@@ -175,11 +175,12 @@ function expiresAt(invite: Invite): string {
 export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	const { sk, mode } = await ensureKey(deps);
 	const invite = liveInvite(deps);
+	const config = readConfig(deps.line);
 	printJson(deps, {
 		line: deps.line.name,
 		npub: npubOf(sk),
-		contact: readConfig(deps.line).contact ?? null,
-		name: readConfig(deps.line).name ?? null,
+		contact: config.contact ?? null,
+		name: config.name ?? null,
 		key_store: mode,
 		listener: livePid(deps) ?? null,
 		...(invite ? { card_expires_at: expiresAt(invite) } : {}),

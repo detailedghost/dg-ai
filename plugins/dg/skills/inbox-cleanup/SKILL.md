@@ -10,7 +10,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
 ~/.dg/bin/dg-skills inbox --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-skills inbox --help
 ```
 

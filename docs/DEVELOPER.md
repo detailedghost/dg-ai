@@ -305,7 +305,7 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 | `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
 | skill tree | the repository itself | tracked in `master` |
 
-The four released packages and both plugin manifests share version 1.18.0.
+The four released packages and both plugin manifests share version 1.18.1.
 Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
 `@dg/common` stays at 1.0.0; it is not part of this matched release set.
 Each workflow publishes its own tag. `dg-skills install` refreshes the extension
