@@ -38,7 +38,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor pw pw-code stash.
 | `--headless` | none | No window. | off |
 | `--browser=<b>` | none | `chrome` (default), `chromium`, `msedge`, `firefox`, `webkit`. | `chrome` |
 | `--from=<state>` | none | Seed the session from a saved state. | none |
-| `--out=<dir>` | none | Output directory for snapshots, screenshots, and files. | `$(stash pw)/<cwd-hash>` |
+| `--out=<dir>` | none | Output directory for snapshots, screenshots, and files. | `$(~/.dg/bin/dg-skills stash pw)/<cwd-hash>` |
 | `--depth=<n>` | none | Default snapshot depth for the session (`0` means unlimited). | `6` |
 | `--raw` | none | Print only the result value. | off |
 | `--codegen` | none | Include the Playwright code that ran. | off |
@@ -72,7 +72,7 @@ Opening a persistent session that another directory holds is refused. Run `pw -s
 
 ## Output files
 
-Snapshots, screenshots, downloads, traces, and videos land in `$(stash pw)/`. Nothing is written to the project unless you pass `--out=<dir>`. Directories that `pw` creates get mode 0700 and the files it writes get mode 0600. `pw` does not change the mode of an existing `--out` directory.
+Snapshots, screenshots, downloads, traces, and videos land in `$(~/.dg/bin/dg-skills stash pw)/`. Nothing is written to the project unless you pass `--out=<dir>`. Directories that `pw` creates get mode 0700 and the files it writes get mode 0600. `pw` does not change the mode of an existing `--out` directory.
 A relative `--filename` resolves against the output directory. An absolute path works anywhere.
 Input files (`upload`, `state-load`, `pw-code --filename`) resolve from the client cwd. Absolute paths work, including `/tmp` and `/mnt/c`. Cap: 50 MB per upload.
 Downloads save to the output directory and show as `- Downloaded <name> to <path>` under `### Events`.
@@ -87,7 +87,7 @@ A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings 
 
 ## Logins
 
-`pw state save <name>` stores a login under `$(stash -s -G pw states)/` (0700 directory, 0600 files). Prefer it over raw `pw state-save <file>`, which leaves a full cookie jar in a plain file until you delete it. `pw open --from=<name>` or `pw state load <name>` reuses it. Details in `references/session-management.md`.
+`pw state save <name>` stores a login under `$(~/.dg/bin/dg-skills stash -s -G pw states)/` (0700 directory, 0600 files). Prefer it over raw `pw state-save <file>`, which leaves a full cookie jar in a plain file until you delete it. `pw open --from=<name>` or `pw state load <name>` reuses it. Details in `references/session-management.md`.
 
 ## Driving the user's real browser with --ext
 

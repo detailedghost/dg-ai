@@ -16,7 +16,7 @@ Capture detailed execution traces for debugging and analysis. Traces include DOM
 
 ## Trace Output File
 
-`~/.dg/bin/dg-skills pw tracing-stop` saves one zip: `$(stash pw trace-<ts>.zip)` (or under `--out=<dir>`). It holds the action log, network log, DOM snapshots, screenshots, and resources. Open it with `npx playwright show-trace <file>`.
+`~/.dg/bin/dg-skills pw tracing-stop` saves one zip: `$(~/.dg/bin/dg-skills stash pw trace-<ts>.zip)` (or under `--out=<dir>`). It holds the action log, network log, DOM snapshots, screenshots, and resources. Open it with `npx playwright show-trace <file>`.
 
 ## What Traces Capture
 

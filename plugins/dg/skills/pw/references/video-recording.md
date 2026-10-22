@@ -1,6 +1,6 @@
 # Video Recording
 
-Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec). Needs ffmpeg; if missing, `pw` prints the `bunx playwright-core install ffmpeg` hint. Relative filenames resolve against the output directory (`$(stash pw)/`).
+Capture browser automation sessions as video for debugging, documentation, or verification. Produces WebM (VP8/VP9 codec). Needs ffmpeg; if missing, `pw` prints the `bunx playwright-core install ffmpeg` hint. Relative filenames resolve against the output directory (`$(~/.dg/bin/dg-skills stash pw)/`).
 
 ## Light/dark before/after screenshot pairs
 
