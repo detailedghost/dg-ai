@@ -1,5 +1,5 @@
 ---
 interface:
-  display_name: Live Page Prototype
-  short_description: Prototype and compare live page variations
-  default_prompt: Use $proto to prototype variations on a live application page.
+  display_name: Throwaway Prototype
+  short_description: Prototype a TUI, UI variants, or a plan walkthrough locally; add --ext to compare variants on a live page
+  default_prompt: Use $proto to build a throwaway prototype — local by default (TUI, UI variants, or a plan walkthrough), or pass --ext to prototype variations directly on a live application page.

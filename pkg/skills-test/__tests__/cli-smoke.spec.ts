@@ -74,9 +74,24 @@ describe("dg-skills CLI", () => {
 			"test-live",
 			"pw",
 			"pw-code",
+			"proto",
+			"prototype",
 		]) {
 			expectListed(out, cmd);
 		}
+	});
+
+	test("proto --help lists the extension-assisted scrape/plant/cleanup verbs", async () => {
+		const { code, out } = await runCli(["proto", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["scrape", "plant", "cleanup"]) expect(out).toContain(verb);
+	});
+
+	test("prototype --help lists the local selection/decision/ui/serve verbs", async () => {
+		const { code, out } = await runCli(["prototype", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["dir", "selection", "decision", "ui", "serve", "components", "open"])
+			expect(out).toContain(verb);
 	});
 
 	test("stash --help documents all storage scopes without starting a service", async () => {

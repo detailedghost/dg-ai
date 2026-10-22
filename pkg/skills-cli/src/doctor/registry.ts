@@ -20,6 +20,7 @@ import { monolithChecks } from "../monolith/doctor";
 import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
 import { polishChecks } from "../polish/doctor";
 import { protoChecks } from "../proto/doctor";
+import { prototypeChecks } from "../prototype/doctor";
 import { proxyChecks } from "../proxy/doctor";
 import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
@@ -58,6 +59,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"vcs-provider": vcsProviderChecks,
 	"clipboard-image": clipboardImageChecks,
 	proto: protoChecks,
+	prototype: prototypeChecks,
 	proxy: proxyChecks,
 	pw: pwChecks,
 	"pw-code": pwCodeChecks,
