@@ -23,6 +23,18 @@ run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review status
 description = "Start the channel-review daemon in the background"
 run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review start'
 
+[tasks."remote:bedrock"]
+description = "Refresh the Bedrock AWS SSO login, then restart the channel-review daemon with Claude on Bedrock"
+run = """
+set -e
+DG="${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}"
+CONFIG="${DG_HOME:-$HOME/.dg}/channel-review/config.json"
+PROFILE=$(bun -e 'const b = (await Bun.file(process.argv[1]).json()).runner?.claude?.bedrock; if (!b) { console.error("Add runner.claude.bedrock (model, region, profile) to " + process.argv[1]); process.exit(1); } console.log(b.profile ?? process.env.AWS_PROFILE ?? "")' "$CONFIG")
+aws sts get-caller-identity ${PROFILE:+--profile "$PROFILE"} >/dev/null 2>&1 || aws sso login ${PROFILE:+--profile "$PROFILE"}
+"$DG" channel-review stop || true
+"$DG" channel-review start
+"""
+
 [tasks."remote:stop"]
 description = "Stop the channel-review daemon"
 run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review stop'

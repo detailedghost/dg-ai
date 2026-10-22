@@ -612,6 +612,25 @@ describe("runner run result", () => {
 		expect(h.ssoLoginCalls).toEqual([profile]);
 	});
 
+	test("Claude restarts SSO sign-in on the expired-token line a live daemon logged", async () => {
+		const profile = "sb_poweruser";
+		const h = harness({
+			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2", profile } } }),
+			process: () => ({
+				status: 1,
+				signal: null,
+				timedOut: false,
+				aborted: false,
+				stderrTail: "",
+				stdoutTail:
+					"API Error: Could not load AWS credentials · Token is expired. To refresh this SSO session run 'aws sso login' with the corresponding profile. Check or refresh your AWS credentials and try again.",
+				outputTail: "",
+			}),
+		});
+		expect((await h.runners.claude.run(runRequest())).code).toBe("CR-208");
+		expect(h.ssoLoginCalls).toEqual([profile]);
+	});
+
 	test("Claude reports expired Bedrock SSO without restarting when no profile is configured", async () => {
 		const h = harness({
 			config: configWith({ claude: { bedrock: { model: "m", region: "us-east-2" } } }),
