@@ -1632,7 +1632,7 @@ describe("postReview — file comments", () => {
     exit 0
     ;;
   *"--paginate"*)
-    echo '[{"id":55,"state":"PENDING","user":{"login":"review-bot"},"body":"## Thrash review spice 3"},{"id":99,"state":"PENDING","user":{"login":"someone-else"},"body":"## Thrash review spice 3"},{"id":100,"state":"APPROVED","user":{"login":"review-bot"},"body":"## Thrash review spice 3"}]'
+    echo '[[{"id":55,"state":"PENDING","user":{"login":"review-bot"},"body":"## Thrash review spice 3"},{"id":99,"state":"PENDING","user":{"login":"someone-else"},"body":"## Thrash review spice 3"},{"id":100,"state":"APPROVED","user":{"login":"review-bot"},"body":"## Thrash review spice 3"}]]'
     exit 0
     ;;
   *"--method DELETE"*)
@@ -1723,7 +1723,7 @@ describe("postReview — file comments", () => {
 		expect(calls).not.toContain("api repos/acme/widgets/pulls/12/reviews/100 --method DELETE");
 		expect(calls.filter((c) => c === "api repos/acme/widgets/pulls/12/reviews --method POST --input -")).toHaveLength(2);
 		expect(calls).toContain("api user --jq .login");
-		expect(calls).toContain("api repos/acme/widgets/pulls/12/reviews --paginate");
+		expect(calls).toContain("api repos/acme/widgets/pulls/12/reviews --paginate --slurp");
 		expect(calls.some((c) => c.includes("--jq") && c.includes("review-bot"))).toBe(false);
 	});
 });
