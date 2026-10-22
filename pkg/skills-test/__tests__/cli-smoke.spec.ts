@@ -67,6 +67,9 @@ describe("dg-skills CLI", () => {
 			"monolith",
 			"jot",
 			"bg",
+			"skill-audit",
+			"skill-publish",
+			"skill-split",
 			"sniff",
 			"doctor",
 			"sync",
@@ -216,6 +219,25 @@ describe("dg-skills CLI", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	test("skill-audit --help documents threshold/json/fix without scanning a directory", async () => {
+		const { code, out } = await runCli(["skill-audit", "--help"]);
+		expect(code).toBe(0);
+		for (const flag of ["--threshold", "--json", "--fix"]) expect(out).toContain(flag);
+	});
+
+	test("skill-split --help documents --list and --apply without touching a skill", async () => {
+		const { code, out } = await runCli(["skill-split", "--help"]);
+		expect(code).toBe(0);
+		expect(out).toContain("--list");
+		expect(out).toContain("--apply");
+	});
+
+	test("skill-publish --help lists the MCP-server and plugin targets without reading any manifest", async () => {
+		const { code, out } = await runCli(["skill-publish", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["analyze", "manifest", "generate", "plugin"]) expect(out).toContain(verb);
 	});
 
 	test("sniff --help documents the path argument without scanning", async () => {

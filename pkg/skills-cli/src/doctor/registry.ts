@@ -25,6 +25,9 @@ import { proxyChecks } from "../proxy/doctor";
 import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
+import { skillAuditChecks } from "../skill-audit/doctor";
+import { skillPublishChecks } from "../skill-publish/doctor";
+import { skillSplitChecks } from "../skill-split/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { specChecks } from "../spec/doctor";
 import { stashChecks } from "../stash/doctor";
@@ -70,6 +73,9 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	monolith: monolithChecks,
 	jot: jotChecks,
 	bg: bgChecks,
+	"skill-audit": skillAuditChecks,
+	"skill-publish": skillPublishChecks,
+	"skill-split": skillSplitChecks,
 	sniff: sniffChecks,
 	"require-extension": requireExtensionChecks,
 	polish: polishChecks,

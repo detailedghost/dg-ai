@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "skill-publish manifest",
+  "required": [
+    "name",
+    "version",
+    "description",
+    "recipe",
+    "tools"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Server/tool name (kebab-case)"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[\\w.]+)?$",
+      "description": "Semver string"
+    },
+    "description": {
+      "type": "string",
+      "description": "Short server description"
+    },
+    "recipe": {
+      "type": "string",
+      "description": "Orchestration guidance (single-sourced)"
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "inputSchema"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "slow": {
+            "type": "boolean"
+          },
+          "poll_interval_hint": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Subprocess timeout in ms (default 120000)"
+          },
+          "inputSchema": {
+            "type": "object"
+          },
+          "arg_mapping": {
+            "type": "array",
+            "description": "Ordered argv construction from tool args. Each entry maps one input property to a positional arg, a valued flag, or a boolean flag. Absent → legacy --key value passthrough.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "positional": {
+                  "type": "string",
+                  "description": "Input property emitted as a bare positional arg"
+                },
+                "flag": {
+                  "type": "string",
+                  "description": "Input property emitted as a valued flag"
+                },
+                "bool_flag": {
+                  "type": "string",
+                  "description": "Boolean input property emitted as a presence-only flag"
+                },
+                "as": {
+                  "type": "string",
+                  "description": "Flag spelling (e.g. --limit); defaults to --<property>"
+                }
+              }
+            }
+          },
+          "resume_contract": {
+            "type": "string"
+          },
+          "long_running": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "concurrency": {
+      "type": "string",
+      "enum": [
+        "serial"
+      ]
+    },
+    "stdout_size_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "min_client_version": {
+      "type": "object"
+    },
+    "cli_path": {
+      "type": "string",
+      "description": "[LOCAL ZONE] Absolute path to the Bun-TS source file — must not appear in portable output"
+    },
+    "connection_aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "[LOCAL ZONE] DB/API connection names used locally"
+    },
+    "local_env_vars": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "[LOCAL ZONE] Env var names present in the local environment"
+    },
+    "author_notes": {
+      "type": "string",
+      "description": "[LOCAL ZONE] Internal notes; never shipped"
+    },
+    "local_test_data": {
+      "type": "string",
+      "description": "[LOCAL ZONE] Path to local fixtures"
+    }
+  }
+}

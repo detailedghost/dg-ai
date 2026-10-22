@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "skill-publish plugin manifest",
+  "required": [
+    "name",
+    "description",
+    "skills"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Plugin name (kebab-case); becomes the /<name>:<skill> invocation namespace"
+    },
+    "description": {
+      "type": "string",
+      "description": "Short plugin description for the marketplace listing"
+    },
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "Skill slugs (a bare slug resolves against the invoking user's own home directory, under .claude/skills/<slug>) or paths to skill directories to bundle into the plugin"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[\\w.]+)?$",
+      "description": "Optional semver; omit to let Claude Code auto-version from the git commit SHA"
+    },
+    "owner": {
+      "type": "string",
+      "description": "Marketplace owner display name; defaults to git config user.name at draft time"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Optional marketplace keywords"
+    },
+    "category": {
+      "type": "string",
+      "description": "Optional marketplace category"
+    }
+  }
+}

@@ -1301,18 +1301,18 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 29 — w7-skill-tools
 
 #### Engineering
-- [ ] Port skill-audit.ts, skill-split.ts, skill-publish-cli.ts; plugin target writes into plugins/dg
-- [ ] Audit/split canonical plugin skills; remove automatic local shim repair and avoid writes to installed caches; explicit local mode must remain bounded.
-- [ ] Make plugin publish an additive update preserving existing dg manifests/other skills; refuse self-moves/destructive destination replacement.
-- [ ] Load schema/registry assets from owning installed skill; add AJV/generation dependencies only if actual port requires them.
-- [ ] unslop needs no work here: it installs from the upstream repo through the marketplace entry shipped in Wave 3, and `/dg:polish` calls `/unslop:unslop`. No vendoring and no Python port.
+- [x] Port skill-audit.ts, skill-split.ts, skill-publish-cli.ts; plugin target writes into plugins/dg
+- [x] Audit/split canonical plugin skills; remove automatic local shim repair and avoid writes to installed caches; explicit local mode must remain bounded.
+- [x] Make plugin publish an additive update preserving existing dg manifests/other skills; refuse self-moves/destructive destination replacement.
+- [x] Load schema/registry assets from owning installed skill; add AJV/generation dependencies only if actual port requires them.
+- [x] unslop needs no work here: it installs from the upstream repo through the marketplace entry shipped in Wave 3, and `/dg:polish` calls `/unslop:unslop`. No vendoring and no Python port.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Use synthetic compiled analyze/validate/generate outside checkout; verify existing plugin survives, no unrelated HOME/bin writes and leak/injection/ship protections hold.
+- [x] Use synthetic compiled analyze/validate/generate outside checkout; verify existing plugin survives, no unrelated HOME/bin writes and leak/injection/ship protections hold.
 
 #### Acceptance Criteria
-- [ ] Canonical plugin maintenance works without local skill paths and cannot replace the whole dg plugin.
+- [x] Canonical plugin maintenance works without local skill paths and cannot replace the whole dg plugin.
 
 ### Slice 30 — w7-cleanup-ls-polish-release
 
