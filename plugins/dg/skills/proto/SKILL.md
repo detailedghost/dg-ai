@@ -10,7 +10,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 ```bash
 ~/.dg/bin/dg-skills prototype --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
