@@ -32,6 +32,8 @@ Decisions live in two places, each for a different reader:
 - `docs/adr/` is for people. Write each ADR in plain English for a reader who is new to the project.
 - `.agents/decisions/` is for agents. It holds the agent-specific rules and context that follow from a decision. Each file links the matching ADR in `docs/adr/` and does not repeat it.
 
+Write `docs/` pages and ADRs in simple English: short sentences, common words, active voice. Write `AGENTS.md` files and everything under `.agents/` dense and terse: fragments, precise technical terms, no filler.
+
 Do not commit an empty file under `.agents/`. Delete a file when it has no content. `agents-folder.spec.ts` checks this.
 
 ## How do I write the PR description?
