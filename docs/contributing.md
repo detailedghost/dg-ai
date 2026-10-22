@@ -8,7 +8,7 @@ This repo's default branch is `master`. In this guide, "the default branch" mean
 
 Make a branch from the default branch. Never commit to the default branch directly.
 
-Run `bun install` at the repo root. It links the `@dg/*` workspace packages. See [docs/DEVELOPER.md](docs/DEVELOPER.md) for the commands of each package.
+Run `bun install` at the repo root. It links the `@dg/*` workspace packages. See [docs/DEVELOPER.md](DEVELOPER.md) for the commands of each package.
 
 ## How do I write commits?
 
@@ -23,7 +23,7 @@ A release uses its own commit: `chore(release): bump the matched set to X.Y.Z`. 
 1. The code change.
 1. Tests that import the real production code.
 1. Updated docs, if anything a user or developer sees has changed.
-1. An ADR (Architecture Decision Record) at `docs/adr/NNNN-kebab-title.md` if the PR introduces or changes an architectural decision. It says what we decided and why. Use [the template](docs/adr/template.md) and add a link to [the index](docs/adr/toc.md).
+1. An ADR (Architecture Decision Record) at `docs/adr/NNNN-kebab-title.md` if the PR introduces or changes an architectural decision. It says what we decided and why. Use [the template](adr/template.md) and add a link to [the index](adr/toc.md).
 
 Write an ADR when a change adds a wire contract, frame type, store, table, state file, trust boundary, secret path, or a wider gate or allowlist. Routine docs, bug fixes, flags, and copy changes do not need an ADR.
 
@@ -32,9 +32,11 @@ Decisions live in two places, each for a different reader:
 - `docs/adr/` is for people. Write each ADR in plain English for a reader who is new to the project.
 - `.agents/decisions/` is for agents. It holds the agent-specific rules and context that follow from a decision. Each file links the matching ADR in `docs/adr/` and does not repeat it.
 
+Do not commit an empty file under `.agents/`. Delete a file when it has no content. `agents-folder.spec.ts` checks this.
+
 ## How do I write the PR description?
 
-Use the PR template in [docs/pull_request_template.md](docs/pull_request_template.md). Answer three questions in plain American English:
+Use the PR template in [docs/pull_request_template.md](pull_request_template.md). Answer three questions in plain American English:
 
 - **What does this change do?**
 - **Why do we need it?**
@@ -62,7 +64,7 @@ When all four are true:
   - `daemon-v*` for `dg-daemon`
   - `agent-v*` for `dg-agent`
 - The **Release All** workflow cuts all four from one manual run.
-- Users install a release with the bootstrap script or `dg-skills install`. See [docs/install.md](docs/install.md).
+- Users install a release with the bootstrap script or `dg-skills install`. See [docs/install.md](install.md).
 
 ## What if I am stuck?
 
@@ -137,14 +139,14 @@ Ask a person. Do not turn off a check to get past it.
 
 - Keep tests on fakes from `__tests__/support/fakes.ts`. Tests that call a real runner CLI run only when `DG_TEST_CLAUDE_CLI=1` or `DG_TEST_GROK_CLI=1` is set. `mise run test:runners` sets them when the binary is on `PATH`.
 - Check runner changes with `mise run test:runners:mutate`. It runs Stryker mutation tests.
-- Automation opens draft PRs and never merges them. See [ADR 0014](docs/adr/0014-draft-prs.md).
-- Pass error reports to a runner as data files. See [ADR 0013](docs/adr/0013-untrusted-reports.md).
-- Keep deployment values out of the source. See [ADR 0007](docs/adr/0007-private-configuration.md).
+- Automation opens draft PRs and never merges them. See [ADR 0014](adr/0014-draft-prs.md).
+- Pass error reports to a runner as data files. See [ADR 0013](adr/0013-untrusted-reports.md).
+- Keep deployment values out of the source. See [ADR 0007](adr/0007-private-configuration.md).
 
 ### pkg/dg-daemon
 
-- The daemon listens on loopback only. It checks origin and capability on its connections. See [ADR 0004](docs/adr/0004-loopback-pairing.md).
-- Encrypt secret fields with the wrapped data key. Keep credentials in their own store. See [ADR 0005](docs/adr/0005-field-encryption.md) and [ADR 0006](docs/adr/0006-credential-store.md).
+- The daemon listens on loopback only. It checks origin and capability on its connections. See [ADR 0004](adr/0004-loopback-pairing.md).
+- Encrypt secret fields with the wrapped data key. Keep credentials in their own store. See [ADR 0005](adr/0005-field-encryption.md) and [ADR 0006](adr/0006-credential-store.md).
 - Group tests in `__tests__/` by domain, such as `server/`, `crypto/`, and `dispatch/`.
 - Keep `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` equal to the `package.json` version. The release tests check this.
 - Build with `bun run build`. It compiles one binary.

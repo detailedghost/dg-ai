@@ -17,6 +17,7 @@ on:
       - .github/workflows/skills-blt.yml
       - .github/workflows/blt-gate.yml
       - scripts/blt-gate.ts
+      - .agents/**
   workflow_call:
 
 # The group is this file's own name, not github.workflow: in a called workflow
