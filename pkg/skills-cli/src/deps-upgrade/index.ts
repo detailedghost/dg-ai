@@ -12,6 +12,7 @@ import { detectProvider } from "../provider/detect";
 import { getProvider } from "../provider/index";
 import { gh, git, remoteDefaultBranch, ShellError } from "../utils/git";
 import { defineCommand, die } from "../utils/legacy-command";
+import { compareVersions } from "../utils/lib";
 import { createWorktree } from "./worktree-compat";
 
 const DESCRIPTION = `deps-upgrade — language-agnostic wrapper for the /deps-upgrade skill.
@@ -791,16 +792,7 @@ export const DEFAULT_COOLDOWN_DAYS = 7;
 const DAY_MS = 86_400_000;
 const STABLE_VERSION = /^v?\d+(\.\d+)*$/;
 
-/** Order dotted numeric versions; a leading v and non-numeric parts count as zero. */
-export function compareVersions(a: string, b: string): number {
-	const parts = (v: string) => v.replace(/^v/, "").split(".").map((n) => Number.parseInt(n, 10) || 0);
-	const [x, y] = [parts(a), parts(b)];
-	for (let i = 0; i < Math.max(x.length, y.length); i++) {
-		const diff = (x[i] ?? 0) - (y[i] ?? 0);
-		if (diff !== 0) return diff;
-	}
-	return 0;
-}
+export { compareVersions };
 
 /** Injectable registry transport; null represents unavailable metadata. */
 export type FetchJson = (url: string) => Promise<unknown>;

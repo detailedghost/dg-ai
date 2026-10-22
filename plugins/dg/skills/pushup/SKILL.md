@@ -9,6 +9,8 @@ allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr
 Carries committed work from a feature branch to a PR sitting open in the browser. Assumes the
 commits already have the shape you want them reviewed in.
 
+If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
+
 ## Usage
 
 **Usage:** `/dg:pushup [--draft] [--group <name>]`
@@ -43,7 +45,7 @@ commits already have the shape you want them reviewed in.
 
    ```sh
    ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
-     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.17.0/pkg/skills-cli/bootstrap.sh | sh
+     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
    Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.

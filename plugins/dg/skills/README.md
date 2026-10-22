@@ -43,6 +43,14 @@ binaries. The skills-root README itself is not installed.
 | `spring-break/` | Consolidate `.agents/school/` into topic clusters |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
+| `jot/` | Save a short note or a session handoff (`dg-skills jot`) |
+| `bg/` | Run a task in the background and track the jobs (`dg-skills bg`) |
+| `cls/` | Close out a git worktree and return to the main repo |
+| `stat/` | Show this session's in-flight work, status, and ETA in one table |
+| `sniff/` | Inventory what an app needs before it can run (`dg-skills sniff`) |
+| `nope/` | Reset to the correct file-search defaults and record a feedback note |
+| `find-work/` | Find actionable work and run each item in a parallel worktree |
+| `doctor/` | Check what the dg skills need and walk through fixes (`dg-skills doctor`) |
 
 ## Structure
 
@@ -84,6 +92,14 @@ skills/
   spring-break/
   review-loop/
   polish/
+  jot/
+  bg/
+  cls/
+  stat/
+  sniff/
+  nope/
+  find-work/
+  doctor/
 ```
 
 Each folder contains `SKILL.md` and may include `references/`, scripts, or other
@@ -94,7 +110,7 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.17.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.18.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.

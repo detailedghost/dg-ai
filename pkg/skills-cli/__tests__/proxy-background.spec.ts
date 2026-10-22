@@ -300,6 +300,21 @@ describe("compiled proxy background", () => {
 		);
 	}, 10000);
 
+	test("the proxy background alias reads the same job registry as bg", async () => {
+		const job: Job = await json(["background", "run", ":"]);
+		await finished(job);
+		const viaAlias = await runProxyProcess(
+			[binary, "proxy", "background", "list"],
+			fixture,
+		);
+		expect(viaAlias.exitCode, viaAlias.stderr).toBe(0);
+		expect(
+			JSON.parse(viaAlias.stdout).jobs.map((value: Job) => value.id),
+		).toEqual([job.id]);
+		const viaBg = await runProxyProcess([binary, "bg", "list"], fixture);
+		expect(JSON.parse(viaBg.stdout)).toEqual(JSON.parse(viaAlias.stdout));
+	});
+
 	test("lists the five public backend identities from the relocated executable", async () => {
 		const result = await run(["--list-backends"]);
 		expect(result.exitCode, result.stderr).toBe(0);
@@ -368,6 +383,7 @@ describe("compiled proxy background", () => {
 		);
 		expect(fixture.readCalls()).toEqual([]);
 		expect(plan.command).not.toMatch(/\$bunfs|~BUN|\/src\/index/);
+		expect(plan.command).toContain(shellCommand([binary, "bg", "run"]));
 		const launched = await runProxyProcess(
 			["/bin/sh", "-c", plan.command],
 			fixture,

@@ -84,14 +84,23 @@ export function writeMarkerEntry(target: string, version: string): void {
 	writeFileSync(markerPath, `${JSON.stringify(m)}\n`);
 }
 
-export function versionGte(a: string, b: string): boolean {
-	const pa = a.split(".").map((n) => Number.parseInt(n, 10) || 0);
-	const pb = b.split(".").map((n) => Number.parseInt(n, 10) || 0);
-	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-		const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-		if (d !== 0) return d > 0;
+/** Order dotted numeric versions; a leading v and non-numeric parts count as zero. */
+export function compareVersions(a: string, b: string): number {
+	const parts = (v: string) =>
+		v
+			.replace(/^v/, "")
+			.split(".")
+			.map((n) => Number.parseInt(n, 10) || 0);
+	const [x, y] = [parts(a), parts(b)];
+	for (let i = 0; i < Math.max(x.length, y.length); i++) {
+		const diff = (x[i] ?? 0) - (y[i] ?? 0);
+		if (diff !== 0) return diff;
 	}
-	return true;
+	return 0;
+}
+
+export function versionGte(a: string, b: string): boolean {
+	return compareVersions(a, b) >= 0;
 }
 
 export type Release = {
