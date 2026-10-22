@@ -28,6 +28,8 @@ const WAVE_4_SKILLS = [
 	"doctor",
 ] as const;
 
+const WAVE_5_SKILLS = ["db", "erd", "eli5", "ticket", "test-live"] as const;
+
 const INDEXES = [
 	["README.md", ["README.md"]],
 	["docs/install.md", ["docs", "install.md"]],
@@ -51,6 +53,10 @@ function indexTests(wave: string, skills: readonly string[]): void {
 		}
 	});
 }
+
+describe("skill indexes list every Wave 5 skill", () => {
+	indexTests("Wave 5", WAVE_5_SKILLS);
+});
 
 describe("skill indexes list every Wave 4 skill", () => {
 	indexTests("Wave 4", WAVE_4_SKILLS);

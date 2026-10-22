@@ -52,6 +52,11 @@ binaries. The skills-root README itself is not installed.
 | `nope/` | Reset to the correct file-search defaults and record a feedback note |
 | `find-work/` | Find actionable work and run each item in a parallel worktree |
 | `doctor/` | Check what the dg skills need and walk through fixes (`dg-skills doctor`) |
+| `db/` | Query PostgreSQL and Snowflake with read-safe defaults (`dg-skills db`) |
+| `erd/` | Generate an architecture map or any Mermaid diagram as Markdown or HTML |
+| `eli5/` | Explain a concept, file, error, or codebase as if the reader is five |
+| `ticket/` | File a Jira ticket from the registered project, assignee, sprint, and issue types |
+| `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg-skills test-live`) |
 
 ## Structure
 
@@ -102,6 +107,11 @@ skills/
   nope/
   find-work/
   doctor/
+  db/
+  erd/
+  eli5/
+  ticket/
+  test-live/
 ```
 
 Each folder contains `SKILL.md` and may include `references/`, scripts, or other
@@ -112,7 +122,7 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.18.1**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.19.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.

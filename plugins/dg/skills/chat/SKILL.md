@@ -21,7 +21,7 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 ```bash
 if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension chat || exit 1; fi
 [ -x ~/.dg/bin/dg-agent ] ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor require-extension install.

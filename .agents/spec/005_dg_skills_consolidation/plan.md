@@ -1138,16 +1138,16 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 20 — w5-db
 
 #### Engineering
-- [ ] Spike first: bun build --compile with pg and snowflake-sdk; if the binary cannot run `db connections`, stop and ask (separate binary needs a decision)
-- [ ] Port db-query to `dg-skills db`; connections come from credentials db/<conn> (value = password/passphrase; meta engine, host, port, database, user, account, warehouse, role, authenticator); no connections.json fallback
+- [x] Spike first: bun build --compile with pg and snowflake-sdk; if the binary cannot run `db connections`, stop and ask (separate binary needs a decision)
+- [x] Port db-query to `dg-skills db`; connections come from credentials db/<conn> (value = password/passphrase; meta engine, host, port, database, user, account, warehouse, role, authenticator); no connections.json fallback
 - [ ] Assign pg/snowflake dependency/lock changes before compile spike; test compiled SDK initialization/auth beyond db connections and retain stop-and-ask failure gate.
-- [ ] Map optional schema/JWT-key-path/SSO/cache/timeout/default metadata without connections.json, preserving auth modes and key-file permissions; use internal list/get with db-scoped access.
-- [ ] Enforce advertised read-safe default rather than trusting shallow legacy classifier; test final WITH DML, write CTE, SELECT INTO and SET/write combinations.
+- [x] Map optional schema/JWT-key-path/SSO/cache/timeout/default metadata without connections.json, preserving auth modes and key-file permissions; use internal list/get with db-scoped access.
+- [x] Enforce advertised read-safe default rather than trusting shallow legacy classifier; test final WITH DML, write CTE, SELECT INTO and SET/write combinations.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Use fake credentials/engines to cover password/JWT/SSO, invalid/absent metadata, output/truncation, --write/query files and cleanup/redaction.
-- [ ] Freeze schema JSON shape for ERD and compiled external-cwd behavior.
+- [x] Use fake credentials/engines to cover password/JWT/SSO, invalid/absent metadata, output/truncation, --write/query files and cleanup/redaction.
+- [x] Freeze schema JSON shape for ERD and compiled external-cwd behavior.
 
 #### Acceptance Criteria
 - [ ] No legacy config fallback or secret output; compiled database functionality meets recorded packaging gate before continuing.
@@ -1175,31 +1175,31 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 ### Slice 23 — w5-ticket
 
 #### Engineering
-- [ ] Move ticket; read site, cloudId, project, assignee, sprintField, issueTypes from `"$DG" credentials list --meta` meta of ticket/jira; no ticket key or email text in the repo
-- [ ] Add opt-in credentials list --meta (or equivalent explicit metadata-only command) exposing arbitrary nonsecret meta without values; preserve default list projection.
-- [ ] Document complete ticket/jira registration, typed issueTypes encoding/default issue type, placeholder value and required-field validation; derive all identifiers/URLs from metadata.
-- [ ] Use exact credentials list --meta opt-in. Define issueTypes metadata as a JSON-encoded string mapping names to IDs, validate decoding and required default issue type before calling Atlassian.
+- [x] Move ticket; read site, cloudId, project, assignee, sprintField, issueTypes from `"$DG" credentials list --meta` meta of ticket/jira; no ticket key or email text in the repo
+- [x] Add opt-in credentials list --meta (or equivalent explicit metadata-only command) exposing arbitrary nonsecret meta without values; preserve default list projection.
+- [x] Document complete ticket/jira registration, typed issueTypes encoding/default issue type, placeholder value and required-field validation; derive all identifiers/URLs from metadata.
+- [x] Use exact credentials list --meta opt-in. Define issueTypes metadata as a JSON-encoded string mapping names to IDs, validate decoding and required default issue type before calling Atlassian.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] bun run test:all and bun run lint:all green
-- [ ] Test metadata-only output cannot print values and synthetic ticket fixtures use configured fields/IDs; preserve duplicate/assignee/integer-sprint behavior.
+- [x] bun run test:all and bun run lint:all green
+- [x] Test metadata-only output cannot print values and synthetic ticket fixtures use configured fields/IDs; preserve duplicate/assignee/integer-sprint behavior.
 
 #### Acceptance Criteria
-- [ ] ticket/SKILL.md tells the user how to register ticket/jira when it is missing
-- [ ] Missing metadata has actionable registration guidance and no original baked-in project/cloud/account/sprint identifiers remain.
+- [x] ticket/SKILL.md tells the user how to register ticket/jira when it is missing
+- [x] Missing metadata has actionable registration guidance and no original baked-in project/cloud/account/sprint identifiers remain.
 
 ### Slice 24 — w5-test-live-release
 
 #### Engineering
-- [ ] Rewrite test-live-setup.sh and test-live-cleanup.sh in TypeScript as `dg-skills test-live setup|cleanup`
+- [x] Rewrite test-live-setup.sh and test-live-cleanup.sh in TypeScript as `dg-skills test-live setup|cleanup`
 - [ ] Bump to 1.19.0; open the Wave 5 draft PR
-- [ ] Preserve actual positional environments/overrides and exit-1 shell parity; GitLab unsupported must precede patch/push.
-- [ ] Scope recoverable setup/cleanup state by repository/worktree/branch and patch commit; parse state as data and remove only owned changes, preserving later/preexisting commits.
+- [x] Preserve actual positional environments/overrides and exit-1 shell parity; GitLab unsupported must precede patch/push.
+- [x] Scope recoverable setup/cleanup state by repository/worktree/branch and patch commit; parse state as data and remove only owned changes, preserving later/preexisting commits.
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Use disposable repos/fake gh for concurrent names, dispatch/push/watch failures, resume/later commits and cleanup refusal without loss.
+- [x] Use disposable repos/fake gh for concurrent names, dispatch/push/watch failures, resume/later commits and cleanup refusal without loss.
 
 #### Acceptance Criteria
 - [ ] Compiled data/deployment fake-runtime gates and matched Wave 5 draft base/head/URL for slices 20–24 persisted; no live deployment tests.
@@ -1414,6 +1414,30 @@ Superseded: viz and review no longer ship (commit fc16957). Original summary: `d
 - Slice 17 (w4-bg-cls-stat): `dg-skills bg` ports bg-helper (run, status, list, update, drain, cancel/kill, prune) and re-executes the real installed binary for drains and resumes, with no caller process-group signals. A relative `--cwd` is stored as an absolute path, and prune resolves a relative `--cwd` and removes every job that is not running inside the given tree, so it never touches `/repo-other` or live jobs. `proxy background` stays as an alias on the same job registry. The bg, cls and stat skills ship with full `~/.dg/bin/dg-skills` calls; stat has no `--viz` and hands lanes to dg:overwatch. cls skips browser cleanup with a note when `pw --help` fails, and cls and proxy probe `bg --help` in their bootstrap gate, because both now need bg.
 - Slice 18 (w4-sniff-nope-find-work): `dg-skills sniff` ports sniff-cli with names-only secret and config inventory, the legacy exit status 1 and the `$HOME/code` env default. The sniff, nope and find-work skills ship; sniff drops `--viz`; find-work prompts use the dg bootstrap, `dg-skills vcs-provider` and `dg-skills worktree` routing and keep the human selection and PR-opening gates. Fixtures and examples carry no private names or paths.
 - Slice 31 (w4-doctor): `dg-skills doctor [<item>...] [--json]` runs a shared item (plugin installed, binary version vs plugin version, writable roots) and per-item checks declared in src/<item>/doctor.ts for every registered command: tools and minimum versions, optional credentials by name, daemon and extension pairing (pinned origin in the daemon config), unslop for polish, and the `Bash(~/.dg/bin/dg-skills <sub>:*)` allow rule. Exit 0 pass or warn, 1 fail, 2 unknown item. The /dg:doctor skill walks through Fix lines; every skill that calls dg-skills names its doctor items. A coverage guard enforces checks, the allow-rule check and the skill line.
+
+### Slice 20 — w5-db (fa17f4d)
+
+Ported db-query to `dg-skills db` (query, tables, describe, explain, schema, connections, test) through `registerLegacyCommand`. Connections resolve from `db/<conn>` credentials only — no `connections.json` fallback — with optional schema, private-key-path, SSO (`authenticator: external_browser`, cache and browser-action-timeout metadata), warehouse, role and account fields, and a key-file permission check (600/400) on the private key path. The read-safe classifier blocks DML/DDL/write CTEs/`SELECT INTO`/multi-statement SQL unless `--write` is given.
+
+Evidence: db-command, db-credentials, db-engines, db-output and db-safety suites (46 tests) plus db-compiled (part of the same 46) pass; db-safety specifically covers CTE writes, trailing write-after-read-CTE, top-level vs nested `SELECT INTO`, `SET`-then-write and `--write` override. Left unchecked in this release pass: the Engineering/Acceptance bullets about testing compiled pg/snowflake SDK initialization and auth *under compile* and a recorded packaging gate — `db-compiled.spec.ts` only exercises credential-less paths (`list`, `--help`) from a compiled-style external cwd, not an actual compiled binary driving a live pg/snowflake connection, so that specific contract line is left unticked rather than assumed.
+
+### Slice 21 — w5-erd-eli5 (655ba8c)
+
+Ported erd-cli to `dg-skills erd` (resolve/generate/render) and moved eli5; erd is general-purpose Mermaid generation (`erDiagram`/`flowchart`/`sequenceDiagram`/`stateDiagram`/`classDiagram`, picked from the request or `--type`), Markdown-only output with an optional self-contained `--html` (pinned mermaid from cdn.jsdelivr.net, light/dark, opened locally). No Cytoscape, no viz board.
+
+Evidence: erd-cli, erd-compiled, erd-graph, erd-render, erd-schema, erd-schema-static and erd-schema-static-orm suites (59 tests) pass, covering golden Mermaid per diagram type, a structural syntax check, the `--html` file's single external asset, and a compiled external-cwd run against a fake live-schema child process. All Engineering/Testing/Acceptance boxes were already checked by the owning agent; this release pass re-ran the suites rather than re-deriving them.
+
+### Slice 23 — w5-ticket (70c9505, 05d1c27, e26322d)
+
+Moved the ticket skill to read site/cloudId/project/assignee/sprintField/issueTypes from `credentials list --meta ticket/jira` — an opt-in, metadata-only projection added to `dg-skills credentials` that exposes nonsecret meta without values and never changes the default `list` output. `issueTypes` is a JSON-encoded name-to-ID map with a required default type, validated before any Atlassian call. ticket/SKILL.md tells the user to register `ticket/jira` when it is missing, with no baked-in project/cloud/account/sprint identifiers left in the repo.
+
+Evidence: credentials-cli (18 tests) and skills-test's ticket-skill (5 tests) suites pass, covering metadata-only output never printing values, duplicate/assignee/integer-sprint behavior and the registration-guidance path. `bun run test:all`/`lint:all` green across the full matched set (see this slice's own full-suite run, below).
+
+### Slice 24 — w5-test-live-release (96175a3; release commit below)
+
+Ported test-live (see the commit message on 96175a3 for the two approved fixes plus three additional correctness improvements beyond a literal port, each called out there). Bumped the matched release set to 1.19.0 and updated the canonical skill index/docs for db, erd, eli5, ticket and test-live.
+
+Evidence: test-live.spec.ts (15 tests) covers the GitLab refusal before any mutation, the happy path end to end including cleanup, an already-dispatchable workflow, a later commit surviving cleanup via `rebase --onto`, the resume refusal, missing-state/wrong-branch/uncommitted-changes cleanup refusals, an in-progress-run warning, dispatch/watch/push failures, cross-repo/cross-branch state scoping, and a poll timeout. Full-suite run after the release commit: common 502, skills-test 956, skills-cli 3007 (2999 pass, 1 skip, 7 known local-browser fails — dashboard real-browser plus 6 `demo --verify`, pre-existing and unrelated to this slice), dg-agent 309, dg-daemon 673 (2 skip), channel-review 1536 (4 skip), extension 899 (1 skip), inbox 177; all eight `tsc --noEmit` lints clean. Not done in this slice: opening the Wave 5 draft PR (gated behind human approval per the Wave Execution Contract) and the matched-base/head/URL acceptance line, which cannot be satisfied without that PR.
 
 ## Agent Notes
 
