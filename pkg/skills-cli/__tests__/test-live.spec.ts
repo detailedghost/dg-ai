@@ -237,6 +237,41 @@ describe("test-live — later commits survive cleanup", () => {
 		);
 		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(headSha(repo));
 	});
+
+	test("a cleanup retry after a transient push failure does not re-rebase or lose the later commit", async () => {
+		const { origin, repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(3303) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+		const patchSha = headSha(repo);
+
+		writeFileSync(join(repo, "README.md"), "hello again\n");
+		runGit(["add", "-A"], repo);
+		runGit(["commit", "-q", "-m", "feat: later work"], repo);
+
+		Bun.spawnSync(["chmod", "-R", "500", origin]);
+		let firstCleanup: Awaited<ReturnType<typeof runCli>>;
+		try {
+			firstCleanup = await runCli(["cleanup"], repo, env);
+		} finally {
+			Bun.spawnSync(["chmod", "-R", "700", origin]);
+		}
+		expect(firstCleanup.code).toBe(1);
+		expect(firstCleanup.stderr).toContain("push failed");
+		const rebasedSha = headSha(repo);
+		expect(rebasedSha).not.toBe(patchSha);
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).not.toContain(
+			"workflow_dispatch",
+		);
+
+		const secondCleanup = await runCli(["cleanup"], repo, env);
+		expect(secondCleanup.code, secondCleanup.stderr).toBe(0);
+		expect(secondCleanup.stdout).toContain("already dropped locally");
+		expect(headSha(repo)).toBe(rebasedSha);
+		expect(log(repo)).toContain("feat: later work");
+		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(rebasedSha);
+	});
 });
 
 describe("test-live setup — resume while a patch is pending", () => {

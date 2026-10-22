@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
 import { runCapture } from "@dg/common/node";
 import { currentBranch } from "../utils/git";
 import { readTestLiveState, removeTestLiveState } from "./state";
+
+const PATCH_MARKER = "workflow_dispatch: {}  # TEST-LIVE: temporary";
 
 function die(message: string): number {
 	process.stderr.write(`test-live-cleanup: ${message}\n`);
@@ -13,6 +16,15 @@ function info(message: string): void {
 
 function git(args: string[]) {
 	return runCapture("git", args, { stdin: null });
+}
+
+/** A missing or unreadable workflow file is never treated as "already clean" — that would skip real recovery. */
+function workflowStillPatched(workflowPath: string): boolean {
+	try {
+		return readFileSync(workflowPath, "utf8").includes(PATCH_MARKER);
+	} catch {
+		return true;
+	}
 }
 
 export async function runCleanup(): Promise<number> {
@@ -51,15 +63,21 @@ export async function runCleanup(): Promise<number> {
 		} else {
 			const ancestor = await git(["merge-base", "--is-ancestor", state.patchCommitSha, "HEAD"]);
 			if (ancestor.status !== 0) {
-				return die(
-					`the patch commit ${state.patchCommitSha.slice(0, 8)} is no longer in this branch's history — inspect the branch manually before retrying`,
-				);
-			}
-			info(`Dropping the patch commit ${state.patchCommitSha.slice(0, 8)}, keeping later commits...`);
-			const rebase = await git(["rebase", "--onto", `${state.patchCommitSha}^`, state.patchCommitSha]);
-			if (rebase.status !== 0) {
-				await git(["rebase", "--abort"]);
-				return die(`rebase to drop the patch commit failed and was aborted: ${rebase.stderr.trim()}`);
+				// A prior cleanup run may have rebased successfully and only failed at the push retry below;
+				// the marker's absence from the workflow file at HEAD is how we tell that apart from real data loss.
+				if (workflowStillPatched(state.workflowPath)) {
+					return die(
+						`the patch commit ${state.patchCommitSha.slice(0, 8)} is no longer in this branch's history — inspect the branch manually before retrying`,
+					);
+				}
+				info("Patch commit already dropped locally — retrying the push...");
+			} else {
+				info(`Dropping the patch commit ${state.patchCommitSha.slice(0, 8)}, keeping later commits...`);
+				const rebase = await git(["rebase", "--onto", `${state.patchCommitSha}^`, state.patchCommitSha]);
+				if (rebase.status !== 0) {
+					await git(["rebase", "--abort"]);
+					return die(`rebase to drop the patch commit failed and was aborted: ${rebase.stderr.trim()}`);
+				}
 			}
 		}
 	}

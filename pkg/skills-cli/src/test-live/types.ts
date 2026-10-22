@@ -1,5 +1,3 @@
-export type TestLiveEnv = "dev" | "stage" | "staging" | "prod";
-
 /** Recoverable setup state, scoped per repository and branch; cleanup trusts only these fields. */
 export interface TestLiveState {
 	branch: string;
