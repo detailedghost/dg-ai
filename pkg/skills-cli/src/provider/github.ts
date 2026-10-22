@@ -539,13 +539,19 @@ function reviewsPath(ref: PrRef): string {
  * tell those two apart, so this also requires the thrash heading this bot always
  * writes into a review's body, pending or submitted.
  */
+function isOwnStalePendingReview(review: Record<string, unknown>, login: string): boolean {
+	const user = review.user as Record<string, unknown> | undefined;
+	const body = (review.body as string) ?? "";
+	return review.state === "PENDING" && user?.login === login && body.startsWith(THRASH_REVIEW_HEADING_PREFIX);
+}
+
 async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
 	const whoami = await tag`api user --jq ${".login"} ${apiHostFlags(ref.repo)}`;
 	const login = whoami.stdout.toString().trim();
-	const jq = `.[] | select(.state == "PENDING" and .user.login == "${login}" and ((.body // "") | startswith("${THRASH_REVIEW_HEADING_PREFIX}"))) | .id`;
-	const listed = await tag`api ${reviewsPath(ref)} --paginate --jq ${jq} ${apiHostFlags(ref.repo)}`;
-	for (const id of listed.stdout.toString().split("\n").filter(Boolean)) {
-		await tag`api ${reviewsPath(ref)}/${id} --method DELETE ${apiHostFlags(ref.repo)}`;
+	const result = await tag`api ${reviewsPath(ref)} --paginate ${apiHostFlags(ref.repo)}`;
+	const reviews = flattenPaginated<Record<string, unknown>>(JSON.parse(result.stdout.toString()));
+	for (const review of reviews.filter((r) => isOwnStalePendingReview(r, login))) {
+		await tag`api ${reviewsPath(ref)}/${String(review.id)} --method DELETE ${apiHostFlags(ref.repo)}`;
 	}
 }
 
