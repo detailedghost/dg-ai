@@ -96,6 +96,7 @@ function requireMetadata(
 function resolvePrivateKeyPath(path: string): string {
 	const expanded = path.replace(/^~(?=$|\/)/, homedir());
 	if (!existsSync(expanded)) throw new Error(`private key not found: ${expanded}`);
+	if (process.platform === "win32") return expanded;
 	const mode = statSync(expanded).mode & 0o777;
 	if (mode !== 0o600 && mode !== 0o400)
 		throw new Error(

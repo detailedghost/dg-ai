@@ -1,5 +1,6 @@
 import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
+import type { DbSchemaResult, DbSchemaTable } from "../types";
 
 export interface PgField {
 	name: string;
@@ -21,7 +22,12 @@ interface PgModule {
 	Client: new (options: Record<string, unknown>) => PgClient;
 }
 
-const pg = require("pg") as PgModule;
+let pgModule: PgModule | undefined;
+
+function getPg(): PgModule {
+	if (!pgModule) pgModule = require("pg") as PgModule;
+	return pgModule;
+}
 
 export function buildPgClientOptions(
 	connection: ConnectionConfig,
@@ -38,7 +44,7 @@ export function buildPgClientOptions(
 export async function pgConnect(
 	connection: ConnectionConfig,
 ): Promise<PgClient> {
-	const client = new pg.Client(buildPgClientOptions(connection));
+	const client = new (getPg().Client)(buildPgClientOptions(connection));
 	await client.connect();
 	return client;
 }
@@ -121,31 +127,6 @@ export async function pgDescribe(
 	const rowEstimate =
 		estimate !== undefined && Number(estimate) >= 0 ? Number(estimate) : undefined;
 	return { columns, rowEstimate };
-}
-
-export interface DbSchemaColumn {
-	name: string;
-	dataType: string;
-	nullable: boolean;
-	isPrimaryKey: boolean;
-	isForeignKey: boolean;
-}
-
-export interface DbSchemaForeignKey {
-	column: string;
-	refTable: string;
-	refColumn: string;
-}
-
-export interface DbSchemaTable {
-	name: string;
-	schema: string;
-	columns: DbSchemaColumn[];
-	foreignKeys: DbSchemaForeignKey[];
-}
-
-export interface DbSchemaResult {
-	tables: DbSchemaTable[];
 }
 
 export async function pgSchema(

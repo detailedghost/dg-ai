@@ -4,7 +4,7 @@ const TRUNCATION_NOTICE = "TRUNCATED: output exceeded 64KB limit (use --limit)\n
 const CREDENTIAL_PATTERNS = [
 	/(?:password|token|passphrase|privateKeyPass)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
 	/-----BEGIN[^-]*PRIVATE KEY-----[\s\S]*?-----END[^-]*PRIVATE KEY-----/g,
-	/postgresql:\/\/[^@\s]*@/gi,
+	/postgres(?:ql)?:\/\/[^@\s]*@/gi,
 	/snowflake:\/\/[^@\s]*@/gi,
 ];
 

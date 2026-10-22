@@ -2,6 +2,7 @@ import type { ConnectionOptions } from "snowflake-sdk";
 import { isWSL, tryOpen } from "@dg/common/node";
 import type { ConnectionConfig } from "../credentials";
 import type { QueryResult } from "../output";
+import type { DbSchemaForeignKey, DbSchemaResult, DbSchemaTable } from "../types";
 
 let snowflakeSdk: typeof import("snowflake-sdk") | undefined;
 
@@ -158,7 +159,7 @@ export async function sfTables(
 ): Promise<string[]> {
 	const { rows } = await executeAsync(
 		connection,
-		`SHOW TABLES IN SCHEMA ${schema}`,
+		`SHOW TABLES IN SCHEMA ${identifierForInterpolation(schema)}`,
 	);
 	return rows.map((row) => String((row as Record<string, unknown>).name));
 }
@@ -175,7 +176,10 @@ export async function sfDescribe(
 	}>;
 	rowEstimate: number | undefined;
 }> {
-	const { rows } = await executeAsync(connection, `DESCRIBE TABLE ${tableName}`);
+	const { rows } = await executeAsync(
+		connection,
+		`DESCRIBE TABLE ${identifierForInterpolation(tableName)}`,
+	);
 	const columns = rows.map((row) => {
 		const record = row as Record<string, unknown>;
 		return {
@@ -193,39 +197,24 @@ export async function sfDescribe(
 		);
 		const value = (result.rows[0] as Record<string, unknown> | undefined)?.rows;
 		if (value !== undefined) rowEstimate = Number(value);
-	} catch {
+	} catch (err) {
+		process.stderr.write(
+			`dg-skills db: could not estimate the row count for ${tableName} via SHOW TABLES LIKE (${(err as Error).message})\n`,
+		);
 		rowEstimate = undefined;
 	}
 	return { columns, rowEstimate };
 }
 
-export interface DbSchemaColumn {
-	name: string;
-	dataType: string;
-	nullable: boolean;
-	isPrimaryKey: boolean;
-	isForeignKey: boolean;
-}
-
-export interface DbSchemaForeignKey {
-	column: string;
-	refTable: string;
-	refColumn: string;
-}
-
-export interface DbSchemaTable {
-	name: string;
-	schema: string;
-	columns: DbSchemaColumn[];
-	foreignKeys: DbSchemaForeignKey[];
-}
-
-export interface DbSchemaResult {
-	tables: DbSchemaTable[];
-}
-
 function quoteIdentifier(name: string): string {
 	return `"${name.replaceAll('"', '""')}"`;
+}
+
+const BARE_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+
+/** Unquoted Snowflake identifiers fold to uppercase; only quote names that need it, so the common unquoted-uppercase case keeps matching as before. */
+function identifierForInterpolation(name: string): string {
+	return BARE_IDENTIFIER_RE.test(name) ? name : quoteIdentifier(name);
 }
 
 export async function sfSchema(
@@ -233,7 +222,7 @@ export async function sfSchema(
 	schema = "PUBLIC",
 ): Promise<DbSchemaResult> {
 	const schemaLiteral = schema.replaceAll("'", "''");
-	const schemaIdentifier = quoteIdentifier(schema);
+	const schemaIdentifier = identifierForInterpolation(schema);
 	const { rows: columnRows } = await executeAsync(
 		connection,
 		`SELECT table_name, table_schema, column_name, data_type, is_nullable

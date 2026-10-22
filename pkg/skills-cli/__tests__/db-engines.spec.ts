@@ -252,6 +252,28 @@ describe("Snowflake engine", () => {
 		);
 	});
 
+	test("logs to stderr instead of silently swallowing a SHOW TABLES LIKE failure", async () => {
+		const fixture = fakeSnowflake((sql) => {
+			if (sql.startsWith("DESCRIBE"))
+				return { rows: [{ name: "ID", type: "NUMBER", null: "N", default: null }] };
+			if (sql.startsWith("SHOW TABLES LIKE")) return { error: new Error("insufficient privileges") };
+			return { rows: [] };
+		});
+		const stderr: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = ((chunk: string) => {
+			stderr.push(String(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+		try {
+			const result = await sfDescribe(fixture.connection, "USERS");
+			expect(result.rowEstimate).toBeUndefined();
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+		expect(stderr.join("")).toContain("insufficient privileges");
+	});
+
 	test("freezes the fixed-query schema JSON shape", async () => {
 		const fixture = fakeSnowflake((sql) => {
 			if (sql.includes("information_schema.columns"))
