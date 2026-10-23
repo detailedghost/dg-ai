@@ -1325,7 +1325,7 @@ Shipped early on PR #42 (2026-10-21), not in the Wave 6 PR. The Wave 6 PR body s
 - [ ] Bump to 1.21.0; open the Wave 7 draft PR
 - [x] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
 - [x] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
-- [ ] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.
+- [x] Consolidation sweep over `pkg/skills-cli/src`: hoist helpers duplicated across waves into `pkg/common`, delete dead compatibility shims, and replace remaining legacy API calls with current ones; no behavior change.
 
 #### Testing Criteria
 ##### Contracts
