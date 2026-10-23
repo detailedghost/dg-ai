@@ -103,6 +103,7 @@ function parseArgs(args: string[]): ParsedArgs {
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] ?? "";
+		const isTrailing = i === args.length - 1;
 		if (arg === "--write") parsed.write = true;
 		else if (arg === "--limit" && i + 1 < args.length)
 			parsed.limit = parseNonNegativeInteger("--limit", args[++i] ?? "");
@@ -114,7 +115,8 @@ function parseArgs(args: string[]): ParsedArgs {
 			parsed.schema = args[++i] ?? "";
 		else if (arg === "-f" && i + 1 < args.length)
 			parsed.sqlFile = args[++i] ?? "";
-		else if (!arg.startsWith("-") || parsed.positional.length >= 1) parsed.positional.push(arg);
+		else if (!arg.startsWith("-") || (isTrailing && parsed.positional.length >= 1))
+			parsed.positional.push(arg);
 	}
 	return parsed;
 }
