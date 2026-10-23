@@ -1,8 +1,10 @@
 import {
 	validateInboxBrowserRequest,
 	validateInboxBrowserResponse,
+	validateInboxSendApproval,
 	type InboxBrowserRequest,
 	type InboxBrowserResponse,
+	type InboxSendApproval,
 } from "./inbox-format";
 import {
 	fail,
@@ -229,6 +231,17 @@ export type ChatFrame =
 			error?: string;
 	  })
 	| (Envelope & {
+			type: "inbox-send-approval-request";
+			requestId: string;
+			approval: InboxSendApproval;
+	  })
+	| (Envelope & {
+			type: "inbox-send-approval-result";
+			token: string;
+			requestId: string;
+			approved: boolean;
+	  })
+	| (Envelope & {
 			type: "user-message";
 			token: string;
 			messageId: string;
@@ -307,6 +320,8 @@ export type ChatFrame =
 const CHAT_FRAME_TYPES = new Set([
 	"inbox-browser-request",
 	"inbox-browser-result",
+	"inbox-send-approval-request",
+	"inbox-send-approval-result",
 	"user-message",
 	"ack",
 	"agent-message",
@@ -335,6 +350,7 @@ const CHAT_FRAME_TYPES = new Set([
 
 const INBOUND_FRAME_TYPES = new Set([
 	"inbox-browser-result",
+	"inbox-send-approval-result",
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -753,6 +769,19 @@ function validateFrameBody(
 				)
 					fail("unknown inbox result field");
 			}
+			return;
+		case "inbox-send-approval-request":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox send approval requestId exceeds 128 characters");
+			validateInboxSendApproval(value.approval);
+			return;
+		case "inbox-send-approval-result":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox send approval requestId exceeds 128 characters");
+			if (typeof value.approved !== "boolean")
+				fail(`${path}.approved must be a boolean`);
 			return;
 		case "config-get":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });

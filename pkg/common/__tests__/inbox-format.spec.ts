@@ -4,12 +4,20 @@ import {
 	INBOX_MAX_CACHE_BYTES,
 	INBOX_MAX_MESSAGE_IDS,
 	INBOX_MAX_PAGE_SIZE,
+	INBOX_SEND_APPROVAL_MAX_TEXT_BYTES,
+	INBOX_SEND_APPROVAL_MAX_TIMEOUT_MS,
 	validateInboxBrowserRequest,
 	validateInboxBrowserResponse,
 	validateInboxCliRequest,
 	validateInboxProfile,
+	validateInboxSendApproval,
 } from "../src/inbox-format";
-import { inboxBrowserRequest, inboxCliRequest, inboxProfile } from "./utils/inbox-fixtures";
+import {
+	inboxBrowserRequest,
+	inboxCliRequest,
+	inboxProfile,
+	inboxSendApproval,
+} from "./utils/inbox-fixtures";
 
 describe("validateInboxProfile", () => {
 	it("round-trips helpful provider settings and environment credential references", () => {
@@ -22,6 +30,54 @@ describe("validateInboxProfile", () => {
 			expect(() => validateInboxProfile(input)).toThrow();
 		},
 	);
+
+	it("round-trips loopback Proton Bridge connection settings", () => {
+		const profile = inboxProfile({
+			provider: "protonmail",
+			gmail: undefined,
+			protonmail: {
+				bridgeHost: "127.0.0.1",
+				bridgeImapPort: 1143,
+				bridgeSmtpPort: 1025,
+				bridgeUsername: "person@example.test",
+				bridgeCertFingerprint: "a".repeat(64),
+			},
+		});
+		expect(validateInboxProfile(JSON.parse(JSON.stringify(profile)))).toEqual(profile);
+	});
+
+	it.each([
+		{ bridgeHost: "10.0.0.5" },
+		{ bridgeImapPort: 0 },
+		{ bridgeImapPort: 70_000 },
+		{ bridgeCertFingerprint: "a".repeat(63) },
+	])("rejects an invalid Proton Bridge setting %p with the field path in the message", (change) => {
+		const profile = inboxProfile({
+			provider: "protonmail",
+			gmail: undefined,
+			protonmail: { bridgeHost: "127.0.0.1", bridgeImapPort: 1143, ...change },
+		});
+		expect(() => validateInboxProfile(profile)).toThrow(/inbox profile\.protonmail\./);
+	});
+});
+
+describe("validateInboxSendApproval", () => {
+	it("round-trips the exact unredacted mail a human reviews", () => {
+		const approval = inboxSendApproval();
+		expect(validateInboxSendApproval(JSON.parse(JSON.stringify(approval)))).toEqual(
+			approval,
+		);
+	});
+
+	it.each([
+		{ provider: "imap" },
+		{ profile: "" },
+		{ to: [] },
+		{ contentHash: "not-hex" },
+		{ contentHash: "a".repeat(63) },
+	])("rejects malformed approval content %p", (change) => {
+		expect(() => validateInboxSendApproval(inboxSendApproval(change))).toThrow();
+	});
 });
 
 describe("validateInboxBrowserRequest", () => {
@@ -90,6 +146,28 @@ describe("validateInboxCliRequest", () => {
 			cache: "x".repeat(INBOX_MAX_CACHE_BYTES + 1),
 		}))).toThrow();
 	});
+
+	it("preserves a correlated send-approval request up to the longer relay deadline", () => {
+		const request = inboxCliRequest({
+			operation: "send-approval", request: undefined,
+			approval: inboxSendApproval(), timeoutMs: INBOX_SEND_APPROVAL_MAX_TIMEOUT_MS,
+		});
+		expect(validateInboxCliRequest(request)).toEqual(request);
+	});
+
+	it("rejects send-approval text over the published byte limit", () => {
+		expect(() => validateInboxCliRequest(inboxCliRequest({
+			operation: "send-approval", request: undefined,
+			approval: inboxSendApproval({ text: "x".repeat(INBOX_SEND_APPROVAL_MAX_TEXT_BYTES + 1) }),
+		}))).toThrow();
+	});
+
+	it("rejects send-approval timeoutMs over the published maximum", () => {
+		expect(() => validateInboxCliRequest(inboxCliRequest({
+			operation: "send-approval", request: undefined,
+			approval: inboxSendApproval(), timeoutMs: INBOX_SEND_APPROVAL_MAX_TIMEOUT_MS + 1,
+		}))).toThrow();
+	});
 });
 
 describe("validateChatFrame — inbox browser relay", () => {
@@ -105,6 +183,32 @@ describe("validateChatFrame — inbox browser relay", () => {
 	it.each([{ requestId: undefined }, { token: undefined }, { sessionId: "" }, { ok: "true" }, { data: { messages: [{ id: "m", body: "raw-email-body", headers: { Authorization: "sensitive" } }] } }])(
 		"rejects uncorrelated or secret-bearing result %p", (change) => {
 			expect(() => validateChatFrame(reply(change))).toThrow();
+		},
+	);
+});
+
+describe("validateChatFrame — inbox send approval relay", () => {
+	function result(overrides: Record<string, unknown> = {}) {
+		return {
+			type: "inbox-send-approval-result" as const,
+			sessionId: "session-a",
+			requestId: "approval-a",
+			token: "token-a",
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			approved: true,
+			...overrides,
+		};
+	}
+
+	it("accepts an authenticated correlated approval decision", () => {
+		const frame = result();
+		expect(validateChatFrame(frame)).toEqual(frame);
+	});
+
+	it.each([{ token: undefined }, { approved: "true" }, { approved: undefined }])(
+		"rejects a send-approval result with a missing token or a non-boolean approved %p",
+		(change) => {
+			expect(() => validateChatFrame(result(change))).toThrow();
 		},
 	);
 });

@@ -256,6 +256,48 @@ function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildInboxSendApproval(overrides: Record<string, unknown> = {}) {
+	return {
+		provider: "outlook" as const,
+		profile: "work",
+		draftId: "m_hash_abc123def456",
+		to: ["person@example.test"],
+		cc: [],
+		subject: "Quarterly update",
+		text: "See the attached numbers.",
+		attachments: [],
+		contentHash: "a".repeat(64),
+		...overrides,
+	};
+}
+
+function buildInboxSendApprovalRequestFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "inbox-send-approval-request",
+		sessionId: "session-a",
+		requestId: "approval-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		approval: buildInboxSendApproval(),
+		...overrides,
+	};
+}
+
+function buildInboxSendApprovalResultFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "inbox-send-approval-result",
+		sessionId: "session-a",
+		requestId: "approval-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		approved: true,
+		...overrides,
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -314,6 +356,8 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-result", buildConfigResultFrame],
 	["inbox-browser-request", buildInboxBrowserRequestFrame],
 	["inbox-browser-result", buildInboxBrowserResultFrame],
+	["inbox-send-approval-request", buildInboxSendApprovalRequestFrame],
+	["inbox-send-approval-result", buildInboxSendApprovalResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],

@@ -26,3 +26,18 @@ export function inboxCliRequest(overrides: Record<string, unknown> = {}) {
 		...overrides,
 	};
 }
+
+export function inboxSendApproval(overrides: Record<string, unknown> = {}) {
+	return {
+		provider: "outlook" as const,
+		profile: "work",
+		draftId: "m_hash_abc123def456",
+		to: ["person@example.test"],
+		cc: [],
+		subject: "Quarterly update",
+		text: "See the attached numbers.",
+		attachments: [],
+		contentHash: "a".repeat(64),
+		...overrides,
+	};
+}

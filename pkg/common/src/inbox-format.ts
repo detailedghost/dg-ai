@@ -10,6 +10,10 @@ export const INBOX_MAX_CACHE_BYTES = 524_288;
 export const INBOX_MAX_TIMEOUT_MS = 120_000;
 /** Daemon relay deadline used when the caller omits timeoutMs. */
 export const INBOX_DEFAULT_TIMEOUT_MS = 30_000;
+/** Maximum send-approval relay deadline; a human review can take far longer than other daemon relays. */
+export const INBOX_SEND_APPROVAL_MAX_TIMEOUT_MS = 600_000;
+/** Maximum send-approval message body, measured in UTF-8 bytes. */
+export const INBOX_SEND_APPROVAL_MAX_TEXT_BYTES = 32_768;
 /** Supported provider discriminants shared by encrypted configuration and relay validation. */
 export type InboxProvider = "protonmail" | "gmail" | "outlook";
 
@@ -27,6 +31,14 @@ export type InboxProviderSettings = {
 	authority?: string;
 	loginHint?: string;
 };
+/** Loopback-only Proton Bridge connection settings; the password itself lives in the credential store. */
+export type InboxProtonBridgeSettings = {
+	bridgeHost?: string;
+	bridgeImapPort?: number;
+	bridgeSmtpPort?: number;
+	bridgeUsername?: string;
+	bridgeCertFingerprint?: string;
+};
 /** Private account configuration; Proton accountHint is its /u/ index, while OAuth providers use a login hint. */
 export type InboxProfile = {
 	provider: InboxProvider;
@@ -34,6 +46,7 @@ export type InboxProfile = {
 	tabId?: number;
 	gmail?: InboxProviderSettings;
 	outlook?: InboxProviderSettings;
+	protonmail?: InboxProtonBridgeSettings;
 };
 /** Public inventory includes only profile name/provider, excluding account details and OAuth caches. */
 export type InboxProfileSummary = { name: string; provider: InboxProvider };
@@ -113,6 +126,18 @@ export type InboxBrowserResponse = {
 	filter?: InboxFilter;
 	hasMore?: boolean;
 };
+/** The exact mail the human reviews before a send completes; never redacted en route to the approval card. */
+export type InboxSendApproval = {
+	provider: InboxProvider;
+	profile: string;
+	draftId: string;
+	to: string[];
+	cc: string[];
+	subject: string;
+	text: string;
+	attachments: string[];
+	contentHash: string;
+};
 /** Internal authenticated CLI operation; cache access is private and every request has a correlation ID. */
 export type InboxCliRequest = {
 	type: "cli-inbox-request";
@@ -124,12 +149,14 @@ export type InboxCliRequest = {
 		| "profile-list"
 		| "cache-get"
 		| "cache-set"
-		| "browser";
+		| "browser"
+		| "send-approval";
 	name?: string;
 	provider?: InboxProvider;
 	profile?: InboxProfile;
 	cache?: string;
 	request?: InboxBrowserRequest;
+	approval?: InboxSendApproval;
 	timeoutMs?: number;
 };
 /** Daemon reply matched to the session/request pair; internal cache values must never be printed. */
@@ -271,6 +298,31 @@ function settings(value: unknown, provider: "gmail" | "outlook"): void {
 		);
 	if (v.scopes !== undefined) strings(v.scopes, `${path}.scopes`, 32, 2048);
 }
+const BRIDGE_LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
+function protonBridgeSettings(value: unknown): void {
+	const path = "inbox profile.protonmail";
+	const v = object(value, path, [
+		"bridgeHost",
+		"bridgeImapPort",
+		"bridgeSmtpPort",
+		"bridgeUsername",
+		"bridgeCertFingerprint",
+	]);
+	if (v.bridgeHost !== undefined) {
+		text(v.bridgeHost, `${path}.bridgeHost`, 64);
+		if (!BRIDGE_LOOPBACK_HOSTS.includes(v.bridgeHost as string))
+			fail(`${path}.bridgeHost must be one of ${BRIDGE_LOOPBACK_HOSTS.join(", ")}`);
+	}
+	for (const key of ["bridgeImapPort", "bridgeSmtpPort"])
+		if (v[key] !== undefined) integer(v[key], `${path}.${key}`, 1, 65_535);
+	if (v.bridgeUsername !== undefined)
+		text(v.bridgeUsername, `${path}.bridgeUsername`, 320);
+	if (v.bridgeCertFingerprint !== undefined) {
+		text(v.bridgeCertFingerprint, `${path}.bridgeCertFingerprint`, 64);
+		if (!/^[0-9a-f]{64}$/i.test(v.bridgeCertFingerprint as string))
+			fail(`${path}.bridgeCertFingerprint must be 64 hex characters`);
+	}
+}
 /** Rejects unknown fields, inline credentials, and provider-incompatible settings before persistence. */
 export function validateInboxProfile(value: unknown): InboxProfile {
 	const v = object(value, "inbox profile", [
@@ -279,6 +331,7 @@ export function validateInboxProfile(value: unknown): InboxProfile {
 		"tabId",
 		"gmail",
 		"outlook",
+		"protonmail",
 	]);
 	validateInboxProvider(v.provider);
 	optionalText(v, ["accountHint"], "inbox profile", 320);
@@ -286,6 +339,7 @@ export function validateInboxProfile(value: unknown): InboxProfile {
 		integer(v.tabId, "inbox profile.tabId", 0, 2_147_483_647);
 	if (v.gmail !== undefined) settings(v.gmail, "gmail");
 	if (v.outlook !== undefined) settings(v.outlook, "outlook");
+	if (v.protonmail !== undefined) protonBridgeSettings(v.protonmail);
 	return value as InboxProfile;
 }
 /** Enforces named operation arguments and bounds before any page execution or relay. */
@@ -460,6 +514,35 @@ export function validateInboxBrowserResponse(
 		fail("inbox browser response exceeds 786432 bytes");
 	return value as InboxBrowserResponse;
 }
+function hexDigest(value: unknown, path: string): void {
+	if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value))
+		fail(`${path} must be 64 lowercase hex characters`);
+}
+/** Validates the exact mail a human reviews before send; text stays unredacted en route to the approval card. */
+export function validateInboxSendApproval(value: unknown): InboxSendApproval {
+	const path = "inbox send approval";
+	const v = object(value, path, [
+		"provider",
+		"profile",
+		"draftId",
+		"to",
+		"cc",
+		"subject",
+		"text",
+		"attachments",
+		"contentHash",
+	]);
+	validateInboxProvider(v.provider);
+	validateInboxProfileName(v.profile);
+	text(v.draftId, `${path}.draftId`, 512);
+	strings(v.to, `${path}.to`, 50, 320, 1);
+	strings(v.cc, `${path}.cc`, 50, 320);
+	text(v.subject, `${path}.subject`, 1024, true);
+	text(v.text, `${path}.text`, INBOX_SEND_APPROVAL_MAX_TEXT_BYTES, true);
+	strings(v.attachments, `${path}.attachments`, 50, 512);
+	hexDigest(v.contentHash, `${path}.contentHash`);
+	return value as InboxSendApproval;
+}
 /** Validates correlation, operation-specific input, private cache bounds, and optional relay deadlines. */
 export function validateInboxCliRequest(value: unknown): InboxCliRequest {
 	requireRecord(value, "inbox CLI request");
@@ -471,6 +554,7 @@ export function validateInboxCliRequest(value: unknown): InboxCliRequest {
 		"cache-get": ["name", "provider"],
 		"cache-set": ["name", "provider", "cache"],
 		browser: ["request"],
+		"send-approval": ["approval"],
 	};
 	choice(value.operation, "inbox CLI request.operation", Object.keys(fields));
 	const operation = value.operation as InboxCliRequest["operation"];
@@ -490,12 +574,16 @@ export function validateInboxCliRequest(value: unknown): InboxCliRequest {
 			v.timeoutMs,
 			"inbox CLI request.timeoutMs",
 			1,
-			INBOX_MAX_TIMEOUT_MS,
+			operation === "send-approval"
+				? INBOX_SEND_APPROVAL_MAX_TIMEOUT_MS
+				: INBOX_MAX_TIMEOUT_MS,
 		);
 	if (operation === "browser") validateInboxBrowserRequest(v.request);
-	else if (operation !== "profile-list") validateInboxProfileName(v.name);
+	else if (operation !== "profile-list" && operation !== "send-approval")
+		validateInboxProfileName(v.name);
 	if (operation === "profile-set") validateInboxProfile(v.profile);
 	if (operation.startsWith("cache-")) validateInboxProvider(v.provider);
 	if (operation === "cache-set") validateInboxAuthCache(v.cache);
+	if (operation === "send-approval") validateInboxSendApproval(v.approval);
 	return value as InboxCliRequest;
 }
