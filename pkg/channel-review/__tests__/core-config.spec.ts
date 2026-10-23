@@ -536,6 +536,43 @@ describe("loadConfig address", () => {
 	});
 });
 
+describe("loadConfig runner.concurrency", () => {
+	test("defaults to 2 when the runner section omits it", () => {
+		const config = loadConfig(writeConfigFile(home.dir, { ...minimalConfigJson(), runner: {} }));
+		expect(config.runner.concurrency).toBe(2);
+	});
+
+	test.each([1, 8])("accepts %d", (concurrency) => {
+		expect(load({ runner: { concurrency } }).runner.concurrency).toBe(concurrency);
+	});
+
+	test.each([0, 9, 1.5, "2", -1])("rejects %p", (concurrency) => {
+		expect(loadFailure(minimalConfigJson({ runner: { concurrency } })).message).toContain(
+			"runner.concurrency",
+		);
+	});
+});
+
+describe("loadConfig relay.streamIdleSeconds", () => {
+	const relay = (streamIdleSeconds: unknown) => ({
+		relay: { ...(minimalConfigJson().relay as object), streamIdleSeconds },
+	});
+
+	test("defaults to 45", () => {
+		expect(load().relay.streamIdleSeconds).toBe(45);
+	});
+
+	test.each([15, 600])("accepts %d", (seconds) => {
+		expect(load(relay(seconds)).relay.streamIdleSeconds).toBe(seconds);
+	});
+
+	test.each([14, 601, 45.5, "45"])("rejects %p", (seconds) => {
+		expect(loadFailure(minimalConfigJson(relay(seconds))).message).toContain(
+			"relay.streamIdleSeconds",
+		);
+	});
+});
+
 describe("loadConfig fun.pool override", () => {
 	test("accepts an override that covers every verdict with both kinds", () => {
 		expect(load({ fun: { pool: completeFunPool() } }).fun?.pool).toEqual(

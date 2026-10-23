@@ -13,20 +13,25 @@ Codex:      $dg:phone-friend
 
 | Command | What it does |
 | --- | --- |
-| `number` | Prints `{line, npub, contact, key_store, listener}`. |
-| `invite [--relay <url>...] [--ttl <hours>]` | Prints a one-time call card, `{card, expires_at}`. |
-| `dial <card\|-> [text]` | Saves the card owner as your contact, uses the card relays, and rings them. `-` reads the card from stdin. |
-| `on` / `off` | Starts or stops the background listener. |
+| `number` | Prints `{line, npub, contact, name, handle, key_store, listener}`. |
+| `invite [--relay <url>...] [--ttl <hours>] [--name <name>]` | Prints a one-time call card, `{card, expires_at, handle}`, and starts the listener. |
+| `dial <card\|-> [text] [--name <name>]` | Saves the card owner as your contact, uses the card relays, rings them, and starts the listener. `-` reads the card from stdin. Prints `{contact, id, relays_ok, handle}`. |
+| `on` / `off` | Starts or stops the background listener by hand. `invite` and `dial` already start it, so `on` is mainly for turning it back on after `off`. |
 | `answer [--restart]` | Stays on the line and prints each new message as a JSON line. `--restart` restarts the listener itself if it stops, for an unattended watch. |
 | `voicemail` | Prints unread messages, then exits. |
 | `say <text\|->` | Sends one message. `-` reads stdin. |
 
 Each message is a JSON line `{id, ts, from, text}`. The message that paired a
-new contact also has `"call": true`.
+new contact also has `"call": true` and a `handle` field.
 
 To pair, one side runs `invite` and gives the card to the other side, which
 runs `dial`. The card works one time and expires after 24 hours. The first
 valid call becomes the contact, and every other sender is dropped.
+
+The `handle` is the `@name` to use when talking about a chat: the contact's
+name if one is set (`name <name>`, or `--name <name>` on `invite`/`dial`),
+else the line's own name. `--line` accepts a handle with or without its
+leading `@`.
 
 The key is stored in one of two places. With a dg session, it is encrypted in
 the dg credential store as `phone-friend/<line>/nostr-key`, and the listener reads it
@@ -56,5 +61,5 @@ runs as shell. Peer text never goes into the heredoc, because a line that is
 only the delimiter would end it.
 
 See the [phone-friend skill](../plugins/dg/skills/phone-friend/SKILL.md) for
-the full loop, auto mode (an unattended, always-on conversation), `@<line>`
+the full loop, auto mode (an unattended, always-on conversation), `@<handle>`
 message routing, and the setup text for the other side.

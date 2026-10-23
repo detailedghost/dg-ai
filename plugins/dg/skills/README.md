@@ -14,7 +14,7 @@ binaries. The skills-root README itself is not installed.
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
-| `agent-seed/` | Set up `.agents/`, `AGENTS.md`, and a minimal `CLAUDE.md` |
+| `agent-seed/` | Set up `.agents/`, a lean `AGENTS.md`, `CLAUDE.md` as `@AGENTS.md`, and the `docs/` rule files |
 | `clipboard-img/` | Capture a clipboard PNG through the compiled clipboard-image command |
 | `grill-me/` | Resolve a design through a structured interview |
 | `hook-comment-disable/` | Disable the American-English hook for one session with explicit approval |
@@ -42,7 +42,7 @@ binaries. The skills-root README itself is not installed.
 | `sdlc/` | Run a feature brief through slice waves to a draft PR |
 | `assign/` | Pick the best-fit engineering agent for work or spec slices |
 | `monolith/` | Consolidate a codebase's vocabulary into `.agents/monolith.md` |
-| `spring-break/` | Consolidate `.agents/school/` into topic clusters |
+| `spring-break/` | Consolidate `.agents/school/` into topic clusters and trim the agent context files |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
 | `jot/` | Save a short note or a session handoff (`dg-skills jot`) |

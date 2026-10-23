@@ -167,7 +167,7 @@ Nothing after this step runs before Approve. `/dg:kick`, `/dg:prd` and `/dg:pick
 mode and reuse the same view.
 
 If plan approval (or an earlier step) surfaced a hands-on validation need, build it with the
-prototype skill (it ships later; skip this step until then) — keep the asset durable (`.agents/prototype/<name>/`, never `--light`/`/tmp`). On
+`/dg:proto` (local mode) — keep the asset durable (`.agents/prototype/<name>/`, never `--light`/`/tmp`). On
 acceptance, register it onto the slice:
 
 ```sh

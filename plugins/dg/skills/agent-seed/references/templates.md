@@ -1,41 +1,24 @@
 # Templates
 
-## CLAUDE.md Template (15-25 lines)
+## CLAUDE.md Template
 
-CLAUDE.md is a minimal stub. AGENTS.md is the authority.
+CLAUDE.md holds one line, so Claude Code loads AGENTS.md with no extra read:
 
 ```markdown
-# <Project Name>
-
-<1-2 sentence description.>
-
-## Commands
-
-| Purpose | Command |
-|---------|---------|
-| Build   | `<build command>` |
-| Test    | `<test command>` |
-| Lint    | `<lint command>` |
-| Dev     | `<dev server command>` |
-
-For architecture, conventions, domain context, and agent workflow, read `AGENTS.md`.
+@AGENTS.md
 ```
 
-Rules:
-- 15-25 lines max
-- No conventions here — those live in AGENTS.md
-- No directory trees, no code examples, no architecture
-- The only actionable content is the commands table
-- Final line is always a pointer to AGENTS.md
+Commands live in `mise.toml` (`mise tasks` lists them) or the build scripts, not in CLAUDE.md.
 
-## AGENTS.md Template (30-60 lines)
+## Root AGENTS.md Template (about 2.4K characters)
 
-AGENTS.md is the primary doc agents read. It carries conventions and routes to all deep context.
+Every session loads this file, so it holds only what an agent cannot find on its own: where things are, and the
+traps. Code style lives in `docs/code_standards.md`. Never repeat it here.
 
 ```markdown
 # AGENTS.md — <Project Name>
 
-<1-2 sentence project summary.>
+<One line: what the repo is and its main stack.>
 
 <!-- agent-seed:start:packages -->
 ## Packages
@@ -45,57 +28,80 @@ AGENTS.md is the primary doc agents read. It carries conventions and routes to a
 | <Name>  | `<path>/` | `<path>/AGENTS.md` |
 <!-- agent-seed:end:packages -->
 
-## Key Conventions
+## Rules
 
-- <Convention 1 — specific, actionable, one line>
-- <Convention 2>
-- <Up to 10 max>
+- Canonical rules: `docs/CONTRIBUTING.md`, `docs/code_standards.md`, `docs/code_review.md`.
+- `mise run <task>` only (`mise tasks` lists them).
+- <Trap: one terse line that stops a real mistake>
+- Decisions: human ADRs in `docs/adr/`, agent rules in `.agents/decisions/` linking the ADR. Cite by number; never
+  relitigate.
+- Style: `docs/` and ADRs simple English (short sentences, common words, active voice); `AGENTS.md` and `.agents/`
+  dense, terse (fragments, precise terms, no filler).
 
 <!-- agent-seed:start:references -->
 ## References
 
-On-demand deep context (read these when you need them, not upfront):
+Read on demand, not upfront:
 
 | File | Contents |
 |------|----------|
+| `.agents/paths.md` | Repo file and folder lookup. Read before you explore the code |
 | `.agents/references/architecture.md` | System design, component map, data flow |
-| `.agents/references/patterns.md` | Code conventions, idioms, examples |
-| `.agents/references/directory-tree.md` | Annotated project tree |
-| `.agents/references/domain.md` | Domain model, terminology |
-| `.agents/monolith.md` | Project vocabulary (terms, conventions, patterns, ambiguities), when the file exists. Consult it before naming things |
-| `.agents/paths.md` | Repo file/directory lookup — read before exploring codebase |
+| `.agents/references/domain.md` | Domain model, terms |
+| `.agents/monolith.md` | Project vocabulary, when the file exists. Consult it before naming things |
 <!-- agent-seed:end:references -->
 
 <!-- agent-seed:start:specs -->
 ## Specs & Learnings
 
-- **Specs:** `.agents/spec/` (feature bundles written by `/dg:kick` and resumed by `/dg:pickup`)
-- **Learnings:** `.agents/school/` (topic-cluster format — any agent may write here following the format in each file's header)
+- Specs: `.agents/spec/` (`/dg:kick` parks a plan, `/dg:pickup` builds it).
+- Learnings: `.agents/school/`. Follow the format in each file's header.
 <!-- agent-seed:end:specs -->
-
-## Agent Workflow
-
-For feature development, use `/dg:kick "<request>"` to park a plan and `/dg:pickup` to implement it. Both read `.agents/school/` and use `.agents/spec/`.
 ```
 
 Notes:
-- Omit the Packages section entirely for single-package projects.
-- The References table lists only files that actually exist.
-- `<!-- agent-seed:start/end -->` markers let future runs update managed sections without touching custom content.
-- Conventions section is NOT wrapped in markers — it's hand-maintained after initial seed.
+- Omit the Packages section for a single-package project.
+- Rules are traps only: terse, one line each, dense technical words are fine. A rule a linter or test enforces does
+  not belong here.
+- The References table lists only files that exist.
+- `<!-- agent-seed:start/end -->` markers let a later run update managed sections without touching the Rules.
 
-## Per-Package AGENTS.md (monorepo, ~10 lines)
+## Per-Package AGENTS.md (monorepo, under about 3.5K characters)
 
 ```markdown
-# AGENTS.md — <Package Name>
+# AGENTS.md — <path>
 
-<1-sentence description of this package.>
+<One line: what the package is.>
+Code standards: `docs/code_standards.md`. Review rules: `docs/code_review.md`.
 
-## References
+## Stack
 
-See root `.agents/references/` for architecture, patterns, and domain context.
-See root `AGENTS.md` for conventions, specs, and learnings locations.
+- <framework, language version, key libraries, test runner>
+
+## Commands
+
+- Build, test, lint, format: `mise run <task>`, ...
+- <how to run it locally, and any platform trap>
+
+## Task templates
+
+<Common task>:
+1. <file or folder to change first>
+2. <next step>
+
+## Traps
+
+- <one line each: what breaks and how to avoid it>
+
+## References (read on demand)
+
+| File | Contents |
+|------|----------|
+| `.agents/references/<pkg>-<topic>.md` | <one feature area: routes, env vars, jobs, entry points> |
 ```
+
+Move feature detail (route lists, env var tables, job lists) to `.agents/references/<pkg>-<topic>.md`, one file per
+topic, and link it from this table.
 
 ## .gitignore Entry
 

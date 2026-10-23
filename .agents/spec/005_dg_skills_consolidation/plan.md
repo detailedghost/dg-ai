@@ -1227,19 +1227,23 @@ Removed by the 2026-10-20 scope decision: viz and review do not ship in dg. Noth
 
 ### Slice 26 — w6-prototype
 
+Shipped early on PR #42 (2026-10-21), not in the Wave 6 PR. The Wave 6 PR body still carries the behavior-change note, and the cutover delete list still needs the local `prototype` skill.
+
+**Superseded (2026-10-22):** this slice's own commits (bddef3e, 464d16a, aa64d5c) built an independent, incompatible port of the same feature already released on #42; the w5→w6 merge dropped slice 26's implementation in favor of #42's (human-ratified), keeping only slice 25's unrelated pw fix. Checkboxes below describe the shipped #42 behavior, not slice 26's own code.
+
 #### Engineering
 - [x] Rewrite prototype-cli (sh) in TypeScript; port prototype-ui-cli.ts and prototype-serve to `dg-skills prototype`; vendor prototype-components/ in the skill.
 - [x] Merge the local /prototype port and the existing extension dg:proto into ONE skill, `plugins/dg/skills/proto/` (the name stays `dg:proto`; no separate `plugins/dg/skills/prototype`). Local is the default: the terminal app for logic and state questions, UI variations with `-n` or `-o` on one route served by `dg-skills prototype serve`, the clickable plan walkthrough, and `-c` resume. `--ext` runs today's extension flow: app-native variations on a live page, then review, approve and rework. Both modes share one plan and variation format.
 - [x] No viz: content the legacy prototype routed through /viz (prose, tables, compare cards) renders on the prototype-serve page.
 - [x] Map old entrypoints to prototype <selection/decision>, prototype ui and prototype serve, disambiguating wait; preserve the existing extension proto command behind `--ext`.
 - [x] Move executable server TS into src/prototype; keep copyable HTML/WebMCP/components assets under skill and return real installed paths.
-- [ ] Behavior change: plain `/dg:proto` becomes local and extension users add `--ext`. Record it in the Wave 6 PR body and in the skill's Flags table. Add the user's local `prototype` skill to the cutover delete list. (Flags table done — see the next item — and the local `prototype` skill is confirmed for the cutover delete list; the Wave 6 PR body itself is assembled when slices 25-27 land together, not a per-slice deliverable, so leaving this open for the orchestrator.)
+- [ ] Behavior change: plain `/dg:proto` becomes local and extension users add `--ext`. Record it in the Wave 6 PR body and in the skill's Flags table. Add the user's local `prototype` skill to the cutover delete list. (The Flags table and skill note are done on PR #42. The Wave 6 PR body and the cutover list are still open.)
 - [x] proto/SKILL.md carries a **Usage:** line and a full `## Flags` table (Flag | Short | Effect | Default) covering `--ext`, `-n`, `-o`, `-c` and every other real flag.
 
 #### Testing Criteria
 ##### Contracts
 - [x] Run compiled pinned-cwd regression, reject/timeout/consumed-sentinel cleanup, server teardown and UI/server self-dispatch with isolated roots.
-- [x] Compiled smoke from an outside folder with no legacy scripts, for each mode. Local covers the logic, UI and walkthrough routes. `--ext` covers the plan handoff to the extension through fakes. (The logic branch has no `dg-skills prototype` CLI surface by design — it is a bespoke script the agent writes — so "covers the logic route" is the reference doc, not a CLI smoke assertion.)
+- [x] Compiled smoke from an outside folder with no legacy scripts, for each mode. Local covers the logic, UI and walkthrough routes. `--ext` covers the plan handoff to the extension through fakes.
 - [x] The skills-test flags guard passes for proto/SKILL.md.
 
 #### Acceptance Criteria
