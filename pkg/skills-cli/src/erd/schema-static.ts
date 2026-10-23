@@ -85,11 +85,13 @@ function discoverByGlobs(scopePath: string, globs: string[]): string[] {
 
 interface ParsedForeignKey {
 	fromColumn: string;
+	toSchema?: string;
 	toTable: string;
 	toColumn: string;
 }
 
 interface ParsedTableStmt {
+	schema: string;
 	table: string;
 	columns: DbColumn[];
 	foreignKeys: ParsedForeignKey[];
@@ -183,12 +185,13 @@ function splitTopLevel(body: string): string[] {
 }
 
 const COLUMN_DEF_RE = /^["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/;
-const INLINE_REFERENCES_RE = /REFERENCES\s+["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
+const INLINE_REFERENCES_RE =
+	/REFERENCES\s+(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
 const TABLE_LEVEL_FK_RE =
-	/^(?:CONSTRAINT\s+["`[]?\w+["`\]]?\s+)?FOREIGN\s+KEY\s*\(\s*["`[]?(\w+)["`\]]?\s*\)\s*REFERENCES\s+["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
+	/^(?:CONSTRAINT\s+["`[]?\w+["`\]]?\s+)?FOREIGN\s+KEY\s*\(\s*["`[]?(\w+)["`\]]?\s*\)\s*REFERENCES\s+(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
 const TABLE_LEVEL_SKIP_RE = /^(PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)\b/i;
 
-function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
+function parseCreateTableBody(schema: string, table: string, body: string): ParsedTableStmt {
 	const columns: DbColumn[] = [];
 	const foreignKeys: ParsedForeignKey[] = [];
 
@@ -200,8 +203,9 @@ function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
 		if (fkMatch) {
 			foreignKeys.push({
 				fromColumn: fkMatch[1] as string,
-				toTable: fkMatch[2] as string,
-				toColumn: fkMatch[3] as string,
+				...(fkMatch[2] ? { toSchema: fkMatch[2] } : {}),
+				toTable: fkMatch[3] as string,
+				toColumn: fkMatch[4] as string,
 			});
 			continue;
 		}
@@ -225,7 +229,12 @@ function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
 		});
 
 		if (inlineRef) {
-			foreignKeys.push({ fromColumn: name, toTable: inlineRef[1] as string, toColumn: inlineRef[2] as string });
+			foreignKeys.push({
+				fromColumn: name,
+				...(inlineRef[1] ? { toSchema: inlineRef[1] } : {}),
+				toTable: inlineRef[2] as string,
+				toColumn: inlineRef[3] as string,
+			});
 		}
 	}
 
@@ -233,10 +242,11 @@ function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
 		throw new Error(`CREATE TABLE ${table}: no parseable column or constraint definitions found`);
 	}
 
-	return { table, columns, foreignKeys };
+	return { schema, table, columns, foreignKeys };
 }
 
-const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s*\(/gi;
+const CREATE_TABLE_RE =
+	/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(/gi;
 const CREATE_TABLE_LOOSE_RE = /CREATE\s+TABLE\b/gi;
 const ALTER_ADD_COLUMN_RE =
 	/ALTER\s+TABLE\s+["`[]?(\w+)["`\]]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/gi;
@@ -256,14 +266,15 @@ function parseSqlFileContent(content: string): ParsedFile {
 	CREATE_TABLE_RE.lastIndex = 0;
 	for (let m = CREATE_TABLE_RE.exec(content); m; m = CREATE_TABLE_RE.exec(content)) {
 		strictCreateCount++;
-		const table = m[1] as string;
+		const schema = (m[1] as string | undefined) ?? "public";
+		const table = m[2] as string;
 		const openIndex = m.index + m[0].length - 1;
 		const closeIndex = findMatchingParen(content, openIndex);
 		if (closeIndex === -1) {
 			throw new Error(`CREATE TABLE ${table}: unbalanced parentheses`);
 		}
 		const body = content.slice(openIndex + 1, closeIndex);
-		creates.push(parseCreateTableBody(table, body));
+		creates.push(parseCreateTableBody(schema, table, body));
 		CREATE_TABLE_RE.lastIndex = closeIndex + 1;
 	}
 
@@ -297,22 +308,29 @@ function parseSqlFileContent(content: string): ParsedFile {
 	return { creates, alters };
 }
 
-/** Node/edge ids are "<schema>.<table>"; this parser always produces the "public" schema. */
+interface TableEntry {
+	schema: string;
+	table: string;
+	columns: Map<string, DbColumn>;
+}
+
+/** Node/edge ids are "<schema>.<table>"; CREATE TABLE honors a captured schema qualifier, defaulting to "public" when unqualified. ALTER TABLE ADD COLUMN's regex captures no schema, so it always targets "public". */
 export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMigrationsResult {
 	const globs = opts.migrationGlobs ?? DEFAULT_MIGRATION_GLOBS;
 	const files = discoverByGlobs(opts.scopePath, globs);
 
-	const nodeColumns = new Map<string, Map<string, DbColumn>>();
-	const edges: DbEdge[] = [];
+	const tables = new Map<string, TableEntry>();
+	const pendingFks: Array<{ fromSchema: string; fromTable: string; fk: ParsedForeignKey }> = [];
 	const evidence: EvidenceRecord[] = [];
 
-	function ensureTable(table: string): Map<string, DbColumn> {
-		let cols = nodeColumns.get(table);
-		if (!cols) {
-			cols = new Map();
-			nodeColumns.set(table, cols);
+	function ensureTable(schema: string, table: string): Map<string, DbColumn> {
+		const key = `${schema}.${table}`;
+		let entry = tables.get(key);
+		if (!entry) {
+			entry = { schema, table, columns: new Map() };
+			tables.set(key, entry);
 		}
-		return cols;
+		return entry.columns;
 	}
 
 	for (const file of files) {
@@ -348,54 +366,78 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 		}
 
 		for (const stmt of parsed.creates) {
-			const cols = ensureTable(stmt.table);
+			const cols = ensureTable(stmt.schema, stmt.table);
 			for (const col of stmt.columns) cols.set(col.name, col);
 			for (const fk of stmt.foreignKeys) {
-				edges.push({
-					from: `public.${stmt.table}`,
-					to: `public.${fk.toTable}`,
-					fromColumn: fk.fromColumn,
-					toColumn: fk.toColumn,
-					confidence: "proven",
-				});
+				pendingFks.push({ fromSchema: stmt.schema, fromTable: stmt.table, fk });
 			}
 		}
 		for (const alter of parsed.alters) {
-			const cols = ensureTable(alter.table);
+			const cols = ensureTable("public", alter.table);
 			cols.set(alter.column.name, alter.column);
 		}
 	}
 
-	const nodes: DbNode[] = Array.from(nodeColumns.entries()).map(([table, cols]) => ({
-		id: `public.${table}`,
-		label: table,
-		schema: "public",
-		columns: Array.from(cols.values()),
+	const edges: DbEdge[] = pendingFks.map(({ fromSchema, fromTable, fk }) => {
+		let toSchema = fk.toSchema;
+		let confidence: DbEdge["confidence"] = "proven";
+		if (!toSchema) {
+			const ownSchemaHasTarget = tables.has(`${fromSchema}.${fk.toTable}`);
+			const publicHasTarget = fromSchema !== "public" && tables.has(`public.${fk.toTable}`);
+			if (ownSchemaHasTarget && publicHasTarget) {
+				confidence = "inferred";
+				evidence.push({
+					type: "db-table",
+					ref: `${fromSchema}.${fromTable}`,
+					detail: `FK ${fk.fromColumn} -> ${fk.toTable}: ambiguous target exists in both ${fromSchema} and public — assumed ${fromSchema}`,
+				});
+			}
+			toSchema = ownSchemaHasTarget ? fromSchema : "public";
+		}
+		return {
+			from: `${fromSchema}.${fromTable}`,
+			to: `${toSchema}.${fk.toTable}`,
+			fromColumn: fk.fromColumn,
+			toColumn: fk.toColumn,
+			confidence,
+		};
+	});
+
+	const nodes: DbNode[] = Array.from(tables.entries()).map(([key, entry]) => ({
+		id: key,
+		label: entry.table,
+		schema: entry.schema,
+		columns: Array.from(entry.columns.values()),
 		source: "static-sql",
 	}));
 
 	return { nodes, edges, evidence };
 }
 
+const DBT_NAME_ENTRY_RE = /^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/;
+
 function extractDbtTables(content: string): { sourceName: string | undefined; tables: string[] }[] {
 	const lines = content.split(/\r?\n/);
 	const groups: { sourceName: string | undefined; tables: string[] }[] = [];
 
 	let currentSourceIndent = -1;
-	let currentSourceName: string | undefined;
 	let inTables = false;
 	let tablesIndent = -1;
+	let inColumns = false;
+	let columnsIndent = -1;
 
 	for (const line of lines) {
 		if (line.trim().length === 0) continue;
 		const indent = line.length - line.trimStart().length;
 		const trimmed = line.trim();
 
-		const sourceMatch = trimmed.match(/^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/);
+		if (inColumns && indent <= columnsIndent) inColumns = false;
+		if (inTables && indent <= tablesIndent) inTables = false;
+
+		const sourceMatch = trimmed.match(DBT_NAME_ENTRY_RE);
 		if (sourceMatch && !inTables) {
 			currentSourceIndent = indent;
-			currentSourceName = sourceMatch[1];
-			groups.push({ sourceName: currentSourceName, tables: [] });
+			groups.push({ sourceName: sourceMatch[1], tables: [] });
 			continue;
 		}
 
@@ -405,16 +447,19 @@ function extractDbtTables(content: string): { sourceName: string | undefined; ta
 			continue;
 		}
 
-		if (inTables) {
-			if (indent <= tablesIndent) {
-				inTables = false;
-			} else {
-				const tableMatch = trimmed.match(/^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/);
-				if (tableMatch && groups.length > 0) {
-					(groups[groups.length - 1] as { tables: string[] }).tables.push(tableMatch[1] as string);
-				}
-			}
+		if (!inTables) continue;
+
+		if (/^columns:\s*$/.test(trimmed)) {
+			inColumns = true;
+			columnsIndent = indent;
+			continue;
 		}
+
+		if (inColumns) continue;
+
+		const tableMatch = trimmed.match(DBT_NAME_ENTRY_RE);
+		const currentGroup = groups.at(-1);
+		if (tableMatch && currentGroup) currentGroup.tables.push(tableMatch[1] as string);
 	}
 
 	return groups;
@@ -666,7 +711,10 @@ function parseCsCreateTableCalls(content: string): ParsedCsTable[] {
 		if (columnsBlockMatch) {
 			const braceOpen = (columnsBlockMatch.index as number) + columnsBlockMatch[0].length - 1;
 			const braceClose = findMatchingBrace(callBody, braceOpen);
-			const columnsBody = braceClose === -1 ? callBody.slice(braceOpen + 1) : callBody.slice(braceOpen + 1, braceClose);
+			if (braceClose === -1) {
+				throw new Error(`migrationBuilder.CreateTable(${table}, ...) columns block has unbalanced braces`);
+			}
+			const columnsBody = callBody.slice(braceOpen + 1, braceClose);
 			const colRe = /(\w+)\s*=\s*table\.Column<([^>]+)>\(([^)]*)\)/g;
 			for (let cm = colRe.exec(columnsBody); cm; cm = colRe.exec(columnsBody)) {
 				const nullableMatch = (cm[3] as string).match(/nullable:\s*(true|false)/);

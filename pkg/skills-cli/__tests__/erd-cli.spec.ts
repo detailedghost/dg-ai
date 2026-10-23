@@ -95,6 +95,19 @@ describe("erd CLI", () => {
 		}
 	});
 
+	test("generate --out with a non-markdown suffix does not produce a double extension", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-erd-out-suffix-"));
+		try {
+			const result = await run(["generate", fixture, "--out", join(root, "map.json")]);
+			expect(result.code, result.stderr).toBe(0);
+			const parsed = JSON.parse(result.stdout) as { outPath: string; evidenceOutPath: string };
+			expect(parsed.outPath).toBe(join(root, "map.md"));
+			expect(parsed.evidenceOutPath).toBe(join(root, "map.json"));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test("a malformed --depth value with a leading digit fails instead of silently coercing", async () => {
 		const result = await run(["generate", fixture, "--depth", "3abc"]);
 		expect(result.code).toBe(1);

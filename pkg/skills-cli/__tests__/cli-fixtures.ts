@@ -1,7 +1,7 @@
 import { afterEach, beforeEach } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ReviewThread } from "../src/provider/types";
 import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
@@ -173,6 +173,18 @@ export function isolateCliTests(): void {
   Object.assign(process.env, savedEnv);
   fixtures.cleanup();
  });
+}
+
+/** Writes `content` to `baseDir/relPath`, creating parent directories as needed. */
+export function writeScopedFile(baseDir: string, relPath: string, content: string): string {
+	const abs = join(baseDir, relPath);
+	mkdirSync(dirname(abs), { recursive: true });
+	writeFileSync(abs, content);
+	return abs;
+}
+
+export function findNodeByLabel<T extends { label: string }>(nodes: T[], label: string): T | undefined {
+	return nodes.find((n) => n.label === label);
 }
 
 /** A thread with one root comment id and no loaded comments. */

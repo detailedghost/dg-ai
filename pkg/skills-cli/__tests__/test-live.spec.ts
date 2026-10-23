@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { git as runGit } from "./git-repo-fixtures";
@@ -24,14 +25,14 @@ function tmp(prefix: string): string {
 	return cliFixtures.tmp(createdDirs, prefix);
 }
 
-function buildRepo(): { origin: string; repo: string } {
+function buildRepoWithWorkflow(workflowContent: string): { origin: string; repo: string } {
 	const origin = tmp("test-live-origin-");
 	runGit(["init", "-q", "--bare", "-b", "main"], origin);
 	const repo = tmp("test-live-repo-");
 	runGit(["init", "-q", "-b", "main"], repo);
 	runGit(["remote", "add", "origin", origin], repo);
 	mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
-	writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), DEPLOY_WORKFLOW);
+	writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), workflowContent);
 	writeFileSync(join(repo, "README.md"), "hello\n");
 	runGit(["add", "-A"], repo);
 	runGit(["commit", "-q", "-m", "chore: init"], repo);
@@ -39,6 +40,10 @@ function buildRepo(): { origin: string; repo: string } {
 	runGit(["checkout", "-q", "-b", BRANCH], repo);
 	runGit(["push", "-q", "-u", "origin", BRANCH], repo);
 	return { origin, repo };
+}
+
+function buildRepo(): { origin: string; repo: string } {
+	return buildRepoWithWorkflow(DEPLOY_WORKFLOW);
 }
 
 function headSha(repo: string): string {
@@ -50,25 +55,18 @@ function log(repo: string, ref = "HEAD"): string {
 }
 
 function findStateFile(dir: string): string {
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			try {
-				return findStateFile(full);
-			} catch {
-				continue;
-			}
-		} else if (entry.name.endsWith(".json")) {
-			return full;
-		}
-	}
-	throw new Error(`no state file found under ${dir}`);
+	const match = readdirSync(dir, { recursive: true })
+		.map((name) => name.toString())
+		.find((name) => name.endsWith(".json"));
+	if (!match) throw new Error(`no state file found under ${dir}`);
+	return join(dir, match);
 }
 
 interface FakeGhOptions {
 	inProgress?: string;
 	poll?: string;
 	baseline?: string;
+	baselineExit?: number;
 	dispatchExit?: number;
 	watchExit?: number;
 }
@@ -84,7 +82,7 @@ function fakeGhScript(opts: FakeGhOptions): string {
     ;;
   *"--limit 1 --json databaseId"*)
     printf '%s\\n' '${opts.baseline ?? "[]"}'
-    exit 0
+    exit ${opts.baselineExit ?? 0}
     ;;
   *"workflow run"*)
     exit ${opts.dispatchExit ?? 0}
@@ -219,6 +217,153 @@ describe("test-live setup/cleanup — happy path", () => {
 		expect(cleanupResult.code, cleanupResult.stderr).toBe(0);
 		expect(cleanupResult.stdout).toContain("nothing to revert");
 		expect(headSha(repo)).toBe(preSha);
+	});
+});
+
+const DEPLOY_JOB = "jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps: []\n";
+
+describe("test-live setup — on: form variants", () => {
+	test("patches a scalar on: push into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: push\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4001) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: {}, workflow_dispatch: {} });
+	});
+
+	test("patches a flow-array on: [push, pull_request] into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: [push, pull_request]\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4002) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({
+			push: {},
+			pull_request: {},
+			workflow_dispatch: {},
+		});
+	});
+
+	test("patches a block-sequence on: [- push, - pull_request] into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non:\n  - push\n  - pull_request\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4003) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({
+			push: {},
+			pull_request: {},
+			workflow_dispatch: {},
+		});
+	});
+
+	test("a scalar on: workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: workflow_dispatch\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4004) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a flow-array already containing workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: [push, workflow_dispatch]\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4005) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a block-sequence already containing workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non:\n  - push\n  - workflow_dispatch\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4006) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("patches an empty flow-mapping on: {} into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {}\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4007) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ workflow_dispatch: {} });
+	});
+
+	test("patches a flow-mapping on: {push: null} into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {push: null}\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4008) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: null, workflow_dispatch: {} });
+	});
+
+	test("patches a flow-mapping on: {push} (implicit-null shorthand) into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {push}\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4010) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: null, workflow_dispatch: {} });
+	});
+
+	test("a flow-mapping already containing workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {workflow_dispatch: null}\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4009) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a workflow with no on: key refuses instead of writing invalid YAML", async () => {
+		const workflowContent = `name: Deploy\n${DEPLOY_JOB}`;
+		const { repo } = buildRepoWithWorkflow(workflowContent);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath() });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("could not find a usable 'on:' trigger to patch");
+		expect(headSha(repo)).toBe(preSha);
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).toBe(workflowContent);
 	});
 });
 
@@ -371,6 +516,14 @@ describe("test-live setup — dispatch/push/watch failures", () => {
 		expect(result.stderr).toContain("dispatch failed");
 	});
 
+	test("a failed previous-run lookup dies instead of watching a stale run", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ baselineExit: 1, poll: runRow(9009) }) });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("failed to list previous runs");
+	});
+
 	test("a watch failure surfaces the run's own exit status", async () => {
 		const { repo } = buildRepo();
 		const env = baseEnv({ path: fakeGhPath({ poll: runRow(8008), watchExit: 7 }) });
@@ -436,6 +589,23 @@ describe("test-live cleanup — corrupt state file", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).not.toContain("no state file");
 		expect(result.stderr).toContain("corrupt");
+	});
+
+	test("a git merge-base failure dies instead of being treated as 'already recovered'", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(9502) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+
+		const stateFile = findStateFile(env.AI_STATE_DIR);
+		const state = JSON.parse(readFileSync(stateFile, "utf8")) as { patchCommitSha: string };
+		state.patchCommitSha = "deadbeef".repeat(5);
+		writeFileSync(stateFile, JSON.stringify(state));
+
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("git merge-base failed");
 	});
 });
 

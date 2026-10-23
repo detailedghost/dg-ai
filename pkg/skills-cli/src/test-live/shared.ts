@@ -2,6 +2,8 @@ import { runCapture } from "@dg/common/node";
 
 export class TestLiveError extends Error {}
 
+export const PATCH_MARKER = "workflow_dispatch: {}  # TEST-LIVE: temporary";
+
 export function makeDie(prefix: string): (message: string) => number {
 	return (message: string) => {
 		process.stderr.write(`${prefix}: ${message}\n`);

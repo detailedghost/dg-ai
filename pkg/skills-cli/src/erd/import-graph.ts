@@ -151,18 +151,28 @@ export function collectImportGraph(opts: CollectImportGraphOptions): CollectImpo
 		const ext = path.extname(relPath);
 		if (!ALLOWED_EXTENSIONS.includes(ext)) continue;
 
-		const stat = fs.statSync(absPath);
-		if (stat.size > maxFileSizeBytes) {
-			evidence.push({ type: "file", ref: relPath, detail: "skipped: exceeds size cap" });
+		let content: string;
+		try {
+			const stat = fs.statSync(absPath);
+			if (stat.size > maxFileSizeBytes) {
+				evidence.push({ type: "file", ref: relPath, detail: "skipped: exceeds size cap" });
+				continue;
+			}
+
+			if (hasNullByte(absPath)) {
+				evidence.push({ type: "file", ref: relPath, detail: "skipped: binary file" });
+				continue;
+			}
+
+			content = fs.readFileSync(absPath, "utf8");
+		} catch (err) {
+			evidence.push({
+				type: "file",
+				ref: relPath,
+				detail: `skipped: could not read file (${(err as Error).message})`,
+			});
 			continue;
 		}
-
-		if (hasNullByte(absPath)) {
-			evidence.push({ type: "file", ref: relPath, detail: "skipped: binary file" });
-			continue;
-		}
-
-		const content = fs.readFileSync(absPath, "utf8");
 		const lines = content.split("\n");
 		const isPython = ext === ".py";
 		const regexes = isPython

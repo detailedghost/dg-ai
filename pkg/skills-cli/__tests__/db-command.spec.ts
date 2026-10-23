@@ -131,6 +131,50 @@ describe("db command specification", () => {
 		expect(fixture.end).toHaveBeenCalledTimes(1);
 	});
 
+	test("accepts a positional SQL argument that starts with a hyphen when passed after --", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const sql = "-- find active users\nSELECT 1";
+		const code = await fixture.spec.subcommands.query?.run(["my-pg", "--", sql], {
+			json: false,
+			help: false,
+		});
+		expect(code).toBeUndefined();
+		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, sql);
+	});
+
+	test("rejects a hyphen-led SQL argument passed without -- and names the -- escape", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const sql = "-- find active users\nSELECT 1";
+		const code = await fixture.spec.subcommands.query?.run(["my-pg", sql], {
+			json: false,
+			help: false,
+		});
+		expect(code).toBe(1);
+		expect(fixture.stderr[0]).toContain("after '--'");
+		expect(fixture.pgQuery).not.toHaveBeenCalled();
+	});
+
+	test("rejects an unrecognized flag with a clear error instead of swallowing the SQL text", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.query?.run(
+			["my-pg", "--typo-flag", "SELECT 1"],
+			{ json: false, help: false },
+		);
+		expect(code).toBe(1);
+		expect(fixture.stderr[0]).toContain("--typo-flag");
+		expect(fixture.pgQuery).not.toHaveBeenCalled();
+	});
+
+	test("a flag placed before the SQL positional still works", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.query?.run(
+			["my-pg", "--write", "DELETE FROM users"],
+			{ json: false, help: false },
+		);
+		expect(code).toBeUndefined();
+		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, "DELETE FROM users");
+	});
+
 	test("rejects a non-numeric --limit with a clear error instead of silently emptying the result", async () => {
 		const fixture = harness({ record: credentialRecord() });
 		const code = await fixture.spec.subcommands.query?.run(

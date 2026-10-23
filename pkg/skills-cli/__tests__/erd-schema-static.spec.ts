@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { DEFAULT_MAX_FILE_SIZE_BYTES, parseDbtSources, parseSqlMigrations } from "../src/erd/schema-static";
+import { findNodeByLabel, writeScopedFile } from "./cli-fixtures";
 
 let scopeDir: string;
 
@@ -16,15 +17,10 @@ afterEach(() => {
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = join(scopeDir, relPath);
-	mkdirSync(dirname(abs), { recursive: true });
-	writeFileSync(abs, content);
-	return abs;
+	return writeScopedFile(scopeDir, relPath, content);
 }
 
-function findNode<T extends { label: string }>(nodes: T[], label: string): T | undefined {
-	return nodes.find((n) => n.label === label);
-}
+const findNode = findNodeByLabel;
 
 describe("parseSqlMigrations", () => {
 	test("extracts one DbNode per CREATE TABLE with columns and types", () => {
@@ -47,6 +43,53 @@ describe("parseSqlMigrations", () => {
 		expect(columnNames).toEqual(["email", "id", "name"]);
 		const idCol = users?.columns.find((c) => c.name === "id");
 		expect(idCol?.dataType.toLowerCase()).toContain("uuid");
+	});
+
+	test("extracts a table from a schema-qualified CREATE TABLE statement", () => {
+		writeFile(
+			"migrations/0001_create_users.sql",
+			`CREATE TABLE "public"."users" (
+				id UUID PRIMARY KEY,
+				email TEXT NOT NULL
+			);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(nodes).toHaveLength(1);
+		const users = findNode(nodes, "users");
+		expect(users).toBeDefined();
+		const columnNames = users?.columns.map((c) => c.name).sort();
+		expect(columnNames).toEqual(["email", "id"]);
+	});
+
+	test("same-named tables in two different schemas do not merge into one node", () => {
+		writeFile(
+			"migrations/0001_create_auth_users.sql",
+			`CREATE TABLE "auth"."users" (
+				id UUID PRIMARY KEY,
+				password_hash TEXT NOT NULL
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_public_users.sql",
+			`CREATE TABLE "public"."users" (
+				id UUID PRIMARY KEY,
+				display_name TEXT NOT NULL
+			);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(nodes).toHaveLength(2);
+		const authUsers = nodes.find((n) => n.id === "auth.users");
+		const publicUsers = nodes.find((n) => n.id === "public.users");
+		expect(authUsers).toBeDefined();
+		expect(publicUsers).toBeDefined();
+		expect(authUsers?.schema).toBe("auth");
+		expect(publicUsers?.schema).toBe("public");
+		expect(authUsers?.columns.map((c) => c.name).sort()).toEqual(["id", "password_hash"]);
+		expect(publicUsers?.columns.map((c) => c.name).sort()).toEqual(["display_name", "id"]);
 	});
 
 	test("inline REFERENCES produces a DbEdge with confidence proven", () => {
@@ -129,6 +172,96 @@ describe("parseSqlMigrations", () => {
 			fromColumn: "order_id",
 			toColumn: "id",
 			confidence: "proven",
+		});
+	});
+
+	test("an unqualified FK target resolves to the referencing table's own schema when it lives there", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_auth_sessions.sql",
+			`CREATE TABLE "auth"."sessions" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES accounts(id)
+			);`,
+		);
+
+		const { edges } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "auth.sessions",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
+		});
+	});
+
+	test("an unqualified FK target ambiguous between its own schema and public is downgraded to inferred confidence", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_public_accounts.sql",
+			`CREATE TABLE "public"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0003_create_auth_sessions.sql",
+			`CREATE TABLE "auth"."sessions" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES accounts(id)
+			);`,
+		);
+
+		const { edges, evidence } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "auth.sessions",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
+			confidence: "inferred",
+		});
+		expect(
+			evidence.some(
+				(e) => e.ref === "auth.sessions" && e.detail?.includes("ambiguous target"),
+			),
+		).toBe(true);
+	});
+
+	test("a schema-qualified FK target resolves to its own schema, not the referencing table's", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_billing_invoices.sql",
+			`CREATE TABLE "billing"."invoices" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES "auth"."accounts"(id)
+			);`,
+		);
+
+		const { edges } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "billing.invoices",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
 		});
 	});
 
@@ -348,6 +481,53 @@ describe("parseDbtSources", () => {
 		expect(result.nodes).toHaveLength(0);
 		const sizeEvidence = result.evidence.find((e) => e.ref.includes("sources.yml"));
 		expect(sizeEvidence?.detail).toContain(String(DEFAULT_MAX_FILE_SIZE_BYTES));
+	});
+
+	test("starts a new group when a second source begins while the first source's tables block is still open", () => {
+		writeFile(
+			"models/staging/sources.yml",
+			[
+				"version: 2",
+				"sources:",
+				"  - name: raw",
+				"    tables:",
+				"      - name: customers",
+				"      - name: events",
+				"  - name: analytics",
+				"    tables:",
+				"      - name: sessions",
+			].join("\n"),
+		);
+
+		const result = parseDbtSources(scopeDir);
+
+		const schemaByLabel = new Map(result.nodes.map((n) => [n.label, n.schema]));
+		expect(schemaByLabel.get("customers")).toBe("raw");
+		expect(schemaByLabel.get("events")).toBe("raw");
+		expect(schemaByLabel.get("sessions")).toBe("analytics");
+		expect(result.nodes).toHaveLength(3);
+	});
+
+	test("does not mistake a table's nested columns for sibling tables", () => {
+		writeFile(
+			"models/staging/sources.yml",
+			[
+				"version: 2",
+				"sources:",
+				"  - name: raw",
+				"    tables:",
+				"      - name: customers",
+				"        columns:",
+				"          - name: id",
+				"          - name: email",
+				"      - name: events",
+			].join("\n"),
+		);
+
+		const result = parseDbtSources(scopeDir);
+
+		const labels = result.nodes.map((n) => n.label).sort();
+		expect(labels).toEqual(["customers", "events"]);
 	});
 
 	test("does not descend into node_modules when discovering sources.yml files", () => {

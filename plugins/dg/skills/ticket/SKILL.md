@@ -102,13 +102,16 @@ name) to resolve it to an id before setting the field.
    meta the same way.
 4. **Resolve sprint** — unless `--no-sprint`, resolve to a sprint id per "How to find the
    latest sprint" above (using `--sprint` override if given).
-5. **Check for duplicates** — before creating, run:
+5. **Check for duplicates** — before creating, escape any `"` in the summary as `\"`, then
+   run:
    ```
    searchJiraIssuesUsingJql:
      cloudId: <registered cloudId>
-     jql: "project = <PROJECT> AND summary ~ \"<exact summary>\""
+     jql: "project = <PROJECT> AND summary ~ \"<escaped summary>\""
    ```
-   If an issue with that exact summary already exists, do NOT create another — report the
+   `~` is a fuzzy text match, not equality — compare each returned issue's actual `summary`
+   field to the input summary text. Only an exact match counts as a duplicate; a partial or
+   unrelated match does not. If an exact match exists, do NOT create another — report the
    existing key + URL and stop.
 6. **Create the issue** via `createJiraIssue`:
    - `cloudId`: the registered `cloudId`
