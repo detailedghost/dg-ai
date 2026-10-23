@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { X509Certificate } from "node:crypto";
+import { createServer as createTlsServer, type TLSSocket } from "node:tls";
 import type { InboxProfile } from "@dg/common";
 import { defaultConfig } from "../../config/defaults";
 import type { AppConfig } from "../../config/types";
@@ -6,7 +8,7 @@ import { hashId } from "../../privacy/hash";
 import { bindInboxRuntime, type InboxRuntime } from "../../runtime";
 import {
 	connectionErrorFor,
-	tlsOptionsFor,
+	createPinnedImapTransport,
 	verifyFingerprint,
 	type BridgeAppendResult,
 	type BridgeConnectionOptions,
@@ -20,6 +22,7 @@ import {
 	type BridgeSource,
 	type BridgeStructurePart,
 } from "../bridge-adapter";
+import { TEST_BRIDGE_CERT_PEM, TEST_BRIDGE_KEY_PEM } from "./fixtures/test-bridge-tls";
 import {
 	createProtonBridgeMailAccessClientWithFactories,
 	type BridgeSessionFactories,
@@ -201,6 +204,12 @@ describe("BridgeMailAccessClient.listMessages", () => {
 		expect(page.hasMore).toBe(false);
 	});
 
+	test("a subject with a double quote reaches search() unescaped; imapflow quotes it on the wire", async () => {
+		const { client, session } = buildClient({});
+		await client.searchMessages({ folderId: "inbox", text: 'say "hi"', limit: 20, page: 0 });
+		expect(session.searchCalls[0]?.criteria.text).toBe('say "hi"');
+	});
+
 	test("--folder Receipts resolves Folders/Receipts", async () => {
 		const { client, session } = buildClient({});
 		await client.listMessages({ folderId: "Receipts", limit: 20, page: 0 });
@@ -368,7 +377,7 @@ describe("BridgeMailAccessClient connection errors", () => {
 	});
 });
 
-describe("bridge-adapter TLS and connection-error mapping", () => {
+describe("bridge-adapter connection-error mapping", () => {
 	const options: BridgeConnectionOptions = {
 		host: "127.0.0.1",
 		imapPort: 1143,
@@ -378,19 +387,6 @@ describe("bridge-adapter TLS and connection-error mapping", () => {
 		credentialName: "inbox/protonmail-bridge/work",
 	};
 
-	test("rejectUnauthorized is false for a loopback host with no fingerprint", () => {
-		const tls = tlsOptionsFor("127.0.0.1", undefined);
-		expect(tls.rejectUnauthorized).toBe(false);
-		expect(tls.checkServerIdentity("127.0.0.1", { fingerprint256: "AA:BB" } as never)).toBeUndefined();
-	});
-
-	test("a configured fingerprint that matches passes, and a mismatch throws", () => {
-		const tls = tlsOptionsFor("127.0.0.1", "aabbcc");
-		expect(tls.checkServerIdentity("127.0.0.1", { fingerprint256: "aa:bb:cc" } as never)).toBeUndefined();
-		const mismatch = tls.checkServerIdentity("127.0.0.1", { fingerprint256: "dd:ee:ff" } as never);
-		expect(mismatch?.message).toBe("Proton Bridge certificate fingerprint does not match the profile");
-	});
-
 	test("verifyFingerprint is a pure comparison", () => {
 		expect(verifyFingerprint({ fingerprint256: "AA:BB:CC" }, "aabbcc")).toBeUndefined();
 		expect(verifyFingerprint({ fingerprint256: "AA:BB:CC" }, "000000")?.message).toBe(
@@ -398,8 +394,10 @@ describe("bridge-adapter TLS and connection-error mapping", () => {
 		);
 	});
 
-	test("a non-loopback host throws even if the profile validator is bypassed", () => {
-		expect(() => tlsOptionsFor("10.0.0.5", undefined)).toThrow("Proton Bridge host must be loopback");
+	test("createPinnedImapTransport throws for a non-loopback host, even if the profile validator is bypassed", () => {
+		expect(() => createPinnedImapTransport("10.0.0.5", undefined)).toThrow(
+			"Proton Bridge host must be loopback",
+		);
 	});
 
 	test("connection refused maps to the reachability sentence with host and port", () => {
@@ -409,10 +407,82 @@ describe("bridge-adapter TLS and connection-error mapping", () => {
 		);
 	});
 
-	test("an IMAP NO on login maps to the credential-update sentence", () => {
-		const error = connectionErrorFor(options, 1143, new Error("Command failed: NO [AUTHENTICATIONFAILED] login failed"));
+	test("an IMAP authenticationFailed error maps to the credential-update sentence", () => {
+		const error = connectionErrorFor(options, 1143, Object.assign(new Error("Authentication failed"), { authenticationFailed: true }));
 		expect(error.message).toBe(
 			"Proton Bridge rejected the login; update the credential inbox/protonmail-bridge/work",
 		);
+	});
+});
+
+/**
+ * The only tests in this file that open a real socket: verifying the fingerprint pin requires
+ * a real TLS handshake against a real self-signed certificate, because `checkServerIdentity`
+ * (the obvious, inert approach this slice first shipped and then corrected) is never invoked
+ * by Node once chain validation has already failed, which it always does for a self-signed
+ * cert. There is no way to prove the pin works, or that it fails closed, without one.
+ */
+describe("createPinnedImapTransport against a real TLS handshake", () => {
+	const cert = TEST_BRIDGE_CERT_PEM;
+	const key = TEST_BRIDGE_KEY_PEM;
+	const realFingerprint = new X509Certificate(cert).fingerprint256;
+
+	async function withTlsServer(
+		run: (port: number) => Promise<void>,
+	): Promise<void> {
+		const server = createTlsServer({ cert, key }, (socket) => socket.end());
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("no port assigned");
+			await run(address.port);
+		} finally {
+			server.close();
+		}
+	}
+
+	async function handshake(port: number, certFingerprint: string | undefined): Promise<{
+		securedCalled: boolean;
+		socketError: Error | undefined;
+	}> {
+		const transport = createPinnedImapTransport("127.0.0.1", certFingerprint);
+		const plain = transport.connect({ host: "127.0.0.1", port, secure: false }, () => {});
+		await new Promise<void>((resolve) => plain.once("connect", resolve));
+		return await new Promise((resolve) => {
+			let securedCalled = false;
+			const tlsSocket = transport.upgrade!(plain, { host: "127.0.0.1", port }, () => {
+				securedCalled = true;
+			}) as TLSSocket;
+			tlsSocket.on("error", (error: Error) => resolve({ securedCalled, socketError: error }));
+			tlsSocket.on("secureConnect", () => {
+				setTimeout(() => resolve({ securedCalled, socketError: undefined }), 50);
+			});
+		});
+	}
+
+	test("no fingerprint configured calls onSecure", async () => {
+		await withTlsServer(async (port) => {
+			const result = await handshake(port, undefined);
+			expect(result.securedCalled).toBe(true);
+			expect(result.socketError).toBeUndefined();
+		});
+	});
+
+	test("a matching fingerprint calls onSecure", async () => {
+		await withTlsServer(async (port) => {
+			const result = await handshake(port, realFingerprint.replace(/:/g, ""));
+			expect(result.securedCalled).toBe(true);
+			expect(result.socketError).toBeUndefined();
+		});
+	});
+
+	test("a mismatched fingerprint never calls onSecure and destroys the socket instead", async () => {
+		await withTlsServer(async (port) => {
+			const result = await handshake(port, "00".repeat(32));
+			expect(result.securedCalled).toBe(false);
+			expect(result.socketError?.message).toBe(
+				"Proton Bridge certificate fingerprint does not match the profile",
+			);
+		});
 	});
 });

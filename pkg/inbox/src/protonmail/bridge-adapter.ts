@@ -1,5 +1,11 @@
-import type { PeerCertificate } from "node:tls";
-import { ImapFlow } from "imapflow";
+import { connect as connectPlainSocket } from "node:net";
+import { connect as connectTlsSocket, type PeerCertificate } from "node:tls";
+import {
+	ImapFlow,
+	type ImapTransport,
+	type ImapTransportConnectOptions,
+	type ImapTransportSocket,
+} from "imapflow";
 import nodemailer from "nodemailer";
 
 export type BridgeMailboxInfo = {
@@ -112,12 +118,51 @@ export function verifyFingerprint(
 	return undefined;
 }
 
-export function tlsOptionsFor(host: string, certFingerprint: string | undefined) {
+/**
+ * A `secure:false` TLS option on `ImapFlow`/nodemailer only wires up Node's default
+ * `checkServerIdentity`, and Node never calls that hook once chain validation has already
+ * failed — which it always does for Bridge's self-signed certificate. `rejectUnauthorized:
+ * false` is what lets the handshake proceed despite that, and nothing then re-checks the
+ * cert; `checkServerIdentity` genuinely never runs. A fingerprint can only be enforced by
+ * taking over the TLS upgrade ourselves, which ImapFlow's `transport` option allows and
+ * nodemailer's SMTP transport does not (see `createBridgeSmtpSender`'s doc comment).
+ *
+ * This transport opens the cleartext socket, lets ImapFlow drive STARTTLS, then performs the
+ * TLS handshake itself: `getPeerCertificate()` is read the moment the handshake completes,
+ * before `onSecure()` is called, so a mismatch destroys the socket without ever calling it —
+ * ImapFlow's LOGIN never goes out. No fingerprint configured skips the check and pins on
+ * loopback alone, as today.
+ */
+export function createPinnedImapTransport(
+	host: string,
+	certFingerprint: string | undefined,
+): ImapTransport {
 	requireLoopbackHost(host);
 	return {
-		rejectUnauthorized: false,
-		checkServerIdentity(_hostname: string, cert: PeerCertificate): Error | undefined {
-			return certFingerprint ? verifyFingerprint(cert, certFingerprint) : undefined;
+		connect(connectOptions: ImapTransportConnectOptions, onConnect: () => void): ImapTransportSocket {
+			return connectPlainSocket({ host: connectOptions.host, port: connectOptions.port }, onConnect);
+		},
+		upgrade(
+			socket: ImapTransportSocket,
+			upgradeOptions,
+			onSecure: () => void,
+		): ImapTransportSocket {
+			const tlsSocket = connectTlsSocket({
+				socket,
+				servername: upgradeOptions.servername,
+				rejectUnauthorized: false,
+			});
+			tlsSocket.once("secureConnect", () => {
+				if (certFingerprint) {
+					const mismatch = verifyFingerprint(tlsSocket.getPeerCertificate(), certFingerprint);
+					if (mismatch) {
+						tlsSocket.destroy(mismatch);
+						return;
+					}
+				}
+				onSecure();
+			});
+			return tlsSocket;
 		},
 	};
 }
@@ -129,12 +174,12 @@ export function connectionErrorFor(options: BridgeConnectionOptions, port: numbe
 			`Proton Bridge is not reachable on ${options.host}:${port}; start Proton Bridge and check the profile`,
 		);
 	}
-	const message = error instanceof Error ? error.message : String(error);
-	if (/\bNO\b/.test(message) && /login|auth/i.test(message)) {
+	if ((error as { authenticationFailed?: boolean } | undefined)?.authenticationFailed) {
 		return new Error(
 			`Proton Bridge rejected the login; update the credential ${options.credentialName}`,
 		);
 	}
+	const message = error instanceof Error ? error.message : String(error);
 	return error instanceof Error ? error : new Error(message);
 }
 
@@ -265,13 +310,14 @@ class RealBridgeImapSession implements BridgeImapSession {
 export async function createBridgeImapSession(
 	options: BridgeConnectionOptions,
 ): Promise<BridgeImapSession> {
+	requireLoopbackHost(options.host);
 	const client = new ImapFlow({
 		host: options.host,
 		port: options.imapPort,
 		secure: false,
 		logger: false,
 		auth: { user: options.username, pass: options.password },
-		tls: tlsOptionsFor(options.host, options.certFingerprint),
+		transport: createPinnedImapTransport(options.host, options.certFingerprint),
 	});
 	try {
 		await client.connect();
@@ -281,16 +327,27 @@ export async function createBridgeImapSession(
 	return new RealBridgeImapSession(client);
 }
 
+/**
+ * nodemailer's SMTP transport has no equivalent to ImapFlow's pluggable `transport.upgrade`:
+ * `getSocket` only replaces the initial cleartext connect, and the STARTTLS handshake itself
+ * is internal and not interceptable. A `certFingerprint` is therefore NOT enforced on the SMTP
+ * connection; `rejectUnauthorized: false` only tolerates Bridge's self-signed certificate, the
+ * same as before any pinning existed. `createBridgeImapSession` runs first on every send and
+ * does pin, which is a partial mitigation (the same local Bridge instance normally serves both
+ * ports) but not a guarantee independent of it. See the slice 3 report for the open question
+ * this leaves for a human decision.
+ */
 export async function createBridgeSmtpSender(
 	options: BridgeConnectionOptions,
 ): Promise<BridgeSmtpSender> {
+	requireLoopbackHost(options.host);
 	const transport = nodemailer.createTransport({
 		host: options.host,
 		port: options.smtpPort,
 		secure: false,
 		requireTLS: true,
 		auth: { user: options.username, pass: options.password },
-		tls: tlsOptionsFor(options.host, options.certFingerprint),
+		tls: { rejectUnauthorized: false },
 	});
 	return {
 		async send(mime: Buffer, envelope: { from: string; to: string[] }): Promise<void> {
