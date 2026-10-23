@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { runCapture } from "@dg/common/node";
-import { runNative } from "./process";
+import { runCapture, runNative } from "@dg/common/node";
 
 function isFile(path: string): boolean {
 	try {

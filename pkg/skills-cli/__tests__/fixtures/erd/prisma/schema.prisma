@@ -1,0 +1,12 @@
+model Org {
+  id    String @id
+  users User[]
+  @@map("orgs")
+}
+
+model User {
+  id    String @id
+  orgId String
+  org   Org @relation(fields: [orgId], references: [id])
+  @@map("users")
+}

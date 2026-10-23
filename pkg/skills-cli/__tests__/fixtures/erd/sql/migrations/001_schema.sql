@@ -1,0 +1,9 @@
+CREATE TABLE orgs (
+  id UUID PRIMARY KEY
+);
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  org_id UUID NOT NULL REFERENCES orgs(id),
+  email TEXT NOT NULL
+);

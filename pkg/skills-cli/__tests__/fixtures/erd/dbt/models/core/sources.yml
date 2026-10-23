@@ -1,0 +1,6 @@
+version: 2
+sources:
+  - name: warehouse
+    tables:
+      - name: orgs
+      - name: users
