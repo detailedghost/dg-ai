@@ -1,4 +1,4 @@
-# 0020 — Require a human browser click for outgoing mail
+# 0021 — Require a human browser click for outgoing mail
 
 Status: Proposed
 Date: 2026-10-23
