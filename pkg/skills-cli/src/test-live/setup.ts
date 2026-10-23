@@ -27,10 +27,6 @@ function gh(args: string[]) {
 	return runCapture("gh", args, { stdin: null });
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function parseGhRuns(stdout: string): GhRun[] {
 	try {
 		const rows = JSON.parse(stdout) as unknown;
@@ -202,7 +198,7 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 				break;
 			}
 		}
-		if (attempt < deps.pollMaxAttempts - 1) await sleep(deps.pollIntervalMs);
+		if (attempt < deps.pollMaxAttempts - 1) await Bun.sleep(deps.pollIntervalMs);
 	}
 
 	if (!runId) {

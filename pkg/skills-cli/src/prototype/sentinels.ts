@@ -21,10 +21,6 @@ export function writeSentinel(path: string, contents: string): void {
 	writeFileAtomic(path, contents);
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** Remove consumed sentinel files; a failed removal warns on stderr instead of failing the claim. */
 export function removeSentinels(...paths: string[]): void {
 	let failed = false;
@@ -78,7 +74,7 @@ async function poll<T>(
 		if (found !== undefined) return found;
 		const remaining = deadline - Date.now();
 		if (remaining <= 0) return undefined;
-		await sleep(Math.min(POLL_MS, remaining));
+		await Bun.sleep(Math.min(POLL_MS, remaining));
 	}
 }
 
