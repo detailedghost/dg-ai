@@ -163,8 +163,6 @@ describe("renderTourOverlayStep — content", () => {
 			step: baseStep,
 			target: null,
 		});
-		// The style lives beside `layer` in whichever root this call mounted into
-		// (a caller's root, or the self-created shadow root) — walk up to find it.
 		const mountRoot = layer.getRootNode() as ParentNode;
 		const style = mountRoot.querySelector("style");
 		expect(style?.textContent).toBe(TOUR_OVERLAY_TOKENS_CSS);
@@ -201,24 +199,13 @@ describe("renderTourOverlayStep — mount boundary", () => {
 });
 
 describe("renderTourOverlayStep — cross-realm safety (dg-skills pw's page.evaluateHandle call)", () => {
-	// `page.evaluateHandle(renderTourOverlayStep, opts)` ships this function's source
-	// text to a fresh browser realm via Function.prototype.toString() and re-parses it
-	// there — any reference to a module-level import, constant, or sibling helper would
-	// throw a ReferenceError in that realm even though a direct same-realm call (the
-	// extension's) never notices. Rebuilding it from its own toString() and running it
-	// is the only way to catch that without an actual second JS realm.
 	it("has no transpiler-emitted helper calls that would be undefined in a fresh realm", () => {
-		// Bun/tsc sometimes lower spread/object-rest/class-field syntax into calls to a
-		// shared __spreadValues/__assign/__rest/__name helper hoisted to module scope —
-		// invisible here (same realm, same module), but a ReferenceError the moment this
-		// function's source text runs anywhere else, including inside a real page.
 		expect(renderTourOverlayStep.toString()).not.toMatch(
 			/\b__spread\w*|__assign\b|__rest\b|__name\b/,
 		);
 	});
 
 	it("still runs correctly when reconstructed purely from its own source text", () => {
-		// biome-ignore lint: deliberately re-parsing the function's own source, same trick Playwright uses.
 		const rebuilt = new Function(
 			`return (${renderTourOverlayStep.toString()});`,
 		)() as typeof renderTourOverlayStep;
@@ -235,10 +222,6 @@ describe("renderTourOverlayStep — cross-realm safety (dg-skills pw's page.eval
 });
 
 describe("renderTourOverlayStep — shared-module parity", () => {
-	// The contract the spec asks for: one TourScript step, rendered through the
-	// extension's calling convention (a supplied shadow root) and through
-	// dg-skills pw's calling convention (no root, reconstructed from source text
-	// the way page.evaluateHandle serializes it), must produce the same overlay.
 	it("renders the same spotlight and callout content both ways for one step", () => {
 		const step: TourOverlayStep = {
 			...baseStep,
@@ -253,7 +236,6 @@ describe("renderTourOverlayStep — shared-module parity", () => {
 			container,
 		);
 
-		// biome-ignore lint: see the cross-realm safety test above.
 		const rebuilt = new Function(
 			`return (${renderTourOverlayStep.toString()});`,
 		)() as typeof renderTourOverlayStep;

@@ -1,20 +1,6 @@
-/**
- * Shared tour-overlay renderer: the spotlight highlight and the explanatory
- * callout card that both the browser extension and `dg-skills pw` draw for a
- * `TourScript` step. Pure DOM, no imports — the extension bundles it like any
- * other `@dg/common` module, and `dg-skills pw` hands the exported function
- * straight to Playwright's `page.evaluateHandle()`, which serializes it with
- * `Function.prototype.toString()` and re-runs it inside the real page. That
- * means this function may not close over anything outside its own body: no
- * module-level helpers, no imports, nothing but its parameter and the DOM
- * globals every page already has. Keep every helper nested inside it.
- *
- * Interactive chrome (Next/Back controls, the review stepper, narration
- * modals) stays in the extension — it has no meaning for an unattended
- * recording and would break the no-outer-scope rule above anyway.
- */
+/** Spotlight + callout renderer shared by the extension and `dg-skills pw`; must stay import-free so `page.evaluateHandle` can run it in a fresh realm. */
 
-/** Color tokens the overlay's highlight/card read via `var(--…)`. Dark is the default; light is opt-in via `data-theme="light"` on the host. Identical to the token half of the extension's `DEMO_THEME_CSS` — see `pkg/common/__tests__/tour-overlay.spec.ts` for the equality guard. */
+/** Color tokens the overlay reads via `var(--…)`; dark is the default, light opts in via `data-theme="light"` on the host. */
 export const TOUR_OVERLAY_TOKENS_CSS = `
 :host {
   --panel: #111111; --ink: #e8e8e8; --muted: #8a8a8a;
