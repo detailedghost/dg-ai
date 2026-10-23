@@ -1445,6 +1445,30 @@ Ported test-live (see the commit message on 96175a3 for the two approved fixes p
 
 Evidence: test-live.spec.ts (15 tests) covers the GitLab refusal before any mutation, the happy path end to end including cleanup, an already-dispatchable workflow, a later commit surviving cleanup via `rebase --onto`, the resume refusal, missing-state/wrong-branch/uncommitted-changes cleanup refusals, an in-progress-run warning, dispatch/watch/push failures, cross-repo/cross-branch state scoping, and a poll timeout. Full-suite run after the release commit: common 502, skills-test 956, skills-cli 3007 (2999 pass, 1 skip, 7 known local-browser fails — dashboard real-browser plus 6 `demo --verify`, pre-existing and unrelated to this slice), dg-agent 309, dg-daemon 673 (2 skip), channel-review 1536 (4 skip), extension 899 (1 skip), inbox 177; all eight `tsc --noEmit` lints clean. Not done in this slice: opening the Wave 5 draft PR (gated behind human approval per the Wave Execution Contract) and the matched-base/head/URL acceptance line, which cannot be satisfied without that PR.
 
+### Slice 20 — w5-db (fa17f4d)
+
+Ported db-query to `dg-skills db` (query, tables, describe, explain, schema, connections, test) through `registerLegacyCommand`. Connections resolve from `db/<conn>` credentials only — no `connections.json` fallback — with optional schema, private-key-path, SSO (`authenticator: external_browser`, cache and browser-action-timeout metadata), warehouse, role and account fields, and a key-file permission check (600/400) on the private key path. The read-safe classifier blocks DML/DDL/write CTEs/`SELECT INTO`/multi-statement SQL unless `--write` is given.
+
+Evidence: db-command, db-credentials, db-engines, db-output and db-safety suites (46 tests) plus db-compiled (part of the same 46) pass; db-safety specifically covers CTE writes, trailing write-after-read-CTE, top-level vs nested `SELECT INTO`, `SET`-then-write and `--write` override. Left unchecked in this release pass: the Engineering/Acceptance bullets about testing compiled pg/snowflake SDK initialization and auth *under compile* and a recorded packaging gate — `db-compiled.spec.ts` only exercises credential-less paths (`list`, `--help`) from a compiled-style external cwd, not an actual compiled binary driving a live pg/snowflake connection, so that specific contract line is left unticked rather than assumed.
+
+### Slice 21 — w5-erd-eli5 (655ba8c)
+
+Ported erd-cli to `dg-skills erd` (resolve/generate/render) and moved eli5; erd is general-purpose Mermaid generation (`erDiagram`/`flowchart`/`sequenceDiagram`/`stateDiagram`/`classDiagram`, picked from the request or `--type`), Markdown-only output with an optional self-contained `--html` (pinned mermaid from cdn.jsdelivr.net, light/dark, opened locally). No Cytoscape, no viz board.
+
+Evidence: erd-cli, erd-compiled, erd-graph, erd-render, erd-schema, erd-schema-static and erd-schema-static-orm suites (59 tests) pass, covering golden Mermaid per diagram type, a structural syntax check, the `--html` file's single external asset, and a compiled external-cwd run against a fake live-schema child process. All Engineering/Testing/Acceptance boxes were already checked by the owning agent; this release pass re-ran the suites rather than re-deriving them.
+
+### Slice 23 — w5-ticket (70c9505, 05d1c27, e26322d)
+
+Moved the ticket skill to read site/cloudId/project/assignee/sprintField/issueTypes from `credentials list --meta ticket/jira` — an opt-in, metadata-only projection added to `dg-skills credentials` that exposes nonsecret meta without values and never changes the default `list` output. `issueTypes` is a JSON-encoded name-to-ID map with a required default type, validated before any Atlassian call. ticket/SKILL.md tells the user to register `ticket/jira` when it is missing, with no baked-in project/cloud/account/sprint identifiers left in the repo.
+
+Evidence: credentials-cli (18 tests) and skills-test's ticket-skill (5 tests) suites pass, covering metadata-only output never printing values, duplicate/assignee/integer-sprint behavior and the registration-guidance path. `bun run test:all`/`lint:all` green across the full matched set (see this slice's own full-suite run, below).
+
+### Slice 24 — w5-test-live-release (96175a3; release commit below)
+
+Ported test-live (see the commit message on 96175a3 for the two approved fixes plus three additional correctness improvements beyond a literal port, each called out there). Bumped the matched release set to 1.19.0 and updated the canonical skill index/docs for db, erd, eli5, ticket and test-live.
+
+Evidence: test-live.spec.ts (15 tests) covers the GitLab refusal before any mutation, the happy path end to end including cleanup, an already-dispatchable workflow, a later commit surviving cleanup via `rebase --onto`, the resume refusal, missing-state/wrong-branch/uncommitted-changes cleanup refusals, an in-progress-run warning, dispatch/watch/push failures, cross-repo/cross-branch state scoping, and a poll timeout. Full-suite run after the release commit: common 502, skills-test 956, skills-cli 3007 (2999 pass, 1 skip, 7 known local-browser fails — dashboard real-browser plus 6 `demo --verify`, pre-existing and unrelated to this slice), dg-agent 309, dg-daemon 673 (2 skip), channel-review 1536 (4 skip), extension 899 (1 skip), inbox 177; all eight `tsc --noEmit` lints clean. Not done in this slice: opening the Wave 5 draft PR (gated behind human approval per the Wave Execution Contract) and the matched-base/head/URL acceptance line, which cannot be satisfied without that PR.
+
 ## Agent Notes
 
 Planning synthesis is complete. Use the reviewed 30-slice ownership and Wave Execution Contract above. The raw roundtable evidence is quarantined from execute mode.
