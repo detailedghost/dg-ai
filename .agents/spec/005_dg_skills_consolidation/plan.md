@@ -1254,7 +1254,7 @@ Shipped early on PR #42 (2026-10-21), not in the Wave 6 PR. The Wave 6 PR body s
 ### Slice 27 — w6-demo-merge-release
 
 #### Engineering
-- [ ] Local is the default dg:demo mode (behavior change: plain /dg:demo becomes local; extension users add --ext). `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output.
+- [x] Local is the default dg:demo mode (behavior change: plain /dg:demo becomes local; extension users add --ext). `dg-skills pw` (slice 25) drives a Playwright Chromium to record video and take light/dark before/after screenshots, and also covers CLI/backend demos and the "commands to run locally" output.
 - [x] Local recordings match the extension's look: same TourScript plan format, same spotlight and explanatory text boxes. Move the overlay styles/rendering into one shared module (`pkg/common/src/tour-overlay.ts`) used by both the extension and `dg-skills pw`.
 - [ ] `--ext` uses the extension: its review/walkthrough/video choices and the upload-and-receipt flow below stay as planned.
 - [ ] `--attach-pr <ref>` works in both modes. Local mode uploads via pw with a saved GitHub login state, else hands over the files plus the PR link with no PR change. In `--ext` mode use the extension-assisted upload/receipt contract below. GitLab attachment reports unsupported before any mutation. Owned-artifact cleanup applies to both modes.
