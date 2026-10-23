@@ -60,7 +60,7 @@ flowchart LR
 
 - [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
-- [0020 — Require a human browser click for outgoing mail](0020-human-send-approval.md)
+- [0021 — Require a human browser click for outgoing mail](0021-human-send-approval.md)
 
 ## Adding an ADR
 
