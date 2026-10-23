@@ -14,6 +14,7 @@ import {
 	clearInvite,
 	createFileKey,
 	DEFAULT_RELAYS,
+	handleFor,
 	isKeyInStore,
 	markKeyInStore,
 	readConfig,
@@ -184,5 +185,20 @@ describe("resolveLine", () => {
 		writeConfig(linePaths(paths(), "b"), { contact: npub, relays: DEFAULT_RELAYS });
 
 		expect(() => resolveLine(paths(), npub)).toThrow("matches lines a, b");
+	});
+
+	it("accepts a leading @ on a line name or a contact name", () => {
+		writeConfig(linePaths(paths(), "consolidation"), { contact: npub, name: "velora", relays: DEFAULT_RELAYS });
+
+		expect(resolveLine(paths(), "@consolidation").name).toBe("consolidation");
+		expect(resolveLine(paths(), "@velora").name).toBe("consolidation");
+		expect(resolveLine(paths(), "@fresh").name).toBe("fresh");
+	});
+});
+
+describe("handleFor", () => {
+	it("is the contact name when one is set, else the line name", () => {
+		expect(handleFor({ relays: DEFAULT_RELAYS }, line)).toBe("@default");
+		expect(handleFor({ name: "velora", relays: DEFAULT_RELAYS }, line)).toBe("@velora");
 	});
 });

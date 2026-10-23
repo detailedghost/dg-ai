@@ -169,13 +169,14 @@ describe("phoneOn", () => {
 		expect(spawned).toBe(2);
 	});
 
-	it("starts with no contact while an invite waits for a call", async () => {
+	it("is a no-op once invite already started the listener with no contact", async () => {
 		await phoneInvite({}, deps());
+		expect(spawned).toBe(1);
 
 		await phoneOn(deps());
 
 		expect(spawned).toBe(1);
-		expect(lines().at(-1)).toMatchObject({ contact: null, status: "started" });
+		expect(lines().at(-1)).toMatchObject({ contact: null, status: "running" });
 	});
 
 	it("refuses with no contact and no invite, and says how to pair", async () => {
@@ -194,14 +195,30 @@ describe("phoneInvite", () => {
 	it("prints a card with our npub, the relays, and a fresh secret, and saves the invite", async () => {
 		await phoneInvite({ relay: ["wss://x.example"] }, deps());
 
-		const [{ card, expires_at }] = lines() as { card: string; expires_at: string }[];
+		const [{ card, expires_at, handle }] = lines() as { card: string; expires_at: string; handle: string }[];
 		const decoded = decodeCard(card, NOW);
 		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(myKey())));
 		expect(decoded.relays).toEqual(["wss://x.example"]);
 		expect(decoded.exp).toBe(NOW + 24 * 3600);
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
+		expect(handle).toBe("@default");
 		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
+	});
+
+	it("keeps the line's own handle at invite time; --name only takes effect once answered", async () => {
+		await phoneInvite({ name: "grok" }, deps());
+
+		const [{ handle }] = lines() as { handle: string }[];
+		expect(handle).toBe("@default");
+	});
+
+	it("starts the listener right away, so the card can ring without a separate on", async () => {
+		await phoneInvite({}, deps());
+
+		expect(spawned).toBe(1);
+		expect(existsSync(line.pidPath)).toBe(true);
+		expect(alive.has(4242)).toBe(true);
 	});
 
 	it("refuses relays that the other side could not dial, and saves nothing", async () => {
@@ -250,13 +267,22 @@ describe("phoneDial", () => {
 		const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
 		expect(rumor.content).toBe("hello");
 		expect(rumor.tags).toContainEqual(["dg-call", secret]);
-		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"] }]);
+		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"], handle: "@default" }]);
 	});
 
-	it("names the card owner when dial gets a name", async () => {
+	it("names the card owner when dial gets a name, and uses it as the handle", async () => {
 		await phoneDial(cardFor(), undefined, deps(), "dante");
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
+		expect(lines()).toMatchObject([{ handle: "@dante" }]);
+	});
+
+	it("starts the listener right away, so a reply is not missed", async () => {
+		await phoneDial(cardFor(), undefined, deps());
+
+		expect(spawned).toBe(1);
+		expect(existsSync(line.pidPath)).toBe(true);
+		expect(alive.has(4242)).toBe(true);
 	});
 
 	it("refuses a dial name that another line uses before it rings", async () => {
@@ -306,6 +332,7 @@ describe("phoneDial", () => {
 describe("accepting a call", () => {
 	it("voicemail pairs the caller, clears the invite, and marks the line as a call", async () => {
 		await phoneInvite({}, deps());
+		alive.clear();
 		const { secret } = readInvite(line) as { secret: string };
 		const mine = getPublicKey(myKey());
 		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, mine, secret)));
@@ -313,19 +340,22 @@ describe("accepting a call", () => {
 
 		await phoneVoicemail(deps());
 
-		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true }]);
+		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true, handle: "@default" }]);
 		expect(readConfig(line).contact).toBe(contactNpub);
 		expect(readInvite(line)).toBeUndefined();
 	});
 
-	it("names the caller with the name the invite was made for", async () => {
+	it("names the caller with the name the invite was made for, and prints that handle on the call", async () => {
 		await phoneInvite({ name: "grok" }, deps());
+		alive.clear();
 		const { secret } = readInvite(line) as { secret: string };
 		await Promise.allSettled(pool.publish(["wss://a"], ring("hello", contactSk, getPublicKey(myKey()), secret)));
+		out = [];
 
 		await phoneVoicemail(deps());
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "grok" });
+		expect(lines()).toMatchObject([{ call: true, handle: "@grok" }]);
 	});
 
 	it("refuses an invite name that another line already uses, and saves no invite", async () => {
@@ -346,7 +376,9 @@ describe("phoneNumber", () => {
 		await phoneNumber(deps());
 
 		const npub = nip19.npubEncode(getPublicKey(myKey()));
-		expect(lines()).toEqual([{ line: "default", npub, contact: contactNpub, name: null, key_store: "file", listener: 4242 }]);
+		expect(lines()).toEqual([
+			{ line: "default", npub, contact: contactNpub, name: null, handle: "@default", key_store: "file", listener: 4242 },
+		]);
 	});
 
 	it("reports no contact and no listener before pairing", async () => {
@@ -367,7 +399,7 @@ describe("phoneName and phoneContacts", () => {
 
 		expect(lines()).toEqual([
 			{ line: "default", name: "velora", contact: contactNpub },
-			{ line: "default", name: "velora", contact: contactNpub, listener: 4242 },
+			{ line: "default", name: "velora", contact: contactNpub, handle: "@velora", listener: 4242 },
 		]);
 		expect(readConfig(line).name).toBe("velora");
 	});
