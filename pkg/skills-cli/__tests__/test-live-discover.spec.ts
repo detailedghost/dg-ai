@@ -5,12 +5,16 @@ import { join } from "node:path";
 import { findWorkflow } from "../src/test-live/discover";
 
 let workflowsDir: string;
+let savedCwd: string;
 
 beforeEach(() => {
 	workflowsDir = mkdtempSync(join(tmpdir(), "test-live-discover-"));
+	savedCwd = process.cwd();
+	process.chdir(workflowsDir);
 });
 
 afterEach(() => {
+	process.chdir(savedCwd);
 	rmSync(workflowsDir, { recursive: true, force: true });
 });
 
