@@ -10,7 +10,9 @@ Execute steps in order. Do not skip steps. Report progress after each.
 - Scan project root for tech stack: `package.json`, `nx.json`, `turbo.json`, `*.sln`, `*.csproj`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `pom.xml`
 - Detect monorepo if: `nx.json`, `turbo.json`, `pnpm-workspace.yaml`, `lerna.json`, `packages/` with multiple `package.json`, or multiple `.sln`/`.csproj`
 - Classify existing `.agents/` content by canonical destination
-- Report: tech stack, monorepo Y/N, .agents/ state, CLAUDE.md line count
+- Read `docs/` and `.github/copilot-instructions.md` if they exist
+- Find tests that read doc files: `git grep -l -e CLAUDE.md -e AGENTS.md -e copilot-instructions` in test folders. List what each one asserts. Any move later must keep that coverage
+- Report: tech stack, monorepo Y/N, .agents/ state, CLAUDE.md and AGENTS.md sizes in characters, the doc-reading tests
 
 > **GATE:** Analysis complete. Proceed only after reporting findings.
 
@@ -29,6 +31,7 @@ Execute steps in order. Do not skip steps. Report progress after each.
 - Create `.agents/references/` if missing
 - Create `.agents/spec/` if missing
 - Create `.agents/school/` if missing
+- Create `.agents/decisions/` only when an ADR in `docs/adr/` changes how an agent works. Never leave an empty file or an empty folder under `.agents/`
 - For each of these 7 school files, create with stub if not present:
   - `engineering.md`, `quality.md`, `performance.md`, `infrastructure.md`, `security.md`, `product.md`, `tooling.md`
   - Stub format (3 lines):
@@ -81,19 +84,19 @@ If a reference file already has content, append after a `---` separator.
 
 > **GATE:** Reference files populated. Conventions collected for Step 7.
 
-## Step 6 — Rewrite CLAUDE.md
+## Step 6 — Human Docs and CLAUDE.md
 
-Build from the template in templates.md (15-25 lines):
-- Project name: from `package.json` name, `.sln` filename, or directory basename (priority order)
-- Description: preserve from original if concise (1-2 sentences); otherwise generate from tech stack
-- Commands: detect from `package.json` scripts, `Makefile`, `*.csproj` build targets; use `<command>` placeholder for unknowns
-- Final line: pointer to `AGENTS.md`
+Follow [docs.md](docs.md):
+- Create `docs/CONTRIBUTING.md`, `docs/code_standards.md`, `docs/code_review.md`, and
+  `.github/copilot-instructions.md` when they are missing. When one exists, report its gaps against docs.md and do
+  not rewrite it.
+- Move style rules from CLAUDE.md and AGENTS.md into `docs/code_standards.md`.
+- Rewrite CLAUDE.md to the single line `@AGENTS.md` (see templates.md). Make sure every command it listed exists in
+  `mise.toml` or the build scripts first.
 
-**No conventions in CLAUDE.md.** Those go in AGENTS.md.
+Verify: `.github/copilot-instructions.md` is under 4,000 characters.
 
-Verify: 15-25 lines. If over 25, the description is too long.
-
-> **GATE:** CLAUDE.md rewritten and within line budget.
+> **GATE:** docs/ files exist or their gaps are reported. CLAUDE.md is `@AGENTS.md`.
 
 ## Step 7 — Create or Update AGENTS.md
 
@@ -101,8 +104,10 @@ AGENTS.md is the primary authority. It carries conventions + routes to all conte
 
 - If AGENTS.md doesn't exist: write from template in templates.md
 - If AGENTS.md exists: update only sections wrapped in `<!-- agent-seed:start/end -->` markers; preserve everything else (including hand-written conventions)
-- Conventions section: populate from extracted conventions (Step 5) on first run. On subsequent runs, do NOT overwrite — conventions are hand-maintained after initial seed.
-- For monorepos: create per-package `AGENTS.md` (simplified — no school section, references point to root `.agents/`)
+- Rules section: populate with the traps from Step 5 on first run. On later runs, do NOT overwrite it. People maintain it after the first seed.
+- For monorepos: create per-package `AGENTS.md` from templates.md: stack, commands, task templates, traps, and a "References (read on demand)" table. Move feature detail to `.agents/references/<pkg>-<topic>.md`
+- Budgets: root AGENTS.md about 2.4K characters, each package AGENTS.md under about 3.5K. Nothing repeats `docs/code_standards.md`
+- Run the doc-reading tests from Step 1 and keep them green
 
 > **GATE:** AGENTS.md exists as the authoritative routing doc.
 
@@ -126,8 +131,9 @@ Print summary:
 - Files updated (list)
 - Files migrated (source -> destination)
 - Placeholders needing manual fill-in
-- Final CLAUDE.md line count
-- Final AGENTS.md line count
+- Final CLAUDE.md content (`@AGENTS.md`)
+- Final AGENTS.md sizes in characters, root and each package
+- docs/ files created, and gaps reported in docs/ files that already existed
 - Git tag created (name)
 
 Then ask the user:
