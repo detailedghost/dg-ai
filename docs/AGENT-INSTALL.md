@@ -67,11 +67,12 @@ does the same from an installed binary. Combined with `DG_INSTALL_CODEX=1`, only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
 - CLI-only skills: `channel-review`, `google-sms-cleanup` (instruction-only;
-  it drives Messages for Web), and `inbox-cleanup` with explicit
-  `--data-path` fixtures.
-- Extension skills: `browser`, `demo`, `proto`, `chat` and `overwatch`. Each
+  it drives Messages for Web), `inbox-cleanup` with explicit
+  `--data-path` fixtures, and `proto`, whose default local mode needs no
+  extension. Only `proto --ext` needs the dg-ai-extension.
+- Extension skills: `browser`, `demo`, `chat` and `overwatch`. Each
   declares `requires: [extension]` in its SKILL.md. In a CLI-only install,
-  `dg-skills batch-open`, `launch`, `demo`, `rerun` and `proto`, and the
+  `dg-skills batch-open`, `launch`, `demo`, `rerun` and `proto --ext`, and the
   `dg-skills require-extension <skill>` check at the top of `chat` and
   `overwatch`, stop with: the command needs the dg-ai-extension, and
   `dg-skills install` adds it.

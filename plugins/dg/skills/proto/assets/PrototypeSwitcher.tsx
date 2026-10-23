@@ -1,28 +1,3 @@
-/**
- * PrototypeSwitcher.tsx — Copy into any React/Next.js/Vite prototype.
- *
- * Usage:
- *   import PrototypeSwitcher from './PrototypeSwitcher'
- *   <PrototypeSwitcher variants={['A', 'B', 'C']} current={variant} prototypeName="my-feature" />
- *
- * Wire up: render this at the root of your prototype page. Arrow clicks write
- * ?variant=<key> to the URL via replaceState and dispatch a `popstate` event —
- * host pages that listen for `popstate` will re-render without a full navigation.
- * If your app uses a path prefix (e.g. Next `basePath`), pass it as `basePath`.
- *
- * The bar shows the prototype slug next to the variant key (`slug · A — Description`).
- * Pass `labels` (variant key → human description) to surface the description in both
- * the bar and the notes panel. The light/dark toggle writes `?mode=light|dark`
- * (+ toggles a `dark` class on <html>) so host pages can react to either signal.
- *
- * The bar carries three always-visible decision buttons: 📝 Notes (toggles a
- * free-text panel), Approve ✓ (POSTs action:"confirm"), and Reject ⟲. Reject opens
- * a popup that REQUIRES a note (so a rework always has direction) with quick-pick
- * reason chips — pass `rejectReasons` to tailor them. Whatever note is set rides
- * along with whichever action is sent. Both responses + notes are surfaced by
- * `dg-skills prototype selection wait`.
- */
-
 import { useCallback, useEffect, useState } from "react";
 
 interface Props {
@@ -86,7 +61,6 @@ const navBtn: React.CSSProperties = {
   fontWeight: 700,
 };
 
-// Variant hue is picked by index (not key) so it works for any variant naming scheme.
 const VARIANT_HUES = ["#4c8dff", "#a855f7", "#22c55e", "#f59e0b", "#f43f5e", "#14b8a6"];
 const CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
 
@@ -178,7 +152,6 @@ const noteQuote: React.CSSProperties = {
   textAlign: "left",
 };
 
-// Dev-only stylesheet for effects inline style objects can't express (@keyframes, :hover).
 const SWITCHER_STYLE_ID = "ps-switcher-styles";
 const SWITCHER_CSS = `
 @keyframes burst { 0%{transform:translate(0,0) rotate(0);opacity:1} 100%{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0} }
@@ -249,8 +222,6 @@ const readMode = (): "light" | "dark" =>
     ? "dark"
     : "light";
 
-// Tab favicon reflects whose turn it is: ⏳ waiting on the user's decision,
-// 🔄 processing a rework, ✅ approved — visible at a glance across tabs.
 const FAVICON_EMOJI = { waiting: "⏳", processing: "🔄", done: "✅" } as const;
 const faviconHref = (state: keyof typeof FAVICON_EMOJI): string =>
   `data:image/svg+xml,${encodeURIComponent(
@@ -277,7 +248,6 @@ export default function PrototypeSwitcher({
     { id: number; dx: number; dy: number; rot: number; color: string; delay: number }[]
   >([]);
 
-  // Append a quick-pick reason on its own line (skip if already present).
   const addReason = useCallback((r: string) => {
     setNotes(prev => {
       const lines = prev.split("\n").map(s => s.trim());
@@ -290,8 +260,6 @@ export default function PrototypeSwitcher({
   const prev = variants[(idx - 1 + variants.length) % variants.length];
   const next = variants[(idx + 1) % variants.length];
 
-  // replaceState keeps the switcher functional without triggering a full navigation.
-  // popstate lets host pages re-render without a hard reload.
   const go = useCallback((key: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("variant", key);
@@ -299,8 +267,8 @@ export default function PrototypeSwitcher({
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
 
-  // Sync local mode from ?mode and reflect it as a `dark` class on <html>.
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const sync = () => {
       const m = readMode();
       setMode(m);
@@ -319,8 +287,6 @@ export default function PrototypeSwitcher({
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
 
-  // Reflect decision state in the tab favicon (⏳ waiting · 🔄 processing · ✅ done)
-  // so a prototype awaiting input is obvious at a glance. No-op in production.
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const state = outcome === "reject" ? "processing" : outcome === "confirm" ? "done" : "waiting";
@@ -333,7 +299,6 @@ export default function PrototypeSwitcher({
     link.href = faviconHref(state);
   }, [outcome]);
 
-  // Inject the keyframes/hover stylesheet once (inline style objects can't hold either).
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     if (document.getElementById(SWITCHER_STYLE_ID)) return;
@@ -343,7 +308,6 @@ export default function PrototypeSwitcher({
     document.head.appendChild(styleEl);
   }, []);
 
-  // One-shot confetti burst when the confirm overlay appears.
   useEffect(() => {
     if (outcome !== "confirm") return;
     const particles = Array.from({ length: 28 }, (_, i) => {
@@ -364,10 +328,10 @@ export default function PrototypeSwitcher({
   }, [outcome]);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const editable = (e.target as HTMLElement).isContentEditable;
-      // Don't steal arrow keys from form inputs.
       if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
       if (e.key === "ArrowLeft") go(prev);
       if (e.key === "ArrowRight") go(next);
@@ -376,8 +340,6 @@ export default function PrototypeSwitcher({
     return () => document.removeEventListener("keydown", onKey);
   }, [go, prev, next]);
 
-  // Best-effort close — browsers honor it only for script-opened/single-history tabs
-  // while a user gesture is live (see the beacon path in submit); overlay is the fallback.
   const closeTab = useCallback(() => {
     try {
       window.open("", "_self");
@@ -388,7 +350,6 @@ export default function PrototypeSwitcher({
   const submit = useCallback(
     (action: "confirm" | "reject") => {
       setError(null);
-      // window.location.port is empty string on default ports (80/443) — fall back to origin directly
       const basePort = port ?? (window.location.port || undefined);
       const base = basePort
         ? `${window.location.protocol}//${window.location.hostname}:${basePort}`
@@ -396,51 +357,32 @@ export default function PrototypeSwitcher({
       const url = `${base}${basePath}/prototype-confirm`;
       const payload = JSON.stringify({ name: prototypeName, variant: current, variants, notes, action });
 
-      // Approve with empty notes is the only outcome that closes the tab — approve
-      // with notes and reject both keep it open for the rework/iteration loop.
       const closeAfter = action === "confirm" && notes.trim().length === 0;
 
-      // sendBeacon delivers without awaiting, so the click's user activation stays live
-      // for window.close() — an awaited fetch loses it and the browser blocks the close.
-      let queued = false;
-      try {
-        queued =
-          typeof navigator.sendBeacon === "function" &&
-          navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }));
-      } catch {
-        queued = false;
-      }
-      if (queued) {
-        setOutcome(action);
-        // 2.2s delay lets the confetti/overlay register first; if the browser blocks
-        // window.close() (tab wasn't script-opened), the overlay is the fallback.
-        if (closeAfter) window.setTimeout(closeTab, 2200);
-        return;
-      }
-
-      // Fallback: beacon unavailable/refused. POST async (close is best-effort here).
       setSubmitting(true);
-      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload })
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      })
         .then(async res => {
           if (!res.ok) {
             const body = await res.json().catch(() => ({}));
             setError((body as { error?: string }).error ?? `HTTP ${res.status}`);
-            setSubmitting(false);
             return;
           }
           setOutcome(action);
           if (closeAfter) window.setTimeout(closeTab, 2200);
-          else setSubmitting(false);
         })
         .catch(err => {
           setError(err instanceof Error ? err.message : "Network error");
-          setSubmitting(false);
-        });
+        })
+        .finally(() => setSubmitting(false));
     },
     [port, basePath, prototypeName, current, variants, notes, closeTab],
   );
 
-  // Guard after all hooks — rules-of-hooks requires hooks to run unconditionally.
   if (process.env.NODE_ENV === "production") return null;
 
   if (outcome === "confirm") {

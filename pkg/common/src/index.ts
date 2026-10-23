@@ -4,6 +4,7 @@ export * from "./agent-name";
 export * from "./connection-drop";
 export * from "./redact";
 export * from "./async";
+export * from "./channel";
 export * from "./chat-format";
 export * from "./cli-wire";
 export * from "./credentials-format";

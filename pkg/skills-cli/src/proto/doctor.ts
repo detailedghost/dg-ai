@@ -10,3 +10,8 @@ export const protoChecks: DoctorCheck[] = [
 	...extensionChecks,
 	allowRuleCheck("proto"),
 ];
+
+export const prototypeChecks: DoctorCheck[] = [
+	skillFilesCheck(["proto"]),
+	allowRuleCheck("prototype"),
+];

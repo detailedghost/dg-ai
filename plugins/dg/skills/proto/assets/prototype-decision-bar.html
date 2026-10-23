@@ -1,13 +1,3 @@
-<!--
-  Prototype decision bar — plain HTML/JS, no framework. Paste this block
-  before </body> and serve the page with `dg-skills prototype serve`, which injects
-  window.prototypeDecide. Call window.prototypeDecisionBar.setVariant(key)
-  from your own switcher whenever the variant changes; single-variant
-  prototypes can skip that and the default "A" is recorded.
-
-  The mode button mirrors PrototypeSwitcher's: it writes ?mode=light|dark and
-  toggles a `dark` class on <html>, so the host page can react to either signal.
--->
 <div id="proto-decision-bar">
   <button type="button" id="proto-decision-mode" title="Toggle light/dark"></button>
   <span class="proto-decision-sep"></span>
@@ -18,7 +8,6 @@
 <div id="proto-decision-toast"></div>
 
 <style>
-  /* --pd-* prefix only, so pasting this into a themed prototype cannot clash with its tokens. */
   :root {
     --pd-bg: #ffffff; --pd-fg: #0f172a; --pd-border: #cbd5e1; --pd-field: #f8fafc;
     --pd-muted: #64748b; --pd-approve-fg: #15803d; --pd-reject-fg: #b45309;
@@ -31,7 +20,6 @@
   }
 
   #proto-decision-bar, #proto-decision-toast {
-    /* max-content, else left:50% caps shrink-to-fit at half the viewport and the labels wrap. */
     position: fixed; left: 50%; transform: translateX(-50%); width: max-content;
     background: var(--pd-bg); color: var(--pd-fg); border: 1px solid var(--pd-border);
     border-radius: 10px; box-shadow: var(--pd-shadow); z-index: 9999;
@@ -49,7 +37,6 @@
     border: 1px solid var(--pd-border); color: var(--pd-fg); background: transparent;
     border-radius: 8px; padding: 7px 11px; font-size: 12px; cursor: pointer;
   }
-  /* Id-plus-id, else the `#bar button` shorthand above outranks these and eats the accent. */
   #proto-decision-bar #proto-decision-approve { border-color: #15803d; color: var(--pd-approve-fg); }
   #proto-decision-bar #proto-decision-reject { border-color: #b45309; color: var(--pd-reject-fg); }
   #proto-decision-notes {
@@ -59,7 +46,6 @@
   #proto-decision-notes::placeholder { color: var(--pd-muted); }
   .proto-decision-sep { width: 1px; height: 18px; background: var(--pd-border); }
 
-  /* Same radial-burst technique as PrototypeSwitcher's approve confetti — kept in sync. */
   @keyframes proto-decision-burst { 0% { transform:translate(0,0) rotate(0); opacity:1 } 100% { transform:translate(var(--dx),var(--dy)) rotate(var(--rot)); opacity:0 } }
   .proto-decision-confetti-particle {
     position:fixed;top:38vh;left:50%;width:10px;height:14px;border-radius:2px;
@@ -74,7 +60,6 @@
     setVariant: (v) => { currentVariant = String(v); },
   };
 
-  // Same ?mode= contract as PrototypeSwitcher, so a host page reacts identically to both.
   var modeBtn = document.getElementById("proto-decision-mode");
   function readMode() {
     return new URLSearchParams(window.location.search).get("mode") === "dark" ? "dark" : "light";
@@ -102,7 +87,6 @@
   }
 
   var CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
-  // One-shot radial burst on approve; skipped for prefers-reduced-motion.
   function confettiBurst() {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     for (let i = 0; i < 28; i++) {
@@ -120,8 +104,6 @@
     }
   }
 
-  // window.prototypeDecide is injected by `dg-skills prototype serve`. Opened straight
-  // off disk (file://) there is no server, so say so instead of failing silently.
   function decide(action) {
     var notes = document.getElementById("proto-decision-notes").value.trim();
     if (action === "reject" && !notes) {
@@ -129,7 +111,7 @@
       return;
     }
     if (typeof window.prototypeDecide !== "function") {
-      say(`No server here — open the localhost URL dg-skills prototype serve printed, or just tell the agent variant ${currentVariant}.`);
+      say(`No server here — open the localhost URL prototype-serve printed, or just tell the agent variant ${currentVariant}.`);
       return;
     }
     window.prototypeDecide(action, currentVariant, notes);

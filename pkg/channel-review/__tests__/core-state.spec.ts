@@ -32,6 +32,7 @@ describe("createStateStore", () => {
 		expect(createStateStore(paths).get()).toEqual({
 			lastEventIds: {},
 			current: null,
+			running: {},
 			handled: {},
 			blocked: {},
 			issues: {},

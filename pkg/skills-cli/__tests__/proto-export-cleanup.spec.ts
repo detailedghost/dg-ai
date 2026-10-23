@@ -258,7 +258,7 @@ describe("proto plant answer export", () => {
 
 		const result = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 
@@ -298,7 +298,7 @@ describe("proto plant answer export", () => {
 		const first = await protoHarness(verdict);
 		const firstResult = await runCli(
 			first.projectRoot,
-			["proto", "plant", first.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", first.planPath, "--timeout", "500"],
 			first.env,
 		);
 		expect(firstResult.code).toBe(0);
@@ -310,7 +310,7 @@ describe("proto plant answer export", () => {
 
 		const secondResult = await runCli(
 			first.projectRoot,
-			["proto", "plant", first.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", first.planPath, "--timeout", "500"],
 			first.env,
 		);
 		expect(secondResult.code).toBe(0);
@@ -339,7 +339,7 @@ describe("proto plant answer export", () => {
 
 		const unrelatedResult = await runCli(
 			unrelated.projectRoot,
-			["proto", "plant", unrelated.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", unrelated.planPath, "--timeout", "500"],
 			unrelated.env,
 		);
 		expect(unrelatedResult.code).toBe(1);
@@ -379,7 +379,7 @@ describe("proto plant answer export", () => {
 
 			const result = await runCli(
 				harness.projectRoot,
-				["proto", "plant", harness.planPath, "--timeout", "500"],
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 				harness.env,
 			);
 
@@ -420,7 +420,7 @@ describe("proto plant answer export", () => {
 
 		const result = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 
@@ -453,7 +453,7 @@ describe("proto plant answer export", () => {
 
 		const result = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 
@@ -476,7 +476,7 @@ describe("proto plant answer export", () => {
 
 		const firstResult = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 		expect(firstResult.code).toBe(0);
@@ -493,7 +493,7 @@ describe("proto plant answer export", () => {
 		};
 		const secondResult = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			{
 				...harness.env,
 				DG_REQUIRE_STALE_REMOVED: "1",
@@ -530,7 +530,7 @@ describe("proto cleanup command", () => {
 
 		const result = await runCli(
 			harness.projectRoot,
-			["proto", "cleanup", verdict.slug],
+			["proto", "--ext", "cleanup", verdict.slug],
 			harness.env,
 		);
 
@@ -554,7 +554,7 @@ describe("proto cleanup command", () => {
 		const harness = await protoHarness(verdict, { preview: "preview" });
 		const plantResult = await runCli(
 			harness.projectRoot,
-			["proto", "plant", harness.planPath, "--timeout", "500"],
+			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
 			harness.env,
 		);
 		expect(plantResult.code).toBe(0);
@@ -569,12 +569,12 @@ describe("proto cleanup command", () => {
 
 		const firstCleanup = await runCli(
 			harness.projectRoot,
-			["proto", "cleanup", verdict.slug],
+			["proto", "--ext", "cleanup", verdict.slug],
 			harness.env,
 		);
 		const secondCleanup = await runCli(
 			harness.projectRoot,
-			["proto", "cleanup", verdict.slug],
+			["proto", "--ext", "cleanup", verdict.slug],
 			harness.env,
 		);
 
@@ -598,12 +598,12 @@ describe("proto command help", () => {
 		const result = await runCli(directory, ["proto", "--help"], process.env);
 		const plantHelp = await runCli(
 			directory,
-			["proto", "plant", "--help"],
+			["proto", "--ext", "plant", "--help"],
 			process.env,
 		);
 		const cleanupHelp = await runCli(
 			directory,
-			["proto", "cleanup", "--help"],
+			["proto", "--ext", "cleanup", "--help"],
 			process.env,
 		);
 

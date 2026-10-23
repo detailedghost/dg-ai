@@ -1,42 +1,25 @@
-/**
- * Manifest format for the self-contained UI-variants flow (`prototype ui`).
- * Markdown frontmatter plus `::: KEY` fenced HTML blocks, chosen as an
- * authoring convenience over hand-escaped JSON. See
- * plugins/dg/skills/proto/references/ui-generate.md for the authoring guide.
- *
- * `parseManifest` returns a `LocalPlan` wrapping a `ProtoPlan` — the same
- * plan/variation contract `dg-skills proto` validates for the extension
- * flow (minus `validateProtoRenderLimits`, whose 5-variation/32K-marker
- * ceiling exists only for that flow's URL transport). The markdown format is
- * sugar in front of this shared contract, not a second one.
- */
+import { escapeHtml, validateProtoPlan } from "@dg/common";
+import { scriptSafeJson } from "./inject";
 
-import { type ProtoPlan, validateProtoPlan } from "@dg/common";
-
-export interface ManifestVariant {
+export interface Variant {
 	key: string;
 	html: string;
 }
 
-interface ManifestData {
+export interface ManifestData {
 	name: string;
+	chain: string;
 	title?: string;
 	theme: "light" | "dark" | "auto";
 	data: Record<string, string>;
 	labels: Record<string, string>;
 	rejectReasons: string[];
-	variants: ManifestVariant[];
-}
-
-export interface LocalPlan {
-	plan: ProtoPlan;
-	title: string;
-	theme: "light" | "dark" | "auto";
-	rejectReasons: string[];
+	variants: Variant[];
 }
 
 const KNOWN_FRONTMATTER_KEYS = new Set([
 	"name",
+	"chain",
 	"title",
 	"theme",
 	"data",
@@ -44,31 +27,24 @@ const KNOWN_FRONTMATTER_KEYS = new Set([
 	"reject_reasons",
 ]);
 
-const DEFAULT_REJECT_REASONS = [
+export const DEFAULT_REJECT_REASONS = [
 	"Wrong direction entirely",
 	"Too similar to current",
 	"Style/branding mismatch",
 	"Needs different content",
 ];
 
-function stripQuotes(value: string): string {
-	const trimmed = value.trim();
+function stripQuotes(s: string): string {
+	const t = s.trim();
 	if (
-		trimmed.length >= 2 &&
-		((trimmed[0] === '"' && trimmed.at(-1) === '"') ||
-			(trimmed[0] === "'" && trimmed.at(-1) === "'"))
+		t.length >= 2 &&
+		((t[0] === '"' && t.at(-1) === '"') || (t[0] === "'" && t.at(-1) === "'"))
 	) {
-		return trimmed.slice(1, -1);
+		return t.slice(1, -1);
 	}
-	return trimmed;
+	return t;
 }
 
-/**
- * Minimal frontmatter parser: top-level `key: value` plus one level of
- * nesting for `data`/`labels` (indented `key: value`) and `reject_reasons`
- * (indented `- value`). Deliberately not full YAML. Unparseable lines are
- * skipped, not fatal.
- */
 function parseFrontmatter(lines: string[]): Record<string, unknown> {
 	const result: Record<string, unknown> = {};
 	let currentKey: string | null = null;
@@ -118,13 +94,9 @@ function parseFrontmatter(lines: string[]): Record<string, unknown> {
 	return result;
 }
 
-/**
- * Fenced `::: KEY\n<raw html>\n:::` blocks. Falls back to treating the whole
- * body as a single implicit variant "A" when no fence is present.
- */
-function parseVariants(body: string): ManifestVariant[] {
+function parseVariants(body: string): Variant[] {
 	const lines = body.split(/\r?\n/);
-	const variants: ManifestVariant[] = [];
+	const variants: Variant[] = [];
 	let i = 0;
 	let sawFence = false;
 
@@ -167,7 +139,29 @@ function interpolate(text: string, data: Record<string, string>): string {
 	return out;
 }
 
-function parseManifestData(raw: string): ManifestData {
+function stringMap(
+	frontmatter: Record<string, unknown>,
+	key: string,
+): Record<string, string> {
+	const value = frontmatter[key];
+	if (value === undefined) return {};
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		throw new Error(`manifest: frontmatter "${key}" must be a key: value map`);
+	return value as Record<string, string>;
+}
+
+function stringList(
+	frontmatter: Record<string, unknown>,
+	key: string,
+): string[] | undefined {
+	const value = frontmatter[key];
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value))
+		throw new Error(`manifest: frontmatter "${key}" must be a list`);
+	return value as string[];
+}
+
+export function parseManifest(raw: string): ManifestData {
 	const lines = raw.split(/\r?\n/);
 	let i = 0;
 	while (i < lines.length && lines[i].trim() === "") i++;
@@ -181,7 +175,9 @@ function parseManifestData(raw: string): ManifestData {
 			i++;
 		}
 		if (i >= lines.length) {
-			throw new Error("manifest: unterminated frontmatter (missing closing ---)");
+			throw new Error(
+				"manifest: unterminated frontmatter (missing closing ---)",
+			);
 		}
 		i++;
 		frontmatter = parseFrontmatter(fmLines);
@@ -190,25 +186,33 @@ function parseManifestData(raw: string): ManifestData {
 	for (const key of Object.keys(frontmatter)) {
 		if (!KNOWN_FRONTMATTER_KEYS.has(key)) {
 			process.stderr.write(
-				`prototype ui: warning: ignoring unknown frontmatter key "${key}"\n`,
+				`prototype: warning: ignoring unknown frontmatter key "${key}"\n`,
 			);
 		}
 	}
 
-	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
+	const name =
+		typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
 	if (!name) {
 		throw new Error('manifest: missing required frontmatter field "name"');
 	}
 
-	const data = (frontmatter.data as Record<string, string> | undefined) ?? {};
-	const labels = (frontmatter.labels as Record<string, string> | undefined) ?? {};
+	const chain =
+		typeof frontmatter.chain === "string" && frontmatter.chain.trim()
+			? frontmatter.chain.trim()
+			: name;
+	const data = stringMap(frontmatter, "data");
+	const labels = stringMap(frontmatter, "labels");
 	const rejectReasons =
-		(frontmatter.reject_reasons as string[] | undefined) ?? DEFAULT_REJECT_REASONS;
-	const themeRaw = typeof frontmatter.theme === "string" ? frontmatter.theme : "auto";
+		stringList(frontmatter, "reject_reasons") ?? DEFAULT_REJECT_REASONS;
+	const themeRaw =
+		typeof frontmatter.theme === "string" ? frontmatter.theme : "auto";
 	const theme: ManifestData["theme"] =
 		themeRaw === "light" || themeRaw === "dark" ? themeRaw : "auto";
 	const title =
-		typeof frontmatter.title === "string" ? interpolate(frontmatter.title, data) : undefined;
+		typeof frontmatter.title === "string"
+			? interpolate(frontmatter.title, data)
+			: undefined;
 
 	const body = lines.slice(i).join("\n");
 	const rawVariants = parseVariants(body);
@@ -217,62 +221,25 @@ function parseManifestData(raw: string): ManifestData {
 			"manifest: no variant content found (need at least one ::: block or bare HTML body)",
 		);
 	}
-	const variants = rawVariants.map((v) => ({ key: v.key, html: interpolate(v.html, data) }));
+	const variants = rawVariants.map((v) => ({
+		key: v.key,
+		html: interpolate(v.html, data),
+	}));
 
-	return { name, title, theme, data, labels, rejectReasons, variants };
+	return { name, chain, title, theme, data, labels, rejectReasons, variants };
 }
 
-/** Parse the markdown manifest into the shared `ProtoPlan` contract plus local-only presentation extras. */
-export function parseManifest(raw: string): LocalPlan {
-	const manifest = parseManifestData(raw);
-	const plan = validateProtoPlan({
-		slug: manifest.name,
-		mode: "replace",
-		variations: manifest.variants.map((variant) => ({
-			key: variant.key,
-			label: manifest.labels[variant.key] ?? variant.key,
-			html: variant.html,
-			css: "",
-		})),
-	});
-	return {
-		plan,
-		title: manifest.title ?? manifest.name,
-		theme: manifest.theme,
-		rejectReasons: manifest.rejectReasons,
-	};
-}
-
-function escapeText(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function escapeAttr(s: string): string {
-	return escapeText(s).replace(/"/g, "&quot;");
-}
-
-/** Escape only for safe embedding inside a <script> JSON literal; not HTML-escaping. */
-function scriptSafeJson(value: unknown): string {
-	return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
-/** Render a `LocalPlan` to the self-contained switcher + decision bar page served by `prototype serve`. */
-export function renderManifest(local: LocalPlan): string {
-	const { plan } = local;
-	const title = local.title;
-	const themeAttr = local.theme === "auto" ? "" : ` data-theme="${local.theme}"`;
-	const sections = plan.variations
-		.map((v) => `<section data-variant="${v.key}">\n${v.html}\n</section>`)
+export function render(m: ManifestData): string {
+	const title = m.title ?? m.name;
+	const themeAttr = m.theme === "auto" ? "" : ` data-theme="${m.theme}"`;
+	const sections = m.variants
+		.map((v) => `<section data-variant="${escapeHtml(v.key)}">\n${v.html}\n</section>`)
 		.join("\n");
-	const variantKeys = plan.variations.map((v) => v.key);
-	// Only surface a label in the client when it adds information: parseManifest
-	// defaults every variation's label to its own key, and "A — A" is noise.
-	const labels = Object.fromEntries(
-		plan.variations.filter((v) => v.label !== v.key).map((v) => [v.key, v.label]),
-	);
-	const reasonChips = local.rejectReasons
+	const variantKeys = m.variants.map((v) => v.key);
+	const reasonChips = m.rejectReasons
 		.map(
 			(r) =>
-				`<button type="button" class="proto-chip" data-reason="${escapeAttr(r)}">${escapeText(r)}</button>`,
+				`<button type="button" class="proto-chip" data-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`,
 		)
 		.join("");
 
@@ -281,7 +248,7 @@ export function renderManifest(local: LocalPlan): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeText(title)}</title>
+<title>${escapeHtml(title)}</title>
 <style>
 :root{
   color-scheme: light dark;
@@ -361,10 +328,12 @@ ${sections}
   <div id="proto-reject-chips">${reasonChips}</div>
   <div id="proto-notes-hint">Notes ride along with whichever button you click next.</div>
 </div>
+<script type="application/json" id="prototype-data">${scriptSafeJson({ name: m.name, variants: variantKeys, labels: m.labels })}</script>
 <script>
 (function(){
-  var VARIANTS = ${scriptSafeJson(variantKeys)};
-  var LABELS = ${scriptSafeJson(labels)};
+  var data = JSON.parse(document.getElementById('prototype-data').textContent);
+  var VARIANTS = data.variants;
+  var LABELS = data.labels;
 
   var root = document.getElementById('proto-root');
   var sections = {};
@@ -443,4 +412,32 @@ ${sections}
 </body>
 </html>
 `;
+}
+
+function planToManifest(raw: string): ManifestData {
+	const plan = validateProtoPlan(JSON.parse(raw));
+	return {
+		name: plan.slug,
+		chain: plan.slug,
+		title: plan.question?.trim() || plan.slug,
+		theme: "auto",
+		data: {},
+		labels: Object.fromEntries(
+			plan.variations.map((variation) => [variation.key, variation.label]),
+		),
+		rejectReasons: DEFAULT_REJECT_REASONS,
+		variants: plan.variations.map((variation) => ({
+			key: variation.key,
+			html: variation.css
+				? `<style>@scope ([data-variant="${variation.key}"]) {\n${variation.css}\n}</style>\n${variation.html}`
+				: variation.html,
+		})),
+	};
+}
+
+/** Read either a Markdown manifest or a ProtoPlan JSON document into one render model. */
+export function parseManifestSource(raw: string): ManifestData {
+	return raw.trimStart().startsWith("{")
+		? planToManifest(raw)
+		: parseManifest(raw);
 }

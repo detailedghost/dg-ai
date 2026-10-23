@@ -1,11 +1,11 @@
 ---
 name: spring-break
-description: Clean up and consolidate .agents/school/ into the standard topic-cluster format. Run once per project to migrate, or periodically to prune stale entries. Janitor skill — call when school files get messy, overgrown, or after long spec runs.
+description: Clean up and consolidate .agents/school/ into the standard topic-cluster format, and put the always-loaded agent context on a diet (CLAUDE.md as @AGENTS.md, lean AGENTS.md files, human rules in docs/). Run once per project to migrate, or periodically to prune. Janitor skill — call when school or agent files get messy, overgrown, or after long spec runs.
 ---
 
 # Skill: Spring Break
 
-Janitor skill for `.agents/school/`. Migrates scattered files into the standard topic-cluster format, deduplicates entries, prunes to line limits. Safe to run multiple times — idempotent.
+Janitor skill for `.agents/school/` and the agent context files. Migrates scattered files into the standard topic-cluster format, deduplicates entries, prunes to line limits, and trims the files every session loads. Safe to run multiple times — idempotent.
 
 **When to suggest running:** If a spec implementation or long-running job is burning through tokens or the context window is getting heavy, ask the user if they want to run spring-break first, clear context, and start fresh.
 
@@ -38,3 +38,4 @@ Before starting, read [references/structure.md](references/structure.md) for the
 | 5 | **Write & Clean** | Write topic files, delete old files and empty subdirs. |
 | 6 | **Report** | Summarize: files migrated, entries merged/pruned, files deleted, spec bundles migrated, any unresolved `plan.md` validation violations from Step 2. |
 | 7 | **Monolith health check** | If `.agents/monolith.md` exists, run `~/.dg/bin/dg-skills monolith prune .agents/monolith.md --dry-run` to list entries whose `_src:_` path no longer exists. If `.agents/school/monolith-conflicts.md` exists, count its entries. Surface both in the report and suggest the user run `/dg:monolith --prune` and review the conflicts log. Do NOT auto-modify monolith.md. |
+| 8 | **Context diet** | Measure the always-loaded files against the budgets in structure.md's "Agent Context Budgets". First find the repo tests that read CLAUDE.md, AGENTS.md, or doc files. List the moves: feature detail to `.agents/references/<pkg>-<topic>.md`, style rules to `docs/code_standards.md`, ADR-linked agent rules to `.agents/decisions/`. Delete empty files and empty folders under `.agents/`. Show the list and ask before you move text out of CLAUDE.md, AGENTS.md, or `docs/`. Run the doc-reading tests after. |

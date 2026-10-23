@@ -684,7 +684,7 @@ export function pickerMachine(
 /** Resolve the variation a verdict applies to without weakening approval gates. */
 export function pickerVerdictKey(
 	state: PrototypePickerState,
-	action: "approve" | "reject",
+	action: "approve" | "reject" | "tweak",
 ): string | null {
 	return action === "approve"
 		? state.selectedKey
@@ -693,9 +693,9 @@ export function pickerVerdictKey(
 
 type VerdictInput = {
 	slug: string;
-	action: "approve" | "reject";
+	action: "approve" | "reject" | "tweak";
 	selectedKey: string;
-	feedback?: string;
+	notes?: string;
 	ts: number;
 };
 
@@ -706,6 +706,16 @@ export function buildVerdict(input: VerdictInput): Verdict {
 			slug: input.slug,
 			action: "approve",
 			selectedKey: input.selectedKey,
+			...(input.notes ? { notes: input.notes } : {}),
+			ts: input.ts,
+		});
+	}
+	if (input.action === "tweak") {
+		return validateVerdict({
+			slug: input.slug,
+			action: "tweak",
+			selectedKey: input.selectedKey,
+			notes: input.notes,
 			ts: input.ts,
 		});
 	}
@@ -713,7 +723,7 @@ export function buildVerdict(input: VerdictInput): Verdict {
 		slug: input.slug,
 		action: "reject",
 		selectedKey: input.selectedKey,
-		feedback: input.feedback,
+		feedback: input.notes,
 		ts: input.ts,
 	});
 }
@@ -728,14 +738,14 @@ const PICKER_CSS = `
 .dg-proto-title { margin: 0 0 .625rem; font-size: .8125rem; text-transform: uppercase; }
 .dg-proto-meta { color: var(--muted); margin-bottom: .5rem; }
 .dg-proto-row { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
-.dg-proto-btn, .dg-proto-feedback {
+.dg-proto-btn, .dg-proto-notes {
   color: var(--ink); background: var(--panel); border: .125rem solid var(--line);
   border-radius: 0; font: inherit; padding: .375rem .5rem;
 }
 .dg-proto-btn { cursor: pointer; text-transform: uppercase; }
 .dg-proto-btn:hover:not(:disabled) { color: #000; background: var(--accent); border-color: var(--accent); }
 .dg-proto-btn:disabled { cursor: not-allowed; opacity: .4; }
-.dg-proto-feedback { box-sizing: border-box; width: 100%; resize: vertical; }
+.dg-proto-notes { box-sizing: border-box; width: 100%; resize: vertical; }
 .dg-proto-error { min-height: 1.25rem; color: var(--accent2); }
 `;
 
@@ -911,7 +921,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		<div class="dg-proto-question"></div>
 		<div class="dg-proto-meta"></div>
 		<div class="dg-proto-row dg-proto-nav"></div>
-		<textarea class="dg-proto-feedback" rows="2" placeholder="Feedback for rejection"></textarea>
+		<textarea class="dg-proto-notes" rows="2" placeholder="Notes: required to reject or tweak, optional on approve"></textarea>
 		<div class="dg-proto-error" role="status"></div>
 		<div class="dg-proto-row dg-proto-actions"></div>
 	`;
@@ -921,9 +931,9 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		const meta = requiredElement<HTMLElement>(panel, ".dg-proto-meta");
 		const nav = requiredElement<HTMLElement>(panel, ".dg-proto-nav");
 		const actions = requiredElement<HTMLElement>(panel, ".dg-proto-actions");
-		const feedback = requiredElement<HTMLTextAreaElement>(
+		const notes = requiredElement<HTMLTextAreaElement>(
 			panel,
-			".dg-proto-feedback",
+			".dg-proto-notes",
 		);
 		const error = requiredElement<HTMLElement>(panel, ".dg-proto-error");
 		question.textContent = plan.question ?? "Choose a variation";
@@ -933,9 +943,10 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		const select = button("Select");
 		const approve = button("Approve");
 		const reject = button("Reject");
+		const tweak = button("Tweak");
 		const close = button("Close");
 		nav.append(previous, next, select);
-		actions.append(approve, reject, close);
+		actions.append(approve, reject, tweak, close);
 
 		let state: PrototypePickerState = {
 			keys: variations.map((variation) => variation.key),
@@ -962,6 +973,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				}`;
 				approve.disabled = state.selectedKey === null;
 				reject.disabled = false;
+				tweak.disabled = false;
 			} catch (error) {
 				cleanup();
 				throw error;
@@ -996,7 +1008,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				throw selectionError;
 			}
 		};
-		const sendVerdict = async (action: "approve" | "reject"): Promise<void> => {
+		const sendVerdict = async (action: "approve" | "reject" | "tweak"): Promise<void> => {
 			if (settling) return;
 			const selectedKey = pickerVerdictKey(state, action);
 			if (!selectedKey) return;
@@ -1007,14 +1019,15 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				state = { ...state, currentIndex: selectedIndex };
 				render();
 			}
-			if (action === "reject" && !feedback.value.trim()) {
-				error.textContent = "Feedback is required to reject.";
+			if (action !== "approve" && !notes.value.trim()) {
+				error.textContent = `Notes are required to ${action}.`;
 				return;
 			}
 			settling = true;
 			try {
 				approve.disabled = true;
 				reject.disabled = true;
+				tweak.disabled = true;
 				if (action === "approve") {
 					state = pickerMachine(state, { type: "approve" });
 					if (!state.approved) return;
@@ -1046,7 +1059,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 					slug: plan.slug,
 					action,
 					selectedKey,
-					feedback: action === "reject" ? feedback.value.trim() : undefined,
+					notes: notes.value.trim() || undefined,
 					ts: Date.now(),
 				});
 				await sendPrototypeMessage({
@@ -1085,6 +1098,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		select.addEventListener("click", choose);
 		approve.addEventListener("click", () => void sendVerdict("approve"));
 		reject.addEventListener("click", () => void sendVerdict("reject"));
+		tweak.addEventListener("click", () => void sendVerdict("tweak"));
 		close.addEventListener("click", cleanup);
 		document.addEventListener("keydown", onKey, true);
 		window.addEventListener("pagehide", cleanup);

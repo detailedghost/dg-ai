@@ -84,6 +84,11 @@ export function writeConfig(line: LinePaths, config: PhoneFriendConfig): void {
 	withDb(line, (db) => db.set(CONFIG, config));
 }
 
+/** The @ handle this line's owner uses to refer to it: the contact name if set, else the line name. */
+export function handleFor(config: PhoneFriendConfig, line: LinePaths): string {
+	return `@${config.name ?? line.name}`;
+}
+
 /** Every line that holds a database, in name order. */
 export function listLines(paths: DgPaths): LinePaths[] {
 	return realSubdirectories(paths.phoneFriendRoot)
@@ -93,20 +98,21 @@ export function listLines(paths: DgPaths): LinePaths[] {
 		.filter((line) => existsSync(line.dbPath));
 }
 
-/** Resolves --line from a line name, a saved contact name, or a contact npub; an unknown name is a new line. */
+/** Resolves --line from a line name, a saved contact name, or a contact npub, each with an optional leading @; an unknown name is a new line. */
 export function resolveLine(paths: DgPaths, value: string): LinePaths {
+	const name = value.startsWith("@") ? value.slice(1) : value;
 	const lines = listLines(paths);
-	if (lines.some((line) => line.name === value)) return linePaths(paths, value);
+	if (lines.some((line) => line.name === name)) return linePaths(paths, name);
 	const matches = lines.filter((line) => {
 		const config = readConfig(line);
-		return config.name === value || config.contact === value;
+		return config.name === name || config.contact === name;
 	});
 	if (matches.length > 1) {
 		throw new DgCliError(`"${value}" matches lines ${matches.map((line) => line.name).join(", ")}; pick one with --line`);
 	}
 	if (matches[0]) return matches[0];
-	if (value.startsWith("npub1")) throw new DgCliError(`no line has contact ${value}`);
-	return linePaths(paths, value);
+	if (name.startsWith("npub1")) throw new DgCliError(`no line has contact ${value}`);
+	return linePaths(paths, name);
 }
 
 export function readInvite(line: LinePaths): Invite | undefined {

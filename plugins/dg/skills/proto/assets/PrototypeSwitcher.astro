@@ -1,38 +1,4 @@
 ---
-/**
- * PrototypeSwitcher.astro — Copy into any Astro prototype.
- *
- * Usage:
- *   import PrototypeSwitcher from './PrototypeSwitcher.astro'
- *   <PrototypeSwitcher variants={['A', 'B', 'C']} current={variant} prototypeName="my-feature" />
- *
- * Wire up: render at the root of your prototype page/layout. Arrow clicks write
- * ?variant=<key> to the URL via replaceState — read it with URLSearchParams on
- * the same page or in a subsequent server render.
- *
- * The bar shows the prototype slug next to the variant key (`slug · A — Description`).
- * Pass `labels` (variant key → human description) to surface the description in both
- * the bar and the notes panel. The light/dark toggle writes `?mode=light|dark`
- * (+ toggles a `dark` class on <html>) so host pages can react to either signal.
- *
- * The bar carries three always-visible decision buttons: 📝 Notes (toggles a
- * free-text panel), Approve ✓ (POSTs action:"confirm"), and Reject ⟲. Reject
- * opens a popup that REQUIRES a note (so a rework always has direction) with
- * quick-pick reason chips — pass `rejectReasons` to tailor them. Whatever note
- * is set rides along with the action. Both responses + notes are surfaced by
- * `dg-skills prototype selection wait`.
- *
- * Neither Approve nor Reject ever closes the tab. Approve shows a full-screen
- * confirm overlay (with notes echoed back if any were left) and stays open — the
- * user may be comparing several variant tabs at once. Reject shows a non-blocking
- * inline "Reworking options…" banner and keeps the tab alive so the agent can
- * revise the variants and bump the reload token.
- *
- * Reload-token polling: this component polls GET <base>/prototype-reload every 2s
- * and calls location.reload() when the returned token changes. It is a no-op when
- * the endpoint 404s or errors (e.g. opened as file://, server not running). This is
- * how a revised prototype reaches the open tab without a manual refresh.
- */
 
 interface Props {
   variants: string[];
@@ -63,7 +29,6 @@ const {
   rejectReasons = DEFAULT_REJECT_REASONS,
 } = Astro.props;
 
-// Don't render in production builds.
 if (import.meta.env.PROD) {
   return;
 }
@@ -73,12 +38,7 @@ if (import.meta.env.PROD) {
 
 <script is:inline define:vars={{ variants, current, prototypeName, labels, basePath, rejectReasons }}>
   (function () {
-    // Note: the frontmatter's `if (import.meta.env.PROD) return` above is the
-    // real guard — it drops this whole component at build time. `import.meta`
-    // is a module-only token and is a hard SyntaxError even under `typeof` in
-    // this classic (is:inline) script, so no runtime re-check is possible here.
 
-    // ── Styles ────────────────────────────────────────────────────────────────
     var css = `
       @keyframes ps-burst { 0%{transform:translate(0,0) rotate(0);opacity:1} 100%{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0} }
       @keyframes ps-glow { 0%,100%{box-shadow:0 0 0 8px rgba(34,197,94,.16),0 10px 40px rgba(34,197,94,.35)} 50%{box-shadow:0 0 0 14px rgba(34,197,94,.06),0 10px 60px rgba(34,197,94,.6)} }
@@ -184,7 +144,6 @@ if (import.meta.env.PROD) {
     style.textContent = css;
     document.head.appendChild(style);
 
-    // ── Bar markup ────────────────────────────────────────────────────────────
     var root = document.getElementById("prototype-switcher");
     if (!root) return;
 
@@ -262,7 +221,6 @@ if (import.meta.env.PROD) {
       </div>
     `;
 
-    // ── Element refs ──────────────────────────────────────────────────────────
     var labelEl        = document.getElementById("ps-label");
     var errorEl        = document.getElementById("ps-error");
     var overlay        = document.getElementById("ps-overlay");
@@ -288,13 +246,11 @@ if (import.meta.env.PROD) {
     var rejectSubmit   = document.getElementById("ps-reject-submit");
     var rejectErrorEl  = document.getElementById("ps-reject-error");
 
-    // ── State ─────────────────────────────────────────────────────────────────
     var activeCurrent = current;
     var notesOpen = false;
     var rejectOpen = false;
     var submitting = false;
 
-    // Variant hue is picked by index (not key) so it works for any variant naming scheme.
     var VARIANT_HUES = ["#4c8dff", "#a855f7", "#22c55e", "#f59e0b", "#f43f5e", "#14b8a6"];
     var CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
 
@@ -304,8 +260,6 @@ if (import.meta.env.PROD) {
       return VARIANT_HUES[((idx % n) + n) % n];
     }
 
-    // ── Favicon (decision state) ──────────────────────────────────────────────
-    // ⏳ waiting · 🔄 processing (rework requested) · ✅ done (approved)
     var FAVICON_EMOJI = { waiting: "⏳", processing: "🔄", done: "✅" };
 
     function faviconHref(state) {
@@ -333,7 +287,6 @@ if (import.meta.env.PROD) {
 
     setFavicon("waiting");
 
-    // ── Mode (light/dark) ─────────────────────────────────────────────────────
     function readMode() {
       return new URLSearchParams(window.location.search).get("mode") === "dark" ? "dark" : "light";
     }
@@ -357,7 +310,6 @@ if (import.meta.env.PROD) {
       });
     }
 
-    // ── Label rendering ───────────────────────────────────────────────────────
     function renderLabel(key) {
       if (!labelEl) return;
       var desc = labels && labels[key];
@@ -394,7 +346,6 @@ if (import.meta.env.PROD) {
       notesBtnEl.classList.toggle("active", notesOpen);
     }
 
-    // ── Reject panel helpers ──────────────────────────────────────────────────
     function renderRejectHeader(key) {
       if (!rejectHeader) return;
       rejectHeader.innerHTML =
@@ -429,7 +380,6 @@ if (import.meta.env.PROD) {
     }
 
     function openRejectPanel() {
-      // Notes and Reject panels share screen space — only one may be visible.
       notesOpen = false;
       if (notesPanel) notesPanel.classList.remove("visible");
       renderNotesBtn();
@@ -437,8 +387,6 @@ if (import.meta.env.PROD) {
       rejectOpen = true;
       renderRejectHeader(activeCurrent);
       buildChips();
-      // Notes ride along with whichever button the user clicks next — backfill
-      // from the notes panel unless the reject textarea already has its own text.
       if (notesArea && rejectArea && !rejectArea.value && notesArea.value.trim()) {
         rejectArea.value = notesArea.value;
       }
@@ -458,7 +406,6 @@ if (import.meta.env.PROD) {
     buildChips();
     renderNotesBtn();
 
-    // ── Variant navigation ────────────────────────────────────────────────────
     function getIdx() {
       return variants.indexOf(activeCurrent);
     }
@@ -497,7 +444,6 @@ if (import.meta.env.PROD) {
       }
     });
 
-    // ── Notes panel ───────────────────────────────────────────────────────────
     if (notesArea) {
       notesArea.addEventListener("input", function () { renderNotesBtn(); });
     }
@@ -506,7 +452,6 @@ if (import.meta.env.PROD) {
       notesBtnEl.addEventListener("click", function () {
         notesOpen = !notesOpen;
         if (notesOpen) {
-          // Notes and Reject panels share screen space — only one may be visible.
           closeRejectPanel();
         }
         if (notesPanel) {
@@ -536,13 +481,11 @@ if (import.meta.env.PROD) {
       });
     }
 
-    // ── Submit (Approve / Reject) ─────────────────────────────────────────────
     function closeTab() {
       try { window.open("", "_self"); } catch (_) {}
       window.close();
     }
 
-    // One-shot confetti burst fired when the confirm overlay appears.
     function confettiBurst() {
       for (var i = 0; i < 28; i++) {
         var angle = (2 * Math.PI * i) / 28 + (i % 3) * 0.12;
@@ -603,9 +546,6 @@ if (import.meta.env.PROD) {
       if (action === "confirm") {
         setFavicon("done");
         showConfirmOverlay();
-        // 2.2s delay lets the confetti/overlay register before the tab vanishes;
-        // if the browser blocks window.close() (tab wasn't script-opened), the
-        // overlay's "You may close this tab" text + Close button are the fallback.
         if (closeAfter) setTimeout(closeTab, 2200);
       } else {
         setFavicon("processing");
@@ -621,8 +561,6 @@ if (import.meta.env.PROD) {
 
       var notes = notesArea ? notesArea.value : "";
       var hadNotes = notes.trim().length > 0;
-      // Approve with empty notes is the only outcome that closes the tab — approve
-      // with notes and reject both keep it open for the rework/iteration loop.
       var closeAfter = action === "confirm" && !hadNotes;
 
       var url = window.location.origin + basePath + "/prototype-confirm";
@@ -634,8 +572,6 @@ if (import.meta.env.PROD) {
         action: action,
       });
 
-      // sendBeacon keeps the click's user activation alive so window.close() is honored
-      // when closeAfter is true. An awaited fetch loses the activation.
       var queued = false;
       try {
         queued =
@@ -652,7 +588,6 @@ if (import.meta.env.PROD) {
         return;
       }
 
-      // Fallback: beacon unavailable/refused.
       fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload })
         .then(function (res) {
           if (!res.ok) {
@@ -704,9 +639,7 @@ if (import.meta.env.PROD) {
 
     if (rejectSubmit) {
       rejectSubmit.addEventListener("click", function () {
-        // Surface errors in the reject panel rather than the bar.
         if (rejectErrorEl) { rejectErrorEl.style.display = "none"; rejectErrorEl.textContent = ""; }
-        // Sync reject textarea into the shared notes so submit() picks it up.
         if (notesArea && rejectArea) notesArea.value = rejectArea.value;
         submit("reject");
         closeRejectPanel();
@@ -723,9 +656,6 @@ if (import.meta.env.PROD) {
       });
     }
 
-    // ── Reload-token polling ──────────────────────────────────────────────────
-    // Polls GET <base>/prototype-reload every 2s; reloads when the token changes.
-    // Stops silently on 404 or any network error (file://, no server, etc.).
     var reloadUrl = window.location.origin + basePath + "/prototype-reload";
     var lastToken = null;
     var pollActive = true;
