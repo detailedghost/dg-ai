@@ -19,18 +19,151 @@ import type {
 
 type FetchLike = typeof fetch;
 
+export type GraphTransportInput = {
+	config: AppConfig;
+	tokenProvider: MicrosoftTokenProvider;
+	fetch?: FetchLike;
+};
+
+/** Shared Graph HTTP plumbing: trusted origin check, bearer auth, retry/backoff, and cursor paging. */
+export class GraphHttpTransport {
+	constructor(private readonly input: GraphTransportInput) {}
+
+	/** Fetches one page per call and keeps pulling `@odata.nextLink` until `limit` items are collected. */
+	async fetchPage<T>(
+		path: string,
+		scopes: string[],
+		limit: number,
+	): Promise<{ items: T[]; hasMore: boolean }> {
+		const items: T[] = [];
+		const stream = this.fetchCollectionStream<T>(path, scopes, limit);
+		let step = await stream.next();
+		while (!step.done) {
+			items.push(...step.value);
+			step = await stream.next();
+		}
+		return { items, hasMore: step.value };
+	}
+
+	async *fetchCollectionStream<T>(
+		path: string,
+		scopes: string[],
+		limit = Number.POSITIVE_INFINITY,
+	): AsyncGenerator<T[], boolean, void> {
+		let next: string | undefined = path;
+		let emitted = 0;
+		const cursors = new Set<string>();
+		const messageIds = new Set<string>();
+		let emptyPages = 0;
+		let hasMoreAfterLimit = false;
+		while (next && emitted < limit) {
+			if (cursors.has(next))
+				throw new Error("Microsoft Graph paging stalled: repeated cursor");
+			cursors.add(next);
+			const page = (await this.fetchJson(next, scopes)) as GraphCollection<T>;
+			if (!Array.isArray(page.value)) {
+				throw new Error(
+					"Microsoft Graph returned a malformed collection response.",
+				);
+			}
+			const fresh = page.value.filter((row) => {
+				if (
+					typeof row === "object" &&
+					row !== null &&
+					"id" in row &&
+					typeof row.id === "string"
+				) {
+					if (messageIds.has(row.id)) return false;
+					messageIds.add(row.id);
+				}
+				return true;
+			});
+			const slice = fresh.slice(0, limit - emitted);
+			if (slice.length > 0) {
+				emitted += slice.length;
+				yield slice;
+			}
+			next = page["@odata.nextLink"];
+			hasMoreAfterLimit = Boolean(next) || fresh.length > slice.length;
+			if (next) {
+				if (page.value.length && !fresh.length)
+					throw new Error(
+						"Microsoft Graph paging stalled: page added no new messages",
+					);
+				emptyPages = page.value.length ? 0 : emptyPages + 1;
+				if (emptyPages >= 3)
+					throw new Error(
+						"Microsoft Graph paging stalled: consecutive empty pages",
+					);
+			}
+		}
+		return hasMoreAfterLimit;
+	}
+
+	async fetchJson(
+		pathOrUrl: string,
+		scopes: string[],
+		init: RequestInit = {},
+	): Promise<unknown> {
+		const base = new URL(this.input.config.outlook.graphBaseUrl);
+		const url = new URL(
+			pathOrUrl.startsWith("http")
+				? pathOrUrl
+				: `${this.input.config.outlook.graphBaseUrl}${pathOrUrl}`,
+		);
+		const prefix = base.pathname.replace(/\/$/, "");
+		if (
+			url.origin !== base.origin ||
+			url.protocol !== "https:" ||
+			(prefix && !url.pathname.startsWith(prefix + "/")) ||
+			url.username ||
+			url.password
+		)
+			throw new Error("Untrusted Microsoft Graph nextLink origin or path");
+		const token = await this.input.tokenProvider.getToken(scopes);
+		const fetchImpl = this.input.fetch ?? fetch;
+		const headers = new Headers(init.headers);
+		headers.set("content-type", "application/json");
+		headers.set("accept", "application/json");
+		headers.set("authorization", `Bearer ${token.accessToken}`);
+		headers.append("Prefer", 'IdType="ImmutableId"');
+		let attempt = 0;
+
+		while (true) {
+			const response = await fetchImpl(url.toString(), {
+				...init,
+				redirect: "error",
+				headers,
+			});
+
+			if (response.ok) {
+				const text = await response.text();
+				if (!text.trim()) {
+					return {};
+				}
+				return JSON.parse(text);
+			}
+
+			if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+				attempt += 1;
+				await sleep(retryDelayMs(response, attempt));
+				continue;
+			}
+
+			throw await graphError(response, scopes);
+		}
+	}
+}
+
 /** Microsoft Graph adapter with trusted cursor paging and immutable message IDs across mailbox moves. */
 export class GraphRestClient implements MailProviderClient {
 	readonly provider = "outlook" as const;
+	private readonly http: GraphHttpTransport;
 
 	/** Uses configured Graph scopes, a host token provider, and an optional fetch boundary. */
-	constructor(
-		private readonly input: {
-			config: AppConfig;
-			tokenProvider: MicrosoftTokenProvider;
-			fetch?: FetchLike;
-		},
-	) {}
+	constructor(private readonly input: GraphTransportInput) {
+		this.http = new GraphHttpTransport(input);
+	}
 
 	/** Returns exact provider folder identities for private routing and inventory. */
 	async listFolders(): Promise<MailFolder[]> {
@@ -81,7 +214,7 @@ export class GraphRestClient implements MailProviderClient {
 		const select =
 			"id,from,sender,subject,bodyPreview,parentFolderId,isRead,receivedDateTime,categories";
 		const start = `/me/mailFolders/${encodeURIComponent(folderId)}/messages?$select=${select}&$top=${top}&$orderby=receivedDateTime desc`;
-		for await (const page of this.fetchCollectionStream<GraphMessage>(
+		for await (const page of this.http.fetchCollectionStream<GraphMessage>(
 			start,
 			this.input.config.outlook.scopes.read,
 			input.limit,
@@ -98,7 +231,7 @@ export class GraphRestClient implements MailProviderClient {
 		for (const chunk of chunked(input.messageIds, 20)) {
 			await Promise.all(
 				chunk.map((messageId) =>
-					this.fetchJson(
+					this.http.fetchJson(
 						`/me/messages/${encodeURIComponent(messageId)}/move`,
 						this.input.config.outlook.scopes.write,
 						{
@@ -116,7 +249,7 @@ export class GraphRestClient implements MailProviderClient {
 		for (const chunk of chunked(input.messageIds, 20)) {
 			await Promise.all(
 				chunk.map((messageId) =>
-					this.fetchJson(
+					this.http.fetchJson(
 						`/me/messages/${encodeURIComponent(messageId)}`,
 						this.input.config.outlook.scopes.write,
 						{
@@ -134,7 +267,7 @@ export class GraphRestClient implements MailProviderClient {
 		id: string;
 		displayName: string;
 	}): Promise<MailFolder> {
-		const folder = (await this.fetchJson(
+		const folder = (await this.http.fetchJson(
 			`/me/mailFolders/${encodeURIComponent(input.id)}`,
 			this.input.config.outlook.scopes.write,
 			{
@@ -152,7 +285,7 @@ export class GraphRestClient implements MailProviderClient {
 	}): Promise<MailFolder> {
 		// `msgfolderroot` is Graph's well-known id for the top level, so promoting a
 		// nested folder to top level is just a move with that destination.
-		const folder = (await this.fetchJson(
+		const folder = (await this.http.fetchJson(
 			`/me/mailFolders/${encodeURIComponent(input.id)}/move`,
 			this.input.config.outlook.scopes.write,
 			{
@@ -168,67 +301,8 @@ export class GraphRestClient implements MailProviderClient {
 		scopes: string[],
 		limit = Number.POSITIVE_INFINITY,
 	): Promise<T[]> {
-		const values: T[] = [];
-		for await (const page of this.fetchCollectionStream<T>(
-			path,
-			scopes,
-			limit,
-		)) {
-			values.push(...page);
-		}
-		return values;
-	}
-
-	private async *fetchCollectionStream<T>(
-		path: string,
-		scopes: string[],
-		limit = Number.POSITIVE_INFINITY,
-	): AsyncGenerator<T[]> {
-		let next: string | undefined = path;
-		let emitted = 0;
-		const cursors = new Set<string>();
-		const messageIds = new Set<string>();
-		let emptyPages = 0;
-		while (next && emitted < limit) {
-			if (cursors.has(next))
-				throw new Error("Microsoft Graph paging stalled: repeated cursor");
-			cursors.add(next);
-			const page = (await this.fetchJson(next, scopes)) as GraphCollection<T>;
-			if (!Array.isArray(page.value)) {
-				throw new Error(
-					"Microsoft Graph returned a malformed collection response.",
-				);
-			}
-			const fresh = page.value.filter((row) => {
-				if (
-					typeof row === "object" &&
-					row !== null &&
-					"id" in row &&
-					typeof row.id === "string"
-				) {
-					if (messageIds.has(row.id)) return false;
-					messageIds.add(row.id);
-				}
-				return true;
-			});
-			const slice = fresh.slice(0, limit - emitted);
-			if (slice.length > 0) {
-				emitted += slice.length;
-				yield slice;
-			}
-			next = page["@odata.nextLink"];
-			if (next) {
-				if (page.value.length && !fresh.length)
-					throw new Error(
-						"Microsoft Graph paging stalled: page added no new messages",
-					);
-				emptyPages = page.value.length ? 0 : emptyPages + 1;
-				if (emptyPages >= 3)
-					throw new Error(
-						"Microsoft Graph paging stalled: consecutive empty pages",
-					);
-			}
-		}
+		const { items } = await this.http.fetchPage<T>(path, scopes, limit);
+		return items;
 	}
 
 	private async fetchFoldersRecursive(): Promise<GraphFolder[]> {
@@ -270,60 +344,6 @@ export class GraphRestClient implements MailProviderClient {
 			`${path}${separator}$select=${select}&$top=${this.input.config.outlook.pageSize}`,
 			this.input.config.outlook.scopes.read,
 		);
-	}
-
-	private async fetchJson(
-		pathOrUrl: string,
-		scopes: string[],
-		init: RequestInit = {},
-	): Promise<unknown> {
-		const base = new URL(this.input.config.outlook.graphBaseUrl);
-		const url = new URL(
-			pathOrUrl.startsWith("http")
-				? pathOrUrl
-				: `${this.input.config.outlook.graphBaseUrl}${pathOrUrl}`,
-		);
-		const prefix = base.pathname.replace(/\/$/, "");
-		if (
-			url.origin !== base.origin ||
-			url.protocol !== "https:" ||
-			(prefix && !url.pathname.startsWith(prefix + "/")) ||
-			url.username ||
-			url.password
-		)
-			throw new Error("Untrusted Microsoft Graph nextLink origin or path");
-		const token = await this.input.tokenProvider.getToken(scopes);
-		const fetchImpl = this.input.fetch ?? fetch;
-		const headers = new Headers(init.headers);
-		headers.set("content-type", "application/json");
-		headers.set("accept", "application/json");
-		headers.set("authorization", `Bearer ${token.accessToken}`);
-		headers.set("Prefer", 'IdType="ImmutableId"');
-		let attempt = 0;
-
-		while (true) {
-			const response = await fetchImpl(url.toString(), {
-				...init,
-				redirect: "error",
-				headers,
-			});
-
-			if (response.ok) {
-				const text = await response.text();
-				if (!text.trim()) {
-					return {};
-				}
-				return JSON.parse(text);
-			}
-
-			if ((response.status === 429 || response.status >= 500) && attempt < 3) {
-				attempt += 1;
-				await sleep(retryDelayMs(response, attempt));
-				continue;
-			}
-
-			throw await graphError(response, scopes);
-		}
 	}
 }
 
