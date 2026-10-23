@@ -90,6 +90,7 @@ interface ParsedForeignKey {
 }
 
 interface ParsedTableStmt {
+	schema: string;
 	table: string;
 	columns: DbColumn[];
 	foreignKeys: ParsedForeignKey[];
@@ -188,7 +189,7 @@ const TABLE_LEVEL_FK_RE =
 	/^(?:CONSTRAINT\s+["`[]?\w+["`\]]?\s+)?FOREIGN\s+KEY\s*\(\s*["`[]?(\w+)["`\]]?\s*\)\s*REFERENCES\s+["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
 const TABLE_LEVEL_SKIP_RE = /^(PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)\b/i;
 
-function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
+function parseCreateTableBody(schema: string, table: string, body: string): ParsedTableStmt {
 	const columns: DbColumn[] = [];
 	const foreignKeys: ParsedForeignKey[] = [];
 
@@ -233,11 +234,11 @@ function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
 		throw new Error(`CREATE TABLE ${table}: no parseable column or constraint definitions found`);
 	}
 
-	return { table, columns, foreignKeys };
+	return { schema, table, columns, foreignKeys };
 }
 
 const CREATE_TABLE_RE =
-	/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`[]?\w+["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(/gi;
+	/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(/gi;
 const CREATE_TABLE_LOOSE_RE = /CREATE\s+TABLE\b/gi;
 const ALTER_ADD_COLUMN_RE =
 	/ALTER\s+TABLE\s+["`[]?(\w+)["`\]]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/gi;
@@ -257,14 +258,15 @@ function parseSqlFileContent(content: string): ParsedFile {
 	CREATE_TABLE_RE.lastIndex = 0;
 	for (let m = CREATE_TABLE_RE.exec(content); m; m = CREATE_TABLE_RE.exec(content)) {
 		strictCreateCount++;
-		const table = m[1] as string;
+		const schema = (m[1] as string | undefined) ?? "public";
+		const table = m[2] as string;
 		const openIndex = m.index + m[0].length - 1;
 		const closeIndex = findMatchingParen(content, openIndex);
 		if (closeIndex === -1) {
 			throw new Error(`CREATE TABLE ${table}: unbalanced parentheses`);
 		}
 		const body = content.slice(openIndex + 1, closeIndex);
-		creates.push(parseCreateTableBody(table, body));
+		creates.push(parseCreateTableBody(schema, table, body));
 		CREATE_TABLE_RE.lastIndex = closeIndex + 1;
 	}
 
@@ -298,20 +300,23 @@ function parseSqlFileContent(content: string): ParsedFile {
 	return { creates, alters };
 }
 
-/** Node/edge ids are "<schema>.<table>"; this parser always produces the "public" schema. */
+/** Node/edge ids are "<schema>.<table>"; CREATE TABLE honors a captured schema qualifier, defaulting to "public" when unqualified. ALTER TABLE ADD COLUMN's regex captures no schema, so it always targets "public". */
 export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMigrationsResult {
 	const globs = opts.migrationGlobs ?? DEFAULT_MIGRATION_GLOBS;
 	const files = discoverByGlobs(opts.scopePath, globs);
 
 	const nodeColumns = new Map<string, Map<string, DbColumn>>();
+	const tableKeys = new Map<string, { schema: string; table: string }>();
 	const edges: DbEdge[] = [];
 	const evidence: EvidenceRecord[] = [];
 
-	function ensureTable(table: string): Map<string, DbColumn> {
-		let cols = nodeColumns.get(table);
+	function ensureTable(schema: string, table: string): Map<string, DbColumn> {
+		const key = `${schema}.${table}`;
+		let cols = nodeColumns.get(key);
 		if (!cols) {
 			cols = new Map();
-			nodeColumns.set(table, cols);
+			nodeColumns.set(key, cols);
+			tableKeys.set(key, { schema, table });
 		}
 		return cols;
 	}
@@ -349,11 +354,11 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 		}
 
 		for (const stmt of parsed.creates) {
-			const cols = ensureTable(stmt.table);
+			const cols = ensureTable(stmt.schema, stmt.table);
 			for (const col of stmt.columns) cols.set(col.name, col);
 			for (const fk of stmt.foreignKeys) {
 				edges.push({
-					from: `public.${stmt.table}`,
+					from: `${stmt.schema}.${stmt.table}`,
 					to: `public.${fk.toTable}`,
 					fromColumn: fk.fromColumn,
 					toColumn: fk.toColumn,
@@ -362,18 +367,21 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 			}
 		}
 		for (const alter of parsed.alters) {
-			const cols = ensureTable(alter.table);
+			const cols = ensureTable("public", alter.table);
 			cols.set(alter.column.name, alter.column);
 		}
 	}
 
-	const nodes: DbNode[] = Array.from(nodeColumns.entries()).map(([table, cols]) => ({
-		id: `public.${table}`,
-		label: table,
-		schema: "public",
-		columns: Array.from(cols.values()),
-		source: "static-sql",
-	}));
+	const nodes: DbNode[] = Array.from(nodeColumns.entries()).map(([key, cols]) => {
+		const { schema, table } = tableKeys.get(key) as { schema: string; table: string };
+		return {
+			id: key,
+			label: table,
+			schema,
+			columns: Array.from(cols.values()),
+			source: "static-sql",
+		};
+	});
 
 	return { nodes, edges, evidence };
 }

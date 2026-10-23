@@ -63,6 +63,35 @@ describe("parseSqlMigrations", () => {
 		expect(columnNames).toEqual(["email", "id"]);
 	});
 
+	test("same-named tables in two different schemas do not merge into one node", () => {
+		writeFile(
+			"migrations/0001_create_auth_users.sql",
+			`CREATE TABLE "auth"."users" (
+				id UUID PRIMARY KEY,
+				password_hash TEXT NOT NULL
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_public_users.sql",
+			`CREATE TABLE "public"."users" (
+				id UUID PRIMARY KEY,
+				display_name TEXT NOT NULL
+			);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(nodes).toHaveLength(2);
+		const authUsers = nodes.find((n) => n.id === "auth.users");
+		const publicUsers = nodes.find((n) => n.id === "public.users");
+		expect(authUsers).toBeDefined();
+		expect(publicUsers).toBeDefined();
+		expect(authUsers?.schema).toBe("auth");
+		expect(publicUsers?.schema).toBe("public");
+		expect(authUsers?.columns.map((c) => c.name).sort()).toEqual(["id", "password_hash"]);
+		expect(publicUsers?.columns.map((c) => c.name).sort()).toEqual(["display_name", "id"]);
+	});
+
 	test("inline REFERENCES produces a DbEdge with confidence proven", () => {
 		writeFile(
 			"migrations/0001_create_users.sql",
