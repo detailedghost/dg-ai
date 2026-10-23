@@ -22,6 +22,7 @@ import type {
 } from "../providers/types";
 import { readJsonFileIfExists as readJsonIfExists } from "../utils/json";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
+import { createBridgeImapSession } from "../protonmail/bridge-adapter";
 import {
 	accountProfileSlug,
 	workspaceDirForProfile,
@@ -392,8 +393,10 @@ export async function statusWorkspace(context: CliContext): Promise<void> {
 	const paths = workspacePaths(getWorkspaceDir(context));
 	const status = await readMessageStatus(paths);
 	const session = await protonSessionStatus(context);
+	const bridge = await bridgeHealthStatus(context);
+	const bridgeField = bridge ? { bridge } : {};
 	if (getBooleanFlag(context.args.flags, "full")) {
-		printJson({ ...status, session });
+		printJson({ ...status, session, ...bridgeField });
 		return;
 	}
 	printJson({
@@ -406,7 +409,62 @@ export async function statusWorkspace(context: CliContext): Promise<void> {
 		messageFilesGlob: "messages/*.json",
 		full: false,
 		session,
+		...bridgeField,
 	});
+}
+
+type BridgeHealthStatus = {
+	checked: boolean;
+	ok?: boolean;
+	check?: string;
+	detail?: string;
+	bridgeCertPinned?: boolean;
+};
+
+function bridgeCheckNameFor(detail: string): string {
+	if (/not reachable/.test(detail)) return "unreachable";
+	if (/fingerprint does not match/.test(detail)) return "tls-mismatch";
+	return "imap-login";
+}
+
+/** `undefined` when the profile is not a Bridge-configured protonmail one; `checked:false` in fixture mode. */
+async function bridgeHealthStatus(context: CliContext): Promise<BridgeHealthStatus | undefined> {
+	if (context.config.provider !== "protonmail") return undefined;
+	const { runtime, profile: profileName } = inboxRuntimeFor(context.config);
+	const profile = await runtime.profileGet?.(profileName);
+	const bridge = profile?.protonmail;
+	if (!bridge?.bridgeUsername) return undefined;
+	const bridgeCertPinned = Boolean(bridge.bridgeCertFingerprint);
+	if (context.config.mail.dataPath) {
+		return { checked: false, bridgeCertPinned };
+	}
+	const credentialName = `inbox/protonmail-bridge/${accountProfileSlug(profileName)}`;
+	const password = await runtime.credentialGet?.(credentialName);
+	if (!password) {
+		return {
+			checked: true,
+			ok: false,
+			check: "no-credential",
+			detail: `store the Proton Bridge password first: dg-skills credentials set ${credentialName}`,
+			bridgeCertPinned,
+		};
+	}
+	try {
+		const session = await createBridgeImapSession({
+			host: bridge.bridgeHost ?? "127.0.0.1",
+			imapPort: bridge.bridgeImapPort ?? 1143,
+			smtpPort: bridge.bridgeSmtpPort ?? 1025,
+			username: bridge.bridgeUsername,
+			password,
+			certFingerprint: bridge.bridgeCertFingerprint,
+			credentialName,
+		});
+		await session.close();
+		return { checked: true, ok: true, check: "imap-login", bridgeCertPinned };
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		return { checked: true, ok: false, check: bridgeCheckNameFor(detail), detail, bridgeCertPinned };
+	}
 }
 
 async function protonSessionStatus(context: CliContext): Promise<{
