@@ -1,3 +1,4 @@
+import { parseArgs as parseNodeArgs } from "node:util";
 import { parseNonNegativeInteger } from "@dg/common";
 import type { CommandSpec } from "../utils/legacy-command";
 import {
@@ -91,34 +92,31 @@ const defaultDeps: DbDeps = {
 	sfDestroy,
 };
 
+const PARSE_ARGS_OPTIONS = {
+	write: { type: "boolean" as const },
+	limit: { type: "string" as const },
+	format: { type: "string" as const },
+	"max-cell": { type: "string" as const },
+	schema: { type: "string" as const },
+	file: { type: "string" as const, short: "f" },
+};
+
 function parseArgs(args: string[]): ParsedArgs {
-	const parsed: ParsedArgs = {
-		positional: [],
-		write: false,
-		limit: null,
-		format: null,
-		maxCell: null,
-		schema: "",
-		sqlFile: "",
+	const { values, positionals } = parseNodeArgs({
+		args,
+		strict: true,
+		allowPositionals: true,
+		options: PARSE_ARGS_OPTIONS,
+	});
+	return {
+		positional: positionals,
+		write: values.write === true,
+		limit: values.limit != null ? parseNonNegativeInteger("--limit", values.limit) : null,
+		format: (values.format as OutputFormat | undefined) ?? null,
+		maxCell: values["max-cell"] != null ? parseNonNegativeInteger("--max-cell", values["max-cell"]) : null,
+		schema: values.schema ?? "",
+		sqlFile: values.file ?? "",
 	};
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i] ?? "";
-		const isTrailing = i === args.length - 1;
-		if (arg === "--write") parsed.write = true;
-		else if (arg === "--limit" && i + 1 < args.length)
-			parsed.limit = parseNonNegativeInteger("--limit", args[++i] ?? "");
-		else if (arg === "--format" && i + 1 < args.length)
-			parsed.format = (args[++i] ?? "") as OutputFormat;
-		else if (arg === "--max-cell" && i + 1 < args.length)
-			parsed.maxCell = parseNonNegativeInteger("--max-cell", args[++i] ?? "");
-		else if (arg === "--schema" && i + 1 < args.length)
-			parsed.schema = args[++i] ?? "";
-		else if (arg === "-f" && i + 1 < args.length)
-			parsed.sqlFile = args[++i] ?? "";
-		else if (!arg.startsWith("-") || (isTrailing && parsed.positional.length >= 1))
-			parsed.positional.push(arg);
-	}
-	return parsed;
 }
 
 async function safely(

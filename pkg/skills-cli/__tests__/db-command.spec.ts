@@ -131,10 +131,10 @@ describe("db command specification", () => {
 		expect(fixture.end).toHaveBeenCalledTimes(1);
 	});
 
-	test("accepts a positional SQL argument that starts with a hyphen instead of dropping it", async () => {
+	test("accepts a positional SQL argument that starts with a hyphen when passed after --", async () => {
 		const fixture = harness({ record: credentialRecord() });
 		const sql = "-- find active users\nSELECT 1";
-		const code = await fixture.spec.subcommands.query?.run(["my-pg", sql], {
+		const code = await fixture.spec.subcommands.query?.run(["my-pg", "--", sql], {
 			json: false,
 			help: false,
 		});
@@ -142,14 +142,25 @@ describe("db command specification", () => {
 		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, sql);
 	});
 
-	test("does not let an unknown flag between the connection name and SQL be taken as the SQL text", async () => {
+	test("rejects an unrecognized flag with a clear error instead of swallowing the SQL text", async () => {
 		const fixture = harness({ record: credentialRecord() });
 		const code = await fixture.spec.subcommands.query?.run(
 			["my-pg", "--typo-flag", "SELECT 1"],
 			{ json: false, help: false },
 		);
+		expect(code).toBe(1);
+		expect(fixture.stderr[0]).toContain("--typo-flag");
+		expect(fixture.pgQuery).not.toHaveBeenCalled();
+	});
+
+	test("a flag placed before the SQL positional still works", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const code = await fixture.spec.subcommands.query?.run(
+			["my-pg", "--write", "DELETE FROM users"],
+			{ json: false, help: false },
+		);
 		expect(code).toBeUndefined();
-		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, "SELECT 1");
+		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, "DELETE FROM users");
 	});
 
 	test("rejects a non-numeric --limit with a clear error instead of silently emptying the result", async () => {
