@@ -236,7 +236,8 @@ function parseCreateTableBody(table: string, body: string): ParsedTableStmt {
 	return { table, columns, foreignKeys };
 }
 
-const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s*\(/gi;
+const CREATE_TABLE_RE =
+	/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`[]?\w+["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(/gi;
 const CREATE_TABLE_LOOSE_RE = /CREATE\s+TABLE\b/gi;
 const ALTER_ADD_COLUMN_RE =
 	/ALTER\s+TABLE\s+["`[]?(\w+)["`\]]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/gi;
@@ -377,25 +378,30 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 	return { nodes, edges, evidence };
 }
 
+const DBT_NAME_ENTRY_RE = /^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/;
+
 function extractDbtTables(content: string): { sourceName: string | undefined; tables: string[] }[] {
 	const lines = content.split(/\r?\n/);
 	const groups: { sourceName: string | undefined; tables: string[] }[] = [];
 
 	let currentSourceIndent = -1;
-	let currentSourceName: string | undefined;
 	let inTables = false;
 	let tablesIndent = -1;
+	let inColumns = false;
+	let columnsIndent = -1;
 
 	for (const line of lines) {
 		if (line.trim().length === 0) continue;
 		const indent = line.length - line.trimStart().length;
 		const trimmed = line.trim();
 
-		const sourceMatch = trimmed.match(/^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/);
+		if (inColumns && indent <= columnsIndent) inColumns = false;
+		if (inTables && indent <= tablesIndent) inTables = false;
+
+		const sourceMatch = trimmed.match(DBT_NAME_ENTRY_RE);
 		if (sourceMatch && !inTables) {
 			currentSourceIndent = indent;
-			currentSourceName = sourceMatch[1];
-			groups.push({ sourceName: currentSourceName, tables: [] });
+			groups.push({ sourceName: sourceMatch[1], tables: [] });
 			continue;
 		}
 
@@ -405,16 +411,19 @@ function extractDbtTables(content: string): { sourceName: string | undefined; ta
 			continue;
 		}
 
-		if (inTables) {
-			if (indent <= tablesIndent) {
-				inTables = false;
-			} else {
-				const tableMatch = trimmed.match(/^-\s*name:\s*["']?([^"'\s]+)["']?\s*$/);
-				if (tableMatch && groups.length > 0) {
-					(groups[groups.length - 1] as { tables: string[] }).tables.push(tableMatch[1] as string);
-				}
-			}
+		if (!inTables) continue;
+
+		if (/^columns:\s*$/.test(trimmed)) {
+			inColumns = true;
+			columnsIndent = indent;
+			continue;
 		}
+
+		if (inColumns) continue;
+
+		const tableMatch = trimmed.match(DBT_NAME_ENTRY_RE);
+		const currentGroup = groups.at(-1);
+		if (tableMatch && currentGroup) currentGroup.tables.push(tableMatch[1] as string);
 	}
 
 	return groups;
@@ -666,7 +675,10 @@ function parseCsCreateTableCalls(content: string): ParsedCsTable[] {
 		if (columnsBlockMatch) {
 			const braceOpen = (columnsBlockMatch.index as number) + columnsBlockMatch[0].length - 1;
 			const braceClose = findMatchingBrace(callBody, braceOpen);
-			const columnsBody = braceClose === -1 ? callBody.slice(braceOpen + 1) : callBody.slice(braceOpen + 1, braceClose);
+			if (braceClose === -1) {
+				throw new Error(`migrationBuilder.CreateTable(${table}, ...) columns block has unbalanced braces`);
+			}
+			const columnsBody = callBody.slice(braceOpen + 1, braceClose);
 			const colRe = /(\w+)\s*=\s*table\.Column<([^>]+)>\(([^)]*)\)/g;
 			for (let cm = colRe.exec(columnsBody); cm; cm = colRe.exec(columnsBody)) {
 				const nullableMatch = (cm[3] as string).match(/nullable:\s*(true|false)/);

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { DEFAULT_MAX_FILE_SIZE_BYTES, parseDbtSources, parseSqlMigrations } from "../src/erd/schema-static";
+import { findNodeByLabel, writeScopedFile } from "./cli-fixtures";
 
 let scopeDir: string;
 
@@ -16,15 +17,10 @@ afterEach(() => {
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = join(scopeDir, relPath);
-	mkdirSync(dirname(abs), { recursive: true });
-	writeFileSync(abs, content);
-	return abs;
+	return writeScopedFile(scopeDir, relPath, content);
 }
 
-function findNode<T extends { label: string }>(nodes: T[], label: string): T | undefined {
-	return nodes.find((n) => n.label === label);
-}
+const findNode = findNodeByLabel;
 
 describe("parseSqlMigrations", () => {
 	test("extracts one DbNode per CREATE TABLE with columns and types", () => {
@@ -47,6 +43,24 @@ describe("parseSqlMigrations", () => {
 		expect(columnNames).toEqual(["email", "id", "name"]);
 		const idCol = users?.columns.find((c) => c.name === "id");
 		expect(idCol?.dataType.toLowerCase()).toContain("uuid");
+	});
+
+	test("extracts a table from a schema-qualified CREATE TABLE statement", () => {
+		writeFile(
+			"migrations/0001_create_users.sql",
+			`CREATE TABLE "public"."users" (
+				id UUID PRIMARY KEY,
+				email TEXT NOT NULL
+			);`,
+		);
+
+		const { nodes } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(nodes).toHaveLength(1);
+		const users = findNode(nodes, "users");
+		expect(users).toBeDefined();
+		const columnNames = users?.columns.map((c) => c.name).sort();
+		expect(columnNames).toEqual(["email", "id"]);
 	});
 
 	test("inline REFERENCES produces a DbEdge with confidence proven", () => {
@@ -348,6 +362,53 @@ describe("parseDbtSources", () => {
 		expect(result.nodes).toHaveLength(0);
 		const sizeEvidence = result.evidence.find((e) => e.ref.includes("sources.yml"));
 		expect(sizeEvidence?.detail).toContain(String(DEFAULT_MAX_FILE_SIZE_BYTES));
+	});
+
+	test("starts a new group when a second source begins while the first source's tables block is still open", () => {
+		writeFile(
+			"models/staging/sources.yml",
+			[
+				"version: 2",
+				"sources:",
+				"  - name: raw",
+				"    tables:",
+				"      - name: customers",
+				"      - name: events",
+				"  - name: analytics",
+				"    tables:",
+				"      - name: sessions",
+			].join("\n"),
+		);
+
+		const result = parseDbtSources(scopeDir);
+
+		const schemaByLabel = new Map(result.nodes.map((n) => [n.label, n.schema]));
+		expect(schemaByLabel.get("customers")).toBe("raw");
+		expect(schemaByLabel.get("events")).toBe("raw");
+		expect(schemaByLabel.get("sessions")).toBe("analytics");
+		expect(result.nodes).toHaveLength(3);
+	});
+
+	test("does not mistake a table's nested columns for sibling tables", () => {
+		writeFile(
+			"models/staging/sources.yml",
+			[
+				"version: 2",
+				"sources:",
+				"  - name: raw",
+				"    tables:",
+				"      - name: customers",
+				"        columns:",
+				"          - name: id",
+				"          - name: email",
+				"      - name: events",
+			].join("\n"),
+		);
+
+		const result = parseDbtSources(scopeDir);
+
+		const labels = result.nodes.map((n) => n.label).sort();
+		expect(labels).toEqual(["customers", "events"]);
 	});
 
 	test("does not descend into node_modules when discovering sources.yml files", () => {
