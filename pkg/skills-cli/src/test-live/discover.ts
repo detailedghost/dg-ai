@@ -3,18 +3,18 @@ import { join } from "node:path";
 import { repoRoot } from "@dg/common/node";
 import { TestLiveError } from "./shared";
 
-export { TestLiveError };
-
 const EXCLUDED_KEYWORDS = ["infra", "build", "blt", "codeql", "admin"];
 
 function isExcluded(name: string): boolean {
 	return EXCLUDED_KEYWORDS.some((keyword) => name.includes(keyword));
 }
 
+const YAML_EXTENSION_RE = /\.ya?ml$/;
+
 function sortedYamlFiles(dir: string): string[] {
 	try {
 		return readdirSync(dir)
-			.filter((name) => name.endsWith(".yml"))
+			.filter((name) => YAML_EXTENSION_RE.test(name))
 			.sort();
 	} catch {
 		return [];
@@ -50,12 +50,19 @@ function readOverride(env: string): string | null {
 	return null;
 }
 
-const EXACT_CANDIDATES: Record<string, string[]> = {
-	dev: ["deploy_dev.yml", "dev_deploy.yml", "deploy-dev.yml", "dev-deploy.yml"],
-	stage: ["deploy_staging.yml", "deploy-staging.yml", "deploy_stage.yml", "deploy-stage.yml"],
-	staging: ["deploy_staging.yml", "deploy-staging.yml", "deploy_stage.yml", "deploy-stage.yml"],
-	prod: ["deploy_prod.yml", "deploy-prod.yml", "prod.yml"],
+const EXACT_CANDIDATE_BASENAMES: Record<string, string[]> = {
+	dev: ["deploy_dev", "dev_deploy", "deploy-dev", "dev-deploy"],
+	stage: ["deploy_staging", "deploy-staging", "deploy_stage", "deploy-stage"],
+	staging: ["deploy_staging", "deploy-staging", "deploy_stage", "deploy-stage"],
+	prod: ["deploy_prod", "deploy-prod", "prod"],
 };
+
+const EXACT_CANDIDATES: Record<string, string[]> = Object.fromEntries(
+	Object.entries(EXACT_CANDIDATE_BASENAMES).map(([env, basenames]) => [
+		env,
+		basenames.flatMap((basename) => [`${basename}.yml`, `${basename}.yaml`]),
+	]),
+);
 
 /** Two needles for stage/staging, tried in this order, matching the legacy script's two concatenated globs. */
 const WILDCARD_NEEDLES: Record<string, string[]> = {
@@ -84,8 +91,9 @@ export function findWorkflow(env: string, workflowsDir: string): string {
 		if (matched) return join(workflowsDir, matched);
 	}
 
-	if (env === "dev" && existsSync(join(workflowsDir, "deploy.yml"))) {
-		return join(workflowsDir, "deploy.yml");
+	if (env === "dev") {
+		const fallback = firstExisting(workflowsDir, ["deploy.yml", "deploy.yaml"]);
+		if (fallback) return join(workflowsDir, fallback);
 	}
 
 	throw new TestLiveError(`no ${env} workflow file found in ${workflowsDir}`);

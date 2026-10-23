@@ -50,25 +50,18 @@ function log(repo: string, ref = "HEAD"): string {
 }
 
 function findStateFile(dir: string): string {
-	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		const full = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			try {
-				return findStateFile(full);
-			} catch {
-				continue;
-			}
-		} else if (entry.name.endsWith(".json")) {
-			return full;
-		}
-	}
-	throw new Error(`no state file found under ${dir}`);
+	const match = readdirSync(dir, { recursive: true })
+		.map((name) => name.toString())
+		.find((name) => name.endsWith(".json"));
+	if (!match) throw new Error(`no state file found under ${dir}`);
+	return join(dir, match);
 }
 
 interface FakeGhOptions {
 	inProgress?: string;
 	poll?: string;
 	baseline?: string;
+	baselineExit?: number;
 	dispatchExit?: number;
 	watchExit?: number;
 }
@@ -84,7 +77,7 @@ function fakeGhScript(opts: FakeGhOptions): string {
     ;;
   *"--limit 1 --json databaseId"*)
     printf '%s\\n' '${opts.baseline ?? "[]"}'
-    exit 0
+    exit ${opts.baselineExit ?? 0}
     ;;
   *"workflow run"*)
     exit ${opts.dispatchExit ?? 0}
@@ -369,6 +362,14 @@ describe("test-live setup — dispatch/push/watch failures", () => {
 		const result = await runCli(["setup", "dev"], repo, env);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("dispatch failed");
+	});
+
+	test("a failed previous-run lookup dies instead of watching a stale run", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ baselineExit: 1, poll: runRow(9009) }) });
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("failed to list previous runs");
 	});
 
 	test("a watch failure surfaces the run's own exit status", async () => {

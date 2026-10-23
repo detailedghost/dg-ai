@@ -3,8 +3,8 @@ import { basename, join } from "node:path";
 import { runCapture, runNative } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { currentBranch } from "../utils/git";
-import { findWorkflow, TestLiveError } from "./discover";
-import { git, info, makeDie } from "./shared";
+import { findWorkflow } from "./discover";
+import { git, info, makeDie, PATCH_MARKER, TestLiveError } from "./shared";
 import { readTestLiveState, writeTestLiveState } from "./state";
 import type { TestLiveState } from "./types";
 
@@ -44,6 +44,7 @@ function parseGhRuns(stdout: string): GhRun[] {
 }
 
 const ON_KEY = /^on:[ \t]*\r?$/m;
+const WORKFLOW_DISPATCH_KEY_RE = /^[ \t]*workflow_dispatch:/m;
 
 export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_DEPS): Promise<number> {
 	const env = args[0] || "dev";
@@ -112,14 +113,14 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 	let patchCommitSha: string | null = null;
 	let prePatchSha: string | null = null;
 
-	if (content.includes("workflow_dispatch")) {
+	if (WORKFLOW_DISPATCH_KEY_RE.test(content)) {
 		info("workflow_dispatch already present — triggering directly");
 	} else {
 		if (!ON_KEY.test(content)) {
 			return die(`could not find an 'on:' key to patch in ${workflowPath}`);
 		}
 		prePatchSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
-		writeFileSync(workflowPath, content.replace(ON_KEY, "on:\n  workflow_dispatch: {}  # TEST-LIVE: temporary"));
+		writeFileSync(workflowPath, content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`));
 		await git(["add", workflowPath]);
 		const commit = await git(["commit", "-m", "chore(ci): add workflow_dispatch for test-live [skip ci]"]);
 		if (commit.status !== 0) {
@@ -167,7 +168,10 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 		"--json",
 		"databaseId",
 	]);
-	const prevId = previous.status === 0 ? parseGhRuns(previous.stdout)[0]?.databaseId ?? 0 : 0;
+	if (previous.status !== 0) {
+		return die(`failed to list previous runs: ${previous.stderr.trim()}`);
+	}
+	const prevId = parseGhRuns(previous.stdout)[0]?.databaseId ?? 0;
 
 	info(`Triggering ${workflowFile} on ${branch}...`);
 	const dispatch = await gh(["workflow", "run", workflowFile, "--ref", branch]);
