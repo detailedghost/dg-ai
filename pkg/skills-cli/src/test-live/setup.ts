@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { runCapture, runNative } from "@dg/common/node";
+import { isMap, isScalar, isSeq, parseDocument, type Node, type Pair } from "yaml";
 import { detectProvider } from "../provider/detect";
 import { currentBranch } from "../utils/git";
 import { findWorkflow } from "./discover";
@@ -44,7 +45,57 @@ function parseGhRuns(stdout: string): GhRun[] {
 }
 
 const ON_KEY = /^on:[ \t]*\r?$/m;
-const WORKFLOW_DISPATCH_KEY_RE = /^[ \t]*workflow_dispatch:/m;
+
+function findOnPair(content: string): Pair<Node, Node> | undefined {
+	const doc = parseDocument(content);
+	if (!isMap(doc.contents)) return undefined;
+	const pair = doc.contents.items.find((item) => String(item.key) === "on");
+	return pair?.value == null ? undefined : (pair as Pair<Node, Node>);
+}
+
+function scalarTriggerNames(onValue: Node): string[] | undefined {
+	if (isScalar(onValue)) {
+		return typeof onValue.value === "string" ? [onValue.value] : undefined;
+	}
+	if (isSeq(onValue)) {
+		const names = onValue.items.map((item) =>
+			isScalar(item) && typeof item.value === "string" ? item.value : null,
+		);
+		return names.every((name): name is string => name !== null) ? names : undefined;
+	}
+	return undefined;
+}
+
+function hasWorkflowDispatchTrigger(content: string): boolean {
+	const onValue = findOnPair(content)?.value;
+	if (!onValue) return false;
+	if (isMap(onValue)) return onValue.items.some((pair) => String(pair.key) === "workflow_dispatch");
+	return scalarTriggerNames(onValue)?.includes("workflow_dispatch") ?? false;
+}
+
+/** Scalar/flow-array/block-sequence on: forms carry no per-trigger config, so normalizing them to a mapping with empty entries is lossless; a mapping form is patched in place to keep any existing trigger config intact. */
+function patchWorkflowDispatch(content: string, workflowPath: string): string {
+	const onPair = findOnPair(content);
+	const onValue = onPair?.value;
+	if (onValue && isMap(onValue)) {
+		if (!ON_KEY.test(content)) {
+			throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
+		}
+		return content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`);
+	}
+	const names = onValue ? scalarTriggerNames(onValue) : undefined;
+	const keyRange = onPair?.key.range;
+	const valueRange = onValue?.range;
+	if (!names || !keyRange || !valueRange) {
+		throw new TestLiveError(
+			`could not find a usable 'on:' trigger to patch in ${workflowPath} — add workflow_dispatch manually and rerun`,
+		);
+	}
+	const remainder = content.slice(valueRange[1]);
+	const separator = remainder.startsWith("\n") || remainder.length === 0 ? "" : "\n";
+	const lines = [...names.map((name) => `  ${name}: {}`), `  ${PATCH_MARKER}`];
+	return `${content.slice(0, keyRange[0])}on:\n${lines.join("\n")}${separator}${remainder}`;
+}
 
 export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_DEPS): Promise<number> {
 	const env = args[0] || "dev";
@@ -113,14 +164,18 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 	let patchCommitSha: string | null = null;
 	let prePatchSha: string | null = null;
 
-	if (WORKFLOW_DISPATCH_KEY_RE.test(content)) {
+	if (hasWorkflowDispatchTrigger(content)) {
 		info("workflow_dispatch already present — triggering directly");
 	} else {
-		if (!ON_KEY.test(content)) {
-			return die(`could not find an 'on:' key to patch in ${workflowPath}`);
+		let patchedContent: string;
+		try {
+			patchedContent = patchWorkflowDispatch(content, workflowPath);
+		} catch (error) {
+			if (error instanceof TestLiveError) return die(error.message);
+			throw error;
 		}
 		prePatchSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
-		writeFileSync(workflowPath, content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`));
+		writeFileSync(workflowPath, patchedContent);
 		await git(["add", workflowPath]);
 		const commit = await git(["commit", "-m", "chore(ci): add workflow_dispatch for test-live [skip ci]"]);
 		if (commit.status !== 0) {

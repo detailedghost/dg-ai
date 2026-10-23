@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { git as runGit } from "./git-repo-fixtures";
@@ -24,14 +25,14 @@ function tmp(prefix: string): string {
 	return cliFixtures.tmp(createdDirs, prefix);
 }
 
-function buildRepo(): { origin: string; repo: string } {
+function buildRepoWithWorkflow(workflowContent: string): { origin: string; repo: string } {
 	const origin = tmp("test-live-origin-");
 	runGit(["init", "-q", "--bare", "-b", "main"], origin);
 	const repo = tmp("test-live-repo-");
 	runGit(["init", "-q", "-b", "main"], repo);
 	runGit(["remote", "add", "origin", origin], repo);
 	mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
-	writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), DEPLOY_WORKFLOW);
+	writeFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), workflowContent);
 	writeFileSync(join(repo, "README.md"), "hello\n");
 	runGit(["add", "-A"], repo);
 	runGit(["commit", "-q", "-m", "chore: init"], repo);
@@ -39,6 +40,10 @@ function buildRepo(): { origin: string; repo: string } {
 	runGit(["checkout", "-q", "-b", BRANCH], repo);
 	runGit(["push", "-q", "-u", "origin", BRANCH], repo);
 	return { origin, repo };
+}
+
+function buildRepo(): { origin: string; repo: string } {
+	return buildRepoWithWorkflow(DEPLOY_WORKFLOW);
 }
 
 function headSha(repo: string): string {
@@ -212,6 +217,103 @@ describe("test-live setup/cleanup — happy path", () => {
 		expect(cleanupResult.code, cleanupResult.stderr).toBe(0);
 		expect(cleanupResult.stdout).toContain("nothing to revert");
 		expect(headSha(repo)).toBe(preSha);
+	});
+});
+
+const DEPLOY_JOB = "jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps: []\n";
+
+describe("test-live setup — on: form variants", () => {
+	test("patches a scalar on: push into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: push\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4001) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: {}, workflow_dispatch: {} });
+	});
+
+	test("patches a flow-array on: [push, pull_request] into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: [push, pull_request]\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4002) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({
+			push: {},
+			pull_request: {},
+			workflow_dispatch: {},
+		});
+	});
+
+	test("patches a block-sequence on: [- push, - pull_request] into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non:\n  - push\n  - pull_request\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4003) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({
+			push: {},
+			pull_request: {},
+			workflow_dispatch: {},
+		});
+	});
+
+	test("a scalar on: workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: workflow_dispatch\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4004) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a flow-array already containing workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: [push, workflow_dispatch]\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4005) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a block-sequence already containing workflow_dispatch triggers directly without patching", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non:\n  - push\n  - workflow_dispatch\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4006) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("triggering directly");
+		expect(headSha(repo)).toBe(preSha);
+	});
+
+	test("a workflow with no on: key refuses instead of writing invalid YAML", async () => {
+		const workflowContent = `name: Deploy\n${DEPLOY_JOB}`;
+		const { repo } = buildRepoWithWorkflow(workflowContent);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath() });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("could not find a usable 'on:' trigger to patch");
+		expect(headSha(repo)).toBe(preSha);
+		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).toBe(workflowContent);
 	});
 });
 
