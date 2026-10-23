@@ -13,6 +13,8 @@ import {
 	phoneDial,
 	phoneCard,
 	phoneContacts,
+	phoneDeliverOff,
+	phoneDeliverOn,
 	phoneInvite,
 	phoneName,
 	phoneNumber,
@@ -23,6 +25,7 @@ import {
 	phoneOn,
 	phoneOff,
 } from "../../src/phone-friend/commands";
+import { PHONE_FRIEND_SAFETY_REF } from "../../src/phone-friend/deliver";
 import {
 	DEFAULT_RELAYS,
 	claimStart,
@@ -418,12 +421,13 @@ describe("phoneName and phoneContacts", () => {
 describe("phoneCard", () => {
 	it("prints the open card again with the same secret, relays, and expiry", async () => {
 		await phoneInvite({ relay: ["wss://x.example"] }, deps());
-		const [first] = lines() as { card: string; expires_at: string }[];
+		const [first] = lines() as { card: string; expires_at: string; safety: string }[];
 		out = [];
 
 		await phoneCard(deps());
 
 		expect(lines()).toEqual([first]);
+		expect(first.safety).toBe(PHONE_FRIEND_SAFETY_REF);
 	});
 
 	it("shows the open card's expiry in phoneNumber, and hides it once no card is open", async () => {
@@ -490,7 +494,22 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		await phoneVoicemail(deps());
 
 		expect(pool.filters).toEqual([]);
-		expect(lines()).toMatchObject([{ text: "from listener" }]);
+		expect(lines()).toMatchObject([{ text: "from listener", title: "from listener" }]);
+	});
+
+	it("adds a non-empty feed title and leaves the stored text unchanged", async () => {
+		pair();
+		await phoneOn(deps());
+		stored({ id: "pad", ts: NOW, from: contactNpub, text: "  hello  " });
+		stored({ id: "blank", ts: NOW, from: contactNpub, text: "   " });
+		out = [];
+
+		await phoneVoicemail(deps());
+
+		expect(lines()).toEqual([
+			expect.objectContaining({ id: "blank", text: "   ", title: "(empty)" }),
+			expect.objectContaining({ id: "pad", text: "  hello  ", title: "hello" }),
+		]);
 	});
 
 	it("follows the inbox until the listener stops", async () => {
@@ -509,6 +528,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		await expect(phoneAnswer(follow)).rejects.toThrow("stopped");
 
 		expect(lines()).toMatchObject([{ text: "live" }]);
+		expect(lines()[0]).not.toHaveProperty("title");
 	});
 
 	it("refuses to follow when no listener runs", async () => {
@@ -733,6 +753,113 @@ describe("registerPhoneFriendCommands", () => {
 		expect(work.line).toBe("work");
 		expect(main.line).toBe("default");
 		expect(work.npub).not.toBe(main.npub);
+	});
+});
+
+describe("phoneDeliver", () => {
+	function recordingDeps(calls: string[][]): PhoneFriendDeps {
+		return {
+			...deps(),
+			jobCwd: paths.stateDir,
+			runJobCli: async (args) => {
+				calls.push(args);
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		};
+	}
+
+	it("registers the default line without --line and prints the stored argv", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOn({ notify: "  reviewer  ", every: " 1m " }, recordingDeps(calls));
+
+		expect(calls[0]).toEqual([
+			"job",
+			"add",
+			"--label",
+			"phone-friend:default",
+			"--every",
+			"1m",
+			"--cwd",
+			paths.stateDir,
+			"--notify",
+			"reviewer",
+			"--",
+			"dg-agent",
+			"phone-friend",
+			"voicemail",
+		]);
+		expect(lines()[0]).toMatchObject({
+			line: "default",
+			delivery: "on",
+			status: "added",
+			notify: "reviewer",
+			argv: ["dg-agent", "phone-friend", "voicemail"],
+		});
+	});
+
+	it("pauses the line job", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOff(recordingDeps(calls));
+
+		expect(calls).toEqual([["job", "disable", "phone-friend:default"]]);
+		expect(lines()[0]).toMatchObject({ delivery: "off", status: "disabled", label: "phone-friend:default" });
+	});
+
+	it("uses the session identity when --notify is omitted", async () => {
+		const calls: string[][] = [];
+		const recorded = recordingDeps(calls);
+
+		await phoneDeliverOn({}, { ...recorded, lookupIdentity: () => "claude" }, "sess");
+
+		expect(calls[0]).toContain("claude");
+		expect(lines()[0]).toMatchObject({ notify: "claude" });
+	});
+
+	it("wires deliver on and off through the line and the session", async () => {
+		const calls: string[][] = [];
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		registerPhoneFriendCommands(program, (session, name) => ({
+			...deps(),
+			line: linePaths(paths, name),
+			jobCwd: paths.stateDir,
+			lookupIdentity: () => {
+				if (session !== "abc") throw new Error(`session ${session}`);
+				return "from-session";
+			},
+			runJobCli: async (args) => {
+				calls.push(args);
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		}));
+
+		await program.parseAsync([
+			"node",
+			"dg-agent",
+			"--session",
+			"abc",
+			"phone-friend",
+			"--line",
+			"work",
+			"deliver",
+			"on",
+		]);
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "deliver", "off"]);
+
+		expect(calls[0]?.slice(0, 8)).toEqual([
+			"job",
+			"add",
+			"--label",
+			"phone-friend:work",
+			"--every",
+			"1m",
+			"--cwd",
+			paths.stateDir,
+		]);
+		expect(calls[0]).toContain("from-session");
+		expect(calls[0]?.slice(-5)).toEqual(["dg-agent", "phone-friend", "--line", "work", "voicemail"]);
+		expect(calls[1]).toEqual(["job", "disable", "phone-friend:default"]);
 	});
 });
 
