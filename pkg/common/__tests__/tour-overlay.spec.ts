@@ -207,6 +207,16 @@ describe("renderTourOverlayStep — cross-realm safety (dg-skills pw's page.eval
 	// throw a ReferenceError in that realm even though a direct same-realm call (the
 	// extension's) never notices. Rebuilding it from its own toString() and running it
 	// is the only way to catch that without an actual second JS realm.
+	it("has no transpiler-emitted helper calls that would be undefined in a fresh realm", () => {
+		// Bun/tsc sometimes lower spread/object-rest/class-field syntax into calls to a
+		// shared __spreadValues/__assign/__rest/__name helper hoisted to module scope —
+		// invisible here (same realm, same module), but a ReferenceError the moment this
+		// function's source text runs anywhere else, including inside a real page.
+		expect(renderTourOverlayStep.toString()).not.toMatch(
+			/\b__spread\w*|__assign\b|__rest\b|__name\b/,
+		);
+	});
+
 	it("still runs correctly when reconstructed purely from its own source text", () => {
 		// biome-ignore lint: deliberately re-parsing the function's own source, same trick Playwright uses.
 		const rebuilt = new Function(
