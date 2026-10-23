@@ -1,11 +1,5 @@
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { writeFileAtomic } from "@dg/common/node";
 import type { SentinelPaths } from "./paths";
 
 export type WaitResult =
@@ -24,9 +18,7 @@ function readTrimmed(path: string): string {
 }
 
 export function writeSentinel(path: string, contents: string): void {
-	const temp = `${path}.${process.pid}.tmp`;
-	writeFileSync(temp, contents);
-	renameSync(temp, path);
+	writeFileAtomic(path, contents);
 }
 
 function sleep(ms: number): Promise<void> {
