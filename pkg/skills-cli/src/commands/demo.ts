@@ -13,6 +13,7 @@ import {
 } from "../demo/attach-pr";
 import { captureBaseline, cleanupOwnedArtifacts } from "../demo/cleanup";
 import { createPwDemoDriver, recordLocalDemo } from "../demo/local-record";
+import { assertExtensionInstalled } from "../utils/cli-only";
 import { addDemoMarker } from "../utils/demo-marker";
 import type { VerifyResult } from "../utils/demo-verify";
 import { verifyScript } from "../utils/demo-verify";
@@ -245,9 +246,11 @@ export function registerDemo(program: Command): void {
 				return;
 			}
 			const script = loadScript(scriptPath);
-			return selectDemoMode(opts) === "ext"
-				? playScript(script, opts)
-				: runLocalDemo(script, opts);
+			if (selectDemoMode(opts) === "ext") {
+				assertExtensionInstalled("dg-skills demo --ext");
+				return playScript(script, opts);
+			}
+			return runLocalDemo(script, opts);
 		});
 }
 

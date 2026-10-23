@@ -3,12 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Command } from "commander";
 
-export const EXTENSION_COMMANDS = [
-	"batch-open",
-	"launch",
-	"demo",
-	"rerun",
-];
+export const EXTENSION_COMMANDS = ["batch-open", "launch", "rerun"];
 
 export const cliOnlyMarker = (): string =>
 	join(process.env.DG_HOME ?? join(homedir(), ".dg"), "cli-only");

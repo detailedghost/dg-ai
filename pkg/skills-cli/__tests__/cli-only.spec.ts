@@ -73,9 +73,9 @@ describe("extension guard", () => {
 
 	test("allows every command on a full install", async () => {
 		const { program, calls } = buildProgram();
-		await program.parseAsync(["demo"], { from: "user" });
+		await program.parseAsync(["launch"], { from: "user" });
 		await program.parseAsync(["inbox"], { from: "user" });
-		expect(calls).toEqual(["demo", "inbox"]);
+		expect(calls).toEqual(["launch", "inbox"]);
 	});
 
 	test("blocks extension commands and nested subcommands in a CLI-only install", async () => {
@@ -121,18 +121,12 @@ describe("skill metadata", () => {
 		expect(names.filter(requiresExtension).sort()).toEqual([
 			"browser",
 			"chat",
-			"demo",
 			"overwatch",
 		]);
 	});
 
 	test("guards a dg-skills command for every extension skill that runs one", () => {
-		expect([...EXTENSION_COMMANDS].sort()).toEqual([
-			"batch-open",
-			"demo",
-			"launch",
-			"rerun",
-		]);
+		expect([...EXTENSION_COMMANDS].sort()).toEqual(["batch-open", "launch", "rerun"]);
 	});
 
 	test("google-sms-cleanup ships with the CLI skills and does not require the extension", () => {
