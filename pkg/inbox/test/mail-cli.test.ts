@@ -10,20 +10,20 @@ import type { InboxRuntime } from "../src/runtime";
 import { fixturePath } from "./fixture-paths";
 
 type Runtime = InboxRuntime;
-type RunResult = { stdout: string; exitCode: number | undefined };
+type RunResult = { stdout: string; exitCode: number };
 
 async function run(args: string[], runtime: Runtime = {}): Promise<RunResult> {
 	const output: string[] = [];
 	const log = console.log;
 	console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
 	const originalExitCode = process.exitCode;
-	process.exitCode = undefined;
+	process.exitCode = 0;
 	try {
 		await main(args, runtime);
-		return { stdout: output.join("\n"), exitCode: process.exitCode };
+		return { stdout: output.join("\n"), exitCode: process.exitCode ?? 0 };
 	} finally {
 		console.log = log;
-		process.exitCode = originalExitCode;
+		process.exitCode = originalExitCode ?? 0;
 	}
 }
 
