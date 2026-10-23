@@ -76,8 +76,9 @@ function hasWorkflowDispatchTrigger(content: string): boolean {
 function mappingEntryText(content: string, pair: Pair<Node, Node | null>): string {
 	const keyRange = pair.key.range;
 	if (!keyRange) return String(pair.key);
-	const end = pair.value?.range?.[1] ?? keyRange[1];
-	return content.slice(keyRange[0], end);
+	const valueRange = pair.value?.range;
+	if (!valueRange) return `${content.slice(keyRange[0], keyRange[1])}:`;
+	return content.slice(keyRange[0], valueRange[1]);
 }
 
 function rewriteOnKeyAsBlockMapping(

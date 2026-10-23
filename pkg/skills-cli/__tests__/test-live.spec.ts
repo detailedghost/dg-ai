@@ -329,6 +329,19 @@ describe("test-live setup — on: form variants", () => {
 		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: null, workflow_dispatch: {} });
 	});
 
+	test("patches a flow-mapping on: {push} (implicit-null shorthand) into a mapping with workflow_dispatch", async () => {
+		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {push}\n${DEPLOY_JOB}`);
+		const preSha = headSha(repo);
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(4010) }) });
+
+		const result = await runCli(["setup", "dev"], repo, env);
+		expect(result.code, result.stderr).toBe(0);
+		expect(headSha(repo)).not.toBe(preSha);
+		const patched = readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8");
+		expect(patched).toContain("workflow_dispatch: {}  # TEST-LIVE: temporary");
+		expect((parseYaml(patched) as { on: unknown }).on).toEqual({ push: null, workflow_dispatch: {} });
+	});
+
 	test("a flow-mapping already containing workflow_dispatch triggers directly without patching", async () => {
 		const { repo } = buildRepoWithWorkflow(`name: Deploy\non: {workflow_dispatch: null}\n${DEPLOY_JOB}`);
 		const preSha = headSha(repo);
