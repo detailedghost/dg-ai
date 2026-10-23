@@ -3,7 +3,6 @@ export const EXT_READ_VERBS = ["current", "snapshot", "screenshot", "selection",
 export const EXT_VERBS = [...EXT_WRITE_VERBS, ...EXT_READ_VERBS] as const;
 
 export type ExtWriteVerb = (typeof EXT_WRITE_VERBS)[number];
-export type ExtReadVerb = (typeof EXT_READ_VERBS)[number];
 export type ExtVerb = (typeof EXT_VERBS)[number];
 
 export const isExtVerb = (value: string): value is ExtVerb => (EXT_VERBS as readonly string[]).includes(value);
