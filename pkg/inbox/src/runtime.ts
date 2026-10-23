@@ -3,6 +3,7 @@ import type {
 	InboxProvider,
 	InboxBrowserRequest,
 	InboxBrowserResponse,
+	InboxSendApproval,
 } from "@dg/common";
 import type { AppConfig } from "./config/types";
 /** Injects encrypted configuration/auth storage and the authenticated Proton extension transport. */
@@ -21,6 +22,12 @@ export type InboxRuntime = {
 	): Promise<void>;
 	/** Sends a validated named operation through the session-bound extension relay. */
 	browserRequest?(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
+	/** Returns a named dg credential-store value, or null when it is unset. */
+	credentialGet?(name: string): Promise<string | null>;
+	/** Relays the exact unredacted mail to the human's approval card and waits for their decision. */
+	sendApproval?(
+		request: InboxSendApproval & { timeoutMs: number },
+	): Promise<{ approved: boolean; decidedAt: string }>;
 };
 const runtimes = new WeakMap<
 	AppConfig,

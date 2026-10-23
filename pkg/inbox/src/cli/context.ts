@@ -59,6 +59,7 @@ export async function createCliContext(
 		} else {
 			config.protonmail.dataPath = args.flags["data-path"];
 		}
+		config.mail.dataPath = args.flags["data-path"];
 	}
 	if (typeof args.flags["gmail-data-path"] === "string") {
 		config.gmail.dataPath = args.flags["gmail-data-path"];
@@ -218,7 +219,12 @@ function applyDatabaseProfile(config: AppConfig, profile: InboxProfile): void {
 		} else {
 			config.outlook = { ...config.outlook, ...flat };
 			if (scopes)
-				config.outlook.scopes = { read: scopes, write: scopes, rules: scopes };
+				config.outlook.scopes = {
+					...config.outlook.scopes,
+					read: scopes,
+					write: scopes,
+					rules: scopes,
+				};
 			config.outlook.loginHint =
 				settings.loginHint ?? profile.accountHint ?? config.outlook.loginHint;
 		}

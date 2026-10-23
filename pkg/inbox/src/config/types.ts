@@ -82,7 +82,11 @@ export type AppConfig = {
 			read: string[];
 			write: string[];
 			rules: string[];
+			send: string[];
 		};
+	};
+	mail: {
+		dataPath?: string;
 	};
 	classifier: {
 		mode: ClassifierMode;
@@ -118,6 +122,7 @@ export type PartialAppConfig = {
 	outlook?: Partial<Omit<AppConfig["outlook"], "scopes">> & {
 		scopes?: Partial<AppConfig["outlook"]["scopes"]>;
 	};
+	mail?: Partial<AppConfig["mail"]>;
 	classifier?: Partial<AppConfig["classifier"]>;
 	output?: Partial<AppConfig["output"]>;
 	security?: Partial<AppConfig["security"]>;

@@ -110,7 +110,14 @@ export const defaultConfig: AppConfig = {
 				.split(",")
 				.map((scope) => scope.trim())
 				.filter(Boolean),
+			send: (process.env.MICROSOFT_SEND_SCOPES ?? "Mail.Send")
+				.split(",")
+				.map((scope) => scope.trim())
+				.filter(Boolean),
 		},
+	},
+	mail: {
+		dataPath: process.env.MAIL_DATA_PATH,
 	},
 	classifier: {
 		mode: classifierMode(process.env.CLASSIFIER_MODE),

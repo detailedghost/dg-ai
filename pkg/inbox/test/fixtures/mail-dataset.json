@@ -1,0 +1,147 @@
+{
+  "messages": [
+    {
+      "id": "msg-plain-1",
+      "from": "Priya Shah <priya@example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Weekly status update",
+      "receivedAt": "2026-10-20T09:00:00Z",
+      "folderId": "inbox",
+      "isRead": false,
+      "hasAttachments": false,
+      "text": "Hi team,\n\nHere is the weekly status update. Everything is on track.\n\nThanks,\nPriya",
+      "attachments": []
+    },
+    {
+      "id": "msg-html-1",
+      "from": "Updates <news@updates.example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Product announcement",
+      "receivedAt": "2026-10-19T09:00:00Z",
+      "folderId": "inbox",
+      "isRead": false,
+      "hasAttachments": false,
+      "text": "",
+      "html": "<html><head><style>body { color: red; }</style></head><body><p>New features are <b>live</b> today.</p><ul><li>Faster search</li><li>Dark mode</li></ul></body></html>",
+      "attachments": []
+    },
+    {
+      "id": "msg-quoted-outlook-1",
+      "from": "Marcus Lee <marcus@example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Re: Budget approval",
+      "receivedAt": "2026-10-15T09:00:00Z",
+      "folderId": "inbox",
+      "isRead": true,
+      "hasAttachments": false,
+      "text": "Sounds good, approved.\n-----Original Message-----\nFrom: Marcus Lee <marcus@example.test>\nSent: Thursday, October 15, 2026 8:00 AM\nTo: Finance <finance@example.test>\nSubject: Budget approval\n\nCan we approve the Q4 budget?",
+      "attachments": []
+    },
+    {
+      "id": "msg-quoted-wrote-1",
+      "from": "Dana Osei <dana@updates.example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Re: Launch checklist",
+      "receivedAt": "2026-10-10T09:00:00Z",
+      "folderId": "inbox",
+      "isRead": true,
+      "hasAttachments": false,
+      "text": "Yes, the checklist looks complete.\n\nOn Fri, Oct 9, 2026 at 3:00 PM Dana Osei <dana@updates.example.test> wrote:\n> Is the launch checklist ready for review?\n> Let me know if anything is missing.",
+      "attachments": []
+    },
+    {
+      "id": "msg-attachments-1",
+      "from": "Priya Shah <priya@example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Invoice and logo assets",
+      "receivedAt": "2026-10-21T09:00:00Z",
+      "folderId": "inbox",
+      "isRead": true,
+      "hasAttachments": true,
+      "text": "Attached are the invoice and the logo assets for the campaign.",
+      "attachments": [
+        {
+          "id": "att-1",
+          "name": "invoice.pdf",
+          "contentType": "application/pdf",
+          "size": 48213,
+          "isInline": false
+        },
+        {
+          "id": "att-2",
+          "name": "report.xlsx",
+          "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "size": 102400,
+          "isInline": false
+        },
+        {
+          "id": "att-3",
+          "name": "logo.png",
+          "contentType": "image/png",
+          "size": 8192,
+          "isInline": true
+        }
+      ]
+    },
+    {
+      "id": "msg-archive-old-1",
+      "from": "Finance <finance@example.test>",
+      "to": [
+        "person@example.test"
+      ],
+      "cc": [],
+      "subject": "Archived receipt",
+      "receivedAt": "2026-08-01T09:00:00Z",
+      "folderId": "archive",
+      "isRead": true,
+      "hasAttachments": false,
+      "text": "This is an archived receipt for your records.",
+      "attachments": []
+    },
+    {
+      "id": "msg-draft-1",
+      "from": "person@example.test",
+      "to": [
+        "vendor@example.test"
+      ],
+      "cc": [],
+      "subject": "Draft: follow-up",
+      "receivedAt": "2026-10-22T09:00:00Z",
+      "folderId": "drafts",
+      "isRead": true,
+      "hasAttachments": false,
+      "text": "Following up on our last conversation.",
+      "attachments": []
+    },
+    {
+      "id": "msg-sent-1",
+      "from": "person@example.test",
+      "to": [
+        "client@example.test"
+      ],
+      "cc": [],
+      "subject": "Sent: proposal",
+      "receivedAt": "2026-10-05T09:00:00Z",
+      "folderId": "sent",
+      "isRead": true,
+      "hasAttachments": false,
+      "text": "Please find the proposal attached.",
+      "attachments": []
+    }
+  ]
+}

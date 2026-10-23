@@ -46,6 +46,7 @@ export function mergeConfig(
 			...override.outlook,
 			scopes: { ...base.outlook.scopes, ...override.outlook?.scopes },
 		},
+		mail: { ...base.mail, ...override.mail },
 		classifier: { ...base.classifier, ...override.classifier },
 		output: { ...base.output, ...override.output },
 		routeProfiles: base.routeProfiles,

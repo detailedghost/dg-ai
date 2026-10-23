@@ -14,6 +14,7 @@ config.configHome = join(
 config.protonmail.dataPath = fixturePath("proton-dataset.json");
 config.outlook.dataPath = fixturePath("outlook-dataset.json");
 config.outlook.allowPlaintextTokenCache = false;
+config.mail = { dataPath: fixturePath("mail-dataset.json") };
 export const fixtureConfigPath = join(
 	config.configHome,
 	"organizer.config.json",
