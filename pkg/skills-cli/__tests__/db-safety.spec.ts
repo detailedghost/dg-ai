@@ -91,6 +91,38 @@ describe("classifySql", () => {
 		});
 	});
 
+	test("blocks SET SESSION ROLE", () => {
+		expect(classifySql("SET SESSION ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET LOCAL ROLE", () => {
+		expect(classifySql("SET LOCAL ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET LOCAL SESSION AUTHORIZATION", () => {
+		expect(classifySql("SET LOCAL SESSION AUTHORIZATION admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks the session_authorization GUC form", () => {
+		expect(classifySql("SET session_authorization = 'admin'", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("keeps SET LOCAL on an ordinary variable read-only", () => {
+		expect(classifySql("SET LOCAL search_path TO app", false)).toEqual({ allowed: true });
+	});
+
 	test("--write allows SET ROLE", () => {
 		expect(classifySql("SET ROLE admin", true)).toEqual({ allowed: true });
 	});
