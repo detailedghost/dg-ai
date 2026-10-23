@@ -192,7 +192,9 @@ ever reports, never mutates:
 
 Every run saves `~/.dg/demos/<slug>/<slug>.demo.md` — local mode saves it directly;
 `--ext` saves it alongside every recorded video it downloads, as `<slug>.demo.md`.
-Replay either without recompiling:
+Replay either without recompiling. `rerun` always goes through the extension (it needs
+it even for a plan local mode recorded); to replay locally instead, run
+`~/.dg/bin/dg-skills demo <path-to>.demo.md`, the same local command from Step 2:
 
 ```bash
 ~/.dg/bin/dg-skills rerun <path-to>.demo.md
