@@ -331,6 +331,32 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		return { ok: true };
 	}
 
+	function dispatchInboxApproval(
+		sessionId: string,
+		requestId: string,
+		approved: boolean,
+	): { ok: boolean; error?: string } {
+		const socket = currentSocket;
+		const bootstrap = bootstrapsBySession.get(sessionId);
+		if (!socket || !bootstrap) {
+			return {
+				ok: false,
+				error: "no chat session is open — start one to approve a send",
+			};
+		}
+		socket.send(
+			JSON.stringify({
+				type: "inbox-send-approval-result",
+				sessionId,
+				token: bootstrap.token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId,
+				approved,
+			}),
+		);
+		return { ok: true };
+	}
+
 	function requestDaemonConfig(
 		kind: "config-get" | "config-set",
 		key: string,
@@ -913,6 +939,23 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 							: {};
 					sendResponse(
 						dispatchCommand(payload.sessionId, payload.commandLabel, params),
+					);
+					return undefined;
+				}
+				case MSG.inboxApprovalResult: {
+					if (
+						typeof payload.sessionId !== "string" ||
+						typeof payload.requestId !== "string" ||
+						typeof payload.approved !== "boolean"
+					) {
+						return undefined;
+					}
+					sendResponse(
+						dispatchInboxApproval(
+							payload.sessionId,
+							payload.requestId,
+							payload.approved,
+						),
 					);
 					return undefined;
 				}

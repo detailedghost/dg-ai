@@ -19,6 +19,7 @@ export const MSG = {
 	overwatchState: "dg-chat:overwatch-state",
 	configRequest: "dg-chat:config-request",
 	commandInvocation: "dg-chat:command-invocation",
+	inboxApprovalResult: "dg-chat:inbox-approval-result",
 } as const;
 
 export type ConfigRelayReply = {
