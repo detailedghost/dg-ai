@@ -309,11 +309,7 @@ export function handleInboxBrowserResult(
 	pending.finish({ ok: true, value: validateInboxBrowserResponse(frame.data) });
 }
 
-/**
- * Settles a pending send-approval only for the extension socket holding the
- * matching session token; the daemon never accepts this frame from a CLI
- * socket even when that socket also knows the session token.
- */
+/** Settles a pending send-approval only for the authorized extension socket holding it; a CLI socket is always refused. */
 export function handleInboxSendApprovalResult(
 	socket: Socket,
 	frame: Extract<ChatFrame, { type: "inbox-send-approval-result" }>,
