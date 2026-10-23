@@ -1,12 +1,11 @@
-import { connect as connectPlainSocket } from "node:net";
-import { connect as connectTlsSocket, type PeerCertificate } from "node:tls";
+import { connect as connectPlainSocket, type Socket } from "node:net";
+import { connect as connectTlsSocket, type PeerCertificate, type TLSSocket } from "node:tls";
 import {
 	ImapFlow,
 	type ImapTransport,
 	type ImapTransportConnectOptions,
 	type ImapTransportSocket,
 } from "imapflow";
-import nodemailer from "nodemailer";
 
 export type BridgeMailboxInfo = {
 	path: string;
@@ -327,38 +326,179 @@ export async function createBridgeImapSession(
 	return new RealBridgeImapSession(client);
 }
 
+const SMTP_CLIENT_HOSTNAME = "localhost";
+const SMTP_SOCKET_TIMEOUT_MS = 30_000;
+
+type SmtpReply = { code: number; message: string };
+
+/**
+ * One command/response exchange at a time, matching the protocol: a reply is matched to
+ * whichever `readReply()` call is waiting (queued if none is), so swapping the plaintext
+ * socket for the upgraded TLS socket after STARTTLS just means building a second channel.
+ */
+function createSmtpChannel(socket: Socket): {
+	readReply(): Promise<SmtpReply>;
+	writeLine(line: string): void;
+} {
+	let buffer = "";
+	const pendingReplies: SmtpReply[] = [];
+	const pendingReaders: { resolve: (reply: SmtpReply) => void; reject: (error: Error) => void }[] = [];
+
+	const deliver = (reply: SmtpReply) => {
+		const reader = pendingReaders.shift();
+		if (reader) reader.resolve(reply);
+		else pendingReplies.push(reply);
+	};
+	const fail = (error: Error) => {
+		const reader = pendingReaders.shift();
+		if (reader) reader.reject(error);
+	};
+
+	socket.setTimeout(SMTP_SOCKET_TIMEOUT_MS, () => socket.destroy(new Error("Proton Bridge SMTP timed out")));
+	socket.on("data", (chunk: Buffer) => {
+		buffer += chunk.toString("binary");
+		let newlineIndex: number;
+		while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+			const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+			buffer = buffer.slice(newlineIndex + 1);
+			const match = /^(\d{3})([ -])(.*)$/.exec(line);
+			if (match && match[2] === " ") deliver({ code: Number(match[1]), message: match[3] });
+		}
+	});
+	socket.on("error", fail);
+	socket.on("close", () => fail(new Error("Proton Bridge SMTP closed the connection")));
+
+	return {
+		readReply(): Promise<SmtpReply> {
+			const buffered = pendingReplies.shift();
+			if (buffered) return Promise.resolve(buffered);
+			return new Promise((resolve, reject) => pendingReaders.push({ resolve, reject }));
+		},
+		writeLine(line: string): void {
+			socket.write(`${line}\r\n`, "binary");
+		},
+	};
+}
+
+async function expectReply(
+	channel: ReturnType<typeof createSmtpChannel>,
+	okCode: number,
+	onFailure?: (reply: SmtpReply) => Error,
+): Promise<SmtpReply> {
+	const reply = await channel.readReply();
+	if (reply.code !== okCode) {
+		throw onFailure
+			? onFailure(reply)
+			: new Error(`Proton Bridge SMTP replied ${reply.code} ${reply.message}`);
+	}
+	return reply;
+}
+
+function connectPlain(host: string, port: number): Promise<Socket> {
+	return new Promise((resolve, reject) => {
+		const socket = connectPlainSocket({ host, port });
+		socket.once("connect", () => resolve(socket));
+		socket.once("error", reject);
+	});
+}
+
+/**
+ * Checks the pin the instant the handshake completes, before any post-STARTTLS command can go
+ * out. No `servername` (SNI): the host is always a loopback literal (`requireLoopbackHost`), SNI
+ * does not accept an IP address, and identity is never checked by hostname here anyway — the
+ * fingerprint (or, with none configured, `rejectUnauthorized: false` alone) is the whole trust
+ * decision.
+ */
+function upgradeToPinnedTls(
+	socket: Socket,
+	options: Pick<BridgeConnectionOptions, "certFingerprint">,
+): Promise<TLSSocket> {
+	return new Promise((resolve, reject) => {
+		const tlsSocket = connectTlsSocket({ socket, rejectUnauthorized: false });
+		tlsSocket.once("secureConnect", () => {
+			if (options.certFingerprint) {
+				const mismatch = verifyFingerprint(tlsSocket.getPeerCertificate(), options.certFingerprint);
+				if (mismatch) {
+					tlsSocket.destroy(mismatch);
+					return;
+				}
+			}
+			resolve(tlsSocket);
+		});
+		tlsSocket.once("error", reject);
+	});
+}
+
+function frameDataSection(mime: Buffer): Buffer {
+	const lines = mime.toString("binary").replace(/\r\n|\r|\n/g, "\r\n").split("\r\n");
+	if (lines[lines.length - 1] === "") lines.pop();
+	const stuffed = lines.map((line) => (line.startsWith(".") ? `.${line}` : line));
+	return Buffer.from(`${stuffed.join("\r\n")}\r\n.\r\n`, "binary");
+}
+
+async function sendOverPinnedStartTls(
+	options: BridgeConnectionOptions,
+	mime: Buffer,
+	envelope: { from: string; to: string[] },
+): Promise<void> {
+	const plainSocket = await connectPlain(options.host, options.smtpPort);
+	const plainChannel = createSmtpChannel(plainSocket);
+	await expectReply(plainChannel, 220);
+	plainChannel.writeLine(`EHLO ${SMTP_CLIENT_HOSTNAME}`);
+	await expectReply(plainChannel, 250);
+	plainChannel.writeLine("STARTTLS");
+	await expectReply(plainChannel, 220);
+
+	const tlsSocket = await upgradeToPinnedTls(plainSocket, options);
+	const secureChannel = createSmtpChannel(tlsSocket);
+	secureChannel.writeLine(`EHLO ${SMTP_CLIENT_HOSTNAME}`);
+	await expectReply(secureChannel, 250);
+
+	const authToken = Buffer.from(`\0${options.username}\0${options.password}`).toString("base64");
+	secureChannel.writeLine(`AUTH PLAIN ${authToken}`);
+	await expectReply(secureChannel, 235, (reply) =>
+		Object.assign(new Error(`Proton Bridge SMTP auth failed: ${reply.code} ${reply.message}`), {
+			authenticationFailed: true,
+		}),
+	);
+
+	secureChannel.writeLine(`MAIL FROM:<${envelope.from}>`);
+	await expectReply(secureChannel, 250);
+	for (const recipient of envelope.to) {
+		secureChannel.writeLine(`RCPT TO:<${recipient}>`);
+		await expectReply(secureChannel, 250);
+	}
+	secureChannel.writeLine("DATA");
+	await expectReply(secureChannel, 354);
+	tlsSocket.write(frameDataSection(mime), "binary");
+	await expectReply(secureChannel, 250);
+	secureChannel.writeLine("QUIT");
+	tlsSocket.end();
+}
+
 /**
  * nodemailer's SMTP transport has no equivalent to ImapFlow's pluggable `transport.upgrade`:
- * `getSocket` only replaces the initial cleartext connect, and the STARTTLS handshake itself
- * is internal and not interceptable. A `certFingerprint` is therefore NOT enforced on the SMTP
- * connection; `rejectUnauthorized: false` only tolerates Bridge's self-signed certificate, the
- * same as before any pinning existed. `createBridgeImapSession` runs first on every send and
- * does pin, which is a partial mitigation (the same local Bridge instance normally serves both
- * ports) but not a guarantee independent of it. See the slice 3 report for the open question
- * this leaves for a human decision.
+ * a pre-connected `options.connection` socket still makes nodemailer wait for a fresh 220
+ * greeting line once secured, which a STARTTLS upgrade never sends (RFC 3207; only an
+ * implicit-TLS connect on a dedicated port does). Pinning the STARTTLS handshake itself
+ * therefore needs the same plaintext-socket-then-`tls.connect` takeover
+ * `createPinnedImapTransport` uses, driving the minimal EHLO/STARTTLS/AUTH PLAIN/MAIL/RCPT/DATA
+ * exchange by hand. `verifyFingerprint` runs the instant the handshake completes, before the
+ * post-STARTTLS `EHLO` (let alone `AUTH`) goes out, so a mismatch fails closed with no
+ * credential ever sent. No fingerprint configured keeps today's loopback-only trust.
  */
 export async function createBridgeSmtpSender(
 	options: BridgeConnectionOptions,
 ): Promise<BridgeSmtpSender> {
 	requireLoopbackHost(options.host);
-	const transport = nodemailer.createTransport({
-		host: options.host,
-		port: options.smtpPort,
-		secure: false,
-		requireTLS: true,
-		auth: { user: options.username, pass: options.password },
-		tls: { rejectUnauthorized: false },
-	});
 	return {
 		async send(mime: Buffer, envelope: { from: string; to: string[] }): Promise<void> {
 			try {
-				await transport.sendMail({ envelope, raw: mime });
+				await sendOverPinnedStartTls(options, mime, envelope);
 			} catch (error) {
 				throw connectionErrorFor(options, options.smtpPort, error);
 			}
 		},
-		async close(): Promise<void> {
-			transport.close();
-		},
+		async close(): Promise<void> {},
 	};
 }
