@@ -215,7 +215,7 @@ describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
 	test("new walkthroughs open in the extension editor", () => {
-		expect(demo).toContain('~/.dg/bin/dg-skills demo --edit /tmp/ai/demo/tour.md');
+		expect(demo).toContain('~/.dg/bin/dg-skills demo --ext --edit /tmp/ai/demo/tour.md');
 	});
 
 	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {
