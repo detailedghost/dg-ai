@@ -58,6 +58,7 @@ import tabClose from "./tab-close/spec";
 import tabList from "./tab-list/spec";
 import tabNew from "./tab-new/spec";
 import tabSelect from "./tab-select/spec";
+import tourStep from "./tour-step/spec";
 import tracingStart from "./tracing-start/spec";
 import tracingStop from "./tracing-stop/spec";
 import type from "./type/spec";
@@ -131,6 +132,7 @@ export const COMMANDS: readonly CommandEntry[] = [
 	{ spec: tabList, load: () => import("./tab-list/run") },
 	{ spec: tabNew, load: () => import("./tab-new/run") },
 	{ spec: tabSelect, load: () => import("./tab-select/run") },
+	{ spec: tourStep, load: () => import("./tour-step/run") },
 	{ spec: tracingStart, load: () => import("./tracing-start/run") },
 	{ spec: tracingStop, load: () => import("./tracing-stop/run") },
 	{ spec: uncheck, load: () => import("./uncheck/run") },
