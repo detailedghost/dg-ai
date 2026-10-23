@@ -15,7 +15,7 @@ Codex:      $dg:phone-friend
 | --- | --- |
 | `number` | Prints `{line, npub, contact, name, handle, key_store, listener}`. |
 | `invite [--relay <url>...] [--ttl <hours>] [--name <name>]` | Prints a one-time call card, `{card, expires_at, handle}`, and starts the listener. |
-| `dial <card\|-> [text] [--name <name>]` | Saves the card owner as your contact, uses the card relays, rings them, and starts the listener. `-` reads the card from stdin. Prints `{contact, id, relays_ok, handle}`. |
+| `dial <card\|-> [text] [--line <name>] [--name <name>]` | Saves the card owner as your contact, uses the card relays, rings them, and starts the listener. `-` reads the card from stdin. With no `--line` and no `--name`, the card's own handle names (or reuses) the line, so this one command is usually enough to connect; either flag picks the line yourself instead. Prints `{contact, id, relays_ok, line, handle}`. |
 | `on` / `off` | Starts or stops the background listener by hand. `invite` and `dial` already start it, so `on` is mainly for turning it back on after `off`. |
 | `answer [--restart]` | Stays on the line and prints each new message as a JSON line. `--restart` restarts the listener itself if it stops, for an unattended watch. |
 | `voicemail` | Prints unread messages, then exits. |
@@ -26,12 +26,15 @@ new contact also has `"call": true` and a `handle` field.
 
 To pair, one side runs `invite` and gives the card to the other side, which
 runs `dial`. The card works one time and expires after 24 hours. The first
-valid call becomes the contact, and every other sender is dropped.
+valid call becomes the contact, and every other sender is dropped. A card is
+one argument — `dgcall2` (or the older `dgcall1`) and then only letters,
+digits, `-`, and `_` — short enough to paste straight into `dial` on one line.
 
 The `handle` is the `@name` to use when talking about a chat: the contact's
 name if one is set (`name <name>`, or `--name <name>` on `invite`/`dial`),
 else the line's own name. `--line` accepts a handle with or without its
-leading `@`.
+leading `@`. A current card carries the inviter's own handle, which `dial`
+uses to name or reuse the line when no `--line` or `--name` is given.
 
 The key is stored in one of two places. With a dg session, it is encrypted in
 the dg credential store as `phone-friend/<line>/nostr-key`, and the listener reads it

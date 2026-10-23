@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -16,6 +16,7 @@ import {
 	DEFAULT_RELAYS,
 	handleFor,
 	isKeyInStore,
+	lineForHandle,
 	markKeyInStore,
 	readConfig,
 	readFileKey,
@@ -193,6 +194,43 @@ describe("resolveLine", () => {
 		expect(resolveLine(paths(), "@consolidation").name).toBe("consolidation");
 		expect(resolveLine(paths(), "@velora").name).toBe("consolidation");
 		expect(resolveLine(paths(), "@fresh").name).toBe("fresh");
+	});
+});
+
+describe("lineForHandle", () => {
+	const npub = nip19.npubEncode(getPublicKey(generateSecretKey()));
+	const otherNpub = nip19.npubEncode(getPublicKey(generateSecretKey()));
+	const paths = () => resolveDgPaths({ env: { DG_HOME: home } });
+
+	it("picks a new line by name, with no side effect on disk", () => {
+		const picked = lineForHandle(paths(), "velora", npub);
+
+		expect(picked.name).toBe("velora");
+		expect(existsSync(picked.dbPath)).toBe(false);
+	});
+
+	it("reuses the same-named line when it is already paired with this contact", () => {
+		writeConfig(linePaths(paths(), "velora"), { contact: npub, relays: DEFAULT_RELAYS });
+
+		expect(lineForHandle(paths(), "velora", npub).name).toBe("velora");
+	});
+
+	it("refuses the same-named line when it already has a different contact", () => {
+		writeConfig(linePaths(paths(), "velora"), { contact: otherNpub, relays: DEFAULT_RELAYS });
+
+		expect(() => lineForHandle(paths(), "velora", npub)).toThrow("different contact");
+	});
+
+	it("refuses a same-named line that has no contact yet, rather than guess it is the same one", () => {
+		writeConfig(linePaths(paths(), "velora"), { relays: DEFAULT_RELAYS });
+
+		expect(() => lineForHandle(paths(), "velora", npub)).toThrow("different contact");
+	});
+
+	it("refuses a handle another line already claims by its saved contact name", () => {
+		writeConfig(linePaths(paths(), "work"), { contact: otherNpub, name: "velora", relays: DEFAULT_RELAYS });
+
+		expect(() => lineForHandle(paths(), "velora", npub)).toThrow("already used by line work");
 	});
 });
 

@@ -206,11 +206,11 @@ describe("phoneInvite", () => {
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
 	});
 
-	it("keeps the line's own handle at invite time; --name only takes effect once answered", async () => {
+	it("shows the real handle it will use right away, not the line's own name", async () => {
 		await phoneInvite({ name: "grok" }, deps());
 
 		const [{ handle }] = lines() as { handle: string }[];
-		expect(handle).toBe("@default");
+		expect(handle).toBe("@grok");
 	});
 
 	it("starts the listener right away, so the card can ring without a separate on", async () => {
@@ -256,8 +256,8 @@ describe("phoneInvite", () => {
 describe("phoneDial", () => {
 	const secret = "ab".repeat(32);
 
-	function cardFor(relays = ["wss://x.example"]) {
-		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100 });
+	function cardFor(relays = ["wss://x.example"], handle = "default") {
+		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100, handle });
 	}
 
 	it("saves the card owner as the contact, uses its relays, and rings with the secret", async () => {
@@ -327,6 +327,69 @@ describe("phoneDial", () => {
 	it("rejects an expired card", async () => {
 		await expect(phoneDial(cardFor(), undefined, deps({ now: () => NOW + 101 }))).rejects.toThrow("expired");
 	});
+});
+
+describe("phoneDial with no --line or --name: the card's handle names the line", () => {
+	const secret = "ab".repeat(32);
+
+	function cardFor(handle: string, relays = ["wss://x.example"]) {
+		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100, handle });
+	}
+
+	it("creates a new line named after the handle, and leaves the current line untouched", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		const velora = linePaths(paths, "velora");
+		expect(readConfig(velora)).toMatchObject({ contact: contactNpub, name: "velora" });
+		expect(readConfig(line).contact).toBeUndefined();
+		expect(lines()).toMatchObject([{ line: "velora", handle: "@velora" }]);
+	});
+
+	it("starts the listener on the new line, not the current one", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(spawned).toBe(1);
+		expect(existsSync(linePaths(paths, "velora").pidPath)).toBe(true);
+		expect(existsSync(line.pidPath)).toBe(false);
+	});
+
+	it("reuses a line already paired with this same contact, instead of refusing", async () => {
+		writeConfig(linePaths(paths, "velora"), { contact: contactNpub, relays: DEFAULT_RELAYS });
+
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
+		expect(pool.events).toHaveLength(1);
+	});
+
+	it("refuses when the derived line already has a different contact, and rings no one", async () => {
+		writeConfig(linePaths(paths, "velora"), { contact: "npub1someoneelse", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("different contact");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("refuses a handle another line already claims by its saved contact name", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: "npub1someoneelse", name: "velora", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("already used by line work");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("an explicit --line wins: no second line is created", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps(), undefined, true);
+
+		expect(readConfig(line)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+	});
+
+	it("an explicit --name wins over the card's handle", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps(), "dante");
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+	});
+
 });
 
 describe("accepting a call", () => {
@@ -733,6 +796,24 @@ describe("registerPhoneFriendCommands", () => {
 		expect(work.line).toBe("work");
 		expect(main.line).toBe("default");
 		expect(work.npub).not.toBe(main.npub);
+	});
+
+	it("dial with no --line lets a v2 card's handle name the line; an explicit --line disables that", async () => {
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		registerPhoneFriendCommands(program, (_session, name) => ({ ...deps(), line: linePaths(paths, name) }));
+		const card = encodeCard({
+			npub: contactNpub,
+			relays: ["wss://x.example"],
+			secret: "ab".repeat(32),
+			exp: NOW + 100,
+			handle: "velora",
+		});
+
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "dial", card]);
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
+
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "--line", "work", "dial", card]);
+		expect(readConfig(linePaths(paths, "work")).contact).toBe(contactNpub);
 	});
 });
 

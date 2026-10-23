@@ -164,6 +164,25 @@ export function lineClaiming(paths: DgPaths, line: LinePaths, name: string): Lin
 	);
 }
 
+/**
+ * The line to dial into for a v2 card's handle, with no explicit `--line` or `--name`: the line
+ * of that name, brand new or already paired with this same contact. A same-named line that exists
+ * but is not confirmed as this contact (no contact yet, or a different one) is left alone instead
+ * of guessed at, since a wrong guess would silently drop that line's own contact. Also refuses a
+ * name another line already claims by its own saved contact name.
+ */
+export function lineForHandle(paths: DgPaths, handle: string, npub: string): LinePaths {
+	const derived = linePaths(paths, handle);
+	const claimedBy = lineClaiming(paths, derived, handle);
+	if (claimedBy) {
+		throw new DgCliError(`"${handle}" is already used by line ${claimedBy.name}; dial again with --line to pick one`);
+	}
+	if (existsSync(derived.dbPath) && readConfig(derived).contact !== npub) {
+		throw new DgCliError(`line "${handle}" already has a different contact; dial again with --line to pick one`);
+	}
+	return derived;
+}
+
 /** Deletes the invite and saves the caller as the contact, with the invite's name, in one transaction. */
 export function acceptCall(paths: DgPaths, line: LinePaths, contact: string): void {
 	withDb(line, (db) =>

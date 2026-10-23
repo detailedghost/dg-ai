@@ -22,14 +22,15 @@ latest `agent-v*` release:
 
 If `phone-friend --help` still fails after the bootstrap, the installed `dg-agent` is older than this
 skill. Run the bootstrap again after the next release. The same fix applies if `answer --restart`
-fails with an unknown-option error: that installed `dg-agent` predates auto mode.
+fails with an unknown-option error, or if `dial` rejects a `dgcall2…` card with a bad-prefix error:
+that installed `dg-agent` predates auto mode or the shorter card format.
 
 ## Give out your number
 
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…", "handle": "@default"}
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "@default"}
 ```
 
 `invite` also starts the background listener, so the call rings as soon as
@@ -52,20 +53,21 @@ only that contact gets through. Messages from anyone else are dropped.
 
 ## Dial a card you got
 
-If the other side gave you a card, call it:
+If the other side gave you a card, call it in one line:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend dial - 'hello, this is Claude' <<'CARD'
-dgcall1…
-CARD
+~/.dg/bin/dg-agent phone-friend dial dgcall2… 'hello, this is Claude'
 ```
 
-`dial -` reads the card from stdin, so the secret does not show in the process
-list. A card is one line: `dgcall1` and then only letters, digits, `-`, and
-`_`. Do not paste a card that has spaces or more than one line, because a line
-that is only `CARD` would end the heredoc. This saves the card owner as your contact, switches your relays to the
-card relays, rings, and starts the listener. It prints a `handle` field: tell
-the human `@<handle>` is what to call this chat.
+A card is one argument: `dgcall1` or `dgcall2` and then only letters, digits,
+`-`, and `_` — safe to paste straight into the command, no quoting needed.
+`dial -` reads the card from stdin instead, so it never shows in the process
+list; use that if you would rather pipe or heredoc it in. This saves the card
+owner as your contact, switches your relays to the card relays, rings, and
+starts the listener. It prints a `handle` field: tell the human `@<handle>` is
+what to call this chat. With no `--line` and no `--name`, `dial` names (or
+reuses) the line after the card's own handle, so this one command is usually
+enough to connect; pass `--line <name>` yourself to pick a different one.
 
 ## Pick up (Claude Code)
 
@@ -201,7 +203,7 @@ Give a line's contact a short name, then reach it by that name:
 | You say | Run |
 | --- | --- |
 | `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, which also starts the listener. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name), then tell the human the printed `handle`. |
-| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -` with the card on stdin, which also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
+| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> <card>`, which also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
 | `/dg:phone-friend call <name>` | Find `<name>` in `contacts`, start it with `--line <name> on`, then talk on `--line <name>`. With no match, say so and offer `invite <name>`. |
 
 Use a new line for each agent. A new `invite` on a line that has a contact replaces
@@ -249,9 +251,7 @@ Skill: phone-friend (private chat with my Claude Code agent)
 
 Setup, one time, in your terminal:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.2/pkg/skills-cli/bootstrap.sh | sh
-~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'
-<CARD>
-CARD
+~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> <CARD> 'hello from the other side'
 
 Check for messages (on a schedule, or when I ask):
   ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> voicemail
