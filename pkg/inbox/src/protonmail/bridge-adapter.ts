@@ -123,8 +123,9 @@ export function verifyFingerprint(
  * failed — which it always does for Bridge's self-signed certificate. `rejectUnauthorized:
  * false` is what lets the handshake proceed despite that, and nothing then re-checks the
  * cert; `checkServerIdentity` genuinely never runs. A fingerprint can only be enforced by
- * taking over the TLS upgrade ourselves, which ImapFlow's `transport` option allows and
- * nodemailer's SMTP transport does not (see `createBridgeSmtpSender`'s doc comment).
+ * taking over the TLS upgrade ourselves. ImapFlow's `transport` option allows that directly;
+ * `createBridgeSmtpSender` gets the same guarantee by driving STARTTLS itself over a plain
+ * `net.Socket` instead of going through nodemailer at all (see its own doc comment).
  *
  * This transport opens the cleartext socket, lets ImapFlow drive STARTTLS, then performs the
  * TLS handshake itself: `getPeerCertificate()` is read the moment the handshake completes,
