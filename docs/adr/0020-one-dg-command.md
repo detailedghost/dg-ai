@@ -30,11 +30,16 @@ start --env <env>` starts the daemon if it is not running, registers the `review
 missing, and starts it. `dg review stop` waits up to two minutes for a running review, then stops the service.
 The channel-review pid file goes away. `dg review run` stays for foreground debugging.
 
-The code moves with the process model. `pkg/channel-review` and `pkg/dg-agent` fold into `pkg/dg-daemon`.
-Channel review becomes a service kind that the daemon can register, and its skill moves to
-`pkg/dg-daemon/skills/channel-review/`. It still runs as its own supervised process, so a runner crash
-does not take down the daemon. `pkg/inbox` folds into `pkg/skills-cli` as the `inbox` command. That leaves
-five packages: `common`, `skills-cli`, `skills-test`, `dg-daemon`, and `extension`.
+`dg-daemon` is the long-running service and nothing else: the session hub, the store, the job scheduler,
+the service supervisor, and the socket API. It has no command tree of its own; `dg daemon run` starts it.
+Every command lives in `pkg/skills-cli`, which builds the `dg` binary. That includes the channel-review
+engine (`dg review run --env <env>` is the service entry), the client side of `dg-agent` (attach,
+overwatch, phone-friend), `inbox`, and a thin `dg daemon` client for the socket. A daemon service or job is
+a stored `dg <command>` argument list. The supervisor starts, watches, and restarts those processes, so any
+`dg` command can become a job or a service without new daemon code, and each review still runs in its own
+process. One copy of each shared pattern lives in `pkg/common`: paths, config, credentials, the error
+catalog, process spawn, JSON output with redaction, wire formats, and the doctor check type. That leaves
+five packages: `common`, `skills-cli`, `dg-daemon`, `skills-test`, and `extension`.
 
 The `review-<env>` service declaration carries no `envFile`. Channel review reads `runner.claude.bedrock`
 (profile and region) from its own config at every start, so a supervisor restart always picks up the current
@@ -103,8 +108,8 @@ the three binaries this ADR merges, and that channel still needs its own tag.
 flowchart LR
     OS["OS login task or unit"] --> D["dg daemon (pkg/dg-daemon)"]
     U["user: dg review start"] --> D
-    D -->|"supervised child"| R["dg review run (pkg/dg-daemon review service)"]
-    D --> J["scheduled jobs"]
+    D -->|"supervised child"| R["dg review run (pkg/skills-cli)"]
+    D --> J["scheduled jobs: dg <command>"]
     A["dg agent (pkg/dg-agent)"] -->|"/cli"| D
     S["skills: ~/.dg/bin/dg-skills link"] --> B["dg skills (pkg/skills-cli)"]
 ```
