@@ -114,7 +114,7 @@ function parseArgs(args: string[]): ParsedArgs {
 			parsed.schema = args[++i] ?? "";
 		else if (arg === "-f" && i + 1 < args.length)
 			parsed.sqlFile = args[++i] ?? "";
-		else if (!arg.startsWith("-")) parsed.positional.push(arg);
+		else if (!arg.startsWith("-") || parsed.positional.length >= 1) parsed.positional.push(arg);
 	}
 	return parsed;
 }

@@ -85,6 +85,18 @@ describe("PostgreSQL engine", () => {
 		});
 	});
 
+	test("passes an explicit ssl option through to the client", () => {
+		expect(
+			buildPgClientOptions({
+				engine: "postgresql",
+				database: "app",
+				user: "readonly",
+				password: "fixture-password",
+				ssl: true,
+			}),
+		).toMatchObject({ ssl: true });
+	});
+
 	test("maps row and write query results", async () => {
 		const rows = fakePg({
 			fields: [{ name: "id" }, { name: "name" }],
@@ -319,5 +331,16 @@ describe("Snowflake engine", () => {
 			],
 		});
 		expect(fixture.execute).toHaveBeenCalledTimes(3);
+	});
+
+	test("binds the schema filter instead of interpolating it into the query text", async () => {
+		const fixture = fakeSnowflake((sql) => {
+			if (sql.includes("information_schema.columns")) return { rows: [] };
+			return { rows: [] };
+		});
+		await sfSchema(fixture.connection, "PUBLIC");
+		const firstCall = fixture.execute.mock.calls[0]?.[0] as { sqlText: string; binds?: unknown[] };
+		expect(firstCall.sqlText).not.toContain("PUBLIC");
+		expect(firstCall.binds).toEqual(["PUBLIC"]);
 	});
 });

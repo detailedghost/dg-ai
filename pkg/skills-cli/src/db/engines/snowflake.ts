@@ -23,6 +23,7 @@ export interface SfConnection {
 	connect(callback: (error: Error | undefined, connection: SfConnection) => void): void;
 	execute(options: {
 		sqlText: string;
+		binds?: unknown[];
 		parameters?: Record<string, unknown>;
 		complete: (
 			error: Error | undefined,
@@ -46,10 +47,12 @@ function connectAsync(connection: SfConnection): Promise<SfConnection> {
 export function executeAsync(
 	connection: SfConnection,
 	sqlText: string,
+	binds?: unknown[],
 ): Promise<{ statement: SfStatement; rows: unknown[] }> {
 	return new Promise((resolve, reject) => {
 		connection.execute({
 			sqlText,
+			binds,
 			parameters: { MULTI_STATEMENT_COUNT: 1 },
 			complete: (error, statement, rows = []) => {
 				if (error) reject(error);
@@ -221,14 +224,14 @@ export async function sfSchema(
 	connection: SfConnection,
 	schema = "PUBLIC",
 ): Promise<DbSchemaResult> {
-	const schemaLiteral = schema.replaceAll("'", "''");
 	const schemaIdentifier = quoteIdentifier(schema);
 	const { rows: columnRows } = await executeAsync(
 		connection,
 		`SELECT table_name, table_schema, column_name, data_type, is_nullable
 		 FROM information_schema.columns
-		 WHERE table_schema = '${schemaLiteral}'
+		 WHERE table_schema = ?
 		 ORDER BY table_name, ordinal_position`,
+		[schema],
 	);
 	const tables = new Map<string, DbSchemaTable>();
 	for (const row of columnRows) {

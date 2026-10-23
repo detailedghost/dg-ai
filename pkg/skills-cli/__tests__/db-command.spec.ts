@@ -131,6 +131,17 @@ describe("db command specification", () => {
 		expect(fixture.end).toHaveBeenCalledTimes(1);
 	});
 
+	test("accepts a positional SQL argument that starts with a hyphen instead of dropping it", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const sql = "-- find active users\nSELECT 1";
+		const code = await fixture.spec.subcommands.query?.run(["my-pg", sql], {
+			json: false,
+			help: false,
+		});
+		expect(code).toBeUndefined();
+		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, sql);
+	});
+
 	test("rejects a non-numeric --limit with a clear error instead of silently emptying the result", async () => {
 		const fixture = harness({ record: credentialRecord() });
 		const code = await fixture.spec.subcommands.query?.run(
