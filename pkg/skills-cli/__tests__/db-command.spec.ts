@@ -142,6 +142,18 @@ describe("db command specification", () => {
 		expect(fixture.pgQuery).toHaveBeenCalledWith(fixture.client, sql);
 	});
 
+	test("rejects a hyphen-led SQL argument passed without -- and names the -- escape", async () => {
+		const fixture = harness({ record: credentialRecord() });
+		const sql = "-- find active users\nSELECT 1";
+		const code = await fixture.spec.subcommands.query?.run(["my-pg", sql], {
+			json: false,
+			help: false,
+		});
+		expect(code).toBe(1);
+		expect(fixture.stderr[0]).toContain("after '--'");
+		expect(fixture.pgQuery).not.toHaveBeenCalled();
+	});
+
 	test("rejects an unrecognized flag with a clear error instead of swallowing the SQL text", async () => {
 		const fixture = harness({ record: credentialRecord() });
 		const code = await fixture.spec.subcommands.query?.run(
