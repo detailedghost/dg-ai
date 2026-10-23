@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectCodeGraph } from "../src/erd/code-graph";
@@ -16,7 +16,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	chmodSync(scopeDir, 0o700);
 	rmSync(scopeDir, { recursive: true, force: true });
 });
 
@@ -71,41 +70,21 @@ describe("collectImportGraph edge cases", () => {
 });
 
 describe("directory read failures", () => {
-	function writeBlockedDir(): string {
+	function writeBlockedDirFixture(): string {
 		writeFile("src/ok.ts", "export const ok = true;\n");
 		const blockedDir = join(scopeDir, "src", "blocked");
 		mkdirSync(blockedDir);
 		writeFileSync(join(blockedDir, "secret.ts"), "export const secret = true;\n");
-		chmodSync(blockedDir, 0o000);
 		return blockedDir;
 	}
 
-	test("collectCodeGraph records evidence instead of throwing when a subdirectory is unreadable", () => {
-		const blockedDir = writeBlockedDir();
-		try {
-			let result: ReturnType<typeof collectCodeGraph> | undefined;
-			expect(() => {
-				result = collectCodeGraph({ scopePath: scopeDir });
-			}).not.toThrow();
-			expect(result?.nodes.some((node) => node.id === "src/ok.ts")).toBe(true);
-			expect(result?.evidence.some((e) => e.detail?.includes("could not read directory"))).toBe(true);
-		} finally {
-			chmodSync(blockedDir, 0o700);
-		}
-	});
-
-	test("collectImportGraph records evidence instead of throwing when a subdirectory is unreadable", () => {
-		const blockedDir = writeBlockedDir();
-		try {
-			let result: ReturnType<typeof collectImportGraph> | undefined;
-			expect(() => {
-				result = collectImportGraph({ scopePath: scopeDir });
-			}).not.toThrow();
-			expect(result?.evidence.some((e) => e.detail?.includes("could not read directory"))).toBe(true);
-		} finally {
-			chmodSync(blockedDir, 0o700);
-		}
-	});
+	function mockReaddirThrowsFor(blockedDir: string): string {
+		return `const originalReaddirSync = fs.readdirSync;
+mock.module("node:fs", () => ({ ...fs, readdirSync(path, options) {
+	if (String(path) === ${JSON.stringify(blockedDir)}) throw new Error("EACCES: permission denied, scandir '" + path + "'");
+	return originalReaddirSync(path, options);
+} }));`;
+	}
 
 	async function runInMockedFsProcess(
 		mockBody: string,
@@ -129,6 +108,36 @@ ${scriptBody}
 		]);
 		return { stdout, stderr, exitCode };
 	}
+
+	test("collectCodeGraph records evidence instead of throwing when a subdirectory is unreadable", async () => {
+		const blockedDir = writeBlockedDirFixture();
+		const { stdout, stderr, exitCode } = await runInMockedFsProcess(
+			mockReaddirThrowsFor(blockedDir),
+			`const { collectCodeGraph } = await import(${JSON.stringify(new URL("../src/erd/code-graph.ts", import.meta.url).pathname)});
+const result = collectCodeGraph({ scopePath: ${JSON.stringify(scopeDir)} });
+console.log(JSON.stringify({ nodeIds: result.nodes.map((n) => n.id), evidence: result.evidence }));`,
+		);
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		const { nodeIds, evidence } = JSON.parse(stdout) as {
+			nodeIds: string[];
+			evidence: { ref: string; detail?: string }[];
+		};
+		expect(nodeIds).toContain("src/ok.ts");
+		expect(evidence.some((e) => e.detail?.includes("could not read directory"))).toBe(true);
+	});
+
+	test("collectImportGraph records evidence instead of throwing when a subdirectory is unreadable", async () => {
+		const blockedDir = writeBlockedDirFixture();
+		const { stdout, stderr, exitCode } = await runInMockedFsProcess(
+			mockReaddirThrowsFor(blockedDir),
+			`const { collectImportGraph } = await import(${JSON.stringify(new URL("../src/erd/import-graph.ts", import.meta.url).pathname)});
+const result = collectImportGraph({ scopePath: ${JSON.stringify(scopeDir)} });
+console.log(JSON.stringify({ evidence: result.evidence }));`,
+		);
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		const { evidence } = JSON.parse(stdout) as { evidence: { ref: string; detail?: string }[] };
+		expect(evidence.some((e) => e.detail?.includes("could not read directory"))).toBe(true);
+	});
 
 	test("collectImportGraph records evidence instead of throwing when a file cannot be read", async () => {
 		writeFile("src/ok.ts", "export const ok = true;\n");
