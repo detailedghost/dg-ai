@@ -18,6 +18,7 @@ const SECRET_BYTES = 32;
 const EXP_BYTES = 4;
 const V2_MIN_BYTES = PUBKEY_BYTES + SECRET_BYTES + EXP_BYTES + 1;
 const MAX_RELAY_URL_BYTES = 255;
+const MAX_V2_EXP = 0xffffffff;
 
 function isNpub(value: unknown): value is string {
 	if (typeof value !== "string") return false;
@@ -101,6 +102,9 @@ export function encodeCard(card: Required<Card>): string {
 		throw new DgCliError(`handle must be 1-32 lowercase letters, digits, or dashes, got "${card.handle}"`);
 	}
 	if (!SECRET_HEX_PATTERN.test(card.secret)) throw new DgCliError(`bad secret "${card.secret}"`);
+	if (!Number.isInteger(card.exp) || card.exp < 0 || card.exp > MAX_V2_EXP) {
+		throw new DgCliError(`exp must fit in 4 bytes (0 to ${MAX_V2_EXP}), got ${card.exp}`);
+	}
 	const exp = Buffer.alloc(EXP_BYTES);
 	exp.writeUInt32BE(card.exp, 0);
 	const body = Buffer.concat([

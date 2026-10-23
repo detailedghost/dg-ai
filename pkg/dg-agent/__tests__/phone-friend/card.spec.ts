@@ -127,6 +127,11 @@ describe("call cards v2 (current)", () => {
 		expect(() => encodeCard({ ...card, relays: [huge] })).toThrow(DgCliError);
 	});
 
+	it("refuses an expiry that cannot fit in 4 bytes, instead of a raw RangeError", () => {
+		expect(() => encodeCard({ ...card, exp: 0x1_0000_0000 })).toThrow(DgCliError);
+		expect(() => encodeCard({ ...card, exp: -1 })).toThrow(DgCliError);
+	});
+
 	it("refuses to encode more than the max relays", () => {
 		const tooMany = Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`);
 
