@@ -76,7 +76,7 @@ export const cliOptions = [
 	{
 		flags: "--to [selector]",
 		description:
-			"Destination parent folder for relocate ('root' for top level).",
+			"Draft recipients (comma-separated), or relocate destination folder.",
 	},
 	{
 		flags: "--rename [name]",
@@ -206,6 +206,51 @@ export const cliOptions = [
 		flags: "--ai-redacted [true|false]",
 		description: "Control redacted AI output.",
 	},
+	{
+		flags: "--unread",
+		description: "Restrict mail list or search to unread messages.",
+	},
+	{
+		flags: "--since [value]",
+		description:
+			"Restrict mail list or search to messages received on or after this ISO date/time, or a relative duration like 7d.",
+	},
+	{
+		flags: "--from [domain]",
+		description: "Restrict mail list or search to this sender domain.",
+	},
+	{
+		flags: "--subject [text]",
+		description: "Restrict mail list or search to a subject substring.",
+	},
+	{ flags: "--query [text]", description: "Mail search text." },
+	{ flags: "--page [number]", description: "Zero-based mail result page." },
+	{
+		flags: "--message [id]",
+		description: "Mail message id from mail list or mail search.",
+	},
+	{
+		flags: "--max-chars [number]",
+		description: "Maximum mail read body length, in characters.",
+	},
+	{
+		flags: "--full-quotes",
+		description: "Keep quoted history in mail read output.",
+	},
+	{ flags: "--cc [list]", description: "Draft Cc recipients (comma-separated)." },
+	{
+		flags: "--body-file [path]",
+		description: "Draft body source: a file path, or - for stdin.",
+	},
+	{
+		flags: "--reply-all",
+		description: "Reply to all original recipients when drafting a reply.",
+	},
+	{ flags: "--draft [id]", description: "Mail draft id to send." },
+	{
+		flags: "--wait [seconds]",
+		description: "Seconds to wait for mail send human approval.",
+	},
 	{ flags: "--help", description: "Display help." },
 ] satisfies CliOption[];
 
@@ -226,6 +271,30 @@ export const cliCommandSpecs = [
 	{
 		nameAndArgs: "load <folders|labels|filters>",
 		description: "Load provider folder, label/category, or filter snapshots.",
+	},
+	{
+		nameAndArgs: "mail list",
+		description: "List mail message metadata for one folder.",
+	},
+	{
+		nameAndArgs: "mail search",
+		description: "Search mail message metadata by text.",
+	},
+	{
+		nameAndArgs: "mail read",
+		description: "Read one mail message, redacted and quote-stripped.",
+	},
+	{
+		nameAndArgs: "mail attachments",
+		description: "List one mail message's attachment metadata.",
+	},
+	{
+		nameAndArgs: "mail draft <new|reply>",
+		description: "Create a server-side mail draft, new or in reply.",
+	},
+	{
+		nameAndArgs: "mail send",
+		description: "Send a mail draft after human approval.",
 	},
 	{
 		nameAndArgs: "classify-doc",
@@ -401,6 +470,28 @@ export const commandHelpFlags: Record<string, readonly string[]> = {
 	init: ["--username", ...browserHelpFlags],
 	login: [...browserHelpFlags],
 	"load <folders|labels|filters>": [],
+	"mail list": ["--folder", "--unread", "--since", "--from", "--subject", "--limit", "--page"],
+	"mail search": [
+		"--query",
+		"--folder",
+		"--unread",
+		"--since",
+		"--from",
+		"--subject",
+		"--limit",
+		"--page",
+	],
+	"mail read": ["--message", "--max-chars", "--full-quotes"],
+	"mail attachments": ["--message"],
+	"mail draft <new|reply>": [
+		"--to",
+		"--cc",
+		"--subject",
+		"--body-file",
+		"--message",
+		"--reply-all",
+	],
+	"mail send": ["--draft", "--wait"],
 	"classify-doc": [],
 	"folders plan-tree": ["--dry-run", "--plan-path"],
 	"folders apply-tree": ["--confirm", "--plan-path"],

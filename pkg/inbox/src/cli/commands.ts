@@ -31,6 +31,14 @@ import { routeProfileFilter } from "../features/filter-routing/command";
 import { discoverInboxProjects } from "../features/inbox-planning/projects";
 import { validateSpecCommand } from "../features/spec-validation/command";
 import {
+	mailAttachments,
+	mailDraft,
+	mailList,
+	mailRead,
+	mailSearch,
+	mailSend,
+} from "../mail/commands";
+import {
 	applyCleanupPlanPatch,
 	applyOutlookFilters,
 	applyOutlookFolderTree,
@@ -87,6 +95,12 @@ export const commandRegistry: CommandRegistry = {
 	"load:folders": loadFolders,
 	"load:labels": loadLabels,
 	"load:filters": loadFilters,
+	"mail:attachments": mailAttachments,
+	"mail:draft": mailDraft,
+	"mail:list": mailList,
+	"mail:read": mailRead,
+	"mail:search": mailSearch,
+	"mail:send": mailSend,
 	probe: probeFolder,
 	"recommend:filters": recommendFilters,
 	review: reviewWorkspace,
