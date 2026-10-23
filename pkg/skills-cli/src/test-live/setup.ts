@@ -73,28 +73,60 @@ function hasWorkflowDispatchTrigger(content: string): boolean {
 	return scalarTriggerNames(onValue)?.includes("workflow_dispatch") ?? false;
 }
 
-/** Scalar/flow-array/block-sequence on: forms carry no per-trigger config, so normalizing them to a mapping with empty entries is lossless; a mapping form is patched in place to keep any existing trigger config intact. */
+function mappingEntryText(content: string, pair: Pair<Node, Node | null>): string {
+	const keyRange = pair.key.range;
+	if (!keyRange) return String(pair.key);
+	const end = pair.value?.range?.[1] ?? keyRange[1];
+	return content.slice(keyRange[0], end);
+}
+
+function rewriteOnKeyAsBlockMapping(
+	content: string,
+	keyRange: readonly [number, number, number],
+	valueRange: readonly [number, number, number],
+	entryLines: string[],
+): string {
+	const remainder = content.slice(valueRange[1]);
+	const separator = remainder.startsWith("\n") || remainder.length === 0 ? "" : "\n";
+	const lines = [...entryLines.map((line) => `  ${line}`), `  ${PATCH_MARKER}`];
+	return `${content.slice(0, keyRange[0])}on:\n${lines.join("\n")}${separator}${remainder}`;
+}
+
+/** Scalar/flow-array/block-sequence on: forms carry no per-trigger config, so normalizing them to a mapping with empty entries is lossless. A block mapping is patched in place to keep its existing trigger config intact; a flow mapping (`on: {...}`) is rewritten to block style, because the marker's trailing comment would otherwise swallow the rest of its line. */
 function patchWorkflowDispatch(content: string, workflowPath: string): string {
 	const onPair = findOnPair(content);
 	const onValue = onPair?.value;
-	if (onValue && isMap(onValue)) {
-		if (!ON_KEY.test(content)) {
-			throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
-		}
-		return content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`);
-	}
-	const names = onValue ? scalarTriggerNames(onValue) : undefined;
 	const keyRange = onPair?.key.range;
 	const valueRange = onValue?.range;
+
+	if (onValue && isMap(onValue)) {
+		if (!keyRange || !valueRange) {
+			throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
+		}
+		if (!onValue.flow) {
+			if (!ON_KEY.test(content)) {
+				throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
+			}
+			return content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`);
+		}
+		const entryLines = (onValue.items as Pair<Node, Node | null>[]).map((pair) =>
+			mappingEntryText(content, pair),
+		);
+		return rewriteOnKeyAsBlockMapping(content, keyRange, valueRange, entryLines);
+	}
+
+	const names = onValue ? scalarTriggerNames(onValue) : undefined;
 	if (!names || !keyRange || !valueRange) {
 		throw new TestLiveError(
 			`could not find a usable 'on:' trigger to patch in ${workflowPath} — add workflow_dispatch manually and rerun`,
 		);
 	}
-	const remainder = content.slice(valueRange[1]);
-	const separator = remainder.startsWith("\n") || remainder.length === 0 ? "" : "\n";
-	const lines = [...names.map((name) => `  ${name}: {}`), `  ${PATCH_MARKER}`];
-	return `${content.slice(0, keyRange[0])}on:\n${lines.join("\n")}${separator}${remainder}`;
+	return rewriteOnKeyAsBlockMapping(
+		content,
+		keyRange,
+		valueRange,
+		names.map((name) => `${name}: {}`),
+	);
 }
 
 export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_DEPS): Promise<number> {
