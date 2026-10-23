@@ -454,14 +454,15 @@ describe("dg-skills inbox mail — error shapes", () => {
 });
 
 describe("createMailAccessClient — provider stubs", () => {
-	test("protonmail without a dataPath throws not implemented in this build", () => {
-		const config = { ...defaultConfig, provider: "protonmail" as const, mail: { dataPath: undefined } };
-		expect(() => createMailAccessClient(config, {})).toThrow("not implemented in this build");
-	});
-
 	test("outlook without a dataPath builds a Graph-backed client instead of the stub", () => {
 		const config = { ...defaultConfig, provider: "outlook" as const, mail: { dataPath: undefined } };
 		expect(() => createMailAccessClient(config, {})).not.toThrow();
+	});
+
+	test("protonmail without a dataPath constructs lazily instead of throwing", () => {
+		const config = { ...defaultConfig, provider: "protonmail" as const, mail: { dataPath: undefined } };
+		const client = createMailAccessClient(config, {});
+		expect(typeof client.listMessages).toBe("function");
 	});
 
 	test("gmail throws the unsupported-provider sentence even without a dataPath", () => {
