@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -38,9 +37,8 @@ export interface CheckGitignoredOptions {
 }
 
 function defaultRunGit(args: string[]): { status: number | null } {
-	const result = spawnSync("git", args, { encoding: "utf-8" });
-	if (result.error) throw result.error;
-	return { status: result.status };
+	const result = Bun.spawnSync(["git", ...args]);
+	return { status: result.exitCode };
 }
 
 /** Warn-only: never throws, and any non-zero exit or spawn failure reads as "not ignored". */

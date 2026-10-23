@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -8,6 +7,7 @@ import {
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
+import { wslToWindowsPath } from "../pw/core/windows";
 import { type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
 import { assertProtoName, protoDir, sentinelPaths } from "./paths";
@@ -254,6 +254,9 @@ export function stopChain(name: string): string {
 export function openInBrowser(target: string): Promise<boolean> {
 	if (/^https?:\/\//.test(target) || !existsSync(target))
 		return tryOpen(target);
-	const converted = spawnSync("wslpath", ["-w", target], { encoding: "utf8" });
-	return tryOpen(converted.status === 0 ? converted.stdout.trim() : target);
+	let path = target;
+	try {
+		path = wslToWindowsPath(target);
+	} catch {}
+	return tryOpen(path);
 }
