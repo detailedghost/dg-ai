@@ -1321,7 +1321,7 @@ Shipped early on PR #42 (2026-10-21), not in the Wave 6 PR. The Wave 6 PR body s
 ### Slice 30 — w7-cleanup-ls-polish-release
 
 #### Engineering
-- [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (vendor pr-body-style.md into the skill; hook remains a configured external executable)
+- [ ] Move cleanup (uses configured external daily-prune executable), ls-skills (table uses dg: names), polish (link to sdlc's pr-body-style.md by relative path, decided 2026-10-22; hook remains a configured external executable)
 - [ ] Bump to 1.21.0; open the Wave 7 draft PR
 - [x] Use configurable daily-prune/prose-check executable paths with actionable unavailable behavior, preserving excluded hook scope and strict private-path wall.
 - [x] Require a source checkout for maintenance writes; installed cache reports proposals and runtime history stays outside plugin; reconcile ls-skills scope/categories/removed/merged aliases.
