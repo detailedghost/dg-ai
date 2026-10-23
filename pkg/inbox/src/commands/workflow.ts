@@ -241,11 +241,15 @@ export async function relocateFolder(context: CliContext): Promise<void> {
 	if (!sourceSelector) {
 		throw new Error("folders relocate requires --folder <source id or path>");
 	}
-	const toSelector = getStringFlag(context.args.flags, "to");
+	const legacyToSelector = getStringFlag(context.args.flags, "to");
+	if (legacyToSelector) {
+		console.error("warning: --to on folders relocate is deprecated; use --dest");
+	}
+	const destSelector = getStringFlag(context.args.flags, "dest") || legacyToSelector;
 	const rename = getStringFlag(context.args.flags, "rename");
-	if (!toSelector && !rename) {
+	if (!destSelector && !rename) {
 		throw new Error(
-			"folders relocate requires --to <parent|root> and/or --rename <name>",
+			"folders relocate requires --dest <parent|root> and/or --rename <name>",
 		);
 	}
 	const folders = await readFolders(paths);
@@ -256,13 +260,13 @@ export async function relocateFolder(context: CliContext): Promise<void> {
 			throw new Error(`${provider} client does not support folder relocation`);
 		}
 		let movedTo: string | undefined;
-		if (toSelector) {
+		if (destSelector) {
 			const destinationId =
-				toSelector.toLowerCase() === "root"
+				destSelector.toLowerCase() === "root"
 					? "msgfolderroot"
-					: resolveFolder(folders, toSelector, { purpose: "target" }).id;
+					: resolveFolder(folders, destSelector, { purpose: "target" }).id;
 			await client.moveFolder({ id: source.id, destinationId });
-			movedTo = toSelector;
+			movedTo = destSelector;
 		}
 		if (rename) {
 			await client.renameFolder({ id: source.id, displayName: rename });

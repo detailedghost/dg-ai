@@ -251,4 +251,71 @@ describe("Outlook CLI provider", () => {
 			"requires a successful apply --dry-run report",
 		);
 	});
+
+	test("folders relocate accepts --dest without warning", async () => {
+		const dir = `/tmp/email-organizer-outlook-relocate-dest-${crypto.randomUUID()}`;
+		await runCli(["load", "folders", "--provider", "outlook", "--dir", dir]);
+		const relocate = await runCli([
+			"folders",
+			"relocate",
+			"--provider",
+			"outlook",
+			"--dir",
+			dir,
+			"--folder",
+			"receipts",
+			"--dest",
+			"inbox",
+		]);
+		expect(relocate.stderr).not.toContain("deprecated");
+		expect(relocate.code).toBe(1);
+		expect(relocate.stderr).toContain(
+			"outlook client does not support folder relocation",
+		);
+	});
+
+	test("folders relocate accepts the deprecated --to with one warning naming --dest", async () => {
+		const dir = `/tmp/email-organizer-outlook-relocate-to-${crypto.randomUUID()}`;
+		await runCli(["load", "folders", "--provider", "outlook", "--dir", dir]);
+		const relocate = await runCli([
+			"folders",
+			"relocate",
+			"--provider",
+			"outlook",
+			"--dir",
+			dir,
+			"--folder",
+			"receipts",
+			"--to",
+			"inbox",
+		]);
+		expect(relocate.stderr.match(/deprecated/g)).toHaveLength(1);
+		expect(relocate.stderr).toContain(
+			"warning: --to on folders relocate is deprecated; use --dest",
+		);
+		expect(relocate.code).toBe(1);
+		expect(relocate.stderr).toContain(
+			"outlook client does not support folder relocation",
+		);
+	});
+
+	test("folders relocate without --dest, --to, or --rename names --dest in the error", async () => {
+		const dir = `/tmp/email-organizer-outlook-relocate-missing-${crypto.randomUUID()}`;
+		await runCli(["load", "folders", "--provider", "outlook", "--dir", dir]);
+		const relocate = await runCli([
+			"folders",
+			"relocate",
+			"--provider",
+			"outlook",
+			"--dir",
+			dir,
+			"--folder",
+			"receipts",
+		]);
+		expect(relocate.code).toBe(1);
+		expect(relocate.stderr).toContain(
+			"folders relocate requires --dest <parent|root> and/or --rename <name>",
+		);
+		expect(relocate.stderr).not.toContain("deprecated");
+	});
 });

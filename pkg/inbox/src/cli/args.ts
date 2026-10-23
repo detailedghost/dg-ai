@@ -74,9 +74,12 @@ export const cliOptions = [
 			"File of work-item ids (one per line or JSON array) to restrict a decision to.",
 	},
 	{
-		flags: "--to [selector]",
-		description:
-			"Draft recipients (comma-separated), or relocate destination folder.",
+		flags: "--to [recipients]",
+		description: "Draft recipients (comma-separated).",
+	},
+	{
+		flags: "--dest [selector]",
+		description: "Relocate destination folder (parent id, path, or 'root').",
 	},
 	{
 		flags: "--rename [name]",
@@ -496,7 +499,7 @@ export const commandHelpFlags: Record<string, readonly string[]> = {
 	"folders plan-tree": ["--dry-run", "--plan-path"],
 	"folders apply-tree": ["--confirm", "--plan-path"],
 	"folders inventory": [],
-	"folders relocate": ["--folder", "--to", "--rename"],
+	"folders relocate": ["--folder", "--dest", "--rename"],
 	"labels plan": ["--dry-run", "--plan-path"],
 	"labels apply": ["--confirm", "--plan-path"],
 	"labels inventory": [],
