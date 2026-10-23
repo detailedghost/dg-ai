@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { openDaemonDatabase } from "@dg/common/daemon-db";
@@ -120,11 +120,16 @@ describe("channel-review database import", () => {
 
 	test("reports a failed deferred event save through onSaveError", async () => {
 		const errors: unknown[] = [];
-		const stale = createStateStore(paths, undefined, 10, undefined, error => errors.push(error));
-		stores.push(stale);
-		stale.setLastEventId("chat1", "e1");
-		open().markHandled("other", "done");
-		stale.setLastEventId("chat1", "e2");
+		setSystemTime(new Date(at));
+		try {
+			const stale = createStateStore(paths, undefined, 10, undefined, error => errors.push(error));
+			stores.push(stale);
+			stale.setLastEventId("chat1", "e1");
+			open().markHandled("other", "done");
+			stale.setLastEventId("chat1", "e2");
+		} finally {
+			setSystemTime();
+		}
 		await Bun.sleep(40);
 		expect(errors).toHaveLength(1);
 		expect(String(errors[0])).toContain("another connection");
