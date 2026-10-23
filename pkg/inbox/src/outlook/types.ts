@@ -34,16 +34,35 @@ export type GraphEmailAddress = {
 	};
 };
 
+export type GraphBody = {
+	contentType: "text" | "html";
+	content: string;
+};
+
 export type GraphMessage = {
 	id: string;
 	from?: GraphEmailAddress;
 	sender?: GraphEmailAddress;
+	toRecipients?: GraphEmailAddress[];
+	ccRecipients?: GraphEmailAddress[];
 	subject?: string;
 	bodyPreview?: string;
+	body?: GraphBody;
+	uniqueBody?: GraphBody;
 	parentFolderId?: string;
 	isRead?: boolean;
+	isDraft?: boolean;
+	hasAttachments?: boolean;
 	receivedDateTime?: string;
 	categories?: string[];
+};
+
+export type GraphAttachment = {
+	id: string;
+	name: string;
+	contentType: string;
+	size: number;
+	isInline: boolean;
 };
 
 export type GraphRule = {
