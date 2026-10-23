@@ -2,7 +2,11 @@ import {
 	handleCredentialsRequest,
 	sendCredentialsResult,
 } from "./credentials";
-import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
+import {
+	handleInboxCli,
+	handleInboxBrowserResult,
+	handleInboxSendApprovalResult,
+} from "./inbox";
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
@@ -988,6 +992,16 @@ async function dispatchFrame(
 	switch (frame.type) {
 		case "inbox-browser-result":
 			return handleInboxBrowserResult(ws, frame, deps);
+		case "inbox-send-approval-result":
+			if (ws.data.kind !== "ws") {
+				await sendError(
+					ws,
+					frame.sessionId,
+					"inbox-send-approval-result is accepted only on the extension socket",
+				);
+				return;
+			}
+			return handleInboxSendApprovalResult(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":

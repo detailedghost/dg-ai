@@ -1,4 +1,5 @@
 import {
+	authorizeFrame,
 	CHAT_PROTOCOL_VERSION,
 	INBOX_DEFAULT_TIMEOUT_MS,
 	type ChatFrame,
@@ -17,8 +18,10 @@ import {
 
 type Socket = ServerWebSocket<SocketState>;
 type Result = { ok: true; value: unknown } | { ok: false; error: string };
+type RelayOperation = "browser" | "send-approval";
 type Pending = {
 	sessionId: string;
+	operation: RelayOperation;
 	requester: Socket;
 	extension: Socket;
 	finish: (result: Result, deliver?: boolean) => void;
@@ -31,6 +34,8 @@ const states = new WeakMap<ConnectionManager, RelayState>();
 const MAX_SESSION_REQUEST_IDS = 10_000;
 const MAX_PENDING = 128;
 const MAX_REQUESTER_PENDING = 8;
+const BROWSER_MIN_VERSION = { major: 1, minor: 11 } as const;
+const SEND_APPROVAL_MIN_VERSION = { major: 1, minor: 22 } as const;
 
 function state(deps: FrameHandlerDeps): RelayState {
 	let existing = states.get(deps.connections);
@@ -86,6 +91,19 @@ function missingExtensionError(
 	);
 }
 
+function satisfiesVersion(
+	raw: string | undefined,
+	floor: { major: number; minor: number },
+): boolean {
+	const version = raw?.match(
+		/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+	);
+	if (!version) return false;
+	const major = Number(version[1]);
+	const minor = Number(version[2]);
+	return major > floor.major || (major === floor.major && minor >= floor.minor);
+}
+
 /** Handles authenticated profile/cache requests or binds a browser relay to one requester and one authorized extension. */
 export async function handleInboxCli(
 	requester: Socket,
@@ -100,7 +118,7 @@ export async function handleInboxCli(
 		});
 		return;
 	}
-	if (frame.operation !== "browser") {
+	if (frame.operation !== "browser" && frame.operation !== "send-approval") {
 		try {
 			let value: unknown = null;
 			switch (frame.operation) {
@@ -134,6 +152,7 @@ export async function handleInboxCli(
 		}
 		return;
 	}
+	const isSendApproval = frame.operation === "send-approval";
 	const relay = state(deps);
 	const requestKey = key(sessionId, frame.requestId);
 	if (relay.pending.get(requestKey)?.requester === requester) return;
@@ -179,25 +198,22 @@ export async function handleInboxCli(
 			ok: false,
 			error: peers.length
 				? "Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session."
-				: missingExtensionError(sessionId, deps),
+				: isSendApproval
+					? `Send approval needs the human's dg chat tab. ${missingExtensionError(sessionId, deps)}`
+					: missingExtensionError(sessionId, deps),
 		});
 		return;
 	}
 	const extension = peers[0];
-	const version = extension.data.extensionVersion?.match(
-		/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
-	);
-	if (
-		!version ||
-		!(
-			Number(version[1]) > 1 ||
-			(Number(version[1]) === 1 && Number(version[2]) >= 11)
-		)
-	) {
+	const minVersion = isSendApproval
+		? SEND_APPROVAL_MIN_VERSION
+		: BROWSER_MIN_VERSION;
+	if (!satisfiesVersion(extension.data.extensionVersion, minVersion)) {
 		await result(requester, sessionId, frame.requestId, {
 			ok: false,
-			error:
-				"Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
+			error: isSendApproval
+				? "Send approval requires dg extension 1.22.0 or newer; update the extension, reload it, and reconnect this session."
+				: "Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
 		});
 		return;
 	}
@@ -220,12 +236,19 @@ export async function handleInboxCli(
 		() =>
 			finish({
 				ok: false,
-				error:
-					"Inbox extension request timed out; check the authenticated Proton tab and retry with a new requestId.",
+				error: isSendApproval
+					? "Send approval timed out; the human did not decide within the wait."
+					: "Inbox extension request timed out; check the authenticated Proton tab and retry with a new requestId.",
 			}),
 		frame.timeoutMs ?? INBOX_DEFAULT_TIMEOUT_MS,
 	);
-	const pending = { sessionId, requester, extension, finish };
+	const pending: Pending = {
+		sessionId,
+		operation: frame.operation,
+		requester,
+		extension,
+		finish,
+	};
 	relay.pending.set(requestKey, pending);
 	offRequester = onSocketClose(requester, () =>
 		finish({ ok: false, error: "Inbox requester disconnected." }, false),
@@ -236,22 +259,29 @@ export async function handleInboxCli(
 			error: "Inbox extension disconnected before replying.",
 		}),
 	);
-	try {
-		await sendViaQueue(
-			extension,
-			JSON.stringify({
+	const outbound = isSendApproval
+		? {
+				type: "inbox-send-approval-request",
+				sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: frame.requestId,
+				approval: frame.approval,
+			}
+		: {
 				type: "inbox-browser-request",
 				sessionId,
 				protocolVersion: CHAT_PROTOCOL_VERSION,
 				requestId: frame.requestId,
 				request: frame.request,
-			}),
-		);
+			};
+	try {
+		await sendViaQueue(extension, JSON.stringify(outbound));
 	} catch {
 		finish({
 			ok: false,
-			error:
-				"Inbox extension request could not be sent; reconnect the extension.",
+			error: isSendApproval
+				? "Send approval request could not be sent; reconnect the extension."
+				: "Inbox extension request could not be sent; reconnect the extension.",
 		});
 	}
 }
@@ -265,11 +295,47 @@ export function handleInboxBrowserResult(
 	const pending = state(deps).pending.get(
 		key(frame.sessionId, frame.requestId),
 	);
-	if (!pending || pending.extension !== socket || socket.data.kind !== "ws")
+	if (
+		!pending ||
+		pending.operation !== "browser" ||
+		pending.extension !== socket ||
+		socket.data.kind !== "ws"
+	)
 		return;
 	if (!frame.ok) {
 		pending.finish({ ok: false, error: frame.error! });
 		return;
 	}
 	pending.finish({ ok: true, value: validateInboxBrowserResponse(frame.data) });
+}
+
+/**
+ * Settles a pending send-approval only for the extension socket holding the
+ * matching session token; the daemon never accepts this frame from a CLI
+ * socket even when that socket also knows the session token.
+ */
+export function handleInboxSendApprovalResult(
+	socket: Socket,
+	frame: Extract<ChatFrame, { type: "inbox-send-approval-result" }>,
+	deps: FrameHandlerDeps,
+): void {
+	if (socket.data.kind !== "ws") return;
+	try {
+		authorizeFrame(frame, socket.data.capabilities);
+	} catch {
+		return;
+	}
+	const pending = state(deps).pending.get(
+		key(frame.sessionId, frame.requestId),
+	);
+	if (
+		!pending ||
+		pending.operation !== "send-approval" ||
+		pending.extension !== socket
+	)
+		return;
+	pending.finish({
+		ok: true,
+		value: { approved: frame.approved, decidedAt: new Date().toISOString() },
+	});
 }
