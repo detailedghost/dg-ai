@@ -61,7 +61,7 @@ beforeAll(async () => {
 						sessionId,
 						requestId: frame.requestId,
 						ok: true,
-						value: [],
+						value: frame.operation === "get" ? null : [],
 					}),
 				);
 			},
@@ -133,6 +133,23 @@ describe("compiled dg-skills db from an external cwd", () => {
 	test("help initializes no credential or database connection", async () => {
 		operations.length = 0;
 		const result = await run(["--help"]);
+		expect(result.code, result.stderr).toBe(0);
+		expect(result.stdout).toContain("connections");
+		expect(result.stderr).toBe("");
+		expect(operations).toEqual([]);
+	});
+
+	test("a trailing --json on a query reaches argument parsing instead of tripping strict parseArgs", async () => {
+		operations.length = 0;
+		const result = await run(["query", "nonexistent-conn", "select 1", "--json"]);
+		expect(result.stderr).not.toContain("Unknown option");
+		expect(result.stderr).toContain('connection "nonexistent-conn" not found');
+		expect(operations).toContain("get");
+	});
+
+	test("db <subcommand> --help never reaches the subcommand or its credential lookup", async () => {
+		operations.length = 0;
+		const result = await run(["query", "--help"]);
 		expect(result.code, result.stderr).toBe(0);
 		expect(result.stdout).toContain("connections");
 		expect(result.stderr).toBe("");
