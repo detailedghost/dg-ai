@@ -30,6 +30,12 @@ start --env <env>` starts the daemon if it is not running, registers the `review
 missing, and starts it. `dg review stop` waits up to two minutes for a running review, then stops the service.
 The channel-review pid file goes away. `dg review run` stays for foreground debugging.
 
+The code moves with the process model. `pkg/channel-review` and `pkg/dg-agent` fold into `pkg/dg-daemon`.
+Channel review becomes a service kind that the daemon can register, and its skill moves to
+`pkg/dg-daemon/skills/channel-review/`. It still runs as its own supervised process, so a runner crash
+does not take down the daemon. `pkg/inbox` folds into `pkg/skills-cli` as the `inbox` command. That leaves
+five packages: `common`, `skills-cli`, `skills-test`, `dg-daemon`, and `extension`.
+
 The `review-<env>` service declaration carries no `envFile`. Channel review reads `runner.claude.bedrock`
 (profile and region) from its own config at every start, so a supervisor restart always picks up the current
 config instead of a snapshot that can drift out of step with it. When the AWS SSO session for that profile
@@ -97,7 +103,7 @@ the three binaries this ADR merges, and that channel still needs its own tag.
 flowchart LR
     OS["OS login task or unit"] --> D["dg daemon (pkg/dg-daemon)"]
     U["user: dg review start"] --> D
-    D -->|"supervised child"| R["dg review run (pkg/channel-review)"]
+    D -->|"supervised child"| R["dg review run (pkg/dg-daemon review service)"]
     D --> J["scheduled jobs"]
     A["dg agent (pkg/dg-agent)"] -->|"/cli"| D
     S["skills: ~/.dg/bin/dg-skills link"] --> B["dg skills (pkg/skills-cli)"]
