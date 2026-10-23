@@ -1,10 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { runCapture, runNative } from "@dg/common/node";
+import { isMap, isScalar, isSeq, parseDocument, type Node, type Pair } from "yaml";
 import { detectProvider } from "../provider/detect";
 import { currentBranch } from "../utils/git";
-import { findWorkflow, TestLiveError } from "./discover";
-import { git, info, makeDie } from "./shared";
+import { findWorkflow } from "./discover";
+import { git, info, makeDie, PATCH_MARKER, TestLiveError } from "./shared";
 import { readTestLiveState, writeTestLiveState } from "./state";
 import type { TestLiveState } from "./types";
 
@@ -40,6 +41,90 @@ function parseGhRuns(stdout: string): GhRun[] {
 }
 
 const ON_KEY = /^on:[ \t]*\r?$/m;
+
+function findOnPair(content: string): Pair<Node, Node> | undefined {
+	const doc = parseDocument(content);
+	if (!isMap(doc.contents)) return undefined;
+	const pair = doc.contents.items.find((item) => String(item.key) === "on");
+	return pair?.value == null ? undefined : (pair as Pair<Node, Node>);
+}
+
+function scalarTriggerNames(onValue: Node): string[] | undefined {
+	if (isScalar(onValue)) {
+		return typeof onValue.value === "string" ? [onValue.value] : undefined;
+	}
+	if (isSeq(onValue)) {
+		const names = onValue.items.map((item) =>
+			isScalar(item) && typeof item.value === "string" ? item.value : null,
+		);
+		return names.every((name): name is string => name !== null) ? names : undefined;
+	}
+	return undefined;
+}
+
+function hasWorkflowDispatchTrigger(content: string): boolean {
+	const onValue = findOnPair(content)?.value;
+	if (!onValue) return false;
+	if (isMap(onValue)) return onValue.items.some((pair) => String(pair.key) === "workflow_dispatch");
+	return scalarTriggerNames(onValue)?.includes("workflow_dispatch") ?? false;
+}
+
+function mappingEntryText(content: string, pair: Pair<Node, Node | null>): string {
+	const keyRange = pair.key.range;
+	if (!keyRange) return String(pair.key);
+	const valueRange = pair.value?.range;
+	if (!valueRange) return `${content.slice(keyRange[0], keyRange[1])}:`;
+	return content.slice(keyRange[0], valueRange[1]);
+}
+
+function rewriteOnKeyAsBlockMapping(
+	content: string,
+	keyRange: readonly [number, number, number],
+	valueRange: readonly [number, number, number],
+	entryLines: string[],
+): string {
+	const remainder = content.slice(valueRange[1]);
+	const separator = remainder.startsWith("\n") || remainder.length === 0 ? "" : "\n";
+	const lines = [...entryLines.map((line) => `  ${line}`), `  ${PATCH_MARKER}`];
+	return `${content.slice(0, keyRange[0])}on:\n${lines.join("\n")}${separator}${remainder}`;
+}
+
+/** Scalar/flow-array/block-sequence on: forms carry no per-trigger config, so normalizing them to a mapping with empty entries is lossless. A block mapping is patched in place to keep its existing trigger config intact; a flow mapping (`on: {...}`) is rewritten to block style, because the marker's trailing comment would otherwise swallow the rest of its line. */
+function patchWorkflowDispatch(content: string, workflowPath: string): string {
+	const onPair = findOnPair(content);
+	const onValue = onPair?.value;
+	const keyRange = onPair?.key.range;
+	const valueRange = onValue?.range;
+
+	if (onValue && isMap(onValue)) {
+		if (!keyRange || !valueRange) {
+			throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
+		}
+		if (!onValue.flow) {
+			if (!ON_KEY.test(content)) {
+				throw new TestLiveError(`could not find an 'on:' key to patch in ${workflowPath}`);
+			}
+			return content.replace(ON_KEY, `on:\n  ${PATCH_MARKER}`);
+		}
+		const entryLines = (onValue.items as Pair<Node, Node | null>[]).map((pair) =>
+			mappingEntryText(content, pair),
+		);
+		return rewriteOnKeyAsBlockMapping(content, keyRange, valueRange, entryLines);
+	}
+
+	const names = onValue ? scalarTriggerNames(onValue) : undefined;
+	if (!names || !keyRange || !valueRange) {
+		throw new TestLiveError(
+			`could not find a usable 'on:' trigger to patch in ${workflowPath} — add workflow_dispatch manually and rerun`,
+		);
+	}
+	return rewriteOnKeyAsBlockMapping(
+		content,
+		keyRange,
+		valueRange,
+		names.map((name) => `${name}: {}`),
+	);
+}
 
 export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_DEPS): Promise<number> {
 	const env = args[0] || "dev";
@@ -108,14 +193,18 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 	let patchCommitSha: string | null = null;
 	let prePatchSha: string | null = null;
 
-	if (content.includes("workflow_dispatch")) {
+	if (hasWorkflowDispatchTrigger(content)) {
 		info("workflow_dispatch already present — triggering directly");
 	} else {
-		if (!ON_KEY.test(content)) {
-			return die(`could not find an 'on:' key to patch in ${workflowPath}`);
+		let patchedContent: string;
+		try {
+			patchedContent = patchWorkflowDispatch(content, workflowPath);
+		} catch (error) {
+			if (error instanceof TestLiveError) return die(error.message);
+			throw error;
 		}
 		prePatchSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
-		writeFileSync(workflowPath, content.replace(ON_KEY, "on:\n  workflow_dispatch: {}  # TEST-LIVE: temporary"));
+		writeFileSync(workflowPath, patchedContent);
 		await git(["add", workflowPath]);
 		const commit = await git(["commit", "-m", "chore(ci): add workflow_dispatch for test-live [skip ci]"]);
 		if (commit.status !== 0) {
@@ -163,7 +252,10 @@ export async function runSetup(args: string[], deps: SetupDeps = DEFAULT_SETUP_D
 		"--json",
 		"databaseId",
 	]);
-	const prevId = previous.status === 0 ? parseGhRuns(previous.stdout)[0]?.databaseId ?? 0 : 0;
+	if (previous.status !== 0) {
+		return die(`failed to list previous runs: ${previous.stderr.trim()}`);
+	}
+	const prevId = parseGhRuns(previous.stdout)[0]?.databaseId ?? 0;
 
 	info(`Triggering ${workflowFile} on ${branch}...`);
 	const dispatch = await gh(["workflow", "run", workflowFile, "--ref", branch]);

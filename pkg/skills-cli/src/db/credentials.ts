@@ -25,6 +25,7 @@ export interface ConnectionConfig {
 	role?: string;
 	clientStoreTemporaryCredential?: boolean;
 	browserActionTimeout?: number;
+	ssl?: boolean;
 }
 
 export type DbCredentialClient = Pick<CredentialClient, "get" | "list" | "close">;
@@ -128,6 +129,7 @@ function connectionFromRecord(
 		warehouse: optionalString(meta, "warehouse", name),
 		role: optionalString(meta, "role", name),
 		authenticator: optionalString(meta, "authenticator", name),
+		ssl: optionalBoolean(meta, "ssl", name),
 		clientStoreTemporaryCredential: optionalBoolean(
 			meta,
 			"clientStoreTemporaryCredential",

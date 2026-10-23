@@ -38,6 +38,7 @@ export function buildPgClientOptions(
 		database: connection.database,
 		user: connection.user,
 		password: connection.password,
+		ssl: connection.ssl,
 	};
 }
 

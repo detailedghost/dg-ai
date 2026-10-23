@@ -12,6 +12,7 @@ import {
 	buildStateDiagram,
 	MERMAID_CDN_URL,
 	renderHtml,
+	renderMarkdown,
 } from "../src/erd/render";
 
 const graph: ArchitectureGraph = {
@@ -181,6 +182,25 @@ describe("Mermaid grammar validation", () => {
 			dbEdges: [],
 		};
 		expect(await parses(buildSchemaErDiagram(weird))).toBe(true);
+	});
+});
+
+describe("truncation note", () => {
+	test("a depth cutoff is not counted twice between codeNodes and codeEdges", () => {
+		const markdown = renderMarkdown({
+			graph: { ...graph, truncated: { codeNodes: 3, codeEdges: 3, dbNodes: 0, dbEdges: 0 } },
+			truncationReason: "depth",
+		});
+		expect(markdown).toContain("3 nodes/edges truncated at depth cap");
+		expect(markdown).not.toContain("6 nodes/edges truncated");
+	});
+
+	test("a node-cap reason counts codeNodes and codeEdges independently", () => {
+		const markdown = renderMarkdown({
+			graph: { ...graph, truncated: { codeNodes: 1, codeEdges: 2, dbNodes: 0, dbEdges: 0 } },
+			truncationReason: "node-cap",
+		});
+		expect(markdown).toContain("3 nodes/edges truncated at the default node-count safety limit");
 	});
 });
 

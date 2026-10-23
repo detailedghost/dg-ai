@@ -103,7 +103,17 @@ export function collectCodeGraph(opts: CollectCodeGraphOptions): CollectCodeGrap
 			} else if (entry.isFile()) {
 				if (isSecretFile(entryRelPath, entry.name, secretFilePatterns)) continue;
 
-				const stat = fs.statSync(entryAbsPath);
+				let stat: fs.Stats;
+				try {
+					stat = fs.statSync(entryAbsPath);
+				} catch (err) {
+					evidence.push({
+						type: "file",
+						ref: entryRelPath,
+						detail: `skipped: could not stat file (${(err as Error).message})`,
+					});
+					continue;
+				}
 				nodes.push({ id: entryRelPath, label: entry.name, kind: "file", sizeBytes: stat.size });
 				evidence.push({ type: "file", ref: entryRelPath });
 				fileCount += 1;

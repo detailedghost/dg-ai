@@ -64,3 +64,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)pkg/skills-test/__tests__/no-local-zone\.spec\.ts$''']
 regexes = ['''^AKIAABCDEFGHIJKLMNOP$''']
+
+# 84c85021 introduced this key at the path below. It has not moved.
+[[allowlists]]
+description = "Synthetic self-signed localhost private key for the Bridge TLS loopback tests"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/inbox/src/protonmail/__test__/fixtures/test-bridge-tls\.ts$''']
+regexes = ['''^-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC2K0kajDeyj1wy\n''']

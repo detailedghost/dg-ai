@@ -431,7 +431,8 @@ function findStaticSchemaNote(graph: ArchitectureGraph): string | undefined {
 
 function buildTruncationNote(graph: ArchitectureGraph, reason: TruncationReason): string | undefined {
 	const { codeNodes, codeEdges, dbNodes, dbEdges } = graph.truncated;
-	const total = codeNodes + codeEdges + dbNodes + dbEdges;
+	const total =
+		reason === "depth" ? codeNodes + dbNodes + dbEdges : codeNodes + codeEdges + dbNodes + dbEdges;
 	if (total === 0) return undefined;
 	const cause = reason === "node-cap" ? "the default node-count safety limit" : "depth cap";
 	return `> ${total} nodes/edges truncated at ${cause}.`;

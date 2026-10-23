@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
 	collectStaticSchema,
@@ -9,6 +9,7 @@ import {
 	parseEfMigrations,
 	parsePrismaSchema,
 } from "../src/erd/schema-static";
+import { findNodeByLabel, writeScopedFile } from "./cli-fixtures";
 
 let scopeDir: string;
 
@@ -21,15 +22,10 @@ afterEach(() => {
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = join(scopeDir, relPath);
-	mkdirSync(dirname(abs), { recursive: true });
-	writeFileSync(abs, content);
-	return abs;
+	return writeScopedFile(scopeDir, relPath, content);
 }
 
-function findNode<T extends { label: string }>(nodes: T[], label: string): T | undefined {
-	return nodes.find((n) => n.label === label);
-}
+const findNode = findNodeByLabel;
 
 const PRISMA_FIXTURE = `
 model User {
@@ -287,6 +283,42 @@ public partial class AlterWidgets : Migration
 		expect(findNode(result!.nodes, "Users")).toBeDefined();
 		const fileEvidence = result!.evidence.filter((e) => e.type === "file");
 		expect(fileEvidence.some((e) => e.ref.includes("0001_Malformed.cs") && e.detail)).toBe(true);
+	});
+
+	test("an EF CreateTable call with an unbalanced columns brace is skipped with a file evidence note, not silently truncated", () => {
+		writeFile(
+			"Migrations/0001_Unbalanced.cs",
+			`
+using Microsoft.EntityFrameworkCore.Migrations;
+
+public partial class Unbalanced : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Widgets",
+            columns: table => new
+            {
+                Id = table.Column<Guid>(nullable: false)
+            constraints: table =>
+            {
+                table.PrimaryKey("PK_Widgets", x => x.Id);
+            });
+    }
+}
+`,
+		);
+		writeFile("Migrations/0002_CreateUsers.cs", EF_CREATE_USERS);
+
+		let result: ReturnType<typeof parseEfMigrations> | undefined;
+		expect(() => {
+			result = parseEfMigrations(join(scopeDir, "Migrations"));
+		}).not.toThrow();
+
+		expect(findNode(result!.nodes, "Widgets")).toBeUndefined();
+		expect(findNode(result!.nodes, "Users")).toBeDefined();
+		const fileEvidence = result!.evidence.filter((e) => e.type === "file");
+		expect(fileEvidence.some((e) => e.ref.includes("0001_Unbalanced.cs") && e.detail)).toBe(true);
 	});
 
 	test("an EF migration .cs file exceeding the max file size cap is skipped with a file evidence note", () => {

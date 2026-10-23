@@ -52,6 +52,22 @@ describe("credential-backed database connections", () => {
 		expect(fixture.get).toHaveBeenCalledWith("db/my-pg");
 	});
 
+	test("coerces a string ssl flag to a boolean", async () => {
+		const fixture = fakeClient({
+			record: {
+				value: "fixture-password",
+				meta: {
+					engine: "postgresql",
+					database: "app",
+					user: "readonly",
+					ssl: "true",
+				},
+				updatedAt: "2026-01-01T00:00:00Z",
+			},
+		});
+		expect(await getConnection(fixture.client, "my-pg")).toMatchObject({ ssl: true });
+	});
+
 	test("never maps the external-browser placeholder to a password", async () => {
 		const fixture = fakeClient({
 			record: {

@@ -64,6 +64,69 @@ describe("classifySql", () => {
 		expect(classifySql("SET x = 1", false)).toEqual({ allowed: true });
 	});
 
+	test("keeps SET SESSION on an ordinary variable read-only", () => {
+		expect(classifySql("SET SESSION statement_timeout = 5000", false)).toEqual({
+			allowed: true,
+		});
+	});
+
+	test("blocks SET ROLE", () => {
+		expect(classifySql("SET ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET SESSION AUTHORIZATION", () => {
+		expect(classifySql("SET SESSION AUTHORIZATION admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks lowercase and mixed-case SET ROLE", () => {
+		expect(classifySql("set role admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET SESSION ROLE", () => {
+		expect(classifySql("SET SESSION ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET LOCAL ROLE", () => {
+		expect(classifySql("SET LOCAL ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET LOCAL SESSION AUTHORIZATION", () => {
+		expect(classifySql("SET LOCAL SESSION AUTHORIZATION admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks the session_authorization GUC form", () => {
+		expect(classifySql("SET session_authorization = 'admin'", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("keeps SET LOCAL on an ordinary variable read-only", () => {
+		expect(classifySql("SET LOCAL search_path TO app", false)).toEqual({ allowed: true });
+	});
+
+	test("--write allows SET ROLE", () => {
+		expect(classifySql("SET ROLE admin", true)).toEqual({ allowed: true });
+	});
+
 	test("ignores semicolons and write keywords inside literals and comments", () => {
 		expect(
 			classifySql(

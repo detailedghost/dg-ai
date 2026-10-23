@@ -1,11 +1,8 @@
 import { readFileSync } from "node:fs";
 import { currentBranch } from "../utils/git";
-import { TestLiveError } from "./discover";
-import { git, info, makeDie } from "./shared";
+import { git, info, makeDie, PATCH_MARKER, TestLiveError } from "./shared";
 import { readTestLiveState, removeTestLiveState } from "./state";
 import type { TestLiveState } from "./types";
-
-const PATCH_MARKER = "workflow_dispatch: {}  # TEST-LIVE: temporary";
 
 const die = makeDie("test-live-cleanup");
 
@@ -32,7 +29,7 @@ async function dropPatchCommit(
 	}
 
 	const ancestor = await git(["merge-base", "--is-ancestor", patchCommitSha, "HEAD"]);
-	if (ancestor.status !== 0) {
+	if (ancestor.status === 1) {
 		// A prior cleanup run may have rebased successfully and only failed at the push retry below;
 		// the marker's absence from the workflow file at HEAD is how we tell that apart from real data loss.
 		if (workflowStillPatched(workflowPath)) {
@@ -42,6 +39,9 @@ async function dropPatchCommit(
 		}
 		info("Patch commit already dropped locally — retrying the push...");
 		return;
+	}
+	if (ancestor.status !== 0) {
+		return die(`git merge-base failed: ${ancestor.stderr.trim()}`);
 	}
 
 	info(`Dropping the patch commit ${patchCommitSha.slice(0, 8)}, keeping later commits...`);
