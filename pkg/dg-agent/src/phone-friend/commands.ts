@@ -31,6 +31,7 @@ import {
 import {
 	acceptCall as saveCaller,
 	claimStart,
+	handleFor,
 	lineClaiming,
 	listLines,
 	releaseStart,
@@ -181,6 +182,7 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 		npub: npubOf(sk),
 		contact: config.contact ?? null,
 		name: config.name ?? null,
+		handle: handleFor(config, deps.line),
 		key_store: mode,
 		listener: livePid(deps) ?? null,
 		...(invite ? { card_expires_at: expiresAt(invite) } : {}),
@@ -211,6 +213,7 @@ export function phoneContacts(deps: PhoneFriendDeps): void {
 			line: line.name,
 			name: config.name ?? null,
 			contact: config.contact ?? null,
+			handle: handleFor(config, line),
 			listener: pid !== undefined && deps.isAlive(pid) ? pid : null,
 		});
 	}
@@ -221,13 +224,14 @@ export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
 	if (!invite) {
 		throw new DgCliError("no open call card on this line; run `dg-agent phone-friend invite` to make one");
 	}
+	const config = readConfig(deps.line);
 	const card = encodeCard({
 		npub: await myNpub(deps),
-		relays: readConfig(deps.line).relays,
+		relays: config.relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
 	});
-	printJson(deps, { card, expires_at: expiresAt(invite) });
+	printJson(deps, { card, expires_at: expiresAt(invite), handle: handleFor(config, deps.line) });
 }
 
 function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
@@ -318,8 +322,8 @@ export async function phoneInvite(
 		exp: invite.expiresAt,
 	});
 	writeInvite(deps.line, invite, relays);
-	if (livePid(deps) !== undefined) await spawnOrRestart(deps);
-	printJson(deps, { card, expires_at: expiresAt(invite) });
+	await spawnOrRestart(deps);
+	printJson(deps, { card, expires_at: expiresAt(invite), handle: handleFor(readConfig(deps.line), deps.line) });
 }
 
 export async function phoneDial(
@@ -346,8 +350,13 @@ export async function phoneDial(
 			...(name === undefined ? {} : { name }),
 		});
 		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: words, call: true }, card.npub);
-		if (livePid(deps) !== undefined) await spawnOrRestart(deps);
-		printJson(deps, { contact: card.npub, id: event.id, relays_ok: ok });
+		await spawnOrRestart(deps);
+		printJson(deps, {
+			contact: card.npub,
+			id: event.id,
+			relays_ok: ok,
+			handle: handleFor(readConfig(deps.line), deps.line),
+		});
 	} finally {
 		pool.close(card.relays);
 	}
@@ -361,7 +370,9 @@ export async function phoneOff(deps: PhoneFriendDeps): Promise<void> {
 }
 
 function printUnread(inbox: PhoneFriendDb, deps: PhoneFriendDeps): void {
-	for (const message of inbox.takeUnread()) printJson(deps, message);
+	for (const message of inbox.takeUnread()) {
+		printJson(deps, message.call ? { ...message, handle: handleFor(readConfig(deps.line), deps.line) } : message);
+	}
 }
 
 function openInbox(deps: PhoneFriendDeps): PhoneFriendDb {
@@ -519,7 +530,7 @@ export function registerPhoneFriendCommands(
 		.description("private NIP-17 chat with one contact over public Nostr relays")
 		.option(
 			"--line <name>",
-			"which of your numbers to use: a line name, a contact name, or a contact npub; each line has its own key and contact",
+			"which of your numbers to use: a line name, a contact name (an @ handle works too), or a contact npub; each line has its own key and contact",
 			DEFAULT_LINE,
 		)
 		.hook("preAction", (_hooked, action) => {
