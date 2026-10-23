@@ -1049,10 +1049,11 @@ describe("buildOverlay — callout controls", () => {
 		);
 	const buttonByLabel = (root: HTMLElement, label: string): HTMLButtonElement =>
 		root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
-	// layer = root's single fixed-inset child; its first child is the spotlight
+	// layer = the fixed-inset div renderTourOverlayStep (pkg/common/src/tour-overlay.ts)
+	// mounts beside its own <style> tag; the layer's first child is the spotlight
 	// (highlight or dim), its last is the callout card — true for every non-video call.
 	const layerOf = (root: HTMLElement): HTMLElement =>
-		root.firstElementChild as HTMLElement;
+		[...root.children].find((c) => c.tagName !== "STYLE") as HTMLElement;
 
 	it("shows enabled jump and single-step controls with real aria-labels mid-tour", () => {
 		const root = domRoot();

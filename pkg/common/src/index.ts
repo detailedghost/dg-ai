@@ -21,4 +21,5 @@ export * from "./session-connect";
 export * from "./skill-files";
 export * from "./slug";
 export * from "./thrash-spice";
+export * from "./tour-overlay";
 export * from "./types";

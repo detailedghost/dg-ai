@@ -1,19 +1,15 @@
+import { TOUR_OVERLAY_TOKENS_CSS } from "@dg/common";
 import { ACCENT, createEl, SANS } from "./ui-helpers";
 
 /**
  * Brutalist-neon theme mirroring the settings page (options/style.css): monospace,
  * hard 2px borders, square corners, a hard offset accent shadow. Injected into each
  * overlay's shadow root so inline `var(--…)` styles resolve and stay theme-aware.
+ * The color tokens are owned by `@dg/common`'s tour-overlay module (shared with
+ * `dg-skills pw`'s local recordings); the rules below are extension-only chrome
+ * (the review stepper, modals) layered on top of them.
  */
-export const DEMO_THEME_CSS = `
-:host {
-  --panel: #111111; --ink: #e8e8e8; --muted: #8a8a8a;
-  --line: #e8e8e8; --accent: #00f0ff; --accent2: #ff2bd6; --accent-setup: #ff8c1a; --code-bg: #000000;
-}
-:host([data-theme="light"]) {
-  --panel: #ffffff; --ink: #0a0a0a; --muted: #52525b;
-  --line: #0a0a0a; --accent: #0891b2; --accent2: #c026d3; --accent-setup: #c2410c; --code-bg: #f4f4f5;
-}
+export const DEMO_THEME_CSS = `${TOUR_OVERLAY_TOKENS_CSS}
 .dg-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 0.125rem var(--accent); }
 .dg-btn:hover:not(:disabled) { background: var(--accent); color: #000; border-color: var(--accent); }
 .dg-btn:disabled { opacity: 0.5; }
