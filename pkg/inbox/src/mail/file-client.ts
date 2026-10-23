@@ -132,7 +132,9 @@ export class FileMailAccessClient implements MailAccessClient {
 		if (!original)
 			throw new Error(`mail fixture message not found: ${input.messageId}`);
 		const to = [original.from];
-		const cc = input.replyAll ? [...original.to, ...original.cc] : input.cc;
+		const cc = input.replyAll
+			? [...original.to, ...original.cc, ...input.cc]
+			: input.cc;
 		const subject = /^re:/i.test(original.subject)
 			? original.subject
 			: `Re: ${original.subject}`;

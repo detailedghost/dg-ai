@@ -363,11 +363,14 @@ describe("dg-skills inbox mail draft", () => {
 				"--body-file",
 				bodyFile,
 				"--reply-all",
+				"--cc",
+				"extra@other.test",
 				...baseArgs(dir, dataPath),
 			]);
 			const output = JSON.parse(stdout);
 			expect(output.kind).toBe("mail-draft");
 			expect(output.inReplyTo).toBe(id);
+			expect(output.cc).toEqual(["[email:example.test]", "[email:other.test]"]);
 		});
 	});
 });
