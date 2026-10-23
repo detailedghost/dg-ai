@@ -6,6 +6,7 @@ export const INSTALLED_SKILL_FILES = [
 	"address/references/workflow.md",
 	"agent-seed/SKILL.md",
 	"agent-seed/references/classification.md",
+	"agent-seed/references/docs.md",
 	"agent-seed/references/templates.md",
 	"agent-seed/references/workflow.md",
 	"assign/SKILL.md",

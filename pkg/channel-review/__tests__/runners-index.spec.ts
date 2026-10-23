@@ -11,6 +11,8 @@ import {
 
 const HOME = "/home/dev";
 const URL = "https://github.com/o/r/pull/12";
+const CODEX_HEADLESS_NOTE =
+	"This run is headless. No one can answer questions. Post the review without asking for confirmation.";
 const PATHS = {
 	claude: "/bin/claude",
 	codex: "/bin/codex",
@@ -362,6 +364,7 @@ describe("runner run argv", () => {
 			"--allowedTools",
 			...config.runner.claude.allowedTools,
 		]);
+		expect(h.processes[0]?.argv[2]).not.toContain(CODEX_HEADLESS_NOTE);
 	});
 
 	test("claude omits -s and -c when neither is set", async () => {
@@ -455,7 +458,7 @@ describe("runner run argv", () => {
 		]);
 	});
 
-	test("codex builds the exec argv with the thrash skill prompt", async () => {
+	test("codex builds the exec argv with the headless note and the thrash skill prompt", async () => {
 		const h = harness();
 		await h.runners.codex.run(runRequest({ spice: 2 }));
 		expect(h.processes[0]?.argv).toEqual([
@@ -465,7 +468,7 @@ describe("runner run argv", () => {
 			"-C",
 			"/work",
 			"--dangerously-bypass-approvals-and-sandbox",
-			`Use the thrash skill: $thrash ${URL} -s 2`,
+			`${CODEX_HEADLESS_NOTE} Use the thrash skill: $thrash ${URL} -s 2`,
 		]);
 	});
 
@@ -525,6 +528,7 @@ describe("runner run argv", () => {
 			"--no-ask-user",
 			"-s",
 		]);
+		expect(h.processes[0]?.argv[2]).not.toContain(CODEX_HEADLESS_NOTE);
 	});
 
 	test.each([...RUNNER_NAMES])("%s passes cwd, timeout, log path, signal, and onSpawn to runProcess", async (name) => {
