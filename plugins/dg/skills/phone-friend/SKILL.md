@@ -108,9 +108,9 @@ the daemon instead of waiting for a manual check:
 `dg-agent phone-friend --line <line> voicemail`. The job runs on `--every`
 (default `1m`). `--notify` is the agent identity that should receive new
 messages; omit it and the command uses the active dg session in this directory
-(or `--session`). The daemon's job runner turns each new voicemail line into a
-notification on that identity, which `dg-agent recv` delivers. `deliver on`
-again re-enables the same job. `deliver off` pauses it.
+(or `--session`). The daemon's job runner posts each new voicemail line as a
+notification to that identity. `deliver on` again re-enables the same job.
+`deliver off` pauses it.
 
 `voicemail` still works by hand. It prints only messages you have not read,
 then marks them read, and each line includes `title` (the message text) so the
