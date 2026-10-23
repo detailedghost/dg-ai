@@ -1,11 +1,4 @@
-/**
- * Owned-artifact cleanup: a demo run (local or --ext) must never leave a stray
- * recording/screenshot/plan file lying around as a side effect, but it also must
- * never touch anything the user already had dirty or untracked before the run
- * started — a blanket `git clean` is exactly the failure mode this guards against.
- * Capture a baseline before the run, then after it, delete only paths that are both
- * new since that baseline and match one of this run's own artifact patterns.
- */
+/** Owned-artifact cleanup: delete only paths that are both new since a pre-run baseline and match one of this run's own artifact patterns — never anything already dirty or untracked. */
 
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,7 +18,6 @@ async function gitStatusPaths(cwd: string): Promise<Set<string>> {
 	const paths = new Set<string>();
 	for (const line of stdout.split("\n")) {
 		if (line.length < 4) continue;
-		// Porcelain v1: two status chars, a space, then the path (renames add " -> dest").
 		const path = line.slice(3);
 		const renamed = path.split(" -> ");
 		paths.add(renamed[renamed.length - 1] as string);
@@ -42,12 +34,7 @@ export async function captureBaseline(cwd: string): Promise<GitStatusBaseline> {
 	}
 }
 
-/**
- * Delete only paths that are new since `baseline` AND match one of `ownedPatterns`.
- * A path present in the baseline is never touched, regardless of pattern — that is
- * the one invariant this function exists to hold, so it's checked first and alone.
- * Returns the paths it actually removed.
- */
+/** Deletes only paths new since `baseline` that match one of `ownedPatterns`; returns the paths it removed. */
 export async function cleanupOwnedArtifacts(
 	cwd: string,
 	baseline: GitStatusBaseline,

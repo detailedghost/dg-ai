@@ -1,11 +1,4 @@
-/**
- * The non-upload half of `dg:demo --attach-pr <ref>`. An authenticated GitHub upload
- * spike (saved pw login state, --ext's upload-and-receipt contract) owns everything
- * that actually publishes media to a PR; until that lands, every GitHub ref — local
- * mode or --ext — hands the recorded files and the PR link back to the caller and
- * changes nothing. GitLab is refused before any mutation, since it was never in
- * scope for attachment.
- */
+/** The non-upload half of `dg:demo --attach-pr <ref>`, pending a future authenticated-upload spike: GitHub hands back the files and the PR link, GitLab is refused — neither mutates the PR. */
 
 import { detectProvider as detectProviderDefault, type DetectResult } from "../provider/detect";
 import { getProvider as getProviderDefault } from "../provider/index";
@@ -52,7 +45,6 @@ export function describeAttachPrOutcome(outcome: AttachPrOutcome): string {
 	}
 	const prefix = "--attach-pr: no authenticated upload path yet (that waits for the upload spike).";
 	if (outcome.files.length === 0) {
-		// --ext mode: recording happens later, in the browser — there's nothing to list yet.
 		return `${prefix} Once you've recorded and downloaded it, attach it to ${outcome.prUrl} yourself — it was not changed.`;
 	}
 	const fileList = outcome.files.map((f) => `  - ${f}`).join("\n");

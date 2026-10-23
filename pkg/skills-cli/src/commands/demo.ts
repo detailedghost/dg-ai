@@ -1,13 +1,4 @@
-/**
- * `demo` — play a declarative tour script. Local is the default: `dg-skills pw`
- * drives a real Chromium to record a video and a light/dark before/after
- * screenshot pair, rendering each step through the shared overlay module
- * (pkg/common/src/tour-overlay.ts). `--ext` hands the script to the
- * dg-ai-extension instead (today's behavior, unchanged): it encodes the script
- * into a `_demo` fragment marker on its startUrl and opens it in the default
- * browser; the extension plays the tour, then strips the marker. Either way, a
- * re-runnable plan.md is saved so the tour can be replayed later via `rerun`.
- */
+/** `demo` — play a declarative tour script; local (the default) records it via `dg-skills pw`, `--ext` hands it to the dg-ai-extension instead. */
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -147,8 +138,6 @@ export async function playScript(
 			console.log(
 				"In the browser: press Alt+Shift+D to start recording. A .zip (video + plan) saves to your Downloads/dg-demo/ folder.",
 			);
-		// The extension records client-side (into the user's Downloads); there's no
-		// artifact file list yet here, only the PR to report against.
 		if (opts.attachPr) {
 			console.log(describeAttachPrOutcome(await resolveAttachPr(opts.attachPr, [])));
 		}
@@ -167,12 +156,7 @@ function demoSessionName(script: TourScript): string {
 	return `dg-demo-${slugify(script.title ?? "demo")}-${randomUUID().slice(0, 8)}`.slice(0, 48);
 }
 
-/**
- * Drives `dg-skills pw` to record a local video + light/dark before/after screenshot
- * pair for `script`, prints the commands to reproduce/replay it locally, then — within
- * the same pre-run baseline — hands off `--attach-pr` and sweeps this run's own
- * artifacts out of the cwd before returning.
- */
+/** Records `script` locally through `dg-skills pw`, then handles `--attach-pr` and artifact cleanup within one baseline. */
 async function runLocalDemo(script: TourScript, opts: DemoOpts): Promise<void> {
 	const cwd = process.cwd();
 	const baseline = await captureBaseline(cwd);

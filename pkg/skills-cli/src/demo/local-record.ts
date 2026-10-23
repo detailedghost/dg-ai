@@ -1,12 +1,4 @@
-/**
- * Local demo recording: drives a real `dg-skills pw` session — exactly the sequence
- * of `pw` invocations documented in plugins/dg/skills/pw/references/video-recording.md
- * — to walk a TourScript unattended, rendering each step's overlay through
- * `pw tour-step` (pkg/skills-cli/src/pw/commands/tour-step), and to capture a
- * light/dark before/after screenshot pair. `DemoPwDriver` is the fake-browser
- * boundary: production uses `createPwDemoDriver`, which issues the same argv a human
- * typing `dg-skills pw ...` would; tests substitute a driver that just records calls.
- */
+/** Local demo recording: drives a `dg-skills pw` session, unattended, through `DemoPwDriver` — the fake-browser boundary production and tests substitute independently. */
 
 import { join } from "node:path";
 import { partitionTourSteps, type TourScript, type TourStep } from "@dg/common";
@@ -127,14 +119,7 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Walks `script`'s tutorial steps unattended through `driver`, the way video mode
- * already plays in the extension: setup is assumed already satisfied (local
- * recording has no live user to drive a setup phase), actions fire automatically,
- * and there's no "waiting for a click" state — there's no one to click. Assumes the
- * plan was already walked with `demo --verify`, so it never renders an "action
- * missing" or "waiting for click" warning of its own.
- */
+/** Walks `script`'s tutorial steps unattended through `driver`: setup is assumed already satisfied and every action fires automatically — there is no live user to wait for. */
 export async function recordLocalDemo(
 	script: TourScript,
 	outputDir: string,

@@ -26,13 +26,7 @@ function parsePhase(value: string | undefined): "setup" | "tutorial" {
 	throw new UsageError(`Invalid --phase '${value}': use setup or tutorial`);
 }
 
-/**
- * Renders one TourScript step's spotlight + callout card for a local recording, through
- * the exact function the extension calls same-realm — see pkg/common/src/tour-overlay.ts
- * for why that function must stay import-free. `evaluateHandle` (not `evaluate`) is
- * required here: the function's return value holds live DOM nodes, which only a handle
- * can carry back across the realm boundary without Playwright trying to JSON-serialize them.
- */
+/** Renders one TourScript step's overlay via `renderTourOverlayStep`; `evaluateHandle` (not `evaluate`) because its return value holds live DOM nodes. */
 const tourStep: DaemonHandler = async (ctx, args) => {
 	const body = args.positionals[0] as string;
 	const target = stringFlag(args, "target");
