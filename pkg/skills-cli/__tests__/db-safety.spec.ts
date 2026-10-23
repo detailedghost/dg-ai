@@ -64,6 +64,37 @@ describe("classifySql", () => {
 		expect(classifySql("SET x = 1", false)).toEqual({ allowed: true });
 	});
 
+	test("keeps SET SESSION on an ordinary variable read-only", () => {
+		expect(classifySql("SET SESSION statement_timeout = 5000", false)).toEqual({
+			allowed: true,
+		});
+	});
+
+	test("blocks SET ROLE", () => {
+		expect(classifySql("SET ROLE admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks SET SESSION AUTHORIZATION", () => {
+		expect(classifySql("SET SESSION AUTHORIZATION admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("blocks lowercase and mixed-case SET ROLE", () => {
+		expect(classifySql("set role admin", false)).toEqual({
+			allowed: false,
+			reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+		});
+	});
+
+	test("--write allows SET ROLE", () => {
+		expect(classifySql("SET ROLE admin", true)).toEqual({ allowed: true });
+	});
+
 	test("ignores semicolons and write keywords inside literals and comments", () => {
 		expect(
 			classifySql(

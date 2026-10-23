@@ -3,8 +3,9 @@ const READ_ONLY_KEYWORDS = new Set([
 	"SHOW",
 	"DESCRIBE",
 	"DESC",
-	"SET",
 ]);
+
+const SET_PRIVILEGE_TARGETS = new Set(["ROLE"]);
 
 const WRITE_KEYWORDS = new Set([
 	"INSERT",
@@ -186,6 +187,18 @@ export function classifySql(sql: string, writeEnabled: boolean): SafetyResult {
 			allowed: false,
 			reason: "SELECT INTO creates a table — use --write",
 		};
+
+	if (keyword === "SET") {
+		const target = scan.tokens[1]?.word ?? "";
+		const isSessionAuthorization =
+			target === "SESSION" && scan.tokens[2]?.word === "AUTHORIZATION";
+		if (SET_PRIVILEGE_TARGETS.has(target) || isSessionAuthorization)
+			return {
+				allowed: false,
+				reason: "SET ROLE/SESSION AUTHORIZATION changes session privileges — use --write",
+			};
+		return { allowed: true };
+	}
 
 	if (READ_ONLY_KEYWORDS.has(keyword)) return { allowed: true };
 	if (WRITE_KEYWORDS.has(keyword))
