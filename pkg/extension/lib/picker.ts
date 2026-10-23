@@ -5,9 +5,6 @@ import { ACCENT, createEl, SANS } from "./ui-helpers";
  * Brutalist-neon theme mirroring the settings page (options/style.css): monospace,
  * hard 2px borders, square corners, a hard offset accent shadow. Injected into each
  * overlay's shadow root so inline `var(--…)` styles resolve and stay theme-aware.
- * The color tokens are owned by `@dg/common`'s tour-overlay module (shared with
- * `dg-skills pw`'s local recordings); the rules below are extension-only chrome
- * (the review stepper, modals) layered on top of them.
  */
 export const DEMO_THEME_CSS = `${TOUR_OVERLAY_TOKENS_CSS}
 .dg-field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 0.125rem var(--accent); }

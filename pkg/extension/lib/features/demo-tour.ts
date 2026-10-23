@@ -1271,9 +1271,6 @@ export function buildOverlay(
 	const total = stateSteps(state).length;
 	const last = state.index === total - 1;
 
-	// The highlight + card themselves are the shared module dg-skills pw's local
-	// recordings also render — see pkg/common/src/tour-overlay.ts. Only the
-	// interactive controls below (meaningless for an unattended recording) stay here.
 	const { card, reposition } = renderTourOverlayStep(
 		{
 			css: TOUR_OVERLAY_TOKENS_CSS,
@@ -1363,7 +1360,6 @@ export function buildOverlay(
 		card.appendChild(controls);
 	}
 
-	// Controls change the card's size, so re-measure now that they're in place.
 	reposition();
 	// Keep the spotlight + card aligned as the page scrolls/resizes.
 	window.addEventListener("scroll", reposition, { passive: true });
