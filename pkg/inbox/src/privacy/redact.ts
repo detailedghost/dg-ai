@@ -18,6 +18,22 @@ export function redactText(input: string, maxLength = 160): string {
 		.slice(0, maxLength);
 }
 
+export type RedactedBodyText = {
+	text: string;
+	truncated: boolean;
+};
+
+/** Redacts addresses and phone numbers while keeping newlines and digits; `redactText` collapses both away. */
+export function redactBodyText(input: string, maxChars: number): RedactedBodyText {
+	const redacted = input
+		.replace(emailPattern, "[email:$1]")
+		.replace(phonePattern, "[phone]");
+	const truncated = redacted.length > maxChars;
+	const text = redacted.slice(0, maxChars);
+	assertNoEmailAddress(text);
+	return { text, truncated };
+}
+
 export function assertNoEmailAddress(input: string): void {
 	if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(input)) {
 		throw new Error("Refusing to emit raw email address in redacted output.");
