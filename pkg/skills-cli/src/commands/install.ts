@@ -238,6 +238,17 @@ async function installCliOnly(): Promise<void> {
 	);
 }
 
+/** For a non-Claude agent that only needs phone-friend: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
+async function installAgentOnly(): Promise<void> {
+	const releases = await listReleases();
+	await installBinary(BINARIES[0], releases);
+	await installBinary(BINARIES[2], releases);
+	setCliOnly(true);
+	console.log(
+		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
+	);
+}
+
 async function install(
 	target: Target,
 	forceLocal: boolean,
@@ -318,6 +329,10 @@ export function registerInstall(program: Command): void {
 			"install only the dg-skills binary; skip the extension, dg-daemon and dg-agent",
 		)
 		.option(
+			"--agent-only",
+			"install dg-agent (and dg-skills, which fetches it); skip the extension and dg-daemon, for a non-Claude agent that only needs phone-friend",
+		)
+		.option(
 			"--skills-only",
 			"copy plugins/dg/skills instruction files only; fetch no binaries and run no skill content",
 		)
@@ -332,6 +347,7 @@ export function registerInstall(program: Command): void {
 					local?: boolean;
 					repo?: string;
 					cliOnly?: boolean;
+					agentOnly?: boolean;
 					skillsOnly?: boolean;
 					dest?: string;
 				},
@@ -339,6 +355,7 @@ export function registerInstall(program: Command): void {
 				if (opts.skillsOnly) {
 					assertSkillsOnlyFlags({
 						cliOnly: !!opts.cliOnly,
+						agentOnly: !!opts.agentOnly,
 						local: !!opts.local,
 						target,
 					});
@@ -351,7 +368,11 @@ export function registerInstall(program: Command): void {
 					await installSkillsCli();
 					return;
 				}
+				if (opts.cliOnly && opts.agentOnly) {
+					throw new Error("install accepts only one of --cli-only and --agent-only");
+				}
 				if (opts.cliOnly) return installCliOnly();
+				if (opts.agentOnly) return installAgentOnly();
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
 					!!opts.local,

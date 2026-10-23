@@ -3,6 +3,8 @@
 #   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.2/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
+# Agent-only (install dg-agent too, for a non-Claude agent that only needs phone-friend; still
+# skips the extension and dg-daemon): set $env:DG_AGENT_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release.
@@ -88,10 +90,17 @@ function Get-DgSkillsSource {
 	return (Join-Path $tmp "dg-ai-$tag\plugins\dg\skills")
 }
 
+if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_CLI_ONLY -eq "1") {
+	throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_CLI_ONLY"
+}
+if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
+	throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_AGENT_ONLY"
+}
+if ($env:DG_CLI_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
+	throw "dg-skills: set only one of DG_CLI_ONLY and DG_AGENT_ONLY"
+}
+
 if ($env:DG_SKILLS_ONLY -eq "1") {
-	if ($env:DG_CLI_ONLY -eq "1") {
-		throw "dg-skills: set only one of DG_SKILLS_ONLY and DG_CLI_ONLY"
-	}
 	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST }
 		elseif ($env:DG_HOME) { Join-Path $env:DG_HOME "skills" }
 		else { Join-Path $env:USERPROFILE ".dg\skills" }
@@ -169,6 +178,8 @@ if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
 $env:DG_SKILLS_BOOTSTRAP = "1"
 if ($env:DG_CLI_ONLY -eq "1") {
 	$installOutput = & $dest install --cli-only 2>&1
+} elseif ($env:DG_AGENT_ONLY -eq "1") {
+	$installOutput = & $dest install --agent-only 2>&1
 } else {
 	# Set up the browser extension too, so one command installs everything.
 	Write-Host "Setting up the dg-ai-extension…"
@@ -191,7 +202,7 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 		$skillsDir = Join-Path $codexRoot "skills"
 		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
 		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
-			if ($env:DG_CLI_ONLY -eq "1" -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
+			if (($env:DG_CLI_ONLY -eq "1" -or $env:DG_AGENT_ONLY -eq "1") -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
 			Copy-Item -Recurse -Force $skill.FullName $skillsDir
 		}
 	} finally {

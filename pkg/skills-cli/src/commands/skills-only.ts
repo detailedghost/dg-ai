@@ -16,12 +16,13 @@ import {
 
 export type SkillsOnlyFlags = {
 	cliOnly: boolean;
+	agentOnly: boolean;
 	local: boolean;
 	target: string | undefined;
 };
 
 export function assertSkillsOnlyFlags(flags: SkillsOnlyFlags): void {
-	if (!flags.cliOnly && !flags.local && flags.target === undefined) return;
+	if (!flags.cliOnly && !flags.agentOnly && !flags.local && flags.target === undefined) return;
 	throw new Error(
 		"install --skills-only copies skill instruction files and accepts only --repo and --dest",
 	);
