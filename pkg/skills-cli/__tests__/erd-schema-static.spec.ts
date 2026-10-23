@@ -201,6 +201,44 @@ describe("parseSqlMigrations", () => {
 		});
 	});
 
+	test("an unqualified FK target ambiguous between its own schema and public is downgraded to inferred confidence", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_public_accounts.sql",
+			`CREATE TABLE "public"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0003_create_auth_sessions.sql",
+			`CREATE TABLE "auth"."sessions" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES accounts(id)
+			);`,
+		);
+
+		const { edges, evidence } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "auth.sessions",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
+			confidence: "inferred",
+		});
+		expect(
+			evidence.some(
+				(e) => e.ref === "auth.sessions" && e.detail?.includes("ambiguous target"),
+			),
+		).toBe(true);
+	});
+
 	test("a schema-qualified FK target resolves to its own schema, not the referencing table's", () => {
 		writeFile(
 			"migrations/0001_create_auth_accounts.sql",

@@ -379,13 +379,27 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 	}
 
 	const edges: DbEdge[] = pendingFks.map(({ fromSchema, fromTable, fk }) => {
-		const toSchema = fk.toSchema ?? (tables.has(`${fromSchema}.${fk.toTable}`) ? fromSchema : "public");
+		let toSchema = fk.toSchema;
+		let confidence: DbEdge["confidence"] = "proven";
+		if (!toSchema) {
+			const ownSchemaHasTarget = tables.has(`${fromSchema}.${fk.toTable}`);
+			const publicHasTarget = fromSchema !== "public" && tables.has(`public.${fk.toTable}`);
+			if (ownSchemaHasTarget && publicHasTarget) {
+				confidence = "inferred";
+				evidence.push({
+					type: "db-table",
+					ref: `${fromSchema}.${fromTable}`,
+					detail: `FK ${fk.fromColumn} -> ${fk.toTable}: ambiguous target exists in both ${fromSchema} and public — assumed ${fromSchema}`,
+				});
+			}
+			toSchema = ownSchemaHasTarget ? fromSchema : "public";
+		}
 		return {
 			from: `${fromSchema}.${fromTable}`,
 			to: `${toSchema}.${fk.toTable}`,
 			fromColumn: fk.fromColumn,
 			toColumn: fk.toColumn,
-			confidence: "proven",
+			confidence,
 		};
 	});
 
