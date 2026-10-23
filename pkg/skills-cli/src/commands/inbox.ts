@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
 	buildBootstrapUrl,
 	CliClient,
+	createCredentialClient,
 	readSessionFiles,
 	readSessionIdentities,
 	resolveCliSession,
@@ -20,6 +21,7 @@ import {
 	type InboxCliRequest,
 	type InboxCliResult,
 	type InboxProfile,
+	type InboxProtonBridgeSettings,
 	type InboxProviderSettings,
 } from "@dg/common";
 
@@ -31,6 +33,8 @@ const profileHelp = `Profile configuration:
 Settings: --client-id --client-secret-env --access-token-env --refresh-token-env
   --tenant-id --authority --redirect-uri --auth-mode --scopes --page-size
   --tab-id --account-hint --login-hint
+Proton Bridge: --bridge-host --bridge-imap-port --bridge-smtp-port
+  --bridge-username --bridge-cert-fingerprint
 Use --account-profile NAME for workflows; --session ID selects a dg session.
 Start a session with dg-agent start --open. Profiles and OAuth caches use
 dg-ai's encrypted database. Secrets are environment references only.`;
@@ -85,7 +89,20 @@ function isProtocolError(
 	);
 }
 
-function daemonRuntime(session?: string) {
+function isSendApprovalResult(
+	value: unknown,
+): value is { approved: boolean; decidedAt: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"approved" in value &&
+		typeof value.approved === "boolean" &&
+		"decidedAt" in value &&
+		typeof value.decidedAt === "string"
+	);
+}
+
+export function inboxDaemonRuntime(session?: string) {
 	let connection: Promise<CliClient> | undefined;
 	let client: CliClient | undefined;
 	const connect = () =>
@@ -112,7 +129,7 @@ function daemonRuntime(session?: string) {
 		let result: InboxCliResult | ProtocolError;
 		try {
 			const timeout =
-				frame.operation === "browser"
+				frame.operation === "browser" || frame.operation === "send-approval"
 					? (frame.timeoutMs ?? INBOX_DEFAULT_TIMEOUT_MS) + 5_000
 					: 10_000;
 			result = await cli.request(
@@ -162,6 +179,26 @@ function daemonRuntime(session?: string) {
 			validateInboxBrowserResponse(
 				await request({ operation: "browser", request: browser }),
 			),
+		credentialGet: async (name) => {
+			const credentials = createCredentialClient({ paths: resolveDgPaths(), session });
+			try {
+				const record = await credentials.get(name);
+				return record?.value ?? null;
+			} finally {
+				credentials.close();
+			}
+		},
+		sendApproval: async (approval) => {
+			const { timeoutMs, ...rest } = approval;
+			const value = await request({
+				operation: "send-approval",
+				approval: rest,
+				timeoutMs,
+			});
+			if (!isSendApprovalResult(value))
+				throw new Error("Inbox daemon returned a malformed send-approval result.");
+			return value;
+		},
 	};
 	return { runtime, request, close: () => client?.close() };
 }
@@ -209,6 +246,7 @@ async function profileFromFlags(args: string[]): Promise<InboxProfile> {
 	const provider = validateInboxProvider(values.get("provider"));
 	const profile: InboxProfile = { provider };
 	const settings: InboxProviderSettings = {};
+	const bridge: InboxProtonBridgeSettings = {};
 	for (const [key, value] of values) {
 		switch (key) {
 			case "provider":
@@ -218,6 +256,21 @@ async function profileFromFlags(args: string[]): Promise<InboxProfile> {
 				break;
 			case "account-hint":
 				profile.accountHint = value;
+				break;
+			case "bridge-host":
+				bridge.bridgeHost = value;
+				break;
+			case "bridge-imap-port":
+				bridge.bridgeImapPort = Number(value);
+				break;
+			case "bridge-smtp-port":
+				bridge.bridgeSmtpPort = Number(value);
+				break;
+			case "bridge-username":
+				bridge.bridgeUsername = value;
+				break;
+			case "bridge-cert-fingerprint":
+				bridge.bridgeCertFingerprint = value;
 				break;
 			case "client-id":
 				settings.clientId = value;
@@ -272,6 +325,11 @@ async function profileFromFlags(args: string[]): Promise<InboxProfile> {
 				"Proton profiles use tab-id and account-hint; OAuth settings belong to Gmail or Outlook.",
 			);
 		profile[provider] = settings;
+	}
+	if (Object.keys(bridge).length) {
+		if (provider !== "protonmail")
+			throw new Error("Proton Bridge settings belong to protonmail profiles only.");
+		profile.protonmail = bridge;
 	}
 	return validateInboxProfile(profile);
 }
@@ -355,7 +413,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		);
 		return;
 	}
-	const daemon = daemonRuntime(session);
+	const daemon = inboxDaemonRuntime(session);
 	try {
 		if (args[0] === "profile") {
 			if (args.includes("--help") || args.includes("-h") || args.length === 1) {
