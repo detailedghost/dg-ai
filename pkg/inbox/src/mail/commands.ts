@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { CHAT_MAX_MESSAGE_BODY_BYTES } from "@dg/common";
 import { readCappedStdin } from "@dg/common/node";
 import { getBooleanFlag, getListFlag, getNumberFlag, getStringFlag, type CliFlags } from "../cli/args";
@@ -9,11 +8,11 @@ import { fromDomain, redactBodyText, redactText } from "../privacy/redact";
 import { inboxRuntimeFor } from "../runtime";
 import { createMailAccessClient } from "./factory";
 import { htmlToText } from "./html-text";
-import { rememberIds, resolveId } from "./ids";
+import { rememberIds, resolveId, UNKNOWN_MESSAGE_ID } from "./ids";
 import { stripQuotedHistory } from "./quote-strip";
+import { sendDraftWithApproval } from "./send";
 import type { MailMessage, MailQuery } from "./types";
 
-const UNKNOWN_MESSAGE_ID = "unknown message id; run mail list or mail search first";
 const SINCE_RELATIVE = /^(\d+)d$/;
 const FOLDER_DISPLAY_NAMES: Record<string, string> = {
 	inbox: "Inbox",
@@ -32,10 +31,6 @@ function senderNameFrom(from: string): string | undefined {
 	const match = /^(.*)<[^<>]+>\s*$/.exec(from);
 	const name = match?.[1]?.trim();
 	return name || undefined;
-}
-
-function sha256Hex(value: string): string {
-	return createHash("sha256").update(value).digest("hex");
 }
 
 function requireStringFlag(flags: CliFlags, key: string, message: string): string {
@@ -63,13 +58,6 @@ function validateMaxChars(flags: CliFlags): number {
 	if (!Number.isInteger(maxChars) || maxChars < 1 || maxChars > 65_536)
 		throw new Error("--max-chars must be between 1 and 65536");
 	return maxChars;
-}
-
-function validateWaitSeconds(flags: CliFlags): number {
-	const wait = getNumberFlag(flags, "wait", 300);
-	if (!Number.isInteger(wait) || wait < 1 || wait > 600)
-		throw new Error("--wait must be between 1 and 600");
-	return wait;
 }
 
 function parseSince(value: string): string {
@@ -289,46 +277,10 @@ export async function mailDraft(context: CliContext): Promise<void> {
 }
 
 export async function mailSend(context: CliContext): Promise<void> {
-	const flags = context.args.flags;
-	const hashedDraftId = requireStringFlag(flags, "draft", "mail send requires --draft ID");
-	const runtime = inboxRuntimeFor(context.config).runtime;
-	if (!runtime.sendApproval) {
-		printJson({ kind: "mail-send-refused", reason: "no-approval-channel" });
-		process.exitCode = 1;
-		return;
-	}
-	const waitSeconds = validateWaitSeconds(flags);
-	const providerId = await resolveMessageId(context, hashedDraftId);
-	const client = createMailAccessClient(context.config, runtime);
-	const draft = await client.getDraft(providerId);
-	const contentHash = sha256Hex(
-		JSON.stringify({ to: draft.to, cc: draft.cc, subject: draft.subject, text: draft.text }),
+	const hashedDraftId = requireStringFlag(
+		context.args.flags,
+		"draft",
+		"mail send requires --draft ID",
 	);
-	const decision = await runtime.sendApproval({
-		provider: context.config.provider,
-		profile: getStringFlag(flags, "account-profile", "default"),
-		draftId: hashedDraftId,
-		to: draft.to,
-		cc: draft.cc,
-		subject: draft.subject,
-		text: draft.text,
-		attachments: draft.attachments.map((attachment) => attachment.name),
-		contentHash,
-		timeoutMs: waitSeconds * 1000,
-	});
-	if (!decision.approved) {
-		printJson({
-			kind: "mail-send-rejected",
-			draftId: hashedDraftId,
-			decidedAt: decision.decidedAt,
-		});
-		process.exitCode = 1;
-		return;
-	}
-	await client.sendDraft(providerId);
-	printJson({
-		kind: "mail-sent",
-		draftId: hashedDraftId,
-		approval: { by: "extension", decidedAt: decision.decidedAt },
-	});
+	await sendDraftWithApproval(context, hashedDraftId);
 }

@@ -14,6 +14,9 @@ type MailIdsFile = {
 const MAX_REMEMBERED_IDS = 5000;
 const IDS_FILE_MODE = 0o600;
 
+export const UNKNOWN_MESSAGE_ID =
+	"unknown message id; run mail list or mail search first";
+
 function idsFilePath(workspaceDir: string): string {
 	return join(workspaceDir, "mail", "ids.json");
 }
