@@ -85,6 +85,7 @@ function discoverByGlobs(scopePath: string, globs: string[]): string[] {
 
 interface ParsedForeignKey {
 	fromColumn: string;
+	toSchema?: string;
 	toTable: string;
 	toColumn: string;
 }
@@ -184,9 +185,10 @@ function splitTopLevel(body: string): string[] {
 }
 
 const COLUMN_DEF_RE = /^["`[]?(\w+)["`\]]?\s+([A-Za-z][\w]*(?:\s*\([^)]*\))?)/;
-const INLINE_REFERENCES_RE = /REFERENCES\s+["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
+const INLINE_REFERENCES_RE =
+	/REFERENCES\s+(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
 const TABLE_LEVEL_FK_RE =
-	/^(?:CONSTRAINT\s+["`[]?\w+["`\]]?\s+)?FOREIGN\s+KEY\s*\(\s*["`[]?(\w+)["`\]]?\s*\)\s*REFERENCES\s+["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
+	/^(?:CONSTRAINT\s+["`[]?\w+["`\]]?\s+)?FOREIGN\s+KEY\s*\(\s*["`[]?(\w+)["`\]]?\s*\)\s*REFERENCES\s+(?:["`[]?(\w+)["`\]]?\s*\.\s*)?["`[]?(\w+)["`\]]?\s*\(\s*["`[]?(\w+)["`\]]?\s*\)/i;
 const TABLE_LEVEL_SKIP_RE = /^(PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)\b/i;
 
 function parseCreateTableBody(schema: string, table: string, body: string): ParsedTableStmt {
@@ -201,8 +203,9 @@ function parseCreateTableBody(schema: string, table: string, body: string): Pars
 		if (fkMatch) {
 			foreignKeys.push({
 				fromColumn: fkMatch[1] as string,
-				toTable: fkMatch[2] as string,
-				toColumn: fkMatch[3] as string,
+				...(fkMatch[2] ? { toSchema: fkMatch[2] } : {}),
+				toTable: fkMatch[3] as string,
+				toColumn: fkMatch[4] as string,
 			});
 			continue;
 		}
@@ -226,7 +229,12 @@ function parseCreateTableBody(schema: string, table: string, body: string): Pars
 		});
 
 		if (inlineRef) {
-			foreignKeys.push({ fromColumn: name, toTable: inlineRef[1] as string, toColumn: inlineRef[2] as string });
+			foreignKeys.push({
+				fromColumn: name,
+				...(inlineRef[1] ? { toSchema: inlineRef[1] } : {}),
+				toTable: inlineRef[2] as string,
+				toColumn: inlineRef[3] as string,
+			});
 		}
 	}
 
@@ -300,25 +308,29 @@ function parseSqlFileContent(content: string): ParsedFile {
 	return { creates, alters };
 }
 
+interface TableEntry {
+	schema: string;
+	table: string;
+	columns: Map<string, DbColumn>;
+}
+
 /** Node/edge ids are "<schema>.<table>"; CREATE TABLE honors a captured schema qualifier, defaulting to "public" when unqualified. ALTER TABLE ADD COLUMN's regex captures no schema, so it always targets "public". */
 export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMigrationsResult {
 	const globs = opts.migrationGlobs ?? DEFAULT_MIGRATION_GLOBS;
 	const files = discoverByGlobs(opts.scopePath, globs);
 
-	const nodeColumns = new Map<string, Map<string, DbColumn>>();
-	const tableKeys = new Map<string, { schema: string; table: string }>();
-	const edges: DbEdge[] = [];
+	const tables = new Map<string, TableEntry>();
+	const pendingFks: Array<{ fromSchema: string; fromTable: string; fk: ParsedForeignKey }> = [];
 	const evidence: EvidenceRecord[] = [];
 
 	function ensureTable(schema: string, table: string): Map<string, DbColumn> {
 		const key = `${schema}.${table}`;
-		let cols = nodeColumns.get(key);
-		if (!cols) {
-			cols = new Map();
-			nodeColumns.set(key, cols);
-			tableKeys.set(key, { schema, table });
+		let entry = tables.get(key);
+		if (!entry) {
+			entry = { schema, table, columns: new Map() };
+			tables.set(key, entry);
 		}
-		return cols;
+		return entry.columns;
 	}
 
 	for (const file of files) {
@@ -357,13 +369,7 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 			const cols = ensureTable(stmt.schema, stmt.table);
 			for (const col of stmt.columns) cols.set(col.name, col);
 			for (const fk of stmt.foreignKeys) {
-				edges.push({
-					from: `${stmt.schema}.${stmt.table}`,
-					to: `public.${fk.toTable}`,
-					fromColumn: fk.fromColumn,
-					toColumn: fk.toColumn,
-					confidence: "proven",
-				});
+				pendingFks.push({ fromSchema: stmt.schema, fromTable: stmt.table, fk });
 			}
 		}
 		for (const alter of parsed.alters) {
@@ -372,16 +378,24 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 		}
 	}
 
-	const nodes: DbNode[] = Array.from(nodeColumns.entries()).map(([key, cols]) => {
-		const { schema, table } = tableKeys.get(key) as { schema: string; table: string };
+	const edges: DbEdge[] = pendingFks.map(({ fromSchema, fromTable, fk }) => {
+		const toSchema = fk.toSchema ?? (tables.has(`${fromSchema}.${fk.toTable}`) ? fromSchema : "public");
 		return {
-			id: key,
-			label: table,
-			schema,
-			columns: Array.from(cols.values()),
-			source: "static-sql",
+			from: `${fromSchema}.${fromTable}`,
+			to: `${toSchema}.${fk.toTable}`,
+			fromColumn: fk.fromColumn,
+			toColumn: fk.toColumn,
+			confidence: "proven",
 		};
 	});
+
+	const nodes: DbNode[] = Array.from(tables.entries()).map(([key, entry]) => ({
+		id: key,
+		label: entry.table,
+		schema: entry.schema,
+		columns: Array.from(entry.columns.values()),
+		source: "static-sql",
+	}));
 
 	return { nodes, edges, evidence };
 }

@@ -175,6 +175,58 @@ describe("parseSqlMigrations", () => {
 		});
 	});
 
+	test("an unqualified FK target resolves to the referencing table's own schema when it lives there", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_auth_sessions.sql",
+			`CREATE TABLE "auth"."sessions" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES accounts(id)
+			);`,
+		);
+
+		const { edges } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "auth.sessions",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
+		});
+	});
+
+	test("a schema-qualified FK target resolves to its own schema, not the referencing table's", () => {
+		writeFile(
+			"migrations/0001_create_auth_accounts.sql",
+			`CREATE TABLE "auth"."accounts" (
+				id UUID PRIMARY KEY
+			);`,
+		);
+		writeFile(
+			"migrations/0002_create_billing_invoices.sql",
+			`CREATE TABLE "billing"."invoices" (
+				id UUID PRIMARY KEY,
+				account_id UUID NOT NULL REFERENCES "auth"."accounts"(id)
+			);`,
+		);
+
+		const { edges } = parseSqlMigrations({ scopePath: scopeDir });
+
+		expect(edges).toHaveLength(1);
+		expect(edges[0]).toMatchObject({
+			from: "billing.invoices",
+			to: "auth.accounts",
+			fromColumn: "account_id",
+			toColumn: "id",
+		});
+	});
+
 	test("multiple migration files touching the same table merge into one DbNode (additive union)", () => {
 		writeFile(
 			"migrations/0001_create_widgets.sql",
