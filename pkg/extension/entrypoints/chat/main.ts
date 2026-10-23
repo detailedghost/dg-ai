@@ -41,6 +41,7 @@ import {
 	mountPairing,
 	type PairingOptions,
 } from "@/lib/features/pairing";
+import { mountInboxSendApproval } from "@/lib/features/inbox-send-approval";
 import type { ChatHistoryItem } from "@/lib/features/chat-transcript";
 import { redactSecrets } from "@/lib/features/chat-connection";
 import { createVimNav } from "@/lib/features/vim-nav";
@@ -116,6 +117,11 @@ type PageChatClient = ChatClient & {
 		sessionId: string,
 		commandLabel: string,
 		params?: Record<string, unknown>,
+	): Promise<SendResult>;
+	sendInboxApprovalResult(
+		sessionId: string,
+		requestId: string,
+		approved: boolean,
 	): Promise<SendResult>;
 	sendUserMessageAndWait(
 		sessionId: string,
@@ -350,6 +356,25 @@ function createRelayChatClient(): PageChatClient {
 				sessionId,
 				commandLabel,
 				params,
+			});
+		},
+
+		sendInboxApprovalResult(
+			sessionId: string,
+			requestId: string,
+			approved: boolean,
+		): Promise<SendResult> {
+			if (!knownSessions.has(sessionId)) {
+				return Promise.resolve({
+					ok: false,
+					error: `Session ${sessionId} is not available in this chat page`,
+				});
+			}
+			return sendAndWait({
+				type: MSG.inboxApprovalResult,
+				sessionId,
+				requestId,
+				approved,
 			});
 		},
 	};
@@ -606,7 +631,8 @@ export async function renderChatPage(
 	threadError.hidden = true;
 	const threadNodes = element(doc, "div", "chat-thread__nodes");
 	const pairHost = element(doc, "div", "chat-pair");
-	thread.append(threadHeader, threadError, pairHost, threadNodes);
+	const inboxApprovalHost = element(doc, "div", "chat-inbox-approval");
+	thread.append(threadHeader, threadError, pairHost, inboxApprovalHost, threadNodes);
 
 	const moveStatus = element(doc, "div", "chat-move-status");
 	moveStatus.setAttribute("role", "status");
@@ -625,6 +651,15 @@ export async function renderChatPage(
 			daemonReachable = reachable;
 			syncCreateChatDisabled();
 		},
+	});
+	mountInboxSendApproval(inboxApprovalHost, {
+		onFrame: client.onFrame,
+		send: (sessionId, requestId, approved) =>
+			void (client as Partial<PageChatClient>).sendInboxApprovalResult?.(
+				sessionId,
+				requestId,
+				approved,
+			),
 	});
 
 	let canvas: ReturnType<typeof createChatCanvas> | undefined;
