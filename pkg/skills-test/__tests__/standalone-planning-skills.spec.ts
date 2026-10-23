@@ -30,7 +30,7 @@ function isShipped(command: string): boolean {
 function bannedPatterns(): RegExp[] {
 	return [
 		...SKILL_COMMANDS.filter((command) => !isShipped(command)).map(
-			(command) => new RegExp(`(?<![\\w.])/${command}\\b`),
+			(command) => new RegExp(`(?<![\\w.])/${command}(?![\\w-])`),
 		),
 		...RETIRED,
 	];

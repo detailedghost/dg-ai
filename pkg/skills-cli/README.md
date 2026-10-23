@@ -9,12 +9,15 @@ bun pkg/skills-cli/src/index.ts --help
 bun pkg/skills-cli/src/index.ts install
 bun pkg/skills-cli/src/index.ts install --skills-only --dest "$HOME/.dg/skills"
 bun pkg/skills-cli/src/index.ts demo --edit my-feature.demo.md
-bun pkg/skills-cli/src/index.ts proto scrape https://app.example.test/page
-bun pkg/skills-cli/src/index.ts proto plant /tmp/ai/proto/example/plan.json
-bun pkg/skills-cli/src/index.ts proto cleanup example
+bun pkg/skills-cli/src/index.ts prototype ui plan.json
+bun pkg/skills-cli/src/index.ts proto --ext scrape https://app.example.test/page
+bun pkg/skills-cli/src/index.ts proto --ext plant /tmp/ai/proto/example/plan.json
+bun pkg/skills-cli/src/index.ts proto --ext cleanup example
 ```
 
-The `proto` workflow requires the companion extension. `scrape` and `plant`
+Plain `proto` and `prototype` run the local prototype commands (`ui`, `serve`,
+`wait`, `confirm`, `status`, `stop`, and the path helpers) and need no
+extension. The `proto --ext` workflow requires the companion extension. `scrape` and `plant`
 exchange local files through the browser's Downloads directory and block until
 the extension responds. Run `plant` and `cleanup` from the target project root;
 an approved answer is preserved under `.agents/prototype/<slug>/`.

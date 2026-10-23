@@ -400,7 +400,7 @@ describe("proto scrape command", () => {
 			writeFile(`${expectedDownload}.crdownload`, "stale partial"),
 		]);
 
-		const result = await runCli(["proto", "scrape", url, "--timeout", "500"], {
+		const result = await runCli(["proto", "--ext", "scrape", url, "--timeout", "500"], {
 			...harness.env,
 			DG_REQUIRE_STALE_REMOVED: "1",
 			DG_TEST_EXPECTED: expectedDownload,
@@ -426,7 +426,7 @@ describe("proto scrape command", () => {
 			homeDir: harness.home,
 		});
 
-		const result = await runCli(["proto", "scrape", url, "--timeout", "500"], {
+		const result = await runCli(["proto", "--ext", "scrape", url, "--timeout", "500"], {
 			...harness.env,
 			DG_TEST_EXPECTED: expectedDownload,
 		});
@@ -444,7 +444,7 @@ describe("proto scrape command", () => {
 			dgProtoPath(protoSlug(url), "style-guide.json"),
 		);
 
-		const result = await runCli(["proto", "scrape", url, "--timeout", "60"], {
+		const result = await runCli(["proto", "--ext", "scrape", url, "--timeout", "60"], {
 			...harness.env,
 			DG_TEST_EXPECTED: expectedDownload,
 		});

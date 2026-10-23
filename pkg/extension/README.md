@@ -37,7 +37,7 @@ remains blocked until setup has handed off to the tutorial.
 
 ## Live-page prototypes
 
-The `/dg:proto` skill and `dg-skills proto` commands use the extension to sample
+The `/dg:proto --ext` skill mode and `dg-skills proto --ext` commands use the extension to sample
 a bounded set of page styles, render sanitized HTML/CSS variations in an
 isolated shadow root, collect an explicit approve/reject verdict, and optionally
 save a visible-tab preview. Style guides, verdicts, and previews use the local

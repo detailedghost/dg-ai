@@ -81,12 +81,13 @@ export type ProtoPayload =
 	| { phase: "scrape"; slug: string }
 	| { phase: "plant"; slug: string; plan: ProtoPlan };
 
-/** User's explicit approval or feedback-bearing rejection of a variation. */
+/** User's approval, feedback-bearing rejection, or note-bearing tweak of a variation. */
 export type Verdict =
 	| {
 			slug: string;
 			action: "approve";
 			selectedKey: string;
+			notes?: string;
 			ts: number;
 	  }
 	| {
@@ -94,6 +95,13 @@ export type Verdict =
 			action: "reject";
 			selectedKey: string;
 			feedback: string;
+			ts: number;
+	  }
+	| {
+			slug: string;
+			action: "tweak";
+			selectedKey: string;
+			notes: string;
 			ts: number;
 	  };
 

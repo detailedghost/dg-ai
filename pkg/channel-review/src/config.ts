@@ -119,6 +119,7 @@ export type ChannelConfig = {
 		fallback: Exclude<RunnerName, "claude"> | null;
 		timeoutMinutes: number;
 		addressTimeoutMinutes: number;
+		concurrency: number;
 		claude: {
 			path?: string;
 			allowedTools: string[];
@@ -137,6 +138,7 @@ export type ChannelConfig = {
 	reactions: typeof REACTION_DEFAULTS;
 	relay: {
 		appName: string;
+		streamIdleSeconds: number;
 		secret: { id: string; key: string; region: string };
 	};
 	fun: { pool?: FunEntry[] };
@@ -250,12 +252,19 @@ function wholeDays(value: unknown, path: string): number {
 	return value;
 }
 
+const DEFAULT_STREAM_IDLE_SECONDS = 45;
+const MIN_STREAM_IDLE_SECONDS = 15;
+const MAX_STREAM_IDLE_SECONDS = 600;
+const DEFAULT_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 8;
+
 function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["runner"] {
 	const rec = section(raw, "runner", "", [
 		"default",
 		"fallback",
 		"timeoutMinutes",
 		"addressTimeoutMinutes",
+		"concurrency",
 		...RUNNER_NAMES,
 	]);
 	const defaultRunner = rec.default ?? "claude";
@@ -265,6 +274,15 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 		requireOneOf(fallback, "runner.fallback", RUNNER_NAMES.filter((name) => name !== "claude"));
 	const timeout = minutes(rec.timeoutMinutes ?? 30, "runner.timeoutMinutes");
 	const addressTimeout = minutes(rec.addressTimeoutMinutes ?? 60, "runner.addressTimeoutMinutes");
+	const concurrency = rec.concurrency ?? DEFAULT_CONCURRENCY;
+	if (
+		typeof concurrency !== "number" ||
+		!Number.isInteger(concurrency) ||
+		concurrency < 1 ||
+		concurrency > MAX_CONCURRENCY
+	) {
+		fail(`runner.concurrency must be a whole number from 1 to ${MAX_CONCURRENCY}`);
+	}
 
 	const claude = section(rec, "claude", "runner", [
 		"path",
@@ -316,6 +334,7 @@ function parseRunner(raw: Rec, cloneRoot: string, home: string): ChannelConfig["
 		fallback,
 		timeoutMinutes: timeout,
 		addressTimeoutMinutes: addressTimeout,
+		concurrency,
 		claude: {
 			path: optionalText(claude, "path", "runner.claude"),
 			allowedTools,
@@ -679,10 +698,21 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 		reactions[key] = text(reactionsRaw, key, "reactions", REACTION_DEFAULTS[key]);
 	}
 
-	const relay = section(raw, "relay", "", ["appName", "secret"]);
+	const relay = section(raw, "relay", "", ["appName", "secret", "streamIdleSeconds"]);
 	const appName = required(relay, "appName", "relay");
 	if (relay.secret === undefined) fail("relay.secret is required");
 	const secret = section(relay, "secret", "relay", ["id", "key", "region"]);
+	const streamIdleSeconds = relay.streamIdleSeconds ?? DEFAULT_STREAM_IDLE_SECONDS;
+	if (
+		typeof streamIdleSeconds !== "number" ||
+		!Number.isInteger(streamIdleSeconds) ||
+		streamIdleSeconds < MIN_STREAM_IDLE_SECONDS ||
+		streamIdleSeconds > MAX_STREAM_IDLE_SECONDS
+	) {
+		fail(
+			`relay.streamIdleSeconds must be a whole number from ${MIN_STREAM_IDLE_SECONDS} to ${MAX_STREAM_IDLE_SECONDS}`,
+		);
+	}
 
 	const funRaw = section(raw, "fun", "", ["pool"]);
 	let pool: FunEntry[] | undefined;
@@ -720,6 +750,7 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 		reactions,
 		relay: {
 			appName,
+			streamIdleSeconds,
 			secret: {
 				id: required(secret, "id", "relay.secret"),
 				key: required(secret, "key", "relay.secret"),

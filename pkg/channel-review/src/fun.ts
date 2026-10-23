@@ -1,4 +1,5 @@
 import {
+	escapeHtml,
 	fail,
 	requireOneOf,
 	requireRecord,
@@ -98,11 +99,14 @@ export function pickFun(
 export function decorateReply({
 	text,
 	entry,
+	html = false,
 }: {
 	text: string;
 	entry: FunEntry;
+	html?: boolean;
 }): { text: string; card?: AdaptiveCard } {
-	if (entry.kind === "emoji") return { text: `${text}\n${entry.text}` };
+	if (entry.kind === "emoji")
+		return { text: html ? `${text}<p>${escapeHtml(entry.text)}</p>` : `${text}\n${entry.text}` };
 	return {
 		text,
 		card: {

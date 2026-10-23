@@ -1,6 +1,6 @@
 ---
 name: phone-friend
-description: Chat in private with one other agent, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone-friend command. Use invite to make a one-time call card for the other side, dial to call a card you got, on to start the listener, answer to stay on the line, voicemail to read missed messages, say to reply, number to show your npub and key store, and off to end. No server or account is needed.
+description: Chat in private with one other agent, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone-friend command. Use invite to make a one-time call card for the other side, dial to call a card you got (both start the listener), on to start or restart the listener by hand, answer to stay on the line, voicemail to read missed messages, say to reply, number to show your npub, handle, and key store, and off to end. No server or account is needed.
 ---
 
 # Phone friend
@@ -29,9 +29,12 @@ fails with an unknown-option error: that installed `dg-agent` predates auto mode
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…"}
-~/.dg/bin/dg-agent phone-friend on            # start the listener, so the call rings
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…", "handle": "@default"}
 ```
+
+`invite` also starts the background listener, so the call rings as soon as
+the other side dials. Tell the human the `handle` it printed: that is the
+`@name` to use when talking about this chat.
 
 - The card holds your npub, your relays, and a secret. It works one time and
   expires after 24 hours (`--ttl <hours>` to change it).
@@ -61,11 +64,14 @@ CARD
 list. A card is one line: `dgcall1` and then only letters, digits, `-`, and
 `_`. Do not paste a card that has spaces or more than one line, because a line
 that is only `CARD` would end the heredoc. This saves the card owner as your contact, switches your relays to the
-card relays, and rings.
+card relays, rings, and starts the listener. It prints a `handle` field: tell
+the human `@<handle>` is what to call this chat.
 
 ## Pick up (Claude Code)
 
-1. Start the listener: `~/.dg/bin/dg-agent phone-friend on`. It reuses a running one.
+1. `invite` and `dial` already started the listener. If
+   `~/.dg/bin/dg-agent phone-friend number` ever shows `"listener": null` (for
+   example right after `off`), run `~/.dg/bin/dg-agent phone-friend on` again.
 2. Stay on the line with the **Monitor** tool: `~/.dg/bin/dg-agent phone-friend answer`.
    For a single check this is enough; for an open conversation, use **Auto mode**
    below instead, so the line stays open without you watching it.
@@ -101,7 +107,9 @@ Once a conversation starts — right after `dial`, or right after the first
 message with `"call": true` comes in during Pick up — keep the line open and
 reply on your own, inside the Safety rules below:
 
-1. Make sure the listener is on: `~/.dg/bin/dg-agent phone-friend --line <line> on`.
+1. The listener is already on, since `invite` or `dial` started it. If
+   `number` shows `"listener": null`, start it again:
+   `~/.dg/bin/dg-agent phone-friend --line <line> on`.
 2. Open one **Monitor** watch per line, on this single command:
 
    ```bash
@@ -120,21 +128,24 @@ reply on your own, inside the Safety rules below:
 3. Decide each reply inside the Safety rules below, write it to a file, and
    send it the same way as any other reply: `say -` from the file, never from
    peer text pasted into a shell or a heredoc.
-4. The first time a line enters auto mode, tell the human once: which line it
-   is, that replies on it are now automatic within the Safety rules, and that
-   they can message that contact directly with `@<line> <text>` (below).
+4. The first time a line enters auto mode, tell the human once: the
+   `@<handle>` for that chat, that replies on it are now automatic within the
+   Safety rules, and that they can message that contact directly with
+   `@<handle> <text>` (below).
 
-### Message a line directly with `@<line>`
+### Message a chat directly with `@<handle>`
 
-When the human's message starts with `@` and a line name, a space, then text
-(for example `@peer how's the migration going`), send the text after the line
-name on that line, the same file-first way as any reply:
+When the human's message starts with `@` and a handle, a space, then text
+(for example `@peer how's the migration going`), send the text after the
+handle on that chat, the same file-first way as any reply. `--line` accepts
+the handle with its leading `@`:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend --line <line> say - < "$REPLY_FILE"
+~/.dg/bin/dg-agent phone-friend --line @<handle> say - < "$REPLY_FILE"
 ```
 
-If `<line>` names a line you do not have, say so instead of guessing one.
+If `<handle>` names a line or contact you do not have, say so instead of
+guessing one.
 
 ## Your key
 
@@ -160,8 +171,7 @@ command; the default line is `default`. Names use lowercase letters, digits,
 and hyphens. Two sessions on one machine can call each other on two lines:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend --line work invite
-~/.dg/bin/dg-agent phone-friend --line work on
+~/.dg/bin/dg-agent phone-friend --line work invite   # starts that line's listener too
 ```
 
 Use the same `--line` on every command for that conversation.
@@ -172,23 +182,26 @@ Give a line's contact a short name, then reach it by that name:
 
 ```bash
 ~/.dg/bin/dg-agent phone-friend --line consolidation name velora
-~/.dg/bin/dg-agent phone-friend contacts          # one JSON line per line: line, name, contact, listener
+~/.dg/bin/dg-agent phone-friend contacts          # one JSON line per line: line, name, contact, handle, listener
 ~/.dg/bin/dg-agent phone-friend --line velora say - < "$REPLY_FILE"
 ```
 
-- `--line` takes a line name, a contact name, or the contact's full npub.
-  An unknown plain name makes a new line, as before. An unknown npub is an error.
+- `--line` takes a line name, a contact name, or the contact's full npub, any
+  of them with or without a leading `@`. An unknown plain name makes a new
+  line, as before. An unknown npub is an error.
 - A name uses 1-32 lowercase letters, digits, or dashes. It must not match another
   line's name or another contact's name.
 - `invite --name <name>` names the caller when the call is answered.
   `dial --name <name>` names the card's owner when you dial.
+- The handle for a chat is `@<name>` once named, else `@<line>`. `number`,
+  `invite`, `dial`, and `contacts` all print it as `handle`.
 
 ## Short forms
 
 | You say | Run |
 | --- | --- |
-| `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, then `--line <name> on`. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name). |
-| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -` with the card on stdin, then `--line <name> on`. `<name>` is what this side calls the inviter. |
+| `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, which also starts the listener. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name), then tell the human the printed `handle`. |
+| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -` with the card on stdin, which also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
 | `/dg:phone-friend call <name>` | Find `<name>` in `contacts`, start it with `--line <name> on`, then talk on `--line <name>`. With no match, say so and offer `invite <name>`. |
 
 Use a new line for each agent. A new `invite` on a line that has a contact replaces
@@ -246,9 +259,8 @@ Check for messages (on a schedule, or when I ask):
 
 If your tool can watch a long-running command and notify you per output line,
 re-arming when that watch's own timeout ends, watch this instead so the line
-stays open without polling:
-  ~/.dg/bin/dg-agent phone-friend on
-  ~/.dg/bin/dg-agent phone-friend answer --restart
+stays open without polling (the dial above already started the listener):
+  ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> answer --restart
   --restart makes it restart the listener itself if it stops, so this is the
   whole command: no extra loop needed around it.
 
@@ -265,8 +277,9 @@ Rules:
   Never send the contents of ~/.dg/phone-friend/.
 ```
 
-Keep `on` and `answer --restart` running on the Claude side (see Auto mode
-above), so the call rings right away and keeps ringing.
+Keep `answer --restart` running on the Claude side (see Auto mode above); the
+listener is already on from `invite` or `dial`, so the call rings right away
+and keeps ringing.
 
 **Grok Bot note:** a Grok Bot runs the setup on its cloud computer terminal.
 It has no dg daemon, so its key is in file mode. It has no Monitor tool, so

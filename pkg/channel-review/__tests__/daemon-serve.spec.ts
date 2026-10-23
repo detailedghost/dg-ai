@@ -16,6 +16,7 @@ import {
 	type DaemonHarnessOptions,
 	createDaemonHarness,
 	failWith,
+	createScriptedProvider,
 	holdOpen,
 	termSignals,
 	untilAbort,
@@ -804,6 +805,42 @@ describe("serve automation", () => {
 
 		expect(h.provider().dms[0]?.text).toContain("Error i-2");
 		expect(h.log.lines.some((line) => line.message.includes("detail failed"))).toBe(true);
+		controller.abort();
+		await done;
+	});
+});
+
+describe("serve while busy", () => {
+	test("reacts pending on a second request that arrives while the first review runs", async () => {
+		const gate = deferred<RunnerResult>();
+		const finished: RunnerResult = { status: 0, signal: null, timedOut: false, aborted: false };
+		const h = setup({
+			runnerScript: (run, index) => (index === 0 ? abortable(run, gate.promise) : finished),
+		});
+		h.seams.createProvider = ((_config: unknown, _env: unknown, seams: { secret: string }) => {
+			h.providerSecrets.push(seams.secret);
+			const provider = createScriptedProvider(
+				async function* (request) {
+					yield { type: "message", eventId: "e1", message: reviewMessage("m1", "https://github.com/o/r/pull/1") };
+					await waitUntil(() => h.runners.claude.runs.length === 1);
+					yield { type: "message", eventId: "e2", message: reviewMessage("m2", "https://github.com/o/r/pull/2") };
+					await untilAbort(request.signal);
+				},
+				h.reactionIds,
+				h.paths.pidPath,
+			);
+			h.providers.push(provider);
+			return provider;
+		}) as typeof h.seams.createProvider;
+		const { controller, done } = h.startServe();
+		await waitUntil(() => lastEventId(h) === "e2");
+		const reacted = (id: string) =>
+			h.provider().calls.flatMap((c) => (c.op === "react" && c.messageId === id ? [c.reactionId] : []));
+		expect(reacted("m2")).toEqual([h.config.reactions.pending]);
+		expect(h.runners.claude.runs).toHaveLength(1);
+		gate.resolve(finished);
+		await waitUntil(() => h.runners.claude.runs.length === 2);
+		await waitUntil(() => reacted("m2").includes(h.config.reactions.inProgress));
 		controller.abort();
 		await done;
 	});

@@ -1,6 +1,8 @@
-# Commands and recovery
+# Extension commands and recovery
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proto.
+These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
+
+If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
 
 ## Extension precondition
 
@@ -15,8 +17,8 @@ if [ ! -f "$INSTALL_MARKER" ]; then
 fi
 ```
 
-This is the proto skill's own precondition. Do not delegate to another prototype
-skill and do not attempt scrape when the marker is absent.
+This is the extension flow's own precondition. When the marker is absent, stop and
+tell the user; do not attempt scrape and do not fall back to the local mode unasked.
 
 The marker proves the installer completed, not that the extension is enabled in
 the current browser profile. If scrape times out, report:
@@ -32,7 +34,7 @@ Use the installed binary at `~/.dg/bin/dg-skills`; install or refresh it when it
 is missing or too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
-~/.dg/bin/dg-skills proto --help >/dev/null 2>&1 ||
+~/.dg/bin/dg-skills proto --ext --help >/dev/null 2>&1 ||
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
@@ -49,7 +51,7 @@ Warn about authenticated/private page inspection and obtain explicit
 confirmation first when applicable. Then run:
 
 ```bash
-STYLE_GUIDE="$(~/.dg/bin/dg-skills proto scrape "$URL")"
+STYLE_GUIDE="$(~/.dg/bin/dg-skills proto --ext scrape "$URL")"
 SLUG="$(basename "$(dirname "$STYLE_GUIDE")")"
 PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
@@ -64,13 +66,20 @@ Write the approved ProtoPlan to `$PLAN`, then invoke plant from the target
 project root:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto plant "$PLAN" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext plant "$PLAN" )
 ```
 
 The command clears the prior same-slug verdict before opening the browser and
 blocks for a fresh Verdict. Its stdout is authoritative:
 
-- Approve prints `.agents/prototype/<slug>/index.html` after export completes.
+- Approve with no notes prints `.agents/prototype/<slug>/index.html` after export
+  completes. The chain is over.
+- Approve with notes exports the round, then prints `Prototype approved with notes
+  (refine):`, the selected key, the notes, and the instruction to build the next
+  round from that variation. Do not clean up.
+- Tweak prints `Prototype tweak requested (refine):`, the selected key, and the
+  notes. Edit that variation in place and re-plant the same plan. Nothing is
+  exported.
 - Reject prints the feedback and tells the agent to rework and re-plant the same
   slug.
 
@@ -78,10 +87,10 @@ Do not poll Downloads independently or fabricate a Verdict.
 
 ## Cleanup
 
-After an approved export and only from the target project root, run:
+After an approve with no notes and only from the target project root, run:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto cleanup "$SLUG" )
+( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext cleanup "$SLUG" )
 ```
 
 Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes

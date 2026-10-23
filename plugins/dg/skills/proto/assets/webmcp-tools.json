@@ -1,0 +1,16 @@
+{
+	"tools": [
+		{
+			"name": "get_prototype_state",
+			"description": "Read the prototype the person is looking at. Include the chain, the round name, the active variant key, that variant's label, the notes text currently in the notes box (including text that is not submitted yet), and the decision status.",
+			"inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+			"annotations": { "readOnlyHint": true }
+		},
+		{
+			"name": "list_prototype_variants",
+			"description": "List the variant keys and labels on this page.",
+			"inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+			"annotations": { "readOnlyHint": true }
+		}
+	]
+}
