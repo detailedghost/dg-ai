@@ -24,7 +24,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor credentials db stash.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-skills db <query|tables|describe|explain|schema|connections|test> [arguments] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [-f file.sql]`
+**Usage:** `~/.dg/bin/dg-skills db <query|tables|describe|explain|schema|connections|test> [arguments] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]`
 
 ## Flags
 
@@ -35,7 +35,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor credentials db stash.
 | `--format F` | none | Format query rows as `tsv`, `json`, or `markdown`. | `tsv` |
 | `--max-cell N` | none | Truncate each displayed cell after N characters. | `200` |
 | `--schema S` | none | Select the schema for table and schema introspection. | `public` for PostgreSQL; `PUBLIC` for Snowflake |
-| `-f file.sql` | `-f` | Read query SQL from a file instead of an argument. | SQL argument |
+| `--file file.sql` | `-f` | Read query SQL from a file instead of an argument. | SQL argument |
 
 An unrecognized flag is rejected with an error. A SQL or table argument that itself starts with `-` (for example a leading `-- comment`) must come after a literal `--`, e.g. `db query my-pg -- "-- comment\nSELECT 1"`.
 
