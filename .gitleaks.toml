@@ -64,3 +64,18 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)pkg/skills-test/__tests__/no-local-zone\.spec\.ts$''']
 regexes = ['''^AKIAABCDEFGHIJKLMNOP$''']
+
+# TEST_BRIDGE_KEY_PEM is the throwaway CN=localhost key for the Proton bridge
+# TLS handshake specs. Ignore a private-key finding only when the path is that
+# fixture and the secret contains one interior slice of that key. The empty
+# groups keep the slice from sitting contiguously in this file. A different
+# private key on this path still reports.
+[[allowlists]]
+description = "Throwaway localhost key in the Proton bridge TLS fixture"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/inbox/src/protonmail/__test__/fixtures/test-bridge-tls\.ts$''',
+]
+regexes = ['''mrtWwf(?:)Hdstsz(?:)RLJ9OU(?:)XVB8qC''']
