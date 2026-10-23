@@ -59,17 +59,17 @@ The default is TSV with a `ROWS: shown/total` header. Cells over `--max-cell` ar
 
 ## Safety
 
-Queries are read-safe by default. `SELECT`, `SHOW`, `DESCRIBE`, non-analyzing `EXPLAIN`, and a single `SET` pass without flags. DML, DDL, write CTEs, `SELECT INTO`, multiple statements, and `EXPLAIN ANALYZE` require `--write`.
+Queries are read-safe by default. `SELECT`, `SHOW`, `DESCRIBE`, non-analyzing `EXPLAIN`, and `SET` pass without flags. DML, DDL, write CTEs, `SELECT INTO`, multiple statements, `EXPLAIN ANALYZE`, `SET ROLE`, and `SET SESSION AUTHORIZATION` require `--write`.
 
 ## Snowflake SSO with a cold cache
 
 The login URL goes to stderr, and the connection blocks until login completes. Run it in the background, poll the log, and relay the **last** `https://` line because each retry creates a new SAML request:
 
 ```bash
-~/.dg/bin/dg-skills db test my-sf > "$(~/.dg/bin/dg-skills stash -a db sso.log)" 2>&1
+~/.dg/bin/dg-skills db test my-sf > "$(~/.dg/bin/dg-skills stash db sso.log)" 2>&1
 ```
 
-Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `! ~/.dg/bin/dg-skills db test my-sf` once to prime the temporary credential cache.
+Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `~/.dg/bin/dg-skills db test my-sf` once, themselves, to prime the temporary credential cache.
 
 ## References
 

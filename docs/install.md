@@ -73,7 +73,8 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `channel-review` | Yes |
 | `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
-| `db`, `erd`, `eli5` | Yes |
+| `db`, `erd` | Yes |
+| `eli5` | Yes for `-v`/`-p` (stash) or `--erd`; a plain `/dg:eli5 <thing>` needs no CLI |
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
 | `test-live` | Yes — needs Git and an authenticated `gh` (GitHub only) |
 | `nope` | No CLI needed — it calls no CLI and no other skill |
