@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { collectCodeGraph } from "../src/erd/code-graph";
 import { mergeGraph } from "../src/erd/graph";
 import { collectImportGraph } from "../src/erd/import-graph";
+import { writeScopedFile } from "./cli-fixtures";
 
 const fixture = join(import.meta.dir, "fixtures", "erd", "code-graph");
 
@@ -20,10 +21,7 @@ afterEach(() => {
 });
 
 function writeFile(relPath: string, content: string): string {
-	const abs = join(scopeDir, relPath);
-	mkdirSync(join(abs, ".."), { recursive: true });
-	writeFileSync(abs, content);
-	return abs;
+	return writeScopedFile(scopeDir, relPath, content);
 }
 
 describe("code and import collectors", () => {
@@ -106,6 +104,23 @@ describe("directory read failures", () => {
 			expect(result?.evidence.some((e) => e.detail?.includes("could not read directory"))).toBe(true);
 		} finally {
 			chmodSync(blockedDir, 0o700);
+		}
+	});
+
+	test("collectImportGraph records evidence instead of throwing when a file cannot be read", () => {
+		writeFile("src/ok.ts", "export const ok = true;\n");
+		const blockedFile = writeFile("src/blocked.ts", "export const blocked = true;\n");
+		chmodSync(blockedFile, 0o000);
+		try {
+			let result: ReturnType<typeof collectImportGraph> | undefined;
+			expect(() => {
+				result = collectImportGraph({ scopePath: scopeDir });
+			}).not.toThrow();
+			expect(result?.evidence.some((e) => e.ref === "src/blocked.ts" && e.detail?.includes("could not read file"))).toBe(
+				true,
+			);
+		} finally {
+			chmodSync(blockedFile, 0o700);
 		}
 	});
 });

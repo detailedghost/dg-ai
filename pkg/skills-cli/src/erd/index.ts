@@ -64,8 +64,9 @@ async function collectDbPartial(scope: string): Promise<DbPartial> {
 			evidence: [...live.evidence, ...fromStatic.evidence],
 			truncated: { nodes: 0 },
 		};
-	} catch {
-		return { nodes: [], edges: [], evidence: [], truncated: { nodes: 0 } };
+	} catch (err) {
+		const detail = `skipped: db schema collection failed (${(err as Error).message})`;
+		return { nodes: [], edges: [], evidence: [{ type: "db-table", ref: scope, detail }], truncated: { nodes: 0 } };
 	}
 }
 
@@ -265,10 +266,6 @@ function stripOutputSuffix(outPath: string): string {
 	return outPath.replace(/\.(?:md|json|html)$/i, "");
 }
 
-function stripMarkdownSuffix(outPath: string): string {
-	return /\.md$/i.test(outPath) ? outPath.slice(0, -3) : outPath;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -454,7 +451,7 @@ export function createErdSpec(overrides: Partial<ErdDeps> = {}) {
 					const result = await generateArchitecture({
 						scope: parsed.positionals[0] ?? ".",
 						depth: parsed.depth,
-						outPath: parsed.out ? stripMarkdownSuffix(parsed.out) : undefined,
+						outPath: parsed.out ? stripOutputSuffix(parsed.out) : undefined,
 						type: parsed.type,
 						html: parsed.html,
 					});
