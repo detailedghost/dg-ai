@@ -540,6 +540,23 @@ describe("test-live cleanup — corrupt state file", () => {
 		expect(result.stderr).not.toContain("no state file");
 		expect(result.stderr).toContain("corrupt");
 	});
+
+	test("a git merge-base failure dies instead of being treated as 'already recovered'", async () => {
+		const { repo } = buildRepo();
+		const env = baseEnv({ path: fakeGhPath({ poll: runRow(9502) }) });
+
+		const setupResult = await runCli(["setup", "dev"], repo, env);
+		expect(setupResult.code, setupResult.stderr).toBe(0);
+
+		const stateFile = findStateFile(env.AI_STATE_DIR);
+		const state = JSON.parse(readFileSync(stateFile, "utf8")) as { patchCommitSha: string };
+		state.patchCommitSha = "deadbeef".repeat(5);
+		writeFileSync(stateFile, JSON.stringify(state));
+
+		const result = await runCli(["cleanup"], repo, env);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("git merge-base failed");
+	});
 });
 
 describe("test-live — scoped state path", () => {

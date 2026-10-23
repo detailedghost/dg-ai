@@ -107,21 +107,68 @@ describe("directory read failures", () => {
 		}
 	});
 
-	test("collectImportGraph records evidence instead of throwing when a file cannot be read", () => {
+	async function runInMockedFsProcess(
+		mockBody: string,
+		scriptBody: string,
+	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+		const script = `
+import { mock } from "bun:test";
+import * as fs from "node:fs";
+${mockBody}
+${scriptBody}
+`;
+		const child = Bun.spawn([process.execPath, "-e", script], {
+			cwd: import.meta.dir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+			child.exited,
+		]);
+		return { stdout, stderr, exitCode };
+	}
+
+	test("collectImportGraph records evidence instead of throwing when a file cannot be read", async () => {
 		writeFile("src/ok.ts", "export const ok = true;\n");
-		const blockedFile = writeFile("src/blocked.ts", "export const blocked = true;\n");
-		chmodSync(blockedFile, 0o000);
-		try {
-			let result: ReturnType<typeof collectImportGraph> | undefined;
-			expect(() => {
-				result = collectImportGraph({ scopePath: scopeDir });
-			}).not.toThrow();
-			expect(result?.evidence.some((e) => e.ref === "src/blocked.ts" && e.detail?.includes("could not read file"))).toBe(
-				true,
-			);
-		} finally {
-			chmodSync(blockedFile, 0o700);
-		}
+		writeFile("src/blocked.ts", "export const blocked = true;\n");
+		const { stdout, stderr, exitCode } = await runInMockedFsProcess(
+			`const originalReadFileSync = fs.readFileSync;
+mock.module("node:fs", () => ({ ...fs, readFileSync(path, options) {
+	if (String(path).endsWith("blocked.ts")) throw new Error("EACCES: permission denied, open 'blocked.ts'");
+	return originalReadFileSync(path, options);
+} }));`,
+			`const { collectImportGraph } = await import(${JSON.stringify(new URL("../src/erd/import-graph.ts", import.meta.url).pathname)});
+const result = collectImportGraph({ scopePath: ${JSON.stringify(scopeDir)} });
+console.log(JSON.stringify({ evidence: result.evidence }));`,
+		);
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		const { evidence } = JSON.parse(stdout) as { evidence: { ref: string; detail?: string }[] };
+		expect(evidence.some((e) => e.ref === "src/blocked.ts" && e.detail?.includes("could not read file"))).toBe(true);
+	});
+
+	test("collectCodeGraph records evidence instead of throwing when statSync fails on a file", async () => {
+		writeFile("src/ok.ts", "export const ok = true;\n");
+		writeFile("src/blocked.ts", "export const blocked = true;\n");
+		const { stdout, stderr, exitCode } = await runInMockedFsProcess(
+			`const originalStatSync = fs.statSync;
+mock.module("node:fs", () => ({ ...fs, statSync(path, options) {
+	if (String(path).endsWith("blocked.ts")) throw new Error("EACCES: permission denied, stat 'blocked.ts'");
+	return originalStatSync(path, options);
+} }));`,
+			`const { collectCodeGraph } = await import(${JSON.stringify(new URL("../src/erd/code-graph.ts", import.meta.url).pathname)});
+const result = collectCodeGraph({ scopePath: ${JSON.stringify(scopeDir)} });
+console.log(JSON.stringify({ nodeIds: result.nodes.map((n) => n.id), evidence: result.evidence }));`,
+		);
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		const { nodeIds, evidence } = JSON.parse(stdout) as {
+			nodeIds: string[];
+			evidence: { ref: string; detail?: string }[];
+		};
+		expect(nodeIds).toContain("src/ok.ts");
+		expect(nodeIds).not.toContain("src/blocked.ts");
+		expect(evidence.some((e) => e.ref === "src/blocked.ts" && e.detail?.includes("could not stat file"))).toBe(true);
 	});
 });
 
