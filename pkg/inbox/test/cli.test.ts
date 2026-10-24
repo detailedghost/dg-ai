@@ -1347,8 +1347,12 @@ describe("CLI", () => {
 					id: "existing-filter",
 					name: "Email Organizer: message.bank.example -> Receipts",
 					enabled: true,
-					conditions: ["message.bank.example"],
-					actions: ["fileinto Receipts"],
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "message.bank.example" { fileinto "Receipts"; }',
+					],
+					actions: [
+						'require ["fileinto"]; if address :domain :is "From" "message.bank.example" { fileinto "Receipts"; }',
+					],
 				},
 			],
 			messages: [],
@@ -1474,7 +1478,9 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
-		const created = dataset.filters.filter(
+		expect(dataset.filters).toHaveLength(1);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		const created = declared.filters.filter(
 			(filter: { name: string }) =>
 				filter.name.includes("stripe.com") ||
 				filter.name.includes("spam.example.com"),
@@ -1484,11 +1490,9 @@ describe("CLI", () => {
 			filter.name.includes("stripe.com"),
 		);
 		expect(stripe.name).toBe("Receipts - stripe.com");
-		expect(stripe.conditions[0]).toContain(
-			'address :domain :is "From" "stripe.com"',
-		);
-		expect(stripe.conditions[0]).toContain('fileinto "Receipts"');
-		expect(stripe.conditions[0]).toContain('addflag "\\\\Seen"');
+		expect(stripe.sieve).toContain('address :domain :is "From" "stripe.com"');
+		expect(stripe.sieve).toContain('fileinto "Receipts"');
+		expect(stripe.sieve).toContain('addflag "\\\\Seen"');
 	});
 
 	test("filters load infers naming conventions and consolidate merges generated filters into existing names", async () => {
@@ -1524,10 +1528,10 @@ describe("CLI", () => {
 					name: "Email Organizer: stripe.com -> Receipts",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
 					],
 				},
 				{
@@ -1535,10 +1539,10 @@ describe("CLI", () => {
 					name: "Email Organizer: shop.example.com -> Receipts",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
 					],
 				},
 			],
@@ -1605,14 +1609,16 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
-		expect(
-			dataset.filters.map((filter: { name: string }) => filter.name),
-		).toEqual(["Fin - Purchases"]);
-		expect(dataset.filters[0].conditions[0]).toContain(
+		expect(dataset.filters).toHaveLength(3);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Fin - Purchases",
+		]);
+		expect(declared.filters[0].sieve).toContain(
 			"email-organizer consolidated domains",
 		);
-		expect(dataset.filters[0].conditions[0]).toContain("shop.example.com");
-		expect(dataset.filters[0].conditions[0]).toContain("stripe.com");
+		expect(declared.filters[0].sieve).toContain("shop.example.com");
+		expect(declared.filters[0].sieve).toContain("stripe.com");
 	});
 
 	test("filters group promotes remaining generated filters into generic grouped filters", async () => {
@@ -1630,10 +1636,10 @@ describe("CLI", () => {
 					name: "Email Organizer: billing.example.com -> invoice",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
 					],
 				},
 				{
@@ -1641,10 +1647,10 @@ describe("CLI", () => {
 					name: "Email Organizer: promo.example.com -> Spam",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
 					],
 				},
 				{
@@ -1652,10 +1658,10 @@ describe("CLI", () => {
 					name: "Email Organizer: edc.example.com -> hunt",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
 					],
 				},
 			],
@@ -1734,23 +1740,25 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
+		expect(dataset.filters).toHaveLength(3);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
 		expect(
-			dataset.filters.map((filter: { name: string }) => filter.name).sort(),
+			declared.filters.map((filter: { name: string }) => filter.name).sort(),
 		).toEqual(["Fin - Invoices", "Hunt - EDC", "Spam - Marketing"]);
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Fin - Invoices",
-			).conditions[0],
+			).sieve,
 		).toContain("billing.example.com");
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Spam - Marketing",
-			).conditions[0],
+			).sieve,
 		).toContain("promo.example.com");
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Hunt - EDC",
-			).conditions[0],
+			).sieve,
 		).toContain("edc.example.com");
 	});
 
@@ -2359,10 +2367,13 @@ describe("CLI", () => {
 			`"${domains.at(-1)}", "extra.example"`,
 		);
 		const updated = await Bun.file(dataPath).json();
-		expect(updated.filters[0].conditions[0]).toBe(expected);
-		expect(updated.filters[0].actions[0]).toBe(expected);
+		expect(updated.filters[0].conditions[0]).toBe(sieve);
+		expect(updated.filters[0].actions[0]).toBe(sieve);
 		expect(expected).toContain('fileinto "Newsletters"');
 		expect(expected).toContain('require ["fileinto", "imap4flags"]');
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters[0].protonId).toBe("manual-news");
+		expect(declared.filters[0].sieve).toBe(expected);
 		const audit = await Bun.file(confirmedBody.auditPath).json();
 		expect(audit).toMatchObject({
 			kind: "workspace-filter-extend-audit",
@@ -2374,9 +2385,7 @@ describe("CLI", () => {
 		expect(audit.afterHash).toHaveLength(64);
 		expect(audit.afterHash).not.toBe(audit.beforeHash);
 		const refreshed = await Bun.file(`${dir}/filters.json`).json();
-		expect(refreshed.kind).toBe("filters");
-		expect(refreshed.filters[0].id).toBe("manual-news");
-		expect(refreshed.filters[0].destinations).toEqual(["Newsletters"]);
+		expect(refreshed).toEqual({});
 	});
 
 	test("filters extend refuses a script with no From-domain check", async () => {

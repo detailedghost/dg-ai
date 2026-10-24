@@ -58,6 +58,7 @@ export type WorkspacePaths = {
 	folders: string;
 	labels: string;
 	filters: string;
+	declaredFilters: string;
 	classificationGuide: string;
 	messagesDir: string;
 	status: string;
@@ -75,6 +76,7 @@ export function workspacePaths(
 		folders: join(dir, "folders.json"),
 		labels: join(dir, "labels.json"),
 		filters: join(dir, "filters.json"),
+		declaredFilters: join(dir, "declared-filters.json"),
 		classificationGuide: join(dir, "classification.json"),
 		messagesDir: join(dir, "messages"),
 		status: join(dir, "messages", "_status.json"),

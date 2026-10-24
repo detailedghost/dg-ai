@@ -1,0 +1,1438 @@
+{
+  "kind": "declared-filters",
+  "version": 1,
+  "provider": "protonmail",
+  "policy": {
+    "naming": {
+      "folderSlugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "folderExceptions": [
+        "Notification",
+        "Alerts"
+      ]
+    },
+    "safety": {
+      "protectedPlusAlias": "owner+*@example.test",
+      "verificationSenders": [
+        "security.example"
+      ],
+      "blockedDestinations": [
+        "junk"
+      ]
+    },
+    "keepFirst": [
+      "+Owner"
+    ]
+  },
+  "folders": [
+    {
+      "path": "Inbox",
+      "type": "system",
+      "protonId": "fld-inbox"
+    },
+    {
+      "path": "Spam",
+      "type": "system",
+      "protonId": "fld-spam"
+    },
+    {
+      "path": "Trash",
+      "type": "system",
+      "protonId": "fld-trash"
+    },
+    {
+      "path": "family",
+      "type": "folder",
+      "protonId": "fld-family"
+    },
+    {
+      "path": "travel",
+      "type": "folder",
+      "protonId": "fld-travel"
+    },
+    {
+      "path": "school",
+      "type": "folder",
+      "protonId": "fld-school"
+    },
+    {
+      "path": "archive",
+      "type": "folder",
+      "protonId": "fld-archive"
+    },
+    {
+      "path": "fin/banking",
+      "type": "folder",
+      "protonId": "fld-banking"
+    },
+    {
+      "path": "fin/investments",
+      "type": "folder",
+      "protonId": "fld-investments"
+    },
+    {
+      "path": "fin/notifications",
+      "type": "folder",
+      "protonId": "fld-notifications"
+    },
+    {
+      "path": "Notification/Alerts",
+      "type": "folder",
+      "protonId": "fld-alerts"
+    },
+    {
+      "path": "Fin/Banking",
+      "type": "folder",
+      "protonId": "fld-legacy-banking"
+    },
+    {
+      "path": "fin/statements",
+      "type": "folder",
+      "protonId": "fld-fin-statements"
+    },
+    {
+      "path": "fin/invoices",
+      "type": "folder",
+      "protonId": "fld-fin-invoices"
+    },
+    {
+      "path": "fin/shipping",
+      "type": "folder",
+      "protonId": "fld-fin-shipping"
+    },
+    {
+      "path": "fin/returns",
+      "type": "folder",
+      "protonId": "fld-fin-returns"
+    },
+    {
+      "path": "fin/letters",
+      "type": "folder",
+      "protonId": "fld-fin-letters"
+    },
+    {
+      "path": "shop/statements",
+      "type": "folder",
+      "protonId": "fld-shop-statements"
+    },
+    {
+      "path": "shop/invoices",
+      "type": "folder",
+      "protonId": "fld-shop-invoices"
+    },
+    {
+      "path": "shop/shipping",
+      "type": "folder",
+      "protonId": "fld-shop-shipping"
+    },
+    {
+      "path": "shop/returns",
+      "type": "folder",
+      "protonId": "fld-shop-returns"
+    },
+    {
+      "path": "shop/letters",
+      "type": "folder",
+      "protonId": "fld-shop-letters"
+    },
+    {
+      "path": "news/statements",
+      "type": "folder",
+      "protonId": "fld-news-statements"
+    },
+    {
+      "path": "news/invoices",
+      "type": "folder",
+      "protonId": "fld-news-invoices"
+    },
+    {
+      "path": "news/shipping",
+      "type": "folder",
+      "protonId": "fld-news-shipping"
+    },
+    {
+      "path": "news/returns",
+      "type": "folder",
+      "protonId": "fld-news-returns"
+    },
+    {
+      "path": "news/letters",
+      "type": "folder",
+      "protonId": "fld-news-letters"
+    },
+    {
+      "path": "work/statements",
+      "type": "folder",
+      "protonId": "fld-work-statements"
+    },
+    {
+      "path": "work/invoices",
+      "type": "folder",
+      "protonId": "fld-work-invoices"
+    },
+    {
+      "path": "work/shipping",
+      "type": "folder",
+      "protonId": "fld-work-shipping"
+    },
+    {
+      "path": "work/returns",
+      "type": "folder",
+      "protonId": "fld-work-returns"
+    },
+    {
+      "path": "work/letters",
+      "type": "folder",
+      "protonId": "fld-work-letters"
+    },
+    {
+      "path": "home/statements",
+      "type": "folder",
+      "protonId": "fld-home-statements"
+    },
+    {
+      "path": "home/invoices",
+      "type": "folder",
+      "protonId": "fld-home-invoices"
+    },
+    {
+      "path": "home/shipping",
+      "type": "folder",
+      "protonId": "fld-home-shipping"
+    },
+    {
+      "path": "home/returns",
+      "type": "folder",
+      "protonId": "fld-home-returns"
+    },
+    {
+      "path": "home/letters",
+      "type": "folder",
+      "protonId": "fld-home-letters"
+    },
+    {
+      "path": "travel/statements",
+      "type": "folder",
+      "protonId": "fld-travel-statements"
+    },
+    {
+      "path": "travel/invoices",
+      "type": "folder",
+      "protonId": "fld-travel-invoices"
+    },
+    {
+      "path": "travel/shipping",
+      "type": "folder",
+      "protonId": "fld-travel-shipping"
+    },
+    {
+      "path": "travel/returns",
+      "type": "folder",
+      "protonId": "fld-travel-returns"
+    },
+    {
+      "path": "travel/letters",
+      "type": "folder",
+      "protonId": "fld-travel-letters"
+    },
+    {
+      "path": "health/statements",
+      "type": "folder",
+      "protonId": "fld-health-statements"
+    },
+    {
+      "path": "health/invoices",
+      "type": "folder",
+      "protonId": "fld-health-invoices"
+    },
+    {
+      "path": "health/shipping",
+      "type": "folder",
+      "protonId": "fld-health-shipping"
+    },
+    {
+      "path": "health/returns",
+      "type": "folder",
+      "protonId": "fld-health-returns"
+    },
+    {
+      "path": "health/letters",
+      "type": "folder",
+      "protonId": "fld-health-letters"
+    },
+    {
+      "path": "school/statements",
+      "type": "folder",
+      "protonId": "fld-school-statements"
+    },
+    {
+      "path": "school/invoices",
+      "type": "folder",
+      "protonId": "fld-school-invoices"
+    },
+    {
+      "path": "school/shipping",
+      "type": "folder",
+      "protonId": "fld-school-shipping"
+    },
+    {
+      "path": "school/returns",
+      "type": "folder",
+      "protonId": "fld-school-returns"
+    },
+    {
+      "path": "school/letters",
+      "type": "folder",
+      "protonId": "fld-school-letters"
+    },
+    {
+      "path": "civic/statements",
+      "type": "folder",
+      "protonId": "fld-civic-statements"
+    },
+    {
+      "path": "civic/invoices",
+      "type": "folder",
+      "protonId": "fld-civic-invoices"
+    },
+    {
+      "path": "civic/shipping",
+      "type": "folder",
+      "protonId": "fld-civic-shipping"
+    },
+    {
+      "path": "civic/returns",
+      "type": "folder",
+      "protonId": "fld-civic-returns"
+    },
+    {
+      "path": "civic/letters",
+      "type": "folder",
+      "protonId": "fld-civic-letters"
+    },
+    {
+      "path": "hobby/statements",
+      "type": "folder",
+      "protonId": "fld-hobby-statements"
+    },
+    {
+      "path": "hobby/invoices",
+      "type": "folder",
+      "protonId": "fld-hobby-invoices"
+    },
+    {
+      "path": "hobby/shipping",
+      "type": "folder",
+      "protonId": "fld-hobby-shipping"
+    },
+    {
+      "path": "hobby/returns",
+      "type": "folder",
+      "protonId": "fld-hobby-returns"
+    },
+    {
+      "path": "hobby/letters",
+      "type": "folder",
+      "protonId": "fld-hobby-letters"
+    }
+  ],
+  "filters": [
+    {
+      "name": "+Owner",
+      "enabled": true,
+      "protonId": "flt-01",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+owner\" {\n  fileinto \"Inbox\";\n  stop;\n}"
+    },
+    {
+      "name": "+Family & .family",
+      "enabled": true,
+      "protonId": "flt-02",
+      "sieve": "require [\"include\", \"environment\", \"fileinto\"];\nif anyof (address :all :is \"To\" \"owner+family@example.test\", address :all :is \"To\" \"owner.family@example.test\") {\n  fileinto \"family\";\n}"
+    },
+    {
+      "name": "+Travel",
+      "enabled": true,
+      "protonId": "flt-03",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+travel\" {\n  fileinto \"travel\";\n  stop;\n}"
+    },
+    {
+      "name": "Bot - Archive",
+      "enabled": true,
+      "protonId": "flt-04",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+archive\" {\n  fileinto \"archive\";\n  stop;\n}"
+    },
+    {
+      "name": "+school",
+      "enabled": true,
+      "protonId": "flt-05",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+school\" {\n  fileinto \"school\";\n  stop;\n}"
+    },
+    {
+      "name": "Fin - Notif",
+      "enabled": true,
+      "protonId": "flt-06",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"notices.fin.example\" {\n  fileinto \"fin/notifications\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Fin - Investment",
+      "enabled": true,
+      "protonId": "flt-07",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk.invest.example\") {\n  fileinto \"fin/investments\";\n}"
+    },
+    {
+      "name": "Fin - Bank",
+      "enabled": true,
+      "protonId": "flt-08",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"desk.bank.example\" {\n  fileinto \"fin/banking\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Shop - Coupons",
+      "enabled": true,
+      "protonId": "flt-09",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"promo.shop.example\" {\n  fileinto \"Spam\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "News - Digests",
+      "enabled": false,
+      "protonId": "flt-10",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"digest.news.example\") {\n  fileinto \"news/digests\";\n}"
+    },
+    {
+      "name": "Fin - Statements",
+      "enabled": true,
+      "protonId": "flt-11",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.fin.example\") {\n  fileinto \"fin/statements\";\n}"
+    },
+    {
+      "name": "Fin - Invoices",
+      "enabled": true,
+      "protonId": "flt-12",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.fin.example\" {\n  fileinto \"fin/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Fin - Shipping",
+      "enabled": true,
+      "protonId": "flt-13",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.fin.example\") {\n  fileinto \"fin/shipping\";\n}"
+    },
+    {
+      "name": "Fin - Returns",
+      "enabled": true,
+      "protonId": "flt-14",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.fin.example\" {\n  fileinto \"fin/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Fin - Letters",
+      "enabled": true,
+      "protonId": "flt-15",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.fin.example\") {\n  fileinto \"fin/letters\";\n}"
+    },
+    {
+      "name": "Shop - Statements",
+      "enabled": true,
+      "protonId": "flt-16",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.shop.example\" {\n  fileinto \"shop/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Shop - Invoices",
+      "enabled": true,
+      "protonId": "flt-17",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.shop.example\") {\n  fileinto \"shop/invoices\";\n}"
+    },
+    {
+      "name": "Shop - Shipping",
+      "enabled": true,
+      "protonId": "flt-18",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.shop.example\" {\n  fileinto \"shop/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Shop - Returns",
+      "enabled": true,
+      "protonId": "flt-19",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.shop.example\") {\n  fileinto \"shop/returns\";\n}"
+    },
+    {
+      "name": "Shop - Letters",
+      "enabled": true,
+      "protonId": "flt-20",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.shop.example\" {\n  fileinto \"shop/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "News - Statements",
+      "enabled": true,
+      "protonId": "flt-21",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.news.example\") {\n  fileinto \"news/statements\";\n}"
+    },
+    {
+      "name": "News - Invoices",
+      "enabled": true,
+      "protonId": "flt-22",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.news.example\" {\n  fileinto \"news/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "News - Shipping",
+      "enabled": true,
+      "protonId": "flt-23",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.news.example\") {\n  fileinto \"news/shipping\";\n}"
+    },
+    {
+      "name": "News - Returns",
+      "enabled": true,
+      "protonId": "flt-24",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.news.example\" {\n  fileinto \"news/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "News - Letters",
+      "enabled": true,
+      "protonId": "flt-25",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.news.example\") {\n  fileinto \"news/letters\";\n}"
+    },
+    {
+      "name": "Work - Statements",
+      "enabled": true,
+      "protonId": "flt-26",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.work.example\" {\n  fileinto \"work/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Work - Invoices",
+      "enabled": true,
+      "protonId": "flt-27",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.work.example\") {\n  fileinto \"work/invoices\";\n}"
+    },
+    {
+      "name": "Work - Shipping",
+      "enabled": true,
+      "protonId": "flt-28",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.work.example\" {\n  fileinto \"work/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Work - Returns",
+      "enabled": true,
+      "protonId": "flt-29",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.work.example\") {\n  fileinto \"work/returns\";\n}"
+    },
+    {
+      "name": "Work - Letters",
+      "enabled": true,
+      "protonId": "flt-30",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.work.example\" {\n  fileinto \"work/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Home - Statements",
+      "enabled": true,
+      "protonId": "flt-31",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.home.example\") {\n  fileinto \"home/statements\";\n}"
+    },
+    {
+      "name": "Home - Invoices",
+      "enabled": true,
+      "protonId": "flt-32",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.home.example\" {\n  fileinto \"home/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Home - Shipping",
+      "enabled": true,
+      "protonId": "flt-33",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.home.example\") {\n  fileinto \"home/shipping\";\n}"
+    },
+    {
+      "name": "Home - Returns",
+      "enabled": true,
+      "protonId": "flt-34",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.home.example\" {\n  fileinto \"home/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Home - Letters",
+      "enabled": true,
+      "protonId": "flt-35",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.home.example\") {\n  fileinto \"home/letters\";\n}"
+    },
+    {
+      "name": "Travel - Statements",
+      "enabled": true,
+      "protonId": "flt-36",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.travel.example\" {\n  fileinto \"travel/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Travel - Invoices",
+      "enabled": true,
+      "protonId": "flt-37",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.travel.example\") {\n  fileinto \"travel/invoices\";\n}"
+    },
+    {
+      "name": "Travel - Shipping",
+      "enabled": true,
+      "protonId": "flt-38",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.travel.example\" {\n  fileinto \"travel/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Travel - Returns",
+      "enabled": true,
+      "protonId": "flt-39",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.travel.example\") {\n  fileinto \"travel/returns\";\n}"
+    },
+    {
+      "name": "Travel - Letters",
+      "enabled": true,
+      "protonId": "flt-40",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.travel.example\" {\n  fileinto \"travel/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Health - Statements",
+      "enabled": true,
+      "protonId": "flt-41",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.health.example\") {\n  fileinto \"health/statements\";\n}"
+    },
+    {
+      "name": "Health - Invoices",
+      "enabled": true,
+      "protonId": "flt-42",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.health.example\" {\n  fileinto \"health/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Health - Shipping",
+      "enabled": true,
+      "protonId": "flt-43",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.health.example\") {\n  fileinto \"health/shipping\";\n}"
+    },
+    {
+      "name": "Health - Returns",
+      "enabled": true,
+      "protonId": "flt-44",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.health.example\" {\n  fileinto \"health/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Health - Letters",
+      "enabled": true,
+      "protonId": "flt-45",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.health.example\") {\n  fileinto \"health/letters\";\n}"
+    },
+    {
+      "name": "School - Statements",
+      "enabled": true,
+      "protonId": "flt-46",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.school.example\" {\n  fileinto \"school/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "School - Invoices",
+      "enabled": true,
+      "protonId": "flt-47",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.school.example\") {\n  fileinto \"school/invoices\";\n}"
+    },
+    {
+      "name": "School - Shipping",
+      "enabled": true,
+      "protonId": "flt-48",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.school.example\" {\n  fileinto \"school/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "School - Returns",
+      "enabled": true,
+      "protonId": "flt-49",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.school.example\") {\n  fileinto \"school/returns\";\n}"
+    },
+    {
+      "name": "School - Letters",
+      "enabled": true,
+      "protonId": "flt-50",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.school.example\" {\n  fileinto \"school/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Civic - Statements",
+      "enabled": true,
+      "protonId": "flt-51",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.civic.example\") {\n  fileinto \"civic/statements\";\n}"
+    },
+    {
+      "name": "Civic - Invoices",
+      "enabled": true,
+      "protonId": "flt-52",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.civic.example\" {\n  fileinto \"civic/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Civic - Shipping",
+      "enabled": true,
+      "protonId": "flt-53",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.civic.example\") {\n  fileinto \"civic/shipping\";\n}"
+    },
+    {
+      "name": "Civic - Returns",
+      "enabled": true,
+      "protonId": "flt-54",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.civic.example\" {\n  fileinto \"civic/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Civic - Letters",
+      "enabled": true,
+      "protonId": "flt-55",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.civic.example\") {\n  fileinto \"civic/letters\";\n}"
+    },
+    {
+      "name": "Hobby - Statements",
+      "enabled": true,
+      "protonId": "flt-56",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.hobby.example\" {\n  fileinto \"hobby/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Hobby - Invoices",
+      "enabled": true,
+      "protonId": "flt-57",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.hobby.example\") {\n  fileinto \"hobby/invoices\";\n}"
+    },
+    {
+      "name": "Hobby - Shipping",
+      "enabled": true,
+      "protonId": "flt-58",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.hobby.example\" {\n  fileinto \"hobby/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    },
+    {
+      "name": "Hobby - Returns",
+      "enabled": true,
+      "protonId": "flt-59",
+      "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.hobby.example\") {\n  fileinto \"hobby/returns\";\n}"
+    },
+    {
+      "name": "Hobby - Letters",
+      "enabled": true,
+      "protonId": "flt-60",
+      "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.hobby.example\" {\n  fileinto \"hobby/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+    }
+  ],
+  "observed": {
+    "filters": [
+      {
+        "id": "flt-01",
+        "name": "+Owner",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+owner\" {\n  fileinto \"Inbox\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-02",
+        "name": "+Family & .family",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"fileinto\"];\nif anyof (address :all :is \"To\" \"owner+family@example.test\", address :all :is \"To\" \"owner.family@example.test\") {\n  fileinto \"family\";\n}"
+      },
+      {
+        "id": "flt-03",
+        "name": "+Travel",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+travel\" {\n  fileinto \"travel\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-04",
+        "name": "Bot - Archive",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+archive\" {\n  fileinto \"archive\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-05",
+        "name": "+school",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# email-organizer route profile\nif address :localpart :matches \"To\" \"*+school\" {\n  fileinto \"school\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-06",
+        "name": "Fin - Notif",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"notices.fin.example\" {\n  fileinto \"fin/notifications\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-07",
+        "name": "Fin - Investment",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk.invest.example\") {\n  fileinto \"fin/investments\";\n}"
+      },
+      {
+        "id": "flt-08",
+        "name": "Fin - Bank",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"desk.bank.example\" {\n  fileinto \"fin/banking\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-09",
+        "name": "Shop - Coupons",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"promo.shop.example\" {\n  fileinto \"Spam\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-10",
+        "name": "News - Digests",
+        "enabled": false,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"digest.news.example\") {\n  fileinto \"news/digests\";\n}"
+      },
+      {
+        "id": "flt-11",
+        "name": "Fin - Statements",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.fin.example\") {\n  fileinto \"fin/statements\";\n}"
+      },
+      {
+        "id": "flt-12",
+        "name": "Fin - Invoices",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.fin.example\" {\n  fileinto \"fin/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-13",
+        "name": "Fin - Shipping",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.fin.example\") {\n  fileinto \"fin/shipping\";\n}"
+      },
+      {
+        "id": "flt-14",
+        "name": "Fin - Returns",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.fin.example\" {\n  fileinto \"fin/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-15",
+        "name": "Fin - Letters",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.fin.example\") {\n  fileinto \"fin/letters\";\n}"
+      },
+      {
+        "id": "flt-16",
+        "name": "Shop - Statements",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.shop.example\" {\n  fileinto \"shop/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-17",
+        "name": "Shop - Invoices",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.shop.example\") {\n  fileinto \"shop/invoices\";\n}"
+      },
+      {
+        "id": "flt-18",
+        "name": "Shop - Shipping",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.shop.example\" {\n  fileinto \"shop/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-19",
+        "name": "Shop - Returns",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.shop.example\") {\n  fileinto \"shop/returns\";\n}"
+      },
+      {
+        "id": "flt-20",
+        "name": "Shop - Letters",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.shop.example\" {\n  fileinto \"shop/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-21",
+        "name": "News - Statements",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.news.example\") {\n  fileinto \"news/statements\";\n}"
+      },
+      {
+        "id": "flt-22",
+        "name": "News - Invoices",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.news.example\" {\n  fileinto \"news/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-23",
+        "name": "News - Shipping",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.news.example\") {\n  fileinto \"news/shipping\";\n}"
+      },
+      {
+        "id": "flt-24",
+        "name": "News - Returns",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.news.example\" {\n  fileinto \"news/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-25",
+        "name": "News - Letters",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.news.example\") {\n  fileinto \"news/letters\";\n}"
+      },
+      {
+        "id": "flt-26",
+        "name": "Work - Statements",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.work.example\" {\n  fileinto \"work/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-27",
+        "name": "Work - Invoices",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.work.example\") {\n  fileinto \"work/invoices\";\n}"
+      },
+      {
+        "id": "flt-28",
+        "name": "Work - Shipping",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.work.example\" {\n  fileinto \"work/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-29",
+        "name": "Work - Returns",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.work.example\") {\n  fileinto \"work/returns\";\n}"
+      },
+      {
+        "id": "flt-30",
+        "name": "Work - Letters",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.work.example\" {\n  fileinto \"work/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-31",
+        "name": "Home - Statements",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.home.example\") {\n  fileinto \"home/statements\";\n}"
+      },
+      {
+        "id": "flt-32",
+        "name": "Home - Invoices",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.home.example\" {\n  fileinto \"home/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-33",
+        "name": "Home - Shipping",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.home.example\") {\n  fileinto \"home/shipping\";\n}"
+      },
+      {
+        "id": "flt-34",
+        "name": "Home - Returns",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.home.example\" {\n  fileinto \"home/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-35",
+        "name": "Home - Letters",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.home.example\") {\n  fileinto \"home/letters\";\n}"
+      },
+      {
+        "id": "flt-36",
+        "name": "Travel - Statements",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.travel.example\" {\n  fileinto \"travel/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-37",
+        "name": "Travel - Invoices",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.travel.example\") {\n  fileinto \"travel/invoices\";\n}"
+      },
+      {
+        "id": "flt-38",
+        "name": "Travel - Shipping",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.travel.example\" {\n  fileinto \"travel/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-39",
+        "name": "Travel - Returns",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.travel.example\") {\n  fileinto \"travel/returns\";\n}"
+      },
+      {
+        "id": "flt-40",
+        "name": "Travel - Letters",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.travel.example\" {\n  fileinto \"travel/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-41",
+        "name": "Health - Statements",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.health.example\") {\n  fileinto \"health/statements\";\n}"
+      },
+      {
+        "id": "flt-42",
+        "name": "Health - Invoices",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.health.example\" {\n  fileinto \"health/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-43",
+        "name": "Health - Shipping",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.health.example\") {\n  fileinto \"health/shipping\";\n}"
+      },
+      {
+        "id": "flt-44",
+        "name": "Health - Returns",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.health.example\" {\n  fileinto \"health/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-45",
+        "name": "Health - Letters",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.health.example\") {\n  fileinto \"health/letters\";\n}"
+      },
+      {
+        "id": "flt-46",
+        "name": "School - Statements",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.school.example\" {\n  fileinto \"school/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-47",
+        "name": "School - Invoices",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.school.example\") {\n  fileinto \"school/invoices\";\n}"
+      },
+      {
+        "id": "flt-48",
+        "name": "School - Shipping",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.school.example\" {\n  fileinto \"school/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-49",
+        "name": "School - Returns",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.school.example\") {\n  fileinto \"school/returns\";\n}"
+      },
+      {
+        "id": "flt-50",
+        "name": "School - Letters",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.school.example\" {\n  fileinto \"school/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-51",
+        "name": "Civic - Statements",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@statements.civic.example\") {\n  fileinto \"civic/statements\";\n}"
+      },
+      {
+        "id": "flt-52",
+        "name": "Civic - Invoices",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"invoices.civic.example\" {\n  fileinto \"civic/invoices\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-53",
+        "name": "Civic - Shipping",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@shipping.civic.example\") {\n  fileinto \"civic/shipping\";\n}"
+      },
+      {
+        "id": "flt-54",
+        "name": "Civic - Returns",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"returns.civic.example\" {\n  fileinto \"civic/returns\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-55",
+        "name": "Civic - Letters",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@letters.civic.example\") {\n  fileinto \"civic/letters\";\n}"
+      },
+      {
+        "id": "flt-56",
+        "name": "Hobby - Statements",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"statements.hobby.example\" {\n  fileinto \"hobby/statements\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-57",
+        "name": "Hobby - Invoices",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@invoices.hobby.example\") {\n  fileinto \"hobby/invoices\";\n}"
+      },
+      {
+        "id": "flt-58",
+        "name": "Hobby - Shipping",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"shipping.hobby.example\" {\n  fileinto \"hobby/shipping\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      },
+      {
+        "id": "flt-59",
+        "name": "Hobby - Returns",
+        "enabled": true,
+        "sieve": "require [\"include\", \"environment\", \"variables\", \"relational\", \"comparator-i;ascii-numeric\", \"spamtest\"];\nif allof (environment :matches \"vnd.proton.origination\" \"*\", address :all :comparator \"i;unicode-casemap\" :is \"From\" \"desk@returns.hobby.example\") {\n  fileinto \"hobby/returns\";\n}"
+      },
+      {
+        "id": "flt-60",
+        "name": "Hobby - Letters",
+        "enabled": true,
+        "sieve": "require [\"fileinto\", \"imap4flags\"];\n# Generated by email-organizer.\nif address :domain :is \"From\" \"letters.hobby.example\" {\n  fileinto \"hobby/letters\";\n  addflag \"\\\\Seen\";\n  stop;\n}"
+      }
+    ],
+    "folders": [
+      {
+        "id": "fld-inbox",
+        "path": "Inbox",
+        "name": "Inbox",
+        "type": "system"
+      },
+      {
+        "id": "fld-spam",
+        "path": "Spam",
+        "name": "Spam",
+        "type": "system"
+      },
+      {
+        "id": "fld-trash",
+        "path": "Trash",
+        "name": "Trash",
+        "type": "system"
+      },
+      {
+        "id": "fld-family",
+        "path": "family",
+        "name": "family",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel",
+        "path": "travel",
+        "name": "travel",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school",
+        "path": "school",
+        "name": "school",
+        "type": "folder"
+      },
+      {
+        "id": "fld-archive",
+        "path": "archive",
+        "name": "archive",
+        "type": "folder"
+      },
+      {
+        "id": "fld-banking",
+        "path": "fin/banking",
+        "name": "banking",
+        "type": "folder"
+      },
+      {
+        "id": "fld-investments",
+        "path": "fin/investments",
+        "name": "investments",
+        "type": "folder"
+      },
+      {
+        "id": "fld-notifications",
+        "path": "fin/notifications",
+        "name": "notifications",
+        "type": "folder"
+      },
+      {
+        "id": "fld-alerts",
+        "path": "Notification/Alerts",
+        "name": "Alerts",
+        "type": "folder"
+      },
+      {
+        "id": "fld-legacy-banking",
+        "path": "Fin/Banking",
+        "name": "Banking",
+        "type": "folder"
+      },
+      {
+        "id": "fld-fin-statements",
+        "path": "fin/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-fin-invoices",
+        "path": "fin/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-fin-shipping",
+        "path": "fin/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-fin-returns",
+        "path": "fin/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-fin-letters",
+        "path": "fin/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-shop-statements",
+        "path": "shop/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-shop-invoices",
+        "path": "shop/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-shop-shipping",
+        "path": "shop/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-shop-returns",
+        "path": "shop/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-shop-letters",
+        "path": "shop/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-news-statements",
+        "path": "news/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-news-invoices",
+        "path": "news/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-news-shipping",
+        "path": "news/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-news-returns",
+        "path": "news/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-news-letters",
+        "path": "news/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-work-statements",
+        "path": "work/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-work-invoices",
+        "path": "work/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-work-shipping",
+        "path": "work/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-work-returns",
+        "path": "work/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-work-letters",
+        "path": "work/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-home-statements",
+        "path": "home/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-home-invoices",
+        "path": "home/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-home-shipping",
+        "path": "home/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-home-returns",
+        "path": "home/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-home-letters",
+        "path": "home/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel-statements",
+        "path": "travel/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel-invoices",
+        "path": "travel/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel-shipping",
+        "path": "travel/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel-returns",
+        "path": "travel/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-travel-letters",
+        "path": "travel/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-health-statements",
+        "path": "health/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-health-invoices",
+        "path": "health/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-health-shipping",
+        "path": "health/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-health-returns",
+        "path": "health/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-health-letters",
+        "path": "health/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school-statements",
+        "path": "school/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school-invoices",
+        "path": "school/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school-shipping",
+        "path": "school/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school-returns",
+        "path": "school/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-school-letters",
+        "path": "school/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-civic-statements",
+        "path": "civic/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-civic-invoices",
+        "path": "civic/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-civic-shipping",
+        "path": "civic/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-civic-returns",
+        "path": "civic/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-civic-letters",
+        "path": "civic/letters",
+        "name": "letters",
+        "type": "folder"
+      },
+      {
+        "id": "fld-hobby-statements",
+        "path": "hobby/statements",
+        "name": "statements",
+        "type": "folder"
+      },
+      {
+        "id": "fld-hobby-invoices",
+        "path": "hobby/invoices",
+        "name": "invoices",
+        "type": "folder"
+      },
+      {
+        "id": "fld-hobby-shipping",
+        "path": "hobby/shipping",
+        "name": "shipping",
+        "type": "folder"
+      },
+      {
+        "id": "fld-hobby-returns",
+        "path": "hobby/returns",
+        "name": "returns",
+        "type": "folder"
+      },
+      {
+        "id": "fld-hobby-letters",
+        "path": "hobby/letters",
+        "name": "letters",
+        "type": "folder"
+      }
+    ]
+  }
+}

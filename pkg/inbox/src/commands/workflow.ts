@@ -164,7 +164,7 @@ export async function loadFilters(context: CliContext): Promise<void> {
 			count: filters.length,
 			redacted: true,
 			snippetLength,
-			note: "conditions and actions in filters.json are redacted snippets and can cut a rule off mid-string. filters extend reads the live rule for a full before/after diff.",
+			note: "conditions and actions in filters.json are redacted snippets and can cut a rule off mid-string. filters import stores the full Sieve in declared-filters.json. filters sync is the Proton write path.",
 		});
 	} finally {
 		await client.close?.();
