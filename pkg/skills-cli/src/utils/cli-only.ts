@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Command } from "commander";
+import { cliDest } from "./lib";
 
 export const EXTENSION_COMMANDS = [
 	"batch-open",
@@ -23,7 +24,10 @@ export function setCliOnly(enabled: boolean): void {
 }
 
 export function extensionRequiredMessage(subject: string): string {
-	return `${subject} needs the dg-ai-extension, but this is a CLI-only install. Run "dg-skills install" to add the extension, dg-daemon and dg-agent.`;
+	const toAdd = existsSync(cliDest("dg-agent"))
+		? "the extension and dg-daemon"
+		: "the extension, dg-daemon and dg-agent";
+	return `${subject} needs the dg-ai-extension, but this is a CLI-only install. Run "dg-skills install" to add ${toAdd}.`;
 }
 
 export function assertExtensionInstalled(subject: string): void {

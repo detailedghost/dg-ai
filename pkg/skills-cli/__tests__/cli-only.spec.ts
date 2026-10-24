@@ -22,6 +22,7 @@ import {
 	registerRequireExtension,
 	setCliOnly,
 } from "../src/utils/cli-only";
+import { cliBinDir, cliDest } from "../src/utils/lib";
 
 const skillsDir = new URL("../../../plugins/dg/skills/", import.meta.url).pathname;
 const bootstrap = new URL("../bootstrap.sh", import.meta.url).pathname;
@@ -96,6 +97,17 @@ describe("extension guard", () => {
 		await program.parseAsync(["channel-review"], { from: "user" });
 		await program.parseAsync(["inbox"], { from: "user" });
 		expect(calls).toEqual(["channel-review", "inbox"]);
+	});
+
+	test("omits dg-agent from the hint once an agent-only install already placed it", async () => {
+		setCliOnly(true);
+		expect(extensionRequiredMessage("x")).toContain("the extension, dg-daemon and dg-agent");
+
+		mkdirSync(cliBinDir(), { recursive: true });
+		writeFileSync(cliDest("dg-agent"), "");
+
+		expect(extensionRequiredMessage("x")).toContain("the extension and dg-daemon");
+		expect(extensionRequiredMessage("x")).not.toContain("dg-agent.");
 	});
 
 	test("require-extension names the skill and how to add the extension", async () => {
