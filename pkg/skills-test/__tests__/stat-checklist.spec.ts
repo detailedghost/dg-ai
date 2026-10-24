@@ -1,8 +1,8 @@
 /**
  * Black-box checks for `dg-skills stat`: the POSIX table actually parses with
- * `awk`, the plain view is actually ASCII, and both the plain and default
- * views survive a real run through `marked` with the structure the checklist
- * is supposed to have (nested ordered lists, task items for --plain).
+ * `awk`, the plain view is actually ASCII, and the plain view survives a
+ * real run through `marked` with the structure it is supposed to have
+ * (nested ordered lists, task-list checkboxes).
  */
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";

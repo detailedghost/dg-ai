@@ -13,7 +13,13 @@ import {
 	serializeChecklist,
 	setStatus,
 } from "../src/stat/checklist";
-import { type ChecklistItem, type ChecklistModel, emptyModel } from "../src/stat/model";
+import {
+	type ChecklistItem,
+	type ChecklistModel,
+	emptyModel,
+	STATUS_EMOJI,
+	STATUSES,
+} from "../src/stat/model";
 
 function item(text: string, overrides: Partial<ChecklistItem> = {}): ChecklistItem {
 	return { text, status: "queued", children: [], ...overrides };
@@ -125,6 +131,18 @@ describe("renderers", () => {
 			done: [item("Sign in to GitHub", { status: "done" })],
 		};
 	}
+
+	test("renderEmoji carries every status's own emoji from STATUS_EMOJI, not just a few", () => {
+		const nonDone = STATUSES.filter((status) => status !== "done");
+		const model: ChecklistModel = {
+			open: nonDone.map((status) => item(status, { status })),
+			done: [item("done", { status: "done" })],
+		};
+		const lines = renderEmoji(model).split("\n").filter((line) => /^\d/.test(line));
+		expect(lines).toHaveLength(STATUSES.length);
+		for (const [index, status] of [...nonDone, "done" as const].entries())
+			expect(lines[index]).toContain(STATUS_EMOJI[status]);
+	});
 
 	test("renderEmoji shows emoji, an eta suffix on the agent item, none on the user item, and a blank line before Total", () => {
 		const out = renderEmoji(sample());
