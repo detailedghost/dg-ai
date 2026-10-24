@@ -112,7 +112,7 @@ Then add what only you know: your current foreground task, how far into it you a
 
 Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `~/.dg/bin/dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
 
-The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own open agent items. Two things are still judgment, left to the main loop:
+The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
 
 - **Session-only work not yet on the list.** Prefer adding it first (see "Keeping the list current" below), so the checklist already reflects it. If you do not, append a short, plain trailer after the CLI's own output: `Also running, not on the list:` followed by one line per item. Do this for the default and `--plain` views; for `--long`, append the same items as additional rows (see below) instead.
 - **A fuller critical-path total.** The CLI's `Total:`/`# Total:` line is computed from checklist agent ETAs alone. When this session also has foreground or background work not on the checklist, recompute the total as `max(foreground serial chain, longest background chain)` — the critical path, not the sum — folding in the checklist's own total as one candidate chain. Replace the CLI's total line with this fuller one; name the chain that set the number.

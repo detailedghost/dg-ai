@@ -22,7 +22,7 @@ const ETA_SUFFIX = /^(.*) \[(<5 min|~15 min|~30 min|~1 hr|>1 hr|unknown)\]$/;
 const ESCAPED_ETA_SUFFIX = /^(.*)\\(\[(<5 min|~15 min|~30 min|~1 hr|>1 hr|unknown)\])$/;
 
 export function sanitizeText(text: string): string {
-	return text.replace(/[\t\r\n]+/g, " ").trim();
+	return text.replace(/[\t\r\n\u2028\u2029]+/g, " ").trim();
 }
 
 function toAscii(text: string): string {
@@ -164,6 +164,11 @@ export interface TotalResult {
 	label?: { order: string; text: string };
 }
 
+function topLevelOrderOf(label: string): string {
+	const dot = label.indexOf(".");
+	return dot === -1 ? label : label.slice(0, dot);
+}
+
 /** The unfinished agent item with the largest known ETA names the critical path. Parked work is excluded. Ties keep priority order. */
 export function computeTotal(model: ChecklistModel): TotalResult | null {
 	let anyUnfinished = false;
@@ -254,7 +259,13 @@ export function renderLong(model: ChecklistModel): string {
 	const total = computeTotal(model);
 	if (total) {
 		const folded: TotalResult = total.label
-			? { bucket: total.bucket, label: { order: total.label.order, text: tsvField(total.label.text) } }
+			? {
+					bucket: total.bucket,
+					label: {
+						order: topLevelOrderOf(total.label.order),
+						text: tsvField(total.label.text),
+					},
+				}
 			: total;
 		const line = totalLine(folded, "# ");
 		if (line) lines.push(line);

@@ -118,6 +118,28 @@ describe("checklist store", () => {
 		});
 	}, 20_000);
 
+	test("an empty lock left by a crash between create and write becomes stale after a short grace period", async () => {
+		await withIsolatedState(async () => {
+			const path = checklistPath();
+			writeFileSync(`${path}.lock`, "");
+			await updateChecklist(path, (model) => mustAdd(model, "next"));
+			expect(readChecklist(path).open.map((item) => item.text)).toEqual(["next"]);
+			expect(existsSync(`${path}.lock`)).toBe(false);
+		});
+	}, 20_000);
+
+	test("several callers queued on the same dead-pid lock all land their update serially, none lost", async () => {
+		await withIsolatedState(async () => {
+			const path = checklistPath();
+			writeFileSync(`${path}.lock`, "2147483646");
+			await Promise.all(
+				["a", "b", "c", "d"].map((text) => updateChecklist(path, (model) => mustAdd(model, text))),
+			);
+			expect(readChecklist(path).open.map((item) => item.text).sort()).toEqual(["a", "b", "c", "d"]);
+			expect(existsSync(`${path}.lock`)).toBe(false);
+		});
+	}, 20_000);
+
 	test("a thrown mutation releases the lock and does not write", async () => {
 		await withIsolatedState(async () => {
 			const path = checklistPath();

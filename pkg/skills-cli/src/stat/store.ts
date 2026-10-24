@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isAlive, statePath, writeFileAtomic } from "@dg/common/node";
 import { type ChecklistModel, emptyModel } from "./model";
@@ -6,6 +7,7 @@ import { parseChecklist, serializeChecklist } from "./checklist";
 
 const LOCK_TRIES = 50;
 const LOCK_WAIT_MS = 100;
+const EMPTY_LOCK_STALE_MS = 2000;
 
 export function checklistPath(cwd?: string): string {
 	return statePath("stat", "checklist.md", cwd ? { cwd } : {});
@@ -20,13 +22,45 @@ export function writeChecklist(path: string, model: ChecklistModel): void {
 	writeFileAtomic(path, serializeChecklist(model));
 }
 
-function lockOwnerGone(lock: string): boolean {
+/**
+ * A lock naming a dead pid is stale. An empty lock (a crash between creating it and writing its pid) is stale
+ * once it's old enough that a legitimate writer would already have named itself. A lock already gone needs no
+ * reclaiming. A lock this process can't read for any other reason is left alone, since it might be live and
+ * merely unreadable to this process.
+ */
+function isLockStale(lock: string): boolean {
+	let raw: string;
 	try {
-		const pid = Number.parseInt(readFileSync(lock, "utf8"), 10);
+		raw = readFileSync(lock, "utf8");
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ENOENT";
+	}
+	if (raw !== "") {
+		const pid = Number.parseInt(raw, 10);
 		return Number.isSafeInteger(pid) && pid > 1 && !isAlive(pid);
+	}
+	try {
+		return Date.now() - statSync(lock).mtimeMs > EMPTY_LOCK_STALE_MS;
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Claims a lock this process judged stale by renaming it aside first. The rename is atomic, so of several
+ * contenders that all judged the same lock stale, only one wins it; a loser gets ENOENT and backs off rather
+ * than deleting whatever the winner just created in its place — closing the check-then-remove race where two
+ * waiters could otherwise both decide "stale" and the second one deletes the first's fresh, live lock.
+ */
+function reclaimStaleLock(lock: string): void {
+	const claim = `${lock}.${process.pid}.${randomUUID()}.stale`;
+	try {
+		renameSync(lock, claim);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	rmSync(claim, { force: true });
 }
 
 /** Same exclusive lockfile the checkpoint writer uses: create with `wx`, steal a dead owner's lock, wait a bounded time. */
@@ -40,7 +74,7 @@ async function withChecklistLock<T>(file: string, fn: () => T | Promise<T>): Pro
 			held = true;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			if (lockOwnerGone(lock)) rmSync(lock, { force: true });
+			if (isLockStale(lock)) reclaimStaleLock(lock);
 			else await Bun.sleep(LOCK_WAIT_MS);
 		}
 	}

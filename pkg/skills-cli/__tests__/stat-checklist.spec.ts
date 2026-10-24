@@ -29,6 +29,18 @@ describe("sanitizeText", () => {
 	test("collapses tabs, carriage returns and newlines into a single space, and trims", () => {
 		expect(sanitizeText("  foo\tbar\r\nbaz  ")).toBe("foo bar baz");
 	});
+
+	test("folds the unicode line and paragraph separators, which the item-line regex can't match, so a stored item can't silently vanish on the next read", () => {
+		expect(sanitizeText("first second")).toBe("first second");
+		expect(sanitizeText("first second")).toBe("first second");
+		for (const raw of ["first second", "first second"]) {
+			const added = addItem(emptyModel(), raw);
+			if (!added.ok) throw new Error("expected success");
+			const text = serializeChecklist(added.model);
+			expect(parseChecklist(text).open).toHaveLength(1);
+			expect(parseChecklist(text).open[0]?.text).toBe("first second");
+		}
+	});
 });
 
 describe("parseChecklist / serializeChecklist round trip", () => {
@@ -207,6 +219,14 @@ describe("renderers", () => {
 	test("renderLong sanitizes an embedded tab in item text to a space", () => {
 		const out = renderLong({ open: [item("has\ta\ttab")], done: [] });
 		expect(out).toContain("has a tab");
+	});
+
+	test("renderLong's total cites a winning sub-item by its parent's top-level number, since every sub-item row prints '-' in ORDER", () => {
+		const parent = item("parent", { status: "running", eta: "~15 min" });
+		parent.children.push(item("child", { status: "running", eta: "~1 hr" }));
+		const model: ChecklistModel = { open: [item("other"), parent], done: [] };
+		expect(renderLong(model)).toContain("# Total: ~1 hr (critical path: 2 child)");
+		expect(computeTotal(model)).toEqual({ bucket: "~1 hr", label: { order: "2.1", text: "child" } });
 	});
 
 	test("every view reports an empty checklist with one line naming how to add items", () => {
