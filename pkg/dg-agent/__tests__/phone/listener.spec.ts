@@ -11,7 +11,10 @@ import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
 import {
 	claimListener,
+	commandLookupFromText,
+	displaceStaleLock,
 	ensureListenerSubscribed,
+	holderVerdict,
 	isListenerArgs,
 	isOurListener,
 	listenerClaimPath,
@@ -603,7 +606,7 @@ describe("claimListener", () => {
 		writeFileSync(listenerClaimPath(paths), "4242\n", { mode: 0o600 });
 		const stderr = captureStderr();
 		try {
-			expect(claimListener(paths, 5150, () => true)).toBe(false);
+			expect(claimListener(paths, 5150, () => "ours")).toBe(false);
 			expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("4242");
 			expect(stderr.lines.join("")).toContain("listener claim lost to 4242; pid 5150 is exiting");
 		} finally {
@@ -620,5 +623,90 @@ describe("claimListener", () => {
 		utimesSync(listenerClaimPath(paths), past, past);
 		expect(claimListener(paths, 5150)).toBe(true);
 		expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("5150");
+	});
+
+	it("keeps a lock when the holder's command line cannot be read", () => {
+		writeFileSync(listenerClaimPath(paths), "4242\n", { mode: 0o600 });
+		const stderr = captureStderr();
+		try {
+			expect(claimListener(paths, 5150, () => "unknown")).toBe(false);
+			expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("4242");
+			expect(stderr.lines.join("")).toContain("could not read the holder's command line; leaving its lock; pid 5150 is exiting");
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	it("falls back to an exclusive create when the filesystem cannot hard-link", () => {
+		const link = () => {
+			const err = new Error("operation not supported") as NodeJS.ErrnoException;
+			err.code = "ENOTSUP";
+			throw err;
+		};
+
+		expect(claimListener(paths, 5150, () => "foreign", link)).toBe(true);
+		expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("5150");
+	});
+
+	it("does not throw when linking fails and a phone listener already holds the lock", () => {
+		writeFileSync(listenerClaimPath(paths), "4242\n", { mode: 0o600 });
+		const link = () => {
+			const err = new Error("operation not supported") as NodeJS.ErrnoException;
+			err.code = "ENOTSUP";
+			throw err;
+		};
+		const stderr = captureStderr();
+		try {
+			expect(claimListener(paths, 5150, () => "ours", link)).toBe(false);
+			expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("4242");
+			expect(stderr.lines.join("")).toContain("listener claim lost to 4242; pid 5150 is exiting");
+		} finally {
+			stderr.restore();
+		}
+	});
+});
+
+describe("commandLookupFromText", () => {
+	it("treats a failed or empty lookup as unknown and a real command line as args", () => {
+		expect(commandLookupFromText(1, "")).toEqual({ kind: "unknown" });
+		expect(commandLookupFromText(0, "")).toEqual({ kind: "unknown" });
+		expect(commandLookupFromText(0, "   ")).toEqual({ kind: "unknown" });
+		expect(commandLookupFromText(null, undefined)).toEqual({ kind: "unknown" });
+		expect(commandLookupFromText(0, "C:\\dg\\dg-agent.exe phone __run")).toEqual({
+			kind: "args",
+			args: ["C:\\dg\\dg-agent.exe", "phone", "__run"],
+		});
+		expect(commandLookupFromText(0, "notepad.exe")).toEqual({ kind: "args", args: ["notepad.exe"] });
+	});
+});
+
+describe("holderVerdict", () => {
+	it("calls a dead pid foreign and does not throw when its command line is gone", async () => {
+		const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		await new Promise((resolve) => child.once("exit", resolve));
+
+		expect(holderVerdict(pid)).toBe("foreign");
+	});
+});
+
+describe("displaceStaleLock", () => {
+	it("deletes a stale lock only when the renamed bytes are the ones that were judged stale", () => {
+		const path = listenerClaimPath(paths);
+		writeFileSync(path, "111\n", { mode: 0o600 });
+
+		expect(displaceStaleLock(path, "111\n", `${path}.aside`)).toBe("displaced");
+		expect(existsSync(path)).toBe(false);
+		expect(existsSync(`${path}.aside`)).toBe(false);
+	});
+
+	it("puts the lock back when the renamed file is no longer the stale bytes", () => {
+		const path = listenerClaimPath(paths);
+		writeFileSync(path, "222\n", { mode: 0o600 });
+
+		expect(displaceStaleLock(path, "111\n", `${path}.aside`)).toBe("restored");
+		expect(readFileSync(path, "utf8")).toBe("222\n");
+		expect(existsSync(`${path}.aside`)).toBe(false);
 	});
 });

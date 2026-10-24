@@ -217,9 +217,10 @@ service manager's copy keeps running. `close` stops it. More than one old
 listener is stopped, and exactly one new listener starts only after each of
 them has exited. If one will not exit, nothing new is started and `phone.db`
 is not written. That process keeps running, and any listener that already
-exited stays stopped. If the new listener fails to start, every stopped
-listener is started again against its own line database, `phone.db` is
-removed, and the command fails. The old root stays in place on that failure
+exited stays stopped. If the new listener fails to start, `phone.db` is kept
+and one `phone __run` is started against it, reported only if that process
+stays up. The old per-line listener command is not restarted. The old
+root stays in place on that failure
 and is renamed to `~/.dg/phone-friend.migrated` only after a start that
 succeeded. Every later command is a no-op migration check. To roll back, rename
 `~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend` and run the old

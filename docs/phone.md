@@ -82,7 +82,8 @@ commands, per platform:
 | Windows | `<phoneRoot>/dg-phone.task.xml` | `schtasks /End` (best-effort, avoids racing a task it is about to replace) then `schtasks /Create /TN dg-phone /XML <path> /F`, then `schtasks /Run /TN dg-phone` |
 
 When `DG_HOME` is set, the Windows task passes it to the listener as
-`--dg-home`, since a task has no environment block. If `schtasks /Run` fails
+`--dg-home`, since a task has no environment block. `ExecutionTimeLimit` is
+`PT0S`, so Task Scheduler does not stop the listener after 72 hours. If `schtasks /Run` fails
 after `/Create` registered the task, that task is deleted. The XML file is
 kept only when the delete fails, so `close` can retry the cleanup.
 
@@ -161,9 +162,10 @@ and, only after every one has exited, starts exactly one new listener and
 records its pid. If one will not exit, no new listener is started and
 `phone.db` is not written. That process keeps running. Any listener that
 already exited stays stopped. If the new listener fails to start after the
-old ones have exited, every stopped listener is started again against its
-own line database, `phone.db` is removed, and the command fails so the
-migration can be retried. The old root stays in place on that failure.
+old ones have exited, `phone.db` is kept and one `phone __run` is started
+against it. That is reported only when the process stays up. The old
+`phone-friend --line` command is not restarted: this binary rejects it.
+The old root stays in place on that failure.
 
 A start that succeeds renames the old root to `~/.dg/phone-friend.migrated`
 and prints a one-line summary to stderr. Every later command sees `phone.db`

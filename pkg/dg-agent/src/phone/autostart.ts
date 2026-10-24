@@ -162,6 +162,7 @@ export function windowsTaskXml(spec: AutostartSpec): string {
 		"\t</Triggers>",
 		"\t<Settings>",
 		"\t\t<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
+		"\t\t<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
 		"\t\t<RestartOnFailure>",
 		"\t\t\t<Interval>PT1M</Interval>",
 		"\t\t\t<Count>10</Count>",

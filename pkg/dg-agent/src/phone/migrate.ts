@@ -12,7 +12,6 @@ import {
 	listenerCommandArgs,
 	listenerGeneration,
 	listenerLogPath,
-	listenerPidPath,
 	spawnDetachedListener,
 	type ListenerGeneration,
 } from "./listener";
@@ -41,8 +40,8 @@ export type MigrationResult =
 			numberKey: string;
 			/** `adopted` keeps a listener that is already `phone __run`. `replaced` stopped the old
 			 * ones and started exactly one new listener, with its pid recorded. `none` means nothing
-			 * was listening. A failed replacement throws instead of returning: every stopped listener
-			 * is started again on its own line database and `phone.db` is removed. */
+			 * was listening. A failed replacement throws: one `phone __run` is started against the
+			 * kept `phone.db` and the message says so only when that process stays up. */
 			listener: "adopted" | "replaced" | "none";
 			/** Resolves once every `dg-daemon job disable` attempt has settled; the one-time stderr
 			 * summary is written when this resolves. Production callers ignore it; tests await it. */
@@ -361,8 +360,9 @@ function releaseMigrationLock(paths: DgPaths): void {
  * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
  * key, contact, invite, and message into one `phone.db`. A listener that is already `phone __run`
  * is kept. An old `phone-friend __run` is stopped and exactly one new listener is started against
- * `phone.db`, with its pid recorded. If that start throws, every stopped listener is started again
- * on its own line database and `phone.db` is removed. Read-only commands do not call this.
+ * `phone.db`, with its pid recorded. If that start throws, one `phone __run` is started against
+ * the kept `phone.db` and reported only if it stays up. This binary rejects `phone-friend --line`.
+ * Read-only commands do not call this.
  */
 export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigrateDeps()): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
@@ -377,24 +377,44 @@ export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigra
 
 type SavedListener = { pid: number; argv: string[] | undefined };
 
-/** Drops a phone.db the restored line listeners will not write, so the next command can migrate again. */
-function removeMigratedDb(paths: DgPaths): void {
-	rmSync(PhoneDb.path(paths), { force: true });
-	rmSync(join(paths.phoneRoot, "phone.db.tmp"), { force: true });
-	rmSync(listenerPidPath(paths), { force: true });
+/** Long enough for a process that exits immediately (the new binary rejects `--line`) to be observed dead. */
+const RESTORE_SETTLE_MS = 500;
+
+/**
+ * An argv this binary will keep running. `phone-friend --line` exits 2, so a captured legacy
+ * command is not re-executed. A captured `phone __run` (no `--line`) is. Otherwise the current
+ * binary's own `phone __run` is used, which writes `phone.db`.
+ */
+function argvThisBinaryAccepts(saved: SavedListener[]): string[] {
+	for (const entry of saved) {
+		const argv = entry.argv?.filter((part) => part.length > 0);
+		if (!argv || argv.length === 0) continue;
+		if (argv.includes("--line") || argv.includes("phone-friend")) continue;
+		if (argv.includes("phone") && argv.includes("__run")) return argv;
+	}
+	return selfCommand(["phone", "__run"]);
 }
 
-/** Starts every listener this migration stopped, each with the argv captured before the signal.
- * That argv still points at the line database the process can write. `phone.db` is removed so
- * those processes are the live store again and a later command retries the migration. */
-function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener[]): void {
-	removeMigratedDb(paths);
-	for (const entry of saved) {
-		if (!entry.argv || entry.argv.length === 0) continue;
-		try {
-			deps.restoreListener(paths, entry.argv);
-		} catch {}
+/**
+ * Starts one listener the current binary accepts, against the `phone.db` already written.
+ * Returns it only after it has stayed alive through `RESTORE_SETTLE_MS`. A legacy per-line
+ * command is not started: this binary rejects it, and those processes would exit at once.
+ */
+function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener[]): { stayedUp: boolean; pid?: number } {
+	if (!existsSync(PhoneDb.path(paths))) return { stayedUp: false };
+	let pid: number;
+	try {
+		pid = deps.restoreListener(paths, argvThisBinaryAccepts(saved));
+	} catch {
+		return { stayedUp: false };
 	}
+	for (let waited = 0; waited < RESTORE_SETTLE_MS; waited += 50) {
+		if (!deps.isAlive(pid)) return { stayedUp: false };
+		deps.sleepSync(50);
+	}
+	if (!deps.isAlive(pid)) return { stayedUp: false };
+	adoptListenerPid(paths, { pid, since: deps.now(), hook: null });
+	return { stayedUp: true, pid };
 }
 
 function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
@@ -416,8 +436,9 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 		try {
 			staged = lines.map((line) => readLegacyLine(line));
 		} catch (err) {
-			restorePrevious(paths, deps, saved);
-			throw err;
+			throw new DgCliError(
+				`${describeError(err)} Stopped listeners were not restarted: this binary rejects phone-friend --line, and phone.db was not written.`,
+			);
 		}
 	}
 
@@ -445,10 +466,15 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 			adoptListenerPid(paths, { pid, since: deps.now(), hook: null, relays });
 			listener = "replaced";
 		} catch (err) {
-			restorePrevious(paths, deps, saved);
+			const restored = restorePrevious(paths, deps, saved);
 			const detail = describeError(err);
+			if (restored.stayedUp) {
+				throw new DgCliError(
+					`the replacement phone listener failed to start (${detail}). A phone __run listener (pid ${restored.pid}) stayed up against phone.db. The old per-line listeners were not restarted.`,
+				);
+			}
 			throw new DgCliError(
-				`the replacement phone listener failed to start (${detail}). Restored every stopped listener onto its own line database and removed phone.db`,
+				`the replacement phone listener failed to start (${detail}). No listener stayed up. phone.db was kept. Run phone open.`,
 			);
 		}
 	}

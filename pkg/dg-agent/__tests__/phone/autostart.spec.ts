@@ -153,6 +153,7 @@ describe("windowsTaskXml", () => {
 
 		expect(text).toContain("<LogonTrigger>");
 		expect(text).toContain("<RestartOnFailure>\n\t\t\t<Interval>PT1M</Interval>\n\t\t\t<Count>10</Count>\n\t\t</RestartOnFailure>");
+		expect(text).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>");
 		expect(text).toContain("<Command>C:\\dg\\dg-agent.exe</Command>");
 		expect(text).toContain('<Arguments>phone __run --on-message "C:\\Program Files\\notify.exe" "a b" "c\\"d"</Arguments>');
 		expect(text).not.toContain("--dg-home");

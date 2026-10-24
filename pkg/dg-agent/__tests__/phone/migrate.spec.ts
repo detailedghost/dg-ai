@@ -852,7 +852,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 		}
 	});
 
-	it("restores every stopped listener onto its line database when the replacement fails to spawn", () => {
+	it("starts one phone __run against phone.db when the legacy command would exit, and only says so if it stays up", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -873,13 +873,65 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				migrateIfNeeded(
 					paths,
 					fakeMigrateDeps({
-						classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
-						isAlive: (pid) => alive.has(pid),
+						classifyListener: (pid) => (pid === 4242 || pid === 4243 ? "legacy" : undefined),
+						isAlive: (pid) => alive.has(pid) || pid === 8888,
 						kill: (pid) => {
 							alive.delete(pid);
 						},
 						commandArgs: (pid) =>
-							pid === 4242 ? ["phone-friend", "--line", "default", "__run"] : ["phone-friend", "--line", "work", "__run"],
+							pid === 4242
+								? ["/old/dg-agent", "phone-friend", "--line", "default", "__run"]
+								: ["/old/dg-agent", "phone-friend", "--line", "work", "__run"],
+						startListener: () => {
+							throw new Error("spawn failed");
+						},
+						restoreListener: (_paths, argv) => {
+							restored.push(argv);
+							alive.add(8888);
+							return 8888;
+						},
+						renameLegacyRoot: () => {
+							throw new Error("rename should be skipped");
+						},
+					}),
+				),
+			).toThrow("A phone __run listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
+
+			expect(restored).toHaveLength(1);
+			expect(restored[0]).toContain("phone");
+			expect(restored[0]).toContain("__run");
+			expect(restored[0]?.includes("phone-friend")).toBe(false);
+			expect(restored[0]?.includes("--line")).toBe(false);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(8888);
+			expect(existsSync(PhoneDb.path(paths))).toBe(true);
+			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not claim a restore when the replacement listener exits immediately", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+				listenerPid: 4242,
+			});
+			const alive = new Set([4242]);
+			const restored: string[][] = [];
+
+			expect(() =>
+				migrateIfNeeded(
+					paths,
+					fakeMigrateDeps({
+						classifyListener: (pid) => (pid === 4242 ? "legacy" : undefined),
+						isAlive: (pid) => alive.has(pid),
+						kill: (pid) => {
+							alive.delete(pid);
+						},
+						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
 						startListener: () => {
 							throw new Error("spawn failed");
 						},
@@ -892,17 +944,12 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						},
 					}),
 				),
-			).toThrow("Restored every stopped listener onto its own line database and removed phone.db");
+			).toThrow("No listener stayed up. phone.db was kept. Run phone open.");
 
-			expect(restored).toEqual([
-				["phone-friend", "--line", "default", "__run"],
-				["phone-friend", "--line", "work", "__run"],
-			]);
-			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+			expect(restored).toEqual([["/old/dg-agent", "phone", "__run"]]);
+			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 			expect(existsSync(listenerPidPath(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
-			expect(existsSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"))).toBe(true);
-			expect(existsSync(join(paths.phoneFriendRoot, "work", "phone-friend.db"))).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

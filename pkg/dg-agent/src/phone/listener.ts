@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, linkSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
@@ -61,23 +61,65 @@ export function isListenerArgs(args: string[]): boolean {
 	return (args.includes("phone") || args.includes("phone-friend")) && args.includes("__run");
 }
 
-export function listenerCommandArgs(pid: number): string[] | undefined {
-	if (!isAlive(pid)) return undefined;
+export type ProcessArgs = { kind: "dead" } | { kind: "unknown" } | { kind: "args"; args: string[] };
+
+/** `ours` keeps the lock. `foreign` is a command line that is positively not a listener. `unknown` means the lookup failed or came back empty. */
+export type HolderVerdict = "ours" | "foreign" | "unknown";
+
+/** A `ps` or PowerShell command-line lookup. A failed or empty result is unknown, not a foreign process. */
+export function commandLookupFromText(status: number | null, stdout: string | undefined): ProcessArgs {
+	if (status !== 0 || stdout === undefined) return { kind: "unknown" };
+	const args = stdout
+		.trim()
+		.split(/\s+/)
+		.filter((part) => part.length > 0);
+	if (args.length === 0) return { kind: "unknown" };
+	return { kind: "args", args };
+}
+
+function readProcessArgs(pid: number): ProcessArgs {
+	if (!Number.isSafeInteger(pid) || pid <= 0) return { kind: "unknown" };
+	if (!isAlive(pid)) return { kind: "dead" };
 	const cmdline = `/proc/${pid}/cmdline`;
-	if (existsSync(cmdline)) return readFileSync(cmdline, "utf8").split("\0");
+	if (existsSync("/proc")) {
+		try {
+			if (!existsSync(cmdline)) return isAlive(pid) ? { kind: "unknown" } : { kind: "dead" };
+			const args = readFileSync(cmdline, "utf8")
+				.split("\0")
+				.filter((part) => part.length > 0);
+			if (args.length === 0) return { kind: "unknown" };
+			return { kind: "args", args };
+		} catch {
+			return isAlive(pid) ? { kind: "unknown" } : { kind: "dead" };
+		}
+	}
 	if (process.platform === "win32") {
 		const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`;
 		const ps = spawnSync("powershell", ["-NoProfile", "-Command", query], { encoding: "utf8" });
-		return ps.status === 0 ? ps.stdout.trim().split(/\s+/) : undefined;
+		if (ps.error) return { kind: "unknown" };
+		return commandLookupFromText(ps.status, ps.stdout);
 	}
 	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
-	return ps.status === 0 ? ps.stdout.trim().split(/\s+/) : undefined;
+	if (ps.error) return { kind: "unknown" };
+	return commandLookupFromText(ps.status, ps.stdout);
 }
 
-/** Whether `pid` is alive and its command line is one of our listeners, not just a reused pid. */
+export function listenerCommandArgs(pid: number): string[] | undefined {
+	const found = readProcessArgs(pid);
+	return found.kind === "args" ? found.args : undefined;
+}
+
+/** Whether `pid` is alive and its command line is positively one of our listeners. */
 export function isOurListener(pid: number): boolean {
-	const args = listenerCommandArgs(pid);
-	return args !== undefined && isListenerArgs(args);
+	return holderVerdict(pid) === "ours";
+}
+
+/** Dead and a positively non-listener command line are foreign. A lookup that cannot answer is unknown. */
+export function holderVerdict(pid: number): HolderVerdict {
+	const found = readProcessArgs(pid);
+	if (found.kind === "dead") return "foreign";
+	if (found.kind === "unknown") return "unknown";
+	return isListenerArgs(found.args) ? "ours" : "foreign";
 }
 
 /** `current` is already `phone __run`. `legacy` is the old `phone-friend __run` process. */
@@ -115,10 +157,16 @@ export function listenerClaimPath(paths: DgPaths): string {
 const CLAIM_GRACE_MS = 1000;
 const CLAIM_ATTEMPTS = 5;
 
-type ClaimView = { kind: "mine" | "held" | "stale"; holder: string };
+const CLAIM_UNKNOWN_WAIT_MS = 20;
+
+type ClaimView = { kind: "mine" | "held" | "unknown" | "stale"; holder: string };
 
 function logClaim(message: string): void {
 	process.stderr.write(`phone: ${message}\n`);
+}
+
+function sleepClaim(ms: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 function readClaimRaw(path: string): string | undefined {
@@ -129,8 +177,32 @@ function readClaimRaw(path: string): string | undefined {
 	}
 }
 
-/** `held` is a phone listener for this line, or a lock too new to judge. Anything else is stale. */
-function inspectClaim(path: string, pid: number, ours: (pid: number) => boolean, now: number): ClaimView {
+/**
+ * Moves a stale lock aside and deletes it only when the moved bytes are still `expected`.
+ * A rename is atomic, so a contender that already replaced the lock does not have its file removed.
+ * If the moved bytes differ, they are renamed back.
+ */
+export function displaceStaleLock(path: string, expected: string, aside: string): "displaced" | "restored" | "missed" {
+	try {
+		renameSync(path, aside);
+	} catch {
+		return "missed";
+	}
+	const moved = readClaimRaw(aside);
+	if (moved !== expected) {
+		try {
+			renameSync(aside, path);
+		} catch {
+			// The lock path was reclaimed. Leave the aside file so those bytes are not deleted.
+		}
+		return "restored";
+	}
+	rmSync(aside, { force: true });
+	return "displaced";
+}
+
+/** `held` is a phone listener, or a lock too new to judge. `unknown` is a lookup that cannot answer. */
+function inspectClaim(path: string, pid: number, verdict: (holder: number) => HolderVerdict, now: number): ClaimView {
 	let raw: string | undefined;
 	let ageMs: number | undefined;
 	try {
@@ -143,7 +215,7 @@ function inspectClaim(path: string, pid: number, ours: (pid: number) => boolean,
 			return { kind: "stale", holder: "" };
 		}
 		if (ageMs < CLAIM_GRACE_MS) return { kind: "held", holder: "" };
-		return { kind: "stale", holder: "" };
+		return { kind: "unknown", holder: "" };
 	}
 	const holder = raw.trim();
 	const parsed = Number(holder);
@@ -152,56 +224,94 @@ function inspectClaim(path: string, pid: number, ours: (pid: number) => boolean,
 		if ((ageMs ?? CLAIM_GRACE_MS) < CLAIM_GRACE_MS) return { kind: "held", holder };
 		return { kind: "stale", holder };
 	}
-	if (ours(parsed)) return { kind: "held", holder };
+	const who = verdict(parsed);
+	if (who === "ours") return { kind: "held", holder };
+	if (who === "unknown") return { kind: "unknown", holder };
 	return { kind: "stale", holder };
+}
+
+function claimExclusive(tmp: string, path: string, pid: number, link: (src: string, dest: string) => void): "created" | "exists" {
+	try {
+		link(tmp, path);
+		return "created";
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "EEXIST") return "exists";
+		try {
+			const fd = openSync(path, "wx", 0o600);
+			try {
+				writeSync(fd, String(pid));
+			} finally {
+				closeSync(fd);
+			}
+			return "created";
+		} catch (wxErr) {
+			if ((wxErr as NodeJS.ErrnoException).code !== "EEXIST") throw wxErr;
+			return "exists";
+		}
+	}
 }
 
 /**
  * Exclusive claim so a second `phone __run` exits instead of subscribing beside the first.
- * The lock file is linked into place already containing the pid, so a contender never sees an
- * empty file and deletes the winner. Only a pid whose command line is a phone listener keeps
- * the slot. A dead pid, or a live pid reused by something else after an unclean exit, is taken
- * over. Losing the claim is logged: a clean exit would otherwise leave systemd and launchd
- * with nothing to restart.
+ * The lock file is linked into place already containing the pid. A filesystem that cannot hard
+ * link falls back to an exclusive create that writes the pid before anyone else reads it.
+ * Only a command line that is positively not a listener is taken over. A lookup that cannot
+ * answer keeps the lock. Losing the claim is logged, including the winner's pid.
  */
-export function claimListener(paths: DgPaths, pid: number, ours: (holder: number) => boolean = isOurListener): boolean {
+export function claimListener(
+	paths: DgPaths,
+	pid: number,
+	verdict: (holder: number) => HolderVerdict = holderVerdict,
+	link: (src: string, dest: string) => void = linkSync,
+): boolean {
 	ensurePrivateDir(paths.phoneRoot);
 	const path = listenerClaimPath(paths);
 	const tmp = `${path}.${pid}.claim`;
 	writeFileSync(tmp, String(pid), { mode: 0o600 });
 	let announcedTakeover = false;
+	let sawUnknown = false;
 	try {
 		for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
-			try {
-				linkSync(tmp, path);
-				return true;
-			} catch (err) {
-				if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-			}
-			const seen = inspectClaim(path, pid, ours, Date.now());
+			if (claimExclusive(tmp, path, pid, link) === "created") return true;
+			const seen = inspectClaim(path, pid, verdict, Date.now());
 			if (seen.kind === "mine") return true;
 			if (seen.kind === "held") {
 				logClaim(`listener claim lost to ${seen.holder || "an unreadable lock"}; pid ${pid} is exiting`);
 				return false;
 			}
+			if (seen.kind === "unknown") {
+				sawUnknown = true;
+				sleepClaim(CLAIM_UNKNOWN_WAIT_MS);
+				continue;
+			}
 			const before = readClaimRaw(path);
-			const again = inspectClaim(path, pid, ours, Date.now());
+			const again = inspectClaim(path, pid, verdict, Date.now());
 			if (again.kind === "mine") return true;
 			if (again.kind === "held") {
 				logClaim(`listener claim lost to ${again.holder || "an unreadable lock"}; pid ${pid} is exiting`);
 				return false;
 			}
-			if (readClaimRaw(path) !== before) continue;
+			if (again.kind === "unknown") {
+				sawUnknown = true;
+				sleepClaim(CLAIM_UNKNOWN_WAIT_MS);
+				continue;
+			}
+			if (before === undefined || readClaimRaw(path) !== before) continue;
+			const aside = `${path}.${pid}.${attempt}.stale`;
+			if (displaceStaleLock(path, before, aside) !== "displaced") continue;
 			if (!announcedTakeover) {
 				logClaim(`listener lock held by ${again.holder || "an empty file"} is not a live phone listener; taking over`);
 				announcedTakeover = true;
 			}
-			rmSync(path, { force: true });
 		}
 	} finally {
 		rmSync(tmp, { force: true });
 	}
-	logClaim(`listener claim lost; pid ${pid} is exiting`);
+	if (sawUnknown) {
+		logClaim(`listener claim lost; could not read the holder's command line; leaving its lock; pid ${pid} is exiting`);
+	} else {
+		logClaim(`listener claim lost; pid ${pid} is exiting`);
+	}
 	return false;
 }
 
