@@ -7,7 +7,9 @@ import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRE
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
+import { defaultOnSignal, defaultSchedule, readListenerPid, runListener } from "./listener";
 import { migrateIfNeeded } from "./migrate";
+import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
 	addInvite,
@@ -37,9 +39,11 @@ export type PhoneDeps = KeyDeps & {
 	now: () => number;
 };
 
-/** Repo path of the phone skill's safety rules. Slice 1's `push.ts` declares the same string; slice 3
- * should import one from the other once it wires both modules together. */
-export const PHONE_SAFETY_REF = "plugins/dg/skills/phone/references/safety.md";
+export type RunDeps = PhoneDeps & {
+	pid: number;
+	schedule: Parameters<typeof runListener>[0]["schedule"];
+	onSignal: Parameters<typeof runListener>[0]["onSignal"];
+};
 
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
@@ -282,11 +286,26 @@ export function phoneVoicemail(deps: PhoneDeps): void {
 export function phoneStatus(deps: PhoneDeps): void {
 	migrateIfNeeded(deps.paths);
 	const number = readNumber(deps.db);
+	const listener = readListenerPid(deps.paths);
 	printJson(deps, {
 		as: number?.as ?? FALLBACK_SELF_NAME,
 		contacts: listContacts(deps.db).length,
 		pending_voicemail: deps.db.unreadMessages().length,
+		listener: listener ? { pid: listener.pid, since: listener.since } : null,
+		hook: listener?.hook ? { kind: "command" as const, argv: listener.hook.argv, timeout_s: listener.hook.timeoutS } : null,
 	});
+}
+
+export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const timeoutSeconds = opts.onMessageTimeout === undefined ? DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS : Number(opts.onMessageTimeout);
+	if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+		throw new DgCliError(`--on-message-timeout must be a positive number of seconds, got "${opts.onMessageTimeout}"`);
+	}
+	const hook: CommandPushTarget | undefined = opts.onMessage?.length
+		? { kind: "command", argv: opts.onMessage, timeoutMs: Math.round(timeoutSeconds * 1000) }
+		: undefined;
+	await runListener({ ...deps, hook });
 }
 
 export function registerPhoneCommands(
@@ -370,4 +389,13 @@ export function registerPhoneCommands(
 		.command("status")
 		.description("print your self name, contact count, and pending voicemail count")
 		.action(() => phoneStatus(makeDeps(session)));
+
+	phone
+		.command("__run", { hidden: true })
+		.description("internal: run the always-on listener in the foreground (never call directly)")
+		.option("--on-message <argv...>", "command and args to run for each delivered message")
+		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
+		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) =>
+			phoneRun(opts, { ...makeDeps(session), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal }),
+		);
 }

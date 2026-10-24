@@ -141,6 +141,10 @@ export class PhoneDb {
 		return (this.db.query("SELECT * FROM keys WHERE id = $id").get({ id }) as KeyRow | null) ?? undefined;
 	}
 
+	listKeyIds(): string[] {
+		return (this.db.query("SELECT id FROM keys ORDER BY id").all() as { id: string }[]).map((row) => row.id);
+	}
+
 	putKey(row: Omit<KeyRow, "created_at">): void {
 		this.db
 			.query(
@@ -290,6 +294,30 @@ export class PhoneDb {
 			const rows = this.unreadMessages();
 			this.markRead(rows.map((row) => row.id));
 			return rows;
+		});
+	}
+
+	/** The oldest unread message still under the hook's attempt cap, or undefined once the queue is empty. */
+	nextDeliverable(cap: number): MessageRow | undefined {
+		return (
+			(this.db
+				.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap ORDER BY ts, id LIMIT 1")
+				.get({ cap }) as MessageRow | null) ?? undefined
+		);
+	}
+
+	/** Unread messages that hit the hook's attempt cap; retried only on listener start and the stuck timer. */
+	stuckMessages(cap: number): MessageRow[] {
+		return this.db
+			.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap ORDER BY ts, id")
+			.all({ cap }) as MessageRow[];
+	}
+
+	bumpAttempts(id: string): number {
+		return this.transaction(() => {
+			this.db.query("UPDATE messages SET attempts = attempts + 1 WHERE id = $id").run({ id });
+			const row = this.db.query("SELECT attempts FROM messages WHERE id = $id").get({ id }) as { attempts: number } | null;
+			return row?.attempts ?? 0;
 		});
 	}
 

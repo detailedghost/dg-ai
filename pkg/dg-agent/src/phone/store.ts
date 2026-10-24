@@ -7,7 +7,6 @@ export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
 export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
 export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string };
 export type ListenerRecord = { pid: number; since: number };
-export type SubscriberRecord = { pid: number; startedAt: number };
 
 export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
 export const FALLBACK_SELF_NAME = "dg";
@@ -19,7 +18,6 @@ const NUMBER_SETTING = "number";
 const RELAYS_SETTING = "relays";
 const NUMBER_KEY_SETTING = "number_key";
 const LISTENER_SETTING = "listener";
-const SUBSCRIBER_SETTING = "subscriber";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
 
@@ -140,6 +138,11 @@ export function removeContact(db: PhoneDb, handle: string): ContactRecord {
 	return toContactRecord(existing);
 }
 
+/** Moves a contact to the key the listener saw it ring on; the "re-accept" a known caller's ring triggers. */
+export function setContactKeyId(db: PhoneDb, npub: string, keyId: string): void {
+	db.setContactKeyId(npub, keyId);
+}
+
 function toInviteRecord(row: InviteRow): InviteRecord {
 	return {
 		secret: row.secret,
@@ -178,18 +181,6 @@ export function writeListener(db: PhoneDb, record: ListenerRecord): void {
 
 export function clearListener(db: PhoneDb): void {
 	db.unset(LISTENER_SETTING);
-}
-
-export function readSubscriber(db: PhoneDb): SubscriberRecord | undefined {
-	return db.get<SubscriberRecord>(SUBSCRIBER_SETTING);
-}
-
-export function writeSubscriber(db: PhoneDb, record: SubscriberRecord): void {
-	db.set(SUBSCRIBER_SETTING, record);
-}
-
-export function clearSubscriber(db: PhoneDb): void {
-	db.unset(SUBSCRIBER_SETTING);
 }
 
 function pubkeyHex(npub: string): string {

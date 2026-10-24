@@ -10,7 +10,7 @@ import {
 	resolveDgPaths,
 	writeCredentialGrantToken,
 } from "@dg/common/node";
-import { generateSecretKey, nip19 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { PhoneDb } from "../../src/phone/db";
 import {
 	createFileKey,
@@ -19,6 +19,7 @@ import {
 	type KeyClient,
 	type KeyDeps,
 	keyName,
+	loadAllKeys,
 	loadKey,
 	markKeyInStore,
 	readFileKey,
@@ -241,5 +242,33 @@ describe("multiple keys", () => {
 		expect(Buffer.from(number.sk).equals(Buffer.from(legacy.sk))).toBe(false);
 		expect(store.get(keyName("work"))).toBe(nip19.nsecEncode(legacy.sk));
 		expect(keyName("work")).toBe("phone-friend/work/nostr-key");
+	});
+});
+
+describe("loadAllKeys", () => {
+	it("loads every key row the database knows, keyed by id and public key", async () => {
+		const number = await ensureKey(deps({ session: true }), "default");
+		const legacy = await ensureKey(deps({ session: true }), "work");
+
+		const keys = await loadAllKeys(deps({ session: true }));
+
+		expect(keys.map((key) => key.id).sort()).toEqual(["default", "work"]);
+		const byId = new Map(keys.map((key) => [key.id, key]));
+		expect(byId.get("default")?.pub).toBe(getPublicKey(number.sk));
+		expect(byId.get("work")?.pub).toBe(getPublicKey(legacy.sk));
+	});
+
+	it("is empty when no key has ever been created", async () => {
+		expect(await loadAllKeys(deps())).toEqual([]);
+	});
+
+	it("leaves out a key row whose store is unreachable rather than failing the whole load", async () => {
+		await ensureKey(deps({ session: true }), "default");
+		markKeyInStore(db, "work", generateSecretKey());
+		store.delete(keyName("work"));
+
+		const keys = await loadAllKeys(deps());
+
+		expect(keys.map((key) => key.id)).toEqual(["default"]);
 	});
 });

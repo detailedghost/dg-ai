@@ -1,6 +1,7 @@
 import { DgCliError, describeError } from "@dg/common";
 import { type CredentialClient, createCredentialClient, type DgPaths, resolveCliSession } from "@dg/common/node";
-import { generateSecretKey, nip19 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import type { KeyEntry } from "./chat";
 import type { PhoneDb } from "./db";
 import { numberKeyId } from "./store";
 
@@ -143,4 +144,20 @@ export async function ensureKey(deps: KeyDeps, id: string): Promise<LoadedKey> {
 /** Loads or creates the one key your own number uses, keyed by `settings.number_key`. */
 export function ensureNumberKey(deps: KeyDeps): Promise<LoadedKey> {
 	return ensureKey(deps, numberKeyId(deps.db));
+}
+
+/** Every key row the database knows, loaded for the listener's single multi-key subscription. A row whose
+ * key cannot be loaded (store unreachable) is left out rather than failing the whole listener. */
+export async function loadAllKeys(deps: KeyDeps): Promise<KeyEntry[]> {
+	const keys: KeyEntry[] = [];
+	for (const id of deps.db.listKeyIds()) {
+		let loaded: LoadedKey | undefined;
+		try {
+			loaded = await loadKey(deps, id);
+		} catch {
+			loaded = undefined;
+		}
+		if (loaded) keys.push({ id, pub: getPublicKey(loaded.sk), sk: loaded.sk });
+	}
+	return keys;
 }

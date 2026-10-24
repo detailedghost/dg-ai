@@ -187,7 +187,7 @@ describe("subscribe", () => {
 		const pool = createFakePool();
 		const received: string[] = [];
 		let latestIds: string[] = [];
-		const sub = subscribe(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, (message, seen) => {
+		const sub = subscribe(pool, RELAYS, [bob], () => gateWithContact(alice.pub), { cursor: 0, ids: [] }, (message, seen) => {
 			received.push(message.text);
 			latestIds = seen.ids;
 		});
@@ -206,7 +206,7 @@ describe("subscribe", () => {
 		const mallory = identity();
 		const pool = createFakePool();
 		const received: string[] = [];
-		const sub = subscribe(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, (message) => {
+		const sub = subscribe(pool, RELAYS, [bob], () => gateWithContact(alice.pub), { cursor: 0, ids: [] }, (message) => {
 			received.push(message.text);
 		});
 
@@ -215,6 +215,24 @@ describe("subscribe", () => {
 		sub.close();
 
 		expect(received).toEqual(["real"]);
+	});
+
+	it("re-reads the gate for every event, so a contact added mid-subscription is admitted without a restart", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const received: string[] = [];
+		let gate = emptyGate();
+		const sub = subscribe(pool, RELAYS, [bob], () => gate, { cursor: 0, ids: [] }, (message) => {
+			received.push(message.text);
+		});
+
+		await publish(pool, RELAYS, wrap("too early", alice.sk, bob.pub));
+		gate = gateWithContact(alice.pub);
+		await publish(pool, RELAYS, wrap("now a contact", alice.sk, bob.pub));
+		sub.close();
+
+		expect(received).toEqual(["now a contact"]);
 	});
 });
 

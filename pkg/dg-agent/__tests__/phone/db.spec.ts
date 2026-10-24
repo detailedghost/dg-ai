@@ -126,6 +126,41 @@ describe("PhoneDb", () => {
 		});
 	});
 
+	describe("hook delivery queue", () => {
+		it("hands back the oldest unread message under the attempt cap, skipping those at or over it", () => {
+			db.addMessage(message("a", NOW));
+			db.addMessage(message("b", NOW + 1));
+			db.bumpAttempts("a");
+			db.bumpAttempts("a");
+
+			expect(db.nextDeliverable(2)?.id).toBe("b");
+			expect(db.nextDeliverable(3)?.id).toBe("a");
+		});
+
+		it("returns undefined once every unread row is at or over the cap", () => {
+			db.addMessage(message("a", NOW));
+			db.bumpAttempts("a");
+
+			expect(db.nextDeliverable(1)).toBeUndefined();
+		});
+
+		it("lists stuck messages oldest first and leaves rows under the cap out", () => {
+			db.addMessage(message("a", NOW));
+			db.addMessage(message("b", NOW + 1));
+			db.bumpAttempts("a");
+			db.bumpAttempts("a");
+
+			expect(db.stuckMessages(2).map((m) => m.id)).toEqual(["a"]);
+		});
+
+		it("bumps attempts by one and returns the new count", () => {
+			db.addMessage(message("a", NOW));
+
+			expect(db.bumpAttempts("a")).toBe(1);
+			expect(db.bumpAttempts("a")).toBe(2);
+		});
+	});
+
 	describe("keys", () => {
 		it("inserts a key row only once, and a later makeDefault call is discarded", () => {
 			const first = db.ensureKeyRow("default", () => ({ nsec: "nsec1first", in_store: 0 }));
@@ -142,6 +177,13 @@ describe("PhoneDb", () => {
 			db.putKey({ id: "default", nsec: null, in_store: 1 });
 
 			expect(db.getKey("default")).toMatchObject({ nsec: null, in_store: 1 });
+		});
+
+		it("lists every key id in order", () => {
+			db.ensureKeyRow("work", () => ({ nsec: null, in_store: 1 }));
+			db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
+
+			expect(db.listKeyIds()).toEqual(["default", "work"]);
 		});
 	});
 

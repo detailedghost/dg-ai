@@ -10,7 +10,6 @@ import {
 	addContact,
 	addInvite,
 	clearListener,
-	clearSubscriber,
 	DEFAULT_NUMBER_KEY_ID,
 	DEFAULT_RELAYS,
 	findContactByHandle,
@@ -21,18 +20,19 @@ import {
 	nextFreeHandle,
 	normalizeHandle,
 	numberKeyId,
+	readCursor,
 	readListener,
 	readNumber,
 	readRelays,
-	readSubscriber,
 	removeContact,
 	renameContact,
 	requireFreeHandle,
 	resolvedSelfName,
+	setContactKeyId,
+	writeCursor,
 	writeListener,
 	writeNumber,
 	writeRelays,
-	writeSubscriber,
 } from "../../src/phone/store";
 
 let home: string;
@@ -158,6 +158,15 @@ describe("contacts", () => {
 		expect(findContactByHandle(db, "velora")).toBeUndefined();
 		expect(() => removeContact(db, "velora")).toThrow("no contact +velora");
 	});
+
+	it("moves a contact to the key its ring was addressed to", () => {
+		const who = npub();
+		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
+
+		setContactKeyId(db, who, "default");
+
+		expect(findContactByNpub(db, who)?.keyId).toBe("default");
+	});
 });
 
 describe("invites", () => {
@@ -194,21 +203,24 @@ describe("gateFor", () => {
 	});
 });
 
-describe("listener and subscriber settings", () => {
-	it("round-trip and clear independently", () => {
+describe("listener settings", () => {
+	it("round-trips and clears", () => {
 		writeListener(db, { pid: 123, since: NOW });
-		writeSubscriber(db, { pid: 456, startedAt: NOW });
 
 		expect(readListener(db)).toEqual({ pid: 123, since: NOW });
-		expect(readSubscriber(db)).toEqual({ pid: 456, startedAt: NOW });
 
 		clearListener(db);
 
 		expect(readListener(db)).toBeUndefined();
-		expect(readSubscriber(db)).toEqual({ pid: 456, startedAt: NOW });
+	});
+});
 
-		clearSubscriber(db);
+describe("cursor", () => {
+	it("starts at zero and round-trips", () => {
+		expect(readCursor(db)).toBe(0);
 
-		expect(readSubscriber(db)).toBeUndefined();
+		writeCursor(db, NOW);
+
+		expect(readCursor(db)).toBe(NOW);
 	});
 });

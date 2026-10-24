@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -24,6 +24,7 @@ import {
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey, ensureNumberKey, type KeyClient } from "../../src/phone/keys";
+import { listenerPidPath } from "../../src/phone/listener";
 import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact } from "../../src/phone/store";
 import { createFakePool, type FakePool } from "./fake-pool";
 
@@ -457,7 +458,29 @@ describe("status", () => {
 
 		phoneStatus(d);
 
-		expect(lines()[0]).toEqual({ as: "dante", contacts: 1, pending_voicemail: 1 });
+		expect(lines()[0]).toEqual({ as: "dante", contacts: 1, pending_voicemail: 1, listener: null, hook: null });
+	});
+
+	it("reports the running listener and its hook from the pid file, and null once the pid is dead", () => {
+		const d = deps(freshHome());
+		writeFileSync(
+			listenerPidPath(d.paths),
+			JSON.stringify({ pid: process.pid, since: NOW, hook: { argv: ["notify-send"], timeoutS: 30 } }),
+		);
+
+		phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({
+			listener: { pid: process.pid, since: NOW },
+			hook: { kind: "command", argv: ["notify-send"], timeout_s: 30 },
+		});
+
+		out = [];
+		writeFileSync(listenerPidPath(d.paths), JSON.stringify({ pid: 999_999_999, since: NOW, hook: null }));
+
+		phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({ listener: null, hook: null });
 	});
 });
 

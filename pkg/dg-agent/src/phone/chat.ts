@@ -225,17 +225,21 @@ export async function fetchNew(
 
 export type SubscribeExtra = { newContact?: NewContact; reaccept?: Reaccept };
 
+/**
+ * Re-reads the gate from `gate()` for every event, instead of a snapshot taken once at subscribe
+ * time: a contact `accept`ed or an invite consumed after the subscription opened must be visible to
+ * the very next wrap, not only after the listener restarts.
+ */
 export function subscribe(
 	pool: PhonePool,
 	relays: string[],
 	keys: KeyEntry[],
-	gate: Gate,
+	gate: () => Gate,
 	seen: Seen,
 	onMessage: (message: Message, seen: Seen, gate: Gate, extra: SubscribeExtra) => void,
 	now: () => number = nowSeconds,
 ): SubCloser {
 	let state = seen;
-	let current = gate;
 	const known = new Set(seen.ids);
 	const strangers = new Set<string>();
 	return pool.subscribe(relays, inboxFilter(keys.map((key) => key.pub), seen.cursor, now()), {
@@ -243,7 +247,7 @@ export function subscribe(
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			const key = pickKey(event, keys);
 			const rumor = key ? open(event, key.sk) : null;
-			const admitted = rumor && key ? admit(event, rumor, key.id, current, now()) : null;
+			const admitted = rumor && key ? admit(event, rumor, key.id, gate(), now()) : null;
 			if (!admitted) {
 				strangers.add(event.id);
 				if (strangers.size > STRANGER_ID_LIMIT) {
@@ -252,9 +256,8 @@ export function subscribe(
 				return;
 			}
 			known.add(event.id);
-			current = admitted.gate;
 			state = remember(state, now(), [event.id]);
-			onMessage(admitted.message, state, current, { newContact: admitted.newContact, reaccept: admitted.reaccept });
+			onMessage(admitted.message, state, admitted.gate, { newContact: admitted.newContact, reaccept: admitted.reaccept });
 		},
 	});
 }
