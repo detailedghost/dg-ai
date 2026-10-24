@@ -259,13 +259,13 @@ describe("packaged stat skill", () => {
 		expect(text).not.toMatch(/--viz|viz board|viz-cli/);
 	});
 
-	test("documents --overwatch as its only flag", () => {
+	test("documents --long, --plain and --overwatch", () => {
 		const text = skillText("stat");
 		const { documented } = requiredFlagsTable(text);
-		expect([...documented]).toEqual(["--overwatch"]);
+		expect([...documented]).toEqual(["--long", "-l", "--plain", "-p", "--overwatch"]);
 		expect(
 			[...usageLine(text).matchAll(FLAG)].map((match) => match[1]),
-		).toEqual(["--overwatch"]);
+		).toEqual(["-l", "--long", "-p", "--plain", "--overwatch"]);
 	});
 
 	test("gathers and cleans up through dg-skills subcommands", () => {
@@ -275,6 +275,7 @@ describe("packaged stat skill", () => {
 			"~/.dg/bin/dg-skills bg list",
 			"~/.dg/bin/dg-skills bg prune --cwd",
 			"~/.dg/bin/dg-skills worktree list",
+			"~/.dg/bin/dg-skills stat checklist",
 		])
 			expect(text).toContain(call);
 	});
@@ -285,12 +286,17 @@ describe("packaged stat skill", () => {
 		expect(text).toContain("TaskStop");
 	});
 
-	test("falls back to the plain table when the overwatch agent or the daemon is missing", () => {
+	test("falls back to the plain checklist when the overwatch agent or the daemon is missing", () => {
 		const text = skillText("stat");
 		expect(text).toMatch(/overwatch agent binary is missing/);
-		expect(text).toMatch(/fall back to the plain table/i);
+		expect(text).toMatch(/fall back to the plain checklist/i);
 		expect(text).toContain("/dg:overwatch");
 		expect(text.replace(/\/dg:overwatch/g, "")).not.toContain("dg:overwatch");
+	});
+
+	test("never calls stat add, stat done or stat status on itself", () => {
+		const text = skillText("stat");
+		expect(text).toMatch(/never calls `stat add`, `stat done`, or `stat status`/);
 	});
 });
 
@@ -336,6 +342,7 @@ describe("stat and cls shell blocks degrade safely", () => {
 				'  "bg list") echo \'{"jobs":[{"id":"j1","state":"done","exitCode":0,"logFile":"/l","command":"c","cwd":"\'"$PWD"\'"}]}\' ;;',
 				'  "vcs-provider list-prs") echo \'[{"number":7,"state":"open","title":"t"}]\' ;;',
 				'  "worktree list") echo "path=/w" ;;',
+				'  "stat checklist") echo \'{"open":[],"done":[],"total":null}\' ;;',
 				'  "stash -C") echo "/scratch/pw/bucket-x" ;;',
 				"esac",
 				"",
@@ -384,12 +391,13 @@ describe("stat and cls shell blocks degrade safely", () => {
 		const run = sh(gatherBlock(), main, home);
 		expect(run.code).toBe(0);
 		expect(run.out).toContain("BRANCH=main");
-		for (const key of ["PRS=", "JOBS=", "WORKTREES="])
+		for (const key of ["PRS=", "JOBS=", "WORKTREES=", "CHECKLIST="])
 			expect(run.out).toContain(key);
 		const calls = readFileSync(log, "utf8");
 		expect(calls).toContain("vcs-provider list-prs --head main");
 		expect(calls).toContain("bg list");
 		expect(calls).toContain("worktree list");
+		expect(calls).toContain("stat checklist --json");
 	});
 
 	test("the stat gather block still exits 0 outside a repository and when every CLI call fails", () => {
@@ -400,11 +408,13 @@ describe("stat and cls shell blocks degrade safely", () => {
 		expect(outside.code).toBe(0);
 		expect(outside.out).toContain("BRANCH=none");
 		expect(outside.out).toContain("JOBS=[]");
+		expect(outside.out).toContain("CHECKLIST=null");
 		const { main } = fixtures.repo();
 		const failing = sh(gatherBlock(), main, home);
 		expect(failing.code).toBe(0);
 		expect(failing.out).toContain("PRS=[]");
 		expect(failing.out).toContain("JOBS=[]");
+		expect(failing.out).toContain("CHECKLIST=null");
 	});
 
 	test("the cls detect block classifies the main and the linked checkout", () => {
