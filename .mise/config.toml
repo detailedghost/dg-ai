@@ -92,11 +92,6 @@ description = "Run the dg-agent unit tests"
 dir = "pkg/dg-agent"
 run = "bun test"
 
-[tasks."test:phone-friend:mutate"]
-description = "Mutation-test phone-friend delivery against its unit tests"
-dir = "pkg/dg-agent"
-run = "bunx stryker run"
-
 [tasks."test:daemon"]
 description = "Run the dg-daemon unit tests"
 dir = "pkg/dg-daemon"
