@@ -10,6 +10,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor proto stash.
+
 `dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
 
 # Prototype
