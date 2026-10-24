@@ -18,6 +18,7 @@ import {
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
+	phoneWhoami,
 	isListenerArgs,
 	registerPhoneFriendCommands,
 	phoneOn,
@@ -27,9 +28,11 @@ import {
 	DEFAULT_RELAYS,
 	claimStart,
 	createFileKey,
+	defaultSelfName,
 	readFileKey,
 	readConfig,
 	readInvite,
+	sanitizeSelfName,
 	writeConfig,
 } from "../../src/phone-friend/store";
 import { decodeCard, encodeCard } from "../../src/phone-friend/card";
@@ -195,14 +198,20 @@ describe("phoneInvite", () => {
 	it("prints a card with our npub, the relays, and a fresh secret, and saves the invite", async () => {
 		await phoneInvite({ relay: ["wss://x.example"] }, deps());
 
-		const [{ card, expires_at, handle }] = lines() as { card: string; expires_at: string; handle: string }[];
+		const [{ card, expires_at, handle, as }] = lines() as {
+			card: string;
+			expires_at: string;
+			handle: string;
+			as: string;
+		}[];
 		const decoded = decodeCard(card, NOW);
 		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(myKey())));
 		expect(decoded.relays).toEqual(["wss://x.example"]);
 		expect(decoded.exp).toBe(NOW + 24 * 3600);
+		expect(decoded.handle).toBe(as);
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
 		expect(handle).toBe("@default");
-		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
+		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp, as });
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
 	});
 
@@ -211,6 +220,37 @@ describe("phoneInvite", () => {
 
 		const [{ handle }] = lines() as { handle: string }[];
 		expect(handle).toBe("@grok");
+	});
+
+	it("--as overrides the saved self name on this one card, and the override survives on `card`", async () => {
+		await phoneInvite({ as: "dante" }, deps());
+
+		const [{ card, as }] = lines() as { card: string; as: string }[];
+		expect(as).toBe("dante");
+		expect(decodeCard(card, NOW).handle).toBe("dante");
+		out = [];
+
+		await phoneCard(deps());
+
+		expect(lines()).toMatchObject([{ as: "dante" }]);
+	});
+
+	it("without --as, the card carries the saved whoami, defaulting to the OS user when none is saved", async () => {
+		await phoneInvite({}, deps());
+		const [{ as: defaulted }] = lines() as { as: string }[];
+		expect(defaulted).toBe(defaultSelfName());
+		out = [];
+
+		phoneWhoami("dante", deps());
+		out = [];
+		await phoneInvite({}, deps());
+
+		expect(lines()).toMatchObject([{ as: "dante" }]);
+	});
+
+	it("rejects an --as that is not a safe self name, and saves no invite", async () => {
+		await expect(phoneInvite({ as: "Dante!" }, deps())).rejects.toThrow("lowercase");
+		expect(readInvite(line)).toBeUndefined();
 	});
 
 	it("starts the listener right away, so the card can ring without a separate on", async () => {
@@ -390,6 +430,23 @@ describe("phoneDial with no --line or --name: the card's handle names the line",
 		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
 	});
 
+	it("end to end: a card from an inviter named 'dante' makes the dialer's line 'dante' too", async () => {
+		const danteHome = mkdtempSync(join(tmpdir(), "dg-phone-friend-dante-"));
+		const dantePaths = resolveDgPaths({ env: { DG_HOME: danteHome } });
+		try {
+			await phoneInvite({ as: "dante" }, deps({ paths: dantePaths, line: linePaths(dantePaths) }));
+			const [{ card }] = lines() as { card: string }[];
+			const danteNpub = decodeCard(card, NOW).npub;
+			out = [];
+
+			await phoneDial(card, undefined, deps());
+
+			const danteLine = linePaths(paths, "dante");
+			expect(readConfig(danteLine)).toMatchObject({ contact: danteNpub, name: "dante" });
+		} finally {
+			rmSync(danteHome, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("accepting a call", () => {
@@ -475,6 +532,66 @@ describe("phoneName and phoneContacts", () => {
 		writeConfig(other, { contact: contactNpub, name: "velora", relays: DEFAULT_RELAYS });
 		expect(() => phoneName("velora", deps())).toThrow("already used by line work");
 		expect(() => phoneName("work", deps())).toThrow("already used by line work");
+	});
+});
+
+describe("phoneWhoami", () => {
+	it("saves a self name and prints it back as saved", () => {
+		phoneWhoami("dante", deps());
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("prints a default self name as not saved, until one is saved", () => {
+		phoneWhoami(undefined, deps());
+		out = [];
+		phoneWhoami("dante", deps());
+		out = [];
+
+		phoneWhoami(undefined, deps());
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("is shared across lines: a name saved on one line reads back on another", () => {
+		phoneWhoami("dante", deps());
+		out = [];
+
+		phoneWhoami(undefined, deps({ line: linePaths(paths, "work") }));
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("rejects a bad self name, and saves nothing", () => {
+		expect(() => phoneWhoami("Dante!", deps())).toThrow("lowercase");
+
+		phoneWhoami(undefined, deps());
+		expect((lines()[0] as { saved: boolean }).saved).toBe(false);
+	});
+
+	it("does not collide with a line literally named 'whoami'", async () => {
+		phoneWhoami("dante", deps());
+		out = [];
+
+		await phoneInvite({}, deps({ line: linePaths(paths, "whoami") }));
+
+		expect(decodeCard((lines()[0] as { card: string }).card, NOW).handle).toBe("dante");
+	});
+});
+
+describe("defaultSelfName and sanitizeSelfName", () => {
+	it("lowercases and strips to the line-name charset", () => {
+		expect(sanitizeSelfName("Dante")).toBe("dante");
+		expect(sanitizeSelfName("Dante Burgos!")).toBe("danteburgos");
+		expect(sanitizeSelfName("---dante---")).toBe("dante");
+		expect(sanitizeSelfName("")).toBeUndefined();
+		expect(sanitizeSelfName("!!!")).toBeUndefined();
+	});
+
+	it("falls back to dg when nothing in the raw name survives sanitizing", () => {
+		expect(defaultSelfName("Dante")).toBe("dante");
+		expect(defaultSelfName("!!!")).toBe("dg");
+		expect(defaultSelfName("")).toBe("dg");
 	});
 });
 

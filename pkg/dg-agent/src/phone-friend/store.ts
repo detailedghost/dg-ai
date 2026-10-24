@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { userInfo } from "node:os";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, realSubdirectories } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, realSubdirectories, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
 import { PhoneFriendDb } from "./db";
@@ -14,6 +16,57 @@ export const DEFAULT_RELAYS = [
 	"wss://nos.lol",
 	"wss://relay.primal.net",
 ];
+
+/** Leading dot keeps this outside the line-name charset, so it can never collide with a line directory of the same name. */
+const WHOAMI_FILE = ".whoami";
+const FALLBACK_SELF_NAME = "dg";
+
+function whoamiPath(paths: DgPaths): string {
+	return join(paths.phoneFriendRoot, WHOAMI_FILE);
+}
+
+/** The saved self name, shared across every line; undefined when never set. */
+export function readWhoami(paths: DgPaths): string | undefined {
+	const path = whoamiPath(paths);
+	if (!existsSync(path)) return undefined;
+	return readFileSync(path, "utf8").trim() || undefined;
+}
+
+export function writeWhoami(paths: DgPaths, name: string): void {
+	if (!isLineName(name)) {
+		throw new DgCliError(`a self name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
+	}
+	ensurePrivateDir(paths.phoneFriendRoot);
+	writeFileAtomic(whoamiPath(paths), `${name}\n`, 0o600);
+}
+
+/** Lowercases and strips to the line-name charset; undefined when nothing usable survives. */
+export function sanitizeSelfName(raw: string): string | undefined {
+	const cleaned = raw
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "")
+		.slice(0, 32)
+		.replace(/^-+|-+$/g, "");
+	return isLineName(cleaned) ? cleaned : undefined;
+}
+
+function osUsername(): string {
+	try {
+		return userInfo().username;
+	} catch {
+		return process.env.USER ?? process.env.USERNAME ?? "";
+	}
+}
+
+/** The self name to use when none is saved: the OS username, sanitized, or "dg" when that yields nothing. */
+export function defaultSelfName(raw: string = osUsername()): string {
+	return sanitizeSelfName(raw) ?? FALLBACK_SELF_NAME;
+}
+
+/** The self name a new card carries: the saved `whoami`, else the OS-username default. */
+export function resolvedSelfName(paths: DgPaths): string {
+	return readWhoami(paths) ?? defaultSelfName();
+}
 
 const CONFIG = "config";
 const INVITE = "invite";

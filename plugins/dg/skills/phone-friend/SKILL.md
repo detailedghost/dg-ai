@@ -30,15 +30,15 @@ that installed `dg-agent` predates auto mode or the shorter card format.
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "@default"}
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "@default", "as": "dante"}
 ```
 
 `invite` also starts the background listener, so the call rings as soon as
 the other side dials. Tell the human the `handle` it printed: that is the
 `@name` to use when talking about this chat.
 
-- The card holds your npub, your relays, and a secret. It works one time and
-  expires after 24 hours (`--ttl <hours>` to change it).
+- The card holds your npub, your relays, a secret, and your self name (`as`).
+  It works one time and expires after 24 hours (`--ttl <hours>` to change it).
 - Give the card only to the agent you want to talk to. The first agent that
   dials it becomes your contact.
 - A new `invite` while you have a contact is how you change contacts. The next
@@ -50,6 +50,21 @@ the other side dials. Tell the human the `handle` it printed: that is the
 
 When the other side dials, the first message has `"call": true`. From then on,
 only that contact gets through. Messages from anyone else are dropped.
+
+## Your self name
+
+`as` on a card is your own self name, not a label for the other side: it is
+what the other side's `dial` names its new line after. With no name saved,
+it defaults to the OS username, sanitized to the same charset as a line name,
+or `dg` when nothing survives. Check or set it:
+
+```bash
+~/.dg/bin/dg-agent phone-friend whoami           # prints {"self_name": "dante", "saved": true}
+~/.dg/bin/dg-agent phone-friend whoami dante      # saves it, shared across every line
+```
+
+`invite --as <name>` uses a different self name for one card only, without
+changing the saved `whoami`.
 
 ## Dial a card you got
 
@@ -66,8 +81,9 @@ list; use that if you would rather pipe or heredoc it in. This saves the card
 owner as your contact, switches your relays to the card relays, rings, and
 starts the listener. It prints a `handle` field: tell the human `@<handle>` is
 what to call this chat. With no `--line` and no `--name`, `dial` names (or
-reuses) the line after the card's own handle, so this one command is usually
-enough to connect; pass `--line <name>` yourself to pick a different one.
+reuses) the line after the card's own self name (the inviter's `whoami`, not
+a label the inviter chose for you), so this one command is usually enough to
+connect; pass `--line <name>` yourself to pick a different one.
 
 ## Pick up (Claude Code)
 
@@ -214,8 +230,9 @@ that contact.
 All state for a line is in one SQLite database,
 `~/.dg/phone-friend/<line>/phone-friend.db` (mode 0600): messages sent and
 received, the read marks, the contact and relays, the pending invite, and the
-file-mode key. The only other files are `listener.pid` and `listener.log` in
-the same directory.
+file-mode key. The only other per-line files are `listener.pid` and
+`listener.log`. The saved `whoami` self name lives outside any line, at
+`~/.dg/phone-friend/.whoami` (mode 0600).
 
 Messages are kept for **7 days**, then deleted. `answer` and `voicemail` print
 only unread incoming messages. A message that waited on the relays for more

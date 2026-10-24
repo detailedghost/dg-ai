@@ -35,13 +35,16 @@ import {
 	lineClaiming,
 	lineForHandle,
 	listLines,
+	readWhoami,
 	releaseStart,
+	resolvedSelfName,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
 	resolveLine,
 	writeConfig,
 	writeInvite,
+	writeWhoami,
 } from "./store";
 
 export type PhoneFriendDeps = KeyDeps & {
@@ -190,6 +193,17 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	});
 }
 
+/** Prints the saved self name (or its OS-username default) with no argument; saves a new one with one. */
+export function phoneWhoami(name: string | undefined, deps: PhoneFriendDeps): void {
+	if (name !== undefined) {
+		writeWhoami(deps.paths, name);
+		printJson(deps, { self_name: name, saved: true });
+		return;
+	}
+	const saved = readWhoami(deps.paths);
+	printJson(deps, { self_name: saved ?? resolvedSelfName(deps.paths), saved: saved !== undefined });
+}
+
 function requireFreeName(name: string, deps: PhoneFriendDeps): void {
 	if (!isLineName(name)) {
 		throw new DgCliError(`a contact name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
@@ -226,15 +240,16 @@ export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
 		throw new DgCliError("no open call card on this line; run `dg-agent phone-friend invite` to make one");
 	}
 	const config = readConfig(deps.line);
-	const handle = handleName(config, deps.line, invite.name);
+	const peerHandle = handleName(config, deps.line, invite.name);
+	const selfName = invite.as ?? resolvedSelfName(deps.paths);
 	const card = encodeCard({
 		npub: await myNpub(deps),
 		relays: config.relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
-		handle,
+		handle: selfName,
 	});
-	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${handle}` });
+	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${peerHandle}`, as: selfName });
 }
 
 function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
@@ -306,10 +321,13 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 }
 
 export async function phoneInvite(
-	opts: { relay?: string[]; ttl?: string; name?: string },
+	opts: { relay?: string[]; ttl?: string; name?: string; as?: string },
 	deps: PhoneFriendDeps,
 ): Promise<void> {
 	if (opts.name !== undefined) requireFreeName(opts.name, deps);
+	if (opts.as !== undefined && !isLineName(opts.as)) {
+		throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+	}
 	const hours = opts.ttl === undefined ? DEFAULT_INVITE_HOURS : Number(opts.ttl);
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
@@ -318,22 +336,24 @@ export async function phoneInvite(
 	if (!isCardRelays(relays)) {
 		throw new DgCliError(`--relay must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	}
+	const selfName = opts.as ?? resolvedSelfName(deps.paths);
 	const invite = {
 		secret: randomBytes(SECRET_BYTES).toString("hex"),
 		expiresAt: deps.now() + Math.round(hours * 3600),
+		as: selfName,
 		...(opts.name === undefined ? {} : { name: opts.name }),
 	};
-	const handle = handleName(readConfig(deps.line), deps.line, opts.name);
+	const peerHandle = handleName(readConfig(deps.line), deps.line, opts.name);
 	const card = encodeCard({
 		npub: await myNpub(deps),
 		relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
-		handle,
+		handle: selfName,
 	});
 	writeInvite(deps.line, invite, relays);
 	await spawnOrRestart(deps);
-	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${handle}` });
+	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${peerHandle}`, as: selfName });
 }
 
 /**
@@ -569,6 +589,12 @@ export function registerPhoneFriendCommands(
 		.action(() => phoneNumber(makeDeps(session, line)));
 
 	phone
+		.command("whoami")
+		.description("print the self name your cards carry, or save a new one (shared across every line)")
+		.argument("[name]", "1-32 lowercase letters, digits, or dashes")
+		.action((name: string | undefined) => phoneWhoami(name, makeDeps(session, line)));
+
+	phone
 		.command("name")
 		.description("save a name for this line's contact, so --line <name> reaches it")
 		.argument("<name>", "1-32 lowercase letters, digits, or dashes")
@@ -590,7 +616,10 @@ export function registerPhoneFriendCommands(
 		.option("--relay <url...>", "relays to use instead of the saved ones")
 		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
 		.option("--name <name>", "name to give the contact once the call is answered")
-		.action((opts: { relay?: string[]; ttl?: string; name?: string }) => phoneInvite(opts, makeDeps(session, line)));
+		.option("--as <name>", "self name this card carries instead of your saved whoami")
+		.action((opts: { relay?: string[]; ttl?: string; name?: string; as?: string }) =>
+			phoneInvite(opts, makeDeps(session, line)),
+		);
 
 	phone
 		.command("dial")
