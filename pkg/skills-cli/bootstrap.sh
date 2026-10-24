@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #   ... | sh -s -- --agent-only (or DG_AGENT_ONLY=1): install dg-agent too, for a non-Claude
-#       agent that only needs phone-friend; still skips the extension and dg-daemon.
+#       agent that only needs phone; still skips the extension and dg-daemon.
 #   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
 #       install only the dg-skills CLI (checksum-verified like the default path).
 #       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.

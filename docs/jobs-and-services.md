@@ -21,10 +21,9 @@ and `url` optional — and each line becomes a feed item. The daemon dedupes on
 `id`, so a second run of the same query adds nothing. `--notify <identity>`
 queues one agent message when a run brings in something new. `job list`, `job run`, `job enable`, `job disable` and `job rm` manage them from there.
 
-`dg-agent phone-friend deliver on` registers one of these jobs per line. Its
-stored argv is `dg-agent phone-friend voicemail` (plus `--line <name>` for any
-line other than `default`), and `--notify` is the agent identity that should
-hear about unread messages. See [Phone friend](phone-friend.md).
+Phone (`dg-agent phone`) no longer delivers through a job like this: `phone
+open` keeps its own always-on listener running instead, through the OS's
+own service manager. See [Phone](phone.md).
 
 A job inherits no secrets: the daemon passes only `PATH`, `HOME`, `LANG` and
 `TZ` to the child, so the command must authenticate through its own config

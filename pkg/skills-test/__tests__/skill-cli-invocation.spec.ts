@@ -67,7 +67,7 @@ describe("packaged skills call the CLI by its literal path", () => {
 			"inbox-cleanup",
 			"jobs",
 			"overwatch",
-			"phone-friend",
+			"phone",
 			"pushup",
 		];
 		const bad = FILES.filter(
