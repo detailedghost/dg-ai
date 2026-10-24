@@ -23,7 +23,7 @@ the latest `agent-v*` release:
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor credentials.
+If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 
 ## Usage
 
@@ -91,7 +91,7 @@ exists, installs it to restart on login:
 
 ```bash
 ~/.dg/bin/dg-agent phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
-~/.dg/bin/dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {...}|null, "hook": {...}|null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>", "legacy_root_present": false}
+~/.dg/bin/dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {...}|null, "hook": {...}|null, "legacy_root_present": false, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
 ~/.dg/bin/dg-agent phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
 ```
 
@@ -254,5 +254,9 @@ It has no dg daemon, so its key is in file mode. It has no way to receive a
 push either, so ask it to run `voicemail` on its own schedule, the same as
 any other side with no hook of its own.
 
-**`phone-friend` is the old name.** It still works, hidden, for two minor
-releases, with a one-line notice on stderr naming the removal release.
+**`phone-friend` is the old name.** `dial`, `on`, `off`, and `card` are hidden
+synonyms for `accept`, `open`, `close`, and `number` under either name.
+`answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each
+fails with its replacement named and exits 2. The alias itself still works,
+hidden, for two minor releases, with a one-line notice on stderr naming the
+removal release.

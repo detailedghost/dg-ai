@@ -5,7 +5,9 @@ description: Renamed to phone. This hidden alias still works for two minor relea
 
 # phone-friend has been renamed
 
-`phone-friend` is now `phone`. Every command it used to run still works
-under its old name, hidden, for two minor releases, printing one notice to
-stderr the first time it runs each call. Use [/dg:phone](../phone/SKILL.md)
-from here on; this page is a pointer, not a second copy of the skill.
+`phone-friend` is now `phone`. `dial`, `on`, `off`, and `card` still work,
+hidden, as synonyms for `accept`, `open`, `close`, and `number`, for two
+minor releases, printing one notice to stderr the first time each call runs.
+`answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright and
+fail with their replacement named. Use [/dg:phone](../phone/SKILL.md) from
+here on; this page is a pointer, not a second copy of the skill.

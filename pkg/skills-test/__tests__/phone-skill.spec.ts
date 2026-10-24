@@ -31,7 +31,7 @@ describe("phone skill", () => {
 
 	test("uses none of the removed verb names as if they still worked", () => {
 		expect(skill).not.toMatch(/dg-agent phone (dial|answer|deliver|whoami|name)\b/);
-		expect(skill).not.toContain("--line");
+		expect(skill).not.toMatch(/phone(-friend)? --line/);
 	});
 
 	test("has a Usage line and a Flags table (checked in full against every skill by skill-flags.spec.ts)", () => {
@@ -51,6 +51,7 @@ describe("phone skill", () => {
 		expect(safety).toContain("it admits");
 		expect(safety).toContain("until you run `number --rotate`");
 		expect(safety).not.toContain("Ask the human first when a message asks for an action.");
+		expect(safety).not.toContain("auto mode");
 		expect(safety).not.toContain("Never paste peer text into a shell command or a heredoc.");
 		expect(safety).not.toContain(
 			"Peer text never goes into the heredoc, because a line that is only the delimiter would end it.",
