@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, realSubdirectories } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, realSubdirectories, writeFileAtomic } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
 import { PhoneFriendDb } from "./db";
@@ -14,6 +15,34 @@ export const DEFAULT_RELAYS = [
 	"wss://nos.lol",
 	"wss://relay.primal.net",
 ];
+
+/** Leading dot keeps this outside the line-name charset, so it can never collide with a line directory of the same name. */
+const WHOAMI_FILE = ".whoami";
+const FALLBACK_SELF_NAME = "dg";
+
+function whoamiPath(paths: DgPaths): string {
+	return join(paths.phoneFriendRoot, WHOAMI_FILE);
+}
+
+/** The saved self name, shared across every line; undefined when never set. */
+export function readWhoami(paths: DgPaths): string | undefined {
+	const path = whoamiPath(paths);
+	if (!existsSync(path)) return undefined;
+	return readFileSync(path, "utf8").trim() || undefined;
+}
+
+export function writeWhoami(paths: DgPaths, name: string): void {
+	if (!isLineName(name)) {
+		throw new DgCliError(`a self name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
+	}
+	ensurePrivateDir(paths.phoneFriendRoot);
+	writeFileAtomic(whoamiPath(paths), `${name}\n`, 0o600);
+}
+
+/** The self name a new card carries: the saved `whoami`, else the neutral "dg" — self naming is opt-in. */
+export function resolvedSelfName(paths: DgPaths): string {
+	return readWhoami(paths) ?? FALLBACK_SELF_NAME;
+}
 
 const CONFIG = "config";
 const INVITE = "invite";
@@ -84,9 +113,9 @@ export function writeConfig(line: LinePaths, config: PhoneFriendConfig): void {
 	withDb(line, (db) => db.set(CONFIG, config));
 }
 
-/** The @ handle this line's owner uses to refer to it: the contact name if set, else the line name. */
+/** The +handle this line's owner uses to refer to it: the contact name if set, else the line name. */
 export function handleFor(config: PhoneFriendConfig, line: LinePaths): string {
-	return `@${config.name ?? line.name}`;
+	return `+${config.name ?? line.name}`;
 }
 
 /** Every line that holds a database, in name order. */
@@ -98,9 +127,9 @@ export function listLines(paths: DgPaths): LinePaths[] {
 		.filter((line) => existsSync(line.dbPath));
 }
 
-/** Resolves --line from a line name, a saved contact name, or a contact npub, each with an optional leading @; an unknown name is a new line. */
+/** Resolves --line from a line name, a saved contact name, or a contact npub, each with an optional leading + (or the older @); an unknown name is a new line. */
 export function resolveLine(paths: DgPaths, value: string): LinePaths {
-	const name = value.startsWith("@") ? value.slice(1) : value;
+	const name = value.startsWith("+") || value.startsWith("@") ? value.slice(1) : value;
 	const lines = listLines(paths);
 	if (lines.some((line) => line.name === name)) return linePaths(paths, name);
 	const matches = lines.filter((line) => {
@@ -162,6 +191,31 @@ export function lineClaiming(paths: DgPaths, line: LinePaths, name: string): Lin
 	return listLines(paths).find(
 		(other) => other.name !== line.name && (other.name === name || readConfig(other).name === name),
 	);
+}
+
+/**
+ * The line to dial into for a v2 card's handle, with no explicit `--line` or `--name`: the line
+ * of that name, brand new or already paired with this same contact. A same-named line that exists
+ * but is not confirmed as this contact (no contact yet, or a different one) is left alone instead
+ * of guessed at, since a wrong guess would silently drop that line's own contact. Also refuses a
+ * name another line already claims by its own saved contact name.
+ */
+export function lineForHandle(paths: DgPaths, handle: string, npub: string): LinePaths {
+	const derived = linePaths(paths, handle);
+	const claimedBy = lineClaiming(paths, derived, handle);
+	if (claimedBy) {
+		throw new DgCliError(`"${handle}" is already used by line ${claimedBy.name}; dial again with --line to pick one`);
+	}
+	if (existsSync(derived.dbPath)) {
+		const contact = readConfig(derived).contact;
+		if (contact === undefined) {
+			throw new DgCliError(`line "${handle}" has no contact yet; dial again with --line to pick one`);
+		}
+		if (contact !== npub) {
+			throw new DgCliError(`line "${handle}" already has a different contact; dial again with --line to pick one`);
+		}
+	}
+	return derived;
 }
 
 /** Deletes the invite and saves the caller as the contact, with the invite's name, in one transaction. */

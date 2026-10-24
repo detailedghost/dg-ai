@@ -13,16 +13,20 @@ import {
 	phoneDial,
 	phoneCard,
 	phoneContacts,
+	phoneDeliverOff,
+	phoneDeliverOn,
 	phoneInvite,
 	phoneName,
 	phoneNumber,
 	phoneSay,
 	phoneVoicemail,
+	phoneWhoami,
 	isListenerArgs,
 	registerPhoneFriendCommands,
 	phoneOn,
 	phoneOff,
 } from "../../src/phone-friend/commands";
+import { PHONE_FRIEND_SAFETY_REF } from "../../src/phone-friend/deliver";
 import {
 	DEFAULT_RELAYS,
 	claimStart,
@@ -32,7 +36,7 @@ import {
 	readInvite,
 	writeConfig,
 } from "../../src/phone-friend/store";
-import { decodeCard, encodeCard } from "../../src/phone-friend/card";
+import { CARD_PREFIX_V1, decodeCard, encodeCard } from "../../src/phone-friend/card";
 import { PhoneFriendDb } from "../../src/phone-friend/db";
 import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 import { createFakePool, type FakePool } from "./fake-pool";
@@ -195,22 +199,59 @@ describe("phoneInvite", () => {
 	it("prints a card with our npub, the relays, and a fresh secret, and saves the invite", async () => {
 		await phoneInvite({ relay: ["wss://x.example"] }, deps());
 
-		const [{ card, expires_at, handle }] = lines() as { card: string; expires_at: string; handle: string }[];
+		const [{ card, expires_at, handle, as }] = lines() as {
+			card: string;
+			expires_at: string;
+			handle: string;
+			as: string;
+		}[];
 		const decoded = decodeCard(card, NOW);
 		expect(decoded.npub).toBe(nip19.npubEncode(getPublicKey(myKey())));
 		expect(decoded.relays).toEqual(["wss://x.example"]);
 		expect(decoded.exp).toBe(NOW + 24 * 3600);
+		expect(decoded.handle).toBe(as);
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
-		expect(handle).toBe("@default");
-		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp });
+		expect(handle).toBe("+default");
+		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp, as });
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
 	});
 
-	it("keeps the line's own handle at invite time; --name only takes effect once answered", async () => {
+	it("shows the real handle it will use right away, not the line's own name", async () => {
 		await phoneInvite({ name: "grok" }, deps());
 
 		const [{ handle }] = lines() as { handle: string }[];
-		expect(handle).toBe("@default");
+		expect(handle).toBe("+grok");
+	});
+
+	it("--as overrides the saved self name on this one card, and the override survives on `card`", async () => {
+		await phoneInvite({ as: "dante" }, deps());
+
+		const [{ card, as }] = lines() as { card: string; as: string }[];
+		expect(as).toBe("dante");
+		expect(decodeCard(card, NOW).handle).toBe("dante");
+		out = [];
+
+		await phoneCard(deps());
+
+		expect(lines()).toMatchObject([{ as: "dante" }]);
+	});
+
+	it("without --as, the card carries the saved whoami, defaulting to the neutral 'dg' when none is saved", async () => {
+		await phoneInvite({}, deps());
+		const [{ as: defaulted }] = lines() as { as: string }[];
+		expect(defaulted).toBe("dg");
+		out = [];
+
+		phoneWhoami("dante", deps());
+		out = [];
+		await phoneInvite({}, deps());
+
+		expect(lines()).toMatchObject([{ as: "dante" }]);
+	});
+
+	it("rejects an --as that is not a safe self name, and saves no invite", async () => {
+		await expect(phoneInvite({ as: "Dante!" }, deps())).rejects.toThrow("lowercase");
+		expect(readInvite(line)).toBeUndefined();
 	});
 
 	it("starts the listener right away, so the card can ring without a separate on", async () => {
@@ -256,8 +297,8 @@ describe("phoneInvite", () => {
 describe("phoneDial", () => {
 	const secret = "ab".repeat(32);
 
-	function cardFor(relays = ["wss://x.example"]) {
-		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100 });
+	function cardFor(relays = ["wss://x.example"], handle = "default") {
+		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100, handle });
 	}
 
 	it("saves the card owner as the contact, uses its relays, and rings with the secret", async () => {
@@ -267,14 +308,14 @@ describe("phoneDial", () => {
 		const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
 		expect(rumor.content).toBe("hello");
 		expect(rumor.tags).toContainEqual(["dg-call", secret]);
-		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"], handle: "@default" }]);
+		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"], handle: "+default" }]);
 	});
 
 	it("names the card owner when dial gets a name, and uses it as the handle", async () => {
 		await phoneDial(cardFor(), undefined, deps(), "dante");
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
-		expect(lines()).toMatchObject([{ handle: "@dante" }]);
+		expect(lines()).toMatchObject([{ handle: "+dante" }]);
 	});
 
 	it("starts the listener right away, so a reply is not missed", async () => {
@@ -329,6 +370,123 @@ describe("phoneDial", () => {
 	});
 });
 
+describe("phoneDial with no --line or --name: the card's handle names the line", () => {
+	const secret = "ab".repeat(32);
+
+	function cardFor(handle: string, relays = ["wss://x.example"]) {
+		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100, handle });
+	}
+
+	function v1CardFor(relays = ["wss://x.example"]) {
+		return (
+			CARD_PREFIX_V1 +
+			Buffer.from(JSON.stringify({ v: 1, npub: contactNpub, relays, secret, exp: NOW + 100 })).toString(
+				"base64url",
+			)
+		);
+	}
+
+	it("a v1 card has no handle, so it lands on the current line unchanged", async () => {
+		await phoneDial(v1CardFor(), undefined, deps());
+
+		expect(readConfig(line)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		expect(pool.events).toHaveLength(1);
+	});
+
+	it("creates a new line named after the handle, and leaves the current line untouched", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		const velora = linePaths(paths, "velora");
+		expect(readConfig(velora)).toMatchObject({ contact: contactNpub, name: "velora" });
+		expect(readConfig(line).contact).toBeUndefined();
+		expect(lines()).toMatchObject([{ line: "velora", handle: "+velora" }]);
+	});
+
+	it("starts the listener on the new line, not the current one", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(spawned).toBe(1);
+		expect(existsSync(linePaths(paths, "velora").pidPath)).toBe(true);
+		expect(existsSync(line.pidPath)).toBe(false);
+	});
+
+	it("reuses a line already paired with this same contact, instead of refusing", async () => {
+		writeConfig(linePaths(paths, "velora"), { contact: contactNpub, relays: DEFAULT_RELAYS });
+
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
+		expect(pool.events).toHaveLength(1);
+	});
+
+	it("refuses when the derived line already has a different contact, and rings no one", async () => {
+		writeConfig(linePaths(paths, "velora"), { contact: "npub1someoneelse", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("different contact");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("refuses a handle another line already claims by its saved contact name", async () => {
+		writeConfig(linePaths(paths, "work"), { contact: "npub1someoneelse", name: "velora", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("already used by line work");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("refuses to overwrite the current line's own contact when the card's handle matches the current line's name", async () => {
+		writeConfig(line, { contact: "npub1someoneelse", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor(line.name), undefined, deps())).rejects.toThrow("different contact");
+		expect(readConfig(line).contact).toBe("npub1someoneelse");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("a failed dial on a new line can be retried, instead of being refused as already in use", async () => {
+		pool = createFakePool([]);
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("no relay");
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+
+		pool = createFakePool();
+
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
+	});
+
+	it("an explicit --line wins: no second line is created", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps(), undefined, true);
+
+		expect(readConfig(line)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+	});
+
+	it("an explicit --name wins over the card's handle", async () => {
+		await phoneDial(cardFor("velora"), undefined, deps(), "dante");
+
+		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+	});
+
+	it("end to end: a card from an inviter named 'dante' makes the dialer's line 'dante' too", async () => {
+		const danteHome = mkdtempSync(join(tmpdir(), "dg-phone-friend-dante-"));
+		const dantePaths = resolveDgPaths({ env: { DG_HOME: danteHome } });
+		try {
+			await phoneInvite({ as: "dante" }, deps({ paths: dantePaths, line: linePaths(dantePaths) }));
+			const [{ card }] = lines() as { card: string }[];
+			const danteNpub = decodeCard(card, NOW).npub;
+			out = [];
+
+			await phoneDial(card, undefined, deps());
+
+			const danteLine = linePaths(paths, "dante");
+			expect(readConfig(danteLine)).toMatchObject({ contact: danteNpub, name: "dante" });
+		} finally {
+			rmSync(danteHome, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("accepting a call", () => {
 	it("voicemail pairs the caller, clears the invite, and marks the line as a call", async () => {
 		await phoneInvite({}, deps());
@@ -340,7 +498,7 @@ describe("accepting a call", () => {
 
 		await phoneVoicemail(deps());
 
-		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true, handle: "@default" }]);
+		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true, handle: "+default" }]);
 		expect(readConfig(line).contact).toBe(contactNpub);
 		expect(readInvite(line)).toBeUndefined();
 	});
@@ -355,7 +513,7 @@ describe("accepting a call", () => {
 		await phoneVoicemail(deps());
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "grok" });
-		expect(lines()).toMatchObject([{ call: true, handle: "@grok" }]);
+		expect(lines()).toMatchObject([{ call: true, handle: "+grok" }]);
 	});
 
 	it("refuses an invite name that another line already uses, and saves no invite", async () => {
@@ -377,7 +535,7 @@ describe("phoneNumber", () => {
 
 		const npub = nip19.npubEncode(getPublicKey(myKey()));
 		expect(lines()).toEqual([
-			{ line: "default", npub, contact: contactNpub, name: null, handle: "@default", key_store: "file", listener: 4242 },
+			{ line: "default", npub, contact: contactNpub, name: null, handle: "+default", key_store: "file", listener: 4242 },
 		]);
 	});
 
@@ -399,7 +557,7 @@ describe("phoneName and phoneContacts", () => {
 
 		expect(lines()).toEqual([
 			{ line: "default", name: "velora", contact: contactNpub },
-			{ line: "default", name: "velora", contact: contactNpub, handle: "@velora", listener: 4242 },
+			{ line: "default", name: "velora", contact: contactNpub, handle: "+velora", listener: 4242 },
 		]);
 		expect(readConfig(line).name).toBe("velora");
 	});
@@ -415,15 +573,67 @@ describe("phoneName and phoneContacts", () => {
 	});
 });
 
+describe("phoneWhoami", () => {
+	it("prints the neutral 'dg' default, unsaved, when self naming is opt-in and none is saved", () => {
+		phoneWhoami(undefined, deps());
+
+		expect(lines()).toEqual([{ self_name: "dg", saved: false }]);
+	});
+
+	it("saves a self name and prints it back as saved", () => {
+		phoneWhoami("dante", deps());
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("prints a default self name as not saved, until one is saved", () => {
+		phoneWhoami(undefined, deps());
+		expect(lines()).toEqual([{ self_name: "dg", saved: false }]);
+		out = [];
+		phoneWhoami("dante", deps());
+		out = [];
+
+		phoneWhoami(undefined, deps());
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("is shared across lines: a name saved on one line reads back on another", () => {
+		phoneWhoami("dante", deps());
+		out = [];
+
+		phoneWhoami(undefined, deps({ line: linePaths(paths, "work") }));
+
+		expect(lines()).toEqual([{ self_name: "dante", saved: true }]);
+	});
+
+	it("rejects a bad self name, and saves nothing", () => {
+		expect(() => phoneWhoami("Dante!", deps())).toThrow("lowercase");
+
+		phoneWhoami(undefined, deps());
+		expect((lines()[0] as { saved: boolean }).saved).toBe(false);
+	});
+
+	it("does not collide with a line literally named 'whoami'", async () => {
+		phoneWhoami("dante", deps());
+		out = [];
+
+		await phoneInvite({}, deps({ line: linePaths(paths, "whoami") }));
+
+		expect(decodeCard((lines()[0] as { card: string }).card, NOW).handle).toBe("dante");
+	});
+});
+
 describe("phoneCard", () => {
 	it("prints the open card again with the same secret, relays, and expiry", async () => {
 		await phoneInvite({ relay: ["wss://x.example"] }, deps());
-		const [first] = lines() as { card: string; expires_at: string }[];
+		const [first] = lines() as { card: string; expires_at: string; safety: string }[];
 		out = [];
 
 		await phoneCard(deps());
 
 		expect(lines()).toEqual([first]);
+		expect(first.safety).toBe(PHONE_FRIEND_SAFETY_REF);
 	});
 
 	it("shows the open card's expiry in phoneNumber, and hides it once no card is open", async () => {
@@ -490,7 +700,22 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		await phoneVoicemail(deps());
 
 		expect(pool.filters).toEqual([]);
-		expect(lines()).toMatchObject([{ text: "from listener" }]);
+		expect(lines()).toMatchObject([{ text: "from listener", title: "from listener" }]);
+	});
+
+	it("adds a non-empty feed title and leaves the stored text unchanged", async () => {
+		pair();
+		await phoneOn(deps());
+		stored({ id: "pad", ts: NOW, from: contactNpub, text: "  hello  " });
+		stored({ id: "blank", ts: NOW, from: contactNpub, text: "   " });
+		out = [];
+
+		await phoneVoicemail(deps());
+
+		expect(lines()).toEqual([
+			expect.objectContaining({ id: "blank", text: "   ", title: "(empty)" }),
+			expect.objectContaining({ id: "pad", text: "  hello  ", title: "hello" }),
+		]);
 	});
 
 	it("follows the inbox until the listener stops", async () => {
@@ -509,6 +734,7 @@ describe("phoneVoicemail and phoneAnswer", () => {
 		await expect(phoneAnswer(follow)).rejects.toThrow("stopped");
 
 		expect(lines()).toMatchObject([{ text: "live" }]);
+		expect(lines()[0]).not.toHaveProperty("title");
 	});
 
 	it("refuses to follow when no listener runs", async () => {
@@ -733,6 +959,169 @@ describe("registerPhoneFriendCommands", () => {
 		expect(work.line).toBe("work");
 		expect(main.line).toBe("default");
 		expect(work.npub).not.toBe(main.npub);
+	});
+
+	it("dial with no --line lets a v2 card's handle name the line; an explicit --line disables that", async () => {
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		registerPhoneFriendCommands(program, (_session, name) => ({ ...deps(), line: linePaths(paths, name) }));
+		const card = encodeCard({
+			npub: contactNpub,
+			relays: ["wss://x.example"],
+			secret: "ab".repeat(32),
+			exp: NOW + 100,
+			handle: "velora",
+		});
+
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "dial", card]);
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
+
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "--line", "work", "dial", card]);
+		expect(readConfig(linePaths(paths, "work")).contact).toBe(contactNpub);
+	});
+});
+
+describe("phoneDeliver", () => {
+	function recordingDeps(calls: string[][]): PhoneFriendDeps {
+		return {
+			...deps(),
+			runJobCli: async (args) => {
+				calls.push(args);
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		};
+	}
+
+	it("registers the default line without --line and prints the stored argv", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOn({ notify: "  reviewer  ", every: " 1m " }, recordingDeps(calls));
+
+		expect(calls[0]).toEqual([
+			"job",
+			"add",
+			"--label",
+			"phone-friend:default",
+			"--every",
+			"1m",
+			"--cwd",
+			paths.stateDir,
+			"--notify",
+			"reviewer",
+			"--",
+			"dg-agent",
+			"phone-friend",
+			"voicemail",
+		]);
+		expect(lines()[0]).toMatchObject({
+			line: "default",
+			delivery: "on",
+			status: "added",
+			notify: "reviewer",
+			argv: ["dg-agent", "phone-friend", "voicemail"],
+		});
+	});
+
+	it("pauses the line job", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOff(recordingDeps(calls));
+
+		expect(calls).toEqual([["job", "disable", "phone-friend:default"]]);
+		expect(lines()[0]).toMatchObject({ delivery: "off", status: "disabled", label: "phone-friend:default" });
+	});
+
+	it("uses the session identity when --notify is omitted", async () => {
+		const calls: string[][] = [];
+		const recorded = recordingDeps(calls);
+
+		await phoneDeliverOn({}, { ...recorded, lookupIdentity: () => "claude" }, "sess");
+
+		expect(calls[0]).toContain("claude");
+		expect(lines()[0]).toMatchObject({ notify: "claude" });
+	});
+
+	it("stores the dg home directory as the job cwd, not the invoking directory", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOn({ notify: "reviewer" }, recordingDeps(calls));
+
+		const cwdIndex = calls[0]?.indexOf("--cwd") ?? -1;
+		expect(cwdIndex).toBeGreaterThan(-1);
+		expect(calls[0]?.[cwdIndex + 1]).toBe(paths.stateDir);
+		expect(calls[0]).not.toContain(process.cwd());
+	});
+
+	it("keeps the stored settings on the enabled path instead of restating the request", async () => {
+		const calls: string[][] = [];
+		const responses: { code: number; stdout: string; stderr: string }[] = [
+			{ code: 1, stdout: "", stderr: 'a job labelled "phone-friend:default" already exists' },
+			{ code: 0, stdout: "", stderr: "" },
+		];
+		const recorded: PhoneFriendDeps = {
+			...deps(),
+			runJobCli: async (args) => {
+				calls.push(args);
+				return responses.shift() ?? { code: 1, stdout: "", stderr: "unexpected job cli call" };
+			},
+		};
+
+		await phoneDeliverOn({ notify: "reviewer", every: "5m" }, recorded);
+
+		expect(calls).toHaveLength(2);
+		expect(calls[1]).toEqual(["job", "enable", "phone-friend:default"]);
+		expect(lines()[0]).toMatchObject({
+			line: "default",
+			delivery: "on",
+			status: "enabled",
+			label: "phone-friend:default",
+			kept_existing_settings: true,
+		});
+		expect(lines()[0]).not.toHaveProperty("every");
+		expect(lines()[0]).not.toHaveProperty("notify");
+	});
+
+	it("wires deliver on and off through the line and the session", async () => {
+		const calls: string[][] = [];
+		const program = new Command().exitOverride().option("-s, --session <id>");
+		registerPhoneFriendCommands(program, (session, name) => ({
+			...deps(),
+			line: linePaths(paths, name),
+			lookupIdentity: () => {
+				if (session !== "abc") throw new Error(`session ${session}`);
+				return "from-session";
+			},
+			runJobCli: async (args) => {
+				calls.push(args);
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		}));
+
+		await program.parseAsync([
+			"node",
+			"dg-agent",
+			"--session",
+			"abc",
+			"phone-friend",
+			"--line",
+			"work",
+			"deliver",
+			"on",
+		]);
+		await program.parseAsync(["node", "dg-agent", "phone-friend", "deliver", "off"]);
+
+		expect(calls[0]?.slice(0, 8)).toEqual([
+			"job",
+			"add",
+			"--label",
+			"phone-friend:work",
+			"--every",
+			"1m",
+			"--cwd",
+			paths.stateDir,
+		]);
+		expect(calls[0]).toContain("from-session");
+		expect(calls[0]?.slice(-5)).toEqual(["dg-agent", "phone-friend", "--line", "work", "voicemail"]);
+		expect(calls[1]).toEqual(["job", "disable", "phone-friend:default"]);
 	});
 });
 

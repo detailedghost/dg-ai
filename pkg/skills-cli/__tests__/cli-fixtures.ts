@@ -1,7 +1,7 @@
 import { afterEach, beforeEach } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ReviewThread } from "../src/provider/types";
 import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
@@ -82,6 +82,24 @@ export function restPr(
 
 export const runGit = git;
 
+export function isolatedGitEnv(opts: {
+	path: string;
+	home: string;
+	scratch: string;
+	state: string;
+}): Record<string, string> {
+	return {
+		PATH: opts.path,
+		HOME: opts.home,
+		AI_SCRATCH_DIR: opts.scratch,
+		AI_STATE_DIR: opts.state,
+		GIT_CONFIG_GLOBAL: "/dev/null",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_COUNT: "0",
+		GIT_TERMINAL_PROMPT: "0",
+	};
+}
+
 export function commitFile(dir: string, name: string, content: string, message: string): string {
 	writeFileSync(join(dir, name), content);
 	runGit(["add", name], dir);
@@ -155,6 +173,18 @@ export function isolateCliTests(): void {
   Object.assign(process.env, savedEnv);
   fixtures.cleanup();
  });
+}
+
+/** Writes `content` to `baseDir/relPath`, creating parent directories as needed. */
+export function writeScopedFile(baseDir: string, relPath: string, content: string): string {
+	const abs = join(baseDir, relPath);
+	mkdirSync(dirname(abs), { recursive: true });
+	writeFileSync(abs, content);
+	return abs;
+}
+
+export function findNodeByLabel<T extends { label: string }>(nodes: T[], label: string): T | undefined {
+	return nodes.find((n) => n.label === label);
 }
 
 /** A thread with one root comment id and no loaded comments. */

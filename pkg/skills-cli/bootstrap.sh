@@ -1,8 +1,10 @@
 #!/bin/sh
 # Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.2/pkg/skills-cli/bootstrap.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
+#   ... | sh -s -- --agent-only (or DG_AGENT_ONLY=1): install dg-agent too, for a non-Claude
+#       agent that only needs phone-friend; still skips the extension and dg-daemon.
 #   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
 #       install only the dg-skills CLI (checksum-verified like the default path).
 #       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.
@@ -21,10 +23,24 @@ set -eu
 
 CLI_ONLY="${DG_CLI_ONLY:-0}"
 SKILLS_ONLY="${DG_SKILLS_ONLY:-0}"
+AGENT_ONLY="${DG_AGENT_ONLY:-0}"
 for arg in "$@"; do
   [ "${arg}" = "--cli-only" ] && CLI_ONLY=1
   [ "${arg}" = "--skills-only" ] && SKILLS_ONLY=1
+  [ "${arg}" = "--agent-only" ] && AGENT_ONLY=1
 done
+if [ "$SKILLS_ONLY" = "1" ] && [ "$CLI_ONLY" = "1" ]; then
+  echo "dg-skills: pass only one of --skills-only and --cli-only" >&2
+  exit 1
+fi
+if [ "$SKILLS_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
+  echo "dg-skills: pass only one of --skills-only and --agent-only" >&2
+  exit 1
+fi
+if [ "$CLI_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
+  echo "dg-skills: pass only one of --cli-only and --agent-only" >&2
+  exit 1
+fi
 
 TMP_PATHS=""
 track_tmp() {
@@ -181,10 +197,6 @@ skills_tree_source() {
 }
 
 if [ "$SKILLS_ONLY" = "1" ]; then
-  if [ "$CLI_ONLY" = "1" ]; then
-    echo "dg-skills: pass only one of --skills-only and --cli-only" >&2
-    exit 1
-  fi
   dest="${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
   skills_tree_source
   copy_skill_tree "${SKILLS_SRC}" "$dest"
@@ -319,6 +331,8 @@ if [ "${SKILLS_ONLY}" = "1" ]; then
   exit 0
 elif [ "${CLI_ONLY}" = "1" ]; then
   DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
+elif [ "${AGENT_ONLY}" = "1" ]; then
+  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only
 else
   # Set up the browser extension too, so one command installs everything.
   echo "Setting up the dg-ai-extension…"
@@ -337,7 +351,7 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   mkdir -p "${CODEX_ROOT}/skills"
   tar -xzf "${archive}" -C "${tmpdir}"
   for skill in "${tmpdir}/dg-ai-${tag}/plugins/dg/skills"/*/; do
-    if [ "${CLI_ONLY}" = "1" ] && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
+    if { [ "${CLI_ONLY}" = "1" ] || [ "${AGENT_ONLY}" = "1" ]; } && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
       continue
     fi
     cp -R "${skill}" "${CODEX_ROOT}/skills/"

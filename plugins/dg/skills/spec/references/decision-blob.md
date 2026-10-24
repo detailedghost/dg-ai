@@ -45,7 +45,7 @@ this exact structure.
 - `proxy_skills`: array of skill names (e.g. `["db", "polish"]`); scaffold omits
   `agents.proxy_skills` in frontmatter when empty/absent. These are the skill-behaviors a proxied
   slice needs — `/dg:spec -s` inlines them into the `/dg:proxy` prompt because `/dg:proxy` injects only the
-  persona file and can't run `/db` or `/dg:polish` as slash-commands.
+  persona file and can't run `/dg:db` or `/dg:polish` as slash-commands.
 - `serializing` (optional, top level): code-generator outputs. Each entry is
   `{"writes": ["<output glob>"], "when": ["<glob that triggers the generator>"]}`. A slice whose
   `files` overlap a `when` glob owns the `writes` globs for `lint-waves`. A bare string entry means

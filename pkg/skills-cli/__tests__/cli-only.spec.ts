@@ -22,6 +22,7 @@ import {
 	registerRequireExtension,
 	setCliOnly,
 } from "../src/utils/cli-only";
+import { cliBinDir, cliDest } from "../src/utils/lib";
 
 const skillsDir = new URL("../../../plugins/dg/skills/", import.meta.url).pathname;
 const bootstrap = new URL("../bootstrap.sh", import.meta.url).pathname;
@@ -96,6 +97,17 @@ describe("extension guard", () => {
 		await program.parseAsync(["channel-review"], { from: "user" });
 		await program.parseAsync(["inbox"], { from: "user" });
 		expect(calls).toEqual(["channel-review", "inbox"]);
+	});
+
+	test("omits dg-agent from the hint once an agent-only install already placed it", async () => {
+		setCliOnly(true);
+		expect(extensionRequiredMessage("x")).toContain("the extension, dg-daemon and dg-agent");
+
+		mkdirSync(cliBinDir(), { recursive: true });
+		writeFileSync(cliDest("dg-agent"), "");
+
+		expect(extensionRequiredMessage("x")).toContain("the extension and dg-daemon");
+		expect(extensionRequiredMessage("x")).not.toContain("dg-agent.");
 	});
 
 	test("require-extension names the skill and how to add the extension", async () => {
@@ -193,5 +205,23 @@ fi
 			exitCode: 0,
 			calls: "install --cli-only",
 		});
+	});
+
+	test("passes --agent-only to install when given the flag", async () => {
+		expect(await run(["--agent-only"])).toEqual({ exitCode: 0, calls: "install --agent-only" });
+	});
+
+	test("passes --agent-only to install when DG_AGENT_ONLY is 1", async () => {
+		expect(await run([], { DG_AGENT_ONLY: "1" })).toEqual({
+			exitCode: 0,
+			calls: "install --agent-only",
+		});
+	});
+
+	test("refuses to combine --cli-only and --agent-only, before any download", async () => {
+		const result = await run(["--cli-only", "--agent-only"]);
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.calls).toBe("");
 	});
 });
