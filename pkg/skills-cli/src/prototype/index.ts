@@ -8,7 +8,12 @@ import {
 	resolveDownloadsDir,
 } from "../utils/proto-paths";
 import { type Flags, parseFlags } from "./args";
-import { protoDir, type SentinelPaths, sentinelPaths } from "./paths";
+import {
+	assertNotSelftestName,
+	protoDir,
+	type SentinelPaths,
+	sentinelPaths,
+} from "./paths";
 import {
 	awaitDecision,
 	confirm,
@@ -169,6 +174,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			name,
 		);
 	}
+	if (command === "confirm" && !flags.selftest) assertNotSelftestName(name);
 	const targetName = flags.selftest ? `${name}-selftest` : name;
 	const paths = locate(targetName, flags);
 	switch (command) {

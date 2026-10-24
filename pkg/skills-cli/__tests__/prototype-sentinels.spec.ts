@@ -9,7 +9,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { protoDir, sentinelPaths } from "../src/prototype/paths";
+import {
+	assertNotSelftestName,
+	protoDir,
+	sentinelPaths,
+} from "../src/prototype/paths";
 import {
 	awaitDecision,
 	confirm,
@@ -242,6 +246,16 @@ describe("prototype directory resolution", () => {
 		expect(() => protoDir(name, { cwd: root, light: false })).toThrow(
 			/invalid prototype name/,
 		);
+	});
+
+	test("assertNotSelftestName rejects a name already ending in -selftest", () => {
+		expect(() => assertNotSelftestName("foo-selftest")).toThrow(
+			/invalid prototype name/,
+		);
+	});
+
+	test("assertNotSelftestName leaves an ordinary name untouched", () => {
+		expect(assertNotSelftestName("foo")).toBe("foo");
 	});
 
 	test("selection written in one worktree is visible from a sibling", () => {

@@ -400,6 +400,12 @@ describe("prototype ui", () => {
 		expect((await cli(["status", `${name}-selftest`]).done).stdout).toBe("Z\n");
 	});
 
+	test("confirm rejects a name already ending in -selftest, since a real prototype there would collide with that base name's self-test sentinel", async () => {
+		const result = await cli(["confirm", "demo-selftest", "Z"]).done;
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("invalid prototype name");
+	});
+
 	test("times out with status 1 and a timeout line when nothing is decided", async () => {
 		const run = cli([
 			"ui",
@@ -527,6 +533,17 @@ describe("prototype ui", () => {
 			expect(result.stderr).toContain("invalid prototype name");
 			expect(existsSync(victim)).toBe(true);
 		});
+	});
+
+	test("ui refuses a chain key ending in -selftest, since that prototype would collide with a same-base-name self-test", async () => {
+		const result = await cli([
+			"ui",
+			manifest("esc"),
+			"--chain=demo-selftest",
+			"--no-open",
+		]).done;
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("invalid prototype name");
 	});
 
 	test("an unknown option and a missing manifest are usage errors", async () => {

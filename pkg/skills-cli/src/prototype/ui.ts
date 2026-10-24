@@ -10,7 +10,12 @@ import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
 import { type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
-import { assertProtoName, protoDir, sentinelPaths } from "./paths";
+import {
+	assertNotSelftestName,
+	assertProtoName,
+	protoDir,
+	sentinelPaths,
+} from "./paths";
 import { status, type WaitResult, wait } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
@@ -187,7 +192,9 @@ export async function runUi(argv: string[]): Promise<number> {
 				"<head>\n<script>window.__protoSeries=true</script>",
 			)
 		: rendered;
-	const key = assertProtoName(flags.chain ?? manifest.chain);
+	const key = assertNotSelftestName(
+		assertProtoName(flags.chain ?? manifest.chain),
+	);
 
 	const existing = loadState(key);
 	let state: UiState;
