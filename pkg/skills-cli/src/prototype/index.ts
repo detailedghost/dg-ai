@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { validateVerdict } from "@dg/common";
 import { resolveSkillAsset } from "../utils/skill-assets";
@@ -33,15 +33,37 @@ import {
  * pending: a `--ext` slug records its verdict as a browser download, not a
  * sentinel file, so a bare local "pending" can still be hiding an unclaimed
  * `--ext` pick. Never consumes anything — `proto --ext plant` remains the
- * only way to claim and export an `--ext` verdict.
+ * only way to claim and export an `--ext` verdict. A verdict file older than
+ * `reloadPath` predates the current local session (`ui` bumps `.reload` on
+ * every start and reuse) and is ignored, so a slug reused by a brand-new
+ * local prototype can't surface a stale decision from an unrelated earlier
+ * run; with no `.reload` yet, there is no session to compare against, so the
+ * verdict is trusted as before. `resolveDownloads` is overridable for tests;
+ * resolving it lazily inside the try means a user with no Downloads folder
+ * detectable (e.g. WSL with no `wslpath`) still gets a plain local "pending"
+ * instead of a crash.
  */
-function extStatus(name: string): string | undefined {
-	for (const path of [
-		join(resolveDownloadsDir(), dgProtoPath(name, "verdict.json")),
-		protoScratchPath(name, "verdict.json"),
+export function extStatus(
+	name: string,
+	reloadPath: string,
+	resolveDownloads: () => string = resolveDownloadsDir,
+): string | undefined {
+	const reloadMs = (() => {
+		try {
+			return statSync(reloadPath).mtimeMs;
+		} catch {
+			return undefined;
+		}
+	})();
+	for (const resolvePath of [
+		() => join(resolveDownloads(), dgProtoPath(name, "verdict.json")),
+		() => protoScratchPath(name, "verdict.json"),
 	]) {
 		try {
+			const path = resolvePath();
 			if (!existsSync(path)) continue;
+			if (reloadMs !== undefined && statSync(path).mtimeMs < reloadMs)
+				continue;
 			const verdict = validateVerdict(JSON.parse(readFileSync(path, "utf8")));
 			if (verdict.slug !== name) continue;
 			return verdict.action === "reject"
@@ -167,7 +189,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			const local = status(paths);
 			return reportStatus(
 				paths,
-				local === "pending" ? (extStatus(name) ?? local) : local,
+				local === "pending" ? (extStatus(name, paths.reload) ?? local) : local,
 				flags,
 				name,
 			);
