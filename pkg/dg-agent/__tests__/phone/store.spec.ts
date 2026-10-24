@@ -204,14 +204,20 @@ describe("gateFor", () => {
 });
 
 describe("listener settings", () => {
-	it("round-trips and clears", () => {
-		writeListener(db, { pid: 123, since: NOW });
+	it("round-trips the hook and autostart state, and clears", () => {
+		writeListener(db, { onMessage: { argv: ["notify-send"], timeoutMs: 30_000 }, autostart: { kind: "systemd" } });
 
-		expect(readListener(db)).toEqual({ pid: 123, since: NOW });
+		expect(readListener(db)).toEqual({ onMessage: { argv: ["notify-send"], timeoutMs: 30_000 }, autostart: { kind: "systemd" } });
 
 		clearListener(db);
 
 		expect(readListener(db)).toBeUndefined();
+	});
+
+	it("round-trips an unavailable autostart reason", () => {
+		writeListener(db, { autostart: { kind: "unavailable", reason: "systemctl --user: command not found" } });
+
+		expect(readListener(db)).toEqual({ autostart: { kind: "unavailable", reason: "systemctl --user: command not found" } });
 	});
 });
 

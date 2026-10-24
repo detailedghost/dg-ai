@@ -1,12 +1,16 @@
 import { DgCliError } from "@dg/common";
 import { nip19 } from "nostr-tools";
+import type { AutostartState } from "./autostart";
 import type { Gate } from "./chat";
 import type { ContactRow, InviteRow, PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
 export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
 export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string };
-export type ListenerRecord = { pid: number; since: number };
+export type OnMessageConfig = { argv: string[]; timeoutMs: number };
+/** The `--on-message` hook `open` installed and the autostart manager it last reported, so a bare
+ * `open` or a service manager's own restart picks up the same hook without the flag repeated. */
+export type ListenerConfig = { onMessage?: OnMessageConfig; autostart?: AutostartState };
 
 export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
 export const FALLBACK_SELF_NAME = "dg";
@@ -171,11 +175,11 @@ export function consumeInvite(db: PhoneDb, secret: string): void {
 	db.consumeInvite(secret);
 }
 
-export function readListener(db: PhoneDb): ListenerRecord | undefined {
-	return db.get<ListenerRecord>(LISTENER_SETTING);
+export function readListener(db: PhoneDb): ListenerConfig | undefined {
+	return db.get<ListenerConfig>(LISTENER_SETTING);
 }
 
-export function writeListener(db: PhoneDb, record: ListenerRecord): void {
+export function writeListener(db: PhoneDb, record: ListenerConfig): void {
 	db.set(LISTENER_SETTING, record);
 }
 

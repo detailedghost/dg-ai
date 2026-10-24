@@ -1,15 +1,20 @@
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { chmodSync, existsSync, openSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
-import { readCappedStdin, resolveDgPaths, writeStdout } from "@dg/common/node";
+import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { nip19, SimplePool } from "nostr-tools";
+import { type AutostartDeps, formatAutostartState, installAutostart, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
-import { defaultOnSignal, defaultSchedule, readListenerPid, runListener } from "./listener";
-import { legacyRootPresent, migrateIfNeeded } from "./migrate";
-import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
+import { defaultOnSignal, defaultSchedule, isOurListener, listenerLogPath, readListenerPid, runListener } from "./listener";
+import { legacyRootPresent, migrateIfNeeded, runArgv } from "./migrate";
+import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
 	addInvite,
@@ -21,12 +26,15 @@ import {
 	nextFreeHandle,
 	normalizeHandle,
 	numberKeyId,
+	type OnMessageConfig,
+	readListener,
 	readNumber,
 	readRelays,
 	removeContact,
 	renameContact,
 	requireFreeHandle,
 	resolvedSelfName,
+	writeListener,
 	writeNumber,
 	writeRelays,
 	listContacts,
@@ -45,8 +53,21 @@ export type RunDeps = PhoneDeps & {
 	onSignal: Parameters<typeof runListener>[0]["onSignal"];
 };
 
+export type OpenCloseDeps = PhoneDeps &
+	AutostartDeps & {
+		which: (name: string) => string | undefined;
+		/** The full argv a unit file or a detached spawn should run; production resolves this
+		 * binary's own invocation with `selfCommand`, tests fake it with a deterministic path. */
+		listenerArgv: (extraArgs: string[]) => string[];
+		spawnListener: (argv: string[], logPath: string) => number;
+		kill: (pid: number, signal: NodeJS.Signals) => void;
+		isOurListener: (pid: number) => boolean;
+		sleep: (ms: number) => Promise<void>;
+	};
+
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
+const STOP_WAIT_MS = 5000;
 
 /** The CLI entry point: migration must run before `PhoneDb.open` creates `phone.db`, since
  * `legacyRoot` stops seeing a legacy install the moment that file exists. */
@@ -61,6 +82,41 @@ function defaultDeps(session?: string): PhoneDeps {
 		write: writeStdout,
 		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
 		now: () => Math.floor(Date.now() / 1000),
+	};
+}
+
+/** Detached, `unref`'d, logging to `<phoneRoot>/listener.log`: the same shape phone-friend's `on` used. */
+function defaultSpawnListener(argv: string[], logPath: string): number {
+	ensurePrivateDir(dirname(logPath));
+	const log = openSync(logPath, "a", 0o600);
+	chmodSync(logPath, 0o600);
+	const [command, ...args] = argv;
+	const child = spawn(command, args, { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: process.env });
+	child.unref();
+	if (child.pid === undefined) throw new DgCliError("could not spawn the phone listener");
+	return child.pid;
+}
+
+function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
+	return {
+		...defaultDeps(session),
+		platform: process.platform,
+		homeDir: homedir(),
+		env: process.env,
+		uid: process.getuid?.() ?? 0,
+		writeFile: (path, text, mode) => {
+			ensurePrivateDir(dirname(path));
+			writeFileAtomic(path, text, mode);
+		},
+		removeFile: (path) => rmSync(path, { force: true }),
+		fileExists: existsSync,
+		run: runArgv,
+		which: (name) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? undefined,
+		listenerArgv: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
+		spawnListener: defaultSpawnListener,
+		kill: (pid, signal) => process.kill(pid, signal),
+		isOurListener,
+		sleep: (ms) => Bun.sleep(ms),
 	};
 }
 
@@ -294,24 +350,107 @@ export function phoneStatus(deps: PhoneDeps): void {
 		listener: listener ? { pid: listener.pid, since: listener.since } : null,
 		hook: listener?.hook ? { kind: "command" as const, argv: listener.hook.argv, timeout_s: listener.hook.timeoutS } : null,
 		legacy_root_present: legacyRootPresent(deps.paths),
+		autostart: formatAutostartState(readListener(deps.db)?.autostart),
 	});
 }
 
 export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	const timeoutSeconds = opts.onMessageTimeout === undefined ? DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS : Number(opts.onMessageTimeout);
-	if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
-		throw new DgCliError(`--on-message-timeout must be a positive number of seconds, got "${opts.onMessageTimeout}"`);
-	}
+	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);
 	const hook: CommandPushTarget | undefined = opts.onMessage?.length
 		? { kind: "command", argv: opts.onMessage, timeoutMs: Math.round(timeoutSeconds * 1000) }
 		: undefined;
 	await runListener({ ...deps, hook });
 }
 
+function onMessageArgvFor(onMessage: OnMessageConfig | undefined): string[] {
+	return onMessage ? ["--on-message", ...onMessage.argv, "--on-message-timeout", String(Math.round(onMessage.timeoutMs / 1000))] : [];
+}
+
+/** Resolves `--on-message`'s executable to an absolute path at `open` time: a systemd user unit
+ * carries a minimal `PATH`, so the argv baked into it must not depend on a lookup at run time. */
+function resolveOnMessageOpt(
+	opts: { onMessage?: string[]; onMessageTimeout?: string },
+	deps: Pick<OpenCloseDeps, "which">,
+): OnMessageConfig | undefined {
+	if (!opts.onMessage?.length) return undefined;
+	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);
+	const [exe, ...rest] = opts.onMessage;
+	const resolved = deps.which(exe);
+	if (!resolved) throw new DgCliError(`--on-message: ${exe} not found on PATH`);
+	return { argv: [resolved, ...rest], timeoutMs: Math.round(timeoutSeconds * 1000) };
+}
+
+function sameHook(running: { argv: string[]; timeoutS: number } | null | undefined, onMessage: OnMessageConfig | undefined): boolean {
+	if (!running || !onMessage) return !running && !onMessage;
+	return (
+		running.timeoutS === Math.round(onMessage.timeoutMs / 1000) &&
+		running.argv.length === onMessage.argv.length &&
+		running.argv.every((value, index) => value === onMessage.argv[index])
+	);
+}
+
+/** Sends SIGTERM, through `isOurListener`'s extra check against a reused pid, and waits for the
+ * listener's own pid file to go away before returning; `open`/`close` both need the old listener
+ * fully stopped before installing or reporting on the next one. */
+async function stopRunningListener(deps: OpenCloseDeps, pid: number): Promise<void> {
+	if (deps.isOurListener(pid)) deps.kill(pid, "SIGTERM");
+	for (let waited = 0; readListenerPid(deps.paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
+		await deps.sleep(100);
+	}
+}
+
+export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: OpenCloseDeps): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const saved = readListener(deps.db);
+	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
+	if (onMessage) writeListener(deps.db, { ...saved, onMessage });
+
+	const running = readListenerPid(deps.paths);
+	if (running && sameHook(running.hook, onMessage)) {
+		printJson(deps, {
+			pid: running.pid,
+			status: "running",
+			autostart: formatAutostartState(saved?.autostart) ?? "unavailable: not installed",
+			hook: onMessage ? "command" : null,
+		});
+		return;
+	}
+	if (running) await stopRunningListener(deps, running.pid);
+
+	const argv = deps.listenerArgv(onMessageArgvFor(onMessage));
+	const install = await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+	writeListener(deps.db, {
+		onMessage,
+		autostart: install.ok ? { kind: install.kind } : { kind: "unavailable", reason: install.reason },
+	});
+
+	const status = running ? "restarted" : "started";
+	const hookField = onMessage ? ("command" as const) : null;
+	if (install.ok) {
+		printJson(deps, { pid: null, status, autostart: install.kind, hook: hookField });
+		return;
+	}
+	const pid = deps.spawnListener(argv, listenerLogPath(deps.paths));
+	printJson(deps, { pid, status, autostart: `unavailable: ${install.reason}`, hook: hookField });
+}
+
+export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const autostart = await removeAutostart(deps, deps.paths);
+	const saved = readListener(deps.db);
+	if (saved?.autostart) writeListener(deps.db, { ...saved, autostart: undefined });
+
+	const running = readListenerPid(deps.paths);
+	if (running) await stopRunningListener(deps, running.pid);
+
+	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });
+}
+
 export function registerPhoneCommands(
 	program: Command,
 	makeDeps: (session?: string) => PhoneDeps = defaultDeps,
+	makeOpenCloseDeps: (session?: string) => OpenCloseDeps = defaultOpenCloseDeps,
 ): void {
 	let session: string | undefined;
 	const phone = program
@@ -390,6 +529,18 @@ export function registerPhoneCommands(
 		.command("status")
 		.description("print your self name, contact count, and pending voicemail count")
 		.action(() => phoneStatus(makeDeps(session)));
+
+	phone
+		.command("open")
+		.description("start the listener and install it to start on login, where a service manager exists")
+		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
+		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
+		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, makeOpenCloseDeps(session)));
+
+	phone
+		.command("close")
+		.description("stop the listener and remove it from login autostart")
+		.action(() => phoneClose(makeOpenCloseDeps(session)));
 
 	phone
 		.command("__run", { hidden: true })

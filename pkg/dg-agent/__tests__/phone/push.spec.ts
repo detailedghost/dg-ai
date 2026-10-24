@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
 	ANNOUNCE_FIRST_INSTRUCTION,
+	DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS,
 	nextOnMessageRetryDelayMs,
 	onMessagePayload,
+	parseOnMessageTimeoutSeconds,
 	PHONE_SAFETY_REF,
 	pushFrame,
 } from "../../src/phone/push";
@@ -43,6 +45,20 @@ describe("onMessagePayload", () => {
 			text: "hi",
 			call: true,
 		});
+	});
+});
+
+describe("parseOnMessageTimeoutSeconds", () => {
+	it("defaults when no value is given and passes through a valid one", () => {
+		expect(parseOnMessageTimeoutSeconds(undefined)).toBe(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS);
+		expect(parseOnMessageTimeoutSeconds("45")).toBe(45);
+	});
+
+	it("rejects a non-positive or non-numeric value", () => {
+		expect(() => parseOnMessageTimeoutSeconds("0")).toThrow('--on-message-timeout must be a positive number of seconds, got "0"');
+		expect(() => parseOnMessageTimeoutSeconds("nope")).toThrow(
+			'--on-message-timeout must be a positive number of seconds, got "nope"',
+		);
 	});
 });
 

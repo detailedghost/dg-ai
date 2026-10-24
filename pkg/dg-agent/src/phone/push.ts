@@ -1,3 +1,5 @@
+import { DgCliError } from "@dg/common";
+
 export type CommandPushTarget = { kind: "command"; argv: string[]; timeoutMs: number };
 
 export const PHONE_SAFETY_REF = "plugins/dg/skills/phone/references/safety.md";
@@ -7,6 +9,15 @@ export const DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS = 30;
 const ON_MESSAGE_RETRY_DELAYS_MS = [5_000, 30_000, 120_000, 300_000];
 /** In-process attempts before a stuck `--on-message` message waits for the next listener start. */
 export const ON_MESSAGE_MAX_ATTEMPTS = 5;
+
+/** Shared by `phone __run` and `phone open`, which both accept `--on-message-timeout`. */
+export function parseOnMessageTimeoutSeconds(value: string | undefined): number {
+	const seconds = value === undefined ? DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS : Number(value);
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		throw new DgCliError(`--on-message-timeout must be a positive number of seconds, got "${value}"`);
+	}
+	return seconds;
+}
 
 export function nextOnMessageRetryDelayMs(attempt: number): number {
 	return ON_MESSAGE_RETRY_DELAYS_MS[Math.min(attempt, ON_MESSAGE_RETRY_DELAYS_MS.length - 1)];

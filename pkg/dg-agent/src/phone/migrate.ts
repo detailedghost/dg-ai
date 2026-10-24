@@ -1,13 +1,13 @@
 import { Database } from "bun:sqlite";
-import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
-import { isAlive, type DgPaths, realSubdirectories } from "@dg/common/node";
+import { type DgPaths, realSubdirectories } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
+import { isOurListener } from "./listener";
 import {
 	addContact,
 	addInvite,
@@ -141,24 +141,6 @@ function resolveWhoami(paths: DgPaths): string | undefined {
 	return readFileSync(path, "utf8").trim() || undefined;
 }
 
-function isLegacyListenerArgv(args: string[]): boolean {
-	return args.includes("phone-friend") && args.includes("__run");
-}
-
-/** Whether `pid` is alive and its command line is a phone-friend listener, not just a reused pid. */
-function isOurLegacyListener(pid: number): boolean {
-	if (!isAlive(pid)) return false;
-	const cmdline = `/proc/${pid}/cmdline`;
-	if (existsSync(cmdline)) return isLegacyListenerArgv(readFileSync(cmdline, "utf8").split("\0"));
-	if (process.platform === "win32") {
-		const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`;
-		const ps = spawnSync("powershell", ["-NoProfile", "-Command", query], { encoding: "utf8" });
-		return ps.status === 0 && isLegacyListenerArgv(ps.stdout.trim().split(/\s+/));
-	}
-	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
-	return ps.status === 0 && isLegacyListenerArgv(ps.stdout.trim().split(/\s+/));
-}
-
 /** Best-effort: a listener that will not die leaves a stale pid file behind, which is harmless. */
 function stopLegacyListener(line: LegacyLine, deps: MigrateDeps): void {
 	if (!existsSync(line.pidPath)) return;
@@ -257,7 +239,7 @@ export async function disableLegacyDaemonJobs(lineNames: string[], jobCli: JobCl
 function defaultMigrateDeps(): MigrateDeps {
 	return {
 		now: () => Math.floor(Date.now() / 1000),
-		isOurListener: isOurLegacyListener,
+		isOurListener,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		jobCli: runDaemonJobCli,
 		renameLegacyRoot: renameSync,

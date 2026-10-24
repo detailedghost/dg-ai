@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
@@ -35,6 +36,29 @@ export const STUCK_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 
 export function listenerPidPath(paths: DgPaths): string {
 	return join(paths.phoneRoot, "listener.pid");
+}
+
+export function listenerLogPath(paths: DgPaths): string {
+	return join(paths.phoneRoot, "listener.log");
+}
+
+/** True for the argv of either the current `phone __run` listener or the old `phone-friend __run` one. */
+export function isListenerArgs(args: string[]): boolean {
+	return (args.includes("phone") || args.includes("phone-friend")) && args.includes("__run");
+}
+
+/** Whether `pid` is alive and its command line is one of our listeners, not just a reused pid. */
+export function isOurListener(pid: number): boolean {
+	if (!isAlive(pid)) return false;
+	const cmdline = `/proc/${pid}/cmdline`;
+	if (existsSync(cmdline)) return isListenerArgs(readFileSync(cmdline, "utf8").split("\0"));
+	if (process.platform === "win32") {
+		const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`;
+		const ps = spawnSync("powershell", ["-NoProfile", "-Command", query], { encoding: "utf8" });
+		return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
+	}
+	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
+	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
 }
 
 /** Undefined for no file, a parse failure, or a pid that is no longer alive: a crashed listener reports as stopped. */

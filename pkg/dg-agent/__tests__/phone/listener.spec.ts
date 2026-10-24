@@ -8,7 +8,7 @@ import { publish, ring, wrap } from "../../src/phone/chat";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
-import { defaultSchedule, listenerPidPath, type ListenerDeps, runListener } from "../../src/phone/listener";
+import { defaultSchedule, isListenerArgs, listenerPidPath, type ListenerDeps, runListener } from "../../src/phone/listener";
 import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
@@ -307,5 +307,13 @@ describe("runListener", () => {
 
 		expect(db.recentMessages(10).map((m) => m.text).sort()).toEqual(["still arrives", "too slow for the hook"]);
 		expect(db.recentMessages(10).find((m) => m.text === "too slow for the hook")?.attempts).toBeGreaterThan(0);
+	});
+});
+
+describe("isListenerArgs", () => {
+	it("matches the current and the old listener's argv, and nothing else", () => {
+		expect(isListenerArgs(["dg-agent", "phone", "__run"])).toBe(true);
+		expect(isListenerArgs(["dg-agent", "phone-friend", "__run"])).toBe(true);
+		expect(isListenerArgs(["dg-agent", "phone", "number"])).toBe(false);
 	});
 });

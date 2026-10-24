@@ -25,7 +25,7 @@ import {
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey, ensureNumberKey, type KeyClient } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
-import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact } from "../../src/phone/store";
+import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact, writeListener } from "../../src/phone/store";
 import { createFakePool, type FakePool } from "./fake-pool";
 
 let homes: string[];
@@ -465,6 +465,7 @@ describe("status", () => {
 			listener: null,
 			hook: null,
 			legacy_root_present: false,
+			autostart: null,
 		});
 	});
 
@@ -499,6 +500,22 @@ describe("status", () => {
 		phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ legacy_root_present: true });
+	});
+
+	it("reports the autostart kind or unavailable reason last saved by open", () => {
+		const d = deps(freshHome());
+		writeListener(d.db, { autostart: { kind: "systemd" } });
+
+		phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({ autostart: "systemd" });
+
+		out = [];
+		writeListener(d.db, { autostart: { kind: "unavailable", reason: "no systemd user bus" } });
+
+		phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({ autostart: "unavailable: no systemd user bus" });
 	});
 });
 
