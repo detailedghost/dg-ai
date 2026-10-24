@@ -95,6 +95,21 @@ describe("prototype serve", () => {
 		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 	});
 
+	test("selftest:true writes to a sibling -selftest sentinel dir, never the real one", async () => {
+		const { post, paths } = await serve();
+		const response = await post({
+			action: "confirm",
+			variant: "B",
+			notes: "automated click",
+			selftest: true,
+		});
+		expect(await response.json()).toEqual({ ok: true });
+		expect(existsSync(paths.selection)).toBe(false);
+		const selftestPaths = sentinelPaths(`${paths.dir}-selftest`);
+		expect(readFileSync(selftestPaths.selection, "utf8")).toBe("B\n");
+		expect(readFileSync(selftestPaths.source, "utf8")).toBe("browser\n");
+	});
+
 	test("a reject writes the notes, the source, or a bare newline when there are none", async () => {
 		const { post, paths } = await serve();
 		await post({ action: "reject", notes: "no" });

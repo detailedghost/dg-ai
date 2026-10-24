@@ -110,7 +110,9 @@ function recordDecision(
 	paths: SentinelPaths,
 	body: Record<string, unknown>,
 ): Response {
-	mkdirSync(paths.dir, { recursive: true });
+	const target =
+		body.selftest === true ? sentinelPaths(`${paths.dir}-selftest`) : paths;
+	mkdirSync(target.dir, { recursive: true });
 	if (body.decision) {
 		const decision = text(body.decision).toUpperCase();
 		if (decision !== "APPROVED" && decision !== "REWORK")
@@ -119,7 +121,7 @@ function recordDecision(
 				{ status: 400 },
 			);
 		writeSentinel(
-			paths.decision,
+			target.decision,
 			`${JSON.stringify({ decision, notes: text(body.notes) })}\n`,
 		);
 		return Response.json({ ok: true });
@@ -132,8 +134,8 @@ function recordDecision(
 		);
 	const notes = text(body.notes);
 	if (action === "reject") {
-		writeSentinel(paths.source, "browser\n");
-		writeSentinel(paths.reject, notes || "\n");
+		writeSentinel(target.source, "browser\n");
+		writeSentinel(target.reject, notes || "\n");
 		return Response.json({ ok: true });
 	}
 	const variant = text(body.variant);
@@ -147,9 +149,9 @@ function recordDecision(
 			{ error: `variant "${variant}" not in allowed list` },
 			{ status: 400 },
 		);
-	if (notes) writeSentinel(paths.notes, notes);
-	writeSentinel(paths.source, "browser\n");
-	writeSentinel(paths.selection, `${variant}\n`);
+	if (notes) writeSentinel(target.notes, notes);
+	writeSentinel(target.source, "browser\n");
+	writeSentinel(target.selection, `${variant}\n`);
 	return Response.json({ ok: true });
 }
 
