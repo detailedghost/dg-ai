@@ -132,28 +132,37 @@ never reach further back than that window either. The only other files are
 ## Migration and the `phone-friend` alias
 
 `status`, `inbox`, and `contacts` only read. They do not migrate, and they
-do not stop a listener. The first writing command (`number`, `invite`,
-`accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) runs the
-migration once when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists
-and `~/.dg/phone/phone.db` does not. It carries over every line's key (as a
-`keys` row), contact, message, and read mark, and picks the `default` line's
-key as the number if one exists (else the first line by name).
+do not stop a listener. Before `phone.db` exists they report
+`"migration_pending": true` and `"next": "run phone open to migrate"`.
+`inbox` and `contacts` also print the old rows, read-only, and the same hint
+on stderr. The first writing command (`number`, `invite`, `accept`, `say`,
+`voicemail`, `open`, `close`, or a contact edit) runs the migration once
+when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
+`~/.dg/phone/phone.db` does not. It reads every line before it signals a
+listener, so a database that cannot be read leaves every listener running.
+It carries over every line's key (as a `keys` row), contact, message, and
+read mark, and picks the `default` line's key as the number if one exists
+(else the first line by name).
 
-One running old listener is adopted: that process stays up, and the new
-`listener.pid` points at it, so nothing starts a second one. When the process
-is the old `phone-friend __run`, the stderr summary includes
-`"next": "run phone open"`. `open` then stops that one process and starts the
-new listener. When more than one old listener is running, migration stops
-each of them and, only after every one has exited, starts exactly one new
-listener. If one will not exit, it starts nothing and leaves those processes
-in place.
+A listener that is already `phone __run` is kept, and `listener.pid` points
+at it, so nothing starts a second one. An old `phone-friend __run` is not
+kept: it would keep writing the old database. Migration stops it and starts
+exactly one `phone __run` against `phone.db`, then records that pid.
+`open` sees the pid and reuses that process. `close` stops it. When more
+than one old listener is running, migration stops each of them and, only
+after every one has exited, starts exactly one new listener and records its
+pid. If one will not exit, no new listener is started and `phone.db` is not
+written. That process keeps running. Any listener that already exited stays
+stopped. If the new listener fails to start after the old ones have exited,
+migration starts the previous listener again.
 
 It then renames the old root to `~/.dg/phone-friend.migrated` and prints a
-one-line summary to stderr. Every later command sees `phone.db` and does
-nothing further. To roll back, rename `~/.dg/phone-friend.migrated` back to
-`~/.dg/phone-friend` and run the previous `dg-agent` binary. `status` reports
-`"legacy_root_present": true` if the final rename fails and leaves the old
-root sitting next to the new database.
+one-line summary to stderr. A failed start skips that rename so the restored
+listener still has its database. Every later command sees `phone.db` and
+does nothing further. To roll back, rename `~/.dg/phone-friend.migrated`
+back to `~/.dg/phone-friend` and run the previous `dg-agent` binary.
+`status` reports `"legacy_root_present": true` if the old root is still
+sitting next to the new database.
 
 `dg-agent phone-friend <verb>` keeps working, hidden, for two minor
 releases past this rename, printing one notice to stderr. `dial`, `on`,

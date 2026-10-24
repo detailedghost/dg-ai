@@ -8,7 +8,14 @@ import { publish, ring, wrap } from "../../src/phone/chat";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
-import { isListenerArgs, listenerPidPath, readListenerPid, type ListenerDeps, runListener } from "../../src/phone/listener";
+import {
+	ensureListenerSubscribed,
+	isListenerArgs,
+	listenerPidPath,
+	readListenerPid,
+	type ListenerDeps,
+	runListener,
+} from "../../src/phone/listener";
 import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
@@ -18,7 +25,9 @@ import {
 	findContactByNpub,
 	listContacts,
 	numberKeyId,
+	DEFAULT_RELAYS,
 	writeNumber,
+	writeRelays,
 } from "../../src/phone/store";
 import { createFakePool, type FakePool } from "./fake-pool";
 
@@ -246,7 +255,7 @@ describe("runListener", () => {
 		await ready;
 
 		const written = JSON.parse(readFileSync(listenerPidPath(paths), "utf8"));
-		expect(written).toEqual({ pid: 9999, since: NOW, hook: { argv: ["notify-send"], timeoutS: 7 } });
+		expect(written).toEqual({ pid: 9999, since: NOW, hook: { argv: ["notify-send"], timeoutS: 7 }, relays: DEFAULT_RELAYS });
 
 		stop();
 		await run;
@@ -337,5 +346,108 @@ describe("readListenerPid", () => {
 		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null }));
 
 		expect(readListenerPid(paths)?.pid).toBe(process.pid);
+	});
+});
+
+describe("one listener at a time", () => {
+	it("subscribes to an invite's relays as well as the saved ones", async () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		addInvite(db, {
+			secret: "22".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(pool.relaysUsed.some((relays) => relays.includes("wss://invite.example") && relays.includes("wss://saved.example"))).toBe(true);
+	});
+
+	it("a second phone __run leaves the first listener's claim and pid file alone", async () => {
+		setUpNumber("ab".repeat(32));
+		const { onSignal, ready, stop } = captureShutdown();
+		const first = runListener(deps({ pid: process.pid, onSignal }));
+		await ready;
+		const listenersBefore = pool.listeners.length;
+
+		await runListener(deps({ pid: 4242 }));
+
+		expect(pool.listeners).toHaveLength(listenersBefore);
+		expect(readListenerPid(paths)?.pid).toBe(process.pid);
+		stop();
+		await first;
+	});
+
+	it("stops a listener that is missing an invite relay and starts exactly one replacement", () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		addInvite(db, {
+			secret: "33".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
+		let alive = true;
+		const spawned: number[] = [];
+
+		ensureListenerSubscribed(paths, db, {
+			isOurListener: () => true,
+			isAlive: () => alive,
+			kill: () => {
+				alive = false;
+			},
+			sleepSync: () => {},
+			spawn: () => {
+				spawned.push(1);
+				return 777;
+			},
+			now: () => NOW,
+			argvFor: (extra) => ["phone", "__run", ...extra],
+		});
+
+		expect(spawned).toEqual([1]);
+		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8"))).toMatchObject({
+			pid: 777,
+			relays: ["wss://saved.example", "wss://invite.example"],
+		});
+	});
+
+	it("does not start a second listener when the running one will not exit", () => {
+		setUpNumber("cd".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		addInvite(db, {
+			secret: "44".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
+		const spawned: number[] = [];
+
+		ensureListenerSubscribed(paths, db, {
+			isOurListener: () => true,
+			isAlive: () => true,
+			kill: () => {},
+			sleepSync: () => {},
+			spawn: () => {
+				spawned.push(1);
+				return 777;
+			},
+			now: () => NOW,
+			argvFor: (extra) => ["phone", "__run", ...extra],
+		});
+
+		expect(spawned).toEqual([]);
+		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
 	});
 });

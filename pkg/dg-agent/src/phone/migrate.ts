@@ -7,7 +7,14 @@ import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories, selfComman
 import { generateSecretKey, nip19 } from "nostr-tools";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
-import { adoptListenerPid, listenerGeneration, listenerLogPath, spawnDetachedListener, type ListenerGeneration } from "./listener";
+import {
+	adoptListenerPid,
+	listenerCommandArgs,
+	listenerGeneration,
+	listenerLogPath,
+	spawnDetachedListener,
+	type ListenerGeneration,
+} from "./listener";
 import {
 	addContact,
 	addInvite,
@@ -30,9 +37,10 @@ export type MigrationResult =
 			contacts: number;
 			messages: number;
 			numberKey: string;
-			/** `adopted` keeps the one running listener. `replaced` stopped every extra one and started
-			 * exactly one new listener. `none` means nothing was listening. */
-			listener: "adopted" | "replaced" | "none";
+			/** `adopted` keeps a listener that is already `phone __run`. `replaced` stopped the old
+			 * ones and started exactly one new listener, with its pid recorded. `failed` means that
+			 * start threw and the previous listener was started again. `none` means nothing was listening. */
+			listener: "adopted" | "replaced" | "failed" | "none";
 			/** Resolves once every `dg-daemon job disable` attempt has settled; the one-time stderr
 			 * summary is written when this resolves. Production callers ignore it; tests await it. */
 			jobsDisabled: Promise<string[]>;
@@ -45,8 +53,13 @@ export type MigrateDeps = {
 	isAlive: (pid: number) => boolean;
 	kill: (pid: number) => void;
 	sleepSync: (ms: number) => void;
-	/** Start exactly one new listener. Called only after every listener being replaced has exited. */
-	startListener: (paths: DgPaths) => void;
+	/** Start exactly one new listener. Called only after every listener being replaced has exited.
+	 * Returns the child pid so the caller can record it before anything else looks. */
+	startListener: (paths: DgPaths) => number;
+	/** Command line of a live listener, captured before it is stopped so a failed start can bring one back. */
+	commandArgs: (pid: number) => string[] | undefined;
+	/** Spawn one saved argv. Used only when `startListener` throws. */
+	restoreListener: (paths: DgPaths, argv: string[]) => number;
 	jobCli: JobCli;
 	renameLegacyRoot: (oldPath: string, newPath: string) => void;
 	writeErr: (text: string) => void;
@@ -162,11 +175,13 @@ function readLegacyPid(line: LegacyLine): number | undefined {
 
 type ListenerPlan =
 	| { action: "none" }
-	| { action: "adopt"; pid: number; generation: ListenerGeneration }
+	| { action: "adopt"; pid: number }
+	| { action: "keep"; pid: number; stop: number[] }
 	| { action: "replace"; pids: number[] };
 
-/** One live listener is adopted. More than one cannot be: keeping them all would leak processes,
- * and starting another beside them would too. A pid `classifyListener` rejects is left alone. */
+/** A `phone __run` process is kept: it will open `phone.db`. An old `phone-friend __run` is not,
+ * because it keeps writing the database it already has open. Every legacy pid is stopped and
+ * exactly one new listener is started. A pid `classifyListener` rejects is left alone. */
 function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 	const live: { pid: number; generation: ListenerGeneration }[] = [];
 	for (const line of lines) {
@@ -177,8 +192,12 @@ function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 		live.push({ pid, generation });
 	}
 	if (live.length === 0) return { action: "none" };
-	if (live.length === 1) return { action: "adopt", pid: live[0].pid, generation: live[0].generation };
-	return { action: "replace", pids: live.map((entry) => entry.pid) };
+	const current = live.filter((entry) => entry.generation === "current");
+	if (current.length === 0) return { action: "replace", pids: live.map((entry) => entry.pid) };
+	const keep = current.find((entry) => entry.pid === process.pid) ?? current[0];
+	const stop = live.filter((entry) => entry.pid !== keep.pid).map((entry) => entry.pid);
+	if (stop.length === 0) return { action: "adopt", pid: keep.pid };
+	return { action: "keep", pid: keep.pid, stop };
 }
 
 /** Stops exactly the pids in `plan` and returns any that are still alive. Does not start a listener. */
@@ -240,6 +259,7 @@ function writeMigratedLines(
 			asName: line.invite.as ?? selfName,
 			name: line.invite.name,
 			keyId: line.name,
+			relays: line.config.relays,
 		});
 	}
 
@@ -292,9 +312,9 @@ function defaultMigrateDeps(): MigrateDeps {
 		isAlive,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		sleepSync,
-		startListener: (paths) => {
-			spawnDetachedListener(selfCommand(["phone", "__run"]), listenerLogPath(paths));
-		},
+		startListener: (paths) => spawnDetachedListener(selfCommand(["phone", "__run"]), listenerLogPath(paths)),
+		commandArgs: listenerCommandArgs,
+		restoreListener: (paths, argv) => spawnDetachedListener(argv, listenerLogPath(paths)),
 		jobCli: runDaemonJobCli,
 		renameLegacyRoot: renameSync,
 		writeErr: (text) => {
@@ -335,10 +355,10 @@ function releaseMigrationLock(paths: DgPaths): void {
 }
 
 /**
- * A writing `phone` command calls this first. Runs once: moves every legacy line's key, contact,
- * invite, and message into one `phone.db`, then renames the old root for rollback. A single live
- * listener is adopted and left running. More than one is stopped, and exactly one new listener
- * is started only after every one of those has exited. Read-only commands do not call this.
+ * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
+ * key, contact, invite, and message into one `phone.db`. A listener that is already `phone __run`
+ * is kept. An old `phone-friend __run` is stopped and exactly one new listener is started against
+ * `phone.db`, with its pid recorded. Read-only commands do not call this.
  */
 export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigrateDeps()): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
@@ -351,23 +371,47 @@ export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigra
 	}
 }
 
+type SavedListener = { pid: number; argv: string[] | undefined };
+
+/** Starts one previously captured listener and records it as legacy, so `open` replaces it later
+ * instead of leaving the line empty. */
+function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener[]): boolean {
+	const previous = saved.find((entry) => entry.argv && entry.argv.length > 0);
+	if (!previous?.argv) return false;
+	try {
+		const pid = deps.restoreListener(paths, previous.argv);
+		adoptListenerPid(paths, { pid, since: deps.now(), hook: null, adopted: "legacy" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 
 	const lines = legacyLines(paths);
+	// A bad database must fail before any listener is signaled.
+	let staged = lines.map((line) => readLegacyLine(line));
 	const plan = planListeners(lines, deps);
-	if (plan.action === "replace") {
-		const stuck = stopForReplace(lines, plan.pids, deps);
+	const stopping = plan.action === "replace" ? plan.pids : plan.action === "keep" ? plan.stop : [];
+	const saved: SavedListener[] = stopping.map((pid) => ({ pid, argv: deps.commandArgs(pid) }));
+	if (stopping.length > 0) {
+		const stuck = stopForReplace(lines, stopping, deps);
 		if (stuck.length > 0) {
 			throw new DgCliError(
-				`a phone listener (pid ${stuck.join(", ")}) did not stop; left it running and did not start another`,
+				`a phone listener (pid ${stuck.join(", ")}) did not stop; left it running and did not start another. Any listener that already exited stays stopped`,
 			);
+		}
+		try {
+			staged = lines.map((line) => readLegacyLine(line));
+		} catch (err) {
+			restorePrevious(paths, deps, saved);
+			throw err;
 		}
 	}
 
-	const staged = lines.map((line) => readLegacyLine(line));
 	const selfName = resolveWhoami(paths) ?? FALLBACK_SELF_NAME;
-
 	const tmpPath = join(paths.phoneRoot, "phone.db.tmp");
 	rmSync(tmpPath, { force: true });
 	const db = PhoneDb.openAt(tmpPath, paths.phoneRoot, deps.now);
@@ -377,25 +421,29 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	} finally {
 		db.close();
 	}
-
 	renameSync(tmpPath, PhoneDb.path(paths));
 
-	if (plan.action === "adopt") {
-		adoptListenerPid(paths, {
-			pid: plan.pid,
-			since: deps.now(),
-			hook: null,
-			...(plan.generation === "legacy" ? { adopted: "legacy" as const } : {}),
-		});
+	let listener: "adopted" | "replaced" | "failed" | "none" = "none";
+	if (plan.action === "adopt" || plan.action === "keep") {
+		adoptListenerPid(paths, { pid: plan.pid, since: deps.now(), hook: null });
+		listener = "adopted";
 	} else if (plan.action === "replace") {
-		deps.startListener(paths);
+		try {
+			const pid = deps.startListener(paths);
+			adoptListenerPid(paths, { pid, since: deps.now(), hook: null });
+			listener = "replaced";
+		} catch {
+			restorePrevious(paths, deps, saved);
+			listener = "failed";
+		}
 	}
 
-	try {
-		deps.renameLegacyRoot(paths.phoneFriendRoot, `${paths.phoneFriendRoot}.migrated`);
-	} catch {}
+	if (listener !== "failed") {
+		try {
+			deps.renameLegacyRoot(paths.phoneFriendRoot, `${paths.phoneFriendRoot}.migrated`);
+		} catch {}
+	}
 
-	const listener = plan.action === "adopt" ? "adopted" : plan.action === "replace" ? "replaced" : "none";
 	const jobsDisabled = disableLegacyDaemonJobs(lines.map((line) => line.name), deps.jobCli);
 	jobsDisabled
 		.then((disabled) => {
@@ -408,7 +456,7 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 				jobs_disabled: disabled,
 				listener,
 			};
-			if (plan.action === "adopt" && plan.generation === "legacy") summary.next = "run phone open";
+			if (listener === "failed") summary.next = "run phone open";
 			deps.writeErr(`${JSON.stringify(summary)}\n`);
 		})
 		.catch(() => {});
@@ -424,26 +472,73 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	};
 }
 
+export type LegacyViewContact = { handle: string; npub: string; relays: string[]; key: string };
+export type LegacyViewMessage = {
+	id: string;
+	ts: number;
+	direction: Direction;
+	handle: string | null;
+	from: string;
+	text: string;
+	read: boolean;
+	call: boolean;
+};
+
+export type LegacyView = {
+	as: string;
+	contacts: number;
+	pendingVoicemail: number;
+	listener: { pid: number; since: null } | null;
+	migrationPending: boolean;
+	contactRows: LegacyViewContact[];
+	messages: LegacyViewMessage[];
+};
+
 /** Reads a legacy install without creating `phone.db`, stopping a listener, or renaming anything. */
-export function readOnlyLegacyView(
-	paths: DgPaths,
-	alive: (pid: number) => boolean = isAlive,
-): { as: string; contacts: number; pendingVoicemail: number; listener: { pid: number; since: null } | null } {
+export function readOnlyLegacyView(paths: DgPaths, alive: (pid: number) => boolean = isAlive): LegacyView {
 	const as = resolveWhoami(paths) ?? FALLBACK_SELF_NAME;
-	if (!hasLegacyLines(paths.phoneFriendRoot)) return { as, contacts: 0, pendingVoicemail: 0, listener: null };
-	let contacts = 0;
+	const empty: LegacyView = {
+		as,
+		contacts: 0,
+		pendingVoicemail: 0,
+		listener: null,
+		migrationPending: false,
+		contactRows: [],
+		messages: [],
+	};
+	if (!hasLegacyLines(paths.phoneFriendRoot)) return empty;
 	let pendingVoicemail = 0;
 	let listener: { pid: number; since: null } | null = null;
+	const contactRows: LegacyViewContact[] = [];
+	const messages: LegacyViewMessage[] = [];
 	for (const line of legacyLines(paths)) {
 		try {
 			const db = new Database(line.dbPath, { readonly: true, strict: true });
 			try {
-				const config = legacySetting<{ contact?: string }>(db, "config");
-				if (config?.contact) contacts += 1;
-				const row = db.query("SELECT COUNT(*) AS n FROM messages WHERE direction = 'in' AND read_at IS NULL").get() as {
-					n: number;
-				};
-				pendingVoicemail += row.n;
+				const config = legacySetting<{ contact?: string; name?: string; relays?: string[] }>(db, "config");
+				const handle = config?.name ?? line.name;
+				if (config?.contact) {
+					contactRows.push({
+						handle,
+						npub: config.contact,
+						relays: config.relays ?? DEFAULT_RELAYS,
+						key: line.name,
+					});
+				}
+				const rows = db.query("SELECT * FROM messages ORDER BY ts, id").all() as LegacyMessageRow[];
+				for (const row of rows) {
+					if (row.direction === "in" && row.read_at === null) pendingVoicemail += 1;
+					messages.push({
+						id: row.id,
+						ts: row.ts,
+						direction: row.direction,
+						handle: config?.contact ? `+${handle}` : null,
+						from: row.sender,
+						text: row.text,
+						read: row.read_at !== null,
+						call: row.call === 1,
+					});
+				}
 			} finally {
 				db.close();
 			}
@@ -452,7 +547,17 @@ export function readOnlyLegacyView(
 		const pid = readLegacyPid(line);
 		if (pid !== undefined && alive(pid)) listener = { pid, since: null };
 	}
-	return { as, contacts, pendingVoicemail, listener };
+	contactRows.sort((a, b) => a.handle.localeCompare(b.handle));
+	messages.sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
+	return {
+		as,
+		contacts: contactRows.length,
+		pendingVoicemail,
+		listener,
+		migrationPending: true,
+		contactRows,
+		messages,
+	};
 }
 
 export function siblingDaemonPath(execPath: string, platform: NodeJS.Platform): string {

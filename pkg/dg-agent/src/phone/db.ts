@@ -40,6 +40,8 @@ export type InviteRow = {
 	as_name: string;
 	name: string | null;
 	key_id: string;
+	/** JSON array of relay URLs this invite's card was published on. Absent on a row written before that column existed. */
+	relays?: string;
 };
 
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
@@ -86,6 +88,12 @@ const SCHEMA: MigrationStep[] = [
 				"CREATE INDEX idx_messages_unread ON messages(ts) WHERE direction = 'in' AND read_at IS NULL",
 			);
 			db.run("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT");
+		},
+	},
+	{
+		version: 2,
+		run: (db) => {
+			db.run("ALTER TABLE invites ADD COLUMN relays TEXT NOT NULL DEFAULT '[]'");
 		},
 	},
 ];
@@ -220,8 +228,8 @@ export class PhoneDb {
 	putInvite(row: InviteRow): void {
 		this.db
 			.query(
-				`INSERT INTO invites (secret, expires_at, as_name, name, key_id)
-				VALUES ($secret, $expiresAt, $asName, $name, $keyId)`,
+				`INSERT INTO invites (secret, expires_at, as_name, name, key_id, relays)
+				VALUES ($secret, $expiresAt, $asName, $name, $keyId, $relays)`,
 			)
 			.run({
 				secret: row.secret,
@@ -229,6 +237,7 @@ export class PhoneDb {
 				asName: row.as_name,
 				name: row.name,
 				keyId: row.key_id,
+				relays: row.relays ?? "[]",
 			});
 	}
 

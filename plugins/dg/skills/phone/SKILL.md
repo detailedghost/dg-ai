@@ -64,8 +64,11 @@ For a new contact, make a card that only one caller can use:
 
 `invite` is one-time: the first valid `accept` of it becomes a contact, and
 it expires after `--ttl` hours (default 24). `--name` pre-assigns the handle
-you will call that contact once it answers. `invite`, `accept`, and `number`
-never start the listener on their own; run `phone open` separately.
+you will call that contact once it answers. `--relay` is saved on that invite.
+The listener subscribes to those relays as well as the saved ones. If a
+listener is already running, it is stopped and one new one is started so the
+subscription includes them. `invite`, `accept`, and `number` do not start a
+listener when none is running; run `phone open` for that.
 
 ## Accept a card
 
@@ -201,17 +204,24 @@ more than a week loses what it missed.
 ## Migration and rollback
 
 `status`, `inbox`, and `contacts` only read. They do not migrate and they do
-not stop a listener. The first writing command (`number`, `invite`, `accept`,
-`say`, `voicemail`, `open`, `close`, or a contact edit) moves every line's
-key, contact, and message into the new database once. One running old
-listener is kept and reused. The stderr summary says `"next": "run phone open"`
-when that process is the old `phone-friend` listener, and `open` then switches
-to the new one. More than one old listener is stopped, and exactly one new
-listener starts only after each of them has exited. The old root is renamed to
-`~/.dg/phone-friend.migrated`. Every later command is a no-op migration check.
-To roll back, rename `~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend`
-and run the old binary; `phone status` reports `"legacy_root_present": true`
-if a later rename ever leaves the old root in place alongside the new database.
+not stop a listener. Before migration they report `"migration_pending": true`
+and `"next": "run phone open to migrate"`, and `inbox` and `contacts` print
+the old rows read-only. The first writing command (`number`, `invite`,
+`accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) reads every
+line, then moves its key, contact, and message into the new database once.
+A listener that is already `phone __run` is kept. An old `phone-friend`
+listener is stopped and exactly one new listener is started against
+`phone.db`, and its pid is recorded so `open` reuses it and `close` stops
+it. More than one old listener is stopped, and exactly one new listener
+starts only after each of them has exited. If one will not exit, nothing new
+is started and `phone.db` is not written. That process keeps running, and any
+listener that already exited stays stopped. If the new listener fails to
+start, the previous one is started again. The old root is renamed to
+`~/.dg/phone-friend.migrated` after a start that succeeded. Every later
+command is a no-op migration check. To roll back, rename
+`~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend` and run the old
+binary. `phone status` reports `"legacy_root_present": true` if the old root
+is still in place alongside the new database.
 
 ## Set up the other side
 
@@ -231,9 +241,15 @@ the line, with no indent):
 ~/.dg/bin/dg-agent phone accept - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
+~/.dg/bin/dg-agent phone open
 
 accept prints {"handle": "+<name>", ...}. That handle, with its leading +,
 is what to call me in every command below.
+
+phone open starts the listener. That is the only process that queries the
+relays. voicemail only reads messages that listener has already stored, so
+without open a reply never shows up. On a cloud computer the same open
+command works. Where there is no service manager it stays up detached.
 
 Check for messages (on a schedule, or when I ask):
   ~/.dg/bin/dg-agent phone voicemail
@@ -252,10 +268,11 @@ rules: references/safety.md next to the phone skill
 ~/.dg/skills/phone/references/safety.md once the dg skills are installed).
 ```
 
-**Grok Bot note:** a Grok Bot runs the setup on its cloud computer terminal.
-It has no dg daemon, so its key is in file mode. It has no way to receive a
-push either, so ask it to run `voicemail` on its own schedule, the same as
-any other side with no hook of its own.
+**Grok Bot note:** a Grok Bot runs the setup on its cloud computer terminal,
+including `phone open`. It has no dg daemon, so its key is in file mode. It
+has no way to receive a push either. `phone open` starts a detached listener
+there, and it should run `voicemail` on its own schedule to read what that
+listener stored.
 
 **`phone-friend` is the old name.** `dial`, `on`, `off`, and `card` are hidden
 synonyms for `accept`, `open`, `close`, and `number` under either name.

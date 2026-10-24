@@ -17,6 +17,7 @@ import {
 	defaultSchedule,
 	isOurListener,
 	listenerLogPath,
+	ensureListenerSubscribed,
 	readListenerPid,
 	removeListenerPid,
 	runListener,
@@ -55,6 +56,7 @@ import {
 export type PhoneDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
 	write: (text: string) => void;
+	writeErr?: (text: string) => void;
 	readStdin: () => Promise<string | undefined>;
 	now: () => number;
 };
@@ -99,6 +101,9 @@ function defaultDeps(session?: string): PhoneDeps {
 		...defaultKeyClients(paths, session),
 		createPool: () => new SimplePool({ enableReconnect: true }),
 		write: writeStdout,
+		writeErr: (text) => {
+			process.stderr.write(text);
+		},
 		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
 		now: () => Math.floor(Date.now() / 1000),
 	};
@@ -134,6 +139,13 @@ function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 
 function printJson(deps: PhoneDeps, value: unknown): void {
 	deps.write(`${JSON.stringify(value)}\n`);
+}
+
+const MIGRATION_HINT = `${JSON.stringify({ migration_pending: true, next: "run phone open to migrate" })}\n`;
+
+function warnMigrationPending(deps: PhoneDeps): void {
+	if (deps.writeErr) deps.writeErr(MIGRATION_HINT);
+	else process.stderr.write(MIGRATION_HINT);
 }
 
 function isoOf(epochSeconds: number): string {
@@ -194,7 +206,7 @@ export async function phoneInvite(
 	const selfName = opts.as ?? resolvedSelfName(deps.db);
 	const secret = randomBytes(SECRET_BYTES).toString("hex");
 	const expiresAt = deps.now() + Math.round(hours * 3600);
-	addInvite(deps.db, { secret, expiresAt, asName: selfName, name: opts.name, keyId: numberKeyId(deps.db) });
+	addInvite(deps.db, { secret, expiresAt, asName: selfName, name: opts.name, keyId: numberKeyId(deps.db), relays });
 	const card = encodeCard({ npub: npubOf(sk), relays, secret, exp: expiresAt, handle: selfName });
 	printJson(deps, {
 		card,
@@ -203,6 +215,7 @@ export async function phoneInvite(
 		handle: opts.name === undefined ? null : `+${opts.name}`,
 		safety: PHONE_SAFETY_REF,
 	});
+	ensureListenerSubscribed(deps.paths, deps.db);
 }
 
 export async function phoneAccept(
@@ -249,7 +262,22 @@ export async function phoneAccept(
 }
 
 export function phoneContacts(deps: PhoneDeps): void {
-	if (!existsSync(PhoneDb.path(deps.paths))) return;
+	if (!existsSync(PhoneDb.path(deps.paths))) {
+		const view = readOnlyLegacyView(deps.paths);
+		if (!view.migrationPending) return;
+		warnMigrationPending(deps);
+		for (const contact of view.contactRows) {
+			printJson(deps, {
+				handle: `+${contact.handle}`,
+				npub: contact.npub,
+				relays: contact.relays,
+				key: contact.key,
+				added_at: null,
+				via: "legacy",
+			});
+		}
+		return;
+	}
 	for (const contact of listContacts(deps.db)) {
 		printJson(deps, {
 			handle: `+${contact.handle}`,
@@ -306,7 +334,30 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDeps): void {
 	const limit = opts.n === undefined ? 50 : Number(opts.n);
 	if (!Number.isInteger(limit) || limit <= 0) throw new DgCliError(`-n must be a positive integer, got "${opts.n}"`);
-	if (!existsSync(PhoneDb.path(deps.paths))) return;
+	if (!existsSync(PhoneDb.path(deps.paths))) {
+		const view = readOnlyLegacyView(deps.paths);
+		if (!view.migrationPending) return;
+		warnMigrationPending(deps);
+		let rows = view.messages;
+		if (opts.handle !== undefined) {
+			const handle = normalizeHandle(opts.handle);
+			if (!view.contactRows.some((contact) => contact.handle === handle)) throw new DgCliError(`no contact +${handle}`);
+			rows = rows.filter((row) => row.handle === `+${handle}`);
+		}
+		for (const row of rows.slice(Math.max(0, rows.length - limit))) {
+			printJson(deps, {
+				id: row.id,
+				ts: row.ts,
+				direction: row.direction,
+				handle: row.handle,
+				from: row.from,
+				text: row.text,
+				read: row.read,
+				...(row.call ? { call: true } : {}),
+			});
+		}
+		return;
+	}
 	let contactNpub: string | undefined;
 	if (opts.handle !== undefined) {
 		const handle = normalizeHandle(opts.handle);
@@ -354,6 +405,8 @@ export function phoneStatus(deps: PhoneDeps): void {
 			listener: view.listener,
 			hook: null,
 			legacy_root_present: false,
+			migration_pending: view.migrationPending,
+			...(view.migrationPending ? { next: "run phone open to migrate" } : {}),
 			autostart: null,
 		});
 		return;
@@ -367,6 +420,7 @@ export function phoneStatus(deps: PhoneDeps): void {
 		listener: listener ? { pid: listener.pid, since: listener.since } : null,
 		hook: listener?.hook ? { kind: "command" as const, argv: listener.hook.argv, timeout_s: listener.hook.timeoutS } : null,
 		legacy_root_present: legacyRootPresent(deps.paths),
+		migration_pending: false,
 		autostart: formatAutostartState(readListener(deps.db)?.autostart),
 	});
 }

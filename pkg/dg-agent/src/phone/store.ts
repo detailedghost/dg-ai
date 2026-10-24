@@ -6,7 +6,7 @@ import type { ContactRow, InviteRow, PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
 export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
-export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string };
+export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string; relays: string[] };
 export type OnMessageConfig = { argv: string[]; timeoutMs: number };
 /** The `--on-message` hook `open` installed and the autostart manager it last reported, so a bare
  * `open` or a service manager's own restart picks up the same hook without the flag repeated. */
@@ -52,6 +52,15 @@ export function readRelays(db: PhoneDb): string[] {
 
 export function writeRelays(db: PhoneDb, relays: string[]): void {
 	db.set(RELAYS_SETTING, relays);
+}
+
+/** Relays the listener must read: the saved number relays, plus every live invite's own list. */
+export function subscriptionRelays(db: PhoneDb): string[] {
+	const relays = new Set(readRelays(db));
+	for (const invite of liveInvites(db)) {
+		for (const relay of invite.relays) relays.add(relay);
+	}
+	return [...relays];
 }
 
 /** The key id your own number uses; `setOnce` so a racing first command wins and a migration can set it first. */
@@ -148,12 +157,20 @@ export function setContactKeyId(db: PhoneDb, npub: string, keyId: string): void 
 }
 
 function toInviteRecord(row: InviteRow): InviteRecord {
+	let relays: string[] = [];
+	if (row.relays) {
+		try {
+			const parsed = JSON.parse(row.relays) as unknown;
+			if (Array.isArray(parsed)) relays = parsed.filter((relay): relay is string => typeof relay === "string");
+		} catch {}
+	}
 	return {
 		secret: row.secret,
 		expiresAt: row.expires_at,
 		asName: row.as_name,
 		name: row.name ?? undefined,
 		keyId: row.key_id,
+		relays,
 	};
 }
 
@@ -161,13 +178,14 @@ export function liveInvites(db: PhoneDb): InviteRecord[] {
 	return db.listLiveInvites().map(toInviteRecord);
 }
 
-export function addInvite(db: PhoneDb, record: InviteRecord): void {
+export function addInvite(db: PhoneDb, record: Omit<InviteRecord, "relays"> & { relays?: string[] }): void {
 	db.putInvite({
 		secret: record.secret,
 		expires_at: record.expiresAt,
 		as_name: record.asName,
 		name: record.name ?? null,
 		key_id: record.keyId,
+		relays: JSON.stringify(record.relays ?? []),
 	});
 }
 

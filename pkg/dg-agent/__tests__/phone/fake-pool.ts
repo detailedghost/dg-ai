@@ -13,6 +13,7 @@ export type FakePool = PhonePool & {
 	events: NostrEvent[];
 	filters: Filter[];
 	listeners: ((event: NostrEvent) => void)[];
+	relaysUsed: string[][];
 };
 
 /** A fresh npub with no corresponding contact. */
@@ -83,6 +84,7 @@ export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 		events: [],
 		filters: [],
 		listeners: [],
+		relaysUsed: [],
 		publish(relays, event) {
 			return relays.map((relay) => {
 				if (accepting !== "all" && !accepting.includes(relay)) {
@@ -93,7 +95,8 @@ export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 				return Promise.resolve("");
 			});
 		},
-		async querySync(_relays, filter) {
+		async querySync(relays, filter) {
+			pool.relaysUsed.push(relays);
 			pool.filters.push(filter);
 			return pool.events.filter(
 				(event) =>
@@ -102,7 +105,8 @@ export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 					(!filter["#p"] || event.tags.some((tag) => tag[0] === "p" && filter["#p"]?.includes(tag[1] as string))),
 			);
 		},
-		subscribe(_relays, filter, params: SubscribeManyParams) {
+		subscribe(relays, filter, params: SubscribeManyParams) {
+			pool.relaysUsed.push(relays);
 			pool.filters.push(filter);
 			const listener = (event: NostrEvent) => params.onevent?.(event);
 			pool.listeners.push(listener);

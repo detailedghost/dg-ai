@@ -169,7 +169,7 @@ describe("invites", () => {
 	it("round-trips a live invite and drops it once consumed", () => {
 		const secret = "ab".repeat(32);
 		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default" });
-		expect(liveInvites(db)).toEqual([{ secret, expiresAt: NOW + 100, asName: "dg", name: undefined, keyId: "default" }]);
+		expect(liveInvites(db)).toEqual([{ secret, expiresAt: NOW + 100, asName: "dg", name: undefined, keyId: "default", relays: [] }]);
 
 		consumeInvite(db, secret);
 

@@ -24,7 +24,19 @@ import {
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey, ensureNumberKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
-import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact, writeListener } from "../../src/phone/store";
+import {
+	addContact,
+	type ContactRecord,
+	DEFAULT_RELAYS,
+	gateFor,
+	listContacts,
+	liveInvites,
+	numberKeyId,
+	readRelays,
+	removeContact,
+	subscriptionRelays,
+	writeListener,
+} from "../../src/phone/store";
 import { createFakePool, freshNpub as realNpub, makeHomeTracker, makePhoneDeps, parseNdjson, type FakePool } from "./fake-pool";
 
 let tracker: ReturnType<typeof makeHomeTracker>;
@@ -151,6 +163,20 @@ describe("invite", () => {
 		expect(printed.expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
 		expect(printed.as).toBe("dg");
 		expect(printed.handle).toBeNull();
+	});
+
+	it("saves --relay on the invite and adds it to the listener subscription without changing the number relays", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		out = [];
+
+		await phoneInvite({ relay: ["wss://invite.example"] }, d);
+
+		const printed = lines()[0] as { card: string };
+		expect(decodeCard(printed.card, NOW).relays).toEqual(["wss://invite.example"]);
+		expect(readRelays(d.db)).toEqual(DEFAULT_RELAYS);
+		expect(liveInvites(d.db)[0]?.relays).toEqual(["wss://invite.example"]);
+		expect(subscriptionRelays(d.db)).toEqual([...DEFAULT_RELAYS, "wss://invite.example"]);
 	});
 
 	it("--name pre-assigns the contact's handle and reports it", async () => {
@@ -455,6 +481,7 @@ describe("status", () => {
 			listener: null,
 			hook: null,
 			legacy_root_present: false,
+			migration_pending: false,
 			autostart: null,
 		});
 	});

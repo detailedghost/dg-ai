@@ -1,8 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, openSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
 import { fetchNew, type Message, type NewContact, type PhonePool, type Reaccept, type Seen, subscribe, UNKNOWN_CALLER_HANDLE } from "./chat";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
@@ -18,6 +18,7 @@ import {
 	readCursor,
 	readRelays,
 	setContactKeyId,
+	subscriptionRelays,
 	writeCursor,
 } from "./store";
 
@@ -34,6 +35,8 @@ export type ListenerPid = {
 	pid: number;
 	since: number;
 	hook: { argv: string[]; timeoutS: number } | null;
+	/** Relays this process subscribed to. Missing means the file was written before that was recorded. */
+	relays?: string[];
 	/** Set when migration kept an old `phone-friend __run` process instead of starting a second one. */
 	adopted?: "legacy";
 };
@@ -56,7 +59,7 @@ export function isListenerArgs(args: string[]): boolean {
 	return (args.includes("phone") || args.includes("phone-friend")) && args.includes("__run");
 }
 
-function listenerCommandArgs(pid: number): string[] | undefined {
+export function listenerCommandArgs(pid: number): string[] | undefined {
 	if (!isAlive(pid)) return undefined;
 	const cmdline = `/proc/${pid}/cmdline`;
 	if (existsSync(cmdline)) return readFileSync(cmdline, "utf8").split("\0");
@@ -90,10 +93,55 @@ export function readListenerPid(paths: DgPaths): ListenerPid | undefined {
 		const record = JSON.parse(readFileSync(path, "utf8")) as ListenerPid;
 		if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return undefined;
 		if (!isAlive(record.pid)) return undefined;
-		return record.adopted === "legacy" ? record : { pid: record.pid, since: record.since, hook: record.hook };
+		return {
+			pid: record.pid,
+			since: record.since,
+			hook: record.hook,
+			...(record.relays ? { relays: record.relays } : {}),
+			...(record.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
+		};
 	} catch {
 		return undefined;
 	}
+}
+
+export function listenerClaimPath(paths: DgPaths): string {
+	return join(paths.phoneRoot, "listener.lock");
+}
+
+/** Exclusive claim so a second `phone __run` exits instead of subscribing beside the first.
+ * A live holder keeps the slot. A dead holder's file is reclaimed once. */
+export function claimListener(paths: DgPaths, pid: number): boolean {
+	ensurePrivateDir(paths.phoneRoot);
+	const path = listenerClaimPath(paths);
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			const fd = openSync(path, "wx", 0o600);
+			writeSync(fd, String(pid));
+			closeSync(fd);
+			return true;
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		}
+		let holder = Number.NaN;
+		try {
+			holder = Number(readFileSync(path, "utf8").trim());
+		} catch {}
+		if (holder === pid) return true;
+		if (Number.isSafeInteger(holder) && holder > 0 && isAlive(holder)) return false;
+		rmSync(path, { force: true });
+	}
+	return false;
+}
+
+/** Removes the claim only when this pid still holds it, so a losing process cannot drop the winner's lock. */
+export function releaseListenerClaim(paths: DgPaths, pid: number): void {
+	const path = listenerClaimPath(paths);
+	if (!existsSync(path)) return;
+	try {
+		const holder = Number(readFileSync(path, "utf8").trim());
+		if (holder === pid) rmSync(path, { force: true });
+	} catch {}
 }
 
 /** Points `listener.pid` at a process that is already running, so nothing else starts a second one. */
@@ -183,15 +231,27 @@ function admitMessage(
  * Resolves once SIGTERM or SIGINT fires, after the subscription, pool, and pid file are torn down.
  */
 export async function runListener(deps: ListenerDeps): Promise<void> {
+	if (!claimListener(deps.paths, deps.pid)) return;
+	try {
+		await runClaimedListener(deps);
+	} catch (err) {
+		releaseListenerClaim(deps.paths, deps.pid);
+		throw err;
+	}
+}
+
+async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await ensureNumberKey(deps);
 	const keys = await loadAllKeys(deps);
-	const relays = readRelays(deps.db);
+	const contactRelays = readRelays(deps.db);
+	const relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
 
 	writeListenerPid(deps.paths, {
 		pid: deps.pid,
 		since: deps.now(),
 		hook: deps.hook ? { argv: deps.hook.argv, timeoutS: Math.round(deps.hook.timeoutMs / 1000) } : null,
+		relays,
 	});
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
@@ -204,7 +264,7 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 		admitMessage(
 			deps.db,
 			deps.now,
-			relays,
+			contactRelays,
 			message,
 			message.call ? newContactByNpub.get(message.from) : undefined,
 			reacceptByNpub.get(message.from),
@@ -223,7 +283,7 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 		() => gateFor(deps.db),
 		caught.seen,
 		(message, seenNow, _gate, extra) => {
-			admitMessage(deps.db, deps.now, relays, message, extra.newContact, extra.reaccept);
+			admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
 			writeCursor(deps.db, seenNow.cursor);
 			void hookRunner.notify();
 		},
@@ -238,10 +298,77 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 			hookRunner.stop();
 			void hookRunner.settle().finally(() => {
 				removeListenerPid(deps.paths);
+				releaseListenerClaim(deps.paths, deps.pid);
 				resolve();
 			});
 		};
 		deps.onSignal("SIGTERM", shutdown);
 		deps.onSignal("SIGINT", shutdown);
 	});
+}
+
+const REFRESH_WAIT_MS = 5000;
+
+function refreshSleep(ms: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export type ListenerRefreshDeps = {
+	isOurListener: (pid: number) => boolean;
+	isAlive: (pid: number) => boolean;
+	kill: (pid: number) => void;
+	sleepSync: (ms: number) => void;
+	spawn: (argv: string[], logPath: string) => number;
+	now: () => number;
+	argvFor: (extraArgs: string[]) => string[];
+};
+
+function defaultRefreshDeps(): ListenerRefreshDeps {
+	return {
+		isOurListener,
+		isAlive,
+		kill: (pid) => process.kill(pid, "SIGTERM"),
+		sleepSync: refreshSleep,
+		spawn: spawnDetachedListener,
+		now: () => Math.floor(Date.now() / 1000),
+		argvFor: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
+	};
+}
+
+function hookArgs(hook: ListenerPid["hook"]): string[] {
+	if (!hook) return [];
+	return ["--on-message", ...hook.argv, "--on-message-timeout", String(hook.timeoutS)];
+}
+
+/** When a live listener is not subscribed to every invite relay, stop it and start exactly one
+ * replacement. If it will not exit, leave it. If the replacement fails to start, start the previous
+ * argv again so the line is not left empty. */
+export function ensureListenerSubscribed(paths: DgPaths, db: PhoneDb, deps: ListenerRefreshDeps = defaultRefreshDeps()): void {
+	const running = readListenerPid(paths);
+	if (!running || !deps.isOurListener(running.pid)) return;
+	const have = new Set(running.relays ?? readRelays(db));
+	if (subscriptionRelays(db).every((relay) => have.has(relay))) return;
+
+	const previous = deps.argvFor(hookArgs(running.hook));
+	deps.kill(running.pid);
+	for (let waited = 0; deps.isAlive(running.pid) && waited < REFRESH_WAIT_MS; waited += 100) deps.sleepSync(100);
+	if (deps.isAlive(running.pid)) return;
+
+	const nextArgv = deps.argvFor(hookArgs(running.hook));
+	try {
+		const pid = deps.spawn(nextArgv, listenerLogPath(paths));
+		adoptListenerPid(paths, { pid, since: deps.now(), hook: running.hook, relays: subscriptionRelays(db) });
+	} catch (err) {
+		try {
+			const pid = deps.spawn(previous, listenerLogPath(paths));
+			adoptListenerPid(paths, {
+				pid,
+				since: deps.now(),
+				hook: running.hook,
+				...(running.relays ? { relays: running.relays } : {}),
+				...(running.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
+			});
+		} catch {}
+		throw err instanceof DgCliError ? err : new DgCliError("the phone listener stopped and the replacement failed to start");
+	}
 }

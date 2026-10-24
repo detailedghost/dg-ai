@@ -67,6 +67,8 @@ describe("phone skill", () => {
 	test("gives generic setup text with a Grok Bot note and documents where data lives", () => {
 		expect(skill).toContain("## Set up the other side");
 		expect(skill).toContain("**Grok Bot note:**");
+		expect(skill).toContain("~/.dg/bin/dg-agent phone open");
+		expect(skill).toContain("voicemail only reads messages that listener has already stored");
 		expect(skill).toContain("~/.dg/phone/phone.db");
 		expect(skill).not.toMatch(/invite\.json|config\.json|phone-friend\/key\b/);
 	});
