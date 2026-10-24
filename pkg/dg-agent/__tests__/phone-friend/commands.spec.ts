@@ -31,11 +31,9 @@ import {
 	DEFAULT_RELAYS,
 	claimStart,
 	createFileKey,
-	defaultSelfName,
 	readFileKey,
 	readConfig,
 	readInvite,
-	sanitizeSelfName,
 	writeConfig,
 } from "../../src/phone-friend/store";
 import { CARD_PREFIX_V1, decodeCard, encodeCard } from "../../src/phone-friend/card";
@@ -238,10 +236,10 @@ describe("phoneInvite", () => {
 		expect(lines()).toMatchObject([{ as: "dante" }]);
 	});
 
-	it("without --as, the card carries the saved whoami, defaulting to the OS user when none is saved", async () => {
+	it("without --as, the card carries the saved whoami, defaulting to the neutral 'dg' when none is saved", async () => {
 		await phoneInvite({}, deps());
 		const [{ as: defaulted }] = lines() as { as: string }[];
-		expect(defaulted).toBe(defaultSelfName());
+		expect(defaulted).toBe("dg");
 		out = [];
 
 		phoneWhoami("dante", deps());
@@ -576,6 +574,12 @@ describe("phoneName and phoneContacts", () => {
 });
 
 describe("phoneWhoami", () => {
+	it("prints the neutral 'dg' default, unsaved, when self naming is opt-in and none is saved", () => {
+		phoneWhoami(undefined, deps());
+
+		expect(lines()).toEqual([{ self_name: "dg", saved: false }]);
+	});
+
 	it("saves a self name and prints it back as saved", () => {
 		phoneWhoami("dante", deps());
 
@@ -584,6 +588,7 @@ describe("phoneWhoami", () => {
 
 	it("prints a default self name as not saved, until one is saved", () => {
 		phoneWhoami(undefined, deps());
+		expect(lines()).toEqual([{ self_name: "dg", saved: false }]);
 		out = [];
 		phoneWhoami("dante", deps());
 		out = [];
@@ -616,22 +621,6 @@ describe("phoneWhoami", () => {
 		await phoneInvite({}, deps({ line: linePaths(paths, "whoami") }));
 
 		expect(decodeCard((lines()[0] as { card: string }).card, NOW).handle).toBe("dante");
-	});
-});
-
-describe("defaultSelfName and sanitizeSelfName", () => {
-	it("lowercases and strips to the line-name charset", () => {
-		expect(sanitizeSelfName("Dante")).toBe("dante");
-		expect(sanitizeSelfName("Dante Burgos!")).toBe("danteburgos");
-		expect(sanitizeSelfName("---dante---")).toBe("dante");
-		expect(sanitizeSelfName("")).toBeUndefined();
-		expect(sanitizeSelfName("!!!")).toBeUndefined();
-	});
-
-	it("falls back to dg when nothing in the raw name survives sanitizing", () => {
-		expect(defaultSelfName("Dante")).toBe("dante");
-		expect(defaultSelfName("!!!")).toBe("dg");
-		expect(defaultSelfName("")).toBe("dg");
 	});
 });
 

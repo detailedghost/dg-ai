@@ -208,7 +208,7 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	});
 }
 
-/** Prints the saved self name (or its OS-username default) with no argument; saves a new one with one. */
+/** Prints the saved self name (or the neutral "dg" default) with no argument; saves a new one with one. */
 export function phoneWhoami(name: string | undefined, deps: PhoneFriendDeps): void {
 	if (name !== undefined) {
 		writeWhoami(deps.paths, name);

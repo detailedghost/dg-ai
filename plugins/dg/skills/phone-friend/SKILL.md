@@ -57,9 +57,9 @@ only that contact gets through. Messages from anyone else are dropped.
 ## Your self name
 
 `as` on a card is your own self name, not a label for the other side: it is
-what the other side's `dial` names its new line after. With no name saved,
-it defaults to the OS username, sanitized to the same charset as a line name,
-or `dg` when nothing survives. Check or set it:
+what the other side's `dial` names its new line after. Self naming is
+opt-in: with none saved, every card carries the neutral `dg`. Check or set
+it:
 
 ```bash
 ~/.dg/bin/dg-agent phone-friend whoami           # prints {"self_name": "dante", "saved": true}

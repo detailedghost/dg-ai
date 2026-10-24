@@ -39,10 +39,9 @@ else the line's own name. `--line` accepts a handle with or without its
 leading `@`.
 
 A card also carries `as`: the inviter's own self name, not a label for the
-peer. It is the saved `whoami` (default: the OS username, sanitized to the
-line-name charset, or `dg` when nothing survives), or `--as <name>` for one
-card. `dial` uses it to name or reuse the line when no `--line` or `--name`
-is given.
+peer. Self naming is opt-in: it is the saved `whoami`, or `--as <name>` for
+one card, else the neutral `dg`. `dial` uses it to name or reuse the line
+when no `--line` or `--name` is given.
 
 The key is stored in one of two places. With a dg session, it is encrypted in
 the dg credential store as `phone-friend/<line>/nostr-key`, and the listener reads it

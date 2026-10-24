@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { userInfo } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, realSubdirectories, writeFileAtomic } from "@dg/common/node";
@@ -40,32 +39,9 @@ export function writeWhoami(paths: DgPaths, name: string): void {
 	writeFileAtomic(whoamiPath(paths), `${name}\n`, 0o600);
 }
 
-/** Lowercases and strips to the line-name charset; undefined when nothing usable survives. */
-export function sanitizeSelfName(raw: string): string | undefined {
-	const cleaned = raw
-		.toLowerCase()
-		.replace(/[^a-z0-9-]/g, "")
-		.slice(0, 32)
-		.replace(/^-+|-+$/g, "");
-	return isLineName(cleaned) ? cleaned : undefined;
-}
-
-function osUsername(): string {
-	try {
-		return userInfo().username;
-	} catch {
-		return process.env.USER ?? process.env.USERNAME ?? "";
-	}
-}
-
-/** The self name to use when none is saved: the OS username, sanitized, or "dg" when that yields nothing. */
-export function defaultSelfName(raw: string = osUsername()): string {
-	return sanitizeSelfName(raw) ?? FALLBACK_SELF_NAME;
-}
-
-/** The self name a new card carries: the saved `whoami`, else the OS-username default. */
+/** The self name a new card carries: the saved `whoami`, else the neutral "dg" — self naming is opt-in. */
 export function resolvedSelfName(paths: DgPaths): string {
-	return readWhoami(paths) ?? defaultSelfName();
+	return readWhoami(paths) ?? FALLBACK_SELF_NAME;
 }
 
 const CONFIG = "config";
