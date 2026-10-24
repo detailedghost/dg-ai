@@ -70,6 +70,14 @@ selects, and approves or rejects them.
 
 Do not infer a result from browser state or elapsed time.
 
+**No self-test convention here.** Local mode's `--selftest`/`.source`/`--require-pending`
+(see [local-build.md](local-build.md)) exist because a decision-bar self-test and the user's
+real click write to the same kind of file, asynchronously, with no built-in ownership check.
+`plant` has no equivalent risk: one `plant` invocation is one synchronous browser session that
+blocks until a human clicks something in it, there is no background process that could write a
+verdict on the agent's behalf, and a verdict a human did not produce in that same browser session
+never reaches `proto --ext plant`'s stdout.
+
 ## Phase 6 — Claim verdict and run the refine chain
 
 Claim only the command's returned result. The first line of the output names the
