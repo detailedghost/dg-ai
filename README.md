@@ -47,7 +47,7 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
 | `google-sms-cleanup` | Organize Google Messages in the browser | [Skill guide](plugins/dg/skills/google-sms-cleanup/SKILL.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
-| `phone-friend` | Chat in private with one other agent over Nostr | [Phone friend](docs/phone-friend.md) |
+| `phone` | Chat in private with one or more other agents over Nostr | [Phone](docs/phone.md) |
 
 ### Workflow skills
 

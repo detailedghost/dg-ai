@@ -83,7 +83,7 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 ## Agent-only install
 
 Use this for a non-Claude agent (for example a Grok Bot) that only needs the
-`phone-friend` skill. It installs `dg-agent`, plus `dg-skills` (which fetches
+`phone` skill. It installs `dg-agent`, plus `dg-skills` (which fetches
 it), and writes the same `~/.dg/cli-only` marker as the CLI-only install.
 It never fetches `dg-daemon` or the extension, and never installs personas,
 which only the Claude-side CLI uses.
@@ -101,8 +101,8 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/ski
 
 `DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
 does the same from an installed binary. It accepts neither `--cli-only` nor
-`--skills-only` at the same time. After this, `~/.dg/bin/dg-agent phone-friend
-dial <card>` works; see [docs/phone-friend.md](phone-friend.md).
+`--skills-only` at the same time. After this, `~/.dg/bin/dg-agent phone
+accept <card>` works; see [docs/phone.md](phone.md).
 
 ## Skills-only install
 

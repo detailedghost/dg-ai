@@ -1,11 +1,10 @@
 import { DgCliError } from "@dg/common";
 import { nip19 } from "nostr-tools";
-import { isLineName } from "./line";
-import { DEFAULT_RELAYS } from "./store";
+import { DEFAULT_RELAYS, isHandle } from "./store";
 
 export type Card = { npub: string; relays: string[]; secret: string; exp: number; handle?: string };
 
-/** v1: JSON, base64url. Kept so an old card still dials; `invite`/`card` emit v2 only. */
+/** v1: JSON, base64url. Kept so an old card still dials; `invite`/`number` emit v2 only. */
 export const CARD_PREFIX_V1 = "dgcall1";
 /** v2: a fixed binary layout, base64url. See `encodeCard`/`decodeCardV2` for the field order. */
 export const CARD_PREFIX = "dgcall2";
@@ -19,7 +18,8 @@ export const SECRET_BYTES = 32;
 const EXP_BYTES = 4;
 const V2_MIN_BYTES = PUBKEY_BYTES + SECRET_BYTES + EXP_BYTES + 1;
 const MAX_RELAY_URL_BYTES = 255;
-const MAX_V2_EXP = 0xffffffff;
+/** Exp sentinel for a card that never expires; a number card carries this, not a far-future date. */
+export const NO_EXPIRY = 0xffffffff;
 
 function isNpub(value: unknown): value is string {
 	if (typeof value !== "string") return false;
@@ -41,7 +41,7 @@ export function isCardRelays(relays: unknown): relays is string[] {
 }
 
 function invalid(reason: string): never {
-	throw new DgCliError(`not a valid phone-friend call card: ${reason}`);
+	throw new DgCliError(`not a valid phone call card: ${reason}`);
 }
 
 function isDefaultRelays(relays: string[]): boolean {
@@ -53,12 +53,12 @@ function npubToPubkeyBytes(npub: string): Buffer {
 	try {
 		decoded = nip19.decode(npub);
 	} catch {
-		throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
+		throw new DgCliError(`not a valid phone call card: bad npub "${npub}"`);
 	}
-	if (decoded.type !== "npub") throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
+	if (decoded.type !== "npub") throw new DgCliError(`not a valid phone call card: bad npub "${npub}"`);
 	const bytes = Buffer.from(decoded.data, "hex");
 	if (bytes.length !== PUBKEY_BYTES) {
-		throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
+		throw new DgCliError(`not a valid phone call card: bad npub "${npub}"`);
 	}
 	return bytes;
 }
@@ -104,14 +104,14 @@ function decodeRelays(body: Buffer, offset: number): { relays: string[]; next: n
 	return { relays, next: at };
 }
 
-/** Emitted by `invite` and `card`. `card.handle` is required: a v2 card always carries the inviter's handle. */
+/** Emitted by `invite` and `number`. `card.handle` is required: a v2 card always carries the inviter's handle. */
 export function encodeCard(card: Required<Card>): string {
-	if (!isLineName(card.handle)) {
+	if (!isHandle(card.handle)) {
 		throw new DgCliError(`handle must be 1-32 lowercase letters, digits, or dashes, got "${card.handle}"`);
 	}
 	if (!SECRET_HEX_PATTERN.test(card.secret)) throw new DgCliError(`bad secret "${card.secret}"`);
-	if (!Number.isInteger(card.exp) || card.exp < 0 || card.exp > MAX_V2_EXP) {
-		throw new DgCliError(`exp must fit in 4 bytes (0 to ${MAX_V2_EXP}), got ${card.exp}`);
+	if (!Number.isInteger(card.exp) || card.exp < 0 || card.exp > NO_EXPIRY) {
+		throw new DgCliError(`exp must fit in 4 bytes (0 to ${NO_EXPIRY}), got ${card.exp}`);
 	}
 	const exp = Buffer.alloc(EXP_BYTES);
 	exp.writeUInt32BE(card.exp, 0);
@@ -137,8 +137,8 @@ function decodeCardV2(trimmed: string, now: number): Card {
 	offset += EXP_BYTES;
 	const { relays, next } = decodeRelays(body, offset);
 	const handle = body.subarray(next).toString("ascii");
-	if (!isLineName(handle)) invalid("bad handle");
-	if (exp <= now) throw new DgCliError("this call card has expired; ask for a new one");
+	if (!isHandle(handle)) invalid("bad handle");
+	if (exp !== NO_EXPIRY && exp <= now) throw new DgCliError("this call card has expired; ask for a new one");
 	return { npub, relays, secret, exp, handle };
 }
 

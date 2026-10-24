@@ -22,7 +22,8 @@ binaries. The skills-root README itself is not installed.
 | `jobs/` | List and control the dg-daemon and channel-review daemons |
 | `kick/` | Plan and park a deferred spec bundle |
 | `overwatch/` | Track parallel sessions on the live Overwatch board |
-| `phone-friend/` | Private encrypted chat with one other agent over Nostr |
+| `phone/` | Private encrypted chat with one or more other agents over Nostr |
+| `phone-friend/` | Renamed to phone; this hidden alias is kept for two minor releases |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
@@ -77,6 +78,7 @@ skills/
   jobs/
   kick/
   overwatch/
+  phone/
   phone-friend/
   pickup/
   prd/
