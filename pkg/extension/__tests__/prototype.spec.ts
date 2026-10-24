@@ -714,3 +714,68 @@ it("replaces the full body in takeover mode and restores every original node", a
 
 	expect([...document.body.childNodes]).toEqual(original);
 });
+
+it("keeps the picker's own focusin from reaching a host-page modal's focus trap", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<div id="host-modal"><button id="modal-target">Modal button</button></div>
+		<section id="mount">Original</section>
+	`;
+	const modal = document.getElementById("host-modal") as HTMLElement;
+	const modalTarget = document.getElementById("modal-target") as HTMLElement;
+	let trapCalls = 0;
+	document.addEventListener("focusin", (event) => {
+		if (!modal.contains(event.target as Node)) {
+			trapCalls += 1;
+			modalTarget.focus();
+		}
+	});
+
+	const shadowRoots: ShadowRoot[] = [];
+	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
+		window.HTMLElement.prototype,
+		"attachShadow",
+	);
+	const originalAttachShadow = window.HTMLElement.prototype.attachShadow;
+	Object.defineProperty(window.HTMLElement.prototype, "attachShadow", {
+		configurable: true,
+		value(this: HTMLElement, init: ShadowRootInit) {
+			const root = originalAttachShadow.call(this, init);
+			shadowRoots.push(root);
+			return root;
+		},
+	});
+
+	try {
+		await plantPrototype({
+			slug: "focus-trap",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{ key: "first", label: "First", html: "<p>Preview</p>", css: "" },
+			],
+		});
+	} finally {
+		if (attachShadowDescriptor) {
+			Object.defineProperty(
+				window.HTMLElement.prototype,
+				"attachShadow",
+				attachShadowDescriptor,
+			);
+		} else {
+			Reflect.deleteProperty(window.HTMLElement.prototype, "attachShadow");
+		}
+	}
+
+	const notes = shadowRoots
+		.map((root) => root.querySelector(".dg-proto-notes"))
+		.find((element) => element !== null) as HTMLElement | undefined;
+	expect(notes).toBeTruthy();
+
+	notes?.focus();
+	notes?.dispatchEvent(
+		new window.Event("focusin", { bubbles: true, composed: true }),
+	);
+
+	expect(trapCalls).toBe(0);
+});

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 interface ConfirmBody {
@@ -7,7 +7,7 @@ interface ConfirmBody {
 	variant: string;
 	variants: string[];
 	notes?: string;
-	action?: "confirm" | "reject";
+	action?: "confirm" | "reject" | "status";
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -81,6 +81,17 @@ function record(body: ConfirmBody): {
 	}
 	const sentinelPath = resolveSentinelPath(body.name);
 	const protoDir = dirname(sentinelPath);
+
+	if (body.action === "status") {
+		try {
+			return {
+				status: 200,
+				body: { token: readFileSync(join(protoDir, ".reload"), "utf8").trim() },
+			};
+		} catch {
+			return { status: 200, body: { token: "0" } };
+		}
+	}
 	mkdirSync(protoDir, { recursive: true });
 
 	if (body.action === "reject") {

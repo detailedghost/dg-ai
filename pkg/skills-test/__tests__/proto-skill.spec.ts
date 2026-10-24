@@ -197,6 +197,17 @@ describe("proto skill local mode", () => {
 		expect(source).not.toContain("sendBeacon");
 	});
 
+	test("the mounted switchers show a building message and shield their own focus from a host modal's trap", () => {
+		const tsx = skillFile("assets/PrototypeSwitcher.tsx");
+		const astro = skillFile("assets/PrototypeSwitcher.astro");
+
+		expect(tsx).toContain("Building the next round from");
+		expect(astro).toContain("Building the next round from");
+
+		expect(tsx).toContain("onFocus={e => e.stopPropagation()}");
+		expect(astro).toMatch(/addEventListener\("focusin",\s*function \(e\) \{ e\.stopPropagation\(\); \}\)/);
+	});
+
 	test("ships the copyable switcher and endpoint assets", () => {
 		for (const file of [
 			"assets/PrototypeSwitcher.tsx",

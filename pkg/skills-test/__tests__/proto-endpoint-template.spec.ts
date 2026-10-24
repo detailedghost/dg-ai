@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,6 +74,54 @@ describe("prototype endpoint template", () => {
 				"utf8",
 			),
 		).toBe("A\n");
+	});
+
+	test("records the decision source as browser for a confirm and a reject", async () => {
+		await post(confirm("demo-source"));
+		expect(
+			readFileSync(
+				join(
+					sandbox,
+					"project",
+					".agents",
+					"prototype",
+					"demo-source",
+					".source",
+				),
+				"utf8",
+			),
+		).toBe("browser\n");
+
+		await post({ ...confirm("demo-source-reject"), action: "reject" });
+		expect(
+			readFileSync(
+				join(
+					sandbox,
+					"project",
+					".agents",
+					"prototype",
+					"demo-source-reject",
+					".source",
+				),
+				"utf8",
+			),
+		).toBe("browser\n");
+	});
+
+	test("a status action reads the reload token without writing any sentinel", async () => {
+		const unbuilt = await post({ name: "status-demo", action: "status" });
+		expect(unbuilt.status).toBe(200);
+		expect(await unbuilt.json()).toEqual({ token: "0" });
+		expect(
+			existsSync(join(sandbox, "project", ".agents", "prototype", "status-demo")),
+		).toBe(false);
+
+		const dir = join(sandbox, "project", ".agents", "prototype", "status-demo");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, ".reload"), "42\n", "utf8");
+		const built = await post({ name: "status-demo", action: "status" });
+		expect(await built.json()).toEqual({ token: "42" });
+		expect(existsSync(join(dir, ".selection"))).toBe(false);
 	});
 
 	test.each([
@@ -199,4 +248,13 @@ describe("framework endpoint templates", () => {
 		expect(source).toContain("application/json");
 		expect(source).toContain("isLocalOrigin");
 	});
+
+	test.each(["prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"])(
+		"%s answers a status action with the reload token, read-only",
+		(file) => {
+			const source = readFileSync(join(ASSETS, file), "utf8");
+			expect(source).toContain('body.action === "status"');
+			expect(source).toContain(".reload");
+		},
+	);
 });

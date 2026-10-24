@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -8,7 +8,7 @@ interface ConfirmBody {
 	variant: string;
 	variants: string[];
 	notes?: string;
-	action?: "confirm" | "reject";
+	action?: "confirm" | "reject" | "status";
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -92,6 +92,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	}
 	const sentinelPath = resolveSentinelPath(body.name);
 	const protoDir = dirname(sentinelPath);
+
+	if (body.action === "status") {
+		try {
+			return NextResponse.json({
+				token: readFileSync(join(protoDir, ".reload"), "utf8").trim(),
+			});
+		} catch {
+			return NextResponse.json({ token: "0" });
+		}
+	}
 	mkdirSync(protoDir, { recursive: true });
 
 	if (body.action === "reject") {

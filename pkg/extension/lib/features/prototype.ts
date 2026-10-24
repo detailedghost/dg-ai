@@ -907,6 +907,9 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			target.style.display = "none";
 		}
 		document.documentElement.appendChild(controlsHost);
+		controlsHost.addEventListener("focusin", (event) =>
+			event.stopPropagation(),
+		);
 		const root = host.attachShadow({ mode: "closed" });
 		const controlsRoot = controlsHost.attachShadow({ mode: "closed" });
 		injectTheme(controlsRoot);
