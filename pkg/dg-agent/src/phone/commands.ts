@@ -7,6 +7,7 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { nip19, SimplePool } from "nostr-tools";
+import pkg from "../../package.json" with { type: "json" };
 import { type AutostartDeps, formatAutostartState, installAutostart, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
@@ -449,108 +450,171 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });
 }
 
-export function registerPhoneCommands(
-	program: Command,
-	makeDeps: (session?: string) => PhoneDeps = defaultDeps,
-	makeOpenCloseDeps: (session?: string) => OpenCloseDeps = defaultOpenCloseDeps,
-): void {
-	let session: string | undefined;
-	const phone = program
-		.command("phone")
-		.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
-		.option("--line <name>", "removed; one phone holds every contact now")
-		.hook("preAction", (hooked, action) => {
-			({ session } = action.optsWithGlobals<{ session?: string }>());
-			if (hooked.getOptionValueSource("line") === "cli") {
-				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox");
-			}
-		});
+const EXIT_REMOVED_VERB = 2;
 
-	phone
+/** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
+const REMOVED_VERBS: Record<string, string> = {
+	answer: "answer is gone; run phone open to start the listener, then phone voicemail to read what came in",
+	deliver: "deliver is gone; use phone open --on-message to run a program for each message",
+	whoami: "whoami is gone; use phone number --as <name>",
+	name: "name is gone; use phone contacts rename +old <new>",
+};
+
+/** `<major>.<minor+2>.0`: the plan's alias-removal window, read from the package's own version so
+ * the printed target moves with the release bump instead of needing an edit when it lands. */
+function aliasRemovalVersion(version: string): string {
+	const [major, minor] = version.split(".").map(Number);
+	return `${major}.${minor + 2}.0`;
+}
+
+/** Attaches every phone verb to `group`, plus (for both the live and the hidden alias group) the
+ * hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
+function attachPhoneVerbs(
+	group: Command,
+	getDeps: () => PhoneDeps,
+	getOpenCloseDeps: () => OpenCloseDeps,
+): void {
+	group
 		.command("number")
 		.description("print your number card, with your npub, relays, and listener state")
 		.option("--as <name>", "self name your card carries, saved for next time")
 		.option("--rotate", "roll a new secret, so every card printed before this stops admitting")
 		.option("--relay <url...>", "relays your own card should use from now on")
-		.action((opts: { as?: string; rotate?: boolean; relay?: string[] }) => phoneNumber(opts, makeDeps(session)));
+		.action((opts: { as?: string; rotate?: boolean; relay?: string[] }) => phoneNumber(opts, getDeps()));
 
-	phone
+	group
 		.command("invite")
 		.description("make a one-time call card; the first ring it admits becomes a new contact")
 		.option("--relay <url...>", "relays this card should use instead of the saved ones")
 		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
 		.option("--as <name>", "self name this card carries instead of your saved one")
 		.option("--name <handle>", "handle to give the contact once the call is answered")
-		.action((opts: { relay?: string[]; ttl?: string; as?: string; name?: string }) => phoneInvite(opts, makeDeps(session)));
+		.action((opts: { relay?: string[]; ttl?: string; as?: string; name?: string }) => phoneInvite(opts, getDeps()));
 
-	phone
+	group
 		.command("accept")
 		.description("accept a call card: ring its owner and save them as a contact")
 		.argument("[card]", "the call card, or - to read it from stdin", "-")
 		.argument("[text]", "first words to send", "hello")
-		.action((card: string, text: string) => phoneAccept(card, text, makeDeps(session)));
+		.action((card: string, text: string) => phoneAccept(card, text, getDeps()));
 
-	const contacts = phone
+	const contacts = group
 		.command("contacts")
 		.description("list every contact, in handle order")
-		.action(() => phoneContacts(makeDeps(session)));
+		.action(() => phoneContacts(getDeps()));
 
 	contacts
 		.command("rename")
 		.argument("<old>", "the contact's current handle")
 		.argument("<new>", "the new handle")
-		.action((oldHandle: string, newHandle: string) => phoneContactsRename(oldHandle, newHandle, makeDeps(session)));
+		.action((oldHandle: string, newHandle: string) => phoneContactsRename(oldHandle, newHandle, getDeps()));
 
 	contacts
 		.command("remove")
 		.argument("<handle>", "the contact to remove")
-		.action((handle: string) => phoneContactsRemove(handle, makeDeps(session)));
+		.action((handle: string) => phoneContactsRemove(handle, getDeps()));
 
-	phone
+	group
 		.command("say")
 		.description("send one message to a contact")
 		.argument("<handle>", "the contact's handle")
 		.argument("<text>", "message text, or - to read it from stdin")
-		.action((handle: string, text: string) => phoneSay(handle, text, makeDeps(session)));
+		.action((handle: string, text: string) => phoneSay(handle, text, getDeps()));
 
-	phone
+	group
 		.command("inbox")
 		.description("print stored messages, oldest first; never marks anything read")
 		.option("-n, --count <count>", "how many messages to print", "50")
 		.argument("[handle]", "limit to one contact's messages")
-		.action((handle: string | undefined, opts: { count?: string }) =>
-			phoneInbox({ n: opts.count, handle }, makeDeps(session)),
-		);
+		.action((handle: string | undefined, opts: { count?: string }) => phoneInbox({ n: opts.count, handle }, getDeps()));
 
-	phone
+	group
 		.command("voicemail")
 		.description("print unread messages, oldest first, and mark them read")
-		.action(() => phoneVoicemail(makeDeps(session)));
+		.action(() => phoneVoicemail(getDeps()));
 
-	phone
+	group
 		.command("status")
 		.description("print your self name, contact count, and pending voicemail count")
-		.action(() => phoneStatus(makeDeps(session)));
+		.action(() => phoneStatus(getDeps()));
 
-	phone
+	group
 		.command("open")
 		.description("start the listener and install it to start on login, where a service manager exists")
 		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, makeOpenCloseDeps(session)));
+		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, getOpenCloseDeps()));
 
-	phone
+	group
 		.command("close")
 		.description("stop the listener and remove it from login autostart")
-		.action(() => phoneClose(makeOpenCloseDeps(session)));
+		.action(() => phoneClose(getOpenCloseDeps()));
 
-	phone
+	group
 		.command("__run", { hidden: true })
 		.description("internal: run the always-on listener in the foreground (never call directly)")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
 		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string }) => {
-			await phoneRun(opts, { ...makeDeps(session), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
+			await phoneRun(opts, { ...getDeps(), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
 			process.exit(0);
 		});
+
+	group
+		.command("dial", { hidden: true })
+		.argument("[card]", "the call card, or - to read it from stdin", "-")
+		.argument("[text]", "first words to send", "hello")
+		.action((card: string, text: string) => phoneAccept(card, text, getDeps()));
+
+	group
+		.command("on", { hidden: true })
+		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
+		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
+		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, getOpenCloseDeps()));
+
+	group
+		.command("off", { hidden: true })
+		.action(() => phoneClose(getOpenCloseDeps()));
+
+	group
+		.command("card", { hidden: true })
+		.option("--as <name>", "self name your card carries, saved for next time")
+		.option("--rotate", "roll a new secret, so every card printed before this stops admitting")
+		.option("--relay <url...>", "relays your own card should use from now on")
+		.action((opts: { as?: string; rotate?: boolean; relay?: string[] }) => phoneNumber(opts, getDeps()));
+
+	for (const [verb, message] of Object.entries(REMOVED_VERBS)) {
+		group
+			.command(verb, { hidden: true })
+			.argument("[args...]")
+			.action(() => {
+				throw new DgCliError(message, EXIT_REMOVED_VERB);
+			});
+	}
+}
+
+export function registerPhoneCommands(
+	program: Command,
+	makeDeps: (session?: string) => PhoneDeps = defaultDeps,
+	makeOpenCloseDeps: (session?: string) => OpenCloseDeps = defaultOpenCloseDeps,
+): void {
+	let session: string | undefined;
+
+	function attachGroup(name: string, notice?: string): void {
+		const group = program
+			.command(name, notice === undefined ? undefined : { hidden: true })
+			.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
+			.option("--line <name>", "removed; one phone holds every contact now")
+			.hook("preAction", (hooked, action) => {
+				({ session } = action.optsWithGlobals<{ session?: string }>());
+				if (hooked.getOptionValueSource("line") === "cli") {
+					throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox", EXIT_REMOVED_VERB);
+				}
+				if (notice !== undefined) process.stderr.write(`${notice}\n`);
+			});
+		attachPhoneVerbs(group, () => makeDeps(session), () => makeOpenCloseDeps(session));
+	}
+
+	attachGroup("phone");
+	attachGroup("phone-friend", `phone-friend is now phone; this alias goes away in ${aliasRemovalVersion(pkg.version)}`);
 }

@@ -154,6 +154,7 @@ describe("phoneOpen", () => {
 		expect(h.written[0]?.text).toContain("<LogonTrigger>");
 		expect(h.written[0]?.text).toContain("<RestartOnFailure>");
 		expect(h.ran).toEqual([
+			["schtasks", "/End", "/TN", "dg-phone"],
 			["schtasks", "/Create", "/TN", "dg-phone", "/XML", h.written[0]?.path, "/F"],
 			["schtasks", "/Run", "/TN", "dg-phone"],
 		]);

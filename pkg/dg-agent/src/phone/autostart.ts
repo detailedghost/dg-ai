@@ -201,6 +201,7 @@ async function installLaunchd(deps: AutostartDeps, path: string): Promise<Autost
 }
 
 async function installTask(deps: AutostartDeps, path: string): Promise<AutostartOutcome> {
+	await deps.run(["schtasks", "/End", "/TN", TASK_NAME]);
 	const create = await deps.run(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", path, "/F"]);
 	if (create.code !== 0) {
 		deps.removeFile(path);

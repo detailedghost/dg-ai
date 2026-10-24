@@ -228,7 +228,7 @@ describe("installAutostart", () => {
 		expect(removed).toHaveLength(1);
 	});
 
-	it("win32 happy path: writes the task xml, creates it, then runs it", async () => {
+	it("win32 happy path: ends any running task first, then writes the task xml, creates it, then runs it", async () => {
 		const ran: string[][] = [];
 		const { deps, written } = fakeDeps({ platform: "win32", run: recordingRun(ran, () => ({ code: 0 })) });
 
@@ -236,9 +236,23 @@ describe("installAutostart", () => {
 
 		expect(outcome).toEqual({ ok: true, kind: "task" });
 		expect(ran).toEqual([
+			["schtasks", "/End", "/TN", "dg-phone"],
 			["schtasks", "/Create", "/TN", "dg-phone", "/XML", written[0]?.path ?? "", "/F"],
 			["schtasks", "/Run", "/TN", "dg-phone"],
 		]);
+	});
+
+	it("win32: a failing Create removes the task xml and reports unavailable, ignoring a failed End", async () => {
+		const ran: string[][] = [];
+		const { deps, removed } = fakeDeps({
+			platform: "win32",
+			run: recordingRun(ran, (argv) => (argv[1] === "/Create" ? { code: 1, stderr: "Access is denied." } : { code: 1 })),
+		});
+
+		const outcome = await installAutostart(deps, paths, spec);
+
+		expect(outcome).toEqual({ ok: false, reason: "Access is denied." });
+		expect(removed).toHaveLength(1);
 	});
 
 	it("reports an unsupported platform as unavailable without writing anything", async () => {
