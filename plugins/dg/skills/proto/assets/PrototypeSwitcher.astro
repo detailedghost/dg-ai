@@ -147,6 +147,8 @@ if (import.meta.env.PROD) {
     var root = document.getElementById("prototype-switcher");
     if (!root) return;
 
+    root.addEventListener("focusin", function (e) { e.stopPropagation(); });
+
     root.innerHTML = `
       <div id="ps-reject-panel">
         <div id="ps-reject-header" style="margin-bottom:8px;font-weight:600;font-size:14px"></div>
@@ -213,7 +215,7 @@ if (import.meta.env.PROD) {
         </div>
         <div id="ps-overlay-msg" style="font-size:24px;font-weight:700"></div>
         <div id="ps-overlay-notes" style="font-size:14px;opacity:.85;max-width:420px;display:none"></div>
-        <div style="font-size:16px;opacity:.7">You may close this tab.</div>
+        <div id="ps-overlay-sub" style="font-size:16px;opacity:.7">You may close this tab.</div>
         <button type="button" id="ps-close"
           style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">
           Close tab
@@ -226,6 +228,7 @@ if (import.meta.env.PROD) {
     var overlay        = document.getElementById("ps-overlay");
     var overlayMsg     = document.getElementById("ps-overlay-msg");
     var overlayNotes   = document.getElementById("ps-overlay-notes");
+    var overlaySub     = document.getElementById("ps-overlay-sub");
     var reworkBanner   = document.getElementById("ps-rework-banner");
     var reworkMsg      = document.getElementById("ps-rework-msg");
     var notesPanel     = document.getElementById("ps-notes-panel");
@@ -509,7 +512,17 @@ if (import.meta.env.PROD) {
 
     function showConfirmOverlay() {
       var notes = notesArea ? notesArea.value.trim() : "";
-      if (overlayMsg) overlayMsg.textContent = "Selected variant " + activeCurrent;
+      var isBuilding = notes.length > 0;
+      if (overlayMsg) {
+        overlayMsg.textContent = isBuilding
+          ? "Building the next round from " + activeCurrent + "…"
+          : "Selected variant " + activeCurrent;
+      }
+      if (overlaySub) {
+        overlaySub.textContent = isBuilding
+          ? "Keep this tab open — it reloads in place when the next round is ready."
+          : "You may close this tab.";
+      }
       if (overlayNotes) {
         if (notes) {
           overlayNotes.textContent = "“" + notes + "”";
@@ -518,6 +531,8 @@ if (import.meta.env.PROD) {
           overlayNotes.style.display = "none";
         }
       }
+      var closeBtnEl = document.getElementById("ps-close");
+      if (closeBtnEl) closeBtnEl.style.display = isBuilding ? "none" : "";
       if (overlay) overlay.classList.add("visible");
       confettiBurst();
     }
@@ -656,23 +671,28 @@ if (import.meta.env.PROD) {
       });
     }
 
-    var reloadUrl = window.location.origin + basePath + "/prototype-reload";
+    var confirmUrl = window.location.origin + basePath + "/prototype-confirm";
     var lastToken = null;
     var pollActive = true;
 
     function pollReload() {
       if (!pollActive) return;
-      fetch(reloadUrl, { method: "GET", cache: "no-store" })
+      fetch(confirmUrl, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: prototypeName, action: "status" }),
+      })
         .then(function (res) {
           if (!res.ok) {
             pollActive = false;
             return null;
           }
-          return res.text();
+          return res.json();
         })
-        .then(function (token) {
-          if (token === null || !pollActive) return;
-          var t = token.trim();
+        .then(function (data) {
+          if (data === null || !pollActive) return;
+          var t = String(data.token);
           if (lastToken === null) {
             lastToken = t;
           } else if (t !== lastToken) {

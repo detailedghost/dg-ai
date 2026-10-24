@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -8,7 +8,8 @@ interface ConfirmBody {
 	variant: string;
 	variants: string[];
 	notes?: string;
-	action?: "confirm" | "reject";
+	action?: "confirm" | "reject" | "status";
+	selftest?: boolean;
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -90,7 +91,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	if (!validName(body?.name)) {
 		return NextResponse.json({ error: "invalid name" }, { status: 400 });
 	}
-	const sentinelPath = resolveSentinelPath(body.name);
+
+	if (body.action === "status") {
+		const reloadDir = dirname(resolveSentinelPath(body.name));
+		try {
+			return NextResponse.json({
+				ok: true,
+				token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
+			});
+		} catch {
+			return NextResponse.json({ ok: true, token: "0" });
+		}
+	}
+
+	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
+	const sentinelPath = resolveSentinelPath(targetName);
 	const protoDir = dirname(sentinelPath);
 	mkdirSync(protoDir, { recursive: true });
 
@@ -99,6 +114,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 			typeof body.notes === "string" && body.notes.length > 0
 				? body.notes
 				: "\n";
+		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 		writeFileSync(join(protoDir, ".reject"), notes, "utf8");
 		return NextResponse.json({ ok: true });
 	}
@@ -108,6 +124,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	if (typeof body.notes === "string" && body.notes.trim()) {
 		writeFileSync(join(protoDir, ".notes"), body.notes, "utf8");
 	}
+	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");
 	return NextResponse.json({ ok: true });
 }

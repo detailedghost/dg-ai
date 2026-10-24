@@ -82,7 +82,7 @@ describe("prototype serve", () => {
 		expect(page).toContain("prototypePlanDecision");
 	});
 
-	test("a confirm writes the notes and then the selection sentinel", async () => {
+	test("a confirm writes the notes, the source, and then the selection sentinel", async () => {
 		const { post, paths } = await serve();
 		const response = await post({
 			action: "confirm",
@@ -92,23 +92,41 @@ describe("prototype serve", () => {
 		expect(await response.json()).toEqual({ ok: true });
 		expect(readFileSync(paths.selection, "utf8")).toBe("B\n");
 		expect(readFileSync(paths.notes, "utf8")).toBe("keep it");
+		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 	});
 
-	test("a reject writes the notes, or a bare newline when there are none", async () => {
+	test("selftest:true writes to a sibling -selftest sentinel dir, never the real one", async () => {
+		const { post, paths } = await serve();
+		const response = await post({
+			action: "confirm",
+			variant: "B",
+			notes: "automated click",
+			selftest: true,
+		});
+		expect(await response.json()).toEqual({ ok: true });
+		expect(existsSync(paths.selection)).toBe(false);
+		const selftestPaths = sentinelPaths(`${paths.dir}-selftest`);
+		expect(readFileSync(selftestPaths.selection, "utf8")).toBe("B\n");
+		expect(readFileSync(selftestPaths.source, "utf8")).toBe("browser\n");
+	});
+
+	test("a reject writes the notes, the source, or a bare newline when there are none", async () => {
 		const { post, paths } = await serve();
 		await post({ action: "reject", notes: "no" });
 		expect(readFileSync(paths.reject, "utf8")).toBe("no");
+		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 		await post({ action: "reject" });
 		expect(readFileSync(paths.reject, "utf8")).toBe("\n");
 	});
 
-	test("a plan decision is normalized and stored", async () => {
+	test("a plan decision is normalized and stored, and also writes the source", async () => {
 		const { post, paths } = await serve();
 		await post({ decision: "rework", notes: "reorder" });
 		expect(JSON.parse(readFileSync(paths.decision, "utf8"))).toEqual({
 			decision: "REWORK",
 			notes: "reorder",
 		});
+		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 	});
 
 	test.each([

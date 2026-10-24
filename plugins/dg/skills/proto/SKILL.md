@@ -10,6 +10,10 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+If a step fails, run ~/.dg/bin/dg-skills doctor proto stash.
+
+`dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
+
 # Prototype
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
@@ -25,7 +29,7 @@ and rework in that page. The `--ext` mode is documented in [references/extension
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--ext` | none | Run the extension mode instead of the local mode: scrape a live page, plant app-native variations in it, and wait for the verdict from the dg-ai-extension. Needs the extension. The other flags below apply to the local mode unless noted. | off (local is the default) |
-| `--count <count>` | `-n` | Number of UI variants to build. Local: any count of 1 or more. `--ext`: 1 to 5. | 5 local, 3 with `--ext` |
+| `--count <count>` | `-n` | Number of UI variants to build. Local: any count of 1 or more. `--ext`: 1 to 5 — the plan travels in the planted page's URL marker, and 5 is the largest comparison that marker can carry. | 5 local, 5 with `--ext` |
 | `--options "<a>,<b>"` | `-o` | Comma-separated directions to build. One variant per name, exactly those, no extras, each name is its label. Overrides `--count`. In `--ext` it takes at most 5 names. | none |
 | `--continue [<name>]` | `-c` | Resume an open refine chain: list open chains, or load the named one and start its next round. Local mode, UI variants branch. | off |
 | `--light` | none | Put the sandbox in scratch, wiped on reboot. Local mode. Plan walkthroughs ignore it. | off (durable sandbox) |
@@ -94,6 +98,8 @@ round, builds no new variants, and shows C again for a pick. `approve C: <note>`
 of a new round: `-n` new variants that change only what the note asks. Every round shows in the
 same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
 or "stop" (`~/.dg/bin/dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`~/.dg/bin/dg-skills prototype status <name>` is the one command for checking a pick, in every
+shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
 
 **Series exception.** When prototypes run one after another (a planned set, such as one screen per
 prototype), keep the same tab for the whole set: run each with `--series` and one shared

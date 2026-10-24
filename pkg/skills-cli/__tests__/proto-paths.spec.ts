@@ -322,6 +322,7 @@ describe("pollForFile", () => {
 			expect(message).toMatch(/relocated Downloads dir/i);
 			expect(message).toMatch(/ask where to save each file/i);
 			expect(message).toMatch(/Linux-side browser/i);
+			expect(message).toMatch(/rebuild and reload the dg-ai-extension/i);
 		}
 	});
 });
@@ -454,5 +455,6 @@ describe("proto scrape command", () => {
 		expect(result.stderr).toMatch(/relocated Downloads dir/i);
 		expect(result.stderr).toMatch(/ask where to save each file/i);
 		expect(result.stderr).toMatch(/Linux-side browser/i);
+		expect(result.stderr).toMatch(/rebuild and reload the dg-ai-extension/i);
 	});
 });

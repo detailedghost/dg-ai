@@ -74,9 +74,23 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 
 **Working directory.** `prototype serve` and `prototype wait` resolve the `--light` sentinel directory from their own working directory. A harness that resets the directory between tool calls makes the pick land in one directory while `wait` watches another. Drive the self-contained flow with `prototype ui` instead of wiring `serve` and `wait` by hand. It records the sentinel directory in the session, so `wait`, `status`, and `stop` for that chain key never depend on the ambient directory. Hand-wire `prototype serve` only when one document must own every variant (shared CSS, JS, or state, the usual shape of a motion prototype), and run both commands from the same directory every time.
 
+**Working directory, mounted endpoint.** The copied endpoint templates pin their own `prototype path <name>` lookup to the repo root (`git rev-parse --show-toplevel`), the same root the agent's own shell normally runs from — not to the dev server's own launch directory, which is often a sub-package. Without that pin, a dev server launched from a workspace subdirectory and an agent running `prototype wait` from the repo root can silently resolve two different `.agents/prototype/<name>/` folders, and a real click never surfaces. This is already built into every shipped template; do not hand-roll an endpoint that drops it.
+
 **`--light` with a mounted endpoint.** Export `PROTOTYPE_LIGHT=1` in the dev server's environment before launching it. The endpoint reads it to write the sentinel where the `--light` waiter is watching. Without it, the endpoint writes under `.agents/` and `wait --light` times out with no feedback. `prototype serve` learns `--light` from its own arguments and needs no variable.
 
 **Endpoint security.** Dev only, localhost only. The variant key is checked against the caller-supplied list for `confirm`. The check is skipped for `reject`.
+
+**Who made the pick.** Every sentinel write also records `.source`: `browser` from a real page click (`prototype serve`, `prototype ui`, and every endpoint template), `cli` from `prototype confirm` run directly, or whatever `prototype confirm --source=TEXT` named. `prototype status <name> --json` prints `{"status":...,"source":...}`; the plain (non-JSON) form is unchanged. Use this to tell a real decision apart from one recorded by hand.
+
+**Self-testing a decision bar before handing it over.** Verifying that Approve/Reject actually post correctly (see "Rendering — local-first, ALWAYS") is a real click against a real endpoint, and it writes a real sentinel — never run it against the prototype's own `<name>`, or the self-test pick and the user's real one become indistinguishable. For a CLI check, run `prototype confirm <name> <variant> --selftest` (it writes to `<name>-selftest`, a throwaway sentinel directory `wait` and `status` for `<name>` never look at). For a real click against a mounted endpoint or a self-contained `prototype serve`/`prototype ui` page, POST with `selftest: true` in the body instead; every shipped endpoint template, and the self-contained server's `/prototype-decision`, redirect that request to the same `<name>-selftest` directory and never touch `<name>`'s own sentinels. Then confirm the real name is still clean before calling the page live and again right before any `prototype wait <name>`:
+
+```sh
+~/.dg/bin/dg-skills prototype status <name> --require-pending
+```
+
+`--require-pending` exits non-zero with an error instead of printing a stale status when `<name>` is not `pending` — run it right before reporting the prototype as ready, and again right before blocking on `wait`, treating a non-zero exit as a bug to find, not a status to report. Once a pick does land in `<name>`'s own sentinel, claim and act on it directly; a verdict a human did not approve never reaches that sentinel in the first place, so there is nothing left to confirm.
+
+**Reload-in-place for a mounted endpoint.** The Astro switcher polls the same `/prototype-confirm` route with `{action:"status"}` every 2s and reloads when the returned reload token changes; no separate GET route exists for this. React, Next, and Vite switchers skip polling entirely and rely on their dev server's own HMR instead.
 
 ## Shipped templates
 

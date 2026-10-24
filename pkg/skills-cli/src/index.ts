@@ -48,7 +48,8 @@ program
 	.description(
 		"Review inboxes, run channel reviews, group marked tabs, play guided tours, and compare live-page prototypes.",
 	)
-	.showHelpAfterError();
+	.showHelpAfterError()
+	.version(process.env.DG_SKILLS_BUILD_SHA ?? "dev");
 
 program.enablePositionalOptions();
 guardExtensionCommands(program);

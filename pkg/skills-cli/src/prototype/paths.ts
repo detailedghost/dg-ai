@@ -15,11 +15,29 @@ export interface SentinelPaths {
 	decision: string;
 	reload: string;
 	changes: string;
+	source: string;
 }
 
 export function assertProtoName(name: string): string {
 	if (!name || name === "." || name === ".." || /[/\\\0]|%2f|%5c/i.test(name))
 		throw new Error(`invalid prototype name: ${JSON.stringify(name)}`);
+	return name;
+}
+
+/**
+ * Reject a raw, user-supplied name that already carries the `-selftest`
+ * suffix `confirm --selftest` and a `ui` chain append on their own: a real
+ * prototype originated under that literal name would otherwise share a
+ * sentinel dir with the self-test output of a same-base-name prototype.
+ * Read-only lookups (status, wait, path) are exempt — querying an existing
+ * self-test's own output by its literal suffixed name is the documented way
+ * to inspect it.
+ */
+export function assertNotSelftestName(name: string): string {
+	if (name.endsWith("-selftest"))
+		throw new Error(
+			`invalid prototype name: ${JSON.stringify(name)} — ends in "-selftest", which would collide with that base name's own self-test sentinel`,
+		);
 	return name;
 }
 
@@ -85,5 +103,6 @@ export function sentinelPaths(dir: string): SentinelPaths {
 		decision: join(dir, ".decision"),
 		reload: join(dir, ".reload"),
 		changes: join(dir, ".changes"),
+		source: join(dir, ".source"),
 	};
 }

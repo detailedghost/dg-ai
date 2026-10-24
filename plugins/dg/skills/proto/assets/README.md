@@ -62,12 +62,17 @@ keyed on `html.dark`. Style your variants against `html.dark` so one toggle them
 **Decision buttons**
 
 - **Notes** toggles a notes panel. A marker shows when it has content. Notes ride along with the next button click.
-- **Approve** POSTs `{ name, variant, variants, notes, action: "confirm" }`. It closes the tab only when notes are empty. A noted approval shows the confirm overlay and keeps the tab open.
+- **Approve** POSTs `{ name, variant, variants, notes, action: "confirm" }`. It closes the tab only when notes are empty. A noted approval shows "Building the next round from &lt;key&gt;…" and keeps the tab open until the reload token changes.
 - **Reject** opens a popup that needs a non-empty note, with quick-pick reason chips. It POSTs `action: "reject"`, never closes the tab, and shows a "Reworking options" banner. The open tab reloads when the agent bumps the reload token.
 
-**Reload token (Astro).** The component polls `GET <base>/prototype-reload` every 2 seconds and
-reloads when the token changes. It does nothing on a 404 or network error. React prototypes use
-their dev server's hot reload.
+**Reload token (Astro).** The component polls `POST <base>/prototype-confirm` with
+`{ name, action: "status" }` every 2 seconds (the endpoint answers read-only, writing nothing) and
+reloads when the returned token changes. It does nothing on a non-OK response or network error.
+React, Next, and Vite prototypes skip this poll and use their dev server's hot reload instead.
+
+**Focus.** Both switchers stop `focusin` from bubbling past their own root. A host page with its
+own focus trap (a modal that steals focus back on any `focusin` outside itself) would otherwise
+make the notes box unusable.
 
 **Delivery.** `navigator.sendBeacon` first, so the click's user activation stays live for
 `window.close()`. A `fetch` fallback runs when the beacon is refused.

@@ -93,7 +93,7 @@ export type PollForFileOptions = {
 };
 
 const TIMEOUT_HELP =
-	"Check for a relocated Downloads dir, disable 'ask where to save each file', and on WSL ensure the default browser is Windows-side rather than a Linux-side browser.";
+	"Check for a relocated Downloads dir, disable 'ask where to save each file', on WSL ensure the default browser is Windows-side rather than a Linux-side browser, and rebuild and reload the dg-ai-extension (chrome://extensions or about:debugging) if it changed since the browser last loaded it.";
 
 /**
  * Poll for a completed JSON download. Chrome partials and transient malformed

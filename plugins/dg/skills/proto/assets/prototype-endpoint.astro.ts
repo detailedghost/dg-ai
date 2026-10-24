@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { APIRoute } from "astro";
 
@@ -8,7 +8,8 @@ interface ConfirmBody {
 	variant: string;
 	variants: string[];
 	notes?: string;
-	action?: "confirm" | "reject";
+	action?: "confirm" | "reject" | "status";
+	selftest?: boolean;
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -49,14 +50,27 @@ const CLI =
 	process.env.DG_SKILLS_BIN ??
 	join(process.env.HOME ?? "", ".dg", "bin", "dg-skills");
 
-function resolveSentinelPath(name: string): string {
-	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
+/** Pins sentinel resolution to the repo root, matching the agent's own cwd. */
+function gitRoot(): string {
 	try {
-		return execFileSync(CLI, ["prototype", "path", name, ...light], {
+		return execFileSync("git", ["rev-parse", "--show-toplevel"], {
 			encoding: "utf8",
 		}).trim();
 	} catch {
-		return join(process.cwd(), ".agents", "prototype", name, ".selection");
+		return process.cwd();
+	}
+}
+
+function resolveSentinelPath(name: string): string {
+	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
+	const cwd = gitRoot();
+	try {
+		return execFileSync(CLI, ["prototype", "path", name, ...light], {
+			encoding: "utf8",
+			cwd,
+		}).trim();
+	} catch {
+		return join(cwd, ".agents", "prototype", name, ".selection");
 	}
 }
 
@@ -78,7 +92,21 @@ export const POST: APIRoute = async ({ request }) => {
 	if (!validName(body?.name)) {
 		return Response.json({ error: "invalid name" }, { status: 400 });
 	}
-	const sentinelPath = resolveSentinelPath(body.name);
+
+	if (body.action === "status") {
+		const reloadDir = dirname(resolveSentinelPath(body.name));
+		try {
+			return Response.json({
+				ok: true,
+				token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
+			});
+		} catch {
+			return Response.json({ ok: true, token: "0" });
+		}
+	}
+
+	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
+	const sentinelPath = resolveSentinelPath(targetName);
 	const protoDir = dirname(sentinelPath);
 	mkdirSync(protoDir, { recursive: true });
 
@@ -87,6 +115,7 @@ export const POST: APIRoute = async ({ request }) => {
 			typeof body.notes === "string" && body.notes.length > 0
 				? body.notes
 				: "\n";
+		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 		writeFileSync(join(protoDir, ".reject"), notes, "utf8");
 		return Response.json({ ok: true });
 	}
@@ -96,6 +125,7 @@ export const POST: APIRoute = async ({ request }) => {
 	if (typeof body.notes === "string" && body.notes.trim()) {
 		writeFileSync(join(protoDir, ".notes"), body.notes, "utf8");
 	}
+	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");
 	return Response.json({ ok: true });
 };

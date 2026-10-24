@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 /** Playwright computes these requires at runtime; make them static so Bun embeds the JSON. */
-const playwrightMetadata: Bun.BunPlugin = {
+export const playwrightMetadata: Bun.BunPlugin = {
 	name: "playwright-metadata",
 	setup(build) {
 		build.onLoad(
@@ -48,20 +49,53 @@ function parseTarget(
 	return target;
 }
 
+/**
+ * Hash every module the entrypoint actually bundles, not just its own file,
+ * so the build stamp changes when any dependency it pulls in changes too.
+ * Output order from `Bun.build` isn't guaranteed stable, so outputs are
+ * sorted by path before hashing.
+ */
+export async function hashBundle(
+	entrypoint: string,
+	plugins: Bun.BunPlugin[],
+): Promise<string> {
+	const result = await Bun.build({
+		entrypoints: [entrypoint],
+		target: "bun",
+		external: ["chromium-bidi", "chromium-bidi/*"],
+		plugins,
+	});
+	if (!result.success)
+		throw new AggregateError(result.logs, "Skills CLI build-hash pass failed.");
+	const hash = createHash("sha1");
+	for (const output of [...result.outputs].sort((a, b) =>
+		a.path.localeCompare(b.path),
+	))
+		hash.update(new Uint8Array(await output.arrayBuffer()));
+	return hash.digest("hex");
+}
+
 export async function buildSkillsCli(options: {
 	outfile: string;
 	target?: Bun.Build.CompileTarget;
 	entrypoint?: string;
 	plugins?: Bun.BunPlugin[];
 }): Promise<void> {
+	const entrypoint = options.entrypoint ?? join(import.meta.dir, "src/index.ts");
+	const plugins = [playwrightMetadata, ...(options.plugins ?? [])];
+	const buildSha = await hashBundle(entrypoint, plugins);
+
 	const result = await Bun.build({
-		entrypoints: [options.entrypoint ?? join(import.meta.dir, "src/index.ts")],
+		entrypoints: [entrypoint],
 		compile: {
 			outfile: options.outfile,
 			...(options.target ? { target: options.target } : {}),
 		},
 		external: ["chromium-bidi", "chromium-bidi/*"],
-		plugins: [playwrightMetadata, ...(options.plugins ?? [])],
+		plugins,
+		define: {
+			"process.env.DG_SKILLS_BUILD_SHA": JSON.stringify(buildSha),
+		},
 	});
 	if (!result.success)
 		throw new AggregateError(result.logs, "Skills CLI compilation failed.");

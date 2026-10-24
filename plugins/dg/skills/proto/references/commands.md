@@ -57,8 +57,9 @@ PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
 ```
 
-The command blocks until the extension downloads and validates the StyleGuide.
-Use its printed stable path; do not guess a slug.
+The command blocks until the extension downloads and validates the StyleGuide, with a 45-second
+default `--timeout` (a download, not a human decision). Use its printed stable path; do not guess
+a slug.
 
 ## Plant and claim
 
@@ -69,8 +70,9 @@ project root:
 ( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext plant "$PLAN" )
 ```
 
-The command clears the prior same-slug verdict before opening the browser and
-blocks for a fresh Verdict. Its stdout is authoritative:
+The command clears the prior same-slug verdict before opening the browser and blocks for a fresh
+Verdict, with a 900-second default `--timeout` (a human reviewing the page, not a download). Its
+stdout is authoritative:
 
 - Approve with no notes prints `.agents/prototype/<slug>/index.html` after export
   completes. The chain is over.

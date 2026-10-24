@@ -25,8 +25,9 @@ selector is available, omit it and let the in-browser region picker choose the
 mount area. Use `replace` mode unless the user explicitly requests a full-page
 takeover.
 
-Default to 3 variations. Accept a requested count from 1 through 5;
-never exceed the maximum of 5.
+Default to 5 variations. Accept a requested count from 1 through 5;
+never exceed the maximum of 5 — the plan travels in the planted page's URL
+marker, and 5 variations is the largest comparison that marker can carry.
 `-n <count>` sets that count. `-o "<a>,<b>"` names the directions: build exactly one
 variation per name, in order, and use each name as its `label`. `-o` overrides `-n`
 and lists at most 5 names. The flags `--light`, `--self-contained`, `--series`,
@@ -68,6 +69,14 @@ The command blocks while the extension plants the choices and the user cycles,
 selects, and approves or rejects them.
 
 Do not infer a result from browser state or elapsed time.
+
+**No self-test convention here.** Local mode's `--selftest`/`.source`/`--require-pending`
+(see [local-build.md](local-build.md)) exist because a decision-bar self-test and the user's
+real click write to the same kind of file, asynchronously, with no built-in ownership check.
+`plant` has no equivalent risk: one `plant` invocation is one synchronous browser session that
+blocks until a human clicks something in it, there is no background process that could write a
+verdict on the agent's behalf, and a verdict a human did not produce in that same browser session
+never reaches `proto --ext plant`'s stdout.
 
 ## Phase 6 — Claim verdict and run the refine chain
 
@@ -112,14 +121,18 @@ with no notes.
 ## Phase 7 — Export and Cleanup
 
 On Approve with no notes, `proto --ext plant` exports the winning self-contained
-`index.html`, editable `styles.css`, optional completed `preview.png`, and
-`NOTES.md` marker under `.agents/prototype/<slug>/`, then prints the answer path.
-Approve with notes exports the same files for that round, so the latest pick
-always exists on disk, but the chain stays open.
+`index.html`, editable `styles.css`, optional completed `preview.png`,
+`lineage.md`, and `NOTES.md` marker under `.agents/prototype/<slug>/`, then
+prints the answer path. Approve with notes exports the same files for that
+round, so the latest pick always exists on disk, but the chain stays open.
 
-`NOTES.md` keeps one `round-N` section per round with its base, variants, pick,
-note, tweaks, and status. While the last round is `open`, a new plant of the
-same slug and question continues the chain. Once a round is `done`, it starts fresh.
+`lineage.md` keeps one `## round-N` block per round with its base, variants,
+pick, note, tweaks, and status — the same file and format the local mode
+writes (see [local-ui.md](local-ui.md) §5.5 and [contracts.md](contracts.md)).
+While the last round is `open`, a new plant of the same slug and question
+continues the chain. Once a round is `done`, it starts fresh. `NOTES.md` keeps
+the question, the latest `Verdict` JSON, and the editing note; it carries no
+round history of its own.
 
 Verify the answer and its `NOTES.md` marker before cleanup. Run `proto --ext cleanup`
 from the same target project root to remove only Downloads and stable scratch

@@ -386,8 +386,9 @@ export default function PrototypeSwitcher({
   if (process.env.NODE_ENV === "production") return null;
 
   if (outcome === "confirm") {
+    const isBuilding = notes.trim().length > 0;
     return (
-      <div style={overlay}>
+      <div style={overlay} onFocus={e => e.stopPropagation()}>
         {confetti.map(p => (
           <div
             key={p.id}
@@ -416,11 +417,13 @@ export default function PrototypeSwitcher({
             />
           </svg>
         </div>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>Selected variant {current}</div>
+        <div style={{ fontSize: 24, fontWeight: 700 }}>
+          {isBuilding ? `Building the next round from ${current}…` : `Selected variant ${current}`}
+        </div>
         {notes.trim() && <div style={noteQuote}>"{notes.trim()}"</div>}
         <div style={{ fontSize: 16, opacity: 0.7 }}>
-          {notes.trim()
-            ? "Selection recorded — the agent will pick it up."
+          {isBuilding
+            ? "Keep this tab open — it reloads in place when the next round is ready."
             : "Selection recorded — this tab will close automatically."}
         </div>
         <button type="button" className="ps-btn" style={btn} onClick={() => setOutcome(null)}>
@@ -435,7 +438,7 @@ export default function PrototypeSwitcher({
   const hue = VARIANT_HUES[((idx % VARIANT_HUES.length) + VARIANT_HUES.length) % VARIANT_HUES.length];
 
   return (
-    <>
+    <div onFocus={e => e.stopPropagation()}>
       {outcome === "reject" && (
         <div style={reworkBanner}>
           <span style={{ fontWeight: 600 }}>⟲ Reworking options…</span> Your reject was sent
@@ -581,6 +584,6 @@ export default function PrototypeSwitcher({
         </button>
         {error && <span style={{ color: "#f87171", marginLeft: 8, fontSize: 12 }}>{error}</span>}
       </div>
-    </>
+    </div>
   );
 }

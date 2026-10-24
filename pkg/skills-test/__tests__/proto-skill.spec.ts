@@ -50,7 +50,7 @@ describe("proto skill", () => {
 			skillFile("references/contracts.md"),
 		].join("\n");
 
-		expect(all).toMatch(/default[^.\n]*3/i);
+		expect(all).toMatch(/default[^.\n]*5/i);
 		expect(all).toMatch(/(?:cap|maximum)[^.\n]*5/i);
 		expect(all).toMatch(/tokens?[^.\n]*verbatim/i);
 		expect(all).toMatch(
@@ -164,7 +164,7 @@ describe("proto skill local mode", () => {
 		]) {
 			expect(byFlag(flag as string)?.[1]).toBe(short as string);
 		}
-		expect(byFlag("--count")?.[3]).toBe("5 local, 3 with `--ext`");
+		expect(byFlag("--count")?.[3]).toMatch(/^5 local, 5 with `--ext`/);
 	});
 
 	test("records the behavior change for plain /dg:proto and the --ext command form", () => {
@@ -195,6 +195,17 @@ describe("proto skill local mode", () => {
 		const source = skillFile("assets/PrototypeSwitcher.tsx");
 		expect(source).toContain(".finally(() => setSubmitting(false))");
 		expect(source).not.toContain("sendBeacon");
+	});
+
+	test("the mounted switchers show a building message and shield their own focus from a host modal's trap", () => {
+		const tsx = skillFile("assets/PrototypeSwitcher.tsx");
+		const astro = skillFile("assets/PrototypeSwitcher.astro");
+
+		expect(tsx).toContain("Building the next round from");
+		expect(astro).toContain("Building the next round from");
+
+		expect(tsx).toContain("onFocus={e => e.stopPropagation()}");
+		expect(astro).toMatch(/addEventListener\("focusin",\s*function \(e\) \{ e\.stopPropagation\(\); \}\)/);
 	});
 
 	test("ships the copyable switcher and endpoint assets", () => {

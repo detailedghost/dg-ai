@@ -122,12 +122,15 @@ the base of the next round. Tweak requires non-empty `notes` and edits the
 selected variation in place without exporting. Reject requires non-empty
 feedback and starts the same-slug generation/approval/plant loop again.
 
-## NOTES.md rounds
+## lineage.md rounds
 
-Each exported round adds a section under `## Rounds`:
+Each exported round adds a block to `lineage.md`, next to `NOTES.md` under the
+same `.agents/prototype/<slug>/` answer directory. One `## round-N` heading per
+block, no wrapping section — this is the same file and format the local mode
+writes (see [local-ui.md](local-ui.md) §5.5):
 
 ```text
-### round-2
+## round-2
 - base: round-1 C
 - variants: A B C
 - picked: B
@@ -138,4 +141,8 @@ Each exported round adds a section under `## Rounds`:
 ```
 
 A round with a note stays `open` until the next round starts. The round that ends
-the chain is `done`.
+the chain is `done`. `NOTES.md` keeps the question, the latest `Verdict` JSON,
+and the editing note; it no longer carries round history. A `NOTES.md` written
+before `lineage.md` existed, with the round history nested under its own legacy
+`## Rounds` heading, is read once on the next approve and folded into
+`lineage.md`; `NOTES.md` drops the legacy section on that same write.
