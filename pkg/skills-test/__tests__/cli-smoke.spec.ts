@@ -67,6 +67,7 @@ describe("dg-skills CLI", () => {
 			"monolith",
 			"jot",
 			"bg",
+			"stat",
 			"sniff",
 			"doctor",
 			"db",
@@ -195,6 +196,41 @@ describe("dg-skills CLI", () => {
 			const listed = await runCli(["jot", "ls", "-n"], env);
 			expect(listed.code).toBe(0);
 			expect(listed.out).toMatch(/^note\t0m\tjot-[a-z]+-[a-z]+\tsmoke note\n$/);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("stat is registered and its help lists every subcommand", async () => {
+		const { code, out } = await runCli(["stat", "--help"]);
+		expect(code).toBe(0);
+		for (const verb of ["checklist", "add", "done", "status"]) expectListed(out, verb);
+	});
+
+	test("stat add, done and checklist run a real round trip in isolated roots", async () => {
+		const root = mkdtempSync(join(tmpdir(), "dg-stat-smoke-"));
+		try {
+			const env = {
+				HOME: root,
+				AI_SCRATCH_DIR: join(root, "scratch"),
+				AI_STATE_DIR: join(root, "state"),
+			};
+			const added = await runCli(
+				["stat", "add", "Phone feature to PR", "--status", "running", "--eta", "~1 hr"],
+				env,
+			);
+			expect(added.code).toBe(0);
+			expect(JSON.parse(added.out)).toMatchObject({ order: "1" });
+			const checklist = await runCli(["stat", "checklist"], env);
+			expect(checklist.code).toBe(0);
+			expect(checklist.out).toBe(
+				"1. 🔄 Phone feature to PR [~1 hr]\n\nTotal: ~1 hr (critical path: 1 Phone feature to PR)\n",
+			);
+			const done = await runCli(["stat", "done", "Phone feature"], env);
+			expect(done.code).toBe(0);
+			expect(JSON.parse(done.out)).toMatchObject({ order: "1" });
+			const after = await runCli(["stat", "checklist"], env);
+			expect(after.out).toBe("1. ✅ Phone feature to PR\n");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
