@@ -160,6 +160,21 @@ describe("createHookRunner", () => {
 		expect(db.recentMessages(2).find((m) => m.id === "m1")).toMatchObject({ attempts: ON_MESSAGE_MAX_ATTEMPTS, read_at: null });
 	});
 
+	it("stop cancels a pending retry and keeps an attempt that resolves afterward from touching the database again", async () => {
+		db.addMessage(message("a", NOW));
+		const alwaysFails: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(1)"], timeoutMs: 2000 };
+		const { schedule, delays } = fakeSchedule();
+		const runner = createHookRunner(db, alwaysFails, schedule);
+
+		const notified = runner.notify();
+		runner.stop();
+		await notified;
+		await runner.settle();
+
+		expect(delays()).toEqual([]);
+		expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 0, read_at: null });
+	});
+
 	it("retryStuck gives a stuck row one fresh attempt without blocking on failure", async () => {
 		db.addMessage(message("m1", NOW));
 		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS; i++) db.bumpAttempts("m1");

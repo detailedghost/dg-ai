@@ -49,6 +49,7 @@ async function deliverOnce(target: CommandPushTarget, db: PhoneDb, row: MessageR
 export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedule: Schedule): HookRunner {
 	let inFlight = false;
 	let runAgain = false;
+	let stopped = false;
 	let cancelRetry: Cancel | undefined;
 	let current: Promise<void> = Promise.resolve();
 
@@ -57,7 +58,14 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		return current;
 	}
 
+	function resumeIfAskedAgain(): void {
+		inFlight = false;
+		if (runAgain && !stopped) start(pass);
+		runAgain = false;
+	}
+
 	async function pass(): Promise<void> {
+		if (stopped) return;
 		if (inFlight) {
 			runAgain = true;
 			return;
@@ -65,9 +73,12 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		inFlight = true;
 		try {
 			for (;;) {
+				if (stopped) return;
 				const row = db.nextDeliverable(ON_MESSAGE_MAX_ATTEMPTS);
 				if (!row) return;
-				if (await deliverOnce(target, db, row)) {
+				const delivered = await deliverOnce(target, db, row);
+				if (stopped) return;
+				if (delivered) {
 					db.markRead([row.id]);
 					continue;
 				}
@@ -80,15 +91,12 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 				return;
 			}
 		} finally {
-			inFlight = false;
-			if (runAgain) {
-				runAgain = false;
-				start(pass);
-			}
+			resumeIfAskedAgain();
 		}
 	}
 
 	async function stuckPass(): Promise<void> {
+		if (stopped) return;
 		if (inFlight) {
 			runAgain = true;
 			return;
@@ -96,22 +104,24 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		inFlight = true;
 		try {
 			for (const row of db.stuckMessages(ON_MESSAGE_MAX_ATTEMPTS)) {
-				if (await deliverOnce(target, db, row)) db.markRead([row.id]);
+				const delivered = await deliverOnce(target, db, row);
+				if (stopped) return;
+				if (delivered) db.markRead([row.id]);
 				else db.bumpAttempts(row.id);
 			}
 		} finally {
-			inFlight = false;
-			if (runAgain) {
-				runAgain = false;
-				start(pass);
-			}
+			resumeIfAskedAgain();
 		}
 	}
 
 	return {
 		notify: () => start(pass),
 		retryStuck: () => start(stuckPass),
-		stop: () => cancelRetry?.(),
+		stop: () => {
+			stopped = true;
+			cancelRetry?.();
+			cancelRetry = undefined;
+		},
 		settle: () => current,
 	};
 }

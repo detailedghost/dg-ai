@@ -194,10 +194,12 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 		const shutdown = () => {
 			sub.close();
 			pool.close(relays);
-			hookRunner.stop();
 			cancelStuckRetry();
-			removeListenerPid(deps.paths);
-			resolve();
+			hookRunner.stop();
+			void hookRunner.settle().finally(() => {
+				removeListenerPid(deps.paths);
+				resolve();
+			});
 		};
 		deps.onSignal("SIGTERM", shutdown);
 		deps.onSignal("SIGINT", shutdown);

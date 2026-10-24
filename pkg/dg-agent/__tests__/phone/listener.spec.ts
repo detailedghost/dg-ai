@@ -8,7 +8,7 @@ import { publish, ring, wrap } from "../../src/phone/chat";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
-import { defaultSchedule, isListenerArgs, listenerPidPath, type ListenerDeps, runListener } from "../../src/phone/listener";
+import { isListenerArgs, listenerPidPath, type ListenerDeps, runListener } from "../../src/phone/listener";
 import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
@@ -294,7 +294,7 @@ describe("runListener", () => {
 		};
 		const { onSignal, ready, stop } = captureShutdown();
 
-		const run = runListener(deps({ hook: sleepyHook, onSignal, schedule: defaultSchedule }));
+		const run = runListener(deps({ hook: sleepyHook, onSignal }));
 		await ready;
 		await publish(pool, RELAYS, wrap("too slow for the hook", alice.sk, getPublicKey(numberSk)));
 		await new Promise((resolve) => setTimeout(resolve, 20));
