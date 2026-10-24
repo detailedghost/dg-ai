@@ -1,6 +1,5 @@
 import { protectedPushReason } from "@dg/common";
-import { runCapture } from "@dg/common/node";
-import { runNative } from "./process";
+import { runCapture, runNative } from "@dg/common/node";
 import { verifyBuild } from "./verify";
 
 class GitFailure extends Error {

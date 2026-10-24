@@ -14,6 +14,18 @@ import {
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS } from "./card";
+import {
+	DEFAULT_DELIVERY_EVERY,
+	type JobCli,
+	PHONE_FRIEND_SAFETY_REF,
+	deliveryArgv,
+	deliveryLabel,
+	disableDelivery,
+	enableDelivery,
+	identityFromDaemon,
+	runDaemonJobCli,
+	voicemailLine,
+} from "./deliver";
 import { PhoneFriendDb } from "./db";
 import { DEFAULT_LINE, isLineName, type LinePaths } from "./line";
 import { defaultKeyClients, ensureKey, type KeyDeps, loadKey } from "./keys";
@@ -56,6 +68,10 @@ export type PhoneFriendDeps = KeyDeps & {
 	sleep: (ms: number) => Promise<void>;
 	readStdin: () => Promise<string | undefined>;
 	now: () => number;
+	/** Runs `dg-daemon job …`. Tests pass a fake; the default finds the installed daemon. */
+	runJobCli?: JobCli;
+	/** Resolves the agent identity to notify when `deliver on` has no `--notify`. */
+	lookupIdentity?: (session?: string) => string;
 };
 
 const FOLLOW_POLL_MS = 1000;
@@ -249,7 +265,7 @@ export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
 		exp: invite.expiresAt,
 		handle: selfName,
 	});
-	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${peerHandle}`, as: selfName });
+	printJson(deps, cardReceipt(card, invite, peerHandle, selfName));
 }
 
 function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
@@ -353,7 +369,22 @@ export async function phoneInvite(
 	});
 	writeInvite(deps.line, invite, relays);
 	await spawnOrRestart(deps);
-	printJson(deps, { card, expires_at: expiresAt(invite), handle: `@${peerHandle}`, as: selfName });
+	printJson(deps, cardReceipt(card, invite, peerHandle, selfName));
+}
+
+function cardReceipt(
+	card: string,
+	invite: Invite,
+	peerHandle: string,
+	selfName: string,
+): { card: string; expires_at: string; handle: string; safety: string; as: string } {
+	return {
+		card,
+		expires_at: expiresAt(invite),
+		handle: `@${peerHandle}`,
+		safety: PHONE_FRIEND_SAFETY_REF,
+		as: selfName,
+	};
 }
 
 /**
@@ -416,6 +447,13 @@ export async function phoneOff(deps: PhoneFriendDeps): Promise<void> {
 function printUnread(inbox: PhoneFriendDb, deps: PhoneFriendDeps): void {
 	for (const message of inbox.takeUnread()) {
 		printJson(deps, message.call ? { ...message, handle: handleFor(readConfig(deps.line), deps.line) } : message);
+	}
+}
+
+function printVoicemail(inbox: PhoneFriendDb, deps: PhoneFriendDeps): void {
+	for (const message of inbox.takeUnread()) {
+		const extra = message.call ? { handle: handleFor(readConfig(deps.line), deps.line) } : undefined;
+		printJson(deps, voicemailLine(message, extra));
 	}
 }
 
@@ -496,10 +534,50 @@ export async function phoneVoicemail(deps: PhoneFriendDeps): Promise<void> {
 				pool.close(config.relays);
 			}
 		}
-		printUnread(inbox, deps);
+		printVoicemail(inbox, deps);
 	} finally {
 		inbox.close();
 	}
+}
+
+export async function phoneDeliverOn(
+	opts: { every?: string; notify?: string },
+	deps: PhoneFriendDeps,
+	session?: string,
+): Promise<void> {
+	const every = (opts.every ?? DEFAULT_DELIVERY_EVERY).trim();
+	const notifyIdentity = opts.notify?.trim()
+		? opts.notify.trim()
+		: (deps.lookupIdentity ?? ((id) => identityFromDaemon(deps.paths, id)))(session);
+	const status = await enableDelivery(
+		{
+			line: deps.line.name,
+			every,
+			notifyIdentity,
+			cwd: deps.paths.stateDir,
+		},
+		deps.runJobCli ?? runDaemonJobCli,
+	);
+	printJson(deps, {
+		line: deps.line.name,
+		delivery: "on",
+		status,
+		label: deliveryLabel(deps.line.name),
+		...(status === "added"
+			? { every, notify: notifyIdentity.trim() }
+			: { kept_existing_settings: true }),
+		argv: deliveryArgv(deps.line.name),
+	});
+}
+
+export async function phoneDeliverOff(deps: PhoneFriendDeps): Promise<void> {
+	const status = await disableDelivery(deps.line.name, deps.runJobCli ?? runDaemonJobCli);
+	printJson(deps, {
+		line: deps.line.name,
+		delivery: "off",
+		status,
+		label: deliveryLabel(deps.line.name),
+	});
 }
 
 function saveSent(deps: PhoneFriendDeps, sent: Message, contact: string): void {
@@ -658,6 +736,30 @@ export function registerPhoneFriendCommands(
 		.command("voicemail")
 		.description("print unread messages as JSON lines, then exit")
 		.action(() => phoneVoicemail(makeDeps(session, line)));
+
+	const deliver = phone
+		.command("deliver")
+		.description(
+			"schedule voicemail on dg-daemon so unread messages notify an agent",
+		);
+
+	deliver
+		.command("on")
+		.description("register or re-enable the voicemail job for this line")
+		.option(
+			"--every <interval>",
+			"how often to check, for example 1m or 15m",
+			DEFAULT_DELIVERY_EVERY,
+		)
+		.option("--notify <identity>", "agent identity that receives new messages")
+		.action((opts: { every?: string; notify?: string }) =>
+			phoneDeliverOn(opts, makeDeps(session, line), session),
+		);
+
+	deliver
+		.command("off")
+		.description("pause the voicemail job for this line")
+		.action(() => phoneDeliverOff(makeDeps(session, line)));
 
 	phone
 		.command("say")
