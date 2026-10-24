@@ -160,7 +160,7 @@ describe("createHookRunner", () => {
 		expect(db.recentMessages(2).find((m) => m.id === "m1")).toMatchObject({ attempts: ON_MESSAGE_MAX_ATTEMPTS, read_at: null });
 	});
 
-	it("stop cancels a pending retry and keeps an attempt that resolves afterward from touching the database again", async () => {
+	it("stop cancels a pending retry and keeps an attempt that resolves afterward from arming a new one", async () => {
 		db.addMessage(message("a", NOW));
 		const alwaysFails: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(1)"], timeoutMs: 2000 };
 		const { schedule, delays } = fakeSchedule();
@@ -172,7 +172,21 @@ describe("createHookRunner", () => {
 		await runner.settle();
 
 		expect(delays()).toEqual([]);
-		expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 0, read_at: null });
+		expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 1, read_at: null });
+	});
+
+	it("a notify that arrives while a delivery is already in flight does not recurse forever once the queue drains", async () => {
+		db.addMessage(message("a", NOW));
+		const { target } = countedHook(0);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+
+		const first = runner.notify();
+		const second = runner.notify();
+		await first;
+		await second;
+		await runner.settle();
+
+		expect(db.recentMessages(1)[0]?.read_at).not.toBeNull();
 	});
 
 	it("retryStuck gives a stuck row one fresh attempt without blocking on failure", async () => {

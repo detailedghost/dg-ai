@@ -60,8 +60,9 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 
 	function resumeIfAskedAgain(): void {
 		inFlight = false;
-		if (runAgain && !stopped) start(pass);
+		const again = runAgain;
 		runAgain = false;
+		if (again && !stopped) start(pass);
 	}
 
 	async function pass(): Promise<void> {
@@ -73,17 +74,15 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		inFlight = true;
 		try {
 			for (;;) {
-				if (stopped) return;
 				const row = db.nextDeliverable(ON_MESSAGE_MAX_ATTEMPTS);
 				if (!row) return;
-				const delivered = await deliverOnce(target, db, row);
-				if (stopped) return;
-				if (delivered) {
+				if (await deliverOnce(target, db, row)) {
 					db.markRead([row.id]);
 					continue;
 				}
 				const attempts = db.bumpAttempts(row.id);
 				if (attempts >= ON_MESSAGE_MAX_ATTEMPTS) continue;
+				if (stopped) return;
 				cancelRetry = schedule(nextOnMessageRetryDelayMs(attempts - 1), () => {
 					cancelRetry = undefined;
 					start(pass);
@@ -104,9 +103,7 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		inFlight = true;
 		try {
 			for (const row of db.stuckMessages(ON_MESSAGE_MAX_ATTEMPTS)) {
-				const delivered = await deliverOnce(target, db, row);
-				if (stopped) return;
-				if (delivered) db.markRead([row.id]);
+				if (await deliverOnce(target, db, row)) db.markRead([row.id]);
 				else db.bumpAttempts(row.id);
 			}
 		} finally {
