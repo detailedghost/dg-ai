@@ -7,6 +7,8 @@ import {
 	PROTO_MAX_TIMEOUT_MS,
 	sanitizeVariationHtml,
 	STYLE_GUIDE_MAX_CONTROLS,
+	PROTO_MARKED_URL_MAX_LENGTH,
+	PROTO_PREVIEW_MAX_CHARS,
 	validateProtoBrowserData,
 	validateProtoCliRequest,
 	validateProtoIdentifier,
@@ -487,22 +489,39 @@ describe("validateProtoBrowserData", () => {
 		});
 	});
 
-	it("rejects an unknown kind and a non-PNG preview data URL", () => {
+	it("accepts a JPEG preview and rejects a non-image or oversized preview", () => {
+		const verdict = {
+			slug: "account-summary-1a2b3c4d",
+			action: "approve" as const,
+			selectedKey: "compact",
+			ts: 1,
+		};
+		expect(
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+			}),
+		).toMatchObject({
+			previewDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+		});
 		expect(() =>
 			validateProtoBrowserData({ kind: "answer", value: "nope" }),
 		).toThrow();
 		expect(() =>
 			validateProtoBrowserData({
 				kind: "verdict",
-				verdict: {
-					slug: "account-summary-1a2b3c4d",
-					action: "approve",
-					selectedKey: "compact",
-					ts: 1,
-				},
+				verdict,
 				previewDataUrl: "data:text/plain,not-a-png",
 			}),
-		).toThrow();
+		).toThrow(/PNG or JPEG/);
+		expect(() =>
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: `data:image/jpeg;base64,${"A".repeat(PROTO_PREVIEW_MAX_CHARS)}`,
+			}),
+		).toThrow(/exceeds/);
 	});
 });
 
@@ -527,6 +546,26 @@ describe("validateProtoCliRequest", () => {
 				buildProtoCliRequest({ phase: "plant", timeoutMs: 900_000 }),
 			),
 		).toEqual(buildProtoCliRequest({ phase: "plant", timeoutMs: 900_000 }));
+	});
+
+	it("requires an http(s) marked URL under the marker length cap", () => {
+		expect(
+			validateProtoCliRequest(
+				buildProtoCliRequest({ markedUrl: "http://example.test/account" }),
+			).markedUrl,
+		).toBe("http://example.test/account");
+		expect(() =>
+			validateProtoCliRequest(
+				buildProtoCliRequest({ markedUrl: "javascript:alert(1)" }),
+			),
+		).toThrow(/http\(s\)/);
+		expect(() =>
+			validateProtoCliRequest(
+				buildProtoCliRequest({
+					markedUrl: `https://example.test/${"a".repeat(PROTO_MARKED_URL_MAX_LENGTH)}`,
+				}),
+			),
+		).toThrow(/marker URL limit/);
 	});
 
 	it("rejects an unknown phase, an out-of-range timeout, and an unknown field", () => {

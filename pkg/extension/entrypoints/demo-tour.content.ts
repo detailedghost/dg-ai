@@ -1,6 +1,7 @@
 import { runDemoTour } from "@/lib/features/demo-tour";
 import {
 	detectPageNotReady,
+	PROTO_HAS_PENDING,
 	PROTO_NOT_READY,
 	PROTO_PROGRESS,
 	PROTO_SAVE_STYLE_GUIDE,
@@ -14,6 +15,17 @@ import {
 } from "@/utils/proto-marker";
 
 type ContentContext = Parameters<typeof runDemoTour>[0];
+
+async function tabHasPendingProtoRequest(): Promise<boolean> {
+	try {
+		const response = (await chrome.runtime.sendMessage({
+			type: PROTO_HAS_PENDING,
+		})) as { pending?: unknown } | undefined;
+		return response?.pending === true;
+	} catch {
+		return false;
+	}
+}
 
 function hasProtoMarker(url: string): boolean {
 	const hashIndex = url.indexOf("#");
@@ -37,6 +49,9 @@ export async function runProto(_ctx: ContentContext): Promise<boolean> {
 	const payload = await readProtoPayload(url);
 	history.replaceState(history.state, "", stripProtoMarker(url));
 	if (!payload) return true;
+	// A marked link on <all_urls> is attacker-reachable. Scrape and plant only
+	// when the background opened this tab for a relay request.
+	if (!(await tabHasPendingProtoRequest())) return true;
 
 	const notReady = detectPageNotReady(payload.expectedUrl);
 	if (notReady) {

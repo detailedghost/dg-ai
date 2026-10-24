@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { CHAT_MAX_PAYLOAD_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -234,6 +235,67 @@ describe("daemon prototype browser relay", () => {
 		expect(answer.ok).toBe(false);
 		expect(answer.error).toMatch(/timed out/i);
 		expect(answer.error).toMatch(/no report from the extension/i);
+		expect(answer.error).toContain("https://example.test/account");
+		expect(answer.error).not.toContain("#_proto=");
+		expect(answer.error).not.toContain("fixture");
+	});
+
+	it("rejects a duplicate requestId from a different CLI without replacing the original", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 5_000 });
+		await relay(page.frames, requestId);
+		const other = await connectCli(port, bootstrap);
+		sockets.push(other);
+		const otherResults = collectFrames(other);
+		send(other, {
+			type: "cli-proto-request",
+			requestId,
+			phase: "scrape",
+			slug: "account-summary-1a2b3c4d",
+			markedUrl: "https://example.test/account#_proto=other",
+			timeoutMs: 5_000,
+		});
+		const rejected = await result(otherResults, requestId);
+		expect(rejected).toMatchObject({
+			ok: false,
+			error: "duplicate requestId",
+		});
+		const data = reply(page.socket, bootstrap, requestId);
+		expect(await result(results, requestId)).toMatchObject({
+			ok: true,
+			data,
+		});
+	});
+
+	it("delivers a verdict when the preview makes the result exceed the frame limit", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { phase: "plant", timeoutMs: 5_000 });
+		await relay(page.frames, requestId);
+		const verdict = {
+			slug: "account-summary-1a2b3c4d",
+			action: "approve",
+			selectedKey: "compact",
+			ts: 1,
+		};
+		const previewDataUrl = `data:image/png;base64,${"A".repeat(CHAT_MAX_PAYLOAD_BYTES)}`;
+		const payload = JSON.stringify({
+			type: "proto-browser-result",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			token: bootstrap.token,
+			requestId,
+			ok: true,
+			data: { kind: "verdict", verdict, previewDataUrl },
+		});
+		expect(Buffer.byteLength(payload)).toBeGreaterThan(CHAT_MAX_PAYLOAD_BYTES);
+		expect(Buffer.byteLength(payload)).toBeLessThan(CHAT_MAX_PAYLOAD_BYTES + 4096);
+		page.socket.send(payload);
+		const answer = await result(results, requestId);
+		expect(answer.ok).toBe(true);
+		expect(answer.error).toBeUndefined();
+		expect(answer.data).toEqual({ kind: "verdict", verdict });
 	});
 
 	it("ignores the wrong request, wrong session, and a newly connected unselected socket", async () => {

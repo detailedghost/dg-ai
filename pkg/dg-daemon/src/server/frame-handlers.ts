@@ -4,9 +4,11 @@ import {
 } from "./credentials";
 import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
 import {
+	failPendingProtoForExtension,
 	handleProtoCli,
 	handleProtoBrowserProgress,
 	handleProtoBrowserResult,
+	settleRejectedProtoBrowserResult,
 } from "./proto";
 import { randomUUID } from "node:crypto";
 import {
@@ -1062,6 +1064,26 @@ export async function handleSocketMessage(
 	const bytes =
 		typeof raw === "string" ? Buffer.byteLength(raw, "utf8") : raw.byteLength;
 	if (bytes > CHAT_MAX_PAYLOAD_BYTES) {
+		let parsedOversize: unknown;
+		try {
+			parsedOversize = JSON.parse(
+				typeof raw === "string" ? raw : raw.toString("utf8"),
+			);
+		} catch {
+			parsedOversize = undefined;
+		}
+		if (settleRejectedProtoBrowserResult(ws, parsedOversize, deps)) return;
+		const unreadable = parsedOversize === undefined;
+		const protoResult =
+			isRecord(parsedOversize) &&
+			parsedOversize.type === "proto-browser-result";
+		if ((unreadable || protoResult) && ws.data.kind === "ws") {
+			failPendingProtoForExtension(
+				ws,
+				deps,
+				`Prototype result exceeded the relay size limit and could not be delivered.`,
+			);
+		}
 		await sendError(
 			ws,
 			TRANSPORT_ERROR_SESSION_ID,
@@ -1146,6 +1168,7 @@ export async function handleSocketMessage(
 	try {
 		frame = validateChatFrame(parsed);
 	} catch (err) {
+		if (settleRejectedProtoBrowserResult(ws, parsed, deps)) return;
 		await sendError(ws, rawSessionId, describeError(err));
 		noteInvalid(ws);
 		return;

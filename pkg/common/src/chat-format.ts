@@ -15,6 +15,7 @@ import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
 import {
 	validateProtoBrowserData,
 	validateProtoIdentifier,
+	validateProtoMarkedUrl,
 	validateProtoNotReadyError,
 } from "./proto-format";
 import type { ProtoBrowserData, ProtoNotReadyError } from "./types";
@@ -792,7 +793,7 @@ function validateFrameBody(
 				fail("proto requestId exceeds 128 characters");
 			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
 			validateProtoIdentifier(value.slug, `${path}.slug`);
-			requireString(value.markedUrl, `${path}.markedUrl`, { nonEmpty: true });
+			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
 			return;
 		case "proto-browser-result":
 			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });

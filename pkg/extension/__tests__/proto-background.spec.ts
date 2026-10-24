@@ -7,8 +7,10 @@ import {
 	type ProtoBrowserRequest,
 	type ProtoResultFrame,
 } from "@/lib/background/proto";
+import { PROTO_PREVIEW_MAX_CHARS } from "@dg/common";
 import {
 	PROTO_CAPTURE_PREVIEW,
+	PROTO_HAS_PENDING,
 	PROTO_NOT_READY,
 	PROTO_PROGRESS,
 	PROTO_SAVE_STYLE_GUIDE,
@@ -27,6 +29,7 @@ type ApiOverrides = {
 	create?: FakeMethod;
 	captureVisibleTab?: FakeMethod;
 	query?: FakeMethod;
+	onRemoved?: (callback: (tabId: number) => void) => void;
 };
 
 function unstubbed(method: string): never {
@@ -36,8 +39,10 @@ function unstubbed(method: string): never {
 function buildApi(overrides: ApiOverrides = {}): {
 	api: ProtoBrowserApi;
 	listener: ProtoListener;
+	removeTab: (tabId: number) => void;
 } {
 	let listener: ProtoListener | undefined;
+	let onRemoved: (tabId: number) => void = () => {};
 	const api = {
 		tabs: {
 			create: overrides.create ?? mock(async () => unstubbed("tabs.create")),
@@ -45,6 +50,12 @@ function buildApi(overrides: ApiOverrides = {}): {
 				overrides.captureVisibleTab ??
 				mock(async () => unstubbed("tabs.captureVisibleTab")),
 			query: overrides.query ?? mock(async () => []),
+			onRemoved: {
+				addListener(callback: (tabId: number) => void) {
+					onRemoved = callback;
+					overrides.onRemoved?.(callback);
+				},
+			},
 		},
 		runtime: {
 			onMessage: {
@@ -56,7 +67,15 @@ function buildApi(overrides: ApiOverrides = {}): {
 	} as unknown as ProtoBrowserApi;
 	registerProto({ browserApi: api });
 	if (!listener) throw new Error("prototype listener was not registered");
-	return { api, listener };
+	return { api, listener, removeTab: (tabId) => onRemoved(tabId) };
+}
+
+function restoreGlobal(name: string): () => void {
+	const original = Object.getOwnPropertyDescriptor(globalThis, name);
+	return () => {
+		if (original) Object.defineProperty(globalThis, name, original);
+		else Reflect.deleteProperty(globalThis, name);
+	};
 }
 
 function flush(): Promise<void> {
@@ -463,7 +482,232 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		});
 
 		expect(captureResponse).toEqual({ saved: true });
-		expect(query).toHaveBeenCalledTimes(2);
+		expect(query).toHaveBeenCalledTimes(4);
 		expect(captureVisibleTab).toHaveBeenCalledTimes(2);
+	});
+
+	it("drops the preview when the tab changes during capture", async () => {
+		let queries = 0;
+		const query = mock(async () => {
+			queries += 1;
+			return queries === 1 ? [{ id: 9 }] : [{ id: 99 }];
+		});
+		const captureVisibleTab = mock(
+			async () => "data:image/jpeg;base64,cHJldmlldw==",
+		);
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const verdict = buildVerdict();
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
+				resolve,
+			);
+		});
+
+		expect(captureResponse).toEqual({
+			saved: false,
+			reason: "prototype tab is no longer active",
+		});
+		expect(captureVisibleTab).toHaveBeenCalledTimes(1);
+		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: { kind: "verdict", verdict },
+		});
+	});
+
+	it("omits an oversized preview and still resolves the verdict", async () => {
+		const oversized = `data:image/jpeg;base64,${"A".repeat(PROTO_PREVIEW_MAX_CHARS)}`;
+		const captureVisibleTab = mock(
+			async (
+				_windowId: number,
+				_options: { format?: string; quality?: number },
+			) => oversized,
+		);
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query: mock(async () => [{ id: 9 }]),
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const verdict = buildVerdict();
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
+				resolve,
+			);
+		});
+		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
+
+		expect(captureResponse).toEqual({
+			saved: false,
+			reason: "preview exceeded the relay size limit and was omitted",
+		});
+		expect(captureVisibleTab.mock.calls[0]?.[1]).toEqual({
+			format: "jpeg",
+			quality: 70,
+		});
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: { kind: "verdict", verdict },
+		});
+	});
+
+	it("keeps a downscaled preview when OffscreenCanvas can shrink it under the budget", async () => {
+		const oversized = `data:image/jpeg;base64,${"A".repeat(PROTO_PREVIEW_MAX_CHARS)}`;
+		const widths: number[] = [];
+		const restoreCanvas = restoreGlobal("OffscreenCanvas");
+		const restoreBitmap = restoreGlobal("createImageBitmap");
+		class FakeCanvas {
+			width: number;
+			height: number;
+			constructor(width: number, height: number) {
+				this.width = width;
+				this.height = height;
+				widths.push(width);
+			}
+			getContext() {
+				return { drawImage() {} };
+			}
+			async convertToBlob() {
+				return new Blob([Uint8Array.from([1, 2, 3])], { type: "image/jpeg" });
+			}
+		}
+		Object.defineProperty(globalThis, "OffscreenCanvas", {
+			configurable: true,
+			value: FakeCanvas,
+		});
+		Object.defineProperty(globalThis, "createImageBitmap", {
+			configurable: true,
+			value: async () => ({ width: 2400, height: 1200, close() {} }),
+		});
+		try {
+			const { api, listener } = buildApi({
+				create: mock(async () => ({ id: 9 })),
+				captureVisibleTab: mock(async () => oversized),
+				query: mock(async () => [{ id: 9 }]),
+			});
+			const handler = createProtoHandler({ browserApi: api });
+			const verdict = buildVerdict();
+			const resultPromise = handler(
+				defaultRequest({ phase: "plant" }),
+				mock(() => {}),
+			);
+			await flush();
+			const captureResponse = await new Promise((resolve) => {
+				listener(
+					{ type: PROTO_CAPTURE_PREVIEW },
+					{ tab: { id: 9, windowId: 3 } },
+					resolve,
+				);
+			});
+			listener(
+				{ type: PROTO_SAVE_VERDICT, verdict },
+				{ tab: { id: 9 } },
+				() => {},
+			);
+			const result = await resultPromise;
+			expect(captureResponse).toEqual({ saved: true });
+			expect(widths[0]).toBeLessThanOrEqual(1280);
+			expect(result).toMatchObject({
+				ok: true,
+				data: { kind: "verdict", verdict },
+			});
+			const preview = (result as { data: { previewDataUrl?: string } }).data
+				.previewDataUrl;
+			expect(preview?.startsWith("data:image/jpeg;base64,")).toBe(true);
+			expect((preview ?? "").length).toBeLessThanOrEqual(PROTO_PREVIEW_MAX_CHARS);
+		} finally {
+			restoreCanvas();
+			restoreBitmap();
+		}
+	});
+
+	it("finishes with a tab-closed error when the prototype tab is removed", async () => {
+		const { api, listener, removeTab } = buildApi({
+			create: mock(async () => ({ id: 7 })),
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
+		removeTab(7);
+		expect(await resultPromise).toEqual({
+			ok: false,
+			error: "The prototype tab was closed before a result.",
+		});
+		listener(
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide: buildStyleGuide() },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+	});
+
+	it("answers whether the sender tab has a pending relay request", async () => {
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 7 })),
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
+		const pending = await new Promise((resolve) => {
+			listener({ type: PROTO_HAS_PENDING }, { tab: { id: 7 } }, resolve);
+		});
+		const absent = await new Promise((resolve) => {
+			listener({ type: PROTO_HAS_PENDING }, { tab: { id: 8 } }, resolve);
+		});
+		expect(pending).toEqual({ pending: true });
+		expect(absent).toEqual({ pending: false });
+		listener(
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide: buildStyleGuide() },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+		await resultPromise;
+	});
+
+	it("refuses to open a non-http URL or one past the marker limit", async () => {
+		const create = mock(async () => ({ id: 7 }));
+		const { api } = buildApi({ create });
+		const handler = createProtoHandler({ browserApi: api });
+		expect(
+			await handler(
+				defaultRequest({ markedUrl: "javascript:alert(1)" }),
+				mock(() => {}),
+			),
+		).toEqual({
+			ok: false,
+			error: "the prototype URL must be an http(s) URL",
+		});
+		expect(
+			await handler(
+				defaultRequest({
+					markedUrl: `https://example.test/${"a".repeat(40_000)}`,
+				}),
+				mock(() => {}),
+			),
+		).toEqual({
+			ok: false,
+			error: "the prototype URL exceeds the marker URL limit",
+		});
+		expect(create).not.toHaveBeenCalled();
 	});
 });

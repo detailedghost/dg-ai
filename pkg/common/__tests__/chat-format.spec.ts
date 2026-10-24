@@ -568,6 +568,30 @@ describe("validateChatFrame — CHAT_MAX_PAYLOAD_BYTES", () => {
 	});
 });
 
+describe("validateChatFrame — proto-browser-request URL", () => {
+	it("accepts http and https and rejects other schemes", () => {
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({
+					markedUrl: "http://example.test/account",
+				}),
+			),
+		).not.toThrow();
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({ markedUrl: "javascript:alert(1)" }),
+			),
+		).toThrow(/http\(s\)/);
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({
+					markedUrl: `https://example.test/${"a".repeat(40_000)}`,
+				}),
+			),
+		).toThrow(/marker URL limit/);
+	});
+});
+
 describe("validateChatFrame — round-trip serialization", () => {
 	it("re-validates a JSON round-tripped frame as deep-equal to the original", () => {
 		const original = buildManifestPublishFrame();

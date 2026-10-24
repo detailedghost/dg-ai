@@ -2,6 +2,7 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { gzipSync } from "node:zlib";
 import { PROTO_MARKER_KEY } from "@dg/common";
 import {
+	PROTO_HAS_PENDING,
 	PROTO_NOT_READY,
 	PROTO_PROGRESS,
 	PROTO_SAVE_STYLE_GUIDE,
@@ -53,6 +54,7 @@ const savedGlobals = {
 
 function stubGlobals(options: {
 	href: string;
+	pending?: boolean;
 	documentOverrides?: Partial<{ title: string; querySelector(selector: string): unknown }>;
 }): { sent: Array<Record<string, unknown>> } {
 	savedGlobals.location = Object.getOwnPropertyDescriptor(globalThis, "location");
@@ -94,6 +96,9 @@ function stubGlobals(options: {
 			runtime: {
 				sendMessage: (message: Record<string, unknown>) => {
 					sent.push(message);
+					if (message.type === PROTO_HAS_PENDING) {
+						return Promise.resolve({ pending: options.pending ?? true });
+					}
 					return Promise.resolve();
 				},
 			},
@@ -177,8 +182,9 @@ test("reports PROTO_NOT_READY instead of scraping when the landed page looks lik
 	expect(capturedContentConfig).toBeDefined();
 	await capturedContentConfig!.main(undefined as never);
 
-	expect(sent).toHaveLength(1);
-	expect(sent[0]).toEqual({
+	expect(sent).toHaveLength(2);
+	expect(sent[0]).toEqual({ type: PROTO_HAS_PENDING });
+	expect(sent[1]).toEqual({
 		type: PROTO_NOT_READY,
 		error: {
 			code: "login-page",
@@ -204,8 +210,35 @@ test("reports PROTO_PROGRESS before scraping when the landed page is ready", asy
 	expect(capturedContentConfig).toBeDefined();
 	await expect(capturedContentConfig!.main(undefined as never)).rejects.toThrow();
 
-	expect(sent[0]).toEqual({
+	expect(sent[0]).toEqual({ type: PROTO_HAS_PENDING });
+	expect(sent[1]).toEqual({
 		type: PROTO_PROGRESS,
 		status: "ready; scraping the style guide",
 	});
+});
+
+test("does not plant a marked page when the tab has no pending relay request", async () => {
+	const href = "https://example.test/account";
+	const url = markedUrl(href, {
+		phase: "plant",
+		slug: "account-summary",
+		expectedUrl: href,
+		plan: {
+			slug: "account-summary",
+			mode: "replace",
+			variations: [
+				{ key: "compact", label: "Compact", html: "<p>Hi</p>", css: "" },
+			],
+		},
+	});
+	const { sent } = stubGlobals({ href: url, pending: false });
+
+	expect(capturedContentConfig).toBeDefined();
+	await capturedContentConfig!.main(undefined as never);
+
+	expect(sent).toEqual([{ type: PROTO_HAS_PENDING }]);
+	expect(sent.some((message) => message.type === PROTO_PROGRESS)).toBe(false);
+	expect(sent.some((message) => message.type === PROTO_SAVE_STYLE_GUIDE)).toBe(
+		false,
+	);
 });

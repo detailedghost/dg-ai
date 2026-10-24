@@ -1251,6 +1251,62 @@ test("registerChat rejects inbox requests for an uncaptured session", async () =
 	expect(relay.results()).toEqual([]);
 });
 
+test("registerChat turns a proto-browser-request onFrame into a proto-browser-result", async () => {
+	const { api, getOnMessage, sendMessage, tabsCreate } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+
+	const request = {
+		type: "proto-browser-request",
+		sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "proto-correlated-request",
+		phase: "scrape",
+		slug: "account-summary",
+		markedUrl: "https://example.test/account#_proto=fixture",
+	};
+	socket.dispatch("message", message(request));
+	await settle();
+	await flushMicrotasks();
+
+	const results = socket.send.mock.calls
+		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
+		.filter((frame) => frame.type === "proto-browser-result");
+	expect(
+		tabsCreate.mock.calls.map(
+			(call) => call[0] as { url: string; active?: boolean },
+		),
+	).toContainEqual({
+		url: request.markedUrl,
+		active: true,
+	});
+	expect(results).toEqual([
+		{
+			type: "proto-browser-result",
+			sessionId: bootstrap.sessionId,
+			requestId: request.requestId,
+			token: bootstrap.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			ok: false,
+			error: "the extension could not open a tab for this URL",
+		},
+	]);
+	expect(() => validateChatFrame(results[0])).not.toThrow();
+	expect(
+		sendMessage.mock.calls.some(
+			([event]) =>
+				(event as { frame?: { type: string } }).frame?.type ===
+				"proto-browser-request",
+		),
+	).toBe(false);
+});
+
 test.each(["session-closed", "close", "error"])("registerChat discards a pending inbox result after %s", async (ending) => {
 	const relay = await inboxRelay({ deferred: true });
 	relay.socket.dispatch("message", message(relay.request));

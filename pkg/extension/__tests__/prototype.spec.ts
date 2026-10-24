@@ -527,6 +527,25 @@ describe("detectPageNotReady", () => {
 		}
 	});
 
+	it("reports ready for the expected URL even when it contains a password field", () => {
+		document.body.innerHTML =
+			'<h1>Account settings</h1><input type="password" name="current-password">';
+		withLocation("https://example.test/account", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+	});
+
+	it("reports login-page for a 401 on the expected URL when the page looks like sign-in", () => {
+		document.body.innerHTML = '<h1>Log in</h1><input type="password">';
+		withLocation("https://example.test/account", () => {
+			withNavigationStatus(401, () => {
+				expect(detectPageNotReady("https://example.test/account")?.code).toBe(
+					"login-page",
+				);
+			});
+		});
+	});
+
 	it("reports redirected when the page lands on a different origin or path", () => {
 		document.body.innerHTML = "<h1>Account summary</h1>";
 		withLocation("https://example.test/other-page", () => {
@@ -767,12 +786,20 @@ describe("sanitizePrototypeVariation", () => {
 			sanitized.html,
 			"text/html",
 		);
-		const inlineStyle = parsed.querySelector("#inline")?.getAttribute("style");
+		const inlineStyle = parsed
+			.querySelector("#dg-proto-adversarial-preview-inline")
+			?.getAttribute("style");
 
-		expect(parsed.querySelector("#encoded")?.hasAttribute("href")).toBe(false);
-		expect(parsed.querySelector("#benign-link")?.getAttribute("href")).toBe(
-			"#details",
-		);
+		expect(
+			parsed
+				.querySelector("#dg-proto-adversarial-preview-encoded")
+				?.hasAttribute("href"),
+		).toBe(false);
+		expect(
+			parsed
+				.querySelector("#dg-proto-adversarial-preview-benign-link")
+				?.getAttribute("href"),
+		).toBe("#details");
 		expect(inlineStyle).toMatch(/position\s*:\s*static/i);
 		expect(inlineStyle).toMatch(/z-index\s*:\s*0/i);
 		expect(inlineStyle).toMatch(/color\s*:\s*green/i);
@@ -872,6 +899,82 @@ describe("sanitizePrototypeVariation", () => {
 		]) {
 			expect(host.style.getPropertyPriority(property)).toBe("important");
 		}
+	});
+
+	it("keeps a brace-escape payload from restyling the host page", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "escape",
+			label: "Escape",
+			html: '<p class="x">Variation</p>',
+			css: "} body > * { display: none !important } .x { color: teal }",
+		});
+		document.body.innerHTML =
+			'<p id="host-copy">Host</p><div data-dg-prototype="escape"><p class="x">Variation</p></div>';
+		const style = document.createElement("style");
+		style.textContent = sanitized.css;
+		document.head.append(style);
+		try {
+			expect(getComputedStyle(document.body).display).not.toBe("none");
+			expect(
+				getComputedStyle(document.getElementById("host-copy") as Element).display,
+			).not.toBe("none");
+			expect(sanitized.css).not.toMatch(/^\s*body\s*>\s*\*/);
+			expect(sanitized.css === "" || sanitized.css.includes("@scope ([data-dg-prototype])")).toBe(
+				true,
+			);
+			if (sanitized.css) {
+				expect(sanitized.css).toMatch(/\.x\s*\{[^}]*color:\s*teal/i);
+			}
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("prefixes variation ids and rewrites for, aria, and fragment references", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "ids",
+			label: "Ids",
+			html: [
+				'<label for="title">Title</label>',
+				'<h2 id="title">Variation title</h2>',
+				'<a href="#title" aria-describedby="title extra">Jump</a>',
+			].join(""),
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.getElementById("title")).toBeNull();
+		expect(parsed.getElementById("dg-proto-ids-title")).not.toBeNull();
+		expect(parsed.querySelector("label")?.getAttribute("for")).toBe(
+			"dg-proto-ids-title",
+		);
+		expect(parsed.querySelector("a")?.getAttribute("href")).toBe(
+			"#dg-proto-ids-title",
+		);
+		expect(parsed.querySelector("a")?.getAttribute("aria-describedby")).toBe(
+			"dg-proto-ids-title extra",
+		);
+	});
+
+	it("namespaces variation radio names away from the host form", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "choice",
+			label: "Choice",
+			html: '<input type="radio" name="plan" value="alt" checked>',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.querySelector("input")?.getAttribute("name")).toBe(
+			"dg-proto-choice-plan",
+		);
 	});
 });
 
@@ -1027,7 +1130,7 @@ it("lets the picker toggle between the original element and the planted variatio
 	expect(host.style.display).toBe("flex");
 
 	toggle.click();
-	expect(target.style.display).toBe("");
+	expect(target.style.display).toBe("flex");
 	expect(host.style.display).toBe("none");
 	expect(toggle.textContent).toBe("Show variation");
 
@@ -1035,6 +1138,42 @@ it("lets the picker toggle between the original element and the planted variatio
 	expect(target.style.display).toBe("none");
 	expect(host.style.display).toBe("flex");
 	expect(toggle.textContent).toBe("Show original");
+
+	window.dispatchEvent(new window.Event("pagehide"));
+});
+
+it("namespaces a variation radio so it does not clear the original selection", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<form>
+			<input type="radio" name="plan" value="original" checked id="original-radio">
+			<section id="mount">Original</section>
+		</form>
+	`;
+	const original = document.getElementById("original-radio") as HTMLInputElement;
+
+	await plantPrototype({
+		slug: "radio-collision",
+		mountSelector: "#mount",
+		mode: "replace",
+		variations: [
+			{
+				key: "first",
+				label: "First",
+				html: '<input type="radio" name="plan" value="alt" checked>',
+				css: "",
+			},
+		],
+	});
+
+	const planted = document.querySelector(
+		'[data-dg-prototype="first"] input[type="radio"]',
+	) as HTMLInputElement | null;
+	expect(planted).not.toBeNull();
+	expect(planted?.getAttribute("name")).toBe("dg-proto-first-plan");
+	expect(planted?.checked).toBe(true);
+	expect(original.checked).toBe(true);
+	expect(original.getAttribute("name")).toBe("plan");
 
 	window.dispatchEvent(new window.Event("pagehide"));
 });

@@ -24,6 +24,8 @@ export const PROTO_CAPTURE_PREVIEW = "dg-proto:capture-preview";
 export const PROTO_NOT_READY = "dg-proto:not-ready";
 /** Content-to-background message reporting the page is ready and work has begun. */
 export const PROTO_PROGRESS = "dg-proto:progress";
+/** Content-to-background query: does this tab have a pending relay request? */
+export const PROTO_HAS_PENDING = "dg-proto:has-pending";
 
 /** Raw, bounded DOM/CSS observations consumed by the pure StyleGuide transform. */
 export type RawStyleSamples = {
@@ -631,8 +633,8 @@ function stripShadowEscapeRules(css: string): string {
 	return SHADOW_ESCAPE_SELECTOR.test(current) ? "" : current;
 }
 
-function sanitizePrototypeCss(css: string, scoped = true): string {
-	const sanitized = stripShadowEscapeRules(
+function preparePrototypeCss(css: string): string {
+	return stripShadowEscapeRules(
 		decodePrototypeCssEscapes(css)
 			.replace(/\/\*[\s\S]*?\*\//g, "")
 			.replace(/@import\b[^;]*(?:;|$)/gi, "")
@@ -655,10 +657,153 @@ function sanitizePrototypeCss(css: string, scoped = true): string {
 			.replaceAll("<", "\\3C ")
 			.replaceAll("-->", "--\\3E "),
 	);
+}
+
+function prototypeStyleSheet(): { new (): CSSStyleSheet } | undefined {
+	const view = document.defaultView as
+		| (Window & { CSSStyleSheet?: { new (): CSSStyleSheet } })
+		| null;
+	const ctor = globalThis.CSSStyleSheet ?? view?.CSSStyleSheet;
+	return typeof ctor === "function" ? ctor : undefined;
+}
+
+function serializeScopedRules(rules: CSSRuleList): string {
+	const parts: string[] = [];
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule) continue;
+		const kind = rule.constructor.name;
+		if (kind === "CSSStyleRule") {
+			const styleRule = rule as CSSStyleRule;
+			if (
+				SHADOW_ESCAPE_SELECTOR.test(styleRule.selectorText) ||
+				SHADOW_ESCAPE_SELECTOR.test(styleRule.cssText)
+			) {
+				continue;
+			}
+			parts.push(styleRule.cssText);
+			continue;
+		}
+		if (
+			kind === "CSSMediaRule" ||
+			kind === "CSSSupportsRule" ||
+			kind === "CSSContainerRule" ||
+			kind === "CSSLayerBlockRule"
+		) {
+			const group = rule as CSSGroupingRule;
+			const inner = serializeScopedRules(group.cssRules);
+			if (!inner.trim()) continue;
+			const open = group.cssText.indexOf("{");
+			const prelude = open > 0 ? group.cssText.slice(0, open).trim() : "";
+			if (!prelude || /@scope\b/i.test(prelude)) continue;
+			parts.push(`${prelude} {\n${inner}\n}`);
+		}
+	}
+	return parts.join("\n");
+}
+
+function cssBracesBalance(css: string): boolean {
+	let depth = 0;
+	let quote: '"' | "'" | undefined;
+	for (let index = 0; index < css.length; index += 1) {
+		const character = css[index];
+		if (quote) {
+			if (character === "\\") {
+				index += 1;
+				continue;
+			}
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character === "{") depth += 1;
+		else if (character === "}") {
+			depth -= 1;
+			if (depth < 0) return false;
+		}
+	}
+	return depth === 0;
+}
+
+function wrapPrototypeScope(css: string): string {
+	const trimmed = css.trim();
+	return trimmed ? `@scope ([data-dg-prototype]) {\n${trimmed}\n}` : "";
+}
+
+function sanitizePrototypeCss(css: string, scoped = true): string {
+	const sanitized = preparePrototypeCss(css);
 	if (!scoped) return sanitized;
-	return sanitized.trim()
-		? `@scope ([data-dg-prototype]) {\n${sanitized}\n}`
-		: "";
+	const trimmed = sanitized.trim();
+	if (!trimmed) return "";
+	const StyleSheet = prototypeStyleSheet();
+	if (StyleSheet) {
+		try {
+			const sheet = new StyleSheet();
+			sheet.replaceSync(trimmed);
+			return wrapPrototypeScope(serializeScopedRules(sheet.cssRules));
+		} catch {
+			return "";
+		}
+	}
+	if (/@scope\b/i.test(trimmed) || !cssBracesBalance(trimmed)) return "";
+	return wrapPrototypeScope(trimmed);
+}
+
+const ARIA_ID_REFERENCE_ATTRIBUTES = [
+	"aria-activedescendant",
+	"aria-controls",
+	"aria-describedby",
+	"aria-details",
+	"aria-errormessage",
+	"aria-flowto",
+	"aria-labelledby",
+	"aria-owns",
+];
+
+/** Prefix ids and radio names, and retarget references that pointed at the old ids. */
+function namespaceVariationDom(root: ParentNode, variationKey: string): void {
+	const prefix = `dg-proto-${variationKey}-`;
+	const idMap = new Map<string, string>();
+	for (const element of root.querySelectorAll("[id]")) {
+		const current = element.getAttribute("id");
+		if (!current || current.startsWith(prefix)) continue;
+		const next = `${prefix}${current}`;
+		idMap.set(current, next);
+		element.setAttribute("id", next);
+	}
+	for (const element of root.querySelectorAll("*")) {
+		const htmlFor = element.getAttribute("for");
+		const mappedFor = htmlFor ? idMap.get(htmlFor) : undefined;
+		if (htmlFor && mappedFor) element.setAttribute("for", mappedFor);
+		for (const name of ARIA_ID_REFERENCE_ATTRIBUTES) {
+			const value = element.getAttribute(name);
+			if (!value) continue;
+			const rewritten = value
+				.split(/\s+/)
+				.map((token) => idMap.get(token) ?? token)
+				.join(" ");
+			if (rewritten !== value) element.setAttribute(name, rewritten);
+		}
+		if (element.tagName === "A") {
+			const href = element.getAttribute("href");
+			if (href?.startsWith("#")) {
+				const mapped = idMap.get(href.slice(1));
+				if (mapped) element.setAttribute("href", `#${mapped}`);
+			}
+		}
+		if (
+			element.tagName === "INPUT" &&
+			(element.getAttribute("type") ?? "").toLowerCase() === "radio"
+		) {
+			const name = element.getAttribute("name");
+			if (name && !name.startsWith(prefix)) {
+				element.setAttribute("name", `${prefix}${name}`);
+			}
+		}
+	}
 }
 
 /**
@@ -705,6 +850,7 @@ export function sanitizePrototypeVariation(
 			}
 		}
 	}
+	namespaceVariationDom(parsed.body, variation.key);
 
 	return {
 		...variation,
@@ -760,19 +906,52 @@ function withoutTrailingSlash(pathname: string): string {
 		: pathname;
 }
 
+function landedOffExpected(expectedUrl: string): boolean {
+	let expected: URL;
+	try {
+		expected = new URL(expectedUrl);
+	} catch {
+		return false;
+	}
+	return (
+		location.origin !== expected.origin ||
+		withoutTrailingSlash(location.pathname) !==
+			withoutTrailingSlash(expected.pathname)
+	);
+}
+
+function expectedPageLabel(expectedUrl: string): string {
+	try {
+		const expected = new URL(expectedUrl);
+		return `${expected.origin}${expected.pathname}`;
+	} catch {
+		return expectedUrl;
+	}
+}
+
+/**
+ * Login heuristics apply only after the navigation is already suspicious:
+ * the browser left `expectedUrl`, or the response was 401/403. A password
+ * field on the page the user asked for is an account form, not a wall.
+ */
 export function detectPageNotReady(
 	expectedUrl: string,
 ): ProtoNotReadyError | undefined {
 	const landedUrl = location.href;
 	const status = navigationHttpStatus();
-	if (typeof status === "number" && status >= 400) {
+	const offTarget = landedOffExpected(expectedUrl);
+	const authStatus = status === 401 || status === 403;
+	if (typeof status === "number" && status >= 400 && !authStatus) {
 		return {
 			code: "http-error",
 			message: `The page responded with HTTP ${status}.`,
 			landedUrl,
 		};
 	}
-	if (hasPasswordField() || hasLoginFormAction() || matchesLoginText()) {
+	if (
+		(offTarget || authStatus) &&
+		(hasPasswordField() || hasLoginFormAction() || matchesLoginText())
+	) {
 		return {
 			code: "login-page",
 			message:
@@ -780,21 +959,17 @@ export function detectPageNotReady(
 			landedUrl,
 		};
 	}
-	let expected: URL | undefined;
-	try {
-		expected = new URL(expectedUrl);
-	} catch {
-		expected = undefined;
-	}
-	if (
-		expected &&
-		(location.origin !== expected.origin ||
-			withoutTrailingSlash(location.pathname) !==
-				withoutTrailingSlash(expected.pathname))
-	) {
+	if (offTarget) {
 		return {
 			code: "redirected",
-			message: `The browser landed on a different page than requested (expected ${expected.origin}${expected.pathname}).`,
+			message: `The browser landed on a different page than requested (expected ${expectedPageLabel(expectedUrl)}).`,
+			landedUrl,
+		};
+	}
+	if (authStatus && typeof status === "number") {
+		return {
+			code: "http-error",
+			message: `The page responded with HTTP ${status}.`,
 			landedUrl,
 		};
 	}
@@ -1051,6 +1226,8 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const nextSibling = target.nextSibling;
 	const previousBodyChildren = takeover ? [...target.childNodes] : [];
 	const prevInlineCssText = target.style.cssText;
+	const savedDisplay = target.style.getPropertyValue("display");
+	const savedDisplayPriority = target.style.getPropertyPriority("display");
 	const computed = getComputedStyle(target);
 	const variationDisplay = computed.display || "block";
 	const instance = ++prototypeHostSequence;
@@ -1154,8 +1331,19 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 					throw new Error("prototype picker has no focused variation");
 				const showingOriginal = !takeover && state.showingOriginal;
 				if (!takeover) {
-					if (showingOriginal) target.style.removeProperty("display");
-					else target.style.setProperty("display", "none", "important");
+					if (showingOriginal) {
+						if (savedDisplay) {
+							target.style.setProperty(
+								"display",
+								savedDisplay,
+								savedDisplayPriority,
+							);
+						} else {
+							target.style.removeProperty("display");
+						}
+					} else {
+						target.style.setProperty("display", "none", "important");
+					}
 					host.style.setProperty(
 						"display",
 						showingOriginal ? "none" : variationDisplay,

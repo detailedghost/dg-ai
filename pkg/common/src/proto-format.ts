@@ -340,8 +340,15 @@ export function validateProtoBrowserData(value: unknown): ProtoBrowserData {
 				"proto browser data.previewDataUrl",
 				{ nonEmpty: true },
 			);
-			if (!value.previewDataUrl.startsWith("data:image/png")) {
-				fail("proto browser data.previewDataUrl must be a PNG data URL");
+			if (value.previewDataUrl.length > PROTO_PREVIEW_MAX_CHARS) {
+				fail(
+					`proto browser data.previewDataUrl exceeds ${PROTO_PREVIEW_MAX_CHARS} characters`,
+				);
+			}
+			if (!PROTO_PREVIEW_DATA_URL.test(value.previewDataUrl)) {
+				fail(
+					"proto browser data.previewDataUrl must be a PNG or JPEG data URL",
+				);
 			}
 		}
 		return value as ProtoBrowserData;
@@ -401,12 +408,7 @@ export function validateProtoCliRequest(value: unknown): ProtoCliRequest {
 		"plant",
 	] as const);
 	validateProtoIdentifier(value.slug, "proto cli request.slug");
-	requireString(value.markedUrl, "proto cli request.markedUrl", {
-		nonEmpty: true,
-	});
-	if (value.markedUrl.length > PROTO_MARKER_URL_MAX_LENGTH + 256) {
-		fail("proto cli request.markedUrl exceeds the marker URL limit");
-	}
+	validateProtoMarkedUrl(value.markedUrl, "proto cli request.markedUrl");
 	if (value.timeoutMs !== undefined) {
 		requireFiniteNumber(value.timeoutMs, "proto cli request.timeoutMs");
 		if (value.timeoutMs <= 0 || value.timeoutMs > PROTO_MAX_TIMEOUT_MS) {
@@ -467,6 +469,37 @@ export const PROTO_MAX_VARIATIONS = 5;
 export const PROTO_MAX_MARKUP_CHARS = 524_288;
 /** Conservative URL-size ceiling shared by the `_proto` marker's writer and reader. */
 export const PROTO_MARKER_URL_MAX_LENGTH = 32_000;
+/**
+ * Ceiling for a relay `markedUrl`, which is the marked page plus a short
+ * margin over the marker itself. Shared by the CLI request and the browser frame.
+ */
+export const PROTO_MARKED_URL_MAX_LENGTH = PROTO_MARKER_URL_MAX_LENGTH + 256;
+/**
+ * Preview data-URL ceiling. 600 KB leaves headroom under the daemon's 1 MiB
+ * frame limit for the verdict envelope, so a screenshot cannot drop the verdict.
+ */
+export const PROTO_PREVIEW_MAX_CHARS = 600_000;
+
+const PROTO_PREVIEW_DATA_URL =
+	/^data:image\/(?:png|jpeg);base64,[a-z0-9+/]+={0,2}$/i;
+
+/** Require an http(s) prototype URL under the shared marker ceiling. */
+export function validateProtoMarkedUrl(value: unknown, path: string): string {
+	requireString(value, path, { nonEmpty: true });
+	if (value.length > PROTO_MARKED_URL_MAX_LENGTH) {
+		fail(`${path} exceeds the marker URL limit`);
+	}
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		fail(`${path} must be an http(s) URL`);
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		fail(`${path} must be an http(s) URL`);
+	}
+	return value;
+}
 
 /**
  * Validate the bounded comparison/render contract without changing the

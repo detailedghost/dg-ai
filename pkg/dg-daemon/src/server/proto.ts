@@ -1,7 +1,11 @@
 import {
+	authorizeFrame,
 	CHAT_PROTOCOL_VERSION,
 	type ChatFrame,
+	describeError,
+	isRecord,
 	type ProtoCliRequest,
+	validateChatFrame,
 } from "@dg/common";
 import type { ServerWebSocket } from "bun";
 import type { FrameHandlerDeps } from "./frame-handlers";
@@ -76,6 +80,80 @@ function result(
 	);
 }
 
+function markedUrlForTimeout(markedUrl: string): string {
+	try {
+		const url = new URL(markedUrl);
+		url.hash = "";
+		return url.toString();
+	} catch {
+		const hash = markedUrl.indexOf("#");
+		return hash >= 0 ? markedUrl.slice(0, hash) : markedUrl;
+	}
+}
+
+function withoutPreview(raw: Record<string, unknown>): Record<string, unknown> {
+	if (!isRecord(raw.data) || !Object.hasOwn(raw.data, "previewDataUrl")) {
+		return raw;
+	}
+	const data = { ...raw.data };
+	delete data.previewDataUrl;
+	return { ...raw, data };
+}
+
+/**
+ * An unreadable `proto-browser-result` must still settle the CLI waiting on it.
+ * Dropping the preview and delivering the rest keeps an oversized screenshot
+ * from hanging the verdict; anything still invalid fails the request outright.
+ * Returns false when the frame is not a result this extension socket owns.
+ */
+export function settleRejectedProtoBrowserResult(
+	socket: Socket,
+	raw: unknown,
+	deps: FrameHandlerDeps,
+): boolean {
+	if (!isRecord(raw) || raw.type !== "proto-browser-result") return false;
+	if (socket.data.kind !== "ws") return false;
+	const sessionId = typeof raw.sessionId === "string" ? raw.sessionId : "";
+	const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
+	if (!sessionId || !requestId) return false;
+	const pending = state(deps).pending.get(key(sessionId, requestId));
+	if (!pending || pending.extension !== socket) return false;
+
+	try {
+		const frame = validateChatFrame(withoutPreview(raw));
+		if (frame.type !== "proto-browser-result") {
+			throw new Error("prototype result changed type");
+		}
+		if (frame.protocolVersion !== CHAT_PROTOCOL_VERSION) {
+			throw new Error(
+				`protocol version mismatch: daemon expects ${CHAT_PROTOCOL_VERSION}`,
+			);
+		}
+		authorizeFrame(frame, socket.data.capabilities);
+		handleProtoBrowserResult(socket, frame, deps);
+	} catch (error) {
+		pending.finish({
+			ok: false,
+			error: `Prototype result could not be delivered: ${describeError(error)}`.slice(
+				0,
+				2048,
+			),
+		});
+	}
+	return true;
+}
+
+/** Fail every prototype request this extension socket still owes, so an unreadable frame cannot leave the CLI waiting. */
+export function failPendingProtoForExtension(
+	socket: Socket,
+	deps: FrameHandlerDeps,
+	error: string,
+): void {
+	for (const pending of state(deps).pending.values()) {
+		if (pending.extension === socket) pending.finish({ ok: false, error });
+	}
+}
+
 function missingExtensionError(
 	sessionId: string,
 	deps: FrameHandlerDeps,
@@ -107,7 +185,16 @@ export async function handleProtoCli(
 	}
 	const relay = state(deps);
 	const requestKey = key(sessionId, frame.requestId);
-	if (relay.pending.get(requestKey)?.requester === requester) return;
+	const existing = relay.pending.get(requestKey);
+	if (existing) {
+		if (existing.requester !== requester) {
+			await result(requester, sessionId, frame.requestId, {
+				ok: false,
+				error: "duplicate requestId",
+			});
+		}
+		return;
+	}
 	let requesterPending = 0;
 	for (const pending of relay.pending.values()) {
 		if (pending.requester === requester) requesterPending++;
@@ -170,7 +257,7 @@ export async function handleProtoCli(
 			ok: false,
 			error: pending.lastStatus
 				? `Prototype ${frame.phase} timed out after ${timeoutMs}ms; last report from the extension: ${pending.lastStatus}.`
-				: `Prototype ${frame.phase} timed out after ${timeoutMs}ms with no report from the extension. It may not have loaded ${frame.markedUrl} in a paired browser, or it predates this change; rebuild and reload the unpacked extension and retry.`,
+				: `Prototype ${frame.phase} timed out after ${timeoutMs}ms with no report from the extension. It may not have loaded ${markedUrlForTimeout(frame.markedUrl)} in a paired browser, or it predates this change; rebuild and reload the unpacked extension and retry.`,
 		});
 	}, timeoutMs);
 	relay.pending.set(requestKey, pending);

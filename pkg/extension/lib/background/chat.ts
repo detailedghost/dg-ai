@@ -23,6 +23,12 @@ import {
 	type InboxBrowserApi,
 	type InboxResultFrame,
 } from "./inbox";
+import {
+	createProtoHandler,
+	type ProtoBrowserApi,
+	type ProtoBrowserRequest,
+	type ProtoResultFrame,
+} from "./proto";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
 	CHAT_SESSION_KEY_PREFIX,
@@ -161,6 +167,10 @@ export type RegisterChatOptions = {
 	inboxHandler?: (
 		frame: Extract<ChatFrame, { type: "inbox-browser-request" }>,
 	) => Promise<InboxResultFrame>;
+	protoHandler?: (
+		request: ProtoBrowserRequest,
+		onProgress: (status: string) => void,
+	) => Promise<ProtoResultFrame>;
 };
 
 function isMarkerCapturedMessage(
@@ -224,7 +234,11 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const inboxHandler =
 		options.inboxHandler ??
 		createInboxHandler({ browserApi: api as unknown as InboxBrowserApi });
+	const protoHandler =
+		options.protoHandler ??
+		createProtoHandler({ browserApi: api as unknown as ProtoBrowserApi });
 	const pendingInbox = new Set<string>();
+	const pendingProto = new Set<string>();
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	function holdBootstrap(bootstrap: SessionBootstrap): void {
 		noteSecret(bootstrap.token);
@@ -565,6 +579,65 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					}
 				})
 				.finally(() => pendingInbox.delete(key));
+			return;
+		}
+		if (frame.type === "proto-browser-request") {
+			const bootstrap = bootstrapsBySession.get(frame.sessionId);
+			const socket = currentSocket;
+			const requestKey = JSON.stringify([frame.sessionId, frame.requestId]);
+			if (
+				!bootstrap ||
+				!socket ||
+				!keepaliveEligible.has(frame.sessionId) ||
+				pendingProto.has(requestKey)
+			) {
+				return;
+			}
+			pendingProto.add(requestKey);
+			const sendProto = (payload: Record<string, unknown>): void => {
+				if (
+					currentSocket !== socket ||
+					bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
+					!keepaliveEligible.has(frame.sessionId)
+				) {
+					return;
+				}
+				try {
+					socket.send(
+						JSON.stringify({
+							...payload,
+							sessionId: frame.sessionId,
+							requestId: frame.requestId,
+							token: bootstrap.token,
+							protocolVersion: CHAT_PROTOCOL_VERSION,
+						}),
+					);
+				} catch {
+					// A closed socket cannot carry its pending result.
+				}
+			};
+			void protoHandler(
+				{
+					phase: frame.phase,
+					slug: frame.slug,
+					markedUrl: frame.markedUrl,
+				},
+				(status) => {
+					sendProto({ type: "proto-browser-progress", status });
+				},
+			)
+				.then((result) => {
+					sendProto({ type: "proto-browser-result", ...result });
+				})
+				.catch(() => {
+					sendProto({
+						type: "proto-browser-result",
+						ok: false,
+						error:
+							"Prototype extension request failed before the browser reported a result.",
+					});
+				})
+				.finally(() => pendingProto.delete(requestKey));
 			return;
 		}
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {

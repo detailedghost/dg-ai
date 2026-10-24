@@ -68,6 +68,32 @@ landed on — instead of silently doing nothing.
   are simply unused now; nothing reads or writes them, and deleting them is
   always safe.
 
+## Hardening
+
+Follow-up constraints on the same relay, recorded so the message contract stays
+explicit:
+
+- `markedUrl` on `cli-proto-request` and `proto-browser-request` must be an
+  `http:` or `https:` URL no longer than the marker ceiling plus 256 characters.
+  The extension checks the same limit again before `tabs.create`.
+- `previewDataUrl` may be a `data:image/png` or `data:image/jpeg` URL of at most
+  600,000 characters. The extension captures JPEG and downscales before sending.
+  A preview that still cannot fit is omitted, and the verdict is delivered
+  without it. An oversized `proto-browser-result` that reaches the daemon is
+  settled the same way, or failed outright, so the CLI does not wait out the
+  plant timeout.
+- A second CLI that reuses a `(sessionId, requestId)` already in flight receives
+  `{ ok: false, error: "duplicate requestId" }`. The original pending entry stays.
+- Closing the prototype tab settles the request with an error instead of leaving
+  the CLI blocked until the daemon deadline.
+- `login-page` is reported only when the browser left `expectedUrl`, or the
+  navigation status is 401 or 403 and the page still looks like a sign-in wall.
+  A password field on the requested URL is not, by itself, a wall.
+- Planted variation markup is namespaced (`id`, radio `name`, and the references
+  that point at those ids) and its CSS is re-serialized from `CSSStyleSheet`
+  rules inside `@scope`. The content script scrapes or plants only when the
+  background has a pending relay request for that tab.
+
 ## Alternatives considered
 
 - **Keep polling Downloads, add a page-readiness heartbeat file.** Still

@@ -1,4 +1,6 @@
 import {
+	PROTO_MARKED_URL_MAX_LENGTH,
+	PROTO_PREVIEW_MAX_CHARS,
 	validateProtoNotReadyError,
 	validateStyleGuide,
 	validateVerdict,
@@ -9,6 +11,7 @@ import { type Browser, browser } from "wxt/browser";
 import { callBrowserApi } from "@/lib/browser-call";
 import {
 	PROTO_CAPTURE_PREVIEW,
+	PROTO_HAS_PENDING,
 	PROTO_NOT_READY,
 	PROTO_PROGRESS,
 	PROTO_SAVE_STYLE_GUIDE,
@@ -44,6 +47,9 @@ export type ProtoBrowserApi = {
 			string
 		>;
 		query: MaybeCallbackMethod<[Browser.tabs.QueryInfo], Browser.tabs.Tab[]>;
+		onRemoved: {
+			addListener(callback: (tabId: number) => void): void;
+		};
 	};
 	runtime: {
 		lastError?: { message?: string };
@@ -90,6 +96,103 @@ function browserCall<T>(
 	);
 }
 
+const PREVIEW_DATA_URL = /^data:image\/(?:png|jpeg);base64,/i;
+const PREVIEW_JPEG_QUALITY = 70;
+
+function previewByteLength(value: string): number {
+	return new TextEncoder().encode(value).length;
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+	const comma = dataUrl.indexOf(",");
+	const meta = comma >= 0 ? dataUrl.slice(0, comma) : "";
+	const payload = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+	const mime = /^data:([^;,]+)/i.exec(meta)?.[1] ?? "image/jpeg";
+	const binary = atob(payload);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return new Blob([bytes], { type: mime });
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+	const bytes = new Uint8Array(await blob.arrayBuffer());
+	let binary = "";
+	const chunk = 0x8000;
+	for (let index = 0; index < bytes.length; index += chunk) {
+		binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+	}
+	const mime = blob.type || "image/jpeg";
+	return `data:${mime};base64,${btoa(binary)}`;
+}
+
+/** Shrink a captured preview with OffscreenCanvas until it fits the relay budget. */
+async function downscalePreview(dataUrl: string): Promise<string | undefined> {
+	if (
+		typeof OffscreenCanvas !== "function" ||
+		typeof createImageBitmap !== "function"
+	) {
+		return undefined;
+	}
+	const bitmap = await createImageBitmap(dataUrlToBlob(dataUrl));
+	try {
+		let quality = PREVIEW_JPEG_QUALITY / 100;
+		let width = bitmap.width;
+		let height = bitmap.height;
+		for (let attempt = 0; attempt < 6; attempt += 1) {
+			const maxWidth = attempt === 0 ? Math.min(width, 1280) : Math.max(320, Math.round(width * 0.7));
+			const scale = width > 0 ? maxWidth / width : 1;
+			const canvas = new OffscreenCanvas(
+				Math.max(1, Math.round(width * scale)),
+				Math.max(1, Math.round(height * scale)),
+			);
+			const context = canvas.getContext("2d");
+			if (!context) return undefined;
+			context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+			const blob = await canvas.convertToBlob({
+				type: "image/jpeg",
+				quality,
+			});
+			const next = await blobToDataUrl(blob);
+			if (
+				PREVIEW_DATA_URL.test(next) &&
+				previewByteLength(next) <= PROTO_PREVIEW_MAX_CHARS
+			) {
+				return next;
+			}
+			width = canvas.width;
+			height = canvas.height;
+			quality = Math.max(0.4, quality - 0.1);
+		}
+		return undefined;
+	} finally {
+		bitmap.close();
+	}
+}
+
+async function fitPreviewDataUrl(
+	dataUrl: string,
+): Promise<{ dataUrl?: string; reason?: string }> {
+	if (!PREVIEW_DATA_URL.test(dataUrl)) {
+		return { reason: "preview was not a PNG or JPEG data URL" };
+	}
+	const fitted =
+		previewByteLength(dataUrl) <= PROTO_PREVIEW_MAX_CHARS
+			? dataUrl
+			: await downscalePreview(dataUrl);
+	if (
+		!fitted ||
+		!PREVIEW_DATA_URL.test(fitted) ||
+		previewByteLength(fitted) > PROTO_PREVIEW_MAX_CHARS
+	) {
+		return {
+			reason: "preview exceeded the relay size limit and was omitted",
+		};
+	}
+	return { dataUrl: fitted };
+}
+
 async function captureVisibleTab(
 	api: ProtoBrowserApi,
 	windowId: number,
@@ -97,10 +200,37 @@ async function captureVisibleTab(
 	const dataUrl = await browserCall(
 		api,
 		api.tabs.captureVisibleTab as MaybeCallbackMethod<unknown[], string>,
-		[windowId, { format: "png" }],
+		[windowId, { format: "jpeg", quality: PREVIEW_JPEG_QUALITY }],
 	);
 	if (!dataUrl) throw new Error("capture returned no image");
 	return dataUrl;
+}
+
+async function activeTabIds(
+	api: ProtoBrowserApi,
+	windowId: number,
+): Promise<number[]> {
+	const activeTabs = await browserCall(
+		api,
+		api.tabs.query as MaybeCallbackMethod<unknown[], Browser.tabs.Tab[]>,
+		[{ active: true, windowId }],
+	);
+	return activeTabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
+}
+
+function markedUrlRejection(markedUrl: string): string | undefined {
+	if (markedUrl.length > PROTO_MARKED_URL_MAX_LENGTH) {
+		return "the prototype URL exceeds the marker URL limit";
+	}
+	try {
+		const url = new URL(markedUrl);
+		if (url.protocol !== "http:" && url.protocol !== "https:") {
+			return "the prototype URL must be an http(s) URL";
+		}
+	} catch {
+		return "the prototype URL must be an http(s) URL";
+	}
+	return undefined;
 }
 
 /** Capture the planted tab's visible preview and remember it for the eventual verdict result. */
@@ -115,15 +245,23 @@ async function capturePreview(
 		return { saved: false, reason: "prototype tab identity is unavailable" };
 	}
 	try {
-		const activeTabs = await browserCall(
-			api,
-			api.tabs.query as MaybeCallbackMethod<unknown[], Browser.tabs.Tab[]>,
-			[{ active: true, windowId }],
-		);
-		if (!activeTabs.some((tab) => tab.id === tabId)) {
+		if (!(await activeTabIds(api, windowId)).includes(tabId)) {
 			return { saved: false, reason: "prototype tab is no longer active" };
 		}
-		pending.previewDataUrl = await captureVisibleTab(api, windowId);
+		const captured = await captureVisibleTab(api, windowId);
+		// A tab switch during capture would export the newly active page. Keep
+		// the image only when the prototype tab is still the one that was captured.
+		if (!(await activeTabIds(api, windowId)).includes(tabId)) {
+			return { saved: false, reason: "prototype tab is no longer active" };
+		}
+		const fitted = await fitPreviewDataUrl(captured);
+		if (!fitted.dataUrl) {
+			return {
+				saved: false,
+				reason: fitted.reason ?? "preview exceeded the relay size limit and was omitted",
+			};
+		}
+		pending.previewDataUrl = fitted.dataUrl;
 		return { saved: true };
 	} catch (error) {
 		return {
@@ -153,6 +291,11 @@ export function requestPrototypeBrowserWork(
 			resolve(result);
 		};
 		void (async () => {
+			const rejected = markedUrlRejection(request.markedUrl);
+			if (rejected) {
+				finish({ ok: false, error: rejected });
+				return;
+			}
 			let tab: Browser.tabs.Tab;
 			try {
 				tab = await browserCall(
@@ -198,9 +341,21 @@ export function createProtoHandler({
 /** Wire the validated content-to-background prototype reports for every open tab's pending request. */
 export function registerProto(options: { browserApi?: ProtoBrowserApi } = {}): void {
 	const api = options.browserApi ?? (browser as unknown as ProtoBrowserApi);
+	api.tabs.onRemoved.addListener((tabId) => {
+		const pending = pendingByTab.get(tabId);
+		if (!pending) return;
+		pending.resolve({
+			ok: false,
+			error: "The prototype tab was closed before a result.",
+		});
+	});
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		const tabId = sender.tab?.id;
 		if (tabId === undefined) return undefined;
+		if (isMessageOfType(message, PROTO_HAS_PENDING)) {
+			sendResponse({ pending: pendingByTab.has(tabId) });
+			return undefined;
+		}
 		const pending = pendingByTab.get(tabId);
 		if (!pending) return undefined;
 
