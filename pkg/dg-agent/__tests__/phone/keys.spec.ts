@@ -49,6 +49,11 @@ function client(overrides: Partial<KeyClient> = {}): KeyClient {
 			calls.push(`set ${name}`);
 			store.set(name, value);
 		},
+		async delete(name) {
+			down();
+			calls.push(`delete ${name}`);
+			return store.delete(name);
+		},
 		async grant(prefix) {
 			down();
 			calls.push(`grant ${prefix}`);
@@ -115,7 +120,7 @@ describe("ensureKey", () => {
 		expect(calls).toEqual([`set ${KEY_NAME}`, `grant ${GRANT_PREFIX}`, `get ${KEY_NAME}`]);
 	});
 
-	it("keeps the file key when the read-back does not match", async () => {
+	it("keeps the file key and cleans up the orphaned store secret when the read-back does not match", async () => {
 		const original = createFileKey(db, "default") as Uint8Array;
 
 		const { sk, mode } = await ensureKey(
@@ -126,6 +131,7 @@ describe("ensureKey", () => {
 		expect(mode).toBe("file");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
 		expect(readFileKey(db, "default")).toBeDefined();
+		expect(store.has(KEY_NAME)).toBe(false);
 	});
 
 	it("keeps the file key when the store refuses the write", async () => {
@@ -151,6 +157,24 @@ describe("ensureKey", () => {
 		} finally {
 			stderr.mockRestore();
 		}
+		expect(readFileKey(db, "default")).toBeDefined();
+	});
+
+	it("cleans up the orphaned store secret when grant fails after set succeeds", async () => {
+		const { mode } = await ensureKey(
+			deps({
+				session: true,
+				client: {
+					grant: async () => {
+						throw new DgCliError("grant refused");
+					},
+				},
+			}),
+			"default",
+		);
+
+		expect(mode).toBe("file");
+		expect(store.has(KEY_NAME)).toBe(false);
 		expect(readFileKey(db, "default")).toBeDefined();
 	});
 

@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
-import { type DgPaths, realSubdirectories } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories } from "@dg/common/node";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
@@ -38,6 +38,7 @@ export type MigrationResult =
 export type MigrateDeps = {
 	now: () => number;
 	isOurListener: (pid: number) => boolean;
+	isAlive: (pid: number) => boolean;
 	kill: (pid: number) => void;
 	jobCli: JobCli;
 	renameLegacyRoot: (oldPath: string, newPath: string) => void;
@@ -145,7 +146,7 @@ function resolveWhoami(paths: DgPaths): string | undefined {
 function stopLegacyListener(line: LegacyLine, deps: MigrateDeps): void {
 	if (!existsSync(line.pidPath)) return;
 	const pid = Number(readFileSync(line.pidPath, "utf8").trim());
-	if (!Number.isInteger(pid) || pid <= 0) return;
+	if (!Number.isSafeInteger(pid) || pid <= 0) return;
 	if (!deps.isOurListener(pid)) return;
 	try {
 		deps.kill(pid);
@@ -240,6 +241,7 @@ function defaultMigrateDeps(): MigrateDeps {
 	return {
 		now: () => Math.floor(Date.now() / 1000),
 		isOurListener,
+		isAlive,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		jobCli: runDaemonJobCli,
 		renameLegacyRoot: renameSync,
@@ -247,6 +249,37 @@ function defaultMigrateDeps(): MigrateDeps {
 			process.stderr.write(text);
 		},
 	};
+}
+
+/** The migration's own claim file, so two commands invoked moments apart cannot both migrate at once. */
+export function migrationLockPath(paths: DgPaths): string {
+	return join(paths.phoneRoot, "phone.db.migrating");
+}
+
+/** Exclusive create; a lock left by a dead process is reclaimed once, a live holder's throws. */
+function acquireMigrationLock(paths: DgPaths, deps: MigrateDeps): void {
+	ensurePrivateDir(paths.phoneRoot);
+	const lockPath = migrationLockPath(paths);
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			const fd = openSync(lockPath, "wx", 0o600);
+			writeSync(fd, String(process.pid));
+			closeSync(fd);
+			return;
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		}
+		const holderPid = Number(readFileSync(lockPath, "utf8").trim());
+		if (Number.isSafeInteger(holderPid) && holderPid > 0 && deps.isAlive(holderPid)) {
+			throw new DgCliError(`another phone command is migrating (pid ${holderPid}); try again in a moment`);
+		}
+		rmSync(lockPath, { force: true });
+	}
+	throw new DgCliError("could not claim the phone migration lock");
+}
+
+function releaseMigrationLock(paths: DgPaths): void {
+	rmSync(migrationLockPath(paths), { force: true });
 }
 
 /**
@@ -257,6 +290,17 @@ function defaultMigrateDeps(): MigrateDeps {
  * best-effort, since by then the data has already safely landed in `phone.db`.
  */
 export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigrateDeps()): MigrationResult {
+	if (!legacyRoot(paths)) return { migrated: false };
+
+	acquireMigrationLock(paths, deps);
+	try {
+		return runMigration(paths, deps);
+	} finally {
+		releaseMigrationLock(paths);
+	}
+}
+
+function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 
 	const lines = legacyLines(paths);

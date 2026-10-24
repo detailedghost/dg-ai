@@ -157,6 +157,8 @@ export class PhoneDb {
 	/** Inserts a key row with `makeDefault()`'s value only if `id` is absent, then reads back whichever row won the race. */
 	ensureKeyRow(id: string, makeDefault: () => Pick<KeyRow, "nsec" | "in_store">): KeyRow {
 		return this.transaction(() => {
+			const existing = this.getKey(id);
+			if (existing) return existing;
 			const fresh = makeDefault();
 			this.db
 				.query(

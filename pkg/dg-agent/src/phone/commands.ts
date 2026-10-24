@@ -6,14 +6,14 @@ import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
-import { nip19, SimplePool } from "nostr-tools";
+import { SimplePool } from "nostr-tools";
 import pkg from "../../package.json" with { type: "json" };
 import { type AutostartDeps, formatAutostartState, installAutostart, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
-import { defaultOnSignal, defaultSchedule, isOurListener, listenerLogPath, readListenerPid, runListener } from "./listener";
+import { defaultOnSignal, defaultSchedule, isOurListener, listenerLogPath, readListenerPid, removeListenerPid, runListener } from "./listener";
 import { legacyRootPresent, migrateIfNeeded, runArgv } from "./migrate";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
@@ -28,6 +28,7 @@ import {
 	normalizeHandle,
 	numberKeyId,
 	type OnMessageConfig,
+	pubkeyHex,
 	readListener,
 	readNumber,
 	readRelays,
@@ -125,14 +126,6 @@ function printJson(deps: PhoneDeps, value: unknown): void {
 	deps.write(`${JSON.stringify(value)}\n`);
 }
 
-function contactHex(npub: string): string {
-	try {
-		const decoded = nip19.decode(npub);
-		if (decoded.type === "npub") return decoded.data;
-	} catch {}
-	throw new DgCliError(`contact must be an npub, got "${npub}"`);
-}
-
 function isoOf(epochSeconds: number): string {
 	return new Date(epochSeconds * 1000).toISOString();
 }
@@ -222,7 +215,7 @@ export async function phoneAccept(
 	}
 	const pool = deps.createPool();
 	try {
-		const event = ring(words, sk, contactHex(card.npub), card.secret, selfName);
+		const event = ring(words, sk, pubkeyHex(card.npub), card.secret, selfName);
 		const { ok } = await publish(pool, card.relays, event);
 		if (ok.length === 0) {
 			if (!existing) removeContact(deps.db, handle);
@@ -279,7 +272,7 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 	const body = textArg === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : textArg;
 	if (!body) throw new DgCliError("message text is empty");
 	const sk = (await ensureKey(deps, contact.keyId)).sk;
-	const event = wrap(body, sk, contactHex(contact.npub));
+	const event = wrap(body, sk, pubkeyHex(contact.npub));
 	const pool = deps.createPool();
 	try {
 		const { ok } = await publish(pool, contact.relays, event);
@@ -391,6 +384,15 @@ function sameHook(running: { argv: string[]; timeoutS: number } | null | undefin
 	);
 }
 
+/** The pid file's listener, but only once `isOurListener` confirms it; clears a stale pid file otherwise. */
+function liveListener(deps: OpenCloseDeps): ReturnType<typeof readListenerPid> {
+	const running = readListenerPid(deps.paths);
+	if (!running) return undefined;
+	if (deps.isOurListener(running.pid)) return running;
+	removeListenerPid(deps.paths);
+	return undefined;
+}
+
 /** Sends SIGTERM, through `isOurListener`'s extra check against a reused pid, and waits for the
  * listener's own pid file to go away before returning; `open`/`close` both need the old listener
  * fully stopped before installing or reporting on the next one, so neither ever runs two at once. */
@@ -408,7 +410,7 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
 	if (onMessage) writeListener(deps.db, { ...saved, onMessage });
 
-	const running = readListenerPid(deps.paths);
+	const running = liveListener(deps);
 	if (running && sameHook(running.hook, onMessage)) {
 		printJson(deps, {
 			pid: running.pid,
@@ -439,7 +441,7 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 
 export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	const running = readListenerPid(deps.paths);
+	const running = liveListener(deps);
 
 	const autostart = await removeAutostart(deps, deps.paths);
 	const saved = readListener(deps.db);
@@ -460,12 +462,14 @@ const REMOVED_VERBS: Record<string, string> = {
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
-/** `<major>.<minor+2>.0`: the plan's alias-removal window, read from the package's own version so
- * the printed target moves with the release bump instead of needing an edit when it lands. */
+/** `<major>.<minor+2>.0` from today's package version. */
 function aliasRemovalVersion(version: string): string {
 	const [major, minor] = version.split(".").map(Number);
 	return `${major}.${minor + 2}.0`;
 }
+
+/** Computed once at module load; a placeholder to hand-set to the real release's minor+2 at ship time. */
+export const ALIAS_REMOVAL_VERSION = aliasRemovalVersion(pkg.version);
 
 /** Attaches every phone verb to `group`, plus (for both the live and the hidden alias group) the
  * hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
@@ -616,5 +620,5 @@ export function registerPhoneCommands(
 	}
 
 	attachGroup("phone");
-	attachGroup("phone-friend", `phone-friend is now phone; this alias goes away in ${aliasRemovalVersion(pkg.version)}`);
+	attachGroup("phone-friend", `phone-friend is now phone; this alias goes away in ${ALIAS_REMOVAL_VERSION}`);
 }

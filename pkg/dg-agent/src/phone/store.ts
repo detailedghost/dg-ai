@@ -187,10 +187,13 @@ export function clearListener(db: PhoneDb): void {
 	db.unset(LISTENER_SETTING);
 }
 
-function pubkeyHex(npub: string): string {
-	const decoded = nip19.decode(npub);
-	if (decoded.type !== "npub") throw new DgCliError(`contact must be an npub, got "${npub}"`);
-	return decoded.data;
+/** Decodes an npub to its hex pubkey, or a clean `DgCliError` for anything that is not one. */
+export function pubkeyHex(npub: string): string {
+	try {
+		const decoded = nip19.decode(npub);
+		if (decoded.type === "npub") return decoded.data;
+	} catch {}
+	throw new DgCliError(`contact must be an npub, got "${npub}"`);
 }
 
 /** Builds the live admission gate from the current contacts, number secret, and unexpired invites. */

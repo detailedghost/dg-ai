@@ -1,36 +1,39 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import pkg from "../../package.json" with { type: "json" };
-import { registerPhoneCommands, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
+import { ALIAS_REMOVAL_VERSION, registerPhoneCommands, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { KeyClient } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
+import { makeHomeTracker, parseNdjson } from "./fake-pool";
 
-let homes: string[];
+let tracker: ReturnType<typeof makeHomeTracker>;
 let out: string[];
 const NOW = Math.floor(Date.now() / 1000);
 
-const [MAJOR, MINOR] = pkg.version.split(".").map(Number);
-const EXPECTED_NOTICE = `phone-friend is now phone; this alias goes away in ${MAJOR}.${MINOR + 2}.0\n`;
+const EXPECTED_NOTICE = `phone-friend is now phone; this alias goes away in ${ALIAS_REMOVAL_VERSION}\n`;
 
 function freshHome(): string {
-	const home = mkdtempSync(join(tmpdir(), "dg-phone-alias-"));
-	homes.push(home);
-	return home;
+	return tracker.freshHome();
 }
 
 function lines(rows: string[] = out): unknown[] {
-	return rows
-		.join("")
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.map((row) => JSON.parse(row));
+	return parseNdjson(rows);
+}
+
+/** Awaits a removed-verb or `--line` rejection and asserts both the replacement message and exit 2. */
+async function expectExit2(promise: Promise<unknown>, message: string): Promise<void> {
+	try {
+		await promise;
+		throw new Error(`expected "${message}" to throw`);
+	} catch (err) {
+		expect(err).toBeInstanceOf(DgCliError);
+		expect((err as DgCliError).message).toContain(message);
+		expect((err as DgCliError).exitCode).toBe(2);
+	}
 }
 
 type Harness = { program: Command; written: { path: string; text: string }[]; removed: string[]; ran: string[][] };
@@ -38,6 +41,7 @@ type Harness = { program: Command; written: { path: string; text: string }[]; re
 function harness(): Harness {
 	const paths = resolveDgPaths({ env: { DG_HOME: freshHome() } });
 	const db = PhoneDb.open(paths, () => NOW);
+	tracker.trackDb(db);
 	const written: { path: string; text: string }[] = [];
 	const removed: string[] = [];
 	const ran: string[][] = [];
@@ -96,12 +100,12 @@ function harness(): Harness {
 }
 
 beforeEach(() => {
-	homes = [];
+	tracker = makeHomeTracker("dg-phone-alias-");
 	out = [];
 });
 
 afterEach(() => {
-	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	tracker.cleanup();
 });
 
 describe("phone-friend alias", () => {
@@ -212,7 +216,7 @@ describe("phone-friend alias", () => {
 		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 
 		try {
-			await expect(h.program.parseAsync(["phone-friend", verb], { from: "user" })).rejects.toThrow(message);
+			await expectExit2(h.program.parseAsync(["phone-friend", verb], { from: "user" }), message);
 		} finally {
 			stderr.mockRestore();
 		}
@@ -221,17 +225,24 @@ describe("phone-friend alias", () => {
 	it("phone deliver also fails with exit 2, not only the phone-friend alias", async () => {
 		const h = harness();
 
-		await expect(h.program.parseAsync(["phone", "deliver", "on"], { from: "user" })).rejects.toThrow(
+		await expectExit2(
+			h.program.parseAsync(["phone", "deliver", "on"], { from: "user" }),
 			"deliver is gone; use phone open --on-message to run a program for each message",
 		);
 	});
 
-	it("--line is gone on the phone-friend group too, before dispatching to any subcommand", async () => {
+	it("--line is gone, with exit 2, on both the phone and the phone-friend group, before dispatching to any subcommand", async () => {
 		const h = harness();
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 
+		await expectExit2(
+			h.program.parseAsync(["phone", "--line", "x", "number"], { from: "user" }),
+			"--line is gone: one phone holds every contact; use +handle on say and inbox",
+		);
+
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 		try {
-			await expect(h.program.parseAsync(["phone-friend", "--line", "x", "number"], { from: "user" })).rejects.toThrow(
+			await expectExit2(
+				h.program.parseAsync(["phone-friend", "--line", "x", "number"], { from: "user" }),
 				"--line is gone: one phone holds every contact; use +handle on say and inbox",
 			);
 		} finally {
@@ -239,18 +250,9 @@ describe("phone-friend alias", () => {
 		}
 	});
 
-	it("removed verbs and --line exit with code 2", async () => {
-		const h = harness();
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
-
-		try {
-			await h.program.parseAsync(["phone-friend", "whoami"], { from: "user" });
-			throw new Error("expected whoami to throw");
-		} catch (err) {
-			expect(err).toBeInstanceOf(DgCliError);
-			expect((err as DgCliError).exitCode).toBe(2);
-		} finally {
-			stderr.mockRestore();
-		}
+	it("the alias removal version is a literal fixed once, not a formula recomputed per call", () => {
+		expect(typeof ALIAS_REMOVAL_VERSION).toBe("string");
+		expect(ALIAS_REMOVAL_VERSION).toMatch(/^\d+\.\d+\.0$/);
+		expect(ALIAS_REMOVAL_VERSION).not.toBe(pkg.version);
 	});
 });

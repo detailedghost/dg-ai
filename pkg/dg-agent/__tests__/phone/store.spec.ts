@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import { nip19 } from "nostr-tools";
 import { PhoneDb } from "../../src/phone/db";
 import {
 	addContact,
 	addInvite,
 	clearListener,
+	consumeInvite,
 	DEFAULT_NUMBER_KEY_ID,
 	DEFAULT_RELAYS,
 	findContactByHandle,
@@ -34,18 +33,15 @@ import {
 	writeNumber,
 	writeRelays,
 } from "../../src/phone/store";
+import { freshNpub as npub, makeTempHome } from "./fake-pool";
 
 let home: string;
 let paths: DgPaths;
 let db: PhoneDb;
 const NOW = 1_800_000_000;
 
-function npub(): string {
-	return nip19.npubEncode(getPublicKey(generateSecretKey()));
-}
-
 beforeEach(() => {
-	home = mkdtempSync(join(tmpdir(), "dg-phone-store-"));
+	home = makeTempHome("dg-phone-store-");
 	paths = resolveDgPaths({ env: { DG_HOME: home } });
 	db = PhoneDb.open(paths, () => NOW);
 	db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
@@ -171,9 +167,13 @@ describe("contacts", () => {
 
 describe("invites", () => {
 	it("round-trips a live invite and drops it once consumed", () => {
-		addInvite(db, { secret: "ab".repeat(32), expiresAt: NOW + 100, asName: "dg", keyId: "default" });
+		const secret = "ab".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default" });
+		expect(liveInvites(db)).toEqual([{ secret, expiresAt: NOW + 100, asName: "dg", name: undefined, keyId: "default" }]);
 
-		expect(liveInvites(db)).toEqual([{ secret: "ab".repeat(32), expiresAt: NOW + 100, asName: "dg", name: undefined, keyId: "default" }]);
+		consumeInvite(db, secret);
+
+		expect(liveInvites(db)).toEqual([]);
 	});
 
 	it("leaves an expired invite out of the live list", () => {
@@ -200,6 +200,12 @@ describe("gateFor", () => {
 
 	it("gives an empty-string number secret before `number` has ever run", () => {
 		expect(gateFor(db).secrets.number).toBe("");
+	});
+
+	it("throws a clean DgCliError instead of a raw decode exception for a malformed contact npub", () => {
+		db.putContact({ npub: "not-an-npub", handle: "broken", relays: "[]", key_id: "default", added_at: NOW, via: "accept" });
+
+		expect(() => gateFor(db)).toThrow(DgCliError);
 	});
 });
 

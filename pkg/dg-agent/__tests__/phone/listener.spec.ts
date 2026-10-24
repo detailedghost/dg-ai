@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
@@ -8,7 +8,7 @@ import { publish, ring, wrap } from "../../src/phone/chat";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
-import { isListenerArgs, listenerPidPath, type ListenerDeps, runListener } from "../../src/phone/listener";
+import { isListenerArgs, listenerPidPath, readListenerPid, type ListenerDeps, runListener } from "../../src/phone/listener";
 import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
@@ -315,5 +315,27 @@ describe("isListenerArgs", () => {
 		expect(isListenerArgs(["dg-agent", "phone", "__run"])).toBe(true);
 		expect(isListenerArgs(["dg-agent", "phone-friend", "__run"])).toBe(true);
 		expect(isListenerArgs(["dg-agent", "phone", "number"])).toBe(false);
+	});
+});
+
+describe("readListenerPid", () => {
+	it("ignores a pid file whose pid is not a safe positive integer, instead of trusting it", () => {
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: "1; rm -rf /", since: NOW, hook: null }));
+		expect(readListenerPid(paths)).toBeUndefined();
+
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: 1.5, since: NOW, hook: null }));
+		expect(readListenerPid(paths)).toBeUndefined();
+
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: -5, since: NOW, hook: null }));
+		expect(readListenerPid(paths)).toBeUndefined();
+
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: 0, since: NOW, hook: null }));
+		expect(readListenerPid(paths)).toBeUndefined();
+	});
+
+	it("accepts a real, alive pid", () => {
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null }));
+
+		expect(readListenerPid(paths)?.pid).toBe(process.pid);
 	});
 });

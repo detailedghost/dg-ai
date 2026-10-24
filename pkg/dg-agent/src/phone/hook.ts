@@ -48,7 +48,8 @@ async function deliverOnce(target: CommandPushTarget, db: PhoneDb, row: MessageR
  */
 export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedule: Schedule): HookRunner {
 	let inFlight = false;
-	let runAgain = false;
+	let passAgain = false;
+	let stuckAgain = false;
 	let stopped = false;
 	let cancelRetry: Cancel | undefined;
 	let current: Promise<void> = Promise.resolve();
@@ -56,10 +57,11 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	/** The only place `current` is reassigned, and only once this call actually takes the lock: a
 	 * coalesced or post-stop call must never overwrite it with an already-settled stand-in, or
 	 * `settle()` would resolve while the pass that is really running is still in flight. */
-	function start(run: () => Promise<void>): Promise<void> {
+	function start(run: () => Promise<void>, kind: "pass" | "stuck"): Promise<void> {
 		if (stopped) return Promise.resolve();
 		if (inFlight) {
-			runAgain = true;
+			if (kind === "pass") passAgain = true;
+			else stuckAgain = true;
 			return current;
 		}
 		inFlight = true;
@@ -67,11 +69,18 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		return current;
 	}
 
+	/** A coalesced `retryStuck()` is folded in right after a coalesced `notify()`, never dropped. */
 	function resumeIfAskedAgain(): void {
 		inFlight = false;
-		const again = runAgain;
-		runAgain = false;
-		if (again) start(pass);
+		const again = passAgain;
+		passAgain = false;
+		if (again) {
+			start(pass, "pass");
+			return;
+		}
+		const retryAgain = stuckAgain;
+		stuckAgain = false;
+		if (retryAgain) start(stuckPass, "stuck");
 	}
 
 	async function pass(): Promise<void> {
@@ -88,7 +97,7 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 				if (stopped) return;
 				cancelRetry = schedule(nextOnMessageRetryDelayMs(attempts - 1), () => {
 					cancelRetry = undefined;
-					start(pass);
+					start(pass, "pass");
 				});
 				return;
 			}
@@ -109,8 +118,8 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	}
 
 	return {
-		notify: () => start(pass),
-		retryStuck: () => start(stuckPass),
+		notify: () => start(pass, "pass"),
+		retryStuck: () => start(stuckPass, "stuck"),
 		stop: () => {
 			stopped = true;
 			cancelRetry?.();

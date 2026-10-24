@@ -192,13 +192,14 @@ describe("installAutostart", () => {
 		expect(ran).toEqual([["systemctl", "--user", "daemon-reload"]]);
 	});
 
-	it("linux: a failing enable --now after a working daemon-reload is a real error, not unavailability", async () => {
+	it("linux: a failing enable --now after a working daemon-reload is a real error, not unavailability, and removes the unit", async () => {
 		const ran: string[][] = [];
-		const { deps } = fakeDeps({
+		const { deps, removed, written } = fakeDeps({
 			run: recordingRun(ran, (argv) => (argv[2] === "enable" ? { code: 1, stderr: "Unit dg-phone.service has a bad unit file" } : { code: 0 })),
 		});
 
 		await expect(installAutostart(deps, paths, spec)).rejects.toBeInstanceOf(DgCliError);
+		expect(removed).toEqual([written[0]?.path]);
 	});
 
 	it("darwin happy path: writes the plist, boots it out best-effort, then bootstraps it", async () => {
@@ -252,6 +253,17 @@ describe("installAutostart", () => {
 		const outcome = await installAutostart(deps, paths, spec);
 
 		expect(outcome).toEqual({ ok: false, reason: "Access is denied." });
+		expect(removed).toHaveLength(1);
+	});
+
+	it("win32: a failing Run after a working Create is a real error, not unavailability, and removes the task xml", async () => {
+		const ran: string[][] = [];
+		const { deps, removed } = fakeDeps({
+			platform: "win32",
+			run: recordingRun(ran, (argv) => (argv[1] === "/Run" ? { code: 1, stderr: "task not found" } : { code: 0 })),
+		});
+
+		await expect(installAutostart(deps, paths, spec)).rejects.toBeInstanceOf(DgCliError);
 		expect(removed).toHaveLength(1);
 	});
 

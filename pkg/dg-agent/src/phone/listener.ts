@@ -61,12 +61,13 @@ export function isOurListener(pid: number): boolean {
 	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
 }
 
-/** Undefined for no file, a parse failure, or a pid that is no longer alive: a crashed listener reports as stopped. */
+/** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is no longer alive. */
 export function readListenerPid(paths: DgPaths): ListenerPid | undefined {
 	const path = listenerPidPath(paths);
 	if (!existsSync(path)) return undefined;
 	try {
 		const record = JSON.parse(readFileSync(path, "utf8")) as ListenerPid;
+		if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return undefined;
 		return isAlive(record.pid) ? record : undefined;
 	} catch {
 		return undefined;
@@ -78,7 +79,7 @@ function writeListenerPid(paths: DgPaths, record: ListenerPid): void {
 	writeFileAtomic(listenerPidPath(paths), JSON.stringify(record));
 }
 
-function removeListenerPid(paths: DgPaths): void {
+export function removeListenerPid(paths: DgPaths): void {
 	rmSync(listenerPidPath(paths), { force: true });
 }
 

@@ -1,5 +1,12 @@
-import type { Filter, NostrEvent } from "nostr-tools";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
+import { generateSecretKey, getPublicKey, type Filter, nip19, type NostrEvent } from "nostr-tools";
 import type { SubscribeManyParams } from "nostr-tools/pool";
+import type { PhoneDeps } from "../../src/phone/commands";
+import { PhoneDb } from "../../src/phone/db";
+import type { KeyClient } from "../../src/phone/keys";
 import type { PhonePool } from "../../src/phone/chat";
 
 export type FakePool = PhonePool & {
@@ -7,6 +14,69 @@ export type FakePool = PhonePool & {
 	filters: Filter[];
 	listeners: ((event: NostrEvent) => void)[];
 };
+
+/** A fresh npub with no corresponding contact. */
+export function freshNpub(): string {
+	return nip19.npubEncode(getPublicKey(generateSecretKey()));
+}
+
+/** One temp directory under `prefix`; the caller is responsible for removing it. */
+export function makeTempHome(prefix: string): string {
+	return mkdtempSync(join(tmpdir(), prefix));
+}
+
+/** Tracks every temp home dir and `PhoneDb` a spec opens, so one `cleanup()` closes and removes them all. */
+export function makeHomeTracker(prefix: string): {
+	freshHome: () => string;
+	trackDb: (db: PhoneDb) => void;
+	cleanup: () => void;
+} {
+	const homes: string[] = [];
+	const dbs: PhoneDb[] = [];
+	return {
+		freshHome: () => {
+			const home = makeTempHome(prefix);
+			homes.push(home);
+			return home;
+		},
+		trackDb: (db: PhoneDb) => {
+			dbs.push(db);
+		},
+		cleanup: () => {
+			for (const db of dbs) db.close();
+			for (const home of homes) rmSync(home, { recursive: true, force: true });
+		},
+	};
+}
+
+/** NDJSON stdout, one JSON value per line. */
+export function parseNdjson(rows: string[]): unknown[] {
+	return rows
+		.join("")
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((row) => JSON.parse(row));
+}
+
+/** The file-mode `PhoneDeps` every CLI-level phone spec needs: a fresh db at `home`, no credential-store grant. */
+export function makePhoneDeps(opts: { home: string; pool: FakePool; write: (text: string) => void; now?: number }): PhoneDeps {
+	const now = opts.now ?? Math.floor(Date.now() / 1000);
+	const paths = resolveDgPaths({ env: { DG_HOME: opts.home } });
+	const db = PhoneDb.open(paths, () => now);
+	return {
+		paths,
+		db,
+		createPool: () => ({ ...opts.pool, close: () => {} }),
+		write: opts.write,
+		readStdin: async () => undefined,
+		now: () => now,
+		sessionClient: async () => undefined,
+		grantClient: (): KeyClient => {
+			throw new Error("no grant in file-mode tests");
+		},
+	};
+}
 
 export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 	const pool: FakePool = {

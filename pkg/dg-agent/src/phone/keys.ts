@@ -5,7 +5,7 @@ import type { KeyEntry } from "./chat";
 import type { PhoneDb } from "./db";
 import { numberKeyId } from "./store";
 
-export type KeyClient = Pick<CredentialClient, "get" | "set" | "grant" | "close">;
+export type KeyClient = Pick<CredentialClient, "get" | "set" | "grant" | "close" | "delete">;
 export type KeyStoreMode = "store" | "file";
 export type KeyDeps = {
 	paths: DgPaths;
@@ -104,14 +104,25 @@ export async function loadKey(deps: KeyDeps, id: string): Promise<LoadedKey | un
 	return undefined;
 }
 
+/** Best-effort: never let a write this call made but is abandoning linger as an orphan. */
+async function cleanUpOrphan(client: KeyClient, name: string): Promise<void> {
+	try {
+		await client.delete(name);
+	} catch {}
+}
+
+/** Only a thrown error below is cleaned up; a plain read-back mismatch means another run's key
+ * already won the race and is the live credential now, not an orphan of this call's. */
 async function putInStore(deps: KeyDeps, id: string, client: KeyClient, sk: Uint8Array): Promise<boolean> {
+	const name = keyName(id);
 	const nsec = nip19.nsecEncode(sk);
 	try {
-		await client.set(keyName(id), nsec, { createdBy: "dg-agent phone" });
+		await client.set(name, nsec, { createdBy: "dg-agent phone" });
 		await client.grant(GRANT_PREFIX);
 		if (!Buffer.from(await readStore(deps, id)).equals(Buffer.from(sk))) return false;
 		return markKeyInStore(deps.db, id, sk);
 	} catch (err) {
+		await cleanUpOrphan(client, name);
 		process.stderr.write(
 			`phone: the dg credential store did not take the key, so it stays in the phone database: ${describeError(err)}\n`,
 		);

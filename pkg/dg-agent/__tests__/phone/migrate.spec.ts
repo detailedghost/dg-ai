@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
-import { phoneSay, type PhoneDeps } from "../../src/phone/commands";
+import { phoneSay } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import {
 	disableLegacyDaemonJobs,
@@ -23,15 +23,20 @@ import {
 	type JobCli,
 	type MigrateDeps,
 	migrateIfNeeded,
+	migrationLockPath,
 	resolveDaemonExecutable,
 	runArgv,
 	runDaemonJobCli,
 	siblingDaemonPath,
 } from "../../src/phone/migrate";
 import { DEFAULT_RELAYS, findContactByHandle, numberKeyId, readCursor, readNumber } from "../../src/phone/store";
-import { createFakePool, type FakePool } from "./fake-pool";
+import { createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
 
 const NOW = 1_800_000_000;
+
+function freshHome(): string {
+	return makeTempHome("dg-phone-migrate-");
+}
 
 type LegacyMessageFixture = {
 	id: string;
@@ -114,14 +119,11 @@ function writeWhoami(paths: DgPaths, name: string): void {
 	writeFileSync(join(paths.phoneFriendRoot, ".whoami"), `${name}\n`);
 }
 
-function freshNpub(): string {
-	return nip19.npubEncode(getPublicKey(generateSecretKey()));
-}
-
 function fakeMigrateDeps(overrides: Partial<MigrateDeps> = {}): MigrateDeps {
 	return {
 		now: () => NOW,
 		isOurListener: () => false,
+		isAlive: () => false,
 		kill: () => {},
 		jobCli: async () => ({ code: 0, stdout: "", stderr: "" }),
 		renameLegacyRoot: renameSync,
@@ -132,7 +134,7 @@ function fakeMigrateDeps(overrides: Partial<MigrateDeps> = {}): MigrateDeps {
 
 describe("legacyRoot / migrateIfNeeded", () => {
 	it("is undefined on a fresh install with neither root", () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
+		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			expect(legacyRoot(paths)).toBeUndefined();
@@ -143,7 +145,7 @@ describe("legacyRoot / migrateIfNeeded", () => {
 	});
 
 	it("finds the old root once a line database exists there, and stops once phone.db exists", () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
+		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
@@ -160,7 +162,7 @@ describe("legacyRoot / migrateIfNeeded", () => {
 	});
 
 	it("ignores a phone-friend root with no line database in it", () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
+		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(paths.phoneFriendRoot, { recursive: true });
@@ -174,7 +176,7 @@ describe("legacyRoot / migrateIfNeeded", () => {
 
 describe("legacyRootPresent", () => {
 	it("is false for an empty old root that was never a real line install, even once phone.db exists", () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
+		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(paths.phoneFriendRoot, { recursive: true });
@@ -189,7 +191,7 @@ describe("legacyRootPresent", () => {
 	});
 
 	it("is true once phone.db exists next to an unrenamed root that still holds a line database", () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
+		const home = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: home } });
 			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
@@ -274,10 +276,6 @@ describe("runDaemonJobCli", () => {
 	});
 });
 
-function freshHome(): string {
-	return mkdtempSync(join(tmpdir(), "dg-phone-migrate-"));
-}
-
 describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 	it("moves two lines' keys, contacts, and messages, keeping one unread mark and picking the default key", () => {
 		const dir = freshHome();
@@ -330,6 +328,7 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 
 			expect(existsSync(paths.phoneFriendRoot)).toBe(false);
 			expect(existsSync(`${paths.phoneFriendRoot}.migrated`)).toBe(true);
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -468,6 +467,7 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
 			expect(existsSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"))).toBe(true);
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -510,32 +510,69 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 
 			migrateIfNeeded(paths, fakeMigrateDeps());
 
-			const db = PhoneDb.open(paths, () => NOW);
 			const pool = createFakePool();
 			const out: string[] = [];
-			const deps: PhoneDeps = {
-				paths,
-				db,
-				createPool: () => ({ ...pool, close: () => {} }),
-				write: (text: string) => {
-					out.push(text);
-				},
-				readStdin: async () => undefined,
-				now: () => NOW,
-				sessionClient: async () => undefined,
-				grantClient: (): never => {
-					throw new Error("no grant in file-mode tests");
-				},
-			};
+			const deps = makePhoneDeps({ home: dir, pool, write: (text) => out.push(text), now: NOW });
 			try {
 				await phoneSay("+velora", "hi", deps);
 			} finally {
-				db.close();
+				deps.db.close();
 			}
 
 			const [sentEvent] = pool.events;
 			const rumor = nip17.unwrapEvent(sentEvent, contactSk);
 			expect(rumor.pubkey).toBe(getPublicKey(workSecret));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("migrateIfNeeded: the migration lock", () => {
+	it("throws when another live process already holds the migration lock, and writes nothing", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			mkdirSync(paths.phoneRoot, { recursive: true });
+			writeFileSync(migrationLockPath(paths), "4242");
+
+			expect(() => migrateIfNeeded(paths, fakeMigrateDeps({ isAlive: (pid) => pid === 4242 }))).toThrow(
+				"another phone command is migrating (pid 4242)",
+			);
+			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+			expect(existsSync(migrationLockPath(paths))).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reclaims a lock left by a dead process and migrates normally", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+			mkdirSync(paths.phoneRoot, { recursive: true });
+			writeFileSync(migrationLockPath(paths), "4242");
+
+			const result = migrateIfNeeded(paths, fakeMigrateDeps({ isAlive: () => false }));
+
+			expect(result.migrated).toBe(true);
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("releases the lock even when the migration throws", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			mkdirSync(join(paths.phoneFriendRoot, "default"), { recursive: true });
+			writeFileSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"), "not a sqlite file");
+
+			expect(() => migrateIfNeeded(paths, fakeMigrateDeps())).toThrow();
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

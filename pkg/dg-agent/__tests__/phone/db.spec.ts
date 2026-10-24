@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -111,8 +111,8 @@ describe("PhoneDb", () => {
 		});
 
 		it("deletes messages older than seven days when it opens", () => {
-			db.addMessage(message("old", NOW - 7 * 24 * 60 * 60 - 1));
-			db.addMessage(message("fresh", NOW - 7 * 24 * 60 * 60 + 60));
+			db.addMessage(message("old", NOW - MESSAGE_TTL_SECONDS - 1));
+			db.addMessage(message("fresh", NOW - MESSAGE_TTL_SECONDS + 60));
 			db.close();
 
 			db = PhoneDb.open(paths, () => now);
@@ -121,7 +121,7 @@ describe("PhoneDb", () => {
 		});
 
 		it("never stores a message that is already past the ttl", () => {
-			expect(db.addMessage(message("stale", NOW - 7 * 24 * 60 * 60 - 1))).toBe(false);
+			expect(db.addMessage(message("stale", NOW - MESSAGE_TTL_SECONDS - 1))).toBe(false);
 			expect(db.recentMessages(10)).toEqual([]);
 		});
 	});
@@ -162,13 +162,20 @@ describe("PhoneDb", () => {
 	});
 
 	describe("keys", () => {
-		it("inserts a key row only once, and a later makeDefault call is discarded", () => {
-			const first = db.ensureKeyRow("default", () => ({ nsec: "nsec1first", in_store: 0 }));
-			const second = db.ensureKeyRow("default", () => ({ nsec: "nsec1second", in_store: 0 }));
+		it("inserts a key row only once, and skips makeDefault once the row already exists", () => {
+			let calls = 0;
+			const makeDefault = () => {
+				calls += 1;
+				return { nsec: "nsec1first", in_store: 0 };
+			};
+
+			const first = db.ensureKeyRow("default", makeDefault);
+			const second = db.ensureKeyRow("default", makeDefault);
 
 			expect(first.nsec).toBe("nsec1first");
 			expect(second.nsec).toBe("nsec1first");
 			expect(db.getKey("default")?.nsec).toBe("nsec1first");
+			expect(calls).toBe(1);
 		});
 
 		it("updates an existing row in place through putKey", () => {

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync, writeFileSync } from "node:fs";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import { phoneClose, phoneOpen, registerPhoneCommands, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
@@ -9,8 +7,9 @@ import { PhoneDb } from "../../src/phone/db";
 import type { KeyClient } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
 import { readListener } from "../../src/phone/store";
+import { makeHomeTracker, parseNdjson } from "./fake-pool";
 
-let homes: string[];
+let tracker: ReturnType<typeof makeHomeTracker>;
 let out: string[];
 const NOW = Math.floor(Date.now() / 1000);
 
@@ -24,23 +23,17 @@ type Harness = {
 };
 
 function lines(): unknown[] {
-	return out
-		.join("")
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.map((row) => JSON.parse(row));
+	return parseNdjson(out);
 }
 
 function freshHome(): string {
-	const home = mkdtempSync(join(tmpdir(), "dg-phone-opencl-"));
-	homes.push(home);
-	return home;
+	return tracker.freshHome();
 }
 
 function harness(overrides: Partial<OpenCloseDeps> = {}): Harness {
 	const paths = resolveDgPaths({ env: { DG_HOME: freshHome() } });
 	const db = PhoneDb.open(paths, () => NOW);
+	tracker.trackDb(db);
 	const written: { path: string; text: string; mode?: number }[] = [];
 	const removed: string[] = [];
 	const ran: string[][] = [];
@@ -113,12 +106,12 @@ function simulateListenerStarted(h: Harness, pid: number = process.pid): void {
 }
 
 beforeEach(() => {
-	homes = [];
+	tracker = makeHomeTracker("dg-phone-opencl-");
 	out = [];
 });
 
 afterEach(() => {
-	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	tracker.cleanup();
 });
 
 describe("phoneOpen", () => {
@@ -233,6 +226,16 @@ describe("phoneOpen", () => {
 		);
 	});
 
+	it("treats a pid file whose process is not ours as stale: clears it and installs fresh instead of reporting running", async () => {
+		const h = harness({ isOurListener: () => false });
+		writeRunningPid(h, process.pid);
+
+		await phoneOpen({}, h.deps);
+
+		expect(h.killed).toEqual([]);
+		expect(lines()[0]).toMatchObject({ status: "started", autostart: "systemd" });
+	});
+
 	it("falls back to a detached spawn and reports unavailable when systemctl is not usable", async () => {
 		const h = harness({
 			run: async (argv) => {
@@ -274,6 +277,16 @@ describe("phoneClose", () => {
 
 		await phoneClose(h.deps);
 
+		expect(lines()[0]).toEqual({ pid: null, status: "closed", autostart: "absent" });
+	});
+
+	it("reports pid null and never tries to kill a pid file that is not ours", async () => {
+		const h = harness({ isOurListener: () => false });
+		writeRunningPid(h, process.pid);
+
+		await phoneClose(h.deps);
+
+		expect(h.killed).toEqual([]);
 		expect(lines()[0]).toEqual({ pid: null, status: "closed", autostart: "absent" });
 	});
 

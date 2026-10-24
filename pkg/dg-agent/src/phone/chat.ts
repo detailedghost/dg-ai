@@ -158,8 +158,19 @@ function inboxFilter(pubs: string[], cursor: number, now: number) {
 	};
 }
 
+/** Keeps only the most recent `limit` entries, so a dedup list cannot grow without bound. */
+export function capIds(ids: string[], limit: number): string[] {
+	return ids.length > limit ? ids.slice(ids.length - limit) : ids;
+}
+
+/** Adds `value` to `set`, then evicts the oldest entry once `limit` is exceeded. */
+export function addBounded<T>(set: Set<T>, value: T, limit: number): void {
+	set.add(value);
+	if (set.size > limit) set.delete(set.values().next().value as T);
+}
+
 function remember(seen: Seen, cursor: number, ids: string[]): Seen {
-	return { cursor, ids: [...seen.ids, ...ids] };
+	return { cursor, ids: capIds([...seen.ids, ...ids], STRANGER_ID_LIMIT) };
 }
 
 function nowSeconds(): number {
@@ -245,17 +256,12 @@ export function subscribe(
 	return pool.subscribe(relays, inboxFilter(keys.map((key) => key.pub), seen.cursor, now()), {
 		onevent(event) {
 			if (known.has(event.id) || strangers.has(event.id)) return;
-			const key = pickKey(event, keys);
-			const rumor = key ? open(event, key.sk) : null;
-			const admitted = rumor && key ? admit(event, rumor, key.id, gate(), now()) : null;
+			const admitted = unwrapIncoming(event, keys, gate(), now());
 			if (!admitted) {
-				strangers.add(event.id);
-				if (strangers.size > STRANGER_ID_LIMIT) {
-					strangers.delete(strangers.values().next().value as string);
-				}
+				addBounded(strangers, event.id, STRANGER_ID_LIMIT);
 				return;
 			}
-			known.add(event.id);
+			addBounded(known, event.id, STRANGER_ID_LIMIT);
 			state = remember(state, now(), [event.id]);
 			onMessage(admitted.message, state, admitted.gate, { newContact: admitted.newContact, reaccept: admitted.reaccept });
 		},

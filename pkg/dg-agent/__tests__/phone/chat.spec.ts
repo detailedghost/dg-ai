@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
 import {
+	addBounded,
+	capIds,
 	fetchNew,
 	type Gate,
 	LOOKBACK_SECONDS,
@@ -385,5 +387,26 @@ describe("the legacy-key re-accept (multi-key gate)", () => {
 			1_000,
 		);
 		expect(reaccept?.reaccept).toEqual({ npub: nip19.npubEncode(alice.pub), keyId: "default" });
+	});
+});
+
+describe("capIds", () => {
+	it("keeps only the most recent `limit` entries, dropping the oldest first", () => {
+		expect(capIds(["a", "b", "c"], 2)).toEqual(["b", "c"]);
+		expect(capIds(["a", "b"], 5)).toEqual(["a", "b"]);
+		expect(capIds([], 2)).toEqual([]);
+	});
+});
+
+describe("addBounded", () => {
+	it("evicts the oldest entry once the set exceeds `limit`, so a long-running subscription cannot grow it without bound", () => {
+		const set = new Set<string>();
+
+		addBounded(set, "a", 2);
+		addBounded(set, "b", 2);
+		addBounded(set, "c", 2);
+
+		expect(set.size).toBe(2);
+		expect([...set]).toEqual(["b", "c"]);
 	});
 });

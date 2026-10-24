@@ -185,6 +185,7 @@ async function installSystemd(deps: AutostartDeps, path: string): Promise<Autost
 	}
 	const enable = await deps.run(["systemctl", "--user", "enable", "--now", SYSTEMD_UNIT]);
 	if (enable.code !== 0) {
+		deps.removeFile(path);
 		throw new DgCliError(`systemctl --user enable --now ${SYSTEMD_UNIT} failed: ${firstLine(enable.stderr) || enable.stdout}`);
 	}
 	return { ok: true, kind: "systemd" };
@@ -209,6 +210,7 @@ async function installTask(deps: AutostartDeps, path: string): Promise<Autostart
 	}
 	const run = await deps.run(["schtasks", "/Run", "/TN", TASK_NAME]);
 	if (run.code !== 0) {
+		deps.removeFile(path);
 		throw new DgCliError(`schtasks /Run /TN ${TASK_NAME} failed: ${firstLine(run.stderr) || run.stdout}`);
 	}
 	return { ok: true, kind: "task" };

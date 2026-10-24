@@ -102,6 +102,12 @@ describe("call cards v2 (current)", () => {
 		expect(() => decodeCard(`${text} extra`, 1_000)).toThrow(DgCliError);
 	});
 
+	it("rejects a card mangled with trailing base64 padding", () => {
+		const text = encodeCard(card);
+
+		expect(() => decodeCard(`${text}=`, 1_000)).toThrow(DgCliError);
+	});
+
 	it("rejects a truncated card", () => {
 		expect(() => decodeCard(rawV2(v2Bytes().subarray(0, 50)), 1_000)).toThrow(DgCliError);
 	});
@@ -187,6 +193,8 @@ describe("call cards v1 (legacy, accept only)", () => {
 			{ ...v1Card, relays: [] },
 			{ ...v1Card, secret: "short" },
 			{ ...v1Card, exp: "soon" },
+			{ ...v1Card, relays: ["http://nope"] },
+			{ ...v1Card, relays: Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`) },
 		]) {
 			expect(() => decodeCard(rawV1(bad), 1_000)).toThrow(DgCliError);
 		}

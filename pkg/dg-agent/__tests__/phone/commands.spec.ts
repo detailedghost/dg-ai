@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
 import { decodeCard } from "../../src/phone/card";
-import { fetchNew, type KeyEntry, ring, unwrapIncoming, wrap } from "../../src/phone/chat";
+import { type KeyEntry, ring, unwrapIncoming } from "../../src/phone/chat";
 import {
 	phoneAccept,
 	phoneContacts,
@@ -23,50 +22,28 @@ import {
 	registerPhoneCommands,
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
-import { createFileKey, ensureNumberKey, type KeyClient } from "../../src/phone/keys";
+import { createFileKey, ensureNumberKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
 import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact, writeListener } from "../../src/phone/store";
-import { createFakePool, type FakePool } from "./fake-pool";
+import { createFakePool, freshNpub as realNpub, makeHomeTracker, makePhoneDeps, parseNdjson, type FakePool } from "./fake-pool";
 
-let homes: string[];
+let tracker: ReturnType<typeof makeHomeTracker>;
 let out: string[];
 let pool: FakePool;
 const NOW = Math.floor(Date.now() / 1000);
 
 function deps(home: string, poolOverride: FakePool = pool): PhoneDeps {
-	const paths = resolveDgPaths({ env: { DG_HOME: home } });
-	const db = PhoneDb.open(paths, () => NOW);
-	return {
-		paths,
-		db,
-		createPool: () => ({ ...poolOverride, close: () => {} }),
-		write: (text) => out.push(text),
-		readStdin: async () => undefined,
-		now: () => NOW,
-		sessionClient: async () => undefined,
-		grantClient: (): KeyClient => {
-			throw new Error("no grant in file-mode tests");
-		},
-	};
+	const d = makePhoneDeps({ home, pool: poolOverride, write: (text) => out.push(text), now: NOW });
+	tracker.trackDb(d.db);
+	return d;
 }
 
 function freshHome(): string {
-	const home = mkdtempSync(join(tmpdir(), "dg-phone-cli-"));
-	homes.push(home);
-	return home;
+	return tracker.freshHome();
 }
 
 function lines(): unknown[] {
-	return out
-		.join("")
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.map((row) => JSON.parse(row));
-}
-
-function realNpub(): string {
-	return nip19.npubEncode(getPublicKey(generateSecretKey()));
+	return parseNdjson(out);
 }
 
 function addTestContact(db: PhoneDb, overrides: Partial<ContactRecord> = {}): ContactRecord {
@@ -84,13 +61,13 @@ function addTestContact(db: PhoneDb, overrides: Partial<ContactRecord> = {}): Co
 }
 
 beforeEach(() => {
-	homes = [];
+	tracker = makeHomeTracker("dg-phone-cli-");
 	out = [];
 	pool = createFakePool();
 });
 
 afterEach(() => {
-	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	tracker.cleanup();
 });
 
 describe("number", () => {
@@ -516,29 +493,6 @@ describe("status", () => {
 		phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ autostart: "unavailable: no systemd user bus" });
-	});
-});
-
-describe("security", () => {
-	it("a wrap addressed to a pubkey we do not hold is dropped, and fetchNew saves no stranger id", async () => {
-		const owner = deps(freshHome());
-		await phoneNumber({}, owner);
-		out = [];
-		const peer = deps(freshHome(), pool);
-		await phoneNumber({}, peer);
-		out = [];
-		await phoneInvite({}, peer);
-		out = [];
-
-		const ownerKey = await ensureNumberKey(owner);
-		const keyEntry: KeyEntry = { id: numberKeyId(owner.db), pub: getPublicKey(ownerKey.sk), sk: ownerKey.sk };
-		const stranger = generateSecretKey();
-		const event = wrap("not for you", stranger, getPublicKey((await ensureNumberKey(peer)).sk));
-
-		const { messages, seen } = await fetchNew(pool, ["wss://a"], [keyEntry], gateFor(owner.db), { cursor: 0, ids: [] }, () => NOW + 5);
-
-		expect(messages).toEqual([]);
-		expect(seen.ids).not.toContain(event.id);
 	});
 });
 

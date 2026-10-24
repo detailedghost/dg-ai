@@ -19,8 +19,10 @@ let scratch: string;
 const COUNTED_HOOK_SRC =
 	"const [c,o]=process.argv.slice(1);const s=await Bun.stdin.text();" +
 	"const p=await Bun.file(o).exists()?await Bun.file(o).text():'';" +
-	"await Bun.write(o,p+s+'\\n');let r=0;try{r=Number(await Bun.file(c).text())}catch{}" +
+	"await Bun.write(o,p+s+'\\n');const r=Number(await Bun.file(c).text());" +
 	"if(r>0){await Bun.write(c,String(r-1));process.exit(1)}process.exit(0)";
+
+const ALWAYS_FAILS: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(1)"], timeoutMs: 2000 };
 
 function countedHook(failTimes: number): { target: CommandPushTarget; outFile: string } {
 	const counterFile = join(scratch, `counter-${Math.random()}`);
@@ -140,10 +142,9 @@ describe("createHookRunner", () => {
 	it("skips a row once it hits the attempt cap, letting newer rows flow, and marks it stuck", async () => {
 		db.addMessage(message("m1", NOW));
 		db.addMessage(message("m2", NOW + 1, { sender: "npub1other", contact: "npub1other" }));
-		const alwaysFails: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(1)"], timeoutMs: 2000 };
 		const succeeds: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(0)"], timeoutMs: 2000 };
 		const { schedule, fireNext } = fakeSchedule();
-		const runner = createHookRunner(db, alwaysFails, schedule);
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
 
 		await runner.notify();
 		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS - 1; i++) {
@@ -162,9 +163,8 @@ describe("createHookRunner", () => {
 
 	it("stop cancels a pending retry and keeps an attempt that resolves afterward from arming a new one", async () => {
 		db.addMessage(message("a", NOW));
-		const alwaysFails: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(1)"], timeoutMs: 2000 };
 		const { schedule, delays } = fakeSchedule();
-		const runner = createHookRunner(db, alwaysFails, schedule);
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
 
 		const notified = runner.notify();
 		runner.stop();
@@ -212,5 +212,23 @@ describe("createHookRunner", () => {
 		await runner.retryStuck();
 
 		expect(db.recentMessages(1)[0]?.read_at).not.toBeNull();
+	});
+
+	it("a retryStuck that races a notify is folded in, not dropped: both the live row and the stuck row end up read", async () => {
+		db.addMessage(message("stuck", NOW));
+		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS; i++) db.bumpAttempts("stuck");
+		db.addMessage(message("live", NOW + 1));
+		const { target } = countedHook(0);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+
+		const notified = runner.notify();
+		const retried = runner.retryStuck();
+		await notified;
+		await retried;
+		await runner.settle();
+
+		const rows = db.recentMessages(2);
+		expect(rows.find((m) => m.id === "live")?.read_at).not.toBeNull();
+		expect(rows.find((m) => m.id === "stuck")?.read_at).not.toBeNull();
 	});
 });
