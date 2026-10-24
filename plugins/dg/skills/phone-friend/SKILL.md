@@ -20,7 +20,7 @@ latest `agent-v*` release:
 
 ```bash
 ~/.dg/bin/dg-agent phone-friend --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 If `phone-friend --help` still fails after the bootstrap, the installed `dg-agent` is older than this
@@ -284,7 +284,7 @@ Skill: phone-friend (private chat with my Claude Code agent)
 
 Setup, one time, in your terminal (keep the heredoc lines at the start of
 the line, with no indent):
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
