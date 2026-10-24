@@ -13,6 +13,12 @@ export const DEFAULT_DELIVERY_EVERY = "1m";
 
 export type JobCliResult = { code: number; stdout: string; stderr: string };
 
+/** dg-daemon's `job add` "label already taken" error text; see pkg/dg-daemon/src/commands/jobs.ts. */
+export const JOB_EXISTS_MARKER = "already exists";
+
+/** dg-daemon's `job enable`/`job disable` "unknown label" error text; see pkg/dg-daemon/src/commands/jobs.ts. */
+export const JOB_NOT_FOUND_MARKER = "no job labelled";
+
 export type JobCli = (args: string[]) => Promise<JobCliResult>;
 
 export type DeliveryTarget = {
@@ -134,7 +140,7 @@ export async function enableDelivery(input: DeliveryTarget, run: JobCli): Promis
 		...deliveryArgv(input.line),
 	]);
 	if (added.code === 0) return "added";
-	if (!outputOf(added).includes("already exists")) {
+	if (!outputOf(added).includes(JOB_EXISTS_MARKER)) {
 		throw new DgCliError(failureText(added, `could not schedule ${label}`));
 	}
 	const enabled = await run(["job", "enable", label]);
@@ -149,7 +155,7 @@ export async function disableDelivery(line: string, run: JobCli): Promise<"disab
 	const label = deliveryLabel(line);
 	const result = await run(["job", "disable", label]);
 	if (result.code === 0) return "disabled";
-	if (outputOf(result).includes("no job labelled")) return "absent";
+	if (outputOf(result).includes(JOB_NOT_FOUND_MARKER)) return "absent";
 	throw new DgCliError(failureText(result, `could not disable ${label}`));
 }
 

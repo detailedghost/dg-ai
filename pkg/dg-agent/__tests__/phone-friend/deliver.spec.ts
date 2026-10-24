@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -17,6 +17,8 @@ import {
 	type JobCli,
 	type JobCliResult,
 	DEFAULT_DELIVERY_EVERY,
+	JOB_EXISTS_MARKER,
+	JOB_NOT_FOUND_MARKER,
 	PHONE_FRIEND_SAFETY_REF,
 	deliveryArgv,
 	deliveryLabel,
@@ -224,14 +226,17 @@ describe("enableDelivery", () => {
 	});
 
 	it("does not enable a job whose add succeeded, even if the output mentions already exists", async () => {
-		const jobs = scripted([result(0, "already exists", "")]);
+		const jobs = scripted([result(0, JOB_EXISTS_MARKER, "")]);
 
 		expect(await enableDelivery(target, jobs.run)).toBe("added");
 		expect(jobs.calls).toHaveLength(1);
 	});
 
 	it("re-enables an existing job when add reports it from either stream", async () => {
-		for (const first of [result(1, 'a job labelled "phone-friend:work" already exists'), result(1, "", "already exists")]) {
+		for (const first of [
+			result(1, `a job labelled "phone-friend:work" ${JOB_EXISTS_MARKER}`),
+			result(1, "", JOB_EXISTS_MARKER),
+		]) {
 			const jobs = scripted([first, result(0)]);
 			expect(await enableDelivery(target, jobs.run)).toBe("enabled");
 			expect(jobs.calls[1]).toEqual(["job", "enable", "phone-friend:work"]);
@@ -252,13 +257,13 @@ describe("enableDelivery", () => {
 	});
 
 	it("surfaces an enable failure after the label already exists", async () => {
-		const jobs = scripted([result(1, "already exists"), result(1, "daemon locked")]);
+		const jobs = scripted([result(1, JOB_EXISTS_MARKER), result(1, "daemon locked")]);
 
 		await expect(enableDelivery(target, jobs.run)).rejects.toThrow("daemon locked");
 	});
 
 	it("names the job when enable fails without output", async () => {
-		const jobs = scripted([result(1, "already exists"), result(1)]);
+		const jobs = scripted([result(1, JOB_EXISTS_MARKER), result(1)]);
 
 		await expect(enableDelivery(target, jobs.run)).rejects.toThrow("could not enable phone-friend:work");
 	});
@@ -276,14 +281,17 @@ describe("enableDelivery", () => {
 
 describe("disableDelivery", () => {
 	it("disables the line job", async () => {
-		const jobs = scripted([result(0, "no job labelled ignored because the command succeeded")]);
+		const jobs = scripted([result(0, `${JOB_NOT_FOUND_MARKER} ignored because the command succeeded`)]);
 
 		expect(await disableDelivery("work", jobs.run)).toBe("disabled");
 		expect(jobs.calls).toEqual([["job", "disable", "phone-friend:work"]]);
 	});
 
 	it("treats a missing job as already off when either stream says so", async () => {
-		for (const response of [result(1, 'no job labelled "phone-friend:work"'), result(1, "", "no job labelled")]) {
+		for (const response of [
+			result(1, `${JOB_NOT_FOUND_MARKER} "phone-friend:work"`),
+			result(1, "", JOB_NOT_FOUND_MARKER),
+		]) {
 			const jobs = scripted([response]);
 			expect(await disableDelivery("work", jobs.run)).toBe("absent");
 		}
@@ -381,61 +389,76 @@ describe("dg-daemon job storage", () => {
 		const dgHome = freshDgHome();
 		homes.push(dgHome);
 		const bin = mkdtempSync(join(tmpdir(), "dg-agent-bin-"));
-		writeFileSync(join(bin, "dg-agent"), "#!/bin/sh\nexit 0\n");
-		chmodSync(join(bin, "dg-agent"), 0o755);
-		const run: JobCli = async (args) => {
-			const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
-				env: subprocessEnv(dgHome, 0, { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` }),
-				stdout: "pipe",
-				stderr: "pipe",
-				stdin: "ignore",
-			});
-			const [stdout, stderr, code] = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
-			return { code: code ?? 1, stdout, stderr };
-		};
-		const target = {
-			line: "work",
-			every: DEFAULT_DELIVERY_EVERY,
-			notifyIdentity: "reviewer",
-			cwd: dgHome,
-		};
-
-		expect(await enableDelivery(target, run)).toBe("added");
-
-		const store = await ChatStore.open(resolveDgPaths({ env: { DG_HOME: dgHome } }), FILE_ONLY_SEAMS);
 		try {
-			const job = store.getJobByLabel("phone-friend:work");
-			expect(job?.argv).toEqual(deliveryArgv("work"));
-			expect(job?.notifyIdentity).toBe("reviewer");
-			expect(job?.intervalMs).toBe(60_000);
-			expect(job?.enabled).toBe(true);
-			expect(job?.cwd).toBe(dgHome);
+			writeFileSync(join(bin, "dg-agent"), "#!/bin/sh\nexit 0\n");
+			chmodSync(join(bin, "dg-agent"), 0o755);
+			const run: JobCli = async (args) => {
+				const proc = Bun.spawn([process.execPath, ENTRY, ...args], {
+					env: subprocessEnv(dgHome, 0, { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` }),
+					stdout: "pipe",
+					stderr: "pipe",
+					stdin: "ignore",
+				});
+				const [stdout, stderr, code] = await Promise.all([
+					new Response(proc.stdout).text(),
+					new Response(proc.stderr).text(),
+					proc.exited,
+				]);
+				return { code: code ?? 1, stdout, stderr };
+			};
+			const target = {
+				line: "work",
+				every: DEFAULT_DELIVERY_EVERY,
+				notifyIdentity: "reviewer",
+				cwd: dgHome,
+			};
+
+			expect(await enableDelivery(target, run)).toBe("added");
+
+			const store = await ChatStore.open(resolveDgPaths({ env: { DG_HOME: dgHome } }), FILE_ONLY_SEAMS);
+			try {
+				const job = store.getJobByLabel("phone-friend:work");
+				expect(job?.argv).toEqual(deliveryArgv("work"));
+				expect(job?.notifyIdentity).toBe("reviewer");
+				expect(job?.intervalMs).toBe(60_000);
+				expect(job?.enabled).toBe(true);
+				expect(job?.cwd).toBe(dgHome);
+			} finally {
+				store.close();
+			}
+
+			expect(await enableDelivery(target, run)).toBe("enabled");
+			expect(await disableDelivery("work", run)).toBe("disabled");
+
+			const after = await ChatStore.open(resolveDgPaths({ env: { DG_HOME: dgHome } }), FILE_ONLY_SEAMS);
+			try {
+				expect(after.listJobs()).toHaveLength(1);
+				expect(after.getJobByLabel("phone-friend:work")?.enabled).toBe(false);
+			} finally {
+				after.close();
+			}
+
+			expect(await disableDelivery("absent", run)).toBe("absent");
 		} finally {
-			store.close();
+			rmSync(bin, { recursive: true, force: true });
 		}
-
-		expect(await enableDelivery(target, run)).toBe("enabled");
-		expect(await disableDelivery("work", run)).toBe("disabled");
-
-		const after = await ChatStore.open(resolveDgPaths({ env: { DG_HOME: dgHome } }), FILE_ONLY_SEAMS);
-		try {
-			expect(after.listJobs()).toHaveLength(1);
-			expect(after.getJobByLabel("phone-friend:work")?.enabled).toBe(false);
-		} finally {
-			after.close();
-		}
-
-		expect(await disableDelivery("absent", run)).toBe("absent");
-		rmSync(bin, { recursive: true, force: true });
 	});
 });
 
 describe("safety reference", () => {
 	it("points at the shared safety profile", () => {
 		expect(PHONE_FRIEND_SAFETY_REF).toBe("plugins/dg/skills/phone-friend/references/safety.md");
+	});
+});
+
+describe("job error markers", () => {
+	it("still matches the wording dg-daemon's job CLI throws", () => {
+		const daemonSource = readFileSync(
+			join(import.meta.dir, "../../../dg-daemon/src/commands/jobs.ts"),
+			"utf8",
+		);
+
+		expect(daemonSource).toContain(JOB_EXISTS_MARKER);
+		expect(daemonSource).toContain(JOB_NOT_FOUND_MARKER);
 	});
 });
