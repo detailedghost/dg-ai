@@ -15,7 +15,7 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
-		"commander": "^14.0.0",
+		"commander": "^15.0.0",
 		"croner": "^10"
 	},
 	"devDependencies": {

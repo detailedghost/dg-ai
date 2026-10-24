@@ -13,7 +13,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
-import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS } from "./card";
+import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, SECRET_BYTES } from "./card";
 import {
 	DEFAULT_DELIVERY_EVERY,
 	type JobCli,
@@ -45,14 +45,18 @@ import {
 	claimStart,
 	handleFor,
 	lineClaiming,
+	lineForHandle,
 	listLines,
+	readWhoami,
 	releaseStart,
+	resolvedSelfName,
 	type PhoneFriendConfig,
 	readConfig,
 	readInvite,
 	resolveLine,
 	writeConfig,
 	writeInvite,
+	writeWhoami,
 } from "./store";
 
 export type PhoneFriendDeps = KeyDeps & {
@@ -76,7 +80,6 @@ const MAX_RESTART_ATTEMPTS = 3;
 const STABLE_TICKS_TO_RESET = 3;
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
-const SECRET_BYTES = 32;
 
 export function isListenerArgs(args: string[]): boolean {
 	return args.includes("phone-friend") && args.includes("__run");
@@ -205,6 +208,17 @@ export async function phoneNumber(deps: PhoneFriendDeps): Promise<void> {
 	});
 }
 
+/** Prints the saved self name (or the neutral "dg" default) with no argument; saves a new one with one. */
+export function phoneWhoami(name: string | undefined, deps: PhoneFriendDeps): void {
+	if (name !== undefined) {
+		writeWhoami(deps.paths, name);
+		printJson(deps, { self_name: name, saved: true });
+		return;
+	}
+	const saved = readWhoami(deps.paths);
+	printJson(deps, { self_name: saved ?? resolvedSelfName(deps.paths), saved: saved !== undefined });
+}
+
 function requireFreeName(name: string, deps: PhoneFriendDeps): void {
 	if (!isLineName(name)) {
 		throw new DgCliError(`a contact name must be 1-32 lowercase letters, digits, or dashes, got "${name}"`);
@@ -241,13 +255,16 @@ export async function phoneCard(deps: PhoneFriendDeps): Promise<void> {
 		throw new DgCliError("no open call card on this line; run `dg-agent phone-friend invite` to make one");
 	}
 	const config = readConfig(deps.line);
+	const peerHandle = handleName(config, deps.line, invite.name);
+	const selfName = invite.as ?? resolvedSelfName(deps.paths);
 	const card = encodeCard({
 		npub: await myNpub(deps),
 		relays: config.relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
+		handle: selfName,
 	});
-	printJson(deps, cardReceipt(deps, card, invite, config));
+	printJson(deps, cardReceipt(card, invite, peerHandle, selfName));
 }
 
 function liveInvite(deps: PhoneFriendDeps): Invite | undefined {
@@ -264,6 +281,11 @@ function gateFor(config: PhoneFriendConfig, deps: PhoneFriendDeps): Gate {
 		contact: config.contact ? contactHex(config.contact) : undefined,
 		invite: liveInvite(deps),
 	};
+}
+
+/** The bare handle name `invite`/`card` use: an explicit `--name` (or the invite it made) wins over the saved contact name, then the line's own name. */
+function handleName(config: PhoneFriendConfig, line: LinePaths, override: string | undefined): string {
+	return override ?? config.name ?? line.name;
 }
 
 function acceptCall(message: Message, deps: PhoneFriendDeps): void {
@@ -314,10 +336,13 @@ export async function phoneOn(deps: PhoneFriendDeps): Promise<void> {
 }
 
 export async function phoneInvite(
-	opts: { relay?: string[]; ttl?: string; name?: string },
+	opts: { relay?: string[]; ttl?: string; name?: string; as?: string },
 	deps: PhoneFriendDeps,
 ): Promise<void> {
 	if (opts.name !== undefined) requireFreeName(opts.name, deps);
+	if (opts.as !== undefined && !isLineName(opts.as)) {
+		throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+	}
 	const hours = opts.ttl === undefined ? DEFAULT_INVITE_HOURS : Number(opts.ttl);
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
@@ -326,66 +351,91 @@ export async function phoneInvite(
 	if (!isCardRelays(relays)) {
 		throw new DgCliError(`--relay must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	}
+	const selfName = opts.as ?? resolvedSelfName(deps.paths);
 	const invite = {
 		secret: randomBytes(SECRET_BYTES).toString("hex"),
 		expiresAt: deps.now() + Math.round(hours * 3600),
+		as: selfName,
 		...(opts.name === undefined ? {} : { name: opts.name }),
 	};
+	const peerHandle = handleName(readConfig(deps.line), deps.line, opts.name);
 	const card = encodeCard({
 		npub: await myNpub(deps),
 		relays,
 		secret: invite.secret,
 		exp: invite.expiresAt,
+		handle: selfName,
 	});
 	writeInvite(deps.line, invite, relays);
 	await spawnOrRestart(deps);
-	printJson(deps, cardReceipt(deps, card, invite, readConfig(deps.line)));
+	printJson(deps, cardReceipt(card, invite, peerHandle, selfName));
 }
 
 function cardReceipt(
-	deps: PhoneFriendDeps,
 	card: string,
 	invite: Invite,
-	config: PhoneFriendConfig,
-): { card: string; expires_at: string; handle: string; safety: string } {
+	peerHandle: string,
+	selfName: string,
+): { card: string; expires_at: string; handle: string; safety: string; as: string } {
 	return {
 		card,
 		expires_at: expiresAt(invite),
-		handle: handleFor(config, deps.line),
+		handle: `+${peerHandle}`,
 		safety: PHONE_FRIEND_SAFETY_REF,
+		as: selfName,
 	};
 }
 
+/**
+ * `card`'s handle is a v2 card's inviter handle. With no explicit `--line` or `--name`, it names
+ * the line to dial into, so one command pairs and connects; `--line`/`--name` still win. Always
+ * goes through `lineForHandle`'s contact check, even when the handle matches the current line's
+ * own name, so a card cannot silently overwrite that line's existing contact.
+ */
 export async function phoneDial(
 	text: string,
 	firstWords: string | undefined,
 	deps: PhoneFriendDeps,
 	name?: string,
+	lineGiven = false,
 ): Promise<void> {
 	if (name !== undefined) requireFreeName(name, deps);
 	const pasted = text === "-" ? await deps.readStdin() : text;
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
-	const sk = await mySecretKey(deps);
+	let target = deps.line;
+	let autoName: string | undefined;
+	if (name === undefined && !lineGiven && card.handle !== undefined) {
+		target = lineForHandle(deps.paths, card.handle, card.npub);
+		if (target.name !== deps.line.name) autoName = card.handle;
+	}
+	const dialDeps = target === deps.line ? deps : { ...deps, line: target };
+	const targetExisted = existsSync(target.dbPath);
+	const sk = await mySecretKey(dialDeps);
 	const words = firstWords || "hello";
 	const event = ring(words, sk, contactHex(card.npub), card.secret);
-	const pool = deps.createPool();
+	const pool = dialDeps.createPool();
 	try {
 		const { ok } = await publish(pool, card.relays, event);
-		if (ok.length === 0) throw new DgCliError("no relay accepted the call");
-		writeConfig(deps.line, {
-			...readConfig(deps.line),
+		if (ok.length === 0) {
+			if (!targetExisted) rmSync(target.dir, { recursive: true, force: true });
+			throw new DgCliError("no relay accepted the call");
+		}
+		const savedName = name ?? autoName;
+		writeConfig(dialDeps.line, {
+			...readConfig(dialDeps.line),
 			contact: card.npub,
 			relays: card.relays,
-			...(name === undefined ? {} : { name }),
+			...(savedName === undefined ? {} : { name: savedName }),
 		});
-		saveSent(deps, { id: event.id, ts: deps.now(), from: npubOf(sk), text: words, call: true }, card.npub);
-		await spawnOrRestart(deps);
-		printJson(deps, {
+		saveSent(dialDeps, { id: event.id, ts: dialDeps.now(), from: npubOf(sk), text: words, call: true }, card.npub);
+		await spawnOrRestart(dialDeps);
+		printJson(dialDeps, {
 			contact: card.npub,
 			id: event.id,
 			relays_ok: ok,
-			handle: handleFor(readConfig(deps.line), deps.line),
+			line: dialDeps.line.name,
+			handle: handleFor(readConfig(dialDeps.line), dialDeps.line),
 		});
 	} finally {
 		pool.close(card.relays);
@@ -602,22 +652,30 @@ export function registerPhoneFriendCommands(
 ): void {
 	let session: string | undefined;
 	let line: string | undefined;
+	let lineGiven = false;
 	const phone = program
 		.command("phone-friend")
 		.description("private NIP-17 chat with one contact over public Nostr relays")
 		.option(
 			"--line <name>",
-			"which of your numbers to use: a line name, a contact name (an @ handle works too), or a contact npub; each line has its own key and contact",
+			"which of your numbers to use: a line name, a contact name (a +handle works too, or the older @ form), or a contact npub; each line has its own key and contact",
 			DEFAULT_LINE,
 		)
-		.hook("preAction", (_hooked, action) => {
+		.hook("preAction", (hooked, action) => {
 			({ session, line } = action.optsWithGlobals<{ session?: string; line?: string }>());
+			lineGiven = hooked.getOptionValueSource("line") === "cli";
 		});
 
 	phone
 		.command("number")
 		.description("print your number (npub), your contact, and the listener state")
 		.action(() => phoneNumber(makeDeps(session, line)));
+
+	phone
+		.command("whoami")
+		.description("print the self name your cards carry, or save a new one (shared across every line)")
+		.argument("[name]", "1-32 lowercase letters, digits, or dashes")
+		.action((name: string | undefined) => phoneWhoami(name, makeDeps(session, line)));
 
 	phone
 		.command("name")
@@ -641,16 +699,21 @@ export function registerPhoneFriendCommands(
 		.option("--relay <url...>", "relays to use instead of the saved ones")
 		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
 		.option("--name <name>", "name to give the contact once the call is answered")
-		.action((opts: { relay?: string[]; ttl?: string; name?: string }) => phoneInvite(opts, makeDeps(session, line)));
+		.option("--as <name>", "self name this card carries instead of your saved whoami")
+		.action((opts: { relay?: string[]; ttl?: string; name?: string; as?: string }) =>
+			phoneInvite(opts, makeDeps(session, line)),
+		);
 
 	phone
 		.command("dial")
-		.description("call the owner of a call card: save them as your contact and ring them")
+		.description(
+			"call the owner of a call card: save them as your contact and ring them. With no --line or --name, a v2 card's handle names (or reuses) the line",
+		)
 		.argument("<card>", "the call card from `phone-friend invite`, or - to read it from stdin")
 		.argument("[text]", "first words to send", "hello")
 		.option("--name <name>", "name to give the card's owner as your contact")
 		.action((card: string, text: string, opts: { name?: string }) =>
-			phoneDial(card, text, makeDeps(session, line), opts.name),
+			phoneDial(card, text, makeDeps(session, line), opts.name, lineGiven),
 		);
 
 	phone

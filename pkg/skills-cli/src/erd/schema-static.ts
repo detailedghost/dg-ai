@@ -391,6 +391,14 @@ export function parseSqlMigrations(opts: ParseSqlMigrationsOptions): ParseSqlMig
 					ref: `${fromSchema}.${fromTable}`,
 					detail: `FK ${fk.fromColumn} -> ${fk.toTable}: ambiguous target exists in both ${fromSchema} and public — assumed ${fromSchema}`,
 				});
+			} else if (!ownSchemaHasTarget && !publicHasTarget) {
+				confidence = "inferred";
+				const searched = fromSchema === "public" ? "public" : `${fromSchema} or public`;
+				evidence.push({
+					type: "db-table",
+					ref: `${fromSchema}.${fromTable}`,
+					detail: `FK ${fk.fromColumn} -> ${fk.toTable}: target not found in ${searched} — assumed public`,
+				});
 			}
 			toSchema = ownSchemaHasTarget ? fromSchema : "public";
 		}

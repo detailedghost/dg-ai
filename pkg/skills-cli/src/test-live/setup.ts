@@ -73,11 +73,14 @@ function hasWorkflowDispatchTrigger(content: string): boolean {
 	return scalarTriggerNames(onValue)?.includes("workflow_dispatch") ?? false;
 }
 
-function mappingEntryText(content: string, pair: Pair<Node, Node | null>): string {
+/** Throws if `pair.value` is present but has no source range — only possible with a constructed, non-parsed node. */
+export function mappingEntryText(content: string, pair: Pair<Node, Node | null>): string {
 	const keyRange = pair.key.range;
 	if (!keyRange) return String(pair.key);
-	const valueRange = pair.value?.range;
-	if (!valueRange) return `${content.slice(keyRange[0], keyRange[1])}:`;
+	const keyText = content.slice(keyRange[0], keyRange[1]);
+	if (!pair.value) return `${keyText}:`;
+	const valueRange = pair.value.range;
+	if (!valueRange) throw new TestLiveError(`could not find a source range for the value of '${keyText}'`);
 	return content.slice(keyRange[0], valueRange[1]);
 }
 

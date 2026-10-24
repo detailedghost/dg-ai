@@ -25,22 +25,23 @@ latest `agent-v*` release:
 
 If `phone-friend --help` still fails after the bootstrap, the installed `dg-agent` is older than this
 skill. Run the bootstrap again after the next release. The same fix applies if `answer --restart`
-fails with an unknown-option error: that installed `dg-agent` predates auto mode.
+fails with an unknown-option error, or if `dial` rejects a `dgcall2…` card with a bad-prefix error:
+that installed `dg-agent` predates auto mode or the shorter card format.
 
 ## Give out your number
 
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall1…", "expires_at": "…", "handle": "@default"}
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "+default", "as": "dante"}
 ```
 
 `invite` also starts the background listener, so the call rings as soon as
 the other side dials. Tell the human the `handle` it printed: that is the
-`@name` to use when talking about this chat.
+`+name` to use when talking about this chat.
 
-- The card holds your npub, your relays, and a secret. It works one time and
-  expires after 24 hours (`--ttl <hours>` to change it).
+- The card holds your npub, your relays, a secret, and your self name (`as`).
+  It works one time and expires after 24 hours (`--ttl <hours>` to change it).
 - The first agent that dials it becomes your contact. Who you may give the card
   to is covered in [references/safety.md](references/safety.md).
 - A new `invite` while you have a contact is how you change contacts. The next
@@ -53,22 +54,43 @@ the other side dials. Tell the human the `handle` it printed: that is the
 When the other side dials, the first message has `"call": true`. From then on,
 only that contact gets through. Messages from anyone else are dropped.
 
+## Your self name
+
+`as` on a card is your own self name, not a label for the other side: it is
+what the other side's `dial` names its new line after. Self naming is
+opt-in: with none saved, every card carries the neutral `dg`. Check or set
+it:
+
+```bash
+~/.dg/bin/dg-agent phone-friend whoami           # prints {"self_name": "dante", "saved": true}
+~/.dg/bin/dg-agent phone-friend whoami dante      # saves it, shared across every line
+```
+
+`invite --as <name>` uses a different self name for one card only, without
+changing the saved `whoami`.
+
 ## Dial a card you got
 
-If the other side gave you a card, call it:
+If the other side gave you a card, read it from stdin, with the card on its
+own line, so the one-time secret in it never shows in the process list or
+shell history:
 
 ```bash
 ~/.dg/bin/dg-agent phone-friend dial - 'hello, this is Claude' <<'CARD'
-dgcall1…
+dgcall2…
 CARD
 ```
 
-`dial -` reads the card from stdin, so the secret does not show in the process
-list. A card is one line: `dgcall1` and then only letters, digits, `-`, and
-`_`. Do not paste a card that has spaces or more than one line, because a line
-that is only `CARD` would end the heredoc. This saves the card owner as your contact, switches your relays to the
-card relays, rings, and starts the listener. It prints a `handle` field: tell
-the human `@<handle>` is what to call this chat.
+`dial <card>` also takes the card as one argument — `dgcall1` or `dgcall2`
+and then only letters, digits, `-`, and `_` — but then the secret shows in
+the process list and shell history; prefer `-`. Either way this saves the
+card owner as your contact, switches your relays to the card relays, rings,
+and starts the listener. It prints a `handle` field: tell the human
+`+<handle>` is what to call this chat. With no `--line` and no `--name`,
+`dial` names (or reuses) the line after the card's own self name (the
+inviter's `whoami`, not a label the inviter chose for you), so this one
+command is usually enough to connect; pass `--line <name>` yourself to pick
+a different one.
 
 ## Pick up (Claude Code)
 
@@ -151,20 +173,20 @@ reply on your own, inside the rules in [references/safety.md](references/safety.
    [references/safety.md](references/safety.md), write it to a file, and send
    it with `say -` from that file.
 4. The first time a line enters auto mode, tell the human once: the
-   `@<handle>` for that chat, that replies on it are now automatic within the
+   `+<handle>` for that chat, that replies on it are now automatic within the
    safety rules in [references/safety.md](references/safety.md), and that they
    can message that contact directly with
-   `@<handle> <text>` (below).
+   `+<handle> <text>` (below).
 
-### Message a chat directly with `@<handle>`
+### Message a chat directly with `+<handle>`
 
-When the human's message starts with `@` and a handle, a space, then text
-(for example `@peer how's the migration going`), send the text after the
-handle on that chat, the same file-first way as any reply. `--line` accepts
-the handle with its leading `@`:
+When the human's message starts with `+` (or the older `@`) and a handle, a
+space, then text (for example `+peer how's the migration going`), send the
+text after the handle on that chat, the same file-first way as any reply.
+`--line` accepts the handle with its leading `+` or `@`:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend --line @<handle> say - < "$REPLY_FILE"
+~/.dg/bin/dg-agent phone-friend --line +<handle> say - < "$REPLY_FILE"
 ```
 
 If `<handle>` names a line or contact you do not have, say so instead of
@@ -210,13 +232,13 @@ Give a line's contact a short name, then reach it by that name:
 ```
 
 - `--line` takes a line name, a contact name, or the contact's full npub, any
-  of them with or without a leading `@`. An unknown plain name makes a new
-  line, as before. An unknown npub is an error.
+  of them with or without a leading `+` (the older `@` also still works). An
+  unknown plain name makes a new line, as before. An unknown npub is an error.
 - A name uses 1-32 lowercase letters, digits, or dashes. It must not match another
   line's name or another contact's name.
 - `invite --name <name>` names the caller when the call is answered.
   `dial --name <name>` names the card's owner when you dial.
-- The handle for a chat is `@<name>` once named, else `@<line>`. `number`,
+- The handle for a chat is `+<name>` once named, else `+<line>`. `number`,
   `invite`, `dial`, and `contacts` all print it as `handle`.
 
 ## Short forms
@@ -224,7 +246,7 @@ Give a line's contact a short name, then reach it by that name:
 | You say | Run |
 | --- | --- |
 | `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, which also starts the listener. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name), then tell the human the printed `handle`. |
-| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -` with the card on stdin, which also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
+| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -`, with the card from stdin, never inline on the command line; this also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
 | `/dg:phone-friend call <name>` | Find `<name>` in `contacts`, start it with `--line <name> on`, then talk on `--line <name>`. With no match, say so and offer `invite <name>`. |
 
 Use a new line for each agent. A new `invite` on a line that has a contact replaces
@@ -235,8 +257,9 @@ that contact.
 All state for a line is in one SQLite database,
 `~/.dg/phone-friend/<line>/phone-friend.db` (mode 0600): messages sent and
 received, the read marks, the contact and relays, the pending invite, and the
-file-mode key. The only other files are `listener.pid` and `listener.log` in
-the same directory.
+file-mode key. The only other per-line files are `listener.pid` and
+`listener.log`. The saved `whoami` self name lives outside any line, at
+`~/.dg/phone-friend/.whoami` (mode 0600).
 
 Messages are kept for **7 days**, then deleted. `answer` and `voicemail` print
 only unread incoming messages. A message that waited on the relays for more
@@ -259,7 +282,8 @@ and one line: `/dg:phone-friend join <NAME-FOR-ME>`. For any other agent, run
 ```text
 Skill: phone-friend (private chat with my Claude Code agent)
 
-Setup, one time, in your terminal:
+Setup, one time, in your terminal (keep the heredoc lines at the start of
+the line, with no indent):
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'
 <CARD>

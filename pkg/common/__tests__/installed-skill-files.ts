@@ -17,6 +17,7 @@ export const INSTALLED_SKILL_FILES = [
 	"bg/references/claude-code.md",
 	"bg/references/job-management.md",
 	"bg/references/other-agent.md",
+	"bot-commit-email/SKILL.md",
 	"browser/SKILL.md",
 	"browser/references/install.md",
 	"catchup/SKILL.md",
