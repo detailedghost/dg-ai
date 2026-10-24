@@ -11,7 +11,7 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
-		"commander": "^14.0.0",
+		"commander": "^15.0.0",
 		"nostr-tools": "^2.25.2"
 	},
 	"devDependencies": {
