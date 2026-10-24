@@ -367,19 +367,24 @@ async function readVerifiedPriorNotes(
 }
 
 /**
- * Prior round blocks for this slug. Reads lineage.md when present; otherwise
- * migrates the legacy `## Rounds` section of an already-verified NOTES.md, so
- * an older same-slug chain started before lineage.md existed still resumes.
+ * Prior round blocks for this slug, only once `priorNotes` confirms a
+ * verified same-question NOTES.md exists — never read a same-slug lineage.md
+ * left over from an unrelated question with no NOTES.md to vouch for it.
+ * Reads lineage.md when present; otherwise migrates the legacy `## Rounds`
+ * section of that NOTES.md, so an older chain started before lineage.md
+ * existed still resumes.
  */
 async function readPriorRounds(
 	seams: AnswerExportSeams,
 	paths: AnswerPaths,
 	priorNotes: string | undefined,
 ): Promise<string[]> {
-	try {
-		return openLineageRounds(await seams.readText(paths.lineage));
-	} catch (error) {
-		if (!isMissingFile(error)) throw error;
+	if (priorNotes !== undefined) {
+		try {
+			return openLineageRounds(await seams.readText(paths.lineage));
+		} catch (error) {
+			if (!isMissingFile(error)) throw error;
+		}
 	}
 	return legacyOpenRounds(priorNotes);
 }

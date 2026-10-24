@@ -626,6 +626,55 @@ describe("proto plant command", () => {
 			);
 		});
 
+		test("ignores a stale lineage.md left over from an unrelated question when NOTES.md is missing", async () => {
+			const url = "https://example.test/account?chain=stale-lineage";
+			const firstPlan = buildPlan(url, {
+				question: "Which account summary works best?",
+			});
+			const harness = await plantHarness(firstPlan);
+			const verdictFor = (verdict: Record<string, string>) =>
+				JSON.stringify({
+					slug: firstPlan.slug,
+					ts: 1_721_234_568_100,
+					...verdict,
+				});
+			const plant = (verdict: Record<string, string>) =>
+				runCli(
+					["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
+					{ ...harness.env, DG_TEST_VERDICT: verdictFor(verdict) },
+				);
+			const notesPath = join(
+				harness.projectRoot,
+				".agents",
+				"prototype",
+				firstPlan.slug,
+				"NOTES.md",
+			);
+			const lineagePath = join(dirname(notesPath), "lineage.md");
+
+			const opened = await plant({
+				action: "approve",
+				selectedKey: "compact",
+				notes: "keep going",
+			});
+			expect(opened.code).toBe(0);
+			await expect(readFile(lineagePath, "utf8")).resolves.toContain(
+				"## round-1",
+			);
+
+			await rm(notesPath, { force: true });
+			const secondPlan = buildPlan(url, {
+				question: "A completely different question",
+			});
+			await writeFile(harness.planPath, JSON.stringify(secondPlan));
+
+			const again = await plant({ action: "approve", selectedKey: "detailed" });
+			expect(again.code).toBe(0);
+			const lineage = await readFile(lineagePath, "utf8");
+			expect(lineage).toContain("## round-1\n- base: none");
+			expect(lineage).not.toContain("## round-2");
+		});
+
 		test("keeps a note line that mentions status from closing the round", async () => {
 			const { plant, lineagePath } = await chainHarness("edge=status");
 			await plant({
