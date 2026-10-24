@@ -352,6 +352,53 @@ describe("prototype ui", () => {
 		expect((await cli(["status", slug]).done).stdout).toBe("B\n");
 	});
 
+	test("status --json reports the recorded source, and --require-pending fails loudly on a stale pick", async () => {
+		const name = "hand-over-demo";
+		const pending = await cli(["status", name, "--require-pending"]).done;
+		expect(pending.exitCode).toBe(0);
+		expect(pending.stdout).toBe("pending\n");
+
+		await cli(["confirm", name, "B", "--notes=ship it"]).done;
+		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
+			status: "B",
+			source: "cli",
+		});
+
+		const stale = await cli(["status", name, "--require-pending"]).done;
+		expect(stale.exitCode).toBe(1);
+		expect(stale.stdout).toBe("");
+		expect(stale.stderr).toMatch(/not "pending"/);
+	});
+
+	test("--require-pending does not consume the pick it refuses to report", async () => {
+		const name = "hand-over-no-consume-demo";
+		await cli(["confirm", name, "B", "--notes=ship it"]).done;
+		await cli(["status", name, "--require-pending"]).done;
+		expect((await cli(["wait", name, "--json"]).done).stdout).toBe(
+			'{"status":"ok","variant":"B","notes":"ship it"}\n',
+		);
+	});
+
+	test("confirm --source=TEXT records that value as the source", async () => {
+		const name = "source-override-demo";
+		await cli(["confirm", name, "B", "--source=automation"]).done;
+		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
+			status: "B",
+			source: "automation",
+		});
+	});
+
+	test("confirm --selftest writes to <name>-selftest, never the real name's sentinel or waiter", async () => {
+		const name = "selftest-demo";
+		await cli(["confirm", name, "Z", "--selftest", "--notes=automated click"]).done;
+
+		expect((await cli(["status", name]).done).stdout).toBe("pending\n");
+		const timedOut = await cli(["wait", name, "--timeout=1"]).done;
+		expect(timedOut.exitCode).toBe(1);
+		expect(timedOut.stdout).toBe("timeout\n");
+
+		expect((await cli(["status", `${name}-selftest`]).done).stdout).toBe("Z\n");
+	});
 
 	test("times out with status 1 and a timeout line when nothing is decided", async () => {
 		const run = cli([

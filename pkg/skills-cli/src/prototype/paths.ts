@@ -15,6 +15,7 @@ export interface SentinelPaths {
 	decision: string;
 	reload: string;
 	changes: string;
+	source: string;
 }
 
 export function assertProtoName(name: string): string {
@@ -85,5 +86,6 @@ export function sentinelPaths(dir: string): SentinelPaths {
 		decision: join(dir, ".decision"),
 		reload: join(dir, ".reload"),
 		changes: join(dir, ".changes"),
+		source: join(dir, ".source"),
 	};
 }

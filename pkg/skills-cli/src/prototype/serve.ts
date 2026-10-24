@@ -132,6 +132,7 @@ function recordDecision(
 		);
 	const notes = text(body.notes);
 	if (action === "reject") {
+		writeSentinel(paths.source, "browser\n");
 		writeSentinel(paths.reject, notes || "\n");
 		return Response.json({ ok: true });
 	}
@@ -147,6 +148,7 @@ function recordDecision(
 			{ status: 400 },
 		);
 	if (notes) writeSentinel(paths.notes, notes);
+	writeSentinel(paths.source, "browser\n");
 	writeSentinel(paths.selection, `${variant}\n`);
 	return Response.json({ ok: true });
 }

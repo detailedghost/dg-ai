@@ -80,6 +80,18 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 
 **Endpoint security.** Dev only, localhost only. The variant key is checked against the caller-supplied list for `confirm`. The check is skipped for `reject`.
 
+**Who made the pick.** Every sentinel write also records `.source`: `browser` from a real page click (`prototype serve`, `prototype ui`, and every endpoint template), `cli` from `prototype confirm` run directly, or whatever `prototype confirm --source=TEXT` named. `prototype status <name> --json` prints `{"status":...,"source":...}`; the plain (non-JSON) form is unchanged. Use this to tell a real decision apart from one recorded by hand.
+
+**Self-testing a decision bar before handing it over.** Verifying that Approve/Reject actually post correctly (see "Rendering — local-first, ALWAYS") is a real click against a real endpoint, and it writes a real sentinel — never run it against the prototype's own `<name>`, or the self-test pick and the user's real one become indistinguishable. Run `prototype confirm <name> <variant> --selftest` instead (it writes to `<name>-selftest`, a throwaway sentinel directory `wait` and `status` for `<name>` never look at), then confirm the real name is still clean before calling the page live and again right before any `prototype wait <name>`:
+
+```sh
+~/.dg/bin/dg-skills prototype status <name> --require-pending
+```
+
+`--require-pending` exits non-zero with an error instead of printing a stale status when `<name>` is not `pending` — run it right before reporting the prototype as ready, and again right before blocking on `wait`, treating a non-zero exit as a bug to find, not a status to report. Once a pick does land in `<name>`'s own sentinel, claim and act on it directly; a verdict a human did not approve never reaches that sentinel in the first place, so there is nothing left to confirm.
+
+**Reload-in-place for a mounted endpoint.** The Astro switcher polls the same `/prototype-confirm` route with `{action:"status"}` every 2s and reloads when the returned reload token changes; no separate GET route exists for this. React, Next, and Vite switchers skip polling entirely and rely on their dev server's own HMR instead.
+
 ## Shipped templates
 
 `~/.dg/bin/dg-skills prototype components` prints the installed directory that holds the copyable templates. Copy a file into the project instead of writing one from scratch.

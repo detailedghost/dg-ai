@@ -14,6 +14,7 @@ import {
 	confirm,
 	formatDecision,
 	formatWait,
+	readSource,
 	status,
 	wait,
 } from "./sentinels";
@@ -53,6 +54,34 @@ function extStatus(name: string): string | undefined {
 	return undefined;
 }
 
+/**
+ * Write a status result, recording who made it when known, and refuse with a
+ * non-zero exit when `--require-pending` asked for "pending" and got
+ * something else — the hand-over check that catches a stale or self-test
+ * pick before the page is reported live, or before anything waits on it.
+ */
+function reportStatus(
+	paths: SentinelPaths,
+	resolved: string,
+	flags: Flags,
+	name: string,
+): number {
+	if (flags.requirePending && resolved !== "pending") {
+		process.stderr.write(
+			`prototype: status for "${name}" is "${resolved}", not "pending" — refusing to report the page as newly live\n`,
+		);
+		return 1;
+	}
+	if (flags.json) {
+		write(
+			`${JSON.stringify({ status: resolved, source: readSource(paths) ?? null })}\n`,
+		);
+	} else {
+		write(`${resolved}\n`);
+	}
+	return 0;
+}
+
 export const USAGE = `Usage: prototype <command> [options]
 
   ui <manifest|plan.json|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open]
@@ -60,9 +89,12 @@ export const USAGE = `Usage: prototype <command> [options]
   serve <html-file> <name> [--light] [--port=PORT] [--idle=SEC] [--dir=PATH]
                                                  Serve a self-contained prototype page
   wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected or rejected
-  confirm <name> <variant> [--light] [--notes=TEXT]
-                                                 Write the selection sentinel (and optional notes)
-  status <name> [--light]                        Print the selection, "rejected", or "pending"
+  confirm <name> <variant> [--light] [--notes=TEXT] [--selftest] [--source=TEXT]
+                                                 Write the selection sentinel (and optional notes).
+                                                 --selftest writes to <name>-selftest instead.
+                                                 --source names who decided (default "cli").
+  status <name> [--light] [--json] [--require-pending]
+                                                 Print the selection, "rejected", or "pending"
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
   await-decision <name> [--timeout=SEC] [--light] [--json]
@@ -77,8 +109,8 @@ export const USAGE = `Usage: prototype <command> [options]
 
 const NAME_COMMANDS: Record<string, readonly string[]> = {
 	wait: ["--timeout", "--light", "--json"],
-	confirm: ["--light", "--notes"],
-	status: ["--light"],
+	confirm: ["--light", "--notes", "--selftest", "--source"],
+	status: ["--light", "--json", "--require-pending"],
 	path: ["--light"],
 	"await-decision": ["--timeout", "--light", "--json"],
 	"decision-path": ["--light"],
@@ -108,10 +140,15 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	if (command === "wait" && session)
 		return waitSession(session, flags.timeoutSec);
 	if (command === "status" && session) {
-		write(`${statusSession(session)}\n`);
-		return 0;
+		return reportStatus(
+			sentinelPaths(session.sentinelDir),
+			statusSession(session),
+			flags,
+			name,
+		);
 	}
-	const paths = locate(name, flags);
+	const targetName = flags.selftest ? `${name}-selftest` : name;
+	const paths = locate(targetName, flags);
 	switch (command) {
 		case "wait": {
 			const result = await wait(paths, flags.timeoutSec);
@@ -124,12 +161,16 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			return result.status === "timeout" ? 1 : 0;
 		}
 		case "confirm":
-			confirm(paths, variant as string, flags.notes);
+			confirm(paths, variant as string, flags.notes, flags.source);
 			return 0;
 		case "status": {
 			const local = status(paths);
-			write(`${local === "pending" ? (extStatus(name) ?? local) : local}\n`);
-			return 0;
+			return reportStatus(
+				paths,
+				local === "pending" ? (extStatus(name) ?? local) : local,
+				flags,
+				name,
+			);
 		}
 		case "path":
 			write(`${paths.selection}\n`);

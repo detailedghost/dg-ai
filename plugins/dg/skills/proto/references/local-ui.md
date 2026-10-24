@@ -101,6 +101,8 @@ A page served by `prototype serve` or `prototype ui` skips this step. The server
 
 **Someone must end up waiting.** A click writes a durable sentinel (see "Claim an outstanding pick" below), but nothing reports it until something calls `wait` or `status` on it. If a builder subagent mounts the prototype and hands off to a different session or the main loop, decide explicitly which side blocks on `prototype wait <name>` — do not hand off assuming the other side already is, or already will. If neither side can block right now, say so and give the exact `prototype wait <name>` (or `status <name>`) command in the handoff, the same way an AFK handoff does below.
 
+**Before reporting the page live, verify it is actually clean.** If you ran a self-test of the decision bar's own wiring (see "Self-testing a decision bar before handing it over" in [local-build.md](local-build.md)), that self-test must use `confirm --selftest`, never a plain `confirm <name>` — then confirm with `~/.dg/bin/dg-skills prototype status <name> --require-pending` both before telling anyone the page is ready, and again immediately before any `prototype wait <name>` call, including one picked up from a hand-off note. A non-zero exit there means something (a leftover pick, a self-test that targeted the wrong name) already landed in the real sentinel; treat that as a bug to fix, not noise to work around.
+
 **Hand-wire it instead when one document must own every variant**: shared CSS, JS, or state that per-variant fragments cannot express, the usual shape of a motion prototype. Paste `prototype-decision-bar.html` into the page, then run both commands from the same directory every time:
 
 ```sh
@@ -126,6 +128,8 @@ For a page that `prototype ui` serves, check and claim with the chain key. `prot
 ```
 
 The second command consumes the decision. Use `prototype status <name>` with no session only for a hand-wired page.
+
+**A claimed pick is the user's decision; act on it with no confirmation question.** The sentinel is the user's real input by construction — nothing a human did not click or type reaches it (`confirm --selftest` writes to `<name>-selftest`, never `<name>`; see local-build.md). Do not re-ask "did you mean to pick B?" once `wait` or `status` reports it. The only reliability work is getting a real pick noticed at all, which "Someone must end up waiting" above and `--require-pending` exist for.
 
 **Do not rely on a live foreground `wait` surviving the session.** If you background it, or hand the prototype off while a pick is outstanding, leave a breadcrumb. Record the prototype name and the literal `~/.dg/bin/dg-skills prototype wait <name>` command both in the handoff note and in `NOTES.md`. A note that only says "awaiting the user's pick" strands the selection.
 

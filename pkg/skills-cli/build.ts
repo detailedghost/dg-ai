@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -54,14 +56,20 @@ export async function buildSkillsCli(options: {
 	entrypoint?: string;
 	plugins?: Bun.BunPlugin[];
 }): Promise<void> {
+	const entrypoint = options.entrypoint ?? join(import.meta.dir, "src/index.ts");
+	const buildSha = createHash("sha1").update(readFileSync(entrypoint)).digest("hex");
+
 	const result = await Bun.build({
-		entrypoints: [options.entrypoint ?? join(import.meta.dir, "src/index.ts")],
+		entrypoints: [entrypoint],
 		compile: {
 			outfile: options.outfile,
 			...(options.target ? { target: options.target } : {}),
 		},
 		external: ["chromium-bidi", "chromium-bidi/*"],
 		plugins: [playwrightMetadata, ...(options.plugins ?? [])],
+		define: {
+			"process.env.DG_SKILLS_BUILD_SHA": JSON.stringify(buildSha),
+		},
 	});
 	if (!result.success)
 		throw new AggregateError(result.logs, "Skills CLI compilation failed.");

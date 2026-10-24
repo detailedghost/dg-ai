@@ -109,6 +109,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 			typeof body.notes === "string" && body.notes.length > 0
 				? body.notes
 				: "\n";
+		writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 		writeFileSync(join(protoDir, ".reject"), notes, "utf8");
 		return NextResponse.json({ ok: true });
 	}
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	if (typeof body.notes === "string" && body.notes.trim()) {
 		writeFileSync(join(protoDir, ".notes"), body.notes, "utf8");
 	}
+	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");
 	return NextResponse.json({ ok: true });
 }

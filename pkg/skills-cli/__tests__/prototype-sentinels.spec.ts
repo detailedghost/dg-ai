@@ -15,6 +15,7 @@ import {
 	confirm,
 	formatDecision,
 	formatWait,
+	readSource,
 	status,
 	wait,
 	writeSentinel,
@@ -55,6 +56,22 @@ describe("prototype sentinels", () => {
 		expect(existsSync(p.selection)).toBe(false);
 		expect(existsSync(p.notes)).toBe(false);
 		expect(status(p)).toBe("pending");
+	});
+
+	test("confirm records its source as cli, and a claim consumes it too", async () => {
+		const p = paths();
+		confirm(p, "B");
+		expect(readSource(p)).toBe("cli");
+		await wait(p, 1);
+		expect(existsSync(p.source)).toBe(false);
+		expect(readSource(p)).toBeUndefined();
+	});
+
+	test("a browser-written selection with no .source reports no source", async () => {
+		const p = paths();
+		mkdirSync(p.dir, { recursive: true });
+		writeFileSync(p.selection, "B\n");
+		expect(readSource(p)).toBeUndefined();
 	});
 
 	test("a reject sentinel surfaces its notes and clears the reject and notes files", async () => {

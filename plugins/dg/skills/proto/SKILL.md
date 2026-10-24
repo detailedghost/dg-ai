@@ -10,6 +10,8 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
+`dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
+
 # Prototype
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
@@ -94,6 +96,8 @@ round, builds no new variants, and shows C again for a pick. `approve C: <note>`
 of a new round: `-n` new variants that change only what the note asks. Every round shows in the
 same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
 or "stop" (`~/.dg/bin/dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`~/.dg/bin/dg-skills prototype status <name>` is the one command for checking a pick, in every
+shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
 
 **Series exception.** When prototypes run one after another (a planned set, such as one screen per
 prototype), keep the same tab for the whole set: run each with `--series` and one shared

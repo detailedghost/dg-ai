@@ -65,15 +65,28 @@ function claimExisting(paths: SentinelPaths): WaitResult | undefined {
 			readFileSync(paths.selection, "utf8").split("\n")[0] ?? ""
 		).replace(/[\r\s]/g, "");
 		const notes = existsSync(paths.notes) ? readTrimmed(paths.notes) : "";
-		removeSentinels(paths.selection, paths.notes);
+		removeSentinels(paths.selection, paths.notes, paths.source);
 		return { status: "ok", variant, notes };
 	}
 	if (existsSync(paths.reject)) {
 		const notes = readTrimmed(paths.reject);
-		removeSentinels(paths.reject, paths.notes);
+		removeSentinels(paths.reject, paths.notes, paths.source);
 		return { status: "rejected", notes };
 	}
 	return undefined;
+}
+
+/**
+ * Who recorded the pending decision: `browser` from a real page click, `cli`
+ * from a direct `prototype confirm`, or whatever `--source=` named.
+ */
+export function readSource(paths: SentinelPaths): string | undefined {
+	try {
+		const value = readTrimmed(paths.source);
+		return value.length > 0 ? value : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 async function poll<T>(
@@ -95,9 +108,11 @@ export function confirm(
 	paths: SentinelPaths,
 	variant: string,
 	notes = "",
+	source = "cli",
 ): void {
 	mkdirSync(paths.dir, { recursive: true });
 	if (notes) writeSentinel(paths.notes, notes);
+	writeSentinel(paths.source, `${source}\n`);
 	writeSentinel(paths.selection, `${variant}\n`);
 }
 
