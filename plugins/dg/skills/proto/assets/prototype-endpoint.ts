@@ -80,20 +80,25 @@ function record(body: ConfirmBody): {
 	if (!validName(body?.name)) {
 		return { status: 400, body: { error: "invalid name" } };
 	}
-	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
-	const sentinelPath = resolveSentinelPath(targetName);
-	const protoDir = dirname(sentinelPath);
 
 	if (body.action === "status") {
+		const reloadDir = dirname(resolveSentinelPath(body.name));
 		try {
 			return {
 				status: 200,
-				body: { token: readFileSync(join(protoDir, ".reload"), "utf8").trim() },
+				body: {
+					ok: true,
+					token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
+				},
 			};
 		} catch {
-			return { status: 200, body: { token: "0" } };
+			return { status: 200, body: { ok: true, token: "0" } };
 		}
 	}
+
+	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
+	const sentinelPath = resolveSentinelPath(targetName);
+	const protoDir = dirname(sentinelPath);
 	mkdirSync(protoDir, { recursive: true });
 
 	if (body.action === "reject") {

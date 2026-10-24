@@ -134,7 +134,7 @@ describe("prototype endpoint template", () => {
 	test("a status action reads the reload token without writing any sentinel", async () => {
 		const unbuilt = await post({ name: "status-demo", action: "status" });
 		expect(unbuilt.status).toBe(200);
-		expect(await unbuilt.json()).toEqual({ token: "0" });
+		expect(await unbuilt.json()).toEqual({ ok: true, token: "0" });
 		expect(
 			existsSync(join(sandbox, "project", ".agents", "prototype", "status-demo")),
 		).toBe(false);
@@ -143,8 +143,25 @@ describe("prototype endpoint template", () => {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, ".reload"), "42\n", "utf8");
 		const built = await post({ name: "status-demo", action: "status" });
-		expect(await built.json()).toEqual({ token: "42" });
+		expect(await built.json()).toEqual({ ok: true, token: "42" });
 		expect(existsSync(join(dir, ".selection"))).toBe(false);
+	});
+
+	test("a status action ignores selftest:true and always reads the real name's reload token", async () => {
+		const dir = join(sandbox, "project", ".agents", "prototype", "status-real");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, ".reload"), "7\n", "utf8");
+		const response = await post({
+			name: "status-real",
+			action: "status",
+			selftest: true,
+		});
+		expect(await response.json()).toEqual({ ok: true, token: "7" });
+		expect(
+			existsSync(
+				join(sandbox, "project", ".agents", "prototype", "status-real-selftest"),
+			),
+		).toBe(false);
 	});
 
 	test.each([

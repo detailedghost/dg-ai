@@ -92,19 +92,22 @@ export const POST: APIRoute = async ({ request }) => {
 	if (!validName(body?.name)) {
 		return Response.json({ error: "invalid name" }, { status: 400 });
 	}
+
+	if (body.action === "status") {
+		const reloadDir = dirname(resolveSentinelPath(body.name));
+		try {
+			return Response.json({
+				ok: true,
+				token: readFileSync(join(reloadDir, ".reload"), "utf8").trim(),
+			});
+		} catch {
+			return Response.json({ ok: true, token: "0" });
+		}
+	}
+
 	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
 	const sentinelPath = resolveSentinelPath(targetName);
 	const protoDir = dirname(sentinelPath);
-
-	if (body.action === "status") {
-		try {
-			return Response.json({
-				token: readFileSync(join(protoDir, ".reload"), "utf8").trim(),
-			});
-		} catch {
-			return Response.json({ token: "0" });
-		}
-	}
 	mkdirSync(protoDir, { recursive: true });
 
 	if (body.action === "reject") {
