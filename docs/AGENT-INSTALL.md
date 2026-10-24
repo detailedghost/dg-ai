@@ -89,14 +89,14 @@ It never fetches `dg-daemon` or the extension, and never installs personas,
 which only the Claude-side CLI uses.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.2/pkg/skills-cli/bootstrap.sh | sh -s -- --agent-only
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --agent-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_AGENT_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.2/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 `DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
