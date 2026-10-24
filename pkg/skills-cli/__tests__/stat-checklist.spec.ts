@@ -221,11 +221,11 @@ describe("renderers", () => {
 		expect(out).toContain("has a tab");
 	});
 
-	test("renderLong's total cites a winning sub-item by its parent's top-level number, since every sub-item row prints '-' in ORDER", () => {
+	test("renderLong's total names a winning sub-item and the parent number a reader can see, since the sub-item row prints '-' in ORDER", () => {
 		const parent = item("parent", { status: "running", eta: "~15 min" });
 		parent.children.push(item("child", { status: "running", eta: "~1 hr" }));
 		const model: ChecklistModel = { open: [item("other"), parent], done: [] };
-		expect(renderLong(model)).toContain("# Total: ~1 hr (critical path: 2 child)");
+		expect(renderLong(model)).toContain("# Total: ~1 hr (critical path: child, under 2)");
 		expect(computeTotal(model)).toEqual({ bucket: "~1 hr", label: { order: "2.1", text: "child" } });
 	});
 
