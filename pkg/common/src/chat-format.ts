@@ -13,6 +13,7 @@ import {
 } from "./assert";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
 import {
+	PROTO_MAX_TIMEOUT_MS,
 	validateProtoBrowserData,
 	validateProtoIdentifier,
 	validateProtoMarkedUrl,
@@ -240,6 +241,7 @@ export type ChatFrame =
 			phase: "scrape" | "plant";
 			slug: string;
 			markedUrl: string;
+			timeoutMs?: number;
 	  })
 	| (Envelope & {
 			type: "proto-browser-result";
@@ -794,6 +796,17 @@ function validateFrameBody(
 			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
 			validateProtoIdentifier(value.slug, `${path}.slug`);
 			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
+			if (value.timeoutMs !== undefined) {
+				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
+				if (
+					value.timeoutMs <= 0 ||
+					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
+				) {
+					fail(
+						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
+					);
+				}
+			}
 			return;
 		case "proto-browser-result":
 			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });

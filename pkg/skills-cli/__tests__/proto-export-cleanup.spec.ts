@@ -116,8 +116,8 @@ function buildStyleGuide(url: string) {
 	};
 }
 
-function previewDataUrl(contents: string): string {
-	return `data:image/png;base64,${Buffer.from(contents).toString("base64")}`;
+function previewDataUrl(contents: string, mime = "image/jpeg"): string {
+	return `data:${mime};base64,${Buffer.from(contents).toString("base64")}`;
 }
 
 async function protoHarness(
@@ -222,10 +222,41 @@ describe("proto plant answer export", () => {
 		expect(operations).toEqual([
 			"write:/answer/index.html",
 			"write:/answer/styles.css",
-			"write-binary:/answer/preview.png",
+			"write-binary:/answer/preview.jpg",
 			"write:/answer/lineage.md",
 			"write:/answer/NOTES.md",
 		]);
+	});
+
+	test("writes a PNG data URL to preview.png", async () => {
+		const plan = buildPlan("https://example.test/png-export");
+		const verdict = {
+			slug: plan.slug,
+			action: "approve",
+			selectedKey: "compact",
+			ts: 1_721_234_567_999,
+		} satisfies Verdict;
+		const operations: string[] = [];
+
+		await exportApprovedAnswer(
+			plan,
+			verdict,
+			previewDataUrl("selected-preview-png", "image/png"),
+			{
+				answerPath: (_slug, file) => `/answer/${file}`,
+				writeBinary: async (destination) => {
+					operations.push(`write-binary:${destination}`);
+				},
+				ensureSafePaths: async () => {},
+				readText: async () => {
+					throw Object.assign(new Error("not found"), { code: "ENOENT" });
+				},
+				removeFile: async () => {},
+				writeText: async () => {},
+			},
+		);
+
+		expect(operations).toEqual(["write-binary:/answer/preview.png"]);
 	});
 
 	test("writes a cwd-relative self-contained answer and preview before the completion marker", async () => {
@@ -255,7 +286,7 @@ describe("proto plant answer export", () => {
 		const [index, styles, preview, notes] = await Promise.all([
 			readFile(expectedIndexPath, "utf8"),
 			readFile(join(harness.answerDirectory, "styles.css"), "utf8"),
-			readFile(join(harness.answerDirectory, "preview.png"), "utf8"),
+			readFile(join(harness.answerDirectory, "preview.jpg"), "utf8"),
 			readFile(join(harness.answerDirectory, "NOTES.md"), "utf8"),
 		]);
 		expect(index).toContain("<style>");
@@ -289,6 +320,7 @@ describe("proto plant answer export", () => {
 			writeFile(join(first.answerDirectory, "index.html"), "stale index"),
 			writeFile(join(first.answerDirectory, "styles.css"), "stale styles"),
 			writeFile(join(first.answerDirectory, "preview.png"), "stale preview"),
+			writeFile(join(first.answerDirectory, "preview.jpg"), "stale jpeg"),
 		]);
 
 		const secondResult = await runCli(
@@ -305,6 +337,9 @@ describe("proto plant answer export", () => {
 		).not.toBe("stale styles");
 		await expect(
 			readFile(join(first.answerDirectory, "preview.png"), "utf8"),
+		).rejects.toThrow();
+		await expect(
+			readFile(join(first.answerDirectory, "preview.jpg"), "utf8"),
 		).rejects.toThrow();
 
 		const unrelated = await protoHarness({
@@ -339,6 +374,7 @@ describe("proto plant answer export", () => {
 		"index.html",
 		"styles.css",
 		"preview.png",
+		"preview.jpg",
 		"lineage.md",
 		"NOTES.md",
 	]) {

@@ -621,6 +621,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					phase: frame.phase,
 					slug: frame.slug,
 					markedUrl: frame.markedUrl,
+					...(frame.timeoutMs !== undefined
+						? { timeoutMs: frame.timeoutMs }
+						: {}),
 				},
 				(status) => {
 					sendProto({ type: "proto-browser-progress", status });

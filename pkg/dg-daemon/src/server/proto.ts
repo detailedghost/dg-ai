@@ -284,6 +284,7 @@ export async function handleProtoCli(
 				phase: frame.phase,
 				slug: frame.slug,
 				markedUrl: frame.markedUrl,
+				timeoutMs,
 			}),
 		);
 	} catch {

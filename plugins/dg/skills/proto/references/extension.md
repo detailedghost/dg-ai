@@ -132,7 +132,7 @@ with no notes.
 ## Phase 7 — Export and Cleanup
 
 On Approve with no notes, `proto --ext plant` exports the winning self-contained
-`index.html`, editable `styles.css`, optional completed `preview.png`,
+`index.html`, editable `styles.css`, optional completed `preview.jpg`,
 `lineage.md`, and `NOTES.md` marker under `.agents/prototype/<slug>/`, then
 prints the answer path. Approve with notes exports the same files for that
 round, so the latest pick always exists on disk, but the chain stays open.

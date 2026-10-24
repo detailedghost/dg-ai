@@ -78,6 +78,7 @@ explicit:
   The extension checks the same limit again before `tabs.create`.
 - `previewDataUrl` may be a `data:image/png` or `data:image/jpeg` URL of at most
   600,000 characters. The extension captures JPEG and downscales before sending.
+  The CLI writes JPEG bytes to `preview.jpg` and PNG bytes to `preview.png`.
   A preview that still cannot fit is omitted, and the verdict is delivered
   without it. An oversized `proto-browser-result` that reaches the daemon is
   settled the same way, or failed outright, so the CLI does not wait out the
@@ -85,14 +86,22 @@ explicit:
 - A second CLI that reuses a `(sessionId, requestId)` already in flight receives
   `{ ok: false, error: "duplicate requestId" }`. The original pending entry stays.
 - Closing the prototype tab settles the request with an error instead of leaving
-  the CLI blocked until the daemon deadline.
+  the CLI blocked until the daemon deadline. The extension also finishes the
+  request at that relay timeout plus a short margin, and drops any captured
+  preview, so an abandoned tab does not keep the image until it closes.
 - `login-page` is reported only when the browser left `expectedUrl`, or the
   navigation status is 401 or 403 and the page still looks like a sign-in wall.
   A password field on the requested URL is not, by itself, a wall.
 - Planted variation markup is namespaced (`id`, radio `name`, and the references
-  that point at those ids) and its CSS is re-serialized from `CSSStyleSheet`
-  rules inside `@scope`. The content script scrapes or plants only when the
-  background has a pending relay request for that tab.
+  that point at those ids, including `for`, `form`, `list`, `headers`, and
+  `aria-*`). Its CSS is re-serialized from `CSSStyleSheet` rules inside `@scope`,
+  which needs Chrome 118 (`minimum_chrome_version`). Id selectors, id attribute
+  selectors, and `url(#…)` fragments use the same prefix. `@keyframes` are kept
+  under that prefix, outside `@scope`, and `animation` / `animation-name`
+  references are rewritten to match. The content script asks
+  `browser.runtime.sendMessage` whether the tab has a pending relay request
+  before it scrapes or plants, so the Firefox MV2 callback-only `chrome`
+  namespace still receives a reply.
 
 ## Alternatives considered
 

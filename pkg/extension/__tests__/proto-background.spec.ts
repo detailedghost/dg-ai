@@ -2,6 +2,8 @@ import { describe, expect, it, mock } from "bun:test";
 import type { ProtoNotReadyError, StyleGuide, Verdict } from "@dg/common";
 import {
 	createProtoHandler,
+	PROTO_DEADLINE_ERROR,
+	protoExtensionDeadlineMs,
 	registerProto,
 	type ProtoBrowserApi,
 	type ProtoBrowserRequest,
@@ -682,6 +684,50 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			() => {},
 		);
 		await resultPromise;
+	});
+
+	it("finishes and drops the captured preview when the extension deadline passes", async () => {
+		const preview = "data:image/jpeg;base64,cHJldmlldw==";
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 7 })),
+			captureVisibleTab: mock(async () => preview),
+			query: mock(async () => [{ id: 7 }]),
+		});
+		const handler = createProtoHandler({ browserApi: api, deadlineMs: 400 });
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 7, windowId: 1 } },
+				resolve,
+			);
+		});
+		expect(captureResponse).toEqual({ saved: true });
+
+		await expect(resultPromise).resolves.toEqual({
+			ok: false,
+			error: PROTO_DEADLINE_ERROR,
+		});
+		const pending = await new Promise((resolve) => {
+			listener({ type: PROTO_HAS_PENDING }, { tab: { id: 7 } }, resolve);
+		});
+		expect(pending).toEqual({ pending: false });
+		listener(
+			{ type: PROTO_SAVE_VERDICT, verdict: buildVerdict() },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+	});
+
+	it("deadlines a relay request slightly after the daemon timeout", () => {
+		expect(protoExtensionDeadlineMs("scrape")).toBe(50_000);
+		expect(protoExtensionDeadlineMs("plant")).toBe(905_000);
+		expect(protoExtensionDeadlineMs("plant", 1_000)).toBe(6_000);
+		expect(protoExtensionDeadlineMs("scrape", 0)).toBe(50_000);
 	});
 
 	it("refuses to open a non-http URL or one past the marker limit", async () => {

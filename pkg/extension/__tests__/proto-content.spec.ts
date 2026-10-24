@@ -1,4 +1,17 @@
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, mock, test } from "bun:test";
+
+let sendMessageImpl: (
+	message: Record<string, unknown>,
+) => Promise<unknown> = async () => undefined;
+
+mock.module("wxt/browser", () => ({
+	browser: {
+		runtime: {
+			sendMessage: (message: Record<string, unknown>) => sendMessageImpl(message),
+		},
+	},
+}));
+
 import { gzipSync } from "node:zlib";
 import { PROTO_MARKER_KEY } from "@dg/common";
 import {
@@ -104,10 +117,18 @@ function stubGlobals(options: {
 			},
 		},
 	});
+	sendMessageImpl = async (message) => {
+		sent.push(message);
+		if (message.type === PROTO_HAS_PENDING) {
+			return { pending: options.pending ?? true };
+		}
+		return undefined;
+	};
 	return { sent };
 }
 
 afterEach(() => {
+	sendMessageImpl = async () => undefined;
 	for (const key of ["location", "history", "document", "chrome"] as const) {
 		const descriptor = savedGlobals[key];
 		if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -241,4 +262,85 @@ test("does not plant a marked page when the tab has no pending relay request", a
 	expect(sent.some((message) => message.type === PROTO_SAVE_STYLE_GUIDE)).toBe(
 		false,
 	);
+});
+
+test("reads the pending reply through browser.runtime.sendMessage when chrome is callback-only", async () => {
+	const href = "https://example.test/account";
+	const url = markedUrl(href, {
+		phase: "scrape",
+		slug: "account-summary",
+		expectedUrl: href,
+	});
+	const sent: Array<Record<string, unknown>> = [];
+	savedGlobals.location = Object.getOwnPropertyDescriptor(globalThis, "location");
+	savedGlobals.history = Object.getOwnPropertyDescriptor(globalThis, "history");
+	savedGlobals.document = Object.getOwnPropertyDescriptor(globalThis, "document");
+	savedGlobals.chrome = Object.getOwnPropertyDescriptor(globalThis, "chrome");
+	const parsed = new URL(href);
+	const fakeLocation = {
+		href: url,
+		origin: parsed.origin,
+		pathname: parsed.pathname,
+	};
+	Object.defineProperty(globalThis, "location", {
+		configurable: true,
+		value: fakeLocation,
+	});
+	Object.defineProperty(globalThis, "history", {
+		configurable: true,
+		value: {
+			state: null,
+			replaceState(_state: unknown, _title: string, nextUrl: string) {
+				fakeLocation.href = nextUrl;
+			},
+		},
+	});
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: { title: "", querySelector: () => null },
+	});
+	Object.defineProperty(globalThis, "chrome", {
+		configurable: true,
+		value: {
+			runtime: {
+				sendMessage(
+					message: Record<string, unknown>,
+					callback?: (response: unknown) => void,
+				) {
+					sent.push(message);
+					callback?.(
+						message.type === PROTO_HAS_PENDING ? { pending: true } : undefined,
+					);
+				},
+			},
+		},
+	});
+	sendMessageImpl = (message) =>
+		new Promise((resolve) => {
+			const chromeRuntime = (
+				globalThis as {
+					chrome: {
+						runtime: {
+							sendMessage: (
+								message: Record<string, unknown>,
+								callback?: (response: unknown) => void,
+							) => unknown;
+						};
+					};
+				}
+			).chrome.runtime;
+			const result = chromeRuntime.sendMessage(message, resolve);
+			if (result !== undefined) {
+				throw new Error("chrome.runtime.sendMessage returned a value");
+			}
+		});
+
+	expect(capturedContentConfig).toBeDefined();
+	await expect(capturedContentConfig!.main(undefined as never)).rejects.toThrow();
+
+	expect(sent[0]).toEqual({ type: PROTO_HAS_PENDING });
+	expect(sent).toContainEqual({
+		type: PROTO_PROGRESS,
+		status: "ready; scraping the style guide",
+	});
 });

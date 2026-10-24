@@ -405,7 +405,7 @@ type AnswerPaths = {
 	index: string;
 	lineage: string;
 	notes: string;
-	preview: string;
+	previews: { jpg: string; png: string };
 	styles: string;
 };
 
@@ -414,13 +414,31 @@ function answerPaths(plan: ProtoPlan, seams: AnswerExportSeams): AnswerPaths {
 		index: seams.answerPath(plan.slug, "index.html"),
 		lineage: seams.answerPath(plan.slug, "lineage.md"),
 		styles: seams.answerPath(plan.slug, "styles.css"),
-		preview: seams.answerPath(plan.slug, "preview.png"),
+		previews: {
+			jpg: seams.answerPath(plan.slug, "preview.jpg"),
+			png: seams.answerPath(plan.slug, "preview.png"),
+		},
 		notes: seams.answerPath(plan.slug, "NOTES.md"),
 	};
 }
 
 function answerPathList(paths: AnswerPaths): string[] {
-	return [paths.index, paths.lineage, paths.styles, paths.preview, paths.notes];
+	return [
+		paths.index,
+		paths.lineage,
+		paths.styles,
+		paths.previews.jpg,
+		paths.previews.png,
+		paths.notes,
+	];
+}
+
+/** Pick the preview filename whose extension matches the data URL's media type. */
+function previewPathForDataUrl(dataUrl: string, paths: AnswerPaths): string {
+	const mime = /^data:([^;,]+)/i.exec(dataUrl)?.[1]?.toLowerCase();
+	if (mime === "image/jpeg" || mime === "image/jpg") return paths.previews.jpg;
+	if (mime === "image/png") return paths.previews.png;
+	throw new TypeError("prototype preview must be a PNG or JPEG data URL");
 }
 
 async function readVerifiedPriorNotes(
@@ -495,7 +513,8 @@ export async function exportApprovedAnswer(
 	// preview before beginning a same-slug overwrite.
 	await Promise.all([
 		seams.removeFile(paths.notes),
-		seams.removeFile(paths.preview),
+		seams.removeFile(paths.previews.jpg),
+		seams.removeFile(paths.previews.png),
 	]);
 
 	// Keep this order fixed: NOTES.md must only appear after every answer file.
@@ -509,7 +528,10 @@ export async function exportApprovedAnswer(
 	await seams.writeText(paths.styles, selected.css);
 	if (previewDataUrl) {
 		const base64 = previewDataUrl.slice(previewDataUrl.indexOf(",") + 1);
-		await seams.writeBinary(paths.preview, Buffer.from(base64, "base64"));
+		await seams.writeBinary(
+			previewPathForDataUrl(previewDataUrl, paths),
+			Buffer.from(base64, "base64"),
+		);
 	}
 	await seams.writeText(
 		paths.lineage,

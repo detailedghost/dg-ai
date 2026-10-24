@@ -449,6 +449,7 @@ const PROTOTYPE_TAGS = new Set([
 	"br",
 	"button",
 	"code",
+	"datalist",
 	"dd",
 	"details",
 	"div",
@@ -544,13 +545,16 @@ const PROTOTYPE_GLOBAL_ATTRIBUTES = new Set([
 ]);
 const PROTOTYPE_TAG_ATTRIBUTES: Record<string, Set<string>> = {
 	a: new Set(["href"]),
-	button: new Set(["disabled", "name", "type", "value"]),
+	button: new Set(["disabled", "form", "name", "type", "value"]),
+	fieldset: new Set(["form"]),
 	img: new Set(["alt", "height", "src", "width"]),
 	input: new Set([
 		"accept",
 		"autocomplete",
 		"checked",
 		"disabled",
+		"form",
+		"list",
 		"max",
 		"maxlength",
 		"min",
@@ -569,12 +573,13 @@ const PROTOTYPE_TAG_ATTRIBUTES: Record<string, Set<string>> = {
 	optgroup: new Set(["disabled", "label"]),
 	option: new Set(["disabled", "label", "selected", "value"]),
 	progress: new Set(["max", "value"]),
-	select: new Set(["disabled", "multiple", "name", "required", "size"]),
-	td: new Set(["colspan", "rowspan"]),
+	select: new Set(["disabled", "form", "multiple", "name", "required", "size"]),
+	td: new Set(["colspan", "headers", "rowspan"]),
 	textarea: new Set([
 		"autocomplete",
 		"cols",
 		"disabled",
+		"form",
 		"maxlength",
 		"minlength",
 		"name",
@@ -584,7 +589,7 @@ const PROTOTYPE_TAG_ATTRIBUTES: Record<string, Set<string>> = {
 		"rows",
 		"wrap",
 	]),
-	th: new Set(["colspan", "rowspan", "scope"]),
+	th: new Set(["colspan", "headers", "rowspan", "scope"]),
 };
 
 function safePrototypeUrl(
@@ -639,7 +644,9 @@ function preparePrototypeCss(css: string): string {
 			.replace(/\/\*[\s\S]*?\*\//g, "")
 			.replace(/@import\b[^;]*(?:;|$)/gi, "")
 			.replace(/@font-face\s*\{[^}]*\}/gi, "")
-			.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, "none")
+			.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, (match) =>
+				/^url\s*\(\s*(?:#|(["'])#)/i.test(match) ? match : "none",
+			)
 			.replace(/(?:behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
 			.replace(
 				/(position\s*:\s*)(?:fixed|absolute|var\s*\([^)]*\))(\s*!important)?/gi,
@@ -667,39 +674,427 @@ function prototypeStyleSheet(): { new (): CSSStyleSheet } | undefined {
 	return typeof ctor === "function" ? ctor : undefined;
 }
 
-function serializeScopedRules(rules: CSSRuleList): string {
+const ANIMATION_KEYWORDS = new Set([
+	"alternate",
+	"alternate-reverse",
+	"backwards",
+	"both",
+	"ease",
+	"ease-in",
+	"ease-in-out",
+	"ease-out",
+	"forwards",
+	"infinite",
+	"linear",
+	"none",
+	"normal",
+	"paused",
+	"reverse",
+	"running",
+	"step-end",
+	"step-start",
+]);
+
+function cssEscapeIdent(value: string): string {
+	const view = document.defaultView as
+		| (Window & { CSS?: { escape?: (text: string) => string } })
+		| null;
+	const escape =
+		(globalThis as { CSS?: { escape?: (text: string) => string } }).CSS?.escape ??
+		view?.CSS?.escape;
+	if (escape) return escape(value);
+	return value.replace(/[^a-zA-Z0-9_-]/g, (character) => `\\${character}`);
+}
+
+function cssString(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function endOfQuoted(value: string, start: number): number {
+	const quote = value[start];
+	for (let index = start + 1; index < value.length; index += 1) {
+		if (value[index] === "\\") {
+			index += 1;
+			continue;
+		}
+		if (value[index] === quote) return index + 1;
+	}
+	return value.length;
+}
+
+function endOfBlock(
+	value: string,
+	start: number,
+	open: string,
+	close: string,
+): number {
+	let depth = 0;
+	let quote: string | undefined;
+	for (let index = start; index < value.length; index += 1) {
+		const character = value[index];
+		if (quote) {
+			if (character === "\\") {
+				index += 1;
+				continue;
+			}
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character === open) depth += 1;
+		else if (character === close) {
+			depth -= 1;
+			if (depth === 0) return index + 1;
+		}
+	}
+	return value.length;
+}
+
+function indexOfBrace(value: string, start: number): number {
+	let quote: string | undefined;
+	for (let index = start; index < value.length; index += 1) {
+		const character = value[index];
+		if (quote) {
+			if (character === "\\") {
+				index += 1;
+				continue;
+			}
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character === "{") return index;
+	}
+	return -1;
+}
+
+function readCssIdent(
+	value: string,
+	start: number,
+): { raw: string; next: number } | undefined {
+	if (start >= value.length) return undefined;
+	const first = value[start] ?? "";
+	if (first !== "-" && first !== "\\" && !/[A-Za-z_\u0080-\uFFFF]/.test(first)) {
+		return undefined;
+	}
+	let index = start;
+	if (value[index] === "-") index += 1;
+	while (index < value.length) {
+		const character = value[index] ?? "";
+		if (character === "\\") {
+			const hex = /^[0-9a-fA-F]{1,6}/.exec(value.slice(index + 1));
+			if (hex) {
+				index += 1 + hex[0].length;
+				if (value[index] === " ") index += 1;
+				continue;
+			}
+			index += 2;
+			continue;
+		}
+		if (!/[A-Za-z0-9_\u0080-\uFFFF-]/.test(character)) break;
+		index += 1;
+	}
+	if (index === start) return undefined;
+	return { raw: value.slice(start, index), next: index };
+}
+
+/** Rewrite `#id` selectors to the prefixed id. Declaration colors are not selectors. */
+function rewriteHashIds(value: string, ids: ReadonlyMap<string, string>): string {
+	if (ids.size === 0 || !value.includes("#")) return value;
+	let result = "";
+	for (let index = 0; index < value.length; index += 1) {
+		const character = value[index];
+		if (character === '"' || character === "'") {
+			const end = endOfQuoted(value, index);
+			result += value.slice(index, end);
+			index = end - 1;
+			continue;
+		}
+		if (character === "#") {
+			const ident = readCssIdent(value, index + 1);
+			if (ident) {
+				const mapped = ids.get(decodePrototypeCssEscapes(ident.raw));
+				if (mapped) {
+					result += `#${cssEscapeIdent(mapped)}`;
+					index = ident.next - 1;
+					continue;
+				}
+				result += value.slice(index, ident.next);
+				index = ident.next - 1;
+				continue;
+			}
+		}
+		result += character;
+	}
+	return result;
+}
+
+const ID_ATTRIBUTE_SELECTOR =
+	/^\[\s*id\s*([~|^$*]?)\s*(=)\s*(?:"((?:\\.|[^"])*)"|'((?:\\.|[^'])*)'|([^\s\]"'=]+))\s*([iIsS])?\s*\]$/i;
+
+function rewriteAttributeSelector(
+	block: string,
+	ids: ReadonlyMap<string, string>,
+): string {
+	const match = ID_ATTRIBUTE_SELECTOR.exec(block);
+	if (!match) return rewriteHashIds(block, ids);
+	const operator = `${match[1] ?? ""}=`;
+	const raw = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(.)/g, "$1");
+	const mapped = ids.get(raw);
+	if (!mapped) return block;
+	const flag = match[6] ? ` ${match[6]}` : "";
+	return `[id${operator}"${cssString(mapped)}"${flag}]`;
+}
+
+function rewriteSelectorIds(
+	selector: string,
+	ids: ReadonlyMap<string, string>,
+): string {
+	if (ids.size === 0 || (!selector.includes("#") && !selector.includes("["))) {
+		return selector;
+	}
+	let result = "";
+	for (let index = 0; index < selector.length; index += 1) {
+		const character = selector[index];
+		if (character === '"' || character === "'") {
+			const end = endOfQuoted(selector, index);
+			result += selector.slice(index, end);
+			index = end - 1;
+			continue;
+		}
+		if (character === "[") {
+			const end = endOfBlock(selector, index, "[", "]");
+			result += rewriteAttributeSelector(selector.slice(index, end), ids);
+			index = end - 1;
+			continue;
+		}
+		if (character === "#") {
+			const ident = readCssIdent(selector, index + 1);
+			if (ident) {
+				const mapped = ids.get(decodePrototypeCssEscapes(ident.raw));
+				if (mapped) {
+					result += `#${cssEscapeIdent(mapped)}`;
+					index = ident.next - 1;
+					continue;
+				}
+				result += selector.slice(index, ident.next);
+				index = ident.next - 1;
+				continue;
+			}
+		}
+		result += character;
+	}
+	return result;
+}
+
+/** Point `url(#id)` at the prefixed id. An unmapped fragment becomes `none`. */
+function rewriteFragmentUrls(
+	css: string,
+	ids: ReadonlyMap<string, string>,
+): string {
+	if (!css.includes("#")) return css;
+	return css.replace(
+		/url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/gi,
+		(_full, _quote: string, id: string) => {
+			const mapped = ids.get(decodePrototypeCssEscapes(id));
+			if (!mapped) return "none";
+			return `url("#${cssString(mapped)}")`;
+		},
+	);
+}
+
+function rewriteAnimationValue(
+	value: string,
+	keyframes: ReadonlyMap<string, string>,
+): string {
+	if (keyframes.size === 0) return value;
+	return value.replace(
+		/(^|[\s,])(-?[A-Za-z_][A-Za-z0-9_-]*)/g,
+		(match, lead: string, token: string) => {
+			if (ANIMATION_KEYWORDS.has(token.toLowerCase())) return match;
+			const mapped = keyframes.get(token);
+			return mapped ? `${lead}${cssEscapeIdent(mapped)}` : match;
+		},
+	);
+}
+
+function rewriteDeclarations(
+	cssText: string,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+): string {
+	const withUrls = rewriteFragmentUrls(cssText, ids);
+	if (keyframes.size === 0) return withUrls;
+	return withUrls.replace(
+		/(^|;)(\s*)(animation-name|animation)(\s*:)([^;]*)/gi,
+		(
+			_match,
+			semi: string,
+			space: string,
+			property: string,
+			colon: string,
+			value: string,
+		) =>
+			`${semi}${space}${property}${colon}${rewriteAnimationValue(value, keyframes)}`,
+	);
+}
+
+function isKeyframesRule(rule: CSSRule): boolean {
+	return rule.type === 7 || rule.constructor?.name === "CSSKeyframesRule";
+}
+
+function isGroupingRule(rule: CSSRule): rule is CSSGroupingRule {
+	const name = rule.constructor?.name;
+	return (
+		name === "CSSMediaRule" ||
+		name === "CSSSupportsRule" ||
+		name === "CSSContainerRule" ||
+		name === "CSSLayerBlockRule"
+	);
+}
+
+function keyframeRuleName(rule: CSSRule): string {
+	if ("name" in rule && typeof (rule as CSSKeyframesRule).name === "string") {
+		return (rule as CSSKeyframesRule).name;
+	}
+	const match = /@keyframes\s+([^\s{]+)/i.exec(rule.cssText);
+	return match?.[1]?.replace(/^["']|["']$/g, "") ?? "";
+}
+
+function collectKeyframeNames(
+	rules: CSSRuleList,
+	prefix: string,
+	into: Map<string, string>,
+): void {
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule) continue;
+		if (isKeyframesRule(rule)) {
+			const name = keyframeRuleName(rule);
+			if (name && !name.startsWith(prefix) && !into.has(name)) {
+				into.set(name, `${prefix}${name}`);
+			}
+			continue;
+		}
+		if (isGroupingRule(rule)) {
+			collectKeyframeNames(rule.cssRules, prefix, into);
+		}
+	}
+}
+
+function formatKeyframeRule(
+	rule: CSSRule,
+	names: ReadonlyMap<string, string>,
+	ids: ReadonlyMap<string, string>,
+): string | undefined {
+	if (SHADOW_ESCAPE_SELECTOR.test(rule.cssText)) return undefined;
+	const name = keyframeRuleName(rule);
+	if (!name) return undefined;
+	const mapped = names.get(name) ?? name;
+	const open = rule.cssText.indexOf("{");
+	const body = open >= 0 ? rule.cssText.slice(open).trim() : "{}";
+	return `@keyframes ${cssEscapeIdent(mapped)} ${rewriteFragmentUrls(body, ids)}`;
+}
+
+/**
+ * `@keyframes` is not valid inside `@scope`, so namespaced copies are emitted
+ * beside the scope block. Prefixed names keep them off the host page.
+ */
+function serializeKeyframeRules(
+	rules: CSSRuleList,
+	names: ReadonlyMap<string, string>,
+	ids: ReadonlyMap<string, string>,
+): string {
 	const parts: string[] = [];
 	for (let index = 0; index < rules.length; index += 1) {
 		const rule = rules[index];
 		if (!rule) continue;
-		const kind = rule.constructor.name;
-		if (kind === "CSSStyleRule") {
-			const styleRule = rule as CSSStyleRule;
-			if (
-				SHADOW_ESCAPE_SELECTOR.test(styleRule.selectorText) ||
-				SHADOW_ESCAPE_SELECTOR.test(styleRule.cssText)
-			) {
-				continue;
-			}
-			parts.push(styleRule.cssText);
+		if (isKeyframesRule(rule)) {
+			const formatted = formatKeyframeRule(rule, names, ids);
+			if (formatted) parts.push(formatted);
 			continue;
 		}
-		if (
-			kind === "CSSMediaRule" ||
-			kind === "CSSSupportsRule" ||
-			kind === "CSSContainerRule" ||
-			kind === "CSSLayerBlockRule"
-		) {
-			const group = rule as CSSGroupingRule;
-			const inner = serializeScopedRules(group.cssRules);
-			if (!inner.trim()) continue;
-			const open = group.cssText.indexOf("{");
-			const prelude = open > 0 ? group.cssText.slice(0, open).trim() : "";
-			if (!prelude || /@scope\b/i.test(prelude)) continue;
-			parts.push(`${prelude} {\n${inner}\n}`);
+		if (isGroupingRule(rule)) {
+			const inner = serializeKeyframeRules(rule.cssRules, names, ids);
+			if (inner) parts.push(inner);
 		}
 	}
 	return parts.join("\n");
+}
+
+function serializeStyleRule(
+	rule: CSSStyleRule,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+): string | undefined {
+	if (
+		SHADOW_ESCAPE_SELECTOR.test(rule.selectorText) ||
+		SHADOW_ESCAPE_SELECTOR.test(rule.cssText)
+	) {
+		return undefined;
+	}
+	const selector = rewriteSelectorIds(rule.selectorText, ids).trim();
+	if (!selector) return undefined;
+	const body = rewriteDeclarations(
+		rule.style?.cssText ?? "",
+		ids,
+		keyframes,
+	).trim();
+	return `${selector} { ${body} }`;
+}
+
+function serializeScopedRules(
+	rules: CSSRuleList,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+): string {
+	const parts: string[] = [];
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule || isKeyframesRule(rule)) continue;
+		if (rule.constructor.name === "CSSStyleRule") {
+			const serialized = serializeStyleRule(rule as CSSStyleRule, ids, keyframes);
+			if (serialized) parts.push(serialized);
+			continue;
+		}
+		if (!isGroupingRule(rule)) continue;
+		const inner = serializeScopedRules(rule.cssRules, ids, keyframes);
+		if (!inner.trim()) continue;
+		const open = rule.cssText.indexOf("{");
+		const prelude = open > 0 ? rule.cssText.slice(0, open).trim() : "";
+		if (!prelude || /@scope\b/i.test(prelude)) continue;
+		parts.push(`${prelude} {\n${inner}\n}`);
+	}
+	return parts.join("\n");
+}
+
+/** Rewrite selectors when CSSOM is unavailable, without touching declaration colors. */
+function rewriteUnparsedCss(
+	css: string,
+	ids: ReadonlyMap<string, string>,
+): string {
+	if (!css.includes("{")) return rewriteFragmentUrls(css, ids);
+	let result = "";
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) {
+			result += rewriteFragmentUrls(css.slice(index), ids);
+			break;
+		}
+		result += rewriteSelectorIds(css.slice(index, open), ids);
+		const end = endOfBlock(css, open, "{", "}");
+		const inner = css.slice(open + 1, Math.max(open + 1, end - 1));
+		result += `{${rewriteUnparsedCss(inner, ids)}}`;
+		index = end;
+	}
+	return result;
 }
 
 function cssBracesBalance(css: string): boolean {
@@ -733,7 +1128,12 @@ function wrapPrototypeScope(css: string): string {
 	return trimmed ? `@scope ([data-dg-prototype]) {\n${trimmed}\n}` : "";
 }
 
-function sanitizePrototypeCss(css: string, scoped = true): string {
+function sanitizePrototypeCss(
+	css: string,
+	scoped = true,
+	ids: ReadonlyMap<string, string> = new Map(),
+	keyframePrefix = "",
+): string {
 	const sanitized = preparePrototypeCss(css);
 	if (!scoped) return sanitized;
 	const trimmed = sanitized.trim();
@@ -743,13 +1143,21 @@ function sanitizePrototypeCss(css: string, scoped = true): string {
 		try {
 			const sheet = new StyleSheet();
 			sheet.replaceSync(trimmed);
-			return wrapPrototypeScope(serializeScopedRules(sheet.cssRules));
+			const keyframes = new Map<string, string>();
+			if (keyframePrefix) {
+				collectKeyframeNames(sheet.cssRules, keyframePrefix, keyframes);
+			}
+			const frames = serializeKeyframeRules(sheet.cssRules, keyframes, ids);
+			const scope = wrapPrototypeScope(
+				serializeScopedRules(sheet.cssRules, ids, keyframes),
+			);
+			return [frames, scope].filter((part) => part.trim()).join("\n");
 		} catch {
 			return "";
 		}
 	}
 	if (/@scope\b/i.test(trimmed) || !cssBracesBalance(trimmed)) return "";
-	return wrapPrototypeScope(trimmed);
+	return wrapPrototypeScope(rewriteUnparsedCss(trimmed, ids));
 }
 
 const ARIA_ID_REFERENCE_ATTRIBUTES = [
@@ -763,8 +1171,14 @@ const ARIA_ID_REFERENCE_ATTRIBUTES = [
 	"aria-owns",
 ];
 
+const SINGLE_ID_REFERENCE_ATTRIBUTES = ["for", "form", "list"];
+const TOKEN_ID_REFERENCE_ATTRIBUTES = [...ARIA_ID_REFERENCE_ATTRIBUTES, "headers"];
+
 /** Prefix ids and radio names, and retarget references that pointed at the old ids. */
-function namespaceVariationDom(root: ParentNode, variationKey: string): void {
+function namespaceVariationDom(
+	root: ParentNode,
+	variationKey: string,
+): Map<string, string> {
 	const prefix = `dg-proto-${variationKey}-`;
 	const idMap = new Map<string, string>();
 	for (const element of root.querySelectorAll("[id]")) {
@@ -775,10 +1189,12 @@ function namespaceVariationDom(root: ParentNode, variationKey: string): void {
 		element.setAttribute("id", next);
 	}
 	for (const element of root.querySelectorAll("*")) {
-		const htmlFor = element.getAttribute("for");
-		const mappedFor = htmlFor ? idMap.get(htmlFor) : undefined;
-		if (htmlFor && mappedFor) element.setAttribute("for", mappedFor);
-		for (const name of ARIA_ID_REFERENCE_ATTRIBUTES) {
+		for (const name of SINGLE_ID_REFERENCE_ATTRIBUTES) {
+			const value = element.getAttribute(name);
+			const mapped = value ? idMap.get(value) : undefined;
+			if (value && mapped) element.setAttribute(name, mapped);
+		}
+		for (const name of TOKEN_ID_REFERENCE_ATTRIBUTES) {
 			const value = element.getAttribute(name);
 			if (!value) continue;
 			const rewritten = value
@@ -804,6 +1220,7 @@ function namespaceVariationDom(root: ParentNode, variationKey: string): void {
 			}
 		}
 	}
+	return idMap;
 }
 
 /**
@@ -850,12 +1267,23 @@ export function sanitizePrototypeVariation(
 			}
 		}
 	}
-	namespaceVariationDom(parsed.body, variation.key);
+	const idMap = namespaceVariationDom(parsed.body, variation.key);
+	for (const element of parsed.body.querySelectorAll("[style]")) {
+		const style = element.getAttribute("style");
+		if (!style) continue;
+		const rewritten = rewriteFragmentUrls(style, idMap);
+		if (rewritten !== style) element.setAttribute("style", rewritten);
+	}
 
 	return {
 		...variation,
 		html: parsed.body.innerHTML,
-		css: sanitizePrototypeCss(variation.css),
+		css: sanitizePrototypeCss(
+			variation.css,
+			true,
+			idMap,
+			`dg-proto-${variation.key}-`,
+		),
 	};
 }
 

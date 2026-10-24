@@ -1,5 +1,6 @@
 import {
 	PROTO_MARKED_URL_MAX_LENGTH,
+	PROTO_MAX_TIMEOUT_MS,
 	PROTO_PREVIEW_MAX_CHARS,
 	validateProtoNotReadyError,
 	validateStyleGuide,
@@ -23,6 +24,8 @@ export type ProtoBrowserRequest = {
 	phase: "scrape" | "plant";
 	slug: string;
 	markedUrl: string;
+	/** Daemon relay deadline. The extension finishes slightly after it. */
+	timeoutMs?: number;
 };
 
 /** Settled outcome of one proto browser request: resolved data, a typed not-ready error, or any other failure. */
@@ -66,10 +69,42 @@ export type ProtoBrowserApi = {
 };
 
 type TabPending = {
+	closed?: boolean;
 	onProgress: (status: string) => void;
 	previewDataUrl?: string;
 	resolve: (result: ProtoResultFrame) => void;
 };
+
+/** Same phase defaults the daemon uses when the CLI omits timeoutMs. */
+const PROTO_PHASE_DEADLINE_MS: Record<ProtoBrowserRequest["phase"], number> = {
+	scrape: 45_000,
+	plant: 900_000,
+};
+
+/**
+ * Hold the preview a little past the daemon deadline so a picker the user is
+ * still looking at is not cleared first. After this, the entry and its preview
+ * are dropped even if the tab stays open.
+ */
+const PROTO_DEADLINE_MARGIN_MS = 5_000;
+
+export const PROTO_DEADLINE_ERROR =
+	"The prototype request reached the extension deadline before a result.";
+
+/** Extension-side deadline for one relay request: the daemon timeout plus a short margin. */
+export function protoExtensionDeadlineMs(
+	phase: ProtoBrowserRequest["phase"],
+	timeoutMs?: number,
+): number {
+	const base =
+		typeof timeoutMs === "number" &&
+		Number.isFinite(timeoutMs) &&
+		timeoutMs > 0 &&
+		timeoutMs <= PROTO_MAX_TIMEOUT_MS
+			? timeoutMs
+			: PROTO_PHASE_DEADLINE_MS[phase];
+	return base + PROTO_DEADLINE_MARGIN_MS;
+}
 
 const pendingByTab = new Map<number, TabPending>();
 
@@ -261,6 +296,9 @@ async function capturePreview(
 				reason: fitted.reason ?? "preview exceeded the relay size limit and was omitted",
 			};
 		}
+		if (pending.closed) {
+			return { saved: false, reason: "prototype request already finished" };
+		}
 		pending.previewDataUrl = fitted.dataUrl;
 		return { saved: true };
 	} catch (error) {
@@ -280,16 +318,32 @@ export function requestPrototypeBrowserWork(
 	api: ProtoBrowserApi,
 	request: ProtoBrowserRequest,
 	onProgress: (status: string) => void,
+	deadlineMs = protoExtensionDeadlineMs(request.phase, request.timeoutMs),
 ): Promise<ProtoResultFrame> {
 	return new Promise((resolve) => {
 		let settled = false;
 		let tabId: number | undefined;
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		const finish = (result: ProtoResultFrame): void => {
 			if (settled) return;
 			settled = true;
-			if (tabId !== undefined) pendingByTab.delete(tabId);
+			if (timer !== undefined) clearTimeout(timer);
+			if (tabId !== undefined) {
+				const pending = pendingByTab.get(tabId);
+				if (pending) {
+					pending.closed = true;
+					pending.previewDataUrl = undefined;
+				}
+				pendingByTab.delete(tabId);
+			}
 			resolve(result);
 		};
+		timer = setTimeout(() => {
+			finish({ ok: false, error: PROTO_DEADLINE_ERROR });
+		}, deadlineMs);
+		if (typeof timer === "object" && timer !== null && "unref" in timer) {
+			timer.unref();
+		}
 		void (async () => {
 			const rejected = markedUrlRejection(request.markedUrl);
 			if (rejected) {
@@ -312,6 +366,7 @@ export function requestPrototypeBrowserWork(
 				});
 				return;
 			}
+			if (settled) return;
 			if (tab?.id === undefined) {
 				finish({
 					ok: false,
@@ -328,14 +383,21 @@ export function requestPrototypeBrowserWork(
 /** Factory mirroring `createInboxHandler`: one browser-work request per call, correlated by its own tab. */
 export function createProtoHandler({
 	browserApi,
+	deadlineMs,
 }: {
 	browserApi: ProtoBrowserApi;
+	deadlineMs?: number;
 }) {
 	return (
 		request: ProtoBrowserRequest,
 		onProgress: (status: string) => void,
 	): Promise<ProtoResultFrame> =>
-		requestPrototypeBrowserWork(browserApi, request, onProgress);
+		requestPrototypeBrowserWork(
+			browserApi,
+			request,
+			onProgress,
+			deadlineMs,
+		);
 }
 
 /** Wire the validated content-to-background prototype reports for every open tab's pending request. */

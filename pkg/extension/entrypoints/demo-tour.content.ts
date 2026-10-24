@@ -1,3 +1,4 @@
+import { browser } from "wxt/browser";
 import { runDemoTour } from "@/lib/features/demo-tour";
 import {
 	detectPageNotReady,
@@ -18,7 +19,10 @@ type ContentContext = Parameters<typeof runDemoTour>[0];
 
 async function tabHasPendingProtoRequest(): Promise<boolean> {
 	try {
-		const response = (await chrome.runtime.sendMessage({
+		// WXT's browser namespace returns a promise on Firefox MV2. The chrome
+		// namespace there is callback-only, so awaiting it resolves to undefined
+		// and every --ext scrape/plant would bail after stripping the marker.
+		const response = (await browser.runtime.sendMessage({
 			type: PROTO_HAS_PENDING,
 		})) as { pending?: unknown } | undefined;
 		return response?.pending === true;

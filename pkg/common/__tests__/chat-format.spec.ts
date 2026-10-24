@@ -5,6 +5,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	fitHistoryPage,
+	PROTO_MAX_TIMEOUT_MS,
 	validateChatFrame,
 	validateCommandManifest,
 } from "../src/index";
@@ -589,6 +590,17 @@ describe("validateChatFrame — proto-browser-request URL", () => {
 				}),
 			),
 		).toThrow(/marker URL limit/);
+	});
+
+	it("accepts the daemon relay timeout and rejects one past the cap", () => {
+		expect(() =>
+			validateChatFrame(buildProtoBrowserRequestFrame({ timeoutMs: 45_000 })),
+		).not.toThrow();
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({ timeoutMs: PROTO_MAX_TIMEOUT_MS + 1 }),
+			),
+		).toThrow(/timeoutMs/);
 	});
 });
 

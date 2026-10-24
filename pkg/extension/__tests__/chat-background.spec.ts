@@ -1270,6 +1270,7 @@ test("registerChat turns a proto-browser-request onFrame into a proto-browser-re
 		phase: "scrape",
 		slug: "account-summary",
 		markedUrl: "https://example.test/account#_proto=fixture",
+		timeoutMs: 45_000,
 	};
 	socket.dispatch("message", message(request));
 	await settle();

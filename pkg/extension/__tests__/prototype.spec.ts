@@ -960,6 +960,72 @@ describe("sanitizePrototypeVariation", () => {
 		);
 	});
 
+	it("rewrites form, list, and headers id references", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "refs",
+			label: "Refs",
+			html: [
+				'<form id="signup"></form>',
+				'<input form="signup" list="cities">',
+				'<datalist id="cities"><option value="Austin"></option></datalist>',
+				'<table><tr><th id="name">Name</th><td headers="name extra">Ada</td></tr></table>',
+			].join(""),
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.getElementById("dg-proto-refs-signup")).not.toBeNull();
+		expect(parsed.querySelector("input")?.getAttribute("form")).toBe(
+			"dg-proto-refs-signup",
+		);
+		expect(parsed.querySelector("input")?.getAttribute("list")).toBe(
+			"dg-proto-refs-cities",
+		);
+		expect(parsed.querySelector("datalist")?.id).toBe("dg-proto-refs-cities");
+		expect(parsed.querySelector("th")?.id).toBe("dg-proto-refs-name");
+		expect(parsed.querySelector("td")?.getAttribute("headers")).toBe(
+			"dg-proto-refs-name extra",
+		);
+	});
+
+	it("rewrites variation id selectors and keeps namespaced keyframes", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "card",
+			label: "Card",
+			html: '<h1 id="hero">Title</h1>',
+			css: [
+				"#hero { color: teal }",
+				"#hero:hover { color: navy }",
+				'[id="hero"] { outline: 1px solid teal }',
+				"[id=hero] { margin: 0 }",
+				"h1 { filter: url(#hero); animation: rise 1s ease; animation-name: rise; color: #fff }",
+				"@keyframes rise { from { opacity: 0 } to { opacity: 1 } }",
+				"@media (min-width: 1px) { #hero { color: teal } }",
+			].join("\n"),
+		});
+
+		expect(sanitized.html).toContain('id="dg-proto-card-hero"');
+		expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+		expect(sanitized.css).toContain("#dg-proto-card-hero");
+		expect(sanitized.css).toContain("#dg-proto-card-hero:hover");
+		expect(sanitized.css).toContain('[id="dg-proto-card-hero"]');
+		expect(sanitized.css).toMatch(/url\("#dg-proto-card-hero"\)/);
+		expect(sanitized.css).toMatch(/color:\s*#fff/i);
+		expect(sanitized.css).toMatch(/@keyframes dg-proto-card-rise\b/);
+		expect(sanitized.css).toMatch(/opacity:\s*0/);
+		expect(sanitized.css).toMatch(/animation:\s*dg-proto-card-rise\b/);
+		expect(sanitized.css).toMatch(/animation-name:\s*dg-proto-card-rise\b/);
+		expect(sanitized.css).not.toMatch(/@keyframes rise\b/);
+		expect(sanitized.css).not.toMatch(/#hero\b/);
+		expect(sanitized.css.indexOf("@keyframes")).toBeLessThan(
+			sanitized.css.indexOf("@scope"),
+		);
+	});
+
 	it("namespaces variation radio names away from the host form", async () => {
 		const { sanitizePrototypeVariation } = await pickerContracts();
 		const sanitized = sanitizePrototypeVariation({

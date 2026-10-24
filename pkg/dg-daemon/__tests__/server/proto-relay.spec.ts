@@ -34,6 +34,7 @@ type RelayFrame = {
 	phase: string;
 	slug: string;
 	markedUrl: string;
+	timeoutMs?: number;
 };
 const sockets: WebSocket[] = [];
 let dgHome: string | undefined;
@@ -147,6 +148,7 @@ describe("daemon prototype browser relay", () => {
 		expect(forwarded.sessionId).toBe(bootstrap.sessionId);
 		expect(forwarded.phase).toBe("scrape");
 		expect(forwarded.markedUrl).toBe("https://example.test/account#_proto=fixture");
+		expect(forwarded.timeoutMs).toBe(1000);
 		const data = reply(page.socket, bootstrap, requestId);
 		expect(await result(results, requestId)).toMatchObject({
 			sessionId: bootstrap.sessionId,
