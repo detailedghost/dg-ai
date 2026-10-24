@@ -121,22 +121,20 @@ describe("filter routing feature", () => {
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 
 		const dataset = await Bun.file(dataPath).json();
-		expect(dataset.folders).toContainEqual(
-			expect.objectContaining({ name: "Updates", path: "Updates" }),
+		expect(dataset.filters).toEqual([]);
+		expect(
+			dataset.folders.map((folder: { name: string }) => folder.name),
+		).toEqual(["Inbox"]);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.folders).toContainEqual(
+			expect.objectContaining({ path: "Updates" }),
 		);
-		const savedFilters = await Bun.file(`${dir}/filters.json`).json();
-		expect(savedFilters.namingConventions).toContainEqual(
-			expect.objectContaining({
-				targetFolder: "Updates",
-				sourceFilterName: "Updates - Projects",
-			}),
-		);
-		const filter = dataset.filters.find(
+		const filter = declared.filters.find(
 			(row: { name: string }) => row.name === "Updates - Projects",
 		);
-		expect(filter.conditions[0]).toContain("backerpress.com");
-		expect(filter.conditions[0]).toContain("kickstarter-project.com");
-		expect(filter.conditions[0]).toContain("kickstarter.com");
-		expect(filter.conditions[0]).toContain("project update");
+		expect(filter.sieve).toContain("backerpress.com");
+		expect(filter.sieve).toContain("kickstarter-project.com");
+		expect(filter.sieve).toContain("kickstarter.com");
+		expect(filter.sieve).toContain("project update");
 	});
 });

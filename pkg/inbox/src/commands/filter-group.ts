@@ -4,15 +4,17 @@ import { getBooleanFlag, getStringFlag } from "../cli/args";
 import { workspaceDirForContext, type CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 import { createProtonMailClient } from "../protonmail/client";
-import type {
-	ProtonFilter,
-	ProtonFolder,
-	ProtonMailClient,
-} from "../protonmail/types";
+import type { ProtonFilter, ProtonFolder } from "../protonmail/types";
 import {
 	readJsonFileIfExists as readJsonIfExists,
 	writeJsonFile as writeJson,
 } from "../utils/json";
+import {
+	declaredFiltersPath,
+	editDeclaredFilters,
+	removeDeclaredFilters,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import { readFilters, readFolders, workspacePaths } from "../workspace/store";
 
@@ -117,9 +119,10 @@ export async function groupGeneratedFilters(
 				"filters group --confirm requires a successful filters group --dry-run report",
 			);
 		}
-		const [folders, liveFilters] = await Promise.all([
+		const [folders, liveFilters, liveFolders] = await Promise.all([
 			readFolders(paths),
 			client.listFilters(),
+			client.listFolders(),
 		]);
 		const plan = buildGroupPlan(paths.dir, folders, liveFilters, context, {
 			dryRun: false,
@@ -129,7 +132,12 @@ export async function groupGeneratedFilters(
 				"filters group --confirm refused because the group plan changed after the last dry run; run filters group --dry-run again",
 			);
 		}
-		const auditPath = await applyGroupPlan(plan, liveFilters, client);
+		const auditPath = await applyGroupPlan(
+			plan,
+			liveFilters,
+			liveFolders,
+			paths.dir,
+		);
 		const summary = summarizeGroupPlan({ ...plan, mutated: true, auditPath });
 		await writeJson(join(paths.reportsDir, "filter-group.json"), summary);
 		printJson(summary);
@@ -206,7 +214,8 @@ function buildGroupPlan(
 async function applyGroupPlan(
 	plan: FilterGroupPlan,
 	liveFilters: ProtonFilter[],
-	client: ProtonMailClient,
+	liveFolders: ProtonFolder[],
+	dir: string,
 ): Promise<string> {
 	const byId = new Map(liveFilters.map((filter) => [filter.id, filter]));
 	const updated: {
@@ -217,32 +226,32 @@ async function applyGroupPlan(
 		deletedFilterIds: string[];
 	}[] = [];
 
-	for (const group of plan.groups) {
-		let filterId = group.existingFilterId;
-		if (filterId) {
-			const existing = byId.get(filterId);
-			if (!existing) {
-				throw new Error(
-					`Existing grouped filter missing from live snapshot: ${group.filterName}`,
-				);
+	await editDeclaredFilters({
+		path: declaredFiltersPath(dir),
+		filters: liveFilters,
+		folders: liveFolders,
+		edit(file) {
+			for (const group of plan.groups) {
+				const existing = group.existingFilterId
+					? byId.get(group.existingFilterId)
+					: undefined;
+				if (group.existingFilterId && !existing) {
+					throw new Error(
+						`Existing grouped filter missing from live snapshot: ${group.filterName}`,
+					);
+				}
+				upsertDeclaredFilter(file, {
+					name: group.filterName,
+					enabled: existing?.enabled ?? true,
+					sieve: group.sieve,
+					...(existing ? { protonId: existing.id } : {}),
+				});
+				removeDeclaredFilters(file, group.generatedFilterIds);
 			}
-			await client.updateFilter({
-				id: existing.id,
-				name: existing.name,
-				sieve: group.sieve,
-				enabled: existing.enabled,
-			});
-		} else {
-			const created = await client.createFilter({
-				name: group.filterName,
-				sieve: group.sieve,
-				enabled: true,
-			});
-			filterId = created.id;
-		}
-		for (const id of group.generatedFilterIds) {
-			await client.deleteFilter({ id });
-		}
+		},
+	});
+	for (const group of plan.groups) {
+		const filterId = group.existingFilterId;
 		updated.push({
 			id: filterId,
 			name: group.filterName,

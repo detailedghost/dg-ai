@@ -54,10 +54,17 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 	/** Creates a reviewed Proton folder or label using the extension's fixed operation. */
 	async createFolder(input: {
 		name: string;
+		path?: string;
+		parentId?: string;
 		type?: "folder" | "label";
 	}): Promise<MailFolder> {
 		const folder = (
-			await this.request({ operation: "create-folder", ...input })
+			await this.request({
+				operation: "create-folder",
+				name: input.name,
+				type: input.type,
+				...(input.parentId ? { parentId: input.parentId } : {}),
+			})
 		).folder;
 		if (!folder)
 			throw new Error("Proton extension did not return the created folder");
@@ -97,6 +104,29 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 	/** Deletes the reviewed rule ID through the selected account. */
 	async deleteFilter(input: { id: string }) {
 		await this.request({ operation: "delete-filter", ...input });
+	}
+	async renameFolder(input: {
+		id: string;
+		displayName: string;
+		path?: string;
+		parentId?: string;
+	}): Promise<MailFolder> {
+		const folder = (
+			await this.request({
+				operation: "rename-folder",
+				id: input.id,
+				name: input.displayName,
+				...(input.parentId ? { parentId: input.parentId } : {}),
+			})
+		).folder;
+		if (!folder) throw new Error("Proton extension did not return the renamed folder");
+		return { ...folder, type: folder.type ?? "folder", path: input.path ?? folder.path };
+	}
+	async deleteFolder(input: { id: string }) {
+		await this.request({ operation: "delete-folder", id: input.id });
+	}
+	async reorderFilters(input: { ids: string[] }) {
+		await this.request({ operation: "reorder-filters", ids: input.ids });
 	}
 	/** Collects the limited stream into memory; prefer listMessagesStream for large mailboxes. */
 	async listMessages(input: ListMessagesInput): Promise<MailMessageSummary[]> {

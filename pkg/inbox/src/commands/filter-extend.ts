@@ -6,12 +6,16 @@ import { printJson } from "../cli/output";
 import { redactPublicValue } from "../privacy/redact";
 import {
 	createMailProviderClient,
-	providerSnippetLength,
 	resolveProvider,
 } from "../providers/factory";
 import type { MailRule } from "../providers/types";
 import { writeJsonFile } from "../utils/json";
-import { readFilters, writeFilters, workspacePaths } from "../workspace/store";
+import {
+	declaredFiltersPath,
+	editDeclaredFilters,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
+import { readFilters, workspacePaths } from "../workspace/store";
 
 const domainPattern =
 	/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
@@ -104,12 +108,10 @@ export async function extendFilter(context: CliContext): Promise<void> {
 	}
 	const client = createMailProviderClient(context.config, provider);
 	try {
-		if (!client.updateFilter) {
-			throw new Error(
-				`${provider} client cannot update a filter. filters extend needs a provider update.`,
-			);
-		}
-		const liveFilters = await client.listFilters();
+		const [liveFilters, liveFolders] = await Promise.all([
+			client.listFilters(),
+			client.listFolders(),
+		]);
 		const filter = liveFilters.find((item) => item.id === filterId);
 		if (!filter) {
 			throw new Error(`filter not found: ${filterId}`);
@@ -123,11 +125,18 @@ export async function extendFilter(context: CliContext): Promise<void> {
 		let auditPath: string | undefined;
 		const paths = workspacePaths(workspaceDirForContext(context));
 		if (!dryRun && extended.added.length > 0) {
-			await client.updateFilter({
-				id: filter.id,
-				name: filter.name,
-				sieve: extended.sieve,
-				enabled: filter.enabled,
+			await editDeclaredFilters({
+				path: declaredFiltersPath(paths.dir),
+				filters: liveFilters,
+				folders: liveFolders,
+				edit(file) {
+					upsertDeclaredFilter(file, {
+						name: filter.name,
+						enabled: filter.enabled,
+						sieve: extended.sieve,
+						protonId: filter.id,
+					});
+				},
 			});
 			mutated = true;
 			auditPath = await writeExtendAudit(paths.auditDir, {
@@ -137,13 +146,6 @@ export async function extendFilter(context: CliContext): Promise<void> {
 				beforeHash: sieveHash(sieve),
 				afterHash: sieveHash(extended.sieve),
 			});
-			const refreshed = await client.listFilters();
-			await writeFilters(
-				paths,
-				refreshed,
-				providerSnippetLength(context.config, provider),
-				provider,
-			);
 		}
 		const saved = await readSavedSieve(paths.dir, filterId);
 		printJson({
@@ -160,7 +162,7 @@ export async function extendFilter(context: CliContext): Promise<void> {
 			after: publicText(extended.sieve),
 			...(auditPath ? { auditPath } : {}),
 			note: mutated
-				? "The live Proton Sieve was updated. filters.json was refreshed from the provider, and the audit file records the filter id, added domains, and before/after hashes."
+				? "The declared filters file was updated. filters sync is the Proton write path. The audit file records the filter id, added domains, and before/after hashes."
 				: "The diff uses the live provider rule. filters.json keeps a redacted snippet and is not the source of this rewrite.",
 		});
 	} finally {

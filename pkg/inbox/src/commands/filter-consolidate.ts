@@ -5,11 +5,7 @@ import { workspaceDirForContext, type CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 import { redactText } from "../privacy/redact";
 import { createProtonMailClient } from "../protonmail/client";
-import type {
-	ProtonFilter,
-	ProtonFolder,
-	ProtonMailClient,
-} from "../protonmail/types";
+import type { ProtonFilter, ProtonFolder } from "../protonmail/types";
 import {
 	readJsonFileIfExists as readJsonIfExists,
 	writeJsonFile as writeJson,
@@ -20,6 +16,12 @@ import {
 	isGeneratedFilterName,
 	type FilterNamingConvention,
 } from "../workspace/filter-naming";
+import {
+	declaredFiltersPath,
+	editDeclaredFilters,
+	removeDeclaredFilters,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import {
 	readFilterNamingConventions,
@@ -118,7 +120,12 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 					"filters consolidate --confirm refused because the consolidation plan changed after the last dry run; run filters consolidate again",
 				);
 			}
-			const audit = await applyConsolidationPlan(plan, liveFilters, client);
+			const audit = await applyConsolidationPlan(
+				plan,
+				liveFilters,
+				await client.listFolders(),
+				paths.dir,
+			);
 			const summary = redactConsolidationPlan({
 				...plan,
 				mutated: true,
@@ -347,7 +354,8 @@ function normalizeFilters(filters: unknown[]): ProtonFilter[] {
 async function applyConsolidationPlan(
 	plan: ConsolidationPlan,
 	liveFilters: ProtonFilter[],
-	client: ProtonMailClient,
+	liveFolders: ProtonFolder[],
+	dir: string,
 ): Promise<{ auditPath: string }> {
 	const byId = new Map(liveFilters.map((filter) => [filter.id, filter]));
 	const updated: {
@@ -375,15 +383,23 @@ async function applyConsolidationPlan(
 			candidate.existingFilter.targetFolder,
 			domains,
 		);
-		await client.updateFilter({
-			id: existing.id,
-			name: existing.name,
-			sieve: mergedSieve,
-			enabled: existing.enabled,
+		await editDeclaredFilters({
+			path: declaredFiltersPath(dir),
+			filters: liveFilters,
+			folders: liveFolders,
+			edit(file) {
+				upsertDeclaredFilter(file, {
+					name: existing.name,
+					enabled: existing.enabled,
+					sieve: mergedSieve,
+					protonId: existing.id,
+				});
+				removeDeclaredFilters(
+					file,
+					candidate.generatedFilters.map((filter) => filter.id),
+				);
+			},
 		});
-		for (const generated of candidate.generatedFilters) {
-			await client.deleteFilter({ id: generated.id });
-		}
 		updated.push({
 			id: existing.id,
 			name: existing.name,

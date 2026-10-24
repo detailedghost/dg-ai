@@ -161,6 +161,34 @@ export const cliOptions = [
 			"Legacy login timeout metadata; sign in to Proton in the browser.",
 	},
 	{
+		flags: "--declared-path [path]",
+		description: "Declared Proton filters file. Defaults to the workspace file.",
+	},
+	{
+		flags: "--apply [hash]",
+		description:
+			"Apply the filters sync plan whose hash came from the reviewed dry run.",
+	},
+	{
+		flags: "--pull [list]",
+		description:
+			"Comma-separated drifted filter or folder ids to copy into the declared file.",
+	},
+	{
+		flags: "--revert [list]",
+		description:
+			"Comma-separated drifted filter or folder ids to restore from the declared file.",
+	},
+	{
+		flags: "--approve-delete [list]",
+		description:
+			"Comma-separated filter or folder ids approved for deletion. Not implied by --apply.",
+	},
+	{
+		flags: "--replace",
+		description: "Replace an existing declared filters file during import.",
+	},
+	{
 		flags: "--dry-run",
 		description: "Plan without mutating the mailbox or local data.",
 	},
@@ -294,13 +322,24 @@ export const cliCommandSpecs = [
 			"Dry-run filter changes from plans/cleanup-policy.json. Dry-run is the default.",
 	},
 	{
+		nameAndArgs: "filters import",
+		description:
+			"Capture live Proton filters and folders into the declared filters file.",
+	},
+	{
+		nameAndArgs: "filters sync",
+		description:
+			"Diff the declared filters file against Proton. Dry-run is the default.",
+	},
+	{
 		nameAndArgs: "filters apply",
-		description: "Dry-run or create recommended Proton filters.",
+		description:
+			"Dry-run or record recommended filters in the declared filters file.",
 	},
 	{
 		nameAndArgs: "filters extend",
 		description:
-			"Dry-run adding sender domains to one live filter and print the diff.",
+			"Dry-run adding sender domains to one filter and record it in the declared file.",
 	},
 	{
 		nameAndArgs: "filters consolidate",
@@ -432,6 +471,16 @@ export const commandHelpFlags: Record<string, readonly string[]> = {
 	],
 	"recommend filters": ["--sample-limit", "--write-archive-decisions"],
 	"filters plan": ["--dry-run", "--plan-path"],
+	"filters import": ["--declared-path", "--replace"],
+	"filters sync": [
+		"--declared-path",
+		"--dry-run",
+		"--apply",
+		"--confirm",
+		"--pull",
+		"--revert",
+		"--approve-delete",
+	],
 	"filters apply": [
 		"--dry-run",
 		"--confirm",

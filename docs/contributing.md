@@ -164,6 +164,17 @@ Ask a person. Do not turn off a check to get past it.
 - Pass error reports to a runner as data files. See [ADR 0013](adr/0013-untrusted-reports.md).
 - Keep deployment values out of the source. See [ADR 0007](adr/0007-private-configuration.md).
 
+### pkg/inbox
+
+- Run `mise run test:inbox`. Do not point those tests at a live Proton mailbox.
+- Check plan and safety changes with `mise run test:inbox:mutate`. It runs Stryker on
+  `pkg/inbox/src/features/filter-policy/plan.ts` and `safety.ts`. Keep the score at or above the repo low threshold of 80.
+- The declared Proton filters file lives under the dg home, for example
+  `~/.dg/inbox/workspaces/protonmail/<workspace>/declared-filters.json`. Do not commit a mailbox snapshot.
+  Ship the schema, the loader, `pkg/inbox/examples/declared-filters.example.json`, and the docs.
+- `filters sync` is the Proton write path. See [ADR 0020](adr/0020-proton-filter-policy.md) and
+  [the filter policy guide](inbox-filter-policy.md).
+
 ### pkg/dg-daemon
 
 - The daemon listens on loopback only. It checks origin and capability on its connections. See [ADR 0004](adr/0004-loopback-pairing.md).

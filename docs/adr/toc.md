@@ -60,6 +60,7 @@ flowchart LR
 
 - [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
+- [0020 — Keep Proton filters in one declared file](0020-proton-filter-policy.md)
 
 ## Adding an ADR
 

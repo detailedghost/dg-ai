@@ -12,12 +12,7 @@ import {
 	createMailProviderClient,
 	resolveProvider,
 } from "../providers/factory";
-import type {
-	CreateMailFilterInput,
-	MailProvider,
-	MailProviderClient,
-	MailRule,
-} from "../providers/types";
+import type { MailProviderClient, MailRule } from "../providers/types";
 import {
 	readJsonFileIfExists as readJsonIfExists,
 	writeJsonFile as writeJson,
@@ -32,6 +27,11 @@ import {
 	isFilterRecommendationTarget,
 	resolveFolder,
 } from "../workspace/folders";
+import {
+	declaredFiltersPath,
+	editDeclaredFilters,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
 import {
 	readFilterNamingConventions,
 	readFilters,
@@ -154,35 +154,44 @@ async function applyFilterMutations(
 		);
 	}
 
-	const liveFilters = await client.listFilters();
-	const plan = await buildFilterApplyPlan(pathsList, liveFilters, context);
-	if (!client.createFilter && plan.create.length > 0) {
+	if (client.provider !== "protonmail") {
 		throw new Error(
-			`${client.provider} filter apply is not supported by this client`,
+			"filters apply edits the Proton declared filters file. filters sync is the Proton write path.",
 		);
 	}
+	const [liveFilters, liveFolders] = await Promise.all([
+		client.listFilters(),
+		client.listFolders(),
+	]);
+	const plan = await buildFilterApplyPlan(pathsList, liveFilters, context);
+	const declaredPath = declaredFiltersPath(paths.dir);
+	await editDeclaredFilters({
+		path: declaredPath,
+		filters: liveFilters,
+		folders: liveFolders,
+		edit(file) {
+			for (const item of plan.create) {
+				upsertDeclaredFilter(file, {
+					name: item.filterName,
+					enabled: true,
+					sieve: item.sieve,
+				});
+			}
+		},
+	});
 	const created: {
 		name: string;
 		domain: string;
 		targetFolder: string;
 		count: number;
 		id: string;
-	}[] = [];
-	for (const item of plan.create) {
-		const filter = await client.createFilter?.(
-			filterCreateInput(client.provider, item),
-		);
-		if (!filter) {
-			continue;
-		}
-		created.push({
-			name: item.filterName,
-			domain: item.domain,
-			targetFolder: item.targetFolder,
-			count: item.count,
-			id: filter.id,
-		});
-	}
+	}[] = plan.create.map((item) => ({
+		name: item.filterName,
+		domain: item.domain,
+		targetFolder: item.targetFolder,
+		count: item.count,
+		id: `declared:${item.filterName}`,
+	}));
 
 	const now = new Date().toISOString();
 	const auditPath = join(
@@ -484,28 +493,6 @@ function filterSummary(
 		warning: dryRun
 			? "Dry run only. No provider filters were created."
 			: undefined,
-	};
-}
-
-function filterCreateInput(
-	provider: MailProvider,
-	item: FilterPlanItem,
-): CreateMailFilterInput {
-	if (provider === "gmail") {
-		return {
-			name: item.filterName,
-			criteria: { from: item.domain },
-			action: {
-				addLabelIds: [item.targetFolderId],
-				removeLabelIds: ["INBOX"],
-			},
-			enabled: true,
-		};
-	}
-	return {
-		name: item.filterName,
-		sieve: item.sieve,
-		enabled: true,
 	};
 }
 
