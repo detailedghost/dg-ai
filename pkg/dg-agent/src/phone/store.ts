@@ -20,6 +20,8 @@ const RELAYS_SETTING = "relays";
 const NUMBER_KEY_SETTING = "number_key";
 const LISTENER_SETTING = "listener";
 const SUBSCRIBER_SETTING = "subscriber";
+/** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
+const CURSOR_SETTING = "cursor";
 
 export function isHandle(value: string): boolean {
 	return HANDLE_PATTERN.test(value);
@@ -53,6 +55,21 @@ export function writeRelays(db: PhoneDb, relays: string[]): void {
 /** The key id your own number uses; `setOnce` so a racing first command wins and a migration can set it first. */
 export function numberKeyId(db: PhoneDb): string {
 	return db.get<string>(NUMBER_KEY_SETTING) ?? db.setOnce(NUMBER_KEY_SETTING, DEFAULT_NUMBER_KEY_ID);
+}
+
+/** Overwrites the number key id outright; migration uses this to point it at the line it picked
+ * before any command's lazy `setOnce` default could win the race. */
+export function writeNumberKeyId(db: PhoneDb, id: string): void {
+	db.set(NUMBER_KEY_SETTING, id);
+}
+
+/** The relay-subscription resume point; 0 means nothing has been read yet. */
+export function readCursor(db: PhoneDb): number {
+	return db.get<number>(CURSOR_SETTING) ?? 0;
+}
+
+export function writeCursor(db: PhoneDb, cursor: number): void {
+	db.set(CURSOR_SETTING, cursor);
 }
 
 function toContactRecord(row: ContactRow): ContactRecord {

@@ -102,8 +102,17 @@ export class PhoneDb {
 	}
 
 	static open(paths: DgPaths, now: () => number = () => Math.floor(Date.now() / 1000)): PhoneDb {
-		ensurePrivateDir(paths.phoneRoot);
-		const dbPath = PhoneDb.path(paths);
+		return PhoneDb.openAt(PhoneDb.path(paths), paths.phoneRoot, now);
+	}
+
+	/** Opens (or creates) a database at an arbitrary path inside `dir`; migration builds
+	 * `phone.db.tmp` here and renames it into place once every row is written. */
+	static openAt(
+		dbPath: string,
+		dir: string,
+		now: () => number = () => Math.floor(Date.now() / 1000),
+	): PhoneDb {
+		ensurePrivateDir(dir);
 		writeFileSync(dbPath, "", { mode: 0o600, flag: "a" });
 		chmodSync(dbPath, 0o600);
 		const db = new Database(dbPath, { strict: true, create: true, readwrite: true });
@@ -238,6 +247,27 @@ export class PhoneDb {
 				text: message.text,
 				call: message.call,
 				readAt: message.direction === "out" ? this.now() : null,
+			});
+		return result.changes > 0;
+	}
+
+	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
+	 * direction; migration uses this to carry over an existing read mark exactly. */
+	insertMigratedMessage(message: Omit<MessageRow, "attempts">): boolean {
+		const result = this.db
+			.query(
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0)`,
+			)
+			.run({
+				id: message.id,
+				direction: message.direction,
+				ts: message.ts,
+				sender: message.sender,
+				contact: message.contact,
+				text: message.text,
+				call: message.call,
+				readAt: message.read_at,
 			});
 		return result.changes > 0;
 	}
