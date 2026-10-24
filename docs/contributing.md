@@ -19,6 +19,8 @@ in the history, such as `skills`, `skills-cli`, `dg-agent`, `channel-review`, `p
 
 A release uses its own commit: `chore(release): bump the matched set to X.Y.Z`. See "How does it get to users?".
 
+Bots that commit or submit a review use the address in the [bot-commit-email skill](../plugins/dg/skills/bot-commit-email/SKILL.md).
+
 ## What must every pull request (PR) include?
 
 1. The code change.
@@ -112,7 +114,7 @@ Ask a person. Do not turn off a check to get past it.
 
   - home paths such as `/home/<name>/` and `C:\Users\<name>`
   - `~/scripts/` and local `~/.claude/skills/` paths
-  - email addresses and token-shaped strings
+  - email addresses and token-shaped strings (`dante@detailedghost.com` and `dante+<bot>@detailedghost.com` are allowed)
   - a retired helper used as a command, such as `stash`, `bg-helper`, or `verify-build`
 
   To add your own private terms, list them in `.no-local-zone.local` at the repo root. Git ignores that file.

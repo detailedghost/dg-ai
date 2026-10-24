@@ -37,7 +37,7 @@ function localTerms(): RegExp | null {
 }
 
 const EMAIL_PART =
-	"\\b[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b";
+	"(?<![\\w.+-])(?!dante(?:\\+[\\w.-]+)?@detailedghost\\.com\\b)[\\w.+-]+@(?!example\\.|users\\.noreply\\.github\\.com|anthropic\\.com|thread\\.v2)[\\w-]+(?:\\.[\\w-]+)+\\b";
 
 const NON_EMAIL_PARTS = [
 	"/home/(?!user\\b|runner\\b|<)[a-z_][a-z0-9_-]*/",
@@ -143,6 +143,8 @@ describe("public skill distribution", () => {
 		"$HOME/.claude/skills/x",
 		"${HOME}/.claude/skills/x",
 		"alice@corp.test",
+		"alice@detailedghost.com",
+		"personal+tag@gmail.com",
 		"ghp_abcdefghijklmnopqrstuvwxyz0123",
 		"AKIAABCDEFGHIJKLMNOP",
 	])("flags %s as private", (line) => {
@@ -154,6 +156,9 @@ describe("public skill distribution", () => {
 		"/mnt/c/Users/<user>/Downloads",
 		"noreply@anthropic.com",
 		"someone@example.com",
+		"dante+warren@detailedghost.com",
+		"dante+baron@detailedghost.com",
+		"dante@detailedghost.com",
 		"../grill-me/SKILL.md",
 		"plugins/dg/skills/thrash/SKILL.md",
 	])("allows %s", (line) => {
