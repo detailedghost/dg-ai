@@ -83,7 +83,7 @@ ORDER	OWNER	STATUS	WORK	DETAIL	PR/MR	ETA
 # Total: ~1 hr (critical path: 1 Phone feature to PR)
 ```
 
-Open items are numbered in priority order (the order they need doing, not insertion time); done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in priority order, so there is nothing to sort. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
+Open items are numbered in priority order (the order they need doing, not insertion time); done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in priority order, so there is nothing to sort. When a sub-item is the critical path, that total reads `(critical path: <text>, under <parent number>)`, using the parent number visible in ORDER. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
 
 ## 1. Gather: one Bash call, filtered in the shell
 

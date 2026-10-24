@@ -169,6 +169,16 @@ function topLevelOrderOf(label: string): string {
 	return dot === -1 ? label : label.slice(0, dot);
 }
 
+/**
+ * `--long` prints `-` in ORDER for every sub-item, so the total cites the parent number a reader can see.
+ * "2 child" reads as an item named child; "child, under 2" names the work and the parent it sits under.
+ */
+function longCriticalPath(label: { order: string; text: string }): string {
+	const text = tsvField(label.text);
+	const top = topLevelOrderOf(label.order);
+	return label.order.includes(".") ? `${text}, under ${top}` : `${top} ${text}`;
+}
+
 /** The unfinished agent item with the largest known ETA names the critical path. Parked work is excluded. Ties keep priority order. */
 export function computeTotal(model: ChecklistModel): TotalResult | null {
 	let anyUnfinished = false;
@@ -258,17 +268,10 @@ export function renderLong(model: ChecklistModel): string {
 	if (hiddenDoneCount > 0) lines.push(`# ...and ${hiddenDoneCount} more done`);
 	const total = computeTotal(model);
 	if (total) {
-		const folded: TotalResult = total.label
-			? {
-					bucket: total.bucket,
-					label: {
-						order: topLevelOrderOf(total.label.order),
-						text: tsvField(total.label.text),
-					},
-				}
-			: total;
-		const line = totalLine(folded, "# ");
-		if (line) lines.push(line);
+		const line = total.label
+			? `# Total: ${total.bucket} (critical path: ${longCriticalPath(total.label)})`
+			: "# Total: unknown";
+		lines.push(line);
 	}
 	return `${lines.join("\n")}\n`;
 }
