@@ -66,7 +66,8 @@ function harness(): Harness {
 		homeDir: "/home/u",
 		env: {},
 		uid: 501,
-		writeFile: (path, text) => {
+		writeFile: (path, data) => {
+			const text = typeof data === "string" ? data : Buffer.from(data).toString("utf8");
 			written.push({ path, text });
 			installed.add(path);
 		},

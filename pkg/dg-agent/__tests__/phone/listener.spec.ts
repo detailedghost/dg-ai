@@ -130,7 +130,7 @@ describe("runListener", () => {
 		expect(contact?.npub).toBe(caller.npub);
 		expect(contact?.via).toBe("number");
 		const payload = JSON.parse(readFileSync(outFile, "utf8"));
-		expect(payload).toMatchObject({ from: caller.npub, handle: "grok", text: "hello there", call: true });
+		expect(payload).toMatchObject({ from: caller.npub, handle: "+grok", text: "hello there", call: true });
 	});
 
 	it("does not rename a just-created contact when a follow-up from the same caller is caught up in the same batch", async () => {

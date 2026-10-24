@@ -11,6 +11,7 @@ import {
 	systemdUnitPath,
 	systemdUnitText,
 	windowsTaskXml,
+	windowsTaskXmlBytes,
 	windowsTaskXmlPath,
 } from "../../src/phone/autostart";
 
@@ -18,11 +19,11 @@ const paths = resolveDgPaths({ platform: "linux", homeDir: "/home/u", env: {} })
 
 function fakeDeps(overrides: Partial<AutostartDeps> = {}): {
 	deps: AutostartDeps;
-	written: { path: string; text: string; mode?: number }[];
+	written: { path: string; text: string | Uint8Array; mode?: number }[];
 	removed: string[];
 	ran: string[][];
 } {
-	const written: { path: string; text: string; mode?: number }[] = [];
+	const written: { path: string; text: string | Uint8Array; mode?: number }[] = [];
 	const removed: string[] = [];
 	const ran: string[][] = [];
 	const deps: AutostartDeps = {
@@ -153,6 +154,16 @@ describe("windowsTaskXml", () => {
 		expect(text).toContain("<RestartOnFailure>\n\t\t\t<Interval>PT1M</Interval>\n\t\t\t<Count>10</Count>\n\t\t</RestartOnFailure>");
 		expect(text).toContain("<Command>C:\\dg\\dg-agent.exe</Command>");
 		expect(text).toContain('<Arguments>phone __run --on-message "C:\\Program Files\\notify.exe" "a b" "c\\"d"</Arguments>');
+	});
+
+	it("encodes the task XML as UTF-16 LE with a BOM, matching the declared encoding", () => {
+		const bytes = Buffer.from(windowsTaskXmlBytes(spec));
+
+		expect([bytes[0], bytes[1]]).toEqual([0xff, 0xfe]);
+		const decoded = bytes.toString("utf16le").replace(/^\uFEFF/, "");
+		expect(decoded).toBe(windowsTaskXml(spec));
+		expect(decoded).toContain('encoding="UTF-16"');
+		expect(bytes.toString("utf8").includes('encoding="UTF-16"')).toBe(false);
 	});
 });
 

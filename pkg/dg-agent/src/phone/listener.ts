@@ -1,6 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, openSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
 import { fetchNew, type Message, type NewContact, type PhonePool, type Reaccept, type Seen, subscribe, UNKNOWN_CALLER_HANDLE } from "./chat";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
@@ -29,7 +30,15 @@ export type ListenerDeps = KeyDeps & {
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 };
 
-export type ListenerPid = { pid: number; since: number; hook: { argv: string[]; timeoutS: number } | null };
+export type ListenerPid = {
+	pid: number;
+	since: number;
+	hook: { argv: string[]; timeoutS: number } | null;
+	/** Set when migration kept an old `phone-friend __run` process instead of starting a second one. */
+	adopted?: "legacy";
+};
+
+export type ListenerGeneration = "current" | "legacy";
 
 /** How often a message stuck at the attempt cap gets one fresh try, outside the listener's start-up retry. */
 export const STUCK_RETRY_INTERVAL_MS = 30 * 60 * 1000;
@@ -47,18 +56,30 @@ export function isListenerArgs(args: string[]): boolean {
 	return (args.includes("phone") || args.includes("phone-friend")) && args.includes("__run");
 }
 
-/** Whether `pid` is alive and its command line is one of our listeners, not just a reused pid. */
-export function isOurListener(pid: number): boolean {
-	if (!isAlive(pid)) return false;
+function listenerCommandArgs(pid: number): string[] | undefined {
+	if (!isAlive(pid)) return undefined;
 	const cmdline = `/proc/${pid}/cmdline`;
-	if (existsSync(cmdline)) return isListenerArgs(readFileSync(cmdline, "utf8").split("\0"));
+	if (existsSync(cmdline)) return readFileSync(cmdline, "utf8").split("\0");
 	if (process.platform === "win32") {
 		const query = `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`;
 		const ps = spawnSync("powershell", ["-NoProfile", "-Command", query], { encoding: "utf8" });
-		return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
+		return ps.status === 0 ? ps.stdout.trim().split(/\s+/) : undefined;
 	}
 	const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
-	return ps.status === 0 && isListenerArgs(ps.stdout.trim().split(/\s+/));
+	return ps.status === 0 ? ps.stdout.trim().split(/\s+/) : undefined;
+}
+
+/** Whether `pid` is alive and its command line is one of our listeners, not just a reused pid. */
+export function isOurListener(pid: number): boolean {
+	const args = listenerCommandArgs(pid);
+	return args !== undefined && isListenerArgs(args);
+}
+
+/** `current` is already `phone __run`. `legacy` is the old `phone-friend __run` process. */
+export function listenerGeneration(pid: number): ListenerGeneration | undefined {
+	const args = listenerCommandArgs(pid);
+	if (!args || !isListenerArgs(args)) return undefined;
+	return args.includes("phone-friend") ? "legacy" : "current";
 }
 
 /** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is no longer alive. */
@@ -68,10 +89,28 @@ export function readListenerPid(paths: DgPaths): ListenerPid | undefined {
 	try {
 		const record = JSON.parse(readFileSync(path, "utf8")) as ListenerPid;
 		if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return undefined;
-		return isAlive(record.pid) ? record : undefined;
+		if (!isAlive(record.pid)) return undefined;
+		return record.adopted === "legacy" ? record : { pid: record.pid, since: record.since, hook: record.hook };
 	} catch {
 		return undefined;
 	}
+}
+
+/** Points `listener.pid` at a process that is already running, so nothing else starts a second one. */
+export function adoptListenerPid(paths: DgPaths, record: ListenerPid): void {
+	writeListenerPid(paths, record);
+}
+
+/** Detached listener process. The child writes `listener.pid` once `phone __run` is up. */
+export function spawnDetachedListener(argv: string[], logPath: string): number {
+	ensurePrivateDir(dirname(logPath));
+	const log = openSync(logPath, "a", 0o600);
+	chmodSync(logPath, 0o600);
+	const [command, ...args] = argv;
+	const child = spawn(command, args, { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: process.env });
+	child.unref();
+	if (child.pid === undefined) throw new DgCliError("could not spawn the phone listener");
+	return child.pid;
 }
 
 function writeListenerPid(paths: DgPaths, record: ListenerPid): void {

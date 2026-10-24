@@ -119,6 +119,19 @@ describe("number", () => {
 		expect((lines()[0] as { expires_at: null }).expires_at).toBeNull();
 	});
 
+	it("reports the live listener from the pid file, and null when none is running", async () => {
+		const d = deps(freshHome());
+
+		await phoneNumber({}, d);
+		expect(lines()[0]).toMatchObject({ listener: null });
+
+		writeFileSync(listenerPidPath(d.paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null }));
+		out = [];
+		await phoneNumber({}, d);
+
+		expect(lines()[0]).toMatchObject({ listener: { pid: process.pid, since: NOW } });
+	});
+
 	it("rejects a bad --as", async () => {
 		const d = deps(freshHome());
 

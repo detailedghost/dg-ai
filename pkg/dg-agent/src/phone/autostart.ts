@@ -13,7 +13,7 @@ export type AutostartDeps = {
 	homeDir: string;
 	env: Record<string, string | undefined>;
 	uid: number;
-	writeFile: (path: string, text: string, mode?: number) => void;
+	writeFile: (path: string, data: string | Uint8Array, mode?: number) => void;
 	removeFile: (path: string) => void;
 	fileExists: (path: string) => boolean;
 	run: (argv: string[]) => Promise<RunResult>;
@@ -133,6 +133,12 @@ export function windowsTaskXmlPath(paths: DgPaths): string {
 	return join(paths.phoneRoot, "dg-phone.task.xml");
 }
 
+/** UTF-16 LE with a BOM, matching the `encoding="UTF-16"` declaration Task Scheduler parses. */
+export function windowsTaskXmlBytes(spec: AutostartSpec): Uint8Array {
+	const text = windowsTaskXml(spec);
+	return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+}
+
 export function windowsTaskXml(spec: AutostartSpec): string {
 	const [command, ...rest] = spec.argv;
 	const args = rest.map(quoteWindowsArg).join(" ");
@@ -225,7 +231,8 @@ async function installTask(deps: AutostartDeps, path: string): Promise<Autostart
 export async function installAutostart(deps: AutostartDeps, paths: DgPaths, spec: AutostartSpec): Promise<AutostartOutcome> {
 	const location = locationFor(deps, paths);
 	if (!location) return { ok: false, reason: `unsupported platform "${deps.platform}"` };
-	deps.writeFile(location.path, unitTextFor(location.kind, spec), 0o600);
+	const payload = location.kind === "task" ? windowsTaskXmlBytes(spec) : unitTextFor(location.kind, spec);
+	deps.writeFile(location.path, payload, 0o600);
 	if (location.kind === "systemd") return installSystemd(deps, location.path);
 	if (location.kind === "launchd") return installLaunchd(deps, location.path);
 	return installTask(deps, location.path);

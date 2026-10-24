@@ -15,7 +15,7 @@ const NOW = Math.floor(Date.now() / 1000);
 
 type Harness = {
 	deps: OpenCloseDeps;
-	written: { path: string; text: string; mode?: number }[];
+	written: { path: string; text: string | Uint8Array; mode?: number }[];
 	removed: string[];
 	ran: string[][];
 	killed: { pid: number; signal: NodeJS.Signals }[];
@@ -34,7 +34,7 @@ function harness(overrides: Partial<OpenCloseDeps> = {}): Harness {
 	const paths = resolveDgPaths({ env: { DG_HOME: freshHome() } });
 	const db = PhoneDb.open(paths, () => NOW);
 	tracker.trackDb(db);
-	const written: { path: string; text: string; mode?: number }[] = [];
+	const written: { path: string; text: string | Uint8Array; mode?: number }[] = [];
 	const removed: string[] = [];
 	const ran: string[][] = [];
 	const killed: { pid: number; signal: NodeJS.Signals }[] = [];
@@ -93,6 +93,14 @@ function harness(overrides: Partial<OpenCloseDeps> = {}): Harness {
 	return { deps, written, removed, ran, killed, spawned };
 }
 
+function unitText(value: string | Uint8Array | undefined): string {
+	if (value === undefined) return "";
+	if (typeof value === "string") return value;
+	const bytes = Buffer.from(value);
+	if (bytes[0] === 0xff && bytes[1] === 0xfe) return bytes.toString("utf16le").replace(/^\uFEFF/, "");
+	return bytes.toString("utf8");
+}
+
 function writeRunningPid(h: Harness, pid: number, hook: { argv: string[]; timeoutS: number } | null = null): void {
 	writeFileSync(listenerPidPath(h.deps.paths), JSON.stringify({ pid, since: NOW, hook }));
 }
@@ -124,7 +132,7 @@ describe("phoneOpen", () => {
 			["systemctl", "--user", "daemon-reload"],
 			["systemctl", "--user", "enable", "--now", "dg-phone.service"],
 		]);
-		expect(h.written[0]?.text).toContain('ExecStart="/fake/execPath" "phone" "__run"');
+		expect(unitText(h.written[0]?.text)).toContain('ExecStart="/fake/execPath" "phone" "__run"');
 		expect(lines()[0]).toEqual({ pid: null, status: "started", autostart: "systemd", hook: null });
 	});
 
@@ -133,8 +141,8 @@ describe("phoneOpen", () => {
 
 		await phoneOpen({}, h.deps);
 
-		expect(h.written[0]?.text).toContain("<key>RunAtLoad</key>\n\t<true/>");
-		expect(h.written[0]?.text).toContain("<key>SuccessfulExit</key>\n\t\t<false/>");
+		expect(unitText(h.written[0]?.text)).toContain("<key>RunAtLoad</key>\n\t<true/>");
+		expect(unitText(h.written[0]?.text)).toContain("<key>SuccessfulExit</key>\n\t\t<false/>");
 		expect(h.ran.at(-1)).toEqual(["launchctl", "bootstrap", "gui/501", h.written[0]?.path]);
 		expect(lines()[0]).toMatchObject({ status: "started", autostart: "launchd" });
 	});
@@ -144,8 +152,14 @@ describe("phoneOpen", () => {
 
 		await phoneOpen({}, h.deps);
 
-		expect(h.written[0]?.text).toContain("<LogonTrigger>");
-		expect(h.written[0]?.text).toContain("<RestartOnFailure>");
+		const taskBytes = h.written[0]?.text;
+		expect(taskBytes).toBeInstanceOf(Uint8Array);
+		const bytes = Buffer.from(taskBytes as Uint8Array);
+		expect([bytes[0], bytes[1]]).toEqual([0xff, 0xfe]);
+		expect(unitText(taskBytes)).toContain('encoding="UTF-16"');
+		expect(Buffer.from(taskBytes as Uint8Array).toString("utf8").includes('encoding="UTF-16"')).toBe(false);
+		expect(unitText(taskBytes)).toContain("<LogonTrigger>");
+		expect(unitText(taskBytes)).toContain("<RestartOnFailure>");
 		expect(h.ran).toEqual([
 			["schtasks", "/End", "/TN", "dg-phone"],
 			["schtasks", "/Create", "/TN", "dg-phone", "/XML", h.written[0]?.path, "/F"],
@@ -159,7 +173,7 @@ describe("phoneOpen", () => {
 
 		await phoneOpen({ onMessage: ["/usr/bin/notify", "a b", 'c"d'] }, h.deps);
 
-		expect(h.written[0]?.text).toContain('"--on-message" "/resolved/usr/bin/notify" "a b" "c\\"d" "--on-message-timeout" "30"');
+		expect(unitText(h.written[0]?.text)).toContain('"--on-message" "/resolved/usr/bin/notify" "a b" "c\\"d" "--on-message-timeout" "30"');
 		expect(lines()[0]).toMatchObject({ hook: "command" });
 		expect(readListener(h.deps.db)?.onMessage).toEqual({ argv: ["/resolved/usr/bin/notify", "a b", 'c"d'], timeoutMs: 30_000 });
 	});
@@ -234,6 +248,53 @@ describe("phoneOpen", () => {
 
 		expect(h.killed).toEqual([]);
 		expect(lines()[0]).toMatchObject({ status: "started", autostart: "systemd" });
+	});
+
+	it("restarts the previous listener when enable fails after the old listener was stopped", async () => {
+		let failEnable = false;
+		const h = harness({
+			run: async (argv) => {
+				h.ran.push(argv);
+				if (failEnable && argv.includes("enable")) return { code: 1, stdout: "", stderr: "enable failed" };
+				return { code: 0, stdout: "", stderr: "" };
+			},
+		});
+		await phoneOpen({ onMessage: ["/usr/bin/notify"] }, h.deps);
+		simulateListenerStarted(h);
+		failEnable = true;
+		h.spawned.length = 0;
+		h.killed.length = 0;
+
+		await expect(phoneOpen({ onMessage: ["/usr/bin/other"] }, h.deps)).rejects.toThrow(
+			"systemctl --user enable --now dg-phone.service failed: enable failed",
+		);
+
+		expect(h.killed).toEqual([{ pid: process.pid, signal: "SIGTERM" }]);
+		expect(h.spawned).toHaveLength(1);
+		expect(h.spawned[0]?.argv).toEqual([
+			"/fake/execPath",
+			"phone",
+			"__run",
+			"--on-message",
+			"/resolved/usr/bin/notify",
+			"--on-message-timeout",
+			"30",
+		]);
+		expect(readListener(h.deps.db)?.onMessage?.argv).toEqual(["/resolved/usr/bin/notify"]);
+	});
+
+	it("replaces an adopted legacy listener instead of treating it as the new one", async () => {
+		const h = harness();
+		writeFileSync(
+			listenerPidPath(h.deps.paths),
+			JSON.stringify({ pid: process.pid, since: NOW, hook: null, adopted: "legacy" }),
+		);
+
+		await phoneOpen({}, h.deps);
+
+		expect(h.killed).toEqual([{ pid: process.pid, signal: "SIGTERM" }]);
+		expect(lines()[0]).toMatchObject({ status: "restarted", autostart: "systemd" });
+		expect(h.spawned).toEqual([]);
 	});
 
 	it("falls back to a detached spawn and reports unavailable when systemctl is not usable", async () => {

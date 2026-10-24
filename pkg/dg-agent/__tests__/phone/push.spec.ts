@@ -31,7 +31,7 @@ describe("onMessagePayload", () => {
 	it("carries id, ts, from, handle, and text as JSON for --on-message's stdin", () => {
 		const payload = onMessagePayload({ id: "m1", ts: 100, from: "npub1them", text: "hi" }, "line");
 
-		expect(JSON.parse(payload)).toEqual({ id: "m1", ts: 100, from: "npub1them", handle: "line", text: "hi" });
+		expect(JSON.parse(payload)).toEqual({ id: "m1", ts: 100, from: "npub1them", handle: "+line", text: "hi" });
 	});
 
 	it("includes call only when the message carries it", () => {
@@ -41,7 +41,7 @@ describe("onMessagePayload", () => {
 			id: "m2",
 			ts: 200,
 			from: "npub1them",
-			handle: "line",
+			handle: "+line",
 			text: "hi",
 			call: true,
 		});

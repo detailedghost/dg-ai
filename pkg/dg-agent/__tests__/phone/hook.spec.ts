@@ -97,7 +97,7 @@ describe("createHookRunner", () => {
 		expect(db.unreadMessages()).toEqual([]);
 		const payloads = deliveredPayloads(outFile);
 		expect(payloads.map((p) => p.id)).toEqual(["a", "b"]);
-		expect(payloads[0]).toEqual({ id: "a", ts: NOW, from: "npub1them", handle: "velora", text: "hi" });
+		expect(payloads[0]).toEqual({ id: "a", ts: NOW, from: "npub1them", handle: "+velora", text: "hi" });
 	});
 
 	it("blocks newer rows while the oldest one fails, then lets them through once it succeeds", async () => {
@@ -187,6 +187,30 @@ describe("createHookRunner", () => {
 
 		expect(db.recentMessages(1)[0]?.read_at).not.toBeNull();
 		expect(deliveredPayloads(outFile)).toHaveLength(1);
+	});
+
+	it("keeps the backoff when another message arrives, and does not stack a second timer", async () => {
+		db.addMessage(message("a", NOW));
+		const { schedule, delays, fireNext } = fakeSchedule();
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
+
+		const first = runner.notify();
+		const second = runner.notify();
+		await first;
+		await second;
+		expect(delays()).toEqual([5000]);
+		expect(db.recentMessages(1)[0]?.attempts).toBe(1);
+
+		db.addMessage(message("b", NOW + 1));
+		await runner.notify();
+		expect(delays()).toEqual([5000]);
+		expect(db.recentMessages(2).find((row) => row.id === "a")?.attempts).toBe(1);
+
+		runner.stop();
+		expect(delays()).toEqual([]);
+		fireNext();
+		await runner.settle();
+		expect(db.recentMessages(2).find((row) => row.id === "a")?.attempts).toBe(1);
 	});
 
 	it("a notify that arrives while a delivery is already in flight does not recurse forever once the queue drains", async () => {

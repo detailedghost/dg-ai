@@ -200,15 +200,18 @@ more than a week loses what it missed.
 
 ## Migration and rollback
 
-The first `phone` or `phone-friend` command on a machine with an old
-`~/.dg/phone-friend/<line>/phone-friend.db` and no `~/.dg/phone/phone.db` yet
-moves every line's key, contact, and message into the new database once,
-prints a one-line summary to stderr, and renames the old root to
-`~/.dg/phone-friend.migrated`. Every later command is a no-op migration
-check. To roll back, rename `~/.dg/phone-friend.migrated` back to
-`~/.dg/phone-friend` and run the old binary; `phone status` reports
-`"legacy_root_present": true` if a later rename ever leaves the old root in
-place alongside the new database.
+`status`, `inbox`, and `contacts` only read. They do not migrate and they do
+not stop a listener. The first writing command (`number`, `invite`, `accept`,
+`say`, `voicemail`, `open`, `close`, or a contact edit) moves every line's
+key, contact, and message into the new database once. One running old
+listener is kept and reused. The stderr summary says `"next": "run phone open"`
+when that process is the old `phone-friend` listener, and `open` then switches
+to the new one. More than one old listener is stopped, and exactly one new
+listener starts only after each of them has exited. The old root is renamed to
+`~/.dg/phone-friend.migrated`. Every later command is a no-op migration check.
+To roll back, rename `~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend`
+and run the old binary; `phone status` reports `"legacy_root_present": true`
+if a later rename ever leaves the old root in place alongside the new database.
 
 ## Set up the other side
 

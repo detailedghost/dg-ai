@@ -44,8 +44,14 @@ export function pushFrame(handle: string, text: string, call?: true): string {
 
 export type PushMessage = { id: string; ts: number; from: string; text: string; call?: true };
 
+/** The hook payload's handle, with the leading `+` every other phone command prints. */
+function wireHandle(handle: string): string {
+	if (handle.length === 0 || handle.startsWith("+")) return handle;
+	return `+${handle}`;
+}
+
 /** The JSON a `--on-message` command receives on stdin; never passed on argv. */
 export function onMessagePayload(message: PushMessage, handle: string): string {
 	const { id, ts, from, text, call } = message;
-	return JSON.stringify({ id, ts, from, handle, text, ...(call ? { call: true as const } : {}) });
+	return JSON.stringify({ id, ts, from, handle: wireHandle(handle), text, ...(call ? { call: true as const } : {}) });
 }

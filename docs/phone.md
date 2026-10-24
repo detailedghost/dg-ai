@@ -84,8 +84,10 @@ commands, per platform:
 `close` runs each platform's stop-and-disable command
 (`systemctl --user disable --now`, `launchctl bootout`, `schtasks /End` then
 `/Delete /F`), removes the file, and sends SIGTERM to any pid still in
-`listener.pid`. Where no service manager answers at all (WSL without
-`systemd=true` in `/etc/wsl.conf`, most containers), `open` falls back to a
+`listener.pid`. If `open` stopped a running listener and the enable step then
+fails, it starts that previous listener again and reports the error, so the
+phone is not left with nothing listening. Where no service manager answers
+at all (WSL without `systemd=true` in `/etc/wsl.conf`, most containers), `open` falls back to a
 detached spawn and reports `"autostart": "unavailable: <reason>"`; nothing
 else restarts that process if it crashes, by design — a fallback supervisor
 would be a second owner of one process.
@@ -129,17 +131,29 @@ never reach further back than that window either. The only other files are
 
 ## Migration and the `phone-friend` alias
 
-The first `phone` or `phone-friend` command on a machine with an old
-`~/.dg/phone-friend/<line>/phone-friend.db` and no `~/.dg/phone/phone.db`
-yet runs the migration once: it carries over every line's key (as a
-`keys` row), contact, message, and read mark, picks the `default` line's
-key as the number if one exists (else the first line by name), then
-renames the old root to `~/.dg/phone-friend.migrated` and prints a one-line
-summary to stderr. Every later command sees `phone.db` already there and
-does nothing further. To roll back, rename `~/.dg/phone-friend.migrated`
-back to `~/.dg/phone-friend` and run the previous `dg-agent` binary;
-`status` reports `"legacy_root_present": true` if the final rename ever
-fails and leaves the old root sitting next to the new database.
+`status`, `inbox`, and `contacts` only read. They do not migrate, and they
+do not stop a listener. The first writing command (`number`, `invite`,
+`accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) runs the
+migration once when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists
+and `~/.dg/phone/phone.db` does not. It carries over every line's key (as a
+`keys` row), contact, message, and read mark, and picks the `default` line's
+key as the number if one exists (else the first line by name).
+
+One running old listener is adopted: that process stays up, and the new
+`listener.pid` points at it, so nothing starts a second one. When the process
+is the old `phone-friend __run`, the stderr summary includes
+`"next": "run phone open"`. `open` then stops that one process and starts the
+new listener. When more than one old listener is running, migration stops
+each of them and, only after every one has exited, starts exactly one new
+listener. If one will not exit, it starts nothing and leaves those processes
+in place.
+
+It then renames the old root to `~/.dg/phone-friend.migrated` and prints a
+one-line summary to stderr. Every later command sees `phone.db` and does
+nothing further. To roll back, rename `~/.dg/phone-friend.migrated` back to
+`~/.dg/phone-friend` and run the previous `dg-agent` binary. `status` reports
+`"legacy_root_present": true` if the final rename fails and leaves the old
+root sitting next to the new database.
 
 `dg-agent phone-friend <verb>` keeps working, hidden, for two minor
 releases past this rename, printing one notice to stderr. `dial`, `on`,

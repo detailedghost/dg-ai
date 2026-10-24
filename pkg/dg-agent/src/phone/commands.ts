@@ -1,6 +1,5 @@
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, openSync, rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -13,8 +12,18 @@ import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRE
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
-import { defaultOnSignal, defaultSchedule, isOurListener, listenerLogPath, readListenerPid, removeListenerPid, runListener } from "./listener";
-import { legacyRootPresent, migrateIfNeeded, runArgv } from "./migrate";
+import {
+	defaultOnSignal,
+	defaultSchedule,
+	isOurListener,
+	listenerLogPath,
+	readListenerPid,
+	removeListenerPid,
+	runListener,
+	spawnDetachedListener,
+	type ListenerPid,
+} from "./listener";
+import { legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
@@ -34,6 +43,7 @@ import {
 	readRelays,
 	removeContact,
 	renameContact,
+	clearListener,
 	requireFreeHandle,
 	resolvedSelfName,
 	writeListener,
@@ -71,14 +81,21 @@ const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 const STOP_WAIT_MS = 5000;
 
-/** The CLI entry point: migration must run before `PhoneDb.open` creates `phone.db`, since
- * `legacyRoot` stops seeing a legacy install the moment that file exists. */
+/** The CLI entry point. `db` migrates on first use, and only then, so a read-only command can
+ * look at `paths` without creating `phone.db`. Migration must still run before `PhoneDb.open`
+ * creates that file, since `legacyRoot` stops seeing a legacy install the moment it exists. */
 function defaultDeps(session?: string): PhoneDeps {
 	const paths = resolveDgPaths();
-	migrateIfNeeded(paths);
+	let db: PhoneDb | undefined;
 	return {
 		paths,
-		db: PhoneDb.open(paths),
+		get db() {
+			if (!db) {
+				migrateIfNeeded(paths);
+				db = PhoneDb.open(paths);
+			}
+			return db;
+		},
 		...defaultKeyClients(paths, session),
 		createPool: () => new SimplePool({ enableReconnect: true }),
 		write: writeStdout,
@@ -89,14 +106,7 @@ function defaultDeps(session?: string): PhoneDeps {
 
 /** Detached, `unref`'d, logging to `<phoneRoot>/listener.log`: the same shape phone-friend's `on` used. */
 function defaultSpawnListener(argv: string[], logPath: string): number {
-	ensurePrivateDir(dirname(logPath));
-	const log = openSync(logPath, "a", 0o600);
-	chmodSync(logPath, 0o600);
-	const [command, ...args] = argv;
-	const child = spawn(command, args, { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: process.env });
-	child.unref();
-	if (child.pid === undefined) throw new DgCliError("could not spawn the phone listener");
-	return child.pid;
+	return spawnDetachedListener(argv, logPath);
 }
 
 function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
@@ -106,9 +116,9 @@ function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 		homeDir: homedir(),
 		env: process.env,
 		uid: process.getuid?.() ?? 0,
-		writeFile: (path, text, mode) => {
+		writeFile: (path, data, mode) => {
 			ensurePrivateDir(dirname(path));
-			writeFileAtomic(path, text, mode);
+			writeFileAtomic(path, typeof data === "string" ? data : Buffer.from(data), mode);
 		},
 		removeFile: (path) => rmSync(path, { force: true }),
 		fileExists: existsSync,
@@ -151,6 +161,7 @@ export async function phoneNumber(
 	const rotatedAt = rotated ? deps.now() : existing?.rotatedAt;
 	writeNumber(deps.db, { secret, as, ...(rotatedAt === undefined ? {} : { rotatedAt }) });
 	const card = encodeCard({ npub: npubOf(sk), relays, secret, exp: NO_EXPIRY, handle: as });
+	const listener = readListenerPid(deps.paths);
 	printJson(deps, {
 		card,
 		npub: npubOf(sk),
@@ -159,7 +170,7 @@ export async function phoneNumber(
 		expires_at: null,
 		rotated,
 		key_store: mode,
-		listener: null,
+		listener: listener ? { pid: listener.pid, since: listener.since } : null,
 		safety: PHONE_SAFETY_REF,
 	});
 }
@@ -238,7 +249,7 @@ export async function phoneAccept(
 }
 
 export function phoneContacts(deps: PhoneDeps): void {
-	migrateIfNeeded(deps.paths);
+	if (!existsSync(PhoneDb.path(deps.paths))) return;
 	for (const contact of listContacts(deps.db)) {
 		printJson(deps, {
 			handle: `+${contact.handle}`,
@@ -293,9 +304,9 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 }
 
 export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDeps): void {
-	migrateIfNeeded(deps.paths);
 	const limit = opts.n === undefined ? 50 : Number(opts.n);
 	if (!Number.isInteger(limit) || limit <= 0) throw new DgCliError(`-n must be a positive integer, got "${opts.n}"`);
+	if (!existsSync(PhoneDb.path(deps.paths))) return;
 	let contactNpub: string | undefined;
 	if (opts.handle !== undefined) {
 		const handle = normalizeHandle(opts.handle);
@@ -334,7 +345,19 @@ export function phoneVoicemail(deps: PhoneDeps): void {
 }
 
 export function phoneStatus(deps: PhoneDeps): void {
-	migrateIfNeeded(deps.paths);
+	if (!existsSync(PhoneDb.path(deps.paths))) {
+		const view = readOnlyLegacyView(deps.paths);
+		printJson(deps, {
+			as: view.as,
+			contacts: view.contacts,
+			pending_voicemail: view.pendingVoicemail,
+			listener: view.listener,
+			hook: null,
+			legacy_root_present: false,
+			autostart: null,
+		});
+		return;
+	}
 	const number = readNumber(deps.db);
 	const listener = readListenerPid(deps.paths);
 	printJson(deps, {
@@ -359,6 +382,11 @@ export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: 
 
 function onMessageArgvFor(onMessage: OnMessageConfig | undefined): string[] {
 	return onMessage ? ["--on-message", ...onMessage.argv, "--on-message-timeout", String(Math.round(onMessage.timeoutMs / 1000))] : [];
+}
+
+function onMessageFromPid(hook: ListenerPid["hook"]): OnMessageConfig | undefined {
+	if (!hook) return undefined;
+	return { argv: hook.argv, timeoutMs: hook.timeoutS * 1000 };
 }
 
 /** Resolves `--on-message`'s executable to an absolute path at `open` time: a systemd user unit
@@ -408,10 +436,10 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 	migrateIfNeeded(deps.paths);
 	const saved = readListener(deps.db);
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
-	if (onMessage) writeListener(deps.db, { ...saved, onMessage });
 
 	const running = liveListener(deps);
-	if (running && sameHook(running.hook, onMessage)) {
+	if (running && running.adopted !== "legacy" && sameHook(running.hook, onMessage)) {
+		if (onMessage) writeListener(deps.db, { ...saved, onMessage });
 		printJson(deps, {
 			pid: running.pid,
 			status: "running",
@@ -420,23 +448,42 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 		});
 		return;
 	}
-	if (running) await stopRunningListener(deps, running.pid);
+	let stopped: ListenerPid | undefined;
+	if (running) {
+		await stopRunningListener(deps, running.pid);
+		stopped = running;
+	}
 
 	const argv = deps.listenerArgv(onMessageArgvFor(onMessage));
-	const install = await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
-	writeListener(deps.db, {
-		onMessage,
-		autostart: install.ok ? { kind: install.kind } : { kind: "unavailable", reason: install.reason },
-	});
-
 	const status = running ? "restarted" : "started";
 	const hookField = onMessage ? ("command" as const) : null;
-	if (install.ok) {
-		printJson(deps, { pid: null, status, autostart: install.kind, hook: hookField });
-		return;
+	let started = false;
+	try {
+		if (onMessage) writeListener(deps.db, { ...saved, onMessage });
+		const install = await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+		started = install.ok;
+		writeListener(deps.db, {
+			onMessage,
+			autostart: install.ok ? { kind: install.kind } : { kind: "unavailable", reason: install.reason },
+		});
+		if (install.ok) {
+			printJson(deps, { pid: null, status, autostart: install.kind, hook: hookField });
+			return;
+		}
+		const pid = deps.spawnListener(argv, listenerLogPath(deps.paths));
+		started = true;
+		printJson(deps, { pid, status, autostart: `unavailable: ${install.reason}`, hook: hookField });
+	} catch (err) {
+		// A new listener is already up, so a later bookkeeping error must not start a second one.
+		if (stopped && !started) {
+			if (saved) writeListener(deps.db, saved);
+			else clearListener(deps.db);
+			try {
+				deps.spawnListener(deps.listenerArgv(onMessageArgvFor(onMessageFromPid(stopped.hook))), listenerLogPath(deps.paths));
+			} catch {}
+		}
+		throw err;
 	}
-	const pid = deps.spawnListener(argv, listenerLogPath(deps.paths));
-	printJson(deps, { pid, status, autostart: `unavailable: ${install.reason}`, hook: hookField });
 }
 
 export async function phoneClose(deps: OpenCloseDeps): Promise<void> {

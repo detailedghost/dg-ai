@@ -59,6 +59,10 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	 * `settle()` would resolve while the pass that is really running is still in flight. */
 	function start(run: () => Promise<void>, kind: "pass" | "stuck"): Promise<void> {
 		if (stopped) return Promise.resolve();
+		if (kind === "pass" && cancelRetry) {
+			passAgain = true;
+			return current;
+		}
 		if (inFlight) {
 			if (kind === "pass") passAgain = true;
 			else stuckAgain = true;
@@ -69,9 +73,11 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		return current;
 	}
 
-	/** A coalesced `retryStuck()` is folded in right after a coalesced `notify()`, never dropped. */
+	/** A coalesced `retryStuck()` is folded in right after a coalesced `notify()`, never dropped.
+	 * A pass stays paused while a backoff timer is pending, so a new message cannot skip that wait. */
 	function resumeIfAskedAgain(): void {
 		inFlight = false;
+		if (cancelRetry) return;
 		const again = passAgain;
 		passAgain = false;
 		if (again) {
@@ -81,6 +87,15 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		const retryAgain = stuckAgain;
 		stuckAgain = false;
 		if (retryAgain) start(stuckPass, "stuck");
+	}
+
+	function armRetry(delayMs: number): void {
+		cancelRetry?.();
+		cancelRetry = schedule(delayMs, () => {
+			cancelRetry = undefined;
+			passAgain = false;
+			start(pass, "pass");
+		});
 	}
 
 	async function pass(): Promise<void> {
@@ -95,10 +110,7 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 				const attempts = db.bumpAttempts(row.id);
 				if (attempts >= ON_MESSAGE_MAX_ATTEMPTS) continue;
 				if (stopped) return;
-				cancelRetry = schedule(nextOnMessageRetryDelayMs(attempts - 1), () => {
-					cancelRetry = undefined;
-					start(pass, "pass");
-				});
+				armRetry(nextOnMessageRetryDelayMs(attempts - 1));
 				return;
 			}
 		} finally {
