@@ -233,7 +233,8 @@ export function renderLong(model: ChecklistModel): string {
 	for (const row of rows) {
 		const owner = row.owner ?? "-";
 		const eta = row.owner === "agent" && row.status !== "done" && row.eta ? row.eta : "-";
-		lines.push([row.order, owner, row.status, tsvField(row.text), "-", "-", eta].join("\t"));
+		const order = row.order.includes(".") ? "-" : row.order;
+		lines.push([order, owner, row.status, tsvField(row.text), "-", "-", eta].join("\t"));
 	}
 	if (hiddenDoneCount > 0) lines.push(`# ...and ${hiddenDoneCount} more done`);
 	const total = totalLine(computeTotal(model), "# ");

@@ -185,11 +185,23 @@ describe("renderers", () => {
 		const lines = out.split("\n").filter(Boolean);
 		expect(lines[0]).toBe("ORDER\tOWNER\tSTATUS\tWORK\tDETAIL\tPR/MR\tETA");
 		expect(lines[1]).toBe("1\tagent\trunning\tPhone feature to PR\t-\t-\t~1 hr");
-		expect(lines[2]).toBe("1.1\tagent\trunning\tFix the flaky listener test\t-\t-\t-");
+		expect(lines[2]).toBe("-\tagent\trunning\tFix the flaky listener test\t-\t-\t-");
 		expect(lines[3]).toBe("2\tuser\tblocked-user\tApprove the Wave 6/7 PR batch\t-\t-\t-");
 		expect(lines[4]).toBe("3\t-\tdone\tSign in to GitHub\t-\t-\t-");
 		expect(lines.at(-1)).toBe("# Total: ~1 hr (critical path: 1 Phone feature to PR)");
 		for (const line of lines) for (const char of line) expect(char.codePointAt(0) ?? 0).toBeLessThan(0x80);
+	});
+
+	test("renderLong gives every sub-item row a dash in ORDER and keeps them in stored order under their parent, even past 10", () => {
+		const parent = item("Parent", { status: "running" });
+		parent.children = Array.from({ length: 12 }, (_, i) => item(`sub ${i}`));
+		const out = renderLong({ open: [parent], done: [] });
+		const rows = out.split("\n").filter((line) => line.startsWith("1\t") || line.startsWith("-\t"));
+		expect(rows[0]).toBe("1\tagent\trunning\tParent\t-\t-\t-");
+		expect(rows.slice(1).map((row) => row.split("\t")[3])).toEqual(
+			Array.from({ length: 12 }, (_, i) => `sub ${i}`),
+		);
+		expect(rows.slice(1).every((row) => row.startsWith("-\tagent\tqueued\t"))).toBe(true);
 	});
 
 	test("renderLong sanitizes an embedded tab in item text to a space", () => {
