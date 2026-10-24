@@ -7,8 +7,9 @@ import { generateSecretKey, nip19 } from "nostr-tools";
 import type { Invite } from "./chat";
 import { PhoneFriendDb } from "./db";
 import { isLineName, type LinePaths, linePaths } from "./line";
+import type { PushTarget } from "./push";
 
-export type PhoneFriendConfig = { contact?: string; name?: string; relays: string[] };
+export type PhoneFriendConfig = { contact?: string; name?: string; relays: string[]; push?: PushTarget };
 
 export const DEFAULT_RELAYS = [
 	"wss://relay.damus.io",
