@@ -359,6 +359,16 @@ export function validateProtoBrowserData(value: unknown): ProtoBrowserData {
 /** Maximum caller-selected daemon relay deadline for one proto browser request. */
 export const PROTO_MAX_TIMEOUT_MS = 900_000;
 
+/**
+ * Relay deadline when the CLI omits timeoutMs.
+ * Scrape is a page read. Plant waits for the picker.
+ * The extension's own deadline is this plus a short margin.
+ */
+export const PROTO_DEFAULT_TIMEOUT_MS = {
+	scrape: 45_000,
+	plant: 900_000,
+} as const;
+
 /** Authenticated CLI request to run one `--ext` scrape or plant through the daemon relay. */
 export type ProtoCliRequest = {
 	type: "cli-proto-request";

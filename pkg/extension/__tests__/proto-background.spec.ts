@@ -9,7 +9,7 @@ import {
 	type ProtoBrowserRequest,
 	type ProtoResultFrame,
 } from "@/lib/background/proto";
-import { PROTO_PREVIEW_MAX_CHARS } from "@dg/common";
+import { PROTO_DEFAULT_TIMEOUT_MS, PROTO_PREVIEW_MAX_CHARS } from "@dg/common";
 import {
 	PROTO_CAPTURE_PREVIEW,
 	PROTO_HAS_PENDING,
@@ -31,6 +31,7 @@ type ApiOverrides = {
 	create?: FakeMethod;
 	captureVisibleTab?: FakeMethod;
 	query?: FakeMethod;
+	remove?: FakeMethod;
 	onRemoved?: (callback: (tabId: number) => void) => void;
 };
 
@@ -52,6 +53,7 @@ function buildApi(overrides: ApiOverrides = {}): {
 				overrides.captureVisibleTab ??
 				mock(async () => unstubbed("tabs.captureVisibleTab")),
 			query: overrides.query ?? mock(async () => []),
+			remove: overrides.remove ?? mock(async () => {}),
 			onRemoved: {
 				addListener(callback: (tabId: number) => void) {
 					onRemoved = callback;
@@ -724,10 +726,49 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 	});
 
 	it("deadlines a relay request slightly after the daemon timeout", () => {
-		expect(protoExtensionDeadlineMs("scrape")).toBe(50_000);
-		expect(protoExtensionDeadlineMs("plant")).toBe(905_000);
+		expect(PROTO_DEFAULT_TIMEOUT_MS.scrape).toBe(45_000);
+		expect(PROTO_DEFAULT_TIMEOUT_MS.plant).toBe(900_000);
+		expect(protoExtensionDeadlineMs("scrape")).toBe(
+			PROTO_DEFAULT_TIMEOUT_MS.scrape + 5_000,
+		);
+		expect(protoExtensionDeadlineMs("plant")).toBe(
+			PROTO_DEFAULT_TIMEOUT_MS.plant + 5_000,
+		);
 		expect(protoExtensionDeadlineMs("plant", 1_000)).toBe(6_000);
-		expect(protoExtensionDeadlineMs("scrape", 0)).toBe(50_000);
+		expect(protoExtensionDeadlineMs("scrape", 0)).toBe(
+			PROTO_DEFAULT_TIMEOUT_MS.scrape + 5_000,
+		);
+	});
+
+	it("closes a tab that opens after the extension deadline", async () => {
+		let resolveCreate: (tab: { id: number }) => void = () => {};
+		const remove = mock(async () => {});
+		const { api, listener } = buildApi({
+			create: mock(
+				() =>
+					new Promise((resolve) => {
+						resolveCreate = resolve;
+					}),
+			),
+			remove,
+		});
+		const handler = createProtoHandler({ browserApi: api, deadlineMs: 30 });
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+
+		await expect(resultPromise).resolves.toEqual({
+			ok: false,
+			error: PROTO_DEADLINE_ERROR,
+		});
+		resolveCreate({ id: 42 });
+		for (let attempt = 0; attempt < 10 && remove.mock.calls.length === 0; attempt += 1) {
+			await flush();
+		}
+
+		expect(remove).toHaveBeenCalledWith(42, expect.any(Function));
+		const pending = await new Promise((resolve) => {
+			listener({ type: PROTO_HAS_PENDING }, { tab: { id: 42 } }, resolve);
+		});
+		expect(pending).toEqual({ pending: false });
 	});
 
 	it("refuses to open a non-http URL or one past the marker limit", async () => {

@@ -86,22 +86,29 @@ explicit:
 - A second CLI that reuses a `(sessionId, requestId)` already in flight receives
   `{ ok: false, error: "duplicate requestId" }`. The original pending entry stays.
 - Closing the prototype tab settles the request with an error instead of leaving
-  the CLI blocked until the daemon deadline. The extension also finishes the
-  request at that relay timeout plus a short margin, and drops any captured
-  preview, so an abandoned tab does not keep the image until it closes.
+  the CLI blocked until the daemon deadline. The extension finishes the request
+  at `PROTO_DEFAULT_TIMEOUT_MS` (the same scrape and plant defaults the daemon
+  uses) plus a short margin, drops any captured preview, and closes a tab that
+  `tabs.create` returns after that deadline.
 - `login-page` is reported only when the browser left `expectedUrl`, or the
   navigation status is 401 or 403 and the page still looks like a sign-in wall.
   A password field on the requested URL is not, by itself, a wall.
 - Planted variation markup is namespaced (`id`, radio `name`, and the references
   that point at those ids, including `for`, `form`, `list`, `headers`, and
-  `aria-*`). Its CSS is re-serialized from `CSSStyleSheet` rules inside `@scope`,
-  which needs Chrome 118 (`minimum_chrome_version`). Id selectors, id attribute
-  selectors, and `url(#…)` fragments use the same prefix. `@keyframes` are kept
-  under that prefix, outside `@scope`, and `animation` / `animation-name`
-  references are rewritten to match. The content script asks
-  `browser.runtime.sendMessage` whether the tab has a pending relay request
-  before it scrapes or plants, so the Firefox MV2 callback-only `chrome`
-  namespace still receives a reply.
+  `aria-*`). A `form` or `list` value that is not one of the variation's own ids
+  is removed, and form-associated controls with no variation form get `form=""`
+  so they do not submit an ancestor host form. A submit that still comes from a
+  planted control is cancelled.
+- Its CSS is re-serialized from `CSSStyleSheet` rules inside `@scope`, which
+  needs Chrome 118 (`minimum_chrome_version`). Nested style rules and nested
+  `@media` are kept. Id selectors, including escaped ids such as `#a\:b`, id
+  attribute selectors (`=`, `^=`, `|=`; `$=` and `*=` still match after the
+  prefix), and `url(#…)` fragments use the same prefix. `@keyframes` are kept
+  under that prefix, outside `@scope`. A conditional `@keyframes` stays inside
+  its `@media` or `@supports`. `animation` / `animation-name` references are
+  rewritten to match. The content script asks `browser.runtime.sendMessage`
+  whether the tab has a pending relay request before it scrapes or plants, so
+  the Firefox MV2 callback-only `chrome` namespace still receives a reply.
 
 ## Alternatives considered
 

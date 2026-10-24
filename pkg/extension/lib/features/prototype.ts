@@ -622,48 +622,102 @@ function decodePrototypeCssEscapes(css: string): string {
 
 const SHADOW_ESCAPE_SELECTOR = /:host(?:-context)?\b|::slotted\b/i;
 
-function stripShadowEscapeRules(css: string): string {
-	let current = css;
-	let previous: string;
-	do {
-		previous = current;
-		current = current.replace(
-			/(^|[{}])([^{}]*(?::host(?:-context)?\b|::slotted\b)[^{}]*)\{[^{}]*\}/gi,
-			"$1",
-		);
-	} while (current !== previous);
+function dropCssPrelude(prelude: string): boolean {
+	const decoded = decodePrototypeCssEscapes(prelude);
+	return (
+		SHADOW_ESCAPE_SELECTOR.test(decoded) ||
+		/@import\b/i.test(decoded) ||
+		/@font-face\b/i.test(decoded) ||
+		/@charset\b/i.test(decoded)
+	);
+}
 
-	// Nested/novel rule syntax that still carries a shadow escape selector is
-	// rejected as a whole rather than risking a partial parser disagreement.
-	return SHADOW_ESCAPE_SELECTOR.test(current) ? "" : current;
+/** Decode escapes in declaration text so `p\6f sition` is still neutralized. */
+function sanitizeCssDeclarations(css: string): string {
+	return decodePrototypeCssEscapes(css)
+		.replace(/@import\b[^;]*(?:;|$)/gi, "")
+		.replace(/@charset\b[^;]*(?:;|$)/gi, "")
+		.replace(/@namespace\b[^;]*(?:;|$)/gi, "")
+		.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, (match) =>
+			/^url\s*\(\s*(?:#|(["'])#)/i.test(match) ? match : "none",
+		)
+		.replace(/(?:behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
+		.replace(
+			/(position\s*:\s*)(?:fixed|absolute|var\s*\([^)]*\))(\s*!important)?/gi,
+			"$1static$2",
+		)
+		.replace(
+			/(z-index\s*:\s*)([^;}]+)/gi,
+			(match, prefix: string, raw: string) => {
+				const numeric = Number(raw.replace(/!important/gi, "").trim());
+				return Number.isFinite(numeric) && Math.abs(numeric) <= 1000
+					? match
+					: `${prefix}0`;
+			},
+		)
+		.replaceAll("<", "\\3C ")
+		.replaceAll("-->", "--\\3E ");
+}
+
+function lastTopLevelSemicolon(value: string): number {
+	let quote: string | undefined;
+	let last = -1;
+	for (let index = 0; index < value.length; index += 1) {
+		const character = value[index];
+		if (quote) {
+			if (character === "\\") {
+				index += 1;
+				continue;
+			}
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character === ";") last = index;
+	}
+	return last;
+}
+
+/**
+ * Sanitize declarations, but keep selector escapes so `#a\:b` still parses as
+ * an id. Nested rules stay in the text for the serializer to walk.
+ */
+function sanitizeCssStructure(css: string): string {
+	let result = "";
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) {
+			result += sanitizeCssDeclarations(css.slice(index));
+			break;
+		}
+		const segment = css.slice(index, open);
+		const split = lastTopLevelSemicolon(segment);
+		const loose = split >= 0 ? segment.slice(0, split + 1) : "";
+		const prelude = split >= 0 ? segment.slice(split + 1) : segment;
+		const end = endOfBlock(css, open, "{", "}");
+		const inner = css.slice(open + 1, Math.max(open + 1, end - 1));
+		result += sanitizeCssDeclarations(loose);
+		if (!dropCssPrelude(prelude)) {
+			const safePrelude = prelude
+				.replaceAll("<", "\\3C ")
+				.replaceAll("-->", "--\\3E ");
+			result += `${safePrelude}{${sanitizeCssStructure(inner)}}`;
+		}
+		index = end;
+	}
+	return result;
 }
 
 function preparePrototypeCss(css: string): string {
-	return stripShadowEscapeRules(
-		decodePrototypeCssEscapes(css)
-			.replace(/\/\*[\s\S]*?\*\//g, "")
-			.replace(/@import\b[^;]*(?:;|$)/gi, "")
-			.replace(/@font-face\s*\{[^}]*\}/gi, "")
-			.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, (match) =>
-				/^url\s*\(\s*(?:#|(["'])#)/i.test(match) ? match : "none",
-			)
-			.replace(/(?:behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
-			.replace(
-				/(position\s*:\s*)(?:fixed|absolute|var\s*\([^)]*\))(\s*!important)?/gi,
-				"$1static$2",
-			)
-			.replace(
-				/(z-index\s*:\s*)([^;}]+)/gi,
-				(match, prefix: string, raw: string) => {
-					const numeric = Number(raw.replace(/!important/gi, "").trim());
-					return Number.isFinite(numeric) && Math.abs(numeric) <= 1000
-						? match
-						: `${prefix}0`;
-				},
-			)
-			.replaceAll("<", "\\3C ")
-			.replaceAll("-->", "--\\3E "),
-	);
+	const structured = sanitizeCssStructure(css.replace(/\/\*[\s\S]*?\*\//g, ""));
+	// A shadow-escape selector that survived the walk blanks the sheet.
+	// The check decodes escapes; the returned sheet keeps ident escapes.
+	if (SHADOW_ESCAPE_SELECTOR.test(decodePrototypeCssEscapes(structured))) return "";
+	return structured;
 }
 
 function prototypeStyleSheet(): { new (): CSSStyleSheet } | undefined {
@@ -841,22 +895,36 @@ const ID_ATTRIBUTE_SELECTOR =
 function rewriteAttributeSelector(
 	block: string,
 	ids: ReadonlyMap<string, string>,
+	idPrefix: string,
 ): string {
 	const match = ID_ATTRIBUTE_SELECTOR.exec(block);
 	if (!match) return rewriteHashIds(block, ids);
-	const operator = `${match[1] ?? ""}=`;
-	const raw = (match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(.)/g, "$1");
+	const operatorFlag = match[1] ?? "";
+	const operator = `${operatorFlag}=`;
+	const raw = decodePrototypeCssEscapes(
+		(match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(.)/g, "$1"),
+	);
+	const flag = match[6] ? ` ${match[6]}` : "";
+	// Prefixing ids makes `^=` / `|=` miss. `$=` and `*=` still match the prefixed id.
+	if (operatorFlag === "^" || operatorFlag === "|") {
+		if (!idPrefix || raw.startsWith(idPrefix)) return block;
+		return `[id${operator}"${cssString(`${idPrefix}${raw}`)}"${flag}]`;
+	}
+	if (operatorFlag === "$" || operatorFlag === "*") return block;
 	const mapped = ids.get(raw);
 	if (!mapped) return block;
-	const flag = match[6] ? ` ${match[6]}` : "";
 	return `[id${operator}"${cssString(mapped)}"${flag}]`;
 }
 
 function rewriteSelectorIds(
 	selector: string,
 	ids: ReadonlyMap<string, string>,
+	idPrefix = "",
 ): string {
-	if (ids.size === 0 || (!selector.includes("#") && !selector.includes("["))) {
+	if (
+		(ids.size === 0 && !idPrefix) ||
+		(!selector.includes("#") && !selector.includes("["))
+	) {
 		return selector;
 	}
 	let result = "";
@@ -870,7 +938,11 @@ function rewriteSelectorIds(
 		}
 		if (character === "[") {
 			const end = endOfBlock(selector, index, "[", "]");
-			result += rewriteAttributeSelector(selector.slice(index, end), ids);
+			result += rewriteAttributeSelector(
+				selector.slice(index, end),
+				ids,
+				idPrefix,
+			);
 			index = end - 1;
 			continue;
 		}
@@ -955,8 +1027,22 @@ function isGroupingRule(rule: CSSRule): rule is CSSGroupingRule {
 		name === "CSSMediaRule" ||
 		name === "CSSSupportsRule" ||
 		name === "CSSContainerRule" ||
-		name === "CSSLayerBlockRule"
+		name === "CSSLayerBlockRule" ||
+		rule.type === 4 ||
+		rule.type === 12
 	);
+}
+
+function childCssRules(rule: CSSRule): CSSRuleList | undefined {
+	if (!("cssRules" in rule)) return undefined;
+	const children = (rule as CSSGroupingRule).cssRules;
+	if (!children || children.length === 0) return undefined;
+	return children;
+}
+
+function groupingPrelude(rule: CSSRule): string {
+	const open = rule.cssText.indexOf("{");
+	return open > 0 ? rule.cssText.slice(0, open).trim() : "";
 }
 
 function keyframeRuleName(rule: CSSRule): string {
@@ -982,8 +1068,9 @@ function collectKeyframeNames(
 			}
 			continue;
 		}
-		if (isGroupingRule(rule)) {
-			collectKeyframeNames(rule.cssRules, prefix, into);
+		const children = childCssRules(rule);
+		if (children && (isGroupingRule(rule) || rule.constructor?.name === "CSSStyleRule")) {
+			collectKeyframeNames(children, prefix, into);
 		}
 	}
 }
@@ -1022,16 +1109,111 @@ function serializeKeyframeRules(
 		}
 		if (isGroupingRule(rule)) {
 			const inner = serializeKeyframeRules(rule.cssRules, names, ids);
-			if (inner) parts.push(inner);
+			if (!inner.trim()) continue;
+			const prelude = groupingPrelude(rule);
+			// Keep @media / @supports around the keyframes. Hoisting them
+			// makes both branches apply, and the later one wins unconditionally.
+			if (!prelude || /@scope\b/i.test(prelude)) continue;
+			parts.push(`${prelude} {\n${inner}\n}`);
+			continue;
+		}
+		if (rule.constructor?.name === "CSSStyleRule") {
+			const children = childCssRules(rule);
+			if (!children) continue;
+			const inner = serializeKeyframeRules(children, names, ids);
+			if (inner.trim()) parts.push(inner);
 		}
 	}
 	return parts.join("\n");
+}
+
+type SourceRule = { prelude: string; body: string };
+type SourceCursor = { rules: SourceRule[]; index: number };
+
+function splitCssRules(css: string): SourceRule[] {
+	const rules: SourceRule[] = [];
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) break;
+		const prelude = css.slice(index, open).trim();
+		const end = endOfBlock(css, open, "{", "}");
+		const body = css.slice(open + 1, Math.max(open + 1, end - 1));
+		if (prelude) rules.push({ prelude, body });
+		index = end;
+	}
+	return rules;
+}
+
+function normalizeCssPrelude(value: string): string {
+	return decodePrototypeCssEscapes(value).replace(/\s+/g, " ").trim();
+}
+
+function takeSource(
+	cursor: SourceCursor | undefined,
+	prelude: string,
+): SourceRule | undefined {
+	if (!cursor || !prelude.trim()) return undefined;
+	const want = normalizeCssPrelude(prelude);
+	for (let index = cursor.index; index < cursor.rules.length; index += 1) {
+		const rule = cursor.rules[index];
+		if (!rule || normalizeCssPrelude(rule.prelude) !== want) continue;
+		cursor.index = index + 1;
+		return rule;
+	}
+	return undefined;
+}
+
+/** Declarations plus nested rules, with id and keyframe rewrites. `@keyframes` are emitted outside `@scope`. */
+function rewriteRuleBody(
+	body: string,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+): string {
+	if (!body.includes("{")) return rewriteDeclarations(body, ids, keyframes);
+	let result = "";
+	let index = 0;
+	while (index < body.length) {
+		const open = indexOfBrace(body, index);
+		if (open < 0) {
+			result += rewriteDeclarations(body.slice(index), ids, keyframes);
+			break;
+		}
+		const segment = body.slice(index, open);
+		const split = lastTopLevelSemicolon(segment);
+		const declarations = split >= 0 ? segment.slice(0, split + 1) : "";
+		const prelude = split >= 0 ? segment.slice(split + 1) : segment;
+		const end = endOfBlock(body, open, "{", "}");
+		const inner = body.slice(open + 1, Math.max(open + 1, end - 1));
+		result += rewriteDeclarations(declarations, ids, keyframes);
+		const decodedPrelude = decodePrototypeCssEscapes(prelude);
+		if (
+			prelude.trim() &&
+			!dropCssPrelude(prelude) &&
+			!/@keyframes\b/i.test(decodedPrelude) &&
+			!/@scope\b/i.test(decodedPrelude)
+		) {
+			result += `${rewriteSelectorIds(prelude, ids, idPrefix)}{${rewriteRuleBody(inner, ids, keyframes, idPrefix)}}`;
+		}
+		index = end;
+	}
+	return result;
+}
+
+function nestedSourceOnly(body: string): string {
+	const open = indexOfBrace(body, 0);
+	if (open < 0) return "";
+	const split = lastTopLevelSemicolon(body.slice(0, open));
+	return body.slice(split >= 0 ? split + 1 : 0);
 }
 
 function serializeStyleRule(
 	rule: CSSStyleRule,
 	ids: ReadonlyMap<string, string>,
 	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+	cursor: SourceCursor | undefined,
 ): string | undefined {
 	if (
 		SHADOW_ESCAPE_SELECTOR.test(rule.selectorText) ||
@@ -1039,13 +1221,40 @@ function serializeStyleRule(
 	) {
 		return undefined;
 	}
-	const selector = rewriteSelectorIds(rule.selectorText, ids).trim();
+	const selector = rewriteSelectorIds(rule.selectorText, ids, idPrefix).trim();
 	if (!selector) return undefined;
-	const body = rewriteDeclarations(
+	const source = takeSource(cursor, rule.selectorText);
+	const children = childCssRules(rule);
+	const declarations = rewriteDeclarations(
 		rule.style?.cssText ?? "",
 		ids,
 		keyframes,
 	).trim();
+	const nested = children
+		? serializeScopedRules(
+				children,
+				ids,
+				keyframes,
+				idPrefix,
+				source ? { rules: splitCssRules(source.body), index: 0 } : undefined,
+			).trim()
+		: "";
+	let body = [declarations, nested].filter((part) => part.trim()).join("\n");
+	// Some CSSOM implementations drop nested rules (and the declarations beside
+	// them) instead of exposing them on cssRules. Rebuild that body from the
+	// already-sanitized source so preview CSS matches the exported sheet.
+	if (!body.trim() && source?.body.trim()) {
+		body = rewriteRuleBody(source.body, ids, keyframes, idPrefix).trim();
+	} else if (!nested && source?.body.includes("{")) {
+		const rewritten = rewriteRuleBody(
+			nestedSourceOnly(source.body),
+			ids,
+			keyframes,
+			idPrefix,
+		).trim();
+		body = [declarations, rewritten].filter((part) => part.trim()).join("\n");
+	}
+	if (!body.trim()) return undefined;
 	return `${selector} { ${body} }`;
 }
 
@@ -1053,22 +1262,48 @@ function serializeScopedRules(
 	rules: CSSRuleList,
 	ids: ReadonlyMap<string, string>,
 	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+	cursor: SourceCursor | undefined,
 ): string {
 	const parts: string[] = [];
 	for (let index = 0; index < rules.length; index += 1) {
 		const rule = rules[index];
 		if (!rule || isKeyframesRule(rule)) continue;
 		if (rule.constructor.name === "CSSStyleRule") {
-			const serialized = serializeStyleRule(rule as CSSStyleRule, ids, keyframes);
+			const serialized = serializeStyleRule(
+				rule as CSSStyleRule,
+				ids,
+				keyframes,
+				idPrefix,
+				cursor,
+			);
 			if (serialized) parts.push(serialized);
 			continue;
 		}
+		if (rule.constructor?.name === "CSSNestedDeclarations" && "style" in rule) {
+			const text = rewriteDeclarations(
+				(rule as CSSStyleRule).style?.cssText ?? "",
+				ids,
+				keyframes,
+			).trim();
+			if (text) parts.push(text);
+			continue;
+		}
 		if (!isGroupingRule(rule)) continue;
-		const inner = serializeScopedRules(rule.cssRules, ids, keyframes);
+		const prelude = groupingPrelude(rule);
+		if (!prelude || /@scope\b/i.test(prelude)) {
+			takeSource(cursor, prelude);
+			continue;
+		}
+		const source = takeSource(cursor, prelude);
+		const inner = serializeScopedRules(
+			rule.cssRules,
+			ids,
+			keyframes,
+			idPrefix,
+			source ? { rules: splitCssRules(source.body), index: 0 } : undefined,
+		);
 		if (!inner.trim()) continue;
-		const open = rule.cssText.indexOf("{");
-		const prelude = open > 0 ? rule.cssText.slice(0, open).trim() : "";
-		if (!prelude || /@scope\b/i.test(prelude)) continue;
 		parts.push(`${prelude} {\n${inner}\n}`);
 	}
 	return parts.join("\n");
@@ -1078,6 +1313,7 @@ function serializeScopedRules(
 function rewriteUnparsedCss(
 	css: string,
 	ids: ReadonlyMap<string, string>,
+	idPrefix = "",
 ): string {
 	if (!css.includes("{")) return rewriteFragmentUrls(css, ids);
 	let result = "";
@@ -1088,10 +1324,10 @@ function rewriteUnparsedCss(
 			result += rewriteFragmentUrls(css.slice(index), ids);
 			break;
 		}
-		result += rewriteSelectorIds(css.slice(index, open), ids);
+		result += rewriteSelectorIds(css.slice(index, open), ids, idPrefix);
 		const end = endOfBlock(css, open, "{", "}");
 		const inner = css.slice(open + 1, Math.max(open + 1, end - 1));
-		result += `{${rewriteUnparsedCss(inner, ids)}}`;
+		result += `{${rewriteUnparsedCss(inner, ids, idPrefix)}}`;
 		index = end;
 	}
 	return result;
@@ -1149,7 +1385,10 @@ function sanitizePrototypeCss(
 			}
 			const frames = serializeKeyframeRules(sheet.cssRules, keyframes, ids);
 			const scope = wrapPrototypeScope(
-				serializeScopedRules(sheet.cssRules, ids, keyframes),
+				serializeScopedRules(sheet.cssRules, ids, keyframes, keyframePrefix, {
+					rules: splitCssRules(trimmed),
+					index: 0,
+				}),
 			);
 			return [frames, scope].filter((part) => part.trim()).join("\n");
 		} catch {
@@ -1157,7 +1396,7 @@ function sanitizePrototypeCss(
 		}
 	}
 	if (/@scope\b/i.test(trimmed) || !cssBracesBalance(trimmed)) return "";
-	return wrapPrototypeScope(rewriteUnparsedCss(trimmed, ids));
+	return wrapPrototypeScope(rewriteUnparsedCss(trimmed, ids, keyframePrefix));
 }
 
 const ARIA_ID_REFERENCE_ATTRIBUTES = [
@@ -1173,6 +1412,13 @@ const ARIA_ID_REFERENCE_ATTRIBUTES = [
 
 const SINGLE_ID_REFERENCE_ATTRIBUTES = ["for", "form", "list"];
 const TOKEN_ID_REFERENCE_ATTRIBUTES = [...ARIA_ID_REFERENCE_ATTRIBUTES, "headers"];
+const FORM_OWNER_TAGS = new Set([
+	"BUTTON",
+	"FIELDSET",
+	"INPUT",
+	"SELECT",
+	"TEXTAREA",
+]);
 
 /** Prefix ids and radio names, and retarget references that pointed at the old ids. */
 function namespaceVariationDom(
@@ -1191,8 +1437,14 @@ function namespaceVariationDom(
 	for (const element of root.querySelectorAll("*")) {
 		for (const name of SINGLE_ID_REFERENCE_ATTRIBUTES) {
 			const value = element.getAttribute(name);
-			const mapped = value ? idMap.get(value) : undefined;
-			if (value && mapped) element.setAttribute(name, mapped);
+			if (!value) continue;
+			const mapped = idMap.get(value);
+			if (mapped) {
+				element.setAttribute(name, mapped);
+				continue;
+			}
+			// An unmapped form/list id points at the host page. Drop it.
+			if (name === "form" || name === "list") element.removeAttribute(name);
 		}
 		for (const name of TOKEN_ID_REFERENCE_ATTRIBUTES) {
 			const value = element.getAttribute(name);
@@ -1218,6 +1470,12 @@ function namespaceVariationDom(
 			if (name && !name.startsWith(prefix)) {
 				element.setAttribute("name", `${prefix}${name}`);
 			}
+		}
+		// `form=""` associates the control with no form, so Enter inside a
+		// planted field cannot submit an ancestor host-page form. A variation
+		// form id rewritten above is left in place.
+		if (FORM_OWNER_TAGS.has(element.tagName) && !element.getAttribute("form")) {
+			element.setAttribute("form", "");
 		}
 	}
 	return idMap;
@@ -1618,6 +1876,16 @@ export function setPrototypeCycleFlash(
 
 let prototypeHostSequence = 0;
 
+function isElementNode(node: unknown): node is Element {
+	return (
+		typeof node === "object" &&
+		node !== null &&
+		"nodeType" in node &&
+		(node as Node).nodeType === 1 &&
+		"tagName" in node
+	);
+}
+
 async function reportPrototypeNotReady(error: ProtoNotReadyError): Promise<void> {
 	await sendPrototypeMessage({ type: PROTO_NOT_READY, error });
 }
@@ -1661,6 +1929,20 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const instance = ++prototypeHostSequence;
 	const host = document.createElement("div");
 	host.id = `dg-proto-host-${instance}`;
+	const preventPlantedSubmit = (event: Event): void => {
+		const form = event.target;
+		if (!isElementNode(form) || form.tagName !== "FORM") return;
+		const submitter = (event as Event & { submitter?: EventTarget | null })
+			.submitter;
+		const active = document.activeElement;
+		const planted =
+			host.contains(form) ||
+			(isElementNode(submitter) && host.contains(submitter)) ||
+			(isElementNode(active) && host.contains(active));
+		if (!planted) return;
+		event.preventDefault();
+		event.stopPropagation();
+	};
 	const controlsHost = document.createElement("div");
 	controlsHost.id = `dg-proto-controls-${instance}`;
 	let cleaned = false;
@@ -1671,6 +1953,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		cleaned = true;
 		if (flashTimer !== undefined) window.clearTimeout(flashTimer);
 		if (onKey) document.removeEventListener("keydown", onKey, true);
+		document.removeEventListener("submit", preventPlantedSubmit, true);
 		window.removeEventListener("pagehide", cleanup);
 		host.remove();
 		controlsHost.remove();
@@ -1687,6 +1970,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	};
 
 	try {
+		document.addEventListener("submit", preventPlantedSubmit, true);
 		applyTrustedPrototypeHostStyles(host, computed);
 		if (takeover) {
 			host.style.setProperty("display", "block", "important");

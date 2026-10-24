@@ -4,6 +4,7 @@ import {
 	type ChatFrame,
 	describeError,
 	isRecord,
+	PROTO_DEFAULT_TIMEOUT_MS,
 	type ProtoCliRequest,
 	validateChatFrame,
 } from "@dg/common";
@@ -33,11 +34,6 @@ type RelayState = { pending: Map<string, Pending> };
 const states = new WeakMap<ConnectionManager, RelayState>();
 const MAX_PENDING = 32;
 const MAX_REQUESTER_PENDING = 4;
-
-const PROTO_DEFAULT_TIMEOUT_MS: Record<ProtoCliRequest["phase"], number> = {
-	scrape: 45_000,
-	plant: 900_000,
-};
 
 function state(deps: FrameHandlerDeps): RelayState {
 	let existing = states.get(deps.connections);

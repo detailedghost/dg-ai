@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	assembleAnswerPage,
 	canonicalizeStyleGuide,
+	PROTO_DEFAULT_TIMEOUT_MS,
 	PROTO_MAX_MARKUP_CHARS,
 	PROTO_MAX_VARIATIONS,
 	PROTO_MAX_TIMEOUT_MS,
@@ -536,6 +537,11 @@ describe("validateProtoCliRequest", () => {
 			...overrides,
 		};
 	}
+
+	it("shares the daemon's default scrape and plant deadlines", () => {
+		expect(PROTO_DEFAULT_TIMEOUT_MS.scrape).toBe(45_000);
+		expect(PROTO_DEFAULT_TIMEOUT_MS.plant).toBe(PROTO_MAX_TIMEOUT_MS);
+	});
 
 	it("accepts a well-formed scrape or plant request", () => {
 		expect(validateProtoCliRequest(buildProtoCliRequest())).toEqual(

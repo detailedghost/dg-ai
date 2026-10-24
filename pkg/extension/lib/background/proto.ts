@@ -1,4 +1,5 @@
 import {
+	PROTO_DEFAULT_TIMEOUT_MS,
 	PROTO_MARKED_URL_MAX_LENGTH,
 	PROTO_MAX_TIMEOUT_MS,
 	PROTO_PREVIEW_MAX_CHARS,
@@ -50,6 +51,7 @@ export type ProtoBrowserApi = {
 			string
 		>;
 		query: MaybeCallbackMethod<[Browser.tabs.QueryInfo], Browser.tabs.Tab[]>;
+		remove: MaybeCallbackMethod<[number | number[]], void>;
 		onRemoved: {
 			addListener(callback: (tabId: number) => void): void;
 		};
@@ -75,12 +77,6 @@ type TabPending = {
 	resolve: (result: ProtoResultFrame) => void;
 };
 
-/** Same phase defaults the daemon uses when the CLI omits timeoutMs. */
-const PROTO_PHASE_DEADLINE_MS: Record<ProtoBrowserRequest["phase"], number> = {
-	scrape: 45_000,
-	plant: 900_000,
-};
-
 /**
  * Hold the preview a little past the daemon deadline so a picker the user is
  * still looking at is not cleared first. After this, the entry and its preview
@@ -102,7 +98,7 @@ export function protoExtensionDeadlineMs(
 		timeoutMs > 0 &&
 		timeoutMs <= PROTO_MAX_TIMEOUT_MS
 			? timeoutMs
-			: PROTO_PHASE_DEADLINE_MS[phase];
+			: PROTO_DEFAULT_TIMEOUT_MS[phase];
 	return base + PROTO_DEADLINE_MARGIN_MS;
 }
 
@@ -366,7 +362,22 @@ export function requestPrototypeBrowserWork(
 				});
 				return;
 			}
-			if (settled) return;
+			if (settled) {
+				// The deadline won while tabs.create was still pending. The tab
+				// is otherwise untracked, so close it instead of leaving it open.
+				if (tab?.id !== undefined && api.tabs.remove) {
+					try {
+						await browserCall(
+							api,
+							api.tabs.remove as MaybeCallbackMethod<unknown[], void>,
+							[tab.id],
+						);
+					} catch {
+						// The request already finished. Closing the tab is best-effort.
+					}
+				}
+				return;
+			}
 			if (tab?.id === undefined) {
 				finish({
 					ok: false,
