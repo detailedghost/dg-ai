@@ -1,6 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { type ProtoVariation, type Verdict, validateVerdict } from "@dg/common";
-import { Window } from "happy-dom";
+import {
+	type HTMLElement as HappyHTMLElement,
+	type ShadowRoot as HappyShadowRoot,
+	Window,
+} from "happy-dom";
 import { styleGuideDownloadOptions } from "@/lib/background/proto";
 import {
 	collectStyleSamples,
@@ -731,7 +735,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 		}
 	});
 
-	const shadowRoots: ShadowRoot[] = [];
+	const shadowRoots: HappyShadowRoot[] = [];
 	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
 		window.HTMLElement.prototype,
 		"attachShadow",
@@ -769,7 +773,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 
 	const notes = shadowRoots
 		.map((root) => root.querySelector(".dg-proto-notes"))
-		.find((element) => element !== null) as HTMLElement | undefined;
+		.find((element) => element !== null) as HappyHTMLElement | undefined;
 	expect(notes).toBeTruthy();
 
 	notes?.focus();
