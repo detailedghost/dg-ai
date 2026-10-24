@@ -25,7 +25,7 @@ and rework in that page. The `--ext` mode is documented in [references/extension
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--ext` | none | Run the extension mode instead of the local mode: scrape a live page, plant app-native variations in it, and wait for the verdict from the dg-ai-extension. Needs the extension. The other flags below apply to the local mode unless noted. | off (local is the default) |
-| `--count <count>` | `-n` | Number of UI variants to build. Local: any count of 1 or more. `--ext`: 1 to 5. | 5 local, 3 with `--ext` |
+| `--count <count>` | `-n` | Number of UI variants to build. Local: any count of 1 or more. `--ext`: 1 to 5 — the plan travels in the planted page's URL marker, and 5 is the largest comparison that marker can carry. | 5 local, 5 with `--ext` |
 | `--options "<a>,<b>"` | `-o` | Comma-separated directions to build. One variant per name, exactly those, no extras, each name is its label. Overrides `--count`. In `--ext` it takes at most 5 names. | none |
 | `--continue [<name>]` | `-c` | Resume an open refine chain: list open chains, or load the named one and start its next round. Local mode, UI variants branch. | off |
 | `--light` | none | Put the sandbox in scratch, wiped on reboot. Local mode. Plan walkthroughs ignore it. | off (durable sandbox) |

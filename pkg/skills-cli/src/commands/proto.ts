@@ -227,11 +227,28 @@ function oneLine(text: string): string {
 const OPEN_STATUS_LINE = /^- status: open$/m;
 const TWEAKS_FILE = "tweaks.json";
 
-function openRounds(priorNotes: string | undefined): string[] {
+/** Round blocks from a lineage.md: one `## round-N` heading per block, no wrapper. */
+function openLineageRounds(lineage: string | undefined): string[] {
+	const blocks = (lineage ?? "")
+		.split(/^(?=## round-\d+$)/m)
+		.map((block) => block.trim())
+		.filter(Boolean);
+	return blocks.at(-1) && OPEN_STATUS_LINE.test(blocks.at(-1) as string)
+		? blocks
+		: [];
+}
+
+/**
+ * Migration path for a NOTES.md written before lineage.md existed: the same
+ * round blocks, nested under `## Rounds` ... `## Verdict` with `### round-N`
+ * headings. Converted to the lineage.md heading level on read so both shapes
+ * merge into one format going forward.
+ */
+function legacyOpenRounds(priorNotes: string | undefined): string[] {
 	const section = priorNotes?.match(/^## Rounds\n([\s\S]*?)^## Verdict$/m)?.[1];
 	const blocks = (section ?? "")
 		.split(/^(?=### round-\d+$)/m)
-		.map((block) => block.trim())
+		.map((block) => block.trim().replace(/^### round-/, "## round-"))
 		.filter(Boolean);
 	return blocks.at(-1) && OPEN_STATUS_LINE.test(blocks.at(-1) as string)
 		? blocks
@@ -247,7 +264,7 @@ function roundBlock(
 	const previousPick = earlier.at(-1)?.match(/^- picked: (.+)$/m)?.[1];
 	const number = earlier.length + 1;
 	return [
-		`### round-${number}`,
+		`## round-${number}`,
 		`- base: ${previousPick ? `round-${number - 1} ${previousPick}` : "none"}`,
 		`- variants: ${plan.variations.map((variation) => variation.key).join(" ")}`,
 		`- picked: ${verdict.selectedKey}`,
@@ -259,20 +276,27 @@ function roundBlock(
 	].join("\n");
 }
 
-function answerNotes(
+/** Build the full lineage.md body: every earlier round closed, then the new one. */
+function lineageContents(
 	plan: ProtoPlan,
 	verdict: Extract<Verdict, { action: "approve" }>,
-	priorNotes: string | undefined,
+	earlier: string[],
 	tweaks: string[],
 ): string {
-	const question = plan.question?.trim() || "_No question provided._";
-	const earlier = openRounds(priorNotes);
 	const rounds = [
 		...earlier.map((block) =>
 			block.replace(OPEN_STATUS_LINE, "- status: done"),
 		),
 		roundBlock(plan, verdict, earlier, tweaks),
 	];
+	return `${rounds.join("\n\n")}\n`;
+}
+
+function answerNotes(
+	plan: ProtoPlan,
+	verdict: Extract<Verdict, { action: "approve" }>,
+): string {
+	const question = plan.question?.trim() || "_No question provided._";
 	return [
 		answerQuestionMarker(plan.question),
 		"# Prototype answer",
@@ -280,10 +304,6 @@ function answerNotes(
 		"## Question",
 		"",
 		question,
-		"",
-		"## Rounds",
-		"",
-		rounds.join("\n\n"),
 		"",
 		"## Verdict",
 		"",
@@ -295,11 +315,14 @@ function answerNotes(
 		"",
 		"`index.html` is the self-contained answer. Edits to `styles.css` do not propagate back into `index.html`; apply intended changes to both files.",
 		"",
+		"Round history lives in `lineage.md` next to this file.",
+		"",
 	].join("\n");
 }
 
 type AnswerPaths = {
 	index: string;
+	lineage: string;
 	notes: string;
 	preview: string;
 	styles: string;
@@ -308,6 +331,7 @@ type AnswerPaths = {
 function answerPaths(plan: ProtoPlan, seams: AnswerExportSeams): AnswerPaths {
 	return {
 		index: seams.answerPath(plan.slug, "index.html"),
+		lineage: seams.answerPath(plan.slug, "lineage.md"),
 		styles: seams.answerPath(plan.slug, "styles.css"),
 		preview: seams.answerPath(plan.slug, "preview.png"),
 		notes: seams.answerPath(plan.slug, "NOTES.md"),
@@ -315,7 +339,7 @@ function answerPaths(plan: ProtoPlan, seams: AnswerExportSeams): AnswerPaths {
 }
 
 function answerPathList(paths: AnswerPaths): string[] {
-	return [paths.index, paths.styles, paths.preview, paths.notes];
+	return [paths.index, paths.lineage, paths.styles, paths.preview, paths.notes];
 }
 
 async function readVerifiedPriorNotes(
@@ -340,6 +364,24 @@ async function readVerifiedPriorNotes(
 	return notes;
 }
 
+/**
+ * Prior round blocks for this slug. Reads lineage.md when present; otherwise
+ * migrates the legacy `## Rounds` section of an already-verified NOTES.md, so
+ * an older same-slug chain started before lineage.md existed still resumes.
+ */
+async function readPriorRounds(
+	seams: AnswerExportSeams,
+	paths: AnswerPaths,
+	priorNotes: string | undefined,
+): Promise<string[]> {
+	try {
+		return openLineageRounds(await seams.readText(paths.lineage));
+	} catch (error) {
+		if (!isMissingFile(error)) throw error;
+	}
+	return legacyOpenRounds(priorNotes);
+}
+
 /** Export the approved variation and optional preview into the target project. */
 export async function exportApprovedAnswer(
 	plan: ProtoPlan,
@@ -351,6 +393,7 @@ export async function exportApprovedAnswer(
 	const seams = { ...DEFAULT_ANSWER_EXPORT_SEAMS, ...overrides };
 	const paths = answerPaths(plan, seams);
 	const priorNotes = await readVerifiedPriorNotes(plan, seams, paths);
+	const earlierRounds = await readPriorRounds(seams, paths, priorNotes);
 	const selected = plan.variations.find(
 		(variation) => variation.key === verdict.selectedKey,
 	);
@@ -384,9 +427,10 @@ export async function exportApprovedAnswer(
 		if (!isMissingFile(error)) throw error;
 	}
 	await seams.writeText(
-		paths.notes,
-		answerNotes(plan, verdict, priorNotes, tweaks),
+		paths.lineage,
+		lineageContents(plan, verdict, earlierRounds, tweaks),
 	);
+	await seams.writeText(paths.notes, answerNotes(plan, verdict));
 	return paths.index;
 }
 

@@ -443,6 +443,7 @@ describe("proto plant command", () => {
 			plan.slug,
 			"NOTES.md",
 		);
+		const lineagePath = join(dirname(notesPath), "lineage.md");
 
 		const tweak = await plant({
 			action: "tweak",
@@ -455,6 +456,7 @@ describe("proto plant command", () => {
 		);
 		expect(tweak.stdout).toContain("round the corners");
 		await expect(readFile(notesPath, "utf8")).rejects.toThrow();
+		await expect(readFile(lineagePath, "utf8")).rejects.toThrow();
 
 		const refine = await plant({
 			action: "approve",
@@ -476,9 +478,14 @@ describe("proto plant command", () => {
 		expect(final.stdout.trim()).toBe(join(dirname(notesPath), "index.html"));
 
 		const notes = await readFile(notesPath, "utf8");
-		expect(notes).toContain(
+		expect(notes).not.toContain("## Rounds");
+		expect(notes).not.toContain("round-1");
+		expect(notes).toContain("Round history lives in `lineage.md`");
+
+		const lineage = await readFile(lineagePath, "utf8");
+		expect(lineage).toContain(
 			[
-				"### round-1",
+				"## round-1",
 				"- base: none",
 				"- variants: compact detailed",
 				"- picked: compact",
@@ -488,9 +495,9 @@ describe("proto plant command", () => {
 				"- status: done",
 			].join("\n"),
 		);
-		expect(notes).toContain(
+		expect(lineage).toContain(
 			[
-				"### round-2",
+				"## round-2",
 				"- base: round-1 compact",
 				"- variants: compact detailed",
 				"- picked: detailed",
@@ -523,11 +530,12 @@ describe("proto plant command", () => {
 				plan.slug,
 				"NOTES.md",
 			);
-			return { plant, tweaksPath, notesPath };
+			const lineagePath = join(dirname(notesPath), "lineage.md");
+			return { plant, tweaksPath, notesPath, lineagePath };
 		}
 
 		test("drops pending tweaks when the round is rejected", async () => {
-			const { plant, tweaksPath, notesPath } =
+			const { plant, tweaksPath, lineagePath } =
 				await chainHarness("edge=reject");
 			await plant({
 				action: "tweak",
@@ -541,7 +549,9 @@ describe("proto plant command", () => {
 			});
 			await expect(readFile(tweaksPath, "utf8")).rejects.toThrow();
 			await plant({ action: "approve", selectedKey: "compact" });
-			expect(await readFile(notesPath, "utf8")).not.toContain("stale tweak");
+			expect(await readFile(lineagePath, "utf8")).not.toContain(
+				"stale tweak",
+			);
 		});
 
 		test("fails with a clear error on a corrupt tweaks file", async () => {
@@ -564,36 +574,69 @@ describe("proto plant command", () => {
 			expect(wrongShape.stderr).toMatch(/tweaks\.json/);
 		});
 
-		test("starts at round-1 when NOTES.md has no Rounds section", async () => {
-			const { plant, notesPath } = await chainHarness("edge=legacy");
+		test("starts at round-1 when lineage.md is missing and NOTES.md has no legacy Rounds section", async () => {
+			const { plant, lineagePath } = await chainHarness("edge=missing");
 			await plant({
 				action: "approve",
 				selectedKey: "compact",
 				notes: "keep going",
 			});
-			const current = await readFile(notesPath, "utf8");
+			await rm(lineagePath, { force: true });
+			const again = await plant({ action: "approve", selectedKey: "detailed" });
+			expect(again.code).toBe(0);
+			const lineage = await readFile(lineagePath, "utf8");
+			expect(lineage).toContain("## round-1\n- base: none");
+			expect(lineage).not.toContain("## round-2");
+		});
+
+		test("migrates a pre-lineage.md NOTES.md's legacy ## Rounds section on the next approve", async () => {
+			const { plant, notesPath, lineagePath } =
+				await chainHarness("edge=legacy");
+			await plant({
+				action: "approve",
+				selectedKey: "compact",
+				notes: "keep going",
+			});
+			// Simulate a prototype directory written before lineage.md existed:
+			// fold the real round-1 block back into NOTES.md under a legacy
+			// `## Rounds` heading with a `### round-N` heading, and drop
+			// lineage.md, so the next approve has only the old shape to read.
+			const legacyRound = (await readFile(lineagePath, "utf8"))
+				.trim()
+				.replace(/^## round-/, "### round-");
+			const currentNotes = await readFile(notesPath, "utf8");
 			await writeFile(
 				notesPath,
-				current.replace(/^## Rounds\n[\s\S]*?(?=^## Verdict$)/m, ""),
+				currentNotes.replace(
+					/^## Verdict$/m,
+					`## Rounds\n\n${legacyRound}\n\n## Verdict`,
+				),
 			);
+			await rm(lineagePath, { force: true });
+
 			const again = await plant({ action: "approve", selectedKey: "detailed" });
 			expect(again.code).toBe(0);
 			const notes = await readFile(notesPath, "utf8");
-			expect(notes).toContain("### round-1\n- base: none");
-			expect(notes).not.toContain("### round-2");
+			expect(notes).not.toContain("## Rounds");
+			expect(notes).not.toContain("round-1");
+			const lineage = await readFile(lineagePath, "utf8");
+			expect(lineage).toContain("## round-1\n- base: none");
+			expect(lineage).toContain(
+				"## round-2\n- base: round-1 compact\n- variants: compact detailed\n- picked: detailed",
+			);
 		});
 
 		test("keeps a note line that mentions status from closing the round", async () => {
-			const { plant, notesPath } = await chainHarness("edge=status");
+			const { plant, lineagePath } = await chainHarness("edge=status");
 			await plant({
 				action: "approve",
 				selectedKey: "compact",
 				notes: "mark - status: open here",
 			});
 			await plant({ action: "approve", selectedKey: "detailed" });
-			const notes = await readFile(notesPath, "utf8");
-			expect(notes).toContain("- note: mark - status: open here");
-			expect(notes).toContain("- status: done\n\n### round-2");
+			const lineage = await readFile(lineagePath, "utf8");
+			expect(lineage).toContain("- note: mark - status: open here");
+			expect(lineage).toContain("- status: done\n\n## round-2");
 		});
 	});
 

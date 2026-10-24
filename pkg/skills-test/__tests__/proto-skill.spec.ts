@@ -50,7 +50,7 @@ describe("proto skill", () => {
 			skillFile("references/contracts.md"),
 		].join("\n");
 
-		expect(all).toMatch(/default[^.\n]*3/i);
+		expect(all).toMatch(/default[^.\n]*5/i);
 		expect(all).toMatch(/(?:cap|maximum)[^.\n]*5/i);
 		expect(all).toMatch(/tokens?[^.\n]*verbatim/i);
 		expect(all).toMatch(
@@ -164,7 +164,7 @@ describe("proto skill local mode", () => {
 		]) {
 			expect(byFlag(flag as string)?.[1]).toBe(short as string);
 		}
-		expect(byFlag("--count")?.[3]).toBe("5 local, 3 with `--ext`");
+		expect(byFlag("--count")?.[3]).toMatch(/^5 local, 5 with `--ext`/);
 	});
 
 	test("records the behavior change for plain /dg:proto and the --ext command form", () => {

@@ -141,20 +141,20 @@ At the pick step, read the result of `prototype wait <name> --json`:
 
 **Same tab across rounds.** With `prototype ui`, one chain is one server, one port, and one tab. Give every round the same chain key (the plan `slug`, or the manifest's chain value). To run round N+1, write its plan and run `prototype ui` again. It reuses the running server, bumps the reload token, and the open tab reloads in place. It opens no new tab and blocks for the next decision. After an approve with notes, the tab shows "Building the next round from `<key>`" and keeps polling. To end the chain, approve with no notes (the tab closes and the server stops) or run `prototype stop <chain>`. Do not start a second server for a later round.
 
-**Storage and `NOTES.md`.** Keep each round in its own folder in the prototype's sandbox:
+**Storage and `lineage.md`.** Keep each round in its own folder in the prototype's sandbox:
 
 ```
-<name>/NOTES.md
+<name>/lineage.md
 <name>/round-1/
 <name>/round-2/
 ```
 
 Each round folder holds its variants. Copy the previous winner into `round-N/base/` before you build, so every round can be rebuilt. For sub-shape A, the variant files stay in the app source with `prototype` and the round number in the path. Copy them into the round folder too.
 
-`NOTES.md` records the rounds under a `## Rounds` heading, one block per round. This is the same block the `--ext` mode writes:
+`lineage.md` records one `## round-N` block per round, no wrapping heading. This is the same file and format the `--ext` mode writes (see [contracts.md](contracts.md) and [extension.md](extension.md) step 7):
 
 ```
-### round-2
+## round-2
 - base: round-1 C
 - variants: A B C D E
 - picked: B
@@ -164,7 +164,9 @@ Each round folder holds its variants. Copy the previous winner into `round-N/bas
 - status: open
 ```
 
-Write the block when the round starts. Fill `picked` and `note` when the user picks. Add the `tweaks:` list on the first tweak, one line per note, in order. Set `status: done` on the round that ends the chain. A round with a note stays `open` until the next round starts.
+Write the block when the round starts. Fill `picked` and `note` when the user picks. Add the `tweaks:` list on the first tweak, one line per note, in order. Set `status: done` on the round that ends the chain. A round with a note stays `open` until the next round starts. Add the note to `lineage.md`, never to a second index. Keep `NOTES.md` for the question and the final answer, not for round history.
+
+**Migrating an older prototype.** A prototype folder from before `lineage.md` existed keeps its round history in `NOTES.md` under a `## Rounds` heading, with `### round-N` headings. Read that section once, the same way `-c` below does, and write it into a new `lineage.md` on the next round; drop the legacy section from `NOTES.md` in the same pass.
 
 **Flags in a chain**
 
@@ -178,7 +180,7 @@ Write the block when the round starts. Fill `picked` and `note` when the user pi
 
 **Resume with `-c` or `--continue [<name>]`**
 
-1. Without a name, read `NOTES.md` in each prototype folder under `.agents/prototype/` and keep the chains whose last round has `status: open`. Show the name, round number, last note, and age. One chain: use it. Two or more: ask the user to choose.
+1. Without a name, read `lineage.md` in each prototype folder under `.agents/prototype/` and keep the chains whose last round has `status: open`. When a folder has no `lineage.md` but its `NOTES.md` still carries a legacy `## Rounds` heading, read the rounds from there instead (and migrate them into a new `lineage.md` on the next round, per "Migrating an older prototype" above). Show the name, round number, last note, and age. One chain: use it. Two or more: ask the user to choose.
 1. With a name, use that chain.
 1. If the folder is missing, say so. For a `--light` chain, say it was lost on reboot or by the scratch cleanup. Do not rebuild it from memory.
 1. Run `prototype status <name>` first (see "Claim an outstanding pick"). If a pick is waiting, claim it and start the next round.

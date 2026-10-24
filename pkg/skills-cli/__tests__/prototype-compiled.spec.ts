@@ -502,7 +502,7 @@ describe("compiled dg-skills proto --ext, plan handoff through fakes", () => {
 		expect(readFileSync(openedUrl, "utf8")).toContain(`${url}#`);
 		expect(
 			readFileSync(
-				join(project, ".agents", "prototype", slug, "NOTES.md"),
+				join(project, ".agents", "prototype", slug, "lineage.md"),
 				"utf8",
 			),
 		).toContain("- picked: detailed");
