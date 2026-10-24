@@ -83,6 +83,7 @@ export const INSTALLED_SKILL_FILES = [
 	"nope/SKILL.md",
 	"overwatch/SKILL.md",
 	"phone-friend/SKILL.md",
+	"phone-friend/references/safety.md",
 	"pickup/SKILL.md",
 	"pickup/references/args.md",
 	"pickup/references/loading.md",
