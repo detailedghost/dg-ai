@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { isMap, parse as parseYaml, parseDocument, Scalar } from "yaml";
+import type { Node, Pair } from "yaml";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { git as runGit } from "./git-repo-fixtures";
-import { runSetup } from "../src/test-live/setup";
+import { mappingEntryText, runSetup } from "../src/test-live/setup";
+import { TestLiveError } from "../src/test-live/shared";
 
 const CLI = join(import.meta.dir, "../src/index.ts");
 const BUN_BIN = process.execPath;
@@ -364,6 +366,32 @@ describe("test-live setup — on: form variants", () => {
 		expect(result.stderr).toContain("could not find a usable 'on:' trigger to patch");
 		expect(headSha(repo)).toBe(preSha);
 		expect(readFileSync(join(repo, ".github", "workflows", WORKFLOW_FILE), "utf8")).toBe(workflowContent);
+	});
+});
+
+function flowMappingPair(content: string): Pair<Node, Node | null> {
+	const doc = parseDocument(content);
+	if (!isMap(doc.contents)) throw new Error("fixture root is not a map");
+	const onPair = doc.contents.items.find((item) => String(item.key) === "on");
+	if (!onPair || !isMap(onPair.value)) throw new Error("fixture 'on:' is not a flow mapping");
+	const pair = onPair.value.items[0] as Pair<Node, Node | null> | undefined;
+	if (!pair) throw new Error("fixture flow mapping has no entries");
+	return pair;
+}
+
+describe("test-live setup — mappingEntryText flow-mapping entry rendering", () => {
+	test("renders a null-value flow-shorthand entry as the bare key followed by a colon", () => {
+		const content = "on: {push}\njobs: {}\n";
+		expect(mappingEntryText(content, flowMappingPair(content))).toBe("push:");
+	});
+
+	test("throws when a present value has no source range, which only a constructed (non-parsed) node can have", () => {
+		const content = "on: {push: null}\njobs: {}\n";
+		const pair = flowMappingPair(content);
+		expect(pair.value?.range).toBeDefined();
+		pair.value = new Scalar(null);
+		expect(pair.value.range).toBeUndefined();
+		expect(() => mappingEntryText(content, pair)).toThrow(TestLiveError);
 	});
 });
 
