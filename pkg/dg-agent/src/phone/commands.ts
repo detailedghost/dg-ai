@@ -396,7 +396,8 @@ export function registerPhoneCommands(
 		.description("internal: run the always-on listener in the foreground (never call directly)")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) =>
-			phoneRun(opts, { ...makeDeps(session), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal }),
-		);
+		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string }) => {
+			await phoneRun(opts, { ...makeDeps(session), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
+			process.exit(0);
+		});
 }

@@ -16,6 +16,7 @@ import {
 	DEFAULT_NUMBER_KEY_ID,
 	findContactByHandle,
 	findContactByNpub,
+	listContacts,
 	numberKeyId,
 	writeNumber,
 } from "../../src/phone/store";
@@ -130,6 +131,39 @@ describe("runListener", () => {
 		expect(contact?.via).toBe("number");
 		const payload = JSON.parse(readFileSync(outFile, "utf8"));
 		expect(payload).toMatchObject({ from: caller.npub, handle: "grok", text: "hello there", call: true });
+	});
+
+	it("does not rename a just-created contact when a follow-up from the same caller is caught up in the same batch", async () => {
+		const secret = "88".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		pool.events.push(ring("hello there", caller.sk, getPublicKey(numberSk), secret, "grok"));
+		pool.events.push(wrap("a follow-up before you were even listening", caller.sk, getPublicKey(numberSk)));
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(listContacts(db).filter((c) => c.npub === caller.npub)).toHaveLength(1);
+		expect(findContactByHandle(db, "grok")?.npub).toBe(caller.npub);
+		expect(findContactByHandle(db, "grok-2")).toBeUndefined();
+	});
+
+	it("falls back to the default handle when a peer's dg-as tag is not a valid handle", async () => {
+		const secret = "99".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		pool.events.push(ring("hi", caller.sk, getPublicKey(numberSk), secret, "Not A Handle!"));
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)?.handle).toBe("dg");
 	});
 
 	it("admits a live ring the same way once the subscription is open", async () => {
@@ -266,10 +300,12 @@ describe("runListener", () => {
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		await publish(pool, RELAYS, wrap("still arrives", bob.sk, getPublicKey(numberSk)));
 		await waitUntil(() => db.recentMessages(10).length >= 2);
+		await waitUntil(() => (db.recentMessages(10).find((m) => m.text === "too slow for the hook")?.attempts ?? 0) > 0);
 
 		stop();
 		await run;
 
 		expect(db.recentMessages(10).map((m) => m.text).sort()).toEqual(["still arrives", "too slow for the hook"]);
+		expect(db.recentMessages(10).find((m) => m.text === "too slow for the hook")?.attempts).toBeGreaterThan(0);
 	});
 });

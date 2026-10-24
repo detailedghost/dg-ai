@@ -1,12 +1,23 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
-import { fetchNew, type Message, type NewContact, type PhonePool, type Reaccept, type Seen, subscribe } from "./chat";
+import { fetchNew, type Message, type NewContact, type PhonePool, type Reaccept, type Seen, subscribe, UNKNOWN_CALLER_HANDLE } from "./chat";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
 import type { PhoneDb } from "./db";
 import type { CommandPushTarget } from "./push";
-import { addContact, consumeInvite, gateFor, nextFreeHandle, readCursor, readRelays, setContactKeyId, writeCursor } from "./store";
+import {
+	addContact,
+	consumeInvite,
+	findContactByNpub,
+	gateFor,
+	isHandle,
+	nextFreeHandle,
+	readCursor,
+	readRelays,
+	setContactKeyId,
+	writeCursor,
+} from "./store";
 
 export type ListenerDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
@@ -73,7 +84,8 @@ function repeat(schedule: Schedule, intervalMs: number, run: () => void): Cancel
 
 /** Applies one admitted message's side effects: a fresh handle and contact row for a new caller, the
  * key move for a re-accept, then the message itself, `contact` keyed by the sender (as `fetchNew`'s
- * wiring contract requires). */
+ * wiring contract requires). Guarded by `findContactByNpub` so a caught-up follow-up from the same
+ * new caller, or a redelivered live event, never renames the contact it already created. */
 function admitMessage(
 	db: PhoneDb,
 	now: () => number,
@@ -82,8 +94,9 @@ function admitMessage(
 	newContact?: NewContact,
 	reaccept?: Reaccept,
 ): void {
-	if (newContact) {
-		const handle = nextFreeHandle(db, newContact.suggestedHandle);
+	if (newContact && !findContactByNpub(db, newContact.npub)) {
+		const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
+		const handle = nextFreeHandle(db, base);
 		addContact(db, { npub: newContact.npub, handle, relays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
 		if (newContact.inviteSecret) consumeInvite(db, newContact.inviteSecret);
 	}
@@ -124,7 +137,14 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 	const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
 	const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
 	for (const message of caught.messages) {
-		admitMessage(deps.db, deps.now, relays, message, newContactByNpub.get(message.from), reacceptByNpub.get(message.from));
+		admitMessage(
+			deps.db,
+			deps.now,
+			relays,
+			message,
+			message.call ? newContactByNpub.get(message.from) : undefined,
+			reacceptByNpub.get(message.from),
+		);
 	}
 	writeCursor(deps.db, caught.seen.cursor);
 
