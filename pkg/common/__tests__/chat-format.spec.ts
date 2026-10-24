@@ -256,6 +256,65 @@ function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildProtoBrowserRequestFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "proto-browser-request",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		phase: "scrape",
+		slug: "account-summary-1a2b3c4d",
+		markedUrl: "https://example.test/account#_proto=fixture",
+		...overrides,
+	};
+}
+
+function buildProtoBrowserResultFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "proto-browser-result",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		ok: true,
+		data: {
+			kind: "style-guide",
+			styleGuide: {
+				meta: {
+					url: "https://example.test/account",
+					scrapedAt: 1,
+					sameOrigin: true,
+				},
+				tokens: {
+					customProps: {},
+					colors: ["rgb(0, 0, 0)"],
+					fontStack: "sans-serif",
+					typeScale: [],
+					spacing: [],
+					radii: [],
+					shadows: [],
+				},
+				components: { button: {}, input: {}, link: {} },
+			},
+		},
+		...overrides,
+	};
+}
+
+function buildProtoBrowserProgressFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "proto-browser-progress",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		status: "ready; scraping the style guide",
+		...overrides,
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -314,6 +373,9 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-result", buildConfigResultFrame],
 	["inbox-browser-request", buildInboxBrowserRequestFrame],
 	["inbox-browser-result", buildInboxBrowserResultFrame],
+	["proto-browser-request", buildProtoBrowserRequestFrame],
+	["proto-browser-result", buildProtoBrowserResultFrame],
+	["proto-browser-progress", buildProtoBrowserProgressFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],

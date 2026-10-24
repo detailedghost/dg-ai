@@ -21,12 +21,25 @@ This is the extension flow's own precondition. When the marker is absent, stop a
 tell the user; do not attempt scrape and do not fall back to the local mode unasked.
 
 The marker proves the installer completed, not that the extension is enabled in
-the current browser profile. If scrape times out, report:
+the current browser profile, or that it is paired to a live `dg-daemon` session.
+`scrape` and `plant` run entirely over that daemon relay now: they connect to the
+sole `dg-daemon` session matching the current working directory (pass
+`--session <id>` to pick a different one), send the daemon a request, and wait
+for the paired extension to answer. If no daemon is running, or no session is
+registered, or no extension is paired to the session, the command fails fast
+with a message naming the problem — it never falls back to a Downloads
+timeout. If scrape or plant times out anyway, report:
 
-> Prototype scrape timed out. Run the browser skill's `install` command,
-> confirm the extension is enabled in the browser that opened, and retry. Also
-> disable “ask where to save each file” and check whether Downloads was
-> relocated.
+> Prototype scrape timed out. Run the browser skill's `install` command, confirm
+> the extension is enabled in the browser that opened, confirm it is paired to
+> this session (open the daemon's printed `/start#_chat=` URL in that browser),
+> and retry.
+
+A typed not-ready error (`login-page`, `http-error`, `redirected`, or
+`mount-missing`) means the extension reached a page it could not scrape or
+plant against. The command's stderr names the code, the reason, and the URL
+the browser actually landed on — read that before retrying; retrying into the
+same login wall or redirect will not help.
 
 ## CLI bootstrap
 
@@ -57,9 +70,10 @@ PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
 ```
 
-The command blocks until the extension downloads and validates the StyleGuide, with a 45-second
-default `--timeout` (a download, not a human decision). Use its printed stable path; do not guess
-a slug.
+The command opens the marked page in the paired browser through the daemon relay and blocks until
+the extension collects and validates the StyleGuide, with a 45-second default `--timeout` (an
+extension round-trip, not a human decision). Pass `--session <id>` when more than one session is
+registered. Use its printed stable scratch path; do not guess a slug.
 
 ## Plant and claim
 
@@ -70,9 +84,9 @@ project root:
 ( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext plant "$PLAN" )
 ```
 
-The command clears the prior same-slug verdict before opening the browser and blocks for a fresh
-Verdict, with a 900-second default `--timeout` (a human reviewing the page, not a download). Its
-stdout is authoritative:
+The command opens the marked page in the paired browser through the daemon relay and blocks for a
+fresh Verdict, with a 900-second default `--timeout` (a human reviewing the page, not a download).
+Pass `--session <id>` when more than one session is registered. Its stdout is authoritative:
 
 - Approve with no notes prints `.agents/prototype/<slug>/index.html` after export
   completes. The chain is over.
@@ -85,7 +99,7 @@ stdout is authoritative:
 - Reject prints the feedback and tells the agent to rework and re-plant the same
   slug.
 
-Do not poll Downloads independently or fabricate a Verdict.
+Do not wait on a Downloads folder or fabricate a Verdict; the CLI only waits on the daemon relay.
 
 ## Cleanup
 
@@ -95,6 +109,7 @@ After an approve with no notes and only from the target project root, run:
 ( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext cleanup "$SLUG" )
 ```
 
-Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes
-`Downloads/dg-proto/<slug>/` and stable agent scratch, is safe to repeat, and
-never removes the exported answer.
+Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes only the
+stable agent scratch for that slug, is safe to repeat, and never removes the
+exported answer. It never touches your Downloads folder — `--ext` never wrote
+one.

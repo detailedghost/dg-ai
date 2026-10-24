@@ -3,6 +3,11 @@ import {
 	sendCredentialsResult,
 } from "./credentials";
 import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
+import {
+	handleProtoCli,
+	handleProtoBrowserProgress,
+	handleProtoBrowserResult,
+} from "./proto";
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
@@ -29,6 +34,7 @@ import {
 	validateOverwatchLaneUpdate,
 	validateOverwatchMerge,
 	validateIsoTimestamp,
+	validateProtoCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -312,6 +318,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 	switch (value.type) {
 		case "cli-inbox-request":
 			try { return validateInboxCliRequest(value); } catch { return undefined; }
+		case "cli-proto-request":
+			try { return validateProtoCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -517,6 +525,8 @@ async function handleCliFrame(
 	switch (frame.type) {
 		case "cli-inbox-request":
 			return handleInboxCli(ws, sessionId, frame, deps);
+		case "cli-proto-request":
+			return handleProtoCli(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -988,6 +998,10 @@ async function dispatchFrame(
 	switch (frame.type) {
 		case "inbox-browser-result":
 			return handleInboxBrowserResult(ws, frame, deps);
+		case "proto-browser-result":
+			return handleProtoBrowserResult(ws, frame, deps);
+		case "proto-browser-progress":
+			return handleProtoBrowserProgress(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1076,6 +1090,17 @@ export async function handleSocketMessage(
 			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
 			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
 			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
+			noteInvalid(ws);
+			return;
+		}
+	}
+
+	if (isRecord(parsed) && parsed.type === "cli-proto-request" && ws.data.kind === "cli") {
+		try { validateProtoCliRequest(parsed); }
+		catch (err) {
+			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
+			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
+			await sendViaQueue(ws, JSON.stringify({ type: "cli-proto-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
 			noteInvalid(ws);
 			return;
 		}

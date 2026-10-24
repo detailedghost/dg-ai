@@ -2,11 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { validateVerdict } from "@dg/common";
 import { resolveSkillAsset } from "../utils/skill-assets";
-import {
-	dgProtoPath,
-	protoScratchPath,
-	resolveDownloadsDir,
-} from "../utils/proto-paths";
+import { protoScratchPath } from "../utils/proto-paths";
 import { type Flags, parseFlags } from "./args";
 import {
 	assertNotSelftestName,
@@ -35,7 +31,7 @@ import {
 
 /**
  * Non-destructive fallback for `status <name>` when no local sentinel is
- * pending: a `--ext` slug records its verdict as a browser download, not a
+ * pending: a `--ext` slug records its verdict in agent scratch, not a
  * sentinel file, so a bare local "pending" can still be hiding an unclaimed
  * `--ext` pick. Never consumes anything — `proto --ext plant` remains the
  * only way to claim and export an `--ext` verdict. A verdict file older than
@@ -43,16 +39,9 @@ import {
  * every start and reuse) and is ignored, so a slug reused by a brand-new
  * local prototype can't surface a stale decision from an unrelated earlier
  * run; with no `.reload` yet, there is no session to compare against, so the
- * verdict is trusted as before. `resolveDownloads` is overridable for tests;
- * resolving it lazily inside the try means a user with no Downloads folder
- * detectable (e.g. WSL with no `wslpath`) still gets a plain local "pending"
- * instead of a crash.
+ * verdict is trusted as before.
  */
-export function extStatus(
-	name: string,
-	reloadPath: string,
-	resolveDownloads: () => string = resolveDownloadsDir,
-): string | undefined {
+export function extStatus(name: string, reloadPath: string): string | undefined {
 	const reloadMs = (() => {
 		try {
 			return statSync(reloadPath).mtimeMs;
@@ -60,25 +49,19 @@ export function extStatus(
 			return undefined;
 		}
 	})();
-	for (const resolvePath of [
-		() => join(resolveDownloads(), dgProtoPath(name, "verdict.json")),
-		() => protoScratchPath(name, "verdict.json"),
-	]) {
-		try {
-			const path = resolvePath();
-			if (!existsSync(path)) continue;
-			if (reloadMs !== undefined && statSync(path).mtimeMs < reloadMs)
-				continue;
-			const verdict = validateVerdict(JSON.parse(readFileSync(path, "utf8")));
-			if (verdict.slug !== name) continue;
-			return verdict.action === "reject"
-				? "rejected"
-				: `${verdict.action}:${verdict.selectedKey}`;
-		} catch {
-			continue;
-		}
+	try {
+		const path = protoScratchPath(name, "verdict.json");
+		if (!existsSync(path)) return undefined;
+		if (reloadMs !== undefined && statSync(path).mtimeMs < reloadMs)
+			return undefined;
+		const verdict = validateVerdict(JSON.parse(readFileSync(path, "utf8")));
+		if (verdict.slug !== name) return undefined;
+		return verdict.action === "reject"
+			? "rejected"
+			: `${verdict.action}:${verdict.selectedKey}`;
+	} catch {
+		return undefined;
 	}
-	return undefined;
 }
 
 /**

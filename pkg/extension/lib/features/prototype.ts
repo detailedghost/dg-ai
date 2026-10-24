@@ -1,6 +1,9 @@
 import {
+	STYLE_GUIDE_MAX_CONTROLS,
+	type ProtoNotReadyError,
 	type ProtoVariation,
 	type StyleGuide,
+	type StyleGuideControl,
 	type Verdict,
 	validateProtoPlan,
 	validateStyleGuide,
@@ -11,12 +14,16 @@ import { callBrowserApi } from "../browser-call";
 import { injectTheme, startPicking, waitForEl } from "../picker";
 import { SANS } from "../ui-helpers";
 
-/** Content-to-background message requesting a local StyleGuide download. */
+/** Content-to-background message handing back a collected StyleGuide. */
 export const PROTO_SAVE_STYLE_GUIDE = "dg-proto:save-style-guide";
-/** Content-to-background message requesting a local verdict download. */
+/** Content-to-background message handing back a human verdict. */
 export const PROTO_SAVE_VERDICT = "dg-proto:save-verdict";
 /** Content-to-background message requesting an optional visible-tab preview. */
 export const PROTO_CAPTURE_PREVIEW = "dg-proto:capture-preview";
+/** Content-to-background message reporting the landed page is not ready for scrape/plant. */
+export const PROTO_NOT_READY = "dg-proto:not-ready";
+/** Content-to-background message reporting the page is ready and work has begun. */
+export const PROTO_PROGRESS = "dg-proto:progress";
 
 /** Raw, bounded DOM/CSS observations consumed by the pure StyleGuide transform. */
 export type RawStyleSamples = {
@@ -29,6 +36,7 @@ export type RawStyleSamples = {
 	radii: string[];
 	shadows: string[];
 	components: StyleGuide["components"];
+	controls: StyleGuideControl[];
 };
 
 function channel(value: string): number | undefined {
@@ -152,7 +160,14 @@ export function styleGuideFromSamples(samples: RawStyleSamples): StyleGuide {
 			button: sortedRecord(samples.components.button),
 			input: sortedRecord(samples.components.input),
 			link: sortedRecord(samples.components.link),
+			...(samples.components.select
+				? { select: sortedRecord(samples.components.select) }
+				: {}),
+			...(samples.components.textarea
+				? { textarea: sortedRecord(samples.components.textarea) }
+				: {}),
 		},
+		...(samples.controls.length > 0 ? { controls: samples.controls } : {}),
 	};
 	return validateStyleGuide(guide);
 }
@@ -257,6 +272,59 @@ function componentSample(
 	return sample;
 }
 
+/** First visible match for a component sample; skips a hidden CSRF-token-shaped first input. */
+function firstVisibleMatch(selector: string): Element | null {
+	for (const element of document.querySelectorAll(selector)) {
+		if (element instanceof HTMLInputElement && element.type === "hidden") {
+			continue;
+		}
+		const style = getComputedStyle(element);
+		if (style.display === "none" || style.visibility === "hidden") continue;
+		return element;
+	}
+	return null;
+}
+
+/** Bootstrap's `data-bs-theme`, a generic `data-theme`, or the page's declared `color-scheme`. */
+function detectColorScheme(): "light" | "dark" | undefined {
+	const themed =
+		document.documentElement.getAttribute("data-bs-theme") ??
+		document.documentElement.getAttribute("data-theme");
+	if (themed === "light" || themed === "dark") return themed;
+	const declared = getComputedStyle(document.documentElement).colorScheme;
+	if (declared === "dark" || declared === "light") return declared;
+	return undefined;
+}
+
+const CONTROL_TAGS = new Set(["input", "select", "textarea", "button"]);
+
+function controlType(element: Element, tag: string): string | undefined {
+	if (tag === "input") return (element as HTMLInputElement).type;
+	if (tag === "button") return (element as HTMLButtonElement).type;
+	return undefined;
+}
+
+/** First form controls in document order, with their host classes, so an agent can reuse them verbatim. */
+function collectControls(limit: number): StyleGuideControl[] {
+	const controls: StyleGuideControl[] = [];
+	for (const element of document.querySelectorAll(
+		"input, select, textarea, button",
+	)) {
+		if (controls.length >= limit) break;
+		const tag = element.tagName.toLowerCase();
+		if (!CONTROL_TAGS.has(tag)) continue;
+		const type = controlType(element, tag);
+		const wrapperClasses = element.parentElement?.className;
+		controls.push({
+			tag: tag as StyleGuideControl["tag"],
+			...(type ? { type } : {}),
+			classes: element.className,
+			...(wrapperClasses ? { wrapperClasses } : {}),
+		});
+	}
+	return controls;
+}
+
 /** Thin DOM collector; real-page coverage remains a manual/E2E contract. */
 export function collectStyleSamples(): RawStyleSamples {
 	const rootStyle = getComputedStyle(document.documentElement);
@@ -278,7 +346,8 @@ export function collectStyleSamples(): RawStyleSamples {
 	/**
 	 * Bound large-page work to one deterministic DOM-order prefix. Worst case:
 	 * inspect 512 root properties and read 500 scan styles + 64 roster + 3 cards
-	 * + root/body + 3 component styles. At most 128 custom properties are emitted.
+	 * + root/body + 1 color-scheme read + 5 component styles. At most 128
+	 * custom properties are emitted.
 	 */
 	const scanned = boundedDescendants(
 		document.body,
@@ -335,11 +404,13 @@ export function collectStyleSamples(): RawStyleSamples {
 		"padding",
 	];
 
+	const colorScheme = detectColorScheme();
 	return {
 		meta: {
 			url: location.href,
 			scrapedAt: Date.now(),
 			sameOrigin: true,
+			...(colorScheme ? { colorScheme } : {}),
 		},
 		customProps,
 		colors,
@@ -349,13 +420,16 @@ export function collectStyleSamples(): RawStyleSamples {
 		radii,
 		shadows,
 		components: {
-			button: componentSample(
-				document.querySelector("button"),
+			button: componentSample(firstVisibleMatch("button"), sharedProperties),
+			input: componentSample(firstVisibleMatch("input"), sharedProperties),
+			link: componentSample(firstVisibleMatch("a"), sharedProperties),
+			select: componentSample(firstVisibleMatch("select"), sharedProperties),
+			textarea: componentSample(
+				firstVisibleMatch("textarea"),
 				sharedProperties,
 			),
-			input: componentSample(document.querySelector("input"), sharedProperties),
-			link: componentSample(document.querySelector("a"), sharedProperties),
 		},
+		controls: collectControls(STYLE_GUIDE_MAX_CONTROLS),
 	};
 }
 
@@ -383,6 +457,7 @@ const PROTOTYPE_TAGS = new Set([
 	"figcaption",
 	"figure",
 	"footer",
+	"form",
 	"h1",
 	"h2",
 	"h3",
@@ -400,9 +475,11 @@ const PROTOTYPE_TAGS = new Set([
 	"main",
 	"nav",
 	"ol",
+	"optgroup",
 	"option",
 	"p",
 	"pre",
+	"progress",
 	"section",
 	"select",
 	"small",
@@ -468,31 +545,42 @@ const PROTOTYPE_TAG_ATTRIBUTES: Record<string, Set<string>> = {
 	button: new Set(["disabled", "name", "type", "value"]),
 	img: new Set(["alt", "height", "src", "width"]),
 	input: new Set([
+		"accept",
+		"autocomplete",
 		"checked",
 		"disabled",
 		"max",
 		"maxlength",
 		"min",
 		"minlength",
+		"multiple",
 		"name",
+		"pattern",
 		"placeholder",
 		"readonly",
+		"required",
 		"step",
 		"type",
 		"value",
 	]),
 	label: new Set(["for"]),
+	optgroup: new Set(["disabled", "label"]),
 	option: new Set(["disabled", "label", "selected", "value"]),
-	select: new Set(["disabled", "multiple", "name"]),
+	progress: new Set(["max", "value"]),
+	select: new Set(["disabled", "multiple", "name", "required", "size"]),
 	td: new Set(["colspan", "rowspan"]),
 	textarea: new Set([
+		"autocomplete",
 		"cols",
 		"disabled",
 		"maxlength",
+		"minlength",
 		"name",
 		"placeholder",
 		"readonly",
+		"required",
 		"rows",
+		"wrap",
 	]),
 	th: new Set(["colspan", "rowspan", "scope"]),
 };
@@ -634,20 +722,101 @@ function prototypeAttributeAllowed(name: string, tagName: string): boolean {
 	);
 }
 
+const LOGIN_TEXT = /sign in|log in|login/i;
+
+function hasPasswordField(): boolean {
+	return document.querySelector('input[type="password"]') !== null;
+}
+
+function hasLoginFormAction(): boolean {
+	return document.querySelector('form[action*="login" i]') !== null;
+}
+
+function matchesLoginText(): boolean {
+	const heading = document.querySelector("h1")?.textContent ?? "";
+	return LOGIN_TEXT.test(document.title) || LOGIN_TEXT.test(heading);
+}
+
+function navigationHttpStatus(): number | undefined {
+	try {
+		const entries = performance.getEntriesByType?.("navigation") as
+			| Array<{ responseStatus?: number }>
+			| undefined;
+		return entries?.[0]?.responseStatus;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Page-level not-ready signals shared by scrape and plant: an HTTP error
+ * response, a sign-in wall, or a landing page that is not the one requested.
+ * Called before any scrape or plant work begins; a mount-selector-specific
+ * check happens separately inside `plantPrototype`.
+ */
+function withoutTrailingSlash(pathname: string): string {
+	return pathname.length > 1 && pathname.endsWith("/")
+		? pathname.slice(0, -1)
+		: pathname;
+}
+
+export function detectPageNotReady(
+	expectedUrl: string,
+): ProtoNotReadyError | undefined {
+	const landedUrl = location.href;
+	const status = navigationHttpStatus();
+	if (typeof status === "number" && status >= 400) {
+		return {
+			code: "http-error",
+			message: `The page responded with HTTP ${status}.`,
+			landedUrl,
+		};
+	}
+	if (hasPasswordField() || hasLoginFormAction() || matchesLoginText()) {
+		return {
+			code: "login-page",
+			message:
+				"The page looks like a sign-in page. Authenticate in this browser profile and retry.",
+			landedUrl,
+		};
+	}
+	let expected: URL | undefined;
+	try {
+		expected = new URL(expectedUrl);
+	} catch {
+		expected = undefined;
+	}
+	if (
+		expected &&
+		(location.origin !== expected.origin ||
+			withoutTrailingSlash(location.pathname) !==
+				withoutTrailingSlash(expected.pathname))
+	) {
+		return {
+			code: "redirected",
+			message: `The browser landed on a different page than requested (expected ${expected.origin}${expected.pathname}).`,
+			landedUrl,
+		};
+	}
+	return undefined;
+}
+
 /** Immutable selection state for the planted comparison picker. */
 export type PrototypePickerState = {
 	keys: string[];
 	currentIndex: number;
 	selectedKey: string | null;
 	approved: boolean;
+	showingOriginal: boolean;
 };
 
-/** User navigation and approval actions accepted by the picker state machine. */
+/** User navigation, approval, and compare actions accepted by the picker state machine. */
 export type PrototypePickerAction =
 	| { type: "previous" }
 	| { type: "next" }
 	| { type: "select" }
-	| { type: "approve" };
+	| { type: "approve" }
+	| { type: "toggle-original" };
 
 /** Pure immutable state transition used by the planted picker UI. */
 export function pickerMachine(
@@ -661,6 +830,7 @@ export function pickerMachine(
 			currentIndex: count === 0 ? 0 : (state.currentIndex - 1 + count) % count,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 	}
 	if (action.type === "next") {
@@ -669,6 +839,7 @@ export function pickerMachine(
 			currentIndex: count === 0 ? 0 : (state.currentIndex + 1) % count,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 	}
 	if (action.type === "select") {
@@ -676,7 +847,11 @@ export function pickerMachine(
 			...state,
 			selectedKey: state.keys[state.currentIndex] ?? null,
 			approved: false,
+			showingOriginal: false,
 		};
+	}
+	if (action.type === "toggle-original") {
+		return { ...state, showingOriginal: !state.showingOriginal };
 	}
 	return state.selectedKey ? { ...state, approved: true } : { ...state };
 }
@@ -840,10 +1015,15 @@ export function setPrototypeCycleFlash(
 
 let prototypeHostSequence = 0;
 
+async function reportPrototypeNotReady(error: ProtoNotReadyError): Promise<void> {
+	await sendPrototypeMessage({ type: PROTO_NOT_READY, error });
+}
+
 /**
  * Plant a prototype into one live-page target. Dynamic SPAs are intentionally
- * bounded to a longer one-shot selector wait; no long-lived MutationObserver is
- * installed, and selector timeout falls back to the interactive picker.
+ * bounded to a longer one-shot selector wait. A given mount selector that
+ * never resolves is a typed not-ready failure, not a silent interactive
+ * fallback; the picker only takes over when no selector was supplied.
  */
 export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const plan = validateProtoPlan(rawPlan);
@@ -852,13 +1032,18 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	let target: HTMLElement | null = takeover ? document.body : null;
 	if (!takeover) {
 		if (plan.mountSelector) {
-			try {
-				target = await waitForEl(plan.mountSelector, 10_000);
-			} catch {
-				// Invalid or stale SPA selectors use the same interactive fallback.
+			target = await waitForEl(plan.mountSelector, 10_000);
+			if (!target) {
+				await reportPrototypeNotReady({
+					code: "mount-missing",
+					message: `The mount selector "${plan.mountSelector}" was not found on the page.`,
+					landedUrl: location.href,
+				});
+				return;
 			}
+		} else {
+			target = await pickPrototypeTarget();
 		}
-		if (!target) target = await pickPrototypeTarget();
 	}
 	if (!target?.parentNode) return;
 
@@ -867,6 +1052,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const previousBodyChildren = takeover ? [...target.childNodes] : [];
 	const prevInlineCssText = target.style.cssText;
 	const computed = getComputedStyle(target);
+	const variationDisplay = computed.display || "block";
 	const instance = ++prototypeHostSequence;
 	const host = document.createElement("div");
 	host.id = `dg-proto-host-${instance}`;
@@ -904,13 +1090,12 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			target.replaceChildren(host);
 		} else {
 			parent.insertBefore(host, target);
-			target.style.display = "none";
+			target.style.setProperty("display", "none", "important");
 		}
 		document.documentElement.appendChild(controlsHost);
 		controlsHost.addEventListener("focusin", (event) =>
 			event.stopPropagation(),
 		);
-		const root = host.attachShadow({ mode: "closed" });
 		const controlsRoot = controlsHost.attachShadow({ mode: "closed" });
 		injectTheme(controlsRoot);
 		const chromeStyle = document.createElement("style");
@@ -944,11 +1129,13 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		const previous = button("Previous");
 		const next = button("Next");
 		const select = button("Select");
+		const toggleOriginal = takeover ? undefined : button("Show original");
 		const approve = button("Approve");
 		const reject = button("Reject");
 		const tweak = button("Tweak");
 		const close = button("Close");
 		nav.append(previous, next, select);
+		if (toggleOriginal) nav.append(toggleOriginal);
 		actions.append(approve, reject, tweak, close);
 
 		let state: PrototypePickerState = {
@@ -956,6 +1143,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 		let settling = false;
 
@@ -964,19 +1152,36 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				const variation = variations[state.currentIndex];
 				if (!variation)
 					throw new Error("prototype picker has no focused variation");
-				root.replaceChildren();
-				const style = document.createElement("style");
-				style.textContent = variation.css;
-				const canvas = document.createElement("div");
-				canvas.setAttribute("data-dg-prototype", variation.key);
-				canvas.innerHTML = variation.html;
-				root.append(style, canvas);
+				const showingOriginal = !takeover && state.showingOriginal;
+				if (!takeover) {
+					if (showingOriginal) target.style.removeProperty("display");
+					else target.style.setProperty("display", "none", "important");
+					host.style.setProperty(
+						"display",
+						showingOriginal ? "none" : variationDisplay,
+						"important",
+					);
+				}
+				if (!showingOriginal) {
+					host.replaceChildren();
+					const style = document.createElement("style");
+					style.textContent = variation.css;
+					const canvas = document.createElement("div");
+					canvas.setAttribute("data-dg-prototype", variation.key);
+					canvas.innerHTML = variation.html;
+					host.append(style, canvas);
+				}
 				meta.textContent = `${state.currentIndex + 1}/${variations.length} · ${variation.label}${
 					state.selectedKey === variation.key ? " · selected" : ""
-				}`;
-				approve.disabled = state.selectedKey === null;
-				reject.disabled = false;
-				tweak.disabled = false;
+				}${showingOriginal ? " · showing original" : ""}`;
+				approve.disabled = state.selectedKey === null || showingOriginal;
+				reject.disabled = showingOriginal;
+				tweak.disabled = showingOriginal;
+				if (toggleOriginal) {
+					toggleOriginal.textContent = showingOriginal
+						? "Show variation"
+						: "Show original";
+				}
 			} catch (error) {
 				cleanup();
 				throw error;
@@ -1012,7 +1217,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			}
 		};
 		const sendVerdict = async (action: "approve" | "reject" | "tweak"): Promise<void> => {
-			if (settling) return;
+			if (settling || state.showingOriginal) return;
 			const selectedKey = pickerVerdictKey(state, action);
 			if (!selectedKey) return;
 			const selectedIndex = variations.findIndex(
@@ -1031,6 +1236,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				approve.disabled = true;
 				reject.disabled = true;
 				tweak.disabled = true;
+				if (toggleOriginal) toggleOriginal.disabled = true;
 				if (action === "approve") {
 					state = pickerMachine(state, { type: "approve" });
 					if (!state.approved) return;
@@ -1040,7 +1246,6 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 					try {
 						result = (await sendPrototypeMessage({
 							type: PROTO_CAPTURE_PREVIEW,
-							slug: plan.slug,
 						})) as typeof result;
 					} catch (captureError) {
 						result = {
@@ -1094,11 +1299,17 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				event.stopPropagation();
 			}
 		};
-		root.addEventListener("click", preventInteraction, true);
-		root.addEventListener("submit", preventInteraction, true);
+		host.addEventListener("click", preventInteraction, true);
+		host.addEventListener("submit", preventInteraction, true);
 		previous.addEventListener("click", () => cycle("previous"));
 		next.addEventListener("click", () => cycle("next"));
 		select.addEventListener("click", choose);
+		if (toggleOriginal) {
+			toggleOriginal.addEventListener("click", () => {
+				state = pickerMachine(state, { type: "toggle-original" });
+				render();
+			});
+		}
 		approve.addEventListener("click", () => void sendVerdict("approve"));
 		reject.addEventListener("click", () => void sendVerdict("reject"));
 		tweak.addEventListener("click", () => void sendVerdict("tweak"));

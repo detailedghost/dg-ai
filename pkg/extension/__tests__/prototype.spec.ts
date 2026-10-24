@@ -1,14 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
-import { type ProtoVariation, type Verdict, validateVerdict } from "@dg/common";
+import {
+	STYLE_GUIDE_MAX_CONTROLS,
+	type ProtoVariation,
+	type Verdict,
+	validateVerdict,
+} from "@dg/common";
 import {
 	type HTMLElement as HappyHTMLElement,
 	type ShadowRoot as HappyShadowRoot,
 	Window,
 } from "happy-dom";
-import { styleGuideDownloadOptions } from "@/lib/background/proto";
 import {
 	collectStyleSamples,
-	PROTO_SAVE_STYLE_GUIDE,
+	detectPageNotReady,
 	PROTO_STYLE_SCAN_LIMITS,
 	styleGuideFromSamples,
 } from "@/lib/features/prototype";
@@ -24,6 +28,10 @@ const globalDescriptors = {
 	location: Object.getOwnPropertyDescriptor(globalThis, "location"),
 	DOMParser: Object.getOwnPropertyDescriptor(globalThis, "DOMParser"),
 	HTMLElement: Object.getOwnPropertyDescriptor(globalThis, "HTMLElement"),
+	HTMLInputElement: Object.getOwnPropertyDescriptor(
+		globalThis,
+		"HTMLInputElement",
+	),
 	window: Object.getOwnPropertyDescriptor(globalThis, "window"),
 };
 
@@ -36,6 +44,7 @@ Object.defineProperties(globalThis, {
 	location: { configurable: true, value: window.location },
 	DOMParser: { configurable: true, value: window.DOMParser },
 	HTMLElement: { configurable: true, value: window.HTMLElement },
+	HTMLInputElement: { configurable: true, value: window.HTMLInputElement },
 	window: { configurable: true, value: window },
 });
 
@@ -74,18 +83,54 @@ function byId(id: string): Element {
 	return element;
 }
 
+async function captureShadowRoots(
+	run: () => Promise<void>,
+): Promise<HappyShadowRoot[]> {
+	const shadowRoots: HappyShadowRoot[] = [];
+	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
+		window.HTMLElement.prototype,
+		"attachShadow",
+	);
+	const originalAttachShadow = window.HTMLElement.prototype.attachShadow;
+	Object.defineProperty(window.HTMLElement.prototype, "attachShadow", {
+		configurable: true,
+		value(this: HappyHTMLElement, init: ShadowRootInit) {
+			const root = originalAttachShadow.call(this, init);
+			shadowRoots.push(root);
+			return root;
+		},
+	});
+
+	try {
+		await run();
+	} finally {
+		if (attachShadowDescriptor) {
+			Object.defineProperty(
+				window.HTMLElement.prototype,
+				"attachShadow",
+				attachShadowDescriptor,
+			);
+		} else {
+			Reflect.deleteProperty(window.HTMLElement.prototype, "attachShadow");
+		}
+	}
+	return shadowRoots;
+}
+
 type PickerState = {
 	keys: string[];
 	currentIndex: number;
 	selectedKey: string | null;
 	approved: boolean;
+	showingOriginal: boolean;
 };
 
 type PickerAction =
 	| { type: "previous" }
 	| { type: "next" }
 	| { type: "select" }
-	| { type: "approve" };
+	| { type: "approve" }
+	| { type: "toggle-original" };
 
 type PrototypePickerContracts = {
 	applyTrustedPrototypeHostStyles(
@@ -229,7 +274,7 @@ describe("collectStyleSamples", () => {
 			expect(styleReads).toBeLessThanOrEqual(
 				PROTO_STYLE_SCAN_LIMITS.domElements +
 					PROTO_STYLE_SCAN_LIMITS.fixedRoster +
-					2,
+					3,
 			);
 			expect(samples.colors).toContain("rgb(62, 0, 1)");
 			expect(samples.colors).not.toContain("rgb(63, 0, 1)");
@@ -293,33 +338,203 @@ describe("collectStyleSamples", () => {
 		expect(colors).not.toContain("rgb(20, 0, 0)");
 		expect(colors).not.toContain("rgb(50, 0, 0)");
 	});
-});
 
-it("uses the payload slug and overwrite policy for style-guide downloads", () => {
-	const options = styleGuideDownloadOptions({
-		type: PROTO_SAVE_STYLE_GUIDE,
-		slug: "payload-slug",
-		styleGuide: {
-			meta: {
-				url: "https://example.test",
-				scrapedAt: 1,
-				sameOrigin: true,
-			},
-			tokens: {
-				customProps: {},
-				colors: ["rgb(0, 0, 0)"],
-				fontStack: "sans-serif",
-				typeScale: [],
-				spacing: [],
-				radii: [],
-				shadows: [],
-			},
-			components: { button: {}, input: {}, link: {} },
-		},
+	it("captures Bootstrap form controls with their host classes so an agent can reuse them", () => {
+		document.body.style.color = "rgb(33, 37, 41)";
+		document.body.innerHTML = `
+			<form>
+				<div class="form-check">
+					<input type="radio" class="form-check-input" name="choice">
+				</div>
+				<input type="text" class="form-control">
+				<select class="form-select"><option>One</option></select>
+				<textarea class="form-control"></textarea>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</form>
+		`;
+
+		try {
+			const samples = collectStyleSamples();
+			const guide = styleGuideFromSamples(samples);
+
+			expect(samples.controls[0]).toEqual({
+				tag: "input",
+				type: "radio",
+				classes: "form-check-input",
+				wrapperClasses: "form-check",
+			});
+			expect(samples.controls.map((control) => control.tag)).toEqual([
+				"input",
+				"input",
+				"select",
+				"textarea",
+				"button",
+			]);
+			expect(guide.controls).toEqual(samples.controls);
+			expect(guide.components.select).toBeDefined();
+			expect(guide.components.textarea).toBeDefined();
+		} finally {
+			document.body.removeAttribute("style");
+		}
 	});
 
-	expect(options.filename).toBe("dg-proto/payload-slug/style-guide.json");
-	expect(options.conflictAction).toBe("overwrite");
+	it("bounds collected controls to the shared StyleGuide control limit", () => {
+		document.body.innerHTML = Array.from(
+			{ length: 40 },
+			(_, index) => `<input class="field-${index}">`,
+		).join("");
+
+		const samples = collectStyleSamples();
+
+		expect(samples.controls.length).toBeLessThanOrEqual(
+			STYLE_GUIDE_MAX_CONTROLS,
+		);
+	});
+
+	it("skips a hidden first input when sampling the input component", () => {
+		document.body.innerHTML = `
+			<input type="hidden" name="csrf" value="token">
+			<input type="text" style="color:rgb(9, 9, 9)">
+		`;
+
+		const samples = collectStyleSamples();
+
+		expect(samples.components.input.color).toBe("rgb(9, 9, 9)");
+	});
+
+	it("reads data-bs-theme over a generic data-theme and over computed color-scheme", () => {
+		document.documentElement.setAttribute("data-bs-theme", "dark");
+		document.documentElement.setAttribute("data-theme", "light");
+
+		try {
+			expect(collectStyleSamples().meta.colorScheme).toBe("dark");
+		} finally {
+			document.documentElement.removeAttribute("data-bs-theme");
+			document.documentElement.removeAttribute("data-theme");
+		}
+	});
+
+	it("falls back to a generic data-theme attribute when data-bs-theme is absent", () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+
+		try {
+			expect(collectStyleSamples().meta.colorScheme).toBe("dark");
+		} finally {
+			document.documentElement.removeAttribute("data-theme");
+		}
+	});
+
+	it("omits colorScheme when neither theme attribute nor computed color-scheme is set", () => {
+		expect(collectStyleSamples().meta.colorScheme).toBeUndefined();
+	});
+});
+
+describe("detectPageNotReady", () => {
+	function withLocation<T>(href: string, run: () => T): T {
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
+		const url = new URL(href);
+		Object.defineProperty(globalThis, "location", {
+			configurable: true,
+			value: { href, origin: url.origin, pathname: url.pathname },
+		});
+		try {
+			return run();
+		} finally {
+			if (descriptor) Object.defineProperty(globalThis, "location", descriptor);
+		}
+	}
+
+	function withNavigationStatus<T>(status: number | undefined, run: () => T): T {
+		const original = (
+			performance as unknown as Record<string, unknown>
+		).getEntriesByType;
+		performance.getEntriesByType = (() =>
+			status === undefined
+				? []
+				: [{ responseStatus: status }]) as unknown as typeof performance.getEntriesByType;
+		try {
+			return run();
+		} finally {
+			if (original === undefined) {
+				Reflect.deleteProperty(performance, "getEntriesByType");
+			} else {
+				(performance as unknown as Record<string, unknown>).getEntriesByType =
+					original;
+			}
+		}
+	}
+
+	it("reports ready when the page matches the expected URL with no sign-in signals", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/account", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+	});
+
+	it("tolerates a trailing-slash-only mismatch against the expected URL", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/account/", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+		withLocation("https://example.test/account", () => {
+			expect(
+				detectPageNotReady("https://example.test/account/"),
+			).toBeUndefined();
+		});
+	});
+
+	it("reports http-error with the response status from the navigation entry", () => {
+		document.body.innerHTML = "<h1>Not found</h1>";
+		withLocation("https://example.test/account", () => {
+			withNavigationStatus(404, () => {
+				expect(detectPageNotReady("https://example.test/account")).toEqual({
+					code: "http-error",
+					message: "The page responded with HTTP 404.",
+					landedUrl: "https://example.test/account",
+				});
+			});
+		});
+	});
+
+	it("reports login-page when a password field is present", () => {
+		document.body.innerHTML = '<input type="password">';
+		withLocation("https://example.test/login", () => {
+			const notReady = detectPageNotReady("https://example.test/account");
+			expect(notReady?.code).toBe("login-page");
+			expect(notReady?.landedUrl).toBe("https://example.test/login");
+		});
+	});
+
+	it("reports login-page when the form action targets a login endpoint", () => {
+		document.body.innerHTML = '<form action="/auth/login"></form>';
+		withLocation("https://example.test/auth/login", () => {
+			expect(
+				detectPageNotReady("https://example.test/account")?.code,
+			).toBe("login-page");
+		});
+	});
+
+	it("reports login-page from the document title or heading sign-in text", () => {
+		document.title = "Sign in";
+		try {
+			withLocation("https://example.test/signin", () => {
+				expect(
+					detectPageNotReady("https://example.test/account")?.code,
+				).toBe("login-page");
+			});
+		} finally {
+			document.title = "";
+		}
+	});
+
+	it("reports redirected when the page lands on a different origin or path", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/other-page", () => {
+			expect(
+				detectPageNotReady("https://example.test/account")?.code,
+			).toBe("redirected");
+		});
+	});
 });
 
 describe("pickerMachine", () => {
@@ -330,6 +545,7 @@ describe("pickerMachine", () => {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 
 		const previous = pickerMachine(initial, { type: "previous" });
@@ -352,6 +568,7 @@ describe("pickerMachine", () => {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		});
 	});
 
@@ -363,6 +580,7 @@ describe("pickerMachine", () => {
 				currentIndex: 0,
 				selectedKey: null,
 				approved: false,
+				showingOriginal: false,
 			},
 			{ type: "select" },
 		);
@@ -374,6 +592,35 @@ describe("pickerMachine", () => {
 		expect(cycled.approved).toBe(false);
 	});
 
+	it("toggles showing the original without disturbing selection, and any cycle clears it", async () => {
+		const { pickerMachine } = await pickerContracts();
+		const selected: PickerState = {
+			keys: ["compact", "detailed", "visual"],
+			currentIndex: 0,
+			selectedKey: "compact",
+			approved: false,
+			showingOriginal: false,
+		};
+
+		const showingOriginal = pickerMachine(selected, {
+			type: "toggle-original",
+		});
+		const showingVariation = pickerMachine(showingOriginal, {
+			type: "toggle-original",
+		});
+		const blockedApprovalWhileShowing = pickerMachine(showingOriginal, {
+			type: "approve",
+		});
+		const cycledAwayFromOriginal = pickerMachine(showingOriginal, {
+			type: "next",
+		});
+
+		expect(showingOriginal).toEqual({ ...selected, showingOriginal: true });
+		expect(showingVariation).toEqual(selected);
+		expect(blockedApprovalWhileShowing.approved).toBe(true);
+		expect(cycledAwayFromOriginal.showingOriginal).toBe(false);
+	});
+
 	it("uses explicit selection for approval and current focus for rejection", async () => {
 		const { pickerVerdictKey } = await pickerContracts();
 		const focusedWithoutSelection: PickerState = {
@@ -381,6 +628,7 @@ describe("pickerMachine", () => {
 			currentIndex: 1,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 
 		expect(pickerVerdictKey(focusedWithoutSelection, "approve")).toBeNull();
@@ -535,6 +783,60 @@ describe("sanitizePrototypeVariation", () => {
 		expect(sanitized.css).toMatch(/color\s*:\s*rebeccapurple/i);
 	});
 
+	it("keeps native form controls and their Bootstrap-shaped attributes so they render visibly", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const source: ProtoVariation = {
+			key: "form-controls",
+			label: "Form controls",
+			html: [
+				'<form action="/submit" method="post">',
+				'<div class="form-check">',
+				'<input type="radio" class="form-check-input" name="plan" value="a" checked required>',
+				"</div>",
+				'<input type="file" class="form-control" accept="image/png" multiple pattern="[a-z]+" autocomplete="off">',
+				'<select class="form-select" required size="3">',
+				'<optgroup label="Group"><option value="1">One</option></optgroup>',
+				"</select>",
+				'<textarea class="form-control" required minlength="4" wrap="soft" autocomplete="off"></textarea>',
+				'<progress value="30" max="100"></progress>',
+				"</form>",
+			].join(""),
+			css: "",
+		};
+
+		const sanitized = sanitizePrototypeVariation(source);
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+
+		expect(parsed.querySelector("form")?.hasAttribute("action")).toBe(false);
+		expect(parsed.querySelector("form")?.hasAttribute("method")).toBe(false);
+		const radio = parsed.querySelector('input[type="radio"]');
+		expect(radio?.getAttribute("class")).toBe("form-check-input");
+		expect(radio?.hasAttribute("checked")).toBe(true);
+		expect(radio?.hasAttribute("required")).toBe(true);
+		const file = parsed.querySelector('input[type="file"]');
+		expect(file?.getAttribute("accept")).toBe("image/png");
+		expect(file?.hasAttribute("multiple")).toBe(true);
+		expect(file?.getAttribute("pattern")).toBe("[a-z]+");
+		expect(file?.getAttribute("autocomplete")).toBe("off");
+		const select = parsed.querySelector("select");
+		expect(select?.hasAttribute("required")).toBe(true);
+		expect(select?.getAttribute("size")).toBe("3");
+		expect(parsed.querySelector("optgroup")?.getAttribute("label")).toBe(
+			"Group",
+		);
+		const textarea = parsed.querySelector("textarea");
+		expect(textarea?.hasAttribute("required")).toBe(true);
+		expect(textarea?.getAttribute("minlength")).toBe("4");
+		expect(textarea?.getAttribute("wrap")).toBe("soft");
+		expect(textarea?.getAttribute("autocomplete")).toBe("off");
+		const progress = parsed.querySelector("progress");
+		expect(progress?.getAttribute("value")).toBe("30");
+		expect(progress?.getAttribute("max")).toBe("100");
+	});
+
 	it("rejects host-targeting rules and scopes benign variation CSS", async () => {
 		const { applyTrustedPrototypeHostStyles, sanitizePrototypeVariation } =
 			await pickerContracts();
@@ -657,18 +959,20 @@ it("replaces only the selected mount in replace mode and restores it on cleanup"
 	`;
 	const original = [...document.body.childNodes];
 
-	await plantPrototype({
-		slug: "replace-mode",
-		mountSelector: "#mount",
-		mode: "replace",
-		variations: [
-			{
-				key: "first",
-				label: "First",
-				html: "<p>Preview</p>",
-				css: "p { color: blue; }",
-			},
-		],
+	const shadowRoots = await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "replace-mode",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{
+					key: "first",
+					label: "First",
+					html: "<p>Preview</p>",
+					css: "p { color: blue; }",
+				},
+			],
+		});
 	});
 
 	expect([...document.body.children].map((element) => element.id)).toEqual([
@@ -681,9 +985,58 @@ it("replaces only the selected mount in replace mode and restores it on cleanup"
 		"none",
 	);
 
+	const host = document.querySelector('[id^="dg-proto-host-"]') as HTMLElement;
+	const canvas = host.querySelector('[data-dg-prototype="first"]');
+	expect(host.shadowRoot).toBeNull();
+	expect(canvas).not.toBeNull();
+	expect(document.contains(canvas)).toBe(true);
+	expect(shadowRoots).toHaveLength(1);
+
 	window.dispatchEvent(new window.Event("pagehide"));
 
 	expect([...document.body.childNodes]).toEqual(original);
+});
+
+it("lets the picker toggle between the original element and the planted variation", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<section id="mount" style="display:flex">Original</section>
+	`;
+	const target = document.getElementById("mount") as HTMLElement;
+
+	const shadowRoots = await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "toggle-original",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{ key: "first", label: "First", html: "<p>Preview</p>", css: "" },
+			],
+		});
+	});
+
+	const host = document.querySelector('[id^="dg-proto-host-"]') as HTMLElement;
+	const controlsRoot = shadowRoots[0];
+	if (!controlsRoot) throw new Error("controls shadow root was not created");
+	const toggle = [...controlsRoot.querySelectorAll("button")].find(
+		(element) => element.textContent === "Show original",
+	) as HappyHTMLElement | undefined;
+	if (!toggle) throw new Error("toggle-original button was not rendered");
+
+	expect(target.style.display).toBe("none");
+	expect(host.style.display).toBe("flex");
+
+	toggle.click();
+	expect(target.style.display).toBe("");
+	expect(host.style.display).toBe("none");
+	expect(toggle.textContent).toBe("Show variation");
+
+	toggle.click();
+	expect(target.style.display).toBe("none");
+	expect(host.style.display).toBe("flex");
+	expect(toggle.textContent).toBe("Show original");
+
+	window.dispatchEvent(new window.Event("pagehide"));
 });
 
 it("replaces the full body in takeover mode and restores every original node", async () => {
@@ -735,22 +1088,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 		}
 	});
 
-	const shadowRoots: HappyShadowRoot[] = [];
-	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
-		window.HTMLElement.prototype,
-		"attachShadow",
-	);
-	const originalAttachShadow = window.HTMLElement.prototype.attachShadow;
-	Object.defineProperty(window.HTMLElement.prototype, "attachShadow", {
-		configurable: true,
-		value(this: HTMLElement, init: ShadowRootInit) {
-			const root = originalAttachShadow.call(this, init);
-			shadowRoots.push(root);
-			return root;
-		},
-	});
-
-	try {
+	const shadowRoots = await captureShadowRoots(async () => {
 		await plantPrototype({
 			slug: "focus-trap",
 			mountSelector: "#mount",
@@ -759,17 +1097,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 				{ key: "first", label: "First", html: "<p>Preview</p>", css: "" },
 			],
 		});
-	} finally {
-		if (attachShadowDescriptor) {
-			Object.defineProperty(
-				window.HTMLElement.prototype,
-				"attachShadow",
-				attachShadowDescriptor,
-			);
-		} else {
-			Reflect.deleteProperty(window.HTMLElement.prototype, "attachShadow");
-		}
-	}
+	});
 
 	const notes = shadowRoots
 		.map((root) => root.querySelector(".dg-proto-notes"))

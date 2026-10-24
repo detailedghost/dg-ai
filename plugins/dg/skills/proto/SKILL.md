@@ -81,8 +81,10 @@ Vendor or inline every dependency, or hand-render to plain HTML and CSS.
 **The local mode never reaches the network at run time.** Never install a package or framework, and
 never fetch one from the network, to satisfy this: use what the project already has installed. If a
 dependency is genuinely missing, stop and name the one command the user should run (the same way the
-browser skill asks for `pw install chrome`) and let them run it. Downloads happen only in `--ext`
-mode, and only for the extension and its own tooling.
+browser skill asks for `pw install chrome`) and let them run it. `--ext` mode never writes a browser
+download either: the extension hands scrape and plant results straight to the CLI over the paired
+dg-daemon session. A `~/Downloads/dg-proto/` folder from an older `dg-skills` version is safe to
+delete; nothing reads or writes it anymore.
 
 A prototype of an existing app's UI renders **in that app**. When the thing being prototyped is a
 page, panel, dialog, or component of a web app in the repo, mount the variants in the real running

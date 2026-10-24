@@ -36,6 +36,12 @@ function isProtoPayload(value: unknown): value is ProtoPayload {
 	} catch {
 		return false;
 	}
+	if (
+		typeof candidate.expectedUrl !== "string" ||
+		candidate.expectedUrl.length === 0
+	) {
+		return false;
+	}
 	if (candidate.phase === "scrape") return true;
 	if (candidate.phase !== "plant") return false;
 

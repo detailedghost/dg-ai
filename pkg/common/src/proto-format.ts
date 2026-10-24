@@ -10,9 +10,12 @@ import {
 } from "./assert";
 import type {
 	AnswerPageMeta,
+	ProtoBrowserData,
+	ProtoNotReadyError,
 	ProtoPlan,
 	ProtoVariation,
 	StyleGuide,
+	StyleGuideControl,
 	Verdict,
 } from "./types";
 
@@ -215,6 +218,25 @@ export function validateProtoIdentifier(
 	return value;
 }
 
+/** Representative form-control tags a StyleGuide may capture for reuse. */
+const STYLE_GUIDE_CONTROL_TAGS = ["input", "select", "textarea", "button"] as const;
+/** Maximum form controls a StyleGuide carries; keeps the payload bounded. */
+export const STYLE_GUIDE_MAX_CONTROLS = 32;
+
+function validateStyleGuideControl(
+	value: unknown,
+	path: string,
+): StyleGuideControl {
+	requireRecord(value, path);
+	requireOneOf(value.tag, `${path}.tag`, STYLE_GUIDE_CONTROL_TAGS);
+	if (value.type !== undefined) requireString(value.type, `${path}.type`);
+	requireString(value.classes, `${path}.classes`);
+	if (value.wrapperClasses !== undefined) {
+		requireString(value.wrapperClasses, `${path}.wrapperClasses`);
+	}
+	return value as StyleGuideControl;
+}
+
 /** Validate an unknown value against the complete StyleGuide contract. */
 export function validateStyleGuide(value: unknown): StyleGuide {
 	requireRecord(value, "style guide");
@@ -223,6 +245,12 @@ export function validateStyleGuide(value: unknown): StyleGuide {
 	requireFiniteNumber(value.meta.scrapedAt, "style guide.meta.scrapedAt");
 	if (typeof value.meta.sameOrigin !== "boolean") {
 		fail("style guide.meta.sameOrigin must be a boolean");
+	}
+	if (value.meta.colorScheme !== undefined) {
+		requireOneOf(value.meta.colorScheme, "style guide.meta.colorScheme", [
+			"light",
+			"dark",
+		] as const);
 	}
 
 	requireRecord(value.tokens, "style guide.tokens");
@@ -243,8 +271,156 @@ export function validateStyleGuide(value: unknown): StyleGuide {
 	requireStringRecord(value.components.button, "style guide.components.button");
 	requireStringRecord(value.components.input, "style guide.components.input");
 	requireStringRecord(value.components.link, "style guide.components.link");
+	if (value.components.select !== undefined) {
+		requireStringRecord(
+			value.components.select,
+			"style guide.components.select",
+		);
+	}
+	if (value.components.textarea !== undefined) {
+		requireStringRecord(
+			value.components.textarea,
+			"style guide.components.textarea",
+		);
+	}
+
+	if (value.controls !== undefined) {
+		if (!Array.isArray(value.controls)) {
+			fail("style guide.controls must be an array");
+		}
+		if (value.controls.length > STYLE_GUIDE_MAX_CONTROLS) {
+			fail(
+				`style guide.controls must contain at most ${STYLE_GUIDE_MAX_CONTROLS} entries`,
+			);
+		}
+		value.controls.forEach((control, index) => {
+			validateStyleGuideControl(control, `style guide.controls[${index}]`);
+		});
+	}
 
 	return value as StyleGuide;
+}
+
+/** Validate a typed not-ready failure the extension hands back instead of a silent timeout. */
+export function validateProtoNotReadyError(value: unknown): ProtoNotReadyError {
+	requireRecord(value, "proto not-ready error");
+	requireOneOf(value.code, "proto not-ready error.code", [
+		"login-page",
+		"redirected",
+		"http-error",
+		"mount-missing",
+	] as const);
+	requireString(value.message, "proto not-ready error.message", {
+		nonEmpty: true,
+	});
+	if (value.message.length > 2048) {
+		fail("proto not-ready error.message exceeds 2048 characters");
+	}
+	requireString(value.landedUrl, "proto not-ready error.landedUrl", {
+		nonEmpty: true,
+	});
+	if (value.landedUrl.length > 4096) {
+		fail("proto not-ready error.landedUrl exceeds 4096 characters");
+	}
+	return value as ProtoNotReadyError;
+}
+
+/** Validate the style guide or verdict payload a proto browser request resolves with. */
+export function validateProtoBrowserData(value: unknown): ProtoBrowserData {
+	requireRecord(value, "proto browser data");
+	if (value.kind === "style-guide") {
+		validateStyleGuide(value.styleGuide);
+		return value as ProtoBrowserData;
+	}
+	if (value.kind === "verdict") {
+		validateVerdict(value.verdict);
+		if (value.previewDataUrl !== undefined) {
+			requireString(
+				value.previewDataUrl,
+				"proto browser data.previewDataUrl",
+				{ nonEmpty: true },
+			);
+			if (!value.previewDataUrl.startsWith("data:image/png")) {
+				fail("proto browser data.previewDataUrl must be a PNG data URL");
+			}
+		}
+		return value as ProtoBrowserData;
+	}
+	return fail('proto browser data.kind must be "style-guide" or "verdict"');
+}
+
+/** Maximum caller-selected daemon relay deadline for one proto browser request. */
+export const PROTO_MAX_TIMEOUT_MS = 900_000;
+
+/** Authenticated CLI request to run one `--ext` scrape or plant through the daemon relay. */
+export type ProtoCliRequest = {
+	type: "cli-proto-request";
+	requestId: string;
+	protocolVersion?: 1;
+	phase: "scrape" | "plant";
+	slug: string;
+	markedUrl: string;
+	timeoutMs?: number;
+};
+
+/** Daemon reply matched to the requestId; resolved data, a typed not-ready error, or a transport error. */
+export type ProtoCliResult = {
+	type: "cli-proto-result";
+	sessionId: string;
+	requestId: string;
+	ok: boolean;
+	data?: ProtoBrowserData;
+	notReady?: ProtoNotReadyError;
+	error?: string;
+};
+
+const PROTO_CLI_REQUEST_FIELDS = [
+	"type",
+	"requestId",
+	"protocolVersion",
+	"phase",
+	"slug",
+	"markedUrl",
+	"timeoutMs",
+];
+
+/** Validate the CLI's authenticated request to run one `--ext` scrape or plant through the daemon relay. */
+export function validateProtoCliRequest(value: unknown): ProtoCliRequest {
+	requireRecord(value, "proto cli request");
+	if (value.type !== "cli-proto-request") {
+		fail('proto cli request.type must be "cli-proto-request"');
+	}
+	requireString(value.requestId, "proto cli request.requestId", {
+		nonEmpty: true,
+	});
+	if (value.requestId.length > 128) {
+		fail("proto cli request.requestId exceeds 128 characters");
+	}
+	requireOneOf(value.phase, "proto cli request.phase", [
+		"scrape",
+		"plant",
+	] as const);
+	validateProtoIdentifier(value.slug, "proto cli request.slug");
+	requireString(value.markedUrl, "proto cli request.markedUrl", {
+		nonEmpty: true,
+	});
+	if (value.markedUrl.length > PROTO_MARKER_URL_MAX_LENGTH + 256) {
+		fail("proto cli request.markedUrl exceeds the marker URL limit");
+	}
+	if (value.timeoutMs !== undefined) {
+		requireFiniteNumber(value.timeoutMs, "proto cli request.timeoutMs");
+		if (value.timeoutMs <= 0 || value.timeoutMs > PROTO_MAX_TIMEOUT_MS) {
+			fail(
+				`proto cli request.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
+			);
+		}
+	}
+	for (const key of Object.keys(value)) {
+		if (!PROTO_CLI_REQUEST_FIELDS.includes(key)) {
+			fail(`proto cli request has unknown field "${key}"`);
+		}
+	}
+	return value as ProtoCliRequest;
 }
 
 /** Validate the structural ProtoPlan contract without sanitizing its markup. */

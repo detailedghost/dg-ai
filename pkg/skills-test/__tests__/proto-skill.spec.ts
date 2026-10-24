@@ -328,9 +328,10 @@ describe("proto skill network egress", () => {
 		}
 	});
 
-	test("says downloads are allowed only behind --ext, and never to install Playwright", () => {
+	test("says --ext never writes a browser download, and never to install Playwright", () => {
 		const skill = skillFile("SKILL.md");
-		expect(skill).toMatch(/Downloads happen only in `--ext`\s+mode/);
+		expect(skill).toMatch(/`--ext`\s+mode never writes a browser\s+download/);
+		expect(skill).toMatch(/safe to\s+delete/i);
 		expect(skill).toMatch(/never install Playwright or download a browser/i);
 		expect(skillFile("references/local-build.md")).toMatch(
 			/never install Playwright or download a browser/i,

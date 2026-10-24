@@ -1,26 +1,19 @@
-import { afterEach, expect, it, mock } from "bun:test";
-import { registerProto } from "@/lib/background/proto";
+import { describe, expect, it, mock } from "bun:test";
+import type { ProtoNotReadyError, StyleGuide, Verdict } from "@dg/common";
+import {
+	createProtoHandler,
+	registerProto,
+	type ProtoBrowserApi,
+	type ProtoBrowserRequest,
+	type ProtoResultFrame,
+} from "@/lib/background/proto";
 import {
 	PROTO_CAPTURE_PREVIEW,
+	PROTO_NOT_READY,
+	PROTO_PROGRESS,
+	PROTO_SAVE_STYLE_GUIDE,
 	PROTO_SAVE_VERDICT,
 } from "@/lib/features/prototype";
-
-const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, "chrome");
-const consoleErrorDescriptor = Object.getOwnPropertyDescriptor(
-	console,
-	"error",
-);
-
-afterEach(() => {
-	if (chromeDescriptor) {
-		Object.defineProperty(globalThis, "chrome", chromeDescriptor);
-	} else {
-		Reflect.deleteProperty(globalThis, "chrome");
-	}
-	if (consoleErrorDescriptor) {
-		Object.defineProperty(console, "error", consoleErrorDescriptor);
-	}
-});
 
 type ProtoListener = (
 	message: unknown,
@@ -28,39 +21,31 @@ type ProtoListener = (
 	sendResponse: (response: unknown) => void,
 ) => boolean | undefined;
 
-type DownloadDelta = {
-	id: number;
-	state?: { current: string };
-	error?: { current: string };
+type FakeMethod = (...args: any[]) => any;
+
+type ApiOverrides = {
+	create?: FakeMethod;
+	captureVisibleTab?: FakeMethod;
+	query?: FakeMethod;
 };
 
-function downloadChanges() {
-	let listener: ((delta: DownloadDelta) => void) | undefined;
-	const addListener = mock((callback: (delta: DownloadDelta) => void) => {
-		listener = callback;
-	});
-	const removeListener = mock((callback: (delta: DownloadDelta) => void) => {
-		if (listener === callback) listener = undefined;
-	});
-	return {
-		addListener,
-		emit(delta: DownloadDelta) {
-			listener?.(delta);
-		},
-		hasListener() {
-			return listener !== undefined;
-		},
-		onChanged: { addListener, removeListener },
-		removeListener,
-	};
+function unstubbed(method: string): never {
+	throw new Error(`${method} was not stubbed for this test`);
 }
 
-function installChrome(
-	value: object,
-	options: { previewDownloadTimeoutMs?: number } = {},
-): ProtoListener {
+function buildApi(overrides: ApiOverrides = {}): {
+	api: ProtoBrowserApi;
+	listener: ProtoListener;
+} {
 	let listener: ProtoListener | undefined;
 	const api = {
+		tabs: {
+			create: overrides.create ?? mock(async () => unstubbed("tabs.create")),
+			captureVisibleTab:
+				overrides.captureVisibleTab ??
+				mock(async () => unstubbed("tabs.captureVisibleTab")),
+			query: overrides.query ?? mock(async () => []),
+		},
 		runtime: {
 			onMessage: {
 				addListener(callback: ProtoListener) {
@@ -68,441 +53,417 @@ function installChrome(
 				},
 			},
 		},
-		...value,
-	};
-	Object.defineProperty(globalThis, "chrome", {
-		configurable: true,
-		value: api,
-	});
-	registerProto({ ...options, browserApi: api as never });
+	} as unknown as ProtoBrowserApi;
+	registerProto({ browserApi: api });
 	if (!listener) throw new Error("prototype listener was not registered");
-	return listener;
+	return { api, listener };
 }
 
-it("observes asynchronous verdict download rejection", async () => {
-	const failure = new Error("download rejected");
-	const download = mock(() => Promise.reject(failure));
-	const logged = mock(() => {});
-	Object.defineProperty(console, "error", {
-		configurable: true,
-		value: logged,
-	});
-	const listener = installChrome({ downloads: { download } });
-	listener(
-		{
-			type: PROTO_SAVE_VERDICT,
-			verdict: {
-				slug: "account-summary",
-				action: "approve",
-				selectedKey: "compact",
-				ts: 1,
-			},
+function flush(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function defaultRequest(
+	overrides: Partial<ProtoBrowserRequest> = {},
+): ProtoBrowserRequest {
+	return {
+		phase: "scrape",
+		slug: "account-summary",
+		markedUrl: "https://example.test/account",
+		...overrides,
+	};
+}
+
+function buildStyleGuide(): StyleGuide {
+	return {
+		meta: { url: "https://example.test/account", scrapedAt: 1, sameOrigin: true },
+		tokens: {
+			customProps: {},
+			colors: ["rgb(0, 0, 0)"],
+			fontStack: "sans-serif",
+			typeScale: [],
+			spacing: [],
+			radii: [],
+			shadows: [],
 		},
-		{},
-		() => {},
-	);
-	await Promise.resolve();
-	await Promise.resolve();
+		components: { button: {}, input: {}, link: {} },
+	};
+}
 
-	expect(download).toHaveBeenCalledTimes(1);
-	expect(logged).toHaveBeenCalledWith(
-		"[dg-ai-extension] verdict download failed:",
-		failure,
-	);
-});
+function buildVerdict(overrides: Partial<Verdict> = {}): Verdict {
+	return {
+		slug: "account-summary",
+		action: "approve",
+		selectedKey: "compact",
+		ts: 1,
+		...overrides,
+	} as Verdict;
+}
 
-it("supports callback-only verdict downloads without reporting a false failure", async () => {
-	const download = mock(
-		(_options: unknown, callback: (downloadId: number) => void) => {
-			callback(11);
-		},
-	);
-	const logged = mock(() => {});
-	Object.defineProperty(console, "error", {
-		configurable: true,
-		value: logged,
-	});
-	const listener = installChrome({ downloads: { download } });
+function buildNotReady(overrides: Partial<ProtoNotReadyError> = {}): ProtoNotReadyError {
+	return {
+		code: "login-page",
+		message: "The page looks like a sign-in page.",
+		landedUrl: "https://example.test/login",
+		...overrides,
+	};
+}
 
-	listener(
-		{
-			type: PROTO_SAVE_VERDICT,
-			verdict: {
-				slug: "account-summary",
-				action: "approve",
-				selectedKey: "compact",
-				ts: 1,
-			},
-		},
-		{},
-		() => {},
-	);
-	await Promise.resolve();
+describe("requestPrototypeBrowserWork / createProtoHandler", () => {
+	it("reports a clear error when opening a tab throws", async () => {
+		const { api } = buildApi({
+			create: mock(async () => {
+				throw new Error("no such window");
+			}),
+		});
+		const handler = createProtoHandler({ browserApi: api });
 
-	expect(download).toHaveBeenCalledTimes(1);
-	expect(logged).not.toHaveBeenCalled();
-});
+		const result = await handler(defaultRequest(), mock(() => {}));
 
-it("skips preview capture when the sender tab is no longer active", async () => {
-	const query = mock(async () => [{ id: 99 }]);
-	const captureVisibleTab = mock(() => {});
-	const download = mock(async () => 1);
-	const listener = installChrome({
-		downloads: { download },
-		tabs: { captureVisibleTab, query },
-		windows: { WINDOW_ID_CURRENT: -2 },
+		expect(result).toEqual({
+			ok: false,
+			error: "the extension could not open a tab for this URL: no such window",
+		});
 	});
 
-	const response = await new Promise<unknown>((resolve) => {
-		expect(
-			listener(
-				{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-				{ tab: { id: 7, windowId: 3 } },
-				resolve,
-			),
-		).toBe(true);
+	it("reports a clear error when the opened tab has no id", async () => {
+		const { api } = buildApi({ create: mock(async () => ({})) });
+		const handler = createProtoHandler({ browserApi: api });
+
+		const result = await handler(defaultRequest(), mock(() => {}));
+
+		expect(result).toEqual({
+			ok: false,
+			error: "the extension could not open a tab for this URL",
+		});
 	});
 
-	expect(response).toEqual({
-		saved: false,
-		reason: "prototype tab is no longer active",
-	});
-	expect(query).toHaveBeenCalledWith(
-		{ active: true, windowId: 3 },
-		expect.any(Function),
-	);
-	expect(captureVisibleTab).not.toHaveBeenCalled();
-	expect(download).not.toHaveBeenCalled();
-});
+	it("resolves a scrape request once the correlated tab reports a style guide", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
+		const handler = createProtoHandler({ browserApi: api });
+		const styleGuide = buildStyleGuide();
 
-it("supports callback-only query, capture, and preview download APIs", async () => {
-	const changes = downloadChanges();
-	const query = mock(
-		(_queryInfo: unknown, callback: (tabs: Array<{ id: number }>) => void) => {
-			callback([{ id: 7 }]);
-		},
-	);
-	const captureVisibleTab = mock(
-		(
-			_windowId: number,
-			_options: unknown,
-			callback: (dataUrl: string) => void,
-		) => {
-			callback("data:image/png;base64,cHJldmlldw==");
-		},
-	);
-	const download = mock(
-		(_options: unknown, callback: (downloadId: number) => void) => {
-			callback(17);
-			changes.emit({ id: 17, state: { current: "complete" } });
-		},
-	);
-	const listener = installChrome({
-		downloads: { download, onChanged: changes.onChanged },
-		tabs: { captureVisibleTab, query },
-		windows: { WINDOW_ID_CURRENT: -2 },
-	});
-
-	const response = await new Promise<unknown>((resolve) => {
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
 		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
+			{ tab: { id: 7 } },
+			() => {},
 		);
+
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: { kind: "style-guide", styleGuide },
+		});
 	});
 
-	expect(response).toEqual({ saved: true });
-	expect(query).toHaveBeenCalledTimes(2);
-	expect(captureVisibleTab).toHaveBeenCalledTimes(1);
-	expect(download).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
-});
+	it("reports an invalid style guide instead of resolving with it", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
+		const handler = createProtoHandler({ browserApi: api });
 
-it("supports Firefox-shaped Promise-only query, capture, and download APIs", async () => {
-	const changes = downloadChanges();
-	const query = mock((_queryInfo: unknown, callback?: unknown) => {
-		if (callback !== undefined) throw new TypeError("too many arguments");
-		return Promise.resolve([{ id: 7 }]);
-	});
-	const captureVisibleTab = mock(
-		(_windowId: number, _options: unknown, callback?: unknown) => {
-			if (callback !== undefined) throw new TypeError("too many arguments");
-			return Promise.resolve("data:image/png;base64,cHJldmlldw==");
-		},
-	);
-	const download = mock((_options: unknown, callback?: unknown) => {
-		if (callback !== undefined) throw new TypeError("too many arguments");
-		changes.emit({ id: 29, state: { current: "complete" } });
-		return Promise.resolve(29);
-	});
-	const listener = installChrome({
-		downloads: { download, onChanged: changes.onChanged },
-		tabs: { captureVisibleTab, query },
-		windows: { WINDOW_ID_CURRENT: -2 },
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
+		listener(
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide: { ready: true } },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+
+		const result = (await resultPromise) as { ok: false; error: string };
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("invalid style guide");
 	});
 
-	const response = await Promise.race([
-		new Promise<unknown>((resolve) => {
-			listener(
-				{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-				{ tab: { id: 7, windowId: 3 } },
+	it("resolves a plant request's verdict with no preview when none was captured", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 9 })) });
+		const handler = createProtoHandler({ browserApi: api });
+		const verdict = buildVerdict();
+
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
+
+		const result = await resultPromise;
+		expect(result).toEqual({ ok: true, data: { kind: "verdict", verdict } });
+		expect(result).not.toHaveProperty("data.previewDataUrl");
+	});
+
+	it("reports an invalid verdict instead of resolving with it", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 9 })) });
+		const handler = createProtoHandler({ browserApi: api });
+
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+		listener(
+			{ type: PROTO_SAVE_VERDICT, verdict: { slug: "account-summary" } },
+			{ tab: { id: 9 } },
+			() => {},
+		);
+
+		const result = (await resultPromise) as { ok: false; error: string };
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("invalid verdict");
+	});
+
+	it("attaches a previously captured preview to the eventual verdict", async () => {
+		const query = mock(async () => [{ id: 9 }]);
+		const captureVisibleTab = mock(async () => "data:image/png;base64,cHJldmlldw==");
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const verdict = buildVerdict();
+
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+		const captureResponse = await new Promise((resolve) => {
+			const keepChannelOpen = listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
 				resolve,
 			);
-		}),
-		new Promise((resolve) =>
-			setTimeout(
-				() => resolve({ saved: false, reason: "timed out in test" }),
-				20,
+			expect(keepChannelOpen).toBe(true);
+		});
+		expect(captureResponse).toEqual({ saved: true });
+		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
+
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: {
+				kind: "verdict",
+				verdict,
+				previewDataUrl: "data:image/png;base64,cHJldmlldw==",
+			},
+		});
+	});
+
+	it("skips the preview and leaves it off the verdict when the tab is no longer active", async () => {
+		const query = mock(async () => [{ id: 99 }]);
+		const captureVisibleTab = mock(async () => "data:image/png;base64,cHJldmlldw==");
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const verdict = buildVerdict();
+
+		const resultPromise = handler(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
+		);
+		await flush();
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
+				resolve,
+			);
+		});
+
+		expect(captureResponse).toEqual({
+			saved: false,
+			reason: "prototype tab is no longer active",
+		});
+		expect(captureVisibleTab).not.toHaveBeenCalled();
+		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
+		expect(await resultPromise).toEqual({ ok: true, data: { kind: "verdict", verdict } });
+	});
+
+	it("reports the capture failure reason when capturing the visible tab throws", async () => {
+		const query = mock(async () => [{ id: 9 }]);
+		const captureVisibleTab = mock(async () => {
+			throw new Error("capture failed: permission denied");
+		});
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		void handler(defaultRequest({ phase: "plant" }), mock(() => {}));
+		await flush();
+
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
+				resolve,
+			);
+		});
+
+		expect(captureResponse).toEqual({
+			saved: false,
+			reason: "capture failed: permission denied",
+		});
+	});
+
+	it("resolves with a typed not-ready error instead of treating it as a transport failure", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
+		const handler = createProtoHandler({ browserApi: api });
+		const notReady = buildNotReady();
+
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
+		listener({ type: PROTO_NOT_READY, error: notReady }, { tab: { id: 7 } }, () => {});
+
+		expect(await resultPromise).toEqual({ ok: false, notReady });
+	});
+
+	it("reports an invalid not-ready error instead of resolving with it", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
+		const handler = createProtoHandler({ browserApi: api });
+
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
+		listener(
+			{ type: PROTO_NOT_READY, error: { code: "not-a-real-code" } },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+
+		const result = (await resultPromise) as { ok: false; error: string };
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("invalid not-ready");
+	});
+
+	it("reports progress without settling the pending request", async () => {
+		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
+		const handler = createProtoHandler({ browserApi: api });
+		const onProgress = mock((_status: string) => {});
+
+		const resultPromise = handler(defaultRequest(), onProgress);
+		await flush();
+		listener(
+			{ type: PROTO_PROGRESS, status: "ready; scraping the style guide" },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+		await flush();
+
+		expect(onProgress).toHaveBeenCalledWith("ready; scraping the style guide");
+		const outcome = await Promise.race([
+			resultPromise.then(() => "settled"),
+			flush().then(() => "still-pending"),
+		]);
+		expect(outcome).toBe("still-pending");
+
+		listener(
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide: buildStyleGuide() },
+			{ tab: { id: 7 } },
+			() => {},
+		);
+		await resultPromise;
+	});
+
+	it("ignores a message for a tab id with no pending request", () => {
+		const { listener } = buildApi();
+
+		expect(() =>
+			listener(
+				{ type: PROTO_SAVE_VERDICT, verdict: buildVerdict() },
+				{ tab: { id: 404 } },
+				() => {},
 			),
-		),
-	]);
-
-	expect(response).toEqual({ saved: true });
-	expect(query).toHaveBeenCalledTimes(4);
-	expect(captureVisibleTab).toHaveBeenCalledTimes(2);
-	expect(download).toHaveBeenCalledTimes(2);
-	expect(changes.hasListener()).toBe(false);
-});
-
-it("degrades gracefully when download completion tracking is unavailable", async () => {
-	const download = mock(async () => 1);
-	const listener = installChrome({
-		downloads: { download },
-		tabs: {
-			captureVisibleTab(
-				_windowId: number,
-				_options: unknown,
-				callback: (dataUrl: string) => void,
-			) {
-				callback("data:image/png;base64,cHJldmlldw==");
-			},
-			query: async () => [{ id: 7 }],
-		},
-		windows: { WINDOW_ID_CURRENT: -2 },
+		).not.toThrow();
 	});
 
-	const response = await new Promise<unknown>((resolve) => {
-		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
-		);
-	});
-
-	expect(response).toEqual({
-		saved: false,
-		reason: "prototype preview download completion tracking is unsupported",
-	});
-	expect(download).not.toHaveBeenCalled();
-});
-
-it("waits for the matching preview download to complete before responding", async () => {
-	const changes = downloadChanges();
-	const query = mock(async () => [{ id: 7 }]);
-	const captureVisibleTab = mock(
-		(
-			windowId: number,
-			_options: unknown,
-			callback: (dataUrl: string) => void,
-		) => {
-			expect(windowId).toBe(3);
-			callback("data:image/png;base64,cHJldmlldw==");
-		},
-	);
-	const download = mock(async () => {
-		expect(changes.hasListener()).toBe(true);
-		return 17;
-	});
-	const listener = installChrome({
-		downloads: { download, onChanged: changes.onChanged },
-		tabs: { captureVisibleTab, query },
-		windows: { WINDOW_ID_CURRENT: -2 },
-	});
-
-	let responded = false;
-	const responsePromise = new Promise<unknown>((resolve) => {
-		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			(response) => {
-				responded = true;
-				resolve(response);
+	it("opens the tab through a Chrome-style callback API", async () => {
+		const create = mock(
+			(_props: unknown, callback: (tab: { id: number }) => void) => {
+				callback({ id: 11 });
 			},
 		);
-	});
-	for (let attempt = 0; attempt < 10 && !changes.hasListener(); attempt += 1) {
-		await Promise.resolve();
-	}
-	expect(changes.hasListener()).toBe(true);
-	expect(responded).toBe(false);
+		const { api, listener } = buildApi({
+			create,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const styleGuide = buildStyleGuide();
 
-	changes.emit({ id: 99, state: { current: "complete" } });
-	changes.emit({ id: 17, state: { current: "in_progress" } });
-	await Promise.resolve();
-	expect(responded).toBe(false);
-
-	changes.emit({ id: 17, state: { current: "complete" } });
-	const response = await responsePromise;
-
-	expect(response).toEqual({ saved: true });
-	expect(query).toHaveBeenCalledTimes(2);
-	expect(captureVisibleTab).toHaveBeenCalledTimes(1);
-	expect(download).toHaveBeenCalledWith(
-		{
-			url: "data:image/png;base64,cHJldmlldw==",
-			filename: "dg-proto/account-summary/preview.png",
-			conflictAction: "overwrite",
-		},
-		expect.any(Function),
-	);
-	expect(changes.removeListener).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
-});
-
-it("handles completion before the preview download ID promise resolves", async () => {
-	const changes = downloadChanges();
-	const query = mock(async () => [{ id: 7 }]);
-	const captureVisibleTab = mock(
-		(
-			_windowId: number,
-			_options: unknown,
-			callback: (dataUrl: string) => void,
-		) => callback("data:image/png;base64,cHJldmlldw=="),
-	);
-	const download = mock(() => {
-		changes.emit({ id: 23, state: { current: "complete" } });
-		return Promise.resolve(23);
-	});
-	const listener = installChrome({
-		downloads: { download, onChanged: changes.onChanged },
-		tabs: { captureVisibleTab, query },
-		windows: { WINDOW_ID_CURRENT: -2 },
-	});
-
-	const response = await new Promise<unknown>((resolve) => {
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
 		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
+			{ tab: { id: 11 } },
+			() => {},
 		);
+
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: { kind: "style-guide", styleGuide },
+		});
+		expect(create).toHaveBeenCalledTimes(1);
 	});
 
-	expect(response).toEqual({ saved: true });
-	expect(changes.removeListener).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
-});
+	it("opens the tab through a Firefox-style Promise-only API", async () => {
+		const create = mock((_props: unknown, callback?: unknown) => {
+			if (callback !== undefined) throw new TypeError("too many arguments");
+			return Promise.resolve({ id: 13 });
+		});
+		const { api, listener } = buildApi({
+			create,
+		});
+		const handler = createProtoHandler({ browserApi: api });
+		const styleGuide = buildStyleGuide();
 
-it("reports preview download startup rejection and removes its listener", async () => {
-	const changes = downloadChanges();
-	const download = mock(() => Promise.reject(new Error("download rejected")));
-	const listener = installChrome({
-		downloads: { download, onChanged: changes.onChanged },
-		tabs: {
-			captureVisibleTab(
-				_windowId: number,
-				_options: unknown,
-				callback: (dataUrl: string) => void,
-			) {
-				callback("data:image/png;base64,cHJldmlldw==");
-			},
-			query: async () => [{ id: 7 }],
-		},
-		windows: { WINDOW_ID_CURRENT: -2 },
-	});
-
-	const response = await new Promise<unknown>((resolve) => {
+		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		await flush();
 		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
+			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
+			{ tab: { id: 13 } },
+			() => {},
 		);
+
+		expect(await resultPromise).toEqual({
+			ok: true,
+			data: { kind: "style-guide", styleGuide },
+		});
+		expect(create).toHaveBeenCalledTimes(2);
 	});
 
-	expect(response).toEqual({ saved: false, reason: "download rejected" });
-	expect(changes.removeListener).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
-});
-
-it("reports interrupted preview downloads and removes its listener", async () => {
-	const changes = downloadChanges();
-	const listener = installChrome({
-		downloads: {
-			download: async () => 31,
-			onChanged: changes.onChanged,
-		},
-		tabs: {
-			captureVisibleTab(
-				_windowId: number,
-				_options: unknown,
-				callback: (dataUrl: string) => void,
-			) {
-				callback("data:image/png;base64,cHJldmlldw==");
+	it("queries and captures the visible tab through Firefox-style Promise-only APIs", async () => {
+		const query = mock((_queryInfo: unknown, callback?: unknown) => {
+			if (callback !== undefined) throw new TypeError("too many arguments");
+			return Promise.resolve([{ id: 9 }]);
+		});
+		const captureVisibleTab = mock(
+			(_windowId: number, _options: unknown, callback?: unknown) => {
+				if (callback !== undefined) throw new TypeError("too many arguments");
+				return Promise.resolve("data:image/png;base64,cHJldmlldw==");
 			},
-			query: async () => [{ id: 7 }],
-		},
-		windows: { WINDOW_ID_CURRENT: -2 },
-	});
-
-	const responsePromise = new Promise<unknown>((resolve) => {
-		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
 		);
-	});
-	for (let attempt = 0; attempt < 10 && !changes.hasListener(); attempt += 1) {
-		await Promise.resolve();
-	}
-	expect(changes.hasListener()).toBe(true);
-	changes.emit({
-		id: 31,
-		state: { current: "interrupted" },
-		error: { current: "NETWORK_FAILED" },
-	});
-
-	expect(await responsePromise).toEqual({
-		saved: false,
-		reason: "prototype preview download 31 was interrupted: NETWORK_FAILED",
-	});
-	expect(changes.removeListener).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
-});
-
-it("times out stalled preview downloads and removes its listener", async () => {
-	const changes = downloadChanges();
-	const listener = installChrome(
-		{
-			downloads: {
-				download: async () => 47,
-				onChanged: changes.onChanged,
-			},
-			tabs: {
-				captureVisibleTab(
-					_windowId: number,
-					_options: unknown,
-					callback: (dataUrl: string) => void,
-				) {
-					callback("data:image/png;base64,cHJldmlldw==");
-				},
-				query: async () => [{ id: 7 }],
-			},
-			windows: { WINDOW_ID_CURRENT: -2 },
-		},
-		{ previewDownloadTimeoutMs: 10 },
-	);
-
-	const response = await new Promise<unknown>((resolve) => {
-		listener(
-			{ type: PROTO_CAPTURE_PREVIEW, slug: "account-summary" },
-			{ tab: { id: 7, windowId: 3 } },
-			resolve,
+		const { api, listener } = buildApi({
+			create: mock(async () => ({ id: 9 })),
+			captureVisibleTab,
+			query,
+		});
+		void createProtoHandler({ browserApi: api })(
+			defaultRequest({ phase: "plant" }),
+			mock(() => {}),
 		);
-	});
+		await flush();
 
-	expect(response).toEqual({
-		saved: false,
-		reason: "timed out waiting for prototype preview download 47 to complete",
+		const captureResponse = await new Promise((resolve) => {
+			listener(
+				{ type: PROTO_CAPTURE_PREVIEW },
+				{ tab: { id: 9, windowId: 3 } },
+				resolve,
+			);
+		});
+
+		expect(captureResponse).toEqual({ saved: true });
+		expect(query).toHaveBeenCalledTimes(2);
+		expect(captureVisibleTab).toHaveBeenCalledTimes(2);
 	});
-	expect(changes.removeListener).toHaveBeenCalledTimes(1);
-	expect(changes.hasListener()).toBe(false);
 });
