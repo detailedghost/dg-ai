@@ -9,6 +9,7 @@ interface ConfirmBody {
 	variants: string[];
 	notes?: string;
 	action?: "confirm" | "reject" | "status";
+	selftest?: boolean;
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -90,7 +91,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	if (!validName(body?.name)) {
 		return NextResponse.json({ error: "invalid name" }, { status: 400 });
 	}
-	const sentinelPath = resolveSentinelPath(body.name);
+	const targetName = body.selftest ? `${body.name}-selftest` : body.name;
+	const sentinelPath = resolveSentinelPath(targetName);
 	const protoDir = dirname(sentinelPath);
 
 	if (body.action === "status") {

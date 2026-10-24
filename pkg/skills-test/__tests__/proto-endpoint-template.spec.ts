@@ -108,6 +108,29 @@ describe("prototype endpoint template", () => {
 		).toBe("browser\n");
 	});
 
+	test("selftest:true in the POST body writes to <name>-selftest, never the real name", async () => {
+		const response = await post({ ...confirm("demo-selftest"), selftest: true });
+		expect(response.status).toBe(200);
+		expect(
+			existsSync(
+				join(sandbox, "project", ".agents", "prototype", "demo-selftest"),
+			),
+		).toBe(false);
+		expect(
+			readFileSync(
+				join(
+					sandbox,
+					"project",
+					".agents",
+					"prototype",
+					"demo-selftest-selftest",
+					".selection",
+				),
+				"utf8",
+			),
+		).toBe("A\n");
+	});
+
 	test("a status action reads the reload token without writing any sentinel", async () => {
 		const unbuilt = await post({ name: "status-demo", action: "status" });
 		expect(unbuilt.status).toBe(200);
@@ -255,6 +278,15 @@ describe("framework endpoint templates", () => {
 			const source = readFileSync(join(ASSETS, file), "utf8");
 			expect(source).toContain('body.action === "status"');
 			expect(source).toContain(".reload");
+		},
+	);
+
+	test.each(["prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"])(
+		"%s redirects a selftest body to <name>-selftest",
+		(file) => {
+			const source = readFileSync(join(ASSETS, file), "utf8");
+			expect(source).toContain("body.selftest");
+			expect(source).toContain("-selftest");
 		},
 	);
 });
