@@ -129,25 +129,58 @@ describe("phone-friend alias", () => {
 		stderr.mockRestore();
 	});
 
-	it("dial matches accept, on matches open, off matches close, card matches number", async () => {
+	it("card matches number, byte for byte", async () => {
 		const h = harness();
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 
-		await h.program.parseAsync(["phone-friend", "card"], { from: "user" });
-		const card = out.slice();
+		await h.program.parseAsync(["phone", "number"], { from: "user" });
+		const numberOut = out.slice();
 		out = [];
 
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		await h.program.parseAsync(["phone-friend", "card"], { from: "user" });
+		stderr.mockRestore();
+
+		expect(out).toEqual(numberOut);
+	});
+
+	it("dial matches accept when no card is given", async () => {
+		const h = harness();
+
+		await expect(h.program.parseAsync(["phone", "accept"], { from: "user" })).rejects.toThrow("no call card given");
+
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		try {
+			await expect(h.program.parseAsync(["phone-friend", "dial"], { from: "user" })).rejects.toThrow("no call card given");
+		} finally {
+			stderr.mockRestore();
+		}
+	});
+
+	it("on matches open and off matches close, byte for byte, including the installed unit", async () => {
+		const h = harness();
+
+		await h.program.parseAsync(["phone", "open"], { from: "user" });
+		const openOut = out.slice();
+		const openWritten = h.written[0]?.text;
+		out = [];
+
+		await h.program.parseAsync(["phone", "close"], { from: "user" });
+		const closeOut = out.slice();
+		out = [];
+
+		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 		await h.program.parseAsync(["phone-friend", "on"], { from: "user" });
-		const on = out.slice();
+		const onOut = out.slice();
+		const onWritten = h.written[1]?.text;
 		out = [];
 
 		await h.program.parseAsync(["phone-friend", "off"], { from: "user" });
-		const off = out.slice();
+		const offOut = out.slice();
 		stderr.mockRestore();
 
-		expect(lines(card)[0]).toMatchObject({ card: expect.any(String), npub: expect.any(String) });
-		expect(lines(on)[0]).toMatchObject({ status: "started", autostart: "systemd" });
-		expect(lines(off)[0]).toMatchObject({ status: "closed" });
+		expect(onOut).toEqual(openOut);
+		expect(offOut).toEqual(closeOut);
+		expect(onWritten).toEqual(openWritten);
 	});
 
 	it("installs and removes exactly the same unit whether reached through open/close or on/off", async () => {

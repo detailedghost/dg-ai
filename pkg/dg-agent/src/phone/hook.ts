@@ -53,7 +53,16 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	let cancelRetry: Cancel | undefined;
 	let current: Promise<void> = Promise.resolve();
 
+	/** The only place `current` is reassigned, and only once this call actually takes the lock: a
+	 * coalesced or post-stop call must never overwrite it with an already-settled stand-in, or
+	 * `settle()` would resolve while the pass that is really running is still in flight. */
 	function start(run: () => Promise<void>): Promise<void> {
+		if (stopped) return Promise.resolve();
+		if (inFlight) {
+			runAgain = true;
+			return current;
+		}
+		inFlight = true;
 		current = run();
 		return current;
 	}
@@ -62,16 +71,10 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 		inFlight = false;
 		const again = runAgain;
 		runAgain = false;
-		if (again && !stopped) start(pass);
+		if (again) start(pass);
 	}
 
 	async function pass(): Promise<void> {
-		if (stopped) return;
-		if (inFlight) {
-			runAgain = true;
-			return;
-		}
-		inFlight = true;
 		try {
 			for (;;) {
 				const row = db.nextDeliverable(ON_MESSAGE_MAX_ATTEMPTS);
@@ -95,12 +98,6 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	}
 
 	async function stuckPass(): Promise<void> {
-		if (stopped) return;
-		if (inFlight) {
-			runAgain = true;
-			return;
-		}
-		inFlight = true;
 		try {
 			for (const row of db.stuckMessages(ON_MESSAGE_MAX_ATTEMPTS)) {
 				if (await deliverOnce(target, db, row)) db.markRead([row.id]);

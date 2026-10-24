@@ -175,6 +175,20 @@ describe("createHookRunner", () => {
 		expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 1, read_at: null });
 	});
 
+	it("settle waits for the delivery already in flight, even after a coalesced notify and a stop", async () => {
+		db.addMessage(message("a", NOW));
+		const { target, outFile } = countedHook(0);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+
+		runner.notify();
+		runner.notify();
+		runner.stop();
+		await runner.settle();
+
+		expect(db.recentMessages(1)[0]?.read_at).not.toBeNull();
+		expect(deliveredPayloads(outFile)).toHaveLength(1);
+	});
+
 	it("a notify that arrives while a delivery is already in flight does not recurse forever once the queue drains", async () => {
 		db.addMessage(message("a", NOW));
 		const { target } = countedHook(0);
