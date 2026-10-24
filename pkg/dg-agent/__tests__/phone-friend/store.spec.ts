@@ -224,7 +224,7 @@ describe("lineForHandle", () => {
 	it("refuses a same-named line that has no contact yet, rather than guess it is the same one", () => {
 		writeConfig(linePaths(paths(), "velora"), { relays: DEFAULT_RELAYS });
 
-		expect(() => lineForHandle(paths(), "velora", npub)).toThrow("different contact");
+		expect(() => lineForHandle(paths(), "velora", npub)).toThrow("no contact yet");
 	});
 
 	it("refuses a handle another line already claims by its saved contact name", () => {

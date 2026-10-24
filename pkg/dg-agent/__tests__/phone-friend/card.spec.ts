@@ -45,7 +45,9 @@ describe("call cards v2 (current)", () => {
 	it("round-trips the default relay list as the single relay-set byte", () => {
 		const withDefaults = { ...card, relays: DEFAULT_RELAYS };
 
-		expect(decodeCard(encodeCard(withDefaults), 1_000)).toEqual(withDefaults);
+		const decoded = decodeCard(encodeCard(withDefaults), 1_000);
+		expect(decoded).toEqual(withDefaults);
+		expect(decoded.relays).not.toBe(DEFAULT_RELAYS);
 	});
 
 	it("stays under ~110 chars with default relays and a short handle", () => {
@@ -132,10 +134,16 @@ describe("call cards v2 (current)", () => {
 		expect(() => encodeCard({ ...card, exp: -1 })).toThrow(DgCliError);
 	});
 
+	it("refuses an npub that decodes to the wrong pubkey length, instead of corrupting the card", () => {
+		const shortNpub = nip19.npubEncode("ab".repeat(16));
+
+		expect(() => encodeCard({ ...card, npub: shortNpub })).toThrow(DgCliError);
+	});
+
 	it("refuses to encode more than the max relays", () => {
 		const tooMany = Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`);
 
-		expect(() => decodeCard(encodeCard({ ...card, relays: tooMany }), 1_000)).toThrow(DgCliError);
+		expect(() => encodeCard({ ...card, relays: tooMany })).toThrow(DgCliError);
 	});
 });
 

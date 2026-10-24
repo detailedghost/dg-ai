@@ -230,8 +230,14 @@ export function lineForHandle(paths: DgPaths, handle: string, npub: string): Lin
 	if (claimedBy) {
 		throw new DgCliError(`"${handle}" is already used by line ${claimedBy.name}; dial again with --line to pick one`);
 	}
-	if (existsSync(derived.dbPath) && readConfig(derived).contact !== npub) {
-		throw new DgCliError(`line "${handle}" already has a different contact; dial again with --line to pick one`);
+	if (existsSync(derived.dbPath)) {
+		const contact = readConfig(derived).contact;
+		if (contact === undefined) {
+			throw new DgCliError(`line "${handle}" has no contact yet; dial again with --line to pick one`);
+		}
+		if (contact !== npub) {
+			throw new DgCliError(`line "${handle}" already has a different contact; dial again with --line to pick one`);
+		}
 	}
 	return derived;
 }

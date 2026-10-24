@@ -13,7 +13,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { getPublicKey, nip19, SimplePool } from "nostr-tools";
-import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS } from "./card";
+import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, SECRET_BYTES } from "./card";
 import {
 	DEFAULT_DELIVERY_EVERY,
 	type JobCli,
@@ -80,7 +80,6 @@ const MAX_RESTART_ATTEMPTS = 3;
 const STABLE_TICKS_TO_RESET = 3;
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
-const SECRET_BYTES = 32;
 
 export function isListenerArgs(args: string[]): boolean {
 	return args.includes("phone-friend") && args.includes("__run");
@@ -389,7 +388,9 @@ function cardReceipt(
 
 /**
  * `card`'s handle is a v2 card's inviter handle. With no explicit `--line` or `--name`, it names
- * the line to dial into, so one command pairs and connects; `--line`/`--name` still win.
+ * the line to dial into, so one command pairs and connects; `--line`/`--name` still win. Always
+ * goes through `lineForHandle`'s contact check, even when the handle matches the current line's
+ * own name, so a card cannot silently overwrite that line's existing contact.
  */
 export async function phoneDial(
 	text: string,
@@ -404,18 +405,22 @@ export async function phoneDial(
 	const card = decodeCard(pasted, deps.now());
 	let target = deps.line;
 	let autoName: string | undefined;
-	if (name === undefined && !lineGiven && card.handle !== undefined && card.handle !== deps.line.name) {
+	if (name === undefined && !lineGiven && card.handle !== undefined) {
 		target = lineForHandle(deps.paths, card.handle, card.npub);
-		autoName = card.handle;
+		if (target.name !== deps.line.name) autoName = card.handle;
 	}
 	const dialDeps = target === deps.line ? deps : { ...deps, line: target };
+	const targetExisted = existsSync(target.dbPath);
 	const sk = await mySecretKey(dialDeps);
 	const words = firstWords || "hello";
 	const event = ring(words, sk, contactHex(card.npub), card.secret);
 	const pool = dialDeps.createPool();
 	try {
 		const { ok } = await publish(pool, card.relays, event);
-		if (ok.length === 0) throw new DgCliError("no relay accepted the call");
+		if (ok.length === 0) {
+			if (!targetExisted) rmSync(target.dir, { recursive: true, force: true });
+			throw new DgCliError("no relay accepted the call");
+		}
 		const savedName = name ?? autoName;
 		writeConfig(dialDeps.line, {
 			...readConfig(dialDeps.line),

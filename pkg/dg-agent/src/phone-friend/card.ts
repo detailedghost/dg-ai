@@ -14,7 +14,8 @@ const RELAY_PATTERN = /^wss:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[\x21-\x7e]*)?$/;
 export const MAX_CARD_RELAYS = 10;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const PUBKEY_BYTES = 32;
-const SECRET_BYTES = 32;
+/** Raw byte length of a card's secret; `commands.ts` reuses this to generate one of matching length. */
+export const SECRET_BYTES = 32;
 const EXP_BYTES = 4;
 const V2_MIN_BYTES = PUBKEY_BYTES + SECRET_BYTES + EXP_BYTES + 1;
 const MAX_RELAY_URL_BYTES = 255;
@@ -55,7 +56,11 @@ function npubToPubkeyBytes(npub: string): Buffer {
 		throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
 	}
 	if (decoded.type !== "npub") throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
-	return Buffer.from(decoded.data, "hex");
+	const bytes = Buffer.from(decoded.data, "hex");
+	if (bytes.length !== PUBKEY_BYTES) {
+		throw new DgCliError(`not a valid phone-friend call card: bad npub "${npub}"`);
+	}
+	return bytes;
 }
 
 function pubkeyBytesToNpub(bytes: Buffer): string {
@@ -64,6 +69,9 @@ function pubkeyBytesToNpub(bytes: Buffer): string {
 
 function encodeRelays(relays: string[]): Buffer {
 	if (isDefaultRelays(relays)) return Buffer.from([0]);
+	if (relays.length > MAX_CARD_RELAYS) {
+		throw new DgCliError(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
+	}
 	const parts = [Buffer.from([relays.length])];
 	for (const relay of relays) {
 		const bytes = Buffer.from(relay, "utf8");
@@ -79,7 +87,7 @@ function encodeRelays(relays: string[]): Buffer {
 function decodeRelays(body: Buffer, offset: number): { relays: string[]; next: number } {
 	const count = body[offset];
 	if (count === undefined) invalid("truncated relay section");
-	if (count === 0) return { relays: DEFAULT_RELAYS, next: offset + 1 };
+	if (count === 0) return { relays: [...DEFAULT_RELAYS], next: offset + 1 };
 	if (count > MAX_CARD_RELAYS) invalid(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	const relays: string[] = [];
 	let at = offset + 1;

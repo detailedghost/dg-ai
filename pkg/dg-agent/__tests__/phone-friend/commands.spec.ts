@@ -38,7 +38,7 @@ import {
 	sanitizeSelfName,
 	writeConfig,
 } from "../../src/phone-friend/store";
-import { decodeCard, encodeCard } from "../../src/phone-friend/card";
+import { CARD_PREFIX_V1, decodeCard, encodeCard } from "../../src/phone-friend/card";
 import { PhoneFriendDb } from "../../src/phone-friend/db";
 import { type LinePaths, linePaths } from "../../src/phone-friend/line";
 import { createFakePool, type FakePool } from "./fake-pool";
@@ -379,6 +379,22 @@ describe("phoneDial with no --line or --name: the card's handle names the line",
 		return encodeCard({ npub: contactNpub, relays, secret, exp: NOW + 100, handle });
 	}
 
+	function v1CardFor(relays = ["wss://x.example"]) {
+		return (
+			CARD_PREFIX_V1 +
+			Buffer.from(JSON.stringify({ v: 1, npub: contactNpub, relays, secret, exp: NOW + 100 })).toString(
+				"base64url",
+			)
+		);
+	}
+
+	it("a v1 card has no handle, so it lands on the current line unchanged", async () => {
+		await phoneDial(v1CardFor(), undefined, deps());
+
+		expect(readConfig(line)).toEqual({ contact: contactNpub, relays: ["wss://x.example"] });
+		expect(pool.events).toHaveLength(1);
+	});
+
 	it("creates a new line named after the handle, and leaves the current line untouched", async () => {
 		await phoneDial(cardFor("velora"), undefined, deps());
 
@@ -417,6 +433,27 @@ describe("phoneDial with no --line or --name: the card's handle names the line",
 
 		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("already used by line work");
 		expect(pool.events).toHaveLength(0);
+	});
+
+	it("refuses to overwrite the current line's own contact when the card's handle matches the current line's name", async () => {
+		writeConfig(line, { contact: "npub1someoneelse", relays: DEFAULT_RELAYS });
+
+		await expect(phoneDial(cardFor(line.name), undefined, deps())).rejects.toThrow("different contact");
+		expect(readConfig(line).contact).toBe("npub1someoneelse");
+		expect(pool.events).toHaveLength(0);
+	});
+
+	it("a failed dial on a new line can be retried, instead of being refused as already in use", async () => {
+		pool = createFakePool([]);
+
+		await expect(phoneDial(cardFor("velora"), undefined, deps())).rejects.toThrow("no relay");
+		expect(existsSync(linePaths(paths, "velora").dbPath)).toBe(false);
+
+		pool = createFakePool();
+
+		await phoneDial(cardFor("velora"), undefined, deps());
+
+		expect(readConfig(linePaths(paths, "velora")).contact).toBe(contactNpub);
 	});
 
 	it("an explicit --line wins: no second line is created", async () => {
