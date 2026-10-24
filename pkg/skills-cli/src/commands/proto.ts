@@ -25,6 +25,7 @@ import {
 import { tryOpen } from "@dg/common/node";
 import { Command } from "commander";
 import { USAGE as PROTOTYPE_USAGE, main as runPrototype } from "../prototype";
+import { DEFAULT_TIMEOUT_SEC } from "../prototype/args";
 import { assertExtensionInstalled } from "../utils/cli-only";
 import { registerRawCommand } from "../utils/legacy-command";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
@@ -38,8 +39,8 @@ import {
 } from "../utils/proto-paths";
 
 const DEFAULT_TIMEOUT_MS = 45_000;
-/** A human deciding on a planted page, not a download; matches local mode's 900s `wait` default. */
-const DEFAULT_PLANT_TIMEOUT_MS = 900_000;
+/** A human deciding on a planted page, not a download; same wait as local mode's `wait` default. */
+const DEFAULT_PLANT_TIMEOUT_MS = DEFAULT_TIMEOUT_SEC * 1000;
 
 type ScrapeOptions = {
 	timeoutMs?: number;
