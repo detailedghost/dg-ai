@@ -392,12 +392,13 @@ function sameHook(running: { argv: string[]; timeoutS: number } | null | undefin
 
 /** Sends SIGTERM, through `isOurListener`'s extra check against a reused pid, and waits for the
  * listener's own pid file to go away before returning; `open`/`close` both need the old listener
- * fully stopped before installing or reporting on the next one. */
+ * fully stopped before installing or reporting on the next one, so neither ever runs two at once. */
 async function stopRunningListener(deps: OpenCloseDeps, pid: number): Promise<void> {
 	if (deps.isOurListener(pid)) deps.kill(pid, "SIGTERM");
 	for (let waited = 0; readListenerPid(deps.paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
 		await deps.sleep(100);
 	}
+	if (readListenerPid(deps.paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
 }
 
 export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: OpenCloseDeps): Promise<void> {
@@ -437,11 +438,12 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 
 export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	const running = readListenerPid(deps.paths);
+
 	const autostart = await removeAutostart(deps, deps.paths);
 	const saved = readListener(deps.db);
 	if (saved?.autostart) writeListener(deps.db, { ...saved, autostart: undefined });
 
-	const running = readListenerPid(deps.paths);
 	if (running) await stopRunningListener(deps, running.pid);
 
 	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });

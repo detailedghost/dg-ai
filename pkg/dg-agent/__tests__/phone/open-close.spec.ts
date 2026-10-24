@@ -76,6 +76,9 @@ function harness(overrides: Partial<OpenCloseDeps> = {}): Harness {
 		fileExists: (path) => installed.has(path),
 		run: async (argv) => {
 			ran.push(argv);
+			if ((argv[0] === "systemctl" && argv.includes("disable")) || (argv[0] === "launchctl" && argv[1] === "bootout")) {
+				rmSync(listenerPidPath(paths), { force: true });
+			}
 			return { code: 0, stdout: "", stderr: "" };
 		},
 		which: (name) => `/resolved${name.startsWith("/") ? name : `/${name}`}`,
@@ -199,6 +202,34 @@ describe("phoneOpen", () => {
 		await phoneOpen({}, h.deps);
 
 		expect(lines()[0]).toMatchObject({ status: "running", hook: "command" });
+	});
+
+	it("stops the old listener and reinstalls when a live listener's hook does not match the requested one", async () => {
+		const h = harness();
+		await phoneOpen({ onMessage: ["/usr/bin/notify"] }, h.deps);
+		simulateListenerStarted(h);
+		out = [];
+		h.ran.length = 0;
+
+		await phoneOpen({ onMessage: ["/usr/bin/other-notify"] }, h.deps);
+
+		expect(h.killed).toEqual([{ pid: process.pid, signal: "SIGTERM" }]);
+		expect(h.ran).toEqual([
+			["systemctl", "--user", "daemon-reload"],
+			["systemctl", "--user", "enable", "--now", "dg-phone.service"],
+		]);
+		expect(lines()[0]).toEqual({ pid: null, status: "restarted", autostart: "systemd", hook: "command" });
+		expect(readListener(h.deps.db)?.onMessage?.argv).toEqual(["/resolved/usr/bin/other-notify"]);
+	});
+
+	it("gives up and reports an error when the old listener never stops", async () => {
+		const h = harness({ kill: () => {} });
+		await phoneOpen({}, h.deps);
+		simulateListenerStarted(h);
+
+		await expect(phoneOpen({ onMessage: ["/usr/bin/notify"] }, h.deps)).rejects.toThrow(
+			`the phone listener (pid ${process.pid}) did not stop`,
+		);
 	});
 
 	it("falls back to a detached spawn and reports unavailable when systemctl is not usable", async () => {
