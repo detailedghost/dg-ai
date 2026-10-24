@@ -8,7 +8,7 @@ import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import { defaultOnSignal, defaultSchedule, readListenerPid, runListener } from "./listener";
-import { migrateIfNeeded } from "./migrate";
+import { legacyRootPresent, migrateIfNeeded } from "./migrate";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
@@ -293,6 +293,7 @@ export function phoneStatus(deps: PhoneDeps): void {
 		pending_voicemail: deps.db.unreadMessages().length,
 		listener: listener ? { pid: listener.pid, since: listener.since } : null,
 		hook: listener?.hook ? { kind: "command" as const, argv: listener.hook.argv, timeout_s: listener.hook.timeoutS } : null,
+		legacy_root_present: legacyRootPresent(deps.paths),
 	});
 }
 

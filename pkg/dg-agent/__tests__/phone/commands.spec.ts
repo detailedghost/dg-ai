@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -458,7 +458,14 @@ describe("status", () => {
 
 		phoneStatus(d);
 
-		expect(lines()[0]).toEqual({ as: "dante", contacts: 1, pending_voicemail: 1, listener: null, hook: null });
+		expect(lines()[0]).toEqual({
+			as: "dante",
+			contacts: 1,
+			pending_voicemail: 1,
+			listener: null,
+			hook: null,
+			legacy_root_present: false,
+		});
 	});
 
 	it("reports the running listener and its hook from the pid file, and null once the pid is dead", () => {
@@ -481,6 +488,17 @@ describe("status", () => {
 		phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ listener: null, hook: null });
+	});
+
+	it("flags legacy_root_present when the old phone-friend root is still sitting next to phone.db", () => {
+		const home = freshHome();
+		const d = deps(home);
+		mkdirSync(join(d.paths.phoneFriendRoot, "default"), { recursive: true });
+		writeFileSync(join(d.paths.phoneFriendRoot, "default", "phone-friend.db"), "");
+
+		phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({ legacy_root_present: true });
 	});
 });
 
