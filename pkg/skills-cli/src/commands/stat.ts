@@ -13,9 +13,10 @@ import {
 	renderLong,
 	renderPlain,
 	setStatus,
+	type ChecklistModel,
 	type Status,
 	STATUSES,
-	writeChecklist,
+	updateChecklist,
 } from "../stat";
 
 function parseEta(value: string): EtaBucket {
@@ -30,6 +31,16 @@ function parseStatusArg(value: string): Status {
 		throw new Error(`status must be one of ${STATUSES.join(", ")}, got "${value}"`);
 	}
 	return value;
+}
+
+function storedAddedText(model: ChecklistModel, label: string): string {
+	const dot = label.indexOf(".");
+	const topIndex = Number(dot === -1 ? label : label.slice(0, dot)) - 1;
+	const parent = model.open[topIndex];
+	if (!parent) return "";
+	if (dot === -1) return parent.text;
+	const childIndex = Number(label.slice(dot + 1)) - 1;
+	return parent.children[childIndex]?.text ?? "";
 }
 
 function reportMatchFailure(
@@ -84,7 +95,7 @@ export function registerStat(program: Command): void {
 		.option("--at <n>", "1-based position among open top-level items (default: end)")
 		.option("--under <nOrMatch>", "add as a sub-item of this open top-level item")
 		.action(
-			(
+			async (
 				text: string,
 				options: { status?: string; eta?: string; at?: string; under?: string },
 			) => {
@@ -106,15 +117,16 @@ export function registerStat(program: Command): void {
 					}
 				}
 				const path = checklistPath();
-				const model = readChecklist(path);
-				const result = addItem(model, text, { status, eta, at, under: options.under });
-				if (!result.ok) reportMatchFailure("add", options.under ?? "", result.candidates);
-				writeChecklist(path, result.model);
+				const result = await updateChecklist(path, (model) => {
+					const added = addItem(model, text, { status, eta, at, under: options.under });
+					if (!added.ok) reportMatchFailure("add", options.under ?? "", added.candidates);
+					return added;
+				});
 				console.log(
 					JSON.stringify({
 						kind: "checklist-item-added",
 						order: result.label,
-						text: text.trim(),
+						text: storedAddedText(result.model, result.label),
 					}),
 				);
 			},
@@ -122,14 +134,15 @@ export function registerStat(program: Command): void {
 
 	stat
 		.command("done")
-		.description("Mark the one open item matching <match> as done")
+		.description("Mark the one unfinished item matching <match> as done")
 		.argument("<match>", "case-insensitive substring of the item text")
-		.action((match: string) => {
+		.action(async (match: string) => {
 			const path = checklistPath();
-			const model = readChecklist(path);
-			const result = markDone(model, match);
-			if (!result.ok) reportMatchFailure("done", match, result.candidates);
-			writeChecklist(path, result.model);
+			const result = await updateChecklist(path, (model) => {
+				const marked = markDone(model, match);
+				if (!marked.ok) reportMatchFailure("done", match, marked.candidates);
+				return marked;
+			});
 			console.log(JSON.stringify({ kind: "checklist-item-done", order: result.label }));
 		});
 
@@ -141,14 +154,15 @@ export function registerStat(program: Command): void {
 		.argument("<match>", "case-insensitive substring of the item text")
 		.argument("<name>", `one of ${STATUSES.join(", ")}`)
 		.option("--eta <bucket>", `one of ${ETA_BUCKETS.join(", ")}`)
-		.action((match: string, name: string, options: { eta?: string }) => {
+		.action(async (match: string, name: string, options: { eta?: string }) => {
 			const status = parseStatusArg(name);
 			const eta = options.eta ? parseEta(options.eta) : undefined;
 			const path = checklistPath();
-			const model = readChecklist(path);
-			const result = setStatus(model, match, status, eta);
-			if (!result.ok) reportMatchFailure("status", match, result.candidates);
-			writeChecklist(path, result.model);
+			const result = await updateChecklist(path, (model) => {
+				const updated = setStatus(model, match, status, eta);
+				if (!updated.ok) reportMatchFailure("status", match, updated.candidates);
+				return updated;
+			});
 			console.log(
 				JSON.stringify({ kind: "checklist-item-status", order: result.label, status }),
 			);

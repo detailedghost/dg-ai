@@ -155,7 +155,11 @@ Rules:
 - Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `~/.dg/bin/dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `~/.dg/bin/dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
 - Subagents cannot call `TaskStop`. Only the main loop does. A subagent reports the finished tasks and stops there.
 - The total ignores cleaned jobs.
-- Report what was cleaned in one line under the checklist: `Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.` Print nothing when nothing finished.
+- Report what was cleaned in one line under the checklist. Default and `--plain` print
+  `Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.` On `--long`,
+  prefix that sentence with `# ` so `awk -F '\t' '!/^#/'` skips it with the total:
+  `# Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.`
+  Print nothing when nothing finished.
 
 ## Keeping the list current
 
@@ -186,7 +190,11 @@ If the overwatch agent binary is missing or the daemon is down, say so in one li
 
 ## Piping `--long`
 
-Its output is POSIX: tab-separated fields, one header line, ASCII only, no embedded tabs or newlines, and a final `#`-prefixed total line a pipeline can skip. Rows already print in priority order — a sub-item's row follows its parent's directly, so no sort step is needed.
+Its output is POSIX: tab-separated fields, one header line, ASCII only, no embedded tabs or newlines, and a final `#`-prefixed total line a pipeline can skip.
+
+The section 4 cleanup summary is a `#`-prefixed line on `--long` too, so the same filter skips it.
+
+Rows already print in priority order — a sub-item's row follows its parent's directly, so no sort step is needed.
 
 The WORK column:
 

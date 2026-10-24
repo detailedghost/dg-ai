@@ -15,9 +15,11 @@ import {
 
 export const DONE_DISPLAY_CAP = 10;
 
-const TOP_LINE = /^(\d+)\.\s\[( |x)\]\s([a-z-]+):\s(.*)$/;
-const CHILD_LINE = /^ {3}(\d+)\.\s\[( |x)\]\s([a-z-]+):\s(.*)$/;
+/** Any indent is a child. New files use the parent number's width; older files used 3 spaces. */
+const ITEM_LINE = /^( *)(\d+)\.\s\[( |x)\]\s([a-z-]+):\s(.*)$/;
 const ETA_SUFFIX = /^(.*) \[(<5 min|~15 min|~30 min|~1 hr|>1 hr|unknown)\]$/;
+/** A trailing bucket written with a backslash is literal text, not an ETA. One backslash is removed on read. */
+const ESCAPED_ETA_SUFFIX = /^(.*)\\(\[(<5 min|~15 min|~30 min|~1 hr|>1 hr|unknown)\])$/;
 
 export function sanitizeText(text: string): string {
 	return text.replace(/[\t\r\n]+/g, " ").trim();
@@ -33,10 +35,22 @@ function tsvField(value: string): string {
 	return toAscii(value.replace(/[\t\r\n]+/g, " "));
 }
 
+/** Escapes a trailing ETA-shaped suffix so a later read does not treat it as metadata. */
+function encodeItemText(text: string): string {
+	if (!ETA_SUFFIX.test(text) && !ESCAPED_ETA_SUFFIX.test(text)) return text;
+	return text.replace(/\[(?=[^[\]]*\]$)/, "\\[");
+}
+
+function decodeItemText(text: string): string {
+	const match = ESCAPED_ETA_SUFFIX.exec(text);
+	if (!match) return text;
+	return `${match[1] ?? ""}${match[2] ?? ""}`;
+}
+
 function splitEta(raw: string): { text: string; eta?: EtaBucket } {
 	const match = ETA_SUFFIX.exec(raw);
-	if (!match) return { text: raw };
-	return { text: match[1] ?? raw, eta: match[2] as EtaBucket };
+	if (!match) return { text: decodeItemText(raw) };
+	return { text: decodeItemText(match[1] ?? raw), eta: match[2] as EtaBucket };
 }
 
 function parseItemLine(
@@ -58,27 +72,21 @@ export function parseChecklist(raw: string): ChecklistModel {
 	let currentParent: ChecklistItem | null = null;
 	for (const line of raw.split("\n")) {
 		if (line.trim() === "") continue;
-		const child = CHILD_LINE.exec(line);
-		if (child) {
-			if (!currentParent) continue;
-			const parsed = parseItemLine(child[3] ?? "", child[4] ?? "");
-			currentParent.children.push({
-				text: parsed.text,
-				status: parsed.status,
-				eta: parsed.eta,
-				children: [],
-			});
-			continue;
-		}
-		const top = TOP_LINE.exec(line);
-		if (!top) continue;
-		const parsed = parseItemLine(top[3] ?? "", top[4] ?? "");
+		const match = ITEM_LINE.exec(line);
+		if (!match) continue;
+		const indent = match[1] ?? "";
+		const parsed = parseItemLine(match[4] ?? "", match[5] ?? "");
 		const item: ChecklistItem = {
 			text: parsed.text,
 			status: parsed.status,
 			eta: parsed.eta,
 			children: [],
 		};
+		if (indent.length > 0) {
+			if (!currentParent) continue;
+			currentParent.children.push(item);
+			continue;
+		}
 		currentParent = item;
 		if (parsed.status === "done") model.done.push(item);
 		else model.open.push(item);
@@ -89,26 +97,29 @@ export function parseChecklist(raw: string): ChecklistModel {
 function formatItemLine(order: string, indent: string, item: ChecklistItem): string {
 	const box = item.status === "done" ? "x" : " ";
 	const etaSuffix = item.status !== "done" && item.eta ? ` [${item.eta}]` : "";
-	return `${indent}${order}. [${box}] ${item.status}: ${item.text}${etaSuffix}`;
+	return `${indent}${order}. [${box}] ${item.status}: ${encodeItemText(item.text)}${etaSuffix}`;
 }
 
-/** Canonical on-disk format; identical in shape to the `--plain` render minus its Total line. */
+/** Spaces that put a nested GFM task inside the parent item: digits, the dot, and the following space. */
+function childIndent(parentNumber: string): string {
+	return " ".repeat(parentNumber.length + 2);
+}
+
+/** Canonical on-disk format. Same item lines as `--plain` aside from its Total line, ASCII folding, and a backslash when text itself ends in an ETA bucket. */
 export function serializeChecklist(model: ChecklistModel): string {
 	const lines: string[] = [];
 	let n = 0;
-	for (const item of model.open) {
+	const push = (item: ChecklistItem) => {
 		n++;
-		lines.push(formatItemLine(String(n), "", item));
+		const order = String(n);
+		lines.push(formatItemLine(order, "", item));
+		const indent = childIndent(order);
 		for (const [i, child] of item.children.entries())
-			lines.push(formatItemLine(String(i + 1), "   ", child));
-	}
+			lines.push(formatItemLine(String(i + 1), indent, child));
+	};
+	for (const item of model.open) push(item);
 	if (model.open.length > 0 && model.done.length > 0) lines.push("");
-	for (const item of model.done) {
-		n++;
-		lines.push(formatItemLine(String(n), "", item));
-		for (const [i, child] of item.children.entries())
-			lines.push(formatItemLine(String(i + 1), "   ", child));
-	}
+	for (const item of model.done) push(item);
 	return lines.length > 0 ? `${lines.join("\n")}\n` : "";
 }
 
@@ -120,35 +131,32 @@ export interface FlatRow {
 	eta?: EtaBucket;
 }
 
+function hasUnfinishedChild(item: ChecklistItem): boolean {
+	return item.children.some((child) => child.status !== "done");
+}
+
 export function flattenForDisplay(
 	model: ChecklistModel,
 	cap = DONE_DISPLAY_CAP,
 ): { rows: FlatRow[]; hiddenDoneCount: number } {
+	const hiddenDone = new Set<number>();
+	model.done.forEach((item, index) => {
+		if (index >= cap && !hasUnfinishedChild(item)) hiddenDone.add(index);
+	});
 	const rows: FlatRow[] = [];
-	let n = 0;
-	const pushItem = (item: ChecklistItem, order: string) => {
+	for (const entry of locateAll(model)) {
+		const hidden =
+			(entry.scope === "done-top" || entry.scope === "done-child") && hiddenDone.has(entry.topIndex);
+		if (hidden) continue;
 		rows.push({
-			order,
-			owner: ownerFor(item.status),
-			status: item.status,
-			text: item.text,
-			eta: item.eta,
+			order: entry.label,
+			owner: ownerFor(entry.item.status),
+			status: entry.item.status,
+			text: entry.item.text,
+			eta: entry.item.eta,
 		});
-	};
-	for (const item of model.open) {
-		n++;
-		const order = String(n);
-		pushItem(item, order);
-		for (const [i, child] of item.children.entries()) pushItem(child, `${order}.${i + 1}`);
 	}
-	const shown = model.done.slice(0, cap);
-	for (const item of shown) {
-		n++;
-		const order = String(n);
-		pushItem(item, order);
-		for (const [i, child] of item.children.entries()) pushItem(child, `${order}.${i + 1}`);
-	}
-	return { rows, hiddenDoneCount: Math.max(0, model.done.length - cap) };
+	return { rows, hiddenDoneCount: hiddenDone.size };
 }
 
 export interface TotalResult {
@@ -156,17 +164,22 @@ export interface TotalResult {
 	label?: { order: string; text: string };
 }
 
-/** The single open agent item with the largest known ETA names the critical path; ties keep priority order. */
+/** The unfinished agent item with the largest known ETA names the critical path. Parked work is excluded. Ties keep priority order. */
 export function computeTotal(model: ChecklistModel): TotalResult | null {
-	if (model.open.length === 0) return null;
+	let anyUnfinished = false;
 	let best: { bucket: EtaBucket; order: string; text: string } | null = null;
-	for (const [index, item] of model.open.entries()) {
+	for (const entry of locateAll(model)) {
+		const { item } = entry;
+		if (item.status === "done") continue;
+		anyUnfinished = true;
+		if (item.status === "parked") continue;
 		if (ownerFor(item.status) !== "agent") continue;
 		if (!item.eta || item.eta === "unknown") continue;
 		if (!best || etaRank(item.eta) > etaRank(best.bucket)) {
-			best = { bucket: item.eta, order: String(index + 1), text: item.text };
+			best = { bucket: item.eta, order: entry.label, text: item.text };
 		}
 	}
+	if (!anyUnfinished) return null;
 	if (!best) return { bucket: "unknown" };
 	return { bucket: best.bucket, label: { order: best.order, text: best.text } };
 }
@@ -189,7 +202,8 @@ function displayNumber(order: string): string {
 }
 
 function indentFor(order: string): string {
-	return order.includes(".") ? "   " : "";
+	const dot = order.indexOf(".");
+	return dot === -1 ? "" : childIndent(order.slice(0, dot));
 }
 
 export function renderEmoji(model: ChecklistModel): string {
@@ -237,8 +251,14 @@ export function renderLong(model: ChecklistModel): string {
 		lines.push([order, owner, row.status, tsvField(row.text), "-", "-", eta].join("\t"));
 	}
 	if (hiddenDoneCount > 0) lines.push(`# ...and ${hiddenDoneCount} more done`);
-	const total = totalLine(computeTotal(model), "# ");
-	if (total) lines.push(total);
+	const total = computeTotal(model);
+	if (total) {
+		const folded: TotalResult = total.label
+			? { bucket: total.bucket, label: { order: total.label.order, text: tsvField(total.label.text) } }
+			: total;
+		const line = totalLine(folded, "# ");
+		if (line) lines.push(line);
+	}
 	return `${lines.join("\n")}\n`;
 }
 
@@ -343,30 +363,35 @@ export interface MutationResult {
 	label: string;
 }
 
-/** Marks the one open item (parent or child) matching `match` as done; a parent's children move with it. */
+/** Marks the one unfinished item matching `match` as done, wherever its parent lives. A parent's children move with it. Already-done items are not candidates. */
 export function markDone(model: ChecklistModel, match: string): MutationResult | MatchFailure {
-	const located = locateAll(model).filter(
-		(entry) => entry.scope === "open-top" || entry.scope === "open-child",
-	);
+	const located = locateAll(model).filter((entry) => entry.item.status !== "done");
 	const resolved = resolveOne(located, match);
 	if (!resolved.ok) return resolved;
 	const { hit } = resolved;
-	if (hit.scope === "open-top") {
-		const doneItem: ChecklistItem = {
-			...(model.open[hit.topIndex] as ChecklistItem),
-			status: "done",
-			eta: undefined,
-		};
-		const open = model.open.filter((_, i) => i !== hit.topIndex);
-		const done = [doneItem, ...model.done];
+	if (hit.scope === "open-child" || hit.scope === "done-child") {
+		const inOpen = hit.scope === "open-child";
+		const parentList = inOpen ? model.open : model.done;
+		const parent = parentList[hit.topIndex] as ChecklistItem;
+		const children = parent.children.map((child) =>
+			child === hit.item ? { ...child, status: "done" as const, eta: undefined } : child,
+		);
+		const updatedParent = { ...parent, children };
+		const open = inOpen
+			? model.open.map((item, i) => (i === hit.topIndex ? updatedParent : item))
+			: model.open;
+		const done = inOpen
+			? model.done
+			: model.done.map((item, i) => (i === hit.topIndex ? updatedParent : item));
 		return { ok: true, model: { open, done }, label: hit.label };
 	}
-	const parent = model.open[hit.topIndex] as ChecklistItem;
-	const children = parent.children.map((child) =>
-		child === hit.item ? { ...child, status: "done" as const, eta: undefined } : child,
-	);
-	const open = model.open.map((item, i) => (i === hit.topIndex ? { ...parent, children } : item));
-	return { ok: true, model: { open, done: model.done }, label: hit.label };
+	const doneItem: ChecklistItem = {
+		...(model.open[hit.topIndex] as ChecklistItem),
+		status: "done",
+		eta: undefined,
+	};
+	const open = model.open.filter((_, i) => i !== hit.topIndex);
+	return { ok: true, model: { open, done: [doneItem, ...model.done] }, label: hit.label };
 }
 
 /** Changes any item's status (open or done) and optional ETA; moving a done top-level item off "done" reopens it at the end of the open list. */

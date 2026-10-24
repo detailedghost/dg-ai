@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { marked } from "marked";
-import { REPO_ROOT } from "./test-support";
+import { readRepoFile, REPO_ROOT } from "./test-support";
 
 const ENTRY = join(REPO_ROOT, "pkg", "skills-cli", "src", "index.ts");
 
@@ -157,6 +157,29 @@ describe("dg-skills stat checklist", () => {
 			expect(code).toBe(1);
 			expect(err).toContain("pass only one of");
 		});
+	});
+
+	test("-p nests a child under parent 10, where a 3-space indent would be a sibling", async () => {
+		await withRoot(async (env) => {
+			for (let i = 1; i <= 9; i++) await runCli(["stat", "add", `item ${i}`], env);
+			await runCli(["stat", "add", "parent ten"], env);
+			await runCli(["stat", "add", "nested child", "--under", "10"], env);
+			const { out } = await runCli(["stat", "checklist", "-p"], env);
+			const body = out.split("\n\n")[0] ?? out;
+			const html = marked.parse(body, { gfm: true }) as string;
+			expect(html).toContain("nested child");
+			expect(/<li><input[^>]*>[^<]*parent ten<ol>/.test(html)).toBe(true);
+		});
+	});
+
+	test("SKILL.md prefixes the --long cleanup summary with #", () => {
+		const skill = readRepoFile("plugins/dg/skills/stat/SKILL.md");
+		expect(skill).toContain(
+			"`Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.`",
+		);
+		expect(skill).toContain(
+			"`# Cleaned: 3 finished jobs (2 bg records, 1 task stopped). Left running: 1.`",
+		);
 	});
 
 	test("status reopens a done item at the end of the open list and keeps the checklist file's numbering fresh", async () => {

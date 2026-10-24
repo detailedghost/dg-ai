@@ -241,12 +241,14 @@ describe("markDone", () => {
 
 	test("ticks a matched sub-item in place without moving its still-open parent", () => {
 		const parent = item("Parent", { status: "running" });
-		parent.children.push(item("sub task"));
-		const result = markDone({ open: [parent], done: [] }, "sub task");
+		parent.children.push(item("sub task"), item("sibling", { status: "queued" }));
+		const other = item("other parent");
+		const result = markDone({ open: [parent, other], done: [item("kept", { status: "done" })] }, "sub task");
 		if (!result.ok) throw new Error("expected a match");
-		expect(result.model.open).toHaveLength(1);
+		expect(result.model.open.map((entry) => entry.text)).toEqual(["Parent", "other parent"]);
 		expect(result.model.open[0]?.status).toBe("running");
-		expect(result.model.open[0]?.children[0]?.status).toBe("done");
+		expect(result.model.open[0]?.children.map((child) => child.status)).toEqual(["done", "queued"]);
+		expect(result.model.done.map((entry) => entry.text)).toEqual(["kept"]);
 	});
 
 	test("errors with no candidates when nothing matches", () => {
@@ -278,11 +280,17 @@ describe("setStatus", () => {
 
 	test("mutates a child's status in place without relocating it", () => {
 		const parent = item("Parent", { status: "running" });
-		parent.children.push(item("sub"));
-		const result = setStatus({ open: [parent], done: [] }, "sub", "failed");
+		parent.children.push(item("sub"), item("sibling"));
+		const result = setStatus(
+			{ open: [parent, item("other")], done: [item("kept", { status: "done" })] },
+			"sub",
+			"failed",
+		);
 		if (!result.ok) throw new Error("expected a match");
+		expect(result.model.open.map((entry) => entry.text)).toEqual(["Parent", "other"]);
 		expect(result.model.open[0]?.status).toBe("running");
-		expect(result.model.open[0]?.children[0]?.status).toBe("failed");
+		expect(result.model.open[0]?.children.map((child) => child.status)).toEqual(["failed", "queued"]);
+		expect(result.model.done.map((entry) => entry.text)).toEqual(["kept"]);
 	});
 
 	test("clears eta when moving an item to done", () => {
@@ -335,5 +343,265 @@ describe("addItem", () => {
 		const result = addItem(emptyModel(), "line one\nline\ttwo");
 		if (!result.ok) throw new Error("expected success");
 		expect(result.model.open[0]?.text).toBe("line one line two");
+	});
+});
+
+describe("markDone matches by the item's own status", () => {
+	test("marks an unfinished child of a done parent in place", () => {
+		const parent = item("parent", { status: "done" });
+		parent.children.push(
+			item("child task", { status: "running", eta: "~15 min" }),
+			item("sibling", { status: "queued" }),
+		);
+		const result = markDone(
+			{ open: [item("still open")], done: [parent, item("other done", { status: "done" })] },
+			"child task",
+		);
+		if (!result.ok) throw new Error(`expected a match, got ${JSON.stringify(result)}`);
+		expect(result.label).toBe("2.1");
+		expect(result.model.open.map((entry) => entry.text)).toEqual(["still open"]);
+		expect(result.model.done.map((entry) => entry.text)).toEqual(["parent", "other done"]);
+		expect(result.model.done[0]?.status).toBe("done");
+		expect(result.model.done[0]?.children[0]).toMatchObject({ status: "done", eta: undefined });
+		expect(result.model.done[0]?.children[1]?.status).toBe("queued");
+	});
+
+	test("stays ambiguous when two unfinished children of a done parent share the match", () => {
+		const parent = item("parent", { status: "done" });
+		parent.children.push(item("slice 6", { status: "running" }), item("slice 6b", { status: "queued" }));
+		const result = markDone({ open: [], done: [parent] }, "slice 6");
+		expect(result).toEqual({
+			ok: false,
+			candidates: [
+				{ label: "1.1", text: "slice 6" },
+				{ label: "1.2", text: "slice 6b" },
+			],
+		});
+	});
+
+	test("does not let an already-done child under an open parent make another match ambiguous", () => {
+		const parent = item("alpha parent", { status: "running" });
+		parent.children.push(item("alpha child", { status: "done" }));
+		const result = markDone({ open: [parent], done: [] }, "alpha");
+		if (!result.ok) throw new Error(`expected a match, got ${JSON.stringify(result)}`);
+		expect(result.model.open).toHaveLength(0);
+		expect(result.model.done[0]?.text).toBe("alpha parent");
+		expect(result.model.done[0]?.children[0]?.status).toBe("done");
+	});
+});
+
+describe("setStatus reaches children of done parents", () => {
+	test("updates an unfinished child of a done parent without moving it", () => {
+		const parent = item("parent", { status: "done" });
+		parent.children.push(item("child task", { status: "running" }), item("sibling"));
+		const result = setStatus(
+			{ open: [item("still open")], done: [parent, item("other done", { status: "done" })] },
+			"child task",
+			"queued",
+			"~15 min",
+		);
+		if (!result.ok) throw new Error(`expected a match, got ${JSON.stringify(result)}`);
+		expect(result.label).toBe("2.1");
+		expect(result.model.open.map((entry) => entry.text)).toEqual(["still open"]);
+		expect(result.model.done.map((entry) => entry.text)).toEqual(["parent", "other done"]);
+		expect(result.model.done[0]?.status).toBe("done");
+		expect(result.model.done[0]?.children[0]).toMatchObject({ status: "queued", eta: "~15 min" });
+		expect(result.model.done[0]?.children[1]?.status).toBe("queued");
+	});
+});
+
+describe("done display cap keeps unfinished subtrees", () => {
+	test("keeps a done parent with an unfinished child past the cap and counts only omitted subtrees", () => {
+		const done = Array.from({ length: 12 }, (_, i) => item(`done ${i}`, { status: "done" as const }));
+		done[11]!.children.push(item("still running", { status: "running", eta: "~30 min" }));
+		const model: ChecklistModel = { open: [], done };
+		const { rows, hiddenDoneCount } = flattenForDisplay(model, 10);
+		expect(rows.map((row) => row.text)).toContain("done 11");
+		expect(rows.find((row) => row.text === "done 11")?.order).toBe("12");
+		expect(rows.find((row) => row.text === "still running")?.order).toBe("12.1");
+		expect(rows.map((row) => row.text)).not.toContain("done 10");
+		expect(hiddenDoneCount).toBe(1);
+		expect(renderEmoji(model)).toContain("still running");
+		expect(renderEmoji(model)).toContain("...and 1 more done");
+		expect(renderPlain(model)).toContain("still running");
+		expect(renderPlain(model)).toContain("...and 1 more done");
+		expect(renderLong(model)).toContain("still running");
+		expect(renderLong(model)).toContain("# ...and 1 more done");
+	});
+
+	test("omits the more-done line when every past-cap parent still has unfinished work", () => {
+		const done = Array.from({ length: 11 }, (_, i) => item(`done ${i}`, { status: "done" as const }));
+		done[10]!.children.push(item("live", { status: "running" }));
+		const model: ChecklistModel = { open: [], done };
+		expect(flattenForDisplay(model, 10).hiddenDoneCount).toBe(0);
+		expect(renderEmoji(model)).not.toContain("more done");
+		expect(renderPlain(model)).not.toContain("more done");
+		expect(renderLong(model)).not.toContain("more done");
+		expect(renderEmoji(model)).toContain("live");
+	});
+
+	test("hides a fully finished past-cap subtree, including its done children, without hiding an open item at the same index", () => {
+		const open = Array.from({ length: 11 }, (_, i) => item(`open ${i}`));
+		const done = Array.from({ length: 11 }, (_, i) => item(`done ${i}`, { status: "done" as const }));
+		done[10]!.children.push(item("finished child", { status: "done" }));
+		const { rows, hiddenDoneCount } = flattenForDisplay({ open, done }, 10);
+		expect(hiddenDoneCount).toBe(1);
+		expect(rows.map((row) => row.text)).toContain("open 10");
+		expect(rows.map((row) => row.text)).not.toContain("done 10");
+		expect(rows.map((row) => row.text)).not.toContain("finished child");
+	});
+});
+
+describe("computeTotal includes unfinished children and excludes parked work", () => {
+	test("a sub-item with a larger eta sets the critical path, including under a done parent", () => {
+		const parent = item("parent", { status: "running", eta: "~15 min" });
+		parent.children.push(item("child", { status: "running", eta: "~1 hr" }));
+		expect(computeTotal({ open: [parent], done: [] })).toEqual({
+			bucket: "~1 hr",
+			label: { order: "1.1", text: "child" },
+		});
+
+		const doneParent = item("done parent", { status: "done" });
+		doneParent.children.push(item("still", { status: "running", eta: ">1 hr" }));
+		expect(computeTotal({ open: [item("small", { eta: "<5 min" })], done: [doneParent] })).toEqual({
+			bucket: ">1 hr",
+			label: { order: "2.1", text: "still" },
+		});
+		expect(computeTotal({ open: [], done: [doneParent] })).toEqual({
+			bucket: ">1 hr",
+			label: { order: "1.1", text: "still" },
+		});
+	});
+
+	test("an equal child eta does not replace an earlier parent on the critical path", () => {
+		const parent = item("parent", { status: "running", eta: "~1 hr" });
+		parent.children.push(item("child", { status: "running", eta: "~1 hr" }));
+		expect(computeTotal({ open: [parent], done: [] })).toEqual({
+			bucket: "~1 hr",
+			label: { order: "1", text: "parent" },
+		});
+	});
+
+	test("a parked eta does not set the critical path, even as the only open item or as a child", () => {
+		expect(
+			computeTotal({ open: [item("paused", { status: "parked", eta: ">1 hr" })], done: [] }),
+		).toEqual({ bucket: "unknown" });
+		const parent = item("parent", { status: "running" });
+		parent.children.push(item("paused child", { status: "parked", eta: ">1 hr" }));
+		expect(computeTotal({ open: [parent], done: [] })).toEqual({ bucket: "unknown" });
+		const queued = item("queued big", { eta: ">1 hr" });
+		const parked = item("parked bigger", { status: "parked", eta: ">1 hr" });
+		expect(computeTotal({ open: [item("running small", { status: "running", eta: "<5 min" }), queued, parked], done: [] })).toEqual({
+			bucket: ">1 hr",
+			label: { order: "2", text: "queued big" },
+		});
+	});
+
+	test("an unknown eta does not become a labeled critical path", () => {
+		expect(computeTotal({ open: [item("x", { eta: "unknown" })], done: [] })).toEqual({ bucket: "unknown" });
+	});
+
+	test("a user item with a larger eta does not beat an agent item", () => {
+		expect(
+			computeTotal({
+				open: [
+					item("agent", { eta: "~15 min" }),
+					item("user", { status: "needs-user", eta: ">1 hr" }),
+				],
+				done: [],
+			}),
+		).toEqual({ bucket: "~15 min", label: { order: "1", text: "agent" } });
+	});
+});
+
+describe("plain indent follows the parent number width", () => {
+	function withChildAt(count: number): ChecklistModel {
+		const open = Array.from({ length: count - 1 }, (_, i) => item(`item ${i + 1}`));
+		const parent = item("parent");
+		parent.children.push(item("nested"));
+		open.push(parent);
+		return { open, done: [] };
+	}
+
+	test("serializes and renders a child of item 10 with 4 spaces and item 100 with 5, and still parses a legacy 3-space indent", () => {
+		const ten = withChildAt(10);
+		const serialized = serializeChecklist(ten);
+		expect(serialized).toContain("\n    1. [ ] queued: nested\n");
+		expect(parseChecklist(serialized)).toEqual(ten);
+		expect(renderPlain(ten)).toContain("\n    1. [ ] queued: nested\n");
+
+		const hundred = withChildAt(100);
+		expect(serializeChecklist(hundred)).toContain("\n     1. [ ] queued: nested\n");
+		expect(parseChecklist(serializeChecklist(hundred))).toEqual(hundred);
+
+		const legacy = ["10. [ ] queued: parent", "   1. [ ] queued: legacy child", ""].join("\n");
+		expect(parseChecklist(legacy).open[0]?.children.map((child) => child.text)).toEqual(["legacy child"]);
+
+		const orphan = ["   1. [ ] queued: orphan", "1. [ ] queued: parent", ""].join("\n");
+		const parsed = parseChecklist(orphan);
+		expect(parsed.open.map((entry) => entry.text)).toEqual(["parent"]);
+		expect(parsed.open[0]?.children).toEqual([]);
+	});
+});
+
+describe("eta suffix collisions", () => {
+	test("round-trips text that ends in an eta bucket without inventing an eta", () => {
+		for (const bucket of ["<5 min", "~15 min", "~30 min", "~1 hr", ">1 hr", "unknown"] as const) {
+			const text = `Investigate [${bucket}]`;
+			const openModel: ChecklistModel = { open: [item(text)], done: [] };
+			expect(parseChecklist(serializeChecklist(openModel))).toEqual(openModel);
+			const doneModel: ChecklistModel = { open: [], done: [item(text, { status: "done" })] };
+			expect(parseChecklist(serializeChecklist(doneModel))).toEqual(doneModel);
+		}
+	});
+
+	test("keeps a real eta when the text itself ends in a bucket", () => {
+		const model: ChecklistModel = {
+			open: [item("Investigate [unknown]", { eta: "~15 min" })],
+			done: [],
+		};
+		const raw = serializeChecklist(model);
+		expect(raw).toContain("\\[unknown]");
+		expect(raw).toContain("[~15 min]");
+		expect(parseChecklist(raw)).toEqual(model);
+	});
+
+	test("round-trips a literal backslash before a bucket and a trailing backslash before a real eta", () => {
+		const literal: ChecklistModel = { open: [item("Investigate \\[unknown]")], done: [] };
+		expect(parseChecklist(serializeChecklist(literal))).toEqual(literal);
+		const trailing: ChecklistModel = { open: [item("foo \\", { eta: "~1 hr" })], done: [] };
+		expect(parseChecklist(serializeChecklist(trailing))).toEqual(trailing);
+		const middle: ChecklistModel = { open: [item("see [unknown] notes")], done: [] };
+		expect(serializeChecklist(middle)).toContain("see [unknown] notes");
+		expect(parseChecklist(serializeChecklist(middle))).toEqual(middle);
+		const brackets: ChecklistModel = { open: [item("see [notes]")], done: [] };
+		expect(serializeChecklist(brackets)).toContain("see [notes]");
+		expect(serializeChecklist(brackets)).not.toContain("\\[");
+		expect(parseChecklist(serializeChecklist(brackets))).toEqual(brackets);
+		const earlier: ChecklistModel = { open: [item("see [notes] then [unknown]")], done: [] };
+		expect(serializeChecklist(earlier)).toContain("see [notes] then \\[unknown]");
+		expect(parseChecklist(serializeChecklist(earlier))).toEqual(earlier);
+	});
+
+	test("does not write an eta suffix onto a done item", () => {
+		const model: ChecklistModel = { open: [], done: [item("finished", { status: "done", eta: "~1 hr" })] };
+		const raw = serializeChecklist(model);
+		expect(raw).not.toContain("[~1 hr]");
+		expect(parseChecklist(raw).done[0]).toMatchObject({ text: "finished", status: "done", eta: undefined });
+	});
+});
+
+describe("renderLong total line is ASCII", () => {
+	test("folds non-ASCII and tabs in the critical-path text the same way as a row", () => {
+		const model: ChecklistModel = {
+			open: [item("café\tbomb", { status: "running", eta: "~15 min" })],
+			done: [],
+		};
+		const out = renderLong(model);
+		for (const char of out) expect(char.codePointAt(0) ?? 0).toBeLessThan(0x80);
+		const total = out.split("\n").find((line) => line.startsWith("# Total"));
+		expect(total).toBe("# Total: ~15 min (critical path: 1 caf? bomb)");
+		expect(total?.includes("\t")).toBe(false);
+		expect(renderEmoji(model)).toContain("café");
 	});
 });
