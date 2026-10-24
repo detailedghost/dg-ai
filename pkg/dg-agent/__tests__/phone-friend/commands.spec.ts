@@ -760,7 +760,6 @@ describe("phoneDeliver", () => {
 	function recordingDeps(calls: string[][]): PhoneFriendDeps {
 		return {
 			...deps(),
-			jobCwd: paths.stateDir,
 			runJobCli: async (args) => {
 				calls.push(args);
 				return { code: 0, stdout: "", stderr: "" };
@@ -817,13 +816,52 @@ describe("phoneDeliver", () => {
 		expect(lines()[0]).toMatchObject({ notify: "claude" });
 	});
 
+	it("stores the dg home directory as the job cwd, not the invoking directory", async () => {
+		const calls: string[][] = [];
+
+		await phoneDeliverOn({ notify: "reviewer" }, recordingDeps(calls));
+
+		const cwdIndex = calls[0]?.indexOf("--cwd") ?? -1;
+		expect(cwdIndex).toBeGreaterThan(-1);
+		expect(calls[0]?.[cwdIndex + 1]).toBe(paths.stateDir);
+		expect(calls[0]).not.toContain(process.cwd());
+	});
+
+	it("keeps the stored settings on the enabled path instead of restating the request", async () => {
+		const calls: string[][] = [];
+		const responses: { code: number; stdout: string; stderr: string }[] = [
+			{ code: 1, stdout: "", stderr: 'a job labelled "phone-friend:default" already exists' },
+			{ code: 0, stdout: "", stderr: "" },
+		];
+		const recorded: PhoneFriendDeps = {
+			...deps(),
+			runJobCli: async (args) => {
+				calls.push(args);
+				return responses.shift() ?? { code: 1, stdout: "", stderr: "unexpected job cli call" };
+			},
+		};
+
+		await phoneDeliverOn({ notify: "reviewer", every: "5m" }, recorded);
+
+		expect(calls).toHaveLength(2);
+		expect(calls[1]).toEqual(["job", "enable", "phone-friend:default"]);
+		expect(lines()[0]).toMatchObject({
+			line: "default",
+			delivery: "on",
+			status: "enabled",
+			label: "phone-friend:default",
+			kept_existing_settings: true,
+		});
+		expect(lines()[0]).not.toHaveProperty("every");
+		expect(lines()[0]).not.toHaveProperty("notify");
+	});
+
 	it("wires deliver on and off through the line and the session", async () => {
 		const calls: string[][] = [];
 		const program = new Command().exitOverride().option("-s, --session <id>");
 		registerPhoneFriendCommands(program, (session, name) => ({
 			...deps(),
 			line: linePaths(paths, name),
-			jobCwd: paths.stateDir,
 			lookupIdentity: () => {
 				if (session !== "abc") throw new Error(`session ${session}`);
 				return "from-session";

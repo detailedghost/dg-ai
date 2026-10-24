@@ -19,7 +19,7 @@ Codex:      $dg:phone-friend
 | `on` / `off` | Starts or stops the background listener by hand. `invite` and `dial` already start it, so `on` is mainly for turning it back on after `off`. |
 | `answer [--restart]` | Stays on the line and prints each new message as a JSON line. `--restart` restarts the listener itself if it stops, for an unattended watch. |
 | `voicemail` | Prints unread messages as JSON lines, including `title`, then marks them read and exits. |
-| `deliver on [--every <interval>] [--notify <identity>]` | Registers a dg-daemon job for this line, or re-enables it. The stored argv is `dg-agent phone-friend voicemail` (`--line <name>` on any other line). Default interval is `1m`. `--notify` is the agent identity that receives new messages; omit it to use the active session. |
+| `deliver on [--every <interval>] [--notify <identity>]` | Registers a dg-daemon job for this line, or re-enables it. The stored argv is `dg-agent phone-friend voicemail` (`--line <name>` on any other line). Default interval is `1m`. `--notify` is the agent identity that receives new messages; omit it to use the active session. Re-enabling an existing job keeps its stored `--every` and `--notify`; a new value only takes effect when the job did not exist yet. |
 | `deliver off` | Pauses that job. |
 | `say <text\|->` | Sends one message. `-` reads stdin. |
 

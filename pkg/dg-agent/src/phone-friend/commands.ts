@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, openSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, openSync, readFileSync, rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import {
 	type DgPaths,
@@ -68,8 +68,6 @@ export type PhoneFriendDeps = KeyDeps & {
 	runJobCli?: JobCli;
 	/** Resolves the agent identity to notify when `deliver on` has no `--notify`. */
 	lookupIdentity?: (session?: string) => string;
-	/** Working directory stored on the delivery job. Defaults to the current directory. */
-	jobCwd?: string;
 };
 
 const FOLLOW_POLL_MS = 1000;
@@ -511,7 +509,7 @@ export async function phoneDeliverOn(
 			line: deps.line.name,
 			every,
 			notifyIdentity,
-			cwd: deps.jobCwd ?? realpathSync(process.cwd()),
+			cwd: deps.paths.stateDir,
 		},
 		deps.runJobCli ?? runDaemonJobCli,
 	);
@@ -520,8 +518,9 @@ export async function phoneDeliverOn(
 		delivery: "on",
 		status,
 		label: deliveryLabel(deps.line.name),
-		every,
-		notify: notifyIdentity.trim(),
+		...(status === "added"
+			? { every, notify: notifyIdentity.trim() }
+			: { kept_existing_settings: true }),
 		argv: deliveryArgv(deps.line.name),
 	});
 }
