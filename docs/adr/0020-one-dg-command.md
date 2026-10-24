@@ -1,8 +1,7 @@
 # 0020 — One `dg` command and binary that supervises channel review
 
-Status: Proposed
+Status: Accepted
 Date: 2026-10-22
-Note: every decision below is settled. Status stays Proposed until the owner accepts the build.
 
 ## Context
 
