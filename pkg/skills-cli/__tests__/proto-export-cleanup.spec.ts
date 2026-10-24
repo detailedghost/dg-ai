@@ -241,6 +241,7 @@ describe("proto plant answer export", () => {
 			"write:/answer/index.html",
 			"write:/answer/styles.css",
 			"copy:/answer/preview.png",
+			"write:/answer/lineage.md",
 			"write:/answer/NOTES.md",
 		]);
 	});
@@ -356,6 +357,7 @@ describe("proto plant answer export", () => {
 		"index.html",
 		"styles.css",
 		"preview.png",
+		"lineage.md",
 		"NOTES.md",
 	]) {
 		test(`refuses symlinked ${outputFile} before modifying its external target`, async () => {
