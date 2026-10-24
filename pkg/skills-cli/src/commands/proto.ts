@@ -38,6 +38,8 @@ import {
 } from "../utils/proto-paths";
 
 const DEFAULT_TIMEOUT_MS = 45_000;
+/** A human deciding on a planted page, not a download; matches local mode's 900s `wait` default. */
+const DEFAULT_PLANT_TIMEOUT_MS = 900_000;
 
 type ScrapeOptions = {
 	timeoutMs?: number;
@@ -712,7 +714,7 @@ function buildExtensionProgram(): Command {
 		.option(
 			"--timeout <ms>",
 			"verdict timeout in milliseconds",
-			String(DEFAULT_TIMEOUT_MS),
+			String(DEFAULT_PLANT_TIMEOUT_MS),
 		)
 		.addHelpText(
 			"after",
