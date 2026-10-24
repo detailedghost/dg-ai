@@ -44,8 +44,11 @@ export const PHONE_SAFETY_REF = "plugins/dg/skills/phone/references/safety.md";
 const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 
+/** The CLI entry point: migration must run before `PhoneDb.open` creates `phone.db`, since
+ * `legacyRoot` stops seeing a legacy install the moment that file exists. */
 function defaultDeps(session?: string): PhoneDeps {
 	const paths = resolveDgPaths();
+	migrateIfNeeded(paths);
 	return {
 		paths,
 		db: PhoneDb.open(paths),

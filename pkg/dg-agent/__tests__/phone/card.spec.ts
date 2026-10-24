@@ -62,6 +62,19 @@ describe("call cards v2 (current)", () => {
 		expect(decodeCard(encodeCard(withPath), 1_000)).toEqual(withPath);
 	});
 
+	it("round-trips several relays and the max handle length", () => {
+		const withMany = { ...card, relays: ["wss://a.example", "wss://b.example:4433/path"], handle: "a".repeat(32) };
+
+		expect(decodeCard(encodeCard(withMany), 1_000)).toEqual(withMany);
+	});
+
+	it("is far shorter than a v1 card with the same contents", () => {
+		const v1 = CARD_PREFIX_V1 + Buffer.from(JSON.stringify({ v: 1, ...card })).toString("base64url");
+		const v2 = encodeCard({ ...card, relays: DEFAULT_RELAYS });
+
+		expect(v2.length).toBeLessThan(v1.length / 2);
+	});
+
 	it("ignores whitespace around a pasted card", () => {
 		expect(decodeCard(`  ${encodeCard(card)}\n`, 1_000)).toEqual(card);
 	});
@@ -100,6 +113,11 @@ describe("call cards v2 (current)", () => {
 		expect(() => decodeCard(rawV2(v2Bytes({ relaySection })), 1_000)).toThrow(DgCliError);
 	});
 
+	it("rejects a relay count over the max, or a relay section cut short", () => {
+		expect(() => decodeCard(rawV2(v2Bytes({ relaySection: Buffer.from([11]) })), 1_000)).toThrow(DgCliError);
+		expect(() => decodeCard(rawV2(v2Bytes({ relaySection: Buffer.from([1, 200]) })), 1_000)).toThrow(DgCliError);
+	});
+
 	it("rejects a card with the wrong prefix", () => {
 		expect(() => decodeCard(encodeCard(card).replace(CARD_PREFIX, "nope1"), 1_000)).toThrow(DgCliError);
 	});
@@ -113,6 +131,18 @@ describe("call cards v2 (current)", () => {
 		const tooMany = Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`);
 
 		expect(() => encodeCard({ ...card, relays: tooMany })).toThrow(DgCliError);
+	});
+
+	it("refuses to encode a relay url too long for the one-byte length prefix", () => {
+		const huge = `wss://${"a".repeat(260)}.example`;
+
+		expect(() => encodeCard({ ...card, relays: [huge] })).toThrow(DgCliError);
+	});
+
+	it("refuses an npub that decodes to the wrong pubkey length, instead of corrupting the card", () => {
+		const shortNpub = nip19.npubEncode("ab".repeat(16));
+
+		expect(() => encodeCard({ ...card, npub: shortNpub })).toThrow(DgCliError);
 	});
 });
 

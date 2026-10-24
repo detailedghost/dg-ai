@@ -9,6 +9,8 @@ import { PhoneDb } from "../../src/phone/db";
 import {
 	addContact,
 	addInvite,
+	clearListener,
+	clearSubscriber,
 	DEFAULT_NUMBER_KEY_ID,
 	DEFAULT_RELAYS,
 	findContactByHandle,
@@ -19,14 +21,18 @@ import {
 	nextFreeHandle,
 	normalizeHandle,
 	numberKeyId,
+	readListener,
 	readNumber,
 	readRelays,
+	readSubscriber,
 	removeContact,
 	renameContact,
 	requireFreeHandle,
 	resolvedSelfName,
+	writeListener,
 	writeNumber,
 	writeRelays,
+	writeSubscriber,
 } from "../../src/phone/store";
 
 let home: string;
@@ -185,5 +191,24 @@ describe("gateFor", () => {
 
 	it("gives an empty-string number secret before `number` has ever run", () => {
 		expect(gateFor(db).secrets.number).toBe("");
+	});
+});
+
+describe("listener and subscriber settings", () => {
+	it("round-trip and clear independently", () => {
+		writeListener(db, { pid: 123, since: NOW });
+		writeSubscriber(db, { pid: 456, startedAt: NOW });
+
+		expect(readListener(db)).toEqual({ pid: 123, since: NOW });
+		expect(readSubscriber(db)).toEqual({ pid: 456, startedAt: NOW });
+
+		clearListener(db);
+
+		expect(readListener(db)).toBeUndefined();
+		expect(readSubscriber(db)).toEqual({ pid: 456, startedAt: NOW });
+
+		clearSubscriber(db);
+
+		expect(readSubscriber(db)).toBeUndefined();
 	});
 });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
-import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
 import { decodeCard } from "../../src/phone/card";
 import { fetchNew, type KeyEntry, ring, unwrapIncoming, wrap } from "../../src/phone/chat";
 import {
@@ -23,7 +23,7 @@ import {
 	registerPhoneCommands,
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
-import { ensureNumberKey, type KeyClient } from "../../src/phone/keys";
+import { createFileKey, ensureNumberKey, type KeyClient } from "../../src/phone/keys";
 import { addContact, type ContactRecord, gateFor, listContacts, numberKeyId, removeContact } from "../../src/phone/store";
 import { createFakePool, type FakePool } from "./fake-pool";
 
@@ -294,6 +294,23 @@ describe("say", () => {
 		expect(first.id).not.toBe(second.id);
 	});
 
+	it("signs with a legacy key_id, not the number key, so an old peer's one-npub gate keeps accepting us", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		out = [];
+		const legacySk = createFileKey(d.db, "work") as Uint8Array;
+		const contactSk = generateSecretKey();
+		addTestContact(d.db, { npub: nip19.npubEncode(getPublicKey(contactSk)), handle: "velora", keyId: "work" });
+
+		await phoneSay("+velora", "hi", d);
+
+		const [sentEvent] = pool.events;
+		const rumor = nip17.unwrapEvent(sentEvent, contactSk);
+		const numberKey = await ensureNumberKey(d);
+		expect(rumor.pubkey).toBe(getPublicKey(legacySk));
+		expect(rumor.pubkey).not.toBe(getPublicKey(numberKey.sk));
+	});
+
 	it("fails on an unknown handle", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -473,6 +490,8 @@ describe("--line is gone", () => {
 		registerPhoneCommands(program, () => deps(freshHome()));
 		program.exitOverride();
 
-		await expect(program.parseAsync(["phone", "--line", "x", "number"], { from: "user" })).rejects.toThrow();
+		await expect(program.parseAsync(["phone", "--line", "x", "number"], { from: "user" })).rejects.toThrow(
+			"--line is gone: one phone holds every contact; use +handle on say and inbox",
+		);
 	});
 });
