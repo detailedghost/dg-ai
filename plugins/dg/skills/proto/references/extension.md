@@ -48,6 +48,15 @@ Generate the requested number of variations as one `ProtoPlan`.
 
 - Reuse StyleGuide color, type, spacing, radius, shadow, custom-property, and
   sampled-component tokens verbatim so every option looks native to the app.
+- For any form control (radio, checkbox, text input, select, textarea, button),
+  copy the exact classes from the StyleGuide's `controls` array and the
+  matching entry in `components` (for example Bootstrap's `form-check`,
+  `form-check-input`, `form-control`, `form-select`, `btn btn-primary`) onto
+  the real native element. A plain unstyled `<input>`/`<select>` renders
+  invisible or broken on a Bootstrap-themed page; reusing the host's own
+  classes is what makes it look and behave native. Respect the StyleGuide's
+  `meta.colorScheme` (and any `data-bs-theme`/`data-theme` it names) so a dark
+  variation does not plant light-only markup on a dark page.
 - Make variations structurally different, not merely recolored. Vary layout,
   information hierarchy, and the primary affordance.
 - Keep markup self-contained and compact. Do not add scripts, event handlers,
@@ -66,7 +75,9 @@ set before planting it. Revise and re-present when requested.
 
 From the target project root, run `proto --ext plant` with the approved scratch plan.
 The command blocks while the extension plants the choices and the user cycles,
-selects, and approves or rejects them.
+selects, and approves or rejects them. The picker also offers a "Show original"
+toggle so the user can compare each variation against the real, unmodified
+element before deciding — this is expected and is not a stall.
 
 Do not infer a result from browser state or elapsed time.
 
@@ -121,7 +132,7 @@ with no notes.
 ## Phase 7 — Export and Cleanup
 
 On Approve with no notes, `proto --ext plant` exports the winning self-contained
-`index.html`, editable `styles.css`, optional completed `preview.png`,
+`index.html`, editable `styles.css`, optional completed `preview.jpg`,
 `lineage.md`, and `NOTES.md` marker under `.agents/prototype/<slug>/`, then
 prints the answer path. Approve with notes exports the same files for that
 round, so the latest pick always exists on disk, but the chain stays open.
@@ -135,5 +146,5 @@ the question, the latest `Verdict` JSON, and the editing note; it carries no
 round history of its own.
 
 Verify the answer and its `NOTES.md` marker before cleanup. Run `proto --ext cleanup`
-from the same target project root to remove only Downloads and stable scratch
-artifacts. Preserve the exported answer and report its path to the user.
+from the same target project root to remove only the stable scratch artifacts
+for that slug. Preserve the exported answer and report its path to the user.

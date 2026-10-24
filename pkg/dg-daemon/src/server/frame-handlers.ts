@@ -3,6 +3,13 @@ import {
 	sendCredentialsResult,
 } from "./credentials";
 import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
+import {
+	failPendingProtoForExtension,
+	handleProtoCli,
+	handleProtoBrowserProgress,
+	handleProtoBrowserResult,
+	settleRejectedProtoBrowserResult,
+} from "./proto";
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
@@ -29,6 +36,7 @@ import {
 	validateOverwatchLaneUpdate,
 	validateOverwatchMerge,
 	validateIsoTimestamp,
+	validateProtoCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -312,6 +320,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 	switch (value.type) {
 		case "cli-inbox-request":
 			try { return validateInboxCliRequest(value); } catch { return undefined; }
+		case "cli-proto-request":
+			try { return validateProtoCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -517,6 +527,8 @@ async function handleCliFrame(
 	switch (frame.type) {
 		case "cli-inbox-request":
 			return handleInboxCli(ws, sessionId, frame, deps);
+		case "cli-proto-request":
+			return handleProtoCli(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -988,6 +1000,10 @@ async function dispatchFrame(
 	switch (frame.type) {
 		case "inbox-browser-result":
 			return handleInboxBrowserResult(ws, frame, deps);
+		case "proto-browser-result":
+			return handleProtoBrowserResult(ws, frame, deps);
+		case "proto-browser-progress":
+			return handleProtoBrowserProgress(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1048,6 +1064,26 @@ export async function handleSocketMessage(
 	const bytes =
 		typeof raw === "string" ? Buffer.byteLength(raw, "utf8") : raw.byteLength;
 	if (bytes > CHAT_MAX_PAYLOAD_BYTES) {
+		let parsedOversize: unknown;
+		try {
+			parsedOversize = JSON.parse(
+				typeof raw === "string" ? raw : raw.toString("utf8"),
+			);
+		} catch {
+			parsedOversize = undefined;
+		}
+		if (settleRejectedProtoBrowserResult(ws, parsedOversize, deps)) return;
+		const unreadable = parsedOversize === undefined;
+		const protoResult =
+			isRecord(parsedOversize) &&
+			parsedOversize.type === "proto-browser-result";
+		if ((unreadable || protoResult) && ws.data.kind === "ws") {
+			failPendingProtoForExtension(
+				ws,
+				deps,
+				`Prototype result exceeded the relay size limit and could not be delivered.`,
+			);
+		}
 		await sendError(
 			ws,
 			TRANSPORT_ERROR_SESSION_ID,
@@ -1076,6 +1112,17 @@ export async function handleSocketMessage(
 			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
 			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
 			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
+			noteInvalid(ws);
+			return;
+		}
+	}
+
+	if (isRecord(parsed) && parsed.type === "cli-proto-request" && ws.data.kind === "cli") {
+		try { validateProtoCliRequest(parsed); }
+		catch (err) {
+			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
+			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
+			await sendViaQueue(ws, JSON.stringify({ type: "cli-proto-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
 			noteInvalid(ws);
 			return;
 		}
@@ -1121,6 +1168,7 @@ export async function handleSocketMessage(
 	try {
 		frame = validateChatFrame(parsed);
 	} catch (err) {
+		if (settleRejectedProtoBrowserResult(ws, parsed, deps)) return;
 		await sendError(ws, rawSessionId, describeError(err));
 		noteInvalid(ws);
 		return;

@@ -5,6 +5,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	fitHistoryPage,
+	PROTO_MAX_TIMEOUT_MS,
 	validateChatFrame,
 	validateCommandManifest,
 } from "../src/index";
@@ -256,6 +257,65 @@ function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildProtoBrowserRequestFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "proto-browser-request",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		phase: "scrape",
+		slug: "account-summary-1a2b3c4d",
+		markedUrl: "https://example.test/account#_proto=fixture",
+		...overrides,
+	};
+}
+
+function buildProtoBrowserResultFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "proto-browser-result",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		ok: true,
+		data: {
+			kind: "style-guide",
+			styleGuide: {
+				meta: {
+					url: "https://example.test/account",
+					scrapedAt: 1,
+					sameOrigin: true,
+				},
+				tokens: {
+					customProps: {},
+					colors: ["rgb(0, 0, 0)"],
+					fontStack: "sans-serif",
+					typeScale: [],
+					spacing: [],
+					radii: [],
+					shadows: [],
+				},
+				components: { button: {}, input: {}, link: {} },
+			},
+		},
+		...overrides,
+	};
+}
+
+function buildProtoBrowserProgressFrame(
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		type: "proto-browser-progress",
+		sessionId: "session-a",
+		requestId: "proto-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		status: "ready; scraping the style guide",
+		...overrides,
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -314,6 +374,9 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["config-result", buildConfigResultFrame],
 	["inbox-browser-request", buildInboxBrowserRequestFrame],
 	["inbox-browser-result", buildInboxBrowserResultFrame],
+	["proto-browser-request", buildProtoBrowserRequestFrame],
+	["proto-browser-result", buildProtoBrowserResultFrame],
+	["proto-browser-progress", buildProtoBrowserProgressFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],
@@ -503,6 +566,41 @@ describe("validateChatFrame — CHAT_MAX_PAYLOAD_BYTES", () => {
 		const oversizedBody = "x".repeat(CHAT_MAX_PAYLOAD_BYTES + 1);
 		const frame = buildAgentMessageFrame({ body: oversizedBody });
 		expect(() => validateChatFrame(frame)).toThrow();
+	});
+});
+
+describe("validateChatFrame — proto-browser-request URL", () => {
+	it("accepts http and https and rejects other schemes", () => {
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({
+					markedUrl: "http://example.test/account",
+				}),
+			),
+		).not.toThrow();
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({ markedUrl: "javascript:alert(1)" }),
+			),
+		).toThrow(/http\(s\)/);
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({
+					markedUrl: `https://example.test/${"a".repeat(40_000)}`,
+				}),
+			),
+		).toThrow(/marker URL limit/);
+	});
+
+	it("accepts the daemon relay timeout and rejects one past the cap", () => {
+		expect(() =>
+			validateChatFrame(buildProtoBrowserRequestFrame({ timeoutMs: 45_000 })),
+		).not.toThrow();
+		expect(() =>
+			validateChatFrame(
+				buildProtoBrowserRequestFrame({ timeoutMs: PROTO_MAX_TIMEOUT_MS + 1 }),
+			),
+		).toThrow(/timeoutMs/);
 	});
 });
 

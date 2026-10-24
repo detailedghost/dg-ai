@@ -64,7 +64,9 @@ export default defineConfig({
 							extension_pages:
 								"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
 						},
-						minimum_chrome_version: "116",
+						// 118: @scope, used to isolate planted variation CSS.
+						// Also covers the Chrome 116 service-worker WebSocket keepalive.
+						minimum_chrome_version: "118",
 					}),
 			action: {
 				default_title: "DeeGee chat",

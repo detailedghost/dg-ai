@@ -12,7 +12,8 @@ perform authoritative validation.
   "meta": {
     "url": "https://app.example.test/account",
     "scrapedAt": 1721234567890,
-    "sameOrigin": true
+    "sameOrigin": true,
+    "colorScheme": "light"
   },
   "tokens": {
     "customProps": { "--brand": "#1457ff" },
@@ -26,13 +27,25 @@ perform authoritative validation.
   "components": {
     "button": { "background-color": "rgb(20, 87, 255)" },
     "input": { "border-radius": "4px" },
-    "link": { "color": "rgb(20, 87, 255)" }
-  }
+    "link": { "color": "rgb(20, 87, 255)" },
+    "select": { "border-radius": "4px" },
+    "textarea": { "border-radius": "4px" }
+  },
+  "controls": [
+    { "tag": "input", "type": "radio", "classes": "form-check-input", "wrapperClasses": "form-check" },
+    { "tag": "select", "classes": "form-select" },
+    { "tag": "button", "type": "submit", "classes": "btn btn-primary" }
+  ]
 }
 ```
 
 Reuse these token values verbatim in variation CSS. Do not normalize colors,
-invent a parallel type scale, or substitute generic spacing.
+invent a parallel type scale, or substitute generic spacing. `meta.colorScheme`
+and `controls` are present only when the scraped page declared a theme or had
+form controls to sample; `controls` lists real host classes for radios,
+checkboxes, text inputs, selects, textareas, and buttons in document order —
+copy a control's `classes` (and `wrapperClasses`, when present) onto the
+matching element in your variation markup rather than leaving it unstyled.
 
 ## ProtoPlan
 

@@ -1,14 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import {
-	chmod,
-	mkdir,
-	mkdtemp,
-	readFile,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -20,13 +13,11 @@ import {
 	type Verdict,
 	validateVerdict,
 } from "@dg/common";
-import {
-	dgProtoPath,
-	protoScratchPath,
-	protoSlug,
-} from "../src/utils/proto-paths";
+import { protoScratchPath, protoSlug } from "../src/utils/proto-paths";
+import { protoDaemonFixture } from "./proto-cli-harness";
 
 const temporaryDirectories: string[] = [];
+const servers: Array<{ stop: () => void }> = [];
 const skillsCliRoot = join(import.meta.dir, "..");
 const skillsCliEntry = join(skillsCliRoot, "src", "index.ts");
 
@@ -37,6 +28,7 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 afterEach(async () => {
+	for (const server of servers.splice(0)) server.stop();
 	await Promise.all(
 		temporaryDirectories
 			.splice(0)
@@ -84,11 +76,6 @@ function buildStyleGuide(url: string) {
 	};
 }
 
-async function executable(path: string, source: string): Promise<void> {
-	await writeFile(path, source);
-	await chmod(path, 0o755);
-}
-
 type CliResult = {
 	code: number | null;
 	stdout: string;
@@ -120,28 +107,12 @@ async function runCli(
 	});
 }
 
-async function plantHarness(
-	plan: ProtoPlan,
-	verdictJson = "",
-): Promise<{
-	env: NodeJS.ProcessEnv;
-	openedUrlPath: string;
-	planPath: string;
-	projectRoot: string;
-	verdictDownloadPath: string;
-	verdictScratchPath: string;
-}> {
+async function plantHarness(plan: ProtoPlan, verdictJson = "") {
 	const directory = await temporaryDirectory();
-	const bin = join(directory, "bin");
-	const downloads = join(directory, "downloads");
 	const projectRoot = join(directory, "project");
 	const scratch = join(directory, "scratch");
+	const dgHome = join(directory, "dg-home");
 	const planPath = join(directory, "plan.json");
-	const openedUrlPath = join(directory, "opened-url.txt");
-	const verdictDownloadPath = join(
-		downloads,
-		dgProtoPath(plan.slug, "verdict.json"),
-	);
 	const verdictScratchPath = protoScratchPath(plan.slug, "verdict.json", {
 		env: { AI_SCRATCH_DIR: scratch },
 	});
@@ -149,11 +120,8 @@ async function plantHarness(
 		env: { AI_SCRATCH_DIR: scratch },
 	});
 
-	await Promise.all([
-		mkdir(bin, { recursive: true }),
-		mkdir(projectRoot, { recursive: true }),
-		mkdir(dirname(styleGuidePath), { recursive: true }),
-	]);
+	await mkdir(projectRoot, { recursive: true });
+	await mkdir(dirname(styleGuidePath), { recursive: true });
 	await Promise.all([
 		writeFile(planPath, JSON.stringify(plan)),
 		writeFile(
@@ -163,72 +131,65 @@ async function plantHarness(
 			),
 		),
 	]);
-	await executable(
-		join(bin, "xdg-user-dir"),
-		'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
+
+	let currentVerdictJson = verdictJson;
+	const server = protoDaemonFixture(
+		{ cwd: projectRoot, dgHome },
+		(request, reply) => {
+			if (!currentVerdictJson) {
+				reply({
+					type: "cli-proto-result",
+					sessionId: "fixture-cli-session",
+					requestId: request.requestId,
+					ok: false,
+					error: "no verdict configured for this fixture",
+				});
+				return;
+			}
+			reply({
+				type: "cli-proto-result",
+				sessionId: "fixture-cli-session",
+				requestId: request.requestId,
+				ok: true,
+				data: { kind: "verdict", verdict: JSON.parse(currentVerdictJson) },
+			});
+		},
 	);
-	const opener = [
-		"#!/bin/sh",
-		'if [ "${DG_REQUIRE_STALE_REMOVED:-0}" = "1" ] && { [ -e "$DG_TEST_VERDICT_PATH" ] || [ -e "$DG_TEST_VERDICT_PATH.crdownload" ]; }; then',
-		"  exit 41",
-		"fi",
-		'printf "%s" "$1" > "$DG_TEST_OPENED_URL"',
-		'if [ -n "${DG_TEST_VERDICT:-}" ]; then',
-		'  mkdir -p "$(dirname "$DG_TEST_VERDICT_PATH")"',
-		'  printf "%s" "$DG_TEST_VERDICT" > "$DG_TEST_VERDICT_PATH"',
-		"fi",
-		"exit 0",
-		"",
-	].join("\n");
-	await Promise.all([
-		executable(join(bin, "xdg-open"), opener),
-		executable(join(bin, "wslview"), opener),
-		executable(
-			join(bin, "cmd.exe"),
-			'#!/bin/sh\nprintf "%s\\n" "C:\\\\Users\\\\Ada"\n',
-		),
-		executable(
-			join(bin, "wslpath"),
-			'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
-		),
-	]);
+	servers.push(server);
 
 	return {
 		env: {
 			...process.env,
 			AI_SCRATCH_DIR: scratch,
-			DG_TEST_DOWNLOADS: downloads,
+			DG_HOME: dgHome,
 			DG_TEST_PROJECT_ROOT: projectRoot,
-			DG_TEST_OPENED_URL: openedUrlPath,
-			DG_TEST_VERDICT: verdictJson,
-			DG_TEST_VERDICT_PATH: verdictDownloadPath,
-			PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
 			WSL_DISTRO_NAME: "",
-		},
-		openedUrlPath,
+		} as NodeJS.ProcessEnv,
 		planPath,
 		projectRoot,
-		verdictDownloadPath,
+		server,
+		setVerdict(next: string): void {
+			currentVerdictJson = next;
+		},
 		verdictScratchPath,
 	};
 }
 
-async function readPlantPayload(openedUrlPath: string) {
-	const openedUrl = await readFile(openedUrlPath, "utf8");
-	const marker = new URLSearchParams(new URL(openedUrl).hash.slice(1)).get(
+function parseMarkedUrl(markedUrl: string) {
+	const marker = new URLSearchParams(new URL(markedUrl).hash.slice(1)).get(
 		"_proto",
 	);
-	if (!marker) throw new Error("opened URL did not contain a prototype marker");
+	if (!marker) throw new Error("marked URL did not contain a prototype marker");
 	return {
-		openedUrl,
+		markedUrl,
 		payload: JSON.parse(
 			gunzipSync(Buffer.from(marker, "base64url")).toString("utf8"),
-		) as { phase: string; slug: string; plan: ProtoPlan },
+		) as { phase: string; slug: string; plan: ProtoPlan; expectedUrl: string },
 	};
 }
 
 describe("proto plant command", () => {
-	test("validates the plan before opening a browser", async () => {
+	test("validates the plan before contacting the daemon", async () => {
 		const url = "https://example.test/account";
 		const invalid = {
 			...buildPlan(url),
@@ -242,7 +203,7 @@ describe("proto plant command", () => {
 		);
 
 		expect(result.code).toBe(1);
-		await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+		expect(harness.server.requests).toHaveLength(0);
 		expect(result.stderr).toMatch(/prototype plan|mode/i);
 	});
 
@@ -281,7 +242,7 @@ describe("proto plant command", () => {
 			error: /HTML\+CSS|524288|trim variation markup/i,
 		},
 	] as const) {
-		test(`rejects ${invalidPlan.name} before opening a browser`, async () => {
+		test(`rejects ${invalidPlan.name} before contacting the daemon`, async () => {
 			const url = `https://example.test/account?invalid=${encodeURIComponent(
 				invalidPlan.name,
 			)}`;
@@ -295,11 +256,11 @@ describe("proto plant command", () => {
 			expect(result.code).toBe(1);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toMatch(invalidPlan.error);
-			await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+			expect(harness.server.requests).toHaveLength(0);
 		});
 	}
 
-	test("sanitizes every variation, clears stale verdicts, and preserves the source fragment", async () => {
+	test("sanitizes every variation, overwrites a stale scratch verdict, and preserves the source fragment", async () => {
 		const url = "https://example.test/account";
 		const plan = buildPlan(url);
 		const verdict: Verdict = {
@@ -309,23 +270,16 @@ describe("proto plant command", () => {
 			ts: 1_721_234_567_999,
 		};
 		const harness = await plantHarness(plan, JSON.stringify(verdict));
-		await mkdir(dirname(harness.verdictDownloadPath), { recursive: true });
-		await Promise.all([
-			writeFile(harness.verdictDownloadPath, '{"stale":true}'),
-			writeFile(`${harness.verdictDownloadPath}.crdownload`, "stale partial"),
-			writeFile(harness.verdictScratchPath, '{"staleScratch":true}'),
-		]);
+		await writeFile(harness.verdictScratchPath, '{"staleScratch":true}');
 
 		const result = await runCli(
 			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
-			{
-				...harness.env,
-				DG_REQUIRE_STALE_REMOVED: "1",
-			},
+			harness.env,
 		);
 		expect(result.code).toBe(0);
-		const { openedUrl, payload } = await readPlantPayload(
-			harness.openedUrlPath,
+		expect(harness.server.requests).toHaveLength(1);
+		const { markedUrl, payload } = parseMarkedUrl(
+			harness.server.requests[0]?.markedUrl as string,
 		);
 
 		expect(payload.phase).toBe("plant");
@@ -334,7 +288,7 @@ describe("proto plant command", () => {
 			plan.variations.map((variation) => sanitizeVariationHtml(variation.html)),
 		);
 		expect(
-			new URLSearchParams(new URL(openedUrl).hash.slice(1)).get("tab"),
+			new URLSearchParams(new URL(markedUrl).hash.slice(1)).get("tab"),
 		).toBe("summary");
 		expect(result.stdout.trim()).toBe(
 			join(
@@ -352,7 +306,7 @@ describe("proto plant command", () => {
 		).toEqual(verdict);
 	});
 
-	test("rejects an oversized sanitized plan before opening", async () => {
+	test("rejects an oversized sanitized plan before contacting the daemon", async () => {
 		const url = "https://example.test/account";
 		const plan = buildPlan(url, {
 			variations: [
@@ -372,7 +326,7 @@ describe("proto plant command", () => {
 		);
 
 		expect(result.code).toBe(1);
-		await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+		expect(harness.server.requests).toHaveLength(0);
 		expect(result.stderr).toMatch(/32K|trim your variations/i);
 	});
 
@@ -387,7 +341,7 @@ describe("proto plant command", () => {
 			feedback: "Keep the detail but reduce the density.",
 		},
 	] as const) {
-		test(`reads, validates, copies, and handles a fresh ${verdict.action} verdict`, async () => {
+		test(`reads, validates, and handles a fresh ${verdict.action} verdict from the daemon`, async () => {
 			const url = `https://example.test/account?verdict=${verdict.action}`;
 			const plan = buildPlan(url);
 			const expected = {
@@ -431,11 +385,13 @@ describe("proto plant command", () => {
 		const harness = await plantHarness(plan);
 		const verdictFor = (verdict: Record<string, string>) =>
 			JSON.stringify({ slug: plan.slug, ts: 1_721_234_568_100, ...verdict });
-		const plant = (verdict: Record<string, string>) =>
-			runCli(["proto", "--ext", "plant", harness.planPath, "--timeout", "500"], {
-				...harness.env,
-				DG_TEST_VERDICT: verdictFor(verdict),
-			});
+		const plant = (verdict: Record<string, string>) => {
+			harness.setVerdict(verdictFor(verdict));
+			return runCli(
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
+				harness.env,
+			);
+		};
 		const notesPath = join(
 			harness.projectRoot,
 			".agents",
@@ -510,15 +466,19 @@ describe("proto plant command", () => {
 		async function chainHarness(query: string) {
 			const plan = buildPlan(`https://example.test/account?${query}`);
 			const harness = await plantHarness(plan);
-			const plant = (verdict: Record<string, string>) =>
-				runCli(["proto", "--ext", "plant", harness.planPath, "--timeout", "500"], {
-					...harness.env,
-					DG_TEST_VERDICT: JSON.stringify({
+			const plant = (verdict: Record<string, string>) => {
+				harness.setVerdict(
+					JSON.stringify({
 						slug: plan.slug,
 						ts: 1_721_234_568_100,
 						...verdict,
 					}),
-				});
+				);
+				return runCli(
+					["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
+					harness.env,
+				);
+			};
 			const tweaksPath = join(
 				dirname(harness.verdictScratchPath),
 				"tweaks.json",
@@ -597,10 +557,6 @@ describe("proto plant command", () => {
 				selectedKey: "compact",
 				notes: "keep going",
 			});
-			// Simulate a prototype directory written before lineage.md existed:
-			// fold the real round-1 block back into NOTES.md under a legacy
-			// `## Rounds` heading with a `### round-N` heading, and drop
-			// lineage.md, so the next approve has only the old shape to read.
 			const legacyRound = (await readFile(lineagePath, "utf8"))
 				.trim()
 				.replace(/^## round-/, "### round-");
@@ -632,17 +588,19 @@ describe("proto plant command", () => {
 				question: "Which account summary works best?",
 			});
 			const harness = await plantHarness(firstPlan);
-			const verdictFor = (verdict: Record<string, string>) =>
-				JSON.stringify({
-					slug: firstPlan.slug,
-					ts: 1_721_234_568_100,
-					...verdict,
-				});
-			const plant = (verdict: Record<string, string>) =>
-				runCli(
-					["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
-					{ ...harness.env, DG_TEST_VERDICT: verdictFor(verdict) },
+			const plant = (verdict: Record<string, string>) => {
+				harness.setVerdict(
+					JSON.stringify({
+						slug: firstPlan.slug,
+						ts: 1_721_234_568_100,
+						...verdict,
+					}),
 				);
+				return runCli(
+					["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
+					harness.env,
+				);
+			};
 			const notesPath = join(
 				harness.projectRoot,
 				".agents",
@@ -689,7 +647,7 @@ describe("proto plant command", () => {
 		});
 	});
 
-	test("rejects a malformed downloaded verdict instead of copying or printing it", async () => {
+	test("rejects a malformed verdict from the daemon instead of writing or printing it", async () => {
 		const url = "https://example.test/account?verdict=invalid";
 		const plan = buildPlan(url);
 		const harness = await plantHarness(

@@ -12,7 +12,14 @@ import {
 	requireString,
 } from "./assert";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
-import { validateProtoIdentifier } from "./proto-format";
+import {
+	PROTO_MAX_TIMEOUT_MS,
+	validateProtoBrowserData,
+	validateProtoIdentifier,
+	validateProtoMarkedUrl,
+	validateProtoNotReadyError,
+} from "./proto-format";
+import type { ProtoBrowserData, ProtoNotReadyError } from "./types";
 
 const UTF8_ENCODER = new TextEncoder();
 
@@ -229,6 +236,29 @@ export type ChatFrame =
 			error?: string;
 	  })
 	| (Envelope & {
+			type: "proto-browser-request";
+			requestId: string;
+			phase: "scrape" | "plant";
+			slug: string;
+			markedUrl: string;
+			timeoutMs?: number;
+	  })
+	| (Envelope & {
+			type: "proto-browser-result";
+			token: string;
+			requestId: string;
+			ok: boolean;
+			data?: ProtoBrowserData;
+			notReady?: ProtoNotReadyError;
+			error?: string;
+	  })
+	| (Envelope & {
+			type: "proto-browser-progress";
+			token: string;
+			requestId: string;
+			status: string;
+	  })
+	| (Envelope & {
 			type: "user-message";
 			token: string;
 			messageId: string;
@@ -307,6 +337,9 @@ export type ChatFrame =
 const CHAT_FRAME_TYPES = new Set([
 	"inbox-browser-request",
 	"inbox-browser-result",
+	"proto-browser-request",
+	"proto-browser-result",
+	"proto-browser-progress",
 	"user-message",
 	"ack",
 	"agent-message",
@@ -335,6 +368,8 @@ const CHAT_FRAME_TYPES = new Set([
 
 const INBOUND_FRAME_TYPES = new Set([
 	"inbox-browser-result",
+	"proto-browser-result",
+	"proto-browser-progress",
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -753,6 +788,80 @@ function validateFrameBody(
 				)
 					fail("unknown inbox result field");
 			}
+			return;
+		case "proto-browser-request":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
+			validateProtoIdentifier(value.slug, `${path}.slug`);
+			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
+			if (value.timeoutMs !== undefined) {
+				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
+				if (
+					value.timeoutMs <= 0 ||
+					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
+				) {
+					fail(
+						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
+					);
+				}
+			}
+			return;
+		case "proto-browser-result":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean")
+				fail("proto result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined || value.notReady !== undefined)
+					fail("successful proto result must not contain an error or notReady");
+				validateProtoBrowserData(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail("failed proto result must not contain data");
+				if (
+					(value.error === undefined) === (value.notReady === undefined)
+				) {
+					fail(
+						"failed proto result must contain exactly one of error or notReady",
+					);
+				}
+				if (value.error !== undefined) {
+					requireString(value.error, "proto result.error", {
+						nonEmpty: true,
+					});
+					if ((value.error as string).length > 2048)
+						fail("proto result.error exceeds 2048 characters");
+				} else {
+					validateProtoNotReadyError(value.notReady);
+				}
+			}
+			for (const key of Object.keys(value)) {
+				if (
+					![
+						"type",
+						"protocolVersion",
+						"sessionId",
+						"token",
+						"requestId",
+						"ok",
+						"data",
+						"notReady",
+						"error",
+					].includes(key)
+				)
+					fail("unknown proto result field");
+			}
+			return;
+		case "proto-browser-progress":
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireString(value.status, `${path}.status`, { nonEmpty: true });
+			if ((value.status as string).length > 512)
+				fail("proto progress status exceeds 512 characters");
 			return;
 		case "config-get":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });

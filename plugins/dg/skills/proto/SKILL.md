@@ -78,6 +78,14 @@ A prototype that does not render is worthless. Never `<script src>` or `<link hr
 URL (CDN scripts, web fonts) in a prototype: it renders blank when the network is blocked.
 Vendor or inline every dependency, or hand-render to plain HTML and CSS.
 
+**The local mode never reaches the network at run time.** Never install a package or framework, and
+never fetch one from the network, to satisfy this: use what the project already has installed. If a
+dependency is genuinely missing, stop and name the one command the user should run (the same way the
+browser skill asks for `pw install chrome`) and let them run it. `--ext` mode never writes a browser
+download either: the extension hands scrape and plant results straight to the CLI over the paired
+dg-daemon session. A `~/Downloads/dg-proto/` folder from an older `dg-skills` version is safe to
+delete; nothing reads or writes it anymore.
+
 A prototype of an existing app's UI renders **in that app**. When the thing being prototyped is a
 page, panel, dialog, or component of a web app in the repo, mount the variants in the real running
 app (UI sub-shape A in [references/local-ui.md](references/local-ui.md)). Never rebuild the app's chrome as a standalone
@@ -87,9 +95,10 @@ With no host app, or with `--self-contained`, serve the content on the `prototyp
 with `dg-skills prototype ui`. Prose, tables, code, and compare cards are plain HTML inside a
 variant, so no other viewer is needed. See [references/local-formats.md](references/local-formats.md).
 
-Verify the page renders before handing it over. Load it (Playwright, or a headless check of the
-produced HTML) and confirm the real content is present. Never ask "does this look right?" about a
-page you have not confirmed renders.
+Verify the page renders before handing it over. Load it (an already-installed Playwright, through
+the `pw` skill or an MCP tool, or a headless check of the produced HTML) and confirm the real
+content is present — never install Playwright or download a browser for this check. Never ask "does
+this look right?" about a page you have not confirmed renders.
 
 ## Refine chain
 

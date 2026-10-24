@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import {
-	chmod,
 	mkdir,
 	mkdtemp,
 	readFile,
@@ -14,14 +13,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ProtoPlan, Verdict } from "@dg/common";
 import { exportApprovedAnswer } from "../src/commands/proto";
-import {
-	answerPagePath,
-	dgProtoPath,
-	protoScratchPath,
-	protoSlug,
-} from "../src/utils/proto-paths";
+import { answerPagePath, protoScratchPath, protoSlug } from "../src/utils/proto-paths";
+import { protoDaemonFixture } from "./proto-cli-harness";
 
 const temporaryDirectories: string[] = [];
+const servers: Array<{ stop: () => void }> = [];
 const skillsCliRoot = join(import.meta.dir, "..");
 const skillsCliEntry = join(skillsCliRoot, "src", "index.ts");
 
@@ -32,17 +28,13 @@ async function temporaryDirectory(): Promise<string> {
 }
 
 afterEach(async () => {
+	for (const server of servers.splice(0)) server.stop();
 	await Promise.all(
 		temporaryDirectories
 			.splice(0)
 			.map((directory) => rm(directory, { force: true, recursive: true })),
 	);
 });
-
-async function executable(path: string, source: string): Promise<void> {
-	await writeFile(path, source);
-	await chmod(path, 0o755);
-}
 
 type CliResult = {
 	code: number | null;
@@ -124,16 +116,18 @@ function buildStyleGuide(url: string) {
 	};
 }
 
+function previewDataUrl(contents: string, mime = "image/jpeg"): string {
+	return `data:${mime};base64,${Buffer.from(contents).toString("base64")}`;
+}
+
 async function protoHarness(
 	verdict: Verdict,
 	options: { preview?: string; question?: string } = {},
 ) {
 	const directory = await temporaryDirectory();
 	const projectRoot = join(directory, "project");
-	const bin = join(directory, "bin");
-	const downloads = join(directory, "downloads");
 	const scratch = join(directory, "scratch");
-	const openedUrlPath = join(directory, "opened-url.txt");
+	const dgHome = join(directory, "dg-home");
 	const sourceUrl = `https://example.test/account?slug=${verdict.slug}`;
 	const plan = buildPlan(
 		sourceUrl,
@@ -144,70 +138,53 @@ async function protoHarness(
 	const styleGuidePath = protoScratchPath(plan.slug, "style-guide.json", {
 		env: { AI_SCRATCH_DIR: scratch },
 	});
-	const verdictPath = join(downloads, dgProtoPath(plan.slug, "verdict.json"));
-	const previewPath = join(downloads, dgProtoPath(plan.slug, "preview.png"));
 
-	await Promise.all([
-		mkdir(projectRoot, { recursive: true }),
-		mkdir(bin, { recursive: true }),
-		mkdir(dirname(styleGuidePath), { recursive: true }),
-	]);
+	await mkdir(projectRoot, { recursive: true });
+	await mkdir(dirname(styleGuidePath), { recursive: true });
 	await Promise.all([
 		writeFile(planPath, JSON.stringify(plan)),
 		writeFile(styleGuidePath, JSON.stringify(buildStyleGuide(sourceUrl))),
 	]);
-	await executable(
-		join(bin, "xdg-user-dir"),
-		'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
+
+	let currentVerdict = verdict;
+	let currentPreview = options.preview;
+	const server = protoDaemonFixture(
+		{ cwd: projectRoot, dgHome },
+		(request, reply) => {
+			reply({
+				type: "cli-proto-result",
+				sessionId: "fixture-cli-session",
+				requestId: request.requestId,
+				ok: true,
+				data: {
+					kind: "verdict",
+					verdict: currentVerdict,
+					...(currentPreview
+						? { previewDataUrl: previewDataUrl(currentPreview) }
+						: {}),
+				},
+			});
+		},
 	);
-	const opener = [
-		"#!/bin/sh",
-		'if [ "${DG_REQUIRE_STALE_REMOVED:-0}" = "1" ] && [ -e "$DG_TEST_VERDICT_PATH" ]; then',
-		"  exit 41",
-		"fi",
-		'printf "%s" "$1" > "$DG_TEST_OPENED_URL"',
-		'mkdir -p "$(dirname "$DG_TEST_VERDICT_PATH")"',
-		'if [ -n "${DG_TEST_PREVIEW:-}" ]; then',
-		'  printf "%s" "$DG_TEST_PREVIEW" > "$DG_TEST_PREVIEW_PATH"',
-		"fi",
-		'printf "%s" "$DG_TEST_VERDICT" > "$DG_TEST_VERDICT_PATH"',
-		"",
-	].join("\n");
-	await Promise.all([
-		executable(join(bin, "xdg-open"), opener),
-		executable(join(bin, "wslview"), opener),
-		executable(
-			join(bin, "cmd.exe"),
-			'#!/bin/sh\nprintf "%s\\n" "C:\\\\Users\\\\Ada"\n',
-		),
-		executable(
-			join(bin, "wslpath"),
-			'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
-		),
-	]);
+	servers.push(server);
 
 	return {
 		answerDirectory: join(projectRoot, ".agents", "prototype", plan.slug),
-		downloads,
 		env: {
 			...process.env,
 			AI_SCRATCH_DIR: scratch,
-			DG_TEST_DOWNLOADS: downloads,
-			DG_TEST_OPENED_URL: openedUrlPath,
-			DG_TEST_PREVIEW: options.preview ?? "",
-			DG_TEST_PREVIEW_PATH: previewPath,
-			DG_TEST_VERDICT: JSON.stringify(verdict),
-			DG_TEST_VERDICT_PATH: verdictPath,
-			PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+			DG_HOME: dgHome,
 			WSL_DISTRO_NAME: "",
 		} satisfies NodeJS.ProcessEnv,
-		openedUrlPath,
 		plan,
 		planPath,
-		previewPath,
 		projectRoot,
 		scratch,
-		verdictPath,
+		server,
+		setVerdict(next: Verdict, preview?: string): void {
+			currentVerdict = next;
+			currentPreview = preview;
+		},
 	};
 }
 
@@ -222,28 +199,64 @@ describe("proto plant answer export", () => {
 		} satisfies Verdict;
 		const operations: string[] = [];
 
-		await exportApprovedAnswer(plan, verdict, "/downloads/preview.png", {
-			answerPath: (_slug, file) => `/answer/${file}`,
-			copy: async (_source, destination) => {
-				operations.push(`copy:${destination}`);
+		await exportApprovedAnswer(
+			plan,
+			verdict,
+			previewDataUrl("selected-preview-png"),
+			{
+				answerPath: (_slug, file) => `/answer/${file}`,
+				writeBinary: async (destination) => {
+					operations.push(`write-binary:${destination}`);
+				},
+				ensureSafePaths: async () => {},
+				readText: async () => {
+					throw Object.assign(new Error("not found"), { code: "ENOENT" });
+				},
+				removeFile: async () => {},
+				writeText: async (path) => {
+					operations.push(`write:${path}`);
+				},
 			},
-			ensureSafePaths: async () => {},
-			readText: async () => {
-				throw Object.assign(new Error("not found"), { code: "ENOENT" });
-			},
-			removeFile: async () => {},
-			writeText: async (path) => {
-				operations.push(`write:${path}`);
-			},
-		});
+		);
 
 		expect(operations).toEqual([
 			"write:/answer/index.html",
 			"write:/answer/styles.css",
-			"copy:/answer/preview.png",
+			"write-binary:/answer/preview.jpg",
 			"write:/answer/lineage.md",
 			"write:/answer/NOTES.md",
 		]);
+	});
+
+	test("writes a PNG data URL to preview.png", async () => {
+		const plan = buildPlan("https://example.test/png-export");
+		const verdict = {
+			slug: plan.slug,
+			action: "approve",
+			selectedKey: "compact",
+			ts: 1_721_234_567_999,
+		} satisfies Verdict;
+		const operations: string[] = [];
+
+		await exportApprovedAnswer(
+			plan,
+			verdict,
+			previewDataUrl("selected-preview-png", "image/png"),
+			{
+				answerPath: (_slug, file) => `/answer/${file}`,
+				writeBinary: async (destination) => {
+					operations.push(`write-binary:${destination}`);
+				},
+				ensureSafePaths: async () => {},
+				readText: async () => {
+					throw Object.assign(new Error("not found"), { code: "ENOENT" });
+				},
+				removeFile: async () => {},
+				writeText: async () => {},
+			},
+		);
+
+		expect(operations).toEqual(["write-binary:/answer/preview.png"]);
 	});
 
 	test("writes a cwd-relative self-contained answer and preview before the completion marker", async () => {
@@ -273,7 +286,7 @@ describe("proto plant answer export", () => {
 		const [index, styles, preview, notes] = await Promise.all([
 			readFile(expectedIndexPath, "utf8"),
 			readFile(join(harness.answerDirectory, "styles.css"), "utf8"),
-			readFile(join(harness.answerDirectory, "preview.png"), "utf8"),
+			readFile(join(harness.answerDirectory, "preview.jpg"), "utf8"),
 			readFile(join(harness.answerDirectory, "NOTES.md"), "utf8"),
 		]);
 		expect(index).toContain("<style>");
@@ -307,6 +320,7 @@ describe("proto plant answer export", () => {
 			writeFile(join(first.answerDirectory, "index.html"), "stale index"),
 			writeFile(join(first.answerDirectory, "styles.css"), "stale styles"),
 			writeFile(join(first.answerDirectory, "preview.png"), "stale preview"),
+			writeFile(join(first.answerDirectory, "preview.jpg"), "stale jpeg"),
 		]);
 
 		const secondResult = await runCli(
@@ -323,6 +337,9 @@ describe("proto plant answer export", () => {
 		).not.toBe("stale styles");
 		await expect(
 			readFile(join(first.answerDirectory, "preview.png"), "utf8"),
+		).rejects.toThrow();
+		await expect(
+			readFile(join(first.answerDirectory, "preview.jpg"), "utf8"),
 		).rejects.toThrow();
 
 		const unrelated = await protoHarness({
@@ -350,17 +367,18 @@ describe("proto plant answer export", () => {
 		expect(
 			await readFile(join(unrelated.answerDirectory, "index.html"), "utf8"),
 		).toBe("keep me");
-		await expect(readFile(unrelated.openedUrlPath, "utf8")).rejects.toThrow();
+		expect(unrelated.server.requests).toHaveLength(0);
 	});
 
 	for (const outputFile of [
 		"index.html",
 		"styles.css",
 		"preview.png",
+		"preview.jpg",
 		"lineage.md",
 		"NOTES.md",
 	]) {
-		test(`refuses symlinked ${outputFile} before modifying its external target`, async () => {
+		test(`refuses symlinked ${outputFile} before contacting the daemon`, async () => {
 			const verdict = {
 				slug: "account-symlinked-file",
 				action: "approve",
@@ -395,7 +413,7 @@ describe("proto plant answer export", () => {
 					readFile(join(harness.answerDirectory, "index.html"), "utf8"),
 				).rejects.toThrow();
 			}
-			await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+			expect(harness.server.requests).toHaveLength(0);
 		});
 	}
 
@@ -430,7 +448,7 @@ describe("proto plant answer export", () => {
 		expect(result.stderr).toMatch(/symbolic link|symlink/i);
 		expect(await readFile(externalSentinel, "utf8")).toBe("external sentinel");
 		await expect(stat(join(externalDirectory, "prototype"))).rejects.toThrow();
-		await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+		expect(harness.server.requests).toHaveLength(0);
 	});
 
 	test("refuses a symlinked answer directory without writing through it", async () => {
@@ -463,7 +481,7 @@ describe("proto plant answer export", () => {
 		expect(result.stderr).toMatch(/symbolic link|symlink/i);
 		expect(await readFile(externalSentinel, "utf8")).toBe("external sentinel");
 		await expect(stat(join(externalDirectory, "index.html"))).rejects.toThrow();
-		await expect(readFile(harness.openedUrlPath, "utf8")).rejects.toThrow();
+		expect(harness.server.requests).toHaveLength(0);
 	});
 
 	test("surfaces reject feedback and re-plants the same slug against a fresh verdict", async () => {
@@ -493,14 +511,11 @@ describe("proto plant answer export", () => {
 			feedback: "The fresh second verdict.",
 			ts: firstVerdict.ts + 1,
 		};
+		harness.setVerdict(secondVerdict);
 		const secondResult = await runCli(
 			harness.projectRoot,
 			["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
-			{
-				...harness.env,
-				DG_REQUIRE_STALE_REMOVED: "1",
-				DG_TEST_VERDICT: JSON.stringify(secondVerdict),
-			},
+			harness.env,
 		);
 		expect(secondResult.code).toBe(0);
 		expect(secondResult.stdout).toContain(secondVerdict.feedback);
@@ -521,14 +536,8 @@ describe("proto cleanup command", () => {
 		const scratchFile = protoScratchPath(verdict.slug, "verdict.json", {
 			env: { AI_SCRATCH_DIR: harness.scratch },
 		});
-		await Promise.all([
-			mkdir(dirname(harness.verdictPath), { recursive: true }),
-			mkdir(dirname(scratchFile), { recursive: true }),
-		]);
-		await Promise.all([
-			writeFile(harness.verdictPath, "temporary verdict"),
-			writeFile(scratchFile, "temporary scratch"),
-		]);
+		await mkdir(dirname(scratchFile), { recursive: true });
+		await writeFile(scratchFile, "temporary scratch");
 
 		const result = await runCli(
 			harness.projectRoot,
@@ -540,13 +549,10 @@ describe("proto cleanup command", () => {
 		expect(result.stderr).toContain(
 			`no exported answer found for ${verdict.slug} — run plant to approve first`,
 		);
-		expect(await readFile(harness.verdictPath, "utf8")).toBe(
-			"temporary verdict",
-		);
 		expect(await readFile(scratchFile, "utf8")).toBe("temporary scratch");
 	});
 
-	test("removes Downloads and scratch artifacts, preserves the answer, and is idempotent", async () => {
+	test("removes temporary scratch, preserves the answer, and is idempotent", async () => {
 		const verdict = {
 			slug: "cleanup-exported",
 			action: "approve",
@@ -582,11 +588,6 @@ describe("proto cleanup command", () => {
 
 		expect(firstCleanup.code).toBe(0);
 		expect(secondCleanup.code).toBe(0);
-		await expect(
-			readFile(
-				join(harness.downloads, dgProtoPath(verdict.slug, "verdict.json")),
-			),
-		).rejects.toThrow();
 		await expect(readFile(scratchFile, "utf8")).rejects.toThrow();
 		expect(
 			await readFile(join(harness.answerDirectory, "NOTES.md"), "utf8"),

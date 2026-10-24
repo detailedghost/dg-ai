@@ -36,12 +36,21 @@ export type TourScript = {
 	setup?: TourSetup;
 };
 
+/** One representative form control, captured with its host classes so a planted variation can reuse them verbatim. */
+export type StyleGuideControl = {
+	tag: "input" | "select" | "textarea" | "button";
+	type?: string;
+	classes: string;
+	wrapperClasses?: string;
+};
+
 /** Bounded snapshot of a live page's visual tokens and representative controls. */
 export type StyleGuide = {
 	meta: {
 		url: string;
 		scrapedAt: number;
 		sameOrigin: boolean;
+		colorScheme?: "light" | "dark";
 	};
 	tokens: {
 		customProps: Record<string, string>;
@@ -56,7 +65,11 @@ export type StyleGuide = {
 		button: Record<string, string>;
 		input: Record<string, string>;
 		link: Record<string, string>;
+		select?: Record<string, string>;
+		textarea?: Record<string, string>;
 	};
+	/** First ~32 form controls in document order, so a planted variation can reuse the host's exact classes. */
+	controls?: StyleGuideControl[];
 };
 
 /** One self-contained HTML/CSS choice in a live-page prototype comparison. */
@@ -76,10 +89,14 @@ export type ProtoPlan = {
 	variations: ProtoVariation[];
 };
 
-/** Scrape or plant payload carried by the `_proto` URL marker. */
+/**
+ * Scrape or plant payload carried by the `_proto` URL marker. `expectedUrl` is
+ * the URL the CLI asked the browser to open (before the marker was added), so
+ * the content script can tell a same-fragment redirect from a clean landing.
+ */
 export type ProtoPayload =
-	| { phase: "scrape"; slug: string }
-	| { phase: "plant"; slug: string; plan: ProtoPlan };
+	| { phase: "scrape"; slug: string; expectedUrl: string }
+	| { phase: "plant"; slug: string; plan: ProtoPlan; expectedUrl: string };
 
 /** User's approval, feedback-bearing rejection, or note-bearing tweak of a variation. */
 export type Verdict =
@@ -111,3 +128,22 @@ export type AnswerPageMeta = {
 	scrapedAt: number;
 	question?: string;
 };
+
+/** Reasons a `--ext` scrape or plant cannot proceed on the landed page. */
+export type ProtoNotReadyCode =
+	| "login-page"
+	| "redirected"
+	| "http-error"
+	| "mount-missing";
+
+/** Typed, immediate failure the extension hands back instead of silently timing out. */
+export type ProtoNotReadyError = {
+	code: ProtoNotReadyCode;
+	message: string;
+	landedUrl: string;
+};
+
+/** What the extension hands back for one successful proto browser request. */
+export type ProtoBrowserData =
+	| { kind: "style-guide"; styleGuide: StyleGuide }
+	| { kind: "verdict"; verdict: Verdict; previewDataUrl?: string };

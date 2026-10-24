@@ -20,6 +20,7 @@ function buildPlantPayload(): Extract<ProtoPayload, { phase: "plant" }> {
 	return {
 		phase: "plant",
 		slug: "account-summary",
+		expectedUrl: "https://example.test/account",
 		plan: {
 			slug: "account-summary",
 			question: "¿Cuál diseño funciona mejor? 🌱 账户",
@@ -78,7 +79,11 @@ describe("prototype URL marker", () => {
 	});
 
 	test("uses the same gzip path for scrape payloads", async () => {
-		const payload = { phase: "scrape", slug: "account-summary" } as const;
+		const payload = {
+			phase: "scrape",
+			slug: "account-summary",
+			expectedUrl: "https://example.test/account",
+		} as const;
 		const marked = addProtoMarker("https://example.test/account", payload);
 		const encoded = new URLSearchParams(new URL(marked).hash.slice(1)).get(
 			"_proto",
@@ -122,6 +127,7 @@ describe("prototype URL marker", () => {
 		const stale = addProtoMarker(base, {
 			phase: "scrape",
 			slug: "account-summary",
+			expectedUrl: "https://example.test/account",
 		});
 		const newestPayload = buildPlantPayload();
 		const newest = addProtoMarker(stale, newestPayload);
