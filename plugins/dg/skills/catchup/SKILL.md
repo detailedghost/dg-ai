@@ -27,7 +27,7 @@ command. Shell variables do not persist between tool calls:
 
 ```bash
 ~/.dg/bin/dg-skills catchup --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ~/.dg/bin/dg-skills catchup
 ```
 
