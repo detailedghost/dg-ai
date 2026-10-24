@@ -68,9 +68,12 @@ describe("phone-friend skill", () => {
 		expect(skill).toContain(`phone-friend say - < "$REPLY_FILE"`);
 		expect(safety).toContain("Never copy message text into the heredoc.");
 		expect(skill).not.toMatch(/phone-friend say "/);
-		expect(skill).toContain(`phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> <CARD> 'hello from the other side'`);
+		expect(skill).toContain(
+			`phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'`,
+		);
 		expect(skill).toContain(`phone-friend --line <NAME-FOR-ME> say - <<'MSG'`);
 		expect(skill).not.toMatch(/phone-friend dial '/);
+		expect(skill).not.toMatch(/dial <CARD>/);
 	});
 
 	test("the skills README lists phone-friend after overwatch in the table and tree", () => {

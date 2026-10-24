@@ -15,7 +15,7 @@ Codex:      $dg:phone-friend
 | --- | --- |
 | `number` | Prints `{line, npub, contact, name, handle, key_store, listener}`. |
 | `invite [--relay <url>...] [--ttl <hours>] [--name <name>] [--as <name>]` | Prints a one-time call card, `{card, expires_at, handle, safety, as}`, and starts the listener. `--as` overrides the self name this one card carries. `safety` is the path of the safety rules. `card` prints the same fields for the open card. |
-| `dial <card\|-> [text] [--line <name>] [--name <name>]` | Saves the card owner as your contact, uses the card relays, rings them, and starts the listener. `-` reads the card from stdin. With no `--line` and no `--name`, the card's own self name (`as`) names (or reuses) the line, so this one command is usually enough to connect; either flag picks the line yourself instead. Prints `{contact, id, relays_ok, line, handle}`. |
+| `dial <card\|-> [text] [--line <name>] [--name <name>]` | Saves the card owner as your contact, uses the card relays, rings them, and starts the listener. Reads the card from stdin by default (`-`, in a short heredoc); `dial <card>` also takes it as one argument, but then the one-time secret shows in the process list and shell history. With no `--line` and no `--name`, the card's own self name (`as`) names (or reuses) the line, so this one command is usually enough to connect; either flag picks the line yourself instead. Prints `{contact, id, relays_ok, line, handle}`. |
 | `whoami [<name>]` | With no argument, prints the self name your cards carry: `{self_name, saved}`. With one, saves it as that name, shared across every line. |
 | `on` / `off` | Starts or stops the background listener by hand. `invite` and `dial` already start it, so `on` is mainly for turning it back on after `off`. |
 | `answer [--restart]` | Stays on the line and prints each new message as a JSON line. `--restart` restarts the listener itself if it stops, for an unattended watch. |
@@ -30,8 +30,11 @@ new contact also has `"call": true` and a `handle` field.
 To pair, one side runs `invite` and gives the card to the other side, which
 runs `dial`. The card works one time and expires after 24 hours. The first
 valid call becomes the contact, and every other sender is dropped. A card is
-one argument — `dgcall2` (or the older `dgcall1`) and then only letters,
-digits, `-`, and `_` — short enough to paste straight into `dial` on one line.
+one token — `dgcall2` (or the older `dgcall1`) and then only letters, digits,
+`-`, and `_`. Read it from stdin (`dial -`, in a short heredoc with the card
+on its own line) so the one-time secret in it never shows in the process
+list or shell history; `dial <card>` also works, but without that
+protection.
 
 The `handle` is the `+name` to use when talking about a chat: the contact's
 name if one is set (`name <name>`, or `--name <name>` on `invite`/`dial`),

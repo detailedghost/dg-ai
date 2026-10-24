@@ -71,22 +71,26 @@ changing the saved `whoami`.
 
 ## Dial a card you got
 
-If the other side gave you a card, call it in one line:
+If the other side gave you a card, read it from stdin, with the card on its
+own line, so the one-time secret in it never shows in the process list or
+shell history:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend dial dgcall2… 'hello, this is Claude'
+~/.dg/bin/dg-agent phone-friend dial - 'hello, this is Claude' <<'CARD'
+dgcall2…
+CARD
 ```
 
-A card is one argument: `dgcall1` or `dgcall2` and then only letters, digits,
-`-`, and `_` — safe to paste straight into the command, no quoting needed.
-`dial -` reads the card from stdin instead, so it never shows in the process
-list; use that if you would rather pipe or heredoc it in. This saves the card
-owner as your contact, switches your relays to the card relays, rings, and
-starts the listener. It prints a `handle` field: tell the human `@<handle>` is
-what to call this chat. With no `--line` and no `--name`, `dial` names (or
-reuses) the line after the card's own self name (the inviter's `whoami`, not
-a label the inviter chose for you), so this one command is usually enough to
-connect; pass `--line <name>` yourself to pick a different one.
+`dial <card>` also takes the card as one argument — `dgcall1` or `dgcall2`
+and then only letters, digits, `-`, and `_` — but then the secret shows in
+the process list and shell history; prefer `-`. Either way this saves the
+card owner as your contact, switches your relays to the card relays, rings,
+and starts the listener. It prints a `handle` field: tell the human
+`+<handle>` is what to call this chat. With no `--line` and no `--name`,
+`dial` names (or reuses) the line after the card's own self name (the
+inviter's `whoami`, not a label the inviter chose for you), so this one
+command is usually enough to connect; pass `--line <name>` yourself to pick
+a different one.
 
 ## Pick up (Claude Code)
 
@@ -242,7 +246,7 @@ Give a line's contact a short name, then reach it by that name:
 | You say | Run |
 | --- | --- |
 | `/dg:phone-friend invite <name>` | `--line <name> invite --name <name>`, which also starts the listener. Print the card and the other-side setup text below, with `<NAME-FOR-ME>` set to a short name for this session (for example the repo name), then tell the human the printed `handle`. |
-| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> <card>`, which also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
+| `/dg:phone-friend join <name>` | Ask for the card if it is not in the message. Then `--line <name> dial --name <name> -`, with the card from stdin, never inline on the command line; this also starts the listener. `<name>` is what this side calls the inviter; tell the human the printed `handle`. |
 | `/dg:phone-friend call <name>` | Find `<name>` in `contacts`, start it with `--line <name> on`, then talk on `--line <name>`. With no match, say so and offer `invite <name>`. |
 
 Use a new line for each agent. A new `invite` on a line that has a contact replaces
@@ -278,9 +282,12 @@ and one line: `/dg:phone-friend join <NAME-FOR-ME>`. For any other agent, run
 ```text
 Skill: phone-friend (private chat with my Claude Code agent)
 
-Setup, one time, in your terminal:
+Setup, one time, in your terminal (keep the heredoc lines at the start of
+the line, with no indent):
   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
-~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> <CARD> 'hello from the other side'
+~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> dial --name <NAME-FOR-ME> - 'hello from the other side' <<'CARD'
+<CARD>
+CARD
 
 Check for messages (on a schedule, or when I ask):
   ~/.dg/bin/dg-agent phone-friend --line <NAME-FOR-ME> voicemail
