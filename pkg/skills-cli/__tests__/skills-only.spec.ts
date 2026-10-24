@@ -46,16 +46,19 @@ const SUMMARY =
 describe("skills-only helpers", () => {
 	test("rejects flags that would fetch binaries or build the extension", () => {
 		expect(() =>
-			assertSkillsOnlyFlags({ cliOnly: false, local: false, target: undefined }),
+			assertSkillsOnlyFlags({ cliOnly: false, agentOnly: false, local: false, target: undefined }),
 		).not.toThrow();
 		expect(() =>
-			assertSkillsOnlyFlags({ cliOnly: true, local: false, target: undefined }),
+			assertSkillsOnlyFlags({ cliOnly: true, agentOnly: false, local: false, target: undefined }),
 		).toThrow(/accepts only --repo and --dest/);
 		expect(() =>
-			assertSkillsOnlyFlags({ cliOnly: false, local: true, target: undefined }),
+			assertSkillsOnlyFlags({ cliOnly: false, agentOnly: true, local: false, target: undefined }),
 		).toThrow(/accepts only --repo and --dest/);
 		expect(() =>
-			assertSkillsOnlyFlags({ cliOnly: false, local: false, target: "firefox" }),
+			assertSkillsOnlyFlags({ cliOnly: false, agentOnly: false, local: true, target: undefined }),
+		).toThrow(/accepts only --repo and --dest/);
+		expect(() =>
+			assertSkillsOnlyFlags({ cliOnly: false, agentOnly: false, local: false, target: "firefox" }),
 		).toThrow(/accepts only --repo and --dest/);
 	});
 
