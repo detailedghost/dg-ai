@@ -305,7 +305,7 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 | `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
 | skill tree | the repository itself | tracked in `master` |
 
-The four released packages and both plugin manifests share version 1.18.1.
+The four released packages and both plugin manifests share version 1.19.0.
 Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
 `@dg/common` stays at 1.0.0; it is not part of this matched release set.
 Each workflow publishes its own tag. `dg-skills install` refreshes the extension
@@ -338,6 +338,12 @@ Wave 4 adds `jot`, `bg`, `cls`, `stat`, `sniff`, `nope`, `find-work`, and
 `find-work` are instruction-only. After the merge, smoke `jot`, `bg`, `sniff`,
 and `doctor` from outside the checkout with the installed plugin tree.
 Run `dg-skills doctor` after an install or upgrade to check every command.
+
+Wave 5 adds `db`, `erd`, `eli5`, `ticket`, and `test-live`. The compiled
+commands are `dg-skills db`, `dg-skills erd`, and `dg-skills test-live`;
+`eli5` and `ticket` are instruction-only. `test-live` is GitHub only and
+has no GitLab port. After the merge, smoke `db`, `erd`, and `test-live`
+from outside the checkout with the installed plugin tree.
 
 The legacy `viz`, `review`, `lineage`, and `clockout` skills are retired, not
 ported. Delete their local copies at the manual cutover.

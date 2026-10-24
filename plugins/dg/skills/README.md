@@ -14,7 +14,7 @@ binaries. The skills-root README itself is not installed.
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
-| `agent-seed/` | Set up `.agents/`, `AGENTS.md`, and a minimal `CLAUDE.md` |
+| `agent-seed/` | Set up `.agents/`, a lean `AGENTS.md`, `CLAUDE.md` as `@AGENTS.md`, and the `docs/` rule files |
 | `clipboard-img/` | Capture a clipboard PNG through the compiled clipboard-image command |
 | `grill-me/` | Resolve a design through a structured interview |
 | `hook-comment-disable/` | Disable the American-English hook for one session with explicit approval |
@@ -41,7 +41,7 @@ binaries. The skills-root README itself is not installed.
 | `sdlc/` | Run a feature brief through slice waves to a draft PR |
 | `assign/` | Pick the best-fit engineering agent for work or spec slices |
 | `monolith/` | Consolidate a codebase's vocabulary into `.agents/monolith.md` |
-| `spring-break/` | Consolidate `.agents/school/` into topic clusters |
+| `spring-break/` | Consolidate `.agents/school/` into topic clusters and trim the agent context files |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
 | `jot/` | Save a short note or a session handoff (`dg-skills jot`) |
@@ -52,6 +52,11 @@ binaries. The skills-root README itself is not installed.
 | `nope/` | Reset to the correct file-search defaults and record a feedback note |
 | `find-work/` | Find actionable work and run each item in a parallel worktree |
 | `doctor/` | Check what the dg skills need and walk through fixes (`dg-skills doctor`) |
+| `db/` | Query PostgreSQL and Snowflake with read-safe defaults (`dg-skills db`) |
+| `eli5/` | Explain a concept, file, error, or codebase as if the reader is five |
+| `erd/` | Generate an architecture map or any Mermaid diagram as Markdown or HTML |
+| `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg-skills test-live`) |
+| `ticket/` | File a Jira ticket from the registered project, assignee, sprint, and issue types |
 
 ## Structure
 
@@ -102,6 +107,11 @@ skills/
   nope/
   find-work/
   doctor/
+  db/
+  eli5/
+  erd/
+  test-live/
+  ticket/
 ```
 
 Each folder contains `SKILL.md` and may include `references/`, scripts, or other
@@ -112,7 +122,7 @@ implementation lives in [`pkg/skills-cli/`](../../../pkg/skills-cli/README.md).
 ## Runtime requirements
 
 The extension, dg-skills, dg-daemon, dg-agent, and both plugin manifests share
-version **1.18.1**. `chat/` invokes dg-agent (`agent-v*`), which launches the
+version **1.19.0**. `chat/` invokes dg-agent (`agent-v*`), which launches the
 adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.

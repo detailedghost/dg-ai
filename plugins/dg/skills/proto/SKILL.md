@@ -7,7 +7,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 
 ```bash
 ~/.dg/bin/dg-skills prototype --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 # Prototype

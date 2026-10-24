@@ -4,25 +4,43 @@ When scanning CLAUDE.md (and existing AGENTS.md), classify each content block an
 
 ## What Stays in CLAUDE.md
 
+Only `@AGENTS.md`. Move everything else out: commands to `mise.toml` or the build scripts, and all other content by
+the tables below.
+
+## What Goes in docs/ (people)
+
+| Content | Destination |
+|---------|-------------|
+| Branch, commit, PR, merge, and release rules | `docs/CONTRIBUTING.md` |
+| Code style, lint and format tools, naming, per-language rules | `docs/code_standards.md` |
+| Review tiers, comment format, verdict | `docs/code_review.md` |
+| Why an architectural choice was made | `docs/adr/NNNN-<slug>.md` |
+
+## What Goes in AGENTS.md (agents, always loaded)
+
 | Content | Rule |
 |---------|------|
-| Project name (H1) | Always keep |
-| 1-2 sentence description | Keep if concise; rewrite if verbose |
-| Build/test/lint/dev commands | Keep in Commands table |
-| Pointer to AGENTS.md | Always add as final line |
-
-**Nothing else stays in CLAUDE.md.** Conventions, architecture, patterns, domain — all move to AGENTS.md or `.agents/references/`.
-
-## What Goes in AGENTS.md
-
-| Content | Rule |
-|---------|------|
-| Project summary | 1-2 sentences (may reuse CLAUDE.md description) |
-| Conventions | Up to 10, one line each, specific and actionable |
+| Project summary | One line |
 | Packages table | Monorepos only |
-| References routing table | Always present |
+| Rules | Traps only, one terse line each. Link the docs/ files for style. Never repeat `docs/code_standards.md` |
+| References routing table | Always present; lists only files that exist |
 | Specs & Learnings pointers | Always present |
-| Agent Workflow section | Always present |
+
+Root AGENTS.md stays near 2.4K characters. Each package AGENTS.md stays under about 3.5K: stack, commands, short task
+templates, traps, and a "References (read on demand)" table.
+
+## Writing Style
+
+| Where | Style |
+|-------|-------|
+| `docs/`, ADRs most of all | Simple English: short sentences, common words, active voice |
+| `AGENTS.md` files, everything under `.agents/` | Dense and terse: fragments, precise technical terms, no filler |
+
+Rewrite text into the style of its destination when you move it.
+
+## What Goes in .agents/decisions/
+
+Agent rules that follow from an ADR. Each file links its ADR in `docs/adr/` and does not repeat the ADR.
 
 ## What Moves to .agents/references/
 
@@ -37,10 +55,11 @@ When scanning CLAUDE.md (and existing AGENTS.md), classify each content block an
 | Database schemas | Table definitions, migration notes, query patterns | `architecture.md` |
 | Environment setup (detailed) | Multi-line env var docs, credential setup instructions | `architecture.md` |
 | Import patterns | Import examples, entry point patterns | `patterns.md` |
+| Feature detail for one package | Route lists, env var tables, job lists, entry points | `<pkg>-<topic>.md` |
 
 ## Edge Cases
 
-- **Multi-line conventions**: Extract code example to `patterns.md`, leave a one-line summary in AGENTS.md conventions.
+- **Multi-line conventions**: A style rule goes to `docs/code_standards.md`. A trap keeps one line in AGENTS.md Rules, and its code example goes to `patterns.md`.
 - **Mixed blocks**: Split — keep summary in AGENTS.md, move details to references.
-- **Testing documentation**: Short test commands stay in CLAUDE.md commands table. Detailed patterns/fixtures/categories -> `patterns.md`.
+- **Testing documentation**: Test commands live in `mise.toml`. Detailed patterns/fixtures/categories -> `patterns.md`.
 - **Existing AGENTS.md content**: If it has custom agent workflow text, preserve it. Only update managed sections (inside `<!-- agent-seed:start/end -->` markers).

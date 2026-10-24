@@ -6,8 +6,10 @@ import { chainChecks } from "../chain/doctor";
 import { channelReviewChecks } from "../channel-review/doctor";
 import { clipboardImageChecks } from "../clipboard-image/doctor";
 import { credentialsChecks } from "../credentials/doctor";
+import { dbChecks } from "../db/doctor";
 import { demoChecks } from "../demo/doctor";
 import { depsUpgradeChecks } from "../deps-upgrade/doctor";
+import { erdChecks } from "../erd/doctor";
 import { fileChecks } from "../file/doctor";
 import { inboxChecks } from "../inbox/doctor";
 import { installChecks } from "../install/doctor";
@@ -24,6 +26,7 @@ import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { specChecks } from "../spec/doctor";
 import { stashChecks } from "../stash/doctor";
+import { testLiveChecks } from "../test-live/doctor";
 import { thrashChecks } from "../thrash/doctor";
 import { vcsProviderChecks } from "../vcs-provider/doctor";
 import { worktreeChecks } from "../worktree/doctor";
@@ -35,6 +38,9 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	inbox: inboxChecks,
 	"channel-review": channelReviewChecks,
 	credentials: credentialsChecks,
+	db: dbChecks,
+	erd: erdChecks,
+	"test-live": testLiveChecks,
 	install: installChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,

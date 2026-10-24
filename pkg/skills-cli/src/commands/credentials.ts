@@ -149,14 +149,23 @@ export function registerCredentials(
 		.description(
 			"List names and metadata; flags entries expiring within 14 days",
 		)
-		.action(async (_options, command: Command) => {
+		.option(
+			"--meta",
+			"print every stored metadata field instead of the summary projection; still never prints a value",
+		)
+		.action(async (options: { meta?: boolean }, command: Command) => {
 			await withClient(command, async (client) => {
 				const now = deps.now();
+				const stored = await client.list();
 				output({
 					kind: "credentials",
-					credentials: (await client.list()).map((entry) =>
-						listEntry(entry, now),
-					),
+					credentials: options.meta
+						? stored.map((entry) => ({
+								name: entry.name,
+								meta: entry.meta,
+								updatedAt: entry.updatedAt,
+							}))
+						: stored.map((entry) => listEntry(entry, now)),
 					grants: await client.listGrants(),
 				});
 			});

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
 #       install only the dg-skills CLI (checksum-verified like the default path).

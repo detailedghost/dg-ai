@@ -10,18 +10,18 @@ agent-to-agent calls over Nostr. The companion browser extension is `dg-ai-exten
 macOS / Linux (x64 or arm64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.18.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
 
 These install the compiled CLI binaries and stage the extension; no Bun is needed.
 The extension, all three binaries, and both plugin manifests share release
-version **1.18.1**.
+version **1.19.0**.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
@@ -61,7 +61,10 @@ Claude Code also accepts the bare `/<name>`.
 | `bg` | Run a task in the background; `dg-skills bg` tracks the jobs |
 | `clipboard-img` | Save the clipboard image as a PNG |
 | `cls` | Close out a git worktree and return to the main repo |
+| `db` | Query PostgreSQL and Snowflake with read-safe defaults; `dg-skills db` |
 | `doctor` | Check what the dg skills need and walk through the fixes; `dg-skills doctor` |
+| `eli5` | Explain a concept, file, error, or codebase as if the reader is five |
+| `erd` | Generate an architecture map or any Mermaid diagram from code, imports, or a database |
 | `find-work` | Find actionable work, run each item in a parallel worktree, and open PRs in batch |
 | `grill-me` | Interview the user about a design until every branch is resolved |
 | `hook-comment-disable` | Turn off the American-English hook for one session |
@@ -85,6 +88,8 @@ Claude Code also accepts the bare `/<name>`.
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
 | `teach` | Teach a concept across sessions |
+| `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
+| `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
 | `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |

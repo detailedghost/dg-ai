@@ -89,7 +89,7 @@ scriptPath: "<sdlc-skill-dir>/references/templates/slice-wave.workflow.js",
 ```
 
 **Proxied slices:** for any slice with `agents.proxy` set, its `agents.proxy_skills` (e.g. `["db", "polish"]`) must be inlined into that slice's `/dg:proxy` prompt as explicit instructions — `/dg:proxy`
-only injects the persona file and cannot invoke `/db` or `/dg:polish` as slash-commands, so the
+only injects the persona file and cannot invoke `/dg:db` or `/dg:polish` as slash-commands, so the
 skill's behavior has to be spelled out in the prompt text itself (see
 [decision-blob.md](decision-blob.md)).
 
