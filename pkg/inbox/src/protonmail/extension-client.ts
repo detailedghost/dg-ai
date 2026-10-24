@@ -6,6 +6,8 @@ import {
 	type InboxBrowserRequest,
 	type InboxBrowserResponse,
 } from "@dg/common";
+import type { ProtonGate } from "../features/filter-policy/jitter";
+import { liveProtonGate } from "../features/filter-policy/jitter";
 import type { AppConfig } from "../config/types";
 import type {
 	MailProviderClient,
@@ -19,15 +21,27 @@ import type {
 export class ExtensionProtonMailClient implements MailProviderClient {
 	readonly provider = "protonmail" as const;
 	/** Uses private Proton tab/account configuration and the host's validated browser-request callback. */
+	readonly pace: ProtonGate;
 	constructor(
 		private readonly input: {
 			config: AppConfig;
 			browserRequest: (
 				request: InboxBrowserRequest,
 			) => Promise<InboxBrowserResponse>;
+			pace?: ProtonGate;
 		},
-	) {}
+	) {
+		this.pace = input.pace ?? liveProtonGate();
+	}
 	private async request(
+		request: InboxBrowserRequest,
+	): Promise<InboxBrowserResponse> {
+		const retry =
+			request.operation.startsWith("list-") ||
+			request.operation === "session-status";
+		return this.pace.run(() => this.dispatch(request), { retry });
+	}
+	private async dispatch(
 		request: InboxBrowserRequest,
 	): Promise<InboxBrowserResponse> {
 		const target = {

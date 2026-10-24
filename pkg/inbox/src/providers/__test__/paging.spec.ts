@@ -6,6 +6,7 @@ import { GmailRestClient } from "../../gmail/rest-client";
 import { StaticMicrosoftTokenProvider } from "../../outlook/auth";
 import { FileBackedOutlookClient } from "../../outlook/file-client";
 import { GraphRestClient } from "../../outlook/graph-client";
+import { immediateProtonGate } from "../../features/filter-policy/jitter";
 import { ExtensionProtonMailClient } from "../../protonmail/extension-client";
 import { FileBackedProtonMailClient } from "../../protonmail/file-client";
 import type {
@@ -163,6 +164,7 @@ function liveClient(provider: Provider, behavior: Behavior = "normal") {
 	else
 		client = new ExtensionProtonMailClient({
 			config,
+			pace: immediateProtonGate(),
 			browserRequest: async (request) => {
 				const page = request.page ?? 0;
 				calls.push({ page, pageSize: request.pageSize ?? 0 });

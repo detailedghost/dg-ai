@@ -86,7 +86,26 @@ Sync refuses to apply when any safety check fails:
 - `keepFirst` is not the start of the file
 
 GitHub, GitLab, Spam, and Trash stay in force even when the extra lists in the file are empty.
-Proton writes are paced with an irregular pause between calls.
+
+## Pacing
+
+Every live Proton call shares one pacer. That includes `filters import`, the mailbox read in a sync dry run,
+the same read when `--apply` checks the plan hash, later page fetches, and a retry after an error.
+The pause is not a fixed delay, and it is not a fixed percent of a delay. Most gaps are short. A few are
+much longer.
+
+Calls do not go out in a burst, and they never run at the same time. After a few calls the client sits
+idle for a longer break, then continues. A rate limit or a dropped connection waits a random, growing
+pause and tries a read a small number of times. A write is not retried, because Proton may already have
+saved it. When those tries are used up, the command stops.
+
+If an apply stops halfway, the command reads Proton once more and writes the declared file with the steps
+that landed. The next dry run does not create those filters or folders again, and it does not mark them
+as drift. Steps that never ran stay in the plan.
+
+A folder rename sends the parent id when that parent is already known. A top-level rename, or a rename
+whose parent path is not in the mailbox snapshot, leaves the parent field out. Proton keeps the folder's
+current parent.
 
 ## Naming
 

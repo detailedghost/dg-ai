@@ -26,7 +26,7 @@ import {
 	writeDeclaredFilters,
 } from "./store";
 
-type ProtonSnapshotClient = Omit<PolicyWriteClient, "listFilters"> & {
+type ProtonSnapshotClient = Omit<PolicyWriteClient, "listFilters" | "listFolders"> & {
 	listFolders(): Promise<
 		Array<{
 			id: string;
@@ -114,10 +114,9 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 			plan,
 			approvedDeletes: getListFlag(context.args.flags, "approve-delete") ?? [],
 			client,
-			clock: { now: () => Date.now(), sleep: (ms) => Bun.sleep(ms) },
-			rng: Math.random,
 			declared,
 			foldersByPath,
+			persist: (file) => writeDeclaredFilters(path, file),
 		});
 		const after = await readLive(client);
 		observeLive(updated, after.filters, after.folders);
@@ -175,10 +174,8 @@ async function readLive(client: ProtonSnapshotClient): Promise<{
 	filters: LiveFilter[];
 	folders: LiveFolder[];
 }> {
-	const [folders, filters] = await Promise.all([
-		client.listFolders(),
-		client.listFilters(),
-	]);
+	const folders = await client.listFolders();
+	const filters = await client.listFilters();
 	return {
 		folders: folders.map((folder) => ({
 			id: folder.id,
