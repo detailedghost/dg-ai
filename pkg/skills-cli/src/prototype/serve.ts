@@ -120,6 +120,7 @@ function recordDecision(
 				{ error: 'decision must be "APPROVED" or "REWORK"' },
 				{ status: 400 },
 			);
+		writeSentinel(target.source, "browser\n");
 		writeSentinel(
 			target.decision,
 			`${JSON.stringify({ decision, notes: text(body.notes) })}\n`,

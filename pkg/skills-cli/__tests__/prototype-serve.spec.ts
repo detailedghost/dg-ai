@@ -119,13 +119,14 @@ describe("prototype serve", () => {
 		expect(readFileSync(paths.reject, "utf8")).toBe("\n");
 	});
 
-	test("a plan decision is normalized and stored", async () => {
+	test("a plan decision is normalized and stored, and also writes the source", async () => {
 		const { post, paths } = await serve();
 		await post({ decision: "rework", notes: "reorder" });
 		expect(JSON.parse(readFileSync(paths.decision, "utf8"))).toEqual({
 			decision: "REWORK",
 			notes: "reorder",
 		});
+		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 	});
 
 	test.each([
