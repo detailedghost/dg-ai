@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, closeSync, existsSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
@@ -16,11 +16,13 @@ import {
 	isHandle,
 	nextFreeHandle,
 	readCursor,
+	readListener,
 	readRelays,
 	setContactKeyId,
 	subscriptionRelays,
 	writeCursor,
 } from "./store";
+import { managedRestartCommands, type AutostartKind } from "./autostart";
 
 export type ListenerDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
@@ -109,28 +111,97 @@ export function listenerClaimPath(paths: DgPaths): string {
 	return join(paths.phoneRoot, "listener.lock");
 }
 
-/** Exclusive claim so a second `phone __run` exits instead of subscribing beside the first.
- * A live holder keeps the slot. A dead holder's file is reclaimed once. */
-export function claimListener(paths: DgPaths, pid: number): boolean {
+/** How long an empty or unreadable lock is treated as held, so a winner's file is not deleted mid-write. */
+const CLAIM_GRACE_MS = 1000;
+const CLAIM_ATTEMPTS = 5;
+
+type ClaimView = { kind: "mine" | "held" | "stale"; holder: string };
+
+function logClaim(message: string): void {
+	process.stderr.write(`phone: ${message}\n`);
+}
+
+function readClaimRaw(path: string): string | undefined {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
+}
+
+/** `held` is a phone listener for this line, or a lock too new to judge. Anything else is stale. */
+function inspectClaim(path: string, pid: number, ours: (pid: number) => boolean, now: number): ClaimView {
+	let raw: string | undefined;
+	let ageMs: number | undefined;
+	try {
+		raw = readFileSync(path, "utf8");
+		ageMs = now - statSync(path).mtimeMs;
+	} catch {
+		try {
+			ageMs = now - statSync(path).mtimeMs;
+		} catch {
+			return { kind: "stale", holder: "" };
+		}
+		if (ageMs < CLAIM_GRACE_MS) return { kind: "held", holder: "" };
+		return { kind: "stale", holder: "" };
+	}
+	const holder = raw.trim();
+	const parsed = Number(holder);
+	if (parsed === pid) return { kind: "mine", holder };
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+		if ((ageMs ?? CLAIM_GRACE_MS) < CLAIM_GRACE_MS) return { kind: "held", holder };
+		return { kind: "stale", holder };
+	}
+	if (ours(parsed)) return { kind: "held", holder };
+	return { kind: "stale", holder };
+}
+
+/**
+ * Exclusive claim so a second `phone __run` exits instead of subscribing beside the first.
+ * The lock file is linked into place already containing the pid, so a contender never sees an
+ * empty file and deletes the winner. Only a pid whose command line is a phone listener keeps
+ * the slot. A dead pid, or a live pid reused by something else after an unclean exit, is taken
+ * over. Losing the claim is logged: a clean exit would otherwise leave systemd and launchd
+ * with nothing to restart.
+ */
+export function claimListener(paths: DgPaths, pid: number, ours: (holder: number) => boolean = isOurListener): boolean {
 	ensurePrivateDir(paths.phoneRoot);
 	const path = listenerClaimPath(paths);
-	for (let attempt = 0; attempt < 2; attempt += 1) {
-		try {
-			const fd = openSync(path, "wx", 0o600);
-			writeSync(fd, String(pid));
-			closeSync(fd);
-			return true;
-		} catch (err) {
-			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+	const tmp = `${path}.${pid}.claim`;
+	writeFileSync(tmp, String(pid), { mode: 0o600 });
+	let announcedTakeover = false;
+	try {
+		for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+			try {
+				linkSync(tmp, path);
+				return true;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+			}
+			const seen = inspectClaim(path, pid, ours, Date.now());
+			if (seen.kind === "mine") return true;
+			if (seen.kind === "held") {
+				logClaim(`listener claim lost to ${seen.holder || "an unreadable lock"}; pid ${pid} is exiting`);
+				return false;
+			}
+			const before = readClaimRaw(path);
+			const again = inspectClaim(path, pid, ours, Date.now());
+			if (again.kind === "mine") return true;
+			if (again.kind === "held") {
+				logClaim(`listener claim lost to ${again.holder || "an unreadable lock"}; pid ${pid} is exiting`);
+				return false;
+			}
+			if (readClaimRaw(path) !== before) continue;
+			if (!announcedTakeover) {
+				logClaim(`listener lock held by ${again.holder || "an empty file"} is not a live phone listener; taking over`);
+				announcedTakeover = true;
+			}
+			rmSync(path, { force: true });
 		}
-		let holder = Number.NaN;
-		try {
-			holder = Number(readFileSync(path, "utf8").trim());
-		} catch {}
-		if (holder === pid) return true;
-		if (Number.isSafeInteger(holder) && holder > 0 && isAlive(holder)) return false;
-		rmSync(path, { force: true });
+	} finally {
+		rmSync(tmp, { force: true });
 	}
+	logClaim(`listener claim lost; pid ${pid} is exiting`);
 	return false;
 }
 
@@ -307,7 +378,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	});
 }
 
-const REFRESH_WAIT_MS = 5000;
+/** Long enough for an in-flight `--on-message` to finish draining after SIGTERM. */
+const REFRESH_WAIT_MS = 60_000;
 
 function refreshSleep(ms: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -321,6 +393,10 @@ export type ListenerRefreshDeps = {
 	spawn: (argv: string[], logPath: string) => number;
 	now: () => number;
 	argvFor: (extraArgs: string[]) => string[];
+	/** Command line of the running listener, captured before it is stopped. */
+	commandArgs?: (pid: number) => string[] | undefined;
+	/** Restarts a systemd, launchd, or Task Scheduler listener instead of detaching a second one. */
+	restartManaged?: (kind: AutostartKind) => void;
 };
 
 function defaultRefreshDeps(): ListenerRefreshDeps {
@@ -340,35 +416,76 @@ function hookArgs(hook: ListenerPid["hook"]): string[] {
 	return ["--on-message", ...hook.argv, "--on-message-timeout", String(hook.timeoutS)];
 }
 
+function managedKind(kind: string | undefined): AutostartKind | undefined {
+	if (kind === "systemd" || kind === "launchd" || kind === "task") return kind;
+	return undefined;
+}
+
+function restartManagedListener(kind: AutostartKind): void {
+	const commands = managedRestartCommands(kind, process.getuid?.() ?? 0);
+	for (let index = 0; index < commands.length; index += 1) {
+		const [command, ...args] = commands[index] ?? [];
+		const result = spawnSync(command ?? "", args, { encoding: "utf8" });
+		const last = index === commands.length - 1;
+		if (result.status !== 0 && (last || kind !== "task")) {
+			const detail = (result.stderr || result.stdout || "").trim().split("\n")[0];
+			throw new DgCliError(`could not restart the ${kind} phone listener${detail ? `: ${detail}` : ""}`);
+		}
+	}
+}
+
+function waitForExit(pid: number, deps: ListenerRefreshDeps): boolean {
+	for (let waited = 0; deps.isAlive(pid) && waited < REFRESH_WAIT_MS; waited += 100) deps.sleepSync(100);
+	return !deps.isAlive(pid);
+}
+
 /** When a live listener is not subscribed to every invite relay, stop it and start exactly one
- * replacement. If it will not exit, leave it. If the replacement fails to start, start the previous
- * argv again so the line is not left empty. */
+ * replacement. A service-managed listener is restarted through that manager, so it stays supervised.
+ * The wait covers a hook that is still draining. If the process never exits, this throws and does
+ * not start a second listener. If a detached replacement fails to start, the command line captured
+ * before the stop is started again. */
 export function ensureListenerSubscribed(paths: DgPaths, db: PhoneDb, deps: ListenerRefreshDeps = defaultRefreshDeps()): void {
 	const running = readListenerPid(paths);
 	if (!running || !deps.isOurListener(running.pid)) return;
-	const have = new Set(running.relays ?? readRelays(db));
-	if (subscriptionRelays(db).every((relay) => have.has(relay))) return;
+	// A pid file written before relays were recorded is not proof the process missed an invite.
+	if (!running.relays) return;
+	const wanted = subscriptionRelays(db);
+	if (wanted.every((relay) => running.relays?.includes(relay))) return;
 
-	const previous = deps.argvFor(hookArgs(running.hook));
+	const previous = (deps.commandArgs ?? listenerCommandArgs)(running.pid);
+	const managed = managedKind(readListener(db)?.autostart?.kind);
+	if (managed) {
+		(deps.restartManaged ?? restartManagedListener)(managed);
+		if (!waitForExit(running.pid, deps)) {
+			throw new DgCliError(
+				`the phone listener (pid ${running.pid}) did not exit; left the ${managed} service in place and did not start another`,
+			);
+		}
+		return;
+	}
+
 	deps.kill(running.pid);
-	for (let waited = 0; deps.isAlive(running.pid) && waited < REFRESH_WAIT_MS; waited += 100) deps.sleepSync(100);
-	if (deps.isAlive(running.pid)) return;
+	if (!waitForExit(running.pid, deps)) {
+		throw new DgCliError(`the phone listener (pid ${running.pid}) did not exit; no replacement was started`);
+	}
 
 	const nextArgv = deps.argvFor(hookArgs(running.hook));
 	try {
 		const pid = deps.spawn(nextArgv, listenerLogPath(paths));
-		adoptListenerPid(paths, { pid, since: deps.now(), hook: running.hook, relays: subscriptionRelays(db) });
+		adoptListenerPid(paths, { pid, since: deps.now(), hook: running.hook, relays: wanted });
 	} catch (err) {
-		try {
-			const pid = deps.spawn(previous, listenerLogPath(paths));
-			adoptListenerPid(paths, {
-				pid,
-				since: deps.now(),
-				hook: running.hook,
-				...(running.relays ? { relays: running.relays } : {}),
-				...(running.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
-			});
-		} catch {}
+		if (previous && previous.length > 0) {
+			try {
+				const pid = deps.spawn(previous, listenerLogPath(paths));
+				adoptListenerPid(paths, {
+					pid,
+					since: deps.now(),
+					hook: running.hook,
+					relays: running.relays,
+					...(running.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
+				});
+			} catch {}
+		}
 		throw err instanceof DgCliError ? err : new DgCliError("the phone listener stopped and the replacement failed to start");
 	}
 }

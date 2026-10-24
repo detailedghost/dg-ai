@@ -211,14 +211,17 @@ the old rows read-only. The first writing command (`number`, `invite`,
 line, then moves its key, contact, and message into the new database once.
 A listener that is already `phone __run` is kept. An old `phone-friend`
 listener is stopped and exactly one new listener is started against
-`phone.db`, and its pid is recorded so `open` reuses it and `close` stops
-it. More than one old listener is stopped, and exactly one new listener
-starts only after each of them has exited. If one will not exit, nothing new
-is started and `phone.db` is not written. That process keeps running, and any
-listener that already exited stays stopped. If the new listener fails to
-start, the previous one is started again. The old root is renamed to
-`~/.dg/phone-friend.migrated` after a start that succeeded. Every later
-command is a no-op migration check. To roll back, rename
+`phone.db`, and its pid is recorded. `open` installs login autostart when
+none is recorded yet, stopping that detached process first so only the
+service manager's copy keeps running. `close` stops it. More than one old
+listener is stopped, and exactly one new listener starts only after each of
+them has exited. If one will not exit, nothing new is started and `phone.db`
+is not written. That process keeps running, and any listener that already
+exited stays stopped. If the new listener fails to start, every stopped
+listener is started again against its own line database, `phone.db` is
+removed, and the command fails. The old root stays in place on that failure
+and is renamed to `~/.dg/phone-friend.migrated` only after a start that
+succeeded. Every later command is a no-op migration check. To roll back, rename
 `~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend` and run the old
 binary. `phone status` reports `"legacy_root_present": true` if the old root
 is still in place alongside the new database.

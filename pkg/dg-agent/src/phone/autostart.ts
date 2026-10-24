@@ -139,9 +139,19 @@ export function windowsTaskXmlBytes(spec: AutostartSpec): Uint8Array {
 	return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
 }
 
+/** Task Scheduler has no environment block, so a set `DG_HOME` is passed as `--dg-home` after `__run`. */
+function windowsTaskArgs(spec: AutostartSpec): string[] {
+	const args = spec.argv.slice(1);
+	if (!spec.dgHome) return args;
+	const runAt = args.indexOf("__run");
+	const insertAt = runAt === -1 ? args.length : runAt + 1;
+	args.splice(insertAt, 0, "--dg-home", spec.dgHome);
+	return args;
+}
+
 export function windowsTaskXml(spec: AutostartSpec): string {
-	const [command, ...rest] = spec.argv;
-	const args = rest.map(quoteWindowsArg).join(" ");
+	const command = spec.argv[0] ?? "";
+	const args = windowsTaskArgs(spec).map(quoteWindowsArg).join(" ");
 	return [
 		'<?xml version="1.0" encoding="UTF-16"?>',
 		'<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
@@ -216,10 +226,21 @@ async function installTask(deps: AutostartDeps, path: string): Promise<Autostart
 	}
 	const run = await deps.run(["schtasks", "/Run", "/TN", TASK_NAME]);
 	if (run.code !== 0) {
-		deps.removeFile(path);
+		const deleted = await deps.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"]);
+		if (deleted.code === 0) deps.removeFile(path);
 		throw new DgCliError(`schtasks /Run /TN ${TASK_NAME} failed: ${firstLine(run.stderr) || run.stdout}`);
 	}
 	return { ok: true, kind: "task" };
+}
+
+/** Commands that restart an already-installed listener without replacing it with a detached process. */
+export function managedRestartCommands(kind: AutostartKind, uid: number): string[][] {
+	if (kind === "systemd") return [["systemctl", "--user", "restart", SYSTEMD_UNIT]];
+	if (kind === "launchd") return [["launchctl", "kickstart", "-k", `gui/${uid}/${LAUNCHD_LABEL}`]];
+	return [
+		["schtasks", "/End", "/TN", TASK_NAME],
+		["schtasks", "/Run", "/TN", TASK_NAME],
+	];
 }
 
 /**

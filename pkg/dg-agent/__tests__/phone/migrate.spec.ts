@@ -1,6 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { Command } from "commander";
 import { Database } from "bun:sqlite";
+import { spawn } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -654,7 +655,12 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			await result.jobsDisabled;
 			expect(result.listener).toBe("replaced");
 			expect(killed).toEqual([4242]);
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8"))).toEqual({ pid: 9001, since: NOW, hook: null });
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8"))).toEqual({
+				pid: 9001,
+				since: NOW,
+				hook: null,
+				relays: DEFAULT_RELAYS,
+			});
 			expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({ listener: "replaced" });
 
 			const oldDb = new Database(join(paths.phoneFriendRoot, "default", "phone-friend.db"));
@@ -846,7 +852,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 		}
 	});
 
-	it("starts the previous listener again when the replacement fails to spawn", () => {
+	it("restores every stopped listener onto its line database when the replacement fails to spawn", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -855,43 +861,54 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				listenerPid: 4242,
 			});
-			let alive = true;
+			writeLegacyLine(paths, "work", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+				listenerPid: 4243,
+			});
+			const alive = new Set([4242, 4243]);
 			const restored: string[][] = [];
 
-			const result = migrateIfNeeded(
-				paths,
-				fakeMigrateDeps({
-					classifyListener: (pid) => (pid === 4242 ? "legacy" : undefined),
-					isAlive: () => alive,
-					kill: () => {
-						alive = false;
-					},
-					commandArgs: () => ["phone-friend", "--line", "default", "__run"],
-					startListener: () => {
-						throw new Error("spawn failed");
-					},
-					restoreListener: (_paths, argv) => {
-						restored.push(argv);
-						return 8888;
-					},
-					renameLegacyRoot: () => {
-						throw new Error("rename should be skipped");
-					},
-				}),
-			);
+			expect(() =>
+				migrateIfNeeded(
+					paths,
+					fakeMigrateDeps({
+						classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
+						isAlive: (pid) => alive.has(pid),
+						kill: (pid) => {
+							alive.delete(pid);
+						},
+						commandArgs: (pid) =>
+							pid === 4242 ? ["phone-friend", "--line", "default", "__run"] : ["phone-friend", "--line", "work", "__run"],
+						startListener: () => {
+							throw new Error("spawn failed");
+						},
+						restoreListener: (_paths, argv) => {
+							restored.push(argv);
+							return 8888;
+						},
+						renameLegacyRoot: () => {
+							throw new Error("rename should be skipped");
+						},
+					}),
+				),
+			).toThrow("Restored every stopped listener onto its own line database and removed phone.db");
 
-			expect(result.migrated).toBe(true);
-			if (result.migrated) expect(result.listener).toBe("failed");
-			expect(restored).toEqual([["phone-friend", "--line", "default", "__run"]]);
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8"))).toMatchObject({ pid: 8888, adopted: "legacy" });
-			expect(existsSync(PhoneDb.path(paths))).toBe(true);
+			expect(restored).toEqual([
+				["phone-friend", "--line", "default", "__run"],
+				["phone-friend", "--line", "work", "__run"],
+			]);
+			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+			expect(existsSync(listenerPidPath(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
+			expect(existsSync(join(paths.phoneFriendRoot, "default", "phone-friend.db"))).toBe(true);
+			expect(existsSync(join(paths.phoneFriendRoot, "work", "phone-friend.db"))).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	it("records the replacement so phone open reuses it and phone close stops it", async () => {
+	it("records the replacement so phone open installs autostart and phone close stops the one listener", async () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -926,10 +943,17 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 
 			const db = PhoneDb.open(paths, () => NOW);
 			const killed: number[] = [];
+			const ran: string[][] = [];
+			const printed: string[] = [];
+			const service = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)"], { stdio: "ignore" });
+			const servicePid = service.pid;
+			if (servicePid === undefined) throw new Error("service listener did not start");
 			const deps = {
 				paths,
 				db,
-				write: () => {},
+				write: (text: string) => {
+					printed.push(text);
+				},
 				readStdin: async () => undefined,
 				now: () => NOW,
 				sessionClient: async () => undefined,
@@ -946,7 +970,10 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				writeFile: () => {},
 				removeFile: () => {},
 				fileExists: () => false,
-				run: async () => ({ code: 0, stdout: "", stderr: "" }),
+				run: async (argv: string[]) => {
+					ran.push(argv);
+					return { code: 0, stdout: "", stderr: "" };
+				},
 				which: () => "/resolved/bin",
 				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "__run", ...extra],
 				spawnListener: () => {
@@ -957,19 +984,26 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					killed.push(pid);
 					rmSync(listenerPidPath(paths), { force: true });
 				},
-				isOurListener: (pid: number) => pid === process.pid,
+				isOurListener: (pid: number) => pid === process.pid || pid === servicePid,
 				sleep: async () => {},
 			} as OpenCloseDeps;
 
 			try {
 				await phoneOpen({}, deps);
 				expect(spawned).toEqual([]);
-				expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
-				await phoneClose(deps);
 				expect(killed).toEqual([process.pid]);
+				expect(ran).toEqual([
+					["systemctl", "--user", "daemon-reload"],
+					["systemctl", "--user", "enable", "--now", "dg-phone.service"],
+				]);
+				expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({ status: "restarted", autostart: "systemd", pid: null });
+				writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: servicePid, since: NOW, hook: null }));
+				await phoneClose(deps);
+				expect(killed).toEqual([process.pid, servicePid]);
 				expect(existsSync(listenerPidPath(paths))).toBe(false);
 				expect(spawned).toEqual([]);
 			} finally {
+				service.kill();
 				db.close();
 			}
 		} finally {

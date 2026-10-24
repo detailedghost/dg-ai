@@ -7,6 +7,7 @@ import {
 	formatAutostartState,
 	installAutostart,
 	launchdPlistText,
+	managedRestartCommands,
 	removeAutostart,
 	systemdUnitPath,
 	systemdUnitText,
@@ -154,6 +155,17 @@ describe("windowsTaskXml", () => {
 		expect(text).toContain("<RestartOnFailure>\n\t\t\t<Interval>PT1M</Interval>\n\t\t\t<Count>10</Count>\n\t\t</RestartOnFailure>");
 		expect(text).toContain("<Command>C:\\dg\\dg-agent.exe</Command>");
 		expect(text).toContain('<Arguments>phone __run --on-message "C:\\Program Files\\notify.exe" "a b" "c\\"d"</Arguments>');
+		expect(text).not.toContain("--dg-home");
+	});
+
+	it("passes DG_HOME as --dg-home after __run, because a task has no environment block", () => {
+		const text = windowsTaskXml({
+			argv: ["C:\\dg\\dg-agent.exe", "phone", "__run", "--on-message", "C:\\Program Files\\notify.exe"],
+			dgHome: "D:\\custom dg&home",
+			logPath: "",
+		});
+
+		expect(text).toContain('<Arguments>phone __run --dg-home "D:\\custom dg&amp;home" --on-message "C:\\Program Files\\notify.exe"</Arguments>');
 	});
 
 	it("encodes the task XML as UTF-16 LE with a BOM, matching the declared encoding", () => {
@@ -267,15 +279,28 @@ describe("installAutostart", () => {
 		expect(removed).toHaveLength(1);
 	});
 
-	it("win32: a failing Run after a working Create is a real error, not unavailability, and removes the task xml", async () => {
+	it("win32: a failing Run after a working Create deletes the registered task and removes the task xml", async () => {
 		const ran: string[][] = [];
-		const { deps, removed } = fakeDeps({
+		const { deps, removed, written } = fakeDeps({
 			platform: "win32",
 			run: recordingRun(ran, (argv) => (argv[1] === "/Run" ? { code: 1, stderr: "task not found" } : { code: 0 })),
 		});
 
 		await expect(installAutostart(deps, paths, spec)).rejects.toBeInstanceOf(DgCliError);
-		expect(removed).toHaveLength(1);
+		expect(ran.map((argv) => argv[1])).toEqual(["/End", "/Create", "/Run", "/Delete"]);
+		expect(removed).toEqual([written[0]?.path]);
+	});
+
+	it("win32: keeps the task xml when deleting the registered task after a failed Run also fails", async () => {
+		const ran: string[][] = [];
+		const { deps, removed } = fakeDeps({
+			platform: "win32",
+			run: recordingRun(ran, (argv) => (argv[1] === "/Run" || argv[1] === "/Delete" ? { code: 1, stderr: "access denied" } : { code: 0 })),
+		});
+
+		await expect(installAutostart(deps, paths, spec)).rejects.toBeInstanceOf(DgCliError);
+		expect(ran.map((argv) => argv[1])).toEqual(["/End", "/Create", "/Run", "/Delete"]);
+		expect(removed).toEqual([]);
 	});
 
 	it("reports an unsupported platform as unavailable without writing anything", async () => {
@@ -309,6 +334,17 @@ describe("removeAutostart", () => {
 		expect(outcome).toBe("removed");
 		expect(ran).toEqual([["systemctl", "--user", "disable", "--now", "dg-phone.service"]]);
 		expect(removed).toEqual(["/home/u/.config/systemd/user/dg-phone.service"]);
+	});
+});
+
+describe("managedRestartCommands", () => {
+	it("restarts each manager in place", () => {
+		expect(managedRestartCommands("systemd", 501)).toEqual([["systemctl", "--user", "restart", "dg-phone.service"]]);
+		expect(managedRestartCommands("launchd", 501)).toEqual([["launchctl", "kickstart", "-k", "gui/501/com.detailedghost.dg-phone"]]);
+		expect(managedRestartCommands("task", 0)).toEqual([
+			["schtasks", "/End", "/TN", "dg-phone"],
+			["schtasks", "/Run", "/TN", "dg-phone"],
+		]);
 	});
 });
 

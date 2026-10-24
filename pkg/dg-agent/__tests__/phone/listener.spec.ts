@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
@@ -9,8 +10,11 @@ import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, type KeyClient } from "../../src/phone/keys";
 import {
+	claimListener,
 	ensureListenerSubscribed,
 	isListenerArgs,
+	isOurListener,
+	listenerClaimPath,
 	listenerPidPath,
 	readListenerPid,
 	type ListenerDeps,
@@ -26,6 +30,7 @@ import {
 	listContacts,
 	numberKeyId,
 	DEFAULT_RELAYS,
+	writeListener,
 	writeNumber,
 	writeRelays,
 } from "../../src/phone/store";
@@ -371,18 +376,25 @@ describe("one listener at a time", () => {
 	});
 
 	it("a second phone __run leaves the first listener's claim and pid file alone", async () => {
-		setUpNumber("ab".repeat(32));
-		const { onSignal, ready, stop } = captureShutdown();
-		const first = runListener(deps({ pid: process.pid, onSignal }));
-		await ready;
-		const listenersBefore = pool.listeners.length;
+		const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)", "phone", "__run"], { stdio: "ignore" });
+		try {
+			if (holder.pid === undefined) throw new Error("helper listener did not start");
+			expect(isOurListener(holder.pid)).toBe(true);
+			setUpNumber("ab".repeat(32));
+			const { onSignal, ready, stop } = captureShutdown();
+			const first = runListener(deps({ pid: holder.pid, onSignal }));
+			await ready;
+			const listenersBefore = pool.listeners.length;
 
-		await runListener(deps({ pid: 4242 }));
+			await runListener(deps({ pid: 4242 }));
 
-		expect(pool.listeners).toHaveLength(listenersBefore);
-		expect(readListenerPid(paths)?.pid).toBe(process.pid);
-		stop();
-		await first;
+			expect(pool.listeners).toHaveLength(listenersBefore);
+			expect(readListenerPid(paths)?.pid).toBe(holder.pid);
+			stop();
+			await first;
+		} finally {
+			holder.kill();
+		}
 	});
 
 	it("stops a listener that is missing an invite relay and starts exactly one replacement", () => {
@@ -434,6 +446,117 @@ describe("one listener at a time", () => {
 		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
 		const spawned: number[] = [];
 
+		expect(() =>
+			ensureListenerSubscribed(paths, db, {
+				isOurListener: () => true,
+				isAlive: () => true,
+				kill: () => {},
+				sleepSync: () => {},
+				spawn: () => {
+					spawned.push(1);
+					return 777;
+				},
+				now: () => NOW,
+				argvFor: (extra) => ["phone", "__run", ...extra],
+			}),
+		).toThrow(`the phone listener (pid ${process.pid}) did not exit; no replacement was started`);
+
+		expect(spawned).toEqual([]);
+		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
+	});
+
+	it("restarts a systemd listener through the service instead of detaching a second one", () => {
+		setUpNumber("ef".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		writeListener(db, { autostart: { kind: "systemd" } });
+		addInvite(db, {
+			secret: "55".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
+		let alive = true;
+		const restarted: string[] = [];
+		const spawned: number[] = [];
+
+		ensureListenerSubscribed(paths, db, {
+			isOurListener: () => true,
+			isAlive: () => alive,
+			kill: () => {
+				throw new Error("a managed listener is restarted by its service, not signaled here");
+			},
+			sleepSync: () => {},
+			spawn: () => {
+				spawned.push(1);
+				return 777;
+			},
+			now: () => NOW,
+			argvFor: (extra) => ["phone", "__run", ...extra],
+			restartManaged: (kind) => {
+				restarted.push(kind);
+				alive = false;
+			},
+		});
+
+		expect(restarted).toEqual(["systemd"]);
+		expect(spawned).toEqual([]);
+	});
+
+	it("starts the command line captured before the stop when the replacement spawn fails", () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		addInvite(db, {
+			secret: "66".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
+		let alive = true;
+		const spawned: string[][] = [];
+
+		expect(() =>
+			ensureListenerSubscribed(paths, db, {
+				isOurListener: () => true,
+				isAlive: () => alive,
+				kill: () => {
+					alive = false;
+				},
+				sleepSync: () => {},
+				spawn: (argv) => {
+					spawned.push(argv);
+					if (spawned.length === 1) throw new Error("spawn failed");
+					return 888;
+				},
+				now: () => NOW,
+				argvFor: (extra) => ["phone", "__run", ...extra],
+				commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+			}),
+		).toThrow("the phone listener stopped and the replacement failed to start");
+
+		expect(spawned).toEqual([
+			["phone", "__run"],
+			["/old/dg-agent", "phone", "__run"],
+		]);
+		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(888);
+	});
+
+	it("does not restart a listener whose pid file never recorded relays", () => {
+		setUpNumber("cd".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		addInvite(db, {
+			secret: "77".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null }));
+		const spawned: number[] = [];
+
 		ensureListenerSubscribed(paths, db, {
 			isOurListener: () => true,
 			isAlive: () => true,
@@ -448,6 +571,54 @@ describe("one listener at a time", () => {
 		});
 
 		expect(spawned).toEqual([]);
-		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
+	});
+});
+
+describe("claimListener", () => {
+	function captureStderr(): { lines: string[]; restore: () => void } {
+		const lines: string[] = [];
+		const spy = spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array, encoding?: BufferEncoding | ((err?: Error) => void), cb?: (err?: Error) => void) => {
+			lines.push(String(chunk));
+			if (typeof encoding === "function") encoding();
+			else cb?.();
+			return true;
+		});
+		return { lines, restore: () => spy.mockRestore() };
+	}
+
+	it("takes over a lock held by an unrelated live pid", () => {
+		writeFileSync(listenerClaimPath(paths), `${process.pid}\n`, { mode: 0o600 });
+		const stderr = captureStderr();
+		try {
+			expect(isOurListener(process.pid)).toBe(false);
+			expect(claimListener(paths, 5150)).toBe(true);
+			expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("5150");
+			expect(stderr.lines.join("")).toContain("taking over");
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	it("leaves a lock held by a phone listener and logs that the claim was lost", () => {
+		writeFileSync(listenerClaimPath(paths), "4242\n", { mode: 0o600 });
+		const stderr = captureStderr();
+		try {
+			expect(claimListener(paths, 5150, () => true)).toBe(false);
+			expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("4242");
+			expect(stderr.lines.join("")).toContain("listener claim lost to 4242; pid 5150 is exiting");
+		} finally {
+			stderr.restore();
+		}
+	});
+
+	it("treats a fresh empty lock as held, and takes over one old enough to be stale", () => {
+		writeFileSync(listenerClaimPath(paths), "", { mode: 0o600 });
+		expect(claimListener(paths, 5150)).toBe(false);
+		expect(readFileSync(listenerClaimPath(paths), "utf8")).toBe("");
+
+		const past = new Date(Date.now() - 5000);
+		utimesSync(listenerClaimPath(paths), past, past);
+		expect(claimListener(paths, 5150)).toBe(true);
+		expect(readFileSync(listenerClaimPath(paths), "utf8").trim()).toBe("5150");
 	});
 });

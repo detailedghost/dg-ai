@@ -81,6 +81,11 @@ commands, per platform:
 | macOS | `~/Library/LaunchAgents/com.detailedghost.dg-phone.plist` | `launchctl bootout` (best-effort) then `launchctl bootstrap gui/<uid> <path>` |
 | Windows | `<phoneRoot>/dg-phone.task.xml` | `schtasks /End` (best-effort, avoids racing a task it is about to replace) then `schtasks /Create /TN dg-phone /XML <path> /F`, then `schtasks /Run /TN dg-phone` |
 
+When `DG_HOME` is set, the Windows task passes it to the listener as
+`--dg-home`, since a task has no environment block. If `schtasks /Run` fails
+after `/Create` registered the task, that task is deleted. The XML file is
+kept only when the delete fails, so `close` can retry the cleanup.
+
 `close` runs each platform's stop-and-disable command
 (`systemctl --user disable --now`, `launchctl bootout`, `schtasks /End` then
 `/Delete /F`), removes the file, and sends SIGTERM to any pid still in
@@ -148,18 +153,21 @@ A listener that is already `phone __run` is kept, and `listener.pid` points
 at it, so nothing starts a second one. An old `phone-friend __run` is not
 kept: it would keep writing the old database. Migration stops it and starts
 exactly one `phone __run` against `phone.db`, then records that pid.
-`open` sees the pid and reuses that process. `close` stops it. When more
-than one old listener is running, migration stops each of them and, only
-after every one has exited, starts exactly one new listener and records its
-pid. If one will not exit, no new listener is started and `phone.db` is not
-written. That process keeps running. Any listener that already exited stays
-stopped. If the new listener fails to start after the old ones have exited,
-migration starts the previous listener again.
+`open` installs login autostart when that listener has none yet, stopping
+the detached process first so the service manager's copy is the only one.
+Once autostart is recorded, a later `open` reuses the process. `close` stops
+it. When more than one old listener is running, migration stops each of them
+and, only after every one has exited, starts exactly one new listener and
+records its pid. If one will not exit, no new listener is started and
+`phone.db` is not written. That process keeps running. Any listener that
+already exited stays stopped. If the new listener fails to start after the
+old ones have exited, every stopped listener is started again against its
+own line database, `phone.db` is removed, and the command fails so the
+migration can be retried. The old root stays in place on that failure.
 
-It then renames the old root to `~/.dg/phone-friend.migrated` and prints a
-one-line summary to stderr. A failed start skips that rename so the restored
-listener still has its database. Every later command sees `phone.db` and
-does nothing further. To roll back, rename `~/.dg/phone-friend.migrated`
+A start that succeeds renames the old root to `~/.dg/phone-friend.migrated`
+and prints a one-line summary to stderr. Every later command sees `phone.db`
+and does nothing further. To roll back, rename `~/.dg/phone-friend.migrated`
 back to `~/.dg/phone-friend` and run the previous `dg-agent` binary.
 `status` reports `"legacy_root_present": true` if the old root is still
 sitting next to the new database.

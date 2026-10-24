@@ -184,6 +184,21 @@ describe("phoneOpen", () => {
 		await expect(phoneOpen({ onMessage: ["ghost-notify"] }, h.deps)).rejects.toThrow("--on-message: ghost-notify not found on PATH");
 	});
 
+	it("installs autostart when a listener is already running but none was recorded", async () => {
+		const h = harness();
+		writeRunningPid(h, process.pid);
+
+		await phoneOpen({}, h.deps);
+
+		expect(h.killed).toEqual([{ pid: process.pid, signal: "SIGTERM" }]);
+		expect(h.ran).toEqual([
+			["systemctl", "--user", "daemon-reload"],
+			["systemctl", "--user", "enable", "--now", "dg-phone.service"],
+		]);
+		expect(h.spawned).toEqual([]);
+		expect(lines()[0]).toEqual({ pid: null, status: "restarted", autostart: "systemd", hook: null });
+	});
+
 	it("is idempotent: a second call with the same hook reports running and installs nothing new", async () => {
 		const h = harness();
 

@@ -492,7 +492,9 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
 
 	const running = liveListener(deps);
-	if (running && running.adopted !== "legacy" && sameHook(running.hook, onMessage)) {
+	// Migration records a listener before login autostart exists. Skip the reuse return in that
+	// case so this open installs it, after stopping the detached process, and only one keeps running.
+	if (running && running.adopted !== "legacy" && sameHook(running.hook, onMessage) && saved?.autostart) {
 		if (onMessage) writeListener(deps.db, { ...saved, onMessage });
 		printJson(deps, {
 			pid: running.pid,
@@ -660,7 +662,9 @@ function attachPhoneVerbs(
 		.description("internal: run the always-on listener in the foreground (never call directly)")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string }) => {
+		.option("--dg-home <dir>", "state directory for this listener; overrides DG_HOME")
+		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string; dgHome?: string }) => {
+			if (opts.dgHome) process.env.DG_HOME = opts.dgHome;
 			await phoneRun(opts, { ...getDeps(), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
 			process.exit(0);
 		});
