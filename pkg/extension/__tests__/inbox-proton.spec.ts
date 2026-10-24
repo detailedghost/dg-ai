@@ -255,3 +255,57 @@ it("accepts exact custom-folder membership alongside other Proton labels", async
 		labels: ["5", "custom-folder", "label"],
 	});
 });
+
+it("renames and deletes a folder and reorders filters through acknowledged Proton calls", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Label: { ID: "folder-a", Name: "receipts", Type: 3, ParentID: "parent-1" },
+	});
+	const renamed = await executeProtonPage(
+		{
+			operation: "rename-folder",
+			id: "folder a",
+			name: "receipts",
+			parentId: "parent-1",
+		},
+		context(fetch),
+	);
+	expect(renamed.folder).toMatchObject({ id: "folder-a", name: "receipts" });
+	await executeProtonPage(
+		{ operation: "delete-folder", id: "folder-a" },
+		context(fetch),
+	);
+	await executeProtonPage(
+		{ operation: "reorder-filters", ids: ["filter-a", "filter-b"] },
+		context(fetch),
+	);
+	const calls = fetch.mock.calls as unknown as Array<[string, RequestInit]>;
+	expect(calls.map(([url, init]) => [new URL(url).pathname, init.method])).toEqual([
+		["/api/core/v4/labels/folder%20a", "PUT"],
+		["/api/core/v4/labels/folder-a", "DELETE"],
+		["/api/mail/v4/filters/order", "PUT"],
+	]);
+	expect(JSON.parse(String(calls[0]?.[1].body))).toEqual({
+		Name: "receipts",
+		ParentID: "parent-1",
+	});
+	expect(JSON.parse(String(calls[2]?.[1].body))).toEqual({
+		FilterIDs: ["filter-a", "filter-b"],
+	});
+});
+
+it("omits ParentID when a folder rename does not name a parent", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Label: { ID: "folder-a", Name: "receipts", Type: 3, ParentID: "parent-1" },
+	});
+	await executeProtonPage(
+		{ operation: "rename-folder", id: "folder-a", name: "receipts" },
+		context(fetch),
+	);
+	const body = JSON.parse(
+		String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+	);
+	expect(body).toEqual({ Name: "receipts" });
+	expect(body.ParentID).toBeUndefined();
+});

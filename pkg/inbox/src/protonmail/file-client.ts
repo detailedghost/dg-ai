@@ -38,10 +38,11 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 		if (existing) {
 			return existing;
 		}
+		const path = input.path ?? input.name;
 		const folder = {
 			id: `folder-${nanoid()}`,
 			name: input.name,
-			path: input.name,
+			path,
 			type: input.type ?? "label",
 			total: 0,
 			unread: 0,
@@ -49,6 +50,33 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 		dataset.folders.push(folder);
 		await this.persistDataset();
 		return folder;
+	}
+
+	async renameFolder(input: {
+		id: string;
+		displayName: string;
+		path?: string;
+		parentId?: string;
+	}) {
+		const dataset = await this.loadDataset();
+		const folder = dataset.folders.find((item) => item.id === input.id);
+		if (!folder) {
+			throw new Error(`Folder not found in file-backed dataset: ${input.id}`);
+		}
+		folder.name = input.displayName;
+		folder.path = input.path ?? input.displayName;
+		await this.persistDataset();
+		return folder;
+	}
+
+	async deleteFolder(input: { id: string }) {
+		const dataset = await this.loadDataset();
+		const before = dataset.folders.length;
+		dataset.folders = dataset.folders.filter((folder) => folder.id !== input.id);
+		if (dataset.folders.length === before) {
+			throw new Error(`Folder not found in file-backed dataset: ${input.id}`);
+		}
+		await this.persistDataset();
 	}
 
 	async listFilters() {
@@ -92,6 +120,21 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 		dataset.filters = dataset.filters.filter(
 			(filter) => filter.id !== input.id,
 		);
+		await this.persistDataset();
+	}
+
+	async reorderFilters(input: { ids: string[] }) {
+		const dataset = await this.loadDataset();
+		const byId = new Map(dataset.filters.map((filter) => [filter.id, filter]));
+		const ordered = input.ids.map((id) => {
+			const filter = byId.get(id);
+			if (!filter) {
+				throw new Error(`Filter not found in file-backed dataset: ${id}`);
+			}
+			return filter;
+		});
+		const rest = dataset.filters.filter((filter) => !input.ids.includes(filter.id));
+		dataset.filters = [...ordered, ...rest];
 		await this.persistDataset();
 	}
 

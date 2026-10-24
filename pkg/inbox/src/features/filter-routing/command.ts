@@ -6,20 +6,16 @@ import { workspaceDirForContext, type CliContext } from "../../cli/context";
 import { printJson } from "../../cli/output";
 import type { RouteProfileConfig } from "../../config/types";
 import { createProtonMailClient } from "../../protonmail/client";
-import type {
-	ProtonFilter,
-	ProtonFolder,
-	ProtonMailClient,
-} from "../../protonmail/types";
+import type { ProtonFilter, ProtonFolder } from "../../protonmail/types";
 import { readJsonFileIfExists, writeJsonFile } from "../../utils/json";
-import { folderDisplayName, resolveFolder } from "../../workspace/folders";
 import {
-	readFilters,
-	readFolders,
-	writeFilters,
-	writeFolders,
-	workspacePaths,
-} from "../../workspace/store";
+	declaredFiltersPath,
+	editDeclaredFilters,
+	upsertDeclaredFilter,
+	upsertDeclaredFolder,
+} from "../filter-policy/store";
+import { folderDisplayName, resolveFolder } from "../../workspace/folders";
+import { readFilters, readFolders, workspacePaths } from "../../workspace/store";
 
 type RoutePlan = {
 	kind: "workspace-filter-route-plan";
@@ -100,19 +96,7 @@ export async function routeProfileFilter(context: CliContext): Promise<void> {
 				"filters route --confirm refused because the route plan changed after the last dry run; run filters route --dry-run again",
 			);
 		}
-		const auditPath = await applyRoutePlan(plan, client);
-		const [refreshedFolders, refreshedFilters] = await Promise.all([
-			client.listFolders(),
-			client.listFilters(),
-		]);
-		// Filter naming reads folders.json. Save that snapshot before filters so
-		// the reader cannot observe a partial replacement of the folder file.
-		await writeFolders(paths, refreshedFolders);
-		await writeFilters(
-			paths,
-			refreshedFilters,
-			context.config.protonmail.snippetLength,
-		);
+		const auditPath = await applyRoutePlan(plan, paths.dir, folders, filters);
 		const summary = summarizeRoutePlan({ ...plan, mutated: true, auditPath });
 		await writeJsonFile(join(paths.reportsDir, "filter-route.json"), summary);
 		printJson(summary);
@@ -203,30 +187,37 @@ function buildRoutePlan(
 
 async function applyRoutePlan(
 	plan: RoutePlan,
-	client: ProtonMailClient,
+	dir: string,
+	liveFolders: ProtonFolder[],
+	liveFilters: ProtonFilter[],
 ): Promise<string> {
-	const folder = plan.existingFolderId
-		? {
-				id: plan.existingFolderId,
-				name: plan.folderName,
-				type: "label" as const,
-			}
-		: await client.createFolder({ name: plan.folderName, type: "label" });
-
-	if (plan.filterAction === "update" && plan.existingFilterId) {
-		await client.updateFilter({
-			id: plan.existingFilterId,
-			name: plan.filterName,
-			sieve: plan.sieve,
-			enabled: true,
-		});
-	} else {
-		await client.createFilter({
-			name: plan.filterName,
-			sieve: plan.sieve,
-			enabled: true,
-		});
-	}
+	await editDeclaredFilters({
+		path: declaredFiltersPath(dir),
+		filters: liveFilters,
+		folders: liveFolders,
+		edit(file) {
+			upsertDeclaredFolder(file, {
+				path: plan.folderName,
+				type: "label",
+				...(plan.existingFolderId
+					? { protonId: plan.existingFolderId }
+					: {}),
+			});
+			upsertDeclaredFilter(file, {
+				name: plan.filterName,
+				enabled: true,
+				sieve: plan.sieve,
+				...(plan.existingFilterId
+					? { protonId: plan.existingFilterId }
+					: {}),
+			});
+		},
+	});
+	const folder = {
+		id: plan.existingFolderId ?? `declared:${plan.folderName}`,
+		name: plan.folderName,
+		type: "label" as const,
+	};
 
 	const auditPath = join(
 		plan.dir,

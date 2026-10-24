@@ -4,6 +4,8 @@ node_modules/
 !.agents/plugins/
 !.agents/plugins/marketplace.json
 !.agents/spec/
+!.agents/decisions/
+!.agents/decisions/**
 dist/
 .output/
 .env

@@ -362,10 +362,36 @@ export async function executeProtonPage(
 					Name: request.name,
 					Type: request.type === "label" ? 1 : 3,
 					Color: "#8080FF",
+					...(request.parentId ? { ParentID: request.parentId } : {}),
 				});
 				result = { folder: normalizeFolder(record(json.Label)) };
 				break;
 			}
+			case "rename-folder": {
+				const json = await api(
+					`core/v4/labels/${encodeURIComponent(request.id!)}`,
+					"PUT",
+					{
+						Name: request.name,
+						...(request.parentId ? { ParentID: request.parentId } : {}),
+					},
+				);
+				result = { folder: normalizeFolder(record(json.Label)) };
+				break;
+			}
+			case "delete-folder":
+				await api(
+					`core/v4/labels/${encodeURIComponent(request.id!)}`,
+					"DELETE",
+				);
+				result = {};
+				break;
+			case "reorder-filters":
+				await api("mail/v4/filters/order", "PUT", {
+					FilterIDs: request.ids,
+				});
+				result = {};
+				break;
 			case "create-filter":
 			case "update-filter": {
 				const previous =

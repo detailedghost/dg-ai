@@ -23,6 +23,8 @@ export type CreateProtonFilterInput = {
 
 export type CreateProtonFolderInput = {
 	name: string;
+	path?: string;
+	parentId?: string;
 	type?: "folder" | "label";
 };
 
@@ -60,10 +62,18 @@ export type ListMessagesInput = {
 export interface ProtonMailClient {
 	listFolders(): Promise<ProtonFolder[]>;
 	createFolder(input: CreateProtonFolderInput): Promise<ProtonFolder>;
+	renameFolder(input: {
+		id: string;
+		displayName: string;
+		path?: string;
+		parentId?: string;
+	}): Promise<ProtonFolder>;
+	deleteFolder(input: { id: string }): Promise<void>;
 	listFilters(): Promise<ProtonFilter[]>;
 	createFilter(input: CreateProtonFilterInput): Promise<ProtonFilter>;
 	updateFilter(input: UpdateProtonFilterInput): Promise<ProtonFilter>;
 	deleteFilter(input: { id: string }): Promise<void>;
+	reorderFilters(input: { ids: string[] }): Promise<void>;
 	listMessages(input: ListMessagesInput): Promise<ProtonMessageSummary[]>;
 	moveMessages(input: {
 		messageIds: string[];

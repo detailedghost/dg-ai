@@ -6,6 +6,8 @@ import {
 	type InboxBrowserRequest,
 	type InboxBrowserResponse,
 } from "@dg/common";
+import type { ProtonGate } from "../features/filter-policy/jitter";
+import { liveProtonGate } from "../features/filter-policy/jitter";
 import type { AppConfig } from "../config/types";
 import type {
 	MailProviderClient,
@@ -19,15 +21,27 @@ import type {
 export class ExtensionProtonMailClient implements MailProviderClient {
 	readonly provider = "protonmail" as const;
 	/** Uses private Proton tab/account configuration and the host's validated browser-request callback. */
+	readonly pace: ProtonGate;
 	constructor(
 		private readonly input: {
 			config: AppConfig;
 			browserRequest: (
 				request: InboxBrowserRequest,
 			) => Promise<InboxBrowserResponse>;
+			pace?: ProtonGate;
 		},
-	) {}
+	) {
+		this.pace = input.pace ?? liveProtonGate();
+	}
 	private async request(
+		request: InboxBrowserRequest,
+	): Promise<InboxBrowserResponse> {
+		const retry =
+			request.operation.startsWith("list-") ||
+			request.operation === "session-status";
+		return this.pace.run(() => this.dispatch(request), { retry });
+	}
+	private async dispatch(
 		request: InboxBrowserRequest,
 	): Promise<InboxBrowserResponse> {
 		const target = {
@@ -54,10 +68,17 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 	/** Creates a reviewed Proton folder or label using the extension's fixed operation. */
 	async createFolder(input: {
 		name: string;
+		path?: string;
+		parentId?: string;
 		type?: "folder" | "label";
 	}): Promise<MailFolder> {
 		const folder = (
-			await this.request({ operation: "create-folder", ...input })
+			await this.request({
+				operation: "create-folder",
+				name: input.name,
+				type: input.type,
+				...(input.parentId ? { parentId: input.parentId } : {}),
+			})
 		).folder;
 		if (!folder)
 			throw new Error("Proton extension did not return the created folder");
@@ -97,6 +118,29 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 	/** Deletes the reviewed rule ID through the selected account. */
 	async deleteFilter(input: { id: string }) {
 		await this.request({ operation: "delete-filter", ...input });
+	}
+	async renameFolder(input: {
+		id: string;
+		displayName: string;
+		path?: string;
+		parentId?: string;
+	}): Promise<MailFolder> {
+		const folder = (
+			await this.request({
+				operation: "rename-folder",
+				id: input.id,
+				name: input.displayName,
+				...(input.parentId ? { parentId: input.parentId } : {}),
+			})
+		).folder;
+		if (!folder) throw new Error("Proton extension did not return the renamed folder");
+		return { ...folder, type: folder.type ?? "folder", path: input.path ?? folder.path };
+	}
+	async deleteFolder(input: { id: string }) {
+		await this.request({ operation: "delete-folder", id: input.id });
+	}
+	async reorderFilters(input: { ids: string[] }) {
+		await this.request({ operation: "reorder-filters", ids: input.ids });
 	}
 	/** Collects the limited stream into memory; prefer listMessagesStream for large mailboxes. */
 	async listMessages(input: ListMessagesInput): Promise<MailMessageSummary[]> {
