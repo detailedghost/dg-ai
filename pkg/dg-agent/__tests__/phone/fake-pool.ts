@@ -1,8 +1,8 @@
 import type { Filter, NostrEvent } from "nostr-tools";
 import type { SubscribeManyParams } from "nostr-tools/pool";
-import type { PhoneFriendPool } from "../../src/phone-friend/chat";
+import type { PhonePool } from "../../src/phone/chat";
 
-export type FakePool = PhoneFriendPool & {
+export type FakePool = PhonePool & {
 	events: NostrEvent[];
 	filters: Filter[];
 	listeners: ((event: NostrEvent) => void)[];

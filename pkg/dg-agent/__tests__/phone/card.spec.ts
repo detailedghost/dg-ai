@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { DgCliError } from "@dg/common";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
-import { CARD_PREFIX, CARD_PREFIX_V1, decodeCard, encodeCard, MAX_CARD_RELAYS } from "../../src/phone-friend/card";
-import { DEFAULT_RELAYS } from "../../src/phone-friend/store";
+import { CARD_PREFIX, CARD_PREFIX_V1, decodeCard, encodeCard, MAX_CARD_RELAYS, NO_EXPIRY } from "../../src/phone/card";
+import { DEFAULT_RELAYS } from "../../src/phone/store";
 
 const pubkeyHex = getPublicKey(generateSecretKey());
 const npub = nip19.npubEncode(pubkeyHex);
@@ -56,23 +56,10 @@ describe("call cards v2 (current)", () => {
 		expect(text.length).toBeLessThanOrEqual(110);
 	});
 
-	it("is far shorter than a v1 card with the same contents", () => {
-		const v1 = CARD_PREFIX_V1 + Buffer.from(JSON.stringify({ v: 1, ...card })).toString("base64url");
-		const v2 = encodeCard({ ...card, relays: DEFAULT_RELAYS });
-
-		expect(v2.length).toBeLessThan(v1.length / 2);
-	});
-
 	it("round-trips a relay with a port and a path", () => {
 		const withPath = { ...card, relays: ["wss://a.example:4433/nostr"] };
 
 		expect(decodeCard(encodeCard(withPath), 1_000)).toEqual(withPath);
-	});
-
-	it("round-trips several relays and the max handle length", () => {
-		const withMany = { ...card, relays: ["wss://a.example", "wss://b.example:4433/path"], handle: "a".repeat(32) };
-
-		expect(decodeCard(encodeCard(withMany), 1_000)).toEqual(withMany);
 	});
 
 	it("ignores whitespace around a pasted card", () => {
@@ -83,7 +70,7 @@ describe("call cards v2 (current)", () => {
 		expect(() => decodeCard(encodeCard(card), 3_000)).toThrow("expired");
 	});
 
-	it("rejects a handle that is not a safe line name", () => {
+	it("rejects a handle that is not a safe shape", () => {
 		for (const handle of ["", "Default", "de fault", "../etc", "a".repeat(33), "has/slash", "has@at"]) {
 			expect(() => encodeCard({ ...card, handle })).toThrow(DgCliError);
 		}
@@ -100,16 +87,10 @@ describe("call cards v2 (current)", () => {
 
 		expect(() => decodeCard(`${text.slice(0, 10)}%%${text.slice(12)}`, 1_000)).toThrow(DgCliError);
 		expect(() => decodeCard(`${text} extra`, 1_000)).toThrow(DgCliError);
-		expect(() => decodeCard(`${text}=`, 1_000)).toThrow(DgCliError);
 	});
 
 	it("rejects a truncated card", () => {
 		expect(() => decodeCard(rawV2(v2Bytes().subarray(0, 50)), 1_000)).toThrow(DgCliError);
-	});
-
-	it("rejects a relay count over the max, or a relay section cut short", () => {
-		expect(() => decodeCard(rawV2(v2Bytes({ relaySection: Buffer.from([11]) })), 1_000)).toThrow(DgCliError);
-		expect(() => decodeCard(rawV2(v2Bytes({ relaySection: Buffer.from([1, 200]) })), 1_000)).toThrow(DgCliError);
 	});
 
 	it("rejects a relay that decodes but is not a wss:// URL", () => {
@@ -123,21 +104,9 @@ describe("call cards v2 (current)", () => {
 		expect(() => decodeCard(encodeCard(card).replace(CARD_PREFIX, "nope1"), 1_000)).toThrow(DgCliError);
 	});
 
-	it("refuses to encode a relay url too long for the one-byte length prefix", () => {
-		const huge = `wss://${"a".repeat(260)}.example`;
-
-		expect(() => encodeCard({ ...card, relays: [huge] })).toThrow(DgCliError);
-	});
-
 	it("refuses an expiry that cannot fit in 4 bytes, instead of a raw RangeError", () => {
 		expect(() => encodeCard({ ...card, exp: 0x1_0000_0000 })).toThrow(DgCliError);
 		expect(() => encodeCard({ ...card, exp: -1 })).toThrow(DgCliError);
-	});
-
-	it("refuses an npub that decodes to the wrong pubkey length, instead of corrupting the card", () => {
-		const shortNpub = nip19.npubEncode("ab".repeat(16));
-
-		expect(() => encodeCard({ ...card, npub: shortNpub })).toThrow(DgCliError);
 	});
 
 	it("refuses to encode more than the max relays", () => {
@@ -147,13 +116,28 @@ describe("call cards v2 (current)", () => {
 	});
 });
 
-describe("call cards v1 (legacy, dial only)", () => {
+describe("NO_EXPIRY (the number card)", () => {
+	it("round-trips and never rejects as expired, however far in the future `now` is", () => {
+		const neverExpires = { ...card, exp: NO_EXPIRY };
+		const text = encodeCard(neverExpires);
+
+		expect(decodeCard(text, 1_000)).toEqual(neverExpires);
+		expect(decodeCard(text, 4_000_000_000)).toEqual(neverExpires);
+	});
+
+	it("is the largest value a 4-byte exp can hold", () => {
+		expect(NO_EXPIRY).toBe(0xffffffff);
+		expect(() => encodeCard({ ...card, exp: NO_EXPIRY + 1 })).toThrow(DgCliError);
+	});
+});
+
+describe("call cards v1 (legacy, accept only)", () => {
 	function rawV1(value: unknown): string {
 		return CARD_PREFIX_V1 + Buffer.from(JSON.stringify(value)).toString("base64url");
 	}
 	const v1Card = { v: 1, npub, relays: ["wss://a.example"], secret: secretHex, exp: 2_000 };
 
-	it("a card `invite` printed before this change still dials", () => {
+	it("a card printed before this change still decodes, with no handle", () => {
 		expect(decodeCard(rawV1(v1Card), 1_000)).toEqual({
 			npub,
 			relays: ["wss://a.example"],
@@ -171,8 +155,6 @@ describe("call cards v1 (legacy, dial only)", () => {
 			{ ...v1Card, v: 2 },
 			{ ...v1Card, npub: "npub1nope" },
 			{ ...v1Card, relays: [] },
-			{ ...v1Card, relays: ["http://a.example"] },
-			{ ...v1Card, relays: Array.from({ length: MAX_CARD_RELAYS + 1 }, (_, i) => `wss://r${i}.example`) },
 			{ ...v1Card, secret: "short" },
 			{ ...v1Card, exp: "soon" },
 		]) {

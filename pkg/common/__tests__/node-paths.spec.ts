@@ -117,6 +117,13 @@ describe("resolveDgPaths", () => {
 		expect(paths.phoneFriendRoot).toBe(posix.join(paths.stateDir, "phone-friend"));
 	});
 
+	it("puts the phone root under <root>/phone, alongside phone-friend for the migration reader", () => {
+		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
+
+		expect(paths.phoneRoot).toBe(posix.join(paths.stateDir, "phone"));
+		expect(paths.phoneRoot).not.toBe(paths.phoneFriendRoot);
+	});
+
 	it("names the daemon files by the daemon, not by the harness", () => {
 		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
 
@@ -143,6 +150,7 @@ describe("resolveDgPaths", () => {
 			expect(win32.dirname(paths[field])).toBe(paths.agentsDir);
 		}
 		expect(paths.phoneFriendRoot).toBe(win32.join(paths.stateDir, "phone-friend"));
+		expect(paths.phoneRoot).toBe(win32.join(paths.stateDir, "phone"));
 	});
 
 	it("honors DG_HOME as the sole root override, replacing <home>/.dg wholesale", () => {

@@ -10,7 +10,7 @@ import {
 import { Command } from "commander";
 import { registerAgentCommands } from "./commands";
 import { registerMemoryCommands } from "./memory/commands";
-import { registerPhoneFriendCommands } from "./phone-friend/commands";
+import { registerPhoneCommands } from "./phone/commands";
 import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
 import { cmdStart } from "./start";
@@ -32,7 +32,7 @@ program
 
 registerAgentCommands(program);
 registerMemoryCommands(program);
-registerPhoneFriendCommands(program);
+registerPhoneCommands(program);
 
 program
 	.command("start")
