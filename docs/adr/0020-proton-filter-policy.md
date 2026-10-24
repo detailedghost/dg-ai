@@ -26,13 +26,17 @@ plan. Sync does not rename it on its own.
 
 Safety checks block the apply. The declared file sets the protected plus-alias pattern and any extra
 verification senders. GitHub, GitLab, Spam, and Trash always stay on that list. No planned write may send
-protected plus-alias mail, or mail from those senders, to Spam or Trash. Proton writes wait a random,
-non-uniform gap between calls. The other filter commands edit only the declared file.
+protected plus-alias mail, or mail from those senders, to Spam or Trash. Every live Proton call, including
+import and the sync read, waits on one shared pacer. The gap is irregular, calls stay serial, and a rate
+limit backs off a few times and then stops. A stopped apply records the steps that landed before it throws.
+A folder rename omits the parent id when that parent is unknown, so Proton keeps the current parent.
+The other filter commands edit only the declared file.
 
 ## Consequences
 
 - **Good:** one reviewed plan is the Proton write path, in `pkg/inbox/src/features/filter-policy/sync-command.ts`.
 - **Good:** a truncated inventory snippet cannot become a stored filter. `fullSieveOrThrow` refuses it.
+- **Good:** a partial apply writes the declared file before it throws, so the next dry run does not duplicate a filter Proton already created.
 - **Bad:** the first sync needs an import, and a later edit in the Proton UI stays drift until someone chooses pull or revert.
 - **Bad:** applying a new plan requires a new hash. Adding `--approve-delete` or `--pull` changes the hash.
 - **Neutral:** `filters.json` remains a redacted inventory. It is no longer an input to a Proton write.

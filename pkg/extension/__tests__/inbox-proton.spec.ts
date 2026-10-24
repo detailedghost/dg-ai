@@ -293,3 +293,19 @@ it("renames and deletes a folder and reorders filters through acknowledged Proto
 		FilterIDs: ["filter-a", "filter-b"],
 	});
 });
+
+it("omits ParentID when a folder rename does not name a parent", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Label: { ID: "folder-a", Name: "receipts", Type: 3, ParentID: "parent-1" },
+	});
+	await executeProtonPage(
+		{ operation: "rename-folder", id: "folder-a", name: "receipts" },
+		context(fetch),
+	);
+	const body = JSON.parse(
+		String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+	);
+	expect(body).toEqual({ Name: "receipts" });
+	expect(body.ParentID).toBeUndefined();
+});

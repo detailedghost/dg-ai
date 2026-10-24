@@ -29,10 +29,8 @@ export async function importDeclaredFilters(context: CliContext): Promise<void> 
 	}
 	const client = createProtonMailClient(context.config);
 	try {
-		const [folders, filters] = await Promise.all([
-			client.listFolders(),
-			client.listFilters(),
-		]);
+		const folders = await client.listFolders();
+		const filters = await client.listFilters();
 		const file = seedDeclaredFromLive({
 			filters: filters.map((filter) => ({
 				id: filter.id,

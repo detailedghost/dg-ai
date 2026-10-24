@@ -91,7 +91,8 @@ filter also has `destinations`, the `fileinto` folder paths parsed from the full
 rule before that cutoff. That snapshot is not the Proton source of truth.
 `filters import` copies live filters and folders into `declared-filters.json`
 under the workspace. `filters sync` is the only command that writes filters or
-folders back to Proton. See [the filter policy guide](../../../../../docs/inbox-filter-policy.md).
+folders back to Proton. Live Proton calls, including that import and the sync
+read, wait on one irregular serial pacer. See [the filter policy guide](../../../../../docs/inbox-filter-policy.md).
 
 `filters extend --filter-id ID --add-domains domain.example --dry-run` reads the
 live Proton Sieve and prints the before/after diff. It refuses any other provider

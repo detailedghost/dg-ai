@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { applySyncPlan, type PolicyWriteClient } from "../apply";
-import type { SyncPlan } from "../plan";
+import { buildSyncPlan, type SyncPlan } from "../plan";
 import { emptyDeclaredFilters } from "../schema";
-import type { Clock } from "../jitter";
 
 function client(): PolicyWriteClient & { calls: string[] } {
 	const calls: string[] = [];
@@ -10,7 +9,14 @@ function client(): PolicyWriteClient & { calls: string[] } {
 	return {
 		calls,
 		async listFilters() {
-			return filters;
+			return filters.map((filter) => ({
+				...filter,
+				conditions: ['require ["fileinto"];\nif true {\n  keep;\n}\n'],
+				actions: ['require ["fileinto"];\nif true {\n  keep;\n}\n'],
+			}));
+		},
+		async listFolders() {
+			return [];
 		},
 		async createFolder(input) {
 			calls.push(`folder:${input.path}`);
@@ -41,10 +47,8 @@ function client(): PolicyWriteClient & { calls: string[] } {
 	};
 }
 
-const clock: Clock = { now: () => 0, sleep: async () => undefined };
-
 describe("apply sync plan", () => {
-	test("creates parents first, deletes children first, and paces every write", async () => {
+	test("creates parents first and deletes children first", async () => {
 		const writer = client();
 		const plan: SyncPlan = {
 			actions: [
@@ -75,8 +79,6 @@ describe("apply sync plan", () => {
 			plan,
 			approvedDeletes: ["child", "parent"],
 			client: writer,
-			clock,
-			rng: () => 0.4,
 			declared,
 			foldersByPath: new Map(),
 		});
@@ -96,11 +98,104 @@ describe("apply sync plan", () => {
 				},
 				approvedDeletes: [],
 				client: client(),
-				clock,
-				rng: () => 0.2,
 				declared: emptyDeclaredFilters(),
 				foldersByPath: new Map(),
 			}),
 		).rejects.toThrow("Refusing to delete Old without per-item approval");
+	});
+
+	test("sends a known parent id and omits an unknown parent", async () => {
+		const writer = client();
+		const renames: Array<{ path?: string; parentId?: string; keys: string[] }> = [];
+		writer.renameFolder = async (input) => {
+			renames.push({
+				path: input.path,
+				parentId: input.parentId,
+				keys: Object.keys(input),
+			});
+			return { id: input.id };
+		};
+		const declared = emptyDeclaredFilters();
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "rename-folder", id: "child", from: "fin/banking", to: "fin/receipts" },
+					{ op: "rename-folder", id: "other", from: "shop/orders", to: "shop/returns" },
+					{ op: "rename-folder", id: "top", from: "Archive", to: "archive" },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared,
+			foldersByPath: new Map([["fin", "parent-fin"]]),
+		});
+		expect(renames[0]).toMatchObject({ path: "fin/receipts", parentId: "parent-fin" });
+		expect(renames[1]?.keys).not.toContain("parentId");
+		expect(renames[2]?.keys).not.toContain("parentId");
+	});
+
+	test("records a stopped apply so the next plan neither drifts nor duplicates", async () => {
+		const writer = client();
+		const sieve = 'require ["fileinto"];\nif true {\n  keep;\n}\n';
+		let creates = 0;
+		writer.createFilter = async (input) => {
+			creates += 1;
+			if (creates === 2) throw new Error("proton stopped");
+			return { id: "created-1", name: input.name };
+		};
+		writer.listFilters = async () => [
+			{
+				id: "created-1",
+				name: "Fin - Banking",
+				enabled: true,
+				conditions: [sieve],
+				actions: [sieve],
+			},
+		];
+		const declared = emptyDeclaredFilters();
+		declared.filters = [
+			{ name: "Fin - Banking", enabled: true, sieve },
+			{ name: "Shop - Orders", enabled: true, sieve },
+		];
+		const saved: unknown[] = [];
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "create-filter", name: "Fin - Banking", enabled: true, sieve },
+						{ op: "create-filter", name: "Shop - Orders", enabled: true, sieve },
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+				persist: async (file) => {
+					saved.push(structuredClone(file));
+				},
+			}),
+		).rejects.toThrow("proton stopped");
+		expect(saved).toHaveLength(1);
+		expect(declared.filters[0]?.protonId).toBe("created-1");
+		expect(declared.filters[1]?.protonId).toBeUndefined();
+		const plan = buildSyncPlan({
+			desiredFilters: declared.filters,
+			desiredFolders: [],
+			liveFilters: [{ id: "created-1", name: "Fin - Banking", enabled: true, sieve }],
+			liveFolders: [],
+			observedFilters: declared.observed?.filters,
+			observedFolders: declared.observed?.folders,
+			naming: {
+				folderSlugPattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+				folderExceptions: [],
+			},
+		});
+		expect(plan.actions.some((action) => action.op === "create-filter" && action.name === "Fin - Banking")).toBe(false);
+		expect(plan.actions).toContainEqual(
+			expect.objectContaining({ op: "create-filter", name: "Shop - Orders" }),
+		);
+		expect(plan.notices.some((notice) => notice.op === "drift")).toBe(false);
 	});
 });
