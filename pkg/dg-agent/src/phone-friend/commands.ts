@@ -380,7 +380,7 @@ function cardReceipt(
 	return {
 		card,
 		expires_at: expiresAt(invite),
-		handle: `@${peerHandle}`,
+		handle: `+${peerHandle}`,
 		safety: PHONE_FRIEND_SAFETY_REF,
 		as: selfName,
 	};
@@ -658,7 +658,7 @@ export function registerPhoneFriendCommands(
 		.description("private NIP-17 chat with one contact over public Nostr relays")
 		.option(
 			"--line <name>",
-			"which of your numbers to use: a line name, a contact name (an @ handle works too), or a contact npub; each line has its own key and contact",
+			"which of your numbers to use: a line name, a contact name (a +handle works too, or the older @ form), or a contact npub; each line has its own key and contact",
 			DEFAULT_LINE,
 		)
 		.hook("preAction", (hooked, action) => {

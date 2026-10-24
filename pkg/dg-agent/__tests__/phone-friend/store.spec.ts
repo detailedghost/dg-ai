@@ -188,12 +188,14 @@ describe("resolveLine", () => {
 		expect(() => resolveLine(paths(), npub)).toThrow("matches lines a, b");
 	});
 
-	it("accepts a leading @ on a line name or a contact name", () => {
+	it("accepts a leading + (or the older @) on a line name or a contact name", () => {
 		writeConfig(linePaths(paths(), "consolidation"), { contact: npub, name: "velora", relays: DEFAULT_RELAYS });
 
+		expect(resolveLine(paths(), "+consolidation").name).toBe("consolidation");
+		expect(resolveLine(paths(), "+velora").name).toBe("consolidation");
+		expect(resolveLine(paths(), "+fresh").name).toBe("fresh");
 		expect(resolveLine(paths(), "@consolidation").name).toBe("consolidation");
 		expect(resolveLine(paths(), "@velora").name).toBe("consolidation");
-		expect(resolveLine(paths(), "@fresh").name).toBe("fresh");
 	});
 });
 
@@ -236,7 +238,7 @@ describe("lineForHandle", () => {
 
 describe("handleFor", () => {
 	it("is the contact name when one is set, else the line name", () => {
-		expect(handleFor({ relays: DEFAULT_RELAYS }, line)).toBe("@default");
-		expect(handleFor({ name: "velora", relays: DEFAULT_RELAYS }, line)).toBe("@velora");
+		expect(handleFor({ relays: DEFAULT_RELAYS }, line)).toBe("+default");
+		expect(handleFor({ name: "velora", relays: DEFAULT_RELAYS }, line)).toBe("+velora");
 	});
 });

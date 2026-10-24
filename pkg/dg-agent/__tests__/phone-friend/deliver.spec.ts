@@ -88,11 +88,11 @@ describe("voicemailLine", () => {
 	});
 
 	it("keeps the message fields and lets the title win over an extra title", () => {
-		expect(voicemailLine({ id: "m1", text: "  ping  ", from: "npub1" }, { title: "nope", handle: "@work" })).toEqual({
+		expect(voicemailLine({ id: "m1", text: "  ping  ", from: "npub1" }, { title: "nope", handle: "+work" })).toEqual({
 			id: "m1",
 			text: "  ping  ",
 			from: "npub1",
-			handle: "@work",
+			handle: "+work",
 			title: "ping",
 		});
 	});
@@ -100,7 +100,7 @@ describe("voicemailLine", () => {
 	it("is one feed item the daemon job runner can notify on", () => {
 		const printed = voicemailLine(
 			{ id: "evt1", ts: 10, from: "npub1abc", text: "ship it" },
-			{ call: true, handle: "@work" },
+			{ call: true, handle: "+work" },
 		);
 		const parsed = parseFeedLines(`${JSON.stringify(printed)}\n`);
 		expect(parsed).toEqual({

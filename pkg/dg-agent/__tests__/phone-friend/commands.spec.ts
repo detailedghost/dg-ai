@@ -211,7 +211,7 @@ describe("phoneInvite", () => {
 		expect(decoded.exp).toBe(NOW + 24 * 3600);
 		expect(decoded.handle).toBe(as);
 		expect(expires_at).toBe(new Date((NOW + 24 * 3600) * 1000).toISOString());
-		expect(handle).toBe("@default");
+		expect(handle).toBe("+default");
 		expect(readInvite(line)).toEqual({ secret: decoded.secret, expiresAt: decoded.exp, as });
 		expect(readConfig(line).relays).toEqual(["wss://x.example"]);
 	});
@@ -220,7 +220,7 @@ describe("phoneInvite", () => {
 		await phoneInvite({ name: "grok" }, deps());
 
 		const [{ handle }] = lines() as { handle: string }[];
-		expect(handle).toBe("@grok");
+		expect(handle).toBe("+grok");
 	});
 
 	it("--as overrides the saved self name on this one card, and the override survives on `card`", async () => {
@@ -308,14 +308,14 @@ describe("phoneDial", () => {
 		const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
 		expect(rumor.content).toBe("hello");
 		expect(rumor.tags).toContainEqual(["dg-call", secret]);
-		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"], handle: "@default" }]);
+		expect(lines()).toMatchObject([{ contact: contactNpub, relays_ok: ["wss://x.example"], handle: "+default" }]);
 	});
 
 	it("names the card owner when dial gets a name, and uses it as the handle", async () => {
 		await phoneDial(cardFor(), undefined, deps(), "dante");
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "dante" });
-		expect(lines()).toMatchObject([{ handle: "@dante" }]);
+		expect(lines()).toMatchObject([{ handle: "+dante" }]);
 	});
 
 	it("starts the listener right away, so a reply is not missed", async () => {
@@ -399,7 +399,7 @@ describe("phoneDial with no --line or --name: the card's handle names the line",
 		const velora = linePaths(paths, "velora");
 		expect(readConfig(velora)).toMatchObject({ contact: contactNpub, name: "velora" });
 		expect(readConfig(line).contact).toBeUndefined();
-		expect(lines()).toMatchObject([{ line: "velora", handle: "@velora" }]);
+		expect(lines()).toMatchObject([{ line: "velora", handle: "+velora" }]);
 	});
 
 	it("starts the listener on the new line, not the current one", async () => {
@@ -498,7 +498,7 @@ describe("accepting a call", () => {
 
 		await phoneVoicemail(deps());
 
-		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true, handle: "@default" }]);
+		expect(lines()).toMatchObject([{ from: contactNpub, text: "hello", call: true, handle: "+default" }]);
 		expect(readConfig(line).contact).toBe(contactNpub);
 		expect(readInvite(line)).toBeUndefined();
 	});
@@ -513,7 +513,7 @@ describe("accepting a call", () => {
 		await phoneVoicemail(deps());
 
 		expect(readConfig(line)).toMatchObject({ contact: contactNpub, name: "grok" });
-		expect(lines()).toMatchObject([{ call: true, handle: "@grok" }]);
+		expect(lines()).toMatchObject([{ call: true, handle: "+grok" }]);
 	});
 
 	it("refuses an invite name that another line already uses, and saves no invite", async () => {
@@ -535,7 +535,7 @@ describe("phoneNumber", () => {
 
 		const npub = nip19.npubEncode(getPublicKey(myKey()));
 		expect(lines()).toEqual([
-			{ line: "default", npub, contact: contactNpub, name: null, handle: "@default", key_store: "file", listener: 4242 },
+			{ line: "default", npub, contact: contactNpub, name: null, handle: "+default", key_store: "file", listener: 4242 },
 		]);
 	});
 
@@ -557,7 +557,7 @@ describe("phoneName and phoneContacts", () => {
 
 		expect(lines()).toEqual([
 			{ line: "default", name: "velora", contact: contactNpub },
-			{ line: "default", name: "velora", contact: contactNpub, handle: "@velora", listener: 4242 },
+			{ line: "default", name: "velora", contact: contactNpub, handle: "+velora", listener: 4242 },
 		]);
 		expect(readConfig(line).name).toBe("velora");
 	});

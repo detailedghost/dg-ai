@@ -33,10 +33,10 @@ valid call becomes the contact, and every other sender is dropped. A card is
 one argument — `dgcall2` (or the older `dgcall1`) and then only letters,
 digits, `-`, and `_` — short enough to paste straight into `dial` on one line.
 
-The `handle` is the `@name` to use when talking about a chat: the contact's
+The `handle` is the `+name` to use when talking about a chat: the contact's
 name if one is set (`name <name>`, or `--name <name>` on `invite`/`dial`),
 else the line's own name. `--line` accepts a handle with or without its
-leading `@`.
+leading `+` (the older `@` also still works).
 
 A card also carries `as`: the inviter's own self name, not a label for the
 peer. Self naming is opt-in: it is the saved `whoami`, or `--as <name>` for
@@ -80,7 +80,7 @@ message text. The daemon must be running. The job's environment is `PATH`,
 is unset).
 
 See the [phone-friend skill](../plugins/dg/skills/phone-friend/SKILL.md) for
-the full loop, auto mode (an unattended, always-on conversation), `@<handle>`
+the full loop, auto mode (an unattended, always-on conversation), `+<handle>`
 message routing, and the setup text for the other side. See
 [Scheduled jobs and services](jobs-and-services.md) for the job model this
 delivery hook uses.

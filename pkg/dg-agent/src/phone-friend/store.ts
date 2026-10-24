@@ -113,9 +113,9 @@ export function writeConfig(line: LinePaths, config: PhoneFriendConfig): void {
 	withDb(line, (db) => db.set(CONFIG, config));
 }
 
-/** The @ handle this line's owner uses to refer to it: the contact name if set, else the line name. */
+/** The +handle this line's owner uses to refer to it: the contact name if set, else the line name. */
 export function handleFor(config: PhoneFriendConfig, line: LinePaths): string {
-	return `@${config.name ?? line.name}`;
+	return `+${config.name ?? line.name}`;
 }
 
 /** Every line that holds a database, in name order. */
@@ -127,9 +127,9 @@ export function listLines(paths: DgPaths): LinePaths[] {
 		.filter((line) => existsSync(line.dbPath));
 }
 
-/** Resolves --line from a line name, a saved contact name, or a contact npub, each with an optional leading @; an unknown name is a new line. */
+/** Resolves --line from a line name, a saved contact name, or a contact npub, each with an optional leading + (or the older @); an unknown name is a new line. */
 export function resolveLine(paths: DgPaths, value: string): LinePaths {
-	const name = value.startsWith("@") ? value.slice(1) : value;
+	const name = value.startsWith("+") || value.startsWith("@") ? value.slice(1) : value;
 	const lines = listLines(paths);
 	if (lines.some((line) => line.name === name)) return linePaths(paths, name);
 	const matches = lines.filter((line) => {

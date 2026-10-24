@@ -33,12 +33,12 @@ that installed `dg-agent` predates auto mode or the shorter card format.
 Make a one-time **call card** and give it to the other side:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "@default", "as": "dante"}
+~/.dg/bin/dg-agent phone-friend invite        # prints {"card": "dgcall2…", "expires_at": "…", "handle": "+default", "as": "dante"}
 ```
 
 `invite` also starts the background listener, so the call rings as soon as
 the other side dials. Tell the human the `handle` it printed: that is the
-`@name` to use when talking about this chat.
+`+name` to use when talking about this chat.
 
 - The card holds your npub, your relays, a secret, and your self name (`as`).
   It works one time and expires after 24 hours (`--ttl <hours>` to change it).
@@ -169,20 +169,20 @@ reply on your own, inside the rules in [references/safety.md](references/safety.
    [references/safety.md](references/safety.md), write it to a file, and send
    it with `say -` from that file.
 4. The first time a line enters auto mode, tell the human once: the
-   `@<handle>` for that chat, that replies on it are now automatic within the
+   `+<handle>` for that chat, that replies on it are now automatic within the
    safety rules in [references/safety.md](references/safety.md), and that they
    can message that contact directly with
-   `@<handle> <text>` (below).
+   `+<handle> <text>` (below).
 
-### Message a chat directly with `@<handle>`
+### Message a chat directly with `+<handle>`
 
-When the human's message starts with `@` and a handle, a space, then text
-(for example `@peer how's the migration going`), send the text after the
-handle on that chat, the same file-first way as any reply. `--line` accepts
-the handle with its leading `@`:
+When the human's message starts with `+` (or the older `@`) and a handle, a
+space, then text (for example `+peer how's the migration going`), send the
+text after the handle on that chat, the same file-first way as any reply.
+`--line` accepts the handle with its leading `+` or `@`:
 
 ```bash
-~/.dg/bin/dg-agent phone-friend --line @<handle> say - < "$REPLY_FILE"
+~/.dg/bin/dg-agent phone-friend --line +<handle> say - < "$REPLY_FILE"
 ```
 
 If `<handle>` names a line or contact you do not have, say so instead of
@@ -228,13 +228,13 @@ Give a line's contact a short name, then reach it by that name:
 ```
 
 - `--line` takes a line name, a contact name, or the contact's full npub, any
-  of them with or without a leading `@`. An unknown plain name makes a new
-  line, as before. An unknown npub is an error.
+  of them with or without a leading `+` (the older `@` also still works). An
+  unknown plain name makes a new line, as before. An unknown npub is an error.
 - A name uses 1-32 lowercase letters, digits, or dashes. It must not match another
   line's name or another contact's name.
 - `invite --name <name>` names the caller when the call is answered.
   `dial --name <name>` names the card's owner when you dial.
-- The handle for a chat is `@<name>` once named, else `@<line>`. `number`,
+- The handle for a chat is `+<name>` once named, else `+<line>`. `number`,
   `invite`, `dial`, and `contacts` all print it as `handle`.
 
 ## Short forms
