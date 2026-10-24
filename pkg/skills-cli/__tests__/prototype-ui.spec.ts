@@ -303,6 +303,56 @@ describe("prototype ui", () => {
 		expect(timed.stdout).toBe("timeout\n");
 	});
 
+	test("status falls back to an unclaimed --ext verdict when no local sentinel is pending", async () => {
+		const slug = "ext-fallback-demo";
+		expect((await cli(["status", slug]).done).stdout).toBe("pending\n");
+
+		const verdictDir = join(scratch, "proto", slug);
+		mkdirSync(verdictDir, { recursive: true });
+		writeFileSync(
+			join(verdictDir, "verdict.json"),
+			JSON.stringify({
+				slug,
+				action: "approve",
+				selectedKey: "detailed",
+				ts: 1_721_234_568_000,
+			}),
+		);
+		expect((await cli(["status", slug]).done).stdout).toBe(
+			"approve:detailed\n",
+		);
+
+		writeFileSync(
+			join(verdictDir, "verdict.json"),
+			JSON.stringify({
+				slug,
+				action: "reject",
+				selectedKey: "detailed",
+				feedback: "too busy",
+				ts: 1_721_234_568_001,
+			}),
+		);
+		expect((await cli(["status", slug]).done).stdout).toBe("rejected\n");
+	});
+
+	test("status prefers a real local sentinel over an unclaimed --ext verdict", async () => {
+		const slug = "ext-fallback-wins-demo";
+		const verdictDir = join(scratch, "proto", slug);
+		mkdirSync(verdictDir, { recursive: true });
+		writeFileSync(
+			join(verdictDir, "verdict.json"),
+			JSON.stringify({
+				slug,
+				action: "approve",
+				selectedKey: "detailed",
+				ts: 1_721_234_568_000,
+			}),
+		);
+		await cli(["confirm", slug, "B"]).done;
+		expect((await cli(["status", slug]).done).stdout).toBe("B\n");
+	});
+
+
 	test("times out with status 1 and a timeout line when nothing is decided", async () => {
 		const run = cli([
 			"ui",
