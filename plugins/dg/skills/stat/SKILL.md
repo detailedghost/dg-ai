@@ -57,6 +57,32 @@ Example (`/dg:stat`, default view):
 Total: ~1 hr (critical path: 1 Phone feature to PR)
 ```
 
+The same checklist, `--plain`:
+
+```text
+1. [ ] running: Phone feature to PR [~1 hr]
+   1. [ ] running: Fix the flaky listener test
+2. [ ] queued: Slice 6 [~15 min]
+3. [ ] blocked-user: Approve the Wave 6/7 PR batch
+4. [ ] needs-user: Sign the vendor form
+5. [x] done: Sign in to GitHub
+
+# Total: ~1 hr (critical path: 1 Phone feature to PR)
+```
+
+The same checklist, `--long` (tab-separated):
+
+```text
+ORDER	OWNER	STATUS	WORK	DETAIL	PR/MR	ETA
+1	agent	running	Phone feature to PR	-	-	~1 hr
+1.1	agent	running	Fix the flaky listener test	-	-	-
+2	agent	queued	Slice 6	-	-	~15 min
+3	user	blocked-user	Approve the Wave 6/7 PR batch	-	-	-
+4	user	needs-user	Sign the vendor form	-	-	-
+5	-	done	Sign in to GitHub	-	-	-
+# Total: ~1 hr (critical path: 1 Phone feature to PR)
+```
+
 Open items are numbered in priority order (the order they need doing, not insertion time); done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
 
 ## 1. Gather: one Bash call, filtered in the shell
