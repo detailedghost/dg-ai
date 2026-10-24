@@ -49,14 +49,27 @@ const CLI =
 	process.env.DG_SKILLS_BIN ??
 	join(process.env.HOME ?? "", ".dg", "bin", "dg-skills");
 
-function resolveSentinelPath(name: string): string {
-	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
+/** Pins sentinel resolution to the repo root, matching the agent's own cwd. */
+function gitRoot(): string {
 	try {
-		return execFileSync(CLI, ["prototype", "path", name, ...light], {
+		return execFileSync("git", ["rev-parse", "--show-toplevel"], {
 			encoding: "utf8",
 		}).trim();
 	} catch {
-		return join(process.cwd(), ".agents", "prototype", name, ".selection");
+		return process.cwd();
+	}
+}
+
+function resolveSentinelPath(name: string): string {
+	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
+	const cwd = gitRoot();
+	try {
+		return execFileSync(CLI, ["prototype", "path", name, ...light], {
+			encoding: "utf8",
+			cwd,
+		}).trim();
+	} catch {
+		return join(cwd, ".agents", "prototype", name, ".selection");
 	}
 }
 

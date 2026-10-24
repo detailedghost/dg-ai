@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -156,6 +157,34 @@ describe("express style handler", () => {
 				?.status,
 		).toBe(403);
 		expect((await call(confirm("demo"), headers))?.status).toBe(200);
+	});
+});
+
+describe("prototype endpoint template cwd stability", () => {
+	test("resolves the repo root even when the dev server's cwd is a nested workspace", async () => {
+		execFileSync("git", ["init", "-q"], { cwd: sandbox });
+		const nested = join(sandbox, "apps", "web");
+		mkdirSync(nested, { recursive: true });
+		process.chdir(nested);
+		const mod = await import(join(ASSETS, "prototype-endpoint.ts"));
+		const response = await mod.default.fetch(
+			new Request("http://localhost:3000/prototype-confirm", {
+				method: "POST",
+				headers: GOOD_HEADERS,
+				body: JSON.stringify(confirm("nested-demo")),
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(
+			existsSync(
+				join(sandbox, ".agents", "prototype", "nested-demo", ".selection"),
+			),
+		).toBe(true);
+		expect(
+			existsSync(
+				join(nested, ".agents", "prototype", "nested-demo", ".selection"),
+			),
+		).toBe(false);
 	});
 });
 

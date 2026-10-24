@@ -99,6 +99,8 @@ A page served by `prototype serve` or `prototype ui` skips this step. The server
 
 **Never hand over a prototype whose only affordance is switching variants.** A UI prototype the user must decide on carries the notes box and the **Approve** and **Reject** buttons wired to the sentinel, and the agent then blocks on `prototype wait` before treating it as delivered, or says plainly why it cannot. For a prototype with no host app, use `~/.dg/bin/dg-skills prototype ui <plan|manifest>` (see [local-formats.md](local-formats.md)). It builds the page with the full bar, serves and opens it, blocks for the decision, and prints one JSON line. Do not hand-roll a page with only arrow buttons. For a mounted app route, copy the switcher and endpoint templates. Either way a switcher without Approve, Reject, and notes is incomplete.
 
+**Someone must end up waiting.** A click writes a durable sentinel (see "Claim an outstanding pick" below), but nothing reports it until something calls `wait` or `status` on it. If a builder subagent mounts the prototype and hands off to a different session or the main loop, decide explicitly which side blocks on `prototype wait <name>` — do not hand off assuming the other side already is, or already will. If neither side can block right now, say so and give the exact `prototype wait <name>` (or `status <name>`) command in the handoff, the same way an AFK handoff does below.
+
 **Hand-wire it instead when one document must own every variant**: shared CSS, JS, or state that per-variant fragments cannot express, the usual shape of a motion prototype. Paste `prototype-decision-bar.html` into the page, then run both commands from the same directory every time:
 
 ```sh
