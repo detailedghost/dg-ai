@@ -172,12 +172,12 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/ski
 `dg-skills install --version 1.19.0` is the flag on an already installed
 binary. Leaving it unset installs each binary's newest release, as before.
 
-If the pinned `daemon-v`, `agent-v` or `ext-v` release does not exist, the
-whole install fails and names the missing release, before touching any
-binary or the extension. Check that the owner actually published that
-release for all four components before asking for a pin. A missing pinned
-`skills-v` release still warns and skips, the same as an unpinned install
-that can't reach one of its releases.
+If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
+exist, the whole install fails and names the missing release, before
+touching any binary or the extension. Check that the owner actually
+published that release for all four components before asking for a pin.
+Leaving the version unset keeps today's behavior: install the newest of
+each, warning and skipping one that can't be reached.
 
 ______________________________________________________________________
 

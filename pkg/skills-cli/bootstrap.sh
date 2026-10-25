@@ -12,9 +12,9 @@
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>):
 #       install the skills-v<x.y.z> release instead of the newest skills-v* release;
 #       a leading v or skills-v prefix is accepted. Fails if that release does not
-#       exist. Carries through to `dg-skills install`, so the matching daemon-v,
-#       agent-v and ext-v release installs too; a missing one of those also fails
-#       the whole install, before any binary or the extension changes. Unset:
+#       exist. Carries through to `dg-skills install`, which pins the matching
+#       daemon-v, agent-v and ext-v release too and fails the whole install, before
+#       any binary or the extension changes, if any of the four is missing. Unset:
 #       install the newest of each, warning and skipping one that is missing.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release

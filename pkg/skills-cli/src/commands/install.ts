@@ -211,10 +211,9 @@ function binarySpec(binaryName: string): BinarySpec {
 }
 
 /**
- * A pinned daemon-v, agent-v or ext-v release that does not exist hard-fails the whole
- * install before any binary or the extension is touched, naming the exact missing tag,
- * so a pin never leaves some of them updated and others not. A pinned skills-v release
- * stays warn-and-skip, unchanged, since dg-skills is the installer running right now.
+ * A pinned skills-v, daemon-v, agent-v or ext-v release that does not exist hard-fails
+ * the whole install before any binary or the extension is touched, naming the exact
+ * missing tag, so a pin never leaves some of them updated and others not.
  */
 function assertPinnedReleasesExist(
 	version: string,
@@ -231,7 +230,9 @@ function assertPinnedReleasesExist(
 
 async function installCli(version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) assertPinnedReleasesExist(version, ["daemon-v", "agent-v"], releases);
+	if (version) {
+		assertPinnedReleasesExist(version, BINARIES.map((spec) => spec.tagPrefix), releases);
+	}
 	for (const spec of BINARIES) {
 		await installBinary({ ...spec, version }, releases);
 	}
@@ -248,11 +249,13 @@ async function installSkillsCli(version?: string): Promise<void> {
 		console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
 		return;
 	}
+	if (version) assertPinnedReleasesExist(version, ["skills-v"], releases);
 	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 }
 
 async function installCliOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
+	if (version) assertPinnedReleasesExist(version, ["skills-v"], releases);
 	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
@@ -268,7 +271,7 @@ async function installCliOnly(version?: string): Promise<void> {
 /** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
 async function installAgentOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) assertPinnedReleasesExist(version, ["agent-v"], releases);
+	if (version) assertPinnedReleasesExist(version, ["skills-v", "agent-v"], releases);
 	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 	await installBinary({ ...binarySpec("dg-agent"), version }, releases);
 	setCliOnly(true);
@@ -284,7 +287,11 @@ async function install(
 	pin?: string,
 ): Promise<void> {
 	if (!forceLocal && pin) {
-		assertPinnedReleasesExist(pin, ["ext-v", "daemon-v", "agent-v"], await listReleases());
+		assertPinnedReleasesExist(
+			pin,
+			["ext-v", ...BINARIES.map((spec) => spec.tagPrefix)],
+			await listReleases(),
+		);
 	}
 	setCliOnly(false);
 	const dest = extensionDest(target);
@@ -374,7 +381,7 @@ export function registerInstall(program: Command): void {
 		)
 		.option(
 			"--version <x.y.z>",
-			"pin skills-v/daemon-v/agent-v/ext-v to that release instead of each one's newest; fails before any change if the pinned daemon-v, agent-v or ext-v release does not exist",
+			"pin skills-v/daemon-v/agent-v/ext-v to that release instead of each one's newest; fails before any change if a pinned release does not exist",
 		)
 		.action(
 			async (
