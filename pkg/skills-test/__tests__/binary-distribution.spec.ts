@@ -228,26 +228,32 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 describe("the bootstrap scripts reach dg-daemon through install, not a second curl loop", () => {
 	test("bootstrap.sh ends by calling install rather than fetching dg-daemon itself", () => {
 		const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
-		expect(sh).toMatch(/"\$\{DEST\}"\s+install/);
+		expect(sh).toMatch(/"\$\{INSTALLER\}"\s+install/);
 		expect(sh).not.toContain("dg-daemon-linux");
 		expect(sh).not.toContain("dg-daemon-windows");
 	});
 
 	test("bootstrap.ps1 likewise delegates rather than duplicating the fetch", () => {
 		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
-		expect(ps1).toMatch(/&\s+\$dest\s+install/);
+		expect(ps1).toMatch(/&\s+\$installer\s+install/);
 		expect(ps1).not.toContain("dg-daemon-linux");
 		expect(ps1).not.toContain("dg-daemon-windows");
 	});
 
 	test("the fetcher marks what it downloads executable, so both binaries are runnable", () => {
 		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
-		const fn = /export async function fetchCliBinary[\s\S]*?\n}/.exec(lib)?.[0];
+		const fn = /export function commitCliBinary[\s\S]*?\n}/.exec(lib)?.[0];
 
 		expect(fn).toMatch(/chmodSync\(staging, 0o755\)/);
 		expect(fn?.indexOf("chmodSync(staging")).toBeLessThan(
 			fn?.indexOf("renameSync(staging, dest)") ?? -1,
 		);
+	});
+
+	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		expect(ps1).toMatch(/installer-.*NewGuid.*\.exe/);
+		expect(ps1).not.toMatch(/&\s+\$dest\s+install/);
 	});
 });
 

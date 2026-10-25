@@ -91,6 +91,19 @@ describe("pickExtAsset (extension zip from ext-v* only)", () => {
 	test("no ext-v* release → undefined", () => {
 		expect(pickExtAsset([RELEASES[0]], "chrome")).toBeUndefined();
 	});
+
+	test("a version pin resolves the exact ext-v<version> tag", () => {
+		const pinned: Release[] = [
+			{
+				tag_name: "ext-v2.0.0",
+				draft: false,
+				assets: [{ name: "dg-ai-extension-2.0.0-chrome.zip", browser_download_url: "u/2.0.0" }],
+			},
+			...RELEASES,
+		];
+		expect(pickExtAsset(pinned, "chrome", "1.7.6")?.version).toBe("1.7.6");
+		expect(pickExtAsset(pinned, "chrome", "9.9.9")).toBeUndefined();
+	});
 });
 
 describe("pickCliAsset (binary from skills-v* only)", () => {
@@ -121,6 +134,26 @@ describe("pickCliAsset (binary from skills-v* only)", () => {
 		expect(pickCliAsset(withDraft, SKILLS_SPEC, "linux", "x64")?.version).toBe(
 			"1.0.0",
 		);
+	});
+
+	test("a version pin resolves the exact tag instead of the newest", () => {
+		const pinned: Release[] = [
+			{
+				tag_name: "skills-v2.0.0",
+				draft: false,
+				assets: [{ name: "dg-skills-linux-x64", browser_download_url: "u/2.0.0" }],
+			},
+			...RELEASES,
+		];
+		const a = pickCliAsset(pinned, { ...SKILLS_SPEC, version: "1.0.0" }, "linux", "x64");
+		expect(a?.version).toBe("1.0.0");
+		expect(a?.url).toBe("u/linux-x64");
+	});
+
+	test("a version pin with no matching release resolves undefined, even though a newer one exists", () => {
+		expect(
+			pickCliAsset(RELEASES, { ...SKILLS_SPEC, version: "9.9.9" }, "linux", "x64"),
+		).toBeUndefined();
 	});
 });
 

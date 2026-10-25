@@ -35,13 +35,14 @@ source and needs Bun from https://bun.sh.)
 
 ## Commands
 
-**Usage:** `/dg:browser install [chrome|firefox] [--local]` · `batch-open [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `demo [--print] <script.json>`
+**Usage:** `/dg:browser install [chrome|firefox] [--local] [--version <x.y.z>]` · `batch-open [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `demo [--print] <script.json>`
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--local` | none | install: build the extension from source. | off (download the release) |
+| `--version <x.y.z>` | none | install: pin the skills-v/daemon-v/agent-v/ext-v release to install, instead of each one's newest. | unset (newest) |
 | `--group <name>` | `-g` | batch-open and launch: tab group name. | `PRs` |
 | `--repo owner/repo` | none | batch-open: repository for bare PR numbers. | current repo |
 | `--print` | none | batch-open and demo: print the URLs without opening them. | off |
@@ -50,13 +51,16 @@ source and needs Bun from https://bun.sh.)
 | `--dry-run` | none | launch: show what would run without starting the browser. | off |
 
 
-- `install [chrome|firefox] [--local]` — stage the extension for a one-time load
-  **and** refresh the compiled `dg-skills` binary. Downloads the CI-built
-  extension zip from the latest `ext-v*` release (or builds locally with
-  `--local` / in a source checkout) and the platform `dg-skills` binary from the
-  latest `skills-v*` release, then prints the browser-specific Load-unpacked
+- `install [chrome|firefox] [--local] [--version <x.y.z>]` — stage the extension
+  for a one-time load **and** refresh the compiled `dg-skills` binary. Downloads
+  the CI-built extension zip from the latest `ext-v*` release (or builds locally
+  with `--local` / in a source checkout) and the platform `dg-skills` binary from
+  the latest `skills-v*` release, then prints the browser-specific Load-unpacked
   steps. Relay them. Default target is `chrome` (also serves Brave/Edge/Vivaldi).
-  See `references/install.md` for full per-OS detail.
+  `--version <x.y.z>` pins the skills-v/daemon-v/agent-v/ext-v release instead of
+  each one's newest; a missing pinned release, for any of the four, fails the
+  whole install before anything changes, naming the release. See
+  `references/install.md` for full per-OS detail.
 
 - `batch-open [--group <name>] [--repo owner/repo] [--print] <refs…>` — resolve
   refs and open them in the **default** browser, grouped into `<name>` (default

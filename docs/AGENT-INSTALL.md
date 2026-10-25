@@ -150,6 +150,39 @@ skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Set
 `DG_SKILLS_NO_CLI=1` with the bootstraps for an offline copy that skips the CLI.
 
+## Pin a version
+
+Use this when the user wants a specific release instead of the newest, for
+example to match a pinned CI job or roll back after a bad upgrade. Add
+`--version <x.y.z>` (shell) or set `DG_VERSION` first (PowerShell); it combines
+with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
+the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
+```
+
+Needs 1.21.0 or newer.
+
+On Windows PowerShell:
+
+```powershell
+$env:DG_VERSION = "1.19.0"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+Needs 1.21.0 or newer.
+
+`dg-skills install --version 1.19.0` is the flag on an already installed
+binary. Leaving it unset installs each binary's newest release, as before.
+
+If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
+exist, the whole install fails and names the missing release, before
+touching any binary or the extension. Check that the owner actually
+published that release for all four components before asking for a pin.
+Leaving the version unset keeps today's behavior: install the newest of
+each, warning and skipping one that can't be reached.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

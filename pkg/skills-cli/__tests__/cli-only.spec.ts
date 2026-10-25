@@ -224,4 +224,32 @@ fi
 		expect(result.exitCode).not.toBe(0);
 		expect(result.calls).toBe("");
 	});
+
+	test("passes --version to install when given the flag", async () => {
+		expect(await run(["--version", "9.9.9"])).toEqual({
+			exitCode: 0,
+			calls: "install --version 9.9.9",
+		});
+	});
+
+	test("passes --version to install when DG_VERSION is set", async () => {
+		expect(await run([], { DG_VERSION: "9.9.9" })).toEqual({
+			exitCode: 0,
+			calls: "install --version 9.9.9",
+		});
+	});
+
+	test("combines --version with --cli-only", async () => {
+		expect(await run(["--cli-only", "--version", "9.9.9"])).toEqual({
+			exitCode: 0,
+			calls: "install --cli-only --version 9.9.9",
+		});
+	});
+
+	test("delegates through the newest binary even when the pinned version matches no release", async () => {
+		const result = await run(["--version", "1.0.0"]);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.calls).toBe("install --version 1.0.0");
+	});
 });

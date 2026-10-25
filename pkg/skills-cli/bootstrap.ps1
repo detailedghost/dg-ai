@@ -7,13 +7,29 @@
 # skips the extension and dg-daemon): set $env:DG_AGENT_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #
-# Idempotent: re-running overwrites the binary with the newest skills-v* release.
+# Pin a version instead of the newest release: set $env:DG_VERSION = "<x.y.z>" first
+# (piped `irm | iex` cannot take parameters), or pass -Version <x.y.z> when running a
+# saved copy of this file directly. A leading v or skills-v prefix is accepted. With
+# DG_SKILLS_ONLY this script installs that exact skills-v<x.y.z> binary directly. Every
+# other mode downloads the newest skills-v* binary to a temp file instead and runs its
+# `install --version <x.y.z>` (deleted afterward either way), because that is the
+# binary that knows how to resolve, download and verify a pinned release — the newest
+# release may predate --version support. That install checks every release the mode
+# needs, then downloads and verifies every artifact (with checksums) into staging, and
+# only then replaces anything, including dg-skills itself and its version stamp. Unset:
+# install the newest of each, warning and skipping one that is missing.
+#
+# Idempotent: re-running overwrites the binary with the newest skills-v* release
+# (or the pinned one, with -Version/DG_VERSION).
 # Skills-only copies plugins/dg/skills into $env:DG_SKILLS_DEST
 # (default: $env:DG_HOME\skills or ~/.dg/skills).
 #
 # When the skills-v* release publishes SHA256SUMS (GNU sha256sum lines), the
 # download is verified before it is installed. Releases without that asset
 # still install. The skills release workflow writes the file beside the binaries.
+param(
+	[string]$Version
+)
 $ErrorActionPreference = "Stop"
 
 # Copy skill directories as data, matching @dg/common filesToInstall.
@@ -57,18 +73,34 @@ $repo = "detailedghost/dg-ai"
 $headers = @{ "User-Agent" = "dg-ai" }
 $script:rel = $null
 
+$script:pinnedVersion = $null
+$rawVersion = if ($Version) { $Version } elseif ($env:DG_VERSION) { $env:DG_VERSION } else { $null }
+if ($rawVersion) {
+	if ($rawVersion -like "skills-v*") { $script:pinnedVersion = $rawVersion.Substring(8) }
+	elseif ($rawVersion -like "v*") { $script:pinnedVersion = $rawVersion.Substring(1) }
+	else { $script:pinnedVersion = $rawVersion }
+}
+
 function Resolve-DgRelease {
 	if ($script:rel) { return $script:rel }
 	$perPage = 100
 	$pageCap = 10
 	$scanned = 0
+	$want = if ($env:DG_SKILLS_ONLY -eq "1" -and $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $null }
 	for ($page = 1; $page -le $pageCap; $page++) {
 		$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
 		$scanned += $batch.Count
-		$script:rel = $batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+		$script:rel = if ($want) {
+			$batch | Where-Object { $_.tag_name -eq $want -and -not $_.draft } | Select-Object -First 1
+		} else {
+			$batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+		}
 		if ($script:rel -or $batch.Count -lt $perPage) { break }
 	}
-	if (-not $script:rel) { throw "dg-skills: no skills-v* release found in the $scanned releases scanned" }
+	if (-not $script:rel) {
+		if ($want) { throw "dg-skills: no release named $want found in the $scanned releases scanned" }
+		throw "dg-skills: no skills-v* release found in the $scanned releases scanned"
+	}
 	return $script:rel
 }
 
@@ -127,81 +159,97 @@ $url = $rel.assets | Where-Object { $_.name -eq $asset } | Select-Object -Expand
 
 if (-not $url) { throw "dg-skills: no $asset asset in $($rel.tag_name)" }
 
-New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-Invoke-WebRequest -Headers $headers -Uri $url -OutFile $dest
-
-$sums = $rel.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
-if ($sums) {
-	$sumsPath = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-SHA256SUMS-" + [guid]::NewGuid())
-	try {
-		Invoke-WebRequest -Headers $headers -Uri $sums.browser_download_url -OutFile $sumsPath
-		$expected = $null
-		foreach ($line in Get-Content $sumsPath) {
-			if ($line -match '^([0-9A-Fa-f]{64})\s+\*?(.+)$' -and $Matches[2] -eq $asset) {
-				$expected = $Matches[1].ToLowerInvariant()
-				break
-			}
-		}
-		if (-not $expected) {
-			Remove-Item $dest -Force
-			throw "dg-skills: SHA256SUMS in $($rel.tag_name) has no entry for $asset"
-		}
-		$actual = (Get-FileHash -Algorithm SHA256 -Path $dest).Hash.ToLowerInvariant()
-		if ($actual -ne $expected) {
-			Remove-Item $dest -Force
-			throw "dg-skills: checksum mismatch for $asset in $($rel.tag_name)"
-		}
-	} finally {
-		Remove-Item $sumsPath -Force -ErrorAction SilentlyContinue
-	}
-}
-
-# Stamp the installed version so `dg-skills install` won't re-download the binary.
-Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
-Write-Host "dg-skills installed at $dest"
-
-if ($env:PATH -notlike "*$binDir*") {
-	Write-Host "Add to PATH:  `$env:PATH = `"$binDir;`$env:PATH`""
-}
-
-function Convert-DgInstallLine {
-	param([string]$Line)
-	if ($Line -match '^dg-skills already current \(v(.+)\)\.$') {
-		return "dg-skills verified (v$($Matches[1]))."
-	}
-	return $Line
-}
-
-# Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
-if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
-
-$env:DG_SKILLS_BOOTSTRAP = "1"
-if ($env:DG_CLI_ONLY -eq "1") {
-	$installOutput = & $dest install --cli-only 2>&1
-} elseif ($env:DG_AGENT_ONLY -eq "1") {
-	$installOutput = & $dest install --agent-only 2>&1
+$delegate = $env:DG_SKILLS_ONLY -ne "1" -and $script:pinnedVersion
+$installer = if ($delegate) {
+	Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-installer-" + [guid]::NewGuid() + ".exe")
 } else {
-	# Set up the browser extension too, so one command installs everything.
-	Write-Host "Setting up the dg-ai-extension…"
-	$installOutput = & $dest install 2>&1
+	$dest
 }
-$installCode = $LASTEXITCODE
-$installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }
-if ($installCode -ne 0) { exit $installCode }
+$exitCode = 0
+
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+try {
+	Invoke-WebRequest -Headers $headers -Uri $url -OutFile $installer
+
+	$sums = $rel.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
+	if ($sums) {
+		$sumsPath = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-SHA256SUMS-" + [guid]::NewGuid())
+		try {
+			Invoke-WebRequest -Headers $headers -Uri $sums.browser_download_url -OutFile $sumsPath
+			$expected = $null
+			foreach ($line in Get-Content $sumsPath) {
+				if ($line -match '^([0-9A-Fa-f]{64})\s+\*?(.+)$' -and $Matches[2] -eq $asset) {
+					$expected = $Matches[1].ToLowerInvariant()
+					break
+				}
+			}
+			if (-not $expected) {
+				Remove-Item $installer -Force
+				throw "dg-skills: SHA256SUMS in $($rel.tag_name) has no entry for $asset"
+			}
+			$actual = (Get-FileHash -Algorithm SHA256 -Path $installer).Hash.ToLowerInvariant()
+			if ($actual -ne $expected) {
+				Remove-Item $installer -Force
+				throw "dg-skills: checksum mismatch for $asset in $($rel.tag_name)"
+			}
+		} finally {
+			Remove-Item $sumsPath -Force -ErrorAction SilentlyContinue
+		}
+	}
+
+	if (-not $delegate) {
+		# Stamp the installed version so `dg-skills install` won't re-download the binary.
+		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
+		Write-Host "dg-skills installed at $dest"
+	}
+
+	if ($env:PATH -notlike "*$binDir*") {
+		Write-Host "Add to PATH:  `$env:PATH = `"$binDir;`$env:PATH`""
+	}
+
+	function Convert-DgInstallLine {
+		param([string]$Line)
+		if ($Line -match '^dg-skills already current \(v(.+)\)\.$') {
+			return "dg-skills verified (v$($Matches[1]))."
+		}
+		return $Line
+	}
+
+	# Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
+	if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
+
+	$versionArgs = if ($script:pinnedVersion) { @("--version", $script:pinnedVersion) } else { @() }
+	$env:DG_SKILLS_BOOTSTRAP = "1"
+	if ($env:DG_CLI_ONLY -eq "1") {
+		$installOutput = & $installer install --cli-only @versionArgs 2>&1
+	} elseif ($env:DG_AGENT_ONLY -eq "1") {
+		$installOutput = & $installer install --agent-only @versionArgs 2>&1
+	} else {
+		# Set up the browser extension too, so one command installs everything.
+		Write-Host "Setting up the dg-ai-extension…"
+		$installOutput = & $installer install @versionArgs 2>&1
+	}
+	$exitCode = $LASTEXITCODE
+	$installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }
+} finally {
+	if ($delegate) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+}
+if ($exitCode -ne 0) { exit $exitCode }
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
 # repository's skills into CODEX_HOME (default: $HOME\.codex\skills).
 if ($env:DG_INSTALL_CODEX -eq "1") {
 	$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+	$codexTag = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $rel.tag_name }
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 	try {
-		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$($rel.tag_name).zip" -OutFile $archive
+		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$codexTag.zip" -OutFile $archive
 		Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
 		$skillsDir = Join-Path $codexRoot "skills"
 		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
+		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$codexTag\plugins\dg\skills")) {
 			if (($env:DG_CLI_ONLY -eq "1" -or $env:DG_AGENT_ONLY -eq "1") -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
 			Copy-Item -Recurse -Force $skill.FullName $skillsDir
 		}

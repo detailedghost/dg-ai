@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +41,7 @@ prev=""
 url=""
 for a in "$@"; do
   if [ "$prev" = "-o" ]; then outfile="$a"; fi
-  url="$a"
+  case "$a" in http*) url="$a" ;; esac
   prev="$a"
 done
 case "$url" in
@@ -58,7 +59,22 @@ case "$url" in
     exit 1
   fi
   ;;
+*/archive/refs/tags/*)
+  archtag=$(printf '%s' "$url" | sed -E 's#.*/archive/refs/tags/([^/]+)\\.tar\\.gz$#\\1#')
+  if [ -n "$outfile" ]; then
+    printf '%s\\t%s\\n' "$outfile" "$url" >> "$STUBDIR/downloads.log"
+  fi
+  if [ -f "$STUBDIR/archive-$archtag.tar.gz" ]; then
+    cat "$STUBDIR/archive-$archtag.tar.gz" > "\${outfile:-/dev/stdout}"
+  else
+    echo "stub has no fixture archive for $archtag" >&2
+    exit 1
+  fi
+  ;;
 *)
+  if [ -n "$outfile" ]; then
+    printf '%s\\t%s\\n' "$outfile" "$url" >> "$STUBDIR/downloads.log"
+  fi
   if [ -n "\${INSTALL_BODY:-}" ]; then
     printf '%s\\n' "$INSTALL_BODY" > "\${outfile:-/dev/stdout}"
   else
@@ -75,15 +91,37 @@ type BootstrapRun = {
 	destUrl: string | undefined;
 	versionContent: string | undefined;
 	pageRequests: number;
+	destPath: string;
+	downloads: { out: string; url: string }[];
 };
 
 function fakeBinary(url: string): string {
 	return `#!/bin/sh\n# ${url}\nexit 0\n`;
 }
 
+/** Builds a real .tar.gz fixture so bootstrap.sh's own `tar -xzf` can extract it. */
+function buildCodexArchive(stubDir: string, tag: string, skillName: string, skillBody: string): void {
+	const srcRoot = join(stubDir, `codex-src-${tag}`);
+	const skillDir = join(srcRoot, `dg-ai-${tag}`, "plugins", "dg", "skills", skillName);
+	mkdirSync(skillDir, { recursive: true });
+	writeFileSync(join(skillDir, "SKILL.md"), skillBody);
+	const result = Bun.spawnSync(["tar", "-czf", join(stubDir, `archive-${tag}.tar.gz`), "-C", srcRoot, `dg-ai-${tag}`]);
+	if (result.exitCode !== 0) {
+		throw new Error(`failed to build fixture archive for ${tag}: ${result.stderr.toString()}`);
+	}
+}
+
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
-	options: { sums?: string; installBody?: string; dgHome?: string; skillsOnly?: boolean } = {},
+	options: {
+		sums?: string;
+		installBody?: string;
+		dgHome?: string;
+		skillsOnly?: boolean;
+		args?: string[];
+		env?: Record<string, string>;
+		codexArchives?: { tag: string; skillName: string; skillBody: string }[];
+	} = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
 	const binDir = join(dir, "stubbin");
@@ -93,6 +131,9 @@ async function runBootstrap(
 	});
 	if (options.sums !== undefined) {
 		writeFileSync(join(dir, "SHA256SUMS"), options.sums);
+	}
+	for (const { tag, skillName, skillBody } of options.codexArchives ?? []) {
+		buildCodexArchive(dir, tag, skillName, skillBody);
 	}
 	const counterFile = join(dir, "counter");
 	writeFileSync(counterFile, "0");
@@ -105,21 +146,25 @@ async function runBootstrap(
 	const skillsSource = join(dir, "skills-src");
 	mkdirSync(join(skillsSource, "probe"), { recursive: true });
 	writeFileSync(join(skillsSource, "probe", "SKILL.md"), "probe\n");
-	const proc = Bun.spawn(["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : [])], {
-		env: {
-			...process.env,
-			PATH: `${binDir}:${process.env.PATH}`,
-			HOME: home,
-			DG_HOME: options.dgHome ?? "",
-			STUBDIR: dir,
-			DG_SKILLS_SOURCE: skillsSource,
-			DG_SKILLS_DEST: join(dir, "skills-out"),
-			COUNTER: counterFile,
-			...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
+	const proc = Bun.spawn(
+		["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : []), ...(options.args ?? [])],
+		{
+			env: {
+				...process.env,
+				PATH: `${binDir}:${process.env.PATH}`,
+				HOME: home,
+				DG_HOME: options.dgHome ?? "",
+				STUBDIR: dir,
+				DG_SKILLS_SOURCE: skillsSource,
+				DG_SKILLS_DEST: join(dir, "skills-out"),
+				COUNTER: counterFile,
+				...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
+				...(options.env ?? {}),
+			},
+			stdout: "pipe",
+			stderr: "pipe",
 		},
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	);
 	const stdout = await new Response(proc.stdout).text();
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
@@ -130,6 +175,17 @@ async function runBootstrap(
 	const destContent = existsSync(destPath)
 		? readFileSync(destPath, "utf8")
 		: undefined;
+	const downloadsLog = join(dir, "downloads.log");
+	const downloads = existsSync(downloadsLog)
+		? readFileSync(downloadsLog, "utf8")
+				.trim()
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => {
+					const [out, url] = line.split("\t");
+					return { out: out ?? "", url: url ?? "" };
+				})
+		: [];
 
 	return {
 		code,
@@ -140,6 +196,8 @@ async function runBootstrap(
 			? readFileSync(versionPath, "utf8").trim()
 			: undefined,
 		pageRequests: Number(readFileSync(counterFile, "utf8").trim()),
+		destPath,
+		downloads,
 	};
 }
 
@@ -247,6 +305,107 @@ describe("bootstrap.sh picks its binary from the skills-v* tag only", () => {
 	});
 });
 
+describe("bootstrap.sh pins a version with --version or DG_VERSION", () => {
+	const THREE_RELEASES = [
+		release("skills-v3.0.0", [SKILLS_ASSET]),
+		release("skills-v2.0.0", [SKILLS_ASSET]),
+		release("skills-v1.0.0", [SKILLS_ASSET]),
+	];
+	const ECHO_INSTALL = '#!/bin/sh\necho "install ran: $*"';
+
+	test("--version normalizes and carries through to the dg-skills install call", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "2.0.0"], installBody: ECHO_INSTALL });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("--version=x.y.z works too", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version=2.0.0"], installBody: ECHO_INSTALL });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("DG_VERSION picks the same tag as --version", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { env: { DG_VERSION: "2.0.0" }, installBody: ECHO_INSTALL });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("accepts a leading v or a full skills-v prefix", async () => {
+		const withV = await runBootstrap([THREE_RELEASES], {
+			args: ["--version", "v2.0.0"],
+			installBody: ECHO_INSTALL,
+		});
+		const withSkillsV = await runBootstrap([THREE_RELEASES], {
+			args: ["--version", "skills-v2.0.0"],
+			installBody: ECHO_INSTALL,
+		});
+		expect(withV.stdout).toContain("install ran: install --version 2.0.0");
+		expect(withSkillsV.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("--version takes priority over DG_VERSION", async () => {
+		const run = await runBootstrap([THREE_RELEASES], {
+			args: ["--version", "2.0.0"],
+			env: { DG_VERSION: "1.0.0" },
+			installBody: ECHO_INSTALL,
+		});
+		expect(run.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("--version with no value fails before any download", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version"] });
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("--version requires a value");
+		expect(run.pageRequests).toBe(0);
+	});
+
+	test("downloads the newest release to a temp installer, never the pinned one, and removes it afterward", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "2.0.0"], installBody: ECHO_INSTALL });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.destUrl).toBeUndefined();
+		expect(run.versionContent).toBeUndefined();
+		expect(run.downloads).toHaveLength(1);
+		expect(run.downloads[0]?.url).toContain("/skills-v3.0.0/");
+		expect(run.downloads[0]?.out).not.toBe(run.destPath);
+		expect(existsSync(run.downloads[0]?.out ?? "")).toBe(false);
+	});
+
+	test("a pin matching no release still delegates, leaving validation to the newest binary's own install", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "9.9.9"], installBody: ECHO_INSTALL });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --version 9.9.9");
+		expect(run.downloads[0]?.url).toContain("/skills-v3.0.0/");
+	});
+
+	test("--skills-only still pins the exact release directly and fails clearly when it is missing", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "9.9.9"], skillsOnly: true });
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("no release named skills-v9.9.9 found");
+		expect(run.destUrl).toBeUndefined();
+	});
+
+	test("a pin carries through alongside --cli-only, delegated through the newest binary", async () => {
+		const run = await runBootstrap([THREE_RELEASES], {
+			args: ["--cli-only", "--version", "2.0.0"],
+			installBody: ECHO_INSTALL,
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --cli-only --version 2.0.0");
+		expect(run.destUrl).toBeUndefined();
+	});
+
+	test("fails before any temp installer when the newest release has no asset for this platform", async () => {
+		const run = await runBootstrap(
+			[[release("skills-v3.0.0", []), release("skills-v2.0.0", [SKILLS_ASSET])]],
+			{ args: ["--version", "2.0.0"] },
+		);
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain(`no ${SKILLS_ASSET} asset in skills-v3.0.0`);
+		expect(run.downloads).toHaveLength(0);
+	});
+});
+
 describe("bootstrap.sh pages past the first release listing", () => {
 	test("scans a second page when no skills-v* release appears on the first", async () => {
 		const run = await runBootstrap([
@@ -327,5 +486,45 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 		expect(sh).toContain("dg-skills verified");
 		expect(ps1).toContain("SHA256SUMS");
 		expect(ps1).toContain("dg-skills verified");
+	});
+});
+
+describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", () => {
+	const TWO_RELEASES = [
+		release("skills-v3.0.0", [SKILLS_ASSET]),
+		release("skills-v2.0.0", [SKILLS_ASSET]),
+	];
+
+	test("a pinned install's Codex archive and extraction dir come from the pinned tag", async () => {
+		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		try {
+			const run = await runBootstrap([TWO_RELEASES], {
+				args: ["--version", "2.0.0"],
+				installBody: '#!/bin/sh\necho "install ran: $*"',
+				env: { DG_INSTALL_CODEX: "1", CODEX_HOME: codexHome },
+				codexArchives: [
+					{ tag: "skills-v3.0.0", skillName: "probe", skillBody: "newest probe\n" },
+					{ tag: "skills-v2.0.0", skillName: "probe", skillBody: "pinned probe\n" },
+				],
+			});
+			expect(run.code, run.stderr).toBe(0);
+			expect(run.downloads.some((d) => d.url.includes("/archive/refs/tags/skills-v2.0.0.tar.gz"))).toBe(true);
+			expect(run.downloads.some((d) => d.url.includes("/archive/refs/tags/skills-v3.0.0.tar.gz"))).toBe(false);
+			expect(readFileSync(join(codexHome, "skills", "probe", "SKILL.md"), "utf8")).toBe("pinned probe\n");
+		} finally {
+			rmSync(codexHome, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("bootstrap.ps1 DG_INSTALL_CODEX uses the pinned tag, not the newest", () => {
+	test("the Codex archive URL and extraction path use a pin-aware tag, not $rel.tag_name directly", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		const codexBlock = ps1.slice(ps1.indexOf("DG_INSTALL_CODEX"));
+		expect(codexBlock).toContain(
+			'$codexTag = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $rel.tag_name }',
+		);
+		expect(codexBlock).toContain("archive/refs/tags/$codexTag.zip");
+		expect(codexBlock).toContain("dg-ai-$codexTag\\plugins\\dg\\skills");
 	});
 });

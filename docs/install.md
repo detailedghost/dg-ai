@@ -38,6 +38,41 @@ is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from
 source with `--local` needs [Bun](https://bun.sh).)
 
+## Pin a version
+
+Install a specific release instead of the newest, by adding `--version <x.y.z>`
+(shell) or setting `DG_VERSION` first (PowerShell):
+
+<!-- markdownlint-disable MD013 -->
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
+```
+
+Needs 1.21.0 or newer.
+
+```powershell
+$env:DG_VERSION = "1.19.0"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+Needs 1.21.0 or newer.
+
+<!-- markdownlint-enable MD013 -->
+
+This also pins the `daemon-v*`, `agent-v*` and `ext-v*` releases that
+`dg-skills install` fetches afterward to the same version, and combines with
+`--cli-only`/`--agent-only`. An installed binary accepts the same flag:
+`dg-skills install --version 1.19.0`. Leaving it unset installs each binary's
+newest release, as before.
+
+If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
+exist, the whole install fails and names the missing release. It checks
+every pinned release first and changes nothing — no binary and no
+extension — so a pin never leaves some parts updated and others not.
+Leaving the version unset keeps today's behavior: install the newest of
+each, warning and skipping one that can't be reached.
+
 ## CLI-only install
 
 Install only the `dg-skills` binary and the skills that run without the browser
