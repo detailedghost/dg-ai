@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, resolve, sep, win32 } from "node:path";
 import { resolveDgPaths, runCapture, runCaptureBytes } from "@dg/common/node";
 
@@ -117,6 +117,13 @@ describe("resolveDgPaths", () => {
 		expect(paths.phoneFriendRoot).toBe(posix.join(paths.stateDir, "phone-friend"));
 	});
 
+	it("puts the phone root under <root>/phone, alongside phone-friend for the migration reader", () => {
+		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
+
+		expect(paths.phoneRoot).toBe(posix.join(paths.stateDir, "phone"));
+		expect(paths.phoneRoot).not.toBe(paths.phoneFriendRoot);
+	});
+
 	it("names the daemon files by the daemon, not by the harness", () => {
 		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
 
@@ -143,6 +150,7 @@ describe("resolveDgPaths", () => {
 			expect(win32.dirname(paths[field])).toBe(paths.agentsDir);
 		}
 		expect(paths.phoneFriendRoot).toBe(win32.join(paths.stateDir, "phone-friend"));
+		expect(paths.phoneRoot).toBe(win32.join(paths.stateDir, "phone"));
 	});
 
 	it("honors DG_HOME as the sole root override, replacing <home>/.dg wholesale", () => {
@@ -291,5 +299,42 @@ console.log(JSON.stringify({status: result.status, stdout: result.stdout, stderr
 		await expect(
 			runCapture("dg-nonexistent-binary-xyz", []),
 		).rejects.toBeDefined();
+	});
+
+	it("bounds a timed-out call even when a backgrounded grandchild keeps the output pipe open", async () => {
+		const startedAt = Date.now();
+
+		const result = await runCaptureBytes("sh", ["-c", "sleep 3 & sleep 10"], { timeoutMs: 100 });
+
+		expect(Date.now() - startedAt).toBeLessThan(2000);
+		expect(result.signal).toBe("SIGKILL");
+	});
+
+	it("destroys the output pipe once the grace period fires, so a lingering grandchild's later write fails instead of leaking into a nobody-reads-it pipe forever", async () => {
+		const marker = join(tmpdir(), `runcapture-epipe-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const scriptPath = join(tmpdir(), `runcapture-epipe-script-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`);
+		const grandchildScript = `
+process.stdout.on("error", (err) => {
+	require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(err && err.code));
+	process.exit(0);
+});
+await Bun.sleep(900);
+process.stdout.write("late-data");
+await Bun.sleep(200);
+require("node:fs").writeFileSync(${JSON.stringify(marker)}, "wrote-with-no-error");
+`;
+		writeFileSync(scriptPath, grandchildScript);
+		try {
+			await runCaptureBytes("sh", ["-c", `${process.execPath} ${scriptPath} & sleep 10`], {
+				timeoutMs: 100,
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 1300));
+			const outcome = existsSync(marker) ? readFileSync(marker, "utf8") : "never-wrote";
+			expect(outcome).not.toBe("wrote-with-no-error");
+		} finally {
+			rmSync(marker, { force: true });
+			rmSync(scriptPath, { force: true });
+		}
 	});
 });

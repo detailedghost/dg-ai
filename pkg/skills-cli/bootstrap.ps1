@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
-# Agent-only (install dg-agent too, for a non-Claude agent that only needs phone-friend; still
+# Agent-only (install dg-agent too, for a non-Claude agent that only needs phone; still
 # skips the extension and dg-daemon): set $env:DG_AGENT_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #

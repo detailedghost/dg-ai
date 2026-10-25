@@ -244,7 +244,7 @@ async function installCliOnly(): Promise<void> {
 	);
 }
 
-/** For a non-Claude agent that only needs phone-friend: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
+/** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
 async function installAgentOnly(): Promise<void> {
 	const releases = await listReleases();
 	await installBinary(binarySpec("dg-skills"), releases);
@@ -336,7 +336,7 @@ export function registerInstall(program: Command): void {
 		)
 		.option(
 			"--agent-only",
-			"install dg-agent (and dg-skills, which fetches it); skip the extension and dg-daemon, for a non-Claude agent that only needs phone-friend",
+			"install dg-agent (and dg-skills, which fetches it); skip the extension and dg-daemon, for a non-Claude agent that only needs phone",
 		)
 		.option(
 			"--skills-only",

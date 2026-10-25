@@ -1,6 +1,6 @@
 /**
  * `install --agent-only` fetches dg-skills (the installer vehicle) and dg-agent, so a
- * non-Claude agent that only needs phone-friend has `dg-agent`. It never fetches dg-daemon
+ * non-Claude agent that only needs phone has `dg-agent`. It never fetches dg-daemon
  * or the extension, and never installs personas, which only the Claude-side CLI uses.
  */
 import { describe, expect, test } from "bun:test";
