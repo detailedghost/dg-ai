@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { type DgPaths, isAlive, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
 import {
 	phoneClose,
@@ -44,7 +44,7 @@ import {
 	siblingDaemonPath,
 } from "../../src/phone/migrate";
 import { DEFAULT_RELAYS, findContactByHandle, numberKeyId, readCursor, readNumber } from "../../src/phone/store";
-import { createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
+import { blockingSleep, createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
 
 const NOW = 1_800_000_000;
 
@@ -950,6 +950,49 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 			expect(existsSync(listenerPidPath(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not claim a restore stayed up when it is a zombie the blocking settle wait never reaps", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+				listenerPid: 4242,
+			});
+			const alive = new Set([4242]);
+			let restoredPid: number | undefined;
+
+			expect(() =>
+				migrateIfNeeded(
+					paths,
+					fakeMigrateDeps({
+						classifyListener: (pid) => (pid === 4242 ? "legacy" : undefined),
+						isAlive: (pid) => (pid === restoredPid ? isAlive(pid) : alive.has(pid)),
+						kill: (pid) => {
+							alive.delete(pid);
+						},
+						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+						sleepSync: blockingSleep,
+						startListener: () => {
+							throw new Error("spawn failed");
+						},
+						restoreListener: () => {
+							const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+							restoredPid = child.pid;
+							if (restoredPid === undefined) throw new Error("helper did not start");
+							return restoredPid;
+						},
+						renameLegacyRoot: () => {},
+					}),
+				),
+			).toThrow("No listener stayed up. phone.db was kept. Run phone open.");
+
+			expect(existsSync(listenerPidPath(paths))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

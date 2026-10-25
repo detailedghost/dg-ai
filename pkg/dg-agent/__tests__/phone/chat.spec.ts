@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
 import {
 	addBounded,
+	CALL_TAG,
 	capIds,
 	fetchNew,
 	type Gate,
@@ -9,6 +10,7 @@ import {
 	pickKey,
 	publish,
 	ring,
+	SELF_NAME_TAG,
 	subscribe,
 	unwrapIncoming,
 	wrap,
@@ -173,7 +175,7 @@ describe("fetchNew", () => {
 			);
 		pool.events.push(at("second", 2_000), at("first", 1_000));
 
-		const { messages } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] });
+		const { messages } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, () => 2_005);
 
 		expect(messages.map((m) => [m.text, m.ts])).toEqual([
 			["first", 1_000],
@@ -316,6 +318,28 @@ describe("invite secrets (one-time)", () => {
 		expect(admitted?.newContact).toMatchObject({ via: "invite", suggestedHandle: "velora", inviteSecret: secret });
 	});
 
+	it("carries the invite's own relays onto the new contact, not the gate's default relays", () => {
+		const alice = identity();
+		const bob = identity();
+		const gate: Gate = {
+			contacts: new Map(),
+			secrets: { number: "", invites: [{ secret, expiresAt: 5_000, name: "velora", relays: ["wss://invite.example"] }] },
+		};
+
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gate, 1_000);
+
+		expect(admitted?.newContact?.relays).toEqual(["wss://invite.example"]);
+	});
+
+	it("leaves the new contact's relays unset when the invite has none of its own", () => {
+		const alice = identity();
+		const bob = identity();
+
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gateWithInvite(secret, "velora"), 1_000);
+
+		expect(admitted?.newContact?.relays).toBeUndefined();
+	});
+
 	it("falls back to the caller's dg-as tag when the invite has no pre-assigned name", () => {
 		const alice = identity();
 		const bob = identity();
@@ -387,6 +411,93 @@ describe("the legacy-key re-accept (multi-key gate)", () => {
 			1_000,
 		);
 		expect(reaccept?.reaccept).toEqual({ npub: nip19.npubEncode(alice.pub), keyId: "default" });
+	});
+});
+
+describe("message ttl", () => {
+	it("drops a ring whose rumor is older than the message ttl, even with a matching number secret", () => {
+		const alice = identity();
+		const bob = identity();
+		const secret = "cd".repeat(32);
+		const now = 1_800_000_000;
+		const backdated = nip59.createWrap(
+			nip59.createSeal(
+				nip59.createRumor(
+					{
+						kind: 14,
+						content: "late",
+						created_at: now - MESSAGE_TTL_SECONDS - 1,
+						tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "grok"]],
+					},
+					alice.sk,
+				),
+				alice.sk,
+				bob.pub,
+			),
+			bob.pub,
+		);
+
+		const admitted = unwrapIncoming(backdated, [bob], { contacts: new Map(), secrets: { number: secret, invites: [] } }, now);
+
+		expect(admitted).toBeNull();
+	});
+
+	it("still admits a ring just inside the message ttl", () => {
+		const alice = identity();
+		const bob = identity();
+		const secret = "cd".repeat(32);
+		const now = 1_800_000_000;
+		const fresh = nip59.createWrap(
+			nip59.createSeal(
+				nip59.createRumor(
+					{
+						kind: 14,
+						content: "on time",
+						created_at: now - MESSAGE_TTL_SECONDS + 1,
+						tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "grok"]],
+					},
+					alice.sk,
+				),
+				alice.sk,
+				bob.pub,
+			),
+			bob.pub,
+		);
+
+		const admitted = unwrapIncoming(fresh, [bob], { contacts: new Map(), secrets: { number: secret, invites: [] } }, now);
+
+		expect(admitted?.message.text).toBe("on time");
+	});
+
+	it("drops a backdated reaccept ring from an existing contact, instead of moving their key_id", () => {
+		const alice = identity();
+		const bob = identity();
+		const secret = "cd".repeat(32);
+		const now = 1_800_000_000;
+		const backdated = nip59.createWrap(
+			nip59.createSeal(
+				nip59.createRumor(
+					{
+						kind: 14,
+						content: "hi again",
+						created_at: now - MESSAGE_TTL_SECONDS - 1,
+						tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "alice"]],
+					},
+					alice.sk,
+				),
+				alice.sk,
+				bob.pub,
+			),
+			bob.pub,
+		);
+		const gate: Gate = {
+			contacts: new Map([[alice.pub, { npub: nip19.npubEncode(alice.pub), handle: "alice" }]]),
+			secrets: { number: secret, invites: [] },
+		};
+
+		const admitted = unwrapIncoming(backdated, [bob], gate, now);
+
+		expect(admitted).toBeNull();
 	});
 });
 

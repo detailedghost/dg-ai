@@ -104,10 +104,11 @@ export async function loadKey(deps: KeyDeps, id: string): Promise<LoadedKey | un
 	return undefined;
 }
 
-/** Best-effort: never let a write this call made but is abandoning linger as an orphan. */
-async function cleanUpOrphan(client: KeyClient, name: string): Promise<void> {
+/** Best-effort: deletes `name` only if it still holds the value this call itself wrote. */
+export async function cleanUpOrphan(client: KeyClient, name: string, ownValue: string): Promise<void> {
 	try {
-		await client.delete(name);
+		const record = await client.get(name);
+		if (record?.value === ownValue) await client.delete(name);
 	} catch {}
 }
 
@@ -122,7 +123,7 @@ async function putInStore(deps: KeyDeps, id: string, client: KeyClient, sk: Uint
 		if (!Buffer.from(await readStore(deps, id)).equals(Buffer.from(sk))) return false;
 		return markKeyInStore(deps.db, id, sk);
 	} catch (err) {
-		await cleanUpOrphan(client, name);
+		await cleanUpOrphan(client, name, nsec);
 		process.stderr.write(
 			`phone: the dg credential store did not take the key, so it stays in the phone database: ${describeError(err)}\n`,
 		);

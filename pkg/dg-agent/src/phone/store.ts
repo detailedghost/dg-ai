@@ -224,7 +224,12 @@ export function gateFor(db: PhoneDb): Gate {
 		contacts,
 		secrets: {
 			number: readNumber(db)?.secret ?? "",
-			invites: liveInvites(db).map((invite) => ({ secret: invite.secret, expiresAt: invite.expiresAt, name: invite.name })),
+			invites: liveInvites(db).map((invite) => ({
+				secret: invite.secret,
+				expiresAt: invite.expiresAt,
+				name: invite.name,
+				relays: invite.relays,
+			})),
 		},
 	};
 }

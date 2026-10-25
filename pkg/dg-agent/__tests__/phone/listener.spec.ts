@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
@@ -37,7 +37,7 @@ import {
 	writeNumber,
 	writeRelays,
 } from "../../src/phone/store";
-import { createFakePool, type FakePool } from "./fake-pool";
+import { blockingSleep, createFakePool, type FakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
 let home: string;
@@ -213,6 +213,30 @@ describe("runListener", () => {
 		await run;
 
 		expect(findContactByHandle(db, "preassigned")?.npub).toBe(caller.npub);
+	});
+
+	it("records an invite-admitted contact with the invite's own relays, not the default relays", async () => {
+		const numberSk = setUpNumber("ff".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		const inviteSecret = "22".repeat(32);
+		addInvite(db, {
+			secret: inviteSecret,
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			name: "velora",
+			keyId: DEFAULT_NUMBER_KEY_ID,
+			relays: ["wss://invite.example"],
+		});
+		const caller = identity();
+		pool.events.push(ring("hi", caller.sk, getPublicKey(numberSk), inviteSecret, "x"));
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(findContactByHandle(db, "velora")?.relays).toEqual(["wss://invite.example"]);
 	});
 
 	it("moves a known contact's key id when they ring the number secret from a new key", async () => {
@@ -637,6 +661,19 @@ describe("claimListener", () => {
 		}
 	});
 
+	it("names the error code when the lock file itself cannot be read, not the holder's command line", () => {
+		mkdirSync(listenerClaimPath(paths));
+		const past = new Date(Date.now() - 5000);
+		utimesSync(listenerClaimPath(paths), past, past);
+		const stderr = captureStderr();
+		try {
+			expect(claimListener(paths, 5150)).toBe(false);
+			expect(stderr.lines.join("")).toContain("could not read the lock file (EISDIR); leaving its lock; pid 5150 is exiting");
+		} finally {
+			stderr.restore();
+		}
+	});
+
 	it("falls back to an exclusive create when the filesystem cannot hard-link", () => {
 		const link = () => {
 			const err = new Error("operation not supported") as NodeJS.ErrnoException;
@@ -689,6 +726,19 @@ describe("holderVerdict", () => {
 
 		expect(holderVerdict(pid)).toBe("foreign");
 	});
+
+	it("calls a zombie pid foreign instead of unknown, so its lock is not held forever", () => {
+		const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		try {
+			blockingSleep(200);
+
+			expect(holderVerdict(pid)).toBe("foreign");
+		} finally {
+			child.kill();
+		}
+	});
 });
 
 describe("displaceStaleLock", () => {
@@ -708,5 +758,54 @@ describe("displaceStaleLock", () => {
 		expect(displaceStaleLock(path, "111\n", `${path}.aside`)).toBe("restored");
 		expect(readFileSync(path, "utf8")).toBe("222\n");
 		expect(existsSync(`${path}.aside`)).toBe(false);
+	});
+
+	it("falls back to a rename when the filesystem cannot hard-link, so the put-back still restores a live lock", () => {
+		const path = listenerClaimPath(paths);
+		writeFileSync(path, "222\n", { mode: 0o600 });
+		const link = () => {
+			const err = new Error("operation not supported") as NodeJS.ErrnoException;
+			err.code = "ENOTSUP";
+			throw err;
+		};
+
+		expect(displaceStaleLock(path, "111\n", `${path}.aside`, link)).toBe("restored");
+		expect(readFileSync(path, "utf8")).toBe("222\n");
+		expect(existsSync(`${path}.aside`)).toBe(false);
+	});
+
+	it("does not overwrite a third contender's fresh lock, and still cleans up the aside file, when the put-back lands on an occupied path", () => {
+		const path = listenerClaimPath(paths);
+		const aside = `${path}.aside`;
+		writeFileSync(path, "222\n", { mode: 0o600 });
+
+		const grandchildScript = `
+import { mock } from "bun:test";
+const fs = await import("node:fs");
+const originalLink = fs.linkSync;
+let injected = false;
+mock.module("node:fs", () => ({
+	...fs,
+	linkSync(src, dest) {
+		if (!injected && dest === ${JSON.stringify(path)}) {
+			injected = true;
+			fs.writeFileSync(dest, "999\\n", { mode: 0o600 });
+		}
+		return originalLink(src, dest);
+	},
+}));
+const { displaceStaleLock } = await import(${JSON.stringify(`${import.meta.dir}/../../src/phone/listener.ts`)});
+const result = displaceStaleLock(${JSON.stringify(path)}, "111\\n", ${JSON.stringify(aside)});
+console.log(JSON.stringify({ injected, result }));
+`;
+		const proc = Bun.spawnSync([process.execPath, "--eval", grandchildScript], { stdio: ["ignore", "pipe", "pipe"] });
+
+		expect(proc.stderr.toString()).toBe("");
+		expect(proc.exitCode).toBe(0);
+		const outcome = JSON.parse(proc.stdout.toString());
+		expect(outcome.injected).toBe(true);
+		expect(outcome.result).toBe("restored");
+		expect(readFileSync(path, "utf8")).toBe("999\n");
+		expect(existsSync(aside)).toBe(false);
 	});
 });

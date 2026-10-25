@@ -195,7 +195,7 @@ describe("gateFor", () => {
 		const hex = nip19.decode(who).data as string;
 		expect(gate.contacts.get(hex)).toEqual({ npub: who, handle: "velora" });
 		expect(gate.secrets.number).toBe("ab".repeat(32));
-		expect(gate.secrets.invites).toEqual([{ secret: "cd".repeat(32), expiresAt: NOW + 100, name: "grok" }]);
+		expect(gate.secrets.invites).toEqual([{ secret: "cd".repeat(32), expiresAt: NOW + 100, name: "grok", relays: [] }]);
 	});
 
 	it("gives an empty-string number secret before `number` has ever run", () => {

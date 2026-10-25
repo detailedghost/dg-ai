@@ -50,6 +50,11 @@ export function makeHomeTracker(prefix: string): {
 	};
 }
 
+/** Blocks the event loop so a just-exited child cannot be reaped before the next read. */
+export function blockingSleep(ms: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /** NDJSON stdout, one JSON value per line. */
 export function parseNdjson(rows: string[]): unknown[] {
 	return rows

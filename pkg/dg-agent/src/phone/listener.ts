@@ -77,11 +77,23 @@ export function commandLookupFromText(status: number | null, stdout: string | un
 	return { kind: "args", args };
 }
 
+/** True when `/proc/<pid>/stat` reports zombie state; anything unreadable is not a zombie. */
+export function isZombie(pid: number): boolean {
+	try {
+		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+		const afterComm = stat.slice(stat.lastIndexOf(")") + 2);
+		return afterComm.charAt(0) === "Z";
+	} catch {
+		return false;
+	}
+}
+
 function readProcessArgs(pid: number): ProcessArgs {
 	if (!Number.isSafeInteger(pid) || pid <= 0) return { kind: "unknown" };
 	if (!isAlive(pid)) return { kind: "dead" };
 	const cmdline = `/proc/${pid}/cmdline`;
 	if (existsSync("/proc")) {
+		if (isZombie(pid)) return { kind: "dead" };
 		try {
 			if (!existsSync(cmdline)) return isAlive(pid) ? { kind: "unknown" } : { kind: "dead" };
 			const args = readFileSync(cmdline, "utf8")
@@ -159,7 +171,7 @@ const CLAIM_ATTEMPTS = 5;
 
 const CLAIM_UNKNOWN_WAIT_MS = 20;
 
-type ClaimView = { kind: "mine" | "held" | "unknown" | "stale"; holder: string };
+type ClaimView = { kind: "mine" | "held" | "unknown" | "stale"; holder: string; reason?: string };
 
 function logClaim(message: string): void {
 	process.stderr.write(`phone: ${message}\n`);
@@ -180,9 +192,14 @@ function readClaimRaw(path: string): string | undefined {
 /**
  * Moves a stale lock aside and deletes it only when the moved bytes are still `expected`.
  * A rename is atomic, so a contender that already replaced the lock does not have its file removed.
- * If the moved bytes differ, they are renamed back.
+ * If the moved bytes differ, `link` puts them back, falling back to a rename on anything but `EEXIST`.
  */
-export function displaceStaleLock(path: string, expected: string, aside: string): "displaced" | "restored" | "missed" {
+export function displaceStaleLock(
+	path: string,
+	expected: string,
+	aside: string,
+	link: (src: string, dest: string) => void = linkSync,
+): "displaced" | "restored" | "missed" {
 	try {
 		renameSync(path, aside);
 	} catch {
@@ -191,10 +208,15 @@ export function displaceStaleLock(path: string, expected: string, aside: string)
 	const moved = readClaimRaw(aside);
 	if (moved !== expected) {
 		try {
-			renameSync(aside, path);
-		} catch {
-			// The lock path was reclaimed. Leave the aside file so those bytes are not deleted.
+			link(aside, path);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+				try {
+					renameSync(aside, path);
+				} catch {}
+			}
 		}
+		rmSync(aside, { force: true });
 		return "restored";
 	}
 	rmSync(aside, { force: true });
@@ -208,14 +230,15 @@ function inspectClaim(path: string, pid: number, verdict: (holder: number) => Ho
 	try {
 		raw = readFileSync(path, "utf8");
 		ageMs = now - statSync(path).mtimeMs;
-	} catch {
+	} catch (err) {
+		const reason = (err as NodeJS.ErrnoException).code;
 		try {
 			ageMs = now - statSync(path).mtimeMs;
 		} catch {
 			return { kind: "stale", holder: "" };
 		}
 		if (ageMs < CLAIM_GRACE_MS) return { kind: "held", holder: "" };
-		return { kind: "unknown", holder: "" };
+		return { kind: "unknown", holder: "", reason };
 	}
 	const holder = raw.trim();
 	const parsed = Number(holder);
@@ -270,6 +293,7 @@ export function claimListener(
 	writeFileSync(tmp, String(pid), { mode: 0o600 });
 	let announcedTakeover = false;
 	let sawUnknown = false;
+	let unknownReason: string | undefined;
 	try {
 		for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
 			if (claimExclusive(tmp, path, pid, link) === "created") return true;
@@ -281,6 +305,7 @@ export function claimListener(
 			}
 			if (seen.kind === "unknown") {
 				sawUnknown = true;
+				unknownReason = seen.reason ?? unknownReason;
 				sleepClaim(CLAIM_UNKNOWN_WAIT_MS);
 				continue;
 			}
@@ -293,12 +318,13 @@ export function claimListener(
 			}
 			if (again.kind === "unknown") {
 				sawUnknown = true;
+				unknownReason = again.reason ?? unknownReason;
 				sleepClaim(CLAIM_UNKNOWN_WAIT_MS);
 				continue;
 			}
 			if (before === undefined || readClaimRaw(path) !== before) continue;
 			const aside = `${path}.${pid}.${attempt}.stale`;
-			if (displaceStaleLock(path, before, aside) !== "displaced") continue;
+			if (displaceStaleLock(path, before, aside, link) !== "displaced") continue;
 			if (!announcedTakeover) {
 				logClaim(`listener lock held by ${again.holder || "an empty file"} is not a live phone listener; taking over`);
 				announcedTakeover = true;
@@ -307,7 +333,9 @@ export function claimListener(
 	} finally {
 		rmSync(tmp, { force: true });
 	}
-	if (sawUnknown) {
+	if (unknownReason) {
+		logClaim(`listener claim lost; could not read the lock file (${unknownReason}); leaving its lock; pid ${pid} is exiting`);
+	} else if (sawUnknown) {
 		logClaim(`listener claim lost; could not read the holder's command line; leaving its lock; pid ${pid} is exiting`);
 	} else {
 		logClaim(`listener claim lost; pid ${pid} is exiting`);
@@ -390,7 +418,8 @@ function admitMessage(
 	if (newContact && !findContactByNpub(db, newContact.npub)) {
 		const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
 		const handle = nextFreeHandle(db, base);
-		addContact(db, { npub: newContact.npub, handle, relays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
+		const contactRelays = newContact.relays?.length ? newContact.relays : relays;
+		addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
 		if (newContact.inviteSecret) consumeInvite(db, newContact.inviteSecret);
 	}
 	if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);

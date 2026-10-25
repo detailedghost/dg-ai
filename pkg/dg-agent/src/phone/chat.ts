@@ -6,8 +6,8 @@ import { MESSAGE_TTL_SECONDS } from "./db";
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string };
-/** The admission-time view of a live invite: just enough for the gate to match and name a new caller. */
-export type Invite = { secret: string; expiresAt: number; name?: string };
+/** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
+export type Invite = { secret: string; expiresAt: number; name?: string; relays?: string[] };
 export type Seen = { cursor: number; ids: string[] };
 /** One of our own keys, as fetchNew/subscribe need it: which pubkey a wrap may address, and the sk to open it. */
 export type KeyEntry = { id: string; pub: string; sk: Uint8Array };
@@ -25,6 +25,8 @@ export type NewContact = {
 	via: "number" | "invite";
 	suggestedHandle: string;
 	inviteSecret?: string;
+	/** The matched invite's own relays; unset for a number-secret admission, which uses the default relays. */
+	relays?: string[];
 };
 export type Reaccept = { npub: string; keyId: string };
 
@@ -94,12 +96,14 @@ function selfNameOf(rumor: Rumor): string | undefined {
 }
 
 /**
+ * A rumor older than `MESSAGE_TTL_SECONDS` is rejected outright, before any secret or contact check.
  * A known sender is always admitted; a ring that also carries the number secret is a silent
  * re-accept (the contact's `key_id` moves to whichever key the wrap was addressed to). An unknown
  * sender is admitted only by the number secret or a live invite secret, and always flagged `call`
  * so the caller announces the new contact. An invite match consumes that one invite.
  */
 function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: number): Admitted | null {
+	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return null;
 	const npub = nip19.npubEncode(rumor.pubkey);
 	const message: Message = { id: event.id, ts: rumor.created_at, from: npub, text: rumor.content };
 	const existing = gate.contacts.get(rumor.pubkey);
@@ -130,7 +134,15 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 				contacts,
 				secrets: { number: gate.secrets.number, invites: gate.secrets.invites.filter((live) => live.secret !== invite.secret) },
 			},
-			newContact: { pubkeyHex: rumor.pubkey, npub, keyId, via: "invite", suggestedHandle: handle, inviteSecret: invite.secret },
+			newContact: {
+				pubkeyHex: rumor.pubkey,
+				npub,
+				keyId,
+				via: "invite",
+				suggestedHandle: handle,
+				inviteSecret: invite.secret,
+				relays: invite.relays,
+			},
 		};
 	}
 	return null;

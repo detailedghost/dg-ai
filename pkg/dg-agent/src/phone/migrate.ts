@@ -9,6 +9,7 @@ import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
 import {
 	adoptListenerPid,
+	isZombie,
 	listenerCommandArgs,
 	listenerGeneration,
 	listenerLogPath,
@@ -409,10 +410,10 @@ function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener
 		return { stayedUp: false };
 	}
 	for (let waited = 0; waited < RESTORE_SETTLE_MS; waited += 50) {
-		if (!deps.isAlive(pid)) return { stayedUp: false };
+		if (!deps.isAlive(pid) || isZombie(pid)) return { stayedUp: false };
 		deps.sleepSync(50);
 	}
-	if (!deps.isAlive(pid)) return { stayedUp: false };
+	if (!deps.isAlive(pid) || isZombie(pid)) return { stayedUp: false };
 	adoptListenerPid(paths, { pid, since: deps.now(), hook: null });
 	return { stayedUp: true, pid };
 }

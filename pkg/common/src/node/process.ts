@@ -124,6 +124,9 @@ export async function runCapture(
 	};
 }
 
+/** How long to wait for a closed pipe's final buffered output once the child itself has exited. */
+const EXIT_TO_CLOSE_GRACE_MS = 500;
+
 /**
  * Capture exact bytes and signal-derived status; startup errors reject and nonzero exits resolve.
  * Null stdin ignores input, undefined closes an empty pipe, and a string supplies its exact contents.
@@ -148,6 +151,8 @@ export function runCaptureBytes(
 				: spawn(command, args, { ...captureOptions, stdio: "pipe" });
 		const stdout: Buffer[] = [];
 		const stderr: Buffer[] = [];
+		let settled = false;
+		let graceTimer: ReturnType<typeof setTimeout> | undefined;
 		child.stdout.on("data", (chunk: Buffer) => {
 			stdout.push(chunk);
 		});
@@ -155,17 +160,26 @@ export function runCaptureBytes(
 			stderr.push(chunk);
 		});
 		child.on("error", reject);
-		child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+		const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(graceTimer);
 			const status =
 				code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0);
-			const out = Buffer.concat(stdout);
-			const err = Buffer.concat(stderr);
 			resolve({
 				status,
 				signal,
-				stdout: out,
-				stderr: err,
+				stdout: Buffer.concat(stdout),
+				stderr: Buffer.concat(stderr),
 			});
+		};
+		child.on("close", settle);
+		child.on("exit", (code, signal) => {
+			graceTimer = setTimeout(() => {
+				child.stdout.destroy();
+				child.stderr.destroy();
+				settle(code, signal);
+			}, EXIT_TO_CLOSE_GRACE_MS);
 		});
 		child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
 			if (error.code !== "EPIPE") reject(error);

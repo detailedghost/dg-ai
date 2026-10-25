@@ -13,6 +13,7 @@ import {
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { PhoneDb } from "../../src/phone/db";
 import {
+	cleanUpOrphan,
 	createFileKey,
 	ensureKey,
 	GRANT_PREFIX,
@@ -89,6 +90,30 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
+describe("cleanUpOrphan", () => {
+	it("deletes the credential when the store still holds this call's own value", async () => {
+		store.set(KEY_NAME, "nsec1ownvalue");
+
+		await cleanUpOrphan(client(), KEY_NAME, "nsec1ownvalue");
+
+		expect(store.has(KEY_NAME)).toBe(false);
+	});
+
+	it("leaves another call's committed key alone when it no longer matches this call's own value", async () => {
+		store.set(KEY_NAME, "nsec1winnervalue");
+
+		await cleanUpOrphan(client(), KEY_NAME, "nsec1ownvalue");
+
+		expect(store.get(KEY_NAME)).toBe("nsec1winnervalue");
+	});
+
+	it("does nothing when the store never received this call's value", async () => {
+		await cleanUpOrphan(client(), KEY_NAME, "nsec1ownvalue");
+
+		expect(store.has(KEY_NAME)).toBe(false);
+	});
+});
+
 describe("ensureKey", () => {
 	it("puts the first key in the store and makes a grant when a session exists", async () => {
 		const { sk, mode } = await ensureKey(deps({ session: true }), "default");
@@ -120,7 +145,7 @@ describe("ensureKey", () => {
 		expect(calls).toEqual([`set ${KEY_NAME}`, `grant ${GRANT_PREFIX}`, `get ${KEY_NAME}`]);
 	});
 
-	it("keeps the file key and cleans up the orphaned store secret when the read-back does not match", async () => {
+	it("keeps the file key and leaves the store secret alone when the read-back does not match this call's own write", async () => {
 		const original = createFileKey(db, "default") as Uint8Array;
 
 		const { sk, mode } = await ensureKey(
@@ -131,7 +156,7 @@ describe("ensureKey", () => {
 		expect(mode).toBe("file");
 		expect(Buffer.from(sk).equals(Buffer.from(original))).toBe(true);
 		expect(readFileKey(db, "default")).toBeDefined();
-		expect(store.has(KEY_NAME)).toBe(false);
+		expect(store.get(KEY_NAME)).toBe(nip19.nsecEncode(sk));
 	});
 
 	it("keeps the file key when the store refuses the write", async () => {
