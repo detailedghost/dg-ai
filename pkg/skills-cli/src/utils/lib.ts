@@ -130,15 +130,19 @@ export function cliAssetName(
 }
 
 /**
- * Newest ext-v* release's -TARGET.zip. /releases is newest-first; we filter to
- * ext-v* because the repo also publishes skills-v* (CLI binaries) — a plain
+ * Newest ext-v* release's -TARGET.zip, or the exact ext-v<version> release
+ * when `version` pins one. /releases is newest-first; we filter to ext-v*
+ * because the repo also publishes skills-v* (CLI binaries) — a plain
  * /releases/latest would resolve across all tags and miss the zips.
  */
 export function pickExtAsset(
 	releases: Release[],
 	target: Target,
+	version?: string,
 ): PickedAsset | undefined {
-	const rel = releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
+	const rel = version
+		? releases.find((r) => r.tag_name === `ext-v${version}` && !r.draft)
+		: releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
 	const asset = rel?.assets.find((a) => a.name.endsWith(`-${target}.zip`));
 	if (!rel || !asset) return undefined;
 	return {
@@ -148,7 +152,8 @@ export function pickExtAsset(
 	};
 }
 
-export type BinarySpec = { binaryName: string; tagPrefix: string };
+/** `version` pins resolution to `${tagPrefix}${version}` exactly, instead of the newest release with that prefix. */
+export type BinarySpec = { binaryName: string; tagPrefix: string; version?: string };
 
 export function pickCliAsset(
 	releases: Release[],
@@ -158,9 +163,9 @@ export function pickCliAsset(
 ): PickedAsset | undefined {
 	const name = cliAssetName(spec.binaryName, platform, arch);
 	if (!name) return undefined;
-	const rel = releases.find(
-		(r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft,
-	);
+	const rel = spec.version
+		? releases.find((r) => r.tag_name === `${spec.tagPrefix}${spec.version}` && !r.draft)
+		: releases.find((r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft);
 	const asset = rel?.assets.find((a) => a.name === name);
 	if (!rel || !asset) return undefined;
 	const sums = rel.assets.find((a) => a.name === "SHA256SUMS");
@@ -221,20 +226,25 @@ export function describeMissingCliAsset(
 	spec: BinarySpec,
 	releases: Release[],
 ): MissingCliAssetReason {
-	const hasRelease = releases.some(
-		(r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft,
-	);
+	const hasRelease = spec.version
+		? releases.some((r) => r.tag_name === `${spec.tagPrefix}${spec.version}` && !r.draft)
+		: releases.some((r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft);
 	return hasRelease
 		? { kind: "no-platform-asset" }
 		: { kind: "no-matching-release", releasesScanned: releases.length };
 }
 
-/** Download the newest extension release's zip for `target` to a temp file. */
+/** Download the newest extension release's zip for `target`, or the exact `version` pin, to a temp file. */
 export async function downloadReleaseAsset(
 	target: Target,
+	version?: string,
 ): Promise<{ zip: string; version: string }> {
-	const asset = pickExtAsset(await listReleases(), target);
-	if (!asset) throw new Error(`no ext-v* ${target} asset found`);
+	const asset = pickExtAsset(await listReleases(), target, version);
+	if (!asset) {
+		throw new Error(
+			version ? `no ext-v${version} ${target} asset found` : `no ext-v* ${target} asset found`,
+		);
+	}
 	const dl = await fetch(asset.url, { headers: UA });
 	if (!dl.ok) throw new Error(`asset download failed: HTTP ${dl.status}`);
 	const zip = join(tmpdir(), asset.name);

@@ -159,18 +159,19 @@ async function installBinary(
 			console.warn(
 				reason.kind === "no-platform-asset"
 					? `⚠ ${binaryName}: this platform (${platform}) has no published asset; skipping its refresh.`
-					: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
+					: spec.version
+						? `⚠ ${binaryName}: no release ${spec.tagPrefix}${spec.version} was found; skipping its refresh.`
+						: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
 			);
 			return;
 		}
 		const vf = cliVersionFile(binaryName);
 		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
 		// The binary is large; skip the download when we're already current.
-		if (
-			installed &&
-			existsSync(cliDest(binaryName)) &&
-			versionGte(installed, asset.version)
-		) {
+		const current = spec.version
+			? installed === asset.version
+			: Boolean(installed) && versionGte(installed, asset.version);
+		if (current && existsSync(cliDest(binaryName))) {
 			console.log(currentBinaryLine(binaryName, installed));
 			return;
 		}
@@ -209,16 +210,16 @@ function binarySpec(binaryName: string): BinarySpec {
 	return spec;
 }
 
-async function installCli(): Promise<void> {
+async function installCli(version?: string): Promise<void> {
 	const releases = await listReleases();
 	for (const spec of BINARIES) {
-		await installBinary(spec, releases);
+		await installBinary({ ...spec, version }, releases);
 	}
 	removeRetiredBinaries();
 }
 
 /** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
-async function installSkillsCli(): Promise<void> {
+async function installSkillsCli(version?: string): Promise<void> {
 	let releases: Release[];
 	try {
 		releases = await listReleases();
@@ -227,12 +228,12 @@ async function installSkillsCli(): Promise<void> {
 		console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
 		return;
 	}
-	await installBinary(binarySpec("dg-skills"), releases);
+	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 }
 
-async function installCliOnly(): Promise<void> {
+async function installCliOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
-	await installBinary(binarySpec("dg-skills"), releases);
+	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
 	setCliOnly(true);
@@ -245,10 +246,10 @@ async function installCliOnly(): Promise<void> {
 }
 
 /** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
-async function installAgentOnly(): Promise<void> {
+async function installAgentOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
-	await installBinary(binarySpec("dg-skills"), releases);
-	await installBinary(binarySpec("dg-agent"), releases);
+	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
+	await installBinary({ ...binarySpec("dg-agent"), version }, releases);
 	setCliOnly(true);
 	console.log(
 		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
@@ -259,6 +260,7 @@ async function install(
 	target: Target,
 	forceLocal: boolean,
 	repo?: string,
+	pin?: string,
 ): Promise<void> {
 	setCliOnly(false);
 	const dest = extensionDest(target);
@@ -268,7 +270,7 @@ async function install(
 	let stage: () => void;
 	const release = forceLocal
 		? undefined
-		: await downloadReleaseAsset(target).catch((err) => {
+		: await downloadReleaseAsset(target, pin).catch((err) => {
 				console.warn(
 					`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
 				);
@@ -288,16 +290,14 @@ async function install(
 	}
 
 	const markerVersion = readMarker()[target];
-	if (
-		!forceLocal &&
-		markerVersion &&
-		versionGte(markerVersion, version) &&
-		existsSync(dest.copyPath)
-	) {
+	const markerCurrent = pin
+		? markerVersion === version
+		: Boolean(markerVersion) && versionGte(markerVersion, version);
+	if (!forceLocal && markerCurrent && existsSync(dest.copyPath)) {
 		console.log(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
-		if (!forceLocal) await installCli();
+		if (!forceLocal) await installCli(pin);
 		return;
 	}
 	const isUpgrade = Boolean(markerVersion);
@@ -315,7 +315,7 @@ async function install(
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 
 	// Also keep the compiled CLI current (skip in --local dev, where we run source).
-	if (!forceLocal) await installCli();
+	if (!forceLocal) await installCli(pin);
 }
 
 export function registerInstall(program: Command): void {
@@ -346,6 +346,10 @@ export function registerInstall(program: Command): void {
 			"--dest <path>",
 			"directory for --skills-only (default: $DG_SKILLS_DEST, else $DG_HOME/skills or ~/.dg/skills)",
 		)
+		.option(
+			"--version <x.y.z>",
+			"pin the skills-v/daemon-v/agent-v/ext-v release to install, instead of each one's newest",
+		)
 		.action(
 			async (
 				target: string | undefined,
@@ -356,6 +360,7 @@ export function registerInstall(program: Command): void {
 					agentOnly?: boolean;
 					skillsOnly?: boolean;
 					dest?: string;
+					version?: string;
 				},
 			) => {
 				if (opts.skillsOnly) {
@@ -371,18 +376,19 @@ export function registerInstall(program: Command): void {
 						repoRoot: repoRoot(),
 					});
 					console.log(skillsOnlyReport(result));
-					await installSkillsCli();
+					await installSkillsCli(opts.version);
 					return;
 				}
 				if (opts.cliOnly && opts.agentOnly) {
 					throw new Error("install accepts only one of --cli-only and --agent-only");
 				}
-				if (opts.cliOnly) return installCliOnly();
-				if (opts.agentOnly) return installAgentOnly();
+				if (opts.cliOnly) return installCliOnly(opts.version);
+				if (opts.agentOnly) return installAgentOnly(opts.version);
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
 					!!opts.local,
 					opts.repo,
+					opts.version,
 				);
 			},
 		);

@@ -9,8 +9,14 @@
 #       install only the dg-skills CLI (checksum-verified like the default path).
 #       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.
 #       DG_SKILLS_NO_CLI=1 keeps it an offline copy (no CLI download).
+#   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>):
+#       install the skills-v<x.y.z> release instead of the newest skills-v* release;
+#       a leading v or skills-v prefix is accepted. Fails if that release does not
+#       exist. Carries through to `dg-skills install`, so the matching daemon-v,
+#       agent-v and ext-v release installs too. Unset: install the newest of each.
 #
-# Idempotent: re-running overwrites the binary with the newest skills-v* release.
+# Idempotent: re-running overwrites the binary with the newest skills-v* release
+# (or the pinned one, with --version).
 # --skills-only instead copies plugins/dg/skills into $DG_SKILLS_DEST
 # (default: $DG_HOME/skills or ~/.dg/skills).
 # Windows: use bootstrap.ps1 instead.
@@ -24,10 +30,20 @@ set -eu
 CLI_ONLY="${DG_CLI_ONLY:-0}"
 SKILLS_ONLY="${DG_SKILLS_ONLY:-0}"
 AGENT_ONLY="${DG_AGENT_ONLY:-0}"
-for arg in "$@"; do
-  [ "${arg}" = "--cli-only" ] && CLI_ONLY=1
-  [ "${arg}" = "--skills-only" ] && SKILLS_ONLY=1
-  [ "${arg}" = "--agent-only" ] && AGENT_ONLY=1
+VERSION_ARG=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --cli-only) CLI_ONLY=1 ;;
+    --skills-only) SKILLS_ONLY=1 ;;
+    --agent-only) AGENT_ONLY=1 ;;
+    --version=*) VERSION_ARG=${1#--version=} ;;
+    --version)
+      shift
+      [ "$#" -gt 0 ] || { echo "dg-skills: --version requires a value" >&2; exit 1; }
+      VERSION_ARG=$1
+      ;;
+  esac
+  shift
 done
 if [ "$SKILLS_ONLY" = "1" ] && [ "$CLI_ONLY" = "1" ]; then
   echo "dg-skills: pass only one of --skills-only and --cli-only" >&2
@@ -40,6 +56,22 @@ fi
 if [ "$CLI_ONLY" = "1" ] && [ "$AGENT_ONLY" = "1" ]; then
   echo "dg-skills: pass only one of --cli-only and --agent-only" >&2
   exit 1
+fi
+
+normalize_version() {
+  v=$1
+  case "$v" in
+    skills-v*) v=${v#skills-v} ;;
+    v*) v=${v#v} ;;
+  esac
+  printf '%s' "$v"
+}
+
+PINNED_VERSION=""
+if [ -n "${VERSION_ARG}" ]; then
+  PINNED_VERSION=$(normalize_version "${VERSION_ARG}")
+elif [ -n "${DG_VERSION:-}" ]; then
+  PINNED_VERSION=$(normalize_version "${DG_VERSION}")
 fi
 
 TMP_PATHS=""
@@ -150,15 +182,26 @@ tag=""
 
 resolve_release() {
   [ -n "${tag}" ] && return
+  if [ -n "${PINNED_VERSION}" ]; then
+    want="skills-v${PINNED_VERSION}"
+    want_pattern=$(printf '%s' "${want}" | sed -e 's/[.[\^$*]/\\&/g')
+  fi
   page=1
   while [ -z "${tag}" ] && [ "${page}" -le "${PAGE_CAP}" ]; do
     batch=$(curl -fsSL -H "User-Agent: dg-ai" \
       "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
     releases="${releases}${batch}"
-    tag=$(printf '%s' "${batch}" |
-      grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
-      head -1 |
-      sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+    if [ -n "${PINNED_VERSION}" ]; then
+      if printf '%s' "${batch}" |
+        grep -qE "\"tag_name\"[[:space:]]*:[[:space:]]*\"${want_pattern}\""; then
+        tag="${want}"
+      fi
+    else
+      tag=$(printf '%s' "${batch}" |
+        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
+        head -1 |
+        sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+    fi
     batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     [ "${batch_count}" -lt "${PER_PAGE}" ] && break
     page=$((page + 1))
@@ -166,7 +209,11 @@ resolve_release() {
 
   if [ -z "${tag}" ]; then
     scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
-    echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
+    if [ -n "${PINNED_VERSION}" ]; then
+      echo "dg-skills: no release named ${want} found in the ${scanned} releases scanned" >&2
+    else
+      echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
+    fi
     exit 1
   fi
 }
@@ -330,13 +377,25 @@ if [ "${SKILLS_ONLY}" = "1" ]; then
   # Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
   exit 0
 elif [ "${CLI_ONLY}" = "1" ]; then
-  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
+  if [ -n "${PINNED_VERSION}" ]; then
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only --version "${PINNED_VERSION}"
+  else
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
+  fi
 elif [ "${AGENT_ONLY}" = "1" ]; then
-  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only
+  if [ -n "${PINNED_VERSION}" ]; then
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only --version "${PINNED_VERSION}"
+  else
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only
+  fi
 else
   # Set up the browser extension too, so one command installs everything.
   echo "Setting up the dg-ai-extension…"
-  DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install
+  if [ -n "${PINNED_VERSION}" ]; then
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --version "${PINNED_VERSION}"
+  else
+    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install
+  fi
 fi
 
 # Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the

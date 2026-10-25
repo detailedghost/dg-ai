@@ -101,4 +101,17 @@ describe("describeMissingCliAsset tells apart the two ways a binary can be unava
 			releasesScanned: 1,
 		});
 	});
+
+	test("a version pin matches only its exact tag, even with a newer release present", () => {
+		const releases: Release[] = [
+			{ tag_name: "daemon-v2.0.0", draft: false, assets: [] },
+		];
+		expect(describeMissingCliAsset({ ...SPEC, version: "1.0.0" }, releases)).toEqual({
+			kind: "no-matching-release",
+			releasesScanned: 1,
+		});
+		expect(describeMissingCliAsset({ ...SPEC, version: "2.0.0" }, releases)).toEqual({
+			kind: "no-platform-asset",
+		});
+	});
 });

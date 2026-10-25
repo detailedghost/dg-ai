@@ -83,7 +83,14 @@ function fakeBinary(url: string): string {
 
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
-	options: { sums?: string; installBody?: string; dgHome?: string; skillsOnly?: boolean } = {},
+	options: {
+		sums?: string;
+		installBody?: string;
+		dgHome?: string;
+		skillsOnly?: boolean;
+		args?: string[];
+		env?: Record<string, string>;
+	} = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
 	const binDir = join(dir, "stubbin");
@@ -105,21 +112,25 @@ async function runBootstrap(
 	const skillsSource = join(dir, "skills-src");
 	mkdirSync(join(skillsSource, "probe"), { recursive: true });
 	writeFileSync(join(skillsSource, "probe", "SKILL.md"), "probe\n");
-	const proc = Bun.spawn(["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : [])], {
-		env: {
-			...process.env,
-			PATH: `${binDir}:${process.env.PATH}`,
-			HOME: home,
-			DG_HOME: options.dgHome ?? "",
-			STUBDIR: dir,
-			DG_SKILLS_SOURCE: skillsSource,
-			DG_SKILLS_DEST: join(dir, "skills-out"),
-			COUNTER: counterFile,
-			...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
+	const proc = Bun.spawn(
+		["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : []), ...(options.args ?? [])],
+		{
+			env: {
+				...process.env,
+				PATH: `${binDir}:${process.env.PATH}`,
+				HOME: home,
+				DG_HOME: options.dgHome ?? "",
+				STUBDIR: dir,
+				DG_SKILLS_SOURCE: skillsSource,
+				DG_SKILLS_DEST: join(dir, "skills-out"),
+				COUNTER: counterFile,
+				...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
+				...(options.env ?? {}),
+			},
+			stdout: "pipe",
+			stderr: "pipe",
 		},
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	);
 	const stdout = await new Response(proc.stdout).text();
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
@@ -244,6 +255,80 @@ describe("bootstrap.sh picks its binary from the skills-v* tag only", () => {
 			],
 		]);
 		expect(run.destUrl).toContain("/skills-v3.1.0/");
+	});
+});
+
+describe("bootstrap.sh pins a version with --version or DG_VERSION", () => {
+	const THREE_RELEASES = [
+		release("skills-v3.0.0", [SKILLS_ASSET]),
+		release("skills-v2.0.0", [SKILLS_ASSET]),
+		release("skills-v1.0.0", [SKILLS_ASSET]),
+	];
+
+	test("--version picks the named tag instead of the newest", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "2.0.0"] });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.destUrl).toContain("/skills-v2.0.0/");
+		expect(run.versionContent).toBe("2.0.0");
+	});
+
+	test("--version=x.y.z works too", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version=2.0.0"] });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.destUrl).toContain("/skills-v2.0.0/");
+	});
+
+	test("DG_VERSION picks the same tag as --version", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { env: { DG_VERSION: "2.0.0" } });
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.destUrl).toContain("/skills-v2.0.0/");
+	});
+
+	test("accepts a leading v or a full skills-v prefix", async () => {
+		const withV = await runBootstrap([THREE_RELEASES], { args: ["--version", "v2.0.0"] });
+		const withSkillsV = await runBootstrap([THREE_RELEASES], { args: ["--version", "skills-v2.0.0"] });
+		expect(withV.destUrl).toContain("/skills-v2.0.0/");
+		expect(withSkillsV.destUrl).toContain("/skills-v2.0.0/");
+	});
+
+	test("--version takes priority over DG_VERSION", async () => {
+		const run = await runBootstrap([THREE_RELEASES], {
+			args: ["--version", "2.0.0"],
+			env: { DG_VERSION: "1.0.0" },
+		});
+		expect(run.destUrl).toContain("/skills-v2.0.0/");
+	});
+
+	test("fails clearly when the pinned release does not exist", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version", "9.9.9"] });
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("skills-v9.9.9");
+		expect(run.destUrl).toBeUndefined();
+	});
+
+	test("--version with no value fails before any download", async () => {
+		const run = await runBootstrap([THREE_RELEASES], { args: ["--version"] });
+		expect(run.code).not.toBe(0);
+		expect(run.stderr).toContain("--version requires a value");
+		expect(run.pageRequests).toBe(0);
+	});
+
+	test("a pin carries through to the dg-skills install call", async () => {
+		const run = await runBootstrap([THREE_RELEASES], {
+			args: ["--version", "2.0.0"],
+			installBody: '#!/bin/sh\necho "install ran: $*"',
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --version 2.0.0");
+	});
+
+	test("a pin carries through alongside --cli-only", async () => {
+		const run = await runBootstrap([THREE_RELEASES], {
+			args: ["--cli-only", "--version", "2.0.0"],
+			installBody: '#!/bin/sh\necho "install ran: $*"',
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stdout).toContain("install ran: install --cli-only --version 2.0.0");
 	});
 });
 

@@ -7,13 +7,24 @@
 # skips the extension and dg-daemon): set $env:DG_AGENT_ONLY = "1" first.
 # Skills-only (instruction files plus the checksum-verified dg-skills CLI; no daemon, agent or extension, no skill execution): set $env:DG_SKILLS_ONLY = "1" first.
 #
-# Idempotent: re-running overwrites the binary with the newest skills-v* release.
+# Pin a version instead of the newest release: set $env:DG_VERSION = "<x.y.z>" first
+# (piped `irm | iex` cannot take parameters), or pass -Version <x.y.z> when running a
+# saved copy of this file directly. Installs the skills-v<x.y.z> release; a leading v
+# or skills-v prefix is accepted. Fails if that release does not exist. Carries through
+# to `dg-skills install`, so the matching daemon-v, agent-v and ext-v release installs
+# too. Unset: install the newest of each.
+#
+# Idempotent: re-running overwrites the binary with the newest skills-v* release
+# (or the pinned one, with -Version/DG_VERSION).
 # Skills-only copies plugins/dg/skills into $env:DG_SKILLS_DEST
 # (default: $env:DG_HOME\skills or ~/.dg/skills).
 #
 # When the skills-v* release publishes SHA256SUMS (GNU sha256sum lines), the
 # download is verified before it is installed. Releases without that asset
 # still install. The skills release workflow writes the file beside the binaries.
+param(
+	[string]$Version
+)
 $ErrorActionPreference = "Stop"
 
 # Copy skill directories as data, matching @dg/common filesToInstall.
@@ -57,18 +68,34 @@ $repo = "detailedghost/dg-ai"
 $headers = @{ "User-Agent" = "dg-ai" }
 $script:rel = $null
 
+$script:pinnedVersion = $null
+$rawVersion = if ($Version) { $Version } elseif ($env:DG_VERSION) { $env:DG_VERSION } else { $null }
+if ($rawVersion) {
+	if ($rawVersion -like "skills-v*") { $script:pinnedVersion = $rawVersion.Substring(8) }
+	elseif ($rawVersion -like "v*") { $script:pinnedVersion = $rawVersion.Substring(1) }
+	else { $script:pinnedVersion = $rawVersion }
+}
+
 function Resolve-DgRelease {
 	if ($script:rel) { return $script:rel }
 	$perPage = 100
 	$pageCap = 10
 	$scanned = 0
+	$want = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $null }
 	for ($page = 1; $page -le $pageCap; $page++) {
 		$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
 		$scanned += $batch.Count
-		$script:rel = $batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+		$script:rel = if ($want) {
+			$batch | Where-Object { $_.tag_name -eq $want -and -not $_.draft } | Select-Object -First 1
+		} else {
+			$batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+		}
 		if ($script:rel -or $batch.Count -lt $perPage) { break }
 	}
-	if (-not $script:rel) { throw "dg-skills: no skills-v* release found in the $scanned releases scanned" }
+	if (-not $script:rel) {
+		if ($want) { throw "dg-skills: no release named $want found in the $scanned releases scanned" }
+		throw "dg-skills: no skills-v* release found in the $scanned releases scanned"
+	}
 	return $script:rel
 }
 
@@ -175,15 +202,16 @@ function Convert-DgInstallLine {
 # Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
 if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
 
+$versionArgs = if ($script:pinnedVersion) { @("--version", $script:pinnedVersion) } else { @() }
 $env:DG_SKILLS_BOOTSTRAP = "1"
 if ($env:DG_CLI_ONLY -eq "1") {
-	$installOutput = & $dest install --cli-only 2>&1
+	$installOutput = & $dest install --cli-only @versionArgs 2>&1
 } elseif ($env:DG_AGENT_ONLY -eq "1") {
-	$installOutput = & $dest install --agent-only 2>&1
+	$installOutput = & $dest install --agent-only @versionArgs 2>&1
 } else {
 	# Set up the browser extension too, so one command installs everything.
 	Write-Host "Setting up the dg-ai-extension…"
-	$installOutput = & $dest install 2>&1
+	$installOutput = & $dest install @versionArgs 2>&1
 }
 $installCode = $LASTEXITCODE
 $installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }

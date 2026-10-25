@@ -150,6 +150,28 @@ skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Set
 `DG_SKILLS_NO_CLI=1` with the bootstraps for an offline copy that skips the CLI.
 
+## Pin a version
+
+Use this when the user wants a specific release instead of the newest, for
+example to match a pinned CI job or roll back after a bad upgrade. Add
+`--version <x.y.z>` (shell) or set `DG_VERSION` first (PowerShell); it combines
+with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
+the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DG_VERSION = "1.19.0"
+irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
+```
+
+`dg-skills install --version 1.19.0` is the flag on an already installed
+binary. Leaving it unset installs each binary's newest release, as before.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

@@ -24,7 +24,8 @@ The extension, all three binaries, and both plugin manifests share release
 version **1.20.0**.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
-standalone skills, updates, and **[CLI-only installation](docs/install.md#cli-only-install)**.
+standalone skills, updates, **[CLI-only installation](docs/install.md#cli-only-install)**,
+and **[pinning a version](docs/install.md#pin-a-version)**.
 From a checkout, `mise run install:skills` copies instruction files without binaries;
 see [skills-only installation](docs/install.md#skills-only-install) for `--skills-only`.
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
