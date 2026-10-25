@@ -332,4 +332,28 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
+
+	test("a pin naming a missing release leaves an existing cli-only marker untouched", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-version-pin-keeps-cli-only-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		writeFileSync(join(home, "cli-only"), "");
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		try {
+			const preload = writeFullPreload(directory, fetchLog, ["skills-v1.2.3"]);
+			const result = await run(
+				["bun", "--preload", preload, ENTRY, "install", "--version", "1.2.3"],
+				childEnv(home),
+			);
+
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("no release named skills-v1.2.3 found");
+			expect(existsSync(join(home, "cli-only"))).toBe(true);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, ".dg", "dg-ai-extension-chrome"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
 });

@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +41,7 @@ prev=""
 url=""
 for a in "$@"; do
   if [ "$prev" = "-o" ]; then outfile="$a"; fi
-  url="$a"
+  case "$a" in http*) url="$a" ;; esac
   prev="$a"
 done
 case "$url" in
@@ -55,6 +56,18 @@ case "$url" in
     cat "$STUBDIR/SHA256SUMS" > "\${outfile:-/dev/stdout}"
   else
     echo "stub missing SHA256SUMS" >&2
+    exit 1
+  fi
+  ;;
+*/archive/refs/tags/*)
+  archtag=$(printf '%s' "$url" | sed -E 's#.*/archive/refs/tags/([^/]+)\\.tar\\.gz$#\\1#')
+  if [ -n "$outfile" ]; then
+    printf '%s\\t%s\\n' "$outfile" "$url" >> "$STUBDIR/downloads.log"
+  fi
+  if [ -f "$STUBDIR/archive-$archtag.tar.gz" ]; then
+    cat "$STUBDIR/archive-$archtag.tar.gz" > "\${outfile:-/dev/stdout}"
+  else
+    echo "stub has no fixture archive for $archtag" >&2
     exit 1
   fi
   ;;
@@ -86,6 +99,18 @@ function fakeBinary(url: string): string {
 	return `#!/bin/sh\n# ${url}\nexit 0\n`;
 }
 
+/** Builds a real .tar.gz fixture so bootstrap.sh's own `tar -xzf` can extract it. */
+function buildCodexArchive(stubDir: string, tag: string, skillName: string, skillBody: string): void {
+	const srcRoot = join(stubDir, `codex-src-${tag}`);
+	const skillDir = join(srcRoot, `dg-ai-${tag}`, "plugins", "dg", "skills", skillName);
+	mkdirSync(skillDir, { recursive: true });
+	writeFileSync(join(skillDir, "SKILL.md"), skillBody);
+	const result = Bun.spawnSync(["tar", "-czf", join(stubDir, `archive-${tag}.tar.gz`), "-C", srcRoot, `dg-ai-${tag}`]);
+	if (result.exitCode !== 0) {
+		throw new Error(`failed to build fixture archive for ${tag}: ${result.stderr.toString()}`);
+	}
+}
+
 async function runBootstrap(
 	pages: Record<string, unknown>[][],
 	options: {
@@ -95,6 +120,7 @@ async function runBootstrap(
 		skillsOnly?: boolean;
 		args?: string[];
 		env?: Record<string, string>;
+		codexArchives?: { tag: string; skillName: string; skillBody: string }[];
 	} = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
@@ -105,6 +131,9 @@ async function runBootstrap(
 	});
 	if (options.sums !== undefined) {
 		writeFileSync(join(dir, "SHA256SUMS"), options.sums);
+	}
+	for (const { tag, skillName, skillBody } of options.codexArchives ?? []) {
+		buildCodexArchive(dir, tag, skillName, skillBody);
 	}
 	const counterFile = join(dir, "counter");
 	writeFileSync(counterFile, "0");
@@ -457,5 +486,45 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 		expect(sh).toContain("dg-skills verified");
 		expect(ps1).toContain("SHA256SUMS");
 		expect(ps1).toContain("dg-skills verified");
+	});
+});
+
+describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", () => {
+	const TWO_RELEASES = [
+		release("skills-v3.0.0", [SKILLS_ASSET]),
+		release("skills-v2.0.0", [SKILLS_ASSET]),
+	];
+
+	test("a pinned install's Codex archive and extraction dir come from the pinned tag", async () => {
+		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		try {
+			const run = await runBootstrap([TWO_RELEASES], {
+				args: ["--version", "2.0.0"],
+				installBody: '#!/bin/sh\necho "install ran: $*"',
+				env: { DG_INSTALL_CODEX: "1", CODEX_HOME: codexHome },
+				codexArchives: [
+					{ tag: "skills-v3.0.0", skillName: "probe", skillBody: "newest probe\n" },
+					{ tag: "skills-v2.0.0", skillName: "probe", skillBody: "pinned probe\n" },
+				],
+			});
+			expect(run.code, run.stderr).toBe(0);
+			expect(run.downloads.some((d) => d.url.includes("/archive/refs/tags/skills-v2.0.0.tar.gz"))).toBe(true);
+			expect(run.downloads.some((d) => d.url.includes("/archive/refs/tags/skills-v3.0.0.tar.gz"))).toBe(false);
+			expect(readFileSync(join(codexHome, "skills", "probe", "SKILL.md"), "utf8")).toBe("pinned probe\n");
+		} finally {
+			rmSync(codexHome, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("bootstrap.ps1 DG_INSTALL_CODEX uses the pinned tag, not the newest", () => {
+	test("the Codex archive URL and extraction path use a pin-aware tag, not $rel.tag_name directly", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		const codexBlock = ps1.slice(ps1.indexOf("DG_INSTALL_CODEX"));
+		expect(codexBlock).toContain(
+			'$codexTag = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $rel.tag_name }',
+		);
+		expect(codexBlock).toContain("archive/refs/tags/$codexTag.zip");
+		expect(codexBlock).toContain("dg-ai-$codexTag\\plugins\\dg\\skills");
 	});
 });

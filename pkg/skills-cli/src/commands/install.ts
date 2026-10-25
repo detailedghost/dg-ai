@@ -346,7 +346,6 @@ function finishExtensionStage(
 
 /** A pinned default install: resolves and downloads the extension and every binary before committing any of them. */
 async function installPinnedAll(target: Target, pin: string): Promise<void> {
-	setCliOnly(false);
 	const dest = extensionDest(target);
 	const releases = await listReleases();
 
@@ -367,6 +366,7 @@ async function installPinnedAll(target: Target, pin: string): Promise<void> {
 	}
 
 	commitStagedBinaries(staged);
+	setCliOnly(false);
 	removeRetiredBinaries();
 }
 

@@ -240,15 +240,16 @@ if ($exitCode -ne 0) { exit $exitCode }
 # repository's skills into CODEX_HOME (default: $HOME\.codex\skills).
 if ($env:DG_INSTALL_CODEX -eq "1") {
 	$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+	$codexTag = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $rel.tag_name }
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 	try {
-		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$($rel.tag_name).zip" -OutFile $archive
+		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$codexTag.zip" -OutFile $archive
 		Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
 		$skillsDir = Join-Path $codexRoot "skills"
 		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$($rel.tag_name)\plugins\dg\skills")) {
+		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$codexTag\plugins\dg\skills")) {
 			if (($env:DG_CLI_ONLY -eq "1" -or $env:DG_AGENT_ONLY -eq "1") -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
 			Copy-Item -Recurse -Force $skill.FullName $skillsDir
 		}

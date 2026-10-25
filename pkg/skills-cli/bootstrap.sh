@@ -422,14 +422,16 @@ fi
 # repository's skills into CODEX_HOME (default: ~/.codex/skills).
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
+  CODEX_TAG="${tag}"
+  [ -n "${PINNED_VERSION}" ] && CODEX_TAG="skills-v${PINNED_VERSION}"
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"
   curl -fsSL -H "User-Agent: dg-ai" \
-    "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "${archive}"
+    "https://github.com/${REPO}/archive/refs/tags/${CODEX_TAG}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   tar -xzf "${archive}" -C "${tmpdir}"
-  for skill in "${tmpdir}/dg-ai-${tag}/plugins/dg/skills"/*/; do
+  for skill in "${tmpdir}/dg-ai-${CODEX_TAG}/plugins/dg/skills"/*/; do
     if { [ "${CLI_ONLY}" = "1" ] || [ "${AGENT_ONLY}" = "1" ]; } && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
       continue
     fi
