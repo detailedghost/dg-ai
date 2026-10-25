@@ -83,6 +83,17 @@ function byId(id: string): Element {
 	return element;
 }
 
+/** Top-level style rules are a breakout: planted CSS may only be @scope or keyframes. */
+function topLevelStyleRuleCount(css: string): number {
+	const sheet = new window.CSSStyleSheet();
+	sheet.replaceSync(css);
+	let count = 0;
+	for (let index = 0; index < sheet.cssRules.length; index += 1) {
+		if (sheet.cssRules[index]?.constructor.name === "CSSStyleRule") count += 1;
+	}
+	return count;
+}
+
 async function captureShadowRoots(
 	run: () => Promise<void>,
 ): Promise<HappyShadowRoot[]> {
@@ -1109,6 +1120,111 @@ describe("sanitizePrototypeVariation", () => {
 		);
 	});
 
+	it("keeps a newline inside a CSS string from closing @scope", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "break",
+			label: "Break",
+			html: '<p class="ok">Variation</p>',
+			css: '.ok { color: teal }\n.x{foo:"a\n}} html{display:none} p{q:"}',
+		});
+		document.body.innerHTML =
+			'<p id="host-copy">Host</p><div data-dg-prototype="break"><p class="ok">Variation</p></div>';
+		const style = document.createElement("style");
+		style.textContent = sanitized.css;
+		document.head.append(style);
+		try {
+			expect(getComputedStyle(document.documentElement).display).not.toBe(
+				"none",
+			);
+			expect(
+				getComputedStyle(document.getElementById("host-copy") as Element)
+					.display,
+			).not.toBe("none");
+			expect(topLevelStyleRuleCount(sanitized.css)).toBe(0);
+			expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+			expect(sanitized.css).toMatch(/\.ok\s*\{[^}]*color:\s*teal/i);
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("keeps comment, escape, and url() boundaries from emitting host rules", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const cases = [
+			".ok { color: teal /* } html{display:none} */ }",
+			'.ok { content: "/* } html{display:none} */"; color: teal }',
+			".ok { color: teal } .x{color:navy;background:url(foo}html{display:none})}",
+			'.ok { color: teal }\n.x{foo:"a\\\n} still"; color: teal}',
+			String.raw`.ok { color: teal } .x{foo:"a\"} html{display:none}"; color: teal}`,
+		];
+		for (const css of cases) {
+			const sanitized = sanitizePrototypeVariation({
+				key: "edge",
+				label: "Edge",
+				html: '<p class="ok">Variation</p>',
+				css,
+			});
+			document.body.innerHTML =
+				'<p id="host-copy">Host</p><div data-dg-prototype="edge"><p class="ok">Kept</p></div>';
+			const style = document.createElement("style");
+			style.textContent = sanitized.css;
+			document.head.append(style);
+			try {
+				expect(getComputedStyle(document.documentElement).display).not.toBe(
+					"none",
+				);
+				expect(
+					getComputedStyle(document.getElementById("host-copy") as Element)
+						.display,
+				).not.toBe("none");
+				expect(topLevelStyleRuleCount(sanitized.css)).toBe(0);
+				expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+				expect(sanitized.css).toMatch(/\.ok\s*\{[^}]*color:\s*teal/i);
+			} finally {
+				style.remove();
+			}
+		}
+	});
+
+	it("drops an unmapped label for id and keeps a variation one", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "label",
+			label: "Label",
+			html: '<label for="hostbtn">Go</label><label for="title">Title</label><h2 id="title">T</h2>',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		const labels = [...parsed.querySelectorAll("label")];
+		expect(labels[0]?.hasAttribute("for")).toBe(false);
+		expect(labels[0]?.textContent).toBe("Go");
+		expect(labels[1]?.getAttribute("for")).toBe("dg-proto-label-title");
+	});
+
+	it("sets an empty form owner only on controls outside a variation form", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "owned",
+			label: "Owned",
+			html: '<form id="pf"><input name="a"><button type="submit">go</button></form><input name="loose">',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		const form = parsed.querySelector("form");
+		expect(form?.querySelector("input")?.hasAttribute("form")).toBe(false);
+		expect(form?.querySelector("button")?.hasAttribute("form")).toBe(false);
+		expect(parsed.querySelector('input[name="loose"]')?.getAttribute("form")).toBe(
+			"",
+		);
+	});
+
 	it("drops host form and list ids and disassociates planted controls", async () => {
 		const { sanitizePrototypeVariation } = await pickerContracts();
 		const sanitized = sanitizePrototypeVariation({
@@ -1345,6 +1461,78 @@ it("does not let planted controls submit the host page", async () => {
 	});
 	hostForm.dispatchEvent(ownSubmit);
 	expect(ownSubmit.defaultPrevented).toBe(false);
+
+	window.dispatchEvent(new window.Event("pagehide"));
+});
+
+it("does not let a planted label activate a host control", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<form id="pagesearch" action="/hostsubmit">
+			<input name="hq" value="hostval">
+			<button id="hostbtn" type="submit">Go</button>
+			<section id="mount">Original</section>
+		</form>
+		<form id="other" action="/other">
+			<button id="otherbtn" type="submit">Other</button>
+		</form>
+	`;
+	const hostForm = window.document.getElementById("pagesearch");
+	const otherForm = window.document.getElementById("other");
+	if (!hostForm || !otherForm) throw new Error("missing host form");
+	let hostSubmits = 0;
+	let otherSubmits = 0;
+	hostForm.addEventListener("submit", () => {
+		hostSubmits += 1;
+	});
+	otherForm.addEventListener("submit", () => {
+		otherSubmits += 1;
+	});
+
+	await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "no-host-label",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{
+					key: "bind",
+					label: "Bind",
+					html: '<label>Go</label><button id="inner" type="button">In</button><label for="inner">Inside</label>',
+					css: "",
+				},
+			],
+		});
+	});
+
+	const plantedHost = window.document.querySelector('[id^="dg-proto-host-"]');
+	if (!plantedHost) throw new Error("missing planted host");
+	const labels = [...plantedHost.querySelectorAll("label")];
+	const plantedLabel = labels[0];
+	const innerLabel = labels[1];
+	if (!plantedLabel || !innerLabel) throw new Error("missing planted label");
+	expect(plantedLabel.hasAttribute("for")).toBe(false);
+	expect(innerLabel.getAttribute("for")).toBe("dg-proto-bind-inner");
+
+	(plantedLabel as HappyHTMLElement).click();
+	expect(hostSubmits).toBe(0);
+
+	for (const targetId of ["hostbtn", "otherbtn"]) {
+		plantedLabel.setAttribute("for", targetId);
+		const click = new window.Event("click", { bubbles: true, cancelable: true });
+		plantedLabel.dispatchEvent(click);
+		expect(click.defaultPrevented).toBe(true);
+		(plantedLabel as HappyHTMLElement).click();
+	}
+	expect(hostSubmits).toBe(0);
+	expect(otherSubmits).toBe(0);
+
+	const innerClick = new window.Event("click", {
+		bubbles: true,
+		cancelable: true,
+	});
+	innerLabel.dispatchEvent(innerClick);
+	expect(innerClick.defaultPrevented).toBe(false);
 
 	window.dispatchEvent(new window.Event("pagehide"));
 });

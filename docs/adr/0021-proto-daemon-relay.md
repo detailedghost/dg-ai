@@ -95,13 +95,17 @@ explicit:
   A password field on the requested URL is not, by itself, a wall.
 - Planted variation markup is namespaced (`id`, radio `name`, and the references
   that point at those ids, including `for`, `form`, `list`, `headers`, and
-  `aria-*`). A `form` or `list` value that is not one of the variation's own ids
-  is removed, and form-associated controls with no variation form get `form=""`
-  so they do not submit an ancestor host form. A submit that still comes from a
-  planted control is cancelled.
+  `aria-*`). A `form`, `list`, or `for` value that is not one of the variation's
+  own ids is removed. `form=""` is set only on controls that are not already
+  inside a variation `<form>`, so Enter cannot submit an ancestor host form
+  without detaching the variation's own fields. A label click that still
+  resolves to a control outside the variation is cancelled.
 - Its CSS is re-serialized from `CSSStyleSheet` rules inside `@scope`, which
   needs Chrome 118 (`minimum_chrome_version`). Nested style rules and nested
-  `@media` are kept. Id selectors, including escaped ids such as `#a\:b`, id
+  `@media` are kept. Scanners end a string at an unescaped newline and skip
+  comments, escapes, and `url()`. The planted sheet is parsed again and dropped
+  unless every top-level rule is that `@scope` block or a keyframes wrapper.
+  Id selectors, including escaped ids such as `#a\:b`, id
   attribute selectors (`=`, `^=`, `|=`; `$=` and `*=` still match after the
   prefix), and `url(#…)` fragments use the same prefix. `@keyframes` are kept
   under that prefix, outside `@scope`. A conditional `@keyframes` stays inside

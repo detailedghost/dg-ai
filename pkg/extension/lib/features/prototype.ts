@@ -660,23 +660,14 @@ function sanitizeCssDeclarations(css: string): string {
 }
 
 function lastTopLevelSemicolon(value: string): number {
-	let quote: string | undefined;
 	let last = -1;
 	for (let index = 0; index < value.length; index += 1) {
-		const character = value[index];
-		if (quote) {
-			if (character === "\\") {
-				index += 1;
-				continue;
-			}
-			if (character === quote) quote = undefined;
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
 			continue;
 		}
-		if (character === '"' || character === "'") {
-			quote = character;
-			continue;
-		}
-		if (character === ";") last = index;
+		if (value[index] === ";") last = index;
 	}
 	return last;
 }
@@ -713,7 +704,7 @@ function sanitizeCssStructure(css: string): string {
 }
 
 function preparePrototypeCss(css: string): string {
-	const structured = sanitizeCssStructure(css.replace(/\/\*[\s\S]*?\*\//g, ""));
+	const structured = sanitizeCssStructure(stripCssComments(css));
 	// A shadow-escape selector that survived the walk blanks the sheet.
 	// The check decodes escapes; the returned sheet keeps ident escapes.
 	if (SHADOW_ESCAPE_SELECTOR.test(decodePrototypeCssEscapes(structured))) return "";
@@ -764,16 +755,122 @@ function cssString(value: string): string {
 	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function isCssNewline(character: string | undefined): boolean {
+	return character === "\n" || character === "\r" || character === "\f";
+}
+
+function isCssWhitespace(character: string | undefined): boolean {
+	return character === " " || character === "\t" || isCssNewline(character);
+}
+
+function endOfComment(value: string, start: number): number {
+	const end = value.indexOf("*/", start + 2);
+	return end < 0 ? value.length : end + 2;
+}
+
+/**
+ * Index just after a string that starts at `start`, or the unescaped newline
+ * that ends a bad-string. That newline is not consumed: CSS reconsumes it.
+ * A backslash followed by a newline continues the string.
+ */
 function endOfQuoted(value: string, start: number): number {
 	const quote = value[start];
 	for (let index = start + 1; index < value.length; index += 1) {
+		const character = value[index];
+		if (character === "\\") {
+			const next = value[index + 1];
+			if (next === undefined) return value.length;
+			if (next === "\r" && value[index + 2] === "\n") {
+				index += 2;
+				continue;
+			}
+			index += 1;
+			continue;
+		}
+		if (isCssNewline(character)) return index;
+		if (character === quote) return index + 1;
+	}
+	return value.length;
+}
+
+function identBoundary(value: string, index: number): boolean {
+	if (index === 0) return true;
+	const previous = value[index - 1] ?? "";
+	return !/[A-Za-z0-9_-]/.test(previous);
+}
+
+/** Consume a `url(...)` token, including braces and quotes that are not structural. */
+function endOfUrlToken(value: string, openParen: number): number {
+	let index = openParen + 1;
+	while (index < value.length && isCssWhitespace(value[index])) index += 1;
+	const quote = value[index];
+	if (quote === '"' || quote === "'") {
+		index = endOfQuoted(value, index);
+		while (index < value.length && isCssWhitespace(value[index])) index += 1;
+		if (value[index] === ")") return index + 1;
+	}
+	for (; index < value.length; index += 1) {
 		if (value[index] === "\\") {
 			index += 1;
 			continue;
 		}
-		if (value[index] === quote) return index + 1;
+		if (value[index] === ")") return index + 1;
 	}
 	return value.length;
+}
+
+/**
+ * If `index` starts a comment, string, or `url()`, return where the scanner
+ * should resume. A bad-string resumes at its terminating newline.
+ */
+function skipCssToken(value: string, index: number): number | undefined {
+	if (value.startsWith("/*", index)) return endOfComment(value, index);
+	const character = value[index];
+	if (character === '"' || character === "'") return endOfQuoted(value, index);
+	if (
+		identBoundary(value, index) &&
+		value.slice(index, index + 3).toLowerCase() === "url"
+	) {
+		let cursor = index + 3;
+		while (cursor < value.length) {
+			if (value.startsWith("/*", cursor)) {
+				cursor = endOfComment(value, cursor);
+				continue;
+			}
+			if (isCssWhitespace(value[cursor])) {
+				cursor += 1;
+				continue;
+			}
+			break;
+		}
+		if (value[cursor] === "(") return endOfUrlToken(value, cursor);
+	}
+	return undefined;
+}
+
+function advanceOverToken(index: number, skipped: number | undefined): number | undefined {
+	if (skipped === undefined || skipped <= index) return undefined;
+	return skipped - 1;
+}
+
+/** Drop comments, but not `/*` inside a string or a `url()` token. */
+function stripCssComments(css: string): string {
+	let result = "";
+	for (let index = 0; index < css.length; index += 1) {
+		if (css.startsWith("/*", index)) {
+			index = Math.max(index, endOfComment(css, index) - 1);
+			continue;
+		}
+		const resume = advanceOverToken(index, skipCssToken(css, index));
+		if (resume !== undefined) {
+			const end = resume + 1;
+			result += css.slice(index, end);
+			index = resume;
+			continue;
+		}
+		result += css[index] ?? "";
+	}
+	return result;
 }
 
 function endOfBlock(
@@ -783,21 +880,13 @@ function endOfBlock(
 	close: string,
 ): number {
 	let depth = 0;
-	let quote: string | undefined;
 	for (let index = start; index < value.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
 		const character = value[index];
-		if (quote) {
-			if (character === "\\") {
-				index += 1;
-				continue;
-			}
-			if (character === quote) quote = undefined;
-			continue;
-		}
-		if (character === '"' || character === "'") {
-			quote = character;
-			continue;
-		}
 		if (character === open) depth += 1;
 		else if (character === close) {
 			depth -= 1;
@@ -808,22 +897,13 @@ function endOfBlock(
 }
 
 function indexOfBrace(value: string, start: number): number {
-	let quote: string | undefined;
 	for (let index = start; index < value.length; index += 1) {
-		const character = value[index];
-		if (quote) {
-			if (character === "\\") {
-				index += 1;
-				continue;
-			}
-			if (character === quote) quote = undefined;
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
 			continue;
 		}
-		if (character === '"' || character === "'") {
-			quote = character;
-			continue;
-		}
-		if (character === "{") return index;
+		if (value[index] === "{") return index;
 	}
 	return -1;
 }
@@ -1335,21 +1415,13 @@ function rewriteUnparsedCss(
 
 function cssBracesBalance(css: string): boolean {
 	let depth = 0;
-	let quote: '"' | "'" | undefined;
 	for (let index = 0; index < css.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(css, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
 		const character = css[index];
-		if (quote) {
-			if (character === "\\") {
-				index += 1;
-				continue;
-			}
-			if (character === quote) quote = undefined;
-			continue;
-		}
-		if (character === '"' || character === "'") {
-			quote = character;
-			continue;
-		}
 		if (character === "{") depth += 1;
 		else if (character === "}") {
 			depth -= 1;
@@ -1357,6 +1429,52 @@ function cssBracesBalance(css: string): boolean {
 		}
 	}
 	return depth === 0;
+}
+
+function isPrototypeScopeRule(rule: CSSRule): boolean {
+	if (rule.constructor?.name === "CSSScopeRule") return true;
+	return /@scope\b/i.test(groupingPrelude(rule));
+}
+
+/** `@keyframes`, or a media/supports/layer wrapper that contains only those. */
+function isKeyframesOnlyWrapper(rule: CSSRule): boolean {
+	if (isKeyframesRule(rule)) return true;
+	if (!isGroupingRule(rule) || isPrototypeScopeRule(rule)) return false;
+	const children = childCssRules(rule);
+	if (!children) return false;
+	for (let index = 0; index < children.length; index += 1) {
+		const child = children[index];
+		if (!child || !isKeyframesOnlyWrapper(child)) return false;
+	}
+	return true;
+}
+
+/**
+ * Reparse the sheet that will be planted. Anything that is not the @scope
+ * block or a keyframes wrapper is a breakout and the sheet is rejected.
+ */
+function prototypeCssIsContained(css: string): boolean {
+	const StyleSheet = prototypeStyleSheet();
+	if (!StyleSheet || !css.trim()) return !css.trim();
+	try {
+		const sheet = new StyleSheet();
+		sheet.replaceSync(css);
+		let scopes = 0;
+		for (let index = 0; index < sheet.cssRules.length; index += 1) {
+			const rule = sheet.cssRules[index];
+			if (!rule) return false;
+			if (isPrototypeScopeRule(rule)) {
+				scopes += 1;
+				if (scopes > 1) return false;
+				continue;
+			}
+			if (isKeyframesOnlyWrapper(rule)) continue;
+			return false;
+		}
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function wrapPrototypeScope(css: string): string {
@@ -1390,7 +1508,8 @@ function sanitizePrototypeCss(
 					index: 0,
 				}),
 			);
-			return [frames, scope].filter((part) => part.trim()).join("\n");
+			const assembled = [frames, scope].filter((part) => part.trim()).join("\n");
+			return prototypeCssIsContained(assembled) ? assembled : "";
 		} catch {
 			return "";
 		}
@@ -1443,8 +1562,10 @@ function namespaceVariationDom(
 				element.setAttribute(name, mapped);
 				continue;
 			}
-			// An unmapped form/list id points at the host page. Drop it.
-			if (name === "form" || name === "list") element.removeAttribute(name);
+			// An unmapped form, list, or for id points at the host page. Drop it.
+			if (name === "form" || name === "list" || name === "for") {
+				element.removeAttribute(name);
+			}
 		}
 		for (const name of TOKEN_ID_REFERENCE_ATTRIBUTES) {
 			const value = element.getAttribute(name);
@@ -1471,10 +1592,14 @@ function namespaceVariationDom(
 				element.setAttribute("name", `${prefix}${name}`);
 			}
 		}
-		// `form=""` associates the control with no form, so Enter inside a
-		// planted field cannot submit an ancestor host-page form. A variation
-		// form id rewritten above is left in place.
-		if (FORM_OWNER_TAGS.has(element.tagName) && !element.getAttribute("form")) {
+		// `form=""` disassociates a control that is not already inside a
+		// variation form, so Enter cannot submit an ancestor host-page form.
+		// Controls inside the variation's own form keep that owner.
+		if (
+			FORM_OWNER_TAGS.has(element.tagName) &&
+			!element.getAttribute("form") &&
+			element.closest("form") === null
+		) {
 			element.setAttribute("form", "");
 		}
 	}
@@ -2183,18 +2308,26 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		};
 		const preventInteraction = (event: Event): void => {
 			const path = event.composedPath();
-			if (
-				event.type === "submit" ||
-				path.some(
-					(node) =>
-						node instanceof Element &&
-						(node.tagName === "A" ||
-							node.tagName === "BUTTON" ||
-							node.tagName === "INPUT" ||
-							node.tagName === "SELECT" ||
-							node.tagName === "TEXTAREA"),
-				)
-			) {
+			const activatesControl = path.some((node) => {
+				if (!isElementNode(node)) return false;
+				if (
+					node.tagName === "A" ||
+					node.tagName === "BUTTON" ||
+					node.tagName === "INPUT" ||
+					node.tagName === "SELECT" ||
+					node.tagName === "TEXTAREA"
+				) {
+					return true;
+				}
+				if (node.tagName !== "LABEL") return false;
+				const forId = node.getAttribute("for");
+				const control = forId
+					? node.ownerDocument.getElementById(forId)
+					: node.querySelector("button, input, select, textarea");
+				if (!control) return Boolean(forId);
+				return !host.contains(control);
+			});
+			if (event.type === "submit" || activatesControl) {
 				event.preventDefault();
 				event.stopPropagation();
 			}
