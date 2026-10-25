@@ -1,5 +1,10 @@
+import { browser } from "wxt/browser";
 import { runDemoTour } from "@/lib/features/demo-tour";
 import {
+	detectPageNotReady,
+	PROTO_HAS_PENDING,
+	PROTO_NOT_READY,
+	PROTO_PROGRESS,
 	PROTO_SAVE_STYLE_GUIDE,
 	plantPrototype,
 	scrapeStyleGuide,
@@ -11,6 +16,20 @@ import {
 } from "@/utils/proto-marker";
 
 type ContentContext = Parameters<typeof runDemoTour>[0];
+
+async function tabHasPendingProtoRequest(): Promise<boolean> {
+	try {
+		// WXT's browser namespace returns a promise on Firefox MV2. The chrome
+		// namespace there is callback-only, so awaiting it resolves to undefined
+		// and every --ext scrape/plant would bail after stripping the marker.
+		const response = (await browser.runtime.sendMessage({
+			type: PROTO_HAS_PENDING,
+		})) as { pending?: unknown } | undefined;
+		return response?.pending === true;
+	} catch {
+		return false;
+	}
+}
 
 function hasProtoMarker(url: string): boolean {
 	const hashIndex = url.indexOf("#");
@@ -24,7 +43,9 @@ function hasProtoMarker(url: string): boolean {
 /**
  * Handle prototype markers before demo state initialization. Any `_proto`
  * marker—valid or malformed—owns this page load and prevents demo storage
- * reads/writes; plant dispatch is completed by the picker slice.
+ * reads/writes; plant dispatch is completed by the picker slice. A not-ready
+ * page (login wall, HTTP error, redirect) reports immediately instead of
+ * scraping or planting against the wrong page.
  */
 export async function runProto(_ctx: ContentContext): Promise<boolean> {
 	const url = location.href;
@@ -32,12 +53,27 @@ export async function runProto(_ctx: ContentContext): Promise<boolean> {
 	const payload = await readProtoPayload(url);
 	history.replaceState(history.state, "", stripProtoMarker(url));
 	if (!payload) return true;
+	// A marked link on <all_urls> is attacker-reachable. Scrape and plant only
+	// when the background opened this tab for a relay request.
+	if (!(await tabHasPendingProtoRequest())) return true;
+
+	const notReady = detectPageNotReady(payload.expectedUrl);
+	if (notReady) {
+		await chrome.runtime.sendMessage({ type: PROTO_NOT_READY, error: notReady });
+		return true;
+	}
+	await chrome.runtime.sendMessage({
+		type: PROTO_PROGRESS,
+		status:
+			payload.phase === "scrape"
+				? "ready; scraping the style guide"
+				: "ready; planting the comparison",
+	});
 
 	if (payload.phase === "scrape") {
 		const styleGuide = scrapeStyleGuide();
 		await chrome.runtime.sendMessage({
 			type: PROTO_SAVE_STYLE_GUIDE,
-			slug: payload.slug,
 			styleGuide,
 		});
 	} else {

@@ -1,6 +1,9 @@
 import {
+	STYLE_GUIDE_MAX_CONTROLS,
+	type ProtoNotReadyError,
 	type ProtoVariation,
 	type StyleGuide,
+	type StyleGuideControl,
 	type Verdict,
 	validateProtoPlan,
 	validateStyleGuide,
@@ -11,12 +14,18 @@ import { callBrowserApi } from "../browser-call";
 import { injectTheme, startPicking, waitForEl } from "../picker";
 import { SANS } from "../ui-helpers";
 
-/** Content-to-background message requesting a local StyleGuide download. */
+/** Content-to-background message handing back a collected StyleGuide. */
 export const PROTO_SAVE_STYLE_GUIDE = "dg-proto:save-style-guide";
-/** Content-to-background message requesting a local verdict download. */
+/** Content-to-background message handing back a human verdict. */
 export const PROTO_SAVE_VERDICT = "dg-proto:save-verdict";
 /** Content-to-background message requesting an optional visible-tab preview. */
 export const PROTO_CAPTURE_PREVIEW = "dg-proto:capture-preview";
+/** Content-to-background message reporting the landed page is not ready for scrape/plant. */
+export const PROTO_NOT_READY = "dg-proto:not-ready";
+/** Content-to-background message reporting the page is ready and work has begun. */
+export const PROTO_PROGRESS = "dg-proto:progress";
+/** Content-to-background query: does this tab have a pending relay request? */
+export const PROTO_HAS_PENDING = "dg-proto:has-pending";
 
 /** Raw, bounded DOM/CSS observations consumed by the pure StyleGuide transform. */
 export type RawStyleSamples = {
@@ -29,6 +38,7 @@ export type RawStyleSamples = {
 	radii: string[];
 	shadows: string[];
 	components: StyleGuide["components"];
+	controls: StyleGuideControl[];
 };
 
 function channel(value: string): number | undefined {
@@ -152,7 +162,14 @@ export function styleGuideFromSamples(samples: RawStyleSamples): StyleGuide {
 			button: sortedRecord(samples.components.button),
 			input: sortedRecord(samples.components.input),
 			link: sortedRecord(samples.components.link),
+			...(samples.components.select
+				? { select: sortedRecord(samples.components.select) }
+				: {}),
+			...(samples.components.textarea
+				? { textarea: sortedRecord(samples.components.textarea) }
+				: {}),
 		},
+		...(samples.controls.length > 0 ? { controls: samples.controls } : {}),
 	};
 	return validateStyleGuide(guide);
 }
@@ -257,6 +274,59 @@ function componentSample(
 	return sample;
 }
 
+/** First visible match for a component sample; skips a hidden CSRF-token-shaped first input. */
+function firstVisibleMatch(selector: string): Element | null {
+	for (const element of document.querySelectorAll(selector)) {
+		if (element instanceof HTMLInputElement && element.type === "hidden") {
+			continue;
+		}
+		const style = getComputedStyle(element);
+		if (style.display === "none" || style.visibility === "hidden") continue;
+		return element;
+	}
+	return null;
+}
+
+/** Bootstrap's `data-bs-theme`, a generic `data-theme`, or the page's declared `color-scheme`. */
+function detectColorScheme(): "light" | "dark" | undefined {
+	const themed =
+		document.documentElement.getAttribute("data-bs-theme") ??
+		document.documentElement.getAttribute("data-theme");
+	if (themed === "light" || themed === "dark") return themed;
+	const declared = getComputedStyle(document.documentElement).colorScheme;
+	if (declared === "dark" || declared === "light") return declared;
+	return undefined;
+}
+
+const CONTROL_TAGS = new Set(["input", "select", "textarea", "button"]);
+
+function controlType(element: Element, tag: string): string | undefined {
+	if (tag === "input") return (element as HTMLInputElement).type;
+	if (tag === "button") return (element as HTMLButtonElement).type;
+	return undefined;
+}
+
+/** First form controls in document order, with their host classes, so an agent can reuse them verbatim. */
+function collectControls(limit: number): StyleGuideControl[] {
+	const controls: StyleGuideControl[] = [];
+	for (const element of document.querySelectorAll(
+		"input, select, textarea, button",
+	)) {
+		if (controls.length >= limit) break;
+		const tag = element.tagName.toLowerCase();
+		if (!CONTROL_TAGS.has(tag)) continue;
+		const type = controlType(element, tag);
+		const wrapperClasses = element.parentElement?.className;
+		controls.push({
+			tag: tag as StyleGuideControl["tag"],
+			...(type ? { type } : {}),
+			classes: element.className,
+			...(wrapperClasses ? { wrapperClasses } : {}),
+		});
+	}
+	return controls;
+}
+
 /** Thin DOM collector; real-page coverage remains a manual/E2E contract. */
 export function collectStyleSamples(): RawStyleSamples {
 	const rootStyle = getComputedStyle(document.documentElement);
@@ -278,7 +348,8 @@ export function collectStyleSamples(): RawStyleSamples {
 	/**
 	 * Bound large-page work to one deterministic DOM-order prefix. Worst case:
 	 * inspect 512 root properties and read 500 scan styles + 64 roster + 3 cards
-	 * + root/body + 3 component styles. At most 128 custom properties are emitted.
+	 * + root/body + 1 color-scheme read + 5 component styles. At most 128
+	 * custom properties are emitted.
 	 */
 	const scanned = boundedDescendants(
 		document.body,
@@ -335,11 +406,13 @@ export function collectStyleSamples(): RawStyleSamples {
 		"padding",
 	];
 
+	const colorScheme = detectColorScheme();
 	return {
 		meta: {
 			url: location.href,
 			scrapedAt: Date.now(),
 			sameOrigin: true,
+			...(colorScheme ? { colorScheme } : {}),
 		},
 		customProps,
 		colors,
@@ -349,13 +422,16 @@ export function collectStyleSamples(): RawStyleSamples {
 		radii,
 		shadows,
 		components: {
-			button: componentSample(
-				document.querySelector("button"),
+			button: componentSample(firstVisibleMatch("button"), sharedProperties),
+			input: componentSample(firstVisibleMatch("input"), sharedProperties),
+			link: componentSample(firstVisibleMatch("a"), sharedProperties),
+			select: componentSample(firstVisibleMatch("select"), sharedProperties),
+			textarea: componentSample(
+				firstVisibleMatch("textarea"),
 				sharedProperties,
 			),
-			input: componentSample(document.querySelector("input"), sharedProperties),
-			link: componentSample(document.querySelector("a"), sharedProperties),
 		},
+		controls: collectControls(STYLE_GUIDE_MAX_CONTROLS),
 	};
 }
 
@@ -373,6 +449,7 @@ const PROTOTYPE_TAGS = new Set([
 	"br",
 	"button",
 	"code",
+	"datalist",
 	"dd",
 	"details",
 	"div",
@@ -383,6 +460,7 @@ const PROTOTYPE_TAGS = new Set([
 	"figcaption",
 	"figure",
 	"footer",
+	"form",
 	"h1",
 	"h2",
 	"h3",
@@ -400,9 +478,11 @@ const PROTOTYPE_TAGS = new Set([
 	"main",
 	"nav",
 	"ol",
+	"optgroup",
 	"option",
 	"p",
 	"pre",
+	"progress",
 	"section",
 	"select",
 	"small",
@@ -465,36 +545,51 @@ const PROTOTYPE_GLOBAL_ATTRIBUTES = new Set([
 ]);
 const PROTOTYPE_TAG_ATTRIBUTES: Record<string, Set<string>> = {
 	a: new Set(["href"]),
-	button: new Set(["disabled", "name", "type", "value"]),
+	button: new Set(["disabled", "form", "name", "type", "value"]),
+	fieldset: new Set(["form"]),
 	img: new Set(["alt", "height", "src", "width"]),
 	input: new Set([
+		"accept",
+		"autocomplete",
 		"checked",
 		"disabled",
+		"form",
+		"list",
 		"max",
 		"maxlength",
 		"min",
 		"minlength",
+		"multiple",
 		"name",
+		"pattern",
 		"placeholder",
 		"readonly",
+		"required",
 		"step",
 		"type",
 		"value",
 	]),
 	label: new Set(["for"]),
+	optgroup: new Set(["disabled", "label"]),
 	option: new Set(["disabled", "label", "selected", "value"]),
-	select: new Set(["disabled", "multiple", "name"]),
-	td: new Set(["colspan", "rowspan"]),
+	progress: new Set(["max", "value"]),
+	select: new Set(["disabled", "form", "multiple", "name", "required", "size"]),
+	td: new Set(["colspan", "headers", "rowspan"]),
 	textarea: new Set([
+		"autocomplete",
 		"cols",
 		"disabled",
+		"form",
 		"maxlength",
+		"minlength",
 		"name",
 		"placeholder",
 		"readonly",
+		"required",
 		"rows",
+		"wrap",
 	]),
-	th: new Set(["colspan", "rowspan", "scope"]),
+	th: new Set(["colspan", "headers", "rowspan", "scope"]),
 };
 
 function safePrototypeUrl(
@@ -527,50 +622,988 @@ function decodePrototypeCssEscapes(css: string): string {
 
 const SHADOW_ESCAPE_SELECTOR = /:host(?:-context)?\b|::slotted\b/i;
 
-function stripShadowEscapeRules(css: string): string {
-	let current = css;
-	let previous: string;
-	do {
-		previous = current;
-		current = current.replace(
-			/(^|[{}])([^{}]*(?::host(?:-context)?\b|::slotted\b)[^{}]*)\{[^{}]*\}/gi,
-			"$1",
-		);
-	} while (current !== previous);
-
-	// Nested/novel rule syntax that still carries a shadow escape selector is
-	// rejected as a whole rather than risking a partial parser disagreement.
-	return SHADOW_ESCAPE_SELECTOR.test(current) ? "" : current;
+function dropCssPrelude(prelude: string): boolean {
+	const decoded = decodePrototypeCssEscapes(prelude);
+	return (
+		SHADOW_ESCAPE_SELECTOR.test(decoded) ||
+		/@import\b/i.test(decoded) ||
+		/@font-face\b/i.test(decoded) ||
+		/@charset\b/i.test(decoded)
+	);
 }
 
-function sanitizePrototypeCss(css: string, scoped = true): string {
-	const sanitized = stripShadowEscapeRules(
-		decodePrototypeCssEscapes(css)
-			.replace(/\/\*[\s\S]*?\*\//g, "")
-			.replace(/@import\b[^;]*(?:;|$)/gi, "")
-			.replace(/@font-face\s*\{[^}]*\}/gi, "")
-			.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, "none")
-			.replace(/(?:behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
-			.replace(
-				/(position\s*:\s*)(?:fixed|absolute|var\s*\([^)]*\))(\s*!important)?/gi,
-				"$1static$2",
-			)
-			.replace(
-				/(z-index\s*:\s*)([^;}]+)/gi,
-				(match, prefix: string, raw: string) => {
-					const numeric = Number(raw.replace(/!important/gi, "").trim());
-					return Number.isFinite(numeric) && Math.abs(numeric) <= 1000
-						? match
-						: `${prefix}0`;
-				},
-			)
-			.replaceAll("<", "\\3C ")
-			.replaceAll("-->", "--\\3E "),
+/** Decode escapes in declaration text so `p\6f sition` is still neutralized. */
+function sanitizeCssDeclarations(css: string): string {
+	return decodePrototypeCssEscapes(css)
+		.replace(/@import\b[^;]*(?:;|$)/gi, "")
+		.replace(/@charset\b[^;]*(?:;|$)/gi, "")
+		.replace(/@namespace\b[^;]*(?:;|$)/gi, "")
+		.replace(/(?:url|image-set|-webkit-image-set)\s*\([^)]*\)/gi, (match) =>
+			/^url\s*\(\s*(?:#|(["'])#)/i.test(match) ? match : "none",
+		)
+		.replace(/(?:behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
+		.replace(
+			/(position\s*:\s*)(?:fixed|absolute|var\s*\([^)]*\))(\s*!important)?/gi,
+			"$1static$2",
+		)
+		.replace(
+			/(z-index\s*:\s*)([^;}]+)/gi,
+			(match, prefix: string, raw: string) => {
+				const numeric = Number(raw.replace(/!important/gi, "").trim());
+				return Number.isFinite(numeric) && Math.abs(numeric) <= 1000
+					? match
+					: `${prefix}0`;
+			},
+		)
+		.replaceAll("<", "\\3C ")
+		.replaceAll("-->", "--\\3E ");
+}
+
+function lastTopLevelSemicolon(value: string): number {
+	let last = -1;
+	for (let index = 0; index < value.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
+		if (value[index] === ";") last = index;
+	}
+	return last;
+}
+
+/**
+ * Sanitize declarations, but keep selector escapes so `#a\:b` still parses as
+ * an id. Nested rules stay in the text for the serializer to walk.
+ */
+function sanitizeCssStructure(css: string): string {
+	let result = "";
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) {
+			result += sanitizeCssDeclarations(css.slice(index));
+			break;
+		}
+		const segment = css.slice(index, open);
+		const split = lastTopLevelSemicolon(segment);
+		const loose = split >= 0 ? segment.slice(0, split + 1) : "";
+		const prelude = split >= 0 ? segment.slice(split + 1) : segment;
+		const end = endOfBlock(css, open, "{", "}");
+		const inner = css.slice(open + 1, Math.max(open + 1, end - 1));
+		result += sanitizeCssDeclarations(loose);
+		if (!dropCssPrelude(prelude)) {
+			const safePrelude = prelude
+				.replaceAll("<", "\\3C ")
+				.replaceAll("-->", "--\\3E ");
+			result += `${safePrelude}{${sanitizeCssStructure(inner)}}`;
+		}
+		index = end;
+	}
+	return result;
+}
+
+function preparePrototypeCss(css: string): string {
+	const structured = sanitizeCssStructure(stripCssComments(css));
+	// A shadow-escape selector that survived the walk blanks the sheet.
+	// The check decodes escapes; the returned sheet keeps ident escapes.
+	if (SHADOW_ESCAPE_SELECTOR.test(decodePrototypeCssEscapes(structured))) return "";
+	return structured;
+}
+
+function prototypeStyleSheet(): { new (): CSSStyleSheet } | undefined {
+	const view = document.defaultView as
+		| (Window & { CSSStyleSheet?: { new (): CSSStyleSheet } })
+		| null;
+	const ctor = globalThis.CSSStyleSheet ?? view?.CSSStyleSheet;
+	return typeof ctor === "function" ? ctor : undefined;
+}
+
+const ANIMATION_KEYWORDS = new Set([
+	"alternate",
+	"alternate-reverse",
+	"backwards",
+	"both",
+	"ease",
+	"ease-in",
+	"ease-in-out",
+	"ease-out",
+	"forwards",
+	"infinite",
+	"linear",
+	"none",
+	"normal",
+	"paused",
+	"reverse",
+	"running",
+	"step-end",
+	"step-start",
+]);
+
+function cssEscapeIdent(value: string): string {
+	const view = document.defaultView as
+		| (Window & { CSS?: { escape?: (text: string) => string } })
+		| null;
+	const escape =
+		(globalThis as { CSS?: { escape?: (text: string) => string } }).CSS?.escape ??
+		view?.CSS?.escape;
+	if (escape) return escape(value);
+	return value.replace(/[^a-zA-Z0-9_-]/g, (character) => `\\${character}`);
+}
+
+function cssString(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function isCssNewline(character: string | undefined): boolean {
+	return character === "\n" || character === "\r" || character === "\f";
+}
+
+function isCssWhitespace(character: string | undefined): boolean {
+	return character === " " || character === "\t" || isCssNewline(character);
+}
+
+function endOfComment(value: string, start: number): number {
+	const end = value.indexOf("*/", start + 2);
+	return end < 0 ? value.length : end + 2;
+}
+
+/**
+ * Index just after a string that starts at `start`, or the unescaped newline
+ * that ends a bad-string. That newline is not consumed: CSS reconsumes it.
+ * A backslash followed by a newline continues the string.
+ */
+function endOfQuoted(value: string, start: number): number {
+	const quote = value[start];
+	for (let index = start + 1; index < value.length; index += 1) {
+		const character = value[index];
+		if (character === "\\") {
+			const next = value[index + 1];
+			if (next === undefined) return value.length;
+			if (next === "\r" && value[index + 2] === "\n") {
+				index += 2;
+				continue;
+			}
+			index += 1;
+			continue;
+		}
+		if (isCssNewline(character)) return index;
+		if (character === quote) return index + 1;
+	}
+	return value.length;
+}
+
+function identBoundary(value: string, index: number): boolean {
+	if (index === 0) return true;
+	const previous = value[index - 1] ?? "";
+	return !/[A-Za-z0-9_-]/.test(previous);
+}
+
+/** Consume a `url(...)` token, including braces and quotes that are not structural. */
+function endOfUrlToken(value: string, openParen: number): number {
+	let index = openParen + 1;
+	while (index < value.length && isCssWhitespace(value[index])) index += 1;
+	const quote = value[index];
+	if (quote === '"' || quote === "'") {
+		index = endOfQuoted(value, index);
+		while (index < value.length && isCssWhitespace(value[index])) index += 1;
+		if (value[index] === ")") return index + 1;
+	}
+	for (; index < value.length; index += 1) {
+		if (value[index] === "\\") {
+			index += 1;
+			continue;
+		}
+		if (value[index] === ")") return index + 1;
+	}
+	return value.length;
+}
+
+/**
+ * If `index` starts a comment, string, or `url()`, return where the scanner
+ * should resume. A bad-string resumes at its terminating newline.
+ */
+function skipCssToken(value: string, index: number): number | undefined {
+	if (value.startsWith("/*", index)) return endOfComment(value, index);
+	const character = value[index];
+	if (character === '"' || character === "'") return endOfQuoted(value, index);
+	if (
+		identBoundary(value, index) &&
+		value.slice(index, index + 3).toLowerCase() === "url"
+	) {
+		let cursor = index + 3;
+		while (cursor < value.length) {
+			if (value.startsWith("/*", cursor)) {
+				cursor = endOfComment(value, cursor);
+				continue;
+			}
+			if (isCssWhitespace(value[cursor])) {
+				cursor += 1;
+				continue;
+			}
+			break;
+		}
+		if (value[cursor] === "(") return endOfUrlToken(value, cursor);
+	}
+	return undefined;
+}
+
+function advanceOverToken(index: number, skipped: number | undefined): number | undefined {
+	if (skipped === undefined || skipped <= index) return undefined;
+	return skipped - 1;
+}
+
+/** Drop comments, but not `/*` inside a string or a `url()` token. */
+function stripCssComments(css: string): string {
+	let result = "";
+	for (let index = 0; index < css.length; index += 1) {
+		if (css.startsWith("/*", index)) {
+			index = Math.max(index, endOfComment(css, index) - 1);
+			continue;
+		}
+		const resume = advanceOverToken(index, skipCssToken(css, index));
+		if (resume !== undefined) {
+			const end = resume + 1;
+			result += css.slice(index, end);
+			index = resume;
+			continue;
+		}
+		result += css[index] ?? "";
+	}
+	return result;
+}
+
+function endOfBlock(
+	value: string,
+	start: number,
+	open: string,
+	close: string,
+): number {
+	let depth = 0;
+	for (let index = start; index < value.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
+		const character = value[index];
+		if (character === open) depth += 1;
+		else if (character === close) {
+			depth -= 1;
+			if (depth === 0) return index + 1;
+		}
+	}
+	return value.length;
+}
+
+function indexOfBrace(value: string, start: number): number {
+	for (let index = start; index < value.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(value, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
+		if (value[index] === "{") return index;
+	}
+	return -1;
+}
+
+function readCssIdent(
+	value: string,
+	start: number,
+): { raw: string; next: number } | undefined {
+	if (start >= value.length) return undefined;
+	const first = value[start] ?? "";
+	if (first !== "-" && first !== "\\" && !/[A-Za-z_\u0080-\uFFFF]/.test(first)) {
+		return undefined;
+	}
+	let index = start;
+	if (value[index] === "-") index += 1;
+	while (index < value.length) {
+		const character = value[index] ?? "";
+		if (character === "\\") {
+			const hex = /^[0-9a-fA-F]{1,6}/.exec(value.slice(index + 1));
+			if (hex) {
+				index += 1 + hex[0].length;
+				if (value[index] === " ") index += 1;
+				continue;
+			}
+			index += 2;
+			continue;
+		}
+		if (!/[A-Za-z0-9_\u0080-\uFFFF-]/.test(character)) break;
+		index += 1;
+	}
+	if (index === start) return undefined;
+	return { raw: value.slice(start, index), next: index };
+}
+
+/** Rewrite `#id` selectors to the prefixed id. Declaration colors are not selectors. */
+function rewriteHashIds(value: string, ids: ReadonlyMap<string, string>): string {
+	if (ids.size === 0 || !value.includes("#")) return value;
+	let result = "";
+	for (let index = 0; index < value.length; index += 1) {
+		const character = value[index];
+		if (character === '"' || character === "'") {
+			const end = endOfQuoted(value, index);
+			result += value.slice(index, end);
+			index = end - 1;
+			continue;
+		}
+		if (character === "#") {
+			const ident = readCssIdent(value, index + 1);
+			if (ident) {
+				const mapped = ids.get(decodePrototypeCssEscapes(ident.raw));
+				if (mapped) {
+					result += `#${cssEscapeIdent(mapped)}`;
+					index = ident.next - 1;
+					continue;
+				}
+				result += value.slice(index, ident.next);
+				index = ident.next - 1;
+				continue;
+			}
+		}
+		result += character;
+	}
+	return result;
+}
+
+const ID_ATTRIBUTE_SELECTOR =
+	/^\[\s*id\s*([~|^$*]?)\s*(=)\s*(?:"((?:\\.|[^"])*)"|'((?:\\.|[^'])*)'|([^\s\]"'=]+))\s*([iIsS])?\s*\]$/i;
+
+function rewriteAttributeSelector(
+	block: string,
+	ids: ReadonlyMap<string, string>,
+	idPrefix: string,
+): string {
+	const match = ID_ATTRIBUTE_SELECTOR.exec(block);
+	if (!match) return rewriteHashIds(block, ids);
+	const operatorFlag = match[1] ?? "";
+	const operator = `${operatorFlag}=`;
+	const raw = decodePrototypeCssEscapes(
+		(match[3] ?? match[4] ?? match[5] ?? "").replace(/\\(.)/g, "$1"),
 	);
-	if (!scoped) return sanitized;
-	return sanitized.trim()
-		? `@scope ([data-dg-prototype]) {\n${sanitized}\n}`
+	const flag = match[6] ? ` ${match[6]}` : "";
+	// Prefixing ids makes `^=` / `|=` miss. `$=` and `*=` still match the prefixed id.
+	if (operatorFlag === "^" || operatorFlag === "|") {
+		if (!idPrefix || raw.startsWith(idPrefix)) return block;
+		return `[id${operator}"${cssString(`${idPrefix}${raw}`)}"${flag}]`;
+	}
+	if (operatorFlag === "$" || operatorFlag === "*") return block;
+	const mapped = ids.get(raw);
+	if (!mapped) return block;
+	return `[id${operator}"${cssString(mapped)}"${flag}]`;
+}
+
+function rewriteSelectorIds(
+	selector: string,
+	ids: ReadonlyMap<string, string>,
+	idPrefix = "",
+): string {
+	if (
+		(ids.size === 0 && !idPrefix) ||
+		(!selector.includes("#") && !selector.includes("["))
+	) {
+		return selector;
+	}
+	let result = "";
+	for (let index = 0; index < selector.length; index += 1) {
+		const character = selector[index];
+		if (character === '"' || character === "'") {
+			const end = endOfQuoted(selector, index);
+			result += selector.slice(index, end);
+			index = end - 1;
+			continue;
+		}
+		if (character === "[") {
+			const end = endOfBlock(selector, index, "[", "]");
+			result += rewriteAttributeSelector(
+				selector.slice(index, end),
+				ids,
+				idPrefix,
+			);
+			index = end - 1;
+			continue;
+		}
+		if (character === "#") {
+			const ident = readCssIdent(selector, index + 1);
+			if (ident) {
+				const mapped = ids.get(decodePrototypeCssEscapes(ident.raw));
+				if (mapped) {
+					result += `#${cssEscapeIdent(mapped)}`;
+					index = ident.next - 1;
+					continue;
+				}
+				result += selector.slice(index, ident.next);
+				index = ident.next - 1;
+				continue;
+			}
+		}
+		result += character;
+	}
+	return result;
+}
+
+/** Point `url(#id)` at the prefixed id. An unmapped fragment becomes `none`. */
+function rewriteFragmentUrls(
+	css: string,
+	ids: ReadonlyMap<string, string>,
+): string {
+	if (!css.includes("#")) return css;
+	return css.replace(
+		/url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/gi,
+		(_full, _quote: string, id: string) => {
+			const mapped = ids.get(decodePrototypeCssEscapes(id));
+			if (!mapped) return "none";
+			return `url("#${cssString(mapped)}")`;
+		},
+	);
+}
+
+function rewriteAnimationValue(
+	value: string,
+	keyframes: ReadonlyMap<string, string>,
+): string {
+	if (keyframes.size === 0) return value;
+	return value.replace(
+		/(^|[\s,])(-?[A-Za-z_][A-Za-z0-9_-]*)/g,
+		(match, lead: string, token: string) => {
+			if (ANIMATION_KEYWORDS.has(token.toLowerCase())) return match;
+			const mapped = keyframes.get(token);
+			return mapped ? `${lead}${cssEscapeIdent(mapped)}` : match;
+		},
+	);
+}
+
+function rewriteDeclarations(
+	cssText: string,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+): string {
+	const withUrls = rewriteFragmentUrls(cssText, ids);
+	if (keyframes.size === 0) return withUrls;
+	return withUrls.replace(
+		/(^|;)(\s*)(animation-name|animation)(\s*:)([^;]*)/gi,
+		(
+			_match,
+			semi: string,
+			space: string,
+			property: string,
+			colon: string,
+			value: string,
+		) =>
+			`${semi}${space}${property}${colon}${rewriteAnimationValue(value, keyframes)}`,
+	);
+}
+
+function isKeyframesRule(rule: CSSRule): boolean {
+	return rule.type === 7 || rule.constructor?.name === "CSSKeyframesRule";
+}
+
+function isGroupingRule(rule: CSSRule): rule is CSSGroupingRule {
+	const name = rule.constructor?.name;
+	return (
+		name === "CSSMediaRule" ||
+		name === "CSSSupportsRule" ||
+		name === "CSSContainerRule" ||
+		name === "CSSLayerBlockRule" ||
+		rule.type === 4 ||
+		rule.type === 12
+	);
+}
+
+function childCssRules(rule: CSSRule): CSSRuleList | undefined {
+	if (!("cssRules" in rule)) return undefined;
+	const children = (rule as CSSGroupingRule).cssRules;
+	if (!children || children.length === 0) return undefined;
+	return children;
+}
+
+function groupingPrelude(rule: CSSRule): string {
+	const open = rule.cssText.indexOf("{");
+	return open > 0 ? rule.cssText.slice(0, open).trim() : "";
+}
+
+function keyframeRuleName(rule: CSSRule): string {
+	if ("name" in rule && typeof (rule as CSSKeyframesRule).name === "string") {
+		return (rule as CSSKeyframesRule).name;
+	}
+	const match = /@keyframes\s+([^\s{]+)/i.exec(rule.cssText);
+	return match?.[1]?.replace(/^["']|["']$/g, "") ?? "";
+}
+
+function collectKeyframeNames(
+	rules: CSSRuleList,
+	prefix: string,
+	into: Map<string, string>,
+): void {
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule) continue;
+		if (isKeyframesRule(rule)) {
+			const name = keyframeRuleName(rule);
+			if (name && !name.startsWith(prefix) && !into.has(name)) {
+				into.set(name, `${prefix}${name}`);
+			}
+			continue;
+		}
+		const children = childCssRules(rule);
+		if (children && (isGroupingRule(rule) || rule.constructor?.name === "CSSStyleRule")) {
+			collectKeyframeNames(children, prefix, into);
+		}
+	}
+}
+
+function formatKeyframeRule(
+	rule: CSSRule,
+	names: ReadonlyMap<string, string>,
+	ids: ReadonlyMap<string, string>,
+): string | undefined {
+	if (SHADOW_ESCAPE_SELECTOR.test(rule.cssText)) return undefined;
+	const name = keyframeRuleName(rule);
+	if (!name) return undefined;
+	const mapped = names.get(name) ?? name;
+	const open = rule.cssText.indexOf("{");
+	const body = open >= 0 ? rule.cssText.slice(open).trim() : "{}";
+	return `@keyframes ${cssEscapeIdent(mapped)} ${rewriteFragmentUrls(body, ids)}`;
+}
+
+/**
+ * `@keyframes` is not valid inside `@scope`, so namespaced copies are emitted
+ * beside the scope block. Prefixed names keep them off the host page.
+ */
+function serializeKeyframeRules(
+	rules: CSSRuleList,
+	names: ReadonlyMap<string, string>,
+	ids: ReadonlyMap<string, string>,
+): string {
+	const parts: string[] = [];
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule) continue;
+		if (isKeyframesRule(rule)) {
+			const formatted = formatKeyframeRule(rule, names, ids);
+			if (formatted) parts.push(formatted);
+			continue;
+		}
+		if (isGroupingRule(rule)) {
+			const inner = serializeKeyframeRules(rule.cssRules, names, ids);
+			if (!inner.trim()) continue;
+			const prelude = groupingPrelude(rule);
+			// Keep @media / @supports around the keyframes. Hoisting them
+			// makes both branches apply, and the later one wins unconditionally.
+			if (!prelude || /@scope\b/i.test(prelude)) continue;
+			parts.push(`${prelude} {\n${inner}\n}`);
+			continue;
+		}
+		if (rule.constructor?.name === "CSSStyleRule") {
+			const children = childCssRules(rule);
+			if (!children) continue;
+			const inner = serializeKeyframeRules(children, names, ids);
+			if (inner.trim()) parts.push(inner);
+		}
+	}
+	return parts.join("\n");
+}
+
+type SourceRule = { prelude: string; body: string };
+type SourceCursor = { rules: SourceRule[]; index: number };
+
+function splitCssRules(css: string): SourceRule[] {
+	const rules: SourceRule[] = [];
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) break;
+		const prelude = css.slice(index, open).trim();
+		const end = endOfBlock(css, open, "{", "}");
+		const body = css.slice(open + 1, Math.max(open + 1, end - 1));
+		if (prelude) rules.push({ prelude, body });
+		index = end;
+	}
+	return rules;
+}
+
+function normalizeCssPrelude(value: string): string {
+	return decodePrototypeCssEscapes(value).replace(/\s+/g, " ").trim();
+}
+
+function takeSource(
+	cursor: SourceCursor | undefined,
+	prelude: string,
+): SourceRule | undefined {
+	if (!cursor || !prelude.trim()) return undefined;
+	const want = normalizeCssPrelude(prelude);
+	for (let index = cursor.index; index < cursor.rules.length; index += 1) {
+		const rule = cursor.rules[index];
+		if (!rule || normalizeCssPrelude(rule.prelude) !== want) continue;
+		cursor.index = index + 1;
+		return rule;
+	}
+	return undefined;
+}
+
+/** Declarations plus nested rules, with id and keyframe rewrites. `@keyframes` are emitted outside `@scope`. */
+function rewriteRuleBody(
+	body: string,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+): string {
+	if (!body.includes("{")) return rewriteDeclarations(body, ids, keyframes);
+	let result = "";
+	let index = 0;
+	while (index < body.length) {
+		const open = indexOfBrace(body, index);
+		if (open < 0) {
+			result += rewriteDeclarations(body.slice(index), ids, keyframes);
+			break;
+		}
+		const segment = body.slice(index, open);
+		const split = lastTopLevelSemicolon(segment);
+		const declarations = split >= 0 ? segment.slice(0, split + 1) : "";
+		const prelude = split >= 0 ? segment.slice(split + 1) : segment;
+		const end = endOfBlock(body, open, "{", "}");
+		const inner = body.slice(open + 1, Math.max(open + 1, end - 1));
+		result += rewriteDeclarations(declarations, ids, keyframes);
+		const decodedPrelude = decodePrototypeCssEscapes(prelude);
+		if (
+			prelude.trim() &&
+			!dropCssPrelude(prelude) &&
+			!/@keyframes\b/i.test(decodedPrelude) &&
+			!/@scope\b/i.test(decodedPrelude)
+		) {
+			result += `${rewriteSelectorIds(prelude, ids, idPrefix)}{${rewriteRuleBody(inner, ids, keyframes, idPrefix)}}`;
+		}
+		index = end;
+	}
+	return result;
+}
+
+function nestedSourceOnly(body: string): string {
+	const open = indexOfBrace(body, 0);
+	if (open < 0) return "";
+	const split = lastTopLevelSemicolon(body.slice(0, open));
+	return body.slice(split >= 0 ? split + 1 : 0);
+}
+
+function serializeStyleRule(
+	rule: CSSStyleRule,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+	cursor: SourceCursor | undefined,
+): string | undefined {
+	if (
+		SHADOW_ESCAPE_SELECTOR.test(rule.selectorText) ||
+		SHADOW_ESCAPE_SELECTOR.test(rule.cssText)
+	) {
+		return undefined;
+	}
+	const selector = rewriteSelectorIds(rule.selectorText, ids, idPrefix).trim();
+	if (!selector) return undefined;
+	const source = takeSource(cursor, rule.selectorText);
+	const children = childCssRules(rule);
+	const declarations = rewriteDeclarations(
+		rule.style?.cssText ?? "",
+		ids,
+		keyframes,
+	).trim();
+	const nested = children
+		? serializeScopedRules(
+				children,
+				ids,
+				keyframes,
+				idPrefix,
+				source ? { rules: splitCssRules(source.body), index: 0 } : undefined,
+			).trim()
 		: "";
+	let body = [declarations, nested].filter((part) => part.trim()).join("\n");
+	// Some CSSOM implementations drop nested rules (and the declarations beside
+	// them) instead of exposing them on cssRules. Rebuild that body from the
+	// already-sanitized source so preview CSS matches the exported sheet.
+	if (!body.trim() && source?.body.trim()) {
+		body = rewriteRuleBody(source.body, ids, keyframes, idPrefix).trim();
+	} else if (!nested && source?.body.includes("{")) {
+		const rewritten = rewriteRuleBody(
+			nestedSourceOnly(source.body),
+			ids,
+			keyframes,
+			idPrefix,
+		).trim();
+		body = [declarations, rewritten].filter((part) => part.trim()).join("\n");
+	}
+	if (!body.trim()) return undefined;
+	return `${selector} { ${body} }`;
+}
+
+function serializeScopedRules(
+	rules: CSSRuleList,
+	ids: ReadonlyMap<string, string>,
+	keyframes: ReadonlyMap<string, string>,
+	idPrefix: string,
+	cursor: SourceCursor | undefined,
+): string {
+	const parts: string[] = [];
+	for (let index = 0; index < rules.length; index += 1) {
+		const rule = rules[index];
+		if (!rule || isKeyframesRule(rule)) continue;
+		if (rule.constructor.name === "CSSStyleRule") {
+			const serialized = serializeStyleRule(
+				rule as CSSStyleRule,
+				ids,
+				keyframes,
+				idPrefix,
+				cursor,
+			);
+			if (serialized) parts.push(serialized);
+			continue;
+		}
+		if (rule.constructor?.name === "CSSNestedDeclarations" && "style" in rule) {
+			const text = rewriteDeclarations(
+				(rule as CSSStyleRule).style?.cssText ?? "",
+				ids,
+				keyframes,
+			).trim();
+			if (text) parts.push(text);
+			continue;
+		}
+		if (!isGroupingRule(rule)) continue;
+		const prelude = groupingPrelude(rule);
+		if (!prelude || /@scope\b/i.test(prelude)) {
+			takeSource(cursor, prelude);
+			continue;
+		}
+		const source = takeSource(cursor, prelude);
+		const inner = serializeScopedRules(
+			rule.cssRules,
+			ids,
+			keyframes,
+			idPrefix,
+			source ? { rules: splitCssRules(source.body), index: 0 } : undefined,
+		);
+		if (!inner.trim()) continue;
+		parts.push(`${prelude} {\n${inner}\n}`);
+	}
+	return parts.join("\n");
+}
+
+/** Rewrite selectors when CSSOM is unavailable, without touching declaration colors. */
+function rewriteUnparsedCss(
+	css: string,
+	ids: ReadonlyMap<string, string>,
+	idPrefix = "",
+): string {
+	if (!css.includes("{")) return rewriteFragmentUrls(css, ids);
+	let result = "";
+	let index = 0;
+	while (index < css.length) {
+		const open = indexOfBrace(css, index);
+		if (open < 0) {
+			result += rewriteFragmentUrls(css.slice(index), ids);
+			break;
+		}
+		result += rewriteSelectorIds(css.slice(index, open), ids, idPrefix);
+		const end = endOfBlock(css, open, "{", "}");
+		const inner = css.slice(open + 1, Math.max(open + 1, end - 1));
+		result += `{${rewriteUnparsedCss(inner, ids, idPrefix)}}`;
+		index = end;
+	}
+	return result;
+}
+
+function cssBracesBalance(css: string): boolean {
+	let depth = 0;
+	for (let index = 0; index < css.length; index += 1) {
+		const resume = advanceOverToken(index, skipCssToken(css, index));
+		if (resume !== undefined) {
+			index = resume;
+			continue;
+		}
+		const character = css[index];
+		if (character === "{") depth += 1;
+		else if (character === "}") {
+			depth -= 1;
+			if (depth < 0) return false;
+		}
+	}
+	return depth === 0;
+}
+
+function isPrototypeScopeRule(rule: CSSRule): boolean {
+	if (rule.constructor?.name === "CSSScopeRule") return true;
+	return /@scope\b/i.test(groupingPrelude(rule));
+}
+
+/** `@keyframes`, or a media/supports/layer wrapper that contains only those. */
+function isKeyframesOnlyWrapper(rule: CSSRule): boolean {
+	if (isKeyframesRule(rule)) return true;
+	if (!isGroupingRule(rule) || isPrototypeScopeRule(rule)) return false;
+	const children = childCssRules(rule);
+	if (!children) return false;
+	for (let index = 0; index < children.length; index += 1) {
+		const child = children[index];
+		if (!child || !isKeyframesOnlyWrapper(child)) return false;
+	}
+	return true;
+}
+
+/**
+ * Reparse the sheet that will be planted. Anything that is not the @scope
+ * block or a keyframes wrapper is a breakout and the sheet is rejected.
+ */
+function prototypeCssIsContained(css: string): boolean {
+	const StyleSheet = prototypeStyleSheet();
+	if (!StyleSheet || !css.trim()) return !css.trim();
+	try {
+		const sheet = new StyleSheet();
+		sheet.replaceSync(css);
+		let scopes = 0;
+		for (let index = 0; index < sheet.cssRules.length; index += 1) {
+			const rule = sheet.cssRules[index];
+			if (!rule) return false;
+			if (isPrototypeScopeRule(rule)) {
+				scopes += 1;
+				if (scopes > 1) return false;
+				continue;
+			}
+			if (isKeyframesOnlyWrapper(rule)) continue;
+			return false;
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function wrapPrototypeScope(css: string): string {
+	const trimmed = css.trim();
+	return trimmed ? `@scope ([data-dg-prototype]) {\n${trimmed}\n}` : "";
+}
+
+function sanitizePrototypeCss(
+	css: string,
+	scoped = true,
+	ids: ReadonlyMap<string, string> = new Map(),
+	keyframePrefix = "",
+): string {
+	const sanitized = preparePrototypeCss(css);
+	if (!scoped) return sanitized;
+	const trimmed = sanitized.trim();
+	if (!trimmed) return "";
+	const StyleSheet = prototypeStyleSheet();
+	if (StyleSheet) {
+		try {
+			const sheet = new StyleSheet();
+			sheet.replaceSync(trimmed);
+			const keyframes = new Map<string, string>();
+			if (keyframePrefix) {
+				collectKeyframeNames(sheet.cssRules, keyframePrefix, keyframes);
+			}
+			const frames = serializeKeyframeRules(sheet.cssRules, keyframes, ids);
+			const scope = wrapPrototypeScope(
+				serializeScopedRules(sheet.cssRules, ids, keyframes, keyframePrefix, {
+					rules: splitCssRules(trimmed),
+					index: 0,
+				}),
+			);
+			const assembled = [frames, scope].filter((part) => part.trim()).join("\n");
+			return prototypeCssIsContained(assembled) ? assembled : "";
+		} catch {
+			return "";
+		}
+	}
+	if (/@scope\b/i.test(trimmed) || !cssBracesBalance(trimmed)) return "";
+	return wrapPrototypeScope(rewriteUnparsedCss(trimmed, ids, keyframePrefix));
+}
+
+const ARIA_ID_REFERENCE_ATTRIBUTES = [
+	"aria-activedescendant",
+	"aria-controls",
+	"aria-describedby",
+	"aria-details",
+	"aria-errormessage",
+	"aria-flowto",
+	"aria-labelledby",
+	"aria-owns",
+];
+
+const SINGLE_ID_REFERENCE_ATTRIBUTES = ["for", "form", "list"];
+const TOKEN_ID_REFERENCE_ATTRIBUTES = [...ARIA_ID_REFERENCE_ATTRIBUTES, "headers"];
+const FORM_OWNER_TAGS = new Set([
+	"BUTTON",
+	"FIELDSET",
+	"INPUT",
+	"SELECT",
+	"TEXTAREA",
+]);
+
+/** Prefix ids and radio names, and retarget references that pointed at the old ids. */
+function namespaceVariationDom(
+	root: ParentNode,
+	variationKey: string,
+): Map<string, string> {
+	const prefix = `dg-proto-${variationKey}-`;
+	const idMap = new Map<string, string>();
+	for (const element of root.querySelectorAll("[id]")) {
+		const current = element.getAttribute("id");
+		if (!current || current.startsWith(prefix)) continue;
+		const next = `${prefix}${current}`;
+		idMap.set(current, next);
+		element.setAttribute("id", next);
+	}
+	for (const element of root.querySelectorAll("*")) {
+		for (const name of SINGLE_ID_REFERENCE_ATTRIBUTES) {
+			const value = element.getAttribute(name);
+			if (!value) continue;
+			const mapped = idMap.get(value);
+			if (mapped) {
+				element.setAttribute(name, mapped);
+				continue;
+			}
+			// An unmapped form, list, or for id points at the host page. Drop it.
+			if (name === "form" || name === "list" || name === "for") {
+				element.removeAttribute(name);
+			}
+		}
+		for (const name of TOKEN_ID_REFERENCE_ATTRIBUTES) {
+			const value = element.getAttribute(name);
+			if (!value) continue;
+			const rewritten = value
+				.split(/\s+/)
+				.map((token) => idMap.get(token) ?? token)
+				.join(" ");
+			if (rewritten !== value) element.setAttribute(name, rewritten);
+		}
+		if (element.tagName === "A") {
+			const href = element.getAttribute("href");
+			if (href?.startsWith("#")) {
+				const mapped = idMap.get(href.slice(1));
+				if (mapped) element.setAttribute("href", `#${mapped}`);
+			}
+		}
+		if (
+			element.tagName === "INPUT" &&
+			(element.getAttribute("type") ?? "").toLowerCase() === "radio"
+		) {
+			const name = element.getAttribute("name");
+			if (name && !name.startsWith(prefix)) {
+				element.setAttribute("name", `${prefix}${name}`);
+			}
+		}
+		// `form=""` disassociates a control that is not already inside a
+		// variation form, so Enter cannot submit an ancestor host-page form.
+		// Controls inside the variation's own form keep that owner.
+		if (
+			FORM_OWNER_TAGS.has(element.tagName) &&
+			!element.getAttribute("form") &&
+			element.closest("form") === null
+		) {
+			element.setAttribute("form", "");
+		}
+	}
+	return idMap;
 }
 
 /**
@@ -617,11 +1650,23 @@ export function sanitizePrototypeVariation(
 			}
 		}
 	}
+	const idMap = namespaceVariationDom(parsed.body, variation.key);
+	for (const element of parsed.body.querySelectorAll("[style]")) {
+		const style = element.getAttribute("style");
+		if (!style) continue;
+		const rewritten = rewriteFragmentUrls(style, idMap);
+		if (rewritten !== style) element.setAttribute("style", rewritten);
+	}
 
 	return {
 		...variation,
 		html: parsed.body.innerHTML,
-		css: sanitizePrototypeCss(variation.css),
+		css: sanitizePrototypeCss(
+			variation.css,
+			true,
+			idMap,
+			`dg-proto-${variation.key}-`,
+		),
 	};
 }
 
@@ -634,20 +1679,130 @@ function prototypeAttributeAllowed(name: string, tagName: string): boolean {
 	);
 }
 
+const LOGIN_TEXT = /sign in|log in|login/i;
+
+function hasPasswordField(): boolean {
+	return document.querySelector('input[type="password"]') !== null;
+}
+
+function hasLoginFormAction(): boolean {
+	return document.querySelector('form[action*="login" i]') !== null;
+}
+
+function matchesLoginText(): boolean {
+	const heading = document.querySelector("h1")?.textContent ?? "";
+	return LOGIN_TEXT.test(document.title) || LOGIN_TEXT.test(heading);
+}
+
+function navigationHttpStatus(): number | undefined {
+	try {
+		const entries = performance.getEntriesByType?.("navigation") as
+			| Array<{ responseStatus?: number }>
+			| undefined;
+		return entries?.[0]?.responseStatus;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Page-level not-ready signals shared by scrape and plant: an HTTP error
+ * response, a sign-in wall, or a landing page that is not the one requested.
+ * Called before any scrape or plant work begins; a mount-selector-specific
+ * check happens separately inside `plantPrototype`.
+ */
+function withoutTrailingSlash(pathname: string): string {
+	return pathname.length > 1 && pathname.endsWith("/")
+		? pathname.slice(0, -1)
+		: pathname;
+}
+
+function landedOffExpected(expectedUrl: string): boolean {
+	let expected: URL;
+	try {
+		expected = new URL(expectedUrl);
+	} catch {
+		return false;
+	}
+	return (
+		location.origin !== expected.origin ||
+		withoutTrailingSlash(location.pathname) !==
+			withoutTrailingSlash(expected.pathname)
+	);
+}
+
+function expectedPageLabel(expectedUrl: string): string {
+	try {
+		const expected = new URL(expectedUrl);
+		return `${expected.origin}${expected.pathname}`;
+	} catch {
+		return expectedUrl;
+	}
+}
+
+/**
+ * Login heuristics apply only after the navigation is already suspicious:
+ * the browser left `expectedUrl`, or the response was 401/403. A password
+ * field on the page the user asked for is an account form, not a wall.
+ */
+export function detectPageNotReady(
+	expectedUrl: string,
+): ProtoNotReadyError | undefined {
+	const landedUrl = location.href;
+	const status = navigationHttpStatus();
+	const offTarget = landedOffExpected(expectedUrl);
+	const authStatus = status === 401 || status === 403;
+	if (typeof status === "number" && status >= 400 && !authStatus) {
+		return {
+			code: "http-error",
+			message: `The page responded with HTTP ${status}.`,
+			landedUrl,
+		};
+	}
+	if (
+		(offTarget || authStatus) &&
+		(hasPasswordField() || hasLoginFormAction() || matchesLoginText())
+	) {
+		return {
+			code: "login-page",
+			message:
+				"The page looks like a sign-in page. Authenticate in this browser profile and retry.",
+			landedUrl,
+		};
+	}
+	if (offTarget) {
+		return {
+			code: "redirected",
+			message: `The browser landed on a different page than requested (expected ${expectedPageLabel(expectedUrl)}).`,
+			landedUrl,
+		};
+	}
+	if (authStatus && typeof status === "number") {
+		return {
+			code: "http-error",
+			message: `The page responded with HTTP ${status}.`,
+			landedUrl,
+		};
+	}
+	return undefined;
+}
+
 /** Immutable selection state for the planted comparison picker. */
 export type PrototypePickerState = {
 	keys: string[];
 	currentIndex: number;
 	selectedKey: string | null;
 	approved: boolean;
+	showingOriginal: boolean;
 };
 
-/** User navigation and approval actions accepted by the picker state machine. */
+/** User navigation, approval, and compare actions accepted by the picker state machine. */
 export type PrototypePickerAction =
 	| { type: "previous" }
 	| { type: "next" }
 	| { type: "select" }
-	| { type: "approve" };
+	| { type: "approve" }
+	| { type: "toggle-original" };
 
 /** Pure immutable state transition used by the planted picker UI. */
 export function pickerMachine(
@@ -661,6 +1816,7 @@ export function pickerMachine(
 			currentIndex: count === 0 ? 0 : (state.currentIndex - 1 + count) % count,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 	}
 	if (action.type === "next") {
@@ -669,6 +1825,7 @@ export function pickerMachine(
 			currentIndex: count === 0 ? 0 : (state.currentIndex + 1) % count,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 	}
 	if (action.type === "select") {
@@ -676,7 +1833,11 @@ export function pickerMachine(
 			...state,
 			selectedKey: state.keys[state.currentIndex] ?? null,
 			approved: false,
+			showingOriginal: false,
 		};
+	}
+	if (action.type === "toggle-original") {
+		return { ...state, showingOriginal: !state.showingOriginal };
 	}
 	return state.selectedKey ? { ...state, approved: true } : { ...state };
 }
@@ -840,10 +2001,25 @@ export function setPrototypeCycleFlash(
 
 let prototypeHostSequence = 0;
 
+function isElementNode(node: unknown): node is Element {
+	return (
+		typeof node === "object" &&
+		node !== null &&
+		"nodeType" in node &&
+		(node as Node).nodeType === 1 &&
+		"tagName" in node
+	);
+}
+
+async function reportPrototypeNotReady(error: ProtoNotReadyError): Promise<void> {
+	await sendPrototypeMessage({ type: PROTO_NOT_READY, error });
+}
+
 /**
  * Plant a prototype into one live-page target. Dynamic SPAs are intentionally
- * bounded to a longer one-shot selector wait; no long-lived MutationObserver is
- * installed, and selector timeout falls back to the interactive picker.
+ * bounded to a longer one-shot selector wait. A given mount selector that
+ * never resolves is a typed not-ready failure, not a silent interactive
+ * fallback; the picker only takes over when no selector was supplied.
  */
 export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const plan = validateProtoPlan(rawPlan);
@@ -852,13 +2028,18 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	let target: HTMLElement | null = takeover ? document.body : null;
 	if (!takeover) {
 		if (plan.mountSelector) {
-			try {
-				target = await waitForEl(plan.mountSelector, 10_000);
-			} catch {
-				// Invalid or stale SPA selectors use the same interactive fallback.
+			target = await waitForEl(plan.mountSelector, 10_000);
+			if (!target) {
+				await reportPrototypeNotReady({
+					code: "mount-missing",
+					message: `The mount selector "${plan.mountSelector}" was not found on the page.`,
+					landedUrl: location.href,
+				});
+				return;
 			}
+		} else {
+			target = await pickPrototypeTarget();
 		}
-		if (!target) target = await pickPrototypeTarget();
 	}
 	if (!target?.parentNode) return;
 
@@ -866,10 +2047,27 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	const nextSibling = target.nextSibling;
 	const previousBodyChildren = takeover ? [...target.childNodes] : [];
 	const prevInlineCssText = target.style.cssText;
+	const savedDisplay = target.style.getPropertyValue("display");
+	const savedDisplayPriority = target.style.getPropertyPriority("display");
 	const computed = getComputedStyle(target);
+	const variationDisplay = computed.display || "block";
 	const instance = ++prototypeHostSequence;
 	const host = document.createElement("div");
 	host.id = `dg-proto-host-${instance}`;
+	const preventPlantedSubmit = (event: Event): void => {
+		const form = event.target;
+		if (!isElementNode(form) || form.tagName !== "FORM") return;
+		const submitter = (event as Event & { submitter?: EventTarget | null })
+			.submitter;
+		const active = document.activeElement;
+		const planted =
+			host.contains(form) ||
+			(isElementNode(submitter) && host.contains(submitter)) ||
+			(isElementNode(active) && host.contains(active));
+		if (!planted) return;
+		event.preventDefault();
+		event.stopPropagation();
+	};
 	const controlsHost = document.createElement("div");
 	controlsHost.id = `dg-proto-controls-${instance}`;
 	let cleaned = false;
@@ -880,6 +2078,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		cleaned = true;
 		if (flashTimer !== undefined) window.clearTimeout(flashTimer);
 		if (onKey) document.removeEventListener("keydown", onKey, true);
+		document.removeEventListener("submit", preventPlantedSubmit, true);
 		window.removeEventListener("pagehide", cleanup);
 		host.remove();
 		controlsHost.remove();
@@ -896,6 +2095,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 	};
 
 	try {
+		document.addEventListener("submit", preventPlantedSubmit, true);
 		applyTrustedPrototypeHostStyles(host, computed);
 		if (takeover) {
 			host.style.setProperty("display", "block", "important");
@@ -904,13 +2104,12 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			target.replaceChildren(host);
 		} else {
 			parent.insertBefore(host, target);
-			target.style.display = "none";
+			target.style.setProperty("display", "none", "important");
 		}
 		document.documentElement.appendChild(controlsHost);
 		controlsHost.addEventListener("focusin", (event) =>
 			event.stopPropagation(),
 		);
-		const root = host.attachShadow({ mode: "closed" });
 		const controlsRoot = controlsHost.attachShadow({ mode: "closed" });
 		injectTheme(controlsRoot);
 		const chromeStyle = document.createElement("style");
@@ -944,11 +2143,13 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		const previous = button("Previous");
 		const next = button("Next");
 		const select = button("Select");
+		const toggleOriginal = takeover ? undefined : button("Show original");
 		const approve = button("Approve");
 		const reject = button("Reject");
 		const tweak = button("Tweak");
 		const close = button("Close");
 		nav.append(previous, next, select);
+		if (toggleOriginal) nav.append(toggleOriginal);
 		actions.append(approve, reject, tweak, close);
 
 		let state: PrototypePickerState = {
@@ -956,6 +2157,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 		let settling = false;
 
@@ -964,19 +2166,47 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				const variation = variations[state.currentIndex];
 				if (!variation)
 					throw new Error("prototype picker has no focused variation");
-				root.replaceChildren();
-				const style = document.createElement("style");
-				style.textContent = variation.css;
-				const canvas = document.createElement("div");
-				canvas.setAttribute("data-dg-prototype", variation.key);
-				canvas.innerHTML = variation.html;
-				root.append(style, canvas);
+				const showingOriginal = !takeover && state.showingOriginal;
+				if (!takeover) {
+					if (showingOriginal) {
+						if (savedDisplay) {
+							target.style.setProperty(
+								"display",
+								savedDisplay,
+								savedDisplayPriority,
+							);
+						} else {
+							target.style.removeProperty("display");
+						}
+					} else {
+						target.style.setProperty("display", "none", "important");
+					}
+					host.style.setProperty(
+						"display",
+						showingOriginal ? "none" : variationDisplay,
+						"important",
+					);
+				}
+				if (!showingOriginal) {
+					host.replaceChildren();
+					const style = document.createElement("style");
+					style.textContent = variation.css;
+					const canvas = document.createElement("div");
+					canvas.setAttribute("data-dg-prototype", variation.key);
+					canvas.innerHTML = variation.html;
+					host.append(style, canvas);
+				}
 				meta.textContent = `${state.currentIndex + 1}/${variations.length} · ${variation.label}${
 					state.selectedKey === variation.key ? " · selected" : ""
-				}`;
-				approve.disabled = state.selectedKey === null;
-				reject.disabled = false;
-				tweak.disabled = false;
+				}${showingOriginal ? " · showing original" : ""}`;
+				approve.disabled = state.selectedKey === null || showingOriginal;
+				reject.disabled = showingOriginal;
+				tweak.disabled = showingOriginal;
+				if (toggleOriginal) {
+					toggleOriginal.textContent = showingOriginal
+						? "Show variation"
+						: "Show original";
+				}
 			} catch (error) {
 				cleanup();
 				throw error;
@@ -1012,7 +2242,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 			}
 		};
 		const sendVerdict = async (action: "approve" | "reject" | "tweak"): Promise<void> => {
-			if (settling) return;
+			if (settling || state.showingOriginal) return;
 			const selectedKey = pickerVerdictKey(state, action);
 			if (!selectedKey) return;
 			const selectedIndex = variations.findIndex(
@@ -1031,6 +2261,7 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 				approve.disabled = true;
 				reject.disabled = true;
 				tweak.disabled = true;
+				if (toggleOriginal) toggleOriginal.disabled = true;
 				if (action === "approve") {
 					state = pickerMachine(state, { type: "approve" });
 					if (!state.approved) return;
@@ -1040,7 +2271,6 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 					try {
 						result = (await sendPrototypeMessage({
 							type: PROTO_CAPTURE_PREVIEW,
-							slug: plan.slug,
 						})) as typeof result;
 					} catch (captureError) {
 						result = {
@@ -1078,27 +2308,41 @@ export async function plantPrototype(rawPlan: unknown): Promise<void> {
 		};
 		const preventInteraction = (event: Event): void => {
 			const path = event.composedPath();
-			if (
-				event.type === "submit" ||
-				path.some(
-					(node) =>
-						node instanceof Element &&
-						(node.tagName === "A" ||
-							node.tagName === "BUTTON" ||
-							node.tagName === "INPUT" ||
-							node.tagName === "SELECT" ||
-							node.tagName === "TEXTAREA"),
-				)
-			) {
+			const activatesControl = path.some((node) => {
+				if (!isElementNode(node)) return false;
+				if (
+					node.tagName === "A" ||
+					node.tagName === "BUTTON" ||
+					node.tagName === "INPUT" ||
+					node.tagName === "SELECT" ||
+					node.tagName === "TEXTAREA"
+				) {
+					return true;
+				}
+				if (node.tagName !== "LABEL") return false;
+				const forId = node.getAttribute("for");
+				const control = forId
+					? node.ownerDocument.getElementById(forId)
+					: node.querySelector("button, input, select, textarea");
+				if (!control) return Boolean(forId);
+				return !host.contains(control);
+			});
+			if (event.type === "submit" || activatesControl) {
 				event.preventDefault();
 				event.stopPropagation();
 			}
 		};
-		root.addEventListener("click", preventInteraction, true);
-		root.addEventListener("submit", preventInteraction, true);
+		host.addEventListener("click", preventInteraction, true);
+		host.addEventListener("submit", preventInteraction, true);
 		previous.addEventListener("click", () => cycle("previous"));
 		next.addEventListener("click", () => cycle("next"));
 		select.addEventListener("click", choose);
+		if (toggleOriginal) {
+			toggleOriginal.addEventListener("click", () => {
+				state = pickerMachine(state, { type: "toggle-original" });
+				render();
+			});
+		}
 		approve.addEventListener("click", () => void sendVerdict("approve"));
 		reject.addEventListener("click", () => void sendVerdict("reject"));
 		tweak.addEventListener("click", () => void sendVerdict("tweak"));

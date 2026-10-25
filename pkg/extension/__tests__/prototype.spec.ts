@@ -1,14 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it } from "bun:test";
-import { type ProtoVariation, type Verdict, validateVerdict } from "@dg/common";
+import {
+	STYLE_GUIDE_MAX_CONTROLS,
+	type ProtoVariation,
+	type Verdict,
+	validateVerdict,
+} from "@dg/common";
 import {
 	type HTMLElement as HappyHTMLElement,
 	type ShadowRoot as HappyShadowRoot,
 	Window,
 } from "happy-dom";
-import { styleGuideDownloadOptions } from "@/lib/background/proto";
 import {
 	collectStyleSamples,
-	PROTO_SAVE_STYLE_GUIDE,
+	detectPageNotReady,
 	PROTO_STYLE_SCAN_LIMITS,
 	styleGuideFromSamples,
 } from "@/lib/features/prototype";
@@ -24,6 +28,10 @@ const globalDescriptors = {
 	location: Object.getOwnPropertyDescriptor(globalThis, "location"),
 	DOMParser: Object.getOwnPropertyDescriptor(globalThis, "DOMParser"),
 	HTMLElement: Object.getOwnPropertyDescriptor(globalThis, "HTMLElement"),
+	HTMLInputElement: Object.getOwnPropertyDescriptor(
+		globalThis,
+		"HTMLInputElement",
+	),
 	window: Object.getOwnPropertyDescriptor(globalThis, "window"),
 };
 
@@ -36,6 +44,7 @@ Object.defineProperties(globalThis, {
 	location: { configurable: true, value: window.location },
 	DOMParser: { configurable: true, value: window.DOMParser },
 	HTMLElement: { configurable: true, value: window.HTMLElement },
+	HTMLInputElement: { configurable: true, value: window.HTMLInputElement },
 	window: { configurable: true, value: window },
 });
 
@@ -74,18 +83,65 @@ function byId(id: string): Element {
 	return element;
 }
 
+/** Top-level style rules are a breakout: planted CSS may only be @scope or keyframes. */
+function topLevelStyleRuleCount(css: string): number {
+	const sheet = new window.CSSStyleSheet();
+	sheet.replaceSync(css);
+	let count = 0;
+	for (let index = 0; index < sheet.cssRules.length; index += 1) {
+		if (sheet.cssRules[index]?.constructor.name === "CSSStyleRule") count += 1;
+	}
+	return count;
+}
+
+async function captureShadowRoots(
+	run: () => Promise<void>,
+): Promise<HappyShadowRoot[]> {
+	const shadowRoots: HappyShadowRoot[] = [];
+	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
+		window.HTMLElement.prototype,
+		"attachShadow",
+	);
+	const originalAttachShadow = window.HTMLElement.prototype.attachShadow;
+	Object.defineProperty(window.HTMLElement.prototype, "attachShadow", {
+		configurable: true,
+		value(this: HappyHTMLElement, init: ShadowRootInit) {
+			const root = originalAttachShadow.call(this, init);
+			shadowRoots.push(root);
+			return root;
+		},
+	});
+
+	try {
+		await run();
+	} finally {
+		if (attachShadowDescriptor) {
+			Object.defineProperty(
+				window.HTMLElement.prototype,
+				"attachShadow",
+				attachShadowDescriptor,
+			);
+		} else {
+			Reflect.deleteProperty(window.HTMLElement.prototype, "attachShadow");
+		}
+	}
+	return shadowRoots;
+}
+
 type PickerState = {
 	keys: string[];
 	currentIndex: number;
 	selectedKey: string | null;
 	approved: boolean;
+	showingOriginal: boolean;
 };
 
 type PickerAction =
 	| { type: "previous" }
 	| { type: "next" }
 	| { type: "select" }
-	| { type: "approve" };
+	| { type: "approve" }
+	| { type: "toggle-original" };
 
 type PrototypePickerContracts = {
 	applyTrustedPrototypeHostStyles(
@@ -229,7 +285,7 @@ describe("collectStyleSamples", () => {
 			expect(styleReads).toBeLessThanOrEqual(
 				PROTO_STYLE_SCAN_LIMITS.domElements +
 					PROTO_STYLE_SCAN_LIMITS.fixedRoster +
-					2,
+					3,
 			);
 			expect(samples.colors).toContain("rgb(62, 0, 1)");
 			expect(samples.colors).not.toContain("rgb(63, 0, 1)");
@@ -293,33 +349,222 @@ describe("collectStyleSamples", () => {
 		expect(colors).not.toContain("rgb(20, 0, 0)");
 		expect(colors).not.toContain("rgb(50, 0, 0)");
 	});
-});
 
-it("uses the payload slug and overwrite policy for style-guide downloads", () => {
-	const options = styleGuideDownloadOptions({
-		type: PROTO_SAVE_STYLE_GUIDE,
-		slug: "payload-slug",
-		styleGuide: {
-			meta: {
-				url: "https://example.test",
-				scrapedAt: 1,
-				sameOrigin: true,
-			},
-			tokens: {
-				customProps: {},
-				colors: ["rgb(0, 0, 0)"],
-				fontStack: "sans-serif",
-				typeScale: [],
-				spacing: [],
-				radii: [],
-				shadows: [],
-			},
-			components: { button: {}, input: {}, link: {} },
-		},
+	it("captures Bootstrap form controls with their host classes so an agent can reuse them", () => {
+		document.body.style.color = "rgb(33, 37, 41)";
+		document.body.innerHTML = `
+			<form>
+				<div class="form-check">
+					<input type="radio" class="form-check-input" name="choice">
+				</div>
+				<input type="text" class="form-control">
+				<select class="form-select"><option>One</option></select>
+				<textarea class="form-control"></textarea>
+				<button type="submit" class="btn btn-primary">Save</button>
+			</form>
+		`;
+
+		try {
+			const samples = collectStyleSamples();
+			const guide = styleGuideFromSamples(samples);
+
+			expect(samples.controls[0]).toEqual({
+				tag: "input",
+				type: "radio",
+				classes: "form-check-input",
+				wrapperClasses: "form-check",
+			});
+			expect(samples.controls.map((control) => control.tag)).toEqual([
+				"input",
+				"input",
+				"select",
+				"textarea",
+				"button",
+			]);
+			expect(guide.controls).toEqual(samples.controls);
+			expect(guide.components.select).toBeDefined();
+			expect(guide.components.textarea).toBeDefined();
+		} finally {
+			document.body.removeAttribute("style");
+		}
 	});
 
-	expect(options.filename).toBe("dg-proto/payload-slug/style-guide.json");
-	expect(options.conflictAction).toBe("overwrite");
+	it("bounds collected controls to the shared StyleGuide control limit", () => {
+		document.body.innerHTML = Array.from(
+			{ length: 40 },
+			(_, index) => `<input class="field-${index}">`,
+		).join("");
+
+		const samples = collectStyleSamples();
+
+		expect(samples.controls.length).toBeLessThanOrEqual(
+			STYLE_GUIDE_MAX_CONTROLS,
+		);
+	});
+
+	it("skips a hidden first input when sampling the input component", () => {
+		document.body.innerHTML = `
+			<input type="hidden" name="csrf" value="token">
+			<input type="text" style="color:rgb(9, 9, 9)">
+		`;
+
+		const samples = collectStyleSamples();
+
+		expect(samples.components.input.color).toBe("rgb(9, 9, 9)");
+	});
+
+	it("reads data-bs-theme over a generic data-theme and over computed color-scheme", () => {
+		document.documentElement.setAttribute("data-bs-theme", "dark");
+		document.documentElement.setAttribute("data-theme", "light");
+
+		try {
+			expect(collectStyleSamples().meta.colorScheme).toBe("dark");
+		} finally {
+			document.documentElement.removeAttribute("data-bs-theme");
+			document.documentElement.removeAttribute("data-theme");
+		}
+	});
+
+	it("falls back to a generic data-theme attribute when data-bs-theme is absent", () => {
+		document.documentElement.setAttribute("data-theme", "dark");
+
+		try {
+			expect(collectStyleSamples().meta.colorScheme).toBe("dark");
+		} finally {
+			document.documentElement.removeAttribute("data-theme");
+		}
+	});
+
+	it("omits colorScheme when neither theme attribute nor computed color-scheme is set", () => {
+		expect(collectStyleSamples().meta.colorScheme).toBeUndefined();
+	});
+});
+
+describe("detectPageNotReady", () => {
+	function withLocation<T>(href: string, run: () => T): T {
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
+		const url = new URL(href);
+		Object.defineProperty(globalThis, "location", {
+			configurable: true,
+			value: { href, origin: url.origin, pathname: url.pathname },
+		});
+		try {
+			return run();
+		} finally {
+			if (descriptor) Object.defineProperty(globalThis, "location", descriptor);
+		}
+	}
+
+	function withNavigationStatus<T>(status: number | undefined, run: () => T): T {
+		const original = (
+			performance as unknown as Record<string, unknown>
+		).getEntriesByType;
+		performance.getEntriesByType = (() =>
+			status === undefined
+				? []
+				: [{ responseStatus: status }]) as unknown as typeof performance.getEntriesByType;
+		try {
+			return run();
+		} finally {
+			if (original === undefined) {
+				Reflect.deleteProperty(performance, "getEntriesByType");
+			} else {
+				(performance as unknown as Record<string, unknown>).getEntriesByType =
+					original;
+			}
+		}
+	}
+
+	it("reports ready when the page matches the expected URL with no sign-in signals", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/account", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+	});
+
+	it("tolerates a trailing-slash-only mismatch against the expected URL", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/account/", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+		withLocation("https://example.test/account", () => {
+			expect(
+				detectPageNotReady("https://example.test/account/"),
+			).toBeUndefined();
+		});
+	});
+
+	it("reports http-error with the response status from the navigation entry", () => {
+		document.body.innerHTML = "<h1>Not found</h1>";
+		withLocation("https://example.test/account", () => {
+			withNavigationStatus(404, () => {
+				expect(detectPageNotReady("https://example.test/account")).toEqual({
+					code: "http-error",
+					message: "The page responded with HTTP 404.",
+					landedUrl: "https://example.test/account",
+				});
+			});
+		});
+	});
+
+	it("reports login-page when a password field is present", () => {
+		document.body.innerHTML = '<input type="password">';
+		withLocation("https://example.test/login", () => {
+			const notReady = detectPageNotReady("https://example.test/account");
+			expect(notReady?.code).toBe("login-page");
+			expect(notReady?.landedUrl).toBe("https://example.test/login");
+		});
+	});
+
+	it("reports login-page when the form action targets a login endpoint", () => {
+		document.body.innerHTML = '<form action="/auth/login"></form>';
+		withLocation("https://example.test/auth/login", () => {
+			expect(
+				detectPageNotReady("https://example.test/account")?.code,
+			).toBe("login-page");
+		});
+	});
+
+	it("reports login-page from the document title or heading sign-in text", () => {
+		document.title = "Sign in";
+		try {
+			withLocation("https://example.test/signin", () => {
+				expect(
+					detectPageNotReady("https://example.test/account")?.code,
+				).toBe("login-page");
+			});
+		} finally {
+			document.title = "";
+		}
+	});
+
+	it("reports ready for the expected URL even when it contains a password field", () => {
+		document.body.innerHTML =
+			'<h1>Account settings</h1><input type="password" name="current-password">';
+		withLocation("https://example.test/account", () => {
+			expect(detectPageNotReady("https://example.test/account")).toBeUndefined();
+		});
+	});
+
+	it("reports login-page for a 401 on the expected URL when the page looks like sign-in", () => {
+		document.body.innerHTML = '<h1>Log in</h1><input type="password">';
+		withLocation("https://example.test/account", () => {
+			withNavigationStatus(401, () => {
+				expect(detectPageNotReady("https://example.test/account")?.code).toBe(
+					"login-page",
+				);
+			});
+		});
+	});
+
+	it("reports redirected when the page lands on a different origin or path", () => {
+		document.body.innerHTML = "<h1>Account summary</h1>";
+		withLocation("https://example.test/other-page", () => {
+			expect(
+				detectPageNotReady("https://example.test/account")?.code,
+			).toBe("redirected");
+		});
+	});
 });
 
 describe("pickerMachine", () => {
@@ -330,6 +575,7 @@ describe("pickerMachine", () => {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 
 		const previous = pickerMachine(initial, { type: "previous" });
@@ -352,6 +598,7 @@ describe("pickerMachine", () => {
 			currentIndex: 0,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		});
 	});
 
@@ -363,6 +610,7 @@ describe("pickerMachine", () => {
 				currentIndex: 0,
 				selectedKey: null,
 				approved: false,
+				showingOriginal: false,
 			},
 			{ type: "select" },
 		);
@@ -374,6 +622,35 @@ describe("pickerMachine", () => {
 		expect(cycled.approved).toBe(false);
 	});
 
+	it("toggles showing the original without disturbing selection, and any cycle clears it", async () => {
+		const { pickerMachine } = await pickerContracts();
+		const selected: PickerState = {
+			keys: ["compact", "detailed", "visual"],
+			currentIndex: 0,
+			selectedKey: "compact",
+			approved: false,
+			showingOriginal: false,
+		};
+
+		const showingOriginal = pickerMachine(selected, {
+			type: "toggle-original",
+		});
+		const showingVariation = pickerMachine(showingOriginal, {
+			type: "toggle-original",
+		});
+		const blockedApprovalWhileShowing = pickerMachine(showingOriginal, {
+			type: "approve",
+		});
+		const cycledAwayFromOriginal = pickerMachine(showingOriginal, {
+			type: "next",
+		});
+
+		expect(showingOriginal).toEqual({ ...selected, showingOriginal: true });
+		expect(showingVariation).toEqual(selected);
+		expect(blockedApprovalWhileShowing.approved).toBe(true);
+		expect(cycledAwayFromOriginal.showingOriginal).toBe(false);
+	});
+
 	it("uses explicit selection for approval and current focus for rejection", async () => {
 		const { pickerVerdictKey } = await pickerContracts();
 		const focusedWithoutSelection: PickerState = {
@@ -381,6 +658,7 @@ describe("pickerMachine", () => {
 			currentIndex: 1,
 			selectedKey: null,
 			approved: false,
+			showingOriginal: false,
 		};
 
 		expect(pickerVerdictKey(focusedWithoutSelection, "approve")).toBeNull();
@@ -519,12 +797,20 @@ describe("sanitizePrototypeVariation", () => {
 			sanitized.html,
 			"text/html",
 		);
-		const inlineStyle = parsed.querySelector("#inline")?.getAttribute("style");
+		const inlineStyle = parsed
+			.querySelector("#dg-proto-adversarial-preview-inline")
+			?.getAttribute("style");
 
-		expect(parsed.querySelector("#encoded")?.hasAttribute("href")).toBe(false);
-		expect(parsed.querySelector("#benign-link")?.getAttribute("href")).toBe(
-			"#details",
-		);
+		expect(
+			parsed
+				.querySelector("#dg-proto-adversarial-preview-encoded")
+				?.hasAttribute("href"),
+		).toBe(false);
+		expect(
+			parsed
+				.querySelector("#dg-proto-adversarial-preview-benign-link")
+				?.getAttribute("href"),
+		).toBe("#details");
 		expect(inlineStyle).toMatch(/position\s*:\s*static/i);
 		expect(inlineStyle).toMatch(/z-index\s*:\s*0/i);
 		expect(inlineStyle).toMatch(/color\s*:\s*green/i);
@@ -533,6 +819,60 @@ describe("sanitizePrototypeVariation", () => {
 		expect(sanitized.css).toMatch(/position\s*:\s*relative/i);
 		expect(sanitized.css).toMatch(/z-index\s*:\s*1000/i);
 		expect(sanitized.css).toMatch(/color\s*:\s*rebeccapurple/i);
+	});
+
+	it("keeps native form controls and their Bootstrap-shaped attributes so they render visibly", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const source: ProtoVariation = {
+			key: "form-controls",
+			label: "Form controls",
+			html: [
+				'<form action="/submit" method="post">',
+				'<div class="form-check">',
+				'<input type="radio" class="form-check-input" name="plan" value="a" checked required>',
+				"</div>",
+				'<input type="file" class="form-control" accept="image/png" multiple pattern="[a-z]+" autocomplete="off">',
+				'<select class="form-select" required size="3">',
+				'<optgroup label="Group"><option value="1">One</option></optgroup>',
+				"</select>",
+				'<textarea class="form-control" required minlength="4" wrap="soft" autocomplete="off"></textarea>',
+				'<progress value="30" max="100"></progress>',
+				"</form>",
+			].join(""),
+			css: "",
+		};
+
+		const sanitized = sanitizePrototypeVariation(source);
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+
+		expect(parsed.querySelector("form")?.hasAttribute("action")).toBe(false);
+		expect(parsed.querySelector("form")?.hasAttribute("method")).toBe(false);
+		const radio = parsed.querySelector('input[type="radio"]');
+		expect(radio?.getAttribute("class")).toBe("form-check-input");
+		expect(radio?.hasAttribute("checked")).toBe(true);
+		expect(radio?.hasAttribute("required")).toBe(true);
+		const file = parsed.querySelector('input[type="file"]');
+		expect(file?.getAttribute("accept")).toBe("image/png");
+		expect(file?.hasAttribute("multiple")).toBe(true);
+		expect(file?.getAttribute("pattern")).toBe("[a-z]+");
+		expect(file?.getAttribute("autocomplete")).toBe("off");
+		const select = parsed.querySelector("select");
+		expect(select?.hasAttribute("required")).toBe(true);
+		expect(select?.getAttribute("size")).toBe("3");
+		expect(parsed.querySelector("optgroup")?.getAttribute("label")).toBe(
+			"Group",
+		);
+		const textarea = parsed.querySelector("textarea");
+		expect(textarea?.hasAttribute("required")).toBe(true);
+		expect(textarea?.getAttribute("minlength")).toBe("4");
+		expect(textarea?.getAttribute("wrap")).toBe("soft");
+		expect(textarea?.getAttribute("autocomplete")).toBe("off");
+		const progress = parsed.querySelector("progress");
+		expect(progress?.getAttribute("value")).toBe("30");
+		expect(progress?.getAttribute("max")).toBe("100");
 	});
 
 	it("rejects host-targeting rules and scopes benign variation CSS", async () => {
@@ -570,6 +910,370 @@ describe("sanitizePrototypeVariation", () => {
 		]) {
 			expect(host.style.getPropertyPriority(property)).toBe("important");
 		}
+	});
+
+	it("keeps a brace-escape payload from restyling the host page", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "escape",
+			label: "Escape",
+			html: '<p class="x">Variation</p>',
+			css: "} body > * { display: none !important } .x { color: teal }",
+		});
+		document.body.innerHTML =
+			'<p id="host-copy">Host</p><div data-dg-prototype="escape"><p class="x">Variation</p></div>';
+		const style = document.createElement("style");
+		style.textContent = sanitized.css;
+		document.head.append(style);
+		try {
+			expect(getComputedStyle(document.body).display).not.toBe("none");
+			expect(
+				getComputedStyle(document.getElementById("host-copy") as Element).display,
+			).not.toBe("none");
+			expect(sanitized.css).not.toMatch(/^\s*body\s*>\s*\*/);
+			expect(sanitized.css === "" || sanitized.css.includes("@scope ([data-dg-prototype])")).toBe(
+				true,
+			);
+			if (sanitized.css) {
+				expect(sanitized.css).toMatch(/\.x\s*\{[^}]*color:\s*teal/i);
+			}
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("prefixes variation ids and rewrites for, aria, and fragment references", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "ids",
+			label: "Ids",
+			html: [
+				'<label for="title">Title</label>',
+				'<h2 id="title">Variation title</h2>',
+				'<a href="#title" aria-describedby="title extra">Jump</a>',
+			].join(""),
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.getElementById("title")).toBeNull();
+		expect(parsed.getElementById("dg-proto-ids-title")).not.toBeNull();
+		expect(parsed.querySelector("label")?.getAttribute("for")).toBe(
+			"dg-proto-ids-title",
+		);
+		expect(parsed.querySelector("a")?.getAttribute("href")).toBe(
+			"#dg-proto-ids-title",
+		);
+		expect(parsed.querySelector("a")?.getAttribute("aria-describedby")).toBe(
+			"dg-proto-ids-title extra",
+		);
+	});
+
+	it("rewrites form, list, and headers id references", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "refs",
+			label: "Refs",
+			html: [
+				'<form id="signup"></form>',
+				'<input form="signup" list="cities">',
+				'<datalist id="cities"><option value="Austin"></option></datalist>',
+				'<table><tr><th id="name">Name</th><td headers="name extra">Ada</td></tr></table>',
+			].join(""),
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.getElementById("dg-proto-refs-signup")).not.toBeNull();
+		expect(parsed.querySelector("input")?.getAttribute("form")).toBe(
+			"dg-proto-refs-signup",
+		);
+		expect(parsed.querySelector("input")?.getAttribute("list")).toBe(
+			"dg-proto-refs-cities",
+		);
+		expect(parsed.querySelector("datalist")?.id).toBe("dg-proto-refs-cities");
+		expect(parsed.querySelector("th")?.id).toBe("dg-proto-refs-name");
+		expect(parsed.querySelector("td")?.getAttribute("headers")).toBe(
+			"dg-proto-refs-name extra",
+		);
+	});
+
+	it("rewrites variation id selectors and keeps namespaced keyframes", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "card",
+			label: "Card",
+			html: '<h1 id="hero">Title</h1>',
+			css: [
+				"#hero { color: teal }",
+				"#hero:hover { color: navy }",
+				'[id="hero"] { outline: 1px solid teal }',
+				"[id=hero] { margin: 0 }",
+				"h1 { filter: url(#hero); animation: rise 1s ease; animation-name: rise; color: #fff }",
+				"@keyframes rise { from { opacity: 0 } to { opacity: 1 } }",
+				"@media (min-width: 1px) { #hero { color: teal } }",
+			].join("\n"),
+		});
+
+		expect(sanitized.html).toContain('id="dg-proto-card-hero"');
+		expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+		expect(sanitized.css).toContain("#dg-proto-card-hero");
+		expect(sanitized.css).toContain("#dg-proto-card-hero:hover");
+		expect(sanitized.css).toContain('[id="dg-proto-card-hero"]');
+		expect(sanitized.css).toMatch(/url\("#dg-proto-card-hero"\)/);
+		expect(sanitized.css).toMatch(/color:\s*#fff/i);
+		expect(sanitized.css).toMatch(/@keyframes dg-proto-card-rise\b/);
+		expect(sanitized.css).toMatch(/opacity:\s*0/);
+		expect(sanitized.css).toMatch(/animation:\s*dg-proto-card-rise\b/);
+		expect(sanitized.css).toMatch(/animation-name:\s*dg-proto-card-rise\b/);
+		expect(sanitized.css).not.toMatch(/@keyframes rise\b/);
+		expect(sanitized.css).not.toMatch(/#hero\b/);
+		expect(sanitized.css.indexOf("@keyframes")).toBeLessThan(
+			sanitized.css.indexOf("@scope"),
+		);
+	});
+
+	it("keeps nested selectors and nested @media", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "nest",
+			label: "Nest",
+			html: '<h1 id="hero">Title</h1>',
+			css: [
+				".a { color: red; &:hover { color: navy } .b & { color: teal } @media (min-width: 1px) { #hero { color: olive } } }",
+				"#hero { color: teal }",
+			].join("\n"),
+		});
+
+		expect(sanitized.css).toMatch(/\.a\s*\{[\s\S]*color:\s*red/i);
+		expect(sanitized.css).toMatch(
+			/\.a\s*\{[\s\S]*&:hover\s*\{[^}]*color:\s*navy/i,
+		);
+		expect(sanitized.css).toMatch(/\.b\s*&/);
+		expect(sanitized.css).toMatch(
+			/@media\s*\(\s*min-width:\s*1px\s*\)\s*\{[\s\S]*#dg-proto-nest-hero[\s\S]*color:\s*olive/i,
+		);
+		expect(sanitized.css).toContain("#dg-proto-nest-hero");
+		expect(sanitized.css).not.toMatch(/#hero\b/);
+		const ruleAt = sanitized.css.indexOf(".a");
+		const hoverAt = sanitized.css.indexOf("&:hover");
+		const mediaAt = sanitized.css.indexOf("min-width: 1px");
+		expect(ruleAt).toBeGreaterThanOrEqual(0);
+		expect(hoverAt).toBeGreaterThan(ruleAt);
+		expect(mediaAt).toBeGreaterThan(hoverAt);
+		expect(sanitized.css.indexOf("@scope")).toBeGreaterThanOrEqual(0);
+		expect(sanitized.css.indexOf("@scope")).toBeLessThan(ruleAt);
+	});
+
+	it("rewrites escaped ids and prefix attribute selectors", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "card",
+			label: "Card",
+			html: '<h1 id="a:b">Escaped</h1><h2 id="sec-title">Section</h2><h2 id="hero">Hero</h2>',
+			css: [
+				String.raw`#a\:b { color: teal }`,
+				'[id^="sec-"] { color: teal }',
+				'[id|="sec"] { color: navy }',
+				'[id$="hero"] { color: black }',
+				'[id*="hero"] { outline: 1px solid teal }',
+			].join("\n"),
+		});
+
+		expect(sanitized.html).toContain('id="dg-proto-card-a:b"');
+		expect(sanitized.css).toMatch(/#dg-proto-card-a\\:b/);
+		expect(sanitized.css).toMatch(/color:\s*teal/i);
+		expect(sanitized.css).toContain('[id^="dg-proto-card-sec-"]');
+		expect(sanitized.css).toContain('[id|="dg-proto-card-sec"]');
+		expect(sanitized.css).toContain('[id$="hero"]');
+		expect(sanitized.css).toContain('[id*="hero"]');
+		expect(sanitized.css).not.toContain('[id^="sec-"]');
+		expect(sanitized.css).not.toContain('[id|="sec"]');
+	});
+
+	it("keeps conditional keyframes inside their media queries", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "card",
+			label: "Card",
+			html: "<p>Motion</p>",
+			css: [
+				"@media (max-width: 2px) { @keyframes rise { from { opacity: 0 } to { opacity: 1 } } }",
+				"@media (min-width: 3px) { @keyframes rise { from { opacity: 1 } to { opacity: 0 } } }",
+				".box { animation-name: rise }",
+			].join("\n"),
+		});
+
+		expect(sanitized.css).toMatch(
+			/@media\s*\(\s*max-width:\s*2px\s*\)\s*\{\s*@keyframes dg-proto-card-rise\b[\s\S]*?opacity:\s*0/,
+		);
+		expect(sanitized.css).toMatch(
+			/@media\s*\(\s*min-width:\s*3px\s*\)\s*\{\s*@keyframes dg-proto-card-rise\b[\s\S]*?opacity:\s*1/,
+		);
+		expect(sanitized.css).toMatch(/animation-name:\s*dg-proto-card-rise\b/);
+		expect(sanitized.css.indexOf("@keyframes")).toBeGreaterThan(
+			sanitized.css.indexOf("@media"),
+		);
+	});
+
+	it("keeps a newline inside a CSS string from closing @scope", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "break",
+			label: "Break",
+			html: '<p class="ok">Variation</p>',
+			css: '.ok { color: teal }\n.x{foo:"a\n}} html{display:none} p{q:"}',
+		});
+		document.body.innerHTML =
+			'<p id="host-copy">Host</p><div data-dg-prototype="break"><p class="ok">Variation</p></div>';
+		const style = document.createElement("style");
+		style.textContent = sanitized.css;
+		document.head.append(style);
+		try {
+			expect(getComputedStyle(document.documentElement).display).not.toBe(
+				"none",
+			);
+			expect(
+				getComputedStyle(document.getElementById("host-copy") as Element)
+					.display,
+			).not.toBe("none");
+			expect(topLevelStyleRuleCount(sanitized.css)).toBe(0);
+			expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+			expect(sanitized.css).toMatch(/\.ok\s*\{[^}]*color:\s*teal/i);
+		} finally {
+			style.remove();
+		}
+	});
+
+	it("keeps comment, escape, and url() boundaries from emitting host rules", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const cases = [
+			".ok { color: teal /* } html{display:none} */ }",
+			'.ok { content: "/* } html{display:none} */"; color: teal }',
+			".ok { color: teal } .x{color:navy;background:url(foo}html{display:none})}",
+			'.ok { color: teal }\n.x{foo:"a\\\n} still"; color: teal}',
+			String.raw`.ok { color: teal } .x{foo:"a\"} html{display:none}"; color: teal}`,
+		];
+		for (const css of cases) {
+			const sanitized = sanitizePrototypeVariation({
+				key: "edge",
+				label: "Edge",
+				html: '<p class="ok">Variation</p>',
+				css,
+			});
+			document.body.innerHTML =
+				'<p id="host-copy">Host</p><div data-dg-prototype="edge"><p class="ok">Kept</p></div>';
+			const style = document.createElement("style");
+			style.textContent = sanitized.css;
+			document.head.append(style);
+			try {
+				expect(getComputedStyle(document.documentElement).display).not.toBe(
+					"none",
+				);
+				expect(
+					getComputedStyle(document.getElementById("host-copy") as Element)
+						.display,
+				).not.toBe("none");
+				expect(topLevelStyleRuleCount(sanitized.css)).toBe(0);
+				expect(sanitized.css).toContain("@scope ([data-dg-prototype])");
+				expect(sanitized.css).toMatch(/\.ok\s*\{[^}]*color:\s*teal/i);
+			} finally {
+				style.remove();
+			}
+		}
+	});
+
+	it("drops an unmapped label for id and keeps a variation one", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "label",
+			label: "Label",
+			html: '<label for="hostbtn">Go</label><label for="title">Title</label><h2 id="title">T</h2>',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		const labels = [...parsed.querySelectorAll("label")];
+		expect(labels[0]?.hasAttribute("for")).toBe(false);
+		expect(labels[0]?.textContent).toBe("Go");
+		expect(labels[1]?.getAttribute("for")).toBe("dg-proto-label-title");
+	});
+
+	it("sets an empty form owner only on controls outside a variation form", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "owned",
+			label: "Owned",
+			html: '<form id="pf"><input name="a"><button type="submit">go</button></form><input name="loose">',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		const form = parsed.querySelector("form");
+		expect(form?.querySelector("input")?.hasAttribute("form")).toBe(false);
+		expect(form?.querySelector("button")?.hasAttribute("form")).toBe(false);
+		expect(parsed.querySelector('input[name="loose"]')?.getAttribute("form")).toBe(
+			"",
+		);
+	});
+
+	it("drops host form and list ids and disassociates planted controls", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "bind",
+			label: "Bind",
+			html: [
+				'<form id="signup" action="/submit" method="post"></form>',
+				'<input form="pagesearch" list="missing" type="text">',
+				'<input form="signup" list="cities" type="text">',
+				'<datalist id="cities"></datalist>',
+				"<button>Go</button>",
+				"<select></select>",
+				"<textarea></textarea>",
+			].join(""),
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(sanitized.html).not.toContain("pagesearch");
+		expect(sanitized.html).not.toContain("missing");
+		expect(parsed.querySelector("form")?.hasAttribute("action")).toBe(false);
+		expect(parsed.querySelector("form")?.hasAttribute("method")).toBe(false);
+		const inputs = [...parsed.querySelectorAll("input")];
+		expect(inputs[0]?.getAttribute("form")).toBe("");
+		expect(inputs[0]?.hasAttribute("list")).toBe(false);
+		expect(inputs[1]?.getAttribute("form")).toBe("dg-proto-bind-signup");
+		expect(inputs[1]?.getAttribute("list")).toBe("dg-proto-bind-cities");
+		expect(parsed.querySelector("button")?.getAttribute("form")).toBe("");
+		expect(parsed.querySelector("select")?.getAttribute("form")).toBe("");
+		expect(parsed.querySelector("textarea")?.getAttribute("form")).toBe("");
+	});
+
+	it("namespaces variation radio names away from the host form", async () => {
+		const { sanitizePrototypeVariation } = await pickerContracts();
+		const sanitized = sanitizePrototypeVariation({
+			key: "choice",
+			label: "Choice",
+			html: '<input type="radio" name="plan" value="alt" checked>',
+			css: "",
+		});
+		const parsed = new window.DOMParser().parseFromString(
+			sanitized.html,
+			"text/html",
+		);
+		expect(parsed.querySelector("input")?.getAttribute("name")).toBe(
+			"dg-proto-choice-plan",
+		);
 	});
 });
 
@@ -657,18 +1361,20 @@ it("replaces only the selected mount in replace mode and restores it on cleanup"
 	`;
 	const original = [...document.body.childNodes];
 
-	await plantPrototype({
-		slug: "replace-mode",
-		mountSelector: "#mount",
-		mode: "replace",
-		variations: [
-			{
-				key: "first",
-				label: "First",
-				html: "<p>Preview</p>",
-				css: "p { color: blue; }",
-			},
-		],
+	const shadowRoots = await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "replace-mode",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{
+					key: "first",
+					label: "First",
+					html: "<p>Preview</p>",
+					css: "p { color: blue; }",
+				},
+			],
+		});
 	});
 
 	expect([...document.body.children].map((element) => element.id)).toEqual([
@@ -681,9 +1387,232 @@ it("replaces only the selected mount in replace mode and restores it on cleanup"
 		"none",
 	);
 
+	const host = document.querySelector('[id^="dg-proto-host-"]') as HTMLElement;
+	const canvas = host.querySelector('[data-dg-prototype="first"]');
+	expect(host.shadowRoot).toBeNull();
+	expect(canvas).not.toBeNull();
+	expect(document.contains(canvas)).toBe(true);
+	expect(shadowRoots).toHaveLength(1);
+
 	window.dispatchEvent(new window.Event("pagehide"));
 
 	expect([...document.body.childNodes]).toEqual(original);
+});
+
+it("does not let planted controls submit the host page", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<form id="pagesearch">
+			<section id="mount">Original</section>
+			<button type="submit" id="host-submit">Search</button>
+		</form>
+	`;
+	const hostForm = window.document.getElementById("pagesearch");
+	if (!hostForm) throw new Error("missing host form");
+
+	await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "no-host-submit",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{
+					key: "bind",
+					label: "Bind",
+					html: '<input type="text" name="q"><form action="/submit"><button type="submit">Send</button></form>',
+					css: "",
+				},
+			],
+		});
+	});
+
+	const plantedHost = window.document.querySelector('[id^="dg-proto-host-"]');
+	if (!plantedHost) throw new Error("missing planted host");
+	const plantedInput = plantedHost.querySelector("input");
+	if (!plantedInput) throw new Error("missing planted input");
+	expect(plantedInput.getAttribute("form")).toBe("");
+	expect(plantedHost.innerHTML).not.toContain("pagesearch");
+	expect(plantedHost.querySelector("form")?.hasAttribute("action")).toBe(false);
+
+	plantedInput.focus();
+	const ancestorSubmit = new window.Event("submit", {
+		bubbles: true,
+		cancelable: true,
+	});
+	hostForm.dispatchEvent(ancestorSubmit);
+	expect(ancestorSubmit.defaultPrevented).toBe(true);
+
+	const plantedForm = plantedHost.querySelector("form");
+	if (plantedForm) {
+		const plantedSubmit = new window.Event("submit", {
+			bubbles: true,
+			cancelable: true,
+		});
+		plantedForm.dispatchEvent(plantedSubmit);
+		expect(plantedSubmit.defaultPrevented).toBe(true);
+	}
+
+	const hostButton = window.document.getElementById("host-submit");
+	if (!hostButton) throw new Error("missing host submit");
+	(hostButton as HappyHTMLElement).focus();
+	const ownSubmit = new window.Event("submit", {
+		bubbles: true,
+		cancelable: true,
+	});
+	hostForm.dispatchEvent(ownSubmit);
+	expect(ownSubmit.defaultPrevented).toBe(false);
+
+	window.dispatchEvent(new window.Event("pagehide"));
+});
+
+it("does not let a planted label activate a host control", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<form id="pagesearch" action="/hostsubmit">
+			<input name="hq" value="hostval">
+			<button id="hostbtn" type="submit">Go</button>
+			<section id="mount">Original</section>
+		</form>
+		<form id="other" action="/other">
+			<button id="otherbtn" type="submit">Other</button>
+		</form>
+	`;
+	const hostForm = window.document.getElementById("pagesearch");
+	const otherForm = window.document.getElementById("other");
+	if (!hostForm || !otherForm) throw new Error("missing host form");
+	let hostSubmits = 0;
+	let otherSubmits = 0;
+	hostForm.addEventListener("submit", () => {
+		hostSubmits += 1;
+	});
+	otherForm.addEventListener("submit", () => {
+		otherSubmits += 1;
+	});
+
+	await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "no-host-label",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{
+					key: "bind",
+					label: "Bind",
+					html: '<label>Go</label><button id="inner" type="button">In</button><label for="inner">Inside</label>',
+					css: "",
+				},
+			],
+		});
+	});
+
+	const plantedHost = window.document.querySelector('[id^="dg-proto-host-"]');
+	if (!plantedHost) throw new Error("missing planted host");
+	const labels = [...plantedHost.querySelectorAll("label")];
+	const plantedLabel = labels[0];
+	const innerLabel = labels[1];
+	if (!plantedLabel || !innerLabel) throw new Error("missing planted label");
+	expect(plantedLabel.hasAttribute("for")).toBe(false);
+	expect(innerLabel.getAttribute("for")).toBe("dg-proto-bind-inner");
+
+	(plantedLabel as HappyHTMLElement).click();
+	expect(hostSubmits).toBe(0);
+
+	for (const targetId of ["hostbtn", "otherbtn"]) {
+		plantedLabel.setAttribute("for", targetId);
+		const click = new window.Event("click", { bubbles: true, cancelable: true });
+		plantedLabel.dispatchEvent(click);
+		expect(click.defaultPrevented).toBe(true);
+		(plantedLabel as HappyHTMLElement).click();
+	}
+	expect(hostSubmits).toBe(0);
+	expect(otherSubmits).toBe(0);
+
+	const innerClick = new window.Event("click", {
+		bubbles: true,
+		cancelable: true,
+	});
+	innerLabel.dispatchEvent(innerClick);
+	expect(innerClick.defaultPrevented).toBe(false);
+
+	window.dispatchEvent(new window.Event("pagehide"));
+});
+
+it("lets the picker toggle between the original element and the planted variation", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<section id="mount" style="display:flex">Original</section>
+	`;
+	const target = document.getElementById("mount") as HTMLElement;
+
+	const shadowRoots = await captureShadowRoots(async () => {
+		await plantPrototype({
+			slug: "toggle-original",
+			mountSelector: "#mount",
+			mode: "replace",
+			variations: [
+				{ key: "first", label: "First", html: "<p>Preview</p>", css: "" },
+			],
+		});
+	});
+
+	const host = document.querySelector('[id^="dg-proto-host-"]') as HTMLElement;
+	const controlsRoot = shadowRoots[0];
+	if (!controlsRoot) throw new Error("controls shadow root was not created");
+	const toggle = [...controlsRoot.querySelectorAll("button")].find(
+		(element) => element.textContent === "Show original",
+	) as HappyHTMLElement | undefined;
+	if (!toggle) throw new Error("toggle-original button was not rendered");
+
+	expect(target.style.display).toBe("none");
+	expect(host.style.display).toBe("flex");
+
+	toggle.click();
+	expect(target.style.display).toBe("flex");
+	expect(host.style.display).toBe("none");
+	expect(toggle.textContent).toBe("Show variation");
+
+	toggle.click();
+	expect(target.style.display).toBe("none");
+	expect(host.style.display).toBe("flex");
+	expect(toggle.textContent).toBe("Show original");
+
+	window.dispatchEvent(new window.Event("pagehide"));
+});
+
+it("namespaces a variation radio so it does not clear the original selection", async () => {
+	const { plantPrototype } = await pickerContracts();
+	document.body.innerHTML = `
+		<form>
+			<input type="radio" name="plan" value="original" checked id="original-radio">
+			<section id="mount">Original</section>
+		</form>
+	`;
+	const original = document.getElementById("original-radio") as HTMLInputElement;
+
+	await plantPrototype({
+		slug: "radio-collision",
+		mountSelector: "#mount",
+		mode: "replace",
+		variations: [
+			{
+				key: "first",
+				label: "First",
+				html: '<input type="radio" name="plan" value="alt" checked>',
+				css: "",
+			},
+		],
+	});
+
+	const planted = document.querySelector(
+		'[data-dg-prototype="first"] input[type="radio"]',
+	) as HTMLInputElement | null;
+	expect(planted).not.toBeNull();
+	expect(planted?.getAttribute("name")).toBe("dg-proto-first-plan");
+	expect(planted?.checked).toBe(true);
+	expect(original.checked).toBe(true);
+	expect(original.getAttribute("name")).toBe("plan");
+
+	window.dispatchEvent(new window.Event("pagehide"));
 });
 
 it("replaces the full body in takeover mode and restores every original node", async () => {
@@ -735,22 +1664,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 		}
 	});
 
-	const shadowRoots: HappyShadowRoot[] = [];
-	const attachShadowDescriptor = Object.getOwnPropertyDescriptor(
-		window.HTMLElement.prototype,
-		"attachShadow",
-	);
-	const originalAttachShadow = window.HTMLElement.prototype.attachShadow;
-	Object.defineProperty(window.HTMLElement.prototype, "attachShadow", {
-		configurable: true,
-		value(this: HTMLElement, init: ShadowRootInit) {
-			const root = originalAttachShadow.call(this, init);
-			shadowRoots.push(root);
-			return root;
-		},
-	});
-
-	try {
+	const shadowRoots = await captureShadowRoots(async () => {
 		await plantPrototype({
 			slug: "focus-trap",
 			mountSelector: "#mount",
@@ -759,17 +1673,7 @@ it("keeps the picker's own focusin from reaching a host-page modal's focus trap"
 				{ key: "first", label: "First", html: "<p>Preview</p>", css: "" },
 			],
 		});
-	} finally {
-		if (attachShadowDescriptor) {
-			Object.defineProperty(
-				window.HTMLElement.prototype,
-				"attachShadow",
-				attachShadowDescriptor,
-			);
-		} else {
-			Reflect.deleteProperty(window.HTMLElement.prototype, "attachShadow");
-		}
-	}
+	});
 
 	const notes = shadowRoots
 		.map((root) => root.querySelector(".dg-proto-notes"))

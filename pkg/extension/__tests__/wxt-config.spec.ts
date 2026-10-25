@@ -49,9 +49,9 @@ it("declares activeTab wherever tabCapture is available", () => {
 	expect(firefoxManifest.permissions).not.toContain("activeTab");
 });
 
-it("declares the minimum Chrome version the background WebSocket needs", () => {
+it("declares Chrome 118 so planted @scope CSS applies", () => {
 	const chromeManifest = manifestFor({ browser: "chrome" });
-	expect(chromeManifest.minimum_chrome_version).toBe("116");
+	expect(chromeManifest.minimum_chrome_version).toBe("118");
 });
 
 it("declares the loopback host permission on the Firefox branch for the chat marker", () => {

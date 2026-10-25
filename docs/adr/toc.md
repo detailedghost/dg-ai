@@ -61,6 +61,7 @@ flowchart LR
 - [0018 — Store channel-review state in the shared daemon database](0018-channel-review-state-in-daemon-db.md)
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
 - [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md)
+- [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
 
 ## Adding an ADR
 

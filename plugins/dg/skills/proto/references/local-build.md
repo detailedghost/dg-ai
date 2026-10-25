@@ -112,7 +112,7 @@ See [../assets/README.md](../assets/README.md) for the switcher props and behavi
 
 With `--publish`, publish the winning variant as a shareable Artifact after the selection is confirmed.
 
-1. **Fetch the winning variant's HTML.** Prefer Playwright: navigate to `http://localhost:<port>?variant=<key>` and read `document.documentElement.outerHTML`. Fall back to `curl -s "http://localhost:<port>?variant=<key>"`.
+1. **Fetch the winning variant's HTML.** Prefer an already-installed Playwright (through the `pw` skill or an MCP tool): navigate to `http://localhost:<port>?variant=<key>` and read `document.documentElement.outerHTML`. Never install Playwright or download a browser for this step. Fall back to `curl -s "http://localhost:<port>?variant=<key>"`.
 2. **Strip the switcher bar.** Remove the switcher element (`id="prototype-switcher"` or the fixed bar at the bottom). It is tooling, not the design being shared.
 3. **Write to scratch.** Save the cleaned HTML to a file under the scratch directory printed by `~/.dg/bin/dg-skills stash prototype <name>-variant-<key>.html`.
 4. **Publish with the Artifact tool.** Title `<name>, variant <key>`. Label `variant-<key>-selected`. File: the scratch path.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const PROTO_SKILL = join(
 	import.meta.dir,
@@ -17,6 +17,67 @@ function skillFile(path: string): string {
 	const absolute = join(PROTO_SKILL, path);
 	expect(existsSync(absolute)).toBe(true);
 	return readFileSync(absolute, "utf8");
+}
+
+/** Every file under the proto skill, as a path relative to PROTO_SKILL. */
+function walkSkillFiles(dir: string = PROTO_SKILL): string[] {
+	const out: string[] = [];
+	for (const entry of readdirSync(dir)) {
+		const absolute = join(dir, entry);
+		if (statSync(absolute).isDirectory()) out.push(...walkSkillFiles(absolute));
+		else out.push(relative(PROTO_SKILL, absolute));
+	}
+	return out;
+}
+
+/**
+ * Entirely `--ext` flows: every command in these files already requires
+ * `--ext`, so their network/install content is the documented extension
+ * behavior, not a default-mode leak.
+ */
+const EXT_ONLY_FILES = new Set([
+	"references/extension.md",
+	"references/commands.md",
+]);
+
+/** `src=`/`href=` attributes, `import(...)`, and `fetch(...)` pointed at a non-local http(s) host. */
+const REMOTE_URL_IN_SINK =
+	/\b(?:src|href)\s*=\s*["'](?:https?:)?\/\/(?!(?:localhost|127\.0\.0\.1|\[::1\]))[^"']*["']|\bimport\s*\(\s*["']https?:\/\/(?!(?:localhost|127\.0\.0\.1))|\bfetch\(\s*["']https?:\/\/(?!(?:localhost|127\.0\.0\.1))/i;
+
+/** Commands that install software or fetch something other than this project's own localhost. */
+const INSTALL_TOKENS: RegExp[] = [
+	/(^|[^.\w])curl\s+(-\S|["']?https?:)/i,
+	/(^|[^.\w])wget\s+(-\S|["']?https?:)/i,
+	/(^|[^.\w])npm\s+(install|ci|exec|create)/i,
+	/(^|[^.\w])npx\s/i,
+	/(^|[^.\w])bunx\s/i,
+	/(^|[^.\w])bun\s+(add|create)\b/i,
+	/(^|[^.\w])git\s+clone\b/i,
+	/(^|[^.\w])playwright\s+install\b/i,
+	/(^|[^.\w])(astro\s+add|create-astro)\b/i,
+];
+
+/**
+ * Lines allowed to contain an install token, each with the reason it is safe.
+ * Keep this list short and specific — a new entry should name one line, not a pattern.
+ */
+const INSTALL_ALLOWLIST: { substring: string; reason: string }[] = [
+	{
+		substring: "raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.19.1/pkg/skills-cli/bootstrap.sh",
+		reason:
+			"the shared dg-skills CLI bootstrap line every skill's SKILL.md carries; checksum-verified by the installer, not a prototype dependency fetch",
+	},
+];
+
+function isAllowlistedInstallLine(line: string): boolean {
+	return INSTALL_ALLOWLIST.some((entry) => line.includes(entry.substring));
+}
+
+function isLocalOnlyCurlOrWget(line: string): boolean {
+	return (
+		/(^|[^.\w])(curl|wget)\s+(-\S|["']?https?:)/i.test(line) &&
+		/localhost|127\.0\.0\.1|\[::1\]/.test(line)
+	);
 }
 
 describe("proto skill", () => {
@@ -223,6 +284,57 @@ describe("proto skill local mode", () => {
 		}
 		expect(skillFile("references/local-build.md")).toContain(
 			"prototype components",
+		);
+	});
+});
+
+describe("proto skill network egress", () => {
+	const files = walkSkillFiles();
+
+	test("default (non --ext) files never point src/href/import/fetch at a remote host", () => {
+		const violations: string[] = [];
+		for (const file of files) {
+			if (EXT_ONLY_FILES.has(file)) continue;
+			const text = skillFile(file);
+			for (const [lineNumber, line] of text.split("\n").entries()) {
+				if (REMOTE_URL_IN_SINK.test(line)) {
+					violations.push(`${file}:${lineNumber + 1}: ${line.trim()}`);
+				}
+			}
+		}
+		expect(violations).toEqual([]);
+	});
+
+	test("default (non --ext) files carry no un-allowlisted install or fetch command", () => {
+		const violations: string[] = [];
+		for (const file of files) {
+			if (EXT_ONLY_FILES.has(file)) continue;
+			const text = skillFile(file);
+			for (const [lineNumber, line] of text.split("\n").entries()) {
+				const hit = INSTALL_TOKENS.some((pattern) => pattern.test(line));
+				if (!hit) continue;
+				if (isLocalOnlyCurlOrWget(line)) continue;
+				if (isAllowlistedInstallLine(line)) continue;
+				violations.push(`${file}:${lineNumber + 1}: ${line.trim()}`);
+			}
+		}
+		expect(violations).toEqual([]);
+	});
+
+	test("the allowlist only matches lines that are actually present", () => {
+		const all = files.map((file) => skillFile(file)).join("\n");
+		for (const entry of INSTALL_ALLOWLIST) {
+			expect(all).toContain(entry.substring);
+		}
+	});
+
+	test("says --ext never writes a browser download, and never to install Playwright", () => {
+		const skill = skillFile("SKILL.md");
+		expect(skill).toMatch(/`--ext`\s+mode never writes a browser\s+download/);
+		expect(skill).toMatch(/safe to\s+delete/i);
+		expect(skill).toMatch(/never install Playwright or download a browser/i);
+		expect(skillFile("references/local-build.md")).toMatch(
+			/never install Playwright or download a browser/i,
 		);
 	});
 });

@@ -2,10 +2,18 @@ import { describe, expect, it } from "bun:test";
 import {
 	assembleAnswerPage,
 	canonicalizeStyleGuide,
+	PROTO_DEFAULT_TIMEOUT_MS,
 	PROTO_MAX_MARKUP_CHARS,
 	PROTO_MAX_VARIATIONS,
+	PROTO_MAX_TIMEOUT_MS,
 	sanitizeVariationHtml,
+	STYLE_GUIDE_MAX_CONTROLS,
+	PROTO_MARKED_URL_MAX_LENGTH,
+	PROTO_PREVIEW_MAX_CHARS,
+	validateProtoBrowserData,
+	validateProtoCliRequest,
 	validateProtoIdentifier,
+	validateProtoNotReadyError,
 	validateProtoPlan,
 	validateProtoRenderLimits,
 	validateStyleGuide,
@@ -355,6 +363,229 @@ describe("validateStyleGuide", () => {
 		});
 
 		expect(() => validateStyleGuide(guide)).not.toThrow();
+	});
+
+	it("accepts an older guide with no colorScheme, select, textarea, or controls", () => {
+		expect(() => validateStyleGuide(buildStyleGuide())).not.toThrow();
+	});
+
+	it("accepts select/textarea components, a colorScheme, and bounded controls", () => {
+		const guide = buildStyleGuide({
+			meta: {
+				url: "https://example.test/account",
+				scrapedAt: 1,
+				sameOrigin: true,
+				colorScheme: "dark",
+			},
+			components: {
+				button: {},
+				input: {},
+				link: {},
+				select: { border: "1px solid #123456" },
+				textarea: { border: "1px solid #123456" },
+			},
+			controls: [
+				{ tag: "input", type: "radio", classes: "form-check-input" },
+				{
+					tag: "select",
+					classes: "form-select",
+					wrapperClasses: "form-group",
+				},
+			],
+		});
+
+		expect(validateStyleGuide(guide)).toBe(guide);
+	});
+
+	it("rejects an invalid colorScheme and a control with an unknown tag", () => {
+		expect(() =>
+			validateStyleGuide(
+				buildStyleGuide({
+					meta: {
+						url: "https://example.test/account",
+						scrapedAt: 1,
+						sameOrigin: true,
+						colorScheme: "sepia",
+					},
+				}),
+			),
+		).toThrow();
+		expect(() =>
+			validateStyleGuide(
+				buildStyleGuide({
+					controls: [{ tag: "div", classes: "card" }],
+				}),
+			),
+		).toThrow();
+	});
+
+	it(`rejects more than ${STYLE_GUIDE_MAX_CONTROLS} controls`, () => {
+		const controls = Array.from({ length: STYLE_GUIDE_MAX_CONTROLS + 1 }, () => ({
+			tag: "input" as const,
+			classes: "form-control",
+		}));
+		expect(() =>
+			validateStyleGuide(buildStyleGuide({ controls })),
+		).toThrow();
+	});
+});
+
+describe("validateProtoNotReadyError", () => {
+	it("accepts a well-formed not-ready error for every ratified code", () => {
+		for (const code of [
+			"login-page",
+			"redirected",
+			"http-error",
+			"mount-missing",
+		] as const) {
+			const error = {
+				code,
+				message: "the page was not ready",
+				landedUrl: "https://example.test/login",
+			};
+			expect(validateProtoNotReadyError(error)).toBe(error);
+		}
+	});
+
+	it("rejects an unknown code and a missing landedUrl", () => {
+		expect(() =>
+			validateProtoNotReadyError({
+				code: "maintenance-page",
+				message: "down for maintenance",
+				landedUrl: "https://example.test",
+			}),
+		).toThrow();
+		expect(() =>
+			validateProtoNotReadyError({
+				code: "login-page",
+				message: "the page was not ready",
+			}),
+		).toThrow();
+	});
+});
+
+describe("validateProtoBrowserData", () => {
+	it("accepts a style-guide payload and a verdict payload with an optional PNG preview", () => {
+		const styleGuide = buildStyleGuide();
+		expect(
+			validateProtoBrowserData({ kind: "style-guide", styleGuide }),
+		).toEqual({ kind: "style-guide", styleGuide });
+
+		const verdict = {
+			slug: "account-summary-1a2b3c4d",
+			action: "approve" as const,
+			selectedKey: "compact",
+			ts: 1,
+		};
+		expect(
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: "data:image/png;base64,cHJldmlldw==",
+			}),
+		).toEqual({
+			kind: "verdict",
+			verdict,
+			previewDataUrl: "data:image/png;base64,cHJldmlldw==",
+		});
+	});
+
+	it("accepts a JPEG preview and rejects a non-image or oversized preview", () => {
+		const verdict = {
+			slug: "account-summary-1a2b3c4d",
+			action: "approve" as const,
+			selectedKey: "compact",
+			ts: 1,
+		};
+		expect(
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+			}),
+		).toMatchObject({
+			previewDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+		});
+		expect(() =>
+			validateProtoBrowserData({ kind: "answer", value: "nope" }),
+		).toThrow();
+		expect(() =>
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: "data:text/plain,not-a-png",
+			}),
+		).toThrow(/PNG or JPEG/);
+		expect(() =>
+			validateProtoBrowserData({
+				kind: "verdict",
+				verdict,
+				previewDataUrl: `data:image/jpeg;base64,${"A".repeat(PROTO_PREVIEW_MAX_CHARS)}`,
+			}),
+		).toThrow(/exceeds/);
+	});
+});
+
+describe("validateProtoCliRequest", () => {
+	function buildProtoCliRequest(overrides: Record<string, unknown> = {}) {
+		return {
+			type: "cli-proto-request" as const,
+			requestId: "proto-request-1",
+			phase: "scrape" as const,
+			slug: "account-summary-1a2b3c4d",
+			markedUrl: "https://example.test/account#_proto=fixture",
+			...overrides,
+		};
+	}
+
+	it("shares the daemon's default scrape and plant deadlines", () => {
+		expect(PROTO_DEFAULT_TIMEOUT_MS.scrape).toBe(45_000);
+		expect(PROTO_DEFAULT_TIMEOUT_MS.plant).toBe(PROTO_MAX_TIMEOUT_MS);
+	});
+
+	it("accepts a well-formed scrape or plant request", () => {
+		expect(validateProtoCliRequest(buildProtoCliRequest())).toEqual(
+			buildProtoCliRequest(),
+		);
+		expect(
+			validateProtoCliRequest(
+				buildProtoCliRequest({ phase: "plant", timeoutMs: 900_000 }),
+			),
+		).toEqual(buildProtoCliRequest({ phase: "plant", timeoutMs: 900_000 }));
+	});
+
+	it("requires an http(s) marked URL under the marker length cap", () => {
+		expect(
+			validateProtoCliRequest(
+				buildProtoCliRequest({ markedUrl: "http://example.test/account" }),
+			).markedUrl,
+		).toBe("http://example.test/account");
+		expect(() =>
+			validateProtoCliRequest(
+				buildProtoCliRequest({ markedUrl: "javascript:alert(1)" }),
+			),
+		).toThrow(/http\(s\)/);
+		expect(() =>
+			validateProtoCliRequest(
+				buildProtoCliRequest({
+					markedUrl: `https://example.test/${"a".repeat(PROTO_MARKED_URL_MAX_LENGTH)}`,
+				}),
+			),
+		).toThrow(/marker URL limit/);
+	});
+
+	it("rejects an unknown phase, an out-of-range timeout, and an unknown field", () => {
+		expect(() =>
+			validateProtoCliRequest(buildProtoCliRequest({ phase: "render" })),
+		).toThrow();
+		expect(() =>
+			validateProtoCliRequest(
+				buildProtoCliRequest({ timeoutMs: PROTO_MAX_TIMEOUT_MS + 1 }),
+			),
+		).toThrow();
+		expect(() =>
+			validateProtoCliRequest(buildProtoCliRequest({ extra: "nope" })),
+		).toThrow();
 	});
 });
 

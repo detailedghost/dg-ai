@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import {
 	access,
-	copyFile,
 	lstat,
 	mkdir,
 	open,
@@ -13,30 +12,28 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	assembleAnswerPage,
+	PROTO_MAX_TIMEOUT_MS,
+	type ProtoBrowserData,
+	type ProtoCliResult,
+	type ProtoNotReadyError,
 	type ProtoPlan,
 	sanitizeVariationHtml,
 	type Verdict,
+	validateProtoBrowserData,
 	validateProtoIdentifier,
 	validateProtoPlan,
 	validateProtoRenderLimits,
 	validateStyleGuide,
 	validateVerdict,
 } from "@dg/common";
-import { tryOpen } from "@dg/common/node";
+import { CliClient, resolveCliSession } from "@dg/common/node";
 import { Command } from "commander";
 import { USAGE as PROTOTYPE_USAGE, main as runPrototype } from "../prototype";
 import { DEFAULT_TIMEOUT_SEC } from "../prototype/args";
 import { assertExtensionInstalled } from "../utils/cli-only";
 import { registerRawCommand } from "../utils/legacy-command";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
-import {
-	answerPagePath,
-	dgProtoPath,
-	pollForFile,
-	protoScratchPath,
-	protoSlug,
-	resolveDownloadsDir,
-} from "../utils/proto-paths";
+import { answerPagePath, protoScratchPath, protoSlug } from "../utils/proto-paths";
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 /** A human deciding on a planted page, not a download; same wait as local mode's `wait` default. */
@@ -44,16 +41,99 @@ const DEFAULT_PLANT_TIMEOUT_MS = DEFAULT_TIMEOUT_SEC * 1000;
 
 type ScrapeOptions = {
 	timeoutMs?: number;
+	session?: string;
 };
 
 type PlantOptions = {
 	timeoutMs?: number;
+	session?: string;
 };
+
+/** A typed not-ready failure the extension reported instead of scraping or planting. */
+export class ProtoNotReadyFailure extends Error {
+	constructor(readonly notReady: ProtoNotReadyError) {
+		super(
+			`Prototype ${notReady.code === "mount-missing" ? "plant" : "scrape/plant"} is not ready (${notReady.code}): ${notReady.message} It landed on ${notReady.landedUrl}.`,
+		);
+		this.name = "ProtoNotReadyFailure";
+	}
+}
+
+function isProtoCliResult(
+	value: unknown,
+	requestId: string,
+): value is ProtoCliResult {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"type" in value &&
+		value.type === "cli-proto-result" &&
+		"requestId" in value &&
+		value.requestId === requestId
+	);
+}
+
+/**
+ * Run one scrape or plant through the daemon relay: the extension opens the
+ * marked URL in a paired browser and hands its result back over the same
+ * authenticated session the CLI connects with. Never touches the filesystem
+ * or a browser directly.
+ */
+async function runProtoBrowserRequest(input: {
+	phase: "scrape" | "plant";
+	slug: string;
+	markedUrl: string;
+	timeoutMs: number;
+	session?: string;
+}): Promise<ProtoBrowserData> {
+	const requestId = crypto.randomUUID();
+	let client: CliClient | undefined;
+	try {
+		const resolved = await resolveCliSession(input.session);
+		client = await CliClient.connect(resolved);
+	} catch (error) {
+		throw new Error(
+			"Prototype --ext requires a dg daemon session with a paired extension. Run dg-agent start --open, then pass --session ID (or use that session's working directory), open the printed /start#_chat= URL in the paired browser, and run dg-skills install if the binaries need updating. " +
+				(error instanceof Error ? error.message : String(error)),
+		);
+	}
+	try {
+		const response = await client.request(
+			{
+				type: "cli-proto-request",
+				requestId,
+				phase: input.phase,
+				slug: input.slug,
+				markedUrl: input.markedUrl,
+				timeoutMs: input.timeoutMs,
+			},
+			(value): value is ProtoCliResult => isProtoCliResult(value, requestId),
+			input.timeoutMs + 5_000,
+		);
+		if (!response.ok) {
+			if (response.notReady) throw new ProtoNotReadyFailure(response.notReady);
+			throw new Error(
+				response.error ?? "prototype extension request failed",
+			);
+		}
+		try {
+			return validateProtoBrowserData(response.data);
+		} catch (error) {
+			throw new Error(
+				`Invalid response from the extension: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
+	} finally {
+		client.close();
+	}
+}
 
 /** Injectable filesystem operations used by the guarded answer exporter. */
 export type AnswerExportSeams = {
 	answerPath(slug: string, file: string): string;
-	copy(source: string, destination: string): Promise<void>;
+	writeBinary(path: string, data: Uint8Array): Promise<void>;
 	ensureSafePaths(paths: string[], createDirectories: boolean): Promise<void>;
 	readText(path: string): Promise<string>;
 	removeFile(path: string): Promise<void>;
@@ -182,23 +262,21 @@ async function writeTextNoFollow(
 	}
 }
 
-async function copyNoFollow(
-	sourcePath: string,
-	destinationPath: string,
+async function writeBinaryNoFollow(
+	path: string,
+	data: Uint8Array,
 ): Promise<void> {
-	const source = await open(sourcePath, constants.O_RDONLY);
-	let destination: Awaited<ReturnType<typeof open>> | undefined;
+	const handle = await open(path, ANSWER_WRITE_FLAGS, 0o666);
 	try {
-		destination = await open(destinationPath, ANSWER_WRITE_FLAGS, 0o666);
-		await destination.writeFile(await source.readFile());
+		await handle.writeFile(data);
 	} finally {
-		await Promise.all([source.close(), destination?.close()]);
+		await handle.close();
 	}
 }
 
 const DEFAULT_ANSWER_EXPORT_SEAMS: AnswerExportSeams = {
 	answerPath: answerPagePath,
-	copy: copyNoFollow,
+	writeBinary: writeBinaryNoFollow,
 	ensureSafePaths: ensureSafeAnswerPaths,
 	readText: (path) => readFile(path, "utf8"),
 	removeFile: async (path) => {
@@ -327,7 +405,7 @@ type AnswerPaths = {
 	index: string;
 	lineage: string;
 	notes: string;
-	preview: string;
+	previews: { jpg: string; png: string };
 	styles: string;
 };
 
@@ -336,13 +414,31 @@ function answerPaths(plan: ProtoPlan, seams: AnswerExportSeams): AnswerPaths {
 		index: seams.answerPath(plan.slug, "index.html"),
 		lineage: seams.answerPath(plan.slug, "lineage.md"),
 		styles: seams.answerPath(plan.slug, "styles.css"),
-		preview: seams.answerPath(plan.slug, "preview.png"),
+		previews: {
+			jpg: seams.answerPath(plan.slug, "preview.jpg"),
+			png: seams.answerPath(plan.slug, "preview.png"),
+		},
 		notes: seams.answerPath(plan.slug, "NOTES.md"),
 	};
 }
 
 function answerPathList(paths: AnswerPaths): string[] {
-	return [paths.index, paths.lineage, paths.styles, paths.preview, paths.notes];
+	return [
+		paths.index,
+		paths.lineage,
+		paths.styles,
+		paths.previews.jpg,
+		paths.previews.png,
+		paths.notes,
+	];
+}
+
+/** Pick the preview filename whose extension matches the data URL's media type. */
+function previewPathForDataUrl(dataUrl: string, paths: AnswerPaths): string {
+	const mime = /^data:([^;,]+)/i.exec(dataUrl)?.[1]?.toLowerCase();
+	if (mime === "image/jpeg" || mime === "image/jpg") return paths.previews.jpg;
+	if (mime === "image/png") return paths.previews.png;
+	throw new TypeError("prototype preview must be a PNG or JPEG data URL");
 }
 
 async function readVerifiedPriorNotes(
@@ -394,7 +490,7 @@ async function readPriorRounds(
 export async function exportApprovedAnswer(
 	plan: ProtoPlan,
 	verdict: Extract<Verdict, { action: "approve" }>,
-	previewDownloadPath: string,
+	previewDataUrl: string | undefined,
 	overrides: Partial<AnswerExportSeams> = {},
 	tweaks: string[] = [],
 ): Promise<string> {
@@ -417,7 +513,8 @@ export async function exportApprovedAnswer(
 	// preview before beginning a same-slug overwrite.
 	await Promise.all([
 		seams.removeFile(paths.notes),
-		seams.removeFile(paths.preview),
+		seams.removeFile(paths.previews.jpg),
+		seams.removeFile(paths.previews.png),
 	]);
 
 	// Keep this order fixed: NOTES.md must only appear after every answer file.
@@ -429,10 +526,12 @@ export async function exportApprovedAnswer(
 		}),
 	);
 	await seams.writeText(paths.styles, selected.css);
-	try {
-		await seams.copy(previewDownloadPath, paths.preview);
-	} catch (error) {
-		if (!isMissingFile(error)) throw error;
+	if (previewDataUrl) {
+		const base64 = previewDataUrl.slice(previewDataUrl.indexOf(",") + 1);
+		await seams.writeBinary(
+			previewPathForDataUrl(previewDataUrl, paths),
+			Buffer.from(base64, "base64"),
+		);
 	}
 	await seams.writeText(
 		paths.lineage,
@@ -442,7 +541,11 @@ export async function exportApprovedAnswer(
 	return paths.index;
 }
 
-/** Open a marked page, wait for its style guide download, and persist a stable copy. */
+/**
+ * Open a marked page through the daemon relay and persist a stable copy of
+ * the style guide the extension hands back. Never touches Downloads or any
+ * browser-process filesystem; the CLI only waits on the daemon.
+ */
 export async function scrapePrototype(
 	url: string,
 	options: ScrapeOptions = {},
@@ -453,42 +556,34 @@ export async function scrapePrototype(
 	}
 
 	const slug = protoSlug(url);
-	const downloadPath = join(
-		resolveDownloadsDir(),
-		dgProtoPath(slug, "style-guide.json"),
-	);
-	const partialPath = `${downloadPath}.crdownload`;
-	await Promise.all([
-		rm(downloadPath, { force: true }),
-		rm(partialPath, { force: true }),
-	]);
-
-	const markedUrl = addProtoMarker(url, { phase: "scrape", slug });
-	if (!(await tryOpen(markedUrl))) {
-		throw new Error(`Could not open the browser for ${url}`);
-	}
-
-	const value = await pollForFile(downloadPath, {
-		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+	const markedUrl = addProtoMarker(url, {
+		phase: "scrape",
+		slug,
+		expectedUrl: url,
 	});
-	try {
-		validateStyleGuide(value);
-	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
+	const data = await runProtoBrowserRequest({
+		phase: "scrape",
+		slug,
+		markedUrl,
+		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		session: options.session,
+	});
+	if (data.kind !== "style-guide") {
 		throw new Error(
-			`Invalid style guide downloaded at ${downloadPath}: ${detail}`,
+			"The extension returned a verdict for a scrape request; re-run scrape with a fresh slug.",
 		);
 	}
 
 	const outputPath = protoScratchPath(slug, "style-guide.json");
 	await mkdir(dirname(outputPath), { recursive: true });
-	await copyFile(downloadPath, outputPath);
+	await writeFile(outputPath, `${JSON.stringify(data.styleGuide, null, 2)}\n`);
 	return outputPath;
 }
 
 /**
- * Open a validated prototype plan on the page recorded by its stable style
- * guide, then wait for the extension to return a fresh validated verdict.
+ * Open a validated prototype plan through the daemon relay and wait for the
+ * extension to hand back a fresh validated verdict. Never touches Downloads
+ * or any browser-process filesystem; the CLI only waits on the daemon.
  */
 export async function plantPrototype(
 	planPath: string,
@@ -522,6 +617,7 @@ export async function plantPrototype(
 		phase: "plant" as const,
 		slug: sanitizedPlan.slug,
 		plan: sanitizedPlan,
+		expectedUrl: styleGuide.meta.url,
 	};
 	if (!protoPayloadFits(styleGuide.meta.url, payload)) {
 		throw new RangeError(
@@ -529,47 +625,31 @@ export async function plantPrototype(
 		);
 	}
 
-	const downloadPath = join(
-		resolveDownloadsDir(),
-		dgProtoPath(sanitizedPlan.slug, "verdict.json"),
-	);
-	const previewDownloadPath = join(
-		resolveDownloadsDir(),
-		dgProtoPath(sanitizedPlan.slug, "preview.png"),
-	);
-	await Promise.all([
-		rm(downloadPath, { force: true }),
-		rm(`${downloadPath}.crdownload`, { force: true }),
-		rm(previewDownloadPath, { force: true }),
-		rm(`${previewDownloadPath}.crdownload`, { force: true }),
-	]);
-
 	const markedUrl = addProtoMarker(styleGuide.meta.url, payload);
-	if (!(await tryOpen(markedUrl))) {
-		throw new Error(`Could not open the browser for ${styleGuide.meta.url}`);
-	}
-
-	const downloaded = await pollForFile(downloadPath, {
-		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+	const data = await runProtoBrowserRequest({
+		phase: "plant",
+		slug: sanitizedPlan.slug,
+		markedUrl,
+		timeoutMs: options.timeoutMs ?? DEFAULT_PLANT_TIMEOUT_MS,
+		session: options.session,
 	});
-	let verdict: Verdict;
-	try {
-		verdict = validateVerdict(downloaded);
-		if (verdict.slug !== sanitizedPlan.slug) {
-			throw new TypeError("verdict.slug does not match the prototype plan");
-		}
-		if (
-			!sanitizedPlan.variations.some(
-				(variation) => variation.key === verdict.selectedKey,
-			)
-		) {
-			throw new TypeError(
-				"verdict.selectedKey does not belong to the prototype plan",
-			);
-		}
-	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
-		throw new Error(`Invalid verdict downloaded at ${downloadPath}: ${detail}`);
+	if (data.kind !== "verdict") {
+		throw new Error(
+			"The extension returned a style guide for a plant request; re-run plant with a fresh plan.",
+		);
+	}
+	const verdict = data.verdict;
+	if (verdict.slug !== sanitizedPlan.slug) {
+		throw new Error("Invalid verdict: verdict.slug does not match the prototype plan");
+	}
+	if (
+		!sanitizedPlan.variations.some(
+			(variation) => variation.key === verdict.selectedKey,
+		)
+	) {
+		throw new Error(
+			"Invalid verdict: verdict.selectedKey does not belong to the prototype plan",
+		);
 	}
 
 	const outputPath = protoScratchPath(sanitizedPlan.slug, "verdict.json");
@@ -601,7 +681,7 @@ export async function plantPrototype(
 	const answerPath = await exportApprovedAnswer(
 		sanitizedPlan,
 		verdict,
-		previewDownloadPath,
+		data.previewDataUrl,
 		{},
 		tweaks,
 	);
@@ -656,19 +736,20 @@ export async function cleanupPrototype(slug: string): Promise<string> {
 		);
 	}
 
-	const downloadsPath = join(resolveDownloadsDir(), dgProtoPath(slug, ""));
 	const scratchPath = protoScratchPath(slug, "");
-	await Promise.all([
-		rm(downloadsPath, { force: true, recursive: true }),
-		rm(scratchPath, { force: true, recursive: true }),
-	]);
-	return `Removed temporary prototype artifacts for ${slug}.`;
+	await rm(scratchPath, { force: true, recursive: true });
+	return `Removed temporary prototype scratch for ${slug}.`;
 }
 
 function timeoutValue(value: string): number {
 	const timeout = Number(value);
 	if (!Number.isFinite(timeout) || timeout <= 0) {
 		throw new TypeError("--timeout must be a positive number of milliseconds");
+	}
+	if (timeout > PROTO_MAX_TIMEOUT_MS) {
+		throw new TypeError(
+			`--timeout must be at most ${PROTO_MAX_TIMEOUT_MS}ms; the daemon relay rejects anything higher`,
+		);
 	}
 	return timeout;
 }
@@ -703,15 +784,22 @@ function buildExtensionProgram(): Command {
 		.argument("<url>", "live http(s) page to inspect")
 		.option(
 			"--timeout <ms>",
-			"download timeout in milliseconds",
+			"daemon relay timeout in milliseconds",
 			String(DEFAULT_TIMEOUT_MS),
 		)
-		.action(async (url: string, options: { timeout: string }) => {
-			const output = await scrapePrototype(url, {
-				timeoutMs: timeoutValue(options.timeout),
-			});
-			console.log(output);
-		});
+		.option(
+			"--session <id>",
+			"dg daemon session id (default: the sole session matching this working directory)",
+		)
+		.action(
+			async (url: string, options: { timeout: string; session?: string }) => {
+				const output = await scrapePrototype(url, {
+					timeoutMs: timeoutValue(options.timeout),
+					session: options.session,
+				});
+				console.log(output);
+			},
+		);
 
 	proto
 		.command("plant")
@@ -719,26 +807,34 @@ function buildExtensionProgram(): Command {
 		.argument("<plan>", "path to a prototype plan JSON file")
 		.option(
 			"--timeout <ms>",
-			"verdict timeout in milliseconds",
+			"daemon relay timeout in milliseconds",
 			String(DEFAULT_PLANT_TIMEOUT_MS),
+		)
+		.option(
+			"--session <id>",
+			"dg daemon session id (default: the sole session matching this working directory)",
 		)
 		.addHelpText(
 			"after",
 			"\nRun from the target project root. A reject surfaces feedback, a tweak surfaces notes, and an approve with notes starts the next round; in each case the agent re-plants the same slug.\n",
 		)
-		.action(async (planPath: string, options: { timeout: string }) => {
-			console.log(
-				await plantPrototype(planPath, {
-					timeoutMs: timeoutValue(options.timeout),
-				}),
-			);
-		});
+		.action(
+			async (
+				planPath: string,
+				options: { timeout: string; session?: string },
+			) => {
+				console.log(
+					await plantPrototype(planPath, {
+						timeoutMs: timeoutValue(options.timeout),
+						session: options.session,
+					}),
+				);
+			},
+		);
 
 	proto
 		.command("cleanup")
-		.description(
-			"remove temporary prototype downloads and scratch after approval",
-		)
+		.description("remove temporary prototype scratch after approval")
 		.argument("<slug>", "approved prototype slug")
 		.addHelpText(
 			"after",

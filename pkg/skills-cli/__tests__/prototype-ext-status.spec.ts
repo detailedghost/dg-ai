@@ -4,15 +4,6 @@ import { dirname, join } from "node:path";
 import { protoScratchPath } from "../src/utils/proto-paths";
 import { extStatus } from "../src/prototype/index";
 
-const NO_RELOAD = join(
-	"/nonexistent-reload-dir-for-ext-status-tests",
-	".reload",
-);
-
-function throwing(): never {
-	throw new Error("Downloads folder could not be resolved");
-}
-
 const written: string[] = [];
 
 afterEach(() => {
@@ -49,32 +40,37 @@ function writeReload(name: string, mtime: Date): string {
 }
 
 describe("extStatus", () => {
-	test("does not crash status when resolving the Downloads folder throws", () => {
-		expect(() =>
-			extStatus("no-such-prototype-ext-status-demo", NO_RELOAD, throwing),
-		).not.toThrow();
+	test("returns undefined with no scratch verdict and no .reload to compare against", () => {
+		const noReload = join(
+			"/nonexistent-reload-dir-for-ext-status-tests",
+			".reload",
+		);
 		expect(
-			extStatus("no-such-prototype-ext-status-demo", NO_RELOAD, throwing),
+			extStatus("no-such-prototype-ext-status-demo", noReload),
 		).toBeUndefined();
 	});
 
-	test("still checks the scratch verdict after the Downloads probe throws, with no .reload to compare against", () => {
+	test("reports a scratch verdict with no .reload to compare against", () => {
 		const name = "ext-status-scratch-fallback-demo";
 		writeVerdict(name, new Date());
-		expect(extStatus(name, NO_RELOAD, throwing)).toBe("approve:detailed");
+		const noReload = join(
+			"/nonexistent-reload-dir-for-ext-status-tests",
+			".reload",
+		);
+		expect(extStatus(name, noReload)).toBe("approve:detailed");
 	});
 
 	test("ignores a scratch verdict older than the current local session's .reload", () => {
 		const name = "ext-status-stale-session-demo";
 		writeVerdict(name, new Date(1_000_000));
 		const reloadPath = writeReload(name, new Date(2_000_000));
-		expect(extStatus(name, reloadPath, throwing)).toBeUndefined();
+		expect(extStatus(name, reloadPath)).toBeUndefined();
 	});
 
 	test("still reports a scratch verdict newer than the current local session's .reload", () => {
 		const name = "ext-status-fresh-session-demo";
 		const reloadPath = writeReload(name, new Date(1_000_000));
 		writeVerdict(name, new Date(2_000_000));
-		expect(extStatus(name, reloadPath, throwing)).toBe("approve:detailed");
+		expect(extStatus(name, reloadPath)).toBe("approve:detailed");
 	});
 });

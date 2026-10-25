@@ -109,7 +109,7 @@ export function inboxCliHarness() {
 }
 
 export function inboxDaemonFixture(
-	harness: ReturnType<typeof inboxCliHarness>,
+	harness: Pick<ReturnType<typeof inboxCliHarness>, "cwd" | "dgHome">,
 	respond: (
 		request: Record<string, unknown>,
 		reply: (frame: Record<string, unknown>) => void,

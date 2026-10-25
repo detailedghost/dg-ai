@@ -17,7 +17,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { cleanupDgHome } from "@dg/dg-daemon/test-harness";
 import { mergeEnv } from "./module-call";
+import { protoDaemonFixture } from "./proto-cli-harness";
 import {
 	collectRun,
 	disposeSpecContext,
@@ -35,7 +37,6 @@ let skills: string;
 let opener: string;
 let outside: string;
 let project: string;
-let downloads: string;
 const spawned: Array<{ kill(): void }> = [];
 
 function env(extra: Record<string, string | undefined> = {}) {
@@ -55,7 +56,6 @@ function env(extra: Record<string, string | undefined> = {}) {
 		DG_PLUGIN_ROOT: undefined,
 		WSL_DISTRO_NAME: "",
 		PROTOTYPE_UI_NO_OPEN: "1",
-		DG_TEST_DOWNLOADS: downloads,
 		...extra,
 	});
 }
@@ -120,33 +120,11 @@ beforeAll(() => {
 	opener = join(context.base, "fake bin");
 	outside = join(context.base, "outside folder");
 	project = join(context.base, "target project");
-	downloads = join(context.base, "downloads");
-	for (const dir of [opener, outside, project, downloads])
+	for (const dir of [opener, outside, project])
 		mkdirSync(dir, { recursive: true });
-	const open = [
-		"#!/bin/sh",
-		'printf "%s" "$1" > "$DG_TEST_OPENED_URL"',
-		'if [ -n "${DG_TEST_VERDICT:-}" ]; then',
-		'  /bin/mkdir -p "$DG_TEST_VERDICT_DIR"',
-		'  printf "%s" "$DG_TEST_VERDICT" > "$DG_TEST_VERDICT_PATH"',
-		"fi",
-		"exit 0",
-		"",
-	].join("\n");
+	const open = "#!/bin/sh\nexit 0\n";
 	executable(join(opener, "xdg-open"), open);
 	executable(join(opener, "wslview"), open);
-	executable(
-		join(opener, "cmd.exe"),
-		'#!/bin/sh\nprintf "%s\\n" "C:\\\\Users\\\\Ada"\n',
-	);
-	executable(
-		join(opener, "wslpath"),
-		'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
-	);
-	executable(
-		join(opener, "xdg-user-dir"),
-		'#!/bin/sh\nprintf "%s\\n" "$DG_TEST_DOWNLOADS"\n',
-	);
 }, 240_000);
 
 function killRecordedServers(): void {
@@ -430,8 +408,8 @@ describe("compiled dg-skills prototype, local mode, from an outside folder", () 
 	});
 });
 
-describe("compiled dg-skills proto --ext, plan handoff through fakes", () => {
-	test("plants the plan on the recorded page and exports the approved answer", async () => {
+describe("compiled dg-skills proto --ext, plan handoff through a fake daemon", () => {
+	test("plants the plan through the daemon relay and exports the approved answer", async () => {
 		const slug = "example-test-account-a1b2c3d4";
 		const url = "https://example.test/account";
 		const plan = {
@@ -478,34 +456,47 @@ describe("compiled dg-skills proto --ext, plan handoff through fakes", () => {
 				components: { button: {}, input: {}, link: {} },
 			}),
 		);
-		const openedUrl = join(context.base, "opened-url.txt");
-		const result = await compiled(
-			["proto", "--ext", "plant", planPath, "--timeout", "5000"],
-			project,
-			{
-				DG_TEST_OPENED_URL: openedUrl,
-				DG_TEST_VERDICT_DIR: join(downloads, "dg-proto", slug),
-				DG_TEST_VERDICT_PATH: join(downloads, "dg-proto", slug, "verdict.json"),
-				DG_TEST_VERDICT: JSON.stringify({
-					slug,
-					ts: 1_721_234_568_000,
-					action: "approve",
-					selectedKey: "detailed",
-				}),
-			},
-		);
-		expect(result.stderr).toBe("");
-		expect(result.exitCode).toBe(0);
-		expect(result.stdout.trim()).toBe(
-			join(project, ".agents", "prototype", slug, "index.html"),
-		);
-		expect(readFileSync(openedUrl, "utf8")).toContain(`${url}#`);
-		expect(
-			readFileSync(
-				join(project, ".agents", "prototype", slug, "lineage.md"),
-				"utf8",
-			),
-		).toContain("- picked: detailed");
+		const dgHome = join(context.base, "dg-home");
+		const server = protoDaemonFixture({ cwd: project, dgHome }, (request, reply) => {
+			reply({
+				type: "cli-proto-result",
+				sessionId: "fixture-cli-session",
+				requestId: request.requestId,
+				ok: true,
+				data: {
+					kind: "verdict",
+					verdict: {
+						slug,
+						ts: 1_721_234_568_000,
+						action: "approve",
+						selectedKey: "detailed",
+					},
+				},
+			});
+		});
+		try {
+			const result = await compiled(
+				["proto", "--ext", "plant", planPath, "--timeout", "5000"],
+				project,
+				{ DG_HOME: dgHome },
+			);
+			expect(result.stderr).toBe("");
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout.trim()).toBe(
+				join(project, ".agents", "prototype", slug, "index.html"),
+			);
+			expect(server.requests).toHaveLength(1);
+			expect(server.requests[0]?.markedUrl).toContain(`${url}#`);
+			expect(
+				readFileSync(
+					join(project, ".agents", "prototype", slug, "lineage.md"),
+					"utf8",
+				),
+			).toContain("- picked: detailed");
+		} finally {
+			server.stop();
+			cleanupDgHome(dgHome);
+		}
 	});
 
 	test("--ext needs the extension on a CLI-only install while local mode still works", async () => {
