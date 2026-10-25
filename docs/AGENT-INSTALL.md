@@ -162,12 +162,16 @@ the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
 curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
 ```
 
+Needs 1.21.0 or newer.
+
 On Windows PowerShell:
 
 ```powershell
 $env:DG_VERSION = "1.19.0"
 irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
+
+Needs 1.21.0 or newer.
 
 `dg-skills install --version 1.19.0` is the flag on an already installed
 binary. Leaving it unset installs each binary's newest release, as before.

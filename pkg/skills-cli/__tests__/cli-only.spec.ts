@@ -246,10 +246,10 @@ fi
 		});
 	});
 
-	test("fails before any install call when the pinned version matches no release", async () => {
+	test("delegates through the newest binary even when the pinned version matches no release", async () => {
 		const result = await run(["--version", "1.0.0"]);
 
-		expect(result.exitCode).not.toBe(0);
-		expect(result.calls).toBe("");
+		expect(result.exitCode).toBe(0);
+		expect(result.calls).toBe("install --version 1.0.0");
 	});
 });

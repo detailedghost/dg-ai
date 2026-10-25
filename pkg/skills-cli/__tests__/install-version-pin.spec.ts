@@ -201,10 +201,13 @@ describe("dg-skills install --version <x.y.z>", () => {
 		}
 	});
 
-	test("--skills-only hard-fails naming skills-v when the pinned CLI release does not exist, and writes no binary", async () => {
+	test("--skills-only hard-fails naming skills-v when the pinned CLI release does not exist, writes no binary, and leaves existing skill files untouched", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-version-pin-skills-only-missing-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
+		const staleSkillFile = join(home, "skills", "probe", "SKILL.md");
+		mkdirSync(join(home, "skills", "probe"), { recursive: true });
+		writeFileSync(staleSkillFile, "stale content\n");
 		const fetchLog = join(directory, "fetch.log");
 		writeFileSync(fetchLog, "");
 		try {
@@ -217,6 +220,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("no release named skills-v1.2.3 found");
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(readFileSync(staleSkillFile, "utf8")).toBe("stale content\n");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -299,6 +303,7 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
 			expect(existsSync(join(home, "bin", "dg-daemon"))).toBe(false);
 			expect(existsSync(join(home, "bin", "dg-agent"))).toBe(false);
+			expect(fetchedUrls(fetchLog).some((url) => url.includes("ext-v"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

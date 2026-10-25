@@ -30,12 +30,16 @@ import {
 	type BinarySpec,
 	cliDest,
 	cliVersionFile,
+	commitCliBinary,
 	describeMissingCliAsset,
 	downloadReleaseAsset,
 	extensionDest,
 	extractZip,
 	fetchCliBinary,
+	fetchVerifiedBinary,
 	listReleases,
+	pickCliAsset,
+	type PickedAsset,
 	type Release,
 	readMarker,
 	repoRoot,
@@ -159,18 +163,14 @@ async function installBinary(
 			console.warn(
 				reason.kind === "no-platform-asset"
 					? `⚠ ${binaryName}: this platform (${platform}) has no published asset; skipping its refresh.`
-					: spec.version
-						? `⚠ ${binaryName}: no release ${spec.tagPrefix}${spec.version} was found; skipping its refresh.`
-						: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
+					: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
 			);
 			return;
 		}
 		const vf = cliVersionFile(binaryName);
 		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
 		// The binary is large; skip the download when we're already current.
-		const current = spec.version
-			? installed === asset.version
-			: Boolean(installed) && versionGte(installed, asset.version);
+		const current = Boolean(installed) && versionGte(installed, asset.version);
 		if (current && existsSync(cliDest(binaryName))) {
 			console.log(currentBinaryLine(binaryName, installed));
 			return;
@@ -184,6 +184,56 @@ async function installBinary(
 			`⚠ ${binaryName} install skipped: ${err instanceof Error ? err.message : err}`,
 		);
 	}
+}
+
+type ResolvedBinary = { binaryName: string; asset: PickedAsset; installed: string };
+
+/** Resolves every spec's asset up front; throws naming the first tag that can't be resolved. */
+function resolvePinnedBinaries(specs: BinarySpec[], releases: Release[]): ResolvedBinary[] {
+	return specs.map((spec) => {
+		const asset = pickCliAsset(releases, spec, process.platform, process.arch);
+		if (!asset) {
+			const reason = describeMissingCliAsset(spec, releases);
+			const platform = `${process.platform}-${process.arch}`;
+			throw new Error(
+				reason.kind === "no-platform-asset"
+					? `${spec.binaryName}: this platform (${platform}) has no published asset for ${spec.tagPrefix}${spec.version}`
+					: `no release named ${spec.tagPrefix}${spec.version} found`,
+			);
+		}
+		const vf = cliVersionFile(spec.binaryName);
+		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
+		return { binaryName: spec.binaryName, asset, installed };
+	});
+}
+
+type StagedBinary = { binaryName: string; asset: PickedAsset; buf: Uint8Array; installed: string };
+
+/** Downloads and verifies every resolved binary that isn't already current; writes nothing to disk. */
+async function fetchResolvedBinaries(resolved: ResolvedBinary[]): Promise<StagedBinary[]> {
+	const staged: StagedBinary[] = [];
+	for (const { binaryName, asset, installed } of resolved) {
+		if (installed === asset.version && existsSync(cliDest(binaryName))) {
+			console.log(currentBinaryLine(binaryName, installed));
+			continue;
+		}
+		staged.push({ binaryName, asset, installed, buf: await fetchVerifiedBinary(binaryName, asset) });
+	}
+	return staged;
+}
+
+function commitStagedBinaries(staged: StagedBinary[]): void {
+	for (const { binaryName, asset, buf, installed } of staged) {
+		const path = commitCliBinary(binaryName, asset, buf);
+		console.log(`${binaryName} ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`);
+	}
+}
+
+/** Resolves, downloads and verifies every binary in `specs` before any of them is committed. */
+async function installPinnedBinaries(specs: BinarySpec[], releases: Release[]): Promise<void> {
+	const resolved = resolvePinnedBinaries(specs, releases);
+	const staged = await fetchResolvedBinaries(resolved);
+	commitStagedBinaries(staged);
 }
 
 const RETIRED_BINARIES = ["dg-server"];
@@ -210,53 +260,42 @@ function binarySpec(binaryName: string): BinarySpec {
 	return spec;
 }
 
-/**
- * A pinned skills-v, daemon-v, agent-v or ext-v release that does not exist hard-fails
- * the whole install before any binary or the extension is touched, naming the exact
- * missing tag, so a pin never leaves some of them updated and others not.
- */
-function assertPinnedReleasesExist(
-	version: string,
-	tagPrefixes: string[],
-	releases: Release[],
-): void {
-	for (const prefix of tagPrefixes) {
-		const tag = `${prefix}${version}`;
-		if (!releases.some((r) => r.tag_name === tag && !r.draft)) {
-			throw new Error(`no release named ${tag} found`);
-		}
-	}
-}
-
-async function installCli(version?: string): Promise<void> {
+async function installCli(): Promise<void> {
 	const releases = await listReleases();
-	if (version) {
-		assertPinnedReleasesExist(version, BINARIES.map((spec) => spec.tagPrefix), releases);
-	}
 	for (const spec of BINARIES) {
-		await installBinary({ ...spec, version }, releases);
+		await installBinary(spec, releases);
 	}
 	removeRetiredBinaries();
 }
 
 /** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
-async function installSkillsCli(version?: string): Promise<void> {
-	let releases: Release[];
-	try {
-		releases = await listReleases();
-	} catch (err) {
-		// Same warn-and-continue as installBinary: the skills are already copied.
-		console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
-		return;
+async function installSkillsCli(version?: string, releases?: Release[]): Promise<void> {
+	let resolved: Release[];
+	if (releases) {
+		resolved = releases;
+	} else {
+		try {
+			resolved = await listReleases();
+		} catch (err) {
+			// Same warn-and-continue as installBinary: the skills are already copied.
+			console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
+			return;
+		}
 	}
-	if (version) assertPinnedReleasesExist(version, ["skills-v"], releases);
-	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
+	if (version) {
+		await installPinnedBinaries([{ ...binarySpec("dg-skills"), version }], resolved);
+	} else {
+		await installBinary(binarySpec("dg-skills"), resolved);
+	}
 }
 
 async function installCliOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) assertPinnedReleasesExist(version, ["skills-v"], releases);
-	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
+	if (version) {
+		await installPinnedBinaries([{ ...binarySpec("dg-skills"), version }], releases);
+	} else {
+		await installBinary(binarySpec("dg-skills"), releases);
+	}
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
 	setCliOnly(true);
@@ -271,13 +310,64 @@ async function installCliOnly(version?: string): Promise<void> {
 /** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
 async function installAgentOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) assertPinnedReleasesExist(version, ["skills-v", "agent-v"], releases);
-	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
-	await installBinary({ ...binarySpec("dg-agent"), version }, releases);
+	if (version) {
+		await installPinnedBinaries(
+			[{ ...binarySpec("dg-skills"), version }, { ...binarySpec("dg-agent"), version }],
+			releases,
+		);
+	} else {
+		await installBinary(binarySpec("dg-skills"), releases);
+		await installBinary(binarySpec("dg-agent"), releases);
+	}
 	setCliOnly(true);
 	console.log(
 		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
 	);
+}
+
+/** Runs `stage`, then the staged/upgrade/first-install messaging and marker write shared by every install path. */
+function finishExtensionStage(
+	target: Target,
+	dest: { copyPath: string; printPath: string },
+	version: string,
+	markerVersion: string | undefined,
+	stage: () => void,
+): void {
+	stage();
+	console.log(`dg-ai-extension (${target}) staged at ${dest.printPath}`);
+	if (markerVersion) {
+		console.log("extension updated — click the reload icon on the extensions page.");
+	} else {
+		printSteps(target, dest.printPath);
+	}
+	writeMarkerEntry(target, version);
+	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
+}
+
+/** A pinned default install: resolves and downloads the extension and every binary before committing any of them. */
+async function installPinnedAll(target: Target, pin: string): Promise<void> {
+	setCliOnly(false);
+	const dest = extensionDest(target);
+	const releases = await listReleases();
+
+	const resolved = resolvePinnedBinaries(
+		BINARIES.map((spec) => ({ ...spec, version: pin })),
+		releases,
+	);
+	const release = await downloadReleaseAsset(target, pin);
+	const staged = await fetchResolvedBinaries(resolved);
+
+	const markerVersion = readMarker()[target];
+	if (markerVersion === release.version && existsSync(dest.copyPath)) {
+		console.log(`dg-ai-extension (${target}) already set up (v${markerVersion}).`);
+	} else {
+		finishExtensionStage(target, dest, release.version, markerVersion, () =>
+			extractZip(release.zip, dest.copyPath),
+		);
+	}
+
+	commitStagedBinaries(staged);
+	removeRetiredBinaries();
 }
 
 async function install(
@@ -287,11 +377,8 @@ async function install(
 	pin?: string,
 ): Promise<void> {
 	if (!forceLocal && pin) {
-		assertPinnedReleasesExist(
-			pin,
-			["ext-v", ...BINARIES.map((spec) => spec.tagPrefix)],
-			await listReleases(),
-		);
+		await installPinnedAll(target, pin);
+		return;
 	}
 	setCliOnly(false);
 	const dest = extensionDest(target);
@@ -301,14 +388,12 @@ async function install(
 	let stage: () => void;
 	const release = forceLocal
 		? undefined
-		: pin
-			? await downloadReleaseAsset(target, pin)
-			: await downloadReleaseAsset(target).catch((err) => {
-					console.warn(
-						`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
-					);
-					return undefined;
-				});
+		: await downloadReleaseAsset(target).catch((err) => {
+				console.warn(
+					`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
+				);
+				return undefined;
+			});
 
 	if (release) {
 		version = release.version;
@@ -323,32 +408,18 @@ async function install(
 	}
 
 	const markerVersion = readMarker()[target];
-	const markerCurrent = pin
-		? markerVersion === version
-		: Boolean(markerVersion) && versionGte(markerVersion, version);
-	if (!forceLocal && markerCurrent && existsSync(dest.copyPath)) {
+	if (!forceLocal && markerVersion && versionGte(markerVersion, version) && existsSync(dest.copyPath)) {
 		console.log(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
-		if (!forceLocal) await installCli(pin);
+		if (!forceLocal) await installCli();
 		return;
 	}
-	const isUpgrade = Boolean(markerVersion);
 
-	stage();
-	console.log(`dg-ai-extension (${target}) staged at ${dest.printPath}`);
-	if (isUpgrade) {
-		console.log(
-			"extension updated — click the reload icon on the extensions page.",
-		);
-	} else {
-		printSteps(target, dest.printPath);
-	}
-	writeMarkerEntry(target, version);
-	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
+	finishExtensionStage(target, dest, version, markerVersion, stage);
 
 	// Also keep the compiled CLI current (skip in --local dev, where we run source).
-	if (!forceLocal) await installCli(pin);
+	if (!forceLocal) await installCli();
 }
 
 export function registerInstall(program: Command): void {
@@ -403,13 +474,18 @@ export function registerInstall(program: Command): void {
 						local: !!opts.local,
 						target,
 					});
+					let releases: Release[] | undefined;
+					if (opts.version) {
+						releases = await listReleases();
+						resolvePinnedBinaries([{ ...binarySpec("dg-skills"), version: opts.version }], releases);
+					}
 					const result = runSkillsOnlyInstall({
 						repo: opts.repo,
 						dest: opts.dest,
 						repoRoot: repoRoot(),
 					});
 					console.log(skillsOnlyReport(result));
-					await installSkillsCli(opts.version);
+					await installSkillsCli(opts.version, releases);
 					return;
 				}
 				if (opts.cliOnly && opts.agentOnly) {

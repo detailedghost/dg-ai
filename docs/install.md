@@ -49,10 +49,14 @@ Install a specific release instead of the newest, by adding `--version <x.y.z>`
 curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
 ```
 
+Needs 1.21.0 or newer.
+
 ```powershell
 $env:DG_VERSION = "1.19.0"
 irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
 ```
+
+Needs 1.21.0 or newer.
 
 <!-- markdownlint-enable MD013 -->
 

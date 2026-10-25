@@ -242,7 +242,7 @@ export async function downloadReleaseAsset(
 	const asset = pickExtAsset(await listReleases(), target, version);
 	if (!asset) {
 		throw new Error(
-			version ? `no ext-v${version} ${target} asset found` : `no ext-v* ${target} asset found`,
+			version ? `no release named ext-v${version} found` : `no ext-v* ${target} asset found`,
 		);
 	}
 	const dl = await fetch(asset.url, { headers: UA });
@@ -273,15 +273,25 @@ export function resolveCliAsset(
 	return pickCliAsset(releases, spec, process.platform, process.arch);
 }
 
-export async function fetchCliBinary(
+/** Download and checksum-verify a binary without writing anything to disk yet. */
+export async function fetchVerifiedBinary(
 	binaryName: string,
 	asset: PickedAsset,
-): Promise<string> {
+): Promise<Uint8Array> {
 	const dl = await fetch(asset.url, { headers: UA });
 	if (!dl.ok)
 		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
 	const buf = Buffer.from(await dl.arrayBuffer());
 	await verifyCliChecksum(asset, buf, `v${asset.version}`);
+	return buf;
+}
+
+/** Stage `buf` next to its final destination, then rename into place and stamp its version. */
+export function commitCliBinary(
+	binaryName: string,
+	asset: PickedAsset,
+	buf: Uint8Array,
+): string {
 	const binDir = cliBinDir();
 	mkdirSync(binDir, { recursive: true });
 	const dest = cliDest(binaryName);
@@ -296,4 +306,12 @@ export async function fetchCliBinary(
 	}
 	writeFileSync(cliVersionFile(binaryName), `${asset.version}\n`);
 	return dest;
+}
+
+export async function fetchCliBinary(
+	binaryName: string,
+	asset: PickedAsset,
+): Promise<string> {
+	const buf = await fetchVerifiedBinary(binaryName, asset);
+	return commitCliBinary(binaryName, asset, buf);
 }

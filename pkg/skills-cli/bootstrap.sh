@@ -10,12 +10,17 @@
 #       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.
 #       DG_SKILLS_NO_CLI=1 keeps it an offline copy (no CLI download).
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>):
-#       install the skills-v<x.y.z> release instead of the newest skills-v* release;
-#       a leading v or skills-v prefix is accepted. Fails if that release does not
-#       exist. Carries through to `dg-skills install`, which pins the matching
-#       daemon-v, agent-v and ext-v release too and fails the whole install, before
-#       any binary or the extension changes, if any of the four is missing. Unset:
-#       install the newest of each, warning and skipping one that is missing.
+#       pin skills-v/daemon-v/agent-v/ext-v to that release; a leading v or skills-v
+#       prefix is accepted. With --skills-only this script installs that exact
+#       skills-v<x.y.z> binary directly. Every other mode downloads the newest
+#       skills-v* binary to a temp path instead and runs its `install --version
+#       <x.y.z>` (deleted afterward either way), because that is the binary that
+#       knows how to resolve, download and verify a pinned release — the newest
+#       release may predate --version support. That install checks every release
+#       the mode needs, then downloads and verifies every artifact (with checksums)
+#       into staging, and only then replaces anything, including dg-skills itself
+#       and its version stamp. Unset: install the newest of each, warning and
+#       skipping one that is missing.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release
 # (or the pinned one, with --version).
@@ -184,7 +189,7 @@ tag=""
 
 resolve_release() {
   [ -n "${tag}" ] && return
-  if [ -n "${PINNED_VERSION}" ]; then
+  if [ "${SKILLS_ONLY}" = "1" ] && [ -n "${PINNED_VERSION}" ]; then
     want="skills-v${PINNED_VERSION}"
     want_pattern=$(printf '%s' "${want}" | sed -e 's/[.[\^$*]/\\&/g')
   fi
@@ -193,7 +198,7 @@ resolve_release() {
     batch=$(curl -fsSL -H "User-Agent: dg-ai" \
       "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
     releases="${releases}${batch}"
-    if [ -n "${PINNED_VERSION}" ]; then
+    if [ -n "${want:-}" ]; then
       if printf '%s' "${batch}" |
         grep -qE "\"tag_name\"[[:space:]]*:[[:space:]]*\"${want_pattern}\""; then
         tag="${want}"
@@ -211,7 +216,7 @@ resolve_release() {
 
   if [ -z "${tag}" ]; then
     scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
-    if [ -n "${PINNED_VERSION}" ]; then
+    if [ -n "${want:-}" ]; then
       echo "dg-skills: no release named ${want} found in the ${scanned} releases scanned" >&2
     else
       echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
@@ -289,9 +294,10 @@ if [ -z "${url}" ]; then
   exit 1
 fi
 
-# Verify DEST against SHA256SUMS when that asset is on this same release.
+# Verify a downloaded file against SHA256SUMS when that asset is on this same release.
 # A missing checksum file is not an error: older skills-v* releases predate it.
 verify_sha256() {
+  target=$1
   sums_url=$(printf '%s' "${releases}" |
     grep -oE "https://[^\"]+/download/${tag}/SHA256SUMS" |
     head -1)
@@ -301,7 +307,7 @@ verify_sha256() {
   sums_file=$(mktemp)
   track_tmp "${sums_file}"
   if ! curl -fsSL -H "User-Agent: dg-ai" -o "${sums_file}" "${sums_url}"; then
-    rm -f "${DEST}" "${sums_file}"
+    rm -f "${target}" "${sums_file}"
     echo "dg-skills: failed to download SHA256SUMS for ${tag}" >&2
     exit 1
   fi
@@ -313,23 +319,23 @@ verify_sha256() {
     }
   ' "${sums_file}" | tr 'A-F' 'a-f')
   if [ -z "${expected}" ]; then
-    rm -f "${DEST}" "${sums_file}"
+    rm -f "${target}" "${sums_file}"
     echo "dg-skills: SHA256SUMS in ${tag} has no entry for ${asset}" >&2
     exit 1
   fi
   if command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "${DEST}" | awk '{print $1}')
+    actual=$(sha256sum "${target}" | awk '{print $1}')
   elif command -v shasum >/dev/null 2>&1; then
-    actual=$(shasum -a 256 "${DEST}" | awk '{print $1}')
+    actual=$(shasum -a 256 "${target}" | awk '{print $1}')
   else
-    rm -f "${DEST}" "${sums_file}"
+    rm -f "${target}" "${sums_file}"
     echo "dg-skills: SHA256SUMS was published for ${tag} but sha256sum and shasum are missing" >&2
     exit 1
   fi
   actual=$(printf '%s' "${actual}" | tr 'A-F' 'a-f')
   rm -f "${sums_file}"
   if [ "${actual}" != "${expected}" ]; then
-    rm -f "${DEST}"
+    rm -f "${target}"
     echo "dg-skills: checksum mismatch for ${asset} in ${tag}" >&2
     exit 1
   fi
@@ -361,14 +367,26 @@ run_install() {
 }
 
 mkdir -p "${BIN_DIR}"
-curl -fsSL -H "User-Agent: dg-ai" -o "${DEST}" "${url}"
-verify_sha256
-chmod +x "${DEST}"
 
-# Stamp the installed version so `dg-skills install` won't re-download the binary.
-version=${tag#skills-v}
-[ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
-echo "dg-skills installed at ${DEST}"
+DELEGATE=0
+if [ "${SKILLS_ONLY}" != "1" ] && [ -n "${PINNED_VERSION}" ]; then
+  DELEGATE=1
+  INSTALLER=$(mktemp "${BIN_DIR}/.dg-skills-installer.XXXXXX")
+  track_tmp "${INSTALLER}"
+else
+  INSTALLER="${DEST}"
+fi
+
+curl -fsSL -H "User-Agent: dg-ai" -o "${INSTALLER}" "${url}"
+verify_sha256 "${INSTALLER}"
+chmod +x "${INSTALLER}"
+
+if [ "${DELEGATE}" = "0" ]; then
+  # Stamp the installed version so `dg-skills install` won't re-download the binary.
+  version=${tag#skills-v}
+  [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
+  echo "dg-skills installed at ${DEST}"
+fi
 
 case ":${PATH}:" in
 *":${BIN_DIR}:"*) ;;
@@ -380,23 +398,23 @@ if [ "${SKILLS_ONLY}" = "1" ]; then
   exit 0
 elif [ "${CLI_ONLY}" = "1" ]; then
   if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only --version "${PINNED_VERSION}"
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --cli-only --version "${PINNED_VERSION}"
   else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --cli-only
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --cli-only
   fi
 elif [ "${AGENT_ONLY}" = "1" ]; then
   if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only --version "${PINNED_VERSION}"
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --agent-only --version "${PINNED_VERSION}"
   else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --agent-only
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --agent-only
   fi
 else
   # Set up the browser extension too, so one command installs everything.
   echo "Setting up the dg-ai-extension…"
   if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install --version "${PINNED_VERSION}"
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --version "${PINNED_VERSION}"
   else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${DEST}" install
+    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install
   fi
 fi
 
