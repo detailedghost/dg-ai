@@ -58,7 +58,9 @@ source and needs Bun from https://bun.sh.)
   the latest `skills-v*` release, then prints the browser-specific Load-unpacked
   steps. Relay them. Default target is `chrome` (also serves Brave/Edge/Vivaldi).
   `--version <x.y.z>` pins the skills-v/daemon-v/agent-v/ext-v release instead of
-  each one's newest. See `references/install.md` for full per-OS detail.
+  each one's newest; a missing pinned daemon-v, agent-v or ext-v release fails the
+  whole install before anything changes, naming the release. See
+  `references/install.md` for full per-OS detail.
 
 - `batch-open [--group <name>] [--repo owner/repo] [--print] <refs…>` — resolve
   refs and open them in the **default** browser, grouped into `<name>` (default

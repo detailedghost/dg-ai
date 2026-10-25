@@ -210,8 +210,28 @@ function binarySpec(binaryName: string): BinarySpec {
 	return spec;
 }
 
+/**
+ * A pinned daemon-v, agent-v or ext-v release that does not exist hard-fails the whole
+ * install before any binary or the extension is touched, naming the exact missing tag,
+ * so a pin never leaves some of them updated and others not. A pinned skills-v release
+ * stays warn-and-skip, unchanged, since dg-skills is the installer running right now.
+ */
+function assertPinnedReleasesExist(
+	version: string,
+	tagPrefixes: string[],
+	releases: Release[],
+): void {
+	for (const prefix of tagPrefixes) {
+		const tag = `${prefix}${version}`;
+		if (!releases.some((r) => r.tag_name === tag && !r.draft)) {
+			throw new Error(`no release named ${tag} found`);
+		}
+	}
+}
+
 async function installCli(version?: string): Promise<void> {
 	const releases = await listReleases();
+	if (version) assertPinnedReleasesExist(version, ["daemon-v", "agent-v"], releases);
 	for (const spec of BINARIES) {
 		await installBinary({ ...spec, version }, releases);
 	}
@@ -248,6 +268,7 @@ async function installCliOnly(version?: string): Promise<void> {
 /** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
 async function installAgentOnly(version?: string): Promise<void> {
 	const releases = await listReleases();
+	if (version) assertPinnedReleasesExist(version, ["agent-v"], releases);
 	await installBinary({ ...binarySpec("dg-skills"), version }, releases);
 	await installBinary({ ...binarySpec("dg-agent"), version }, releases);
 	setCliOnly(true);
@@ -262,6 +283,9 @@ async function install(
 	repo?: string,
 	pin?: string,
 ): Promise<void> {
+	if (!forceLocal && pin) {
+		assertPinnedReleasesExist(pin, ["ext-v", "daemon-v", "agent-v"], await listReleases());
+	}
 	setCliOnly(false);
 	const dest = extensionDest(target);
 
@@ -270,12 +294,14 @@ async function install(
 	let stage: () => void;
 	const release = forceLocal
 		? undefined
-		: await downloadReleaseAsset(target, pin).catch((err) => {
-				console.warn(
-					`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
-				);
-				return undefined;
-			});
+		: pin
+			? await downloadReleaseAsset(target, pin)
+			: await downloadReleaseAsset(target).catch((err) => {
+					console.warn(
+						`⚠ release download unavailable (${err instanceof Error ? err.message : err}); trying local build…`,
+					);
+					return undefined;
+				});
 
 	if (release) {
 		version = release.version;
@@ -348,7 +374,7 @@ export function registerInstall(program: Command): void {
 		)
 		.option(
 			"--version <x.y.z>",
-			"pin the skills-v/daemon-v/agent-v/ext-v release to install, instead of each one's newest",
+			"pin skills-v/daemon-v/agent-v/ext-v to that release instead of each one's newest; fails before any change if the pinned daemon-v, agent-v or ext-v release does not exist",
 		)
 		.action(
 			async (

@@ -1,7 +1,9 @@
 /**
  * `install --version <x.y.z>` pins skills-v/daemon-v/agent-v/ext-v resolution to that
  * exact tag instead of each one's newest release — the carry-through a pinned
- * bootstrap relies on.
+ * bootstrap relies on. A missing pinned daemon-v, agent-v or ext-v release hard-fails
+ * before any binary or the extension is touched, so a pin never leaves a mixed set. A
+ * missing pinned skills-v release still warns and skips, unchanged from today.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -154,7 +156,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 		}
 	});
 
-	test("warns and skips a binary whose pinned version has no release, rather than failing the install", async () => {
+	test("hard-fails naming the exact missing tag when the pinned agent-v release does not exist, and writes no binary", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-version-pin-missing-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
@@ -167,10 +169,92 @@ describe("dg-skills install --version <x.y.z>", () => {
 				childEnv(home),
 			);
 
-			expect(result.code).toBe(0);
-			expect(result.stderr).toContain("no release agent-v4.0.0 was found");
-			expect(result.stderr).toContain("no release skills-v4.0.0 was found");
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("no release named agent-v4.0.0 found");
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-agent"))).toBe(false);
+			expect(existsSync(join(home, "cli-only"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+});
+
+/** Serves ext-v/skills-v/daemon-v/agent-v releases for the same version, minus any tag named in `missing`. */
+function writeFullPreload(dir: string, log: string, missing: string[] = []): string {
+	const base = "https://github.com/detailedghost/dg-ai/releases/download";
+	const candidates = [
+		{ tag: "skills-v1.2.3", asset: assetName("dg-skills") },
+		{ tag: "daemon-v1.2.3", asset: assetName("dg-daemon") },
+		{ tag: "agent-v1.2.3", asset: assetName("dg-agent") },
+		{ tag: "ext-v1.2.3", asset: "dg-ai-extension-1.2.3-chrome.zip" },
+	];
+	const releases = candidates
+		.filter(({ tag }) => !missing.includes(tag))
+		.map(({ tag, asset }) => ({
+			tag_name: tag,
+			draft: false,
+			assets: [{ name: asset, browser_download_url: `${base}/${tag}/${asset}` }],
+		}));
+	const path = join(dir, "full-preload.ts");
+	writeFileSync(
+		path,
+		`import { appendFileSync } from "node:fs";
+const releases = ${JSON.stringify(releases)};
+globalThis.fetch = (async (input: unknown) => {
+  const url = String(input);
+  appendFileSync(${JSON.stringify(log)}, url + "\\n");
+  if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
+  throw new Error("a hard-failed pinned install must not fetch " + url);
+}) as typeof fetch;
+`,
+	);
+	return path;
+}
+
+describe("dg-skills install --version <x.y.z> (default install, extension included)", () => {
+	test("hard-fails naming ext-v before staging the extension, even though skills/daemon/agent all exist", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-version-pin-ext-missing-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		try {
+			const preload = writeFullPreload(directory, fetchLog, ["ext-v1.2.3"]);
+			const result = await run(
+				["bun", "--preload", preload, ENTRY, "install", "--version", "1.2.3"],
+				childEnv(home),
+			);
+
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("no release named ext-v1.2.3 found");
+			expect(existsSync(join(home, ".dg", "dg-ai-extension-chrome"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-daemon"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-agent"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("hard-fails naming daemon-v and never stages the extension, even though ext-v exists", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-version-pin-daemon-missing-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		try {
+			const preload = writeFullPreload(directory, fetchLog, ["daemon-v1.2.3"]);
+			const result = await run(
+				["bun", "--preload", preload, ENTRY, "install", "--version", "1.2.3"],
+				childEnv(home),
+			);
+
+			expect(result.code).not.toBe(0);
+			expect(result.stderr).toContain("no release named daemon-v1.2.3 found");
+			expect(existsSync(join(home, ".dg", "dg-ai-extension-chrome"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
+			expect(existsSync(join(home, "bin", "dg-daemon"))).toBe(false);
 			expect(existsSync(join(home, "bin", "dg-agent"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

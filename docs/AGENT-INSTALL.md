@@ -172,6 +172,13 @@ irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/ski
 `dg-skills install --version 1.19.0` is the flag on an already installed
 binary. Leaving it unset installs each binary's newest release, as before.
 
+If the pinned `daemon-v`, `agent-v` or `ext-v` release does not exist, the
+whole install fails and names the missing release, before touching any
+binary or the extension. Check that the owner actually published that
+release for all four components before asking for a pin. A missing pinned
+`skills-v` release still warns and skips, the same as an unpinned install
+that can't reach one of its releases.
+
 ______________________________________________________________________
 
 ## Step 1 — Install the Claude plugin

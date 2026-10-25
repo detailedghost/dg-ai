@@ -12,7 +12,9 @@
 # saved copy of this file directly. Installs the skills-v<x.y.z> release; a leading v
 # or skills-v prefix is accepted. Fails if that release does not exist. Carries through
 # to `dg-skills install`, so the matching daemon-v, agent-v and ext-v release installs
-# too. Unset: install the newest of each.
+# too; a missing one of those also fails the whole install, before any binary or the
+# extension changes. Unset: install the newest of each, warning and skipping one that
+# is missing.
 #
 # Idempotent: re-running overwrites the binary with the newest skills-v* release
 # (or the pinned one, with -Version/DG_VERSION).
