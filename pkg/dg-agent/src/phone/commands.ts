@@ -6,7 +6,6 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { SimplePool } from "nostr-tools";
-import pkg from "../../package.json" with { type: "json" };
 import { type AutostartDeps, formatAutostartState, installAutostart, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
@@ -565,14 +564,7 @@ const REMOVED_VERBS: Record<string, string> = {
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
-/** `<major>.<minor+2>.0` from today's package version. */
-function aliasRemovalVersion(version: string): string {
-	const [major, minor] = version.split(".").map(Number);
-	return `${major}.${minor + 2}.0`;
-}
-
-/** Computed once at module load; a placeholder to hand-set to the real release's minor+2 at ship time. */
-export const ALIAS_REMOVAL_VERSION = aliasRemovalVersion(pkg.version);
+export const ALIAS_REMOVAL_VERSION = "1.22.0";
 
 /** Attaches every phone verb to `group`, plus (for both the live and the hidden alias group) the
  * hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */

@@ -1,7 +1,7 @@
 {
 	"name": "dg",
 	"description": "Browser, live chat, prototypes, channel review, reviewed Proton Mail, Gmail, and Outlook cleanup, Google Messages cleanup, and planning and delivery skills: spec, sdlc, assign, worktree, monolith, polish, and more.",
-	"version": "1.19.1",
+	"version": "1.20.0",
 	"author": {
 		"name": "detailedghost",
 		"url": "https://github.com/detailedghost"
