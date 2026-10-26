@@ -4,7 +4,6 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writ
 import { dirname, join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories, selfCommand } from "@dg/common/node";
-import { generateSecretKey, nip19 } from "nostr-tools";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
 import {
@@ -69,7 +68,7 @@ export type MigrateDeps = {
 };
 
 const LINE_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
-/** The line a fresh install's number key comes from when one exists; see `writeMigratedLines`. */
+/** The line a fresh install's number key comes from when that line still has a key. */
 const LEGACY_DEFAULT_LINE = "default";
 const STOP_WAIT_MS = 5000;
 
@@ -182,9 +181,10 @@ type ListenerPlan =
 	| { action: "keep"; pid: number; stop: number[] }
 	| { action: "replace"; pids: number[] };
 
-/** A `phone __run` process is kept: it will open `phone.db`. An old `phone-friend __run` is not,
- * because it keeps writing the database it already has open. Every legacy pid is stopped and
- * exactly one new listener is started. A pid `classifyListener` rejects is left alone. */
+/** This process's own `phone __run` is kept: it loads `phone.db` after this migration. Any other
+ * live listener, including a `phone __run` that is not this process, is stopped and exactly one
+ * new listener is started so it subscribes to the keys just written. A pid `classifyListener`
+ * rejects is left alone. */
 function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 	const live: { pid: number; generation: ListenerGeneration }[] = [];
 	for (const line of lines) {
@@ -195,12 +195,11 @@ function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 		live.push({ pid, generation });
 	}
 	if (live.length === 0) return { action: "none" };
-	const current = live.filter((entry) => entry.generation === "current");
-	if (current.length === 0) return { action: "replace", pids: live.map((entry) => entry.pid) };
-	const keep = current.find((entry) => entry.pid === process.pid) ?? current[0];
-	const stop = live.filter((entry) => entry.pid !== keep.pid).map((entry) => entry.pid);
-	if (stop.length === 0) return { action: "adopt", pid: keep.pid };
-	return { action: "keep", pid: keep.pid, stop };
+	const self = live.find((entry) => entry.pid === process.pid && entry.generation === "current");
+	if (!self) return { action: "replace", pids: live.map((entry) => entry.pid) };
+	const stop = live.filter((entry) => entry.pid !== self.pid).map((entry) => entry.pid);
+	if (stop.length === 0) return { action: "adopt", pid: self.pid };
+	return { action: "keep", pid: self.pid, stop };
 }
 
 /** Stops exactly the pids in `plan` and returns any that are still alive. Does not start a listener. */
@@ -224,20 +223,47 @@ function stopForReplace(lines: LegacyLine[], pids: number[], deps: MigrateDeps):
 	return stuck;
 }
 
+function lineHasKeyMaterial(line: LegacyLineData): boolean {
+	return line.keyInStore || Boolean(line.nsec);
+}
+
+/** A line peers can already know: a contact, an invite, or an outbound message. */
+function linePublished(line: LegacyLineData): boolean {
+	if (line.config.contact) return true;
+	if (line.invite) return true;
+	return line.messages.some((message) => message.direction === "out");
+}
+
+function assertKeysMigratable(lines: LegacyLineData[]): void {
+	for (const line of lines) {
+		if (linePublished(line) && !lineHasKeyMaterial(line)) {
+			throw new DgCliError(
+				`line "${line.name}" has no key to migrate; refusing to mint a new number. Restore the nsec in that line's database or the credential phone-friend/${line.name}/nostr-key, then run phone open`,
+			);
+		}
+	}
+}
+
+/** `default` when that line still has a key; otherwise the first keyed line. Empty when none do. */
+function migratedNumberKeyId(lines: LegacyLineData[]): string {
+	const keyed = lines.filter(lineHasKeyMaterial);
+	if (keyed.some((line) => line.name === LEGACY_DEFAULT_LINE)) return LEGACY_DEFAULT_LINE;
+	return keyed[0]?.name ?? "";
+}
+
 function writeMigratedLines(
 	db: PhoneDb,
 	lines: LegacyLineData[],
 	selfName: string,
 	now: number,
 ): { numberKeyId: string; contacts: number; messages: number } {
-	const lineNames = lines.map((line) => line.name);
-	const numberKeyId = lineNames.includes(LEGACY_DEFAULT_LINE) ? LEGACY_DEFAULT_LINE : lineNames[0];
+	const numberKeyId = migratedNumberKeyId(lines);
 
 	for (const line of lines) {
 		if (line.keyInStore) {
 			db.putKey({ id: line.name, nsec: null, in_store: 1 });
-		} else {
-			db.putKey({ id: line.name, nsec: line.nsec ?? nip19.nsecEncode(generateSecretKey()), in_store: 0 });
+		} else if (line.nsec) {
+			db.putKey({ id: line.name, nsec: line.nsec, in_store: 0 });
 		}
 	}
 
@@ -287,7 +313,7 @@ function writeMigratedLines(
 	writeCursor(db, Math.min(...lines.map((line) => line.cursor)));
 
 	writeNumber(db, { secret: randomBytes(SECRET_BYTES).toString("hex"), as: selfName });
-	writeNumberKeyId(db, numberKeyId);
+	if (numberKeyId) writeNumberKeyId(db, numberKeyId);
 
 	return { numberKeyId, contacts: db.listContacts().length, messages: messageCount };
 }
@@ -359,8 +385,8 @@ function releaseMigrationLock(paths: DgPaths): void {
 
 /**
  * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
- * key, contact, invite, and message into one `phone.db`. A listener that is already `phone __run`
- * is kept. An old `phone-friend __run` is stopped and exactly one new listener is started against
+ * key, contact, invite, and message into one `phone.db`. This process's own `phone __run` is
+ * kept. Any other listener is stopped and exactly one new listener is started against
  * `phone.db`, with its pid recorded. If that start throws, one `phone __run` is started against
  * the kept `phone.db` and reported only if it stays up. This binary rejects `phone-friend --line`.
  * Read-only commands do not call this.
@@ -422,8 +448,9 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 
 	const lines = legacyLines(paths);
-	// A bad database must fail before any listener is signaled.
+	// A bad database, or a published line with no key, must fail before any listener is signaled.
 	let staged = lines.map((line) => readLegacyLine(line));
+	assertKeysMigratable(staged);
 	const plan = planListeners(lines, deps);
 	const stopping = plan.action === "replace" ? plan.pids : plan.action === "keep" ? plan.stop : [];
 	const saved: SavedListener[] = stopping.map((pid) => ({ pid, argv: deps.commandArgs(pid) }));

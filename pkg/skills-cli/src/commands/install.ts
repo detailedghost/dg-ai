@@ -20,6 +20,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { personasDest, run, skillsInstallDest } from "@dg/common/node";
+import { refreshPhoneListener } from "./phone-listener";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -266,6 +267,7 @@ async function installCli(): Promise<void> {
 		await installBinary(spec, releases);
 	}
 	removeRetiredBinaries();
+	refreshPhoneListener();
 }
 
 /** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
@@ -323,6 +325,7 @@ async function installAgentOnly(version?: string): Promise<void> {
 	console.log(
 		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
 	);
+	refreshPhoneListener();
 }
 
 /** Runs `stage`, then the staged/upgrade/first-install messaging and marker write shared by every install path. */
@@ -368,6 +371,7 @@ async function installPinnedAll(target: Target, pin: string): Promise<void> {
 	commitStagedBinaries(staged);
 	setCliOnly(false);
 	removeRetiredBinaries();
+	refreshPhoneListener();
 }
 
 async function install(

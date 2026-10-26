@@ -79,7 +79,7 @@ globalThis.fetch = (async (input: unknown) => {
   appendFileSync(${JSON.stringify(log)}, url + "\\n");
   if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
   if (url.endsWith("/skills-v1.2.3/${skillsAsset}")) return new Response("fake dg-skills 1.2.3");
-  if (url.endsWith("/agent-v1.2.3/${agentAsset}")) return new Response("fake dg-agent 1.2.3");
+  if (url.endsWith("/agent-v1.2.3/${agentAsset}")) return new Response(${JSON.stringify("#!/bin/sh\nexit 0\n# fake dg-agent 1.2.3\n")});
   throw new Error("a pinned install must not fetch " + url);
 }) as typeof fetch;
 `,
@@ -114,7 +114,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 			const bin = join(home, "bin");
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("fake dg-skills 1.2.3");
-			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("fake dg-agent 1.2.3");
+			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("#!/bin/sh\nexit 0\n# fake dg-agent 1.2.3\n");
 			expect(readFileSync(join(bin, ".dg-skills.version"), "utf8").trim()).toBe("1.2.3");
 			expect(readFileSync(join(bin, ".dg-agent.version"), "utf8").trim()).toBe("1.2.3");
 		} finally {
@@ -147,7 +147,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 			expect(urls.some((url) => url.endsWith(`/agent-v1.2.3/${assetName("dg-agent")}`))).toBe(true);
 
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("fake dg-skills 1.2.3");
-			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("fake dg-agent 1.2.3");
+			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("#!/bin/sh\nexit 0\n# fake dg-agent 1.2.3\n");
 			expect(readFileSync(join(bin, ".dg-skills.version"), "utf8").trim()).toBe("1.2.3");
 			expect(readFileSync(join(bin, ".dg-agent.version"), "utf8").trim()).toBe("1.2.3");
 		} finally {

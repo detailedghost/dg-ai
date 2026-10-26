@@ -20,8 +20,8 @@ Codex:      $dg:phone
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok}`. |
 | `inbox [-n <count>] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
-| `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, autostart}`. |
-| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. |
+| `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
+| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
 
 A message is `{id, ts, from, handle, text}`; the message that paired a new
@@ -45,6 +45,16 @@ only read what the listener has already caught; neither one queries the
 relays itself, so a message never shows up if the listener has not run
 since it arrived (within the 7-day window relays and this database both
 keep).
+
+Every few seconds the listener re-reads its keys. When a credential store
+cannot be read, it keeps that key's current subscription and still applies a
+change to a key it can read. A key that was unreadable at startup and later
+loads is announced as "a key became readable". A real key change resubscribes
+from the cursor it has already reached. `status` sets `listener.stale` for
+that change even while `keys_unreadable` is true. `say`, `accept`,
+`invite`, `number`, and `voicemail` restart a drifted listener. If that
+process will not exit, the command finishes and writes a warning. The
+listener never restarts the service unit it is running under.
 
 With `--on-message <exe> [args...]`, the listener resolves `exe` to an
 absolute path at `open` time — a systemd user unit carries a minimal
@@ -103,7 +113,8 @@ is recognized as "ours" by pid, so a running listener survives the alias
 rename, and there is exactly one autostart unit regardless of which name
 installed it: `listenerArgv` always bakes in `phone __run`.
 
-The listener's pid and start time live at `<phoneRoot>/listener.pid`; its
+The listener's pid, start time, binary version, and a short hash of the keys it
+subscribed to live at `<phoneRoot>/listener.pid`. The hash is not a secret. Its
 stdout and stderr, when it runs through the detached-spawn fallback or
 launchd, go to `<phoneRoot>/listener.log`. On Linux read the log through
 `journalctl --user -u dg-phone` instead, since systemd owns it there.
@@ -146,19 +157,26 @@ on stderr. The first writing command (`number`, `invite`, `accept`, `say`,
 when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
 `~/.dg/phone/phone.db` does not. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
-It carries over every line's key (as a `keys` row), contact, message, and
-read mark, and picks the `default` line's key as the number if one exists
-(else the first line by name).
+It copies every line's existing nostr key and never mints one. A line that
+already published a contact, an invite, or an outbound message, and has no
+key, stops the migration before any listener is signaled. The error names the
+line and says to restore that line's nsec, or the credential
+`phone-friend/<line>/nostr-key`, then run `phone open`. `dg-skills install`
+prints that failure as a warning. The number key is
+the `default` line only when that line still has its key; otherwise it is
+the first keyed line by name. Contacts, messages, and read marks are carried
+over.
 
-A listener that is already `phone __run` is kept, and `listener.pid` points
-at it, so nothing starts a second one. An old `phone-friend __run` is not
-kept: it would keep writing the old database. Migration stops it and starts
-exactly one `phone __run` against `phone.db`, then records that pid.
-`open` installs login autostart when that listener has none yet, stopping
-the detached process first so the service manager's copy is the only one.
-Once autostart is recorded, a later `open` reuses the process. `close` stops
-it. When more than one old listener is running, migration stops each of them
-and, only after every one has exited, starts exactly one new listener and
+This process's own `phone __run` is kept, and `listener.pid` points at it, so
+nothing starts a second one. Any other live listener, including a `phone __run`
+that is not this process, is stopped and exactly one new `phone __run` is
+started against `phone.db`, then that pid is recorded. An old `phone-friend
+__run` is not kept: it would keep writing the old database. `open` installs
+login autostart when that listener has none yet, stopping the detached process
+first so the service manager's copy is the only one. Once autostart is
+recorded, a later `open` reuses the process unless its version or keys drifted.
+`close` stops it. When more than one old listener is running, migration stops
+each of them and, only after every one has exited, starts exactly one new listener and
 records its pid. If one will not exit, no new listener is started and
 `phone.db` is not written. That process keeps running. Any listener that
 already exited stays stopped. If the new listener fails to start after the

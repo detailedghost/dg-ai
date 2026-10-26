@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
-import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
-import { decodeCard } from "../../src/phone/card";
+import { generateSecretKey, getPublicKey, nip17, nip19, nip59 } from "nostr-tools";
+import { decodeCard, encodeCard, NO_EXPIRY } from "../../src/phone/card";
 import { type KeyEntry, ring, unwrapIncoming } from "../../src/phone/chat";
 import {
 	phoneAccept,
@@ -265,6 +265,46 @@ describe("accept", () => {
 		expect(listContacts(peer.db)).toHaveLength(1);
 	});
 
+	it("rings an existing contact with that contact's key and does not mint a number key", async () => {
+		const peer = deps(freshHome(), pool);
+		const workSk = createFileKey(peer.db, "work") as Uint8Array;
+		const contactSk = generateSecretKey();
+		const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
+		addTestContact(peer.db, { npub: contactNpub, handle: "velora", keyId: "work" });
+		const card = encodeCard({
+			npub: contactNpub,
+			relays: ["wss://a.example"],
+			secret: "ab".repeat(32),
+			exp: NO_EXPIRY,
+			handle: "velora",
+		});
+
+		await phoneAccept(card, "hi", peer);
+
+		const rumor = nip59.unwrapEvent(pool.events[0], contactSk);
+		expect(rumor.pubkey).toBe(getPublicKey(workSk));
+		expect(listContacts(peer.db)[0]?.keyId).toBe("work");
+		expect(peer.db.getKey("default")).toBeUndefined();
+	});
+
+	it("records a local accepted notice and marks that contact", async () => {
+		const owner = deps(freshHome());
+		await phoneNumber({}, owner);
+		const card = (lines()[0] as { card: string }).card;
+		out = [];
+		const peer = deps(freshHome(), pool);
+
+		await phoneAccept(card, "hi", peer);
+		out = [];
+		phoneContacts(peer);
+		expect(lines()[0]).toMatchObject({ handle: "+dg", marker: "accepted" });
+
+		out = [];
+		phoneInbox({}, peer);
+		const system = (lines() as { text: string; system?: boolean }[]).find((row) => row.text === "accepted +dg");
+		expect(system).toMatchObject({ system: true });
+	});
+
 	it("fails on a v1 card, which carries no handle", async () => {
 		const peer = deps(freshHome());
 		const npub = realNpub();
@@ -423,10 +463,10 @@ describe("voicemail", () => {
 		d.db.addMessage({ id: "b", direction: "in", ts: NOW + 2, sender: "npub1x", contact: "npub1x", text: "b", call: 0 });
 		d.db.addMessage({ id: "a", direction: "in", ts: NOW + 1, sender: "npub1x", contact: "npub1x", text: "a", call: 0 });
 
-		phoneVoicemail(d);
+		await phoneVoicemail(d);
 		const first = lines() as { id: string }[];
 		out = [];
-		phoneVoicemail(d);
+		await phoneVoicemail(d);
 
 		expect(first.map((r) => r.id)).toEqual(["a", "b"]);
 		expect(lines()).toEqual([]);
@@ -472,7 +512,7 @@ describe("status", () => {
 		addTestContact(d.db, { npub: "npub1a", handle: "aaa" });
 		d.db.addMessage({ id: "m1", direction: "in", ts: NOW, sender: "npub1a", contact: "npub1a", text: "hi", call: 0 });
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toEqual({
 			as: "dante",
@@ -482,18 +522,19 @@ describe("status", () => {
 			hook: null,
 			legacy_root_present: false,
 			migration_pending: false,
+			notice: null,
 			autostart: null,
 		});
 	});
 
-	it("reports the running listener and its hook from the pid file, and null once the pid is dead", () => {
+	it("reports the running listener and its hook from the pid file, and null once the pid is dead", async () => {
 		const d = deps(freshHome());
 		writeFileSync(
 			listenerPidPath(d.paths),
 			JSON.stringify({ pid: process.pid, since: NOW, hook: { argv: ["notify-send"], timeoutS: 30 } }),
 		);
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({
 			listener: { pid: process.pid, since: NOW },
@@ -503,34 +544,34 @@ describe("status", () => {
 		out = [];
 		writeFileSync(listenerPidPath(d.paths), JSON.stringify({ pid: 999_999_999, since: NOW, hook: null }));
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ listener: null, hook: null });
 	});
 
-	it("flags legacy_root_present when the old phone-friend root is still sitting next to phone.db", () => {
+	it("flags legacy_root_present when the old phone-friend root is still sitting next to phone.db", async () => {
 		const home = freshHome();
 		const d = deps(home);
 		mkdirSync(join(d.paths.phoneFriendRoot, "default"), { recursive: true });
 		writeFileSync(join(d.paths.phoneFriendRoot, "default", "phone-friend.db"), "");
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ legacy_root_present: true });
 	});
 
-	it("reports the autostart kind or unavailable reason last saved by open", () => {
+	it("reports the autostart kind or unavailable reason last saved by open", async () => {
 		const d = deps(freshHome());
 		writeListener(d.db, { autostart: { kind: "systemd" } });
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ autostart: "systemd" });
 
 		out = [];
 		writeListener(d.db, { autostart: { kind: "unavailable", reason: "no systemd user bus" } });
 
-		phoneStatus(d);
+		await phoneStatus(d);
 
 		expect(lines()[0]).toMatchObject({ autostart: "unavailable: no systemd user bus" });
 	});

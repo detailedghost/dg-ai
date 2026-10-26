@@ -94,7 +94,7 @@ exists, installs it to restart on login:
 
 ```bash
 ~/.dg/bin/dg-agent phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
-~/.dg/bin/dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {...}|null, "hook": {...}|null, "legacy_root_present": false, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
+~/.dg/bin/dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {"pid": n, "since": n, "stale": false}|null, "hook": {...}|null, "legacy_root_present": false, "notice": null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
 ~/.dg/bin/dg-agent phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
 ```
 
@@ -104,8 +104,15 @@ yet to clear a saved one once set. Where no service manager answers (for
 example WSL without `systemd=true`, or a container), `open` falls back to a
 detached spawn and reports `"autostart": "unavailable: <reason>"`; nothing
 else restarts that process if it dies, so check `status` after a reboot. The
-listener's own process id and start time live at `<phoneRoot>/listener.pid`;
-its stdout and stderr, when it runs through the fallback spawn or launchd, go
+listener's pid, start time, binary version, and key fingerprint live at
+`<phoneRoot>/listener.pid`. `open` restarts a listener whose version or keys
+differ from the database. `status` sets `listener.stale` to true, with a
+reason, when that happens, and `notice` to the newest local message. When a
+key's credential-store read fails, `status` includes `keys_unreadable: true`
+and leaves `stale` false, unless a key it can read has changed. A local
+voicemail row from sender `phone` announces an accepted card, a new contact, a
+key change, or a binary change. `contacts` may include `marker` (`accepted` or
+`new`). Its stdout and stderr, when it runs through the fallback spawn or launchd, go
 to `<phoneRoot>/listener.log`. On Linux, read the log through
 `journalctl --user -u dg-phone` instead, since systemd owns it there.
 
@@ -208,8 +215,14 @@ not stop a listener. Before migration they report `"migration_pending": true`
 and `"next": "run phone open to migrate"`, and `inbox` and `contacts` print
 the old rows read-only. The first writing command (`number`, `invite`,
 `accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) reads every
-line, then moves its key, contact, and message into the new database once.
-A listener that is already `phone __run` is kept. An old `phone-friend`
+line, then copies its existing key (never a newly minted one), contact, and
+message into the new database once. A published line with no key stops the
+migration before any listener is signaled and says to restore that line's
+nsec, or the credential `phone-friend/<line>/nostr-key`, then run `phone open`.
+`dg-skills install` prints that failure as a warning.
+
+This process's own `phone __run` is kept. Any other live listener, including a
+`phone __run` that is not this process, is restarted so it reloads keys. An old `phone-friend`
 listener is stopped and exactly one new listener is started against
 `phone.db`, and its pid is recorded. `open` installs login autostart when
 none is recorded yet, stopping that detached process first so only the

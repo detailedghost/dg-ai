@@ -6,6 +6,7 @@ import { phoneClose, phoneOpen, registerPhoneCommands, type OpenCloseDeps, type 
 import { PhoneDb } from "../../src/phone/db";
 import type { KeyClient } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
+import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
 import { readListener } from "../../src/phone/store";
 import { makeHomeTracker, parseNdjson } from "./fake-pool";
 
@@ -102,7 +103,7 @@ function unitText(value: string | Uint8Array | undefined): string {
 }
 
 function writeRunningPid(h: Harness, pid: number, hook: { argv: string[]; timeoutS: number } | null = null): void {
-	writeFileSync(listenerPidPath(h.deps.paths), JSON.stringify({ pid, since: NOW, hook }));
+	writeFileSync(listenerPidPath(h.deps.paths), JSON.stringify({ pid, since: NOW, hook, version: DG_AGENT_PACKAGE_VERSION }));
 }
 
 /** Simulates the installed unit (or the fallback spawn) having actually started: writes `process.pid`

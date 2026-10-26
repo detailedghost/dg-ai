@@ -79,7 +79,7 @@ globalThis.fetch = (async (input: unknown) => {
   appendFileSync(${JSON.stringify(log)}, url + "\\n");
   if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
   if (url.endsWith("/skills-v9.9.9/${skillsAsset}")) return new Response("fake dg-skills");
-  if (url.endsWith("/agent-v9.9.9/${agentAsset}")) return new Response("fake dg-agent");
+  if (url.endsWith("/agent-v9.9.9/${agentAsset}")) return new Response(${JSON.stringify("#!/bin/sh\nexit 0\n# fake dg-agent\n")});
   throw new Error("agent-only install must not fetch " + url);
 }) as typeof fetch;
 `,
@@ -118,7 +118,7 @@ describe("dg-skills install --agent-only", () => {
 
 			const bin = join(home, "bin");
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("fake dg-skills");
-			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("fake dg-agent");
+			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("#!/bin/sh\nexit 0\n# fake dg-agent\n");
 			expect(existsSync(join(bin, "dg-daemon"))).toBe(false);
 			expect(readFileSync(join(bin, ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
 			expect(readFileSync(join(bin, ".dg-agent.version"), "utf8").trim()).toBe("9.9.9");
