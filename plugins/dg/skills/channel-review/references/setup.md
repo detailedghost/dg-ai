@@ -15,7 +15,7 @@ config.json. Nothing is built in.
 | Key | Meaning |
 | --- | --- |
 | `baseUrl` | Relay API root, such as `https://relay.example.test/api`. Required. |
-| `awsProfile` | AWS SSO profile that can read the relay secret. Required. |
+| `awsProfile` | AWS SSO profile named in the `connect relay` paste prompt, for fetching the relay secret by hand. Required. |
 | `botName` | Bot display name that people mention, such as `Review Bot (Dev)`. Required. |
 
 A missing key fails with a config error that names it, such as
@@ -30,8 +30,8 @@ profile. `dg-skills channel-review env dev` saves dev as the default.
 Install these on every machine that runs the daemon:
 
 - The dg plugin and its compiled `dg-skills` binary.
-- The AWS CLI with SSO access to the environment's profile and permission to read
-  the configured Secrets Manager secret.
+- The AWS CLI with SSO access to the environment's profile, so you can read the
+  configured Secrets Manager secret yourself and paste it into `connect relay`.
 - `gh`, signed in for GitHub. Install and sign in to `glab` for GitLab MRs.
 - At least one runner CLI, signed in: `claude`, `codex`, `copilot`, or Grok Build (`grok`).
 - The thrash skill where that runner finds it. The dg plugin ships `/dg:thrash` and its persona; a skills-only install copies both.
@@ -171,8 +171,9 @@ is absent, set the chat's `id` to the `19:...@thread.v2` part of the Teams
 **Copy link** URL. Set `relay.appName` to the application name that the relay
 registered for this client.
 
-Before starting, a human signs in with `aws sso login --profile <profile>`.
-Stop the daemon, then run `dg-skills channel-review status --env dev`.
+Before starting, make sure the relay secret is stored: run
+`dg-skills channel-review connect relay --env dev` if it is not yet. Stop
+the daemon, then run `dg-skills channel-review status --env dev`.
 Require secret and reactions checks to report `ok`, every entry in `chats` to
 resolve to an ID, and the selected runner probe to report `ok`. Status exits 1
 when any chat check errors. Status prints JSON with named
@@ -303,7 +304,7 @@ names under `channel-review/`. Environment variables are fallbacks.
 
 | Store name | Holds | Meta | Env fallback |
 | --- | --- | --- | --- |
-| `channel-review/relay/<env>` | Relay secret for dev or prod | `provider` | `CHANNEL_REVIEW_RELAY_SECRET_<ENV>`, then AWS Secrets Manager |
+| `channel-review/relay/<env>` | Relay secret for dev or prod | `provider` | `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` |
 | `channel-review/datadog` | Datadog personal access token | `site` (such as `us5.datadoghq.com`), `scopes`, `expiresAt` | `DATADOG_ACCESS_TOKEN`, or `DATADOG_API_KEY` and `DATADOG_APP_KEY`; `DATADOG_SITE` |
 | `channel-review/sentry` | Sentry user auth token | `site` (base URL), `org`, `scopes` | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_BASE_URL` |
 
@@ -334,8 +335,8 @@ dg-skills channel-review connect relay --env dev
   `event:read`, `project:read` and `org:read`. Pass `--site` for a self-hosted
   Sentry and `--org` when the address does not show the organization. It
   verifies with one organization request.
-- `connect relay` fetches the relay secret once through AWS (the env's AWS
-  profile) and stores it.
+- `connect relay` prints the AWS CLI command to fetch the env's relay secret,
+  prompts you to paste the result, and stores it.
 - `--paste` skips the automated browser: it opens the token page in your
   default browser and reads the token from a hidden prompt. The browser flows
   fall back to this mode when a page step fails.

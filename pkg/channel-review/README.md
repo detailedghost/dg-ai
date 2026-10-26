@@ -51,14 +51,15 @@ URL-encoded. The daemon refuses redirects.
 | --- | --- |
 | Header | `X-Api-Code` on every request |
 | Value | Base64 of `<relay.appName>:<secret>` (UTF-8) |
-| Secret source | AWS Secrets Manager: secret `relay.secret.id` in `relay.secret.region`, read with profile `envs.<name>.awsProfile`. The secret string is JSON; the value is under key `relay.secret.key`. |
+| Secret source | The dg credential store (`channel-review/relay/<env>`), or the `CHANNEL_REVIEW_RELAY_SECRET_<ENV>` environment variable; see [credential store](../../docs/chat.md#credential-store). `connect relay` stores a value you paste in yourself. |
 | Rejected | HTTP 401 or 403 on any call |
 
 The secret stays in memory only. On a 401 or 403 from the events stream, the
-daemon fetches the secret again and reconnects once. A second rejection stops
-that chat's stream and logs a remedy that names the secret id, key, and profile.
-At startup, a 401 or 403 stops the daemon with the same remedy; `status`
-reports it as a failed check.
+daemon re-reads the credential store and reconnects once. A second rejection
+stops that chat's stream and logs a remedy that names the AWS secret id and
+key to check, and the `connect relay` command to run. At startup, a 401 or
+403 stops the daemon with the same remedy; `status` reports it as a failed
+check.
 
 ### Events stream
 

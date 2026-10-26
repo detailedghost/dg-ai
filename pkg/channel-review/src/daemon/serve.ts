@@ -404,7 +404,7 @@ export async function serve({
 					}
 					refetched = true;
 					log.warn(
-						`chat ${chatId}: the relay rejected the secret; fetching a fresh one`,
+						`chat ${chatId}: the relay rejected the secret; re-reading the credential store`,
 					);
 					try {
 						await refreshSecrets();

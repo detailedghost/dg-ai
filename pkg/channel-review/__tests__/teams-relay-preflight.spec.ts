@@ -28,8 +28,6 @@ afterEach(() => {
 	home.cleanup();
 });
 
-type Capture = { status: number; signal: null; stdout: string; stderr: string };
-
 function buildConfig(extra: Record<string, unknown> = {}) {
 	return loadConfig(
 		writeConfigFile(
@@ -52,8 +50,8 @@ function createRig(
 	config: ReturnType<typeof buildConfig>,
 	options: {
 		envName?: "dev" | "prod";
-		aws?: Partial<Capture>;
 		secret?: string;
+		noSecret?: boolean;
 		listed?: string[];
 		eventsStatus?: number;
 		chats?: unknown[];
@@ -69,7 +67,6 @@ function createRig(
 		body?: ReadableStream | null;
 	}[] = [];
 	const canceled: boolean[] = [];
-	const awsCalls: { command: string; args: string[] }[] = [];
 	const fetchFake = (async (input: unknown, init: RequestInit = {}) => {
 		const url = String(input);
 		const entry: (typeof fetched)[number] = {
@@ -107,31 +104,15 @@ function createRig(
 		}
 		throw new Error(`unscripted ${url}`);
 	}) as unknown as typeof fetch;
-	const runCapture = async (
-		command: string,
-		args: string[],
-	): Promise<Capture> => {
-		awsCalls.push({ command, args });
-		return {
-			status: 0,
-			signal: null,
-			stdout: JSON.stringify({ [config.relay.secret.key]: SECRET }),
-			stderr: "",
-			...options.aws,
-		};
-	};
 	return {
 		env,
 		fetched,
-		awsCalls,
 		run: () =>
 			preflight({
 				config,
 				env,
 				fetch: fetchFake,
-				runCapture,
-				which: () => "/usr/bin/aws",
-				secret: options.secret,
+				secret: options.noSecret ? undefined : options.secret ?? SECRET,
 			}),
 		eventsWasClosed: () => {
 			const events = fetched.find((entry) => entry.url.endsWith("/events"));
@@ -141,15 +122,13 @@ function createRig(
 }
 
 describe("preflight", () => {
-	test("uses a resolved relay secret without calling AWS", async () => {
+	test("uses the resolved relay secret", async () => {
 		const rig = createRig(buildConfig({ chat: { id: CHAT_ID } }), {
 			secret: SECRET,
-			aws: { status: 255, stderr: "AWS must not run" },
 		});
 		const report = await rig.run();
 		expect(report.secret).toBe("ok");
 		expect(report.chats).toMatchObject([{ id: CHAT_ID }]);
-		expect(rig.awsCalls).toEqual([]);
 		expect(JSON.stringify(report)).not.toContain(SECRET);
 	});
 
@@ -181,7 +160,7 @@ describe("preflight", () => {
 		for (const entry of all) expect(entry.redirect).toBe("error");
 	});
 
-	test("calls aws with the prod profile and fetches from the prod base URL", async () => {
+	test("fetches from the prod base URL", async () => {
 		const config = buildConfig();
 		const rig = createRig(config, {
 			envName: "prod",
@@ -189,27 +168,21 @@ describe("preflight", () => {
 		});
 		const report = await rig.run();
 		expect(report.env).toBe("prod");
-		const args = rig.awsCalls[0]?.args ?? [];
-		expect(args[args.indexOf("--profile") + 1]).toBe("example-prod");
 		expect(rig.fetched.length).toBeGreaterThan(0);
 		for (const entry of rig.fetched)
 			expect(entry.url.startsWith(rig.env.baseUrl)).toBe(true);
 	});
 
-	test("skips chat and reactions when the secret fetch fails with an SSO error", async () => {
+	test("skips chat and reactions when no relay secret is resolved, naming the connect remedy", async () => {
 		const config = buildConfig();
-		const rig = createRig(config, {
-			envName: "prod",
-			aws: { status: 255, stderr: "SSO session has expired", stdout: SECRET },
-		});
+		const rig = createRig(config, { envName: "prod", noSecret: true });
 		const report = await rig.run();
 		expect(report.secret).toEqual({
-			error: expect.stringContaining("aws sso login --profile example-prod"),
+			error: expect.stringContaining("dg-skills channel-review connect relay --env prod"),
 		});
 		expect(report.chats).toBe("skipped");
 		expect(report.reactions).toBe("skipped");
 		expect(rig.fetched).toHaveLength(0);
-		expect(JSON.stringify(report)).not.toContain(SECRET);
 	});
 
 	test("with chat.id set never lists chats, reports ok on an events 200, and closes the stream", async () => {

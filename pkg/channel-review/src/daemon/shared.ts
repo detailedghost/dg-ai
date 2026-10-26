@@ -19,12 +19,6 @@ export type DaemonIo = {
 };
 
 export type DaemonSeams = AutomationSeams & {
-	fetchSecret?: (params: {
-		profile: string;
-		region: string;
-		id: string;
-		key: string;
-	}) => Promise<string>;
 	createProvider?: typeof createTeamsRelayProvider;
 	credentials?: CredentialSource;
 	runners?: Record<RunnerName, Runner>;

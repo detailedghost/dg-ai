@@ -66,7 +66,7 @@ scheduled deps-upgrade runs. Keys and variables: [setup](references/setup.md); s
 ## Go to production
 
 1. Add the prod bot (`envs.prod.botName`) to each review chat.
-2. Run `aws sso login --profile <envs.prod.awsProfile>` and confirm the secret is readable.
+2. Make sure the prod relay secret is stored: run `dg-skills channel-review connect relay --env prod` if it is not yet.
 3. Run `~/.dg/bin/dg-skills channel-review status --env prod` while stopped. Require every
    preflight check to succeed: secret and reactions `ok`, a resolved ID for each chat,
    and the selected runner probe `ok`.

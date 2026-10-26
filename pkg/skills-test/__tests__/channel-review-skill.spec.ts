@@ -233,7 +233,7 @@ describe("channel-review skill distribution", () => {
 		const section = skill.slice(skill.indexOf("Go to production"));
 		const positions = [
 			/prod bot/,
-			/aws sso login --profile/,
+			/connect relay --env prod/,
 			/status --env prod/,
 			/start --env prod/,
 			/channel-review env prod/,

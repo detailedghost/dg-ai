@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { connect } from "../src/daemon";
+import { localSecretName } from "../src/credentials";
 import { RelayAuthError } from "../src/providers/teams-relay";
 import { type DaemonHarness, createDaemonHarness } from "./daemon-harness";
 
 const harnesses: DaemonHarness[] = [];
 
+/** Defaults a local relay secret, so only the tests targeting it need to override it. */
 function setup(options: Parameters<typeof createDaemonHarness>[0] = {}) {
 	const harness = createDaemonHarness(options);
 	harnesses.push(harness);
+	harness.seams.env = { [localSecretName(harness.env.name)]: "secret-1" };
 	return harness;
 }
 
@@ -16,43 +19,39 @@ afterEach(async () => {
 });
 
 describe("connect", () => {
-	test("fetches the secret with the env's AWS profile and the configured secret location", async () => {
-		const h = setup({ envName: "prod" });
-		await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
-		expect(h.fetchSecretCalls).toEqual([
-			{
-				profile: "example-prod",
-				region: h.config.relay.secret.region,
-				id: h.config.relay.secret.id,
-				key: h.config.relay.secret.key,
-			},
-		]);
-	});
-
-	test("uses the env's local secret variable and skips the fetch", async () => {
+	test("uses the env's local secret variable", async () => {
 		const h = setup({ envName: "prod" });
 		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_PROD: " local-secret " };
 		const result = await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
-		expect(h.fetchSecretCalls).toEqual([]);
 		expect(h.providerSecrets).toEqual(["local-secret"]);
 		expect(result.secret).toBe("local-secret");
 	});
 
-	test("fetches the secret when only another env's local variable is set", async () => {
+	test("throws naming the connect command when no relay secret is configured", async () => {
+		const h = setup({ envName: "prod" });
+		h.seams.env = {};
+		await expect(
+			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
+		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
+	});
+
+	test("ignores another env's local variable", async () => {
 		const h = setup({ envName: "prod" });
 		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_DEV: "dev-secret" };
-		await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
-		expect(h.fetchSecretCalls).toHaveLength(1);
+		await expect(
+			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
+		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
 	});
 
-	test("fetches the secret when the local variable is blank", async () => {
+	test("treats a blank local variable as unset", async () => {
 		const h = setup({ envName: "prod" });
 		h.seams.env = { CHANNEL_REVIEW_RELAY_SECRET_PROD: "  " };
-		await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
-		expect(h.fetchSecretCalls).toHaveLength(1);
+		await expect(
+			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
+		).rejects.toThrow("dg-skills channel-review connect relay --env prod");
 	});
 
-	test("builds the provider with the fetched secret and returns secret, provider, and chats", async () => {
+	test("builds the provider with the resolved secret and returns secret, provider, and chats", async () => {
 		const h = setup();
 		const result = await connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams });
 		expect(h.providerSecrets).toEqual(["secret-1"]);
@@ -107,21 +106,10 @@ describe("connect", () => {
 		).rejects.toThrow("chat-1");
 	});
 
-	test("an RelayAuthError names the secret remedy and does not fetch the secret a second time", async () => {
+	test("an RelayAuthError names the secret remedy", async () => {
 		const h = setup({ resolveError: new RelayAuthError(401) });
 		await expect(
 			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow(/secret/i);
-		expect(h.secrets).toHaveLength(1);
-	});
-
-	test("a secret fetch failure rejects with its message", async () => {
-		const h = setup();
-		h.seams.fetchSecret = async () => {
-			throw new Error("AWS SSO session expired");
-		};
-		await expect(
-			connect({ config: h.config, env: h.env, overrides: {}, seams: h.seams }),
-		).rejects.toThrow("AWS SSO session expired");
+		).rejects.toThrow("dg-skills channel-review connect relay --env dev");
 	});
 });

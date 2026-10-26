@@ -1,11 +1,11 @@
 import { describeError } from "@dg/common";
 import type { ChannelConfig, EnvSettings } from "../../config";
+import { missingRelaySecretRemedy } from "../../credentials";
 import { loadFunPool } from "../../fun";
 import { resolveChat } from "./chats";
 import { createRelayClient, type RelayClient } from "./client";
 import { validateReactionIds } from "./reaction-id";
 import { createReactions } from "./reactions";
-import { fetchRelaySecret, type SecretSeams } from "./secret";
 
 type Check = "ok" | "skipped" | { error: string };
 
@@ -70,32 +70,17 @@ export async function preflight({
 	config,
 	env,
 	fetch,
-	runCapture,
-	which,
 	secret: resolvedSecret,
 }: {
 	config: ChannelConfig;
 	env: EnvSettings & { name: string };
 	fetch: typeof globalThis.fetch;
 	secret?: string;
-} & SecretSeams): Promise<PreflightReport> {
-	let secret: string;
-	try {
-		secret =
-			resolvedSecret ||
-			(await fetchRelaySecret(
-				{
-					profile: env.awsProfile,
-					region: config.relay.secret.region,
-					id: config.relay.secret.id,
-					key: config.relay.secret.key,
-				},
-				{ runCapture, which },
-			));
-	} catch (error) {
+}): Promise<PreflightReport> {
+	if (!resolvedSecret) {
 		return {
 			env: env.name,
-			secret: { error: describeError(error) },
+			secret: { error: missingRelaySecretRemedy(env.name) },
 			chats: "skipped",
 			reactions: "skipped",
 			funPool: "skipped",
@@ -104,7 +89,7 @@ export async function preflight({
 	const client = createRelayClient({
 		baseUrl: env.baseUrl,
 		appName: config.relay.appName,
-		secret,
+		secret: resolvedSecret,
 		fetch,
 	});
 	return {

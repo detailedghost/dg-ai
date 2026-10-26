@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SystemSeams } from "@dg/common/node";
 import { type ChannelConfig, loadConfig, resolveEnv } from "../src/config";
+import { relayCredentialName } from "../src/credentials";
 import type {
 	ChildLike,
 	DaemonIo,
@@ -219,7 +220,6 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 	const providers: ScriptedProvider[] = [];
 	const secrets: string[] = [];
 	const providerSecrets: string[] = [];
-	const fetchSecretCalls: unknown[] = [];
 	const runners: Record<RunnerName, FakeRunner> = {
 		claude: createFakeRunner("claude", options.runnerScript),
 		codex: createFakeRunner("codex", options.runnerScript),
@@ -229,15 +229,29 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 	const verdict = createFakeVerdictReader();
 	const stack = createFakeStackReader();
 
+	/** Every refreshSecrets() read hands out the next secret-N, simulating a rotated credential. */
+	const relayName = env ? relayCredentialName(env.name) : undefined;
+	let nextSecret = 1;
+	const relayEntries: Record<string, { value: string }> = relayName
+		? { [relayName]: { value: "secret-1" } }
+		: {};
+	const baseCredentials = createFakeCredentialSource(relayEntries);
+	const credentials = {
+		...baseCredentials,
+		get: async (name: string) => {
+			const record = await baseCredentials.get(name);
+			if (record && name === relayName) {
+				secrets.push(record.value);
+				nextSecret += 1;
+				relayEntries[relayName]!.value = `secret-${nextSecret}`;
+			}
+			return record;
+		},
+	};
+
 	const seams: DaemonSeams = {
 		env: {},
-		credentials: createFakeCredentialSource(),
-		fetchSecret: async (params) => {
-			fetchSecretCalls.push(params);
-			const secret = `secret-${secrets.length + 1}`;
-			secrets.push(secret);
-			return secret;
-		},
+		credentials,
 		createProvider: (_config, _env, providerSeams) => {
 			providerSecrets.push(providerSeams.secret);
 			const provider = createScriptedProvider(
@@ -279,7 +293,6 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 		provider: () => providers[providers.length - 1] as ScriptedProvider,
 		secrets,
 		providerSecrets,
-		fetchSecretCalls,
 		runners,
 		verdict,
 		stack,

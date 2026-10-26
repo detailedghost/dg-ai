@@ -6,4 +6,3 @@ export {
 	isCustomReactionId,
 	validateReactionIds,
 } from "./reaction-id";
-export { fetchRelaySecret } from "./secret";
