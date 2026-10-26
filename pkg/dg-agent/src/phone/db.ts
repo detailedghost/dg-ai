@@ -11,6 +11,9 @@ import { join } from "node:path";
 
 export type Direction = "in" | "out";
 
+/** Local voicemail rows. Never a contact, and never handed to `--on-message`. */
+export const PHONE_SYSTEM_SENDER = "phone";
+
 export type MessageRow = {
 	id: string;
 	direction: Direction;
@@ -312,16 +315,20 @@ export class PhoneDb {
 	nextDeliverable(cap: number): MessageRow | undefined {
 		return (
 			(this.db
-				.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap ORDER BY ts, id LIMIT 1")
-				.get({ cap }) as MessageRow | null) ?? undefined
+				.query(
+					"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap AND sender != $sender ORDER BY ts, id LIMIT 1",
+				)
+				.get({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow | null) ?? undefined
 		);
 	}
 
 	/** Unread messages that hit the hook's attempt cap; retried only on listener start and the stuck timer. */
 	stuckMessages(cap: number): MessageRow[] {
 		return this.db
-			.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap ORDER BY ts, id")
-			.all({ cap }) as MessageRow[];
+			.query(
+				"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap AND sender != $sender ORDER BY ts, id",
+			)
+			.all({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow[];
 	}
 
 	bumpAttempts(id: string): number {

@@ -57,6 +57,13 @@ describe("the released packages ship as one matched set", () => {
 		}
 	});
 
+	test("the version dg-agent reports is the version it was packaged as", () => {
+		const version = readRepoFile("pkg", "dg-agent", "src", "version.ts");
+		const reported = /DG_AGENT_PACKAGE_VERSION = "([^"]+)"/.exec(version)?.[1];
+
+		expect(reported).toBe(packageVersion("dg-agent"));
+	});
+
 	test("the version the daemon reports is the version it was packaged as", () => {
 		const status = readRepoFile(
 			"pkg",

@@ -1,8 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { nip19 } from "nostr-tools";
 import type { AutostartState } from "./autostart";
 import type { Gate } from "./chat";
-import type { ContactRow, InviteRow, PhoneDb } from "./db";
+import { PHONE_SYSTEM_SENDER, type ContactRow, type InviteRow, type PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
 export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
@@ -22,6 +23,7 @@ const NUMBER_SETTING = "number";
 const RELAYS_SETTING = "relays";
 const NUMBER_KEY_SETTING = "number_key";
 const LISTENER_SETTING = "listener";
+const DRIFT_SETTING = "listener_drift";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
 
@@ -203,6 +205,32 @@ export function writeListener(db: PhoneDb, record: ListenerConfig): void {
 
 export function clearListener(db: PhoneDb): void {
 	db.unset(LISTENER_SETTING);
+}
+
+/** A local inbox row. `sender` is `phone`, so it is not delivered to a contact or to `--on-message`. */
+export function addPhoneNotice(db: PhoneDb, text: string, now: number): void {
+	db.addMessage({
+		id: `phone-notice-${now}-${randomBytes(4).toString("hex")}`,
+		direction: "in",
+		ts: now,
+		sender: PHONE_SYSTEM_SENDER,
+		contact: PHONE_SYSTEM_SENDER,
+		text,
+		call: 0,
+	});
+}
+
+/** Records `text` once per `token`, so a repeated status check does not pile up the same notice. */
+export function notePhoneDrift(db: PhoneDb, token: string, text: string, now: number): void {
+	if (db.get<string>(DRIFT_SETTING) === token) return;
+	db.set(DRIFT_SETTING, token);
+	addPhoneNotice(db, text, now);
+}
+
+/** The newest unread local notice, or null when voicemail has none waiting. */
+export function latestPhoneNotice(db: PhoneDb): string | null {
+	const rows = db.unreadMessages().filter((row) => row.sender === PHONE_SYSTEM_SENDER);
+	return rows.at(-1)?.text ?? null;
 }
 
 /** Decodes an npub to its hex pubkey, or a clean `DgCliError` for anything that is not one. */

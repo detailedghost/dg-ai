@@ -181,9 +181,10 @@ type ListenerPlan =
 	| { action: "keep"; pid: number; stop: number[] }
 	| { action: "replace"; pids: number[] };
 
-/** A `phone __run` process is kept: it will open `phone.db`. An old `phone-friend __run` is not,
- * because it keeps writing the database it already has open. Every legacy pid is stopped and
- * exactly one new listener is started. A pid `classifyListener` rejects is left alone. */
+/** This process's own `phone __run` is kept: it loads `phone.db` after this migration. Any other
+ * live listener, including a `phone __run` that is not this process, is stopped and exactly one
+ * new listener is started so it subscribes to the keys just written. A pid `classifyListener`
+ * rejects is left alone. */
 function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 	const live: { pid: number; generation: ListenerGeneration }[] = [];
 	for (const line of lines) {
@@ -194,12 +195,11 @@ function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
 		live.push({ pid, generation });
 	}
 	if (live.length === 0) return { action: "none" };
-	const current = live.filter((entry) => entry.generation === "current");
-	if (current.length === 0) return { action: "replace", pids: live.map((entry) => entry.pid) };
-	const keep = current.find((entry) => entry.pid === process.pid) ?? current[0];
-	const stop = live.filter((entry) => entry.pid !== keep.pid).map((entry) => entry.pid);
-	if (stop.length === 0) return { action: "adopt", pid: keep.pid };
-	return { action: "keep", pid: keep.pid, stop };
+	const self = live.find((entry) => entry.pid === process.pid && entry.generation === "current");
+	if (!self) return { action: "replace", pids: live.map((entry) => entry.pid) };
+	const stop = live.filter((entry) => entry.pid !== self.pid).map((entry) => entry.pid);
+	if (stop.length === 0) return { action: "adopt", pid: self.pid };
+	return { action: "keep", pid: self.pid, stop };
 }
 
 /** Stops exactly the pids in `plan` and returns any that are still alive. Does not start a listener. */
@@ -383,8 +383,8 @@ function releaseMigrationLock(paths: DgPaths): void {
 
 /**
  * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
- * key, contact, invite, and message into one `phone.db`. A listener that is already `phone __run`
- * is kept. An old `phone-friend __run` is stopped and exactly one new listener is started against
+ * key, contact, invite, and message into one `phone.db`. This process's own `phone __run` is
+ * kept. Any other listener is stopped and exactly one new listener is started against
  * `phone.db`, with its pid recorded. If that start throws, one `phone __run` is started against
  * the kept `phone.db` and reported only if it stays up. This binary rejects `phone-friend --line`.
  * Read-only commands do not call this.

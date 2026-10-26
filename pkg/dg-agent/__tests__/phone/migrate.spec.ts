@@ -30,6 +30,7 @@ import {
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { listenerPidPath } from "../../src/phone/listener";
+import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
 import {
 	disableLegacyDaemonJobs,
 	legacyRoot,
@@ -715,6 +716,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				since: NOW,
 				hook: null,
 				relays: DEFAULT_RELAYS,
+				version: DG_AGENT_PACKAGE_VERSION,
 			});
 			expect(JSON.parse(printed[0] ?? "{}")).toMatchObject({ listener: "replaced" });
 
@@ -754,7 +756,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 		}
 	});
 
-	it("adopts a listener that is already phone __run without marking it legacy", () => {
+	it("restarts a phone __run that is not this process so it reloads keys", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -763,12 +765,42 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				nsec: nip19.nsecEncode(generateSecretKey()),
 				listenerPid: 4242,
 			});
+			const started: number[] = [];
+
+			migrateIfNeeded(
+				paths,
+				fakeMigrateDeps({
+					classifyListener: (pid) => (pid === 4242 ? "current" : undefined),
+					startListener: () => {
+						started.push(9001);
+						return 9001;
+					},
+					renameLegacyRoot: () => {},
+				}),
+			);
+
+			expect(started).toEqual([9001]);
+			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(9001);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("adopts this process when it is already phone __run", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			writeLegacyLine(paths, "default", {
+				contact: freshNpub(),
+				nsec: nip19.nsecEncode(generateSecretKey()),
+				listenerPid: process.pid,
+			});
 			const started: string[] = [];
 
 			migrateIfNeeded(
 				paths,
 				fakeMigrateDeps({
-					classifyListener: () => "current",
+					classifyListener: (pid) => (pid === process.pid ? "current" : undefined),
 					startListener: () => {
 						started.push("start");
 						return 0;
@@ -778,7 +810,9 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 			);
 
 			expect(started).toEqual([]);
-			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).adopted).toBeUndefined();
+			const recorded = JSON.parse(readFileSync(listenerPidPath(paths), "utf8")) as { pid: number; adopted?: string };
+			expect(recorded.pid).toBe(process.pid);
+			expect(recorded.adopted).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -1263,7 +1297,7 @@ describe("read-only phone commands", () => {
 				},
 			} as PhoneDeps;
 
-			phoneStatus(deps);
+			await phoneStatus(deps);
 			phoneInbox({}, deps);
 			phoneContacts(deps);
 
@@ -1272,7 +1306,7 @@ describe("read-only phone commands", () => {
 					as: "dg",
 					contacts: 1,
 					pending_voicemail: 1,
-					listener: { pid: process.pid, since: null },
+					listener: { pid: process.pid, since: null, stale: true, reason: "listener binary version differs" },
 					hook: null,
 					legacy_root_present: false,
 					migration_pending: true,

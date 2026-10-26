@@ -6,15 +6,16 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { SimplePool } from "nostr-tools";
-import { type AutostartDeps, formatAutostartState, installAutostart, removeAutostart } from "./autostart";
+import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
-import { PhoneDb } from "./db";
+import { PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey, loadKey } from "./keys";
 import {
 	defaultOnSignal,
 	defaultSchedule,
 	isOurListener,
+	listenerDrift,
 	listenerLogPath,
 	ensureListenerSubscribed,
 	readListenerPid,
@@ -23,11 +24,12 @@ import {
 	spawnDetachedListener,
 	type ListenerPid,
 } from "./listener";
-import { legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
+import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
 	addInvite,
+	addPhoneNotice,
 	findContactByHandle,
 	findContactByNpub,
 	FALLBACK_SELF_NAME,
@@ -49,7 +51,9 @@ import {
 	writeListener,
 	writeNumber,
 	writeRelays,
+	latestPhoneNotice,
 	listContacts,
+	notePhoneDrift,
 } from "./store";
 
 export type PhoneDeps = KeyDeps & {
@@ -58,6 +62,14 @@ export type PhoneDeps = KeyDeps & {
 	writeErr?: (text: string) => void;
 	readStdin: () => Promise<string | undefined>;
 	now: () => number;
+	/** Present on the real CLI so a writing command can restart a listener whose version or keys drifted. */
+	kill?: (pid: number, signal: NodeJS.Signals) => void;
+	spawnListener?: (argv: string[], logPath: string) => number;
+	isOurListener?: (pid: number) => boolean;
+	run?: (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
+	uid?: number;
+	sleep?: (ms: number) => Promise<void>;
+	listenerArgv?: (extraArgs: string[]) => string[];
 };
 
 export type RunDeps = PhoneDeps & {
@@ -82,6 +94,38 @@ const MAX_SEND_BYTES = 64 * 1024;
 const DEFAULT_INVITE_HOURS = 24;
 const STOP_WAIT_MS = 5000;
 
+function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
+	return kind === "systemd" || kind === "launchd" || kind === "task";
+}
+
+/** Stops a listener this binary started when its version or keys no longer match the database.
+ * Does nothing unless `kill` and `isOurListener` are injected, and never signals this process. */
+async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): Promise<void> {
+	if (!deps.kill || !deps.isOurListener) return;
+	const running = readListenerPid(deps.paths);
+	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) return;
+	const drift = await listenerDrift(deps, running);
+	if (!drift.restart) return;
+	if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
+	const saved = readListener(deps.db);
+	const kind = saved?.autostart?.kind;
+	if (isManagedKind(kind) && deps.run) {
+		for (const argv of managedRestartCommands(kind, deps.uid ?? 0)) await deps.run(argv);
+		return;
+	}
+	deps.kill(running.pid, "SIGTERM");
+	if (deps.sleep) {
+		for (let waited = 0; readListenerPid(deps.paths)?.pid === running.pid && waited < STOP_WAIT_MS; waited += 100) {
+			await deps.sleep(100);
+		}
+	}
+	if (readListenerPid(deps.paths)?.pid === running.pid) {
+		throw new DgCliError(`the phone listener (pid ${running.pid}) did not stop`);
+	}
+	if (!opts.spawn || !deps.spawnListener || !deps.listenerArgv) return;
+	deps.spawnListener(deps.listenerArgv(onMessageArgvFor(saved?.onMessage)), listenerLogPath(deps.paths));
+}
+
 /** The CLI entry point. `db` migrates on first use, and only then, so a read-only command can
  * look at `paths` without creating `phone.db`. Migration must still run before `PhoneDb.open`
  * creates that file, since `legacyRoot` stops seeing a legacy install the moment it exists. */
@@ -105,6 +149,13 @@ function defaultDeps(session?: string): PhoneDeps {
 		},
 		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
 		now: () => Math.floor(Date.now() / 1000),
+		kill: (pid, signal) => process.kill(pid, signal),
+		spawnListener: defaultSpawnListener,
+		isOurListener,
+		run: runArgv,
+		uid: process.getuid?.() ?? 0,
+		sleep: (ms) => Bun.sleep(ms),
+		listenerArgv: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
 	};
 }
 
@@ -171,6 +222,7 @@ export async function phoneNumber(
 	const secret = rotated || !existing ? randomBytes(SECRET_BYTES).toString("hex") : existing.secret;
 	const rotatedAt = rotated ? deps.now() : existing?.rotatedAt;
 	writeNumber(deps.db, { secret, as, ...(rotatedAt === undefined ? {} : { rotatedAt }) });
+	await restartStaleListener(deps, { spawn: true });
 	const card = encodeCard({ npub: npubOf(sk), relays, secret, exp: NO_EXPIRY, handle: as });
 	const listener = readListenerPid(deps.paths);
 	printJson(deps, {
@@ -214,6 +266,7 @@ export async function phoneInvite(
 		handle: opts.name === undefined ? null : `+${opts.name}`,
 		safety: PHONE_SAFETY_REF,
 	});
+	await restartStaleListener(deps, { spawn: true });
 	ensureListenerSubscribed(deps.paths, deps.db);
 }
 
@@ -263,6 +316,8 @@ export async function phoneAccept(
 			text: words,
 			call: 1,
 		});
+		if (!existing) addPhoneNotice(deps.db, `accepted +${handle}`, deps.now());
+		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, relays_ok: ok });
 	} finally {
 		pool.close(card.relays);
@@ -286,7 +341,10 @@ export function phoneContacts(deps: PhoneDeps): void {
 		}
 		return;
 	}
+	const notice = latestPhoneNotice(deps.db);
 	for (const contact of listContacts(deps.db)) {
+		const marker =
+			notice === `accepted +${contact.handle}` ? "accepted" : notice === `new contact +${contact.handle}` ? "new" : undefined;
 		printJson(deps, {
 			handle: `+${contact.handle}`,
 			npub: contact.npub,
@@ -294,6 +352,7 @@ export function phoneContacts(deps: PhoneDeps): void {
 			key: contact.keyId,
 			added_at: contact.addedAt,
 			via: contact.via,
+			...(marker ? { marker } : {}),
 		});
 	}
 }
@@ -333,6 +392,7 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 			text: body,
 			call: 0,
 		});
+		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, relays_ok: ok });
 	} finally {
 		pool.close(contact.relays);
@@ -384,12 +444,14 @@ export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDep
 			text: row.text,
 			read: row.read_at !== null,
 			...(row.call ? { call: true } : {}),
+			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
 		});
 	}
 }
 
-export function phoneVoicemail(deps: PhoneDeps): void {
+export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	await restartStaleListener(deps, { spawn: true });
 	for (const row of deps.db.takeUnread()) {
 		const contact = findContactByNpub(deps.db, row.contact);
 		printJson(deps, {
@@ -399,18 +461,21 @@ export function phoneVoicemail(deps: PhoneDeps): void {
 			from: row.sender,
 			text: row.text,
 			...(row.call ? { call: true } : {}),
+			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
 		});
 	}
 }
 
-export function phoneStatus(deps: PhoneDeps): void {
+export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 	if (!existsSync(PhoneDb.path(deps.paths))) {
 		const view = readOnlyLegacyView(deps.paths);
 		printJson(deps, {
 			as: view.as,
 			contacts: view.contacts,
 			pending_voicemail: view.pendingVoicemail,
-			listener: view.listener,
+			listener: view.listener
+				? { ...view.listener, stale: true, reason: "listener binary version differs" }
+				: null,
 			hook: null,
 			legacy_root_present: false,
 			migration_pending: view.migrationPending,
@@ -420,21 +485,38 @@ export function phoneStatus(deps: PhoneDeps): void {
 		return;
 	}
 	const number = readNumber(deps.db);
-	const listener = readListenerPid(deps.paths);
+	const record = readListenerPid(deps.paths);
+	let notice = latestPhoneNotice(deps.db);
+	let listener: { pid: number; since: number; stale: boolean; reason?: string } | null = null;
+	if (record) {
+		const drift = await listenerDrift(deps, record);
+		if (drift.notice && drift.token) {
+			notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
+			notice = latestPhoneNotice(deps.db);
+		}
+		listener = {
+			pid: record.pid,
+			since: record.since,
+			stale: Boolean(drift.reason),
+			...(drift.reason ? { reason: drift.reason } : {}),
+		};
+	}
 	printJson(deps, {
 		as: number?.as ?? FALLBACK_SELF_NAME,
 		contacts: listContacts(deps.db).length,
-		pending_voicemail: deps.db.unreadMessages().length,
-		listener: listener ? { pid: listener.pid, since: listener.since } : null,
-		hook: listener?.hook ? { kind: "command" as const, argv: listener.hook.argv, timeout_s: listener.hook.timeoutS } : null,
+		pending_voicemail: deps.db.unreadMessages().filter((row) => row.sender !== PHONE_SYSTEM_SENDER).length,
+		listener,
+		hook: record?.hook ? { kind: "command" as const, argv: record.hook.argv, timeout_s: record.hook.timeoutS } : null,
 		legacy_root_present: legacyRootPresent(deps.paths),
 		migration_pending: false,
+		notice,
 		autostart: formatAutostartState(readListener(deps.db)?.autostart),
 	});
 }
 
 export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	await restartStaleListener(deps, { spawn: false });
 	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);
 	const hook: CommandPushTarget | undefined = opts.onMessage?.length
 		? { kind: "command", argv: opts.onMessage, timeoutMs: Math.round(timeoutSeconds * 1000) }
@@ -500,9 +582,10 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
 
 	const running = liveListener(deps);
+	const drift = running ? await listenerDrift(deps, running) : undefined;
 	// Migration records a listener before login autostart exists. Skip the reuse return in that
 	// case so this open installs it, after stopping the detached process, and only one keeps running.
-	if (running && running.adopted !== "legacy" && sameHook(running.hook, onMessage) && saved?.autostart) {
+	if (running && running.adopted !== "legacy" && !drift?.restart && sameHook(running.hook, onMessage) && saved?.autostart) {
 		if (onMessage) writeListener(deps.db, { ...saved, onMessage });
 		printJson(deps, {
 			pid: running.pid,
@@ -512,6 +595,7 @@ export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?:
 		});
 		return;
 	}
+	if (drift?.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
 	let stopped: ListenerPid | undefined;
 	if (running) {
 		await stopRunningListener(deps, running.pid);
@@ -561,6 +645,26 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	if (running) await stopRunningListener(deps, running.pid);
 
 	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });
+}
+
+/** Restarts a listener whose binary or keys drifted. No-ops when this install has never used phone. */
+export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {
+	if (!existsSync(PhoneDb.path(deps.paths)) && !legacyRoot(deps.paths)) return;
+	migrateIfNeeded(deps.paths);
+	if (!existsSync(PhoneDb.path(deps.paths))) return;
+	const running = readListenerPid(deps.paths);
+	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) return;
+	const drift = await listenerDrift(deps, running);
+	if (!drift.restart) return;
+	if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
+	const saved = readListener(deps.db);
+	const kind = saved?.autostart?.kind;
+	if (isManagedKind(kind)) {
+		for (const argv of managedRestartCommands(kind, deps.uid)) await deps.run(argv);
+		return;
+	}
+	await stopRunningListener(deps, running.pid);
+	deps.spawnListener(deps.listenerArgv(onMessageArgvFor(saved?.onMessage)), listenerLogPath(deps.paths));
 }
 
 const EXIT_REMOVED_VERB = 2;
@@ -657,6 +761,11 @@ function attachPhoneVerbs(
 		.command("close")
 		.description("stop the listener and remove it from login autostart")
 		.action(() => phoneClose(getOpenCloseDeps()));
+
+	group
+		.command("__refresh", { hidden: true })
+		.description("internal: restart a listener whose binary or keys drifted")
+		.action(() => phoneRefresh(getOpenCloseDeps()));
 
 	group
 		.command("__run", { hidden: true })

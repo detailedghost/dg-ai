@@ -17,12 +17,15 @@ import {
 	holderVerdict,
 	isListenerArgs,
 	isOurListener,
+	KEY_WATCH_INTERVAL_MS,
+	keyFingerprint,
 	listenerClaimPath,
 	listenerPidPath,
 	readListenerPid,
 	type ListenerDeps,
 	runListener,
 } from "../../src/phone/listener";
+import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
 import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
@@ -279,7 +282,7 @@ describe("runListener", () => {
 	});
 
 	it("writes the listener pid file with the hook's argv and timeout, and removes it on shutdown", async () => {
-		setUpNumber("55".repeat(32));
+		const sk = setUpNumber("55".repeat(32));
 		const hook: CommandPushTarget = { kind: "command", argv: ["notify-send"], timeoutMs: 7000 };
 		const { onSignal, ready, stop } = captureShutdown();
 
@@ -287,7 +290,14 @@ describe("runListener", () => {
 		await ready;
 
 		const written = JSON.parse(readFileSync(listenerPidPath(paths), "utf8"));
-		expect(written).toEqual({ pid: 9999, since: NOW, hook: { argv: ["notify-send"], timeoutS: 7 }, relays: DEFAULT_RELAYS });
+		expect(written).toEqual({
+			pid: 9999,
+			since: NOW,
+			hook: { argv: ["notify-send"], timeoutS: 7 },
+			relays: DEFAULT_RELAYS,
+			version: DG_AGENT_PACKAGE_VERSION,
+			keys: keyFingerprint([{ id: numberKeyId(db), pub: getPublicKey(sk) }]),
+		});
 
 		stop();
 		await run;
@@ -348,6 +358,40 @@ describe("runListener", () => {
 
 		expect(db.recentMessages(10).map((m) => m.text).sort()).toEqual(["still arrives", "too slow for the hook"]);
 		expect(db.recentMessages(10).find((m) => m.text === "too slow for the hook")?.attempts).toBeGreaterThan(0);
+	});
+
+	it("resubscribes when a key appears and records one local notice", async () => {
+		const sk = setUpNumber("11".repeat(32));
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal, schedule }));
+		await ready;
+		expect(pool.listeners).toHaveLength(1);
+		expect(db.unreadMessages().filter((row) => row.sender === "phone")).toEqual([]);
+
+		const extra = identity();
+		db.putKey({ id: "extra", nsec: nip19.nsecEncode(extra.sk), in_store: 0 });
+		const watch = scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS);
+		expect(watch).toBeDefined();
+		watch?.run();
+		await waitUntil(() => pool.filters.some((filter) => filter["#p"]?.includes(extra.pub)));
+
+		expect(pool.listeners).toHaveLength(1);
+		expect(pool.filters.some((filter) => filter["#p"]?.includes(getPublicKey(sk)))).toBe(true);
+		const notices = db.unreadMessages().filter((row) => row.sender === "phone").map((row) => row.text);
+		expect(notices).toEqual(["key changed"]);
+
+		stop();
+		await run;
 	});
 });
 

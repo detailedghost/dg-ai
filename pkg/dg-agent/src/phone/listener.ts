@@ -1,15 +1,28 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
-import { fetchNew, type Message, type NewContact, type PhonePool, type Reaccept, type Seen, subscribe, UNKNOWN_CALLER_HANDLE } from "./chat";
+import { DG_AGENT_PACKAGE_VERSION } from "../version";
+import {
+	fetchNew,
+	type Message,
+	type NewContact,
+	type PhonePool,
+	type Reaccept,
+	type Seen,
+	type SubscribeExtra,
+	subscribe,
+	UNKNOWN_CALLER_HANDLE,
+} from "./chat";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
 import type { PhoneDb } from "./db";
 import type { CommandPushTarget } from "./push";
 import {
 	addContact,
+	addPhoneNotice,
 	consumeInvite,
 	findContactByNpub,
 	gateFor,
@@ -18,6 +31,7 @@ import {
 	readCursor,
 	readListener,
 	readRelays,
+	notePhoneDrift,
 	setContactKeyId,
 	subscriptionRelays,
 	writeCursor,
@@ -41,12 +55,59 @@ export type ListenerPid = {
 	relays?: string[];
 	/** Set when migration kept an old `phone-friend __run` process instead of starting a second one. */
 	adopted?: "legacy";
+	/** `DG_AGENT_PACKAGE_VERSION` of the binary that wrote this file. Missing means an older binary. */
+	version?: string;
+	/** `keyFingerprint` of the keys this process subscribed to. Missing is not a mismatch. */
+	keys?: string;
 };
+
+/** sha256 prefix of sorted `id:pub` lines. Empty when there are no keys. Never includes a secret. */
+export function keyFingerprint(keys: { id: string; pub: string }[]): string {
+	const body = keys.map((key) => `${key.id}:${key.pub}`).sort().join("\n");
+	return createHash("sha256").update(body).digest("hex").slice(0, 16);
+}
+
+export type ListenerDrift = {
+	restart: boolean;
+	reason?: string;
+	token?: string;
+	notice?: string;
+};
+
+/** Whether `record` was written by another binary or subscribed to a different key set than `deps.db` holds. */
+export async function listenerDrift(deps: KeyDeps, record: ListenerPid): Promise<ListenerDrift> {
+	if (record.version !== DG_AGENT_PACKAGE_VERSION) {
+		return {
+			restart: true,
+			reason: "listener binary version differs",
+			token: `binary:${record.version ?? ""}`,
+			notice: "listener binary changed",
+		};
+	}
+	let fingerprint: string;
+	try {
+		fingerprint = keyFingerprint(await loadAllKeys(deps));
+	} catch {
+		return { restart: false, reason: "listener keys could not be read" };
+	}
+	if (record.keys !== undefined && record.keys !== fingerprint) {
+		return {
+			restart: true,
+			reason: "listener keys differ from the database",
+			token: `keys:${fingerprint}`,
+			notice: "key changed",
+		};
+	}
+	return { restart: false };
+}
 
 export type ListenerGeneration = "current" | "legacy";
 
 /** How often a message stuck at the attempt cap gets one fresh try, outside the listener's start-up retry. */
 export const STUCK_RETRY_INTERVAL_MS = 30 * 60 * 1000;
+
+/** How often the running listener re-reads keys and resubscribes when they changed. */
+export const KEY_WATCH_INTERVAL_MS = 5_000;
 
 export function listenerPidPath(paths: DgPaths): string {
 	return join(paths.phoneRoot, "listener.pid");
@@ -77,15 +138,39 @@ export function commandLookupFromText(status: number | null, stdout: string | un
 	return { kind: "args", args };
 }
 
-/** True when `/proc/<pid>/stat` reports zombie state; anything unreadable is not a zombie. */
-export function isZombie(pid: number): boolean {
+/** True when a `/proc/<pid>/stat` line reports zombie state. */
+export function isZombieStat(stat: string): boolean {
+	const afterComm = stat.slice(stat.lastIndexOf(")") + 2);
+	return afterComm.charAt(0) === "Z";
+}
+
+function readProcStat(pid: number): string | undefined {
 	try {
-		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-		const afterComm = stat.slice(stat.lastIndexOf(")") + 2);
-		return afterComm.charAt(0) === "Z";
+		return readFileSync(`/proc/${pid}/stat`, "utf8");
+	} catch {
+		return undefined;
+	}
+}
+
+/** True when `/proc/<pid>/stat` reports zombie state; anything unreadable is not a zombie. */
+export function isZombie(pid: number, readStat: (pid: number) => string | undefined = readProcStat): boolean {
+	try {
+		const stat = readStat(pid);
+		if (stat === undefined) return false;
+		return isZombieStat(stat);
 	} catch {
 		return false;
 	}
+}
+
+/** Alive and not state Z. `kill -0` succeeds on a zombie, so a zombie is not a running listener. */
+export function listenerProcessAlive(
+	pid: number,
+	readStat?: (pid: number) => string | undefined,
+	alive: (pid: number) => boolean = isAlive,
+): boolean {
+	if (!alive(pid)) return false;
+	return !isZombie(pid, readStat);
 }
 
 function readProcessArgs(pid: number): ProcessArgs {
@@ -141,20 +226,25 @@ export function listenerGeneration(pid: number): ListenerGeneration | undefined 
 	return args.includes("phone-friend") ? "legacy" : "current";
 }
 
-/** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is no longer alive. */
-export function readListenerPid(paths: DgPaths): ListenerPid | undefined {
+/** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is dead or a zombie. */
+export function readListenerPid(
+	paths: DgPaths,
+	alive: (pid: number) => boolean = (pid) => listenerProcessAlive(pid),
+): ListenerPid | undefined {
 	const path = listenerPidPath(paths);
 	if (!existsSync(path)) return undefined;
 	try {
 		const record = JSON.parse(readFileSync(path, "utf8")) as ListenerPid;
 		if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return undefined;
-		if (!isAlive(record.pid)) return undefined;
+		if (!alive(record.pid)) return undefined;
 		return {
 			pid: record.pid,
 			since: record.since,
 			hook: record.hook,
 			...(record.relays ? { relays: record.relays } : {}),
 			...(record.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
+			...(typeof record.version === "string" ? { version: record.version } : {}),
+			...(typeof record.keys === "string" ? { keys: record.keys } : {}),
 		};
 	} catch {
 		return undefined;
@@ -372,7 +462,8 @@ export function spawnDetachedListener(argv: string[], logPath: string): number {
 
 function writeListenerPid(paths: DgPaths, record: ListenerPid): void {
 	ensurePrivateDir(paths.phoneRoot);
-	writeFileAtomic(listenerPidPath(paths), JSON.stringify(record));
+	const stamped: ListenerPid = { ...record, version: record.version ?? DG_AGENT_PACKAGE_VERSION };
+	writeFileAtomic(listenerPidPath(paths), JSON.stringify(stamped));
 }
 
 export function removeListenerPid(paths: DgPaths): void {
@@ -420,6 +511,7 @@ function admitMessage(
 		const handle = nextFreeHandle(db, base);
 		const contactRelays = newContact.relays?.length ? newContact.relays : relays;
 		addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
+		addPhoneNotice(db, `new contact +${handle}`, now());
 		if (newContact.inviteSecret) consumeInvite(db, newContact.inviteSecret);
 	}
 	if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
@@ -450,19 +542,25 @@ export async function runListener(deps: ListenerDeps): Promise<void> {
 	}
 }
 
+function listenerPidRecord(deps: ListenerDeps, relays: string[], keys: { id: string; pub: string }[], since: number): ListenerPid {
+	return {
+		pid: deps.pid,
+		since,
+		hook: deps.hook ? { argv: deps.hook.argv, timeoutS: Math.round(deps.hook.timeoutMs / 1000) } : null,
+		relays,
+		keys: keyFingerprint(keys),
+	};
+}
+
 async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await ensureNumberKey(deps);
-	const keys = await loadAllKeys(deps);
+	let keys = await loadAllKeys(deps);
 	const contactRelays = readRelays(deps.db);
 	const relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
+	const since = deps.now();
 
-	writeListenerPid(deps.paths, {
-		pid: deps.pid,
-		since: deps.now(),
-		hook: deps.hook ? { argv: deps.hook.argv, timeoutS: Math.round(deps.hook.timeoutMs / 1000) } : null,
-		relays,
-	});
+	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
 
@@ -486,25 +584,43 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await hookRunner.retryStuck();
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
-	const sub = subscribe(
-		pool,
-		relays,
-		keys,
-		() => gateFor(deps.db),
-		caught.seen,
-		(message, seenNow, _gate, extra) => {
-			admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
-			writeCursor(deps.db, seenNow.cursor);
-			void hookRunner.notify();
-		},
-		deps.now,
-	);
+	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
+		admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
+		writeCursor(deps.db, seenNow.cursor);
+		void hookRunner.notify();
+	};
+	let sub = subscribe(pool, relays, keys, () => gateFor(deps.db), caught.seen, onLive, deps.now);
+	let stopped = false;
+	let watching = false;
+	const watchKeys = () => {
+		if (stopped || watching) return;
+		watching = true;
+		void (async () => {
+			try {
+				const next = await loadAllKeys(deps);
+				const nextPrint = keyFingerprint(next);
+				if (stopped || nextPrint === keyFingerprint(keys)) return;
+				sub.close();
+				if (stopped) return;
+				keys = next;
+				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), caught.seen, onLive, deps.now);
+				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+				notePhoneDrift(deps.db, `keys:${nextPrint}`, "key changed", deps.now());
+			} catch {
+			} finally {
+				watching = false;
+			}
+		})();
+	};
+	const cancelWatch = repeat(deps.schedule, KEY_WATCH_INTERVAL_MS, watchKeys);
 
 	return new Promise<void>((resolve) => {
 		const shutdown = () => {
+			stopped = true;
 			sub.close();
 			pool.close(relays);
 			cancelStuckRetry();
+			cancelWatch();
 			hookRunner.stop();
 			void hookRunner.settle().finally(() => {
 				removeListenerPid(deps.paths);
