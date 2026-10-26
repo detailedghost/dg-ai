@@ -109,7 +109,7 @@ listener's pid, start time, binary version, and key fingerprint live at
 differ from the database. `status` sets `listener.stale` to true, with a
 reason, when that happens, and `notice` to the newest local message. When a
 key's credential-store read fails, `status` includes `keys_unreadable: true`
-and leaves `stale` false; that is not a restart. A local
+and leaves `stale` false, unless a key it can read has changed. A local
 voicemail row from sender `phone` announces an accepted card, a new contact, a
 key change, or a binary change. `contacts` may include `marker` (`accepted` or
 `new`). Its stdout and stderr, when it runs through the fallback spawn or launchd, go

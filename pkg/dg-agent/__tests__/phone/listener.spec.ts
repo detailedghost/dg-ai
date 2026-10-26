@@ -297,6 +297,7 @@ describe("runListener", () => {
 			relays: DEFAULT_RELAYS,
 			version: DG_AGENT_PACKAGE_VERSION,
 			keys: keyFingerprint([{ id: numberKeyId(db), pub: getPublicKey(sk) }]),
+			keyPubs: [{ id: numberKeyId(db), pub: getPublicKey(sk) }],
 		});
 
 		stop();
@@ -474,6 +475,117 @@ describe("runListener", () => {
 		expect(resubscribed?.since).toBeGreaterThan(initialSince);
 		expect(resubscribed?.["#p"]).toEqual(expect.arrayContaining([getPublicKey(sk), storePub, extra.pub]));
 		expect(db.unreadMessages().filter((row) => row.sender === "phone").map((row) => row.text)).toEqual(["key changed"]);
+
+		stop();
+		await run;
+	});
+
+	it("resubscribes a changed file key and keeps the pubkey of an unreadable store key", async () => {
+		const sk = setUpNumber("22".repeat(32));
+		const storeSk = generateSecretKey();
+		const storePub = getPublicKey(storeSk);
+		markKeyInStore(db, "b", storeSk);
+		let down = false;
+		const nsec = nip19.nsecEncode(storeSk);
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(
+			deps({
+				onSignal,
+				schedule,
+				grantClient: (): KeyClient => {
+					if (down) throw new Error("store down");
+					return {
+						async get(name) {
+							return name === keyName("b") ? { value: nsec, meta: {}, updatedAt: "" } : undefined;
+						},
+						async set() {},
+						async delete() {
+							return false;
+						},
+						async grant(prefix) {
+							return { prefix, path: "" };
+						},
+						close() {},
+					};
+				},
+			}),
+		);
+		await ready;
+		const filtersAtStart = pool.filters.length;
+		down = true;
+		const replacement = identity();
+		db.putKey({ id: numberKeyId(db), nsec: nip19.nsecEncode(replacement.sk), in_store: 0 });
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => pool.filters.length > filtersAtStart);
+
+		expect(pool.listeners).toHaveLength(1);
+		const resubscribed = pool.filters.at(-1);
+		expect(resubscribed?.["#p"]).toEqual(expect.arrayContaining([replacement.pub, storePub]));
+		expect(resubscribed?.["#p"]).not.toContain(getPublicKey(sk));
+		expect(db.unreadMessages().filter((row) => row.sender === "phone").map((row) => row.text)).toEqual(["key changed"]);
+
+		stop();
+		await run;
+	});
+
+	it("says a key became readable when a store key loads after startup", async () => {
+		const sk = setUpNumber("33".repeat(32));
+		const storeSk = generateSecretKey();
+		const storePub = getPublicKey(storeSk);
+		markKeyInStore(db, "b", storeSk);
+		let down = true;
+		const nsec = nip19.nsecEncode(storeSk);
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(
+			deps({
+				onSignal,
+				schedule,
+				grantClient: (): KeyClient => {
+					if (down) throw new Error("store down");
+					return {
+						async get(name) {
+							return name === keyName("b") ? { value: nsec, meta: {}, updatedAt: "" } : undefined;
+						},
+						async set() {},
+						async delete() {
+							return false;
+						},
+						async grant(prefix) {
+							return { prefix, path: "" };
+						},
+						close() {},
+					};
+				},
+			}),
+		);
+		await ready;
+		expect(pool.filters[1]?.["#p"]).toEqual([getPublicKey(sk)]);
+		down = false;
+		const filtersAtStart = pool.filters.length;
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => pool.filters.length > filtersAtStart);
+
+		expect(pool.listeners).toHaveLength(1);
+		expect(pool.filters.at(-1)?.["#p"]).toEqual(expect.arrayContaining([getPublicKey(sk), storePub]));
+		expect(db.unreadMessages().filter((row) => row.sender === "phone").map((row) => row.text)).toEqual(["a key became readable"]);
 
 		stop();
 		await run;

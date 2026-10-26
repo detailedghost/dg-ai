@@ -7,6 +7,7 @@ import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic }
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
 	fetchNew,
+	type KeyEntry,
 	type Message,
 	type NewContact,
 	type PhonePool,
@@ -59,6 +60,8 @@ export type ListenerPid = {
 	version?: string;
 	/** `keyFingerprint` of the keys this process subscribed to. Missing is not a mismatch. */
 	keys?: string;
+	/** `id` and `pub` of those keys. Missing on a pid file written before this was recorded. */
+	keyPubs?: ListenerKeyPub[];
 };
 
 /** sha256 prefix of sorted `id:pub` lines. Empty when there are no keys. Never includes a secret. */
@@ -72,9 +75,68 @@ export type ListenerDrift = {
 	reason?: string;
 	token?: string;
 	notice?: string;
-	/** A store read failed. Not a key change, and not a reason to restart. */
+	/** A store read failed. On its own this is not a reason to restart. */
 	keysUnreadable?: boolean;
 };
+
+/** Public keys this process subscribed to. Lets a later check see which key changed when another cannot be read. */
+export type ListenerKeyPub = { id: string; pub: string };
+
+function listenerKeyPubs(keys: { id: string; pub: string }[]): ListenerKeyPub[] {
+	return keys.map((key) => ({ id: key.id, pub: key.pub })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+function readKeyPubs(value: unknown): ListenerKeyPub[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const pubs: ListenerKeyPub[] = [];
+	for (const entry of value) {
+		if (!entry || typeof entry !== "object") return undefined;
+		const id = (entry as { id?: unknown }).id;
+		const pub = (entry as { pub?: unknown }).pub;
+		if (typeof id !== "string" || id.length === 0 || typeof pub !== "string" || pub.length === 0) return undefined;
+		pubs.push({ id, pub });
+	}
+	return pubs;
+}
+
+/** True when a key this process can read is new, gone, or has a different pub than `recorded`. */
+function readableKeysChanged(recorded: ListenerKeyPub[], loaded: { keys: { id: string; pub: string }[]; unreadable: string[] }): boolean {
+	const unread = new Set(loaded.unreadable);
+	const recordedById = new Map(recorded.map((key) => [key.id, key.pub]));
+	for (const key of loaded.keys) {
+		if (recordedById.get(key.id) !== key.pub) return true;
+	}
+	for (const key of recorded) {
+		if (unread.has(key.id)) continue;
+		if (!loaded.keys.some((loadedKey) => loadedKey.id === key.id)) return true;
+	}
+	return false;
+}
+
+/** Keeps the last subscribed secret for an id whose store read failed, and takes the fresh copy of every id that loaded. */
+function mergeHeldKeys(loaded: { keys: KeyEntry[]; unreadable: string[] }, held: KeyEntry[]): KeyEntry[] {
+	const heldById = new Map(held.map((key) => [key.id, key]));
+	const merged = [...loaded.keys];
+	for (const id of loaded.unreadable) {
+		const previous = heldById.get(id);
+		if (previous) merged.push(previous);
+	}
+	return merged;
+}
+
+/** "a key became readable" only when every added id had failed a store read and no subscribed pub changed. */
+function subscriptionNotice(previous: { id: string; pub: string }[], next: { id: string; pub: string }[], previouslyUnreadable: ReadonlySet<string>): string {
+	const previousById = new Map(previous.map((key) => [key.id, key.pub]));
+	const nextIds = new Set(next.map((key) => key.id));
+	const removed = previous.some((key) => !nextIds.has(key.id));
+	const pubChanged = next.some((key) => {
+		const before = previousById.get(key.id);
+		return before !== undefined && before !== key.pub;
+	});
+	const added = next.filter((key) => !previousById.has(key.id));
+	if (!removed && !pubChanged && added.length > 0 && added.every((key) => previouslyUnreadable.has(key.id))) return "a key became readable";
+	return "key changed";
+}
 
 /** Whether `record` was written by another binary or subscribed to a different key set than `deps.db` holds. */
 export async function listenerDrift(deps: KeyDeps, record: ListenerPid): Promise<ListenerDrift> {
@@ -92,7 +154,23 @@ export async function listenerDrift(deps: KeyDeps, record: ListenerPid): Promise
 	} catch {
 		return { restart: false, keysUnreadable: true };
 	}
-	if (loaded.unreadable.length > 0) return { restart: false, keysUnreadable: true };
+	if (loaded.unreadable.length > 0) {
+		const recorded = record.keyPubs;
+		if (recorded && readableKeysChanged(recorded, loaded)) {
+			const held = recorded.filter((key) => loaded.unreadable.includes(key.id));
+			const fingerprint = keyFingerprint([...loaded.keys, ...held]);
+			if (record.keys === undefined || record.keys !== fingerprint) {
+				return {
+					restart: true,
+					reason: "listener keys differ from the database",
+					token: `keys:${fingerprint}`,
+					notice: "key changed",
+					keysUnreadable: true,
+				};
+			}
+		}
+		return { restart: false, keysUnreadable: true };
+	}
 	const fingerprint = keyFingerprint(loaded.keys);
 	if (record.keys !== undefined && record.keys !== fingerprint) {
 		return {
@@ -241,6 +319,7 @@ export function readListenerPid(
 		const record = JSON.parse(readFileSync(path, "utf8")) as ListenerPid;
 		if (!Number.isSafeInteger(record.pid) || record.pid <= 0) return undefined;
 		if (!alive(record.pid)) return undefined;
+		const keyPubs = readKeyPubs(record.keyPubs);
 		return {
 			pid: record.pid,
 			since: record.since,
@@ -249,6 +328,7 @@ export function readListenerPid(
 			...(record.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
 			...(typeof record.version === "string" ? { version: record.version } : {}),
 			...(typeof record.keys === "string" ? { keys: record.keys } : {}),
+			...(keyPubs ? { keyPubs } : {}),
 		};
 	} catch {
 		return undefined;
@@ -553,12 +633,15 @@ function listenerPidRecord(deps: ListenerDeps, relays: string[], keys: { id: str
 		hook: deps.hook ? { argv: deps.hook.argv, timeoutS: Math.round(deps.hook.timeoutMs / 1000) } : null,
 		relays,
 		keys: keyFingerprint(keys),
+		keyPubs: listenerKeyPubs(keys),
 	};
 }
 
 async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await ensureNumberKey(deps);
-	let keys = (await loadAllKeys(deps)).keys;
+	const initialKeys = await loadAllKeys(deps);
+	let keys = initialKeys.keys;
+	let unreadBefore = new Set(initialKeys.unreadable);
 	const contactRelays = readRelays(deps.db);
 	const relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
@@ -604,15 +687,21 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		void (async () => {
 			try {
 				const loaded = await loadAllKeys(deps);
-				if (stopped || loaded.unreadable.length > 0) return;
-				const nextPrint = keyFingerprint(loaded.keys);
-				if (nextPrint === keyFingerprint(keys)) return;
+				if (stopped) return;
+				const merged = mergeHeldKeys(loaded, keys);
+				const nextPrint = keyFingerprint(merged);
+				if (nextPrint === keyFingerprint(keys)) {
+					unreadBefore = new Set(loaded.unreadable);
+					return;
+				}
+				const notice = subscriptionNotice(keys, merged, unreadBefore);
+				unreadBefore = new Set(loaded.unreadable);
 				sub.close();
 				if (stopped) return;
-				keys = loaded.keys;
+				keys = merged;
 				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
 				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
-				notePhoneDrift(deps.db, `keys:${nextPrint}`, "key changed", deps.now());
+				notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
 			} catch {
 			} finally {
 				watching = false;

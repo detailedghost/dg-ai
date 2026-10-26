@@ -198,7 +198,15 @@ describe("a listener whose keys drifted", () => {
 			{ id: "a", pub: getPublicKey(fileSk) },
 			{ id: "b", pub: getPublicKey(storeSk) },
 		]);
-		writePid(h.paths, { pid: process.pid, version: DG_AGENT_PACKAGE_VERSION, keys: fingerprint });
+		writePid(h.paths, {
+			pid: process.pid,
+			version: DG_AGENT_PACKAGE_VERSION,
+			keys: fingerprint,
+			keyPubs: [
+				{ id: "a", pub: getPublicKey(fileSk) },
+				{ id: "b", pub: getPublicKey(storeSk) },
+			],
+		});
 		writeListener(h.deps.db, { autostart: { kind: "systemd" } });
 
 		await phoneStatus(h.deps);
@@ -245,6 +253,44 @@ describe("a listener whose keys drifted", () => {
 			notice: "key changed",
 		});
 		expect(lines()[0]).not.toHaveProperty("keys_unreadable");
+	});
+
+	it("restarts when a readable key changes while a store key is unreadable", async () => {
+		const h = harness();
+		const fileSk = createFileKey(h.deps.db, "a") as Uint8Array;
+		const storeSk = generateSecretKey();
+		markKeyInStore(h.deps.db, "b", storeSk);
+		const filePub = getPublicKey(fileSk);
+		const storePub = getPublicKey(storeSk);
+		writePid(h.paths, {
+			pid: process.pid,
+			version: DG_AGENT_PACKAGE_VERSION,
+			keys: keyFingerprint([
+				{ id: "a", pub: filePub },
+				{ id: "b", pub: storePub },
+			]),
+			keyPubs: [
+				{ id: "a", pub: filePub },
+				{ id: "b", pub: storePub },
+			],
+		});
+		writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+		h.deps.db.putKey({ id: "a", nsec: nip19.nsecEncode(generateSecretKey()), in_store: 0 });
+
+		await phoneStatus(h.deps);
+		const status = lines()[0] as {
+			listener: { pid: number; since: number; stale: boolean; reason?: string };
+			notice: string | null;
+			keys_unreadable?: boolean;
+		};
+		expect(status.listener).toEqual({ pid: process.pid, since: NOW, stale: true, reason: "listener keys differ from the database" });
+		expect(status.notice).toBe("key changed");
+		expect(status.keys_unreadable).toBe(true);
+
+		out = [];
+		await phoneOpen({}, h.deps);
+		expect(h.killed).toEqual([process.pid]);
+		expect(lines()[0]).toMatchObject({ status: "restarted" });
 	});
 });
 

@@ -47,8 +47,11 @@ since it arrived (within the 7-day window relays and this database both
 keep).
 
 Every few seconds the listener re-reads its keys. When a credential store
-cannot be read, it keeps the current subscription. A real key change
-resubscribes from the cursor it has already reached. `say`, `accept`,
+cannot be read, it keeps that key's current subscription and still applies a
+change to a key it can read. A key that was unreadable at startup and later
+loads is announced as "a key became readable". A real key change resubscribes
+from the cursor it has already reached. `status` sets `listener.stale` for
+that change even while `keys_unreadable` is true. `say`, `accept`,
 `invite`, `number`, and `voicemail` restart a drifted listener. If that
 process will not exit, the command finishes and writes a warning. The
 listener never restarts the service unit it is running under.
