@@ -17,6 +17,23 @@ const GITHUB_URL = "https://github.com/o/r/pull/12";
 const GITLAB_URL = "https://gitlab.com/g/p/-/merge_requests/5";
 
 describe("parseTrigger", () => {
+	test("rejects an unknown $ command instead of falling through to a re-review", () => {
+		expect(parseTrigger(`!owner $addressed ${GITHUB_URL}`, OPTIONS)).toEqual({
+			kind: "error",
+			code: "CR-111",
+		});
+		expect(parseTrigger(`!owner $reveiw ${GITHUB_URL}`, OPTIONS)).toEqual({
+			kind: "error",
+			code: "CR-111",
+		});
+	});
+
+	test("ignores a dollar amount that is not a command", () => {
+		expect(parseTrigger(`!owner the fix costs $5 ${GITHUB_URL}`, OPTIONS)).toEqual({
+			kind: "ignore",
+		});
+	});
+
 	test("preserves a model name's case and accepts an uppercase flag", () => {
 		expect(
 			parseTrigger(`!owner $review ${GITHUB_URL} ~MODEL Opus-4.6`, OPTIONS),

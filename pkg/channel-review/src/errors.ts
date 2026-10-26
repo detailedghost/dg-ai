@@ -17,6 +17,8 @@ export const ERROR_CATALOG = {
 		"The ~effort level must be low, medium, high, xhigh, or max, so I didn't review this. Fix the level and try again.",
 	"CR-110":
 		"Too many reviews are waiting, so I didn't queue this one. Post it again in a few minutes.",
+	"CR-111":
+		"I don't know that $ command, so I didn't run anything. Use $review or $address, or send $help for the list.",
 	"CR-201":
 		"I couldn't start {agent} on {owner}'s computer, so I didn't review this. Try ~agent claude.",
 	"CR-202":

@@ -12,7 +12,7 @@ export type TriggerResult =
 			kind: "error";
 			code: Extract<
 				CrCode,
-				"CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105" | "CR-108" | "CR-109"
+				"CR-101" | "CR-102" | "CR-103" | "CR-104" | "CR-105" | "CR-108" | "CR-109" | "CR-111"
 			>;
 	  }
 	| { kind: "emoji"; slot?: string }
@@ -130,7 +130,11 @@ export function parseTrigger(
 		const slot = valueAfter(tokens, "$emoji");
 		return slot === undefined ? { kind: "emoji" } : { kind: "emoji", slot };
 	}
-	if (!review && !address) return { kind: "ignore" };
+	if (!review && !address) {
+		return tokens.some((token) => /^\$[a-z][a-z-]*$/.test(token))
+			? { kind: "error", code: "CR-111" }
+			: { kind: "ignore" };
+	}
 	if (review && address) return { kind: "error", code: "CR-105" };
 
 	const found = links(text, hosts);
