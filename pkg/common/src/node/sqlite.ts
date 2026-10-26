@@ -21,6 +21,7 @@ export function applyConnectionPragmas(
 			Atomics.wait(pause, 0, 0, 10);
 		}
 	}
+	db.run("PRAGMA synchronous = NORMAL");
 	db.run("PRAGMA foreign_keys = ON");
 }
 

@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	applyConnectionPragmas,
 	ForwardOnlyVersionError,
 	type MigrationStep,
 	runMigrations,
@@ -124,6 +125,30 @@ describe("runMigrations", () => {
 		runMigrations(db, [stepCreateA], { snapshotDir });
 
 		expect(readdirSync(snapshotDir).length).toBeGreaterThan(0);
+		db.close(true);
+	});
+});
+
+describe("applyConnectionPragmas", () => {
+	it("sets WAL journal mode, synchronous NORMAL, foreign_keys ON, and a positive busy_timeout", () => {
+		const db = openDb(tempDbPath());
+		applyConnectionPragmas(db);
+
+		expect(
+			(db.query("PRAGMA journal_mode").get() as { journal_mode: string })
+				.journal_mode,
+		).toBe("wal");
+		expect(
+			(db.query("PRAGMA synchronous").get() as { synchronous: number })
+				.synchronous,
+		).toBe(1);
+		expect(
+			(db.query("PRAGMA foreign_keys").get() as { foreign_keys: number })
+				.foreign_keys,
+		).toBe(1);
+		expect(
+			(db.query("PRAGMA busy_timeout").get() as { timeout: number }).timeout,
+		).toBeGreaterThan(0);
 		db.close(true);
 	});
 });
