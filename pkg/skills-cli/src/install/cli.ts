@@ -359,7 +359,6 @@ async function install(
 		await installPinnedAll(target, pin, keepCache);
 		return;
 	}
-	setCliOnly(false);
 	const dest = extensionDest(target);
 
 	// Resolve a source + version: CI release first, local build as dev fallback.
@@ -394,6 +393,7 @@ async function install(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
 		if (!forceLocal) await installCli(keepCache);
+		setCliOnly(false);
 		return;
 	}
 
@@ -401,6 +401,7 @@ async function install(
 
 	// Also keep the bundle current (skip in --local dev, where we run source).
 	if (!forceLocal) await installCli(keepCache);
+	setCliOnly(false);
 }
 
 function withCurrentPins(step: () => void): void {
