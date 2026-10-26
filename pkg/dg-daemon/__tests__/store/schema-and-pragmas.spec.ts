@@ -56,7 +56,7 @@ describe("ChatStore.open — connection + schema", () => {
 		}
 	});
 
-	it("sets WAL journal mode, foreign_keys ON, and a positive busy_timeout", async () => {
+	it("sets WAL journal mode, synchronous NORMAL, foreign_keys ON, and a positive busy_timeout", async () => {
 		const dgHome = freshDgHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
@@ -68,6 +68,10 @@ describe("ChatStore.open — connection + schema", () => {
 					.journal_mode,
 			).toBe("wal");
 			applyConnectionPragmas(raw);
+			expect(
+				(raw.query("PRAGMA synchronous").get() as { synchronous: number })
+					.synchronous,
+			).toBe(1);
 			expect(
 				(raw.query("PRAGMA foreign_keys").get() as { foreign_keys: number })
 					.foreign_keys,
