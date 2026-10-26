@@ -32,10 +32,61 @@ permissions:
   contents: read
 
 jobs:
-  skills-blt:
+  # skills-cli tests alone have taken about 800s. In one job, the later
+  # skills-test step then crossed the 15 minute cap and the run was cancelled
+  # while every finished test was green. Four shards keep each runner well
+  # under that cap. The job id `skills-blt` stays the check name blt-gate
+  # polls, and it runs the other packages only after every shard succeeds.
+  skills-cli:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Install (root — wires workspace symlinks, skip extension postinstall)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # demo --verify drives a real browser with the built extension loaded. Build it
+      # here, not from the spec's beforeAll: a cold wxt build inside a test counts
+      # against that test's own timeout, and a build failure there surfaces as an
+      # unexplained timeout instead of a failed step.
+      - name: Install (extension)
+        working-directory: pkg/extension
+        run: bun install --frozen-lockfile
+
+      - name: Build (extension — the verify harness loads it)
+        working-directory: pkg/extension
+        run: bun run build
+
+      - name: Test (skills-cli)
+        working-directory: pkg/skills-cli
+        env:
+          DG_VERIFY_NO_SANDBOX: "1"
+        run: bun test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  skills-blt:
+    needs: skills-cli
+    if: "${{ !cancelled() }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require skills-cli shards
+        if: "${{ needs.skills-cli.result != 'success' }}"
+        run: |
+          echo "skills-cli shards finished with ${{ needs.skills-cli.result }}"
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Mask secrets in later log output
@@ -75,24 +126,6 @@ jobs:
       - name: Lint (skills-cli)
         working-directory: pkg/skills-cli
         run: bun run lint
-
-      # demo --verify drives a real browser with the built extension loaded. Build it
-      # here, not from the spec's beforeAll: a cold wxt build inside a test counts
-      # against that test's own timeout, and a build failure there surfaces as an
-      # unexplained timeout instead of a failed step.
-      - name: Install (extension)
-        working-directory: pkg/extension
-        run: bun install --frozen-lockfile
-
-      - name: Build (extension — the verify harness loads it)
-        working-directory: pkg/extension
-        run: bun run build
-
-      - name: Test (skills-cli)
-        working-directory: pkg/skills-cli
-        env:
-          DG_VERIFY_NO_SANDBOX: "1"
-        run: bun test
 
       - name: Build (skills-cli)
         working-directory: pkg/skills-cli

@@ -286,6 +286,11 @@ bun test       # install logic + skill manifests + CLI smoke
 | `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*`, 6 bins |
 | `dg-agent-release` | push master: dg-agent, common | `agent-v*`, 6 bins |
 
+The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
+Each shard and the job that follows it has a 30 minute backstop.
+That job passes only after every shard and the other package checks pass.
+`blt-gate` still waits on `skills-blt`, which covers channel-review as well as the shards.
+
 ## Branch Protection
 
 PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-daemon-blt` and
