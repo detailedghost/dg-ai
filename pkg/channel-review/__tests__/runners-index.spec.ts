@@ -13,6 +13,7 @@ const HOME = "/home/dev";
 const URL = "https://github.com/o/r/pull/12";
 const CLAUDE_HEADLESS_NOTE =
 	"This run is headless, and no one can approve a command. The dg-skills CLI is installed and current, so skip the skill's first-run install check. Run each ~/.dg/bin/dg-skills command as its own Bash call, with no pipes, redirects, || or &&.";
+const DRAFT_NOTE = "Review the pull request whether it is a draft or open.";
 const CODEX_HEADLESS_NOTE =
 	"This run is headless. No one can answer questions. Post the review without asking for confirmation.";
 const PATHS = {
@@ -360,7 +361,7 @@ describe("runner run argv", () => {
 			"-p",
 			`/dg:thrash ${URL} -s 3 -c`,
 			"--append-system-prompt",
-			CLAUDE_HEADLESS_NOTE,
+			`${CLAUDE_HEADLESS_NOTE} ${DRAFT_NOTE}`,
 			"--permission-prompts",
 			"none",
 			"--permission-mode",
@@ -476,7 +477,7 @@ describe("runner run argv", () => {
 			"-C",
 			"/work",
 			"--dangerously-bypass-approvals-and-sandbox",
-			`${CODEX_HEADLESS_NOTE} Use the thrash skill: $thrash ${URL} -s 2`,
+			`${CODEX_HEADLESS_NOTE} ${DRAFT_NOTE} Use the thrash skill: $thrash ${URL} -s 2`,
 		]);
 	});
 
@@ -531,7 +532,7 @@ describe("runner run argv", () => {
 		expect(h.processes[0]?.argv).toEqual([
 			PATHS.copilot,
 			"-p",
-			`Use the thrash skill: /thrash ${URL} -c`,
+			`${DRAFT_NOTE} Use the thrash skill: /thrash ${URL} -c`,
 			"--allow-all-tools",
 			"--no-ask-user",
 			"-s",
