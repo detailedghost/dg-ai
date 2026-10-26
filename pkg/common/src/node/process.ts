@@ -139,8 +139,7 @@ export function runCaptureBytes(
 	return new Promise((resolve, reject) => {
 		const captureOptions = {
 			cwd: options.cwd,
-			timeout: options.timeoutMs,
-			killSignal: "SIGKILL" as const,
+			detached: options.timeoutMs !== undefined && process.platform !== "win32",
 		};
 		const child =
 			options.stdin === null
@@ -153,17 +152,22 @@ export function runCaptureBytes(
 		const stderr: Buffer[] = [];
 		let settled = false;
 		let graceTimer: ReturnType<typeof setTimeout> | undefined;
+		let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 		child.stdout.on("data", (chunk: Buffer) => {
 			stdout.push(chunk);
 		});
 		child.stderr.on("data", (chunk: Buffer) => {
 			stderr.push(chunk);
 		});
-		child.on("error", reject);
+		child.on("error", (error) => {
+			clearTimeout(timeoutTimer);
+			reject(error);
+		});
 		const settle = (code: number | null, signal: NodeJS.Signals | null) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(graceTimer);
+			clearTimeout(timeoutTimer);
 			const status =
 				code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0);
 			resolve({
@@ -173,6 +177,11 @@ export function runCaptureBytes(
 				stderr: Buffer.concat(stderr),
 			});
 		};
+		if (options.timeoutMs !== undefined) {
+			timeoutTimer = setTimeout(() => {
+				if (typeof child.pid === "number") killProcessTree(child.pid);
+			}, options.timeoutMs);
+		}
 		child.on("close", settle);
 		child.on("exit", (code, signal) => {
 			graceTimer = setTimeout(() => {

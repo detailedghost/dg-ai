@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { type DgPaths, isAlive, resolveDgPaths } from "@dg/common/node";
 import { PhoneDb } from "../../src/phone/db";
 import { createHookRunner, type Schedule } from "../../src/phone/hook";
 import { ON_MESSAGE_MAX_ATTEMPTS, type CommandPushTarget } from "../../src/phone/push";
@@ -52,6 +52,16 @@ function message(id: string, ts: number, overrides: Partial<{ sender: string; co
 		direction: "in" as const,
 		...overrides,
 	};
+}
+
+/** Polls rather than trusting a fixed delay, since the kill happens off this process's event loop. */
+async function waitUntilDead(pid: number, timeoutMs = 2000): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (!isAlive(pid)) return true;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	return false;
 }
 
 function fakeSchedule(): { schedule: Schedule; delays: () => number[]; fireNext: () => void } {
@@ -237,6 +247,37 @@ describe("createHookRunner", () => {
 
 		expect(db.recentMessages(1)[0]?.read_at).not.toBeNull();
 	});
+
+	it(
+		"kills a grandchild that ignores the timeout, and the scheduled retry is not blocked by it",
+		async () => {
+			db.addMessage(message("a", NOW));
+			const pidFile = join(scratch, `grandchild-pid-${Math.random()}`);
+			const script =
+				"const{spawn}=require('node:child_process');" +
+				`const c=spawn(process.execPath,["-e","process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:"ignore"});` +
+				"c.unref();" +
+				`require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(c.pid));` +
+				"setInterval(()=>{},1000);";
+			const target: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", script], timeoutMs: 300 };
+			const { schedule, delays, fireNext } = fakeSchedule();
+			const runner = createHookRunner(db, target, schedule);
+
+			await runner.notify();
+			const firstGrandchild = Number(readFileSync(pidFile, "utf8"));
+			expect(await waitUntilDead(firstGrandchild)).toBe(true);
+			expect(delays()).toEqual([5000]);
+			expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 1, read_at: null });
+
+			fireNext();
+			await runner.settle();
+			const secondGrandchild = Number(readFileSync(pidFile, "utf8"));
+			expect(await waitUntilDead(secondGrandchild)).toBe(true);
+			expect(delays()).toEqual([30000]);
+			expect(db.recentMessages(1)[0]).toMatchObject({ attempts: 2, read_at: null });
+		},
+		10_000,
+	);
 
 	it("a retryStuck that races a notify is folded in, not dropped: both the live row and the stuck row end up read", async () => {
 		db.addMessage(message("stuck", NOW));
