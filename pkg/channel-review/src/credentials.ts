@@ -20,8 +20,12 @@ export function localSecretName(envName: string): string {
 	return `CHANNEL_REVIEW_RELAY_SECRET_${envName.toUpperCase()}`;
 }
 
+export function missingRelaySecretRemedy(envName: string): string {
+	return `no relay secret stored for ${envName}; run dg-skills channel-review connect relay --env ${envName}`;
+}
+
 export type CredentialSource = Pick<CredentialClient, "list" | "get" | "close">;
-export type SecretSource = "store" | "env" | "aws" | "missing";
+export type SecretSource = "store" | "env" | "missing";
 export type SecretStatus = {
 	name: string;
 	source: SecretSource;
@@ -145,7 +149,7 @@ export async function resolveSecrets({
 	const relay = usable(relayName);
 	const datadog = usable(DATADOG_CREDENTIAL);
 	const sentry = usable(SENTRY_CREDENTIAL);
-	const relayFallback = resolved[relayEnv] ? "env" : "aws";
+	const relayFallback = resolved[relayEnv] ? "env" : "missing";
 	const datadogFallback =
 		"headers" in datadogAuthHeaders(resolved) ? "env" : "missing";
 	const sentryFallback = resolved.SENTRY_AUTH_TOKEN ? "env" : "missing";
