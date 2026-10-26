@@ -415,7 +415,9 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 						},
 					}),
 				),
-			).toThrow('line "default" has no key to migrate; refusing to mint a new number');
+			).toThrow(
+				'line "default" has no key to migrate; refusing to mint a new number. Restore the nsec in that line\'s database or the credential phone-friend/default/nostr-key, then run phone open',
+			);
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
 			expect(killed).toEqual([]);
 		} finally {

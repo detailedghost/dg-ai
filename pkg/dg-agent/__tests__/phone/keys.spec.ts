@@ -299,25 +299,27 @@ describe("loadAllKeys", () => {
 		const number = await ensureKey(deps({ session: true }), "default");
 		const legacy = await ensureKey(deps({ session: true }), "work");
 
-		const keys = await loadAllKeys(deps({ session: true }));
+		const loaded = await loadAllKeys(deps({ session: true }));
 
-		expect(keys.map((key) => key.id).sort()).toEqual(["default", "work"]);
-		const byId = new Map(keys.map((key) => [key.id, key]));
+		expect(loaded.unreadable).toEqual([]);
+		expect(loaded.keys.map((key) => key.id).sort()).toEqual(["default", "work"]);
+		const byId = new Map(loaded.keys.map((key) => [key.id, key]));
 		expect(byId.get("default")?.pub).toBe(getPublicKey(number.sk));
 		expect(byId.get("work")?.pub).toBe(getPublicKey(legacy.sk));
 	});
 
 	it("is empty when no key has ever been created", async () => {
-		expect(await loadAllKeys(deps())).toEqual([]);
+		expect(await loadAllKeys(deps())).toEqual({ keys: [], unreadable: [] });
 	});
 
-	it("leaves out a key row whose store is unreachable rather than failing the whole load", async () => {
+	it("reports a key row whose store is unreachable instead of dropping it", async () => {
 		await ensureKey(deps({ session: true }), "default");
 		markKeyInStore(db, "work", generateSecretKey());
 		store.delete(keyName("work"));
 
-		const keys = await loadAllKeys(deps());
+		const loaded = await loadAllKeys(deps());
 
-		expect(keys.map((key) => key.id)).toEqual(["default"]);
+		expect(loaded.keys.map((key) => key.id)).toEqual(["default"]);
+		expect(loaded.unreadable).toEqual(["work"]);
 	});
 });

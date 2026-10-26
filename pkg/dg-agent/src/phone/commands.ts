@@ -99,7 +99,9 @@ function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" 
 }
 
 /** Stops a listener this binary started when its version or keys no longer match the database.
- * Does nothing unless `kill` and `isOurListener` are injected, and never signals this process. */
+ * Does nothing unless `kill` and `isOurListener` are injected, and never signals this process.
+ * A managed restart runs only from a separate command. `phone __run` signals the other pid and
+ * then subscribes itself, so it cannot restart the unit it is running under. */
 async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): Promise<void> {
 	if (!deps.kill || !deps.isOurListener) return;
 	const running = readListenerPid(deps.paths);
@@ -109,7 +111,7 @@ async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): 
 	if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
 	const saved = readListener(deps.db);
 	const kind = saved?.autostart?.kind;
-	if (isManagedKind(kind) && deps.run) {
+	if (isManagedKind(kind) && deps.run && opts.spawn) {
 		for (const argv of managedRestartCommands(kind, deps.uid ?? 0)) await deps.run(argv);
 		return;
 	}
@@ -120,7 +122,12 @@ async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): 
 		}
 	}
 	if (readListenerPid(deps.paths)?.pid === running.pid) {
-		throw new DgCliError(`the phone listener (pid ${running.pid}) did not stop`);
+		const message = `the phone listener (pid ${running.pid}) did not stop; left it running`;
+		if (!opts.spawn) throw new DgCliError(message);
+		const line = `phone: ${message}\n`;
+		if (deps.writeErr) deps.writeErr(line);
+		else process.stderr.write(line);
+		return;
 	}
 	if (!opts.spawn || !deps.spawnListener || !deps.listenerArgv) return;
 	deps.spawnListener(deps.listenerArgv(onMessageArgvFor(saved?.onMessage)), listenerLogPath(deps.paths));
@@ -488,8 +495,10 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 	const record = readListenerPid(deps.paths);
 	let notice = latestPhoneNotice(deps.db);
 	let listener: { pid: number; since: number; stale: boolean; reason?: string } | null = null;
+	let keysUnreadable = false;
 	if (record) {
 		const drift = await listenerDrift(deps, record);
+		keysUnreadable = Boolean(drift.keysUnreadable);
 		if (drift.notice && drift.token) {
 			notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
 			notice = latestPhoneNotice(deps.db);
@@ -510,6 +519,7 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 		legacy_root_present: legacyRootPresent(deps.paths),
 		migration_pending: false,
 		notice,
+		...(keysUnreadable ? { keys_unreadable: true } : {}),
 		autostart: formatAutostartState(readListener(deps.db)?.autostart),
 	});
 }

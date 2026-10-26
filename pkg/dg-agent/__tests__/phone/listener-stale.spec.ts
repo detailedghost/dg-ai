@@ -3,9 +3,9 @@ import { spawn } from "node:child_process";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { resolveDgPaths, type DgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
-import { phoneNumber, phoneOpen, phoneRefresh, phoneStatus, type OpenCloseDeps } from "../../src/phone/commands";
+import { phoneNumber, phoneOpen, phoneRefresh, phoneRun, phoneStatus, phoneVoicemail, type OpenCloseDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
-import { createFileKey, type KeyClient } from "../../src/phone/keys";
+import { createFileKey, keyName, markKeyInStore, type KeyClient } from "../../src/phone/keys";
 import {
 	isZombieStat,
 	keyFingerprint,
@@ -15,7 +15,7 @@ import {
 } from "../../src/phone/listener";
 import { writeListener } from "../../src/phone/store";
 import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
-import { makeHomeTracker, parseNdjson } from "./fake-pool";
+import { createFakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 
 let tracker: ReturnType<typeof makeHomeTracker>;
 let out: string[];
@@ -177,12 +177,74 @@ describe("a listener whose keys drifted", () => {
 		});
 
 		await phoneStatus(h.deps);
-		expect(lines()[0]).toMatchObject({ listener: { stale: true, reason: "listener keys could not be read" }, notice: null });
+		const status = lines()[0] as { listener: { stale: boolean; reason?: string }; notice: string | null; keys_unreadable?: boolean };
+		expect(status.listener.stale).toBe(false);
+		expect(status.listener.reason).toBeUndefined();
+		expect(status.notice).toBeNull();
+		expect(status.keys_unreadable).toBe(true);
 
 		out = [];
 		await phoneOpen({}, h.deps);
 		expect(h.killed).toEqual([]);
 		expect(lines()[0]).toMatchObject({ status: "running" });
+	});
+
+	it("does not restart when an in-store key cannot be read, and resumes when the store returns", async () => {
+		const h = harness();
+		const fileSk = createFileKey(h.deps.db, "a") as Uint8Array;
+		const storeSk = generateSecretKey();
+		markKeyInStore(h.deps.db, "b", storeSk);
+		const fingerprint = keyFingerprint([
+			{ id: "a", pub: getPublicKey(fileSk) },
+			{ id: "b", pub: getPublicKey(storeSk) },
+		]);
+		writePid(h.paths, { pid: process.pid, version: DG_AGENT_PACKAGE_VERSION, keys: fingerprint });
+		writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+
+		await phoneStatus(h.deps);
+		const down = lines()[0] as { listener: { stale: boolean; reason?: string }; notice: string | null; keys_unreadable?: boolean };
+		expect(down.listener.stale).toBe(false);
+		expect(down.listener.reason).toBeUndefined();
+		expect(down.notice).toBeNull();
+		expect(down.keys_unreadable).toBe(true);
+		expect(h.deps.db.unreadMessages()).toEqual([]);
+
+		out = [];
+		await phoneOpen({}, h.deps);
+		expect(h.killed).toEqual([]);
+		expect(h.ran).toEqual([]);
+		expect(lines()[0]).toMatchObject({ status: "running" });
+
+		const nsec = nip19.nsecEncode(storeSk);
+		h.deps.grantClient = (): KeyClient => ({
+			async get(name) {
+				return name === keyName("b") ? { value: nsec, meta: {}, updatedAt: "" } : undefined;
+			},
+			async set() {},
+			async delete() {
+				return false;
+			},
+			async grant(prefix) {
+				return { prefix, path: "" };
+			},
+			close() {},
+		});
+		out = [];
+		await phoneStatus(h.deps);
+		const back = lines()[0] as { listener: { stale: boolean }; notice: string | null; keys_unreadable?: boolean };
+		expect(back.listener.stale).toBe(false);
+		expect(back.notice).toBeNull();
+		expect(back.keys_unreadable).toBeUndefined();
+		expect(h.deps.db.unreadMessages()).toEqual([]);
+
+		h.deps.db.putKey({ id: "a", nsec: nip19.nsecEncode(generateSecretKey()), in_store: 0 });
+		out = [];
+		await phoneStatus(h.deps);
+		expect(lines()[0]).toMatchObject({
+			listener: { stale: true, reason: "listener keys differ from the database" },
+			notice: "key changed",
+		});
+		expect(lines()[0]).not.toHaveProperty("keys_unreadable");
 	});
 });
 
@@ -213,6 +275,101 @@ describe("the next writing command", () => {
 
 			expect(h.killed).toEqual([pid]);
 			expect(h.spawned).toEqual([7000]);
+		} finally {
+			child.kill();
+		}
+	});
+});
+
+describe("a listener that will not stop", () => {
+	it("prints voicemail and a warning instead of failing after the wait", async () => {
+		const h = harness();
+		const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		try {
+			writePid(h.paths, { pid });
+			h.deps.kill = (signaled) => {
+				h.killed.push(signaled);
+			};
+			const errs: string[] = [];
+			h.deps.writeErr = (text) => errs.push(text);
+			h.deps.db.addMessage({ id: "m1", direction: "in", ts: NOW, sender: "npub1s", contact: "npub1s", text: "hello", call: 0 });
+
+			await phoneVoicemail(h.deps);
+
+			expect(h.killed).toEqual([pid]);
+			expect(h.spawned).toEqual([]);
+			expect(errs.join("")).toBe(`phone: the phone listener (pid ${pid}) did not stop; left it running\n`);
+			expect(lines().map((row) => (row as { text: string }).text)).toEqual(["hello", "listener binary changed"]);
+		} finally {
+			child.kill();
+		}
+	});
+
+	it("does not restart the systemd unit from inside phone __run", async () => {
+		const h = harness();
+		const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		try {
+			writePid(h.paths, { pid, version: "1.19.1" });
+			writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+			let stopHandler: (() => void) | undefined;
+			let resolveReady: () => void = () => {};
+			const ready = new Promise<void>((resolve) => {
+				resolveReady = resolve;
+			});
+			const pool = createFakePool();
+			const run = phoneRun(
+				{},
+				{
+					...h.deps,
+					createPool: () => ({ ...pool, close: () => {} }),
+					pid: process.pid,
+					schedule: () => () => {},
+					onSignal: (signal, handler) => {
+						if (signal === "SIGTERM") {
+							stopHandler = handler;
+							resolveReady();
+						}
+					},
+				},
+			);
+			const finished = run.then(
+				() => "finished" as const,
+				(err: unknown) => err,
+			);
+			const first = await Promise.race([ready.then(() => "ready" as const), finished]);
+			if (first !== "ready") throw first;
+
+			expect(h.ran).toEqual([]);
+			expect(h.killed).toEqual([pid]);
+			expect(readListenerPid(h.paths)?.pid).toBe(process.pid);
+			expect(readListenerPid(h.paths)?.version).toBe(DG_AGENT_PACKAGE_VERSION);
+
+			stopHandler?.();
+			const end = await finished;
+			if (end !== "finished") throw end;
+		} finally {
+			child.kill();
+		}
+	});
+
+	it("restarts a managed unit from a separate command", async () => {
+		const h = harness();
+		const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		try {
+			writePid(h.paths, { pid, version: "1.19.1" });
+			writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+
+			await phoneNumber({}, h.deps);
+
+			expect(h.ran).toEqual([["systemctl", "--user", "restart", "dg-phone.service"]]);
+			expect(h.killed).toEqual([]);
+			expect(h.spawned).toEqual([]);
 		} finally {
 			child.kill();
 		}

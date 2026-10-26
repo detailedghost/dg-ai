@@ -158,18 +158,19 @@ export function ensureNumberKey(deps: KeyDeps): Promise<LoadedKey> {
 	return ensureKey(deps, numberKeyId(deps.db));
 }
 
-/** Every key row the database knows, loaded for the listener's single multi-key subscription. A row whose
- * key cannot be loaded (store unreachable) is left out rather than failing the whole listener. */
-export async function loadAllKeys(deps: KeyDeps): Promise<KeyEntry[]> {
+export type LoadedKeys = { keys: KeyEntry[]; unreadable: string[] };
+
+/** Every key row the database knows. `unreadable` lists rows whose store read failed; those are not a key change. */
+export async function loadAllKeys(deps: KeyDeps): Promise<LoadedKeys> {
 	const keys: KeyEntry[] = [];
+	const unreadable: string[] = [];
 	for (const id of deps.db.listKeyIds()) {
-		let loaded: LoadedKey | undefined;
 		try {
-			loaded = await loadKey(deps, id);
+			const loaded = await loadKey(deps, id);
+			if (loaded) keys.push({ id, pub: getPublicKey(loaded.sk), sk: loaded.sk });
 		} catch {
-			loaded = undefined;
+			unreadable.push(id);
 		}
-		if (loaded) keys.push({ id, pub: getPublicKey(loaded.sk), sk: loaded.sk });
 	}
-	return keys;
+	return { keys, unreadable };
 }

@@ -107,7 +107,9 @@ else restarts that process if it dies, so check `status` after a reboot. The
 listener's pid, start time, binary version, and key fingerprint live at
 `<phoneRoot>/listener.pid`. `open` restarts a listener whose version or keys
 differ from the database. `status` sets `listener.stale` to true, with a
-reason, when that happens, and `notice` to the newest local message. A local
+reason, when that happens, and `notice` to the newest local message. When a
+key's credential-store read fails, `status` includes `keys_unreadable: true`
+and leaves `stale` false; that is not a restart. A local
 voicemail row from sender `phone` announces an accepted card, a new contact, a
 key change, or a binary change. `contacts` may include `marker` (`accepted` or
 `new`). Its stdout and stderr, when it runs through the fallback spawn or launchd, go
@@ -215,7 +217,10 @@ the old rows read-only. The first writing command (`number`, `invite`,
 `accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) reads every
 line, then copies its existing key (never a newly minted one), contact, and
 message into the new database once. A published line with no key stops the
-migration before any listener is signaled.
+migration before any listener is signaled and says to restore that line's
+nsec, or the credential `phone-friend/<line>/nostr-key`, then run `phone open`.
+`dg-skills install` prints that failure as a warning.
+
 This process's own `phone __run` is kept. Any other live listener, including a
 `phone __run` that is not this process, is restarted so it reloads keys. An old `phone-friend`
 listener is stopped and exactly one new listener is started against

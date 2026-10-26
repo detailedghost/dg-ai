@@ -237,7 +237,9 @@ function linePublished(line: LegacyLineData): boolean {
 function assertKeysMigratable(lines: LegacyLineData[]): void {
 	for (const line of lines) {
 		if (linePublished(line) && !lineHasKeyMaterial(line)) {
-			throw new DgCliError(`line "${line.name}" has no key to migrate; refusing to mint a new number`);
+			throw new DgCliError(
+				`line "${line.name}" has no key to migrate; refusing to mint a new number. Restore the nsec in that line's database or the credential phone-friend/${line.name}/nostr-key, then run phone open`,
+			);
 		}
 	}
 }

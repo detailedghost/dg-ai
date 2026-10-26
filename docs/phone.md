@@ -20,7 +20,7 @@ Codex:      $dg:phone
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok}`. |
 | `inbox [-n <count>] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
-| `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. |
+| `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
 
@@ -45,6 +45,13 @@ only read what the listener has already caught; neither one queries the
 relays itself, so a message never shows up if the listener has not run
 since it arrived (within the 7-day window relays and this database both
 keep).
+
+Every few seconds the listener re-reads its keys. When a credential store
+cannot be read, it keeps the current subscription. A real key change
+resubscribes from the cursor it has already reached. `say`, `accept`,
+`invite`, `number`, and `voicemail` restart a drifted listener. If that
+process will not exit, the command finishes and writes a warning. The
+listener never restarts the service unit it is running under.
 
 With `--on-message <exe> [args...]`, the listener resolves `exe` to an
 absolute path at `open` time — a systemd user unit carries a minimal
@@ -149,7 +156,10 @@ when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
 listener, so a database that cannot be read leaves every listener running.
 It copies every line's existing nostr key and never mints one. A line that
 already published a contact, an invite, or an outbound message, and has no
-key, stops the migration before any listener is signaled. The number key is
+key, stops the migration before any listener is signaled. The error names the
+line and says to restore that line's nsec, or the credential
+`phone-friend/<line>/nostr-key`, then run `phone open`. `dg-skills install`
+prints that failure as a warning. The number key is
 the `default` line only when that line still has its key; otherwise it is
 the first keyed line by name. Contacts, messages, and read marks are carried
 over.

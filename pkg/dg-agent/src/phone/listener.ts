@@ -72,6 +72,8 @@ export type ListenerDrift = {
 	reason?: string;
 	token?: string;
 	notice?: string;
+	/** A store read failed. Not a key change, and not a reason to restart. */
+	keysUnreadable?: boolean;
 };
 
 /** Whether `record` was written by another binary or subscribed to a different key set than `deps.db` holds. */
@@ -84,12 +86,14 @@ export async function listenerDrift(deps: KeyDeps, record: ListenerPid): Promise
 			notice: "listener binary changed",
 		};
 	}
-	let fingerprint: string;
+	let loaded: Awaited<ReturnType<typeof loadAllKeys>>;
 	try {
-		fingerprint = keyFingerprint(await loadAllKeys(deps));
+		loaded = await loadAllKeys(deps);
 	} catch {
-		return { restart: false, reason: "listener keys could not be read" };
+		return { restart: false, keysUnreadable: true };
 	}
+	if (loaded.unreadable.length > 0) return { restart: false, keysUnreadable: true };
+	const fingerprint = keyFingerprint(loaded.keys);
 	if (record.keys !== undefined && record.keys !== fingerprint) {
 		return {
 			restart: true,
@@ -554,7 +558,7 @@ function listenerPidRecord(deps: ListenerDeps, relays: string[], keys: { id: str
 
 async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await ensureNumberKey(deps);
-	let keys = await loadAllKeys(deps);
+	let keys = (await loadAllKeys(deps)).keys;
 	const contactRelays = readRelays(deps.db);
 	const relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
@@ -584,12 +588,14 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	await hookRunner.retryStuck();
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
+	let seen = caught.seen;
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
+		seen = seenNow;
 		admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
 	};
-	let sub = subscribe(pool, relays, keys, () => gateFor(deps.db), caught.seen, onLive, deps.now);
+	let sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
 	let stopped = false;
 	let watching = false;
 	const watchKeys = () => {
@@ -597,13 +603,14 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		watching = true;
 		void (async () => {
 			try {
-				const next = await loadAllKeys(deps);
-				const nextPrint = keyFingerprint(next);
-				if (stopped || nextPrint === keyFingerprint(keys)) return;
+				const loaded = await loadAllKeys(deps);
+				if (stopped || loaded.unreadable.length > 0) return;
+				const nextPrint = keyFingerprint(loaded.keys);
+				if (nextPrint === keyFingerprint(keys)) return;
 				sub.close();
 				if (stopped) return;
-				keys = next;
-				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), caught.seen, onLive, deps.now);
+				keys = loaded.keys;
+				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
 				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 				notePhoneDrift(deps.db, `keys:${nextPrint}`, "key changed", deps.now());
 			} catch {

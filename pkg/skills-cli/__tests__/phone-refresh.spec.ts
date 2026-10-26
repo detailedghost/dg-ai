@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,5 +35,27 @@ describe("refreshPhoneListener", () => {
 		}) as typeof spawnSync);
 
 		expect(called).toBe(false);
+	});
+
+	it("warns with the refresh's stderr when it exits non-zero, and stays quiet on success", () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-phone-refresh-"));
+		homes.push(dir);
+		const agent = join(dir, "dg-agent");
+		writeFileSync(agent, "");
+		const warn = spyOn(console, "warn").mockImplementation(() => {});
+		const refusal =
+			'line "default" has no key to migrate; refusing to mint a new number. Restore the nsec in that line\'s database or the credential phone-friend/default/nostr-key, then run phone open';
+		try {
+			refreshPhoneListener(agent, (() => ({ status: 0, stderr: "migrated\n" }) as ReturnType<typeof spawnSync>) as typeof spawnSync);
+			expect(warn).not.toHaveBeenCalled();
+
+			refreshPhoneListener(
+				agent,
+				(() => ({ status: 1, stderr: `noise\ndg-agent: ${refusal}\n` }) as ReturnType<typeof spawnSync>) as typeof spawnSync,
+			);
+			expect(warn).toHaveBeenCalledWith(`warning: phone listener was not refreshed: dg-agent: ${refusal}`);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });
