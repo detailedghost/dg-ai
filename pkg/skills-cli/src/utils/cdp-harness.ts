@@ -96,8 +96,15 @@ export function resolveBrowserBinary(): string {
 export const DEVTOOLS_URL_TIMEOUT_MS = 45000;
 
 const EXIT_GRACE_MS = 2000;
-const CDP_COMMAND_TIMEOUT_MS = 20000;
 const CDP_CONNECT_TIMEOUT_MS = 10000;
+
+/** CDP no-reply budget. Tests may shorten it; a real browser keeps 20s. */
+export function cdpCommandTimeoutMs(
+	env: Record<string, string | undefined> = process.env,
+): number {
+	const parsed = Number(env.DG_CDP_COMMAND_TIMEOUT_MS);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 20_000;
+}
 
 /**
  * Signal a process and wait for it to go, escalating to SIGKILL. An unbounded wait
@@ -280,15 +287,14 @@ class CdpConnection {
 		const payload: CdpMessage = { id, method, params };
 		if (sessionId) payload.sessionId = sessionId;
 		this.ws.send(JSON.stringify(payload));
+		const timeoutMs = cdpCommandTimeoutMs();
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
 				reject(
-					new Error(
-						`${method} got no CDP reply within ${CDP_COMMAND_TIMEOUT_MS}ms`,
-					),
+					new Error(`${method} got no CDP reply within ${timeoutMs}ms`),
 				);
-			}, CDP_COMMAND_TIMEOUT_MS);
+			}, timeoutMs);
 			this.pending.set(id, (m) => {
 				clearTimeout(timer);
 				if (m.error) reject(new Error(`${method} failed: ${m.error.message}`));

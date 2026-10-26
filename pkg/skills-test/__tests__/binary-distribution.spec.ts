@@ -261,10 +261,15 @@ describe("the skills build gives the verify harness what it needs", () => {
 	test("the skills-cli test step turns off the browser sandbox the runner cannot provide", () => {
 		const blt = workflow("skills-blt.yml");
 		const step =
-			/- name: Test \(skills-cli\)[\s\S]*?(?=\n {6}- name:)/.exec(blt)?.[0];
+			/- name: Test \(skills-cli\)[\s\S]*?(?=\n {6}- name:|\n {2}\S|$)/.exec(
+				blt,
+			)?.[0];
 
 		expect(step).toBeDefined();
 		expect(step).toContain("DG_VERIFY_NO_SANDBOX");
+		expect(step).toContain(
+			"bun test --shard=${{ matrix.shard }}/${{ strategy.job-total }}",
+		);
 	});
 
 	test("the extension is built before the skills-cli tests that load it", () => {

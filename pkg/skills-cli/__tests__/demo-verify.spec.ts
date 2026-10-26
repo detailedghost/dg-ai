@@ -22,6 +22,7 @@ import type { TourScript, TourStep } from "@dg/common";
 import { toPlanMarkdown } from "@dg/common";
 import {
 	browserArgs,
+	cdpCommandTimeoutMs,
 	DEVTOOLS_URL_TIMEOUT_MS,
 	killAndWait,
 	sandboxDisabled,
@@ -405,6 +406,8 @@ describe("demo --verify", () => {
 	}, VERIFY_RUN_TIMEOUT_MS);
 
 	test("a CDP command that never gets a reply names the method it was waiting on", async () => {
+		const timeoutMs = 200;
+		const started = Date.now();
 		const cdp = Bun.serve({
 			port: 0,
 			fetch(req, server) {
@@ -425,14 +428,17 @@ describe("demo --verify", () => {
 			);
 			const { out } = await runVerify(plan, {
 				DG_VERIFY_BROWSER: fakeBrowser("silent-browser.sh", cdp.url.host),
+				DG_CDP_COMMAND_TIMEOUT_MS: String(timeoutMs),
 			});
 			const finding = requireFinding(parseVerify(out), "harness-error");
 			expect(String(finding.message)).toContain("got no CDP reply");
 			expect(String(finding.message)).toContain("Target.getTargets");
+			expect(String(finding.message)).toContain(`within ${timeoutMs}ms`);
+			expect(Date.now() - started).toBeLessThan(10_000);
 		} finally {
 			cdp.stop(true);
 		}
-	}, VERIFY_RUN_TIMEOUT_MS);
+	}, 15_000);
 
 	test("a broken DG_VERIFY_BROWSER override is reported as a harness-error finding, not a crash", async () => {
 		const plan = writePlan(
@@ -492,6 +498,17 @@ describe("resolveExtensionDir", () => {
 		} finally {
 			rmSync(fakeRepoRoot, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("CDP command timeout", () => {
+	test("a real browser keeps 20s, and only a positive integer override shortens it", () => {
+		expect(cdpCommandTimeoutMs({})).toBe(20_000);
+		expect(cdpCommandTimeoutMs({ DG_CDP_COMMAND_TIMEOUT_MS: "200" })).toBe(200);
+		expect(cdpCommandTimeoutMs({ DG_CDP_COMMAND_TIMEOUT_MS: "0" })).toBe(20_000);
+		expect(cdpCommandTimeoutMs({ DG_CDP_COMMAND_TIMEOUT_MS: "nope" })).toBe(
+			20_000,
+		);
 	});
 });
 
