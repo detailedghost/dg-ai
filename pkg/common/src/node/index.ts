@@ -3,6 +3,7 @@ export * from "./bun-path";
 export * from "./cli-client";
 export * from "./credential-grants";
 export * from "./credentials-client";
+export * from "./file-lock";
 export * from "./fs";
 export * from "./install-skills";
 export * from "./manifest-load";

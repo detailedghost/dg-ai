@@ -1,14 +1,7 @@
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { isAlive, writeFileAtomic } from "@dg/common/node";
+import { withFileLock, writeFileAtomic } from "@dg/common/node";
 
 const PREAMBLE = "# Checkpoints\n";
 const ID_PATTERN = /^\d{4}-\d{2}-\d{2} \d{4} — .+ — .+$/;
@@ -20,7 +13,6 @@ const REQUIRED_SUBSECTIONS = [
 	"Open questions",
 	"Gotchas",
 ];
-const LOCK_TRIES = 50;
 
 export interface CheckpointSection {
 	id: string;
@@ -177,46 +169,13 @@ export function readCheckpointFile(file: string): string {
 	return existsSync(file) ? readFileSync(file, "utf8") : "";
 }
 
-function lockOwnerGone(lock: string): boolean {
-	try {
-		const pid = Number.parseInt(readFileSync(lock, "utf8"), 10);
-		return Number.isSafeInteger(pid) && pid > 1 && !isAlive(pid);
-	} catch {
-		return false;
-	}
-}
-
-async function withLock<T>(file: string, fn: () => T | Promise<T>): Promise<T> {
-	const lock = `${file}.lock`;
-	let held = false;
-	for (let i = 0; i < LOCK_TRIES && !held; i++) {
-		try {
-			writeFileSync(lock, String(process.pid), { flag: "wx" });
-			held = true;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			if (lockOwnerGone(lock)) rmSync(lock, { force: true });
-			else await Bun.sleep(100);
-		}
-	}
-	if (!held)
-		throw new Error(
-			`${lock} is held; remove it if no other session is writing`,
-		);
-	try {
-		return await fn();
-	} finally {
-		rmSync(lock, { force: true });
-	}
-}
-
 /** Applies transform to the file under a lock; a null result deletes it. */
 export async function updateCheckpointFile(
 	file: string,
 	transform: (content: string) => string | null | Promise<string | null>,
 ): Promise<void> {
 	mkdirSync(path.dirname(file), { recursive: true });
-	await withLock(file, async () => {
+	await withFileLock(file, async () => {
 		const next = await transform(readCheckpointFile(file));
 		if (next === null) {
 			rmSync(file, { force: true });

@@ -276,7 +276,7 @@ describe("checkpoint lock and atomic write", () => {
 		const { cwd, file } = fixture();
 		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
 		const before = readFileSync(file, "utf8");
-		writeFileSync(`${file}.lock`, "");
+		writeFileSync(`${file}.lock`, String(process.pid));
 		const run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain(`${file}.lock is held`);
@@ -317,6 +317,16 @@ describe("checkpoint lock and atomic write", () => {
 		expect(existsSync(`${file}.lock`)).toBe(false);
 	});
 
+	test("an empty lock left by a crash between create and write becomes stale and is taken over", async () => {
+		const { cwd, file } = fixture();
+		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
+		writeFileSync(`${file}.lock`, "");
+		const run = await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_B));
+		expect(run.exitCode).toBe(0);
+		expect(readFileSync(file, "utf8")).toContain(`## ${ID_B}`);
+		expect(existsSync(`${file}.lock`)).toBe(false);
+	});
+
 	test.skipIf(!existsSync("/dev/full"))("kick-take keeps the section when stdout cannot be written", async () => {
 		const { cwd, file } = fixture();
 		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
@@ -332,7 +342,7 @@ describe("checkpoint lock and atomic write", () => {
 	test("a held lock also stops kick-take without removing the section", async () => {
 		const { cwd, file } = fixture();
 		await world.jot(["kick", "--file", file], cwd, checkpointBody(ID_A));
-		writeFileSync(`${file}.lock`, "");
+		writeFileSync(`${file}.lock`, String(process.pid));
 		const run = await world.jot(["kick-take", ID_A, "--file", file], cwd);
 		expect(run.exitCode).toBe(1);
 		expect(run.stderr).toContain("is held");
