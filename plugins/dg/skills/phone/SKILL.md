@@ -208,7 +208,9 @@ not stop a listener. Before migration they report `"migration_pending": true`
 and `"next": "run phone open to migrate"`, and `inbox` and `contacts` print
 the old rows read-only. The first writing command (`number`, `invite`,
 `accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) reads every
-line, then moves its key, contact, and message into the new database once.
+line, then copies its existing key (never a newly minted one), contact, and
+message into the new database once. A published line with no key stops the
+migration before any listener is signaled.
 A listener that is already `phone __run` is kept. An old `phone-friend`
 listener is stopped and exactly one new listener is started against
 `phone.db`, and its pid is recorded. `open` installs login autostart when

@@ -367,6 +367,61 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 		}
 	});
 
+	it("does not mint a key for an empty unkeyed line and points the number at the first keyed line", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			const aliceNsec = nip19.nsecEncode(generateSecretKey());
+			writeLegacyLine(paths, "default", {});
+			writeLegacyLine(paths, "alice", { contact: freshNpub(), nsec: aliceNsec });
+
+			const result = migrateIfNeeded(paths, fakeMigrateDeps());
+			if (result.migrated !== true) throw new Error("expected a migration");
+			expect(result.numberKey).toBe("alice");
+
+			const db = PhoneDb.open(paths, () => NOW);
+			try {
+				expect(db.getKey("default")).toBeUndefined();
+				expect(db.getKey("alice")?.nsec).toBe(aliceNsec);
+				expect(numberKeyId(db)).toBe("alice");
+			} finally {
+				db.close();
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses to mint a key for a published line that has none and does not stop listeners", () => {
+		const dir = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
+			const contact = freshNpub();
+			writeLegacyLine(paths, "default", {
+				contact,
+				listenerPid: 4242,
+				messages: [{ id: "out1", direction: "out", ts: NOW, sender: "npub1us", contact, text: "sent" }],
+			});
+			const killed: number[] = [];
+
+			expect(() =>
+				migrateIfNeeded(
+					paths,
+					fakeMigrateDeps({
+						classifyListener: () => "legacy",
+						kill: (pid) => {
+							killed.push(pid);
+						},
+					}),
+				),
+			).toThrow('line "default" has no key to migrate; refusing to mint a new number');
+			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+			expect(killed).toEqual([]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("de-dupes two lines whose config.name collide into +shared and +shared-2", () => {
 		const dir = freshHome();
 		try {

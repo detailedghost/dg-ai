@@ -4,7 +4,6 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writ
 import { dirname, join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories, selfCommand } from "@dg/common/node";
-import { generateSecretKey, nip19 } from "nostr-tools";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
 import {
@@ -69,7 +68,7 @@ export type MigrateDeps = {
 };
 
 const LINE_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
-/** The line a fresh install's number key comes from when one exists; see `writeMigratedLines`. */
+/** The line a fresh install's number key comes from when that line still has a key. */
 const LEGACY_DEFAULT_LINE = "default";
 const STOP_WAIT_MS = 5000;
 
@@ -224,20 +223,45 @@ function stopForReplace(lines: LegacyLine[], pids: number[], deps: MigrateDeps):
 	return stuck;
 }
 
+function lineHasKeyMaterial(line: LegacyLineData): boolean {
+	return line.keyInStore || Boolean(line.nsec);
+}
+
+/** A line peers can already know: a contact, an invite, or an outbound message. */
+function linePublished(line: LegacyLineData): boolean {
+	if (line.config.contact) return true;
+	if (line.invite) return true;
+	return line.messages.some((message) => message.direction === "out");
+}
+
+function assertKeysMigratable(lines: LegacyLineData[]): void {
+	for (const line of lines) {
+		if (linePublished(line) && !lineHasKeyMaterial(line)) {
+			throw new DgCliError(`line "${line.name}" has no key to migrate; refusing to mint a new number`);
+		}
+	}
+}
+
+/** `default` when that line still has a key; otherwise the first keyed line. Empty when none do. */
+function migratedNumberKeyId(lines: LegacyLineData[]): string {
+	const keyed = lines.filter(lineHasKeyMaterial);
+	if (keyed.some((line) => line.name === LEGACY_DEFAULT_LINE)) return LEGACY_DEFAULT_LINE;
+	return keyed[0]?.name ?? "";
+}
+
 function writeMigratedLines(
 	db: PhoneDb,
 	lines: LegacyLineData[],
 	selfName: string,
 	now: number,
 ): { numberKeyId: string; contacts: number; messages: number } {
-	const lineNames = lines.map((line) => line.name);
-	const numberKeyId = lineNames.includes(LEGACY_DEFAULT_LINE) ? LEGACY_DEFAULT_LINE : lineNames[0];
+	const numberKeyId = migratedNumberKeyId(lines);
 
 	for (const line of lines) {
 		if (line.keyInStore) {
 			db.putKey({ id: line.name, nsec: null, in_store: 1 });
-		} else {
-			db.putKey({ id: line.name, nsec: line.nsec ?? nip19.nsecEncode(generateSecretKey()), in_store: 0 });
+		} else if (line.nsec) {
+			db.putKey({ id: line.name, nsec: line.nsec, in_store: 0 });
 		}
 	}
 
@@ -287,7 +311,7 @@ function writeMigratedLines(
 	writeCursor(db, Math.min(...lines.map((line) => line.cursor)));
 
 	writeNumber(db, { secret: randomBytes(SECRET_BYTES).toString("hex"), as: selfName });
-	writeNumberKeyId(db, numberKeyId);
+	if (numberKeyId) writeNumberKeyId(db, numberKeyId);
 
 	return { numberKeyId, contacts: db.listContacts().length, messages: messageCount };
 }
@@ -422,8 +446,9 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 
 	const lines = legacyLines(paths);
-	// A bad database must fail before any listener is signaled.
+	// A bad database, or a published line with no key, must fail before any listener is signaled.
 	let staged = lines.map((line) => readLegacyLine(line));
+	assertKeysMigratable(staged);
 	const plan = planListeners(lines, deps);
 	const stopping = plan.action === "replace" ? plan.pids : plan.action === "keep" ? plan.stop : [];
 	const saved: SavedListener[] = stopping.map((pid) => ({ pid, argv: deps.commandArgs(pid) }));

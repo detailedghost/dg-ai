@@ -10,7 +10,7 @@ import { type AutostartDeps, formatAutostartState, installAutostart, removeAutos
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PhoneDb } from "./db";
-import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
+import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey, loadKey } from "./keys";
 import {
 	defaultOnSignal,
 	defaultSchedule,
@@ -227,12 +227,21 @@ export async function phoneAccept(
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
 	if (card.handle === undefined) throw new DgCliError("this call card carries no handle; ask for a new card");
-	const keyId = numberKeyId(deps.db);
-	const sk = (await ensureKey(deps, keyId)).sk;
 	const selfName = resolvedSelfName(deps.db);
 	const words = textArg || "hello";
 	const existing = findContactByNpub(deps.db, card.npub);
 	const handle = existing?.handle ?? nextFreeHandle(deps.db, card.handle);
+	let keyId: string;
+	let sk: Uint8Array;
+	if (existing) {
+		keyId = existing.keyId;
+		const loaded = await loadKey(deps, keyId);
+		if (!loaded) throw new DgCliError(`the key for +${existing.handle} is not available`);
+		sk = loaded.sk;
+	} else {
+		keyId = numberKeyId(deps.db);
+		sk = (await ensureKey(deps, keyId)).sk;
+	}
 	if (!existing) {
 		addContact(deps.db, { npub: card.npub, handle, relays: card.relays, keyId, addedAt: deps.now(), via: "accept" });
 	}

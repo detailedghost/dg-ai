@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
-import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
-import { decodeCard } from "../../src/phone/card";
+import { generateSecretKey, getPublicKey, nip17, nip19, nip59 } from "nostr-tools";
+import { decodeCard, encodeCard, NO_EXPIRY } from "../../src/phone/card";
 import { type KeyEntry, ring, unwrapIncoming } from "../../src/phone/chat";
 import {
 	phoneAccept,
@@ -263,6 +263,28 @@ describe("accept", () => {
 
 		expect(secondHandle).toBe(firstHandle);
 		expect(listContacts(peer.db)).toHaveLength(1);
+	});
+
+	it("rings an existing contact with that contact's key and does not mint a number key", async () => {
+		const peer = deps(freshHome(), pool);
+		const workSk = createFileKey(peer.db, "work") as Uint8Array;
+		const contactSk = generateSecretKey();
+		const contactNpub = nip19.npubEncode(getPublicKey(contactSk));
+		addTestContact(peer.db, { npub: contactNpub, handle: "velora", keyId: "work" });
+		const card = encodeCard({
+			npub: contactNpub,
+			relays: ["wss://a.example"],
+			secret: "ab".repeat(32),
+			exp: NO_EXPIRY,
+			handle: "velora",
+		});
+
+		await phoneAccept(card, "hi", peer);
+
+		const rumor = nip59.unwrapEvent(pool.events[0], contactSk);
+		expect(rumor.pubkey).toBe(getPublicKey(workSk));
+		expect(listContacts(peer.db)[0]?.keyId).toBe("work");
+		expect(peer.db.getKey("default")).toBeUndefined();
 	});
 
 	it("fails on a v1 card, which carries no handle", async () => {

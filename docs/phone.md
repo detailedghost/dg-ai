@@ -146,9 +146,12 @@ on stderr. The first writing command (`number`, `invite`, `accept`, `say`,
 when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
 `~/.dg/phone/phone.db` does not. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
-It carries over every line's key (as a `keys` row), contact, message, and
-read mark, and picks the `default` line's key as the number if one exists
-(else the first line by name).
+It copies every line's existing nostr key and never mints one. A line that
+already published a contact, an invite, or an outbound message, and has no
+key, stops the migration before any listener is signaled. The number key is
+the `default` line only when that line still has its key; otherwise it is
+the first keyed line by name. Contacts, messages, and read marks are carried
+over.
 
 A listener that is already `phone __run` is kept, and `listener.pid` points
 at it, so nothing starts a second one. An old `phone-friend __run` is not
