@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { currentBinaryLine } from "../src/commands/install";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +60,44 @@ await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)
 		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
 		expect(stdout).toContain("staged at");
 		expect(readFileSync(join(destination, "background.js"), "utf8")).toBe("fresh local build");
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("install --local leaves an existing cli-only marker in place when the local build fails", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "dg-local-install-fail-"));
+	const repo = join(directory, "repo");
+	const home = join(directory, "home");
+	try {
+		mkdirSync(join(repo, "pkg/extension"), { recursive: true });
+		mkdirSync(join(home, ".dg"), { recursive: true });
+		writeFileSync(join(repo, "pkg/extension/package.json"), "{}");
+		writeFileSync(join(home, ".dg", "cli-only"), "");
+		const script = `
+import { mock } from "bun:test";
+import * as os from "node:os";
+import * as node from "@dg/common/node";
+import { Command } from "commander";
+mock.module("node:os", () => ({ ...os, homedir: () => ${JSON.stringify(home)} }));
+mock.module("@dg/common/node", () => ({ ...node, isWSL: () => false, run: () => {
+  throw new Error("simulated build failure");
+} }));
+const { registerInstall } = await import(${JSON.stringify(new URL("../src/commands/install.ts", import.meta.url).pathname)});
+const program = new Command();
+registerInstall(program);
+await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)}], { from: "user" });
+`;
+		const child = Bun.spawn([process.execPath, "-e", script], {
+			cwd: new URL("..", import.meta.url).pathname,
+			stdout: "pipe", stderr: "pipe",
+		});
+		const [stdout, , exitCode] = await Promise.all([
+			new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+		]);
+		expect(exitCode).not.toBe(0);
+		expect(stdout).not.toContain("staged at");
+		expect(existsSync(join(home, ".dg", "cli-only"))).toBe(true);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
