@@ -59,7 +59,8 @@ When all four are true:
 
 - Required checks are green. Today that means `ext-blt` and `skills-blt`. Once the branch ruleset is updated, those become `blt-gate` and `gitleaks`. `blt-gate`
   runs on every PR, finds the changed packages, and runs only their BLT checks (`skills-blt`, `ext-blt`, `dg-daemon-blt`, `dg-agent-blt`). A docs-only PR passes
-  it with no build.
+  it with no build. The skills-cli suite runs as `skills-cli (1)` through `skills-cli (4)`. The `skills-blt` job waits for every shard, then runs the other
+  package checks, so `blt-gate` still waits on the check named `skills-blt`.
 - GitHub Copilot reviewed the latest push.
 - Every review conversation is resolved.
 - One person approved.

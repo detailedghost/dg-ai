@@ -58,6 +58,16 @@ describe("blt-gate waits for exactly the BLT checks a PR starts", () => {
 		expect(touches(["pkg/common/**"], ["pkg/common-extra/x.ts"])).toBe(false);
 		expect(touches(["bun.lock"], ["bun.lock"])).toBe(true);
 	});
+
+	test("skills-blt stays the check name and passes only after every skills-cli shard", () => {
+		const text = readRepoFile(".github", "workflows", "skills-blt.yml");
+		expect(text).toMatch(/^  skills-blt:\n/m);
+		expect(text).toMatch(/^    needs: skills-cli\n/m);
+		expect(text).toContain("shard: [1, 2, 3, 4]");
+		expect(text).toContain("needs.skills-cli.result != 'success'");
+		expect(text.match(/timeout-minutes: 30/g)).toHaveLength(2);
+		expect(text).not.toContain("timeout-minutes: 15");
+	});
 });
 
 function spawnResult(success: boolean, stdout: string, stderr: string) {
