@@ -247,12 +247,13 @@ async function cmdDiff(args: string[]): Promise<number> {
 	return EXIT.OK;
 }
 
-async function existingThreads(target: Target): Promise<ReviewThread[]> {
+async function existingThreads(target: Target, required: boolean): Promise<ReviewThread[]> {
 	if (target.mode === "local") return [];
 	try {
 		const provider = await getProviderForUrl(target.url);
 		return await provider.listUnresolvedThreads({ includeResolved: true }, prRef(target));
 	} catch (err) {
+		if (required) throw err;
 		const message = err instanceof Error ? err.message : String(err);
 		process.stderr.write(`thrash compile: could not list existing threads, skipping dedupe: ${message}\n`);
 		return [];
@@ -312,7 +313,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
-		existing: await existingThreads(target),
+		existing: await existingThreads(target, policyPath !== undefined),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
 		heading: optionalOption(args, "--heading"),
 		round,
@@ -348,7 +349,7 @@ export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = p
 }
 
 async function cmdPost(args: string[]): Promise<number> {
-	const arg = positional(args, "post", ["--review"]);
+	const arg = positional(args, "post", ["--review", "--head-sha"]);
 	if (!isUrl(arg)) {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /dg:address -l");
 	}
@@ -357,6 +358,7 @@ async function cmdPost(args: string[]): Promise<number> {
 		throw new Error(`review file was compiled for ${stored.target}, not ${arg}`);
 	}
 	const input = toPostReviewInput(stored.review);
+	input.commitId = optionalOption(args, "--head-sha");
 	if (isPostDryRun(args)) {
 		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
 		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });

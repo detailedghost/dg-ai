@@ -14,6 +14,7 @@ import {
 	type PullRequestEvent,
 	readBaseFile,
 	readEvent,
+	readHeadSha,
 } from "./github";
 import {
 	compileArgs,
@@ -26,6 +27,7 @@ import {
 interface State {
 	skipped: boolean;
 	event: PullRequestEvent;
+	headSha: string;
 	round: number;
 	policyPath: string | null;
 	persona: string;
@@ -99,6 +101,7 @@ async function prepare(cfg: Config): Promise<void> {
 		setOutput("skipped", "true");
 		return;
 	}
+	const headSha = await readHeadSha(event);
 	const diff = dgSkills(["thrash", "diff", event.url], scratchEnv());
 	const [reviews, rules, policy, extraPrompt, agent] = await Promise.all([
 		listReviews(event),
@@ -128,6 +131,9 @@ async function prepare(cfg: Config): Promise<void> {
 	const policyPath =
 		policy === null ? null : writeIn(work, "policy.yml", policy);
 	const plan = lastJson<DiffPlan>(await diff);
+	if (await readHeadSha(event) !== headSha) {
+		throw new Error("PR head changed while preparing the diff; run prepare again");
+	}
 	const tasks = plan.chunks.map((chunk) =>
 		writeIn(
 			path.join(scratch, "tasks"),
@@ -146,6 +152,7 @@ async function prepare(cfg: Config): Promise<void> {
 	const state: State = {
 		skipped: false,
 		event,
+		headSha,
 		round,
 		policyPath,
 		persona,
@@ -243,6 +250,7 @@ async function review(cfg: Config): Promise<void> {
 async function publish(cfg: Config): Promise<void> {
 	const state = readState();
 	if (!state) return;
+	if (!state.headSha) throw new Error("Prepared head SHA is missing; run prepare again");
 	const execution = {
 		...scratchEnv(),
 		THRASH_EXECUTION_CONTEXT: JSON.stringify({ origin: "action" }),
@@ -275,6 +283,8 @@ async function publish(cfg: Config): Promise<void> {
 				state.event.url,
 				"--review",
 				compiled.reviewPath,
+				"--head-sha",
+				state.headSha,
 				...postFlags,
 			],
 			execution,

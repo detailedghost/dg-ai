@@ -79,6 +79,13 @@ export async function listReviews(event: PullRequestEvent): Promise<Review[]> {
 	return (JSON.parse(out) as Review[][]).flat();
 }
 
+export async function readHeadSha(event: PullRequestEvent): Promise<string> {
+	const out = await gh(["api", `repos/${event.repo}/pulls/${event.number}`]);
+	const sha = (JSON.parse(out) as { head?: { sha?: string } }).head?.sha;
+	if (!sha) throw new Error("PR head SHA is missing");
+	return sha;
+}
+
 /** A file at the base commit, so the PR under review cannot change its own rules; null when absent. */
 export async function readBaseFile(
 	event: PullRequestEvent,

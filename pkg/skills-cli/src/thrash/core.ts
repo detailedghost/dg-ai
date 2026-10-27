@@ -885,10 +885,28 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 	return lines.join("\n");
 }
 
-function addTallies(a: Record<Tier, number>, b: Record<Tier, number>): Record<Tier, number> {
-	const sum = emptyTally();
-	for (const tier of TIERS) sum[tier] = a[tier] + b[tier];
-	return sum;
+function policyTally(files: DiffFile[], findings: Finding[], opts: CompileOptions): Record<Tier, number> {
+	const tally = openPriorTally(opts.existing, opts.reviewer);
+	const unmatched = opts.existing.flatMap((thread) => {
+		const tier = threadTier(thread);
+		return tier && !thread.resolved && !isAnswered(thread) && isThrashThread(thread, opts.reviewer)
+			? [{ thread, tier }] : [];
+	}).sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
+	for (const finding of [...findings].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
+		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
+		const line = anchor?.newLine ?? anchor?.oldLine ?? null;
+		const index = anchor ? unmatched.findIndex(({ thread }) => thread.path === anchor.path && thread.line === line) : -1;
+		if (index !== -1) {
+			const [{ tier }] = unmatched.splice(index, 1);
+			if (tierRank(finding.tier) < tierRank(tier)) {
+				tally[tier] -= 1;
+				tally[finding.tier] += 1;
+			}
+		} else if (!anchor || priorThreadAt(anchor, opts.existing, opts.reviewer) !== "resolved" || tierRank(finding.tier) <= tierRank("high")) {
+			tally[finding.tier] += 1;
+		}
+	}
+	return tally;
 }
 
 export function compileReview(files: DiffFile[], output: AgentOutput, opts: CompileOptions): CompiledReview {
@@ -941,12 +959,8 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		kept = posted.filter((p) => keep.has(p));
 		for (const p of posted) if (!keep.has(p)) dropped.push({ finding: p.finding, reason: "max-comments" });
 	}
-
-	const notReposted = new Set(
-		dropped.filter((d) => d.reason === "duplicate" || d.reason === "settled").map((d) => d.finding),
-	);
 	const tally = phase
-		? addTallies(tallyFindings(findings.filter((f) => !notReposted.has(f))), openPrior)
+		? policyTally(files, findings, opts)
 		: tallyFindings(findings);
 	const decided = phase
 		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")

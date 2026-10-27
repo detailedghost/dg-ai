@@ -11,8 +11,9 @@ compiled review and handles the provider-specific publishing requests.
 | approve | `event: APPROVE` | `bulk_publish` with `reviewer_state: reviewed`, then `POST .../approve` |
 | comment | `event: COMMENT` | `bulk_publish` with no `reviewer_state` |
 
-GitHub reviews pin to the PR's head commit at post time. GitLab positions carry the MR's
-`diff_refs` SHAs. Both providers reject a comment on a line outside the diff, so `compile`
+GitHub reviews pin to the PR's head commit at post time. `post --head-sha <sha>` instead
+pins the review to that reviewed commit and rejects a changed PR head before any review
+mutation. GitLab positions carry the MR's `diff_refs` SHAs. Both providers reject a comment on a line outside the diff, so `compile`
 resolves every anchor against the parsed hunks first. A finding whose line misses the diff
 posts as a file-level comment on its file: on GitHub a `subjectType: FILE` thread added to a
 pending review, which is then submitted; on GitLab a draft note with `position_type: file`.
@@ -36,7 +37,15 @@ thrash's when its first comment starts with a thrash tier emoji, and, with `--re
 <login>`, when that login opened it. A new comment is dropped as a duplicate when an
 unresolved thrash thread sits on the same path and line. A Medium, Low or Nit comment is also
 dropped when only resolved thrash threads sit there; a Critical or High comment posts again.
-Dropped duplicates still count in the tally and the verdict, except under `--policy` (below).
+Dropped duplicates still count in the tally and the verdict. Under `--policy`, a current
+finding matches at most one counted, unresolved, unanswered earlier finding at the same
+anchor; the pair counts once at the higher severity. A current finding on an answered, unresolved thread still
+counts even when its inline comment is suppressed. Settled Medium, Low and Nit findings
+stay out of policy tallies.
+
+Policy compilation requires a successful thread lookup. A failed lookup stops compilation
+instead of treating unavailable history as empty. Without a policy, dedupe remains best
+effort and compilation can continue after a lookup failure.
 
 ## Nit ladder and `--min-tier`
 
@@ -125,7 +134,11 @@ in the diff is terminal-only in this mode. Nothing posts.
 `dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action. It reads its
 inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules doc and policy from
 the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
-`$THRASHLEY_WORK/state.json`.
+`$THRASHLEY_WORK/state.json`. `prepare` reads the PR head SHA before and after fetching the
+diff, rejects a head change, and saves the reviewed `headSha` in that state. `publish`
+passes it to `post --head-sha`, so a push during review requires fresh preparation and
+review before publication. The review remains pinned to the saved SHA if a push races
+with submission.
 
 A policy file:
 

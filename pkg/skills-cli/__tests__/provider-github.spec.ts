@@ -1445,6 +1445,23 @@ describe("postReview", () => {
     ;;`);
 	}
 
+	test("refuses a review of an earlier commit before any review mutation", async () => {
+		const log = callLogPath();
+		fakeGh(reviewScript());
+		const input = {
+			verdict: "approve" as const,
+			body: "summary",
+			comments,
+			commitId: "earlier",
+		};
+		await expect(createGithubProvider().postReview(ref, input)).rejects.toThrow(
+			"head changed",
+		);
+		expect(readCalls(log)).toEqual([
+			"pr view 12 -R acme/widgets --json headRefOid",
+		]);
+	});
+
 	test("posts one review pinned to the head commit with the mapped event and sides", async () => {
 		const log = callLogPath();
 		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");

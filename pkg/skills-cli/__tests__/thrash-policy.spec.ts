@@ -198,6 +198,93 @@ describe("compileReview with a policy", () => {
 		expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
 	});
 
+	test.each([
+		{ prior: "low" as Tier, current: "high" as Tier, retained: "high" as Tier },
+		{ prior: "high" as Tier, current: "low" as Tier, retained: "high" as Tier },
+	])(
+		"a re-found $current retains the higher severity of an earlier $prior",
+		({ prior, current, retained }) => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [finding(2, current)] },
+				{
+					...BASE,
+					existing: [thread(2, prior)],
+					policy: BLOCK_HIGH,
+					reviewer: "thrashley",
+				},
+			);
+			expect(review.verdict).toBe("request_changes");
+			expect(review.tally).toEqual({ ...emptyTally(), [retained]: 1 });
+			expect(review.comments).toEqual([]);
+			expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+		},
+	);
+
+	test.each([
+		{ reverse: false, current: ["high"] as Tier[] },
+		{ reverse: true, current: ["high"] as Tier[] },
+		{ reverse: false, current: ["low", "high"] as Tier[] },
+		{ reverse: true, current: ["high", "low"] as Tier[] },
+	])("thread and finding order do not inflate the policy tally ($reverse, $current)", ({ reverse, current }) => {
+		const existing = [thread(2, "low"), thread(2, "high")];
+		if (reverse) existing.reverse();
+		const review = compileReview(
+			FILES,
+			{ ...NO_SWOT, findings: current.map((tier) => finding(2, tier)) },
+			{ ...BASE, existing, policy: parsePolicy("phases:\n  - block: { high: 1 }\n") },
+		);
+		expect(review.tally).toEqual({ ...emptyTally(), high: 1, low: 1 });
+		expect(review.verdict).toBe("approve");
+	});
+
+	test("a re-found high blocks after someone answers its unresolved thread", () => {
+		const review = compileReview(
+			FILES,
+			{ ...NO_SWOT, findings: [finding(2, "high")] },
+			{
+				...BASE,
+				existing: [thread(2, "high", { replyBy: "author" })],
+				policy: BLOCK_HIGH,
+			},
+		);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.tally).toEqual({ ...emptyTally(), high: 1 });
+		expect(review.comments).toEqual([]);
+	});
+
+	test("another reviewer's earlier high does not suppress or inflate the current finding", () => {
+		const review = compileReview(
+			FILES,
+			{ ...NO_SWOT, findings: [finding(2, "high")] },
+			{
+				...BASE,
+				existing: [thread(2, "critical", { author: "other-bot" })],
+				policy: BLOCK_HIGH,
+				reviewer: "thrashley",
+			},
+		);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.tally).toEqual({ ...emptyTally(), high: 1 });
+		expect(review.comments.map((c) => c.tier)).toEqual(["high"]);
+	});
+
+	test("a settled medium stays out of policy tallies", () => {
+		const review = compileReview(
+			FILES,
+			{ ...NO_SWOT, findings: [finding(2, "medium")] },
+			{
+				...BASE,
+				existing: [thread(2, "medium", { resolved: true })],
+				policy: STRICT_RELAXED,
+				round: 1,
+			},
+		);
+		expect(review.verdict).toBe("approve");
+		expect(review.tally).toEqual(emptyTally());
+		expect(review.dropped.map((d) => d.reason)).toEqual(["settled"]);
+	});
+
 	test("a relaxed round allows one high and posts no nits", () => {
 		const findings = [
 			finding(2, "high"),

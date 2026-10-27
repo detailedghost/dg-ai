@@ -665,11 +665,15 @@ async function submitWithFileThreads(
 async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Promise<PostedReview> {
 	const prResult = await tag`pr view ${String(ref.number)} ${repoFlags(ref.repo)} --json headRefOid`;
 	const { headRefOid } = JSON.parse(prResult.stdout.toString());
+	if (input.commitId !== undefined && input.commitId !== headRefOid) {
+		throw new Error("PR head changed since preparation; run prepare and review again");
+	}
+	const commitId = input.commitId ?? headRefOid;
 	const posted = await clearingStalePending(tag, ref, () =>
 		input.comments.some(isFileComment)
-			? submitWithFileThreads(tag, ref, input, headRefOid)
-			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)).catch(
-					(err: unknown) => submitKeptPending(tag, ref, input, headRefOid, err),
+			? submitWithFileThreads(tag, ref, input, commitId)
+			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, commitId)).catch(
+					(err: unknown) => submitKeptPending(tag, ref, input, commitId, err),
 				),
 	);
 	return {

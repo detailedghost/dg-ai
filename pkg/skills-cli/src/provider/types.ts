@@ -323,6 +323,8 @@ export function isFileComment(c: ReviewCommentInput): boolean {
 
 /** One summary verdict and its inline comments, published together as a review. */
 export interface PostReviewInput {
+	/** Reviewed commit; GitHub rejects publication if the PR head has changed. */
+	commitId?: string;
 	verdict: ReviewVerdict;
 	body: string;
 	comments: ReviewCommentInput[];
