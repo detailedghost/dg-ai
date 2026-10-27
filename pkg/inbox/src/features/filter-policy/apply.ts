@@ -57,7 +57,7 @@ export type PolicyWriteClient = {
 	reorderFilters(input: { ids: string[] }): Promise<void>;
 };
 
-type AppliedStep = { action: PlanAction; id?: string };
+type AppliedStep = { action: PlanAction; id?: string; order?: string[] };
 
 type FolderStep = {
 	kind: "create" | "rename";
@@ -187,8 +187,9 @@ export async function applySyncPlan(input: {
 			const rest = live
 				.map((filter) => filter.id)
 				.filter((id) => !ordered.includes(id));
-			await input.client.reorderFilters({ ids: [...ordered, ...rest] });
-			done.push({ action });
+			const order = [...ordered, ...rest];
+			await input.client.reorderFilters({ ids: order });
+			done.push({ action, order });
 		});
 	}
 	const folderDeletes = folderDeleteOrder(
@@ -312,6 +313,9 @@ export function recordAppliedProgress(
 				name: found?.name ?? leaf(path),
 				type: found?.type ?? "folder",
 			});
+		}
+		if (action.op === "reorder-filters" && step.order) {
+			recordObservedOrder(file, step.order);
 		}
 		if (action.op === "delete-filter") {
 			if (live.filters.some((filter) => filter.id === action.id)) continue;
@@ -438,6 +442,26 @@ function upsertObservedFilter(
 		return;
 	}
 	file.observed.filters.push(filter);
+}
+
+function recordObservedOrder(file: DeclaredFiltersFile, order: string[]): void {
+	if (!file.observed) return;
+	const position = (id: string): number => {
+		const index = order.indexOf(id);
+		return index < 0 ? order.length : index;
+	};
+	const sorted = file.observed.filters
+		.map((filter, index) => ({ filter, index }))
+		.sort(
+			(left, right) =>
+				position(left.filter.id) - position(right.filter.id) ||
+				left.index - right.index,
+		)
+		.map((entry) => entry.filter);
+	const sequenced = sorted.some((filter) => filter.sequence !== undefined);
+	file.observed.filters = sequenced
+		? sorted.map((filter, index) => ({ ...filter, sequence: index + 1 }))
+		: sorted;
 }
 
 function upsertObservedFolder(

@@ -71,22 +71,21 @@ export function overlayDeclaredFilters<T extends ProtonFilter>(
 	});
 }
 
-export async function readDeclaredWithUnsynced<T extends ProtonFilter>(
-	dir: string,
+export function projectDeclaredFilters<T extends ProtonFilter>(
 	filters: T[],
-): Promise<Array<T | ProtonFilter>> {
-	const declared = await readDeclaredFiltersIfExists(declaredFiltersPath(dir));
+	declared: DeclaredFiltersFile | undefined,
+): Array<T | ProtonFilter> {
 	return [
 		...overlayDeclaredFilters(filters, declared),
 		...declaredOnlyFilters(filters, declared),
 	];
 }
 
-export async function readDeclaredOverlay<T extends ProtonFilter>(
+export async function readDeclaredWithUnsynced<T extends ProtonFilter>(
 	dir: string,
 	filters: T[],
-): Promise<T[]> {
-	return overlayDeclaredFilters(
+): Promise<Array<T | ProtonFilter>> {
+	return projectDeclaredFilters(
 		filters,
 		await readDeclaredFiltersIfExists(declaredFiltersPath(dir)),
 	);

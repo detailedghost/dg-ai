@@ -22,7 +22,7 @@ import {
 	removeDeclaredFilters,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
-import { readDeclaredOverlay } from "./filter-declared";
+import { isDeclaredOnlyId, readDeclaredWithUnsynced } from "./filter-declared";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import {
 	readFilterNamingConventions,
@@ -104,7 +104,7 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 					"filters consolidate --confirm requires a successful filters consolidate dry-run plan",
 				);
 			}
-			const liveFilters = await readDeclaredOverlay(
+			const liveFilters = await readDeclaredWithUnsynced(
 				paths.dir,
 				await client.listFilters(),
 			);
@@ -154,7 +154,7 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 	if (context.config.protonmail.liveBrowser) {
 		const client = createProtonMailClient(context.config);
 		try {
-			const liveFilters = await readDeclaredOverlay(
+			const liveFilters = await readDeclaredWithUnsynced(
 				paths.dir,
 				await client.listFilters(),
 			);
@@ -179,7 +179,7 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 			await client.close?.();
 		}
 	}
-	const filters = await readDeclaredOverlay(
+	const filters = await readDeclaredWithUnsynced(
 		paths.dir,
 		normalizeFilters(rawFilters),
 	);
@@ -402,11 +402,13 @@ async function applyConsolidationPlan(
 					name: existing.name,
 					enabled: existing.enabled,
 					sieve: mergedSieve,
-					protonId: existing.id,
+					...(isDeclaredOnlyId(existing.id) ? {} : { protonId: existing.id }),
 				});
 				removeDeclaredFilters(
 					file,
-					candidate.generatedFilters.map((filter) => filter.id),
+					candidate.generatedFilters.map((filter) =>
+						isDeclaredOnlyId(filter.id) ? filter.name : filter.id,
+					),
 				);
 			},
 		});

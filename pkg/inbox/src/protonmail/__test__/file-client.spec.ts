@@ -44,3 +44,40 @@ describe("file-backed folder creation", () => {
 		expect((await client.createFolder({ name: "Invoices" })).id).toBe("fin");
 	});
 });
+
+describe("file-backed filter reorder", () => {
+	function filterWith(id: string, sequence: number) {
+		return { id, name: id, enabled: true, conditions: [], actions: [], sequence };
+	}
+
+	test("rewrites sequence values to match the saved order", async () => {
+		const client = new FileBackedProtonMailClient({
+			dataset: {
+				...structuredClone(emptyDataset),
+				filters: [filterWith("a", 1), filterWith("b", 2)],
+			},
+		});
+		await client.reorderFilters({ ids: ["b", "a"] });
+		const filters = (await client.listFilters()) as Array<{ id: string; sequence?: number }>;
+		expect(filters.map((filter) => [filter.id, filter.sequence])).toEqual([
+			["b", 1],
+			["a", 2],
+		]);
+	});
+
+	test("leaves filters without sequence values untouched", async () => {
+		const client = new FileBackedProtonMailClient({
+			dataset: {
+				...structuredClone(emptyDataset),
+				filters: [
+					{ id: "a", name: "a", enabled: true, conditions: [], actions: [] },
+					{ id: "b", name: "b", enabled: true, conditions: [], actions: [] },
+				],
+			},
+		});
+		await client.reorderFilters({ ids: ["b", "a"] });
+		const filters = await client.listFilters();
+		expect(filters.map((filter) => filter.id)).toEqual(["b", "a"]);
+		expect(filters.every((filter) => !("sequence" in filter))).toBe(true);
+	});
+});

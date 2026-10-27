@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	findDeclaredFilter,
 	overlayDeclaredFilters,
+	projectDeclaredFilters,
 } from "../src/commands/filter-declared";
 import { emptyDeclaredFilters } from "../src/features/filter-policy/schema";
 
@@ -62,3 +63,16 @@ describe("declared filter lookup", () => {
 		).toHaveLength(0);
 	});
 });
+
+describe("declared filter projection", () => {
+	test("includes declared-only filters with local identities", () => {
+		const declared = declaredWith([
+			{ name: "Receipts", protonId: "p1" },
+			{ name: "Staged" },
+		]);
+		const live = [{ id: "p1", name: "Receipts", enabled: true, conditions: [], actions: [] }];
+		const projected = projectDeclaredFilters(live, declared);
+		expect(projected.map((filter) => filter.id)).toEqual(["p1", "declared:Staged"]);
+	});
+});
+

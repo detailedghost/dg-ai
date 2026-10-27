@@ -18,7 +18,8 @@ import {
 } from "../features/filter-policy/store";
 import {
 	findDeclaredFilter,
-	overlayDeclaredFilters,
+	isDeclaredOnlyId,
+	projectDeclaredFilters,
 } from "./filter-declared";
 import { readFilters, workspacePaths } from "../workspace/store";
 
@@ -119,7 +120,7 @@ export async function extendFilter(context: CliContext): Promise<void> {
 			client.listFolders(),
 			readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
 		]);
-		const filter = overlayDeclaredFilters(liveFilters, declared).find(
+		const filter = projectDeclaredFilters(liveFilters, declared).find(
 			(item) => item.id === filterId,
 		);
 		if (!filter) {
@@ -142,7 +143,7 @@ export async function extendFilter(context: CliContext): Promise<void> {
 						name: filter.name,
 						enabled: filter.enabled,
 						sieve: extended.sieve,
-						protonId: filter.id,
+						...(isDeclaredOnlyId(filter.id) ? {} : { protonId: filter.id }),
 					});
 				},
 			});

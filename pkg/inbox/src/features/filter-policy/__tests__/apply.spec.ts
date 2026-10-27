@@ -349,3 +349,61 @@ describe("apply sync plan", () => {
 		expect(updated.folders).toEqual([]);
 	});
 });
+
+describe("partial apply recovery", () => {
+	test("records a completed reorder in the observed baseline when a later delete fails", async () => {
+		const writer = client();
+		const order = ["a", "b", "c"];
+		writer.listFilters = async () =>
+			order.map((id) => ({
+				id,
+				name: id,
+				enabled: true,
+				conditions: ["keep;"],
+				actions: ["keep;"],
+			}));
+		writer.reorderFilters = async (input) => {
+			order.splice(0, order.length, ...input.ids);
+		};
+		writer.deleteFilter = async () => {
+			throw new Error("delete failed");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.observed = {
+			filters: ["a", "b", "c"].map((id, index) => ({
+				id,
+				name: id,
+				enabled: true,
+				sieve: "keep;",
+				sequence: index + 1,
+			})),
+			folders: [],
+		};
+		let persisted: typeof declared | undefined;
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "reorder-filters", names: ["b", "a"], ids: ["b", "a"] },
+						{ op: "delete-filter", id: "c", name: "c" },
+					],
+					notices: [],
+				},
+				approvedDeletes: ["c"],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+				persist: async (file) => {
+					persisted = structuredClone(file);
+				},
+			}),
+		).rejects.toThrow("delete failed");
+		expect(persisted?.observed?.filters.map((filter) => [filter.id, filter.sequence])).toEqual([
+			["b", 1],
+			["a", 2],
+			["c", 3],
+		]);
+		expect(persisted?.observed?.filters[0]?.sieve).toBe("keep;");
+	});
+});
+

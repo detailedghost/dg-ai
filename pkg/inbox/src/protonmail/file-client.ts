@@ -12,6 +12,8 @@ import type {
 	UpdateProtonFilterInput,
 } from "./types";
 
+type SequencedFilter = ProtonDataset["filters"][number] & { sequence?: number };
+
 export class FileBackedProtonMailClient implements ProtonMailClient {
 	readonly provider = "protonmail" as const;
 
@@ -136,7 +138,15 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 			return filter;
 		});
 		const rest = dataset.filters.filter((filter) => !input.ids.includes(filter.id));
-		dataset.filters = [...ordered, ...rest];
+		const next: SequencedFilter[] = [...ordered, ...rest];
+		const sequences = next
+			.map((filter) => filter.sequence)
+			.filter((value): value is number => typeof value === "number")
+			.sort((left, right) => left - right);
+		dataset.filters =
+			sequences.length === next.length
+				? next.map((filter, index) => ({ ...filter, sequence: sequences[index] }))
+				: next;
 		await this.persistDataset();
 	}
 
