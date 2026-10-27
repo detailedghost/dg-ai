@@ -65,6 +65,9 @@ of ids or names.
 - `--revert` writes the declared version back to Proton.
 - An item that exists only in Proton can be pulled, or reverted and deleted. The delete still needs
   `--approve-delete`.
+- A filter or folder you removed from the file is a delete candidate only while Proton still matches
+  the last import or sync. If Proton changed it since (filter name, enabled state, or Sieve; folder
+  name or path), the plan reports drift. Pick `--pull`, or `--revert` with `--approve-delete`.
 - An item deleted in the Proton UI is drift too. `--pull` removes it from the file. `--revert` creates it
   again.
 - A reorder made in the Proton UI is drift named `filter-order`. `--pull filter-order` copies the live

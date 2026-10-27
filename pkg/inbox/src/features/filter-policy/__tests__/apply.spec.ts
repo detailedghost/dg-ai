@@ -619,6 +619,30 @@ describe("apply identity and ordering", () => {
 		expect(declared.observed?.filters.map((filter) => filter.id)).toEqual(["b", "a"]);
 	});
 
+	test("keeps withheld filters in Proton sequence order when reordering", async () => {
+		const writer = client();
+		const sequences = { c: 1, d: 2, a: 3, b: 4 };
+		writer.listFilters = async () =>
+			["d", "a", "c", "b"].map((id) => ({
+				id,
+				name: id.toUpperCase(),
+				enabled: true,
+				sieve: body,
+				sequence: sequences[id as keyof typeof sequences],
+			}));
+		await applySyncPlan({
+			plan: {
+				actions: [{ op: "reorder-filters", names: ["B", "A"], ids: ["b", "a"] }],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toContain("reorder:b,a,c,d");
+	});
+
 	test("deletes a Spam filter before the keep or stop filter that guards it", async () => {
 		const writer = client();
 		writer.listFilters = async () => [

@@ -235,7 +235,7 @@ export async function applySyncPlan(input: {
 				throw new Error(`Reorder lists filter ${repeated} more than once`);
 			}
 			const ordered = resolved.filter((id) => liveIds.has(id));
-			const rest = live
+			const rest = orderedFilters(live)
 				.map((filter) => filter.id)
 				.filter((id) => !ordered.includes(id));
 			const order = [...ordered, ...rest];

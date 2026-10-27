@@ -226,7 +226,14 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 	const deleteCandidates: { id: string; name: string }[] = [];
 	for (const live of liveFilters) {
 		if (matchedLiveIds.has(live.id)) continue;
-		if (observedFilters.has(live.id)) {
+		const baseline = observedFilters.get(live.id);
+		if (
+			baseline &&
+			sameState(
+				stateOf(baseline.name, baseline.enabled, baseline.sieve),
+				stateOf(live.name, live.enabled, live.sieve),
+			)
+		) {
 			deleteCandidates.push({ id: live.id, name: live.name });
 			continue;
 		}
@@ -236,7 +243,9 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 			target: "filter",
 			id: live.id,
 			name: live.name,
-			detail: "Filter is in Proton and not in the declared file",
+			detail: baseline
+				? "Proton changed this filter and it is not in the declared file"
+				: "Filter is in Proton and not in the declared file",
 		});
 	}
 
@@ -304,7 +313,8 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 	}
 	for (const live of liveFolders) {
 		if (matchedFolderIds.has(live.id) || live.type === "system") continue;
-		if (observedFolders.has(live.id)) {
+		const baseline = observedFolders.get(live.id);
+		if (baseline && baseline.path === live.path) {
 			folderDeleteCandidates.push({ id: live.id, path: live.path });
 			continue;
 		}
@@ -314,7 +324,9 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 			target: "folder",
 			id: live.id,
 			name: live.path,
-			detail: "Folder is in Proton and not in the declared file",
+			detail: baseline
+				? "Proton changed this folder and it is not in the declared file"
+				: "Folder is in Proton and not in the declared file",
 		});
 	}
 
@@ -652,9 +664,8 @@ function resolveAddedDrift(
 	approveDelete: string[],
 	actions: PlanAction[],
 ): void {
-	for (let index = notices.length - 1; index >= 0; index -= 1) {
-		const notice = notices[index];
-		if (!notice || notice.op !== "drift") continue;
+	for (const notice of [...notices]) {
+		if (notice.op !== "drift") continue;
 		if (!notice.detail.includes("not in the declared file")) continue;
 		const selected = matchesSelector(pull, notice.id, notice.name);
 		const restore = matchesSelector(revert, notice.id, notice.name);
@@ -662,7 +673,7 @@ function resolveAddedDrift(
 			throw new Error(`Choose pull or revert for ${notice.name}, not both`);
 		}
 		if (selected) {
-			notices.splice(index, 1);
+			notices.splice(notices.indexOf(notice), 1);
 			if (notice.target === "filter") {
 				const live = liveFilters.find((filter) => filter.id === notice.id);
 				if (!live) {
@@ -692,7 +703,7 @@ function resolveAddedDrift(
 		if (!restore || !matchesSelector(approveDelete, notice.id, notice.name)) {
 			continue;
 		}
-		notices.splice(index, 1);
+		notices.splice(notices.indexOf(notice), 1);
 		if (notice.target === "filter") {
 			actions.push({ op: "delete-filter", id: notice.id, name: notice.name });
 		} else {

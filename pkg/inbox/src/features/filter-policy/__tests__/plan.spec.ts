@@ -797,6 +797,69 @@ describe("filter policy plan", () => {
 		);
 	});
 
+	test("reports drift for a removed declaration that Proton changed since the baseline", () => {
+		const kept = proton("f1", "Fin - Banking");
+		const baseline = proton("new", "Shop - Orders", "shop/orders");
+		const edited = proton("new", "Shop - Orders", "shop/orders", {
+			sieve: sieve("shop/other"),
+		});
+		const base = {
+			desiredFilters: [wanted("Fin - Banking", "fin/banking", "f1")],
+			liveFilters: [kept, edited],
+			observedFilters: [kept, baseline],
+		};
+		const plan = buildSyncPlan(input(base));
+		expect(() => buildSyncPlan(input({ ...base, approveDelete: ["new"] }))).toThrow(
+			"Unknown approve-delete target",
+		);
+		expect(plan.actions.some((action) => action.op === "delete-filter")).toBe(false);
+		expect(plan.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "filter", id: "new" }),
+		);
+		expect(
+			buildSyncPlan(input({ ...base, pull: ["new"] })).actions,
+		).toContainEqual(expect.objectContaining({ op: "pull-filter", id: "new" }));
+		expect(
+			buildSyncPlan(input({ ...base, revert: ["new"], approveDelete: ["new"] }))
+				.actions,
+		).toContainEqual({ op: "delete-filter", id: "new", name: "Shop - Orders" });
+	});
+
+	test("reports drift for a removed folder that Proton renamed since the baseline", () => {
+		const plan = buildSyncPlan(
+			input({
+				liveFolders: [folder("r1", "shop/renamed")],
+				observedFolders: [folder("r1", "shop/orders")],
+			}),
+		);
+		expect(plan.actions.some((action) => action.op === "delete-folder")).toBe(false);
+		expect(plan.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "folder", id: "r1" }),
+		);
+	});
+
+	test("appends pulled filters in live order", () => {
+		const a = proton("a", "A");
+		const b = proton("b", "B", "shop/orders");
+		const c = proton("c", "C", "shop/receipts");
+		const plan = buildSyncPlan(
+			input({
+				desiredFilters: [wanted("A", "fin/banking", "a")],
+				liveFilters: [a, b, c],
+				observedFilters: [a],
+				pull: ["b", "c"],
+			}),
+		);
+		expect(
+			plan.actions
+				.filter((action) => action.op === "pull-filter")
+				.map((action) => action.id),
+		).toEqual(["b", "c"]);
+		expect(
+			plan.actions.find((action) => action.op === "reorder-filters"),
+		).toBeUndefined();
+	});
+
 	test("reports a filter deleted in Proton as drift instead of recreating it", () => {
 		const base = {
 			desiredFilters: [wanted("Fin - Banking", "fin/banking", "f1")],
