@@ -72,7 +72,7 @@ the latest code:
 
 ```bash
 ~/.dg/bin/dg-skills demo --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor demo install rerun.
