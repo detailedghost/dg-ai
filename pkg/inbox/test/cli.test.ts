@@ -1347,8 +1347,12 @@ describe("CLI", () => {
 					id: "existing-filter",
 					name: "Email Organizer: message.bank.example -> Receipts",
 					enabled: true,
-					conditions: ["message.bank.example"],
-					actions: ["fileinto Receipts"],
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "message.bank.example" { fileinto "Receipts"; }',
+					],
+					actions: [
+						'require ["fileinto"]; if address :domain :is "From" "message.bank.example" { fileinto "Receipts"; }',
+					],
 				},
 			],
 			messages: [],
@@ -1474,7 +1478,9 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
-		const created = dataset.filters.filter(
+		expect(dataset.filters).toHaveLength(1);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		const created = declared.filters.filter(
 			(filter: { name: string }) =>
 				filter.name.includes("stripe.com") ||
 				filter.name.includes("spam.example.com"),
@@ -1484,11 +1490,83 @@ describe("CLI", () => {
 			filter.name.includes("stripe.com"),
 		);
 		expect(stripe.name).toBe("Receipts - stripe.com");
-		expect(stripe.conditions[0]).toContain(
-			'address :domain :is "From" "stripe.com"',
+		expect(stripe.sieve).toContain('address :domain :is "From" "stripe.com"');
+		expect(stripe.sieve).toContain('fileinto "Receipts"');
+		expect(stripe.sieve).toContain('addflag "\\\\Seen"');
+	});
+
+	test("filters apply confirms Gmail filters through criteria and action creation", async () => {
+		const dir = tmpPath("filter-apply-gmail-workspace");
+		const dataPath = tmpPath("filter-apply-gmail-dataset.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "INBOX", name: "Inbox", type: "system", total: 0, unread: 0 },
+				{
+					id: "Label_receipts",
+					name: "Receipts",
+					type: "label",
+					total: 0,
+					unread: 0,
+				},
+			],
+			filters: [],
+			messages: [],
+		});
+		for (const kind of ["folders", "filters"]) {
+			const loaded = await runCli([
+				"load",
+				kind,
+				"--provider",
+				"gmail",
+				"--dir",
+				dir,
+				"--data-path",
+				dataPath,
+			]);
+			expect(loaded.code, loaded.stderr).toBe(0);
+		}
+		await Bun.$`mkdir -p ${dir}/plans`.quiet();
+		await Bun.write(
+			`${dir}/plans/filter-recommendations.json`,
+			`${JSON.stringify({
+				filterRecommendations: [
+					{
+						domain: "stripe.com",
+						targetFolder: "Receipts",
+						count: 12,
+						safeForDomainFilter: true,
+					},
+				],
+			})}\n`,
 		);
-		expect(stripe.conditions[0]).toContain('fileinto "Receipts"');
-		expect(stripe.conditions[0]).toContain('addflag "\\\\Seen"');
+		const args = [
+			"filters",
+			"apply",
+			"--provider",
+			"gmail",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+		];
+		const gmailDry = await runCli([...args, "--dry-run"]);
+		expect(gmailDry.code, gmailDry.stderr).toBe(0);
+		const confirmed = await runCli([...args, "--confirm"]);
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		expect(JSON.parse(confirmed.stdout)).toMatchObject({
+			mutated: true,
+			create: 1,
+		});
+		const dataset = await Bun.file(dataPath).json();
+		expect(dataset.filters).toHaveLength(1);
+		expect(JSON.parse(dataset.filters[0].conditions[0])).toEqual({
+			from: "stripe.com",
+		});
+		expect(JSON.parse(dataset.filters[0].actions[0])).toEqual({
+			addLabelIds: ["Label_receipts"],
+			removeLabelIds: ["INBOX"],
+		});
+		expect(existsSync(`${dir}/declared-filters.json`)).toBe(false);
 	});
 
 	test("filters load infers naming conventions and consolidate merges generated filters into existing names", async () => {
@@ -1524,10 +1602,10 @@ describe("CLI", () => {
 					name: "Email Organizer: stripe.com -> Receipts",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
 					],
 				},
 				{
@@ -1535,10 +1613,10 @@ describe("CLI", () => {
 					name: "Email Organizer: shop.example.com -> Receipts",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "shop.example.com" { fileinto "Receipts"; stop; }',
 					],
 				},
 			],
@@ -1605,14 +1683,16 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
-		expect(
-			dataset.filters.map((filter: { name: string }) => filter.name),
-		).toEqual(["Fin - Purchases"]);
-		expect(dataset.filters[0].conditions[0]).toContain(
+		expect(dataset.filters).toHaveLength(3);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Fin - Purchases",
+		]);
+		expect(declared.filters[0].sieve).toContain(
 			"email-organizer consolidated domains",
 		);
-		expect(dataset.filters[0].conditions[0]).toContain("shop.example.com");
-		expect(dataset.filters[0].conditions[0]).toContain("stripe.com");
+		expect(declared.filters[0].sieve).toContain("shop.example.com");
+		expect(declared.filters[0].sieve).toContain("stripe.com");
 	});
 
 	test("filters group promotes remaining generated filters into generic grouped filters", async () => {
@@ -1630,10 +1710,10 @@ describe("CLI", () => {
 					name: "Email Organizer: billing.example.com -> invoice",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
 					],
 				},
 				{
@@ -1641,10 +1721,10 @@ describe("CLI", () => {
 					name: "Email Organizer: promo.example.com -> Spam",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "promo.example.com" { fileinto "Spam"; stop; }',
 					],
 				},
 				{
@@ -1652,10 +1732,10 @@ describe("CLI", () => {
 					name: "Email Organizer: edc.example.com -> hunt",
 					enabled: true,
 					conditions: [
-						'if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
 					],
 					actions: [
-						'if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
+						'require ["fileinto"]; if address :domain :is "From" "edc.example.com" { fileinto "hunt"; stop; }',
 					],
 				},
 			],
@@ -1734,24 +1814,499 @@ describe("CLI", () => {
 		});
 		expect(existsSync(confirmedOutput.auditPath)).toBe(true);
 		const dataset = await Bun.file(dataPath).json();
+		expect(dataset.filters).toHaveLength(3);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
 		expect(
-			dataset.filters.map((filter: { name: string }) => filter.name).sort(),
+			declared.filters.map((filter: { name: string }) => filter.name).sort(),
 		).toEqual(["Fin - Invoices", "Hunt - EDC", "Spam - Marketing"]);
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Fin - Invoices",
-			).conditions[0],
+			).sieve,
 		).toContain("billing.example.com");
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Spam - Marketing",
-			).conditions[0],
+			).sieve,
 		).toContain("promo.example.com");
 		expect(
-			dataset.filters.find(
+			declared.filters.find(
 				(filter: { name: string }) => filter.name === "Hunt - EDC",
-			).conditions[0],
+			).sieve,
 		).toContain("edc.example.com");
+	});
+
+	test("filters consolidate keeps staged declared edits on the existing filter", async () => {
+		const dir = tmpPath("filter-consolidate-staged");
+		const dataPath = tmpPath("filter-consolidate-staged.json");
+		await writeDataset(dataPath, {
+			folders: [{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 }],
+			filters: [
+				{
+					id: "manual-receipts",
+					name: "Fin - Purchases",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "old.example" { fileinto "Receipts"; }',
+					],
+					actions: [],
+				},
+				{
+					id: "generated-stripe",
+					name: "Email Organizer: stripe.com -> Receipts",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; stop; }',
+					],
+					actions: [],
+				},
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const staged = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"manual-receipts",
+			"--add-domains",
+			"staged.example",
+			"--confirm",
+		]);
+		expect(staged.code, staged.stderr).toBe(0);
+		const declaredPath = `${dir}/declared-filters.json`;
+		
+		const cmd = (flag: string) =>
+			runCli(["filters", "consolidate", "--dir", dir, flag, "--data-path", dataPath]);
+		const dry = await cmd("--dry-run");
+		expect(dry.code, dry.stderr).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Fin - Purchases",
+		]);
+		expect(declared.filters[0].sieve).toContain("old.example");
+		expect(declared.filters[0].sieve).toContain("staged.example");
+		expect(declared.filters[0].sieve).toContain("stripe.com");
+	});
+
+	test("filters consolidate resolves staged targets before removing any source filter", async () => {
+		const dir = tmpPath("filter-consolidate-shift");
+		const dataPath = tmpPath("filter-consolidate-shift.json");
+		const rule = (folder: string, domain: string) =>
+			`require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; stop; }`;
+		const generated = (id: string, domain: string, folder: string) => ({
+			id,
+			name: `Email Organizer: ${domain} -> ${folder}`,
+			enabled: true,
+			conditions: [rule(folder, domain)],
+			actions: [],
+		});
+		const staged = (name: string, folder: string, domain: string) => ({
+			name,
+			enabled: true,
+			sieve: rule(folder, domain),
+		});
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				generated("gen-receipts", "stripe.com", "Receipts"),
+				generated("gen-invoice", "billing.example.com", "invoice"),
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const declaredPath = `${dir}/declared-filters.json`;
+		await Bun.write(
+			declaredPath,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ ...generated("x", "stripe.com", "Receipts"), sieve: rule("Receipts", "stripe.com"), protonId: "gen-receipts" },
+					{ ...generated("x", "billing.example.com", "invoice"), sieve: rule("invoice", "billing.example.com"), protonId: "gen-invoice" },
+					staged("Fin - Purchases", "Receipts", "old.example"),
+					staged("Fin - Invoices", "invoice", "older.example"),
+					staged("Tail", "Elsewhere", "tail.example"),
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "consolidate", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		const byName = (name: string) =>
+			declared.filters.find((filter: { name: string }) => filter.name === name);
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Fin - Purchases",
+			"Fin - Invoices",
+			"Tail",
+		]);
+		expect(byName("Fin - Purchases").sieve).toContain("stripe.com");
+		expect(byName("Fin - Invoices").sieve).toContain("billing.example.com");
+		expect(byName("Tail").sieve).toContain("tail.example");
+	});
+
+	test("filters group keeps staged declared edits on the existing grouped filter", async () => {
+		const dir = tmpPath("filter-group-staged");
+		const dataPath = tmpPath("filter-group-staged.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+				{ id: "spam", name: "Spam", type: "system", total: 0, unread: 0 },
+				{ id: "hunt", name: "hunt", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{
+					id: "group-invoices",
+					name: "Fin - Invoices",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "old.example" { fileinto "invoice"; }',
+					],
+					actions: [],
+				},
+				{
+					id: "generated-invoice",
+					name: "Email Organizer: billing.example.com -> invoice",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+					],
+					actions: [],
+				},
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const staged = await runCli([
+			"filters",
+			"extend",
+			"--dir",
+			dir,
+			"--data-path",
+			dataPath,
+			"--filter-id",
+			"group-invoices",
+			"--add-domains",
+			"staged.example",
+			"--confirm",
+		]);
+		expect(staged.code, staged.stderr).toBe(0);
+		const declaredPath = `${dir}/declared-filters.json`;
+		const stagedFile = await Bun.file(declaredPath).json();
+		stagedFile.filters.find(
+			(filter: { name: string }) => filter.name === "Fin - Invoices",
+		).enabled = false;
+		await Bun.write(declaredPath, JSON.stringify(stagedFile));
+		const cmd = (flag: string) =>
+			runCli(["filters", "group", "--dir", dir, flag, "--data-path", dataPath]);
+		const dry = await cmd("--dry-run");
+		expect(dry.code, dry.stderr).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		const grouped = declared.filters.find(
+			(filter: { name: string }) => filter.name === "Fin - Invoices",
+		);
+		expect(grouped.sieve).toContain("old.example");
+		expect(grouped.sieve).toContain("staged.example");
+		expect(grouped.sieve).toContain("billing.example.com");
+		expect(grouped.enabled).toBe(false);
+	});
+
+	test("filters group resolves staged targets before removing any source filter", async () => {
+		const dir = tmpPath("filter-group-shift");
+		const dataPath = tmpPath("filter-group-shift.json");
+		const generated = (id: string, domain: string, folder: string) => ({
+			id,
+			name: `Email Organizer: ${domain} -> ${folder}`,
+			enabled: true,
+			conditions: [
+				`require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; stop; }`,
+			],
+			actions: [],
+		});
+		const staged = (name: string, folder: string, domain: string) => ({
+			name,
+			enabled: true,
+			sieve: `require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; }`,
+		});
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+				{ id: "spam", name: "Spam", type: "system", total: 0, unread: 0 },
+				{ id: "hunt", name: "hunt", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				generated("gen-hunt", "hunt.example", "hunt"),
+				generated("gen-invoice", "billing.example.com", "invoice"),
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const declaredPath = `${dir}/declared-filters.json`;
+		await Bun.write(
+			declaredPath,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ ...staged("Email Organizer: hunt.example -> hunt", "hunt", "hunt.example"), protonId: "gen-hunt" },
+					{ ...staged("Email Organizer: billing.example.com -> invoice", "invoice", "billing.example.com"), protonId: "gen-invoice" },
+					staged("Hunt - EDC", "hunt", "old-hunt.example"),
+					staged("Fin - Invoices", "invoice", "old.example"),
+					staged("Tail", "invoice", "tail.example"),
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "group", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		const byName = (name: string) =>
+			declared.filters.find((filter: { name: string }) => filter.name === name);
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Hunt - EDC",
+			"Fin - Invoices",
+			"Tail",
+		]);
+		expect(byName("Fin - Invoices").sieve).toContain("billing.example.com");
+		expect(byName("Fin - Invoices").sieve).toContain("old.example");
+		expect(byName("Tail").sieve).toContain("tail.example");
+		expect(byName("Hunt - EDC").sieve).toContain("hunt.example");
+	});
+
+	test("filters apply keeps an unsynced declared recommendation instead of recreating it", async () => {
+		const dir = tmpPath("filter-apply-declared");
+		const dataPath = tmpPath("filter-apply-declared.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.$`mkdir -p ${dir}/plans`.quiet();
+		await Bun.write(
+			`${dir}/plans/filter-recommendations.json`,
+			JSON.stringify({
+				filterRecommendations: [
+					{
+						domain: "stripe.com",
+						targetFolder: "Receipts",
+						count: 12,
+						safeForDomainFilter: true,
+					},
+				],
+				archiveFollowups: [],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "apply", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		expect((await cmd("--confirm")).code).toBe(0);
+		const declaredPath = `${dir}/declared-filters.json`;
+		const first = await Bun.file(declaredPath).json();
+		first.filters[0].sieve += "\n# staged edit";
+		first.filters[0].enabled = false;
+		await Bun.write(declaredPath, JSON.stringify(first));
+		const dry = await cmd("--dry-run");
+		expect(JSON.parse(dry.stdout)).toMatchObject({ create: 0, existing: 1 });
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		expect(declared.filters).toHaveLength(1);
+		expect(declared.filters[0].sieve).toContain("# staged edit");
+		expect(declared.filters[0].enabled).toBe(false);
+	});
+
+	test("filters apply creates a recommendation whose synced rule was renamed to another sender", async () => {
+		const dir = tmpPath("filter-apply-overlay");
+		const dataPath = tmpPath("filter-apply-overlay.json");
+		const stripe =
+			'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; }';
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{ id: "p1", name: "Imported", enabled: true, conditions: [stripe], actions: [] },
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.$`mkdir -p ${dir}/plans`.quiet();
+		await Bun.write(
+			`${dir}/plans/filter-recommendations.json`,
+			JSON.stringify({
+				filterRecommendations: [
+					{ domain: "stripe.com", targetFolder: "Receipts", count: 12, safeForDomainFilter: true },
+				],
+				archiveFollowups: [],
+			}),
+		);
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{
+						name: "Renamed",
+						protonId: "p1",
+						enabled: true,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "other.example" { fileinto "Elsewhere"; }',
+					},
+				],
+			}),
+		);
+		const dry = await runCli(["filters", "apply", "--dir", dir, "--dry-run", "--data-path", dataPath]);
+		expect(dry.code, dry.stderr).toBe(0);
+		expect(JSON.parse(dry.stdout)).toMatchObject({ create: 1, existing: 0 });
+	});
+
+	test("filters extend edits the right staged entry when two share a name", async () => {
+		const dir = tmpPath("filter-extend-collide");
+		const dataPath = tmpPath("filter-extend-collide.json");
+		const sieve = (domain: string) =>
+			`require ["fileinto"];\nif address :domain :is "From" "${domain}" {\n  fileinto "Newsletters";\n}`;
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "newsletters", name: "Newsletters", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [],
+			messages: [],
+		});
+		await Bun.$`mkdir -p ${dir}`.quiet();
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ name: "Same", enabled: true, sieve: sieve("first.example") },
+					{ name: "Same", enabled: true, sieve: sieve("second.example") },
+				],
+			}),
+		);
+		const result = await runCli([
+			"filters", "extend", "--dir", dir, "--data-path", dataPath,
+			"--filter-id", "declared:1", "--add-domains", "added.example", "--confirm",
+		]);
+		expect(result.code, result.stderr).toBe(0);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters).toHaveLength(2);
+		expect(declared.filters[0].sieve).not.toContain("added.example");
+		expect(declared.filters[1].sieve).toContain("added.example");
+		expect(declared.filters[1].sieve).toContain("second.example");
+	});
+
+	test("filters group keeps staged edits on an unsynced declared group", async () => {
+		const dir = tmpPath("filter-group-unsynced");
+		const dataPath = tmpPath("filter-group-unsynced.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+				{ id: "spam", name: "Spam", type: "system", total: 0, unread: 0 },
+				{ id: "hunt", name: "hunt", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{
+					id: "generated-invoice",
+					name: "Email Organizer: billing.example.com -> invoice",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+					],
+					actions: [],
+				},
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{
+						name: "Fin - Invoices",
+						enabled: false,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "staged.example" { fileinto "invoice"; }',
+					},
+					{
+						name: "Email Organizer: billing.example.com -> invoice",
+						protonId: "generated-invoice",
+						enabled: true,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+					},
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "group", "--dir", dir, flag, "--data-path", dataPath]);
+		const dry = await cmd("--dry-run");
+		expect(dry.code, dry.stderr).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		const grouped = declared.filters.find(
+			(filter: { name: string }) => filter.name === "Fin - Invoices",
+		);
+		expect(grouped.sieve).toContain("staged.example");
+		expect(grouped.sieve).toContain("billing.example.com");
+		expect(grouped.enabled).toBe(false);
 	});
 
 	test("filters apply blocks domain-only filters with cross-workspace target conflicts", async () => {
@@ -2359,10 +2914,13 @@ describe("CLI", () => {
 			`"${domains.at(-1)}", "extra.example"`,
 		);
 		const updated = await Bun.file(dataPath).json();
-		expect(updated.filters[0].conditions[0]).toBe(expected);
-		expect(updated.filters[0].actions[0]).toBe(expected);
+		expect(updated.filters[0].conditions[0]).toBe(sieve);
+		expect(updated.filters[0].actions[0]).toBe(sieve);
 		expect(expected).toContain('fileinto "Newsletters"');
 		expect(expected).toContain('require ["fileinto", "imap4flags"]');
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters[0].protonId).toBe("manual-news");
+		expect(declared.filters[0].sieve).toBe(expected);
 		const audit = await Bun.file(confirmedBody.auditPath).json();
 		expect(audit).toMatchObject({
 			kind: "workspace-filter-extend-audit",
@@ -2374,9 +2932,70 @@ describe("CLI", () => {
 		expect(audit.afterHash).toHaveLength(64);
 		expect(audit.afterHash).not.toBe(audit.beforeHash);
 		const refreshed = await Bun.file(`${dir}/filters.json`).json();
-		expect(refreshed.kind).toBe("filters");
-		expect(refreshed.filters[0].id).toBe("manual-news");
-		expect(refreshed.filters[0].destinations).toEqual(["Newsletters"]);
+		expect(refreshed).toEqual({});
+	});
+
+	test("filters extend builds from the declared entry when extending twice before sync", async () => {
+		const dir = tmpPath("filter-extend-twice");
+		const dataPath = tmpPath("filter-extend-twice.json");
+		const sieve = [
+			'require ["fileinto"];',
+			'if address :domain :is "From" "news.example" {',
+			'  fileinto "Newsletters";',
+			"}",
+		].join("\n");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "newsletters", name: "Newsletters", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{
+					id: "manual-news",
+					name: "Newsletters",
+					enabled: true,
+					conditions: [sieve],
+					actions: [sieve],
+				},
+			],
+			messages: [],
+		});
+		const extend = (domain: string, ...rest: string[]) =>
+			runCli([
+				"filters",
+				"extend",
+				"--dir",
+				dir,
+				"--data-path",
+				dataPath,
+				"--filter-id",
+				"manual-news",
+				"--add-domains",
+				domain,
+				...rest,
+			]);
+		expect((await extend("a.example", "--confirm")).code).toBe(0);
+		const declaredPath = `${dir}/declared-filters.json`;
+		const staged = await Bun.file(declaredPath).json();
+		staged.filters[0].name = "Staged name";
+		staged.filters[0].enabled = false;
+		await Bun.write(declaredPath, JSON.stringify(staged));
+
+		const preview = await extend("b.example");
+		expect(preview.code, preview.stderr).toBe(0);
+		const previewBody = JSON.parse(preview.stdout);
+		expect(previewBody.before).toContain("a.example");
+		expect(previewBody.after).toContain("b.example");
+		expect(previewBody.name).toBe("Staged name");
+
+		const confirmed = await extend("b.example", "--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		expect(declared.filters).toHaveLength(1);
+		expect(declared.filters[0].sieve).toContain("news.example");
+		expect(declared.filters[0].sieve).toContain("a.example");
+		expect(declared.filters[0].sieve).toContain("b.example");
+		expect(declared.filters[0].name).toBe("Staged name");
+		expect(declared.filters[0].enabled).toBe(false);
 	});
 
 	test("filters extend refuses a script with no From-domain check", async () => {

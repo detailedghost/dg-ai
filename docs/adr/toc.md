@@ -62,6 +62,7 @@ flowchart LR
 - [0019 — Pass review origin and model evidence across runner attempts](0019-review-execution-context.md)
 - [0020 — One `dg` command and binary that supervises channel review](0020-one-dg-command.md)
 - [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
+- [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 
 ## Adding an ADR
 

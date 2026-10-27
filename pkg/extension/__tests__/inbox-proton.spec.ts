@@ -255,3 +255,101 @@ it("accepts exact custom-folder membership alongside other Proton labels", async
 		labels: ["5", "custom-folder", "label"],
 	});
 });
+
+it("renames and deletes a folder and reorders filters through acknowledged Proton calls", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Label: { ID: "folder-a", Name: "receipts", Type: 3, ParentID: "parent-1" },
+	});
+	const renamed = await executeProtonPage(
+		{
+			operation: "rename-folder",
+			id: "folder a",
+			name: "receipts",
+			parentId: "parent-1",
+		},
+		context(fetch),
+	);
+	expect(renamed.folder).toMatchObject({ id: "folder-a", name: "receipts" });
+	await executeProtonPage(
+		{ operation: "delete-folder", id: "folder-a" },
+		context(fetch),
+	);
+	await executeProtonPage(
+		{ operation: "reorder-filters", ids: ["filter-a", "filter-b"] },
+		context(fetch),
+	);
+	const calls = fetch.mock.calls as unknown as Array<[string, RequestInit]>;
+	expect(calls.map(([url, init]) => [new URL(url).pathname, init.method])).toEqual([
+		["/api/core/v4/labels/folder%20a", "PUT"],
+		["/api/core/v4/labels/folder-a", "DELETE"],
+		["/api/mail/v4/filters/order", "PUT"],
+	]);
+	expect(JSON.parse(String(calls[0]?.[1].body))).toEqual({
+		Name: "receipts",
+		ParentID: "parent-1",
+	});
+	expect(JSON.parse(String(calls[2]?.[1].body))).toEqual({
+		FilterIDs: ["filter-a", "filter-b"],
+	});
+});
+
+it("omits ParentID when a folder rename does not name a parent", async () => {
+	const fetch = providerFetch({
+		Code: 1000,
+		Label: { ID: "folder-a", Name: "receipts", Type: 3, ParentID: "parent-1" },
+	});
+	await executeProtonPage(
+		{ operation: "rename-folder", id: "folder-a", name: "receipts" },
+		context(fetch),
+	);
+	const body = JSON.parse(
+		String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+	);
+	expect(body).toEqual({ Name: "receipts" });
+	expect(body.ParentID).toBeUndefined();
+});
+
+it("runs list-folders requests one at a time with a pacing call before each follow-up", async () => {
+	const events: string[] = [];
+	let active = 0;
+	let maxActive = 0;
+	const fetch = mock(async (url: RequestInfo | URL) => {
+		active += 1;
+		maxActive = Math.max(maxActive, active);
+		events.push(`fetch:${new URL(String(url), "https://mail.proton.me").pathname}`);
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		active -= 1;
+		return new Response(JSON.stringify({ Labels: [], Counts: [] }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	});
+	const pace = async () => {
+		events.push("pace");
+	};
+	await executeProtonPage({ operation: "list-folders" }, context(fetch as never, { pace }));
+	expect(maxActive).toBe(1);
+	expect(events.filter((event) => event === "pace")).toHaveLength(2);
+	expect(events[1]).toBe("pace");
+	expect(events[3]).toBe("pace");
+});
+
+it("sends an explicit null parent for a root move and omits the parent otherwise", async () => {
+	const bodies: unknown[] = [];
+	const fetch = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
+		bodies.push(JSON.parse(String(init?.body)));
+		return new Response(JSON.stringify({ Code: 1000, Label: { ID: "f1", Name: "Child", Type: 3 } }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	});
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child", moveToRoot: true }, context(fetch as never));
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child" }, context(fetch as never));
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child", parentId: "p1" }, context(fetch as never));
+	expect(bodies).toEqual([
+		{ Name: "Child", ParentID: null },
+		{ Name: "Child" },
+		{ Name: "Child", ParentID: "p1" },
+	]);
+});

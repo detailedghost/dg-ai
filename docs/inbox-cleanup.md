@@ -7,8 +7,9 @@ confirmed mailbox changes. Proton uses extension JavaScript in a signed-in mail
 tab; Gmail/Outlook use OAuth and profiles in dg-ai's encrypted database.
 
 Read [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
-[the workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md). Live-account
-authentication and mutations need validation in your provider/browser setup.
+[the workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md). Proton
+filter and folder writes go through [the filter policy](inbox-filter-policy.md).
+Live-account authentication and mutations need validation in your provider/browser setup.
 
 For a fixture-only install, see [CLI-only installation](install.md#cli-only-install).
 Live provider profiles need the daemon; [the credential ADR](adr/0006-credential-store.md)

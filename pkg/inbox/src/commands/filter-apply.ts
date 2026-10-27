@@ -33,6 +33,14 @@ import {
 	resolveFolder,
 } from "../workspace/folders";
 import {
+	declaredFiltersPath,
+	declaredOnlyId,
+	editDeclaredFilters,
+	readDeclaredFiltersIfExists,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
+import { projectDeclaredFilters } from "./filter-declared";
+import {
 	readFilterNamingConventions,
 	readFilters,
 	readFolders,
@@ -154,9 +162,13 @@ async function applyFilterMutations(
 		);
 	}
 
-	const liveFilters = await client.listFilters();
+	const isProton = client.provider === "protonmail";
+	const [liveFilters, liveFolders] = await Promise.all([
+		client.listFilters(),
+		isProton ? client.listFolders() : Promise.resolve([]),
+	]);
 	const plan = await buildFilterApplyPlan(pathsList, liveFilters, context);
-	if (!client.createFilter && plan.create.length > 0) {
+	if (!isProton && !client.createFilter && plan.create.length > 0) {
 		throw new Error(
 			`${client.provider} filter apply is not supported by this client`,
 		);
@@ -168,20 +180,48 @@ async function applyFilterMutations(
 		count: number;
 		id: string;
 	}[] = [];
-	for (const item of plan.create) {
-		const filter = await client.createFilter?.(
-			filterCreateInput(client.provider, item),
-		);
-		if (!filter) {
-			continue;
-		}
-		created.push({
-			name: item.filterName,
-			domain: item.domain,
-			targetFolder: item.targetFolder,
-			count: item.count,
-			id: filter.id,
+	if (isProton) {
+		const localIds: string[] = [];
+		await editDeclaredFilters({
+			path: declaredFiltersPath(paths.dir),
+			filters: liveFilters,
+			folders: liveFolders,
+			edit(file) {
+				for (const item of plan.create) {
+					const index = upsertDeclaredFilter(file, {
+						name: item.filterName,
+						enabled: true,
+						sieve: item.sieve,
+					});
+					localIds.push(declaredOnlyId(index));
+				}
+			},
 		});
+		for (const [position, item] of plan.create.entries()) {
+			created.push({
+				name: item.filterName,
+				domain: item.domain,
+				targetFolder: item.targetFolder,
+				count: item.count,
+				id: localIds[position] ?? "",
+			});
+		}
+	} else {
+		for (const item of plan.create) {
+			const filter = await client.createFilter?.(
+				filterCreateInput(client.provider, item),
+			);
+			if (!filter) {
+				continue;
+			}
+			created.push({
+				name: item.filterName,
+				domain: item.domain,
+				targetFolder: item.targetFolder,
+				count: item.count,
+				id: filter.id,
+			});
+		}
 	}
 
 	const now = new Date().toISOString();
@@ -230,6 +270,10 @@ async function buildFilterApplyPlan(
 	context: CliContext,
 ): Promise<FilterApplyPlan> {
 	const paths = pathsList[0];
+	const knownFilters = projectDeclaredFilters(
+		existingFilters,
+		await readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
+	);
 	const minCount = getNumberFlag(context.args.flags, "min-count", 1);
 	const onlyDomain = getStringFlag(context.args.flags, "domain");
 	const onlyTarget = getStringFlag(context.args.flags, "target-folder");
@@ -362,7 +406,7 @@ async function buildFilterApplyPlan(
 	const create: FilterPlanItem[] = [];
 	const existing: FilterPlanItem[] = [];
 	for (const item of [...candidates.values()].sort(sortPlanItems)) {
-		if (hasExistingFilter(existingFilters, item)) {
+		if (hasExistingFilter(knownFilters, item)) {
 			existing.push(item);
 		} else {
 			create.push(item);

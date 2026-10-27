@@ -5,6 +5,7 @@ import type {
 	InboxBrowserResponse,
 } from "@dg/common";
 import type { AppConfig } from "./config/types";
+import type { ProtonGate } from "./features/filter-policy/jitter";
 /** Injects encrypted configuration/auth storage and the authenticated Proton extension transport. */
 export type InboxRuntime = {
 	/** Returns exact private account settings, or null when the named profile is absent. */
@@ -21,6 +22,8 @@ export type InboxRuntime = {
 	): Promise<void>;
 	/** Sends a validated named operation through the session-bound extension relay. */
 	browserRequest?(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
+	/** Replaces the live Proton pacer, for tests that must not wait on real gaps. */
+	protonGate?: ProtonGate;
 };
 const runtimes = new WeakMap<
 	AppConfig,

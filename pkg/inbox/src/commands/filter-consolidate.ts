@@ -5,11 +5,7 @@ import { workspaceDirForContext, type CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
 import { redactText } from "../privacy/redact";
 import { createProtonMailClient } from "../protonmail/client";
-import type {
-	ProtonFilter,
-	ProtonFolder,
-	ProtonMailClient,
-} from "../protonmail/types";
+import type { ProtonFilter, ProtonFolder } from "../protonmail/types";
 import {
 	readJsonFileIfExists as readJsonIfExists,
 	writeJsonFile as writeJson,
@@ -20,6 +16,13 @@ import {
 	isGeneratedFilterName,
 	type FilterNamingConvention,
 } from "../workspace/filter-naming";
+import {
+	declaredFiltersPath,
+	editDeclaredFilters,
+	removeDeclaredFilters,
+	upsertDeclaredFilter,
+} from "../features/filter-policy/store";
+import { isDeclaredOnlyId, readDeclaredWithUnsynced } from "./filter-declared";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import {
 	readFilterNamingConventions,
@@ -101,7 +104,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 					"filters consolidate --confirm requires a successful filters consolidate dry-run plan",
 				);
 			}
-			const liveFilters = await client.listFilters();
+			const liveFilters = await readDeclaredWithUnsynced(
+				paths.dir,
+				await client.listFilters(),
+			);
 			const namingConventions =
 				savedConventions.length > 0
 					? savedConventions
@@ -118,7 +124,12 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 					"filters consolidate --confirm refused because the consolidation plan changed after the last dry run; run filters consolidate again",
 				);
 			}
-			const audit = await applyConsolidationPlan(plan, liveFilters, client);
+			const audit = await applyConsolidationPlan(
+				plan,
+				liveFilters,
+				await client.listFolders(),
+				paths.dir,
+			);
 			const summary = redactConsolidationPlan({
 				...plan,
 				mutated: true,
@@ -143,7 +154,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 	if (context.config.protonmail.liveBrowser) {
 		const client = createProtonMailClient(context.config);
 		try {
-			const liveFilters = await client.listFilters();
+			const liveFilters = await readDeclaredWithUnsynced(
+				paths.dir,
+				await client.listFilters(),
+			);
 			const conventions =
 				namingConventions.length > 0
 					? namingConventions
@@ -165,7 +179,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 			await client.close?.();
 		}
 	}
-	const filters = normalizeFilters(rawFilters);
+	const filters = await readDeclaredWithUnsynced(
+		paths.dir,
+		normalizeFilters(rawFilters),
+	);
 	const summary = buildConsolidationPlan(
 		paths.dir,
 		folders,
@@ -347,16 +364,11 @@ function normalizeFilters(filters: unknown[]): ProtonFilter[] {
 async function applyConsolidationPlan(
 	plan: ConsolidationPlan,
 	liveFilters: ProtonFilter[],
-	client: ProtonMailClient,
+	liveFolders: ProtonFolder[],
+	dir: string,
 ): Promise<{ auditPath: string }> {
 	const byId = new Map(liveFilters.map((filter) => [filter.id, filter]));
-	const updated: {
-		id: string;
-		name: string;
-		mergedDomains: string[];
-		deletedFilterIds: string[];
-	}[] = [];
-	for (const candidate of plan.consolidationCandidates) {
+	const merges = plan.consolidationCandidates.map((candidate) => {
 		const existing = byId.get(candidate.existingFilter.id);
 		if (!existing) {
 			throw new Error(
@@ -370,27 +382,46 @@ async function applyConsolidationPlan(
 			);
 		}
 		const domains = candidate.generatedFilters.map((filter) => filter.domain);
-		const mergedSieve = mergeSieve(
-			existingSieve,
-			candidate.existingFilter.targetFolder,
+		return {
+			existing,
 			domains,
-		);
-		await client.updateFilter({
-			id: existing.id,
-			name: existing.name,
-			sieve: mergedSieve,
-			enabled: existing.enabled,
-		});
-		for (const generated of candidate.generatedFilters) {
-			await client.deleteFilter({ id: generated.id });
-		}
-		updated.push({
-			id: existing.id,
-			name: existing.name,
-			mergedDomains: domains.map(redactDomain),
 			deletedFilterIds: candidate.generatedFilters.map((filter) => filter.id),
-		});
-	}
+			mergedSieve: mergeSieve(
+				existingSieve,
+				candidate.existingFilter.targetFolder,
+				domains,
+			),
+		};
+	});
+	await editDeclaredFilters({
+		path: declaredFiltersPath(dir),
+		filters: liveFilters,
+		folders: liveFolders,
+		edit(file) {
+			for (const { existing, mergedSieve } of merges) {
+				upsertDeclaredFilter(
+					file,
+					{
+						name: existing.name,
+						enabled: existing.enabled,
+						sieve: mergedSieve,
+						...(isDeclaredOnlyId(existing.id) ? {} : { protonId: existing.id }),
+					},
+					existing.id,
+				);
+			}
+			removeDeclaredFilters(
+				file,
+				merges.flatMap((merge) => merge.deletedFilterIds),
+			);
+		},
+	});
+	const updated = merges.map(({ existing, domains, deletedFilterIds }) => ({
+		id: existing.id,
+		name: existing.name,
+		mergedDomains: domains.map(redactDomain),
+		deletedFilterIds,
+	}));
 	const auditPath = join(
 		plan.dir,
 		"audit",

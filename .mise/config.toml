@@ -87,6 +87,16 @@ description = "Run the browser extension unit tests"
 dir = "pkg/extension"
 run = "bun test"
 
+[tasks."test:inbox"]
+description = "Run the inbox unit tests"
+dir = "pkg/inbox"
+run = "bun test"
+
+[tasks."test:inbox:mutate"]
+description = "Mutation-test the Proton filter plan and safety checks"
+dir = "pkg/inbox"
+run = "bunx stryker run stryker.filter-policy.conf.mjs"
+
 [tasks."test:agent"]
 description = "Run the dg-agent unit tests"
 dir = "pkg/dg-agent"

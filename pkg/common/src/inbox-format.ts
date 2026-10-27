@@ -44,9 +44,12 @@ export type InboxBrowserOperation =
 	| "list-filters"
 	| "list-messages"
 	| "create-folder"
+	| "rename-folder"
+	| "delete-folder"
 	| "create-filter"
 	| "update-filter"
 	| "delete-filter"
+	| "reorder-filters"
 	| "move-messages"
 	| "mark-read"
 	| "unlabel-messages";
@@ -64,6 +67,9 @@ export type InboxBrowserRequest = {
 	id?: string;
 	name?: string;
 	sieve?: string;
+	parentId?: string;
+	moveToRoot?: boolean;
+	ids?: string[];
 	enabled?: boolean;
 	type?: "folder" | "label";
 };
@@ -298,10 +304,13 @@ export function validateInboxBrowserRequest(
 		"list-folders": [],
 		"list-filters": [],
 		"list-messages": ["page", "pageSize", "folderId"],
-		"create-folder": ["name", "type"],
+		"create-folder": ["name", "type", "parentId"],
+		"rename-folder": ["id", "name", "parentId", "moveToRoot"],
+		"delete-folder": ["id"],
 		"create-filter": ["name", "sieve", "enabled"],
 		"update-filter": ["id", "name", "sieve", "enabled"],
 		"delete-filter": ["id"],
+		"reorder-filters": ["ids"],
 		"move-messages": ["messageIds", "targetFolderId"],
 		"mark-read": ["messageIds"],
 		"unlabel-messages": ["messageIds", "labelId"],
@@ -320,7 +329,15 @@ export function validateInboxBrowserRequest(
 	]);
 	optionalText(
 		v,
-		["accountHint", "folderId", "targetFolderId", "labelId", "id", "name"],
+		[
+			"accountHint",
+			"folderId",
+			"targetFolderId",
+			"labelId",
+			"id",
+			"name",
+			"parentId",
+		],
 		"inbox browser request",
 	);
 	if (v.tabId !== undefined)
@@ -338,6 +355,10 @@ export function validateInboxBrowserRequest(
 		text(v.sieve, "inbox browser request.sieve", 65_536, true);
 	if (v.enabled !== undefined && typeof v.enabled !== "boolean")
 		fail("inbox browser request.enabled must be a boolean");
+	if (v.moveToRoot !== undefined && typeof v.moveToRoot !== "boolean")
+		fail("inbox browser request.moveToRoot must be a boolean");
+	if (v.moveToRoot === true && v.parentId !== undefined)
+		fail("inbox browser request.moveToRoot conflicts with parentId");
 	if (v.type !== undefined)
 		choice(v.type, "inbox browser request.type", ["folder", "label"]);
 	if (["move-messages", "mark-read", "unlabel-messages"].includes(operation))
@@ -352,10 +373,16 @@ export function validateInboxBrowserRequest(
 		text(v.targetFolderId, "inbox browser request.targetFolderId");
 	if (operation === "unlabel-messages")
 		text(v.labelId, "inbox browser request.labelId");
-	if (["update-filter", "delete-filter"].includes(operation))
+	if (
+		["update-filter", "delete-filter", "rename-folder", "delete-folder"].includes(
+			operation,
+		)
+	)
 		text(v.id, "inbox browser request.id");
-	if (["create-folder", "create-filter"].includes(operation))
+	if (["create-folder", "create-filter", "rename-folder"].includes(operation))
 		text(v.name, "inbox browser request.name");
+	if (operation === "reorder-filters")
+		strings(v.ids, "inbox browser request.ids", 1000, 1024, 1);
 	return value as InboxBrowserRequest;
 }
 function folder(value: unknown): void {

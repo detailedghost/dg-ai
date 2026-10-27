@@ -27,6 +27,8 @@ import { applyRecommendedFilters } from "../commands/filter-apply";
 import { extendFilter } from "../commands/filter-extend";
 import { consolidateFilters } from "../commands/filter-consolidate";
 import { groupGeneratedFilters } from "../commands/filter-group";
+import { importDeclaredFilters } from "../features/filter-policy/import-command";
+import { syncDeclaredFilters } from "../features/filter-policy/sync-command";
 import { routeProfileFilter } from "../features/filter-routing/command";
 import { discoverInboxProjects } from "../features/inbox-planning/projects";
 import { validateSpecCommand } from "../features/spec-validation/command";
@@ -66,6 +68,8 @@ export const commandRegistry: CommandRegistry = {
 	"labels:apply": applyOutlookLabels,
 	"labels:inventory": inventoryLabels,
 	"labels:plan": planOutlookLabels,
+	"filters:import": importDeclaredFilters,
+	"filters:sync": syncDeclaredFilters,
 	"filters:apply": async (context) => {
 		if (context.config.provider === "outlook") {
 			await applyOutlookFilters(context);

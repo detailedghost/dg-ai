@@ -12,6 +12,8 @@ import type {
 	UpdateProtonFilterInput,
 } from "./types";
 
+type SequencedFilter = ProtonDataset["filters"][number] & { sequence?: number };
+
 export class FileBackedProtonMailClient implements ProtonMailClient {
 	readonly provider = "protonmail" as const;
 
@@ -30,18 +32,21 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 
 	async createFolder(input: CreateProtonFolderInput) {
 		const dataset = await this.loadDataset();
-		const existing = dataset.folders.find(
-			(folder) =>
-				folder.name.toLowerCase() === input.name.toLowerCase() ||
-				folder.path?.toLowerCase() === input.name.toLowerCase(),
+		const requested = (input.path ?? input.name).toLowerCase();
+		const existing = dataset.folders.find((folder) =>
+			input.path
+				? (folder.path ?? folder.name).toLowerCase() === requested
+				: folder.name.toLowerCase() === requested ||
+					folder.path?.toLowerCase() === requested,
 		);
 		if (existing) {
 			return existing;
 		}
+		const path = input.path ?? input.name;
 		const folder = {
 			id: `folder-${nanoid()}`,
 			name: input.name,
-			path: input.name,
+			path,
 			type: input.type ?? "label",
 			total: 0,
 			unread: 0,
@@ -49,6 +54,33 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 		dataset.folders.push(folder);
 		await this.persistDataset();
 		return folder;
+	}
+
+	async renameFolder(input: {
+		id: string;
+		displayName: string;
+		path?: string;
+		parentId?: string;
+	}) {
+		const dataset = await this.loadDataset();
+		const folder = dataset.folders.find((item) => item.id === input.id);
+		if (!folder) {
+			throw new Error(`Folder not found in file-backed dataset: ${input.id}`);
+		}
+		folder.name = input.displayName;
+		folder.path = input.path ?? input.displayName;
+		await this.persistDataset();
+		return folder;
+	}
+
+	async deleteFolder(input: { id: string }) {
+		const dataset = await this.loadDataset();
+		const before = dataset.folders.length;
+		dataset.folders = dataset.folders.filter((folder) => folder.id !== input.id);
+		if (dataset.folders.length === before) {
+			throw new Error(`Folder not found in file-backed dataset: ${input.id}`);
+		}
+		await this.persistDataset();
 	}
 
 	async listFilters() {
@@ -92,6 +124,29 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 		dataset.filters = dataset.filters.filter(
 			(filter) => filter.id !== input.id,
 		);
+		await this.persistDataset();
+	}
+
+	async reorderFilters(input: { ids: string[] }) {
+		const dataset = await this.loadDataset();
+		const byId = new Map(dataset.filters.map((filter) => [filter.id, filter]));
+		const ordered = input.ids.map((id) => {
+			const filter = byId.get(id);
+			if (!filter) {
+				throw new Error(`Filter not found in file-backed dataset: ${id}`);
+			}
+			return filter;
+		});
+		const rest = dataset.filters.filter((filter) => !input.ids.includes(filter.id));
+		const next: SequencedFilter[] = [...ordered, ...rest];
+		const sequences = next
+			.map((filter) => filter.sequence)
+			.filter((value): value is number => typeof value === "number")
+			.sort((left, right) => left - right);
+		dataset.filters =
+			sequences.length === next.length
+				? next.map((filter, index) => ({ ...filter, sequence: sequences[index] }))
+				: next;
 		await this.persistDataset();
 	}
 
