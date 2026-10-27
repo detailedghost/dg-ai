@@ -68,6 +68,7 @@ export type InboxBrowserRequest = {
 	name?: string;
 	sieve?: string;
 	parentId?: string;
+	moveToRoot?: boolean;
 	ids?: string[];
 	enabled?: boolean;
 	type?: "folder" | "label";
@@ -304,7 +305,7 @@ export function validateInboxBrowserRequest(
 		"list-filters": [],
 		"list-messages": ["page", "pageSize", "folderId"],
 		"create-folder": ["name", "type", "parentId"],
-		"rename-folder": ["id", "name", "parentId"],
+		"rename-folder": ["id", "name", "parentId", "moveToRoot"],
 		"delete-folder": ["id"],
 		"create-filter": ["name", "sieve", "enabled"],
 		"update-filter": ["id", "name", "sieve", "enabled"],
@@ -354,6 +355,10 @@ export function validateInboxBrowserRequest(
 		text(v.sieve, "inbox browser request.sieve", 65_536, true);
 	if (v.enabled !== undefined && typeof v.enabled !== "boolean")
 		fail("inbox browser request.enabled must be a boolean");
+	if (v.moveToRoot !== undefined && typeof v.moveToRoot !== "boolean")
+		fail("inbox browser request.moveToRoot must be a boolean");
+	if (v.moveToRoot === true && v.parentId !== undefined)
+		fail("inbox browser request.moveToRoot conflicts with parentId");
 	if (v.type !== undefined)
 		choice(v.type, "inbox browser request.type", ["folder", "label"]);
 	if (["move-messages", "mark-read", "unlabel-messages"].includes(operation))

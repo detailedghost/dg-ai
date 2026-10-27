@@ -116,6 +116,30 @@ describe("proton pacing", () => {
 		expect(await runPaced([], clock, Math.random)).toEqual([]);
 	});
 
+	test("queues a request that arrives after the first one started", async () => {
+		const clock: Clock = { now: () => 0, sleep: async () => undefined };
+		const gate = new ProtonGate(clock, () => 0.1, 5);
+		const order: string[] = [];
+		let release: () => void = () => undefined;
+		const first = gate.run(async () => {
+			order.push("first:start");
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			order.push("first:end");
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		const second = gate.run(async () => {
+			order.push("second:start");
+		});
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(order).toEqual(["first:start"]);
+		release();
+		await Promise.all([first, second]);
+		expect(order).toEqual(["first:start", "first:end", "second:start"]);
+	});
+
 	test("backs off a rate limit, then stops, and does not retry a rejected write", async () => {
 		const sleeps: number[] = [];
 		const clock: Clock = {

@@ -41,6 +41,12 @@ function actionLine(action: SyncPlan["actions"][number]): string {
 				: `UPDATE filter ${action.name} (${action.changes.join(", ")})`;
 		case "reorder-filters":
 			return `REORDER filters ${action.names.join(" | ")}`;
+		case "pull-filter-order":
+			return "PULL filter order";
+		case "drop-filter":
+			return `DROP filter ${action.name} [${action.id}]`;
+		case "drop-folder":
+			return `DROP folder ${action.path} [${action.id}]`;
 		case "delete-filter":
 			return `DELETE filter ${action.name} [${action.id}]`;
 		case "create-folder":

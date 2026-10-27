@@ -32,6 +32,7 @@ describe("validateInboxBrowserRequest", () => {
 		{ operation: "list-messages", page: 0, pageSize: 1 },
 		{ operation: "create-folder", name: "Reviewed", type: "folder" },
 		{ operation: "rename-folder", id: "folder-a", name: "Reviewed" },
+		{ operation: "rename-folder", id: "folder-a", name: "Reviewed", moveToRoot: true },
 		{ operation: "delete-folder", id: "folder-a" },
 		{ operation: "create-filter", name: "Reviewed", sieve: "keep;", enabled: true },
 		{ operation: "reorder-filters", ids: ["filter-a", "filter-b"] },
@@ -42,6 +43,14 @@ describe("validateInboxBrowserRequest", () => {
 		{ operation: "unlabel-messages", messageIds: ["message-a"], labelId: "label-a" },
 	])("accepts reviewed fixed operation %p", (request) => {
 		expect(validateInboxBrowserRequest(request)).toMatchObject(request);
+	});
+
+	it.each([
+		{ operation: "rename-folder", id: "folder-a", name: "Reviewed", moveToRoot: "yes" },
+		{ operation: "rename-folder", id: "folder-a", name: "Reviewed", moveToRoot: true, parentId: "folder-b" },
+		{ operation: "create-folder", name: "Reviewed", moveToRoot: true },
+	])("rejects an ambiguous or misplaced root move %p", (request) => {
+		expect(() => validateInboxBrowserRequest(request)).toThrow();
 	});
 
 	it("preserves a bounded page offset independently of page size", () => {

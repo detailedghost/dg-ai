@@ -75,6 +75,7 @@ describe("filter policy plan", () => {
 		);
 		expect(plan.actions).toContainEqual({
 			op: "create-filter",
+			ref: "new:0",
 			name: "Fin - Banking",
 			enabled: true,
 			sieve: sieve("fin/banking"),
@@ -143,6 +144,7 @@ describe("filter policy plan", () => {
 		expect(moved.actions).toContainEqual({
 			op: "reorder-filters",
 			names: ["Shop - Orders", "Fin - Banking"],
+			ids: ["b", "a"],
 		});
 		expect(
 			orderedFilters([
@@ -723,6 +725,7 @@ describe("filter policy plan", () => {
 		expect(pulledName.actions).toContainEqual({
 			op: "reorder-filters",
 			names: ["Fin - Banking", "Shop - Orders"],
+			ids: ["f1", "new"],
 		});
 		expect(() =>
 			buildSyncPlan(
@@ -738,5 +741,119 @@ describe("filter policy plan", () => {
 				}),
 			),
 		).toThrow("Choose pull or revert for Shop - Orders, not both");
+	});
+	test("reorders same-named filters by Proton ID", () => {
+		const plan = buildSyncPlan(
+			input({
+				desiredFilters: [
+					wanted("Fin - Banking", "fin/banking", "b"),
+					wanted("Fin - Banking", "fin/banking", "a"),
+				],
+				liveFilters: [proton("a", "Fin - Banking"), proton("b", "Fin - Banking")],
+			}),
+		);
+		expect(plan.actions).toContainEqual(
+			expect.objectContaining({ op: "reorder-filters", ids: ["b", "a"] }),
+		);
+	});
+
+	test("references a created filter explicitly in the reorder", () => {
+		const plan = buildSyncPlan(
+			input({
+				desiredFilters: [
+					wanted("Shop - Orders", "shop/orders"),
+					wanted("Fin - Banking", "fin/banking", "a"),
+				],
+				liveFilters: [proton("a", "Fin - Banking")],
+			}),
+		);
+		expect(plan.actions).toContainEqual(
+			expect.objectContaining({ op: "create-filter", ref: "new:0" }),
+		);
+		expect(plan.actions).toContainEqual(
+			expect.objectContaining({ op: "reorder-filters", ids: ["new:0", "a"] }),
+		);
+	});
+
+	test("keeps a pulled rename at its declared position", () => {
+		const plan = buildSyncPlan(
+			input({
+				desiredFilters: [
+					wanted("A", "fin/banking", "a"),
+					wanted("B", "shop/orders", "b"),
+				],
+				liveFilters: [proton("x", "X"), proton("b", "B", "shop/orders")].map(
+					(filter) => (filter.id === "x" ? { ...filter, id: "a" } : filter),
+				),
+				observedFilters: [proton("a", "A"), proton("b", "B", "shop/orders")],
+				pull: ["a"],
+			}),
+		);
+		expect(plan.actions.some((action) => action.op === "reorder-filters")).toBe(false);
+		expect(plan.actions).toContainEqual(
+			expect.objectContaining({ op: "pull-filter", id: "a", name: "X" }),
+		);
+	});
+
+	test("reports a filter deleted in Proton as drift instead of recreating it", () => {
+		const base = {
+			desiredFilters: [wanted("Fin - Banking", "fin/banking", "f1")],
+			liveFilters: [],
+			observedFilters: [proton("f1", "Fin - Banking")],
+		};
+		const drift = buildSyncPlan(input(base));
+		expect(drift.actions).toEqual([]);
+		expect(drift.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "filter", id: "f1" }),
+		);
+		const pulled = buildSyncPlan(input({ ...base, pull: ["f1"] }));
+		expect(pulled.actions).toEqual([
+			{ op: "drop-filter", id: "f1", name: "Fin - Banking" },
+		]);
+		const reverted = buildSyncPlan(input({ ...base, revert: ["f1"] }));
+		expect(reverted.actions).toContainEqual(
+			expect.objectContaining({ op: "create-filter", name: "Fin - Banking" }),
+		);
+		expect(reverted.notices).toEqual([]);
+	});
+
+	test("reports a folder deleted in Proton as drift instead of recreating it", () => {
+		const base = {
+			desiredFolders: [{ path: "fin", type: "folder" as const, protonId: "d1" }],
+			liveFolders: [],
+			observedFolders: [folder("d1", "fin")],
+		};
+		const drift = buildSyncPlan(input(base));
+		expect(drift.actions).toEqual([]);
+		expect(drift.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "folder", id: "d1" }),
+		);
+		expect(buildSyncPlan(input({ ...base, pull: ["d1"] })).actions).toEqual([
+			{ op: "drop-folder", id: "d1", path: "fin" },
+		]);
+		expect(buildSyncPlan(input({ ...base, revert: ["d1"] })).actions).toEqual([
+			{ op: "create-folder", path: "fin", type: "folder" },
+		]);
+	});
+
+	test("treats a reorder made only in Proton as drift", () => {
+		const a = proton("a", "A");
+		const b = proton("b", "B", "shop/orders");
+		const base = {
+			desiredFilters: [wanted("A", "fin/banking", "a"), wanted("B", "shop/orders", "b")],
+			liveFilters: [b, a],
+			observedFilters: [a, b],
+		};
+		const drift = buildSyncPlan(input(base));
+		expect(drift.actions).toEqual([]);
+		expect(drift.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", id: "filter-order" }),
+		);
+		expect(buildSyncPlan(input({ ...base, pull: ["filter-order"] })).actions).toEqual([
+			{ op: "pull-filter-order", ids: ["b", "a"] },
+		]);
+		expect(buildSyncPlan(input({ ...base, revert: ["filter-order"] })).actions).toEqual([
+			{ op: "reorder-filters", names: ["A", "B"], ids: ["a", "b"] },
+		]);
 	});
 });

@@ -35,7 +35,13 @@ export type DesiredFolder = {
 };
 
 export type PlanAction =
-	| { op: "create-filter"; name: string; enabled: boolean; sieve: string }
+	| {
+			op: "create-filter";
+			ref?: string;
+			name: string;
+			enabled: boolean;
+			sieve: string;
+	  }
 	| {
 			op: "update-filter";
 			id: string;
@@ -45,7 +51,10 @@ export type PlanAction =
 			sieve: string;
 			changes: Array<"name" | "sieve" | "enabled">;
 	  }
-	| { op: "reorder-filters"; names: string[] }
+	| { op: "reorder-filters"; names: string[]; ids?: string[] }
+	| { op: "pull-filter-order"; ids: string[] }
+	| { op: "drop-filter"; id: string; name: string }
+	| { op: "drop-folder"; id: string; path: string }
 	| { op: "delete-filter"; id: string; name: string }
 	| {
 			op: "create-folder";
@@ -144,8 +153,9 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 	const matchedLiveIds = new Set<string>();
 	const liveById = new Map(liveFilters.map((filter) => [filter.id, filter]));
 	const liveNameCounts = countNames(liveFilters.map((filter) => filter.name));
+	const slots: Array<{ ref: string; name: string }> = [];
 
-	for (const desired of desiredFilters) {
+	for (const [index, desired] of desiredFilters.entries()) {
 		const live = matchLiveFilter(
 			desired,
 			liveFilters,
@@ -154,15 +164,36 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 			matchedLiveIds,
 		);
 		if (!live) {
-			actions.push({
+			const ref = `new:${index}`;
+			const create: PlanAction = {
 				op: "create-filter",
+				ref,
 				name: desired.name,
 				enabled: desired.enabled,
 				sieve: desired.sieve,
-			});
+			};
+			if (desired.protonId && observedFilters.has(desired.protonId)) {
+				rememberDrift(driftSelectors, desired.protonId, desired.name);
+				const recreate = resolveRemoteDeletion({
+					target: "filter",
+					id: desired.protonId,
+					name: desired.name,
+					pull,
+					revert,
+					drop: { op: "drop-filter", id: desired.protonId, name: desired.name },
+					recreate: create,
+					actions,
+					notices,
+				});
+				if (recreate) slots.push({ ref, name: desired.name });
+				continue;
+			}
+			actions.push(create);
+			slots.push({ ref, name: desired.name });
 			continue;
 		}
 		matchedLiveIds.add(live.id);
+		slots.push({ ref: live.id, name: desired.name });
 		const decision = classifyMatchedFilter(
 			desired,
 			live,
@@ -184,6 +215,13 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 			notices,
 		);
 	}
+
+	const orderDrift = remoteOrderDrift(
+		orderedFilters(input.observedFilters ?? []).map((filter) => filter.id),
+		liveFilters.map((filter) => filter.id),
+		slots.map((slot) => slot.ref),
+	);
+	if (orderDrift) rememberDrift(driftSelectors, FILTER_ORDER, FILTER_ORDER);
 
 	const deleteCandidates: { id: string; name: string }[] = [];
 	for (const live of liveFilters) {
@@ -216,11 +254,27 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 		);
 		if (!live) {
 			if (desired.type === "system") continue;
-			actions.push({
+			const create: PlanAction = {
 				op: "create-folder",
 				path: desired.path,
 				type: desired.type,
-			});
+			};
+			if (desired.protonId && observedFolders.has(desired.protonId)) {
+				rememberDrift(driftSelectors, desired.protonId, desired.path);
+				resolveRemoteDeletion({
+					target: "folder",
+					id: desired.protonId,
+					name: desired.path,
+					pull,
+					revert,
+					drop: { op: "drop-folder", id: desired.protonId, path: desired.path },
+					recreate: create,
+					actions,
+					notices,
+				});
+				continue;
+			}
+			actions.push(create);
 			continue;
 		}
 		matchedFolderIds.add(live.id);
@@ -314,15 +368,54 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 		actions,
 	);
 
-	const liveNames = liveFilters.map((filter) => filter.name);
-	const desiredNames = desiredFilters.map((filter) => filter.name);
+	const pulledNames = new Map<string, string>();
 	for (const action of actions) {
-		if (action.op === "pull-filter" && !desiredNames.includes(action.name)) {
-			desiredNames.push(action.name);
+		if (action.op === "pull-filter") pulledNames.set(action.id, action.name);
+	}
+	const order = slots.map((slot) => ({
+		ref: slot.ref,
+		name: pulledNames.get(slot.ref) ?? slot.name,
+	}));
+	const slotRefs = new Set(slots.map((slot) => slot.ref));
+	for (const [id, name] of pulledNames) {
+		if (!slotRefs.has(id)) order.push({ ref: id, name });
+	}
+	const refs = order.map((entry) => entry.ref);
+	const liveIds = liveFilters.map((filter) => filter.id);
+	let withholdReorder = false;
+	if (orderDrift) {
+		const selected = matchesSelector(pull, FILTER_ORDER, FILTER_ORDER);
+		const restore = matchesSelector(revert, FILTER_ORDER, FILTER_ORDER);
+		if (selected && restore) {
+			throw new Error("Choose pull or revert for the filter order, not both");
+		}
+		if (selected) {
+			actions.push({ op: "pull-filter-order", ids: liveIds });
+			withholdReorder = true;
+		} else if (!restore) {
+			notices.push({
+				op: "drift",
+				target: "filter",
+				id: FILTER_ORDER,
+				name: FILTER_ORDER,
+				detail: "Proton changed the filter order after the last import or sync",
+			});
+			withholdReorder = true;
 		}
 	}
-	if (!sameList(liveNames, desiredNames)) {
-		actions.push({ op: "reorder-filters", names: [...desiredNames] });
+	const refSet = new Set(refs);
+	if (
+		!withholdReorder &&
+		!sameList(
+			liveIds.filter((id) => refSet.has(id)),
+			refs,
+		)
+	) {
+		actions.push({
+			op: "reorder-filters",
+			names: order.map((entry) => entry.name),
+			ids: refs,
+		});
 	}
 
 	for (const desired of desiredFilters) {
@@ -606,6 +699,56 @@ function resolveAddedDrift(
 			actions.push({ op: "delete-folder", id: notice.id, path: notice.name });
 		}
 	}
+}
+
+const FILTER_ORDER = "filter-order";
+
+function remoteOrderDrift(
+	observedIds: string[],
+	liveIds: string[],
+	declaredRefs: string[],
+): boolean {
+	const observed = new Set(observedIds);
+	const live = new Set(liveIds);
+	const baseline = observedIds.filter((id) => live.has(id));
+	const current = liveIds.filter((id) => observed.has(id));
+	if (sameList(baseline, current)) return false;
+	const declared = declaredRefs.filter((id) => observed.has(id) && live.has(id));
+	return !sameList(declared, current);
+}
+
+function resolveRemoteDeletion(input: {
+	target: "filter" | "folder";
+	id: string;
+	name: string;
+	pull: string[];
+	revert: string[];
+	drop: PlanAction;
+	recreate: PlanAction;
+	actions: PlanAction[];
+	notices: PlanNotice[];
+}): boolean {
+	const selected = matchesSelector(input.pull, input.id, input.name);
+	const restore = matchesSelector(input.revert, input.id, input.name);
+	if (selected && restore) {
+		throw new Error(`Choose pull or revert for ${input.name}, not both`);
+	}
+	if (selected) {
+		input.actions.push(input.drop);
+		return false;
+	}
+	if (restore) {
+		input.actions.push(input.recreate);
+		return true;
+	}
+	input.notices.push({
+		op: "drift",
+		target: input.target,
+		id: input.id,
+		name: input.name,
+		detail: `${input.target === "filter" ? "Filter" : "Folder"} was deleted in Proton after the last import or sync`,
+	});
+	return false;
 }
 
 function rememberDrift(known: Set<string>, id: string, name: string): void {

@@ -16,6 +16,10 @@ export default defineContentScript({
 					origin: location.origin,
 					headers: observer.getHeaders(),
 					fetch: window.fetch.bind(window),
+					pace: () =>
+						new Promise((resolve) =>
+							setTimeout(resolve, 320 + Math.round(Math.random() ** 3 * 1500)),
+						),
 				}),
 			writable: false,
 			configurable: false,

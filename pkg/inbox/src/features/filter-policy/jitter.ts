@@ -85,7 +85,6 @@ export class ProtonGate {
 	private readonly gaps: number[] = [];
 	private sinceBreak = 0;
 	private burstBudget: number;
-	private active = 0;
 
 	constructor(
 		private readonly clock: Clock,
@@ -96,7 +95,6 @@ export class ProtonGate {
 	}
 
 	async run<T>(op: () => Promise<T>, options?: { retry?: boolean }): Promise<T> {
-		if (this.active > 0) return op();
 		const ticket = this.tail.then(() => this.execute(op, options?.retry === true));
 		this.tail = ticket.then(
 			() => undefined,
@@ -107,11 +105,9 @@ export class ProtonGate {
 
 	private async execute<T>(op: () => Promise<T>, retry: boolean): Promise<T> {
 		await this.pauseBeforeCall();
-		this.active += 1;
 		try {
 			return await this.attempt(op, retry);
 		} finally {
-			this.active -= 1;
 			this.sinceBreak += 1;
 		}
 	}

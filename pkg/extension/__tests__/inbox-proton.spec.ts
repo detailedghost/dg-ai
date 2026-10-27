@@ -309,3 +309,47 @@ it("omits ParentID when a folder rename does not name a parent", async () => {
 	expect(body).toEqual({ Name: "receipts" });
 	expect(body.ParentID).toBeUndefined();
 });
+
+it("runs list-folders requests one at a time with a pacing call before each follow-up", async () => {
+	const events: string[] = [];
+	let active = 0;
+	let maxActive = 0;
+	const fetch = mock(async (url: RequestInfo | URL) => {
+		active += 1;
+		maxActive = Math.max(maxActive, active);
+		events.push(`fetch:${new URL(String(url), "https://mail.proton.me").pathname}`);
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		active -= 1;
+		return new Response(JSON.stringify({ Labels: [], Counts: [] }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	});
+	const pace = async () => {
+		events.push("pace");
+	};
+	await executeProtonPage({ operation: "list-folders" }, context(fetch as never, { pace }));
+	expect(maxActive).toBe(1);
+	expect(events.filter((event) => event === "pace")).toHaveLength(2);
+	expect(events[1]).toBe("pace");
+	expect(events[3]).toBe("pace");
+});
+
+it("sends an explicit null parent for a root move and omits the parent otherwise", async () => {
+	const bodies: unknown[] = [];
+	const fetch = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
+		bodies.push(JSON.parse(String(init?.body)));
+		return new Response(JSON.stringify({ Code: 1000, Label: { ID: "f1", Name: "Child", Type: 3 } }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+	});
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child", moveToRoot: true }, context(fetch as never));
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child" }, context(fetch as never));
+	await executeProtonPage({ operation: "rename-folder", id: "f1", name: "Child", parentId: "p1" }, context(fetch as never));
+	expect(bodies).toEqual([
+		{ Name: "Child", ParentID: null },
+		{ Name: "Child" },
+		{ Name: "Child", ParentID: "p1" },
+	]);
+});

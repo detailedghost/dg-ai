@@ -124,13 +124,14 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 		displayName: string;
 		path?: string;
 		parentId?: string;
+		moveToRoot?: boolean;
 	}): Promise<MailFolder> {
 		const folder = (
 			await this.request({
 				operation: "rename-folder",
 				id: input.id,
 				name: input.displayName,
-				...(input.parentId ? { parentId: input.parentId } : {}),
+				...renamePlacement(input),
 			})
 		).folder;
 		if (!folder) throw new Error("Proton extension did not return the renamed folder");
@@ -219,4 +220,13 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			labelId: input.labelId,
 		});
 	}
+}
+
+function renamePlacement(input: {
+	parentId?: string;
+	moveToRoot?: boolean;
+}): { moveToRoot: true } | { parentId: string } | Record<string, never> {
+	if (input.moveToRoot) return { moveToRoot: true };
+	if (input.parentId) return { parentId: input.parentId };
+	return {};
 }

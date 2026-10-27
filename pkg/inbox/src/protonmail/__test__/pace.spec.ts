@@ -114,4 +114,22 @@ describe("live Proton pacing", () => {
 		expect(writes).toBe(1);
 		expect(rejected.sleeps).toEqual([]);
 	});
+
+	test("sends an explicit root move distinct from an unchanged parent", async () => {
+		const requests: Array<Record<string, unknown>> = [];
+		const harness = client({
+			browserRequest: async (request) => {
+				requests.push(request as Record<string, unknown>);
+				return { folder: { id: "f1", name: "child" } };
+			},
+		});
+		await harness.proton.renameFolder({ id: "f1", displayName: "child", moveToRoot: true });
+		await harness.proton.renameFolder({ id: "f1", displayName: "child" });
+		await harness.proton.renameFolder({ id: "f1", displayName: "child", parentId: "p1" });
+		expect(requests.map(({ moveToRoot, parentId }) => ({ moveToRoot, parentId }))).toEqual([
+			{ moveToRoot: true, parentId: undefined },
+			{ moveToRoot: undefined, parentId: undefined },
+			{ moveToRoot: undefined, parentId: "p1" },
+		]);
+	});
 });

@@ -8,7 +8,7 @@ import {
 	type DeclaredFolder,
 	type DeclaredPolicy,
 } from "./schema";
-import type { LiveFilter, LiveFolder } from "./plan";
+import { orderedFilters, type LiveFilter, type LiveFolder } from "./plan";
 
 export function declaredFiltersPath(dir: string): string {
 	return join(dir, "declared-filters.json");
@@ -35,15 +35,18 @@ export async function writeDeclaredFilters(
 	await writeJsonFile(path, parseDeclaredFilters(file));
 }
 
+type LiveFilterInput = {
+	id: string;
+	name: string;
+	enabled: boolean;
+	conditions?: string[];
+	actions?: string[];
+	sieve?: string;
+	sequence?: number;
+};
+
 export function seedDeclaredFromLive(input: {
-	filters: Array<{
-		id: string;
-		name: string;
-		enabled: boolean;
-		conditions?: string[];
-		actions?: string[];
-		sieve?: string;
-	}>;
+	filters: LiveFilterInput[];
 	folders: Array<{
 		id: string;
 		name: string;
@@ -55,18 +58,20 @@ export function seedDeclaredFromLive(input: {
 	const file = emptyDeclaredFilters();
 	if (input.policy) file.policy = input.policy;
 	file.folders = input.folders.map((folder) => toDeclaredFolder(folder));
-	file.filters = input.filters.map((filter) => ({
+	const ordered = orderedFilters(input.filters);
+	file.filters = ordered.map((filter) => ({
 		name: filter.name,
 		enabled: filter.enabled,
 		sieve: filter.sieve ?? fullSieveOrThrow(filter),
 		protonId: filter.id,
 	}));
 	file.observed = {
-		filters: file.filters.map((filter) => ({
-			id: filter.protonId ?? filter.name,
+		filters: ordered.map((filter, index) => ({
+			id: filter.id,
 			name: filter.name,
 			enabled: filter.enabled,
-			sieve: filter.sieve,
+			sieve: file.filters[index]?.sieve ?? "",
+			...(filter.sequence !== undefined ? { sequence: filter.sequence } : {}),
 		})),
 		folders: file.folders.flatMap((folder) => {
 			if (!folder.protonId) return [];
@@ -85,14 +90,7 @@ export function seedDeclaredFromLive(input: {
 
 export async function editDeclaredFilters(input: {
 	path: string;
-	filters: Array<{
-		id: string;
-		name: string;
-		enabled: boolean;
-		conditions?: string[];
-		actions?: string[];
-		sieve?: string;
-	}>;
+	filters: LiveFilterInput[];
 	folders: Array<{
 		id: string;
 		name: string;
@@ -122,11 +120,16 @@ export function upsertDeclaredFilter(
 		protonId?: string;
 	},
 ): void {
-	const index = file.filters.findIndex(
-		(item) =>
-			(filter.protonId !== undefined && item.protonId === filter.protonId) ||
-			item.name === filter.name,
-	);
+	const byId =
+		filter.protonId === undefined
+			? -1
+			: file.filters.findIndex((item) => item.protonId === filter.protonId);
+	const index =
+		byId >= 0
+			? byId
+			: file.filters.findIndex(
+					(item) => item.protonId === undefined && item.name === filter.name,
+				);
 	if (index >= 0) {
 		const current = file.filters[index];
 		if (!current) return;
@@ -191,6 +194,7 @@ export function observeLive(
 		name: string;
 		enabled: boolean;
 		sieve: string;
+		sequence?: number;
 	}>,
 	folders: Array<{
 		id: string;
@@ -199,11 +203,21 @@ export function observeLive(
 		type?: "folder" | "label" | "system";
 	}>,
 ): void {
+	const claimed = new Set(
+		file.filters.flatMap((filter) =>
+			filters.some((item) => item.id === filter.protonId) && filter.protonId
+				? [filter.protonId]
+				: [],
+		),
+	);
 	for (const filter of file.filters) {
+		if (filters.some((item) => item.id === filter.protonId)) continue;
 		const live = filters.find(
-			(item) => item.id === filter.protonId || item.name === filter.name,
+			(item) => item.name === filter.name && !claimed.has(item.id),
 		);
-		if (live) filter.protonId = live.id;
+		if (!live) continue;
+		filter.protonId = live.id;
+		claimed.add(live.id);
 	}
 	for (const folder of file.folders) {
 		const live = folders.find(
@@ -219,6 +233,7 @@ export function observeLive(
 			name: filter.name,
 			enabled: filter.enabled,
 			sieve: filter.sieve,
+			...(filter.sequence !== undefined ? { sequence: filter.sequence } : {}),
 		})),
 		folders: folders.map((folder) => ({
 			id: folder.id,

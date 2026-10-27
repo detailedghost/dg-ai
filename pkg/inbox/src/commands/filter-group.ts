@@ -15,6 +15,7 @@ import {
 	removeDeclaredFilters,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
+import { readDeclaredOverlay } from "./filter-declared";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import { readFilters, readFolders, workspacePaths } from "../workspace/store";
 
@@ -76,7 +77,7 @@ export async function groupGeneratedFilters(
 				const plan = buildGroupPlan(
 					paths.dir,
 					folders,
-					await client.listFilters(),
+					await readDeclaredOverlay(paths.dir, await client.listFilters()),
 					context,
 					{ dryRun: true },
 				);
@@ -95,7 +96,7 @@ export async function groupGeneratedFilters(
 		const plan = buildGroupPlan(
 			paths.dir,
 			folders,
-			normalizeFilters(savedFilters),
+			await readDeclaredOverlay(paths.dir, normalizeFilters(savedFilters)),
 			context,
 			{ dryRun: true },
 		);
@@ -119,11 +120,12 @@ export async function groupGeneratedFilters(
 				"filters group --confirm requires a successful filters group --dry-run report",
 			);
 		}
-		const [folders, liveFilters, liveFolders] = await Promise.all([
+		const [folders, rawLiveFilters, liveFolders] = await Promise.all([
 			readFolders(paths),
 			client.listFilters(),
 			client.listFolders(),
 		]);
+		const liveFilters = await readDeclaredOverlay(paths.dir, rawLiveFilters);
 		const plan = buildGroupPlan(paths.dir, folders, liveFilters, context, {
 			dryRun: false,
 		});

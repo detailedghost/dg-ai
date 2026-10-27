@@ -19,6 +19,7 @@ type ProtonPageContext = {
 	headers?: ProtonSessionHeaders;
 	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 	timeoutMs?: number;
+	pace?: () => Promise<void>;
 };
 const malformed = () => new ProtonOperationError("unsupported-response");
 function record(value: unknown): RecordValue {
@@ -273,11 +274,11 @@ export async function executeProtonPage(
 				result = { hasMore: false };
 				break;
 			case "list-folders": {
-				const [labels, folders, counts] = await Promise.all([
-					api("core/v4/labels?Type=1"),
-					api("core/v4/labels?Type=3"),
-					api("mail/v4/messages/count"),
-				]);
+				const labels = await api("core/v4/labels?Type=1");
+				await context.pace?.();
+				const folders = await api("core/v4/labels?Type=3");
+				await context.pace?.();
+				const counts = await api("mail/v4/messages/count");
 				const system: InboxFolder[] = [
 					["0", "Inbox"],
 					["3", "Trash"],
@@ -373,7 +374,7 @@ export async function executeProtonPage(
 					"PUT",
 					{
 						Name: request.name,
-						...(request.parentId ? { ParentID: request.parentId } : {}),
+						...renameParent(request),
 					},
 				);
 				result = { folder: normalizeFolder(record(json.Label)) };
@@ -473,4 +474,13 @@ export async function executeProtonPage(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+function renameParent(request: {
+	moveToRoot?: boolean;
+	parentId?: string;
+}): { ParentID: string | null } | Record<string, never> {
+	if (request.moveToRoot) return { ParentID: null };
+	if (request.parentId) return { ParentID: request.parentId };
+	return {};
 }

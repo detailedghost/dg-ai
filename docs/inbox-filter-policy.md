@@ -48,7 +48,8 @@ The plan can include these lines:
 - `BLOCKED` when a safety check refuses the apply
 
 File order is Proton order, top down. `policy.keepFirst` must be the leading names. A reorder shows up
-as its own line. A rename proposal is not applied.
+as its own line. A rename proposal is not applied. A reorder lists filter ids, so two filters with the
+same name keep their places.
 
 ## Drift
 
@@ -59,6 +60,10 @@ of ids or names.
 - `--revert` writes the declared version back to Proton.
 - An item that exists only in Proton can be pulled, or reverted and deleted. The delete still needs
   `--approve-delete`.
+- An item deleted in the Proton UI is drift too. `--pull` removes it from the file. `--revert` creates it
+  again.
+- A reorder made in the Proton UI is drift named `filter-order`. `--pull filter-order` copies the live
+  order into the file. `--revert filter-order` puts the file order back.
 
 Pull, revert, and delete each change the plan. Run the dry run again and use the new hash.
 
@@ -81,7 +86,13 @@ Sync refuses to apply when any safety check fails:
 - `protectedPlusAlias` is missing
 - a planned write would file protected plus-alias mail into Spam or Trash
 - a planned write would file GitHub, GitLab, or another listed verification sender into Spam or Trash
-- a Sieve script looks truncated or redacted
+- a plan that reorders filters leaves any filter in the chain able to do the same
+- a Sieve script looks truncated or redacted, or uses a `fileinto` form the parser cannot read
+
+The check looks at the mail a rule can match, not at the addresses written in it. A rule that sends mail
+to Spam or Trash passes only when its conditions exclude the protected plus-alias in every recipient
+header, and exclude the verification senders. A rule with no condition, or a test the check cannot read,
+is blocked.
 - drift is still unresolved
 - `keepFirst` is not the start of the file
 
@@ -103,9 +114,9 @@ If an apply stops halfway, the command reads Proton once more and writes the dec
 that landed. The next dry run does not create those filters or folders again, and it does not mark them
 as drift. Steps that never ran stay in the plan.
 
-A folder rename sends the parent id when that parent is already known. A top-level rename, or a rename
-whose parent path is not in the mailbox snapshot, leaves the parent field out. Proton keeps the folder's
-current parent.
+A folder rename sends the parent id when that parent is already known. A rename to a top-level path sends
+an explicit move to the root. Creates and renames run in parent order, so a new child waits for its
+renamed parent. A create or rename whose parent path cannot be resolved stops the apply before any write.
 
 ## Naming
 

@@ -59,7 +59,7 @@ describe("sieve parsing", () => {
 	});
 
 	test("flags redacted inventory snippets and refuses to store them", () => {
-		const full = organizerHeader;
+		const full = extensionHeader;
 		const snippet = redactText(full, 80);
 		expect(snippet.length).toBeLessThanOrEqual(80);
 		expect(sieveLooksTruncated(snippet)).toBe(true);
@@ -76,5 +76,89 @@ describe("sieve parsing", () => {
 		).toThrow(/truncated or redacted/);
 		expect(fullSieveOrThrow({ conditions: ["keep"], actions: [full] })).toBe(full);
 		expect(normalizeSieve(" a \r\n")).toBe("a");
+	});
+
+	test("accepts a complete script without a require line", () => {
+		expect(sieveLooksTruncated("keep;")).toBe(false);
+		expect(sieveLooksTruncated('if true {\n  discard;\n}\n')).toBe(false);
+	});
+
+	test("ignores delimiters inside strings and comments when checking completeness", () => {
+		expect(
+			sieveLooksTruncated('if header :contains "subject" "{" {\n  keep;\n}\n'),
+		).toBe(false);
+		expect(
+			sieveLooksTruncated('# say "hi\nif true {\n  keep;\n}\n'),
+		).toBe(false);
+		expect(
+			sieveLooksTruncated('/* { "unbalanced */\nif true {\n  keep;\n}\n'),
+		).toBe(false);
+		expect(sieveLooksTruncated('if true { keep; } # trailing note\n')).toBe(false);
+		expect(sieveLooksTruncated('if header :is "a" "\\"{" {\n keep;\n}\n')).toBe(
+			false,
+		);
+		expect(sieveLooksTruncated("/* never closed\nkeep;")).toBe(true);
+		expect(sieveLooksTruncated('if anyof (true, false {\n  keep;\n}\n')).toBe(true);
+		expect(sieveLooksTruncated("if true { keep; ]\n")).toBe(true);
+		expect(sieveLooksTruncated("if true { keep; } }")).toBe(true);
+		expect(sieveLooksTruncated("keep; # cut")).toBe(false);
+		expect(sieveLooksTruncated('require ["fileinto"];\nfileinto "X"; # note')).toBe(false);
+		expect(parseSieve('require ["fileinto"];\nfileinto "X"; # note').unreadable).toBe(false);
+	});
+
+	test("reads every supported fileinto form", () => {
+		const parsed = parseSieve(
+			[
+				'require ["fileinto", "copy", "mailbox", "imap4flags"];',
+				'fileinto :copy "Spam";',
+				'fileinto :create "a/b";',
+				'fileinto :copy :create "c";',
+				'fileinto :create :copy "d";',
+				'fileinto :flags "\\\\Seen" "e";',
+				'fileinto :copy :flags ["\\\\Seen"] "f";',
+				'# fileinto "commented";',
+				'if header :contains "subject" "fileinto \\"quoted\\"" { fileinto "g"; }',
+			].join("\n"),
+		);
+		expect(parsed.fileinto).toEqual(["Spam", "a/b", "c", "d", "e", "f", "g"]);
+		expect(parsed.unreadable).toBe(false);
+	});
+
+	test("marks a fileinto form it cannot read as unreadable", () => {
+		const unreadable = [
+			'fileinto :mailboxid "x" "Spam";',
+			'fileinto :unknown "Spam";',
+			'fileinto ["Spam", "Trash"];',
+			'fileinto "${folder}";',
+			"fileinto;",
+			'fileinto "Spam" :copy;',
+			'fileinto :flags "Spam";',
+			"if true {",
+			"keep keep keep {",
+			'if header :is ["a" "b"] "c" { keep; }',
+			'if anyof ( { keep; }',
+			'if true { keep; } $',
+		];
+		for (const body of unreadable) {
+			expect(parseSieve(body).unreadable).toBe(true);
+		}
+		expect(parseSieve('fileinto "Spam";').unreadable).toBe(false);
+	});
+
+	test("reads multi-line text strings, numbers, and else branches", () => {
+		const parsed = parseSieve(
+			[
+				'if size :over 100K { fileinto "big"; } elsif exists "x" { keep; } else { fileinto text:',
+				'Spam',
+				'.',
+				'; }',
+			].join("\n"),
+		);
+		expect(parsed.fileinto).toEqual(["big", "Spam"]);
+		expect(parsed.unreadable).toBe(false);
+		expect(
+			parseSieve('if not size :under 5 { fileinto "a"; } else { fileinto "b"; }\n')
+				.fileinto,
+		).toEqual(["a", "b"]);
 	});
 });

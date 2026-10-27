@@ -67,6 +67,7 @@ export interface ProtonMailClient {
 		displayName: string;
 		path?: string;
 		parentId?: string;
+		moveToRoot?: boolean;
 	}): Promise<ProtonFolder>;
 	deleteFolder(input: { id: string }): Promise<void>;
 	listFilters(): Promise<ProtonFilter[]>;

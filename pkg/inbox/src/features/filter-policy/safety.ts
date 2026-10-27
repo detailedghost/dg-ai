@@ -1,5 +1,11 @@
 import type { PlanAction, PlanNotice } from "./plan";
-import { parseSieve, sieveLooksTruncated } from "./parse";
+import {
+	fileintoDestination,
+	parseCommands,
+	sieveLooksTruncated,
+	type SieveCommand,
+	type SieveTest,
+} from "./parse";
 
 export type SafetyPolicy = {
 	protectedPlusAlias: string;
@@ -13,6 +19,7 @@ export type SafetyIssue = {
 		| "protected-destination"
 		| "verification-destination"
 		| "truncated-sieve"
+		| "unreadable-sieve"
 		| "unresolved-drift"
 		| "order";
 	message: string;
@@ -27,6 +34,7 @@ export function safetyIssues(input: {
 	policy: SafetyPolicy;
 	keepFirst: string[];
 	desiredNames: string[];
+	desiredFilters: Array<{ name: string; sieve: string }>;
 }): SafetyIssue[] {
 	const issues: SafetyIssue[] = [];
 	const alias = input.policy.protectedPlusAlias.trim();
@@ -39,27 +47,34 @@ export function safetyIssues(input: {
 	}
 	const blocked = blockedDestinations(input.policy.blockedDestinations);
 	const senders = verificationSenders(input.policy.verificationSenders);
-	for (const action of input.actions) {
-		const sieve = actionSieve(action);
-		if (sieve === undefined) continue;
-		if (sieveLooksTruncated(sieve)) {
+	const protectedMail = alias ? protectedClass(alias) : undefined;
+	const senderMail = senderClass(senders);
+	for (const filter of effectiveFilters(input)) {
+		if (sieveLooksTruncated(filter.sieve)) {
 			issues.push({
 				code: "truncated-sieve",
-				message: `Refusing to write a truncated sieve for ${actionLabel(action)}`,
+				message: `Refusing to write a truncated sieve for ${filter.name}`,
 			});
 			continue;
 		}
-		if (!routesToBlocked(sieve, blocked)) continue;
-		if (alias && textMatchesAlias(sieve, alias)) {
+		const routes = blockedRoutes(filter.sieve, blocked);
+		if (!routes) {
+			issues.push({
+				code: "unreadable-sieve",
+				message: `Refusing to write ${filter.name}: its sieve has a form the safety check cannot read`,
+			});
+			continue;
+		}
+		if (protectedMail && routes.some((route) => canMatch(route, protectedMail))) {
 			issues.push({
 				code: "protected-destination",
-				message: `Refusing to route protected plus-alias mail to Spam or Trash in ${actionLabel(action)}`,
+				message: `Refusing to route protected plus-alias mail to Spam or Trash in ${filter.name}`,
 			});
 		}
-		if (mentionsVerificationSender(sieve, senders)) {
+		if (routes.some((route) => canMatch(route, senderMail))) {
 			issues.push({
 				code: "verification-destination",
-				message: `Refusing to route verification mail to Spam or Trash in ${actionLabel(action)}`,
+				message: `Refusing to route verification mail to Spam or Trash in ${filter.name}`,
 			});
 		}
 	}
@@ -93,38 +108,206 @@ export function verificationSenders(extra: string[]): string[] {
 	]);
 }
 
-export function textMatchesAlias(text: string, glob: string): boolean {
-	const pattern = globToRegExp(glob.trim());
-	if (pattern.test(text.trim())) return true;
-	const pieces = text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? [];
-	if (pieces.some((piece) => pattern.test(piece))) return true;
-	const local = /^([^*@]+)\+\*@(.+)$/.exec(glob.trim());
-	if (!local?.[1] || !local[2]) return false;
-	const localPattern = new RegExp(
-		`${escapeRegExp(local[1])}\\+[A-Za-z0-9._-]+`,
-		"i",
-	);
-	return localPattern.test(text);
-}
-
-export function mentionsVerificationSender(
-	text: string,
-	domains: string[],
-): boolean {
-	const lower = text.toLowerCase();
-	return domains.some((domain) => {
-		const escaped = escapeRegExp(domain.toLowerCase());
-		return new RegExp(`(^|@|\\.|\\s|")${escaped}\\b`, "i").test(lower);
-	});
-}
-
 export function routesToBlocked(sieve: string, blocked: string[]): boolean {
-	if (/\bdiscard\s*;/i.test(sieve)) return true;
-	return parseSieve(sieve).fileinto.some((path) => {
-		const full = path.toLowerCase();
-		const last = full.split("/").filter(Boolean).at(-1) ?? full;
-		return blocked.some((item) => item === full || item === last);
-	});
+	return blockedRoutes(sieve, blocked)?.length !== 0;
+}
+
+type Route = SieveTest[];
+
+type MailClass = {
+	headers: string[];
+	envelopeParts: string[];
+	all: string[];
+	localpart: string[];
+	domain: string[];
+};
+
+type KeyedTest = {
+	source: "address" | "header" | "envelope";
+	names: string[];
+	keys: string[];
+	match: "is" | "contains" | "matches";
+	part: "all" | "localpart" | "domain";
+};
+
+function blockedRoutes(sieve: string, blocked: string[]): Route[] | undefined {
+	const commands = parseCommands(sieve);
+	if (!commands) return undefined;
+	const routes: Route[] = [];
+	let readable = true;
+	const walk = (list: SieveCommand[], conditions: SieveTest[]): void => {
+		for (const command of list) {
+			if (command.name === "discard") routes.push(conditions);
+			if (command.name === "fileinto") {
+				const path = fileintoDestination(command);
+				if (path === undefined) readable = false;
+				else if (isBlockedPath(path, blocked)) routes.push(conditions);
+			}
+			if (command.block) {
+				walk(
+					command.block,
+					command.test ? [...conditions, command.test] : conditions,
+				);
+			}
+		}
+	};
+	walk(commands, []);
+	return readable ? routes : undefined;
+}
+
+function isBlockedPath(path: string, blocked: string[]): boolean {
+	const full = path.toLowerCase();
+	const last = full.split("/").filter(Boolean).at(-1) ?? full;
+	return blocked.some((item) => item === full || item === last);
+}
+
+function canMatch(route: Route, mail: MailClass): boolean {
+	return !route.some((test) => excludes(test, mail));
+}
+
+function protectedClass(alias: string): MailClass {
+	const at = alias.lastIndexOf("@");
+	return {
+		headers: ["to", "cc", "bcc", "delivered-to", "x-original-to", "resent-to"],
+		envelopeParts: ["to"],
+		all: [alias],
+		localpart: [at === -1 ? alias : alias.slice(0, at)],
+		domain: [at === -1 ? "*" : alias.slice(at + 1)],
+	};
+}
+
+function senderClass(domains: string[]): MailClass {
+	return {
+		headers: ["from", "sender", "return-path", "reply-to"],
+		envelopeParts: ["from"],
+		all: domains.flatMap((domain) => [`*@${domain}`, `*@*.${domain}`]),
+		localpart: ["*"],
+		domain: domains.flatMap((domain) => [domain, `*.${domain}`]),
+	};
+}
+
+function excludes(test: SieveTest, mail: MailClass): boolean {
+	if (test.name === "false") return true;
+	if (test.name === "allof") return test.tests.some((t) => excludes(t, mail));
+	if (test.name === "anyof") return test.tests.every((t) => excludes(t, mail));
+	if (test.name === "not") return test.tests.every((t) => covers(t, mail));
+	const keyed = readKeyed(test);
+	if (!keyed) return false;
+	return (
+		relevantNames(keyed, mail).length === keyed.names.length &&
+		keyed.keys.every((key) => !keyOverlaps(keyed, mail, key))
+	);
+}
+
+function covers(test: SieveTest, mail: MailClass): boolean {
+	if (test.name === "true") return true;
+	if (test.name === "allof") return test.tests.every((t) => covers(t, mail));
+	if (test.name === "anyof") return test.tests.some((t) => covers(t, mail));
+	if (test.name === "not") return test.tests.every((t) => excludes(t, mail));
+	const keyed = readKeyed(test);
+	if (!keyed || keyed.match === "is") return false;
+	const known = keyed.source === "envelope" ? mail.envelopeParts : mail.headers;
+	if (!known.every((name) => keyed.names.includes(name))) return false;
+	return patternsOf(keyed, mail).every((pattern) =>
+		keyed.keys.some((key) =>
+			globIsSubset(pattern, keyed.match === "contains" ? `*${key}*` : key),
+		),
+	);
+}
+
+function readKeyed(test: SieveTest): KeyedTest | undefined {
+	if (test.name !== "address" && test.name !== "header" && test.name !== "envelope") {
+		return undefined;
+	}
+	let match: KeyedTest["match"] = "is";
+	let part: KeyedTest["part"] = "all";
+	const positional: string[][] = [];
+	for (let index = 0; index < test.args.length; index += 1) {
+		const arg = test.args[index];
+		if (arg?.type === "string") {
+			positional.push(arg.values);
+		} else if (arg?.type === "tag" && arg.name === "comparator") {
+			index += 1;
+		} else if (
+			arg?.type === "tag" &&
+			(arg.name === "is" || arg.name === "contains" || arg.name === "matches")
+		) {
+			match = arg.name;
+		} else if (
+			arg?.type === "tag" &&
+			(arg.name === "all" || arg.name === "localpart" || arg.name === "domain")
+		) {
+			part = arg.name;
+		} else {
+			return undefined;
+		}
+	}
+	const [names, keys] = positional;
+	if (positional.length !== 2 || !names || !keys) return undefined;
+	return {
+		source: test.name,
+		names: names.map((name) => name.toLowerCase()),
+		keys,
+		match,
+		part,
+	};
+}
+
+function relevantNames(keyed: KeyedTest, mail: MailClass): string[] {
+	const known = keyed.source === "envelope" ? mail.envelopeParts : mail.headers;
+	return keyed.names.filter((name) => known.includes(name));
+}
+
+function patternsOf(keyed: KeyedTest, mail: MailClass): string[] {
+	if (keyed.source === "header") return mail.all.map((glob) => `*${glob}*`);
+	return mail[keyed.part];
+}
+
+function keyOverlaps(keyed: KeyedTest, mail: MailClass, key: string): boolean {
+	if (keyed.source === "header" && keyed.match === "contains") return true;
+	const side = keyed.match === "contains" ? `*${key}*` : key;
+	return patternsOf(keyed, mail).some((pattern) => globsIntersect(side, pattern));
+}
+
+export function globsIntersect(a: string, b: string): boolean {
+	const left = a.toLowerCase();
+	const right = b.toLowerCase();
+	const dead = new Set<number>();
+	const walk = (i: number, j: number): boolean => {
+		if (i === left.length && j === right.length) return true;
+		const id = i * (right.length + 1) + j;
+		if (dead.has(id)) return false;
+		dead.add(id);
+		const p = left[i];
+		const q = right[j];
+		if (p === "*" && (walk(i + 1, j) || (q !== undefined && walk(i, j + 1)))) {
+			return true;
+		}
+		if (q === "*" && (walk(i, j + 1) || (p !== undefined && walk(i + 1, j)))) {
+			return true;
+		}
+		const single = p !== undefined && q !== undefined && p !== "*" && q !== "*";
+		return single && (p === q || p === "?" || q === "?") && walk(i + 1, j + 1);
+	};
+	return walk(0, 0);
+}
+
+export function globIsSubset(inner: string, outer: string): boolean {
+	if (inner.includes("?") || outer.includes("?")) return false;
+	return globToRegExp(outer).test(inner.replaceAll("*", "\u0001"));
+}
+
+function effectiveFilters(input: {
+	actions: PlanAction[];
+	desiredFilters: Array<{ name: string; sieve: string }>;
+}): Array<{ name: string; sieve: string }> {
+	const written = input.actions.flatMap((action) => writtenFilter(action) ?? []);
+	if (!input.actions.some((action) => action.op === "reorder-filters")) return written;
+	const writtenNames = new Set(written.map((filter) => filter.name));
+	const unchanged = input.desiredFilters.filter(
+		(filter) => !writtenNames.has(filter.name),
+	);
+	return [...written, ...unchanged];
 }
 
 export function keepFirstSatisfied(names: string[], keepFirst: string[]): boolean {
@@ -138,26 +321,18 @@ export function globToRegExp(glob: string): RegExp {
 	return new RegExp(`^${body}$`, "i");
 }
 
-function actionSieve(action: PlanAction): string | undefined {
+function writtenFilter(
+	action: PlanAction,
+): { name: string; sieve: string } | undefined {
 	if (
 		action.op === "create-filter" ||
 		action.op === "update-filter" ||
 		action.op === "revert-filter" ||
 		action.op === "pull-filter"
 	) {
-		return action.sieve;
+		return { name: action.name, sieve: action.sieve };
 	}
 	return undefined;
-}
-
-function actionLabel(action: PlanAction): string {
-	if (action.op === "update-filter" || action.op === "revert-filter") {
-		return action.name;
-	}
-	if (action.op === "create-filter" || action.op === "pull-filter") {
-		return action.name;
-	}
-	return action.op;
 }
 
 function unique(values: string[]): string[] {

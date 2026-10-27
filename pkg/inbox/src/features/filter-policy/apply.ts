@@ -39,6 +39,7 @@ export type PolicyWriteClient = {
 		displayName: string;
 		path?: string;
 		parentId?: string;
+		moveToRoot?: boolean;
 	}): Promise<{ id: string }>;
 	deleteFolder(input: { id: string }): Promise<void>;
 	createFilter(input: {
@@ -57,6 +58,12 @@ export type PolicyWriteClient = {
 };
 
 type AppliedStep = { action: PlanAction; id?: string };
+
+type FolderStep = {
+	kind: "create" | "rename";
+	target: string;
+	run: () => Promise<void>;
+};
 
 type LiveSnapshot = {
 	filters: Array<{
@@ -82,7 +89,15 @@ export async function applySyncPlan(input: {
 	persist?: (file: DeclaredFiltersFile) => Promise<void>;
 }): Promise<DeclaredFiltersFile> {
 	assertApprovedDeletes(input.plan.actions, input.approvedDeletes);
-	const idsByName = new Map<string, string>();
+	const idsByRef = new Map<string, string>();
+	const folderSteps: FolderStep[] = [];
+	const scheduleFolder = (
+		kind: FolderStep["kind"],
+		target: string,
+		run: () => Promise<void>,
+	): void => {
+		folderSteps.push({ kind, target, run });
+	};
 	const done: AppliedStep[] = [];
 	const steps: Array<() => Promise<void>> = [];
 	const creates = folderCreateOrder(
@@ -92,7 +107,7 @@ export async function applySyncPlan(input: {
 		),
 	);
 	for (const action of creates) {
-		steps.push(async () => {
+		scheduleFolder("create", action.path, async () => {
 			const parentId = parentIdFor(action.path, input.foldersByPath);
 			const created = await input.client.createFolder({
 				name: leaf(action.path),
@@ -106,18 +121,23 @@ export async function applySyncPlan(input: {
 	}
 	for (const action of input.plan.actions) {
 		if (action.op !== "rename-folder") continue;
-		steps.push(async () => {
+		scheduleFolder("rename", action.to, async () => {
 			const parentId = parentIdFor(action.to, input.foldersByPath);
 			await input.client.renameFolder({
 				id: action.id,
 				displayName: leaf(action.to),
 				path: action.to,
-				...(parentId ? { parentId } : {}),
+				...placement(action.to, parentId),
 			});
 			input.foldersByPath.set(action.to, action.id);
 			done.push({ action, id: action.id });
 		});
 	}
+	steps.push(
+		...orderFolderSteps(folderSteps, new Set(input.foldersByPath.keys())).map(
+			(step) => step.run,
+		),
+	);
 	for (const action of input.plan.actions) {
 		if (action.op === "create-filter") {
 			steps.push(async () => {
@@ -126,7 +146,7 @@ export async function applySyncPlan(input: {
 					sieve: action.sieve,
 					enabled: action.enabled,
 				});
-				idsByName.set(action.name, created.id);
+				if (action.ref) idsByRef.set(action.ref, created.id);
 				done.push({ action, id: created.id });
 			});
 		}
@@ -138,7 +158,6 @@ export async function applySyncPlan(input: {
 					sieve: action.sieve,
 					enabled: action.enabled,
 				});
-				idsByName.set(action.name, action.id);
 				done.push({ action, id: action.id });
 			});
 		}
@@ -147,13 +166,24 @@ export async function applySyncPlan(input: {
 		if (action.op !== "reorder-filters") continue;
 		steps.push(async () => {
 			const live = await input.client.listFilters();
-			for (const filter of live) {
-				if (!idsByName.has(filter.name)) idsByName.set(filter.name, filter.id);
+			const liveIds = new Set(live.map((filter) => filter.id));
+			if (!action.ids) {
+				throw new Error("Refusing to reorder filters without stable filter IDs");
 			}
-			const ordered = action.names.flatMap((name) => {
-				const id = idsByName.get(name);
-				return id ? [id] : [];
+			const resolved = action.ids.map((ref) => {
+				const id = idsByRef.get(ref) ?? ref;
+				if (id.startsWith("new:")) {
+					throw new Error(`Reorder references a filter that was not created: ${ref}`);
+				}
+				return id;
 			});
+			const repeated = resolved.find(
+				(id, index) => resolved.indexOf(id) !== index,
+			);
+			if (repeated) {
+				throw new Error(`Reorder lists filter ${repeated} more than once`);
+			}
+			const ordered = resolved.filter((id) => liveIds.has(id));
 			const rest = live
 				.map((filter) => filter.id)
 				.filter((id) => !ordered.includes(id));
@@ -205,6 +235,21 @@ export async function applySyncPlan(input: {
 				protonId: action.id,
 			});
 		}
+		if (action.op === "drop-filter") {
+			declared.filters = declared.filters.filter(
+				(filter) => filter.protonId !== action.id,
+			);
+		}
+		if (action.op === "drop-folder") {
+			declared.folders = declared.folders.filter(
+				(folder) => folder.protonId !== action.id,
+			);
+		}
+	}
+	for (const action of input.plan.actions) {
+		if (action.op === "pull-filter-order") {
+			sortDeclaredFilters(declared, action.ids);
+		}
 	}
 	return declared;
 }
@@ -220,11 +265,19 @@ export function recordAppliedProgress(
 		if (action.op === "create-filter" || action.op === "update-filter" || action.op === "revert-filter") {
 			const id = step.id ?? actionId(action);
 			if (!id) continue;
-			const found = live.filters.find((filter) => filter.id === id || filter.name === action.name);
+			const found =
+				live.filters.find((filter) => filter.id === id) ??
+				live.filters.find((filter) => filter.name === action.name);
 			const name = found?.name ?? action.name;
 			const enabled = found?.enabled ?? action.enabled;
 			const sieve = found?.sieve || action.sieve;
-			const desired = file.filters.find((filter) => filter.name === action.name || filter.protonId === id);
+			const desired =
+				file.filters.find((filter) => filter.protonId === id) ??
+				file.filters.find(
+					(filter) =>
+						filter.name === action.name &&
+						!live.filters.some((item) => item.id === filter.protonId),
+				);
 			if (desired) desired.protonId = found?.id ?? id;
 			upsertObservedFilter(file, { id: found?.id ?? id, name, enabled, sieve });
 		}
@@ -402,6 +455,53 @@ function upsertObservedFolder(
 		return;
 	}
 	file.observed.folders.push(folder);
+}
+
+function sortDeclaredFilters(file: DeclaredFiltersFile, ids: string[]): void {
+	const position = (filter: { protonId?: string }): number => {
+		const index = filter.protonId ? ids.indexOf(filter.protonId) : -1;
+		return index < 0 ? ids.length : index;
+	};
+	file.filters = file.filters
+		.map((filter, index) => ({ filter, index }))
+		.sort(
+			(left, right) =>
+				position(left.filter) - position(right.filter) || left.index - right.index,
+		)
+		.map((entry) => entry.filter);
+}
+
+function orderFolderSteps(steps: FolderStep[], known: Set<string>): FolderStep[] {
+	const pending = [...steps];
+	const ordered: FolderStep[] = [];
+	while (pending.length > 0) {
+		const index = pending.findIndex(
+			(step) =>
+				!pending.some(
+					(other) => other !== step && other.target === parentOf(step.target),
+				),
+		);
+		const [next] = pending.splice(Math.max(index, 0), 1);
+		if (!next) break;
+		const parent = parentOf(next.target);
+		if (parent && !known.has(parent)) {
+			throw new Error(
+				`Refusing to ${next.kind} ${next.target}: parent folder ${parent} cannot be resolved`,
+			);
+		}
+		known.add(next.target);
+		ordered.push(next);
+	}
+	return ordered;
+}
+
+function placement(
+	path: string,
+	parentId: string | undefined,
+): { moveToRoot: true } | { parentId: string } | Record<string, never> {
+	if (parentOf(path) === undefined) return { moveToRoot: true };
+	if (parentId) return { parentId };
+	return {};
 }
 
 function parentIdFor(path: string, foldersByPath: Map<string, string>): string | undefined {

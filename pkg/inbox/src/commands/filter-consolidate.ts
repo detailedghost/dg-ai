@@ -22,6 +22,7 @@ import {
 	removeDeclaredFilters,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
+import { readDeclaredOverlay } from "./filter-declared";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import {
 	readFilterNamingConventions,
@@ -103,7 +104,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 					"filters consolidate --confirm requires a successful filters consolidate dry-run plan",
 				);
 			}
-			const liveFilters = await client.listFilters();
+			const liveFilters = await readDeclaredOverlay(
+				paths.dir,
+				await client.listFilters(),
+			);
 			const namingConventions =
 				savedConventions.length > 0
 					? savedConventions
@@ -150,7 +154,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 	if (context.config.protonmail.liveBrowser) {
 		const client = createProtonMailClient(context.config);
 		try {
-			const liveFilters = await client.listFilters();
+			const liveFilters = await readDeclaredOverlay(
+				paths.dir,
+				await client.listFilters(),
+			);
 			const conventions =
 				namingConventions.length > 0
 					? namingConventions
@@ -172,7 +179,10 @@ export async function consolidateFilters(context: CliContext): Promise<void> {
 			await client.close?.();
 		}
 	}
-	const filters = normalizeFilters(rawFilters);
+	const filters = await readDeclaredOverlay(
+		paths.dir,
+		normalizeFilters(rawFilters),
+	);
 	const summary = buildConsolidationPlan(
 		paths.dir,
 		folders,

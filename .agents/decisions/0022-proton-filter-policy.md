@@ -15,5 +15,6 @@ ADR: [docs/adr/0022-proton-filter-policy.md](../../docs/adr/0022-proton-filter-p
 - Reads retry HTTP 429 twice and a transient error once, then stop. Writes are not retried.
 - A failed apply re-reads live Proton, merges only completed steps into the declared file, and persists before rethrow.
 - Do not replace the whole observed snapshot on that partial path.
-- A folder rename sends `ParentID` only when the parent path is in `foldersByPath`. Omit the field otherwise. Do not send an empty parent id.
+- A folder rename sends `ParentID` when the parent path is in `foldersByPath`, and `moveToRoot` (Proton `ParentID: null`) for a top-level path. Refuse a create or rename whose parent cannot be resolved, before any write.
+- Match filters by Proton id first. Fall back to the name only for a declared entry with no id.
 - Do not run inbox tests or sync against live Proton.

@@ -56,11 +56,16 @@ describe("apply sync plan", () => {
 				{ op: "create-folder", path: "fin", type: "folder" },
 				{
 					op: "create-filter",
+					ref: "new:0",
 					name: "Shop - Orders",
 					enabled: true,
 					sieve: 'require ["fileinto"];\nif true {\n  keep;\n}\n',
 				},
-				{ op: "reorder-filters", names: ["Fin - Banking", "Shop - Orders"] },
+				{
+					op: "reorder-filters",
+					names: ["Fin - Banking", "Shop - Orders"],
+					ids: ["old", "new:0"],
+				},
 				{ op: "delete-folder", id: "child", path: "fin/old" },
 				{ op: "delete-folder", id: "parent", path: "fin" },
 				{
@@ -104,7 +109,7 @@ describe("apply sync plan", () => {
 		).rejects.toThrow("Refusing to delete Old without per-item approval");
 	});
 
-	test("sends a known parent id and omits an unknown parent", async () => {
+	test("sends a known parent id and omits a top-level parent", async () => {
 		const writer = client();
 		const renames: Array<{ path?: string; parentId?: string; keys: string[] }> = [];
 		writer.renameFolder = async (input) => {
@@ -120,7 +125,6 @@ describe("apply sync plan", () => {
 			plan: {
 				actions: [
 					{ op: "rename-folder", id: "child", from: "fin/banking", to: "fin/receipts" },
-					{ op: "rename-folder", id: "other", from: "shop/orders", to: "shop/returns" },
 					{ op: "rename-folder", id: "top", from: "Archive", to: "archive" },
 				],
 				notices: [],
@@ -132,7 +136,6 @@ describe("apply sync plan", () => {
 		});
 		expect(renames[0]).toMatchObject({ path: "fin/receipts", parentId: "parent-fin" });
 		expect(renames[1]?.keys).not.toContain("parentId");
-		expect(renames[2]?.keys).not.toContain("parentId");
 	});
 
 	test("records a stopped apply so the next plan neither drifts nor duplicates", async () => {
@@ -163,8 +166,8 @@ describe("apply sync plan", () => {
 			applySyncPlan({
 				plan: {
 					actions: [
-						{ op: "create-filter", name: "Fin - Banking", enabled: true, sieve },
-						{ op: "create-filter", name: "Shop - Orders", enabled: true, sieve },
+						{ op: "create-filter", ref: "new:0", name: "Fin - Banking", enabled: true, sieve },
+						{ op: "create-filter", ref: "new:1", name: "Shop - Orders", enabled: true, sieve },
 					],
 					notices: [],
 				},
@@ -197,5 +200,129 @@ describe("apply sync plan", () => {
 			expect.objectContaining({ op: "create-filter", name: "Shop - Orders" }),
 		);
 		expect(plan.notices.some((notice) => notice.op === "drift")).toBe(false);
+	});
+	test("orders same-named filters by ID and resolves a created filter by reference", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "a", name: "Same", enabled: true },
+			{ id: "b", name: "Same", enabled: true },
+			{ id: "created", name: "Same", enabled: true },
+		];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "create-filter", ref: "new:2", name: "Same", enabled: true, sieve: "s" },
+					{ op: "reorder-filters", names: ["Same", "Same", "Same"], ids: ["b", "new:2", "a"] },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toContain("reorder:b,created,a");
+	});
+
+	test("refuses a reorder that lists one ID twice", async () => {
+		const writer = client();
+		writer.listFilters = async () => [{ id: "a", name: "A", enabled: true }];
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [{ op: "reorder-filters", names: ["A", "A"], ids: ["a", "a"] }],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared: emptyDeclaredFilters(),
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("more than once");
+		expect(writer.calls).toEqual([]);
+	});
+
+	test("refuses a nested create whose parent cannot be resolved before writing anything", async () => {
+		const writer = client();
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "create-folder", path: "other", type: "folder" },
+						{ op: "create-folder", path: "fin/receipts", type: "folder" },
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared: emptyDeclaredFilters(),
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("parent folder fin cannot be resolved");
+		expect(writer.calls).toEqual([]);
+	});
+
+	test("refuses a rename whose target parent cannot be resolved before writing anything", async () => {
+		const writer = client();
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "create-folder", path: "other", type: "folder" },
+						{ op: "rename-folder", id: "r-id", from: "receipts", to: "fin/receipts" },
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared: emptyDeclaredFilters(),
+				foldersByPath: new Map([["receipts", "r-id"]]),
+			}),
+		).rejects.toThrow("parent folder fin cannot be resolved");
+		expect(writer.calls).toEqual([]);
+	});
+
+	test("renames a parent before creating its new child", async () => {
+		const writer = client();
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "create-folder", path: "finance/receipts", type: "folder" },
+					{ op: "rename-folder", id: "fin-id", from: "fin", to: "finance" },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map([["fin", "fin-id"]]),
+		});
+		expect(writer.calls).toEqual(["rename:finance", "folder:finance/receipts"]);
+	});
+
+	test("drops pulled-away declarations and follows a pulled filter order", async () => {
+		const declared = emptyDeclaredFilters();
+		declared.filters = [
+			{ name: "A", enabled: true, sieve: "s", protonId: "a" },
+			{ name: "B", enabled: true, sieve: "s", protonId: "b" },
+			{ name: "C", enabled: true, sieve: "s", protonId: "c" },
+		];
+		declared.folders = [{ path: "gone", type: "folder", protonId: "g" }];
+		const updated = await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "drop-filter", id: "a", name: "A" },
+					{ op: "drop-folder", id: "g", path: "gone" },
+					{ op: "pull-filter-order", ids: ["c", "b"] },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: client(),
+			declared,
+			foldersByPath: new Map(),
+		});
+		expect(updated.filters.map((filter) => filter.protonId)).toEqual(["c", "b"]);
+		expect(updated.folders).toEqual([]);
 	});
 });

@@ -29,7 +29,8 @@ verification senders. GitHub, GitLab, Spam, and Trash always stay on that list. 
 protected plus-alias mail, or mail from those senders, to Spam or Trash. Every live Proton call, including
 import and the sync read, waits on one shared pacer. The gap is irregular, calls stay serial, and a rate
 limit backs off a few times and then stops. A stopped apply records the steps that landed before it throws.
-A folder rename omits the parent id when that parent is unknown, so Proton keeps the current parent.
+A folder rename sends the parent id, or an explicit move to the root for a top-level path. A create or
+rename whose parent cannot be resolved stops the apply before any write.
 The other filter commands edit only the declared file.
 
 ## Consequences

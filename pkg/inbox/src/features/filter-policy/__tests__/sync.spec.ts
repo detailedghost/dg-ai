@@ -386,6 +386,7 @@ describe("synthetic declared filters example", () => {
 			policy: parsed.policy.safety,
 			keepFirst: parsed.policy.keepFirst,
 			desiredNames: parsed.filters.map((filter) => filter.name),
+			desiredFilters: parsed.filters,
 		});
 		expect(issues).toEqual([]);
 		expect(plan.notices.some((notice) => notice.op === "rename-proposal")).toBe(
@@ -400,4 +401,39 @@ describe("synthetic declared filters example", () => {
 		).json();
 		expect(shipped).toEqual(example);
 	});
+});
+
+test("import orders filters by Proton sequence and the first sync proposes no reorder", async () => {
+	const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+	const dir = join(root, "workspace");
+	const dataPath = join(root, "mailbox.json");
+	await mkdir(dirname(dataPath), { recursive: true });
+	const bank = full("fin/banking", "desk.bank.example");
+	const shop = full("shop/orders", "shop.example");
+	await Bun.write(
+		dataPath,
+		JSON.stringify({
+			folders: [
+				{ id: "bank", name: "banking", path: "fin/banking", type: "folder" },
+				{ id: "shop", name: "orders", path: "shop/orders", type: "folder" },
+			],
+			filters: [
+				{ id: "shop-filter", name: "Shop - Orders", enabled: true, conditions: [shop], actions: [shop], sequence: 2 },
+				{ id: "bank-filter", name: "Fin - Banking", enabled: true, conditions: [bank], actions: [bank], sequence: 1 },
+			],
+			messages: [],
+		}),
+	);
+	const flags = ["--dir", dir, "--data-path", dataPath];
+	const imported = await runCli(["filters", "import", ...flags]);
+	expect(imported.code, imported.stderr).toBe(0);
+	const file = await Bun.file(join(dir, "declared-filters.json")).json();
+	expect(file.filters.map((filter: { name: string }) => filter.name)).toEqual([
+		"Fin - Banking",
+		"Shop - Orders",
+	]);
+	expect(file.observed.filters.map((filter: { sequence: number }) => filter.sequence)).toEqual([1, 2]);
+	const dry = await runCli(["filters", "sync", ...flags, "--dry-run"]);
+	expect(dry.code, dry.stderr).toBe(0);
+	expect(JSON.parse(dry.stdout)).toMatchObject({ reorders: 0, creates: 0, updates: 0 });
 });

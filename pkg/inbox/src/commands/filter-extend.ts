@@ -13,8 +13,13 @@ import { writeJsonFile } from "../utils/json";
 import {
 	declaredFiltersPath,
 	editDeclaredFilters,
+	readDeclaredFiltersIfExists,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
+import {
+	findDeclaredFilter,
+	overlayDeclaredFilters,
+} from "./filter-declared";
 import { readFilters, workspacePaths } from "../workspace/store";
 
 const domainPattern =
@@ -108,11 +113,15 @@ export async function extendFilter(context: CliContext): Promise<void> {
 	}
 	const client = createMailProviderClient(context.config, provider);
 	try {
-		const [liveFilters, liveFolders] = await Promise.all([
+		const paths = workspacePaths(workspaceDirForContext(context));
+		const [liveFilters, liveFolders, declared] = await Promise.all([
 			client.listFilters(),
 			client.listFolders(),
+			readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
 		]);
-		const filter = liveFilters.find((item) => item.id === filterId);
+		const filter = overlayDeclaredFilters(liveFilters, declared).find(
+			(item) => item.id === filterId,
+		);
 		if (!filter) {
 			throw new Error(`filter not found: ${filterId}`);
 		}
@@ -123,7 +132,6 @@ export async function extendFilter(context: CliContext): Promise<void> {
 		const extended = extendSieveDomains(sieve, domains);
 		let mutated = false;
 		let auditPath: string | undefined;
-		const paths = workspacePaths(workspaceDirForContext(context));
 		if (!dryRun && extended.added.length > 0) {
 			await editDeclaredFilters({
 				path: declaredFiltersPath(paths.dir),
@@ -156,14 +164,16 @@ export async function extendFilter(context: CliContext): Promise<void> {
 			name: publicText(filter.name),
 			addedDomains: extended.added,
 			alreadyPresent: extended.alreadyPresent,
-			source: "live-filter",
+			source: findDeclaredFilter(declared, filter)
+				? "declared-filter"
+				: "live-filter",
 			filtersJsonTruncated: saved !== undefined && saved !== sieve,
 			before: publicText(sieve),
 			after: publicText(extended.sieve),
 			...(auditPath ? { auditPath } : {}),
 			note: mutated
 				? "The declared filters file was updated. filters sync is the Proton write path. The audit file records the filter id, added domains, and before/after hashes."
-				: "The diff uses the live provider rule. filters.json keeps a redacted snippet and is not the source of this rewrite.",
+				: "The diff uses the declared entry when one exists, else the live provider rule. filters.json keeps a redacted snippet and is not the source of this rewrite.",
 		});
 	} finally {
 		await client.close?.();
