@@ -24,6 +24,7 @@ export interface BgJob {
 	statusFile: string;
 	pidFile: string;
 	launcherPid: number;
+	noShell?: boolean;
 	kind: "shell" | "proxy";
 	proxyBackend?: string;
 	state: "running" | "done" | "unknown" | "canceled";

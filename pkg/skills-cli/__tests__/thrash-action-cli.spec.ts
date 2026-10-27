@@ -39,6 +39,11 @@ function fixture() {
   *"pr view 12"*"headRefOid"*) printf '{"headRefOid":"%s"}' "$(cat "$FAKE_HEAD")" ;;
   *"pr view 12"*) echo '{"number":12,"title":"change","body":"","headRefName":"feature","baseRefName":"main"}' ;;
   *"pr diff 12"*)
+    if [ "$FAKE_BIG_LOCK" = 1 ]; then
+      printf 'diff --git a/go.sum b/go.sum\n--- a/go.sum\n+++ b/go.sum\n@@ -0,0 +1,3001 @@\n'
+      i=0; while [ $i -lt 3001 ]; do echo "+line $i"; i=$((i+1)); done
+      exit 0
+    fi
     printf 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
     if [ "$FAKE_PUSH_DURING_DIFF" = 1 ]; then printf def456 > "$FAKE_HEAD"; fi
     ;;
@@ -123,6 +128,23 @@ describe("thrash action commit binding", () => {
 		const result = f.run("publish");
 		expect(result.code, result.output).toBe(1);
 		expect(result.output).toContain("head changed");
+		expect(existsSync(f.capture)).toBe(false);
+	});
+
+	test("prepare skips a diff with no reviewable chunks and publish posts nothing", () => {
+		const f = fixture();
+		const outputFile = join(f.dir, "output.txt");
+		const result = f.run("prepare", {
+			FAKE_BIG_LOCK: "1",
+			GITHUB_OUTPUT: outputFile,
+		});
+		expect(result.code, result.output).toBe(0);
+		expect(readFileSync(outputFile, "utf8")).toContain("skipped=true");
+		expect(
+			JSON.parse(readFileSync(join(f.dir, "state.json"), "utf8")),
+		).toMatchObject({ skipped: true, reason: "no reviewable changes" });
+		const published = f.run("publish");
+		expect(published.code, published.output).toBe(0);
 		expect(existsSync(f.capture)).toBe(false);
 	});
 });

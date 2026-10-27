@@ -134,6 +134,12 @@ async function prepare(cfg: Config): Promise<void> {
 	if (await readHeadSha(event) !== headSha) {
 		throw new Error("PR head changed while preparing the diff; run prepare again");
 	}
+	if (plan.chunks.length === 0) {
+		console.log(`::notice::Thrashley skips PR #${event.number}: no reviewable changes.`);
+		writeFileSync(statePath, JSON.stringify({ skipped: true, reason: "no reviewable changes" }));
+		setOutput("skipped", "true");
+		return;
+	}
 	const tasks = plan.chunks.map((chunk) =>
 		writeIn(
 			path.join(scratch, "tasks"),

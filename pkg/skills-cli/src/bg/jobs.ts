@@ -50,6 +50,7 @@ export interface JobMeta {
 	launcherPid: number;
 	kind: JobKind;
 	proxyBackend?: string;
+	noShell?: boolean;
 }
 
 interface JobState extends JobMeta {
@@ -251,7 +252,11 @@ async function cmdRun(args: string[]): Promise<void> {
 		);
 	const cwd = path.resolve(cwdOverride ?? process.cwd());
 	if (!isDirectory(cwd)) die(`not a directory: ${cwd}`, EXIT.ERR);
-	emitJson(await launchJob(command, cwd));
+	emitJson(await launchJob(command, cwd, undefined, hasNoShellEnv()));
+}
+
+function hasNoShellEnv(): boolean {
+	return /^(1|true|yes)$/i.test(process.env.DG_PROXY_NO_SHELL?.trim() ?? "");
 }
 
 function isDirectory(dir: string): boolean {
@@ -449,6 +454,7 @@ async function launchJob(
 	command: string,
 	cwd: string,
 	backend?: string,
+	noShell = false,
 ): Promise<JobState> {
 	const id = `${Date.now()}-${randSuffix()}`;
 	const paths = jobPaths(id);
@@ -459,6 +465,7 @@ async function launchJob(
 		["-c", `read -r gate || exit 1; ${buildInner(command, paths, kind, id)}`],
 		{
 			cwd,
+			env: noShell ? { ...process.env, DG_PROXY_NO_SHELL: "1" } : process.env,
 			detached: true,
 			stdio: ["pipe", "ignore", "ignore"],
 		},
@@ -483,6 +490,7 @@ async function launchJob(
 		launcherPid: pid,
 		kind,
 		proxyBackend,
+		...(noShell ? { noShell } : {}),
 	};
 	try {
 		const identity = processIdentity(pid);
@@ -574,7 +582,7 @@ async function resumeSession(
 		...carriedFlags(meta.command),
 	];
 	const resumeCmd = shellCommand(selfCommand(["proxy", ...args]));
-	const job = await launchJob(resumeCmd, meta.cwd, backend);
+	const job = await launchJob(resumeCmd, meta.cwd, backend, meta.noShell === true);
 	rmSync(paths.pendingFile, { force: true });
 	return {
 		result: "resumed",
