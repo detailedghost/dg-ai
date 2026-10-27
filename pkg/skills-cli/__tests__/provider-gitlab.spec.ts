@@ -1543,6 +1543,18 @@ describe("listUnresolvedThreads — file anchor from the discussion position", (
 		expect(deleted?.line).toBe(17);
 	});
 
+	test("maps new_line to the RIGHT side and old_line to the LEFT side", async () => {
+		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
+		fakeGlabDiscussions();
+
+		const provider = createGitlabProvider();
+		const threads = await provider.listUnresolvedThreads();
+
+		expect(threads.find((t) => t.threadId === "disc-anchored")?.side).toBe("RIGHT");
+		expect(threads.find((t) => t.threadId === "disc-deleted-line")?.side).toBe("LEFT");
+		expect(threads.find((t) => t.threadId === "disc-overview")?.side).toBeUndefined();
+	});
+
 	test("reports an overview discussion with no position as an empty path and a null line", async () => {
 		process.env.FAKE_MR_JSON = writeJson("positioned.json", positionedFixture());
 		fakeGlabDiscussions();

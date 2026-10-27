@@ -43,6 +43,10 @@ anchor; the pair counts once at the higher severity. A current finding on an ans
 counts even when its inline comment is suppressed. Settled Medium, Low and Nit findings
 stay out of policy tallies.
 
+A thread matches a finding only when path, line and diff side all agree, so a comment on
+removed code (LEFT) never pairs with or settles a finding on added code (RIGHT) at the same
+line number. A thread whose provider reports no side matches either side.
+
 Policy compilation requires a successful thread lookup. A failed lookup stops compilation
 instead of treating unavailable history as empty. Without a policy, dedupe remains best
 effort and compilation can continue after a lookup failure.
@@ -154,7 +158,8 @@ phases:
     block: { critical: 0, high: 1 }
 ```
 
-Each `block` entry is the count a tier may reach; one more requests changes. A missing tier
+Each `block` entry is the count a tier may reach; one more requests changes. Only open findings count, so a round
+with no open finding approves in every phase, strict or relaxed. A missing tier
 has no limit. A round uses the first phase whose `through` covers it, or the last phase. A
 phase whose `requiresClear` tiers still have an open earlier finding is not entered, so the
 round stays in the phase before it. `nits: false` posts no nits.

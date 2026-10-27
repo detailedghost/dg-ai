@@ -98,6 +98,10 @@ function thread(path: string, line: number, body: string, resolved = false): Rev
 	};
 }
 
+function sidedThread(side: "LEFT" | "RIGHT", line: number, body: string, resolved = false): ReviewThread {
+	return { ...thread("src/a.ts", line, body, resolved), threadId: `t-${side}-${line}`, side };
+}
+
 const NO_OPTS = { spice: SPICE_DEFAULT, commentOnly: false, existing: [] as ReviewThread[] };
 
 describe("parseUnifiedDiff", () => {
@@ -464,6 +468,85 @@ describe("compileReview", () => {
 		expect(review.tally.critical).toBe(1);
 		expect(review.verdict).toBe("request_changes");
 		expect(review.body).toContain("1 finding already flagged");
+	});
+
+	test("counts a LEFT and a RIGHT high finding on the same line number separately under a policy", () => {
+		const findings = [finding("src/a.ts", 2, "high", "removed", "old"), finding("src/a.ts", 2, "high", "added", "new")];
+		const existing = [
+			sidedThread("LEFT", 2, `${TIER_EMOJI.high} **High** left`),
+			sidedThread("RIGHT", 2, `${TIER_EMOJI.high} **High** right`),
+		];
+		const policy = parsePolicy("phases:\n  - block:\n      high: 1\n");
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing, policy });
+		expect(review.tally.high).toBe(2);
+		expect(review.verdict).toBe("request_changes");
+	});
+
+	test("pairs each high finding with only the thread on its own diff side", () => {
+		const findings = [finding("src/a.ts", 2, "high", "removed", "old"), finding("src/a.ts", 2, "high", "added", "new")];
+		const policy = parsePolicy("phases:\n  - block:\n      high: 1\n");
+		const left = [sidedThread("LEFT", 2, `${TIER_EMOJI.high} **High** left`)];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing: left, policy });
+		expect(review.tally.high).toBe(2);
+		expect(review.dropped.map((d) => d.finding.side)).toEqual(["old"]);
+	});
+
+	test("a resolved thread on removed code does not settle a new medium finding on the added line at the same number", () => {
+		const existing = [sidedThread("LEFT", 2, `${TIER_EMOJI.medium} **Medium** old`, true)];
+		const findings = [finding("src/a.ts", 2, "medium")];
+		const policy = parsePolicy("phases:\n  - block:\n      medium: 0\n");
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing, policy });
+		expect(review.comments.map((c) => [c.path, c.newLine])).toEqual([["src/a.ts", 2]]);
+		expect(review.dropped).toEqual([]);
+		expect(review.tally.medium).toBe(1);
+		expect(review.verdict).toBe("request_changes");
+	});
+
+	test("a resolved thread on the same diff side still settles a medium finding", () => {
+		const existing = [sidedThread("RIGHT", 2, `${TIER_EMOJI.medium} **Medium** old`, true)];
+		const findings = [finding("src/a.ts", 2, "medium")];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing });
+		expect(review.dropped.map((d) => d.reason)).toEqual(["settled"]);
+	});
+
+	test("approves in a strict round when no finding is open", () => {
+		const policy = parsePolicy(
+			"phases:\n  - name: strict\n    through: 1\n    block: { critical: 0, high: 0, medium: 0 }\n  - name: relaxed\n    block: { high: 1 }\n",
+		);
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, policy, round: 1 });
+		expect(review.phase).toBe("strict");
+		expect(review.verdict).toBe("approve");
+	});
+
+	test("approves when earlier blocking findings are now resolved or answered", () => {
+		const answered: ReviewThread = {
+			...thread("src/a.ts", 3, `${TIER_EMOJI.critical} **Critical** earlier`),
+			comments: [
+				{ id: "1", author: "bot", body: `${TIER_EMOJI.critical} **Critical** earlier`, createdAt: "", diffHunk: "" },
+				{ id: "2", author: "dev", body: "explained", createdAt: "", diffHunk: "" },
+			],
+		};
+		const existing = [thread("src/a.ts", 2, `${TIER_EMOJI.high} **High** earlier`, true), answered];
+		const policy = parsePolicy("phases:\n  - name: strict\n    block: { critical: 0, high: 0 }\n");
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, existing, policy, round: 1 });
+		expect(review.tally.critical).toBe(0);
+		expect(review.tally.high).toBe(0);
+		expect(review.verdict).toBe("approve");
+	});
+
+	test("requests changes in a strict round when an earlier high finding is still open", () => {
+		const existing = [thread("src/a.ts", 2, `${TIER_EMOJI.high} **High** earlier`)];
+		const policy = parsePolicy(
+			"phases:\n  - name: strict\n    through: 1\n    block: { high: 0 }\n  - name: relaxed\n    block: { high: 1 }\n",
+		);
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, existing, policy, round: 1 });
+		expect(review.verdict).toBe("request_changes");
+	});
+
+	test("approves without a policy when earlier blocking findings are fixed and none is re-found", () => {
+		const existing = [thread("src/a.ts", 2, `${TIER_EMOJI.critical} **Critical** earlier`, true)];
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, existing });
+		expect(review.verdict).toBe("approve");
 	});
 
 	test("an outdated resolved thread does not settle a new finding at its old line", () => {

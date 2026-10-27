@@ -45,6 +45,10 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 Spice sets how many findings per tier the PR can have. One more than the limit requests
 changes. Otherwise approve. A blank cell has no limit.
 
+Only open findings count. A finding is open until someone fixes it, answers it in its
+thread, or resolves the thread. When no finding is open, the verdict is approve, in every
+round. Earlier blocking findings that are now fixed or answered do not hold it back.
+
 | Spice | Critical | High | Medium | Low |
 |---|---|---|---|---|
 | 1 | 0 | 4 | | |

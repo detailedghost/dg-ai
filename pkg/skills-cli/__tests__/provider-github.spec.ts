@@ -1179,6 +1179,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 									path: "src/parser.ts",
 									line: 42,
 									originalLine: 40,
+									diffSide: "RIGHT",
 									comments: {
 										nodes: [
 											{
@@ -1197,6 +1198,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 									path: "src/old.ts",
 									line: null,
 									originalLine: 17,
+									diffSide: "LEFT",
 									isOutdated: true,
 									comments: { nodes: [] },
 								},
@@ -1242,6 +1244,18 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 		expect(outdated?.line).toBeNull();
 		expect(outdated?.originalLine).toBe(17);
 		expect(outdated?.outdated).toBe(true);
+	});
+
+	test("carries the thread's diff side through so a LEFT and a RIGHT thread on one line number stay distinct", async () => {
+		process.env.FAKE_PR_JSON = writeJson("anchored.json", anchoredThreadsFixture());
+		fakeGhThreads();
+
+		const provider = createGithubProvider();
+		const threads = await provider.listUnresolvedThreads();
+
+		expect(threads.find((t) => t.threadId === "RT_anchored")?.side).toBe("RIGHT");
+		expect(threads.find((t) => t.threadId === "RT_outdated")?.side).toBe("LEFT");
+		expect(threads.find((t) => t.threadId === "RT_unanchored")?.side).toBeUndefined();
 	});
 
 	test("reports an unanchored thread as an empty path and a null line rather than undefined", async () => {

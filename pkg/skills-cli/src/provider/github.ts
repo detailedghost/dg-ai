@@ -244,6 +244,7 @@ function normalizeGhThread(node: {
 	line?: number | null;
 	originalLine?: number | null;
 	isOutdated?: boolean;
+	diffSide?: string | null;
 	comments?: {
 		nodes?: Array<{
 			databaseId: number;
@@ -271,12 +272,13 @@ function normalizeGhThread(node: {
 		line: node.line ?? null,
 		originalLine: node.originalLine ?? null,
 		outdated: node.isOutdated ?? (node.line == null && node.originalLine != null),
+		side: node.diffSide === "LEFT" || node.diffSide === "RIGHT" ? node.diffSide : undefined,
 	};
 }
 
 const LIST_THREADS_QUERY =
 	"query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){" +
-	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated path line originalLine " +
+	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated diffSide path line originalLine " +
 	"comments(first:50){nodes{databaseId author{login} body createdAt diffHunk} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
 
 async function listUnresolvedThreads(

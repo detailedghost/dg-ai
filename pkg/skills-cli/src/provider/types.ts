@@ -197,7 +197,11 @@ export interface ReviewThread {
 	originalLine?: number | null;
 	/** True once the thread's anchor no longer exists in the current diff. */
 	outdated?: boolean;
+	/** Diff side the line number is on; unset when the provider does not say. */
+	side?: ReviewThreadSide;
 }
+
+export type ReviewThreadSide = "LEFT" | "RIGHT";
 
 /** Maximum trailing CI-log characters retained in normalized failure details. */
 export const LOG_EXCERPT_MAX_CHARS = 8000;

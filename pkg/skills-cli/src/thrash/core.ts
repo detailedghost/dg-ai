@@ -781,9 +781,22 @@ function isOutdatedThread(thread: ReviewThread): boolean {
 	return thread.outdated ?? (thread.line === null && thread.originalLine != null);
 }
 
-function priorThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: string): "unresolved" | "resolved" | null {
+function anchorSide(anchor: Anchor): "LEFT" | "RIGHT" {
+	return anchor.newLine === undefined ? "LEFT" : "RIGHT";
+}
+
+function threadAtAnchor(thread: ReviewThread, anchor: Anchor): boolean {
 	const line = anchor.newLine ?? anchor.oldLine ?? null;
-	const prior = existing.filter((t) => !isOutdatedThread(t) && t.path === anchor.path && t.line === line && isThrashThread(t, reviewer));
+	return (
+		!isOutdatedThread(thread) &&
+		thread.path === anchor.path &&
+		thread.line === line &&
+		(thread.side === undefined || thread.side === anchorSide(anchor))
+	);
+}
+
+function priorThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: string): "unresolved" | "resolved" | null {
+	const prior = existing.filter((t) => threadAtAnchor(t, anchor) && isThrashThread(t, reviewer));
 	if (prior.some((t) => !t.resolved)) return "unresolved";
 	return prior.length > 0 ? "resolved" : null;
 }
@@ -898,8 +911,7 @@ function policyTally(files: DiffFile[], findings: Finding[], opts: CompileOption
 	}).sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
 	for (const finding of [...findings].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
 		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
-		const line = anchor?.newLine ?? anchor?.oldLine ?? null;
-		const index = anchor ? unmatched.findIndex(({ thread }) => !isOutdatedThread(thread) && thread.path === anchor.path && thread.line === line) : -1;
+		const index = anchor ? unmatched.findIndex(({ thread }) => threadAtAnchor(thread, anchor)) : -1;
 		if (index !== -1) {
 			const [{ tier }] = unmatched.splice(index, 1);
 			if (tierRank(finding.tier) < tierRank(tier)) {
