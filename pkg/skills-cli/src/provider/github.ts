@@ -267,7 +267,8 @@ function normalizeGhThread(node: {
 		comments,
 		commentId: comments[0]?.id,
 		path: node.path ?? "",
-		line: node.line ?? node.originalLine ?? null,
+		line: node.line ?? null,
+		originalLine: node.originalLine ?? null,
 	};
 }
 

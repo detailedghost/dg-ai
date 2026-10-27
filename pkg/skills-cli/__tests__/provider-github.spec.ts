@@ -1229,14 +1229,16 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 		expect(anchored?.comments[0].diffHunk).toContain("const n = i + 1;");
 	});
 
-	test("falls back to originalLine for an outdated thread whose current line is null", async () => {
+	test("keeps an outdated thread's current line null and records its original line separately", async () => {
 		process.env.FAKE_PR_JSON = writeJson("anchored.json", anchoredThreadsFixture());
 		fakeGhThreads();
 
 		const provider = createGithubProvider();
 		const threads = await provider.listUnresolvedThreads();
 
-		expect(threads.find((t) => t.threadId === "RT_outdated")?.line).toBe(17);
+		const outdated = threads.find((t) => t.threadId === "RT_outdated");
+		expect(outdated?.line).toBeNull();
+		expect(outdated?.originalLine).toBe(17);
 	});
 
 	test("reports an unanchored thread as an empty path and a null line rather than undefined", async () => {

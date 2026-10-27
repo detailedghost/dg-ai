@@ -124,7 +124,7 @@ async function cmdGatherUnresolved(args: string[]): Promise<void> {
 				threadId: t.threadId,
 				commentId: first ? Number(first.id) : 0,
 				path: t.path,
-				line: t.line,
+				line: t.line ?? t.originalLine ?? null,
 				body: first?.body ?? "",
 				diffHunk: first?.diffHunk ?? "",
 				author: first?.author ?? "",

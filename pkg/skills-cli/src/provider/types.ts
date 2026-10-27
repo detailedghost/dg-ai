@@ -191,7 +191,10 @@ export interface ReviewThread {
 	commentId?: string;
 	/** Empty for a thread not anchored to a file (a GitLab non-diff discussion, an outdated GitHub thread). */
 	path: string;
+	/** Current anchor in the PR diff; null once a GitHub thread is outdated. */
 	line: number | null;
+	/** Anchor at comment time; not valid for matching against the current diff. */
+	originalLine?: number | null;
 }
 
 /** Maximum trailing CI-log characters retained in normalized failure details. */

@@ -145,7 +145,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			model,
 			effort,
 			cwd,
-		});
+		}, noShell);
 		return;
 	}
 
@@ -209,6 +209,7 @@ async function runPlan(
 	backendName: string,
 	backend: Backend,
 	opts: ProxyOptions,
+	noShell: boolean,
 ): Promise<void> {
 	const preflight = checkPreflight(backendName, backend);
 	if (preflight.missing) {
@@ -240,9 +241,8 @@ async function runPlan(
 	if (opts.effort) backendArgs.push("--effort", opts.effort);
 	if (opts.cwd) backendArgs.push("--cwd", opts.cwd);
 	const innerCommand = shellCommand(selfCommand(backendArgs));
-	const command = shellCommand(
-		selfCommand(["bg", "run", innerCommand]),
-	);
+	const launch = shellCommand(selfCommand(["bg", "run", innerCommand]));
+	const command = noShell ? `DG_PROXY_NO_SHELL=1 ${launch}` : launch;
 
 	console.error(`proxy: plan written -> ${planFile}`);
 	console.error(`proxy: run in background with:\n  ${command}`);

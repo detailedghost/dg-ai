@@ -913,7 +913,11 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 	const findings = [...output.findings].sort((a, b) => ordinal(sortKey(a), sortKey(b)));
 	const openPrior = opts.policy ? openPriorTally(opts.existing, opts.reviewer) : emptyTally();
 	const phase = opts.policy ? selectPhase(opts.policy, opts.round ?? 1, openPrior) : undefined;
-	const minTier = opts.minTier ?? (phase && !phase.nits ? "low" : undefined);
+	const phaseFloor: Tier | undefined = phase && !phase.nits ? "low" : undefined;
+	const minTier =
+		opts.minTier !== undefined && phaseFloor !== undefined && tierRank(opts.minTier) > tierRank(phaseFloor)
+			? phaseFloor
+			: (opts.minTier ?? phaseFloor);
 	const maxComments = opts.maxComments ?? opts.policy?.maxComments;
 
 	const posted: Array<{ finding: Finding; comment: CompiledComment }> = [];
