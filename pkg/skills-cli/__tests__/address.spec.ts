@@ -4397,6 +4397,117 @@ describe("address nested invocation", () => {
 	});
 });
 
+describe("gather-overview", () => {
+	const BOT = "copilot-pull-request-reviewer";
+	const overviewBody = (header: string, summary: string) =>
+		`<!-- ccr-overview-v2 -->\n${header}\n\n${summary}\n\n<details>\n<summary>Resolved</summary>\n\n- done\n</details>`;
+
+	async function runOverview(nodes: Array<Record<string, unknown>>) {
+		const repoPath = writeJson("repo.json", {
+			owner: { login: "acme" },
+			name: "widgets",
+			defaultBranchRef: { name: "main" },
+			url: "https://github.com/acme/widgets",
+		});
+		const prPath = writeJson("pr.json", rawPr(9001, "OPEN"));
+		const graphqlPath = writeJson("graphql.json", {
+			data: { repository: { pullRequest: { reviews: { nodes } } } },
+		});
+		const ghBin = fakeGh(`#!/bin/sh
+ARGS="$*"
+case "$ARGS" in
+  *"repo view --json owner,name,defaultBranchRef,url"*)
+    cat "${repoPath}"
+    exit 0
+    ;;
+  *"--json number,title,url,state,headRefName,baseRefName,body,mergedAt"*)
+    cat "${prPath}"
+    exit 0
+    ;;
+  *"api graphql"*)
+    cat "${graphqlPath}"
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+`);
+		return runCli(["gather-overview"], {
+			env: { AI_VCS_PROVIDER: "github", GH_BIN: ghBin, PATH: withFakeGhOnPath(ghBin) },
+		});
+	}
+
+	const review = (id: string, submittedAt: string, body: string, state = "COMMENTED") => ({
+		id,
+		submittedAt,
+		state,
+		body,
+		author: { login: BOT },
+	});
+
+	test("reports needs-closer-look with its summary sentence", async () => {
+		const { stdout, exitCode } = await runOverview([
+			review("R_1", "2026-02-01T10:00:00Z", overviewBody("### 🔵 Needs a closer look", "Two gaps remain in retry handling.")),
+		]);
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout)).toEqual([
+			{
+				reviewId: "R_1",
+				source: "copilot-overview",
+				state: "needs-closer-look",
+				summary: "Two gaps remain in retry handling.",
+				submittedAt: "2026-02-01T10:00:00Z",
+			},
+		]);
+	});
+
+	test("reports changes-recommended as one item", async () => {
+		const { stdout } = await runOverview([
+			review("R_2", "2026-02-01T10:00:00Z", overviewBody("### 🟡 Changes recommended", "Add a guard for empty input.")),
+		]);
+		const items = JSON.parse(stdout);
+		expect(items).toHaveLength(1);
+		expect(items[0]).toMatchObject({ reviewId: "R_2", state: "changes-recommended" });
+	});
+
+	test("fails closed with state unknown on an unrecognized header", async () => {
+		const { stdout } = await runOverview([
+			review("R_3", "2026-02-01T10:00:00Z", overviewBody("### 🟣 Something new", "Odd verdict.")),
+		]);
+		expect(JSON.parse(stdout)).toMatchObject([{ state: "unknown", summary: "Odd verdict." }]);
+	});
+
+	test("prints an empty array when the latest overview reads as approve", async () => {
+		const { stdout } = await runOverview([
+			review("R_4", "2026-02-01T10:00:00Z", overviewBody("### 🟢 Looks good", "No problems found.")),
+		]);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("prints an empty array when no Copilot review exists", async () => {
+		const { stdout, exitCode } = await runOverview([
+			{ ...review("R_5", "2026-02-01T10:00:00Z", "human review"), author: { login: "alice" } },
+		]);
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("ignores an older needs-closer-look superseded by a newer approve", async () => {
+		const { stdout } = await runOverview([
+			review("R_old", "2026-02-01T10:00:00Z", overviewBody("### 🔵 Needs a closer look", "Old gap.")),
+			review("R_new", "2026-02-02T10:00:00Z", overviewBody("### 🟢 Looks good", "All clear.")),
+		]);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+
+	test("prints an empty array on GitLab", async () => {
+		const { stdout, exitCode } = await runCli(["gather-overview"], { env: { AI_VCS_PROVIDER: "gitlab" } });
+		expect(exitCode).toBe(0);
+		expect(JSON.parse(stdout)).toEqual([]);
+	});
+});
+
 describe("address command dispatch", () => {
 	test("help inventories every migrated verb without accessing a provider", async () => {
 		const result = await runCli(["--help"]);
@@ -4407,6 +4518,7 @@ describe("address command dispatch", () => {
 			"view-pr",
 			"gather",
 			"gather-unresolved",
+			"gather-overview",
 			"check-bot-review",
 			"gather-ci-failures",
 			"reply",

@@ -182,7 +182,9 @@ OUT: next action: `close-no-findings` | `trigger` | `act` | `wait`.
    `lastCommitTs` is the ISO time from `git log -1 --format=%cI HEAD`. The helper owns the
    graphql scan, the pattern match, and the `REVIEW_LOOP_NO_FINDINGS_PATTERN`
    override (jq Oniguruma syntax). A `noFindings:true` result → action
-   `close-no-findings`.
+   `close-no-findings`, unless `~/.dg/bin/dg-skills address gather-overview`
+   returns a non-empty array. A non-empty overview means the round is not
+   clean: treat it as findings and continue to the steps below.
 
 1. When `roundsDone == 0` → action `trigger`.
 

@@ -92,9 +92,17 @@ Wiz posts as `wiz-<id>[bot]`: a "Wiz Scan Summary" PR comment, optional inline t
 3. For each finding, fetch details with `execute`: SAST → `codesec` `list_sast_findings` (`file_path`, `status:["OPEN"]`) or `get_sast_finding`; CVE / dependency → `vulnerabilities` domain; secret → `secrets` domain; IaC misconfiguration → `cspm` domain; failed Wiz CLI scan → `codesec` `list_cicd_scans` + `get_cicd_scan`. `discover <domain>` shows parameters.
 4. Tag items `source:"wiz"` (summary-only findings) or keep `source:"comment"`/`"ci"` with `wiz:true`. Attach `{findingId, rule, severity, path, line, remediation}` from Wiz to each item.
 
+### 1e. Copilot overview (skip when `localOnly=true`)
+
+Copilot can name gaps in its review overview that never become inline threads.
+
+1. Run `~/.dg/bin/dg-skills address gather-overview` → `{reviewId, source:"copilot-overview", state, summary, submittedAt}[]`. `[]` means the latest overview is clean, absent, or the provider is GitLab. Skip 1e then.
+2. Tag items `source:"copilot-overview"`. They go through triage (1.5) and fix (2) like comment items.
+3. They have no thread. Phase 6 skips reply and resolve for them.
+
 ### Merge
 
-`workList = localItems ++ commentItems ++ ciItems ++ wizItems`.
+`workList = localItems ++ commentItems ++ ciItems ++ wizItems ++ overviewItems`.
 
 GATE: `workList` empty → stop.
 
@@ -110,9 +118,9 @@ GATE: all calls succeeded. `workList` empty after → stop.
 
 Skip when `verdictsPath` set. CI and Wiz items bypass (pass through unchanged). Local-review items ARE triaged.
 
-Input: `source=="comment" && mode=="fix"` + all `source=="local-review"` items.
+Input: `source=="comment" && mode=="fix"` + all `source=="local-review"` and `source=="copilot-overview"` items.
 
-1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`.
+1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`. A copilot-overview item uses its `reviewId` as `commentId`, `null` as `threadId`, its `summary` as `body`, and `null` for `path` and `line`.
 1. Launch `dg:copilot-antagonist`:
    > Evaluate these review findings. Return ONLY the array your persona defines:
    > `[{"commentId":<commentId>,"threadId":<threadId>,"verdict":"accept|reject-illogical|reject-other|strange","reason":"<why>"}]`
@@ -256,6 +264,8 @@ for item in workList where source=="comment":
 GraphQL `addPullRequestReviewThreadReply` mutation, which can leave replies in pending reviews.
 
 GATE: invalid JSON → stop. `failed > 0` → stop.
+
+Copilot overview: `source=="copilot-overview"` items have no thread, so skip reply and resolve. After the push, run `~/.dg/bin/dg-skills address request-copilot` once if any copilot-overview item was fixed.
 
 Wiz: inline Wiz threads close like any comment item. `source=="wiz"` summary findings get no reply; Wiz re-scans on push. After the push, re-check the Wiz checks and `list_sast_findings` for the changed paths, and report any finding still open.
 
