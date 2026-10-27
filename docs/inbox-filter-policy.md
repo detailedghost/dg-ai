@@ -116,9 +116,10 @@ that landed. The next dry run does not create those filters or folders again, an
 as drift. Steps that never ran stay in the plan. A folder create, rename, or delete, a filter delete, and a
 reorder count as landed when Proton shows the result, even if its reply was lost.
 
-Filter updates and deletes run from the bottom of the live chain upward. A later rule is deleted or edited
-before the guard ahead of it, so a failed call never leaves a guard weakened while the rule it covers is
-still live.
+Filter updates, reverts, and deletes run from the bottom of the live chain upward, whether or not the plan
+has deletes. A later rule is deleted or edited before the guard ahead of it, so a failed call never leaves
+a guard weakened while the rule it covers is still live. These writes run before any reorder, so a reorder
+only moves rules that already hold their new scripts.
 
 A folder rename sends the parent id when that parent is already known. A rename to a top-level path sends
 an explicit move to the root. Creates and renames run in parent order, so a new child waits for its

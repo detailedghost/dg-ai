@@ -390,7 +390,7 @@ describe("apply sync plan", () => {
 });
 
 describe("partial apply recovery", () => {
-	test("records a completed reorder in the observed baseline when a later delete fails", async () => {
+	test("records a completed reorder in the observed baseline when a later folder delete fails", async () => {
 		const writer = client();
 		const order = ["a", "b", "c"];
 		writer.listFilters = async () =>
@@ -404,7 +404,7 @@ describe("partial apply recovery", () => {
 		writer.reorderFilters = async (input) => {
 			order.splice(0, order.length, ...input.ids);
 		};
-		writer.deleteFilter = async () => {
+		writer.deleteFolder = async () => {
 			throw new Error("delete failed");
 		};
 		const declared = emptyDeclaredFilters();
@@ -424,11 +424,11 @@ describe("partial apply recovery", () => {
 				plan: {
 					actions: [
 						{ op: "reorder-filters", names: ["b", "a"], ids: ["b", "a"] },
-						{ op: "delete-filter", id: "c", name: "c" },
+						{ op: "delete-folder", id: "x", path: "x" },
 					],
 					notices: [],
 				},
-				approvedDeletes: ["c"],
+				approvedDeletes: ["x"],
 				client: writer,
 				declared,
 				foldersByPath: new Map(),
@@ -692,6 +692,61 @@ describe("apply identity and ordering", () => {
 			foldersByPath: new Map(),
 		});
 		expect(writer.calls).toEqual(["delete-filter:spam", "update:guard"]);
+	});
+
+	test("updates a later filter before the guard ahead of it when the plan has no deletes", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "guard", name: "Guard", enabled: true, sieve: "stop;" },
+			{ id: "spam", name: "Spam", enabled: true, sieve: body },
+		];
+		const update = (id: string, name: string) => ({
+			op: "update-filter" as const,
+			id,
+			fromName: name,
+			name,
+			sieve: "require [\"fileinto\"];\nkeep;\n",
+			enabled: false,
+			changes: ["enabled" as const],
+		});
+		await applySyncPlan({
+			plan: { actions: [update("guard", "Guard"), update("spam", "Spam")], notices: [] },
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["update:spam", "update:guard"]);
+	});
+
+	test("replaces a filter before a reorder moves it", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "guard", name: "Guard", enabled: true, sieve: "stop;" },
+			{ id: "spam", name: "Spam", enabled: true, sieve: body },
+		];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "reorder-filters", names: ["Spam", "Guard"], ids: ["spam", "guard"] },
+					{
+						op: "update-filter",
+						id: "spam",
+						fromName: "Spam",
+						name: "Spam",
+						sieve: "require [\"fileinto\"];\nkeep;\n",
+						enabled: true,
+						changes: ["sieve"],
+					},
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["update:spam", "reorder:spam,guard"]);
 	});
 
 	test("refuses a create under a path whose ancestor rename moves it", async () => {

@@ -181,6 +181,32 @@ export async function applySyncPlan(input: {
 			});
 		}
 	}
+	const filterDeletes = input.plan.actions.filter(
+		(action): action is Extract<PlanAction, { op: "delete-filter" }> =>
+			action.op === "delete-filter",
+	);
+	for (const action of filterDeletes) {
+		filterWrites.push({
+			id: action.id,
+			run: async () => {
+				inFlight = { action, id: action.id };
+				await input.client.deleteFilter({ id: action.id });
+				inFlight = undefined;
+				done.push({ action, id: action.id });
+			},
+		});
+	}
+	if (filterWrites.length > 0) {
+		steps.push(async () => {
+			const live = await input.client.listFilters();
+			const position = new Map(live.map((filter, index) => [filter.id, index]));
+			filterWrites.sort(
+				(left, right) =>
+					(position.get(right.id) ?? -1) - (position.get(left.id) ?? -1),
+			);
+			for (const write of filterWrites) await write.run();
+		});
+	}
 	for (const action of input.plan.actions) {
 		if (action.op !== "reorder-filters") continue;
 		steps.push(async () => {
@@ -219,34 +245,6 @@ export async function applySyncPlan(input: {
 				action.op === "delete-folder",
 		),
 	);
-	const filterDeletes = input.plan.actions.filter(
-		(action): action is Extract<PlanAction, { op: "delete-filter" }> =>
-			action.op === "delete-filter",
-	);
-	for (const action of filterDeletes) {
-		filterWrites.push({
-			id: action.id,
-			run: async () => {
-				inFlight = { action, id: action.id };
-				await input.client.deleteFilter({ id: action.id });
-				inFlight = undefined;
-				done.push({ action, id: action.id });
-			},
-		});
-	}
-	if (filterWrites.length > 0) {
-		steps.push(async () => {
-			if (filterDeletes.length > 0) {
-				const live = await input.client.listFilters();
-				const position = new Map(live.map((filter, index) => [filter.id, index]));
-				filterWrites.sort(
-					(left, right) =>
-						(position.get(right.id) ?? -1) - (position.get(left.id) ?? -1),
-				);
-			}
-			for (const write of filterWrites) await write.run();
-		});
-	}
 	for (const action of folderDeletes) {
 		steps.push(async () => {
 			inFlight = { action, id: action.id };
