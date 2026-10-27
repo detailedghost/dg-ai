@@ -34,11 +34,12 @@ import {
 } from "../workspace/folders";
 import {
 	declaredFiltersPath,
+	declaredOnlyId,
 	editDeclaredFilters,
 	readDeclaredFiltersIfExists,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
-import { declaredOnlyFilters } from "./filter-declared";
+import { projectDeclaredFilters } from "./filter-declared";
 import {
 	readFilterNamingConventions,
 	readFilters,
@@ -180,27 +181,29 @@ async function applyFilterMutations(
 		id: string;
 	}[] = [];
 	if (isProton) {
+		const localIds: string[] = [];
 		await editDeclaredFilters({
 			path: declaredFiltersPath(paths.dir),
 			filters: liveFilters,
 			folders: liveFolders,
 			edit(file) {
 				for (const item of plan.create) {
-					upsertDeclaredFilter(file, {
+					const index = upsertDeclaredFilter(file, {
 						name: item.filterName,
 						enabled: true,
 						sieve: item.sieve,
 					});
+					localIds.push(declaredOnlyId(index));
 				}
 			},
 		});
-		for (const item of plan.create) {
+		for (const [position, item] of plan.create.entries()) {
 			created.push({
 				name: item.filterName,
 				domain: item.domain,
 				targetFolder: item.targetFolder,
 				count: item.count,
-				id: `declared:${item.filterName}`,
+				id: localIds[position] ?? "",
 			});
 		}
 	} else {
@@ -267,13 +270,10 @@ async function buildFilterApplyPlan(
 	context: CliContext,
 ): Promise<FilterApplyPlan> {
 	const paths = pathsList[0];
-	const knownFilters = [
-		...existingFilters,
-		...declaredOnlyFilters(
-			existingFilters,
-			await readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
-		),
-	];
+	const knownFilters = projectDeclaredFilters(
+		existingFilters,
+		await readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
+	);
 	const minCount = getNumberFlag(context.args.flags, "min-count", 1);
 	const onlyDomain = getStringFlag(context.args.flags, "domain");
 	const onlyTarget = getStringFlag(context.args.flags, "target-folder");

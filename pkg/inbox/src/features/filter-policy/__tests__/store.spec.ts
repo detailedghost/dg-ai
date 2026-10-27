@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { emptyDeclaredFilters } from "../schema";
-import { observeLive, seedDeclaredFromLive, upsertDeclaredFilter } from "../store";
+import {
+	keepUntouchedBaseline,
+	observeLive,
+	removeDeclaredFilters,
+	seedDeclaredFromLive,
+	upsertDeclaredFilter,
+} from "../store";
 
 const sieve = 'require ["fileinto"];\nif true {\n  keep;\n}\n';
 
@@ -33,6 +39,32 @@ describe("declared filter store", () => {
 		upsertDeclaredFilter(file, { name: "Same", enabled: true, sieve: "two", protonId: "a" });
 		expect(file.filters).toHaveLength(1);
 		expect(file.filters[0]).toMatchObject({ sieve: "two", protonId: "a" });
+	});
+
+	test("updates and removes the staged entry a local id names when names repeat", () => {
+		const file = emptyDeclaredFilters();
+		file.filters = [
+			{ name: "Same", enabled: true, sieve: "one" },
+			{ name: "Same", enabled: true, sieve: "two" },
+			{ name: "Same", enabled: true, sieve: "three" },
+		];
+		upsertDeclaredFilter(file, { name: "Same", enabled: true, sieve: "edited" }, "declared:1");
+		expect(file.filters.map((filter) => filter.sieve)).toEqual(["one", "edited", "three"]);
+		removeDeclaredFilters(file, ["declared:1"]);
+		expect(file.filters.map((filter) => filter.sieve)).toEqual(["one", "three"]);
+	});
+
+	test("keeps the baseline for filters a plan did not touch", () => {
+		const file = emptyDeclaredFilters();
+		const entry = (id: string, text: string) => ({ id, name: id, enabled: true, sieve: text });
+		const baseline = { filters: [entry("a", "old"), entry("b", "old")], folders: [] };
+		file.filters = [];
+		observeLive(file, [entry("a", "remote"), entry("b", "pushed"), entry("c", "new")], []);
+		keepUntouchedBaseline(file, baseline, new Set(["b"]));
+		expect(file.observed?.filters.map((filter) => [filter.id, filter.sieve])).toEqual([
+			["a", "old"],
+			["b", "pushed"],
+		]);
 	});
 
 	test("keeps duplicate-name identities when observing live", () => {

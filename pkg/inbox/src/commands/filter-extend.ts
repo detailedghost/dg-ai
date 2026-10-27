@@ -139,12 +139,16 @@ export async function extendFilter(context: CliContext): Promise<void> {
 				filters: liveFilters,
 				folders: liveFolders,
 				edit(file) {
-					upsertDeclaredFilter(file, {
-						name: filter.name,
-						enabled: filter.enabled,
-						sieve: extended.sieve,
-						...(isDeclaredOnlyId(filter.id) ? {} : { protonId: filter.id }),
-					});
+					upsertDeclaredFilter(
+						file,
+						{
+							name: filter.name,
+							enabled: filter.enabled,
+							sieve: extended.sieve,
+							...(isDeclaredOnlyId(filter.id) ? {} : { protonId: filter.id }),
+						},
+						filter.id,
+					);
 				},
 			});
 			mutated = true;

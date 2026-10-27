@@ -6,6 +6,7 @@ import {
 	type PlanAction,
 	type SyncPlan,
 } from "./plan";
+import { guardsChain } from "./safety";
 import type { DeclaredFiltersFile } from "./schema";
 import { upsertDeclaredFilter, upsertDeclaredFolder } from "./store";
 
@@ -101,6 +102,7 @@ export async function applySyncPlan(input: {
 		folderSteps.push({ kind, target, run, ...(vacates ? { vacates } : {}) });
 	};
 	const done: AppliedStep[] = [];
+	let inFlight: AppliedStep | undefined;
 	const steps: Array<() => Promise<void>> = [];
 	const creates = folderCreateOrder(
 		input.plan.actions.filter(
@@ -131,6 +133,9 @@ export async function applySyncPlan(input: {
 				path: action.to,
 				...placement(action.to, parentId),
 			});
+			for (const path of [...input.foldersByPath.keys()]) {
+				if (isWithin(path, action.from)) input.foldersByPath.delete(path);
+			}
 			input.foldersByPath.set(action.to, action.id);
 			done.push({ action, id: action.id });
 		}, action.from);
@@ -143,23 +148,27 @@ export async function applySyncPlan(input: {
 	for (const action of input.plan.actions) {
 		if (action.op === "create-filter") {
 			steps.push(async () => {
+				inFlight = { action };
 				const created = await input.client.createFilter({
 					name: action.name,
 					sieve: action.sieve,
 					enabled: action.enabled,
 				});
+				inFlight = undefined;
 				if (action.ref) idsByRef.set(action.ref, created.id);
 				done.push({ action, id: created.id });
 			});
 		}
 		if (action.op === "update-filter" || action.op === "revert-filter") {
 			steps.push(async () => {
+				inFlight = { action, id: action.id };
 				await input.client.updateFilter({
 					id: action.id,
 					name: action.name,
 					sieve: action.sieve,
 					enabled: action.enabled,
 				});
+				inFlight = undefined;
 				done.push({ action, id: action.id });
 			});
 		}
@@ -200,11 +209,26 @@ export async function applySyncPlan(input: {
 				action.op === "delete-folder",
 		),
 	);
-	for (const action of input.plan.actions) {
-		if (action.op !== "delete-filter") continue;
+	const filterDeletes = input.plan.actions.filter(
+		(action): action is Extract<PlanAction, { op: "delete-filter" }> =>
+			action.op === "delete-filter",
+	);
+	if (filterDeletes.length > 0) {
 		steps.push(async () => {
-			await input.client.deleteFilter({ id: action.id });
-			done.push({ action, id: action.id });
+			const live = await input.client.listFilters();
+			const protectors = new Set(
+				live.filter((filter) => guardsChain(sieveOf(filter))).map((filter) => filter.id),
+			);
+			const liveIds = new Set(live.map((filter) => filter.id));
+			const unguarded = (id: string): boolean => liveIds.has(id) && !protectors.has(id);
+			const ordered = [
+				...filterDeletes.filter((action) => unguarded(action.id)),
+				...filterDeletes.filter((action) => !unguarded(action.id)),
+			];
+			for (const action of ordered) {
+				await input.client.deleteFilter({ id: action.id });
+				done.push({ action, id: action.id });
+			}
 		});
 	}
 	for (const action of folderDeletes) {
@@ -218,7 +242,7 @@ export async function applySyncPlan(input: {
 			await step();
 		}
 	} catch (error) {
-		await reconcilePartial(input, done);
+		await reconcilePartial(input, done, inFlight);
 		throw error;
 	}
 	recordAppliedProgress(input.declared, done, snapshotFromDone(done));
@@ -269,19 +293,14 @@ export function recordAppliedProgress(
 		if (action.op === "create-filter" || action.op === "update-filter" || action.op === "revert-filter") {
 			const id = step.id ?? actionId(action);
 			if (!id) continue;
-			const found =
-				live.filters.find((filter) => filter.id === id) ??
-				live.filters.find((filter) => filter.name === action.name);
+			const found = live.filters.find((filter) => filter.id === id);
 			const name = found?.name ?? action.name;
 			const enabled = found?.enabled ?? action.enabled;
 			const sieve = found?.sieve || action.sieve;
 			const desired =
-				file.filters.find((filter) => filter.protonId === id) ??
-				file.filters.find(
-					(filter) =>
-						filter.name === action.name &&
-						!live.filters.some((item) => item.id === filter.protonId),
-				);
+				action.op === "create-filter"
+					? declaredForRef(file, action.ref)
+					: file.filters.find((filter) => filter.protonId === id);
 			if (desired) desired.protonId = found?.id ?? id;
 			upsertObservedFilter(file, { id: found?.id ?? id, name, enabled, sieve });
 		}
@@ -337,10 +356,13 @@ async function reconcilePartial(
 		persist?: (file: DeclaredFiltersFile) => Promise<void>;
 	},
 	done: AppliedStep[],
+	inFlight?: AppliedStep,
 ): Promise<void> {
 	let live = emptySnapshot();
 	try {
 		live = await readSnapshot(input.client);
+		const landedStep = inFlight && verifyLanded(inFlight, live, input.declared, done);
+		if (landedStep) done.push(landedStep);
 	} catch {
 		live = snapshotFromDone(done);
 	}
@@ -350,6 +372,39 @@ async function reconcilePartial(
 	} catch {
 		return;
 	}
+}
+
+function verifyLanded(
+	step: AppliedStep,
+	live: LiveSnapshot,
+	file: DeclaredFiltersFile,
+	done: AppliedStep[],
+): AppliedStep | undefined {
+	const action = step.action;
+	if (
+		action.op !== "update-filter" &&
+		action.op !== "revert-filter" &&
+		action.op !== "create-filter"
+	) {
+		return undefined;
+	}
+	const matches = (filter: LiveSnapshot["filters"][number]): boolean =>
+		filter.name === action.name &&
+		filter.enabled === action.enabled &&
+		filter.sieve === action.sieve;
+	if (action.op !== "create-filter") {
+		const found = live.filters.find((filter) => filter.id === action.id);
+		return found && matches(found) ? step : undefined;
+	}
+	const known = new Set<string>([
+		...done.flatMap((item) => (item.id ? [item.id] : [])),
+		...(file.observed?.filters ?? []).map((filter) => filter.id),
+		...file.filters.flatMap((filter) => (filter.protonId ? [filter.protonId] : [])),
+	]);
+	const candidates = live.filters.filter((filter) => !known.has(filter.id) && matches(filter));
+	return candidates.length === 1 && candidates[0]
+		? { action, id: candidates[0].id }
+		: undefined;
 }
 
 async function readSnapshot(client: PolicyWriteClient): Promise<LiveSnapshot> {
@@ -424,6 +479,18 @@ function sieveOf(filter: {
 	} catch {
 		return "";
 	}
+}
+
+function declaredForRef(
+	file: DeclaredFiltersFile,
+	ref: string | undefined,
+): DeclaredFiltersFile["filters"][number] | undefined {
+	const match = ref?.match(/^new:(\d+)$/);
+	return match ? file.filters[Number(match[1])] : undefined;
+}
+
+function isWithin(path: string, ancestor: string): boolean {
+	return path === ancestor || path.startsWith(`${ancestor}/`);
 }
 
 function actionId(action: PlanAction): string | undefined {
@@ -509,8 +576,7 @@ function orderFolderSteps(steps: FolderStep[], known: Set<string>): FolderStep[]
 						other !== step &&
 						(other.target === parentOf(step.target) ||
 							(other.vacates !== undefined &&
-								(other.vacates === parentOf(step.target) ||
-									other.vacates === step.target))),
+								isWithin(step.target, other.vacates))),
 				),
 		);
 		const [next] = pending.splice(Math.max(index, 0), 1);
@@ -521,7 +587,12 @@ function orderFolderSteps(steps: FolderStep[], known: Set<string>): FolderStep[]
 				`Refusing to ${next.kind} ${next.target}: parent folder ${parent} cannot be resolved`,
 			);
 		}
-		if (next.vacates) known.delete(next.vacates);
+		if (next.vacates) {
+			const vacated = next.vacates;
+			for (const path of [...known]) {
+				if (isWithin(path, vacated)) known.delete(path);
+			}
+		}
 		known.add(next.target);
 		ordered.push(next);
 	}

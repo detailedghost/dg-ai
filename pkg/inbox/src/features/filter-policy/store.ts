@@ -111,6 +111,22 @@ export async function editDeclaredFilters(input: {
 	return file;
 }
 
+const declaredOnlyPrefix = "declared:";
+
+export function declaredOnlyId(index: number): string {
+	return `${declaredOnlyPrefix}${index}`;
+}
+
+export function isDeclaredOnlyId(id: string): boolean {
+	return id.startsWith(declaredOnlyPrefix);
+}
+
+function declaredOnlyIndex(id: string): number | undefined {
+	if (!isDeclaredOnlyId(id)) return undefined;
+	const index = Number(id.slice(declaredOnlyPrefix.length));
+	return Number.isInteger(index) && index >= 0 ? index : undefined;
+}
+
 export function upsertDeclaredFilter(
 	file: DeclaredFiltersFile,
 	filter: {
@@ -119,24 +135,27 @@ export function upsertDeclaredFilter(
 		sieve: string;
 		protonId?: string;
 	},
-): void {
+	localId?: string,
+): number {
+	const local = localId === undefined ? undefined : declaredOnlyIndex(localId);
 	const byId =
 		filter.protonId === undefined
 			? -1
 			: file.filters.findIndex((item) => item.protonId === filter.protonId);
 	const index =
-		byId >= 0
-			? byId
-			: file.filters.findIndex(
-					(item) => item.protonId === undefined && item.name === filter.name,
-				);
+		local !== undefined && file.filters[local] && !file.filters[local].protonId
+			? local
+			: byId >= 0
+				? byId
+				: file.filters.findIndex(
+						(item) => item.protonId === undefined && item.name === filter.name,
+					);
 	if (index >= 0) {
 		const current = file.filters[index];
-		if (!current) return;
-		file.filters[index] = { ...current, ...filter };
-		return;
+		if (current) file.filters[index] = { ...current, ...filter };
+		return index;
 	}
-	file.filters.push(filter);
+	return file.filters.push(filter) - 1;
 }
 
 export function removeDeclaredFilters(
@@ -144,8 +163,11 @@ export function removeDeclaredFilters(
 	ids: string[],
 ): void {
 	const drop = new Set(ids);
+	const dropIndexes = new Set(ids.map(declaredOnlyIndex));
 	file.filters = file.filters.filter(
-		(filter) => !drop.has(filter.protonId ?? "") && !drop.has(filter.name),
+		(filter, index) =>
+			!drop.has(filter.protonId ?? "") &&
+			!(filter.protonId === undefined && dropIndexes.has(index)),
 	);
 }
 
@@ -241,6 +263,31 @@ export function observeLive(
 			name: folder.name,
 			type: folder.type ?? "folder",
 		})),
+	};
+}
+
+export function keepUntouchedBaseline(
+	file: DeclaredFiltersFile,
+	baseline: DeclaredFiltersFile["observed"],
+	touchedIds: Set<string>,
+): void {
+	if (!baseline || !file.observed) return;
+	const merge = <T extends { id: string }>(live: T[], before: T[]): T[] => {
+		const prior = new Map(before.map((item) => [item.id, item]));
+		const liveIds = new Set(live.map((item) => item.id));
+		const kept = live.flatMap((item) => {
+			if (touchedIds.has(item.id)) return [item];
+			const old = prior.get(item.id);
+			return old ? [old] : [];
+		});
+		const missing = before.filter(
+			(item) => !liveIds.has(item.id) && !touchedIds.has(item.id),
+		);
+		return [...kept, ...missing];
+	};
+	file.observed = {
+		filters: merge(file.observed.filters, baseline.filters),
+		folders: merge(file.observed.folders, baseline.folders),
 	};
 }
 

@@ -19,6 +19,7 @@ import { safetyIssues } from "./safety";
 import type { DeclaredFiltersFile } from "./schema";
 import {
 	declaredFiltersPath,
+	keepUntouchedBaseline,
 	observeLive,
 	readDeclaredFiltersIfExists,
 	toLiveFilters,
@@ -121,12 +122,20 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 		});
 		await writeDeclaredFilters(path, updated);
 		const after = await readLive(client);
+		const recorded = structuredClone(updated.observed);
 		observeLive(updated, after.filters, after.folders);
+		keepUntouchedBaseline(updated, recorded, touchedIds(plan));
 		await writeDeclaredFilters(path, updated);
 		printJson(publicSummary(plan, issues, hash, path, planPath, false));
 	} finally {
 		await client.close?.();
 	}
+}
+
+function touchedIds(plan: SyncPlan): Set<string> {
+	return new Set(
+		plan.actions.flatMap((action) => ("id" in action ? [action.id] : [])),
+	);
 }
 
 async function shouldApply(context: CliContext, hash: string): Promise<boolean> {

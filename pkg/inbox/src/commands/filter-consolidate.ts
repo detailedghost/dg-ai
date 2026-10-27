@@ -398,17 +398,19 @@ async function applyConsolidationPlan(
 			filters: liveFilters,
 			folders: liveFolders,
 			edit(file) {
-				upsertDeclaredFilter(file, {
-					name: existing.name,
-					enabled: existing.enabled,
-					sieve: mergedSieve,
-					...(isDeclaredOnlyId(existing.id) ? {} : { protonId: existing.id }),
-				});
+				upsertDeclaredFilter(
+					file,
+					{
+						name: existing.name,
+						enabled: existing.enabled,
+						sieve: mergedSieve,
+						...(isDeclaredOnlyId(existing.id) ? {} : { protonId: existing.id }),
+					},
+					existing.id,
+				);
 				removeDeclaredFilters(
 					file,
-					candidate.generatedFilters.map((filter) =>
-						isDeclaredOnlyId(filter.id) ? filter.name : filter.id,
-					),
+					candidate.generatedFilters.map((filter) => filter.id),
 				);
 			},
 		});

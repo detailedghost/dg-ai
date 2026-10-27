@@ -243,14 +243,18 @@ async function applyGroupPlan(
 						`Existing grouped filter missing from live snapshot: ${group.filterName}`,
 					);
 				}
-				upsertDeclaredFilter(file, {
-					name: group.filterName,
-					enabled: existing?.enabled ?? true,
-					sieve: group.sieve,
-					...(existing && !isDeclaredOnlyId(existing.id)
-						? { protonId: existing.id }
-						: {}),
-				});
+				upsertDeclaredFilter(
+					file,
+					{
+						name: group.filterName,
+						enabled: existing?.enabled ?? true,
+						sieve: group.sieve,
+						...(existing && !isDeclaredOnlyId(existing.id)
+							? { protonId: existing.id }
+							: {}),
+					},
+					existing?.id,
+				);
 				removeDeclaredFilters(file, group.generatedFilterIds);
 			}
 		},

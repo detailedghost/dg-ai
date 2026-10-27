@@ -446,3 +446,144 @@ describe("partial apply recovery", () => {
 	});
 });
 
+describe("apply identity and ordering", () => {
+	const body = 'require ["fileinto"];\nif true {\n  fileinto "X";\n}\n';
+
+	test("gives a created filter its own ID without touching an unchanged same-named one", async () => {
+		const writer = client();
+		const declared = emptyDeclaredFilters();
+		declared.filters = [
+			{ name: "Same", enabled: true, sieve: body, protonId: "a" },
+			{ name: "Same", enabled: true, sieve: body },
+		];
+		const updated = await applySyncPlan({
+			plan: {
+				actions: [{ op: "create-filter", ref: "new:1", name: "Same", enabled: true, sieve: body }],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared,
+			foldersByPath: new Map(),
+		});
+		expect(updated.filters.map((filter) => filter.protonId)).toEqual(["a", "created"]);
+	});
+
+	test("records an update that Proton committed before its response failed", async () => {
+		const writer = client();
+		let live = { id: "f1", name: "Old", enabled: true, sieve: "old" };
+		writer.listFilters = async () => [live];
+		writer.updateFilter = async (input) => {
+			live = { id: input.id, name: input.name, enabled: input.enabled ?? true, sieve: input.sieve };
+			throw new Error("timeout");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.filters = [{ name: "New", enabled: true, sieve: "new", protonId: "f1" }];
+		declared.observed = {
+			filters: [{ id: "f1", name: "Old", enabled: true, sieve: "old" }],
+			folders: [],
+		};
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{
+							op: "update-filter",
+							id: "f1",
+							fromName: "Old",
+							name: "New",
+							enabled: true,
+							sieve: "new",
+							changes: ["name", "sieve"],
+						},
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("timeout");
+		expect(declared.observed?.filters[0]).toMatchObject({ name: "New", sieve: "new" });
+	});
+
+	test("records a second same-named create that Proton committed before its response failed", async () => {
+		const writer = client();
+		const live = [{ id: "a", name: "Same", enabled: true, sieve: body }];
+		writer.listFilters = async () => live;
+		writer.createFilter = async (input) => {
+			live.push({ id: "b", name: input.name, enabled: true, sieve: input.sieve });
+			throw new Error("timeout");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.filters = [
+			{ name: "Same", enabled: true, sieve: body, protonId: "a" },
+			{ name: "Same", enabled: true, sieve: body },
+		];
+		declared.observed = {
+			filters: [{ id: "a", name: "Same", enabled: true, sieve: body }],
+			folders: [],
+		};
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [{ op: "create-filter", ref: "new:1", name: "Same", enabled: true, sieve: body }],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("timeout");
+		expect(declared.filters.map((filter) => filter.protonId)).toEqual(["a", "b"]);
+		expect(declared.observed?.filters.map((filter) => filter.id)).toEqual(["a", "b"]);
+	});
+
+	test("deletes a Spam filter before the keep or stop filter that guards it", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "guard", name: "Guard", enabled: true, sieve: "keep;" },
+			{ id: "spam", name: "Spam", enabled: true, sieve: body },
+		];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "delete-filter", id: "guard", name: "Guard" },
+					{ op: "delete-filter", id: "spam", name: "Spam" },
+				],
+				notices: [],
+			},
+			approvedDeletes: ["guard", "spam"],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["delete-filter:spam", "delete-filter:guard"]);
+	});
+
+	test("refuses a create under a path whose ancestor rename moves it", async () => {
+		const writer = client();
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "rename-folder", id: "fin-id", from: "fin", to: "finance" },
+						{ op: "create-folder", path: "fin/reports/2026", type: "folder" },
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared: emptyDeclaredFilters(),
+				foldersByPath: new Map([
+					["fin", "fin-id"],
+					["fin/reports", "rep-id"],
+				]),
+			}),
+		).rejects.toThrow("parent folder fin/reports cannot be resolved");
+		expect(writer.calls).toEqual([]);
+	});
+});
+

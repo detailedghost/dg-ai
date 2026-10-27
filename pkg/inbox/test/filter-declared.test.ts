@@ -72,7 +72,7 @@ describe("declared filter projection", () => {
 		]);
 		const live = [{ id: "p1", name: "Receipts", enabled: true, conditions: [], actions: [] }];
 		const projected = projectDeclaredFilters(live, declared);
-		expect(projected.map((filter) => filter.id)).toEqual(["p1", "declared:Staged"]);
+		expect(projected.map((filter) => filter.id)).toEqual(["p1", "declared:1"]);
 	});
 
 	test("leaves out declared entries whose Proton filter is gone", () => {
@@ -84,5 +84,15 @@ describe("declared filter projection", () => {
 		const projected = projectDeclaredFilters(live, declared);
 		expect(projected.map((filter) => filter.id)).toEqual(["p1"]);
 	});
-});
 
+	test("gives staged entries with the same name distinct local ids", () => {
+		const declared = declaredWith([
+			{ name: "Same" },
+			{ name: "Receipts", protonId: "p1" },
+			{ name: "Same" },
+		]);
+		const live = [{ id: "p1", name: "Receipts", enabled: true, conditions: [], actions: [] }];
+		const ids = projectDeclaredFilters(live, declared).map((filter) => filter.id);
+		expect(ids).toEqual(["p1", "declared:0", "declared:2"]);
+	});
+});

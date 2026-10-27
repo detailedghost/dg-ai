@@ -1,5 +1,7 @@
 import {
 	declaredFiltersPath,
+	declaredOnlyId,
+	isDeclaredOnlyId,
 	readDeclaredFiltersIfExists,
 } from "../features/filter-policy/store";
 import type {
@@ -18,11 +20,7 @@ export function findDeclaredFilter(
 	);
 }
 
-const declaredOnlyPrefix = "declared:";
-
-export function isDeclaredOnlyId(id: string): boolean {
-	return id.startsWith(declaredOnlyPrefix);
-}
+export { isDeclaredOnlyId };
 
 /** Staged declared entries with no Proton ID, shaped like live filters. */
 export function declaredOnlyFilters(
@@ -34,9 +32,11 @@ export function declaredOnlyFilters(
 	}
 	const claimed = new Set(filters.map((filter) => findDeclaredFilter(declared, filter)));
 	return declared.filters
-		.filter((entry) => !entry.protonId && !claimed.has(entry))
-		.map((entry) => ({
-			id: `${declaredOnlyPrefix}${entry.name}`,
+		.flatMap((entry, index) =>
+			!entry.protonId && !claimed.has(entry) ? [{ entry, index }] : [],
+		)
+		.map(({ entry, index }) => ({
+			id: declaredOnlyId(index),
 			name: entry.name,
 			enabled: entry.enabled,
 			conditions: [entry.sieve],

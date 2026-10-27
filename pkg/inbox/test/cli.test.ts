@@ -2020,6 +2020,94 @@ describe("CLI", () => {
 		expect(declared.filters[0].enabled).toBe(false);
 	});
 
+	test("filters apply creates a recommendation whose synced rule was renamed to another sender", async () => {
+		const dir = tmpPath("filter-apply-overlay");
+		const dataPath = tmpPath("filter-apply-overlay.json");
+		const stripe =
+			'require ["fileinto"]; if address :domain :is "From" "stripe.com" { fileinto "Receipts"; }';
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{ id: "p1", name: "Imported", enabled: true, conditions: [stripe], actions: [] },
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.$`mkdir -p ${dir}/plans`.quiet();
+		await Bun.write(
+			`${dir}/plans/filter-recommendations.json`,
+			JSON.stringify({
+				filterRecommendations: [
+					{ domain: "stripe.com", targetFolder: "Receipts", count: 12, safeForDomainFilter: true },
+				],
+				archiveFollowups: [],
+			}),
+		);
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{
+						name: "Renamed",
+						protonId: "p1",
+						enabled: true,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "other.example" { fileinto "Elsewhere"; }',
+					},
+				],
+			}),
+		);
+		const dry = await runCli(["filters", "apply", "--dir", dir, "--dry-run", "--data-path", dataPath]);
+		expect(dry.code, dry.stderr).toBe(0);
+		expect(JSON.parse(dry.stdout)).toMatchObject({ create: 1, existing: 0 });
+	});
+
+	test("filters extend edits the right staged entry when two share a name", async () => {
+		const dir = tmpPath("filter-extend-collide");
+		const dataPath = tmpPath("filter-extend-collide.json");
+		const sieve = (domain: string) =>
+			`require ["fileinto"];\nif address :domain :is "From" "${domain}" {\n  fileinto "Newsletters";\n}`;
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "newsletters", name: "Newsletters", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [],
+			messages: [],
+		});
+		await Bun.$`mkdir -p ${dir}`.quiet();
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ name: "Same", enabled: true, sieve: sieve("first.example") },
+					{ name: "Same", enabled: true, sieve: sieve("second.example") },
+				],
+			}),
+		);
+		const result = await runCli([
+			"filters", "extend", "--dir", dir, "--data-path", dataPath,
+			"--filter-id", "declared:1", "--add-domains", "added.example", "--confirm",
+		]);
+		expect(result.code, result.stderr).toBe(0);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		expect(declared.filters).toHaveLength(2);
+		expect(declared.filters[0].sieve).not.toContain("added.example");
+		expect(declared.filters[1].sieve).toContain("added.example");
+		expect(declared.filters[1].sieve).toContain("second.example");
+	});
+
 	test("filters group keeps staged edits on an unsynced declared group", async () => {
 		const dir = tmpPath("filter-group-unsynced");
 		const dataPath = tmpPath("filter-group-unsynced.json");
