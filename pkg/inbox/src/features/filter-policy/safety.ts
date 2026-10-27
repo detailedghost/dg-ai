@@ -1,4 +1,4 @@
-import type { LiveFilter, PlanAction, PlanNotice } from "./plan";
+import { orderedFilters, type LiveFilter, type PlanAction, type PlanNotice } from "./plan";
 import {
 	fileintoDestination,
 	flattenCommands,
@@ -34,7 +34,6 @@ export function safetyIssues(input: {
 	notices: PlanNotice[];
 	policy: SafetyPolicy;
 	keepFirst: string[];
-	desiredNames: string[];
 	liveFilters: LiveFilter[];
 }): SafetyIssue[] {
 	const issues: SafetyIssue[] = [];
@@ -334,14 +333,13 @@ export function guardsChain(sieve: string): boolean {
 
 function projectedNames(input: {
 	actions: PlanAction[];
-	desiredNames: string[];
 	liveFilters: LiveFilter[];
 }): string[] {
 	const reorder = input.actions.find((action) => action.op === "reorder-filters");
 	if (reorder) return reorder.names;
 	const pull = input.actions.find((action) => action.op === "pull-filter-order");
-	if (!pull) return input.desiredNames;
 	const rank = (id: string): number => {
+		if (!pull) return 0;
 		const index = pull.ids.indexOf(id);
 		return index < 0 ? pull.ids.length : index;
 	};
@@ -359,10 +357,12 @@ function projectedNames(input: {
 	const created = input.actions.flatMap((action) =>
 		action.op === "create-filter" ? action.name : [],
 	);
+	const ordered = pull
+		? [...input.liveFilters].sort((left, right) => rank(left.id) - rank(right.id))
+		: orderedFilters(input.liveFilters);
 	return [
-		...input.liveFilters
+		...ordered
 			.filter((filter) => !deleted.has(filter.id))
-			.sort((left, right) => rank(left.id) - rank(right.id))
 			.map((filter) => renamed.get(filter.id) ?? filter.name),
 		...created,
 	];

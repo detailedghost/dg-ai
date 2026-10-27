@@ -30,7 +30,7 @@ describe("declared filter lookup", () => {
 			{ name: "Receipts" },
 			{ name: "Renamed", protonId: "p1" },
 		]);
-		expect(findDeclaredFilter(declared, { id: "p1", name: "Receipts" })?.name).toBe(
+		expect(findDeclaredFilter(declared, { id: "p1", name: "Receipts" }, [])?.name).toBe(
 			"Renamed",
 		);
 	});
@@ -40,15 +40,30 @@ describe("declared filter lookup", () => {
 			{ name: "Receipts", protonId: "p9" },
 			{ name: "Receipts" },
 		]);
-		expect(findDeclaredFilter(declared, { id: "p1", name: "Receipts" })).toBe(
+		expect(findDeclaredFilter(declared, { id: "p1", name: "Receipts" }, [])).toBe(
 			declared.filters[1],
 		);
 		expect(
 			findDeclaredFilter(declaredWith([{ name: "Receipts", protonId: "p9" }]), {
 				id: "p1",
 				name: "Receipts",
-			}),
+			}, []),
 		).toBeUndefined();
+	});
+
+	test("does not match an id-less declaration to several live filters with its name", () => {
+		const declared = declaredWith([{ name: "Same" }]);
+		const live = [
+			{ id: "a", name: "Same", enabled: true, conditions: ["x"], actions: [] },
+			{ id: "b", name: "Same", enabled: true, conditions: ["y"], actions: [] },
+		];
+		expect(findDeclaredFilter(declared, live[0]!, live)).toBeUndefined();
+		const projected = projectDeclaredFilters(live as never, declared);
+		expect(projected.map((filter) => [filter.id, filter.conditions[0]])).toEqual([
+			["a", "x"],
+			["b", "y"],
+			["declared:0", "# Same"],
+		]);
 	});
 
 	test("keeps a live filter whose name matches a removed observed filter with another id", () => {

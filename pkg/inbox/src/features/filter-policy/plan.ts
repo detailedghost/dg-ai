@@ -784,7 +784,7 @@ function matchLiveFilter(
 ): LiveFilter | undefined {
 	if (desired.protonId) {
 		const byId = liveById.get(desired.protonId);
-		if (byId && !matched.has(byId.id)) return byId;
+		return byId && !matched.has(byId.id) ? byId : undefined;
 	}
 	if ((nameCounts.get(desired.name) ?? 0) !== 1) return undefined;
 	return liveFilters.find(
@@ -801,7 +801,7 @@ function matchLiveFolder(
 ): LiveFolder | undefined {
 	if (desired.protonId) {
 		const byId = liveById.get(desired.protonId);
-		if (byId && !matched.has(byId.id)) return byId;
+		return byId && !matched.has(byId.id) ? byId : undefined;
 	}
 	if ((pathCounts.get(desired.path) ?? 0) !== 1) return undefined;
 	return liveFolders.find(

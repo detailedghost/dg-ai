@@ -693,10 +693,12 @@ describe("filter policy plan", () => {
 				],
 			}),
 		);
-		expect(consumed.actions.some((action) => action.op === "create-filter")).toBe(
-			false,
+		expect(consumed.actions).toContainEqual(
+			expect.objectContaining({ op: "create-filter", name: "Shop - Orders" }),
 		);
-		expect(consumed.notices.some((notice) => notice.op === "drift")).toBe(false);
+		expect(
+			consumed.actions.some((action) => action.op === "update-filter" && action.id === "b"),
+		).toBe(false);
 		const duplicateFolders = buildSyncPlan(
 			input({
 				desiredFolders: [{ path: "fin", type: "folder" }],
@@ -834,6 +836,30 @@ describe("filter policy plan", () => {
 		expect(buildSyncPlan(input({ ...base, revert: ["d1"] })).actions).toEqual([
 			{ op: "create-folder", path: "fin", type: "folder" },
 		]);
+	});
+
+	test("reports drift instead of name-matching a replacement for a missing Proton ID", () => {
+		const plan = buildSyncPlan(
+			input({
+				desiredFilters: [wanted("Fin - Banking", "fin/other", "f1")],
+				liveFilters: [proton("f2", "Fin - Banking")],
+				observedFilters: [proton("f1", "Fin - Banking")],
+			}),
+		);
+		expect(plan.actions.some((action) => action.op === "update-filter")).toBe(false);
+		expect(plan.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "filter", id: "f1" }),
+		);
+		const folders = buildSyncPlan(
+			input({
+				desiredFolders: [{ path: "fin", type: "folder" as const, protonId: "d1" }],
+				liveFolders: [folder("d2", "fin")],
+				observedFolders: [folder("d1", "fin")],
+			}),
+		);
+		expect(folders.notices).toContainEqual(
+			expect.objectContaining({ op: "drift", target: "folder", id: "d1" }),
+		);
 	});
 
 	test("treats a reorder made only in Proton as drift", () => {

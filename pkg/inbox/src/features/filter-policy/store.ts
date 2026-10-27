@@ -224,30 +224,30 @@ export function observeLive(
 		path?: string;
 		type?: "folder" | "label" | "system";
 	}>,
+	created: { filters: string[]; folders: string[] } = { filters: [], folders: [] },
 ): void {
+	const liveFilterIds = new Set(filters.map((item) => item.id));
 	const claimed = new Set(
 		file.filters.flatMap((filter) =>
-			filters.some((item) => item.id === filter.protonId) && filter.protonId
-				? [filter.protonId]
-				: [],
+			filter.protonId && liveFilterIds.has(filter.protonId) ? [filter.protonId] : [],
 		),
 	);
 	for (const filter of file.filters) {
-		if (filters.some((item) => item.id === filter.protonId)) continue;
-		const live = filters.find(
-			(item) => item.name === filter.name && !claimed.has(item.id),
-		);
-		if (!live) continue;
+		if (filter.protonId || !created.filters.includes(filter.name)) continue;
+		const sameName = filters.filter((item) => item.name === filter.name);
+		const [live] = sameName.filter((item) => !claimed.has(item.id));
+		if (sameName.length !== 1 || !live) continue;
 		filter.protonId = live.id;
 		claimed.add(live.id);
 	}
 	for (const folder of file.folders) {
-		const live = folders.find(
-			(item) =>
-				item.id === folder.protonId ||
-				(item.path?.trim() || item.name) === folder.path,
+		if (folder.protonId || !created.folders.includes(folder.path)) continue;
+		const samePath = folders.filter(
+			(item) => (item.path?.trim() || item.name) === folder.path,
 		);
-		if (live) folder.protonId = live.id;
+		const [live] = samePath;
+		if (samePath.length !== 1 || !live) continue;
+		folder.protonId = live.id;
 	}
 	file.observed = {
 		filters: filters.map((filter) => ({

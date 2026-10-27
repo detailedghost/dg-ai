@@ -13,11 +13,13 @@ import type { ProtonFilter } from "../protonmail/types";
 export function findDeclaredFilter(
 	declared: DeclaredFiltersFile | undefined,
 	filter: { id: string; name: string },
+	live: Array<{ name: string }>,
 ): DeclaredFilter | undefined {
-	return (
-		declared?.filters.find((item) => item.protonId === filter.id) ??
-		declared?.filters.find((item) => !item.protonId && item.name === filter.name)
-	);
+	const byId = declared?.filters.find((item) => item.protonId === filter.id);
+	if (byId) return byId;
+	const ambiguous = live.filter((item) => item.name === filter.name).length > 1;
+	if (ambiguous) return undefined;
+	return declared?.filters.find((item) => !item.protonId && item.name === filter.name);
 }
 
 export { isDeclaredOnlyId };
@@ -30,7 +32,7 @@ export function declaredOnlyFilters(
 	if (!declared) {
 		return [];
 	}
-	const claimed = new Set(filters.map((filter) => findDeclaredFilter(declared, filter)));
+	const claimed = new Set(filters.map((filter) => findDeclaredFilter(declared, filter, filters)));
 	return declared.filters
 		.flatMap((entry, index) =>
 			!entry.protonId && !claimed.has(entry) ? [{ entry, index }] : [],
@@ -54,7 +56,7 @@ export function overlayDeclaredFilters<T extends ProtonFilter>(
 	}
 	const observed = declared.observed?.filters ?? [];
 	return filters.flatMap((filter) => {
-		const entry = findDeclaredFilter(declared, filter);
+		const entry = findDeclaredFilter(declared, filter, filters);
 		if (entry) {
 			return [
 				{

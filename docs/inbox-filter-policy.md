@@ -51,6 +51,11 @@ File order is Proton order, top down. `policy.keepFirst` must be the leading nam
 as its own line. A rename proposal is not applied. A reorder lists filter ids, so two filters with the
 same name keep their places.
 
+Filters and folders match by Proton id. A declaration with no id matches by name only when exactly one
+live filter or folder has that name. If a declared id is gone from Proton, the plan reports drift and
+never claims a same-named replacement. The `keepFirst` check reads the order Proton will have after the
+apply: renames applied, approved deletes removed, withheld deletes kept, creates last.
+
 ## Drift
 
 A filter or folder changed in the Proton UI, and not in the file, is drift. Pass a comma-separated list
@@ -95,7 +100,7 @@ to Spam or Trash passes only when its conditions exclude the protected plus-alia
 header, and exclude the verification senders. A rule with no condition, or a test the check cannot read,
 is blocked.
 - drift is still unresolved
-- `keepFirst` is not the start of the file
+- `keepFirst` is not the start of the order Proton will have after the apply
 
 GitHub, GitLab, Spam, and Trash stay in force even when the extra lists in the file are empty.
 

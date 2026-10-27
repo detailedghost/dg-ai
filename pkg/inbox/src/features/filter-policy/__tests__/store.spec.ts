@@ -98,22 +98,32 @@ describe("declared filter store", () => {
 		expect(file.filters.map((filter) => filter.protonId)).toEqual(["a", "b"]);
 	});
 
-	test("matches unidentified duplicate names to distinct live filters", () => {
+	test("keeps a declaration's ID when a same-named replacement appears", () => {
+		const file = emptyDeclaredFilters();
+		file.filters = [{ name: "Same", enabled: true, sieve: "one", protonId: "gone" }];
+		observeLive(file, [{ id: "new", name: "Same", enabled: true, sieve: "two" }], [], {
+			filters: ["Same"],
+			folders: [],
+		});
+		expect(file.filters[0]?.protonId).toBe("gone");
+	});
+
+	test("assigns an ID only to a declaration created in this run and matched uniquely", () => {
 		const file = emptyDeclaredFilters();
 		file.filters = [
-			{ name: "Same", enabled: true, sieve: "one" },
-			{ name: "Same", enabled: true, sieve: "two" },
+			{ name: "Fresh", enabled: true, sieve: "one" },
+			{ name: "Staged", enabled: true, sieve: "two" },
 		];
 		observeLive(
 			file,
 			[
-				{ id: "a", name: "Same", enabled: true, sieve: "one", sequence: 1 },
-				{ id: "b", name: "Same", enabled: true, sieve: "two", sequence: 2 },
+				{ id: "a", name: "Fresh", enabled: true, sieve: "one" },
+				{ id: "b", name: "Staged", enabled: true, sieve: "two" },
 			],
 			[],
+			{ filters: ["Fresh"], folders: [] },
 		);
-		expect(file.filters.map((filter) => filter.protonId)).toEqual(["a", "b"]);
-		expect(file.observed?.filters.map((filter) => filter.sequence)).toEqual([1, 2]);
+		expect(file.filters.map((filter) => filter.protonId)).toEqual(["a", undefined]);
 	});
 
 	test("seeds declarations in Proton sequence order and keeps the sequence", () => {

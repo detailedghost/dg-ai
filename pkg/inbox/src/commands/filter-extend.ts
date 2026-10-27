@@ -169,7 +169,7 @@ export async function extendFilter(context: CliContext): Promise<void> {
 			name: publicText(filter.name),
 			addedDomains: extended.added,
 			alreadyPresent: extended.alreadyPresent,
-			source: findDeclaredFilter(declared, filter)
+			source: findDeclaredFilter(declared, filter, liveFilters)
 				? "declared-filter"
 				: "live-filter",
 			filtersJsonTruncated: saved !== undefined && saved !== sieve,

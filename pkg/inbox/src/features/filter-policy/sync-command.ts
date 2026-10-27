@@ -85,7 +85,6 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 			notices: plan.notices,
 			policy: declared.policy.safety,
 			keepFirst: declared.policy.keepFirst,
-			desiredNames: declared.filters.map((filter) => filter.name),
 			liveFilters: live.filters,
 		});
 		const hash = planHash(plan);
@@ -123,7 +122,14 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 		await writeDeclaredFilters(path, updated);
 		const after = await readLive(client);
 		const recorded = structuredClone(updated.observed);
-		observeLive(updated, after.filters, after.folders);
+		observeLive(updated, after.filters, after.folders, {
+			filters: plan.actions.flatMap((action) =>
+				action.op === "create-filter" ? [action.name] : [],
+			),
+			folders: plan.actions.flatMap((action) =>
+				action.op === "create-folder" ? [action.path] : [],
+			),
+		});
 		keepUntouchedBaseline(updated, recorded, touchedIds(plan), pulledOrderIds(plan));
 		await writeDeclaredFilters(path, updated);
 		printJson(publicSummary(plan, issues, hash, path, planPath, false));

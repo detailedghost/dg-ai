@@ -44,7 +44,6 @@ describe("filter policy safety", () => {
 			notices: [],
 			policy,
 			keepFirst: [],
-			desiredNames: [],
 			liveFilters: [],
 		});
 		expect(
@@ -66,7 +65,6 @@ describe("filter policy safety", () => {
 			notices: [],
 			policy,
 			keepFirst: ["Owner"],
-			desiredNames: ["Owner", "GitHub"],
 			liveFilters: [],
 		});
 		expect(issues).toEqual([]);
@@ -82,7 +80,6 @@ describe("filter policy safety", () => {
 				blockedDestinations: [],
 			},
 			keepFirst: [],
-			desiredNames: [],
 			liveFilters: [],
 		});
 		expect(issues.map((issue) => issue.code)).toEqual([
@@ -100,7 +97,6 @@ describe("filter policy safety", () => {
 			notices: [],
 			policy,
 			keepFirst: [],
-			desiredNames: ["Cut"],
 			liveFilters: [],
 		});
 		expect(truncated.map((issue) => issue.code)).toContain("truncated-sieve");
@@ -109,7 +105,6 @@ describe("filter policy safety", () => {
 			notices: [],
 			policy: { ...policy, protectedPlusAlias: "  " },
 			keepFirst: [],
-			desiredNames: [],
 			liveFilters: [],
 		});
 		expect(blank.map((issue) => issue.code)).toEqual(["alias-unconfigured"]);
@@ -125,7 +120,6 @@ describe("filter policy safety", () => {
 			notices: [drift],
 			policy,
 			keepFirst: ["+Owner"],
-			desiredNames: ["Fin - Banking"],
 			liveFilters: [],
 		});
 		expect(unresolved.map((issue) => issue.code)).toEqual([
@@ -217,7 +211,6 @@ describe("filter policy safety", () => {
 			notices: [],
 			policy,
 			keepFirst: [],
-			desiredNames: ["Updated"],
 			liveFilters: [],
 		});
 		expect(
@@ -247,7 +240,6 @@ describe("filter policy safety", () => {
 				notices: [],
 				policy,
 				keepFirst: ["Owner"],
-				desiredNames: ["Owner", "Work"],
 				liveFilters,
 			}).flatMap((issue) => (issue.code === "order" ? [issue.code] : []));
 
@@ -299,14 +291,12 @@ describe("filter policy safety", () => {
 			notices: PlanNotice[];
 			policy: SafetyPolicy;
 			keepFirst: string[];
-			desiredNames: string[];
 			liveFilters: LiveFilter[];
 		} = {
 			notices: [],
 			liveFilters: [],
 			policy: { ...policy, verificationSenders: [] },
 			keepFirst: [],
-			desiredNames: [],
 		};
 		const codes = (body: string, over: Partial<typeof plain> = {}): string[] =>
 			safetyIssues({
@@ -649,7 +639,7 @@ describe("filter policy safety", () => {
 				"Set policy.safety.protectedPlusAlias before applying. The pattern lives in the declared filters file.",
 			]);
 			expect(
-				messages("keep;", { keepFirst: ["A", "B"], desiredNames: ["B"] }),
+				messages("keep;", { keepFirst: ["A", "B"] }),
 			).toEqual(["Declared filters must start with A, B"]);
 		});
 
@@ -703,7 +693,6 @@ describe("filter policy safety", () => {
 			safetyIssues({
 				...base,
 				actions: [],
-				desiredNames: [],
 				liveFilters: [],
 				...input,
 			}).map((issue) => issue.code);
@@ -716,11 +705,44 @@ describe("filter policy safety", () => {
 			const issues = safetyIssues({
 				...base,
 				actions: [{ op: "reorder-filters", names: ["Risky", "Safe"] }],
-				desiredNames: ["Risky", "Safe"],
 				liveFilters: [live("safe", "keep;"), live("Risky", riskySieve)],
 			});
 			expect(issues.map((issue) => issue.code)).toEqual(both);
 			expect(issues[0]?.message).toContain("Risky");
+		});
+
+		test("fails keepFirst when a withheld delete leaves another filter first", () => {
+			const lead = [live("old", "keep;", { name: "Retired", sequence: 1 }), live("guard", "keep;", { name: "Guard", sequence: 2 })];
+			const withheld: PlanNotice = { op: "delete-withheld", target: "filter", id: "old", name: "Retired" };
+			expect(codesOf({ keepFirst: ["Guard"], notices: [withheld], liveFilters: lead })).toEqual(["order"]);
+			expect(
+				codesOf({
+					keepFirst: ["Guard"],
+					actions: [{ op: "delete-filter", id: "old", name: "Retired" }],
+					liveFilters: lead,
+				}),
+			).toEqual([]);
+		});
+
+		test("checks keepFirst against the renamed live name", () => {
+			const lead = [live("g", "keep;", { name: "Guard", sequence: 1 })];
+			expect(
+				codesOf({
+					keepFirst: ["Guard"],
+					actions: [
+						{
+							op: "update-filter",
+							id: "g",
+							fromName: "Guard",
+							name: "Other",
+							enabled: true,
+							sieve: "keep;",
+							changes: ["name"],
+						},
+					],
+					liveFilters: lead,
+				}),
+			).toEqual(["order"]);
 		});
 
 		test("checks an unchanged Spam rule when a delete removes a keep filter", () => {
@@ -881,7 +903,6 @@ describe("filter policy safety", () => {
 						{ op, id: "p1", name: "Same", enabled: true, sieve: "keep;" },
 						{ op: "reorder-filters", names: ["Same"] },
 					],
-					desiredNames: ["Same"],
 					liveFilters: [live("p1", riskySieve)],
 				});
 				expect(issues).toEqual([]);
@@ -896,7 +917,6 @@ describe("filter policy safety", () => {
 					create("Other", riskySieve, "new:2"),
 					{ op: "reorder-filters", names: ["a", "Safe", "Other"] },
 				],
-				desiredNames: [],
 				liveFilters: [live("a", riskySieve), live("s", "keep;")],
 			});
 			expect(issues.map((issue) => issue.message)).toEqual([
@@ -909,7 +929,6 @@ describe("filter policy safety", () => {
 			expect(
 				codesOf({
 					actions: [{ op: "reorder-filters", names: ["Safe"] }],
-					desiredNames: ["Safe"],
 					liveFilters: [live("s", "keep;")],
 				}),
 			).toEqual([]);
@@ -936,7 +955,6 @@ describe("filter policy safety", () => {
 				notices: [],
 				policy: { ...policy, verificationSenders: [] },
 				keepFirst: [],
-				desiredNames: [],
 				liveFilters: [],
 			}).map((issue) => issue.code);
 

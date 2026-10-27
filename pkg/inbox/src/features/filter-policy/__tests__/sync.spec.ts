@@ -436,7 +436,6 @@ describe("synthetic declared filters example", () => {
 			notices: plan.notices,
 			policy: parsed.policy.safety,
 			keepFirst: parsed.policy.keepFirst,
-			desiredNames: parsed.filters.map((filter) => filter.name),
 			liveFilters: parsed.observed?.filters ?? [],
 		});
 		expect(issues).toEqual([]);
