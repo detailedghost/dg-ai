@@ -1488,6 +1488,89 @@ describe("postReview", () => {
 		expect(readCalls(log).filter((c) => c.includes("pulls/12/reviews"))).toHaveLength(2);
 	});
 
+	function gatewayScript(pendingReviews: string): string {
+		return ghScript(`
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    exit 0
+    ;;
+  *"api user --jq"*)
+    echo review-bot
+    exit 0
+    ;;
+  *"--paginate"*)
+    echo '${pendingReviews}'
+    exit 0
+    ;;
+  *"reviews/55/events"*)
+    cat > "$FAKE_STDIN_CAPTURE.submit"
+    echo '{"html_url":"https://github.com/acme/widgets/pull/12#pullrequestreview-55"}'
+    exit 0
+    ;;
+  *"pulls/12/reviews --method POST"*)
+    cat > "$FAKE_STDIN_CAPTURE"
+    echo 'HTTP 502: Bad Gateway' 1>&2
+    exit 1
+    ;;`);
+	}
+
+	test("submits the pending review GitHub kept after a 502 instead of posting it again", async () => {
+		const log = callLogPath();
+		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
+		fakeGh(
+			gatewayScript(
+				'[[{"id":55,"state":"PENDING","commit_id":"abc123","user":{"login":"review-bot"},"body":"## Thrash review spice 5"},{"id":99,"state":"PENDING","commit_id":"abc123","user":{"login":"someone-else"},"body":"## Thrash review spice 5"}]]',
+			),
+		);
+
+		const posted = await createGithubProvider().postReview(ref, {
+			verdict: "request_changes",
+			body: "## Thrash review spice 5",
+			comments,
+		});
+
+		expect(posted).toEqual({
+			url: "https://github.com/acme/widgets/pull/12#pullrequestreview-55",
+			verdict: "request_changes",
+			degraded: false,
+			commentCount: 2,
+		});
+		expect(JSON.parse(readFileSync(`${stdinCapture}.submit`, "utf8"))).toEqual({
+			event: "REQUEST_CHANGES",
+			body: "## Thrash review spice 5",
+		});
+		const calls = readCalls(log);
+		expect(calls.filter((c) => c === "api repos/acme/widgets/pulls/12/reviews --method POST --input -")).toHaveLength(
+			1,
+		);
+		expect(calls.some((c) => c.includes("--method DELETE"))).toBe(false);
+	});
+
+	test("rethrows a 502 instead of publishing an unrelated stale draft", async () => {
+		const log = callLogPath();
+		process.env.FAKE_STDIN_CAPTURE = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		fakeGh(
+			gatewayScript(
+				'[[{"id":55,"state":"PENDING","commit_id":"old999","user":{"login":"review-bot"},"body":"## Thrash review spice 5"},{"id":56,"state":"PENDING","commit_id":"abc123","user":{"login":"review-bot"},"body":"## Thrash review spice 2 from an older run"}]]',
+			),
+		);
+
+		await expect(
+			createGithubProvider().postReview(ref, { verdict: "request_changes", body: "## Thrash review spice 5", comments }),
+		).rejects.toThrow(/502/);
+		expect(readCalls(log).some((c) => c.includes("/events"))).toBe(false);
+	});
+
+	test("rethrows a 502 when GitHub kept no pending review", async () => {
+		process.env.FAKE_STDIN_CAPTURE = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		fakeGh(gatewayScript("[[]]"));
+
+		await expect(
+			createGithubProvider().postReview(ref, { verdict: "comment", body: "## Thrash review spice 5", comments }),
+		).rejects.toThrow(/502/);
+	});
+
 	test("does not retry a refusal that is not about the author's own PR", async () => {
 		process.env.FAKE_STDIN_CAPTURE = join(tmp("fake-gh-stdin-"), "stdin.txt");
 		fakeGh(

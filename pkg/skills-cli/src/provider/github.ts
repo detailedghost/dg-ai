@@ -545,14 +545,53 @@ function isOwnStalePendingReview(review: Record<string, unknown>, login: string)
 	return review.state === "PENDING" && user?.login === login && body.startsWith(THRASH_REVIEW_HEADING_PREFIX);
 }
 
-async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
+async function ownPendingReviews(tag: ShellTag, ref: PrRef): Promise<Record<string, unknown>[]> {
 	const whoami = await tag`api user --jq ${".login"} ${apiHostFlags(ref.repo)}`;
 	const login = whoami.stdout.toString().trim();
 	const result = await tag`api ${reviewsPath(ref)} --paginate --slurp ${apiHostFlags(ref.repo)}`;
 	const reviews = flattenPaginated<Record<string, unknown>>(JSON.parse(result.stdout.toString()));
-	for (const review of reviews.filter((r) => isOwnStalePendingReview(r, login))) {
+	return reviews.filter((r) => isOwnStalePendingReview(r, login));
+}
+
+async function deletePendingReviews(tag: ShellTag, ref: PrRef): Promise<void> {
+	for (const review of await ownPendingReviews(tag, ref)) {
 		await tag`api ${reviewsPath(ref)}/${String(review.id)} --method DELETE ${apiHostFlags(ref.repo)}`;
 	}
+}
+
+function submitPending(
+	tag: ShellTag,
+	ref: PrRef,
+	reviewId: string,
+	verdict: ReviewVerdict,
+	body: string,
+): Promise<{ raw: Record<string, unknown>; verdict: ReviewVerdict; degraded: boolean }> {
+	return withOwnPrFallback(verdict, async (event) => {
+		const submitted = await tag.withInput(
+			JSON.stringify({ event: GITHUB_REVIEW_EVENTS[event], body }),
+		)`api ${reviewsPath(ref)}/${reviewId}/events --method POST --input - ${apiHostFlags(ref.repo)}`;
+		return JSON.parse(submitted.stdout.toString());
+	});
+}
+
+/** GitHub can answer a large review POST with a gateway error after it saved the review as pending. */
+const GATEWAY_NEEDLES = ["http 502", "http 503", "http 504"];
+
+/** Submits only a draft with the failed request's commit and exact body. */
+async function submitKeptPending(
+	tag: ShellTag,
+	ref: PrRef,
+	input: PostReviewInput,
+	commitId: string,
+	err: unknown,
+): Promise<{ raw: Record<string, unknown>; verdict: ReviewVerdict; degraded: boolean }> {
+	if (!GATEWAY_NEEDLES.some((needle) => isCliErrorContaining(err, needle))) throw err;
+	const body = input.body.trim() || EMPTY_REVIEW_BODY;
+	const kept = (await ownPendingReviews(tag, ref))
+		.filter((r) => r.commit_id === commitId && r.body === body)
+		.sort((a, b) => Number(b.id) - Number(a.id));
+	if (kept.length === 0) throw err;
+	return submitPending(tag, ref, String(kept[0].id), input.verdict, body);
 }
 
 async function clearingStalePending<T>(tag: ShellTag, ref: PrRef, post: () => Promise<T>): Promise<T> {
@@ -614,12 +653,7 @@ async function submitWithFileThreads(
 			const thread = JSON.stringify({ query: ADD_FILE_THREAD, variables: { reviewId: pending.node_id, path: c.path, body: c.body } });
 			await tag.withInput(thread)`api graphql --input - ${hostFlags}`;
 		}
-		return await withOwnPrFallback(input.verdict, async (verdict) => {
-			const submitted = await tag.withInput(
-				JSON.stringify({ event: GITHUB_REVIEW_EVENTS[verdict], body }),
-			)`api ${reviewsPath(ref)}/${String(pending.id)}/events --method POST --input - ${hostFlags}`;
-			return JSON.parse(submitted.stdout.toString());
-		});
+		return await submitPending(tag, ref, String(pending.id), input.verdict, body);
 	} catch (err) {
 		await tag`api ${reviewsPath(ref)}/${String(pending.id)} --method DELETE ${hostFlags}`.catch(() => undefined);
 		throw err;
@@ -632,7 +666,9 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 	const posted = await clearingStalePending(tag, ref, () =>
 		input.comments.some(isFileComment)
 			? submitWithFileThreads(tag, ref, input, headRefOid)
-			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)),
+			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)).catch(
+					(err: unknown) => submitKeptPending(tag, ref, input, headRefOid, err),
+				),
 	);
 	return {
 		url: (posted.raw.html_url as string) ?? "",
