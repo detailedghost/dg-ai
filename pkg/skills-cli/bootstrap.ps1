@@ -1,6 +1,6 @@
 # Install the compiled dg-skills CLI for Windows into %USERPROFILE%\.dg\bin.
 #
-#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.ps1 | iex
+#   irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.ps1 | iex
 #
 # CLI-only (skip the extension, dg-daemon and dg-agent): set $env:DG_CLI_ONLY = "1" first.
 # Agent-only (install dg-agent too, for a non-Claude agent that only needs phone; still

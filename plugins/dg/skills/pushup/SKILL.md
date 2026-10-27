@@ -45,7 +45,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 
    ```sh
    ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
-     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.20.0/pkg/skills-cli/bootstrap.sh | sh
+     curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
    ```
 
    Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
