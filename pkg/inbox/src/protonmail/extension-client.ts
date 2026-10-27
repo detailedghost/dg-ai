@@ -9,6 +9,7 @@ import {
 import type { ProtonGate } from "../features/filter-policy/jitter";
 import { liveProtonGate } from "../features/filter-policy/jitter";
 import type { AppConfig } from "../config/types";
+import { inboxRuntimeFor } from "../runtime";
 import type {
 	MailProviderClient,
 	ListMessagesInput,
@@ -31,7 +32,8 @@ export class ExtensionProtonMailClient implements MailProviderClient {
 			pace?: ProtonGate;
 		},
 	) {
-		this.pace = input.pace ?? liveProtonGate();
+		this.pace =
+			input.pace ?? inboxRuntimeFor(input.config).runtime.protonGate ?? liveProtonGate();
 	}
 	private async request(
 		request: InboxBrowserRequest,

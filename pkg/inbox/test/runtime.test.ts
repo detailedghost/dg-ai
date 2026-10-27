@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { main } from "../src/cli/index";
+import { immediateProtonGate } from "../src/features/filter-policy/jitter";
 import { workspaceDirForProfile } from "../src/workspace/profile";
 
 type Runtime = NonNullable<Parameters<typeof main>[1]>;
@@ -181,6 +182,7 @@ describe("main inbox runtime", () => {
 				tabId: 7,
 				accountHint: "private-account@example.test",
 			}),
+			protonGate: immediateProtonGate(),
 			browserRequest: async (request) => {
 				operations.push(request.operation);
 				expect(request.tabId).toBe(7);
