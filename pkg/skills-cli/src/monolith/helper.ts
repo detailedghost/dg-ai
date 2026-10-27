@@ -8,6 +8,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { parseFlag, wholeNumber } from "@dg/common";
 import { projectHash, repoRoot, stateRoot } from "@dg/common/node";
 import { die, EXIT, type SubcommandSpec } from "../utils/legacy-command";
 import { shellValue } from "../worktree/shared";
@@ -461,6 +462,14 @@ function nonTermSections(content: string): string {
 	return out.join("\n").trim();
 }
 
+function parseMinRows(raw: string): number {
+	try {
+		return parseFlag(wholeNumber(1), raw, "split: --min-rows");
+	} catch (err) {
+		return die((err as Error).message);
+	}
+}
+
 function cmdSplit(args: string[]): number {
 	let file = "";
 	let outDir = "";
@@ -473,15 +482,13 @@ function cmdSplit(args: string[]): number {
 		else if (a === "--out-dir")
 			outDir = args[++i] ?? die("split: --out-dir needs a path");
 		else if (a === "--min-rows")
-			minRows = Number(args[++i] ?? die("split: --min-rows needs a number"));
+			minRows = parseMinRows(args[++i] ?? die("split: --min-rows needs a number"));
 		else if (!a.startsWith("-") && file === "") file = a;
 		else die(`split: unknown flag: ${a}`);
 	}
 
 	if (!file) die("split: FILE required");
 	requireFile(file);
-	if (!Number.isInteger(minRows) || minRows < 1)
-		die("split: --min-rows must be a positive integer");
 
 	const abs = abspath(file);
 	const content = readFileSync(abs, "utf8");

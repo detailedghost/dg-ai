@@ -9,6 +9,7 @@ export * from "./chat-format";
 export * from "./cli-wire";
 export * from "./credentials-format";
 export * from "./errors";
+export * from "./flags";
 export * from "./inbox-format";
 export * from "./markers";
 export * from "./pairing";

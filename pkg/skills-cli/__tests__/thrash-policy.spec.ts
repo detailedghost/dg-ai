@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { THRASH_REVIEW_MARKER } from "@dg/common";
 import type { ReviewThread } from "../src/provider/types";
 import {
 	capVerdict,
@@ -11,6 +10,7 @@ import {
 	parseUnifiedDiff,
 	reviewTrigger,
 	SPICE_DEFAULT,
+	THRASH_REVIEW_MARKER,
 	TIER_EMOJI,
 	type Tier,
 } from "../src/thrash/core";
@@ -122,9 +122,9 @@ describe("parsePolicy", () => {
 
 	test("rejects an unknown tier and an empty phase list", () => {
 		expect(() => parsePolicy("phases:\n  - block: { severe: 0 }\n")).toThrow(
-			'unknown tier "severe"',
+			'phases.0.block: Unrecognized key: "severe"',
 		);
-		expect(() => parsePolicy("phases: []\n")).toThrow("non-empty phases");
+		expect(() => parsePolicy("phases: []\n")).toThrow("phases: needs at least one phase");
 	});
 });
 

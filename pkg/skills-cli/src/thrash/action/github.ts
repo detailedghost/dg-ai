@@ -1,4 +1,4 @@
-import { THRASH_REVIEW_MARKER } from "@dg/common";
+import { THRASH_REVIEW_MARKER } from "../constants";
 
 export interface PullRequestEvent {
 	repo: string;

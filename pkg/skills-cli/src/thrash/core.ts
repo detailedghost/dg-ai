@@ -1,13 +1,14 @@
 import path from "node:path";
 import {
 	NIT_LADDER,
+	parseOptionalFlag,
 	SPICE_DEFAULT,
 	SPICE_MAX,
 	SPICE_MIN,
 	THRASH_REVIEW_HEADING_PREFIX,
-	THRASH_REVIEW_MARKER,
 	TIER_EMOJI,
 	VERDICT_LIMITS,
+	wholeNumber,
 } from "@dg/common";
 import {
 	isFileComment,
@@ -18,11 +19,11 @@ import {
 	type ReviewThread,
 	type ReviewVerdict,
 } from "../provider/types";
+import { THRASH_REVIEW_MARKER, TIERS, type Tier } from "./constants";
 import { type ReviewPolicy, selectPhase } from "./policy";
 import { pickSass } from "./sass";
 
-export const TIERS = ["critical", "high", "medium", "low", "nit"] as const;
-export type Tier = (typeof TIERS)[number];
+export { THRASH_REVIEW_MARKER, TIERS, type Tier };
 
 export const TIER_LABEL: Record<Tier, string> = {
 	critical: "Critical",
@@ -172,12 +173,7 @@ export function isTier(value: unknown): value is Tier {
 }
 
 export function parseSpice(raw: string | undefined): number {
-	if (raw === undefined) return SPICE_DEFAULT;
-	const value = Number(raw);
-	if (!Number.isInteger(value) || value < SPICE_MIN || value > SPICE_MAX) {
-		throw new Error(`--spice must be a whole number from ${SPICE_MIN} to ${SPICE_MAX}, got "${raw}"`);
-	}
-	return value;
+	return parseOptionalFlag(wholeNumber(SPICE_MIN, SPICE_MAX), raw, "--spice") ?? SPICE_DEFAULT;
 }
 
 export function parseTier(raw: string): Tier {

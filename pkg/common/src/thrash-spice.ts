@@ -30,6 +30,3 @@ export const TIER_EMOJI: Record<"critical" | "high" | "medium" | "low" | "nit", 
 
 /** Every posted or pending thrash review body starts with this; a provider adapter checks it before deleting a stale pending review, so it never deletes an unrelated draft. */
 export const THRASH_REVIEW_HEADING_PREFIX = "## Thrash review ";
-
-/** Hidden tag in every thrash review body, so a review with a custom heading is still recognized as thrash's own. */
-export const THRASH_REVIEW_MARKER = "<!-- dg:thrash-review -->";

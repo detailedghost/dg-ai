@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
 import { scratchPath } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
@@ -269,26 +270,12 @@ function nextAddressFile(root: string): string {
 	throw new Error(`no free code-review file name under ${dir}`);
 }
 
-function optionalCount(args: string[], flag: string, min: number): number | undefined {
-	const raw = optionalOption(args, flag);
-	if (raw === undefined) return undefined;
-	const value = Number(raw);
-	if (!Number.isInteger(value) || value < min) throw new Error(`${flag} must be a whole number of ${min} or more, got "${raw}"`);
-	return value;
-}
-
-const MAX_EVENTS: Record<string, ReviewVerdict> = {
-	approve: "approve",
-	"request-changes": "request_changes",
-	request_changes: "request_changes",
-	comment: "comment",
-};
+const MAX_EVENT = oneOf(["auto", "approve", "request-changes", "comment"] as const);
 
 function parseMaxEvent(raw: string | undefined): ReviewVerdict | undefined {
-	if (raw === undefined || raw === "auto") return undefined;
-	const event = MAX_EVENTS[raw];
-	if (!event) throw new Error(`--max-event must be auto, approve, request-changes or comment, got "${raw}"`);
-	return event;
+	const event = parseOptionalFlag(MAX_EVENT, raw, "--max-event");
+	if (event === undefined || event === "auto") return undefined;
+	return event === "request-changes" ? "request_changes" : event;
 }
 
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
@@ -320,7 +307,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	);
 	const minTierRaw = optionalOption(args, "--min-tier");
 	const policyPath = optionalOption(args, "--policy");
-	const round = optionalCount(args, "--round", 1);
+	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
@@ -330,7 +317,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		heading: optionalOption(args, "--heading"),
 		round,
 		policy: policyPath === undefined ? undefined : parsePolicy(readFileSync(policyPath, "utf8")),
-		maxComments: optionalCount(args, "--max-comments", 0),
+		maxComments: parseOptionalFlag(wholeNumber(0), optionalOption(args, "--max-comments"), "--max-comments"),
 		maxEvent: parseMaxEvent(optionalOption(args, "--max-event")),
 		reviewer: optionalOption(args, "--reviewer"),
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,

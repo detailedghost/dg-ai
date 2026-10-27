@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { THRASH_REVIEW_MARKER } from "@dg/common";
+import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
 import { readConfig } from "../src/thrash/action/config";
 import { isFork, nextRound, type Review, readEvent } from "../src/thrash/action/github";
 import { compileArgs, lastJson, renderChunkTask } from "../src/thrash/action/tasks";

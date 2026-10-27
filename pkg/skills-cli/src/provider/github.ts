@@ -1,4 +1,5 @@
-import { THRASH_REVIEW_HEADING_PREFIX, THRASH_REVIEW_MARKER } from "@dg/common";
+import { THRASH_REVIEW_HEADING_PREFIX } from "@dg/common";
+import { THRASH_REVIEW_MARKER } from "../thrash/constants";
 import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
