@@ -534,6 +534,15 @@ const command = defineCommand({
 			args: ["target"],
 			run: cmdStack,
 		},
+		action: {
+			description:
+				"Run one GitHub Action phase (prepare, review or publish) from THRASHLEY_* inputs; used by the Thrashley action",
+			args: ["phase"],
+			run: async (args) => {
+				const { runAction } = await import("./action/index");
+				return runAction(args.find((a) => !a.startsWith("--")));
+			},
+		},
 		tally: {
 			description:
 				"Print a markdown table of PR, link, findings per tier, inline count and verdict for review JSON files",

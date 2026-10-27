@@ -122,6 +122,11 @@ in the diff is terminal-only in this mode. Nothing posts.
 
 `THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (GitHub Action)".
 
+`dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action. It reads its
+inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules doc and policy from
+the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
+`$THRASHLEY_WORK/state.json`.
+
 A policy file:
 
 ```yaml
