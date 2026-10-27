@@ -8,6 +8,8 @@ export interface BuildArgsInput {
 	model?: string;
 	effort?: string;
 	resume?: string;
+	/** Deny shell, network, and built-in MCP tools; only backends with `supportsNoShell` honor it. */
+	noShell?: boolean;
 }
 
 /** User-facing installation guidance returned when the selected executable is unavailable. */
@@ -32,4 +34,5 @@ export interface Backend {
 	/** Parse complete stdout after exit, retaining a nullable session when the backend emits none. */
 	parseEvents: (stdout: string) => ParsedResult;
 	install: Install;
+	supportsNoShell?: boolean;
 }

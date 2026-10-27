@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { escapeRegExp, protectedPushReason } from "@dg/common";
+import { escapeRegExp, parseFlag, protectedPushReason, wholeNumber } from "@dg/common";
 import { stateDir } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProvider } from "../provider/index";
@@ -995,10 +995,11 @@ export function heldEntry(
 
 function parseDays(flag: string | boolean | undefined): number {
 	if (flag === undefined) return DEFAULT_COOLDOWN_DAYS;
-	const n = Number(flag);
-	return Number.isInteger(n) && n >= 0
-		? n
-		: die(`--cooldown-days must be a whole number >= 0, got: ${flag}`);
+	try {
+		return parseFlag(wholeNumber(0), String(flag), "--cooldown-days");
+	} catch (err) {
+		return die((err as Error).message);
+	}
 }
 
 /** Delay before treating a repository with no reported checks as green. */

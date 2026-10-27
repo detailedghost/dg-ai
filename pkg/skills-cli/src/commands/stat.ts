@@ -1,11 +1,10 @@
+import { oneOf, parseFlag, parseOptionalFlag, wholeNumber } from "@dg/common";
 import type { Command } from "commander";
 import {
 	addItem,
 	checklistPath,
 	ETA_BUCKETS,
 	type EtaBucket,
-	isEtaBucket,
-	isStatus,
 	markDone,
 	readChecklist,
 	renderEmoji,
@@ -20,17 +19,11 @@ import {
 } from "../stat";
 
 function parseEta(value: string): EtaBucket {
-	if (!isEtaBucket(value)) {
-		throw new Error(`--eta must be one of ${ETA_BUCKETS.join(", ")}, got "${value}"`);
-	}
-	return value;
+	return parseFlag(oneOf(ETA_BUCKETS), value, "--eta");
 }
 
 function parseStatusArg(value: string): Status {
-	if (!isStatus(value)) {
-		throw new Error(`status must be one of ${STATUSES.join(", ")}, got "${value}"`);
-	}
-	return value;
+	return parseFlag(oneOf(STATUSES), value, "status");
 }
 
 function storedAddedText(model: ChecklistModel, label: string): string {
@@ -109,13 +102,7 @@ export function registerStat(program: Command): void {
 				}
 				const status = options.status ? parseStatusArg(options.status) : undefined;
 				const eta = options.eta ? parseEta(options.eta) : undefined;
-				let at: number | undefined;
-				if (options.at !== undefined) {
-					at = Number(options.at);
-					if (!Number.isInteger(at) || at < 1) {
-						throw new Error("add: --at must be a positive integer");
-					}
-				}
+				const at = parseOptionalFlag(wholeNumber(1), options.at, "add: --at");
 				const path = checklistPath();
 				const result = await updateChecklist(path, (model) => {
 					const added = addItem(model, text, { status, eta, at, under: options.under });

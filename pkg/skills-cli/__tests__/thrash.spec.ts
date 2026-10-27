@@ -388,6 +388,61 @@ describe("local mode", () => {
 });
 
 describe("remote mode via the GitHub adapter", () => {
+	test.each([
+		{ mode: "policy", policy: true },
+		{ mode: "dedupe-only", policy: false },
+	])(
+		"compile handles unavailable review history in $mode mode",
+		({ policy }) => {
+			const gh = fakeGh(
+				cliFixtures.shScript(`
+  *"pr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"api graphql"*)
+    echo 'review history unavailable' >&2
+    exit 1
+    ;;
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    ;;`),
+			);
+			const cwd = cliFixtures.tmp(createdDirs, "thrash-history-");
+			const diffFixture = join(cwd, "pr.diff");
+			const policyPath = join(cwd, "policy.yml");
+			writeFileSync(diffFixture, GH_DIFF);
+			writeFileSync(policyPath, "phases:\n  - block: { high: 0 }\n");
+			const env = {
+				GH_BIN: gh.bin,
+				FAKE_CALL_LOG: gh.log,
+				FAKE_DIFF: diffFixture,
+			};
+			const diff = run(["diff", PR_URL], { cwd, env });
+			expect(diff.exitCode, diff.stderr).toBe(EXIT.OK);
+			const plan = JSON.parse(diff.stdout);
+			findingsFile(plan, []);
+			const result = run(
+				[
+					"compile",
+					PR_URL,
+					"--diff",
+					plan.diffPath,
+					"--json",
+					...(policy ? ["--policy", policyPath] : []),
+				],
+				{ cwd, env },
+			);
+			expect(result.stderr).toContain("review history unavailable");
+			if (policy) {
+				expect(result.exitCode).toBe(EXIT.ERR);
+				expect(result.stdout).not.toContain('"verdict"');
+			} else {
+				expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+				expect(JSON.parse(result.stdout).verdict).toBe("approve");
+			}
+		},
+	);
+
 	test("published review comments round-trip through address gather and resolve", () => {
 		const gh = fakeGh(
 			cliFixtures.shScript(`

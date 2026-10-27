@@ -327,6 +327,7 @@ function normalizeGlThread(raw: RawDiscussion): ReviewThread {
 		commentId: comments[0]?.id,
 		path: position?.new_path ?? position?.old_path ?? "",
 		line: position?.new_line ?? position?.old_line ?? null,
+		side: position?.new_line != null ? "RIGHT" : position?.old_line != null ? "LEFT" : undefined,
 	};
 }
 

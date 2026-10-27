@@ -130,6 +130,12 @@ export async function main(argv: string[]): Promise<number | void> {
 		process.exit(1);
 	}
 
+	const noShell = /^(1|true|yes)$/i.test(process.env.DG_PROXY_NO_SHELL?.trim() ?? "");
+	if (noShell && !backend.supportsNoShell) {
+		console.error(`DG_PROXY_NO_SHELL is set, but the ${backendName} backend cannot deny shell tools`);
+		process.exit(1);
+	}
+
 	if (plan) {
 		await runPlan(backendName, backend, {
 			prompt,
@@ -139,7 +145,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			model,
 			effort,
 			cwd,
-		});
+		}, noShell);
 		return;
 	}
 
@@ -163,6 +169,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			effort,
 			cwd,
 			resume,
+			noShell,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -202,6 +209,7 @@ async function runPlan(
 	backendName: string,
 	backend: Backend,
 	opts: ProxyOptions,
+	noShell: boolean,
 ): Promise<void> {
 	const preflight = checkPreflight(backendName, backend);
 	if (preflight.missing) {
@@ -233,9 +241,8 @@ async function runPlan(
 	if (opts.effort) backendArgs.push("--effort", opts.effort);
 	if (opts.cwd) backendArgs.push("--cwd", opts.cwd);
 	const innerCommand = shellCommand(selfCommand(backendArgs));
-	const command = shellCommand(
-		selfCommand(["bg", "run", innerCommand]),
-	);
+	const launch = shellCommand(selfCommand(["bg", "run", innerCommand]));
+	const command = noShell ? `DG_PROXY_NO_SHELL=1 ${launch}` : launch;
 
 	console.error(`proxy: plan written -> ${planFile}`);
 	console.error(`proxy: run in background with:\n  ${command}`);

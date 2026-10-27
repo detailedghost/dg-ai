@@ -225,6 +225,21 @@ describe("cli.ts --plan / -p", () => {
 });
 
 describe("proxy generated launch command", () => {
+	test("carries the no-shell setting into the generated launch command", async () => {
+		fixture.fakeBackend("copilot");
+		const planned = await runCli(["copilot", "--prompt", "do the thing", "--plan"], {
+			DG_PROXY_NO_SHELL: "1",
+		});
+		expect(planned.exitCode, planned.stderr).toBe(0);
+		expect(JSON.parse(planned.stdout).command).toStartWith("DG_PROXY_NO_SHELL=1 ");
+	});
+
+	test("leaves the no-shell setting out of the launch command when it is not set", async () => {
+		fixture.fakeBackend("copilot");
+		const planned = await runCli(["copilot", "--prompt", "do the thing", "--plan"]);
+		expect(JSON.parse(planned.stdout).command).not.toContain("DG_PROXY_NO_SHELL");
+	});
+
 	test("runs a generated source command with quoted cwd, model and prompt-file paths", async () => {
 		fixture.fakeBackend("pi");
 		const cwd = fixture.tmp("dg-proxy-work ' quoted ");

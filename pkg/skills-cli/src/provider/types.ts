@@ -191,8 +191,17 @@ export interface ReviewThread {
 	commentId?: string;
 	/** Empty for a thread not anchored to a file (a GitLab non-diff discussion, an outdated GitHub thread). */
 	path: string;
+	/** Current anchor in the PR diff; null once a GitHub thread is outdated. */
 	line: number | null;
+	/** Anchor at comment time; not valid for matching against the current diff. */
+	originalLine?: number | null;
+	/** True once the thread's anchor no longer exists in the current diff. */
+	outdated?: boolean;
+	/** Diff side the line number is on; unset when the provider does not say. */
+	side?: ReviewThreadSide;
 }
+
+export type ReviewThreadSide = "LEFT" | "RIGHT";
 
 /** Maximum trailing CI-log characters retained in normalized failure details. */
 export const LOG_EXCERPT_MAX_CHARS = 8000;
@@ -323,6 +332,8 @@ export function isFileComment(c: ReviewCommentInput): boolean {
 
 /** One summary verdict and its inline comments, published together as a review. */
 export interface PostReviewInput {
+	/** Reviewed commit; GitHub rejects publication if the PR head has changed. */
+	commitId?: string;
 	verdict: ReviewVerdict;
 	body: string;
 	comments: ReviewCommentInput[];

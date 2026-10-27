@@ -1,4 +1,5 @@
 import { THRASH_REVIEW_HEADING_PREFIX } from "@dg/common";
+import { THRASH_REVIEW_MARKER } from "../thrash/constants";
 import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
@@ -242,6 +243,8 @@ function normalizeGhThread(node: {
 	path?: string | null;
 	line?: number | null;
 	originalLine?: number | null;
+	isOutdated?: boolean;
+	diffSide?: string | null;
 	comments?: {
 		nodes?: Array<{
 			databaseId: number;
@@ -266,13 +269,16 @@ function normalizeGhThread(node: {
 		comments,
 		commentId: comments[0]?.id,
 		path: node.path ?? "",
-		line: node.line ?? node.originalLine ?? null,
+		line: node.line ?? null,
+		originalLine: node.originalLine ?? null,
+		outdated: node.isOutdated ?? (node.line == null && node.originalLine != null),
+		side: node.diffSide === "LEFT" || node.diffSide === "RIGHT" ? node.diffSide : undefined,
 	};
 }
 
 const LIST_THREADS_QUERY =
 	"query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){" +
-	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved path line originalLine " +
+	"pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id isResolved isOutdated diffSide path line originalLine " +
 	"comments(first:50){nodes{databaseId author{login} body createdAt diffHunk} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
 
 async function listUnresolvedThreads(
@@ -507,8 +513,8 @@ const GITHUB_REVIEW_EVENTS: Record<ReviewVerdict, string> = {
 	comment: "COMMENT",
 };
 
-/** GitHub rejects APPROVE and REQUEST_CHANGES from the PR author with this phrase; both are retried as COMMENT. */
-const OWN_PR_NEEDLE = "your own pull request";
+/** Phrases GitHub uses to refuse a verdict (own PR, or Actions may not approve); the review is retried as COMMENT. */
+const REFUSED_VERDICT_NEEDLES = ["your own pull request", "not permitted to approve pull requests"];
 
 const EMPTY_REVIEW_BODY = "Review submitted.";
 
@@ -542,7 +548,8 @@ function reviewsPath(ref: PrRef): string {
 function isOwnStalePendingReview(review: Record<string, unknown>, login: string): boolean {
 	const user = review.user as Record<string, unknown> | undefined;
 	const body = (review.body as string) ?? "";
-	return review.state === "PENDING" && user?.login === login && body.startsWith(THRASH_REVIEW_HEADING_PREFIX);
+	const isThrash = body.startsWith(THRASH_REVIEW_HEADING_PREFIX) || body.includes(THRASH_REVIEW_MARKER);
+	return review.state === "PENDING" && user?.login === login && isThrash;
 }
 
 async function ownPendingReviews(tag: ShellTag, ref: PrRef): Promise<Record<string, unknown>[]> {
@@ -611,7 +618,7 @@ async function withOwnPrFallback(
 	try {
 		return { raw: await submit(verdict), verdict, degraded: false };
 	} catch (err) {
-		if (verdict === "comment" || !isCliErrorContaining(err, OWN_PR_NEEDLE)) throw err;
+		if (verdict === "comment" || !REFUSED_VERDICT_NEEDLES.some((needle) => isCliErrorContaining(err, needle))) throw err;
 		return { raw: await submit("comment"), verdict: "comment", degraded: true };
 	}
 }
@@ -663,11 +670,15 @@ async function submitWithFileThreads(
 async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Promise<PostedReview> {
 	const prResult = await tag`pr view ${String(ref.number)} ${repoFlags(ref.repo)} --json headRefOid`;
 	const { headRefOid } = JSON.parse(prResult.stdout.toString());
+	if (input.commitId !== undefined && input.commitId !== headRefOid) {
+		throw new Error("PR head changed since preparation; run prepare and review again");
+	}
+	const commitId = input.commitId ?? headRefOid;
 	const posted = await clearingStalePending(tag, ref, () =>
 		input.comments.some(isFileComment)
-			? submitWithFileThreads(tag, ref, input, headRefOid)
-			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)).catch(
-					(err: unknown) => submitKeptPending(tag, ref, input, headRefOid, err),
+			? submitWithFileThreads(tag, ref, input, commitId)
+			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, commitId)).catch(
+					(err: unknown) => submitKeptPending(tag, ref, input, commitId, err),
 				),
 	);
 	return {

@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
 import { scratchPath } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
@@ -11,8 +12,10 @@ import {
 	parseRepoRef,
 	type RepoRef,
 	type ReviewThread,
+	type ReviewVerdict,
 } from "../provider/types";
 import { git, resolveBaseSha } from "../utils/git";
+import { parsePolicy } from "./policy";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
 import {
@@ -244,12 +247,13 @@ async function cmdDiff(args: string[]): Promise<number> {
 	return EXIT.OK;
 }
 
-async function existingThreads(target: Target): Promise<ReviewThread[]> {
+async function existingThreads(target: Target, required: boolean): Promise<ReviewThread[]> {
 	if (target.mode === "local") return [];
 	try {
 		const provider = await getProviderForUrl(target.url);
-		return await provider.listUnresolvedThreads({}, prRef(target));
+		return await provider.listUnresolvedThreads({ includeResolved: true }, prRef(target));
 	} catch (err) {
+		if (required) throw err;
 		const message = err instanceof Error ? err.message : String(err);
 		process.stderr.write(`thrash compile: could not list existing threads, skipping dedupe: ${message}\n`);
 		return [];
@@ -267,8 +271,26 @@ function nextAddressFile(root: string): string {
 	throw new Error(`no free code-review file name under ${dir}`);
 }
 
+const MAX_EVENT = oneOf(["auto", "approve", "request-changes", "comment"] as const);
+
+function parseMaxEvent(raw: string | undefined): ReviewVerdict | undefined {
+	const event = parseOptionalFlag(MAX_EVENT, raw, "--max-event");
+	if (event === undefined || event === "auto") return undefined;
+	return event === "request-changes" ? "request_changes" : event;
+}
+
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
-	const arg = positional(args, "compile", ["--diff", "--spice", "--min-tier"]);
+	const arg = positional(args, "compile", [
+		"--diff",
+		"--spice",
+		"--min-tier",
+		"--heading",
+		"--round",
+		"--policy",
+		"--max-comments",
+		"--max-event",
+		"--reviewer",
+	]);
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
@@ -285,12 +307,21 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		}),
 	);
 	const minTierRaw = optionalOption(args, "--min-tier");
+	const policyPath = optionalOption(args, "--policy");
+	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
-		existing: await existingThreads(target),
+		existing: await existingThreads(target, policyPath !== undefined),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
+		heading: optionalOption(args, "--heading"),
+		round,
+		policy: policyPath === undefined ? undefined : parsePolicy(readFileSync(policyPath, "utf8")),
+		maxComments: parseOptionalFlag(wholeNumber(0), optionalOption(args, "--max-comments"), "--max-comments"),
+		maxEvent: parseMaxEvent(optionalOption(args, "--max-event")),
+		reviewer: optionalOption(args, "--reviewer"),
+		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
 	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
@@ -318,7 +349,7 @@ export function isPostDryRun(args: readonly string[], env: NodeJS.ProcessEnv = p
 }
 
 async function cmdPost(args: string[]): Promise<number> {
-	const arg = positional(args, "post", ["--review"]);
+	const arg = positional(args, "post", ["--review", "--head-sha"]);
 	if (!isUrl(arg)) {
 		throw new Error("post needs a PR or MR URL; a local review only writes .agents/code-review/ for /dg:address -l");
 	}
@@ -327,6 +358,7 @@ async function cmdPost(args: string[]): Promise<number> {
 		throw new Error(`review file was compiled for ${stored.target}, not ${arg}`);
 	}
 	const input = toPostReviewInput(stored.review);
+	input.commitId = optionalOption(args, "--head-sha");
 	if (isPostDryRun(args)) {
 		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
 		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
@@ -476,7 +508,7 @@ const command = defineCommand({
 		},
 		compile: {
 			description:
-				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment]",
+				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass]",
 			args: ["target"],
 			run: (args, opts) => cmdCompile(args, opts),
 		},
@@ -490,6 +522,15 @@ const command = defineCommand({
 				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed",
 			args: ["target"],
 			run: cmdStack,
+		},
+		action: {
+			description:
+				"Run one GitHub Action phase (prepare, review or publish) from THRASHLEY_* inputs; used by the Thrashley action",
+			args: ["phase"],
+			run: async (args) => {
+				const { runAction } = await import("./action/index");
+				return runAction(args.find((a) => !a.startsWith("--")));
+			},
 		},
 		tally: {
 			description:

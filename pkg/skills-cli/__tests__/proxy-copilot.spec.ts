@@ -27,6 +27,15 @@ describe("copilot.buildArgs", () => {
 		expect(args[args.indexOf("--effort") + 1]).toBe("high");
 	});
 
+	test("denies shell, url, and built-in MCP tools when noShell is set", () => {
+		const args = copilot.buildArgs(makeInput({ noShell: true }));
+		expect(args.slice(-5)).toEqual(["--deny-tool", "shell", "--deny-tool", "url", "--disable-builtin-mcps"]);
+	});
+
+	test("declares that it honors noShell", () => {
+		expect(copilot.supportsNoShell).toBe(true);
+	});
+
 	test("combines resume, model, and effort flags in one call", () => {
 		const args = copilot.buildArgs(makeInput({ resume: "sess-1", model: "gpt-5", effort: "low" }));
 		expect(args).toEqual([

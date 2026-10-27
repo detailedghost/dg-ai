@@ -45,6 +45,10 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 Spice sets how many findings per tier the PR can have. One more than the limit requests
 changes. Otherwise approve. A blank cell has no limit.
 
+Only open findings count. A finding is open until someone fixes it, answers it in its
+thread, or resolves the thread. When no finding is open, the verdict is approve, in every
+round. Earlier blocking findings that are now fixed or answered do not hold it back.
+
 | Spice | Critical | High | Medium | Low |
 |---|---|---|---|---|
 | 1 | 0 | 4 | | |
@@ -105,7 +109,7 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    per the "Proxy backend" section of that file, and wait for every job to finish.
 3. **Compile.** `~/.dg/bin/dg-skills thrash compile "$TARGET" --diff "$diffPath" --spice N [--min-tier t]
    [--comment]`. It merges every chunk's findings, dedupes them, validates anchors,
-   dedupes against open thrash threads, applies the nit ladder, decides the verdict, and
+   dedupes against earlier thrash threads, applies the nit ladder, decides the verdict, and
    prints the preview plus `REVIEW_JSON=` and `VERDICT=`. Show the preview. On a rejected
    or missing file, follow the retry in `references/agent-prompt.md`.
 4. **Gate.** Local target: report `ADDRESS_FILE=` and offer `/dg:address -l`, then stop.
@@ -162,4 +166,4 @@ headless runs behave the same: no size prompt. `references/details.md` has the r
 | When | Read |
 |---|---|
 | Launching or retrying an agent, or a `--proxy` job | `references/agent-prompt.md` |
-| Provider mapping, own-PR fallback, dedupe rule, local mode details, known gaps | `references/details.md` |
+| Provider mapping, own-PR fallback, dedupe rule, local mode details, headless CI flags and policy files, known gaps | `references/details.md` |

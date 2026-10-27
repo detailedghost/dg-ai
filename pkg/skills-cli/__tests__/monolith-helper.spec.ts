@@ -623,7 +623,7 @@ describe("monolith split", () => {
 		write(rows);
 		const run = await helper(["split", live, "--min-rows", value]);
 		expect(run.exitCode).toBe(1);
-		expect(run.stderr).toContain("--min-rows must be a positive integer");
+		expect(run.stderr).toContain("--min-rows must be a whole number of 1 or more");
 	});
 
 	test("an unknown flag exits 1", async () => {

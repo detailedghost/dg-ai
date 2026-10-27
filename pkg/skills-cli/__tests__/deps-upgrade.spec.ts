@@ -3231,7 +3231,7 @@ describe("deps-upgrade command errors", () => {
 			]);
 			expect(result.exitCode).toBe(1);
 			expect(result.stderr).toContain(
-				"--cooldown-days must be a whole number >= 0",
+				"--cooldown-days must be a whole number of 0 or more",
 			);
 		},
 	);

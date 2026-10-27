@@ -1179,6 +1179,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 									path: "src/parser.ts",
 									line: 42,
 									originalLine: 40,
+									diffSide: "RIGHT",
 									comments: {
 										nodes: [
 											{
@@ -1197,6 +1198,8 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 									path: "src/old.ts",
 									line: null,
 									originalLine: 17,
+									diffSide: "LEFT",
+									isOutdated: true,
 									comments: { nodes: [] },
 								},
 								{
@@ -1226,17 +1229,33 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 		const anchored = threads.find((t) => t.threadId === "RT_anchored");
 		expect(anchored?.path).toBe("src/parser.ts");
 		expect(anchored?.line).toBe(42);
+		expect(anchored?.outdated).toBe(false);
 		expect(anchored?.comments[0].diffHunk).toContain("const n = i + 1;");
 	});
 
-	test("falls back to originalLine for an outdated thread whose current line is null", async () => {
+	test("keeps an outdated thread's current line null and records its original line separately", async () => {
 		process.env.FAKE_PR_JSON = writeJson("anchored.json", anchoredThreadsFixture());
 		fakeGhThreads();
 
 		const provider = createGithubProvider();
 		const threads = await provider.listUnresolvedThreads();
 
-		expect(threads.find((t) => t.threadId === "RT_outdated")?.line).toBe(17);
+		const outdated = threads.find((t) => t.threadId === "RT_outdated");
+		expect(outdated?.line).toBeNull();
+		expect(outdated?.originalLine).toBe(17);
+		expect(outdated?.outdated).toBe(true);
+	});
+
+	test("carries the thread's diff side through so a LEFT and a RIGHT thread on one line number stay distinct", async () => {
+		process.env.FAKE_PR_JSON = writeJson("anchored.json", anchoredThreadsFixture());
+		fakeGhThreads();
+
+		const provider = createGithubProvider();
+		const threads = await provider.listUnresolvedThreads();
+
+		expect(threads.find((t) => t.threadId === "RT_anchored")?.side).toBe("RIGHT");
+		expect(threads.find((t) => t.threadId === "RT_outdated")?.side).toBe("LEFT");
+		expect(threads.find((t) => t.threadId === "RT_unanchored")?.side).toBeUndefined();
 	});
 
 	test("reports an unanchored thread as an empty path and a null line rather than undefined", async () => {
@@ -1445,6 +1464,23 @@ describe("postReview", () => {
     ;;`);
 	}
 
+	test("refuses a review of an earlier commit before any review mutation", async () => {
+		const log = callLogPath();
+		fakeGh(reviewScript());
+		const input = {
+			verdict: "approve" as const,
+			body: "summary",
+			comments,
+			commitId: "earlier",
+		};
+		await expect(createGithubProvider().postReview(ref, input)).rejects.toThrow(
+			"head changed",
+		);
+		expect(readCalls(log)).toEqual([
+			"pr view 12 -R acme/widgets --json headRefOid",
+		]);
+	});
+
 	test("posts one review pinned to the head commit with the mapped event and sides", async () => {
 		const log = callLogPath();
 		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");
@@ -1470,6 +1506,29 @@ describe("postReview", () => {
 			],
 		});
 		expect(readCalls(log).at(-1)).toBe("api repos/acme/widgets/pulls/12/reviews --method POST --input -");
+	});
+
+	test("retries as COMMENT when the repo does not let GitHub Actions approve", async () => {
+		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
+		fakeGh(
+			ghScript(`
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    exit 0
+    ;;
+  *"pulls/12/reviews"*)
+    cat > "$FAKE_STDIN_CAPTURE"
+    if grep -q '"event":"APPROVE"' "$FAKE_STDIN_CAPTURE"; then echo 'HTTP 422: GitHub Actions is not permitted to approve pull requests.' 1>&2; exit 1; fi
+    echo '{"html_url":"https://github.com/acme/widgets/pull/12#pullrequestreview-2"}'
+    exit 0
+    ;;`),
+		);
+
+		const posted = await createGithubProvider().postReview(ref, { verdict: "approve", body: "summary", comments });
+
+		expect(posted).toMatchObject({ verdict: "comment", degraded: true });
+		expect(JSON.parse(readFileSync(stdinCapture, "utf8")).event).toBe("COMMENT");
 	});
 
 	test("retries as COMMENT and reports degraded when GitHub refuses a verdict on the author's own PR", async () => {

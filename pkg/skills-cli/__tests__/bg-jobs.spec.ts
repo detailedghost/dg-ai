@@ -274,6 +274,38 @@ describe("dg-skills bg update", () => {
 		expect(chained.command).toContain("follow-up context");
 	});
 
+	test("keeps the no-shell restriction when a fresh shell resumes the job", async () => {
+		const cwd = world.dir();
+		const { command, env } = proxyJob("sess-noshell");
+		const job = await world.launch(
+			command,
+			cwd,
+			[],
+			{ ...env, DG_PROXY_NO_SHELL: "1" },
+		);
+		expect(job.noShell).toBe(true);
+		await world.settled(job.id, cwd);
+		writeFileSync(
+			world.files(job.id).logFile,
+			'{"sessionId":"sess-noshell"}\n',
+		);
+		const out = await world.json<{ newJobId: string }>(
+			["update", job.id, "follow-up"],
+			cwd,
+			env,
+		);
+		expect((await world.json(["status", out.newJobId], cwd)).noShell).toBe(
+			true,
+		);
+	});
+
+	test("leaves the restriction off for a job started without it", async () => {
+		const cwd = world.dir();
+		const { command, env } = proxyJob("sess-shell");
+		const job = await world.launch(command, cwd, [], env);
+		expect(job.noShell).toBeFalsy();
+	});
+
 	test("drain applies queued context once and reports nothing pending afterward", async () => {
 		const cwd = world.dir();
 		const { command, env } = proxyJob("sess-drain");

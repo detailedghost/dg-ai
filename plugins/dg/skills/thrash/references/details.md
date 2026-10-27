@@ -11,8 +11,9 @@ compiled review and handles the provider-specific publishing requests.
 | approve | `event: APPROVE` | `bulk_publish` with `reviewer_state: reviewed`, then `POST .../approve` |
 | comment | `event: COMMENT` | `bulk_publish` with no `reviewer_state` |
 
-GitHub reviews pin to the PR's head commit at post time. GitLab positions carry the MR's
-`diff_refs` SHAs. Both providers reject a comment on a line outside the diff, so `compile`
+GitHub reviews pin to the PR's head commit at post time. `post --head-sha <sha>` instead
+pins the review to that reviewed commit and rejects a changed PR head before any review
+mutation. GitLab positions carry the MR's `diff_refs` SHAs. Both providers reject a comment on a line outside the diff, so `compile`
 resolves every anchor against the parsed hunks first. A finding whose line misses the diff
 posts as a file-level comment on its file: on GitHub a `subjectType: FILE` thread added to a
 pending review, which is then submitted; on GitLab a draft note with `position_type: file`.
@@ -23,16 +24,32 @@ stale pending review left by a killed run and tries once more.
 
 ## Own-PR fallback
 
-GitHub refuses approve and request-changes from the PR author. The adapter retries as
-comment and returns `degraded: true`. GitLab may refuse approve when author approval is
+GitHub refuses approve and request-changes from the PR author. It also refuses approve
+from a `GITHUB_TOKEN` when the repo does not let GitHub Actions approve pull requests. The
+adapter retries both as comment and returns `degraded: true`. GitLab may refuse approve when author approval is
 off; the drafts and summary still publish, and the result is `degraded: true`. The body
 always states the verdict, so the reader still sees it.
 
 ## Dedupe rule
 
-Before posting, `compile` lists open threads on the PR. A new comment is dropped when an
-unresolved thread sits on the same path and line and its first comment starts with a
-thrash tier emoji. Dropped duplicates still count in the tally and the verdict.
+Before posting, `compile` lists every thread on the PR, resolved ones included. A thread is
+thrash's when its first comment starts with a thrash tier emoji, and, with `--reviewer
+<login>`, when that login opened it. A new comment is dropped as a duplicate when an
+unresolved thrash thread sits on the same path and line. A Medium, Low or Nit comment is also
+dropped when only resolved thrash threads sit there; a Critical or High comment posts again.
+Dropped duplicates still count in the tally and the verdict. Under `--policy`, a current
+finding matches at most one counted, unresolved, unanswered earlier finding at the same
+anchor; the pair counts once at the higher severity. A current finding on an answered, unresolved thread still
+counts even when its inline comment is suppressed. Settled Medium, Low and Nit findings
+stay out of policy tallies.
+
+A thread matches a finding only when path, line and diff side all agree, so a comment on
+removed code (LEFT) never pairs with or settles a finding on added code (RIGHT) at the same
+line number. A thread whose provider reports no side matches either side.
+
+Policy compilation requires a successful thread lookup. A failed lookup stops compilation
+instead of treating unavailable history as empty. Without a policy, dedupe remains best
+effort and compilation can continue after a lookup failure.
 
 ## Nit ladder and `--min-tier`
 
@@ -101,6 +118,55 @@ path. Untracked files are skipped and listed. The same split and merge apply. `c
 with tiers mapped to its severities: critical and high → high, medium → medium, low and
 nit → low. A file-level finding gets a `## path (whole file)` section. A finding with no file
 in the diff is terminal-only in this mode. Nothing posts.
+
+## Headless options for a CI runner
+
+`compile` takes these extra flags, for a runner such as a GitHub Action:
+
+| Flag | Effect |
+|---|---|
+| `--heading <text>` | Starts the summary with `## <text>` in place of `## Thrash review` and the spice. A hidden `<!-- dg:thrash-review -->` tag stays at the end, so the stale-pending-review cleanup still knows the review. |
+| `--round N` | Adds `**Round:** N` to the summary, and picks the policy phase. The caller counts its own earlier reviews. |
+| `--policy <file>` | YAML verdict rules in place of the spice table (example below). The verdict counts the new findings plus every open earlier thrash finding (not resolved, no reply from someone else), and a re-found open finding counts once. |
+| `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count. Overrides the policy's `maxComments`. |
+| `--max-event <event>` | The highest event the review may submit: `auto` (default), `approve`, `request-changes` or `comment`. A verdict above it posts as a comment, and the reason says so. |
+| `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. |
+| `--sass` | Adds one line from the fixed list in `thrash/sass.ts` to the summary, picked from the verdict and the highest tier, seeded by the PR number and round. Never in an inline comment. It changes no verdict or tier. |
+
+`THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (GitHub Action)".
+
+`dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action. It reads its
+inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules doc and policy from
+the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
+`$THRASHLEY_WORK/state.json`. `prepare` reads the PR head SHA before and after fetching the
+diff, rejects a head change, and saves the reviewed `headSha` in that state. `publish`
+passes it to `post --head-sha`, so a push during review requires fresh preparation and
+review before publication. The review remains pinned to the saved SHA if a push races
+with submission.
+
+A policy file:
+
+```yaml
+maxComments: 10
+phases:
+  - name: strict
+    through: 3
+    block: { critical: 0, high: 0, medium: 0, low: 4 }
+  - name: relaxed
+    requiresClear: [critical, high]
+    nits: false
+    block: { critical: 0, high: 1 }
+```
+
+Each `block` entry is the count a tier may reach; one more requests changes. Only open findings count, so a round
+with no open finding approves in every phase, strict or relaxed. A missing tier
+has no limit. A round uses the first phase whose `through` covers it, or the last phase. A
+phase whose `requiresClear` tiers still have an open earlier finding is not entered, so the
+round stays in the phase before it. `nits: false` posts no nits.
+
+`DG_PROXY_NO_SHELL=1` makes `dg-skills proxy copilot` deny shell, URL and built-in MCP tools,
+so a reviewed diff cannot steer the agent into running commands. Other backends refuse to run
+with it set.
 
 ## Known gaps
 
