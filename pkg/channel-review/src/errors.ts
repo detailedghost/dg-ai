@@ -38,7 +38,7 @@ export const ERROR_CATALOG = {
 	"CR-209":
 		"The Bedrock call for {agent} failed before it finished — throttled, access denied, or the model is not available in {owner}'s account — so the task is not complete. Check the Bedrock setup, then try again.",
 	"CR-301":
-		"The review finished, but I found no review on the pull request. Check the PR, or post the request again.",
+		"The review ran, but I found no review on the pull request. GitHub can refuse a post for a short time, for example with a rate limit. Wait a few minutes, then post the request again.",
 	"CR-302":
 		"I couldn't open that pull request. Check that the link is right and that {owner} can see it.",
 	"CR-303":
