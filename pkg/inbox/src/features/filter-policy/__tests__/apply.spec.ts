@@ -569,6 +569,41 @@ describe("apply identity and ordering", () => {
 		expect(declared.observed?.folders[0]).toMatchObject({ id: "fin-id", path: "finance" });
 	});
 
+	test("replaces the old Proton ID of a reverted folder with the recreated folder ID", async () => {
+		const declared = emptyDeclaredFilters();
+		declared.folders = [{ path: "fin", type: "folder", protonId: "old" }];
+		declared.observed = {
+			filters: [],
+			folders: [{ id: "old", path: "fin", name: "fin", type: "folder" }],
+		};
+		const updated = await applySyncPlan({
+			plan: {
+				actions: [{ op: "create-folder", path: "fin", type: "folder", replaces: "old" }],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: client(),
+			declared,
+			foldersByPath: new Map(),
+		});
+		expect(updated.folders).toEqual([{ path: "fin", type: "folder", protonId: "id:fin" }]);
+		expect(updated.observed?.folders.map((item) => item.id)).toEqual(["id:fin"]);
+		const next = buildSyncPlan({
+			desiredFilters: [],
+			desiredFolders: updated.folders,
+			liveFilters: [],
+			liveFolders: [{ id: "id:fin", name: "fin", path: "fin", type: "folder" }],
+			observedFilters: updated.observed?.filters,
+			observedFolders: updated.observed?.folders,
+			naming: {
+				folderSlugPattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+				folderExceptions: [],
+			},
+		});
+		expect(next.actions).toEqual([]);
+		expect(next.notices).toEqual([]);
+	});
+
 	test("records a filter delete that Proton committed before its response failed", async () => {
 		const writer = client();
 		let live = [{ id: "f1", name: "Old", enabled: true, sieve: body }];

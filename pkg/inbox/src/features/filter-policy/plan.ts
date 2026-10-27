@@ -60,6 +60,7 @@ export type PlanAction =
 			op: "create-folder";
 			path: string;
 			type: "folder" | "label" | "system";
+			replaces?: string;
 	  }
 	| { op: "rename-folder"; id: string; from: string; to: string }
 	| { op: "delete-folder"; id: string; path: string }
@@ -269,6 +270,7 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 				type: desired.type,
 			};
 			if (desired.protonId && observedFolders.has(desired.protonId)) {
+				const recreate: PlanAction = { ...create, replaces: desired.protonId };
 				rememberDrift(driftSelectors, desired.protonId, desired.path);
 				resolveRemoteDeletion({
 					target: "folder",
@@ -277,7 +279,7 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 					pull,
 					revert,
 					drop: { op: "drop-folder", id: desired.protonId, path: desired.path },
-					recreate: create,
+					recreate,
 					actions,
 					notices,
 				});

@@ -96,7 +96,7 @@ Sync refuses to apply when any safety check fails:
 - a planned write would file GitHub, GitLab, or another listed verification sender into Spam or Trash
 - a plan that reorders filters, or deletes, disables, or edits a filter with `keep` or `stop`, leaves
   any filter that stays live in Proton able to do the same
-- a Sieve script looks truncated or redacted, or uses a `fileinto` form the parser cannot read
+- a Sieve script looks truncated or redacted, uses a `fileinto` form the parser cannot read, or runs `include`, `global`, or `return` (the checker cannot see an included script, so it fails closed)
 
 The check looks at the mail a rule can match, not at the addresses written in it. A rule that sends mail
 to Spam or Trash passes only when its conditions exclude the protected plus-alias in every recipient

@@ -332,9 +332,17 @@ export function recordAppliedProgress(
 			const found = live.folders.find((folder) => folder.id === id || folder.path === action.path);
 			const path = found?.path || action.path;
 			const desired = file.folders[
-				findDeclaredFolderIndex(file, { path: action.path, protonId: id })
+				findDeclaredFolderIndex(file, {
+					path: action.path,
+					protonId: action.replaces ?? id,
+				})
 			];
 			if (desired) desired.protonId = found?.id ?? id;
+			if (action.replaces) {
+				file.observed.folders = file.observed.folders.filter(
+					(folder) => folder.id !== action.replaces,
+				);
+			}
 			upsertObservedFolder(file, {
 				id: found?.id ?? id,
 				path,

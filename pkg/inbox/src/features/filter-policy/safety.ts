@@ -28,6 +28,7 @@ export type SafetyIssue = {
 
 export const requiredVerificationSenders = ["github.com", "gitlab.com"];
 export const requiredBlockedDestinations = ["spam", "trash"];
+const unseenScriptCommands = ["include", "global", "return"];
 
 export function safetyIssues(input: {
 	actions: PlanAction[];
@@ -141,6 +142,7 @@ function blockedRoutes(sieve: string, blocked: string[]): Route[] | undefined {
 	let readable = true;
 	const walk = (list: SieveCommand[], conditions: SieveTest[]): void => {
 		for (const command of list) {
+			if (unseenScriptCommands.includes(command.name)) readable = false;
 			if (command.name === "discard") routes.push(conditions);
 			if (command.name === "fileinto") {
 				const path = fileintoDestination(command);
@@ -327,7 +329,10 @@ export function guardsChain(sieve: string): boolean {
 	const commands = parseCommands(sieve);
 	if (!commands) return true;
 	return flattenCommands(commands).some(
-		(command) => command.name === "keep" || command.name === "stop",
+		(command) =>
+			command.name === "keep" ||
+			command.name === "stop" ||
+			unseenScriptCommands.includes(command.name),
 	);
 }
 

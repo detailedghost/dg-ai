@@ -552,6 +552,16 @@ describe("filter policy safety", () => {
 			expect(codes("keep keep {\n}")).toEqual(["unreadable-sieve"]);
 		});
 
+		test("refuses a script that runs an include", () => {
+			expect(
+				codes('require ["include"];\ninclude :personal "other";\n'),
+			).toEqual(["unreadable-sieve"]);
+			expect(codes('require ["include"];\nif true { include "other"; }')).toEqual([
+				"unreadable-sieve",
+			]);
+			expect(codes('require ["include"];\nkeep;\n')).toEqual([]);
+		});
+
 		test("excludes a rule only when a negated test covers every header of the protected or sender class", () => {
 			const toAll =
 				'["To", "Cc", "Bcc", "Delivered-To", "X-Original-To", "Resent-To"]';
@@ -750,6 +760,18 @@ describe("filter policy safety", () => {
 				codesOf({
 					actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
 					liveFilters: [live("gone", "keep;"), live("risky", riskySieve)],
+				}),
+			).toEqual(both);
+		});
+
+		test("checks an unchanged Spam rule when a filter that runs an include is deleted", () => {
+			expect(
+				codesOf({
+					actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
+					liveFilters: [
+						live("gone", 'require ["include"];\ninclude :personal "other";\n'),
+						live("risky", riskySieve),
+					],
 				}),
 			).toEqual(both);
 		});

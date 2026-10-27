@@ -897,7 +897,7 @@ describe("filter policy plan", () => {
 			{ op: "drop-folder", id: "d1", path: "fin" },
 		]);
 		expect(buildSyncPlan(input({ ...base, revert: ["d1"] })).actions).toEqual([
-			{ op: "create-folder", path: "fin", type: "folder" },
+			{ op: "create-folder", path: "fin", type: "folder", replaces: "d1" },
 		]);
 	});
 
