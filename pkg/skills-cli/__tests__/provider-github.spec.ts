@@ -1520,7 +1520,7 @@ describe("postReview", () => {
 		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
 		fakeGh(
 			gatewayScript(
-				'[[{"id":55,"state":"PENDING","user":{"login":"review-bot"},"body":"## Thrash review spice 5"},{"id":99,"state":"PENDING","user":{"login":"someone-else"},"body":"## Thrash review spice 5"}]]',
+				'[[{"id":55,"state":"PENDING","commit_id":"abc123","user":{"login":"review-bot"},"body":"## Thrash review spice 5"},{"id":99,"state":"PENDING","commit_id":"abc123","user":{"login":"someone-else"},"body":"## Thrash review spice 5"}]]',
 			),
 		);
 
@@ -1545,6 +1545,21 @@ describe("postReview", () => {
 			1,
 		);
 		expect(calls.some((c) => c.includes("--method DELETE"))).toBe(false);
+	});
+
+	test("rethrows a 502 instead of publishing an unrelated stale draft", async () => {
+		const log = callLogPath();
+		process.env.FAKE_STDIN_CAPTURE = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		fakeGh(
+			gatewayScript(
+				'[[{"id":55,"state":"PENDING","commit_id":"old999","user":{"login":"review-bot"},"body":"## Thrash review spice 5"},{"id":56,"state":"PENDING","commit_id":"abc123","user":{"login":"review-bot"},"body":"## Thrash review spice 2 from an older run"}]]',
+			),
+		);
+
+		await expect(
+			createGithubProvider().postReview(ref, { verdict: "request_changes", body: "## Thrash review spice 5", comments }),
+		).rejects.toThrow(/502/);
+		expect(readCalls(log).some((c) => c.includes("/events"))).toBe(false);
 	});
 
 	test("rethrows a 502 when GitHub kept no pending review", async () => {

@@ -577,17 +577,21 @@ function submitPending(
 /** GitHub can answer a large review POST with a gateway error after it saved the review as pending. */
 const GATEWAY_NEEDLES = ["http 502", "http 503", "http 504"];
 
+/** Submits only a draft with the failed request's commit and exact body. */
 async function submitKeptPending(
 	tag: ShellTag,
 	ref: PrRef,
 	input: PostReviewInput,
+	commitId: string,
 	err: unknown,
 ): Promise<{ raw: Record<string, unknown>; verdict: ReviewVerdict; degraded: boolean }> {
 	if (!GATEWAY_NEEDLES.some((needle) => isCliErrorContaining(err, needle))) throw err;
-	const [pending] = await ownPendingReviews(tag, ref);
-	if (!pending) throw err;
 	const body = input.body.trim() || EMPTY_REVIEW_BODY;
-	return submitPending(tag, ref, String(pending.id), input.verdict, body);
+	const kept = (await ownPendingReviews(tag, ref))
+		.filter((r) => r.commit_id === commitId && r.body === body)
+		.sort((a, b) => Number(b.id) - Number(a.id));
+	if (kept.length === 0) throw err;
+	return submitPending(tag, ref, String(kept[0].id), input.verdict, body);
 }
 
 async function clearingStalePending<T>(tag: ShellTag, ref: PrRef, post: () => Promise<T>): Promise<T> {
@@ -663,7 +667,7 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 		input.comments.some(isFileComment)
 			? submitWithFileThreads(tag, ref, input, headRefOid)
 			: withOwnPrFallback(input.verdict, (verdict) => submitReview(tag, ref, verdict, input, headRefOid)).catch(
-					(err: unknown) => submitKeptPending(tag, ref, input, err),
+					(err: unknown) => submitKeptPending(tag, ref, input, headRefOid, err),
 				),
 	);
 	return {
