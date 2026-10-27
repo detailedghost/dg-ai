@@ -80,13 +80,18 @@ granular answers) — the same command `/dg:prd` documents for pre-granting perm
 ## 5. Drive the slice-wave
 
 Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4.1–4.3** exactly
-as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above. Its Workflow call MUST reference
-the `.js` script by absolute path in the installed `sdlc` skill — the sibling of this skill's base
-directory (`<sdlc-skill-dir>` is the folder holding `sdlc/SKILL.md`):
+as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above. The script lives in the installed
+`sdlc` skill, the sibling of this skill's base directory (`<sdlc-skill-dir>` is the folder holding
+`sdlc/SKILL.md`). Workflow cannot read the plugin cache, so copy the script into the session
+scratchpad first and pass the copy, as engineering.md 4.2 says:
 
 ```
-scriptPath: "<sdlc-skill-dir>/references/templates/slice-wave.workflow.js",
+scriptPath: "<scratchpad>/slice-wave.workflow.js",
 ```
+
+**One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice (or for
+each layer), build each PR in its own worktree and branch, in plan order. Stop at each operator gate
+the plan names and wait for the user before the next PR. Do not merge the slices into one worktree.
 
 **Proxied slices:** for any slice with `agents.proxy` set, its `agents.proxy_skills` (e.g. `["db", "polish"]`) must be inlined into that slice's `/dg:proxy` prompt as explicit instructions — `/dg:proxy`
 only injects the persona file and cannot invoke `/dg:db` or `/dg:polish` as slash-commands, so the
