@@ -113,7 +113,12 @@ saved it. When those tries are used up, the command stops.
 
 If an apply stops halfway, the command reads Proton once more and writes the declared file with the steps
 that landed. The next dry run does not create those filters or folders again, and it does not mark them
-as drift. Steps that never ran stay in the plan.
+as drift. Steps that never ran stay in the plan. A folder create, rename, or delete, a filter delete, and a
+reorder count as landed when Proton shows the result, even if its reply was lost.
+
+Filter updates and deletes run from the bottom of the live chain upward. A later rule is deleted or edited
+before the guard ahead of it, so a failed call never leaves a guard weakened while the rule it covers is
+still live.
 
 A folder rename sends the parent id when that parent is already known. A rename to a top-level path sends
 an explicit move to the root. Creates and renames run in parent order, so a new child waits for its

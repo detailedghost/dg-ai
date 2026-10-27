@@ -269,6 +269,21 @@ describe("filter policy safety", () => {
 			).toEqual([]);
 		});
 
+		test("projects a pulled order from the action ids, not the response order", () => {
+			expect(
+				orderCodes(
+					[{ op: "pull-filter-order", ids: ["w", "o"] }],
+					[live("o", "Owner"), live("w", "Work")],
+				),
+			).toEqual(["order"]);
+			expect(
+				orderCodes(
+					[{ op: "pull-filter-order", ids: ["o", "w"] }],
+					[live("w", "Work"), live("o", "Owner")],
+				),
+			).toEqual([]);
+		});
+
 		test("checks the reorder action names over the declared names", () => {
 			expect(
 				orderCodes(

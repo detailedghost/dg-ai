@@ -67,6 +67,27 @@ describe("declared filter store", () => {
 		]);
 	});
 
+	test("advances the sequence of pulled-order filters and keeps their content baseline", () => {
+		const file = emptyDeclaredFilters();
+		const entry = (id: string, text: string, sequence: number) => ({
+			id,
+			name: id,
+			enabled: true,
+			sieve: text,
+			sequence,
+		});
+		const baseline = { filters: [entry("a", "old", 1), entry("b", "old", 2)], folders: [] };
+		file.filters = [];
+		observeLive(file, [entry("b", "old", 1), entry("a", "remote", 2)], []);
+		keepUntouchedBaseline(file, baseline, new Set(), new Set(["a", "b"]));
+		expect(
+			file.observed?.filters.map((filter) => [filter.id, filter.sieve, filter.sequence]),
+		).toEqual([
+			["b", "old", 1],
+			["a", "old", 2],
+		]);
+	});
+
 	test("keeps duplicate-name identities when observing live", () => {
 		const file = declaredWithDuplicates();
 		const live = [

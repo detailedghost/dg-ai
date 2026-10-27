@@ -124,7 +124,7 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 		const after = await readLive(client);
 		const recorded = structuredClone(updated.observed);
 		observeLive(updated, after.filters, after.folders);
-		keepUntouchedBaseline(updated, recorded, touchedIds(plan));
+		keepUntouchedBaseline(updated, recorded, touchedIds(plan), pulledOrderIds(plan));
 		await writeDeclaredFilters(path, updated);
 		printJson(publicSummary(plan, issues, hash, path, planPath, false));
 	} finally {
@@ -135,6 +135,14 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 function touchedIds(plan: SyncPlan): Set<string> {
 	return new Set(
 		plan.actions.flatMap((action) => ("id" in action ? [action.id] : [])),
+	);
+}
+
+function pulledOrderIds(plan: SyncPlan): Set<string> {
+	return new Set(
+		plan.actions.flatMap((action) =>
+			action.op === "pull-filter-order" ? action.ids : [],
+		),
 	);
 }
 

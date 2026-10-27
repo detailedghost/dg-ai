@@ -1899,6 +1899,73 @@ describe("CLI", () => {
 		expect(declared.filters[0].sieve).toContain("stripe.com");
 	});
 
+	test("filters consolidate resolves staged targets before removing any source filter", async () => {
+		const dir = tmpPath("filter-consolidate-shift");
+		const dataPath = tmpPath("filter-consolidate-shift.json");
+		const rule = (folder: string, domain: string) =>
+			`require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; stop; }`;
+		const generated = (id: string, domain: string, folder: string) => ({
+			id,
+			name: `Email Organizer: ${domain} -> ${folder}`,
+			enabled: true,
+			conditions: [rule(folder, domain)],
+			actions: [],
+		});
+		const staged = (name: string, folder: string, domain: string) => ({
+			name,
+			enabled: true,
+			sieve: rule(folder, domain),
+		});
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				generated("gen-receipts", "stripe.com", "Receipts"),
+				generated("gen-invoice", "billing.example.com", "invoice"),
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const declaredPath = `${dir}/declared-filters.json`;
+		await Bun.write(
+			declaredPath,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ ...generated("x", "stripe.com", "Receipts"), sieve: rule("Receipts", "stripe.com"), protonId: "gen-receipts" },
+					{ ...generated("x", "billing.example.com", "invoice"), sieve: rule("invoice", "billing.example.com"), protonId: "gen-invoice" },
+					staged("Fin - Purchases", "Receipts", "old.example"),
+					staged("Fin - Invoices", "invoice", "older.example"),
+					staged("Tail", "Elsewhere", "tail.example"),
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "consolidate", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		const byName = (name: string) =>
+			declared.filters.find((filter: { name: string }) => filter.name === name);
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Fin - Purchases",
+			"Fin - Invoices",
+			"Tail",
+		]);
+		expect(byName("Fin - Purchases").sieve).toContain("stripe.com");
+		expect(byName("Fin - Invoices").sieve).toContain("billing.example.com");
+		expect(byName("Tail").sieve).toContain("tail.example");
+	});
+
 	test("filters group keeps staged declared edits on the existing grouped filter", async () => {
 		const dir = tmpPath("filter-group-staged");
 		const dataPath = tmpPath("filter-group-staged.json");
@@ -1969,6 +2036,75 @@ describe("CLI", () => {
 		expect(grouped.sieve).toContain("staged.example");
 		expect(grouped.sieve).toContain("billing.example.com");
 		expect(grouped.enabled).toBe(false);
+	});
+
+	test("filters group resolves staged targets before removing any source filter", async () => {
+		const dir = tmpPath("filter-group-shift");
+		const dataPath = tmpPath("filter-group-shift.json");
+		const generated = (id: string, domain: string, folder: string) => ({
+			id,
+			name: `Email Organizer: ${domain} -> ${folder}`,
+			enabled: true,
+			conditions: [
+				`require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; stop; }`,
+			],
+			actions: [],
+		});
+		const staged = (name: string, folder: string, domain: string) => ({
+			name,
+			enabled: true,
+			sieve: `require ["fileinto"]; if address :domain :is "From" "${domain}" { fileinto "${folder}"; }`,
+		});
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+				{ id: "spam", name: "Spam", type: "system", total: 0, unread: 0 },
+				{ id: "hunt", name: "hunt", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				generated("gen-hunt", "hunt.example", "hunt"),
+				generated("gen-invoice", "billing.example.com", "invoice"),
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		const declaredPath = `${dir}/declared-filters.json`;
+		await Bun.write(
+			declaredPath,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{ ...staged("Email Organizer: hunt.example -> hunt", "hunt", "hunt.example"), protonId: "gen-hunt" },
+					{ ...staged("Email Organizer: billing.example.com -> invoice", "invoice", "billing.example.com"), protonId: "gen-invoice" },
+					staged("Hunt - EDC", "hunt", "old-hunt.example"),
+					staged("Fin - Invoices", "invoice", "old.example"),
+					staged("Tail", "invoice", "tail.example"),
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "group", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		const byName = (name: string) =>
+			declared.filters.find((filter: { name: string }) => filter.name === name);
+		expect(declared.filters.map((filter: { name: string }) => filter.name)).toEqual([
+			"Hunt - EDC",
+			"Fin - Invoices",
+			"Tail",
+		]);
+		expect(byName("Fin - Invoices").sieve).toContain("billing.example.com");
+		expect(byName("Fin - Invoices").sieve).toContain("old.example");
+		expect(byName("Tail").sieve).toContain("tail.example");
+		expect(byName("Hunt - EDC").sieve).toContain("hunt.example");
 	});
 
 	test("filters apply keeps an unsynced declared recommendation instead of recreating it", async () => {

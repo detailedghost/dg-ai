@@ -112,6 +112,7 @@ export async function applySyncPlan(input: {
 	);
 	for (const action of creates) {
 		scheduleFolder("create", action.path, async () => {
+			inFlight = { action };
 			const parentId = parentIdFor(action.path, input.foldersByPath);
 			const created = await input.client.createFolder({
 				name: leaf(action.path),
@@ -119,6 +120,7 @@ export async function applySyncPlan(input: {
 				type: action.type === "system" ? "folder" : action.type,
 				...(parentId ? { parentId } : {}),
 			});
+			inFlight = undefined;
 			input.foldersByPath.set(action.path, created.id);
 			done.push({ action, id: created.id });
 		});
@@ -126,6 +128,7 @@ export async function applySyncPlan(input: {
 	for (const action of input.plan.actions) {
 		if (action.op !== "rename-folder") continue;
 		scheduleFolder("rename", action.to, async () => {
+			inFlight = { action, id: action.id };
 			const parentId = parentIdFor(action.to, input.foldersByPath);
 			await input.client.renameFolder({
 				id: action.id,
@@ -133,6 +136,7 @@ export async function applySyncPlan(input: {
 				path: action.to,
 				...placement(action.to, parentId),
 			});
+			inFlight = undefined;
 			for (const path of [...input.foldersByPath.keys()]) {
 				if (isWithin(path, action.from)) input.foldersByPath.delete(path);
 			}
@@ -145,6 +149,7 @@ export async function applySyncPlan(input: {
 			(step) => step.run,
 		),
 	);
+	const filterWrites: Array<{ id: string; run: () => Promise<void> }> = [];
 	for (const action of input.plan.actions) {
 		if (action.op === "create-filter") {
 			steps.push(async () => {
@@ -160,16 +165,19 @@ export async function applySyncPlan(input: {
 			});
 		}
 		if (action.op === "update-filter" || action.op === "revert-filter") {
-			steps.push(async () => {
-				inFlight = { action, id: action.id };
-				await input.client.updateFilter({
-					id: action.id,
-					name: action.name,
-					sieve: action.sieve,
-					enabled: action.enabled,
-				});
-				inFlight = undefined;
-				done.push({ action, id: action.id });
+			filterWrites.push({
+				id: action.id,
+				run: async () => {
+					inFlight = { action, id: action.id };
+					await input.client.updateFilter({
+						id: action.id,
+						name: action.name,
+						sieve: action.sieve,
+						enabled: action.enabled,
+					});
+					inFlight = undefined;
+					done.push({ action, id: action.id });
+				},
 			});
 		}
 	}
@@ -199,7 +207,9 @@ export async function applySyncPlan(input: {
 				.map((filter) => filter.id)
 				.filter((id) => !ordered.includes(id));
 			const order = [...ordered, ...rest];
+			inFlight = { action, order };
 			await input.client.reorderFilters({ ids: order });
+			inFlight = undefined;
 			done.push({ action, order });
 		});
 	}
@@ -213,27 +223,35 @@ export async function applySyncPlan(input: {
 		(action): action is Extract<PlanAction, { op: "delete-filter" }> =>
 			action.op === "delete-filter",
 	);
-	if (filterDeletes.length > 0) {
-		steps.push(async () => {
-			const live = await input.client.listFilters();
-			const protectors = new Set(
-				live.filter((filter) => guardsChain(sieveOf(filter))).map((filter) => filter.id),
-			);
-			const liveIds = new Set(live.map((filter) => filter.id));
-			const unguarded = (id: string): boolean => liveIds.has(id) && !protectors.has(id);
-			const ordered = [
-				...filterDeletes.filter((action) => unguarded(action.id)),
-				...filterDeletes.filter((action) => !unguarded(action.id)),
-			];
-			for (const action of ordered) {
+	for (const action of filterDeletes) {
+		filterWrites.push({
+			id: action.id,
+			run: async () => {
+				inFlight = { action, id: action.id };
 				await input.client.deleteFilter({ id: action.id });
+				inFlight = undefined;
 				done.push({ action, id: action.id });
+			},
+		});
+	}
+	if (filterWrites.length > 0) {
+		steps.push(async () => {
+			if (filterDeletes.length > 0) {
+				const live = await input.client.listFilters();
+				const position = new Map(live.map((filter, index) => [filter.id, index]));
+				filterWrites.sort(
+					(left, right) =>
+						(position.get(right.id) ?? -1) - (position.get(left.id) ?? -1),
+				);
 			}
+			for (const write of filterWrites) await write.run();
 		});
 	}
 	for (const action of folderDeletes) {
 		steps.push(async () => {
+			inFlight = { action, id: action.id };
 			await input.client.deleteFolder({ id: action.id });
+			inFlight = undefined;
 			done.push({ action, id: action.id });
 		});
 	}
@@ -381,6 +399,37 @@ function verifyLanded(
 	done: AppliedStep[],
 ): AppliedStep | undefined {
 	const action = step.action;
+	if (action.op === "rename-folder") {
+		const found = live.folders.find((folder) => folder.id === action.id);
+		return found?.path === action.to ? step : undefined;
+	}
+	if (action.op === "create-folder") {
+		const known = new Set<string>([
+			...done.flatMap((item) => (item.id ? [item.id] : [])),
+			...(file.observed?.folders ?? []).map((folder) => folder.id),
+			...file.folders.flatMap((folder) => (folder.protonId ? [folder.protonId] : [])),
+		]);
+		const created = live.folders.filter(
+			(folder) => folder.path === action.path && !known.has(folder.id),
+		);
+		return created.length === 1 && created[0]
+			? { action, id: created[0].id }
+			: undefined;
+	}
+	if (action.op === "delete-filter") {
+		return live.filters.some((filter) => filter.id === action.id) ? undefined : step;
+	}
+	if (action.op === "delete-folder") {
+		return live.folders.some((folder) => folder.id === action.id) ? undefined : step;
+	}
+	if (action.op === "reorder-filters") {
+		const { order } = step;
+		return order &&
+			order.length === live.filters.length &&
+			order.every((id, index) => live.filters[index]?.id === id)
+			? step
+			: undefined;
+	}
 	if (
 		action.op !== "update-filter" &&
 		action.op !== "revert-filter" &&

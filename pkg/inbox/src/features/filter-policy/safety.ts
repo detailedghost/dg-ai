@@ -339,9 +339,12 @@ function projectedNames(input: {
 }): string[] {
 	const reorder = input.actions.find((action) => action.op === "reorder-filters");
 	if (reorder) return reorder.names;
-	if (!input.actions.some((action) => action.op === "pull-filter-order")) {
-		return input.desiredNames;
-	}
+	const pull = input.actions.find((action) => action.op === "pull-filter-order");
+	if (!pull) return input.desiredNames;
+	const rank = (id: string): number => {
+		const index = pull.ids.indexOf(id);
+		return index < 0 ? pull.ids.length : index;
+	};
 	const renamed = new Map(
 		input.actions.flatMap((action) => {
 			const written = writtenFilter(action);
@@ -359,6 +362,7 @@ function projectedNames(input: {
 	return [
 		...input.liveFilters
 			.filter((filter) => !deleted.has(filter.id))
+			.sort((left, right) => rank(left.id) - rank(right.id))
 			.map((filter) => renamed.get(filter.id) ?? filter.name),
 		...created,
 	];

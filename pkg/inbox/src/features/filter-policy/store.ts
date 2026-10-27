@@ -270,15 +270,23 @@ export function keepUntouchedBaseline(
 	file: DeclaredFiltersFile,
 	baseline: DeclaredFiltersFile["observed"],
 	touchedIds: Set<string>,
+	reorderedIds: Set<string> = new Set(),
 ): void {
 	if (!baseline || !file.observed) return;
-	const merge = <T extends { id: string }>(live: T[], before: T[]): T[] => {
+	const merge = <T extends { id: string; sequence?: number }>(
+		live: T[],
+		before: T[],
+	): T[] => {
 		const prior = new Map(before.map((item) => [item.id, item]));
 		const liveIds = new Set(live.map((item) => item.id));
 		const kept = live.flatMap((item) => {
 			if (touchedIds.has(item.id)) return [item];
 			const old = prior.get(item.id);
-			return old ? [old] : [];
+			if (!old) return [];
+			if (!reorderedIds.has(item.id)) return [old];
+			return [
+				item.sequence === undefined ? old : { ...old, sequence: item.sequence },
+			];
 		});
 		const missing = before.filter(
 			(item) => !liveIds.has(item.id) && !touchedIds.has(item.id),

@@ -255,8 +255,11 @@ async function applyGroupPlan(
 					},
 					existing?.id,
 				);
-				removeDeclaredFilters(file, group.generatedFilterIds);
 			}
+			removeDeclaredFilters(
+				file,
+				plan.groups.flatMap((group) => group.generatedFilterIds),
+			);
 		},
 	});
 	for (const group of plan.groups) {

@@ -541,6 +541,84 @@ describe("apply identity and ordering", () => {
 		expect(declared.observed?.filters.map((filter) => filter.id)).toEqual(["a", "b"]);
 	});
 
+	test("records a folder rename that Proton committed before its response failed", async () => {
+		const writer = client();
+		let folder = { id: "fin-id", name: "fin", path: "fin", type: "folder" as const };
+		writer.listFolders = async () => [folder];
+		writer.renameFolder = async (input) => {
+			folder = { id: input.id, name: input.displayName, path: input.path ?? "", type: "folder" };
+			throw new Error("timeout");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.observed = {
+			filters: [],
+			folders: [{ id: "fin-id", path: "fin", name: "fin", type: "folder" }],
+		};
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [{ op: "rename-folder", id: "fin-id", from: "fin", to: "finance" }],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared,
+				foldersByPath: new Map([["fin", "fin-id"]]),
+			}),
+		).rejects.toThrow("timeout");
+		expect(declared.observed?.folders[0]).toMatchObject({ id: "fin-id", path: "finance" });
+	});
+
+	test("records a filter delete that Proton committed before its response failed", async () => {
+		const writer = client();
+		let live = [{ id: "f1", name: "Old", enabled: true, sieve: body }];
+		writer.listFilters = async () => live;
+		writer.deleteFilter = async () => {
+			live = [];
+			throw new Error("timeout");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.observed = {
+			filters: [{ id: "f1", name: "Old", enabled: true, sieve: body }],
+			folders: [],
+		};
+		await expect(
+			applySyncPlan({
+				plan: { actions: [{ op: "delete-filter", id: "f1", name: "Old" }], notices: [] },
+				approvedDeletes: ["f1"],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("timeout");
+		expect(declared.observed?.filters).toEqual([]);
+	});
+
+	test("records a reorder that Proton committed before its response failed", async () => {
+		const writer = client();
+		let live = [
+			{ id: "a", name: "A", enabled: true, sieve: body },
+			{ id: "b", name: "B", enabled: true, sieve: body },
+		];
+		writer.listFilters = async () => live;
+		writer.reorderFilters = async (input) => {
+			live = input.ids.flatMap((id) => live.filter((filter) => filter.id === id));
+			throw new Error("timeout");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.observed = { filters: [...live], folders: [] };
+		await expect(
+			applySyncPlan({
+				plan: { actions: [{ op: "reorder-filters", names: ["B", "A"], ids: ["b", "a"] }], notices: [] },
+				approvedDeletes: [],
+				client: writer,
+				declared,
+				foldersByPath: new Map(),
+			}),
+		).rejects.toThrow("timeout");
+		expect(declared.observed?.filters.map((filter) => filter.id)).toEqual(["b", "a"]);
+	});
+
 	test("deletes a Spam filter before the keep or stop filter that guards it", async () => {
 		const writer = client();
 		writer.listFilters = async () => [
@@ -561,6 +639,59 @@ describe("apply identity and ordering", () => {
 			foldersByPath: new Map(),
 		});
 		expect(writer.calls).toEqual(["delete-filter:spam", "delete-filter:guard"]);
+	});
+
+	test("deletes a later Spam filter that itself stops before the guard ahead of it", async () => {
+		const writer = client();
+		const spamStop = `require ["fileinto"];\nfileinto "Spam";\nstop;\n`;
+		writer.listFilters = async () => [
+			{ id: "guard", name: "Guard", enabled: true, sieve: "stop;" },
+			{ id: "spam", name: "Spam", enabled: true, sieve: spamStop },
+		];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "delete-filter", id: "guard", name: "Guard" },
+					{ op: "delete-filter", id: "spam", name: "Spam" },
+				],
+				notices: [],
+			},
+			approvedDeletes: ["guard", "spam"],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["delete-filter:spam", "delete-filter:guard"]);
+	});
+
+	test("deletes a later filter before weakening the guard ahead of it", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "guard", name: "Guard", enabled: true, sieve: "stop;" },
+			{ id: "spam", name: "Spam", enabled: true, sieve: body },
+		];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{
+						op: "update-filter",
+						id: "guard",
+						fromName: "Guard",
+						name: "Guard",
+						sieve: "require [\"fileinto\"];\nkeep;\n",
+						enabled: false,
+						changes: ["sieve", "enabled"],
+					},
+					{ op: "delete-filter", id: "spam", name: "Spam" },
+				],
+				notices: [],
+			},
+			approvedDeletes: ["spam"],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["delete-filter:spam", "update:guard"]);
 	});
 
 	test("refuses a create under a path whose ancestor rename moves it", async () => {

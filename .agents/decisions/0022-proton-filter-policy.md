@@ -15,6 +15,9 @@ ADR: [docs/adr/0022-proton-filter-policy.md](../../docs/adr/0022-proton-filter-p
 - Reads retry HTTP 429 twice and a transient error once, then stop. Writes are not retried.
 - A failed apply re-reads live Proton, merges only completed steps into the declared file, and persists before rethrow.
 - Do not replace the whole observed snapshot on that partial path.
+- Recovery also verifies a lost reply for folder create, rename, and delete, filter delete, and reorder.
+- Apply filter updates and deletes in descending live chain position, so a guard changes after the rules it covers.
+- Filters, consolidate, and group commands resolve every `declared:N` target before they remove any entry.
 - A folder rename sends `ParentID` when the parent path is in `foldersByPath`, and `moveToRoot` (Proton `ParentID: null`) for a top-level path. Refuse a create or rename whose parent cannot be resolved, before any write.
 - Match filters by Proton id first. Fall back to the name only for a declared entry with no id.
 - Do not run inbox tests or sync against live Proton.

@@ -368,13 +368,7 @@ async function applyConsolidationPlan(
 	dir: string,
 ): Promise<{ auditPath: string }> {
 	const byId = new Map(liveFilters.map((filter) => [filter.id, filter]));
-	const updated: {
-		id: string;
-		name: string;
-		mergedDomains: string[];
-		deletedFilterIds: string[];
-	}[] = [];
-	for (const candidate of plan.consolidationCandidates) {
+	const merges = plan.consolidationCandidates.map((candidate) => {
 		const existing = byId.get(candidate.existingFilter.id);
 		if (!existing) {
 			throw new Error(
@@ -388,16 +382,23 @@ async function applyConsolidationPlan(
 			);
 		}
 		const domains = candidate.generatedFilters.map((filter) => filter.domain);
-		const mergedSieve = mergeSieve(
-			existingSieve,
-			candidate.existingFilter.targetFolder,
+		return {
+			existing,
 			domains,
-		);
-		await editDeclaredFilters({
-			path: declaredFiltersPath(dir),
-			filters: liveFilters,
-			folders: liveFolders,
-			edit(file) {
+			deletedFilterIds: candidate.generatedFilters.map((filter) => filter.id),
+			mergedSieve: mergeSieve(
+				existingSieve,
+				candidate.existingFilter.targetFolder,
+				domains,
+			),
+		};
+	});
+	await editDeclaredFilters({
+		path: declaredFiltersPath(dir),
+		filters: liveFilters,
+		folders: liveFolders,
+		edit(file) {
+			for (const { existing, mergedSieve } of merges) {
 				upsertDeclaredFilter(
 					file,
 					{
@@ -408,19 +409,19 @@ async function applyConsolidationPlan(
 					},
 					existing.id,
 				);
-				removeDeclaredFilters(
-					file,
-					candidate.generatedFilters.map((filter) => filter.id),
-				);
-			},
-		});
-		updated.push({
-			id: existing.id,
-			name: existing.name,
-			mergedDomains: domains.map(redactDomain),
-			deletedFilterIds: candidate.generatedFilters.map((filter) => filter.id),
-		});
-	}
+			}
+			removeDeclaredFilters(
+				file,
+				merges.flatMap((merge) => merge.deletedFilterIds),
+			);
+		},
+	});
+	const updated = merges.map(({ existing, domains, deletedFilterIds }) => ({
+		id: existing.id,
+		name: existing.name,
+		mergedDomains: domains.map(redactDomain),
+		deletedFilterIds,
+	}));
 	const auditPath = join(
 		plan.dir,
 		"audit",
