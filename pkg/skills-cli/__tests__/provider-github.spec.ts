@@ -1472,6 +1472,29 @@ describe("postReview", () => {
 		expect(readCalls(log).at(-1)).toBe("api repos/acme/widgets/pulls/12/reviews --method POST --input -");
 	});
 
+	test("retries as COMMENT when the repo does not let GitHub Actions approve", async () => {
+		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");
+		process.env.FAKE_STDIN_CAPTURE = stdinCapture;
+		fakeGh(
+			ghScript(`
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    exit 0
+    ;;
+  *"pulls/12/reviews"*)
+    cat > "$FAKE_STDIN_CAPTURE"
+    if grep -q '"event":"APPROVE"' "$FAKE_STDIN_CAPTURE"; then echo 'HTTP 422: GitHub Actions is not permitted to approve pull requests.' 1>&2; exit 1; fi
+    echo '{"html_url":"https://github.com/acme/widgets/pull/12#pullrequestreview-2"}'
+    exit 0
+    ;;`),
+		);
+
+		const posted = await createGithubProvider().postReview(ref, { verdict: "approve", body: "summary", comments });
+
+		expect(posted).toMatchObject({ verdict: "comment", degraded: true });
+		expect(JSON.parse(readFileSync(stdinCapture, "utf8")).event).toBe("COMMENT");
+	});
+
 	test("retries as COMMENT and reports degraded when GitHub refuses a verdict on the author's own PR", async () => {
 		const log = callLogPath();
 		const stdinCapture = join(tmp("fake-gh-stdin-"), "stdin.txt");

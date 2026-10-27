@@ -23,16 +23,20 @@ stale pending review left by a killed run and tries once more.
 
 ## Own-PR fallback
 
-GitHub refuses approve and request-changes from the PR author. The adapter retries as
-comment and returns `degraded: true`. GitLab may refuse approve when author approval is
+GitHub refuses approve and request-changes from the PR author. It also refuses approve
+from a `GITHUB_TOKEN` when the repo does not let GitHub Actions approve pull requests. The
+adapter retries both as comment and returns `degraded: true`. GitLab may refuse approve when author approval is
 off; the drafts and summary still publish, and the result is `degraded: true`. The body
 always states the verdict, so the reader still sees it.
 
 ## Dedupe rule
 
-Before posting, `compile` lists open threads on the PR. A new comment is dropped when an
-unresolved thread sits on the same path and line and its first comment starts with a
-thrash tier emoji. Dropped duplicates still count in the tally and the verdict.
+Before posting, `compile` lists every thread on the PR, resolved ones included. A thread is
+thrash's when its first comment starts with a thrash tier emoji, and, with `--reviewer
+<login>`, when that login opened it. A new comment is dropped as a duplicate when an
+unresolved thrash thread sits on the same path and line. A Medium, Low or Nit comment is also
+dropped when only resolved thrash threads sit there; a Critical or High comment posts again.
+Dropped duplicates still count in the tally and the verdict, except under `--policy` (below).
 
 ## Nit ladder and `--min-tier`
 
@@ -101,6 +105,45 @@ path. Untracked files are skipped and listed. The same split and merge apply. `c
 with tiers mapped to its severities: critical and high → high, medium → medium, low and
 nit → low. A file-level finding gets a `## path (whole file)` section. A finding with no file
 in the diff is terminal-only in this mode. Nothing posts.
+
+## Headless options for a CI runner
+
+`compile` takes these extra flags, for a runner such as a GitHub Action:
+
+| Flag | Effect |
+|---|---|
+| `--heading <text>` | Starts the summary with `## <text>` in place of `## Thrash review` and the spice. A hidden `<!-- dg:thrash-review -->` tag stays at the end, so the stale-pending-review cleanup still knows the review. |
+| `--round N` | Adds `**Round:** N` to the summary, and picks the policy phase. The caller counts its own earlier reviews. |
+| `--policy <file>` | YAML verdict rules in place of the spice table (example below). The verdict counts the new findings plus every open earlier thrash finding (not resolved, no reply from someone else), and a re-found open finding counts once. |
+| `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count. Overrides the policy's `maxComments`. |
+| `--max-event <event>` | The highest event the review may submit: `auto` (default), `approve`, `request-changes` or `comment`. A verdict above it posts as a comment, and the reason says so. |
+| `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. |
+| `--sass` | Adds one line from the fixed list in `thrash/sass.ts` to the summary, picked from the verdict and the highest tier, seeded by the PR number and round. Never in an inline comment. It changes no verdict or tier. |
+
+`THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (GitHub Action)".
+
+A policy file:
+
+```yaml
+maxComments: 10
+phases:
+  - name: strict
+    through: 3
+    block: { critical: 0, high: 0, medium: 0, low: 4 }
+  - name: relaxed
+    requiresClear: [critical, high]
+    nits: false
+    block: { critical: 0, high: 1 }
+```
+
+Each `block` entry is the count a tier may reach; one more requests changes. A missing tier
+has no limit. A round uses the first phase whose `through` covers it, or the last phase. A
+phase whose `requiresClear` tiers still have an open earlier finding is not entered, so the
+round stays in the phase before it. `nits: false` posts no nits.
+
+`DG_PROXY_NO_SHELL=1` makes `dg-skills proxy copilot` deny shell, URL and built-in MCP tools,
+so a reviewed diff cannot steer the agent into running commands. Other backends refuse to run
+with it set.
 
 ## Known gaps
 

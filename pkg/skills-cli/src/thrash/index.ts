@@ -11,8 +11,10 @@ import {
 	parseRepoRef,
 	type RepoRef,
 	type ReviewThread,
+	type ReviewVerdict,
 } from "../provider/types";
 import { git, resolveBaseSha } from "../utils/git";
+import { parsePolicy } from "./policy";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
 import {
@@ -248,7 +250,7 @@ async function existingThreads(target: Target): Promise<ReviewThread[]> {
 	if (target.mode === "local") return [];
 	try {
 		const provider = await getProviderForUrl(target.url);
-		return await provider.listUnresolvedThreads({}, prRef(target));
+		return await provider.listUnresolvedThreads({ includeResolved: true }, prRef(target));
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		process.stderr.write(`thrash compile: could not list existing threads, skipping dedupe: ${message}\n`);
@@ -267,8 +269,40 @@ function nextAddressFile(root: string): string {
 	throw new Error(`no free code-review file name under ${dir}`);
 }
 
+function optionalCount(args: string[], flag: string, min: number): number | undefined {
+	const raw = optionalOption(args, flag);
+	if (raw === undefined) return undefined;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < min) throw new Error(`${flag} must be a whole number of ${min} or more, got "${raw}"`);
+	return value;
+}
+
+const MAX_EVENTS: Record<string, ReviewVerdict> = {
+	approve: "approve",
+	"request-changes": "request_changes",
+	request_changes: "request_changes",
+	comment: "comment",
+};
+
+function parseMaxEvent(raw: string | undefined): ReviewVerdict | undefined {
+	if (raw === undefined || raw === "auto") return undefined;
+	const event = MAX_EVENTS[raw];
+	if (!event) throw new Error(`--max-event must be auto, approve, request-changes or comment, got "${raw}"`);
+	return event;
+}
+
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
-	const arg = positional(args, "compile", ["--diff", "--spice", "--min-tier"]);
+	const arg = positional(args, "compile", [
+		"--diff",
+		"--spice",
+		"--min-tier",
+		"--heading",
+		"--round",
+		"--policy",
+		"--max-comments",
+		"--max-event",
+		"--reviewer",
+	]);
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
@@ -285,12 +319,21 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		}),
 	);
 	const minTierRaw = optionalOption(args, "--min-tier");
+	const policyPath = optionalOption(args, "--policy");
+	const round = optionalCount(args, "--round", 1);
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
 		existing: await existingThreads(target),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
+		heading: optionalOption(args, "--heading"),
+		round,
+		policy: policyPath === undefined ? undefined : parsePolicy(readFileSync(policyPath, "utf8")),
+		maxComments: optionalCount(args, "--max-comments", 0),
+		maxEvent: parseMaxEvent(optionalOption(args, "--max-event")),
+		reviewer: optionalOption(args, "--reviewer"),
+		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
 	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
@@ -476,7 +519,7 @@ const command = defineCommand({
 		},
 		compile: {
 			description:
-				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment]",
+				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass]",
 			args: ["target"],
 			run: (args, opts) => cmdCompile(args, opts),
 		},

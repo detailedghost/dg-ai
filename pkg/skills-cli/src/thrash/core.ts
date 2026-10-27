@@ -5,6 +5,7 @@ import {
 	SPICE_MAX,
 	SPICE_MIN,
 	THRASH_REVIEW_HEADING_PREFIX,
+	THRASH_REVIEW_MARKER,
 	TIER_EMOJI,
 	VERDICT_LIMITS,
 } from "@dg/common";
@@ -17,6 +18,8 @@ import {
 	type ReviewThread,
 	type ReviewVerdict,
 } from "../provider/types";
+import { type ReviewPolicy, selectPhase } from "./policy";
+import { pickSass } from "./sass";
 
 export const TIERS = ["critical", "high", "medium", "low", "nit"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -95,7 +98,7 @@ export interface Anchor {
 	oldLine?: number;
 }
 
-export type DropReason = "duplicate" | "below-min-tier" | "nit-ladder";
+export type DropReason = "duplicate" | "settled" | "below-min-tier" | "nit-ladder" | "max-comments";
 
 export interface DroppedFinding {
 	finding: Finding;
@@ -113,18 +116,33 @@ export interface CompileOptions {
 	commentOnly: boolean;
 	existing: ReviewThread[];
 	trigger?: ReviewTrigger;
+	heading?: string;
+	round?: number;
+	policy?: ReviewPolicy;
+	maxComments?: number;
+	maxEvent?: ReviewVerdict;
+	sassSeed?: number;
+	/** Login whose threads count as this reviewer's own; unset treats every tier-marked thread as thrash's. */
+	reviewer?: string;
 }
 
-export type ReviewTrigger = "daemon" | "manual";
+export type ReviewTrigger = "daemon" | "action" | "manual";
 
 /** Reads the review origin from THRASH_EXECUTION_CONTEXT; anything unreadable is manual. */
 export function reviewTrigger(context: string | undefined): ReviewTrigger {
 	try {
-		return (JSON.parse(context ?? "") as { origin?: unknown }).origin === "daemon" ? "daemon" : "manual";
+		const origin = (JSON.parse(context ?? "") as { origin?: unknown }).origin;
+		return origin === "daemon" || origin === "action" ? origin : "manual";
 	} catch {
 		return "manual";
 	}
 }
+
+const TRIGGER_LABEL: Record<ReviewTrigger, string> = {
+	daemon: "Automatic (daemon)",
+	action: "Automatic (GitHub Action)",
+	manual: "Manual (CLI)",
+};
 
 export interface CompiledReview {
 	verdict: ReviewVerdict;
@@ -138,6 +156,10 @@ export interface CompiledReview {
 	unanchored: Finding[];
 	dropped: DroppedFinding[];
 	trigger: ReviewTrigger;
+	heading?: string;
+	round?: number;
+	phase?: string;
+	sass?: string;
 	body: string;
 }
 
@@ -690,24 +712,45 @@ function plural(count: number, noun: string): string {
 	return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-export function decideVerdict(
+type Verdict = { verdict: ReviewVerdict; reason: string };
+
+function verdictWithin(
 	tally: Record<Tier, number>,
-	spice: number,
+	limits: Partial<Record<Tier, number>>,
 	commentOnly: boolean,
-): { verdict: ReviewVerdict; reason: string } {
+	scope: string,
+): Verdict {
 	const counts = `${plural(tally.critical, "critical")}, ${plural(tally.high, "high")}`;
 	if (commentOnly) return { verdict: "comment", reason: `comment only requested (${counts})` };
-	const limits = VERDICT_LIMITS[spice] ?? VERDICT_LIMITS[SPICE_DEFAULT];
 	for (const tier of TIERS) {
 		const limit = limits[tier];
 		if (limit === undefined || tally[tier] <= limit) continue;
 		const found = `${plural(tally[tier], `${tier} finding`)} found`;
 		return {
 			verdict: "request_changes",
-			reason: limit === 0 ? found : `${found}, limit is ${limit} at spice ${spice}`,
+			reason: limit === 0 ? found : `${found}, limit is ${limit} ${scope}`,
 		};
 	}
 	return { verdict: "approve", reason: counts };
+}
+
+export function decideVerdict(tally: Record<Tier, number>, spice: number, commentOnly: boolean): Verdict {
+	return verdictWithin(tally, VERDICT_LIMITS[spice] ?? VERDICT_LIMITS[SPICE_DEFAULT], commentOnly, `at spice ${spice}`);
+}
+
+const ALLOWED_EVENTS: Record<ReviewVerdict, readonly ReviewVerdict[]> = {
+	approve: ["approve", "comment"],
+	request_changes: ["request_changes", "comment"],
+	comment: ["comment"],
+};
+
+/** Posts a verdict the caller's highest allowed event does not cover as a comment, and says why. */
+export function capVerdict(decided: Verdict, maxEvent: ReviewVerdict | undefined): Verdict {
+	if (maxEvent === undefined || ALLOWED_EVENTS[maxEvent].includes(decided.verdict)) return decided;
+	return {
+		verdict: "comment",
+		reason: `${decided.reason}; ${verdictLabel(decided.verdict).toLowerCase()} is turned off, so this posts as a comment`,
+	};
 }
 
 export function renderComment(finding: Finding): string {
@@ -716,14 +759,43 @@ export function renderComment(finding: Finding): string {
 
 const THRASH_MARKERS = Object.values(TIER_EMOJI);
 
-function isThrashThread(thread: ReviewThread): boolean {
-	const first = thread.comments[0]?.body ?? "";
-	return THRASH_MARKERS.some((m) => first.startsWith(m));
+function sameLogin(a: string, b: string): boolean {
+	const norm = (login: string) => login.trim().toLowerCase().replace(/\[bot\]$/, "");
+	return norm(a) === norm(b);
 }
 
-function isDuplicate(anchor: Anchor, existing: ReviewThread[]): boolean {
+function threadTier(thread: ReviewThread): Tier | undefined {
+	const first = thread.comments[0]?.body ?? "";
+	return TIERS.find((tier) => first.startsWith(TIER_EMOJI[tier]));
+}
+
+function isThrashThread(thread: ReviewThread, reviewer?: string): boolean {
+	const first = thread.comments[0];
+	if (!first || (reviewer !== undefined && !sameLogin(first.author, reviewer))) return false;
+	return THRASH_MARKERS.some((m) => first.body.startsWith(m));
+}
+
+/** Someone other than the thread's opener replied in it. */
+export function isAnswered(thread: ReviewThread): boolean {
+	const opener = thread.comments[0]?.author ?? "";
+	return thread.comments.slice(1).some((c) => !sameLogin(c.author, opener));
+}
+
+function priorThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: string): "unresolved" | "resolved" | null {
 	const line = anchor.newLine ?? anchor.oldLine ?? null;
-	return existing.some((t) => !t.resolved && t.path === anchor.path && t.line === line && isThrashThread(t));
+	const prior = existing.filter((t) => t.path === anchor.path && t.line === line && isThrashThread(t, reviewer));
+	if (prior.some((t) => !t.resolved)) return "unresolved";
+	return prior.length > 0 ? "resolved" : null;
+}
+
+/** Tiers of this reviewer's earlier findings that are neither resolved nor answered. */
+export function openPriorTally(existing: ReviewThread[], reviewer?: string): Record<Tier, number> {
+	const tally = emptyTally();
+	for (const thread of existing) {
+		const tier = threadTier(thread);
+		if (tier && !thread.resolved && !isAnswered(thread) && isThrashThread(thread, reviewer)) tally[tier] += 1;
+	}
+	return tally;
 }
 
 function sortKey(f: Finding): string {
@@ -768,23 +840,43 @@ function commentCounts(comments: CompiledComment[]): string {
 function renderBody(review: Omit<CompiledReview, "body">): string {
 	const folded = review.dropped.filter((d) => d.reason === "nit-ladder");
 	const duplicates = review.dropped.filter((d) => d.reason === "duplicate").length;
+	const settled = review.dropped.filter((d) => d.reason === "settled").length;
+	const overCap = review.dropped.filter((d) => d.reason === "max-comments");
 	const counts = TIERS.map((t) => {
 		const count = t === "nit" && folded.length > 0 ? `${review.tally.nit} (${folded.length} folded)` : review.tally[t];
 		return `${titled(TIER_EMOJI[t], TIER_LABEL[t])} ${count}`;
 	});
 	const spice = titled(spiceLabel(review.spice), `Spice ${review.spice} of ${SPICE_MAX}`);
+	const round =
+		review.round === undefined ? [] : [`**Round:** ${review.round}${review.phase ? `, ${review.phase}` : ""}`];
 	const lines: string[] = [
-		`${THRASH_REVIEW_HEADING_PREFIX}${spice}`,
+		review.heading ? `## ${review.heading}` : `${THRASH_REVIEW_HEADING_PREFIX}${spice}`,
 		"",
 		...renderAlert("NOTE", "What changed", review.changed ? [review.changed] : []),
 		...renderAlert("TIP", "Strengths", review.strengths),
 		...renderAlert("WARNING", "Opportunities", review.opportunities),
-		`${counts.join(" · ")} · **Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}. · ${commentCounts(review.comments)}`,
+		[
+			...counts,
+			...round,
+			`**Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}.`,
+			commentCounts(review.comments),
+		].join(" · "),
+		...(review.sass ? ["", `_${review.sass}_`] : []),
 		"",
-		`**Trigger:** ${review.trigger === "daemon" ? "Automatic (daemon)" : "Manual (CLI)"}`,
+		`**Trigger:** ${TRIGGER_LABEL[review.trigger]}`,
 	];
 	if (duplicates > 0) {
 		lines.push("", `${plural(duplicates, "finding")} already flagged on an open thread and not reposted.`);
+	}
+	if (settled > 0) {
+		lines.push("", `${plural(settled, "finding")} on a line with a resolved thread and not reposted.`);
+	}
+	if (overCap.length > 0) {
+		lines.push("", `${plural(overCap.length, "finding")} over the comment cap and not posted inline:`);
+		for (const { finding } of overCap) {
+			const where = finding.line === null ? finding.path : `${finding.path}:${finding.line}`;
+			lines.push(`- ${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}** \`${where}\` ${finding.title}`);
+		}
 	}
 	if (review.unanchored.length > 0) {
 		const count = review.unanchored.length;
@@ -793,22 +885,31 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 			lines.push(`- ${TIER_EMOJI[finding.tier]} ${finding.title}`);
 		}
 	}
+	lines.push("", THRASH_REVIEW_MARKER);
 	return lines.join("\n");
+}
+
+function addTallies(a: Record<Tier, number>, b: Record<Tier, number>): Record<Tier, number> {
+	const sum = emptyTally();
+	for (const tier of TIERS) sum[tier] = a[tier] + b[tier];
+	return sum;
 }
 
 export function compileReview(files: DiffFile[], output: AgentOutput, opts: CompileOptions): CompiledReview {
 	const findings = [...output.findings].sort((a, b) => ordinal(sortKey(a), sortKey(b)));
-	const tally = tallyFindings(findings);
-	const { verdict, reason } = decideVerdict(tally, opts.spice, opts.commentOnly);
+	const openPrior = opts.policy ? openPriorTally(opts.existing, opts.reviewer) : emptyTally();
+	const phase = opts.policy ? selectPhase(opts.policy, opts.round ?? 1, openPrior) : undefined;
+	const minTier = opts.minTier ?? (phase && !phase.nits ? "low" : undefined);
+	const maxComments = opts.maxComments ?? opts.policy?.maxComments;
 
-	const comments: CompiledComment[] = [];
+	const posted: Array<{ finding: Finding; comment: CompiledComment }> = [];
 	const unanchored: Finding[] = [];
 	const dropped: DroppedFinding[] = [];
-	const nitCap = opts.minTier === undefined ? (NIT_LADDER[opts.spice] ?? 0) : Number.POSITIVE_INFINITY;
+	const nitCap = minTier === undefined ? (NIT_LADDER[opts.spice] ?? 0) : Number.POSITIVE_INFINITY;
 	let nitsKept = 0;
 
 	for (const finding of findings) {
-		if (opts.minTier !== undefined && tierRank(finding.tier) > tierRank(opts.minTier)) {
+		if (minTier !== undefined && tierRank(finding.tier) > tierRank(minTier)) {
 			dropped.push({ finding, reason: "below-min-tier" });
 			continue;
 		}
@@ -821,13 +922,40 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 			unanchored.push(finding);
 			continue;
 		}
-		if (isDuplicate(anchor, opts.existing)) {
+		const prior = priorThreadAt(anchor, opts.existing, opts.reviewer);
+		if (prior === "unresolved") {
 			dropped.push({ finding, reason: "duplicate" });
 			continue;
 		}
+		if (prior === "resolved" && tierRank(finding.tier) > tierRank("high")) {
+			dropped.push({ finding, reason: "settled" });
+			continue;
+		}
 		if (finding.tier === "nit") nitsKept += 1;
-		comments.push({ ...anchor, tier: finding.tier, title: finding.title, body: renderComment(finding) });
+		posted.push({
+			finding,
+			comment: { ...anchor, tier: finding.tier, title: finding.title, body: renderComment(finding) },
+		});
 	}
+
+	let kept = posted;
+	if (maxComments !== undefined && posted.length > maxComments) {
+		const ranked = [...posted].sort((a, b) => tierRank(a.finding.tier) - tierRank(b.finding.tier));
+		const keep = new Set(ranked.slice(0, maxComments));
+		kept = posted.filter((p) => keep.has(p));
+		for (const p of posted) if (!keep.has(p)) dropped.push({ finding: p.finding, reason: "max-comments" });
+	}
+
+	const notReposted = new Set(
+		dropped.filter((d) => d.reason === "duplicate" || d.reason === "settled").map((d) => d.finding),
+	);
+	const tally = phase
+		? addTallies(tallyFindings(findings.filter((f) => !notReposted.has(f))), openPrior)
+		: tallyFindings(findings);
+	const decided = phase
+		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")
+		: decideVerdict(tally, opts.spice, opts.commentOnly);
+	const { verdict, reason } = capVerdict(decided, opts.maxEvent);
 
 	const compiled = {
 		verdict,
@@ -837,10 +965,14 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		changed: output.changed,
 		strengths: output.strengths,
 		opportunities: output.opportunities,
-		comments,
+		comments: kept.map((p) => p.comment),
 		unanchored,
 		dropped,
 		trigger: opts.trigger ?? "manual",
+		heading: opts.heading,
+		round: opts.round,
+		phase: phase?.name || undefined,
+		sass: opts.sassSeed === undefined ? undefined : pickSass(verdict, tally, opts.sassSeed),
 	};
 	return { ...compiled, body: renderBody(compiled) };
 }

@@ -1,4 +1,4 @@
-import { THRASH_REVIEW_HEADING_PREFIX } from "@dg/common";
+import { THRASH_REVIEW_HEADING_PREFIX, THRASH_REVIEW_MARKER } from "@dg/common";
 import type { ShellTag } from "../utils/git";
 import { makeBinPreflightTag } from "./preflight";
 import {
@@ -507,8 +507,8 @@ const GITHUB_REVIEW_EVENTS: Record<ReviewVerdict, string> = {
 	comment: "COMMENT",
 };
 
-/** GitHub rejects APPROVE and REQUEST_CHANGES from the PR author with this phrase; both are retried as COMMENT. */
-const OWN_PR_NEEDLE = "your own pull request";
+/** Phrases GitHub uses to refuse a verdict (own PR, or Actions may not approve); the review is retried as COMMENT. */
+const REFUSED_VERDICT_NEEDLES = ["your own pull request", "not permitted to approve pull requests"];
 
 const EMPTY_REVIEW_BODY = "Review submitted.";
 
@@ -542,7 +542,8 @@ function reviewsPath(ref: PrRef): string {
 function isOwnStalePendingReview(review: Record<string, unknown>, login: string): boolean {
 	const user = review.user as Record<string, unknown> | undefined;
 	const body = (review.body as string) ?? "";
-	return review.state === "PENDING" && user?.login === login && body.startsWith(THRASH_REVIEW_HEADING_PREFIX);
+	const isThrash = body.startsWith(THRASH_REVIEW_HEADING_PREFIX) || body.includes(THRASH_REVIEW_MARKER);
+	return review.state === "PENDING" && user?.login === login && isThrash;
 }
 
 async function ownPendingReviews(tag: ShellTag, ref: PrRef): Promise<Record<string, unknown>[]> {
@@ -611,7 +612,7 @@ async function withOwnPrFallback(
 	try {
 		return { raw: await submit(verdict), verdict, degraded: false };
 	} catch (err) {
-		if (verdict === "comment" || !isCliErrorContaining(err, OWN_PR_NEEDLE)) throw err;
+		if (verdict === "comment" || !REFUSED_VERDICT_NEEDLES.some((needle) => isCliErrorContaining(err, needle))) throw err;
 		return { raw: await submit("comment"), verdict: "comment", degraded: true };
 	}
 }
