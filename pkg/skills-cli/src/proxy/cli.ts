@@ -130,6 +130,12 @@ export async function main(argv: string[]): Promise<number | void> {
 		process.exit(1);
 	}
 
+	const noShell = /^(1|true|yes)$/i.test(process.env.DG_PROXY_NO_SHELL?.trim() ?? "");
+	if (noShell && !backend.supportsNoShell) {
+		console.error(`DG_PROXY_NO_SHELL is set, but the ${backendName} backend cannot deny shell tools`);
+		process.exit(1);
+	}
+
 	if (plan) {
 		await runPlan(backendName, backend, {
 			prompt,
@@ -163,6 +169,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			effort,
 			cwd,
 			resume,
+			noShell,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

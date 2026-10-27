@@ -10,6 +10,7 @@ export const copilot: Backend = {
 		if (input.resume) args.push("--resume", input.resume);
 		if (input.model) args.push("--model", input.model);
 		if (input.effort) args.push("--effort", input.effort);
+		if (input.noShell) args.push("--deny-tool", "shell", "--deny-tool", "url", "--disable-builtin-mcps");
 		return args;
 	},
 
@@ -28,6 +29,8 @@ export const copilot: Backend = {
 
 		return { sessionId, message };
 	},
+
+	supportsNoShell: true,
 
 	install: {
 		hint: "npm package @github/copilot",

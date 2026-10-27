@@ -66,7 +66,9 @@ This matches the native `thrash` persona, so proxy and native reviews behave the
 The backend uses its own file and command tools, and no backend runs in a read-only
 sandbox (codex runs `workspace-write`; the others have none). A diff from a third-party
 PR can carry injected instructions, so do not use `--proxy` on a PR from an author you
-do not trust.
+do not trust. In CI, set `DG_PROXY_NO_SHELL=1` with the `copilot` backend: it then denies
+shell, URL and built-in MCP tools and keeps only file tools. Other backends refuse to run
+with it set.
 
 If the host has no native background facility, prepare one plan per chunk:
 
