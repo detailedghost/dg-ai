@@ -3,6 +3,7 @@ import {
 	assertApprovedDeletes,
 	folderCreateOrder,
 	folderDeleteOrder,
+	orderedFilters,
 	type PlanAction,
 	type SyncPlan,
 } from "./plan";
@@ -19,6 +20,7 @@ export type PolicyWriteClient = {
 			conditions?: string[];
 			actions?: string[];
 			sieve?: string;
+			sequence?: number;
 		}>
 	>;
 	listFolders(): Promise<
@@ -198,7 +200,7 @@ export async function applySyncPlan(input: {
 	}
 	if (filterWrites.length > 0) {
 		steps.push(async () => {
-			const live = await input.client.listFilters();
+			const live = orderedFilters(await input.client.listFilters());
 			const position = new Map(live.map((filter, index) => [filter.id, index]));
 			filterWrites.sort(
 				(left, right) =>

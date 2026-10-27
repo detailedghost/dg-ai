@@ -719,6 +719,31 @@ describe("apply identity and ordering", () => {
 		expect(writer.calls).toEqual(["update:spam", "update:guard"]);
 	});
 
+	test("orders filter writes by Proton sequence, not by response order", async () => {
+		const writer = client();
+		writer.listFilters = async () => [
+			{ id: "spam", name: "Spam", enabled: true, sieve: body, sequence: 2 },
+			{ id: "guard", name: "Guard", enabled: true, sieve: "stop;", sequence: 1 },
+		];
+		const update = (id: string, name: string) => ({
+			op: "update-filter" as const,
+			id,
+			fromName: name,
+			name,
+			sieve: "require [\"fileinto\"];\nkeep;\n",
+			enabled: false,
+			changes: ["enabled" as const],
+		});
+		await applySyncPlan({
+			plan: { actions: [update("guard", "Guard"), update("spam", "Spam")], notices: [] },
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map(),
+		});
+		expect(writer.calls).toEqual(["update:spam", "update:guard"]);
+	});
+
 	test("replaces a filter before a reorder moves it", async () => {
 		const writer = client();
 		writer.listFilters = async () => [
