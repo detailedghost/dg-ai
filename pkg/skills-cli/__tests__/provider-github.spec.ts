@@ -1197,6 +1197,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 									path: "src/old.ts",
 									line: null,
 									originalLine: 17,
+									isOutdated: true,
 									comments: { nodes: [] },
 								},
 								{
@@ -1226,6 +1227,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 		const anchored = threads.find((t) => t.threadId === "RT_anchored");
 		expect(anchored?.path).toBe("src/parser.ts");
 		expect(anchored?.line).toBe(42);
+		expect(anchored?.outdated).toBe(false);
 		expect(anchored?.comments[0].diffHunk).toContain("const n = i + 1;");
 	});
 
@@ -1239,6 +1241,7 @@ describe("listUnresolvedThreads — file anchor and diff hunk", () => {
 		const outdated = threads.find((t) => t.threadId === "RT_outdated");
 		expect(outdated?.line).toBeNull();
 		expect(outdated?.originalLine).toBe(17);
+		expect(outdated?.outdated).toBe(true);
 	});
 
 	test("reports an unanchored thread as an empty path and a null line rather than undefined", async () => {

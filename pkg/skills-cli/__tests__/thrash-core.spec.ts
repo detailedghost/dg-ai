@@ -492,6 +492,50 @@ describe("compileReview", () => {
 		expect(review.verdict).toBe("request_changes");
 	});
 
+	test("an outdated resolved thread does not settle a new whole-file finding on its path", () => {
+		const outdated: ReviewThread = {
+			...thread("src/a.ts", 2, `${TIER_EMOJI.medium} **Medium** old`, true),
+			line: null,
+			originalLine: 2,
+		};
+		const findings = [finding("src/a.ts", null, "medium")];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing: [outdated] });
+		expect(review.comments.map((c) => c.path)).toEqual(["src/a.ts"]);
+		expect(review.dropped).toEqual([]);
+	});
+
+	test("an outdated resolved thread leaves a new whole-file medium finding in the policy tally", () => {
+		const outdated: ReviewThread = {
+			...thread("src/a.ts", 2, `${TIER_EMOJI.medium} **Medium** old`, true),
+			line: null,
+			originalLine: 2,
+		};
+		const findings = [finding("src/a.ts", null, "medium")];
+		const policy = parsePolicy("phases:\n  - block:\n      medium: 0\n");
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing: [outdated], policy });
+		expect(review.tally.medium).toBe(1);
+		expect(review.verdict).toBe("request_changes");
+	});
+
+	test("an unresolved outdated thread does not absorb a separate whole-file finding in the policy tally", () => {
+		const outdated: ReviewThread = {
+			...thread("src/a.ts", 2, `${TIER_EMOJI.medium} **Medium** old`),
+			line: null,
+			originalLine: 2,
+		};
+		const findings = [finding("src/a.ts", null, "medium")];
+		const policy = parsePolicy("phases:\n  - block:\n      medium: 1\n");
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing: [outdated], policy });
+		expect(review.tally.medium).toBe(2);
+	});
+
+	test("an explicit outdated flag keeps a thread from matching a whole-file finding", () => {
+		const flagged: ReviewThread = { ...thread("src/a.ts", 0, `${TIER_EMOJI.medium} **Medium** old`), line: null, outdated: true };
+		const findings = [finding("src/a.ts", null, "medium")];
+		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing: [flagged] });
+		expect(review.comments).toHaveLength(1);
+	});
+
 	test("a finding with no usable line becomes a file comment; one with no file in the diff is not posted but still counts", () => {
 		const findings = [finding("", null, "critical", "cross-file race"), finding("src/a.ts", 99, "medium")];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, NO_OPTS);

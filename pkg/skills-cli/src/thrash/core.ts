@@ -777,9 +777,13 @@ export function isAnswered(thread: ReviewThread): boolean {
 	return thread.comments.slice(1).some((c) => !sameLogin(c.author, opener));
 }
 
+function isOutdatedThread(thread: ReviewThread): boolean {
+	return thread.outdated ?? (thread.line === null && thread.originalLine != null);
+}
+
 function priorThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: string): "unresolved" | "resolved" | null {
 	const line = anchor.newLine ?? anchor.oldLine ?? null;
-	const prior = existing.filter((t) => t.path === anchor.path && t.line === line && isThrashThread(t, reviewer));
+	const prior = existing.filter((t) => !isOutdatedThread(t) && t.path === anchor.path && t.line === line && isThrashThread(t, reviewer));
 	if (prior.some((t) => !t.resolved)) return "unresolved";
 	return prior.length > 0 ? "resolved" : null;
 }
@@ -895,7 +899,7 @@ function policyTally(files: DiffFile[], findings: Finding[], opts: CompileOption
 	for (const finding of [...findings].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
 		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
 		const line = anchor?.newLine ?? anchor?.oldLine ?? null;
-		const index = anchor ? unmatched.findIndex(({ thread }) => thread.path === anchor.path && thread.line === line) : -1;
+		const index = anchor ? unmatched.findIndex(({ thread }) => !isOutdatedThread(thread) && thread.path === anchor.path && thread.line === line) : -1;
 		if (index !== -1) {
 			const [{ tier }] = unmatched.splice(index, 1);
 			if (tierRank(finding.tier) < tierRank(tier)) {

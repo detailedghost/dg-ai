@@ -195,6 +195,8 @@ export interface ReviewThread {
 	line: number | null;
 	/** Anchor at comment time; not valid for matching against the current diff. */
 	originalLine?: number | null;
+	/** True once the thread's anchor no longer exists in the current diff. */
+	outdated?: boolean;
 }
 
 /** Maximum trailing CI-log characters retained in normalized failure details. */
