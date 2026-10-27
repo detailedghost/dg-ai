@@ -171,15 +171,30 @@ export function removeDeclaredFilters(
 	);
 }
 
+export function findDeclaredFolderIndex(
+	file: DeclaredFiltersFile,
+	folder: { path: string; protonId?: string },
+): number {
+	if (folder.protonId !== undefined) {
+		const byId = file.folders.findIndex(
+			(item) => item.protonId === folder.protonId,
+		);
+		if (byId >= 0) return byId;
+	}
+	const byPath = file.folders.flatMap((item, index) =>
+		item.path === folder.path &&
+		(folder.protonId === undefined || item.protonId === undefined)
+			? [index]
+			: [],
+	);
+	return byPath.length === 1 ? (byPath[0] ?? -1) : -1;
+}
+
 export function upsertDeclaredFolder(
 	file: DeclaredFiltersFile,
 	folder: DeclaredFolder,
 ): void {
-	const index = file.folders.findIndex(
-		(item) =>
-			item.path === folder.path ||
-			(folder.protonId !== undefined && item.protonId === folder.protonId),
-	);
+	const index = findDeclaredFolderIndex(file, folder);
 	if (index >= 0) {
 		const current = file.folders[index];
 		if (!current) return;

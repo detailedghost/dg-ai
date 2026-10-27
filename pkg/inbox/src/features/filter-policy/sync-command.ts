@@ -130,7 +130,12 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 				action.op === "create-folder" ? [action.path] : [],
 			),
 		});
-		keepUntouchedBaseline(updated, recorded, touchedIds(plan), pulledOrderIds(plan));
+		keepUntouchedBaseline(
+			updated,
+			recorded,
+			touchedIds(plan),
+			reorderedIds(plan, after.filters),
+		);
 		await writeDeclaredFilters(path, updated);
 		printJson(publicSummary(plan, issues, hash, path, planPath, false));
 	} finally {
@@ -144,7 +149,10 @@ function touchedIds(plan: SyncPlan): Set<string> {
 	);
 }
 
-function pulledOrderIds(plan: SyncPlan): Set<string> {
+function reorderedIds(plan: SyncPlan, live: LiveFilter[]): Set<string> {
+	if (plan.actions.some((action) => action.op === "reorder-filters")) {
+		return new Set(live.map((filter) => filter.id));
+	}
 	return new Set(
 		plan.actions.flatMap((action) =>
 			action.op === "pull-filter-order" ? action.ids : [],

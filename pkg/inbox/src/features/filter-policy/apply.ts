@@ -9,7 +9,11 @@ import {
 } from "./plan";
 import { guardsChain } from "./safety";
 import type { DeclaredFiltersFile } from "./schema";
-import { upsertDeclaredFilter, upsertDeclaredFolder } from "./store";
+import {
+	findDeclaredFolderIndex,
+	upsertDeclaredFilter,
+	upsertDeclaredFolder,
+} from "./store";
 
 export type PolicyWriteClient = {
 	listFilters(): Promise<
@@ -327,7 +331,9 @@ export function recordAppliedProgress(
 			if (!id) continue;
 			const found = live.folders.find((folder) => folder.id === id || folder.path === action.path);
 			const path = found?.path || action.path;
-			const desired = file.folders.find((folder) => folder.path === action.path || folder.protonId === id);
+			const desired = file.folders[
+				findDeclaredFolderIndex(file, { path: action.path, protonId: id })
+			];
 			if (desired) desired.protonId = found?.id ?? id;
 			upsertObservedFolder(file, {
 				id: found?.id ?? id,
@@ -339,9 +345,9 @@ export function recordAppliedProgress(
 		if (action.op === "rename-folder") {
 			const found = live.folders.find((folder) => folder.id === action.id);
 			const path = found?.path || action.to;
-			const desired = file.folders.find(
-				(folder) => folder.protonId === action.id || folder.path === action.to,
-			);
+			const desired = file.folders[
+				findDeclaredFolderIndex(file, { path: action.to, protonId: action.id })
+			];
 			if (desired) {
 				desired.protonId = action.id;
 				if (found?.path) desired.path = found.path;

@@ -487,3 +487,49 @@ test("import orders filters by Proton sequence and the first sync proposes no re
 	expect(dry.code, dry.stderr).toBe(0);
 	expect(JSON.parse(dry.stdout)).toMatchObject({ reorders: 0, creates: 0, updates: 0 });
 });
+
+test("sync keeps one sequence source in the baseline after a reorder and an update", async () => {
+	const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+	const dir = join(root, "workspace");
+	const dataPath = join(root, "mailbox.json");
+	await mkdir(dirname(dataPath), { recursive: true });
+	const bank = full("fin/banking", "desk.bank.example");
+	const shop = full("shop/orders", "shop.example");
+	await Bun.write(
+		dataPath,
+		JSON.stringify({
+			folders: [
+				{ id: "bank", name: "banking", path: "fin/banking", type: "folder" },
+				{ id: "shop", name: "orders", path: "shop/orders", type: "folder" },
+			],
+			filters: [
+				{ id: "bank-filter", name: "Fin - Banking", enabled: true, conditions: [bank], actions: [bank], sequence: 10 },
+				{ id: "shop-filter", name: "Shop - Orders", enabled: true, conditions: [shop], actions: [shop], sequence: 20 },
+			],
+			messages: [],
+		}),
+	);
+	const flags = ["--dir", dir, "--data-path", dataPath];
+	expect((await runCli(["filters", "import", ...flags])).code).toBe(0);
+	const declaredPath = join(dir, "declared-filters.json");
+	const declared = await Bun.file(declaredPath).json();
+	declared.policy.safety.protectedPlusAlias = "owner+*@example.test";
+	declared.filters.reverse();
+	declared.filters[1].sieve = full("fin/receipts", "desk.bank.example");
+	await Bun.write(declaredPath, `${JSON.stringify(declared, null, 2)}\n`);
+	const dry = await runCli(["filters", "sync", ...flags, "--dry-run"]);
+	expect(dry.code, dry.stderr).toBe(0);
+	const applied = await runCli(["filters", "sync", ...flags, "--apply", JSON.parse(dry.stdout).planHash]);
+	expect(applied.code, applied.stderr).toBe(0);
+	const live = await Bun.file(dataPath).json();
+	const after = await Bun.file(declaredPath).json();
+	const liveOrder = [...live.filters]
+		.sort((left: { sequence: number }, right: { sequence: number }) => left.sequence - right.sequence)
+		.map((filter: { id: string }) => filter.id);
+	expect(after.observed.filters.map((filter: { id: string }) => filter.id)).toEqual(liveOrder);
+	expect(
+		after.observed.filters.map((filter: { id: string; sequence: number }) => [filter.id, filter.sequence]),
+	).toEqual(live.filters.map((filter: { id: string; sequence: number }) => [filter.id, filter.sequence]).sort(([, l]: [string, number], [, r]: [string, number]) => l - r));
+	const recheck = await runCli(["filters", "sync", ...flags, "--dry-run"]);
+	expect(JSON.parse(recheck.stdout)).toMatchObject({ reorders: 0, creates: 0, updates: 0 });
+});

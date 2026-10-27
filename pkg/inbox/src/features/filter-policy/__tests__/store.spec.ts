@@ -6,6 +6,7 @@ import {
 	removeDeclaredFilters,
 	seedDeclaredFromLive,
 	upsertDeclaredFilter,
+	upsertDeclaredFolder,
 } from "../store";
 
 const sieve = 'require ["fileinto"];\nif true {\n  keep;\n}\n';
@@ -20,6 +21,28 @@ function declaredWithDuplicates() {
 }
 
 describe("declared filter store", () => {
+	test("updates the folder with the matching Proton ID when an earlier folder shares the path", () => {
+		const file = emptyDeclaredFilters();
+		file.folders = [
+			{ path: "Same", type: "folder", protonId: "a" },
+			{ path: "Same", type: "folder", protonId: "b" },
+		];
+		upsertDeclaredFolder(file, { path: "Same", type: "label", protonId: "b" });
+		expect(file.folders[0]).toMatchObject({ type: "folder", protonId: "a" });
+		expect(file.folders[1]).toMatchObject({ type: "label", protonId: "b" });
+	});
+
+	test("matches a folder by path only when it has no ID and the path is unambiguous", () => {
+		const file = emptyDeclaredFilters();
+		file.folders = [
+			{ path: "Same", type: "folder", protonId: "a" },
+			{ path: "Open", type: "folder" },
+		];
+		upsertDeclaredFolder(file, { path: "Same", type: "label", protonId: "b" });
+		upsertDeclaredFolder(file, { path: "Open", type: "label", protonId: "c" });
+		expect(file.folders.map((folder) => folder.protonId)).toEqual(["a", "c", "b"]);
+	});
+
 	test("updates the filter with the matching Proton ID when names repeat", () => {
 		const file = declaredWithDuplicates();
 		upsertDeclaredFilter(file, { name: "Same", enabled: false, sieve: "three", protonId: "b" });
