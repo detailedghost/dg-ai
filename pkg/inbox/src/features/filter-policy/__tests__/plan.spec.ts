@@ -946,3 +946,56 @@ describe("filter policy plan", () => {
 		]);
 	});
 });
+
+describe("approve-delete selectors", () => {
+	const dupes = [proton("a1", "Same"), proton("b2", "Same", "shop/orders")];
+	const removeBoth = (approveDelete: string[], extra: Partial<SyncPlanInput> = {}) =>
+		input({ liveFilters: dupes, observedFilters: dupes, approveDelete, ...extra });
+
+	test("refuses a name shared by two removed filters and lists their ids", () => {
+		expect(() => buildSyncPlan(removeBoth(["Same"]))).toThrow(
+			"Ambiguous approve-delete target: Same matches a1, b2",
+		);
+	});
+
+	test("deletes only the filter named by a Proton id", () => {
+		const plan = buildSyncPlan(removeBoth(["b2"]));
+		const deletes = plan.actions.filter((action) => action.op === "delete-filter");
+		expect(deletes).toEqual([{ op: "delete-filter", id: "b2", name: "Same" }]);
+		expect(plan.notices).toContainEqual(
+			expect.objectContaining({ op: "delete-withheld", id: "a1" }),
+		);
+	});
+
+	test("refuses a name shared by a removed filter and a removed folder", () => {
+		const filters = [proton("a1", "x")];
+		const folders = [folder("f9", "x")];
+		expect(() =>
+			buildSyncPlan(
+				input({
+					liveFilters: filters,
+					observedFilters: filters,
+					liveFolders: folders,
+					observedFolders: folders,
+					approveDelete: ["x"],
+				}),
+			),
+		).toThrow("Ambiguous approve-delete target: x matches a1, f9");
+	});
+
+	test("accepts a name that matches one removed filter", () => {
+		const filters = [proton("a1", "Solo"), proton("b2", "Other")];
+		const plan = buildSyncPlan(
+			input({
+				liveFilters: filters,
+				observedFilters: filters,
+				approveDelete: ["Solo"],
+			}),
+		);
+		expect(plan.actions).toContainEqual({
+			op: "delete-filter",
+			id: "a1",
+			name: "Solo",
+		});
+	});
+});

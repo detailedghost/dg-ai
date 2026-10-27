@@ -86,8 +86,10 @@ including the same pull, revert, and delete flags.
 
 On a terminal you can use `--confirm` and type `apply`. A non-interactive shell must use `--apply` and
 the hash. `--apply` without a hash is refused. `--apply` does not delete anything. Add
-`--approve-delete id,name` for each filter or folder you intend to remove, and include those flags in
-the dry run that produced the hash.
+`--approve-delete` for each filter or folder you intend to remove, and include those flags in
+the dry run that produced the hash. The flag accepts a Proton id, a filter name, or a folder path. A
+name or path that matches more than one delete candidate is refused, and the error lists the Proton
+ids. Pass one id to approve exactly that item.
 
 Sync refuses to apply when any safety check fails:
 

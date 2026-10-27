@@ -332,23 +332,21 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 
 	assertKnownSelectors("pull", pull, driftSelectors);
 	assertKnownSelectors("revert", revert, driftSelectors);
-	const deleteSelectors = new Set<string>();
-	for (const candidate of deleteCandidates) {
-		deleteSelectors.add(candidate.id);
-		deleteSelectors.add(candidate.name);
-	}
-	for (const candidate of folderDeleteCandidates) {
-		deleteSelectors.add(candidate.id);
-		deleteSelectors.add(candidate.path);
-	}
+	const deleteTargets: { id: string; name: string }[] = [
+		...deleteCandidates,
+		...folderDeleteCandidates.map(({ id, path }) => ({ id, name: path })),
+	];
 	for (const notice of notices) {
 		if (notice.op !== "drift") continue;
 		if (!matchesSelector(revert, notice.id, notice.name)) continue;
 		if (!notice.detail.includes("not in the declared file")) continue;
-		deleteSelectors.add(notice.id);
-		deleteSelectors.add(notice.name);
+		deleteTargets.push({ id: notice.id, name: notice.name });
 	}
+	const deleteSelectors = new Set(
+		deleteTargets.flatMap((target) => [target.id, target.name]),
+	);
 	assertKnownSelectors("approve-delete", approveDelete, deleteSelectors);
+	assertUnambiguousDeletes(approveDelete, deleteTargets);
 
 	for (const candidate of deleteCandidates) {
 		pushDelete(
@@ -857,6 +855,23 @@ function assertKnownSelectors(
 	}
 	for (const selector of selectors) {
 		if (!known.has(selector)) throw new Error(`Unknown ${kind} target: ${selector}`);
+	}
+}
+
+function assertUnambiguousDeletes(
+	selectors: string[],
+	targets: { id: string; name: string }[],
+): void {
+	for (const selector of selectors) {
+		if (targets.some((target) => target.id === selector)) continue;
+		const ids = targets
+			.filter((target) => target.name === selector)
+			.map((target) => target.id);
+		if (ids.length > 1) {
+			throw new Error(
+				`Ambiguous approve-delete target: ${selector} matches ${ids.join(", ")}. Pass one Proton id.`,
+			);
+		}
 	}
 }
 
