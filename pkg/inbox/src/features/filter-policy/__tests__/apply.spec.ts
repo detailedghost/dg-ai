@@ -323,6 +323,45 @@ describe("apply sync plan", () => {
 		expect(writer.calls).toEqual(["rename:finance", "folder:finance/receipts"]);
 	});
 
+	test("creates a replacement for a renamed folder only after the rename frees the path", async () => {
+		const writer = client();
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "create-folder", path: "fin", type: "folder" },
+					{ op: "create-folder", path: "fin/receipts", type: "folder" },
+					{ op: "rename-folder", id: "fin-id", from: "fin", to: "finance" },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared: emptyDeclaredFilters(),
+			foldersByPath: new Map([["fin", "fin-id"]]),
+		});
+		expect(writer.calls).toEqual(["rename:finance", "folder:fin", "folder:fin/receipts"]);
+	});
+
+	test("refuses a child create under a path a rename vacates before writing anything", async () => {
+		const writer = client();
+		await expect(
+			applySyncPlan({
+				plan: {
+					actions: [
+						{ op: "create-folder", path: "fin/receipts", type: "folder" },
+						{ op: "rename-folder", id: "fin-id", from: "fin", to: "finance" },
+					],
+					notices: [],
+				},
+				approvedDeletes: [],
+				client: writer,
+				declared: emptyDeclaredFilters(),
+				foldersByPath: new Map([["fin", "fin-id"]]),
+			}),
+		).rejects.toThrow("parent folder fin cannot be resolved");
+		expect(writer.calls).toEqual([]);
+	});
+
 	test("drops pulled-away declarations and follows a pulled filter order", async () => {
 		const declared = emptyDeclaredFilters();
 		declared.filters = [

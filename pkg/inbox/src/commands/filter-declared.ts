@@ -24,7 +24,7 @@ export function isDeclaredOnlyId(id: string): boolean {
 	return id.startsWith(declaredOnlyPrefix);
 }
 
-/** Declared entries that no live filter claims yet, shaped like live filters. */
+/** Staged declared entries with no Proton ID, shaped like live filters. */
 export function declaredOnlyFilters(
 	filters: Array<{ id: string; name: string }>,
 	declared: DeclaredFiltersFile | undefined,
@@ -34,7 +34,7 @@ export function declaredOnlyFilters(
 	}
 	const claimed = new Set(filters.map((filter) => findDeclaredFilter(declared, filter)));
 	return declared.filters
-		.filter((entry) => !claimed.has(entry))
+		.filter((entry) => !entry.protonId && !claimed.has(entry))
 		.map((entry) => ({
 			id: `${declaredOnlyPrefix}${entry.name}`,
 			name: entry.name,

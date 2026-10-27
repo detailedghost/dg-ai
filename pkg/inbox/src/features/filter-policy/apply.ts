@@ -62,6 +62,7 @@ type AppliedStep = { action: PlanAction; id?: string; order?: string[] };
 type FolderStep = {
 	kind: "create" | "rename";
 	target: string;
+	vacates?: string;
 	run: () => Promise<void>;
 };
 
@@ -95,8 +96,9 @@ export async function applySyncPlan(input: {
 		kind: FolderStep["kind"],
 		target: string,
 		run: () => Promise<void>,
+		vacates?: string,
 	): void => {
-		folderSteps.push({ kind, target, run });
+		folderSteps.push({ kind, target, run, ...(vacates ? { vacates } : {}) });
 	};
 	const done: AppliedStep[] = [];
 	const steps: Array<() => Promise<void>> = [];
@@ -131,7 +133,7 @@ export async function applySyncPlan(input: {
 			});
 			input.foldersByPath.set(action.to, action.id);
 			done.push({ action, id: action.id });
-		});
+		}, action.from);
 	}
 	steps.push(
 		...orderFolderSteps(folderSteps, new Set(input.foldersByPath.keys())).map(
@@ -503,7 +505,12 @@ function orderFolderSteps(steps: FolderStep[], known: Set<string>): FolderStep[]
 		const index = pending.findIndex(
 			(step) =>
 				!pending.some(
-					(other) => other !== step && other.target === parentOf(step.target),
+					(other) =>
+						other !== step &&
+						(other.target === parentOf(step.target) ||
+							(other.vacates !== undefined &&
+								(other.vacates === parentOf(step.target) ||
+									other.vacates === step.target))),
 				),
 		);
 		const [next] = pending.splice(Math.max(index, 0), 1);
@@ -514,6 +521,7 @@ function orderFolderSteps(steps: FolderStep[], known: Set<string>): FolderStep[]
 				`Refusing to ${next.kind} ${next.target}: parent folder ${parent} cannot be resolved`,
 			);
 		}
+		if (next.vacates) known.delete(next.vacates);
 		known.add(next.target);
 		ordered.push(next);
 	}

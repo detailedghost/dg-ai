@@ -1,6 +1,7 @@
-import type { PlanAction, PlanNotice } from "./plan";
+import type { LiveFilter, PlanAction, PlanNotice } from "./plan";
 import {
   fileintoDestination,
+  flattenCommands,
   parseCommands,
   sieveLooksTruncated,
   type SieveCommand,
@@ -34,7 +35,7 @@ export function safetyIssues(input: {
   policy: SafetyPolicy;
   keepFirst: string[];
   desiredNames: string[];
-  desiredFilters: DesiredFilter[];
+  liveFilters: LiveFilter[];
 }): SafetyIssue[] {
   const issues: SafetyIssue[] = [];
   const alias = input.policy.protectedPlusAlias.trim();
@@ -229,6 +230,14 @@ function readKeyed(test: SieveTest): KeyedTest | undefined {
     if (arg?.type === "string") {
       positional.push(arg.values);
     } else if (arg?.type === "tag" && arg.name === "comparator") {
+      const next = index + 1 < test.args.length ? test.args[index + 1] : undefined;
+      if (
+        next?.type !== "string" ||
+        next.values.length !== 1 ||
+        next.values[0]?.toLowerCase() !== "i;ascii-casemap"
+      ) {
+        return undefined;
+      }
       index += 1;
     } else if (
       arg?.type === "tag" &&
@@ -265,27 +274,53 @@ export function globIsSubset(inner: string, outer: string): boolean {
   return globToRegExp(outer).test(inner.replaceAll("*", "\u0001"));
 }
 
-type DesiredFilter = { name: string; sieve: string; protonId?: string };
-
 function effectiveFilters(input: {
   actions: PlanAction[];
-  desiredFilters: DesiredFilter[];
+  liveFilters: LiveFilter[];
 }): Array<{ name: string; sieve: string }> {
   const written = input.actions.flatMap(
     (action) => writtenFilter(action) ?? [],
   );
-  const reshapesChain = input.actions.some(
-    (action) =>
-      action.op === "reorder-filters" || action.op === "delete-filter",
+  if (!reshapesChain(input)) return written;
+  const replaced = new Set(written.flatMap((filter) => filter.key ?? []));
+  const deleted = new Set(
+    input.actions.flatMap((action) =>
+      action.op === "delete-filter" ? action.id : [],
+    ),
   );
-  if (!reshapesChain) return written;
-  const keys = new Set(written.flatMap((filter) => filter.key ?? []));
-  const unchanged = input.desiredFilters.filter(
-    (filter, index) =>
-      !(filter.protonId && keys.has(filter.protonId)) &&
-      !keys.has(`new:${index}`),
+  const staying = input.liveFilters.filter(
+    (filter) =>
+      filter.enabled && !replaced.has(filter.id) && !deleted.has(filter.id),
   );
-  return [...written, ...unchanged];
+  return [...written, ...staying];
+}
+
+function reshapesChain(input: {
+  actions: PlanAction[];
+  liveFilters: LiveFilter[];
+}): boolean {
+  const guards = new Set(
+    input.liveFilters
+      .filter((filter) => guardsChain(filter.sieve))
+      .map((filter) => filter.id),
+  );
+  return input.actions.some((action) => {
+    if (action.op === "reorder-filters") return guards.size > 0;
+    return (
+      (action.op === "delete-filter" ||
+        action.op === "update-filter" ||
+        action.op === "revert-filter") &&
+      guards.has(action.id)
+    );
+  });
+}
+
+function guardsChain(sieve: string): boolean {
+  const commands = parseCommands(sieve);
+  if (!commands) return true;
+  return flattenCommands(commands).some(
+    (command) => command.name === "keep" || command.name === "stop",
+  );
 }
 
 export function keepFirstSatisfied(

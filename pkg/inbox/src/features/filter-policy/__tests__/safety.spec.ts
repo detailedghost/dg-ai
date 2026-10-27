@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PlanAction, PlanNotice } from "../plan";
+import type { LiveFilter, PlanAction, PlanNotice } from "../plan";
 import {
   blockedDestinations,
   globIsSubset,
@@ -8,6 +8,7 @@ import {
   routesToBlocked,
   safetyIssues,
   verificationSenders,
+  type SafetyIssue,
   type SafetyPolicy,
 } from "../safety";
 
@@ -44,7 +45,7 @@ describe("filter policy safety", () => {
       policy,
       keepFirst: [],
       desiredNames: [],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(
       issues.filter((issue) => issue.code === "protected-destination"),
@@ -66,7 +67,7 @@ describe("filter policy safety", () => {
       policy,
       keepFirst: ["Owner"],
       desiredNames: ["Owner", "GitHub"],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(issues).toEqual([]);
   });
@@ -82,7 +83,7 @@ describe("filter policy safety", () => {
       },
       keepFirst: [],
       desiredNames: [],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(issues.map((issue) => issue.code)).toEqual([
       "protected-destination",
@@ -100,7 +101,7 @@ describe("filter policy safety", () => {
       policy,
       keepFirst: [],
       desiredNames: ["Cut"],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(truncated.map((issue) => issue.code)).toContain("truncated-sieve");
     const blank = safetyIssues({
@@ -109,7 +110,7 @@ describe("filter policy safety", () => {
       policy: { ...policy, protectedPlusAlias: "  " },
       keepFirst: [],
       desiredNames: [],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(blank.map((issue) => issue.code)).toEqual(["alias-unconfigured"]);
     const drift: PlanNotice = {
@@ -125,7 +126,7 @@ describe("filter policy safety", () => {
       policy,
       keepFirst: ["+Owner"],
       desiredNames: ["Fin - Banking"],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(unresolved.map((issue) => issue.code)).toEqual([
       "unresolved-drift",
@@ -217,7 +218,7 @@ describe("filter policy safety", () => {
       policy,
       keepFirst: [],
       desiredNames: ["Updated"],
-      desiredFilters: [],
+      liveFilters: [],
     });
     expect(
       issues
@@ -236,10 +237,10 @@ describe("filter policy safety", () => {
       policy: SafetyPolicy;
       keepFirst: string[];
       desiredNames: string[];
-      desiredFilters: Array<{ name: string; sieve: string }>;
+      liveFilters: LiveFilter[];
     } = {
       notices: [],
-      desiredFilters: [],
+      liveFilters: [],
       policy: { ...policy, verificationSenders: [] },
       keepFirst: [],
       desiredNames: [],
@@ -606,89 +607,167 @@ describe("filter policy safety", () => {
       policy: { ...policy, verificationSenders: [] },
       keepFirst: [],
     };
-    const risky = {
-      name: "Risky",
-      sieve: 'require ["fileinto"];\nfileinto "Spam";\n',
-    };
-    const safe = { name: "Safe", sieve: "keep;" };
+    const riskySieve = 'require ["fileinto"];\nfileinto "Spam";\n';
+    const live = (
+      id: string,
+      sieve: string,
+      over: Partial<LiveFilter> = {},
+    ): LiveFilter => ({ id, name: id, enabled: true, sieve, ...over });
+    const update = (
+      id: string,
+      sieve: string,
+      enabled = true,
+    ): PlanAction => ({
+      op: "update-filter",
+      id,
+      fromName: id,
+      name: id,
+      enabled,
+      sieve,
+      changes: enabled ? ["sieve"] : ["enabled"],
+    });
+    const codesOf = (input: Partial<Parameters<typeof safetyIssues>[0]>) =>
+      safetyIssues({
+        ...base,
+        actions: [],
+        desiredNames: [],
+        liveFilters: [],
+        ...input,
+      }).map((issue) => issue.code);
+    const both: SafetyIssue["code"][] = [
+      "protected-destination",
+      "verification-destination",
+    ];
 
-    test("checks an unchanged Spam rule that a reorder-only plan moves", () => {
+    test("checks an unchanged Spam rule that a reorder moves past a keep filter", () => {
       const issues = safetyIssues({
         ...base,
         actions: [{ op: "reorder-filters", names: ["Risky", "Safe"] }],
         desiredNames: ["Risky", "Safe"],
-        desiredFilters: [safe, risky],
+        liveFilters: [live("safe", "keep;"), live("Risky", riskySieve)],
       });
-      expect(issues.map((issue) => issue.code)).toEqual([
-        "protected-destination",
-        "verification-destination",
-      ]);
+      expect(issues.map((issue) => issue.code)).toEqual(both);
       expect(issues[0]?.message).toContain("Risky");
     });
 
-    test("checks an unchanged Spam rule when a delete-filter plan removes a protecting rule", () => {
-      const issues = safetyIssues({
-        ...base,
-        actions: [{ op: "delete-filter", id: "gone", name: "Keep" }],
-        desiredNames: ["Risky"],
-        desiredFilters: [{ ...risky, protonId: "p1" }],
-      });
-      expect(issues.map((issue) => issue.code)).toEqual([
-        "protected-destination",
-        "verification-destination",
-      ]);
+    test("checks an unchanged Spam rule when a delete removes a keep filter", () => {
+      expect(
+        codesOf({
+          actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
+          liveFilters: [live("gone", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
     });
 
-    test("keeps an unchanged same-named filter in the chain when its twin is updated", () => {
-      const issues = safetyIssues({
-        ...base,
-        actions: [
-          {
-            op: "update-filter",
-            id: "p2",
-            fromName: "Same",
-            name: "Same",
-            enabled: true,
-            sieve: "keep;",
-            changes: ["sieve"],
-          },
-          { op: "reorder-filters", names: ["Same", "Same"] },
-        ],
-        desiredNames: ["Same", "Same"],
-        desiredFilters: [
-          { name: "Same", sieve: risky.sieve, protonId: "p1" },
-          { name: "Same", sieve: "keep;", protonId: "p2" },
-        ],
-      });
-      expect(issues.map((issue) => issue.code)).toEqual([
-        "protected-destination",
-        "verification-destination",
-      ]);
+    test("checks an unchanged Spam rule when a stop filter is disabled", () => {
+      expect(
+        codesOf({
+          actions: [update("lead", "stop;", false)],
+          liveFilters: [live("lead", "stop;"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
     });
 
-    test("matches a created filter to its declared entry by create ref", () => {
-      const issues = safetyIssues({
-        ...base,
-        actions: [
-          {
-            op: "create-filter",
-            ref: "new:1",
-            name: "Same",
-            enabled: true,
-            sieve: "keep;",
-          },
-          { op: "reorder-filters", names: ["Same", "Same"] },
-        ],
-        desiredNames: ["Same", "Same"],
-        desiredFilters: [
-          { name: "Same", sieve: risky.sieve, protonId: "p1" },
-          { name: "Same", sieve: "keep;" },
-        ],
-      });
-      expect(issues.map((issue) => issue.code)).toEqual([
-        "protected-destination",
-        "verification-destination",
-      ]);
+    test("checks an unchanged Spam rule when a keep filter is edited", () => {
+      expect(
+        codesOf({
+          actions: [update("lead", "# edited\nkeep;")],
+          liveFilters: [live("lead", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
+    });
+
+    test("checks a reverted keep filter against the rule below it", () => {
+      expect(
+        codesOf({
+          actions: [
+            {
+              op: "revert-filter",
+              id: "lead",
+              name: "lead",
+              enabled: false,
+              sieve: "keep;",
+            },
+          ],
+          liveFilters: [live("lead", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
+    });
+
+    test("stays narrow when the edited filter has no keep or stop", () => {
+      expect(
+        codesOf({
+          actions: [update("lead", "# edited\nfileinto \"Work\";")],
+          liveFilters: [live("lead", 'fileinto "Work";'), live("risky", riskySieve)],
+        }),
+      ).toEqual([]);
+    });
+
+    test("stays narrow when the plan only creates filters", () => {
+      expect(
+        codesOf({
+          actions: [create("Safe", "keep;")],
+          liveFilters: [live("lead", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual([]);
+    });
+
+    test("keeps a withheld delete in the chain", () => {
+      expect(
+        codesOf({
+          actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
+          notices: [
+            { op: "delete-withheld", target: "filter", id: "risky", name: "risky" },
+          ],
+          liveFilters: [live("gone", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
+    });
+
+    test("drops an approved delete of a Spam rule from the chain", () => {
+      expect(
+        codesOf({
+          actions: [
+            { op: "delete-filter", id: "gone", name: "Gone" },
+            { op: "delete-filter", id: "risky", name: "risky" },
+          ],
+          liveFilters: [live("gone", "keep;"), live("risky", riskySieve)],
+        }),
+      ).toEqual([]);
+    });
+
+    test("drops a disabled live Spam rule from the chain", () => {
+      expect(
+        codesOf({
+          actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
+          liveFilters: [
+            live("gone", "keep;"),
+            live("risky", riskySieve, { enabled: false }),
+          ],
+        }),
+      ).toEqual([]);
+    });
+
+    test("replaces a live filter with its written version by id", () => {
+      expect(
+        codesOf({
+          actions: [
+            update("p1", "keep;"),
+            { op: "reorder-filters", names: ["Same", "Same"] },
+          ],
+          liveFilters: [live("p1", "keep;"), live("p2", riskySieve)],
+        }),
+      ).toEqual(both);
+      expect(
+        codesOf({
+          actions: [
+            update("p1", "keep;"),
+            update("p2", "keep;"),
+            { op: "reorder-filters", names: ["Same", "Same"] },
+          ],
+          liveFilters: [live("p1", "keep;"), live("p2", riskySieve)],
+        }),
+      ).toEqual([]);
     });
 
     test("drops a reverted or pulled filter from the unchanged set by id", () => {
@@ -700,48 +779,22 @@ describe("filter policy safety", () => {
             { op: "reorder-filters", names: ["Same"] },
           ],
           desiredNames: ["Same"],
-          desiredFilters: [
-            { name: "Same", sieve: risky.sieve, protonId: "p1" },
-          ],
+          liveFilters: [live("p1", riskySieve)],
         });
         expect(issues).toEqual([]);
       }
     });
 
-    test("does not treat a deleted filter id as a written filter", () => {
-      const issues = safetyIssues({
-        ...base,
-        actions: [{ op: "delete-filter", id: "p1", name: "Gone" }],
-        desiredNames: ["Risky"],
-        desiredFilters: [{ ...risky, protonId: "p1" }],
-      });
-      expect(issues).toHaveLength(2);
-    });
-
-    test("skips unchanged rules when the plan does not reorder", () => {
-      const issues = safetyIssues({
-        ...base,
-        actions: [create("Safe", safe.sieve)],
-        desiredNames: ["Risky", "Safe"],
-        desiredFilters: [risky, safe],
-      });
-      expect(issues).toEqual([]);
-    });
-
-    test("uses the written sieve over the declared one and reports each filter once", () => {
+    test("uses the written sieve over the live one and reports each filter once", () => {
       const issues = safetyIssues({
         ...base,
         actions: [
-          create(
-            "Risky",
-            'require ["fileinto"];\nfileinto "inbox";\n',
-            "new:0",
-          ),
-          create("Other", risky.sieve, "new:2"),
-          { op: "reorder-filters", names: ["Risky", "Safe", "Other"] },
+          update("a", 'require ["fileinto"];\nfileinto "inbox";\n'),
+          create("Other", riskySieve, "new:2"),
+          { op: "reorder-filters", names: ["a", "Safe", "Other"] },
         ],
         desiredNames: [],
-        desiredFilters: [risky, safe, { name: "Other", sieve: risky.sieve }],
+        liveFilters: [live("a", riskySieve), live("s", "keep;")],
       });
       expect(issues.map((issue) => issue.message)).toEqual([
         "Refusing to route protected plus-alias mail to Spam or Trash in Other",
@@ -751,13 +804,55 @@ describe("filter policy safety", () => {
 
     test("passes a chain with no risky rule", () => {
       expect(
-        safetyIssues({
-          ...base,
+        codesOf({
           actions: [{ op: "reorder-filters", names: ["Safe"] }],
           desiredNames: ["Safe"],
-          desiredFilters: [safe],
+          liveFilters: [live("s", "keep;")],
         }),
       ).toEqual([]);
+    });
+
+    test("fails closed when a live keep check cannot read the script", () => {
+      expect(
+        codesOf({
+          actions: [{ op: "delete-filter", id: "gone", name: "Gone" }],
+          liveFilters: [live("gone", "keep keep {\n}"), live("risky", riskySieve)],
+        }),
+      ).toEqual(both);
+    });
+  });
+
+  describe("comparators", () => {
+    const toAll =
+      '["To", "Cc", "Bcc", "Delivered-To", "X-Original-To", "Resent-To"]';
+    const body = (comparator: string): string =>
+      `require ["fileinto"];\nif not address ${comparator} :matches ${toAll} "OWNER+*@EXAMPLE.TEST" {\n  fileinto "Spam";\n}\n`;
+    const run = (sieveBody: string): string[] =>
+      safetyIssues({
+        actions: [create("Rule", sieveBody)],
+        notices: [],
+        policy: { ...policy, verificationSenders: [] },
+        keepFirst: [],
+        desiredNames: [],
+        liveFilters: [],
+      }).map((issue) => issue.code);
+
+    test("treats a case-sensitive comparator as not excluding lowercase protected mail", () => {
+      expect(run(body(':comparator "i;octet"'))).toContain(
+        "protected-destination",
+      );
+    });
+
+    test("fails closed on an unknown comparator", () => {
+      expect(run(body(':comparator "i;unknown"'))).toContain(
+        "protected-destination",
+      );
+    });
+
+    test("still reasons case-insensitively under i;ascii-casemap", () => {
+      expect(run(body(':comparator "i;ascii-casemap"'))).not.toContain(
+        "protected-destination",
+      );
     });
   });
 });

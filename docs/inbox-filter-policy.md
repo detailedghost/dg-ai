@@ -86,7 +86,8 @@ Sync refuses to apply when any safety check fails:
 - `protectedPlusAlias` is missing
 - a planned write would file protected plus-alias mail into Spam or Trash
 - a planned write would file GitHub, GitLab, or another listed verification sender into Spam or Trash
-- a plan that reorders or deletes filters leaves any filter in the chain able to do the same
+- a plan that reorders filters, or deletes, disables, or edits a filter with `keep` or `stop`, leaves
+  any filter that stays live in Proton able to do the same
 - a Sieve script looks truncated or redacted, or uses a `fileinto` form the parser cannot read
 
 The check looks at the mail a rule can match, not at the addresses written in it. A rule that sends mail

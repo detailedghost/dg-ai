@@ -74,5 +74,15 @@ describe("declared filter projection", () => {
 		const projected = projectDeclaredFilters(live, declared);
 		expect(projected.map((filter) => filter.id)).toEqual(["p1", "declared:Staged"]);
 	});
+
+	test("leaves out declared entries whose Proton filter is gone", () => {
+		const declared = declaredWith([
+			{ name: "Receipts", protonId: "p1" },
+			{ name: "Deleted", protonId: "p2" },
+		]);
+		const live = [{ id: "p1", name: "Receipts", enabled: true, conditions: [], actions: [] }];
+		const projected = projectDeclaredFilters(live, declared);
+		expect(projected.map((filter) => filter.id)).toEqual(["p1"]);
+	});
 });
 

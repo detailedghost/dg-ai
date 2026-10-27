@@ -85,7 +85,7 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 			policy: declared.policy.safety,
 			keepFirst: declared.policy.keepFirst,
 			desiredNames: declared.filters.map((filter) => filter.name),
-			desiredFilters: declared.filters,
+			liveFilters: live.filters,
 		});
 		const hash = planHash(plan);
 		const review = formatSyncReview(plan, issues);
