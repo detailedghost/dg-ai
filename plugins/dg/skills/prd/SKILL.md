@@ -45,11 +45,10 @@ Don't restate kick's semantics here.
    is `<prd-slug>` below (the bundle's own `feature_snake_case`, not necessarily the raw
    `<feature-name>` argument verbatim).
 2. **Relocate to the hand-off location.**
-   `mkdir -p .agents/spec/todo/<prd-slug>/`, then move the bundle's contents in:
-   `git mv .agents/spec/<NNN>_<slug>/* .agents/spec/todo/<prd-slug>/` (moves `plan.md`, `initial.md`,
-   `roundtable/`, `context.md`, and `prototype/` if present). The now-empty
-   `.agents/spec/<NNN>_<slug>/` is left behind — `rmdir` it for cleanliness (git doesn't track empty
-   dirs, so this has no effect on history either way).
+   `mkdir -p .agents/spec/todo/`, then move the whole bundle folder:
+   `git mv .agents/spec/<NNN>_<slug> .agents/spec/todo/<prd-slug>`. It moves `plan.md`, `initial.md`,
+   `context.md`, and `prototype/` if present, plus the untracked `roundtable/`. Do not move the
+   folder's contents with a `*` glob: `git mv` refuses the untracked `roundtable/`.
 3. **Assign (defensive re-check).** Invoke `/dg:assign .agents/spec/todo/<prd-slug>/plan.md`. `/dg:kick`'s
    underlying `/dg:spec` plan-mode step 3c already ran `/dg:assign` once before parking, so this is
    normally an idempotent no-op (it skips any slice that already has `agents.primary`) — kept as a
@@ -64,9 +63,9 @@ Don't restate kick's semantics here.
 5. **Fold the commit.** The relocate + assign + permissions steps edited the just-committed bundle.
    Run `git log -1 --format=%s` and `git status -sb`. If the subject is
    `chore(spec): park <slug> (deferred)` and the commit is not pushed, run
-   `git add -f .agents/spec/todo/<prd-slug>/ && git commit --amend --no-edit` so the PRD lands as one
+   `git add -f .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit --amend --no-edit` so the PRD lands as one
    clean commit. Otherwise make a normal follow-up commit:
-   `git add -f .agents/spec/todo/<prd-slug>/ && git commit -m "chore(spec): hand off <prd-slug>"`.
+   `git add -f .agents/spec/todo/<prd-slug>/ ':(exclude).agents/spec/todo/<prd-slug>/roundtable/' && git commit -m "chore(spec): hand off <prd-slug>"`.
    Use `-f` because `/dg:agent-seed` ignores `.agents/`.
 
 ## After Exit

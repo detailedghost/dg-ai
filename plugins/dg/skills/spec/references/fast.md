@@ -79,7 +79,7 @@ scaffold against an unapproved plan.
   approved.
 - f. `~/.dg/bin/dg-skills spec context <bundle>` → `context.md`. **Required**, not optional as it might look in a
   single-session run: it is what F7 re-orients from after each compaction.
-- g. Commit: `git add -f .agents/spec/<NNN>_<slug>/ && git commit -m "chore(spec): plan <slug>"` (`-f` because `/dg:agent-seed` ignores `.agents/`).
+- g. Commit: `git add -f .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): plan <slug>"` (`-f` because `/dg:agent-seed` ignores `.agents/`).
   Mandatory in worktree mode — a worktree branches off freshly fetched `origin` and cannot see an
   uncommitted bundle (see [execute.md](execute.md) § *Bundle-visibility gotcha*).
 

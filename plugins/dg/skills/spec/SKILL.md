@@ -10,6 +10,8 @@ execute mode reads that bundle's tidy pack and drives `/dg:sdlc`'s slice-wave; f
 one chat. The durable read-boundary is the point: planning sprawl (`initial.md`,
 `roundtable/*.md`) is quarantined so an execution session boots off `context.md` + `plan.md`, never
 the whole planning history.
+Bundle commits leave out `roundtable/`: every `git add -f` of a bundle also passes
+`':(exclude)<bundle>/roundtable/'`. A `.gitignore` cannot do this, because `-f` adds ignored files.
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
