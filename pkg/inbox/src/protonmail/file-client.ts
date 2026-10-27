@@ -30,10 +30,12 @@ export class FileBackedProtonMailClient implements ProtonMailClient {
 
 	async createFolder(input: CreateProtonFolderInput) {
 		const dataset = await this.loadDataset();
-		const existing = dataset.folders.find(
-			(folder) =>
-				folder.name.toLowerCase() === input.name.toLowerCase() ||
-				folder.path?.toLowerCase() === input.name.toLowerCase(),
+		const requested = (input.path ?? input.name).toLowerCase();
+		const existing = dataset.folders.find((folder) =>
+			input.path
+				? (folder.path ?? folder.name).toLowerCase() === requested
+				: folder.name.toLowerCase() === requested ||
+					folder.path?.toLowerCase() === requested,
 		);
 		if (existing) {
 			return existing;

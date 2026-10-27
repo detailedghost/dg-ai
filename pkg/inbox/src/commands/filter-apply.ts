@@ -35,8 +35,10 @@ import {
 import {
 	declaredFiltersPath,
 	editDeclaredFilters,
+	readDeclaredFiltersIfExists,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
+import { declaredOnlyFilters } from "./filter-declared";
 import {
 	readFilterNamingConventions,
 	readFilters,
@@ -265,6 +267,13 @@ async function buildFilterApplyPlan(
 	context: CliContext,
 ): Promise<FilterApplyPlan> {
 	const paths = pathsList[0];
+	const knownFilters = [
+		...existingFilters,
+		...declaredOnlyFilters(
+			existingFilters,
+			await readDeclaredFiltersIfExists(declaredFiltersPath(paths.dir)),
+		),
+	];
 	const minCount = getNumberFlag(context.args.flags, "min-count", 1);
 	const onlyDomain = getStringFlag(context.args.flags, "domain");
 	const onlyTarget = getStringFlag(context.args.flags, "target-folder");
@@ -397,7 +406,7 @@ async function buildFilterApplyPlan(
 	const create: FilterPlanItem[] = [];
 	const existing: FilterPlanItem[] = [];
 	for (const item of [...candidates.values()].sort(sortPlanItems)) {
-		if (hasExistingFilter(existingFilters, item)) {
+		if (hasExistingFilter(knownFilters, item)) {
 			existing.push(item);
 		} else {
 			create.push(item);

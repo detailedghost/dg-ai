@@ -18,6 +18,32 @@ export function findDeclaredFilter(
 	);
 }
 
+const declaredOnlyPrefix = "declared:";
+
+export function isDeclaredOnlyId(id: string): boolean {
+	return id.startsWith(declaredOnlyPrefix);
+}
+
+/** Declared entries that no live filter claims yet, shaped like live filters. */
+export function declaredOnlyFilters(
+	filters: Array<{ id: string; name: string }>,
+	declared: DeclaredFiltersFile | undefined,
+): ProtonFilter[] {
+	if (!declared) {
+		return [];
+	}
+	const claimed = new Set(filters.map((filter) => findDeclaredFilter(declared, filter)));
+	return declared.filters
+		.filter((entry) => !claimed.has(entry))
+		.map((entry) => ({
+			id: `${declaredOnlyPrefix}${entry.name}`,
+			name: entry.name,
+			enabled: entry.enabled,
+			conditions: [entry.sieve],
+			actions: [],
+		}));
+}
+
 /** Swaps live filters for their declared entries; drops live filters removed from the declared file. */
 export function overlayDeclaredFilters<T extends ProtonFilter>(
 	filters: T[],
@@ -43,6 +69,17 @@ export function overlayDeclaredFilters<T extends ProtonFilter>(
 		const pendingRemoval = observed.some((item) => item.id === filter.id);
 		return pendingRemoval ? [] : [filter];
 	});
+}
+
+export async function readDeclaredWithUnsynced<T extends ProtonFilter>(
+	dir: string,
+	filters: T[],
+): Promise<Array<T | ProtonFilter>> {
+	const declared = await readDeclaredFiltersIfExists(declaredFiltersPath(dir));
+	return [
+		...overlayDeclaredFilters(filters, declared),
+		...declaredOnlyFilters(filters, declared),
+	];
 }
 
 export async function readDeclaredOverlay<T extends ProtonFilter>(

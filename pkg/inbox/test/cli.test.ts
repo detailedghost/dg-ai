@@ -1971,6 +1971,120 @@ describe("CLI", () => {
 		expect(grouped.enabled).toBe(false);
 	});
 
+	test("filters apply keeps an unsynced declared recommendation instead of recreating it", async () => {
+		const dir = tmpPath("filter-apply-declared");
+		const dataPath = tmpPath("filter-apply-declared.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "receipts", name: "Receipts", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.$`mkdir -p ${dir}/plans`.quiet();
+		await Bun.write(
+			`${dir}/plans/filter-recommendations.json`,
+			JSON.stringify({
+				filterRecommendations: [
+					{
+						domain: "stripe.com",
+						targetFolder: "Receipts",
+						count: 12,
+						safeForDomainFilter: true,
+					},
+				],
+				archiveFollowups: [],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "apply", "--dir", dir, flag, "--data-path", dataPath]);
+		expect((await cmd("--dry-run")).code).toBe(0);
+		expect((await cmd("--confirm")).code).toBe(0);
+		const declaredPath = `${dir}/declared-filters.json`;
+		const first = await Bun.file(declaredPath).json();
+		first.filters[0].sieve += "\n# staged edit";
+		first.filters[0].enabled = false;
+		await Bun.write(declaredPath, JSON.stringify(first));
+		const dry = await cmd("--dry-run");
+		expect(JSON.parse(dry.stdout)).toMatchObject({ create: 0, existing: 1 });
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(declaredPath).json();
+		expect(declared.filters).toHaveLength(1);
+		expect(declared.filters[0].sieve).toContain("# staged edit");
+		expect(declared.filters[0].enabled).toBe(false);
+	});
+
+	test("filters group keeps staged edits on an unsynced declared group", async () => {
+		const dir = tmpPath("filter-group-unsynced");
+		const dataPath = tmpPath("filter-group-unsynced.json");
+		await writeDataset(dataPath, {
+			folders: [
+				{ id: "invoice", name: "invoice", type: "folder", total: 0, unread: 0 },
+				{ id: "spam", name: "Spam", type: "system", total: 0, unread: 0 },
+				{ id: "hunt", name: "hunt", type: "folder", total: 0, unread: 0 },
+			],
+			filters: [
+				{
+					id: "generated-invoice",
+					name: "Email Organizer: billing.example.com -> invoice",
+					enabled: true,
+					conditions: [
+						'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+					],
+					actions: [],
+				},
+			],
+			messages: [],
+		});
+		for (const target of ["folders", "filters"]) {
+			expect(
+				(await runCli(["load", target, "--dir", dir, "--data-path", dataPath])).code,
+			).toBe(0);
+		}
+		await Bun.write(
+			`${dir}/declared-filters.json`,
+			JSON.stringify({
+				kind: "declared-filters",
+				version: 1,
+				provider: "protonmail",
+				filters: [
+					{
+						name: "Fin - Invoices",
+						enabled: false,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "staged.example" { fileinto "invoice"; }',
+					},
+					{
+						name: "Email Organizer: billing.example.com -> invoice",
+						protonId: "generated-invoice",
+						enabled: true,
+						sieve:
+							'require ["fileinto"]; if address :domain :is "From" "billing.example.com" { fileinto "invoice"; stop; }',
+					},
+				],
+			}),
+		);
+		const cmd = (flag: string) =>
+			runCli(["filters", "group", "--dir", dir, flag, "--data-path", dataPath]);
+		const dry = await cmd("--dry-run");
+		expect(dry.code, dry.stderr).toBe(0);
+		const confirmed = await cmd("--confirm");
+		expect(confirmed.code, confirmed.stderr).toBe(0);
+		const declared = await Bun.file(`${dir}/declared-filters.json`).json();
+		const grouped = declared.filters.find(
+			(filter: { name: string }) => filter.name === "Fin - Invoices",
+		);
+		expect(grouped.sieve).toContain("staged.example");
+		expect(grouped.sieve).toContain("billing.example.com");
+		expect(grouped.enabled).toBe(false);
+	});
+
 	test("filters apply blocks domain-only filters with cross-workspace target conflicts", async () => {
 		const first = workspacePaths(tmpPath("filter-conflict-a"));
 		const second = workspacePaths(tmpPath("filter-conflict-b"));

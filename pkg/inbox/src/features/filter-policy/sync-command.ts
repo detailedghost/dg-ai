@@ -119,6 +119,7 @@ export async function syncDeclaredFilters(context: CliContext): Promise<void> {
 			foldersByPath,
 			persist: (file) => writeDeclaredFilters(path, file),
 		});
+		await writeDeclaredFilters(path, updated);
 		const after = await readLive(client);
 		observeLive(updated, after.filters, after.folders);
 		await writeDeclaredFilters(path, updated);

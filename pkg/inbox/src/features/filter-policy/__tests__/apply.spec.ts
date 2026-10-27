@@ -201,6 +201,29 @@ describe("apply sync plan", () => {
 		);
 		expect(plan.notices.some((notice) => notice.op === "drift")).toBe(false);
 	});
+	test("records completed writes in the baseline before any later read", async () => {
+		const writer = client();
+		const sieve = 'require ["fileinto"];\nif true {\n  keep;\n}\n';
+		writer.listFilters = async () => {
+			throw new Error("read exhausted");
+		};
+		const declared = emptyDeclaredFilters();
+		declared.filters = [{ name: "Shop - Orders", enabled: true, sieve }];
+		await applySyncPlan({
+			plan: {
+				actions: [
+					{ op: "create-filter", ref: "new:0", name: "Shop - Orders", enabled: true, sieve },
+				],
+				notices: [],
+			},
+			approvedDeletes: [],
+			client: writer,
+			declared,
+			foldersByPath: new Map(),
+		});
+		expect(declared.filters[0]?.protonId).toBe("created");
+		expect(declared.observed?.filters.map((filter) => filter.id)).toContain("created");
+	});
 	test("orders same-named filters by ID and resolves a created filter by reference", async () => {
 		const writer = client();
 		writer.listFilters = async () => [

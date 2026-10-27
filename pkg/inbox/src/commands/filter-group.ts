@@ -15,7 +15,7 @@ import {
 	removeDeclaredFilters,
 	upsertDeclaredFilter,
 } from "../features/filter-policy/store";
-import { readDeclaredOverlay } from "./filter-declared";
+import { isDeclaredOnlyId, readDeclaredWithUnsynced } from "./filter-declared";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import { readFilters, readFolders, workspacePaths } from "../workspace/store";
 
@@ -77,7 +77,7 @@ export async function groupGeneratedFilters(
 				const plan = buildGroupPlan(
 					paths.dir,
 					folders,
-					await readDeclaredOverlay(paths.dir, await client.listFilters()),
+					await readDeclaredWithUnsynced(paths.dir, await client.listFilters()),
 					context,
 					{ dryRun: true },
 				);
@@ -96,7 +96,7 @@ export async function groupGeneratedFilters(
 		const plan = buildGroupPlan(
 			paths.dir,
 			folders,
-			await readDeclaredOverlay(paths.dir, normalizeFilters(savedFilters)),
+			await readDeclaredWithUnsynced(paths.dir, normalizeFilters(savedFilters)),
 			context,
 			{ dryRun: true },
 		);
@@ -125,7 +125,7 @@ export async function groupGeneratedFilters(
 			client.listFilters(),
 			client.listFolders(),
 		]);
-		const liveFilters = await readDeclaredOverlay(paths.dir, rawLiveFilters);
+		const liveFilters = await readDeclaredWithUnsynced(paths.dir, rawLiveFilters);
 		const plan = buildGroupPlan(paths.dir, folders, liveFilters, context, {
 			dryRun: false,
 		});
@@ -157,6 +157,7 @@ function buildGroupPlan(
 ): FilterGroupPlan {
 	const groups = groupTargets(context);
 	const generated = filters
+		.filter((filter) => !isDeclaredOnlyId(filter.id))
 		.map(parseLegacyGeneratedFilter)
 		.filter((filter): filter is GeneratedFilter => filter !== undefined);
 	const planGroups: GroupPlanItem[] = [];
@@ -246,7 +247,9 @@ async function applyGroupPlan(
 					name: group.filterName,
 					enabled: existing?.enabled ?? true,
 					sieve: group.sieve,
-					...(existing ? { protonId: existing.id } : {}),
+					...(existing && !isDeclaredOnlyId(existing.id)
+						? { protonId: existing.id }
+						: {}),
 				});
 				removeDeclaredFilters(file, group.generatedFilterIds);
 			}

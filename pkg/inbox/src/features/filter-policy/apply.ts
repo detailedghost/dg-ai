@@ -218,6 +218,7 @@ export async function applySyncPlan(input: {
 		await reconcilePartial(input, done);
 		throw error;
 	}
+	recordAppliedProgress(input.declared, done, snapshotFromDone(done));
 	const declared = input.declared;
 	for (const action of input.plan.actions) {
 		if (action.op === "pull-filter") {
