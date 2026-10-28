@@ -330,6 +330,14 @@ export function isFileComment(c: ReviewCommentInput): boolean {
 	return c.newLine === undefined && c.oldLine === undefined;
 }
 
+/** A submitted review as the provider lists it, without its inline comments. */
+export interface ReviewSummary {
+	author: string;
+	body: string;
+	state: string;
+	commitId: string;
+}
+
 /** One summary verdict and its inline comments, published together as a review. */
 export interface PostReviewInput {
 	/** Reviewed commit; GitHub rejects publication if the PR head has changed. */
@@ -377,6 +385,10 @@ export interface Provider {
 	listCiFailures(ref: PrRef): Promise<CiFailure[]>;
 	/** Unified diff of the pull request as the provider serves it. */
 	fetchDiff(ref: PrRef): Promise<string>;
+	/** Submitted reviews on a request, oldest first; empty where the provider has no review objects. */
+	listReviews(ref: PrRef): Promise<ReviewSummary[]>;
+	/** Diff from `sha` to the request's head; null when `sha` is gone or not an ancestor of head, or the provider cannot say. */
+	fetchDiffSince(ref: PrRef, sha: string): Promise<string | null>;
 	/** Publishes every comment and the verdict in one review; degrades to "comment" when the provider refuses the verdict. */
 	postReview(ref: PrRef, input: PostReviewInput): Promise<PostedReview>;
 	/** Change the target/base branch of the specified request. */

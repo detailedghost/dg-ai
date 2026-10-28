@@ -34,6 +34,7 @@ import {
 	type RepoRef,
 	type ReviewComment,
 	type ReviewCommentInput,
+	type ReviewSummary,
 	type ReviewThread,
 	type ReviewVerdict,
 	truncateLogExcerpt,
@@ -507,6 +508,38 @@ async function fetchDiff(tag: ShellTag, ref: PrRef): Promise<string> {
 	return result.stdout.toString();
 }
 
+async function listReviews(tag: ShellTag, ref: PrRef): Promise<ReviewSummary[]> {
+	const result =
+		await tag`api repos/${ownerRepoPath(ref.repo)}/pulls/${String(ref.number)}/reviews --paginate --slurp ${apiHostFlags(ref.repo)}`;
+	type RawReview = { user?: { login?: string } | null; body?: string | null; state?: string; commit_id?: string };
+	return flattenPaginated<RawReview>(JSON.parse(result.stdout.toString())).map((raw) => ({
+		author: raw.user?.login ?? "",
+		body: raw.body ?? "",
+		state: raw.state ?? "",
+		commitId: raw.commit_id ?? "",
+	}));
+}
+
+const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
+const COMPARE_DIFF_ACCEPT = "Accept: application/vnd.github.diff";
+
+async function fetchDiffSince(tag: ShellTag, ref: PrRef, sha: string): Promise<string | null> {
+	if (!COMMIT_SHA.test(sha)) return null;
+	const headResult = await tag`pr view ${String(ref.number)} ${repoFlags(ref.repo)} --json headRefOid`;
+	const { headRefOid } = JSON.parse(headResult.stdout.toString());
+	try {
+		const status =
+			await tag`api repos/${ownerRepoPath(ref.repo)}/compare/${sha}...${headRefOid} --jq .status ${apiHostFlags(ref.repo)}`;
+		if (status.stdout.toString().trim() !== "ahead") return null;
+		const diff =
+			await tag`api repos/${ownerRepoPath(ref.repo)}/compare/${sha}...${headRefOid} -H ${COMPARE_DIFF_ACCEPT} ${apiHostFlags(ref.repo)}`;
+		return diff.stdout.toString();
+	} catch (err) {
+		if (isNotFoundError(err) || isCliErrorContaining(err, "http 422")) return null;
+		throw err;
+	}
+}
+
 const GITHUB_REVIEW_EVENTS: Record<ReviewVerdict, string> = {
 	approve: "APPROVE",
 	request_changes: "REQUEST_CHANGES",
@@ -714,6 +747,8 @@ export function createGithubProvider(): Provider {
 		replyToThread: (thread, body, ref) => replyToThread(tag, thread, body, ref),
 		listCiFailures: (ref) => listCiFailures(tag, ref),
 		fetchDiff: (ref) => fetchDiff(tag, ref),
+		listReviews: (ref) => listReviews(tag, ref),
+		fetchDiffSince: (ref, sha) => fetchDiffSince(tag, ref, sha),
 		postReview: (ref, input) => postReview(tag, ref, input),
 		retargetPullRequest: (ref, newBase) => retargetPullRequest(tag, ref, newBase),
 		getPullRequestBody: (ref) => getPullRequestBody(tag, ref),

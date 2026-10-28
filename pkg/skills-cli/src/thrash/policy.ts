@@ -17,6 +17,10 @@ const PolicyPhaseSchema = z.strictObject({
 
 const ReviewPolicySchema = z.strictObject({
 	maxComments: count.optional(),
+	/** Rounds before a still-blocked review suggests a new approach; the default is 3. */
+	reconsiderAfter: count.optional(),
+	improvements: z.boolean().optional(),
+	maxImprovements: count.optional(),
 	phases: z.array(PolicyPhaseSchema).min(1, "needs at least one phase"),
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ReviewThread } from "../src/provider/types";
+import type { ReviewSummary, ReviewThread } from "../src/provider/types";
 import { parsePolicy } from "../src/thrash/policy";
 import {
 	addressFileName,
@@ -9,11 +9,13 @@ import {
 	compileReview,
 	decideVerdict,
 	diffStats,
+	emptyTally,
 	type Finding,
 	LARGE_DIFF_LINES,
 	MAX_CHUNKS,
 	mergeOutputs,
 	NIT_LADDER,
+	openPriorTally,
 	parseAgentOutput,
 	parseSpice,
 	parseTier,
@@ -31,8 +33,22 @@ import {
 	VERDICT_LIMITS,
 	relativePlanPath,
 	resolvePlanPath,
+	renderComment,
+	renderInlineBody,
 	reviewTrigger,
+	classPrCounts,
+	lastReviewedSha,
+	parseClassMarker,
+	parseUnpostedMarker,
+	parseClearedMarker,
+	clearedThreadIds,
 } from "../src/thrash/core";
+import {
+	THRASH_CLASSES_MARKER_PREFIX,
+	THRASH_CLEARED_MARKER_PREFIX,
+	THRASH_REVIEW_MARKER,
+	THRASH_UNPOSTED_MARKER_PREFIX,
+} from "../src/thrash/constants";
 
 const FIXTURE = `diff --git a/src/a.ts b/src/a.ts
 index 1111111..2222222 100644
@@ -331,7 +347,7 @@ describe("decideVerdict", () => {
 	});
 
 	test("the reason names the tier and the spice limit", () => {
-		expect(decideVerdict(tally(0, 0, 4), 4, false).reason).toBe("4 medium findings found, limit is 2 at spice 4");
+		expect(decideVerdict(tally(0, 0, 4), 4, false).reason).toBe("4 medium findings are open, limit is 2 at spice 4");
 	});
 
 	test("comment-only overrides the rule", () => {
@@ -371,7 +387,7 @@ describe("compileReview", () => {
 			["src/a.ts", 3],
 			["src/new.ts", 1],
 		]);
-		expect(review.comments[0].body).toBe(`${TIER_EMOJI.high} **High** fix it`);
+		expect(review.comments[0].body).toBe(`${TIER_EMOJI.high} **High** fix it\n\n<!-- dg:thrash-finding "high title" -->`);
 		expect(review.verdict).toBe("approve");
 		expect(review.body).toContain('<span title="High">🔥</span> 1 · ');
 		expect(review.body).toContain("**Verdict:** Approve.");
@@ -384,8 +400,8 @@ describe("compileReview", () => {
 			{ ...NO_OPTS, spice: 3 },
 		);
 		expect(review.body).toStartWith('## Thrash review <span title="Spice 3 of 5">🌶️🌶️🌶️○○</span>\n');
-		expect(review.body).toContain("> [!NOTE]\n> **What changed**\n>\n> Adds a.\n");
-		expect(review.body).toContain("> [!TIP]\n> **Strengths**\n>\n> Tested.\n");
+		expect(review.body).toContain("> [!NOTE]\n> **What changed**\n>\n> - Adds a.\n");
+		expect(review.body).toContain("> [!TIP]\n> **Strengths**\n>\n> - Tested.\n");
 		expect(review.body).toContain("> [!WARNING]\n> **Opportunities**\n>\n> - Split it.\n> - Name it.\n");
 		expect(review.body).not.toContain("### Findings");
 
@@ -657,7 +673,7 @@ describe("compileReview", () => {
 			verdict: "approve",
 			body: review.body,
 			comments: [
-				{ path: "src/a.ts", oldPath: undefined, newLine: 4, oldLine: 3, body: `${TIER_EMOJI.low} **Low** low body` },
+				{ path: "src/a.ts", oldPath: undefined, newLine: 4, oldLine: 3, body: renderInlineBody(finding("src/a.ts", 4, "low")) },
 			],
 		});
 	});
@@ -1007,7 +1023,7 @@ describe("thrash review hardening", () => {
 			finding("src/a.ts", 3, "nit", "kept"),
 		];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 2 });
-		expect(review.comments.map((c) => c.body)).toEqual([`${TIER_EMOJI.nit} **Nit** kept`]);
+		expect(review.comments.map((c) => c.body)).toEqual([renderInlineBody(finding("src/a.ts", 3, "nit", "kept"))]);
 		expect(review.unanchored).toHaveLength(5);
 		expect(review.dropped).toEqual([]);
 	});
@@ -1016,5 +1032,831 @@ describe("thrash review hardening", () => {
 		const findings = [finding("a_b.ts", 1, "low"), finding("a-b.ts", 1, "low")];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, NO_OPTS);
 		expect(review.unanchored.map((f) => f.path)).toEqual(["a-b.ts", "a_b.ts"]);
+	});
+});
+
+describe("review rounds, slice A", () => {
+	const swallowed = (path: string, line: number, others: string[] = []): Finding => ({
+		...finding(path, line, "high", "swallows the error"),
+		class: "swallowed error",
+		otherPlaces: others,
+	});
+	const improvement = (line: number, tag = "new API"): Finding => ({
+		...finding("src/a.ts", line, "nit", "use structuredClone"),
+		kind: "improvement",
+		tag,
+	});
+	const WITH_IMPROVEMENTS = { ...NO_OPTS, improvements: true };
+
+	describe("parseAgentOutput", () => {
+		test("reads class, otherPlaces, preExisting, tag and kind", () => {
+			const text = JSON.stringify({
+				findings: [
+					{ path: "a", line: 1, tier: "high", body: "x", class: " swallowed error ", otherPlaces: ["b:2", "c:3"], preExisting: true, tag: "security" },
+					{ path: "a", line: 2, kind: "improvement", body: "y", tag: "cleanup" },
+					{ path: "a", line: 3, tier: "low", body: "z" },
+				],
+			});
+			const [first, second, third] = parseAgentOutput(text).findings;
+			expect(first).toMatchObject({ class: "swallowed error", otherPlaces: ["b:2", "c:3"], preExisting: true, tag: "security" });
+			expect(second).toMatchObject({ kind: "improvement", tag: "cleanup", tier: "nit" });
+			expect(third.class).toBeUndefined();
+			expect(third.preExisting).toBeUndefined();
+			expect(third.kind).toBeUndefined();
+		});
+	});
+
+	describe("renderComment", () => {
+		test("adds the same-class line after the body", () => {
+			expect(renderComment(swallowed("src/a.ts", 2, ["src/b.ts:8", "src/c.ts:9"]))).toBe(
+				`${TIER_EMOJI.high} **High** swallows the error\n\nSame class (swallowed error) at: src/b.ts:8, src/c.ts:9`,
+			);
+		});
+
+		test("shows the tag after the tier", () => {
+			expect(renderComment({ ...finding("a", 1, "medium", "token in log"), tag: "security" })).toBe(
+				`${TIER_EMOJI.medium} **Medium** \`security\` token in log`,
+			);
+		});
+
+		test("marks a pre-existing finding and says it does not block", () => {
+			expect(renderComment({ ...finding("a", 1, "medium", "empty TIMEOUT"), preExisting: true })).toBe(
+				`${TIER_EMOJI.medium} **Medium** \`Pre-existing\` empty TIMEOUT This PR did not add it, and it does not block.`,
+			);
+		});
+
+		test("renders an improvement as optional", () => {
+			expect(renderComment(improvement(2))).toBe(
+				"💡 **Improvement** `new API` use structuredClone\n\nOptional. This does not count toward the verdict, and you do not need to reply.",
+			);
+		});
+	});
+
+	describe("bug class", () => {
+		test("posts one comment for the class and lists the places in the Warning callout", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [swallowed("src/a.ts", 2, ["src/new.ts:1", "src/new.ts:2"])] },
+				NO_OPTS,
+			);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0].body).toContain("Same class (swallowed error) at: src/new.ts:1, src/new.ts:2");
+			expect(review.body).toContain(
+				"> [!WARNING]\n> **Opportunities**\n>\n> - Swallowed error in 3 places: `src/a.ts:2`, `src/new.ts:1`, `src/new.ts:2`\n",
+			);
+		});
+
+		test("writes the class names into a hidden marker, once per class", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [swallowed("src/a.ts", 2, ["src/new.ts:1"]), swallowed("src/a.ts", 3), finding("src/new.ts", 2, "low")] },
+				NO_OPTS,
+			);
+			expect(review.body).toContain('<!-- dg:thrash-classes ["swallowed error"] -->');
+		});
+
+		test("writes no class marker when no finding has a class", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [finding("src/a.ts", 2, "low")] }, NO_OPTS);
+			expect(review.body).not.toContain("dg:thrash-classes");
+		});
+	});
+
+	describe("pre-existing", () => {
+		test("never counts toward the tally or the verdict, and is listed in the summary", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [{ ...finding("src/a.ts", 2, "critical"), preExisting: true }] },
+				NO_OPTS,
+			);
+			expect(review.tally.critical).toBe(0);
+			expect(review.verdict).toBe("approve");
+			expect(review.comments).toHaveLength(1);
+			expect(review.body).toContain("- **Pre-existing:** 1, not counted.\n  - 💀 `src/a.ts:2` critical title");
+		});
+
+		test("an earlier pre-existing thread is not an open finding", () => {
+			const earlier = thread("src/a.ts", 2, `${TIER_EMOJI.high} **High** \`Pre-existing\` old`);
+			expect(openPriorTally([earlier])).toEqual(emptyTally());
+		});
+	});
+
+	describe("improvements", () => {
+		test("are dropped and not shown when the option is off", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [improvement(2)] }, NO_OPTS);
+			expect(review.comments).toHaveLength(0);
+			expect(review.body).not.toContain("💡");
+		});
+
+		test("post as optional comments, show 💡 after 🔬, and never count", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [improvement(2)] }, WITH_IMPROVEMENTS);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0].body).toStartWith("💡 **Improvement** `new API`");
+			expect(review.tally).toEqual(emptyTally());
+			expect(review.verdict).toBe("approve");
+			expect(review.body).toContain('<span title="Nit">🔬</span> 0 · <span title="Improvement">💡</span> 1 · ');
+		});
+
+		test("show 💡 0 when enabled and none were found", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, WITH_IMPROVEMENTS);
+			expect(review.body).toContain("💡</span> 0");
+		});
+
+		test("stop at three by default and at maxImprovements when set", () => {
+			const five = [improvement(1), improvement(2), improvement(3), improvement(4), improvement(5)];
+			const byDefault = compileReview(FILES, { ...NO_SWOT, findings: five }, WITH_IMPROVEMENTS);
+			expect(byDefault.comments).toHaveLength(3);
+			const capped = compileReview(FILES, { ...NO_SWOT, findings: five }, { ...WITH_IMPROVEMENTS, maxImprovements: 1 });
+			expect(capped.comments).toHaveLength(1);
+			expect(capped.dropped.map((d) => d.reason)).toEqual(Array(4).fill("max-improvements"));
+		});
+
+		test("do not use the comment cap or the nit ladder", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [finding("src/a.ts", 2, "high"), improvement(3)] },
+				{ ...WITH_IMPROVEMENTS, maxComments: 1, minTier: "high" },
+			);
+			expect(review.comments).toHaveLength(2);
+		});
+
+		test("an earlier improvement thread is not an open finding and is not reposted", () => {
+			const earlier = thread("src/a.ts", 2, "💡 **Improvement** `new API` old");
+			expect(openPriorTally([earlier])).toEqual(emptyTally());
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [improvement(2)] },
+				{ ...WITH_IMPROVEMENTS, existing: [earlier] },
+			);
+			expect(review.comments).toHaveLength(0);
+		});
+
+		test("stay out of the local address file", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [finding("src/a.ts", 2, "high"), improvement(3)] },
+				WITH_IMPROVEMENTS,
+			);
+			expect(review.comments).toHaveLength(2);
+			expect(renderAddressFile(review)).not.toContain("Improvement");
+			expect(renderAddressFile(review)).toContain("src/a.ts:2");
+		});
+
+		test("the policy turns them on and sets the cap", () => {
+			const policy = parsePolicy("improvements: true\nmaxImprovements: 1\nphases:\n  - block: { critical: 0 }\n");
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [improvement(1), improvement(2)] },
+				{ ...NO_OPTS, policy, round: 1 },
+			);
+			expect(review.comments).toHaveLength(1);
+		});
+	});
+
+	describe("round note", () => {
+		const BLOCKING = { ...NO_SWOT, findings: [finding("src/a.ts", 2, "high")] };
+		const policy = (extra = "") => parsePolicy(`${extra}phases:\n  - block: { critical: 0, high: 0 }\n`);
+
+		test("adds an Important callout after the default three rounds while a blocker is open", () => {
+			const review = compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 4 });
+			expect(review.verdict).toBe("request_changes");
+			expect(review.body).toContain(
+				"> [!IMPORTANT]\n> **Round 4, and a blocker is still open.**\n>\n> - Try a new approach, or ask a person to review.\n",
+			);
+		});
+
+		test("waits for round to pass reconsiderAfter", () => {
+			expect(compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 3 }).body).not.toContain("[!IMPORTANT]");
+			const custom = policy("reconsiderAfter: 1\n");
+			expect(compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: custom, round: 2 }).body).toContain("Round 2, and a blocker");
+		});
+
+		test("is absent when nothing blocks, and never changes the verdict", () => {
+			const clean = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, policy: policy(), round: 9 });
+			expect(clean.body).not.toContain("[!IMPORTANT]");
+			const capped = compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 5, maxEvent: "comment" });
+			expect(capped.verdict).toBe("comment");
+			expect(capped.body).toContain("[!IMPORTANT]");
+		});
+	});
+
+	describe("summary order", () => {
+		test("tally line, Important, Note, Tip, Warning, then the plain bullets", () => {
+			const review = compileReview(
+				FILES,
+				{
+					changed: "Adds a.",
+					strengths: ["Tested."],
+					opportunities: ["Split it."],
+					findings: [finding("src/a.ts", 2, "high"), { ...finding("src/a.ts", 3, "low"), preExisting: true }],
+				},
+				{
+					...NO_OPTS,
+					policy: parsePolicy("phases:\n  - block: { high: 0 }\n"),
+					round: 4,
+					reReview: { sha: "4b7a9d0aaaa", files: 3, lines: 42 },
+					cleared: { fixed: 2, sha: "9f3c2e1bbbb", answered: 1 },
+				},
+			);
+			const at = (text: string) => {
+				const index = review.body.indexOf(text);
+				expect(index).toBeGreaterThan(-1);
+				return index;
+			};
+			const order = [
+				at("## Thrash review"),
+				at("**Round:** 4"),
+				at("[!IMPORTANT]"),
+				at("[!NOTE]"),
+				at("[!TIP]"),
+				at("[!WARNING]"),
+				at("- **Cleared:**"),
+				at("- **Pre-existing:**"),
+				at("**Trigger:**"),
+			];
+			expect(order).toEqual([...order].sort((a, b) => a - b));
+			expect(review.body).toContain("> **Re-review**\n>\n> - Only the diff since `4b7a9d0`: 3 files, 42 lines.\n");
+			expect(review.body).toContain("- **Cleared:** 2 fixed in `9f3c2e1`, 1 answered.");
+		});
+
+		test("leaves the Re-review and Cleared slots out when no data is given", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, changed: "Adds a.", findings: [] }, NO_OPTS);
+			expect(review.body).not.toContain("Re-review");
+			expect(review.body).not.toContain("Cleared");
+			expect(review.body).not.toContain("Pre-existing");
+		});
+
+		test("Cleared names only the parts that are non-zero", () => {
+			const only = (cleared: { fixed: number; sha?: string; answered: number }) =>
+				compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, cleared }).body;
+			expect(only({ fixed: 0, answered: 2 })).toContain("- **Cleared:** 2 answered.");
+			expect(only({ fixed: 1, sha: "abcdef0123", answered: 0 })).toContain("- **Cleared:** 1 fixed in `abcdef0`.");
+			expect(only({ fixed: 0, answered: 0 })).not.toContain("Cleared");
+		});
+	});
+});
+
+describe("clearing and history", () => {
+	const POLICY = parsePolicy("phases:\n  - block: { high: 0 }\n");
+	const awaitFinding: Finding = {
+		...finding("src/a.ts", 2, "high"),
+		title: "Missing await",
+		body: "The call is not awaited.",
+	};
+	const outdated = (body: string, resolved = false): ReviewThread => ({
+		...thread("src/a.ts", 2, body, resolved),
+		line: null,
+		originalLine: 2,
+		outdated: true,
+	});
+	const run = (existing: ReviewThread[], findings: Finding[], extra = {}) =>
+		compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing, policy: POLICY, headSha: "abcdef1234567", ...extra });
+
+	test("clears an outdated thread when the re-review finds nothing like it", () => {
+		const review = run([outdated(renderInlineBody(awaitFinding))], []);
+		expect(review.tally.high).toBe(0);
+		expect(review.verdict).toBe("approve");
+		expect(review.body).toContain("- **Cleared:** 1 fixed in `abcdef1`.");
+	});
+
+	test("keeps an outdated thread open when its finding comes back at a new line", () => {
+		const review = run([outdated(renderInlineBody(awaitFinding))], [{ ...awaitFinding, line: 3 }]);
+		expect(review.tally.high).toBe(1);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.reason).toBe("1 high finding is open");
+		expect(review.body).not.toContain("Cleared");
+	});
+
+	test("matches on the class key when the finding has a class", () => {
+		const earlier = { ...awaitFinding, class: "Missing await" };
+		const again = { ...awaitFinding, title: "Other words", class: "missing-await", line: 3 };
+		expect(run([outdated(renderInlineBody(earlier))], [again]).tally.high).toBe(1);
+	});
+
+	test("a different finding in the same file does not hold the thread open", () => {
+		const other = { ...awaitFinding, title: "Unused import", tier: "medium" as Tier, line: 3 };
+		const review = run([outdated(renderInlineBody(awaitFinding))], [other]);
+		expect(review.tally.high).toBe(0);
+		expect(review.tally.medium).toBe(1);
+		expect(review.body).toContain("1 fixed");
+	});
+
+	test("a thread without a marker is never cleared and never absorbs a finding", () => {
+		const legacy = outdated(`${TIER_EMOJI.high} **High** old`);
+		const review = run([legacy], [{ ...awaitFinding, line: 3, tier: "low" }]);
+		expect(review.tally.high).toBe(1);
+		expect(review.tally.low).toBe(1);
+		expect(run([legacy], []).body).not.toContain("Cleared");
+	});
+
+	test("a thread that is still anchored is not cleared", () => {
+		const open = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+		const review = run([open], []);
+		expect(review.tally.high).toBe(1);
+		expect(review.body).not.toContain("Cleared");
+	});
+
+	test("counts threads cleared by a reply as answered", () => {
+		const answered: ReviewThread = {
+			...thread("src/a.ts", 3, renderInlineBody(awaitFinding)),
+			comments: [
+				{ id: "1", author: "bot", body: renderInlineBody(awaitFinding), createdAt: "", diffHunk: "" },
+				{ id: "2", author: "dev", body: "done", createdAt: "", diffHunk: "" },
+			],
+		};
+		const review = run([answered], []);
+		expect(review.tally.high).toBe(0);
+		expect(review.body).toContain("- **Cleared:** 1 answered.");
+	});
+
+	test("clears without a policy too, and names the fixed count only", () => {
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, existing: [outdated(renderInlineBody(awaitFinding))] });
+		expect(review.body).toContain("- **Cleared:** 1 fixed.");
+	});
+
+	test("counts only open findings in the verdict sentence", () => {
+		const two = [awaitFinding, { ...awaitFinding, title: "Second", line: 3 }];
+		expect(run([], two).reason).toBe("2 high findings are open");
+	});
+
+	const classed: Finding = { ...awaitFinding, class: "Missing await" };
+	const hint = "This class came up in 3 recent PRs. Consider a rule in docs/code_review.md or a lint check.";
+
+	test("adds the repeated-class hint at 3 recent PRs and not at 2", () => {
+		expect(run([], [classed], { classHistory: { "missing await": 3 } }).body).toContain(hint);
+		expect(run([], [classed], { classHistory: { "missing await": 2 } }).body).not.toContain("recent PRs");
+		expect(run([], [awaitFinding], { classHistory: { "missing await": 5 } }).body).not.toContain("recent PRs");
+	});
+
+	test("an inline comment carries a hidden finding key", () => {
+		expect(renderInlineBody(classed)).toContain('<!-- dg:thrash-finding "missing await" -->');
+		expect(renderInlineBody({ ...awaitFinding, title: "" })).not.toContain("dg:thrash-finding");
+	});
+
+	describe("review history", () => {
+		const review = (body: string, commitId: string, author = "thrashley[bot]", state = "COMMENTED"): ReviewSummary => ({
+			author,
+			body: `${body}\n${THRASH_REVIEW_MARKER}`,
+			state,
+			commitId,
+		});
+
+		test("lastReviewedSha takes the latest submitted thrash review", () => {
+			const reviews = [
+				review("one", "aaa1111"),
+				{ author: "dev", body: "lgtm", state: "APPROVED", commitId: "ccc3333" },
+				review("two", "bbb2222"),
+				review("draft", "ddd4444", "thrashley[bot]", "PENDING"),
+			];
+			expect(lastReviewedSha(reviews)).toBe("bbb2222");
+			expect(lastReviewedSha(reviews, "thrashley")).toBe("bbb2222");
+			expect(lastReviewedSha(reviews, "someone-else")).toBeUndefined();
+			expect(lastReviewedSha([])).toBeUndefined();
+		});
+
+		test("parseClassMarker reads the class names back", () => {
+			expect(parseClassMarker(`text\n${THRASH_CLASSES_MARKER_PREFIX}["a b","c"] -->\n`)).toEqual(["a b", "c"]);
+			expect(parseClassMarker("no marker")).toEqual([]);
+			expect(parseClassMarker(`${THRASH_CLASSES_MARKER_PREFIX}not json -->`)).toEqual([]);
+		});
+
+		test("classPrCounts counts each class once per PR", () => {
+			const marker = (names: string[]) => `${THRASH_CLASSES_MARKER_PREFIX}${JSON.stringify(names)} -->`;
+			const counts = classPrCounts(
+				[
+					[review(marker(["x", "y"]), "a"), review(marker(["x"]), "b")],
+					[review(marker(["x"]), "c")],
+					[{ author: "dev", body: marker(["y"]), state: "COMMENTED", commitId: "d" }],
+				],
+			);
+			expect(counts).toEqual({ x: 2, y: 1 });
+		});
+	});
+});
+
+describe("incremental review safety", () => {
+	const POLICY = parsePolicy("phases:\n  - block: { high: 0 }\n");
+	const SINCE = { sha: "aaa1111222", files: 1, lines: 2 };
+	const DELTA = FILES.filter((f) => f.path === "src/a.ts");
+	const awaitFinding: Finding = {
+		...finding("src/a.ts", 2, "high"),
+		title: "Missing await",
+		body: "The call is not awaited.",
+	};
+	const grouped: Finding = { ...awaitFinding, class: "Missing await", otherPlaces: ["src/new.ts:1"] };
+	const outdated = (source: Finding): ReviewThread => ({
+		...thread("src/a.ts", 2, renderInlineBody(source)),
+		line: null,
+		originalLine: 2,
+		outdated: true,
+	});
+	const compile = (files: typeof FILES, findings: Finding[], extra = {}) =>
+		compileReview(files, { ...NO_SWOT, findings }, { ...NO_OPTS, headSha: "abcdef1234567", ...extra });
+
+	describe("clearing a grouped class", () => {
+		test("records every place of a grouped class in the hidden finding marker", () => {
+			expect(renderInlineBody(grouped)).toContain(
+				'<!-- dg:thrash-finding {"key":"missing await","places":["src/a.ts:2","src/new.ts:1"]} -->',
+			);
+		});
+
+		test("keeps the thread open when a recorded place was not re-reviewed", () => {
+			const review = compile(DELTA, [], { existing: [outdated(grouped)], policy: POLICY, reReview: SINCE });
+			expect(review.tally.high).toBe(1);
+			expect(review.verdict).toBe("request_changes");
+			expect(review.body).not.toContain("Cleared");
+		});
+
+		test("clears the thread when every recorded place was re-reviewed and the class did not return", () => {
+			const review = compile(FILES, [], { existing: [outdated(grouped)], policy: POLICY, reReview: SINCE });
+			expect(review.tally.high).toBe(0);
+			expect(review.body).toContain("- **Cleared:** 1 fixed in `abcdef1`.");
+		});
+
+		test("keeps the thread open when the class returns at another recorded place", () => {
+			const returned: Finding = { ...finding("src/new.ts", 1, "high"), title: "Missing await", class: "Missing await" };
+			const review = compile(FILES, [returned], { existing: [outdated(grouped)], policy: POLICY });
+			expect(review.tally.high).toBe(1);
+			expect(review.body).not.toContain("Cleared");
+		});
+
+		describe("a class found again at a recorded place", () => {
+			const returned: Finding = { ...finding("src/new.ts", 1, "high"), title: "Missing await", class: "Missing await" };
+			const current = thread("src/a.ts", 2, renderInlineBody(grouped));
+
+			test("is not counted or posted again while the primary thread is current", () => {
+				const review = compile(FILES, [returned], { existing: [current], policy: POLICY });
+				expect(review.tally.high).toBe(1);
+				expect(review.comments).toHaveLength(0);
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is not posted again when the primary thread is outdated", () => {
+				const review = compile(FILES, [returned], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.tally.high).toBe(1);
+				expect(review.comments).toHaveLength(0);
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+			});
+
+			test("does not absorb an ungrouped finding that shares its title in the same file", () => {
+				const ungrouped = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+				const review = compile(FILES, [{ ...awaitFinding, line: 3 }], { existing: [ungrouped], policy: POLICY });
+				expect(review.tally.high).toBe(2);
+				expect(review.comments).toHaveLength(1);
+			});
+		});
+
+		test("clears an ungrouped thread even when its file is not in the delta", () => {
+			const review = compile(FILES.filter((f) => f.path === "src/new.ts"), [], {
+				existing: [outdated(awaitFinding)],
+				policy: POLICY,
+				reReview: SINCE,
+			});
+			expect(review.tally.high).toBe(0);
+		});
+	});
+
+	describe("cleared threads", () => {
+		const gone = outdated(grouped);
+		const UNRELATED = FILES.filter((f) => f.path === "new/name.ts");
+		const unrelated = (extra = {}) =>
+			compile(UNRELATED, [], { existing: [gone], policy: POLICY, reReview: SINCE, ...extra });
+
+		test("writes the id of a cleared thread into a hidden marker", () => {
+			const review = compile(FILES, [], { existing: [gone], policy: POLICY, reReview: SINCE });
+			expect(review.body).toContain(`${THRASH_CLEARED_MARKER_PREFIX}["${gone.threadId}"] -->`);
+		});
+
+		test("leaves the marker out when nothing was ever cleared", () => {
+			expect(compile(FILES, [], { policy: POLICY }).body).not.toContain("dg:thrash-cleared");
+		});
+
+		test("keeps a cleared grouped class cleared on a later delta that omits its files", () => {
+			const review = unrelated({ clearedThreads: [gone.threadId] });
+			expect(review.tally.high).toBe(0);
+			expect(review.verdict).toBe("approve");
+			expect(review.body).not.toContain("Cleared");
+		});
+
+		test("without the marker the same delta reopens the class", () => {
+			expect(unrelated().tally.high).toBe(1);
+		});
+
+		test("carries earlier cleared ids forward and adds the ones cleared this round", () => {
+			const review = compile(FILES, [], { existing: [gone], policy: POLICY, clearedThreads: ["earlier"] });
+			expect(review.body).toContain(`${THRASH_CLEARED_MARKER_PREFIX}["earlier","${gone.threadId}"] -->`);
+		});
+
+		test("keeps carrying an id after its delta cleared nothing new", () => {
+			expect(unrelated({ clearedThreads: [gone.threadId] }).body).toContain(
+				`${THRASH_CLEARED_MARKER_PREFIX}["${gone.threadId}"] -->`,
+			);
+		});
+
+		test("counts and posts the class again when it returns after it was cleared", () => {
+			const returned = { ...grouped, otherPlaces: undefined };
+			const review = compile(FILES, [returned], { existing: [gone], policy: POLICY, clearedThreads: [gone.threadId] });
+			expect(review.tally.high).toBe(1);
+			expect(review.comments).toHaveLength(1);
+		});
+
+		test("parseClearedMarker reads the ids back", () => {
+			expect(parseClearedMarker(`text\n${THRASH_CLEARED_MARKER_PREFIX}["a","b"] -->\n`)).toEqual(["a", "b"]);
+			expect(parseClearedMarker("no marker")).toEqual([]);
+			expect(parseClearedMarker(`${THRASH_CLEARED_MARKER_PREFIX}not json -->`)).toEqual([]);
+		});
+
+		test("clearedThreadIds reads only the latest thrash review", () => {
+			const review = (ids: string[], commitId: string, author = "thrashley[bot]"): ReviewSummary => ({
+				author,
+				body: `${THRASH_CLEARED_MARKER_PREFIX}${JSON.stringify(ids)} -->\n${THRASH_REVIEW_MARKER}`,
+				state: "COMMENTED",
+				commitId,
+			});
+			const reviews = [review(["old"], "aaa1111"), review(["new"], "bbb2222"), review(["other"], "ccc3333", "dev")];
+			expect(clearedThreadIds(reviews, "thrashley[bot]")).toEqual(["new"]);
+			expect(clearedThreadIds([], "thrashley[bot]")).toEqual([]);
+		});
+	});
+
+	describe("phase order", () => {
+		const PHASED = parsePolicy(
+			"phases:\n  - name: strict\n    through: 1\n    block: { high: 0 }\n  - name: relaxed\n    requiresClear: [high]\n    nits: false\n    block: { high: 1 }\n",
+		);
+
+		test("enters the next phase once the fixed findings are cleared", () => {
+			const nit = finding("src/a.ts", 3, "nit");
+			const review = compile(FILES, [nit], { existing: [outdated(awaitFinding)], policy: PHASED, round: 2 });
+			expect(review.phase).toBe("relaxed");
+			expect(review.dropped.map((d) => d.reason)).toContain("below-min-tier");
+		});
+
+		test("stays in the earlier phase while a prior finding is still open", () => {
+			const stillOpen = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+			const review = compile(FILES, [], { existing: [stillOpen], policy: PHASED, round: 2 });
+			expect(review.phase).toBe("strict");
+		});
+	});
+
+	describe("delta tally without a policy", () => {
+		const untouched = thread(
+			"src/new.ts",
+			1,
+			renderInlineBody({ ...finding("src/new.ts", 1, "critical"), title: "Hardcoded secret" }),
+		);
+
+		test("counts an open blocker in a file the delta did not touch", () => {
+			const review = compile(DELTA, [], { existing: [untouched], reReview: SINCE });
+			expect(review.tally.critical).toBe(1);
+			expect(review.verdict).toBe("request_changes");
+		});
+
+		test("a full review without a policy still tallies only its own findings", () => {
+			const review = compile(FILES, [], { existing: [untouched] });
+			expect(review.tally.critical).toBe(0);
+			expect(review.verdict).toBe("approve");
+		});
+	});
+
+	describe("unposted blockers", () => {
+		const classed: Finding = { ...awaitFinding, class: "Missing await" };
+
+		test("lists the keys of blocking findings that were not posted in a hidden marker", () => {
+			const review = compile(FILES, [classed, finding("src/a.ts", 3, "low")], { policy: POLICY, maxComments: 0 });
+			expect(review.body).toContain('<!-- dg:thrash-unposted ["missing await"] -->');
+		});
+
+		test("lists a blocking finding that names no file in the diff", () => {
+			const lost = { ...finding("nowhere.ts", 1, "high"), title: "Lost" };
+			expect(compile(FILES, [lost], { policy: POLICY }).body).toContain('<!-- dg:thrash-unposted ["lost"] -->');
+		});
+
+		test("leaves the marker out when every blocker posted", () => {
+			expect(compile(FILES, [classed], { policy: POLICY }).body).not.toContain("dg:thrash-unposted");
+		});
+
+		test("leaves a tier without a limit out of the marker", () => {
+			const medium = finding("src/a.ts", 3, "medium");
+			expect(compile(FILES, [medium], { policy: POLICY, maxComments: 0 }).body).not.toContain("dg:thrash-unposted");
+		});
+
+		describe("a blocker dropped as a duplicate", () => {
+			const lowThread = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier: "low" }));
+			const answered: ReviewThread = {
+				...thread("src/a.ts", 2, renderInlineBody(awaitFinding)),
+				comments: [
+					{ id: "1", author: "bot", body: renderInlineBody(awaitFinding), createdAt: "", diffHunk: "" },
+					{ id: "2", author: "dev", body: "on it", createdAt: "", diffHunk: "" },
+				],
+			};
+
+			test.each([
+				["a lower-tier thread", lowThread],
+				["a pre-existing thread", thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, preExisting: true }))],
+				["an answered thread", answered],
+			])("is listed when %s sits on its line", (_name, existing) => {
+				const review = compile(FILES, [awaitFinding], { existing: [existing], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain('<!-- dg:thrash-unposted ["missing await"] -->');
+			});
+
+			test.each([
+				["an equal tier", "high"],
+				["a higher tier", "critical"],
+			] as const)("is left out when an open thread of %s holds it", (_name, tier) => {
+				const holder = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier }));
+				const review = compile(FILES, [awaitFinding], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is left out when its tier has no limit", () => {
+				const medium = { ...awaitFinding, tier: "medium" as Tier };
+				const holder = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier: "low" }));
+				const review = compile(FILES, [medium], { existing: [holder], policy: POLICY });
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is left out when it is pre-existing", () => {
+				const review = compile(FILES, [{ ...awaitFinding, preExisting: true }], { existing: [lowThread], policy: POLICY });
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+		});
+
+		describe("a class that gains a place its thread never recorded", () => {
+			const widened: Finding = {
+				...awaitFinding,
+				class: "Missing await",
+				otherPlaces: ["src/new.ts:1", "new/name.ts:1"],
+			};
+			const unposted = '<!-- dg:thrash-unposted ["missing await"] -->';
+
+			test("is listed while a current thread holds it", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(grouped));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is listed while an outdated grouped thread holds it", () => {
+				const returned: Finding = { ...widened, path: "src/new.ts", line: 1, otherPlaces: ["new/name.ts:1"] };
+				const review = compile(FILES, [returned], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is listed while a thread with one place holds it", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is left out once its thread records every place", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(widened));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("posts its own thread once the recorded places are fixed and only the new place remains", () => {
+				const remaining: Finding = { ...finding("new/name.ts", 1, "high"), title: "Missing await", class: "Missing await" };
+				const review = compile(FILES, [remaining], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.comments).toHaveLength(1);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain("- **Cleared:** 1 fixed");
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+		});
+
+		test("parseUnpostedMarker reads the keys back", () => {
+			expect(parseUnpostedMarker(`text\n${THRASH_UNPOSTED_MARKER_PREFIX}["a b","c"] -->\n`)).toEqual(["a b", "c"]);
+			expect(parseUnpostedMarker("no marker")).toEqual([]);
+			expect(parseUnpostedMarker(`${THRASH_UNPOSTED_MARKER_PREFIX}not json -->`)).toEqual([]);
+		});
+	});
+
+	describe("publication anchors", () => {
+		const PR_DIFF = parseUnifiedDiff(`diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,3 +1,3 @@
+ const a = 1;
+-const b = 2;
++const b = 3;
+ export { a, b };
+`);
+		const DELTA_DIFF = parseUnifiedDiff(`diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,6 +1,5 @@
+ const a = 1;
+ const b = 3;
+-const c = 4;
+ export { a, b };
+ const t1 = 1;
+ const t2 = 2;
+diff --git a/src/reverted.ts b/src/reverted.ts
+--- a/src/reverted.ts
++++ b/src/reverted.ts
+@@ -1,2 +1,1 @@
+ const r = 1;
+-const s = 2;
+`);
+		const anchored = (findings: Finding[]) =>
+			compile(DELTA_DIFF, findings, { reReview: SINCE, prFiles: PR_DIFF }).comments;
+
+		test("keeps a new-side line that the full PR diff also shows", () => {
+			const [comment] = anchored([finding("src/a.ts", 2, "high")]);
+			expect(comment).toMatchObject({ path: "src/a.ts", newLine: 2 });
+		});
+
+		test("posts a file comment for a delta line the full PR diff does not show", () => {
+			const [comment] = anchored([finding("src/a.ts", 4, "high")]);
+			expect(comment.path).toBe("src/a.ts");
+			expect(comment.newLine).toBeUndefined();
+			expect(comment.oldLine).toBeUndefined();
+		});
+
+		test("posts a file comment for an old-side line, whose number is not a PR base line", () => {
+			const [comment] = anchored([finding("src/a.ts", 3, "high", "gone", "old")]);
+			expect(comment.path).toBe("src/a.ts");
+			expect(comment.oldLine).toBeUndefined();
+			expect(comment.newLine).toBeUndefined();
+		});
+
+		test("does not post a finding on a file the full PR diff does not contain", () => {
+			const review = compile(DELTA_DIFF, [finding("src/reverted.ts", 1, "high")], { reReview: SINCE, prFiles: PR_DIFF });
+			expect(review.comments).toHaveLength(0);
+			expect(review.unanchored).toHaveLength(1);
+			expect(review.tally.high).toBe(1);
+		});
+
+		test("matches an existing thread by its PR line", () => {
+			const existing = [thread("src/a.ts", 2, renderInlineBody(finding("src/a.ts", 2, "high")))];
+			const review = compile(DELTA_DIFF, [finding("src/a.ts", 2, "high")], {
+				existing,
+				reReview: SINCE,
+				prFiles: PR_DIFF,
+			});
+			expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+			expect(review.tally.high).toBe(1);
+		});
+	});
+
+	describe("class coalescing", () => {
+		const at = (path: string, line: number, tier: Tier, name: string, extra: Partial<Finding> = {}): Finding => ({
+			...finding(path, line, tier),
+			title: "Missing await",
+			class: name,
+			...extra,
+		});
+
+		test("merges same-class findings from different chunks into one finding at the highest tier", () => {
+			const review = compile(
+				FILES,
+				[at("src/a.ts", 2, "medium", "Missing await"), at("src/new.ts", 1, "high", "missing-await")],
+			);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0]).toMatchObject({ path: "src/a.ts", tier: "high" });
+			expect(review.comments[0].body).toContain("Same class (Missing await) at: src/new.ts:1");
+			expect(review.tally).toMatchObject({ high: 1, medium: 0 });
+			expect(review.body).toContain("Missing await in 2 places: `src/a.ts:2`, `src/new.ts:1`");
+		});
+
+		test("merges every location once and keeps the places a finding already listed", () => {
+			const review = compile(FILES, [
+				at("src/a.ts", 2, "high", "Missing await", { otherPlaces: ["src/new.ts:1"] }),
+				at("src/new.ts", 1, "high", "Missing await", { otherPlaces: ["src/a.ts:2", "src/name.ts:9"] }),
+			]);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0].body).toContain("Same class (Missing await) at: src/new.ts:1, src/name.ts:9");
+			expect(review.tally.high).toBe(1);
+		});
+
+		test("keeps a pre-existing finding apart from a blocking one of the same class", () => {
+			const review = compile(FILES, [
+				at("src/a.ts", 2, "high", "Missing await", { preExisting: true }),
+				at("src/new.ts", 1, "medium", "Missing await"),
+			]);
+			expect(review.comments).toHaveLength(2);
+			expect(review.preExisting).toHaveLength(1);
+			expect(review.tally).toMatchObject({ high: 0, medium: 1 });
+		});
+
+		test("merges pre-existing findings of one class together", () => {
+			const review = compile(FILES, [
+				at("src/a.ts", 2, "low", "Missing await", { preExisting: true }),
+				at("src/new.ts", 1, "medium", "Missing await", { preExisting: true }),
+			]);
+			expect(review.comments).toHaveLength(1);
+			expect(review.preExisting).toHaveLength(1);
+		});
+
+		test("leaves findings without a class alone", () => {
+			const review = compile(FILES, [finding("src/a.ts", 2, "high"), finding("src/new.ts", 1, "high")]);
+			expect(review.comments).toHaveLength(2);
+		});
 	});
 });

@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { parsePolicy } from "../policy";
 import { type Config, readConfig } from "./config";
 import {
 	isFork,
@@ -30,6 +31,7 @@ interface State {
 	headSha: string;
 	round: number;
 	policyPath: string | null;
+	improvements: boolean;
 	persona: string;
 	personasDir: string | null;
 	plan: DiffPlan;
@@ -102,7 +104,7 @@ async function prepare(cfg: Config): Promise<void> {
 		return;
 	}
 	const headSha = await readHeadSha(event);
-	const diff = dgSkills(["thrash", "diff", event.url], scratchEnv());
+	const diff = dgSkills(["thrash", "diff", event.url, "--reviewer", cfg.botLogin], scratchEnv());
 	const [reviews, rules, policy, extraPrompt, agent] = await Promise.all([
 		listReviews(event),
 		readBaseFile(event, cfg.reviewRules),
@@ -130,6 +132,7 @@ async function prepare(cfg: Config): Promise<void> {
 		rules === null ? null : writeIn(scratch, "review-rules.md", rules);
 	const policyPath =
 		policy === null ? null : writeIn(work, "policy.yml", policy);
+	const improvements = cfg.improvements || (policy !== null && parsePolicy(policy).improvements === true);
 	const plan = lastJson<DiffPlan>(await diff);
 	if (await readHeadSha(event) !== headSha) {
 		throw new Error("PR head changed while preparing the diff; run prepare again");
@@ -151,6 +154,7 @@ async function prepare(cfg: Config): Promise<void> {
 				spice: cfg.spice,
 				target: event.url,
 				rulesPath,
+				improvements,
 				extraPrompt,
 			}),
 		),
@@ -161,6 +165,7 @@ async function prepare(cfg: Config): Promise<void> {
 		headSha,
 		round,
 		policyPath,
+		improvements,
 		persona,
 		personasDir,
 		plan,
@@ -272,7 +277,9 @@ async function publish(cfg: Config): Promise<void> {
 				maxComments: cfg.maxComments,
 				verdict: cfg.verdict,
 				reviewer: cfg.botLogin,
+				headSha: state.headSha,
 				sass: cfg.sass,
+				improvements: cfg.improvements,
 			}),
 			execution,
 		),

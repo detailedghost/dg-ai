@@ -15,18 +15,22 @@ import {
 	type ReviewVerdict,
 } from "../provider/types";
 import { git, resolveBaseSha } from "../utils/git";
+import { CLASS_HISTORY_PRS } from "./constants";
 import { parsePolicy } from "./policy";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
 import {
 	addressFileName,
 	annotateDiff,
+	classPrCounts,
 	type ChunkPlan,
 	type CompiledReview,
 	type Coverage,
 	chunkSummary,
+	clearedThreadIds,
 	compileReview,
 	diffStats,
+	lastReviewedSha,
 	mergeOutputs,
 	parseAgentOutput,
 	parseSpice,
@@ -38,11 +42,13 @@ import {
 	renderAddressFile,
 	renderPreview,
 	renderTallyTable,
+	type ReReview,
 	reviewTrigger,
 	type StackStatusRow,
 	stackFor,
 	type TallyRow,
 	toPostReviewInput,
+	unpostedBlockers,
 } from "./core";
 
 const TOOL = "thrash";
@@ -68,6 +74,8 @@ type DiffTarget = RemoteTarget | (LocalTarget & { base: string });
 
 interface PlanFile extends Coverage {
 	contextPath: string;
+	reReview?: ReReview;
+	prDiffPath?: string;
 	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
 }
 
@@ -146,6 +154,36 @@ async function fetchDiffText(target: DiffTarget): Promise<string> {
 	return result.stdout.toString();
 }
 
+function warn(message: string, err: unknown): void {
+	process.stderr.write(`thrash: ${message}: ${err instanceof Error ? err.message : String(err)}\n`);
+}
+
+interface ReviewDiff {
+	text: string;
+	since?: string;
+	prText?: string;
+}
+
+/** From round 2, the diff since the bot's latest review, with the full PR diff beside it; any doubt falls back to the full diff alone. */
+async function fetchReviewDiff(target: DiffTarget, reviewer?: string): Promise<ReviewDiff> {
+	if (target.mode === "local") return { text: await fetchDiffText(target) };
+	const provider = await getProviderForUrl(target.url);
+	try {
+		const reviews = await provider.listReviews(prRef(target));
+		const since = lastReviewedSha(reviews, reviewer);
+		if (since !== undefined && unpostedBlockers(reviews, reviewer).length > 0) {
+			process.stderr.write("thrash: the last review left a blocker unposted, reviewing the full diff\n");
+		} else if (since !== undefined) {
+			await existingThreads(target, true);
+			const text = await provider.fetchDiffSince(prRef(target), since);
+			if (text !== null) return { text, since, prText: await provider.fetchDiff(prRef(target)) };
+		}
+	} catch (err) {
+		warn("could not read the last review or the review threads, reviewing the full diff", err);
+	}
+	return { text: await provider.fetchDiff(prRef(target)) };
+}
+
 async function listUntracked(target: LocalTarget): Promise<string[]> {
 	const result = await git`ls-files --others --exclude-standard -- ${target.relPath}`;
 	return result.stdout.toString().split("\n").filter(Boolean);
@@ -161,6 +199,7 @@ async function renderContext(
 	target: DiffTarget,
 	files: ReturnType<typeof parseUnifiedDiff>,
 	plan: ChunkPlan,
+	since?: string,
 ): Promise<string> {
 	const lines: string[] = ["# Change context", ""];
 	if (target.mode === "remote") {
@@ -183,7 +222,7 @@ async function renderContext(
 	} else {
 		lines.push(`Local review of ${target.relPath} against ${target.base}`, "");
 	}
-	lines.push("Files in the full change:");
+	lines.push(since ? `Re-review: only the diff since ${since}. Files changed since then:` : "Files in the full change:");
 	for (const file of files) {
 		const { added, deleted } = diffStats([file]);
 		lines.push(`- ${file.path} [${file.status}] +${added} -${deleted}`);
@@ -197,9 +236,11 @@ async function renderContext(
 	return `${lines.join("\n")}\n`;
 }
 
-async function writeDiff(target: DiffTarget) {
-	const text = await fetchDiffText(target);
+async function writeDiff(target: DiffTarget, reviewer?: string) {
+	const { text, since, prText } = await fetchReviewDiff(target, reviewer);
 	const files = parseUnifiedDiff(text);
+	const stats = diffStats(files);
+	const reReview = since === undefined ? undefined : { sha: since, files: stats.files, lines: stats.changed };
 	const slug = targetSlug(target);
 	const diffPath = scratchPath(TOOL, `${slug}.diff`);
 	const plan = planChunks(files);
@@ -212,11 +253,15 @@ async function writeDiff(target: DiffTarget) {
 	for (const { findingsPath } of chunks) rmSync(findingsPath, { force: true });
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
-	writeFileSync(contextPath, await renderContext(target, files, plan));
+	const prDiffPath = scratchPath(TOOL, `${slug}.pr.diff`);
+	if (prText !== undefined) writeFileSync(prDiffPath, prText);
+	writeFileSync(contextPath, await renderContext(target, files, plan, since));
 	const planPath = planPathFor(diffPath);
 	const planRoot = path.dirname(planPath);
 	const planFile: PlanFile = {
 		contextPath: relativePlanPath(planRoot, contextPath),
+		...(reReview && { reReview }),
+		...(prText !== undefined && { prDiffPath: relativePlanPath(planRoot, prDiffPath) }),
 		chunks: chunks.map((chunk) => ({
 			...chunk,
 			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
@@ -225,17 +270,17 @@ async function writeDiff(target: DiffTarget) {
 		skipped: plan.skipped,
 	};
 	writeFileSync(planPath, JSON.stringify(planFile, null, 2));
-	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats: diffStats(files) };
+	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats, ...(reReview && { reReview }) };
 }
 
 async function cmdDiff(args: string[]): Promise<number> {
-	const arg = positional(args, "diff", ["--base"]);
+	const arg = positional(args, "diff", ["--base", "--reviewer"]);
 	const resolved = await resolveTarget(arg);
 	const target: DiffTarget =
 		resolved.mode === "local"
 			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base"), "thrash") }
 			: resolved;
-	const written = await writeDiff(target);
+	const written = await writeDiff(target, optionalOption(args, "--reviewer"));
 	const untracked = target.mode === "local" ? await listUntracked(target) : [];
 	printJson({
 		target: arg,
@@ -257,6 +302,33 @@ async function existingThreads(target: Target, required: boolean): Promise<Revie
 		const message = err instanceof Error ? err.message : String(err);
 		process.stderr.write(`thrash compile: could not list existing threads, skipping dedupe: ${message}\n`);
 		return [];
+	}
+}
+
+async function readClearedThreads(target: Target, required: boolean, reviewer?: string): Promise<string[]> {
+	if (target.mode === "local") return [];
+	try {
+		const provider = await getProviderForUrl(target.url);
+		return clearedThreadIds(await provider.listReviews(prRef(target)), reviewer);
+	} catch (err) {
+		if (required) throw err;
+		warn("could not read the cleared threads, skipping them", err);
+		return [];
+	}
+}
+
+async function readClassHistory(target: Target, reviewer?: string): Promise<Record<string, number>> {
+	if (target.mode === "local") return {};
+	try {
+		const provider = await getProviderForUrl(target.url);
+		const merged = await provider.listPullRequests({ state: "MERGED", limit: CLASS_HISTORY_PRS }, target.repo);
+		const reviews = await Promise.all(
+			merged.map((pr) => provider.listReviews({ number: pr.number, repo: target.repo })),
+		);
+		return classPrCounts(reviews, reviewer);
+	} catch (err) {
+		warn("could not read class history, skipping the repeated-class hint", err);
+		return {};
 	}
 }
 
@@ -290,6 +362,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		"--max-comments",
 		"--max-event",
 		"--reviewer",
+		"--head-sha",
 	]);
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
@@ -297,6 +370,9 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const planPath = planPathFor(diffPath);
 	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
 	const planRoot = path.dirname(path.resolve(planPath));
+	const prFiles = plan.prDiffPath
+		? parseUnifiedDiff(readFileSync(resolvePlanPath(planRoot, plan.prDiffPath), "utf8"))
+		: undefined;
 	const output = mergeOutputs(
 		plan.chunks.map((chunk) => {
 			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
@@ -309,18 +385,26 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const minTierRaw = optionalOption(args, "--min-tier");
 	const policyPath = optionalOption(args, "--policy");
 	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
+	const reviewer = optionalOption(args, "--reviewer");
+	const threadsRequired = policyPath !== undefined || plan.reReview !== undefined;
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
-		existing: await existingThreads(target, policyPath !== undefined),
+		existing: await existingThreads(target, threadsRequired),
+		clearedThreads: await readClearedThreads(target, threadsRequired, reviewer),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
 		heading: optionalOption(args, "--heading"),
 		round,
 		policy: policyPath === undefined ? undefined : parsePolicy(readFileSync(policyPath, "utf8")),
 		maxComments: parseOptionalFlag(wholeNumber(0), optionalOption(args, "--max-comments"), "--max-comments"),
 		maxEvent: parseMaxEvent(optionalOption(args, "--max-event")),
-		reviewer: optionalOption(args, "--reviewer"),
+		reviewer,
+		headSha: optionalOption(args, "--head-sha"),
+		reReview: plan.reReview,
+		prFiles,
+		classHistory: output.findings.some((f) => f.class) ? await readClassHistory(target, reviewer) : undefined,
+		improvements: args.includes("--improvements") || undefined,
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
@@ -508,7 +592,7 @@ const command = defineCommand({
 		},
 		compile: {
 			description:
-				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass]",
+				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass] [--improvements]",
 			args: ["target"],
 			run: (args, opts) => cmdCompile(args, opts),
 		},

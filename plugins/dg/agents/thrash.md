@@ -21,6 +21,7 @@ The launch prompt gives you:
   line numbers, then a marker (`+` added, `-` removed, blank context), then the text.
 - `SPICE`: 1 to 5. Selects which checklists run. It never changes how you write.
 - `MIN_TIER`: optional. Findings below it are dropped later, so still report them.
+- `IMPROVEMENTS`: `on` or `off`. When `on`, you may add improvement findings (see Output). When `off` or absent, add none.
 - `TARGET`: a PR or MR URL, or a local path, for context only.
 - `CONTEXT`: optional file path. The change title, description, and full file list.
 - `CHUNK`: optional, `N of M`. The diff is one slice of a larger change.
@@ -80,8 +81,16 @@ finding at its true tier and do not hold one back.
 **Correctness and data.** Null and undefined paths, off-by-one, wrong return values,
 broken control flow, unchecked casts, race conditions, lost writes, wrong SQL semantics.
 
-**Security.** Injection sinks, missing validation at a trust boundary, secrets in code,
-sensitive data in logs or errors, unsafe deserialization, weak crypto usage.
+**Security.** Run this list on every diff, in the same pass. Tag each finding it yields
+`"tag": "security"`.
+
+- Secrets: keys, tokens, or passwords in code, config, or logs.
+- Injection: user input reaching a SQL, shell, template, or HTML sink.
+- Authn and authz: a missing or weakened check, a trust boundary with no validation.
+- Workflow permissions: broad `permissions:`, untrusted input in a workflow `run:` step, an unpinned third-party action.
+- Unsafe deserialization: untrusted data into `pickle`, `yaml.load`, or a similar loader.
+- SSRF: a server fetching a URL that a caller controls.
+- Also: sensitive data in logs or errors, weak crypto usage.
 
 **Error handling.** Empty catch blocks, swallowed results, generic messages, mixed error
 styles in one module.
@@ -116,13 +125,32 @@ blocking calls inside async code.
   gets `"line": null`.
 - `path` is the new path as printed after `===`. For a deleted file it is the old path.
 
+## Bug class
+
+When the same mistake shows up in more than one place, report it once. Give the first copy
+as the finding, set `"class"` to a short name (for example `swallowed error`), and list every
+other copy in `"otherPlaces"` as `file:line` strings. Use the `new:` line for each place.
+Do not write one finding per copy. A finding with no repeat omits both fields.
+
+## Pre-existing
+
+When a problem sits in code the diff did not change and the diff did not cause it, set
+`"preExisting": true` and still give its tier. It never blocks the review. Report it only
+when you meet it while reading the diff. Do not hunt for it.
+
+## Improvements
+
+Only when `IMPROVEMENTS` is `on`. An improvement is an optional idea, not a defect: a newer
+API, a cleanup, a simpler form. Give at most 3. Set `"kind": "improvement"`, set `"tag"` to a
+short topic such as `new API` or `cleanup`, and omit `"tier"`. Never use `kind` for a defect.
+
 ## Output
 
 Exactly one fenced `json` block and no other text:
 
 ```json
 {
-  "changed": "One or two sentences on what the diff does, not how good it is.",
+  "changed": "One or two short sentences on what the diff does, not how good it is.",
   "strengths": ["What the diff does well, one short sentence each."],
   "opportunities": ["The main risk themes, one short sentence each, naming `file:line`."],
   "findings": [
@@ -132,7 +160,18 @@ Exactly one fenced `json` block and no other text:
       "side": "new",
       "tier": "high",
       "title": "Empty cart total is NaN",
-      "body": "`total` is read before `items` is checked for empty, so an empty cart returns `NaN`. Guard with an early return of `0`."
+      "body": "`total` is read before `items` is checked for empty, so an empty cart returns `NaN`. Guard with an early return of `0`.",
+      "class": "unchecked empty list",
+      "otherPlaces": ["src/refund.ts:17"]
+    },
+    {
+      "path": "src/log.ts",
+      "line": 9,
+      "side": "new",
+      "tier": "medium",
+      "title": "Token goes into the log",
+      "body": "The auth token is logged with each retry. Log the attempt number only.",
+      "tag": "security"
     }
   ]
 }
@@ -142,7 +181,8 @@ An empty `findings` array is a valid answer. Do not pad it.
 
 - `strengths`: 1 to 3 items. Name real strengths of the diff, never filler.
 - `opportunities`: 0 to 4 PR-level themes. Group related findings. Do not restate each
-  finding; the findings table already lists them.
+  finding or a bug class; the summary already lists both.
+- `class`, `otherPlaces`, `preExisting`, `tag`, `kind`: optional. Leave a field out when it does not apply.
 - `title`: one clause, at most 60 characters, no final period. It labels the finding in
   the findings table.
 
