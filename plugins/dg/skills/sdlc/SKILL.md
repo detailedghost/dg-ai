@@ -12,7 +12,7 @@ Run a feature brief through the full build pipeline with no spec prerequisite. `
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills worktree --help >/dev/null 2>&1 ||
+~/.dg/bin/dg-skills assign resolve --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
