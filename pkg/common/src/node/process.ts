@@ -15,6 +15,14 @@ export function isWSL(): boolean {
 	}
 }
 
+/** Chromium flags for WSL: --disable-gpu keeps WSLg GPU work off the Windows host unless PW_WSL_GPU=1. */
+export function wslChromiumArgs(
+	env: Record<string, string | undefined> = process.env,
+	wsl: boolean = isWSL(),
+): string[] {
+	return wsl && env.PW_WSL_GPU !== "1" ? ["--disable-gpu"] : [];
+}
+
 function openers(): Array<[string, (url: string) => string[]]> {
 	if (process.platform === "darwin") return [["open", (u) => [u]]];
 	if (isWSL()) {

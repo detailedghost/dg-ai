@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { isAlive, killProcessTree } from "../src/node/process";
+import {
+	isAlive,
+	killProcessTree,
+	wslChromiumArgs,
+} from "../src/node/process";
 
 const errno = (code: string) => Object.assign(new Error(code), { code });
 
@@ -60,5 +64,25 @@ describe("killProcessTree", () => {
 		const calls: [string, string[]][] = [];
 		killProcessTree(42, { platform: "win32", exec: (c, a) => calls.push([c, a]) });
 		expect(calls).toEqual([["taskkill", ["/T", "/F", "/PID", "42"]]]);
+	});
+});
+
+describe("wslChromiumArgs", () => {
+	it("disables the GPU on WSL", () => {
+		expect(wslChromiumArgs({}, true)).toEqual(["--disable-gpu"]);
+	});
+
+	it("keeps the GPU on WSL when PW_WSL_GPU is 1", () => {
+		expect(wslChromiumArgs({ PW_WSL_GPU: "1" }, true)).toEqual([]);
+	});
+
+	it("disables the GPU on WSL for any other PW_WSL_GPU value", () => {
+		expect(wslChromiumArgs({ PW_WSL_GPU: "true" }, true)).toEqual([
+			"--disable-gpu",
+		]);
+	});
+
+	it("adds nothing off WSL", () => {
+		expect(wslChromiumArgs({}, false)).toEqual([]);
 	});
 });
