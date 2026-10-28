@@ -153,13 +153,17 @@ review lists unposted blockers.
 Unposted blockers are findings that count in the tally but have no inline thread, so a delta
 review would lose them: those over the comment cap, below `--min-tier`, folded by the nit
 ladder, naming no file in the diff, or dropped as a duplicate of a thread that does not hold
-them. An open counted thread holds a finding only at the same or a higher tier, so a
-duplicate is recorded when its thread is lower tier, pre-existing, answered, or already
-holds another finding. Only a finding whose tier has a limit in the active verdict table (the
-policy phase or the spice table) is recorded. `compile` writes the keys, or the place when a
-finding has no key, into `<!-- dg:thrash-unposted ["key"] -->`. Reviews stay on the full diff
-until one lists none. Only the tier limits of the phase the round selected count, so an
-unposted finding in a tier that only a later phase limits is not recorded.
+them. An open counted thread holds a finding only at the same or a higher tier and only
+when it recorded every file the finding names, so a duplicate is recorded when its thread is
+lower tier, pre-existing, answered, already holds another finding, or never recorded one of
+the finding's files. A thread cannot be edited, so a class that grew a new file stays
+unposted, and the rounds stay on the full diff, until the recorded files are fixed and the
+remaining place posts its own thread. Only a finding whose tier has a limit in the active
+verdict table (the policy phase or the spice table) is recorded. `compile` writes the keys,
+or the place when a finding has no key, into `<!-- dg:thrash-unposted ["key"] -->`. Reviews
+stay on the full diff until one lists none. Only the tier limits of the phase the round
+selected count, so an unposted finding in a tier that only a later phase limits is not
+recorded.
 Compiling a delta review fails when the thread lookup fails, since approving without the
 earlier threads could drop an open blocker.
 

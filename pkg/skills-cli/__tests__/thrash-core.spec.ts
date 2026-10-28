@@ -1684,6 +1684,52 @@ describe("incremental review safety", () => {
 			});
 		});
 
+		describe("a class that gains a place its thread never recorded", () => {
+			const widened: Finding = {
+				...awaitFinding,
+				class: "Missing await",
+				otherPlaces: ["src/new.ts:1", "new/name.ts:1"],
+			};
+			const unposted = '<!-- dg:thrash-unposted ["missing await"] -->';
+
+			test("is listed while a current thread holds it", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(grouped));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is listed while an outdated grouped thread holds it", () => {
+				const returned: Finding = { ...widened, path: "src/new.ts", line: 1, otherPlaces: ["new/name.ts:1"] };
+				const review = compile(FILES, [returned], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is listed while a thread with one place holds it", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.body).toContain(unposted);
+			});
+
+			test("is left out once its thread records every place", () => {
+				const holder = thread("src/a.ts", 2, renderInlineBody(widened));
+				const review = compile(FILES, [widened], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("posts its own thread once the recorded places are fixed and only the new place remains", () => {
+				const remaining: Finding = { ...finding("new/name.ts", 1, "high"), title: "Missing await", class: "Missing await" };
+				const review = compile(FILES, [remaining], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.comments).toHaveLength(1);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain("- **Cleared:** 1 fixed");
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+		});
+
 		test("parseUnpostedMarker reads the keys back", () => {
 			expect(parseUnpostedMarker(`text\n${THRASH_UNPOSTED_MARKER_PREFIX}["a b","c"] -->\n`)).toEqual(["a b", "c"]);
 			expect(parseUnpostedMarker("no marker")).toEqual([]);

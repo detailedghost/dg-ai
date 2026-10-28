@@ -900,12 +900,27 @@ function recordsPlaces(thread: ReviewThread): boolean {
 	return (threadMarker(thread)?.places.length ?? 0) > 0;
 }
 
+function recordedFiles(thread: ReviewThread): string[] {
+	const places = threadMarker(thread)?.places ?? [];
+	return places.length > 0 ? places.map(placeFile) : [thread.path];
+}
+
+function findingFiles(finding: Finding): string[] {
+	return [finding.path, ...(finding.otherPlaces ?? []).map(placeFile)];
+}
+
 /** Same key, and the finding sits in a file the thread recorded. A thread with no key cannot be judged, so it never matches. */
 function isSameFinding(thread: ReviewThread, finding: Finding): boolean {
 	const marker = threadMarker(thread);
 	if (!marker || marker.key !== findingKey(finding)) return false;
-	const threadFiles = marker.places.length > 0 ? marker.places.map(placeFile) : [thread.path];
-	return [finding.path, ...(finding.otherPlaces ?? []).map(placeFile)].some((file) => threadFiles.includes(file));
+	const threadFiles = recordedFiles(thread);
+	return findingFiles(finding).some((file) => threadFiles.includes(file));
+}
+
+/** Every file of the finding is one the thread recorded; clearing the thread only ever checks those files. */
+function recordsAllPlaces(thread: ReviewThread, finding: Finding): boolean {
+	const threadFiles = recordedFiles(thread);
+	return findingFiles(finding).every((file) => threadFiles.includes(file));
 }
 
 const THRASH_MARKERS = Object.values(TIER_EMOJI);
@@ -1168,11 +1183,16 @@ function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): str
 	return lines.join("\n");
 }
 
+interface Holder {
+	thread: ReviewThread;
+	tier: Tier;
+}
+
 interface Reconciled {
 	tally: Record<Tier, number>;
 	prior: Record<Tier, number>;
 	cleared: string[];
-	holders: Map<Finding, Tier>;
+	holders: Map<Finding, Holder>;
 }
 
 type AnchorOf = (finding: Finding) => Anchor | null;
@@ -1182,15 +1202,16 @@ function reconcileThreads(files: DiffFile[], anchorOf: AnchorOf, findings: Findi
 	const open = opts.existing.filter((thread) => !alreadyCleared.has(thread.threadId));
 	const prior = openPriorTally(open, opts.reviewer);
 	const tally = { ...prior };
-	const holders = new Map<Finding, Tier>();
+	const holders = new Map<Finding, Holder>();
 	const unmatched = open.flatMap((thread) => {
 		const tier = threadTier(thread);
 		return tier && !thread.resolved && !isAnswered(thread) && isThrashThread(thread, opts.reviewer)
 			? [{ thread, tier }] : [];
 	}).sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
 	const consume = (index: number, finding: Finding) => {
-		const [{ tier }] = unmatched.splice(index, 1);
-		holders.set(finding, tier);
+		const [holder] = unmatched.splice(index, 1);
+		const { tier } = holder;
+		holders.set(finding, holder);
 		if (tierRank(finding.tier) < tierRank(tier)) {
 			tally[tier] -= 1;
 			tally[finding.tier] += 1;
@@ -1412,16 +1433,20 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")
 		: decideVerdict(tally, opts.spice, opts.commentOnly);
 	const limits = phase ? phase.block : (VERDICT_LIMITS[opts.spice] ?? VERDICT_LIMITS[SPICE_DEFAULT]);
-	const heldAtTier = (finding: Finding) => {
+	const isHeld = (finding: Finding) => {
 		const holder = reconciled.holders.get(finding);
-		return holder !== undefined && tierRank(holder) <= tierRank(finding.tier);
+		return (
+			holder !== undefined &&
+			tierRank(holder.tier) <= tierRank(finding.tier) &&
+			recordsAllPlaces(holder.thread, finding)
+		);
 	};
 	const unposted = [
 		...new Set(
 			[
 				...unanchored,
 				...dropped
-					.filter((d) => UNPOSTED_REASONS.includes(d.reason) || (d.reason === "duplicate" && !heldAtTier(d.finding)))
+					.filter((d) => UNPOSTED_REASONS.includes(d.reason) || (d.reason === "duplicate" && !isHeld(d.finding)))
 					.map((d) => d.finding),
 			]
 				.filter((f) => !f.preExisting && limits[f.tier] !== undefined)
