@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.23.0 (2026-10-28)
+
+### Features
+
+- feat(thrash): clear fixed findings and review only new work ([#94](https://github.com/detailedghost/dg-ai/pull/94))
+
+### Fixes
+
+- fix(install): keep the piped bootstrap script away from the installer ([#99](https://github.com/detailedghost/dg-ai/pull/99))
+- fix(phone): move the phone-friend alias removal to 1.23.0 ([#100](https://github.com/detailedghost/dg-ai/pull/100))
+
 ## v1.22.0 (2026-10-28)
 
 ### Features
