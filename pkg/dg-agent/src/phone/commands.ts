@@ -687,7 +687,7 @@ const REMOVED_VERBS: Record<string, string> = {
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
-export const ALIAS_REMOVAL_VERSION = "1.22.0";
+export const ALIAS_REMOVAL_VERSION = "1.23.0";
 
 /** Attaches every phone verb to `group`, plus (for both the live and the hidden alias group) the
  * hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
