@@ -163,7 +163,7 @@ $delegate = $env:DG_SKILLS_ONLY -ne "1" -and $script:pinnedVersion
 $installer = if ($delegate) {
 	Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-installer-" + [guid]::NewGuid() + ".exe")
 } else {
-	$dest
+	Join-Path $binDir (".dg-skills-installer-" + [guid]::NewGuid() + ".exe")
 }
 $exitCode = 0
 
@@ -198,8 +198,41 @@ try {
 	}
 
 	if (-not $delegate) {
-		# Stamp the installed version so `dg-skills install` won't re-download the binary.
-		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
+		$lockPath = Join-Path (Resolve-Path -LiteralPath $binDir).ProviderPath ".dg-skills-swap.lock"
+		$deadline = (Get-Date).AddMinutes(2)
+		$swapLock = $null
+		while (-not $swapLock) {
+			try {
+				$swapLock = [System.IO.File]::Open($lockPath, "OpenOrCreate", "ReadWrite", "None")
+			} catch [System.IO.IOException] {
+				if ((Get-Date) -gt $deadline) { throw "dg-skills: another bootstrap is still replacing $dest" }
+				Start-Sleep -Milliseconds 250
+			}
+		}
+		try {
+			$old = $null
+			if (Test-Path -LiteralPath $dest) {
+				$old = "$dest.old-" + [guid]::NewGuid()
+				Move-Item -LiteralPath $dest -Destination $old
+			}
+			try {
+				Move-Item -LiteralPath $installer -Destination $dest
+			} catch {
+				if ($old -and -not (Test-Path -LiteralPath $dest)) {
+					Move-Item -LiteralPath $old -Destination $dest
+				}
+				throw
+			}
+			$installer = $dest
+			$oldPrefix = (Split-Path -Leaf $dest) + ".old-"
+			Get-ChildItem -LiteralPath $binDir -File |
+				Where-Object { $_.Name.StartsWith($oldPrefix) } |
+				ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+			# Stamp the installed version so `dg-skills install` won't re-download the binary.
+			Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
+		} finally {
+			$swapLock.Dispose()
+		}
 		Write-Host "dg-skills installed at $dest"
 	}
 
@@ -232,7 +265,7 @@ try {
 	$exitCode = $LASTEXITCODE
 	$installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }
 } finally {
-	if ($delegate) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+	if ($installer -ne $dest) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
 }
 if ($exitCode -ne 0) { exit $exitCode }
 

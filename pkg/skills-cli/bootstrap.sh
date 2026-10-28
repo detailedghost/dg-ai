@@ -371,17 +371,17 @@ mkdir -p "${BIN_DIR}"
 DELEGATE=0
 if [ "${SKILLS_ONLY}" != "1" ] && [ -n "${PINNED_VERSION}" ]; then
   DELEGATE=1
-  INSTALLER=$(mktemp "${BIN_DIR}/.dg-skills-installer.XXXXXX")
-  track_tmp "${INSTALLER}"
-else
-  INSTALLER="${DEST}"
 fi
+INSTALLER=$(mktemp "${BIN_DIR}/.dg-skills-installer.XXXXXX")
+track_tmp "${INSTALLER}"
 
 curl -fsSL -H "User-Agent: dg-ai" -o "${INSTALLER}" "${url}"
 verify_sha256 "${INSTALLER}"
-chmod +x "${INSTALLER}"
+chmod 755 "${INSTALLER}"
 
 if [ "${DELEGATE}" = "0" ]; then
+  mv -f "${INSTALLER}" "${DEST}"
+  INSTALLER="${DEST}"
   # Stamp the installed version so `dg-skills install` won't re-download the binary.
   version=${tag#skills-v}
   [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"

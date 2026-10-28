@@ -250,6 +250,35 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 		);
 	});
 
+	test("bootstrap.sh never downloads straight over a binary that may be running", () => {
+		const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
+		expect(sh).not.toMatch(/-o\s+"\$\{DEST\}"/);
+		expect(sh).toMatch(/mv -f "\$\{INSTALLER\}" "\$\{DEST\}"/);
+	});
+
+	test("bootstrap.ps1 renames a running dg-skills.exe aside instead of writing over it", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		expect(ps1).not.toMatch(/-OutFile \$dest\b/);
+		expect(ps1).toMatch(/\$old = "\$dest\.old-" \+ \[guid\]::NewGuid\(\)/);
+		expect(ps1).toMatch(/Move-Item -LiteralPath \$dest -Destination \$old/);
+		expect(ps1).toMatch(/Move-Item -LiteralPath \$installer -Destination \$dest/);
+		expect(ps1).toMatch(/Move-Item -LiteralPath \$old -Destination \$dest/);
+		expect(ps1).not.toMatch(/Remove-Item -Path/);
+		expect(ps1).toMatch(/Get-ChildItem -LiteralPath \$binDir -File/);
+		const swap = ps1.indexOf("Move-Item -LiteralPath $installer -Destination $dest");
+		const cleanup = ps1.indexOf("Get-ChildItem -LiteralPath $binDir -File");
+		expect(cleanup).toBeGreaterThan(swap);
+		const lock = ps1.indexOf("[System.IO.File]::Open($lockPath");
+		const stamp = ps1.indexOf('".dg-skills.version"');
+		const release = ps1.indexOf("$swapLock.Dispose()");
+		expect(ps1).not.toContain("Mutex");
+		expect(ps1).toMatch(/\$lockPath = Join-Path \(Resolve-Path -LiteralPath \$binDir\)\.ProviderPath "\.dg-skills-swap\.lock"/);
+		expect(lock).toBeGreaterThan(-1);
+		expect(lock).toBeLessThan(swap);
+		expect(stamp).toBeGreaterThan(cleanup);
+		expect(release).toBeGreaterThan(stamp);
+	});
+
 	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {
 		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
 		expect(ps1).toMatch(/installer-.*NewGuid.*\.exe/);
