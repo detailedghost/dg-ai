@@ -53,6 +53,8 @@ export function listSkillTreeFiles(root: string): string[] {
 	return files;
 }
 
+export const RETIRED_SKILLS = ["phone-friend"];
+
 /**
  * Replace each skill directory in dest with the files selected from source.
  * Entries in dest that are not those skill directories are left in place.
@@ -65,6 +67,9 @@ export function installSkillTree(source: string, dest: string): string[] {
 	}
 	const skillNames = new Set(files.map((file) => file.split("/")[0]));
 	mkdirSync(dest, { recursive: true });
+	for (const name of RETIRED_SKILLS) {
+		rmSync(join(dest, name), { recursive: true, force: true });
+	}
 	for (const name of skillNames) {
 		rmSync(join(dest, name), { recursive: true, force: true });
 	}

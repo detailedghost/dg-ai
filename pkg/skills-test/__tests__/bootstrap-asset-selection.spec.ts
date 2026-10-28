@@ -590,6 +590,23 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 });
 
 describe("bootstrap.sh reads the root directory GitHub puts in a source archive", () => {
+	test("--skills-only removes the retired phone-friend skill and keeps unrelated folders", async () => {
+		const dest = mkdtempSync(join(tmpdir(), "dg-bootstrap-dest-"));
+		mkdirSync(join(dest, "phone-friend"), { recursive: true });
+		writeFileSync(join(dest, "phone-friend", "SKILL.md"), "old stub\n");
+		mkdirSync(join(dest, "my-own-skill"), { recursive: true });
+		writeFileSync(join(dest, "my-own-skill", "SKILL.md"), "mine\n");
+		const run = await runBootstrap([[release("v1.22.0", [SKILLS_ASSET])]], {
+			skillsOnly: true,
+			env: { DG_SKILLS_DEST: dest },
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(existsSync(join(dest, "phone-friend"))).toBe(false);
+		expect(readFileSync(join(dest, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine\n");
+		expect(readFileSync(join(dest, "probe", "SKILL.md"), "utf8")).toBe("probe\n");
+		rmSync(dest, { recursive: true, force: true });
+	});
+
 	test("--skills-only finds the skills in dg-ai-1.22.0, the root GitHub gives the v1.22.0 tag", async () => {
 		const run = await runBootstrap([[release("v1.22.0", [SKILLS_ASSET])]], {
 			skillsOnly: true,

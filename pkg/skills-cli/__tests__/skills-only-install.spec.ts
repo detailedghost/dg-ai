@@ -271,6 +271,30 @@ esac
 }
 
 describe("dg-skills install --skills-only", () => {
+	test("removes the retired phone-friend skill from the dest and keeps unrelated folders", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-retired-e2e-"));
+		const dest = join(directory, "skills");
+		const fetchLog = join(directory, "fetch.log");
+		writeFileSync(fetchLog, "");
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		mkdirSync(join(dest, "phone-friend"), { recursive: true });
+		writeFileSync(join(dest, "phone-friend", "SKILL.md"), "old stub\n");
+		mkdirSync(join(dest, "my-own-skill"), { recursive: true });
+		writeFileSync(join(dest, "my-own-skill", "SKILL.md"), "mine\n");
+		try {
+			const result = await run(
+				["bun", "--preload", writePreload(directory, fetchLog), ENTRY, "install", "--skills-only", "--repo", REPO, "--dest", dest],
+				childEnv(home),
+			);
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expect(existsSync(join(dest, "phone-friend"))).toBe(false);
+			expect(readFileSync(join(dest, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine\n");
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	test("installs the repository skill files and only the verified dg-skills CLI, and runs nothing", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-e2e-"));
 		const dest = join(directory, "skills");

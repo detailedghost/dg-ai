@@ -687,10 +687,7 @@ const REMOVED_VERBS: Record<string, string> = {
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
-export const ALIAS_REMOVAL_VERSION = "1.23.0";
-
-/** Attaches every phone verb to `group`, plus (for both the live and the hidden alias group) the
- * hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
+/** Attaches every phone verb to `group`, plus the hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
 function attachPhoneVerbs(
 	group: Command,
 	getDeps: () => PhoneDeps,
@@ -829,21 +826,15 @@ export function registerPhoneCommands(
 ): void {
 	let session: string | undefined;
 
-	function attachGroup(name: string, notice?: string): void {
-		const group = program
-			.command(name, notice === undefined ? undefined : { hidden: true })
-			.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
-			.option("--line <name>", "removed; one phone holds every contact now")
-			.hook("preAction", (hooked, action) => {
-				({ session } = action.optsWithGlobals<{ session?: string }>());
-				if (hooked.getOptionValueSource("line") === "cli") {
-					throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox", EXIT_REMOVED_VERB);
-				}
-				if (notice !== undefined) process.stderr.write(`${notice}\n`);
-			});
-		attachPhoneVerbs(group, () => makeDeps(session), () => makeOpenCloseDeps(session));
-	}
-
-	attachGroup("phone");
-	attachGroup("phone-friend", `phone-friend is now phone; this alias goes away in ${ALIAS_REMOVAL_VERSION}`);
+	const group = program
+		.command("phone")
+		.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
+		.option("--line <name>", "removed; one phone holds every contact now")
+		.hook("preAction", (hooked, action) => {
+			({ session } = action.optsWithGlobals<{ session?: string }>());
+			if (hooked.getOptionValueSource("line") === "cli") {
+				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox", EXIT_REMOVED_VERB);
+			}
+		});
+	attachPhoneVerbs(group, () => makeDeps(session), () => makeOpenCloseDeps(session));
 }

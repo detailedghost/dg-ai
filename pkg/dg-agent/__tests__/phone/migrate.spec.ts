@@ -1355,7 +1355,7 @@ describe("read-only phone commands", () => {
 			await program.parseAsync(["phone", "status"], { from: "user" });
 			await program.parseAsync(["phone", "inbox"], { from: "user" });
 			await program.parseAsync(["phone", "contacts"], { from: "user" });
-			await program.parseAsync(["phone-friend", "status"], { from: "user" });
+			await program.parseAsync(["phone", "status"], { from: "user" });
 			stdout.mockRestore();
 
 			expect(existsSync(PhoneDb.path(paths))).toBe(false);
