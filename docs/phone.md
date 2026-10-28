@@ -15,7 +15,7 @@ Codex:      $dg:phone
 | --- | --- |
 | `number [--as <name>] [--rotate] [--relay <url>...]` | Prints `{card, npub, as, relays, expires_at: null, rotated, key_store, listener, safety}`. The card never expires; `--rotate` prints a new one and the old secret stops admitting. |
 | `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. |
-| `accept [card] [text]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok}`. |
+| `accept [card] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok}`. A missing self name, or a self name of exactly `default`, exits 1 and writes nothing unless `--name` is set. A handle that already belongs to a different npub exits 1 too; rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok}`. |
 | `inbox [-n <count>] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. |
@@ -33,8 +33,17 @@ silently.
 To pair, one side runs `invite` (one-time) or shares its reusable `number`
 card, and the other runs `accept`. A card is one token, `dgcall2` (or the
 older `dgcall1`) and then only letters, digits, `-`, and `_`. The handle a
-new contact gets is the card's own self name (`as`); rename it afterward
-with `contacts rename` if you want a different one.
+new contact gets is the card's own self name (`as`). A missing self name, or
+a self name of exactly `default`, is refused until you pass `--name <handle>`.
+`default` is not what a current card sends when nobody set `--as`; that card
+carries `dg`. `default` is the fresh number key, and the old phone-friend
+line name. If the handle already belongs to a different npub, accept refuses
+and tells you to rename or remove that contact first. It does not replace
+the row and it does not allocate a `-2` handle. The listener still suffixes
+a handle when someone calls your number. Accepting a card whose npub is
+already a contact keeps that handle and that key. `--key <id>` signs a new
+contact with an existing key. Rename a contact afterward with
+`contacts rename` if you want a different handle.
 
 ## The listener and delivery
 

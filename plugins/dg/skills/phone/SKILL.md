@@ -27,7 +27,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|say|inbox|voicemail|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [-n|--count <n>] [--on-message <exe> [args...]] [--on-message-timeout <seconds>]`
+**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|say|inbox|voicemail|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [-n|--count <n>] [--on-message <exe> [args...]] [--on-message-timeout <seconds>]`
 
 ## Flags
 
@@ -37,7 +37,8 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
 | `--ttl <hours>` | none | Hours until an `invite` card expires. | `24` |
-| `--name <handle>` | none | Handle to give the new contact once an `invite` card is answered. | auto, from the caller's self name |
+| `--name <handle>` | none | On `invite`, the handle to store for whoever answers. On `accept`, the handle to give a new contact. `accept` requires it when the card's self name is missing or `default`. | invite: the caller's self name. accept: the card's self name |
+| `--key <id>` | none | On `accept`, an existing key id to sign a new contact with. Accept will not create a key you name, and it will not switch a contact you already have. | the number key |
 | `--count <n>` | `-n` | How many `inbox` rows to print. | `50` |
 | `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `voicemail`/`inbox`) |
 | `--on-message-timeout <seconds>` | none | Seconds before a running `--on-message` command is killed. | `30` |
@@ -82,10 +83,22 @@ CARD
 ```
 
 This saves the card's owner as a contact, rings them, and prints
-`{"handle": "+<name>", "npub": "...", "id": "...", "relays_ok": [...]}`. The
-new contact's handle comes from the card's own self name (`as`), not from
-anything you pass here; rename it afterward with
-`phone contacts rename +<old> <new>` if you want a different one.
+`{"handle": "+<name>", "npub": "...", "id": "...", "relays_ok": [...]}`.
+The new handle is the card's self name (`as`), unless that name is missing
+or exactly `default`. Those two are refused: the command exits 1 and writes
+nothing, until you pass `--name <handle>`. A current card with no `--as`
+carries `dg`, not `default`. `default` is the key a fresh phone signs with,
+and the old phone-friend line name.
+
+If that handle already belongs to a different npub, accept exits 1 and tells
+you to rename or remove that contact first. It does not replace the contact
+and it does not invent a `-2` handle. Accepting a card whose npub you already
+have keeps that contact's handle and key. Rename a contact afterward with
+`phone contacts rename +<old> <new>`.
+
+`--key <id>` signs a new contact with an existing key instead of the number
+key. The number key is `default` on a fresh phone, or whichever line migration
+kept. An existing contact keeps the key it was saved with.
 
 ## Open the line
 
