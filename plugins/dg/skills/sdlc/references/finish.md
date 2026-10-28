@@ -39,7 +39,7 @@ Because nothing has reviewed the code when the PR/MR opens, step 8 forces `--dra
 
 - a. **Push:** `git push -u origin <branch>` (silent if `permissions.git_push`).
 
-- b. **Body:** populate the provider's template if present — `.github/PULL_REQUEST_TEMPLATE.md` on GitHub, the first `.gitlab/merge_request_templates/*.md` on GitLab; fallback sections Summary / Dev Notes / QA Notes. Append `## Known Issues (Deferred)` from Issues Remediation if non-empty. End with the Claude Code attribution footer. Style: [pr-body-style.md](pr-body-style.md) — apply its self-check to the draft before step c.
+- b. **Body:** populate the provider's template if present — `.github/PULL_REQUEST_TEMPLATE.md` on GitHub, the first `.gitlab/merge_request_templates/*.md` on GitLab; fallback sections Summary / Dev Notes / QA Notes / Risk / How to revert. A provider template that lacks Risk or How to revert gets them appended. Append `## Known Issues (Deferred)` from Issues Remediation if non-empty. End with the Claude Code attribution footer. Style: [pr-body-style.md](pr-body-style.md) — apply its self-check to the draft before step c.
 
 - c. **Create:** run
 
