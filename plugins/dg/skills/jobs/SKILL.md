@@ -15,7 +15,7 @@ Commands use the compiled binaries at `~/.dg/bin/dg-daemon` and
 
 ```sh
 [ -x ~/.dg/bin/dg-daemon ] && [ -x ~/.dg/bin/dg-skills ] ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor channel-review.

@@ -63,7 +63,7 @@ const INSTALL_TOKENS: RegExp[] = [
  */
 const INSTALL_ALLOWLIST: { substring: string; reason: string }[] = [
 	{
-		substring: "raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh",
+		substring: "raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh",
 		reason:
 			"the shared dg-skills CLI bootstrap line every skill's SKILL.md carries; checksum-verified by the installer, not a prototype dependency fetch",
 	},
