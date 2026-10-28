@@ -24,7 +24,7 @@ export const installChecks: DoctorCheck[] = [
 				? ok(`${CLI_PATH} is installed`)
 				: warn(
 						`${CLI_PATH} is not installed`,
-						bootstrapCommand(ctx.installedVersion, ctx),
+						bootstrapCommand(ctx),
 					);
 		},
 	},

@@ -19,13 +19,13 @@ macOS / Linux (x64 or arm64):
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
 Windows (x64 or arm64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -38,6 +38,31 @@ is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from
 source with `--local` needs [Bun](https://bun.sh).)
 
+## Update from an older CLI
+
+The bootstrap URLs above never change. Each release publishes `bootstrap.sh`
+and `bootstrap.ps1` as assets, and `releases/latest` always points at the
+newest one.
+
+CLIs at 1.21.1 or older cannot see the new release scheme. They update once
+through a bridge release, which then follows the new releases. A manual re-run of bootstrap from the URL above
+also works. After that, every update works as usual.
+
+## Update the Claude Code plugin
+
+Pin the marketplace once to the `latest` tag. Do not pin `master`. Set the
+same ref in both files:
+
+- `~/.claude/settings.json`: `extraKnownMarketplaces.detailedghost.source.ref`
+- `~/.claude/plugins/known_marketplaces.json`: the `detailedghost` source `ref`
+
+Then each release arrives with two commands:
+
+```bash
+claude plugin marketplace update detailedghost
+claude plugin update dg@detailedghost
+```
+
 ## Pin a version
 
 Install a specific release instead of the newest, by adding `--version <x.y.z>`
@@ -46,14 +71,14 @@ Install a specific release instead of the newest, by adding `--version <x.y.z>`
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
 ```
 
 Needs 1.21.1 or newer.
 
 ```powershell
 $env:DG_VERSION = "1.19.0"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 Needs 1.21.1 or newer.
@@ -85,14 +110,14 @@ not start a full install.
 macOS / Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Windows, in PowerShell:
 
 ```powershell
 $env:DG_CLI_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -156,14 +181,14 @@ when the binary is not running inside this repository.
 macOS / Linux, without a local checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --skills-only
 ```
 
 Windows, in PowerShell:
 
 ```powershell
 $env:DG_SKILLS_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 <!-- markdownlint-enable MD013 -->
@@ -189,14 +214,14 @@ To install the same skills directly into `$CODEX_HOME/skills` without the Codex
 plugin, opt in while bootstrapping:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 PowerShell standalone installation:
 
 ```powershell
 $env:DG_INSTALL_CODEX = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 The standalone path copies the skills to `$CODEX_HOME/skills` (or

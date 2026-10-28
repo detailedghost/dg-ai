@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+#   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #   ... | sh -s -- --agent-only (or DG_AGENT_ONLY=1): install dg-agent too, for a non-Claude
 #       agent that only needs phone; still skips the extension and dg-daemon.

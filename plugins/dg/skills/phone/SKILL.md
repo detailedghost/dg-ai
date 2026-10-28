@@ -20,7 +20,7 @@ the latest `agent-v*` release:
 
 ```bash
 ~/.dg/bin/dg-agent phone --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
@@ -253,7 +253,7 @@ Skill: phone (private chat with my Claude Code agent)
 
 Setup, one time, in your terminal (keep the heredoc lines at the start of
 the line, with no indent):
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ~/.dg/bin/dg-agent phone number --as <NAME-FOR-ME>
 ~/.dg/bin/dg-agent phone accept - 'hello from the other side' <<'CARD'
 <CARD>

@@ -63,7 +63,7 @@ const INSTALL_TOKENS: RegExp[] = [
  */
 const INSTALL_ALLOWLIST: { substring: string; reason: string }[] = [
 	{
-		substring: "raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh",
+		substring: "github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh",
 		reason:
 			"the shared dg-skills CLI bootstrap line every skill's SKILL.md carries; checksum-verified by the installer, not a prototype dependency fetch",
 	},
@@ -140,7 +140,6 @@ describe("proto skill", () => {
 		const contracts = skillFile("references/contracts.md");
 
 		expect(commands).toContain("~/.dg/bin/dg-skills");
-		expect(commands).toContain("pkg/skills-cli");
 		expect(commands).toContain("bootstrap.sh");
 		expect(commands).toContain("browser-batch-installed");
 		expect(commands).toMatch(/browser skill.+install/i);

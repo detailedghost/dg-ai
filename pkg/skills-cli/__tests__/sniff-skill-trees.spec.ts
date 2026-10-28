@@ -22,7 +22,7 @@ import { SOURCE_SKILLS, splitFrontmatter } from "./spec-fixtures";
 const ENTRY = join(import.meta.dir, "../src/index.ts");
 const SCANNED = ["sniff", "nope", "find-work"];
 const BOOTSTRAP_URL =
-	/https:\/\/raw\.githubusercontent\.com\/detailedghost\/dg-ai\/skills-v\d+\.\d+\.\d+\/pkg\/skills-cli\/bootstrap\.sh/g;
+	/https:\/\/github\.com\/detailedghost\/dg-ai\/releases\/latest\/download\/bootstrap\.sh/g;
 
 function verbsOf(command: string): string[] {
 	const run = Bun.spawnSync([process.execPath, ENTRY, command, "--help"], {

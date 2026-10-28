@@ -5,9 +5,11 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { currentTag, pinBootstrapUrls, pinnedFiles } from "../../../scripts/pin-bootstrap-tag";
 import { REPO_ROOT, readRepoFile } from "./test-support";
 
+
+const STABLE_BOOTSTRAP_SH =
+	"https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh";
 
 const CODEX_PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
 const SKILLS_DIR = join(CODEX_PLUGIN_DIR, "skills");
@@ -142,14 +144,11 @@ describe("CLI-invoking SKILL.md uses the compiled binary", () => {
 			expect(md).not.toMatch(/="\$HOME\/\.dg\/bin\//);
 			expect(md).not.toMatch(/\bDG="/);
 		});
-		test(`${name}: bootstraps via the skills-cli bootstrap script`, () => {
-			expect(md).toContain("skills-cli");
+		test(`${name}: bootstraps via the release bootstrap script`, () => {
 			expect(md).toContain("bootstrap.sh");
 		});
 		test(`${name}: can bootstrap without CLAUDE_PLUGIN_ROOT`, () => {
-			expect(md).toContain(
-				`https://raw.githubusercontent.com/detailedghost/dg-ai/${currentTag()}/pkg/skills-cli/bootstrap.sh`,
-			);
+			expect(md).toContain(STABLE_BOOTSTRAP_SH);
 			expect(md).not.toContain('SRC="${CLAUDE_PLUGIN_ROOT}/');
 		});
 		test(`${name}: does not run the TS source entrypoint`, () => {
@@ -300,12 +299,38 @@ describe("demo verify-and-correct loop", () => {
 	});
 });
 
-describe("bootstrap URLs are pinned to the release tag", () => {
-	const tag = currentTag();
+const PINNED_BOOTSTRAP =
+	/raw\.githubusercontent\.com\/detailedghost\/dg-ai\/[^/\s]+\/pkg\/skills-cli\/bootstrap/;
 
-	test("the tag matches the skills-cli package version", () => {
-		const cli = JSON.parse(readRepoFile("pkg/skills-cli/package.json"));
-		expect(tag).toBe(`skills-v${cli.version}`);
+function sweepFiles(path: string): string[] {
+	if (statSync(path).isFile()) return [path];
+	return readdirSync(path).flatMap((name) => sweepFiles(join(path, name)));
+}
+
+describe("bootstrap URLs are stable", () => {
+	test("every SKILL.md carries the stable bootstrap URL", () => {
+		expect(skillDirs.length).toBeGreaterThan(0);
+		for (const name of skillDirs) {
+			const md = readFileSync(join(SKILLS_DIR, name, "SKILL.md"), "utf8");
+			if (!md.includes("/bin/dg-skills")) continue;
+			expect(md).toContain(STABLE_BOOTSTRAP_SH);
+		}
+	});
+
+	test("no doc, skill or bootstrap script pins a bootstrap URL to a ref", () => {
+		const roots = [
+			"README.md",
+			"docs",
+			"plugins/dg/skills",
+			"pkg/skills-cli/bootstrap.sh",
+			"pkg/skills-cli/bootstrap.ps1",
+		].map((root) => join(REPO_ROOT, root));
+		const files = roots.flatMap(sweepFiles);
+		expect(files.length).toBeGreaterThan(0);
+		const offenders = files.filter((file) =>
+			PINNED_BOOTSTRAP.test(readFileSync(file, "utf8")),
+		);
+		expect(offenders.map((file) => relative(REPO_ROOT, file))).toEqual([]);
 	});
 
 	for (const script of ["bootstrap.sh", "bootstrap.ps1"]) {
@@ -313,16 +338,6 @@ describe("bootstrap URLs are pinned to the release tag", () => {
 			const text = readRepoFile("pkg/skills-cli", script);
 			expect(text).not.toContain("refs/heads/master");
 			expect(text).not.toContain("dg-ai-master");
-			expect(text).toContain("refs/tags/");
-		});
-	}
-
-	for (const file of pinnedFiles()) {
-		const text = readFileSync(file, "utf8");
-		if (!/pkg\/skills-cli\/bootstrap\./.test(text)) continue;
-		test(`${relative(REPO_ROOT, file)}: no bootstrap URL points at master or another tag`, () => {
-			expect(pinBootstrapUrls(text, tag)).toBe(text);
-			expect(text).not.toContain("dg-ai/master/pkg/skills-cli/bootstrap");
 		});
 	}
 });

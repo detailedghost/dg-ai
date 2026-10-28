@@ -44,7 +44,7 @@ export const sharedChecks: DoctorCheck[] = [
 			if (isOlder(ctx.installedVersion, plugin.version))
 				return fail(
 					`dg-skills ${ctx.installedVersion} is older than the dg plugin ${plugin.version}`,
-					bootstrapCommand(plugin.version, ctx),
+					bootstrapCommand(ctx),
 				);
 			if (isOlder(plugin.version, ctx.installedVersion))
 				return warn(

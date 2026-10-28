@@ -30,14 +30,14 @@ Codex can load the same skills without the Claude plugin. The bootstrap scripts
 keep this opt-in because they write to Codex's local skill directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | DG_INSTALL_CODEX=1 sh
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_INSTALL_CODEX = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 These alternative commands install the CLI, stage the browser extension, and copy the
@@ -52,14 +52,14 @@ the marker `~/.dg/cli-only`. Run it before the plugin skills, so their
 bootstrap gate sees `dg-skills` and skips the full install.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_CLI_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 `DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
@@ -89,14 +89,14 @@ It never fetches `dg-daemon` or the extension, and never installs personas,
 which only the Claude-side CLI uses.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --agent-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --agent-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_AGENT_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 `DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
@@ -132,14 +132,14 @@ otherwise `~/.dg/skills`.
 Without a checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --skills-only
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --skills-only
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $env:DG_SKILLS_ONLY = "1"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
@@ -159,7 +159,7 @@ with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
 the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
 ```
 
 Needs 1.21.1 or newer.
@@ -168,7 +168,7 @@ On Windows PowerShell:
 
 ```powershell
 $env:DG_VERSION = "1.19.0"
-irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 Needs 1.21.1 or newer.
@@ -235,11 +235,11 @@ if [ ! -x ~/.dg/bin/dg-skills ]; then
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
     sh "$LOCAL_BOOTSTRAP"
   else
-    curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+    curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
   fi
 fi
 # Windows PowerShell:
-# irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
+# irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
 Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set
