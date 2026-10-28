@@ -27,6 +27,10 @@ Spec file: <absolute path OR the literal string "none">
 
 Read the Comments JSON. For each comment, read just the diff hunk and
 the narrow window of its `path:line`. Do NOT explore beyond that.
+A comment with a null `path` is an overview finding: search the PR diff
+for the files its body names, and read only those. When it names no
+file, search the PR diff once for its key symbols or subsystem terms,
+and read only the hits.
 
 If a spec path is provided (not "none"), read ONLY its "Contracts" and
 "Testing Criteria" sections. Ignore the rest of the spec.

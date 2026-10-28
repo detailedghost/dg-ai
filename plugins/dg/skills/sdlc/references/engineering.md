@@ -22,11 +22,17 @@ For each layer in order:
 
 1. Record `slice_base_sha=$(git -C "$cwd" rev-parse HEAD)` and set spec frontmatter `current_slice` to the layer's lead slice.
 1. Inline the five template bodies (`templates/qa-writer-red.md`, `slice-engineering.md`, `qa-writer-green.md`, `wave.md`, `correction.md`) into `templates: { red, yellow, green, wave, correction }`. Tokens the script substitutes per slice: `{SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS} {SPEC_PATH} {SCRATCH_PATH}`. If any slice in this layer has `proxyBackend` set, additionally inline `templates/slice-engineering-proxy.md` into `templates.proxy` — otherwise omit that key. The proxy template additionally uses `{PROXY_BACKEND}` (← `slice.proxyBackend`) and `{PRIMARY_AGENT}` (← `slice.primaryAgent`), substituted on every template regardless (no-op when the token isn't present).
+1. Copy the script to a path Workflow can read. Workflow refuses a `scriptPath` outside the
+   working directory and the directories added to the session, and the installed plugin cache is
+   outside both. Copy `<sdlc-skill-dir>/references/templates/slice-wave.workflow.js` into the host's
+   session scratchpad (or another added directory) once per run, and pass that copy as
+   `<script-copy>`. When the host has no readable directory, pass the file's text through
+   Workflow's `script` input instead.
 1. Call:
 
 ```
 Workflow({
-  scriptPath: "<sdlc-skill-dir>/references/templates/slice-wave.workflow.js",
+  scriptPath: "<script-copy>",
   args: {
     slices: [{ id, name, primaryAgent, primaryEffort, proxyBackend, qaAgents, brief, testingCriteria }, ...],  // this layer only
     specPath, scratchPath,

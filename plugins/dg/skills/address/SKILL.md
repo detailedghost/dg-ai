@@ -45,6 +45,7 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 - Phase 0.25: worktree merge-detection + cleanup
 - Phase 0.5: permissions probe
 - Phase 1: gather: local code-review file (resolved to PR's worktree dir, always) + PR threads + CI checks + Wiz findings (via the Wiz MCP, when a Wiz bot comment or `Wiz *` check exists)
+- Phase 1e: Copilot overview (`gather-overview`) items join triage and fix; no thread to reply to, so after the push run `request-copilot` once if any was fixed
 - Phase 1.45: apply `#explain` threads (reply + resolve, no fix)
 - Phase 1.5: antagonist triage (skip if `--verdicts` supplied)
 - Phase 1.6: apply rejections

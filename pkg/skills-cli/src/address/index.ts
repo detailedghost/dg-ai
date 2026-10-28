@@ -816,6 +816,79 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 	process.stdout.write(JSON.stringify({ submittedAt: latest.submittedAt, comments }) + "\n");
 }
 
+const COPILOT_REVIEWER = "copilot-pull-request-reviewer";
+const OVERVIEW_MARKER = "<!-- ccr-overview-v2 -->";
+const CLEAN_OVERVIEW_HEADER = /^#+\s*(?:🟢|(?:looks good|no issues|approved)\b)/u;
+
+type OverviewState = "needs-closer-look" | "changes-recommended" | "unknown";
+
+function overviewState(headerText: string): OverviewState {
+	if (headerText.includes("needs a closer look")) return "needs-closer-look";
+	if (headerText.includes("changes recommended")) return "changes-recommended";
+	return "unknown";
+}
+
+function parseOverviewBody(body: string): { state: OverviewState; summary: string } | null {
+	if (!body.trimStart().startsWith(OVERVIEW_MARKER)) return null;
+	const lines = body
+		.trimStart()
+		.slice(OVERVIEW_MARKER.length)
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	const header = lines.find((l) => l.startsWith("#"));
+	const headerText = (header ?? "").toLowerCase();
+	if (CLEAN_OVERVIEW_HEADER.test(headerText)) return null;
+	const state = overviewState(headerText);
+	const afterHeader = header ? lines.slice(lines.indexOf(header) + 1) : lines;
+	const summary = afterHeader.find((l) => !l.startsWith("<") && !l.startsWith("**No open issues")) ?? "";
+	return { state, summary };
+}
+
+async function cmdGatherOverview(args: string[]): Promise<void> {
+	const provider = await getProvider();
+	if (!hasCopilotBot(provider.capabilities)) {
+		process.stdout.write("[]\n");
+		return;
+	}
+	const { owner, repo } = await getOwnerRepo();
+	const prNumber = await getPrNumber(args[0]);
+
+	const query = `
+query($owner:String!,$repo:String!,$pr:Int!) {
+  repository(owner:$owner,name:$repo) {
+    pullRequest(number:$pr) {
+      reviews(last:50) {
+        nodes { id submittedAt body author { login } }
+      }
+    }
+  }
+}`;
+	const r = await gh`api graphql -F owner=${owner} -F repo=${repo} -F pr=${prNumber} -f query=${query}`;
+	const data = JSON.parse(r.stdout.toString()) as {
+		data: {
+			repository: {
+				pullRequest: {
+					reviews: {
+						nodes: Array<{ id: string; submittedAt: string; body: string; author: { login: string } | null }>;
+					};
+				};
+			};
+		};
+	};
+	const pr = data.data.repository.pullRequest;
+	if (!pr) die("gather-overview: pull request not found");
+	const latest = pr.reviews.nodes
+		.filter((n) => n.author?.login === COPILOT_REVIEWER)
+		.sort((a, b) => byTime(a.submittedAt, b.submittedAt))
+		.at(-1);
+	const overview = latest ? parseOverviewBody(latest.body ?? "") : null;
+	const items = latest && overview
+		? [{ reviewId: latest.id, source: "copilot-overview", ...overview, submittedAt: latest.submittedAt }]
+		: [];
+	process.stdout.write(JSON.stringify(items) + "\n");
+}
+
 async function cmdCountCopilotReviews(): Promise<void> {
 	await requireCopilotBot("Copilot review count");
 	const { owner, repo } = await getOwnerRepo();
@@ -883,6 +956,13 @@ export const commandSpec = {
 			args: ["pr_number?"],
 			run: async (args) => {
 				await cmdGatherUnresolved(args);
+			},
+		},
+		"gather-overview": {
+			description: "latest Copilot review overview when it flags work (JSON array, [] when clean)",
+			args: ["pr_number?"],
+			run: async (args) => {
+				await cmdGatherOverview(args);
 			},
 		},
 		"check-bot-review": {
