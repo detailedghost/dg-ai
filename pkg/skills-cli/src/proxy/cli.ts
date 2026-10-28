@@ -13,10 +13,12 @@ import {
 	runBackend,
 	withPersona,
 } from "./index";
+import { applyTier } from "./tier";
 
 const VALUE_FLAGS = new Set([
 	"model",
 	"effort",
+	"tier",
 	"subagent",
 	"spec",
 	"slice",
@@ -77,7 +79,7 @@ export async function main(argv: string[]): Promise<number | void> {
 	const { positionals, flags, listBackends, plan, help } = parsed;
 	if (help) {
 		console.log(
-			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nBackground commands (see dg-skills bg): run, list, prune, status, cancel, kill, update, drain",
+			"Usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]\n\nFlags: --list-backends, --model <model>, --effort <effort>, --tier <haiku|sonnet|opus|fable>, --cwd <path>, --resume <id>, --subagent <name>, --spec <plan>, --slice <id>\nBackground commands (see dg-skills bg): run, list, prune, status, cancel, kill, update, drain",
 		);
 		return 0;
 	}
@@ -91,6 +93,7 @@ export async function main(argv: string[]): Promise<number | void> {
 	const {
 		model,
 		effort,
+		tier,
 		subagent,
 		spec,
 		slice,
@@ -144,6 +147,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			slice,
 			model,
 			effort,
+			tier,
 			cwd,
 		}, noShell);
 		return;
@@ -158,15 +162,16 @@ export async function main(argv: string[]): Promise<number | void> {
 	let result: Awaited<ReturnType<typeof runBackend>>;
 	try {
 		let finalPrompt = prompt;
+		let tiered: { model?: string; effort?: string } = { model, effort };
 		if (!resume) {
 			const persona = await resolvePersona({ subagent, spec, slice });
 			finalPrompt = withPersona(persona, prompt);
+			tiered = applyTier({ backend: backendName, tier, subagent, spec, slice, model, effort });
 		}
 
 		result = await runBackend(backendName, backend, {
 			prompt: finalPrompt,
-			model,
-			effort,
+			...tiered,
 			cwd,
 			resume,
 			noShell,
@@ -219,6 +224,8 @@ async function runPlan(
 	}
 
 	let finalPrompt: string;
+	let model: string | undefined;
+	let effort: string | undefined;
 	try {
 		const persona = await resolvePersona({
 			subagent: opts.subagent,
@@ -226,6 +233,7 @@ async function runPlan(
 			slice: opts.slice,
 		});
 		finalPrompt = withPersona(persona, opts.prompt);
+		({ model, effort } = applyTier({ backend: backendName, ...opts }));
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(message);
@@ -237,8 +245,8 @@ async function runPlan(
 	writeFileSync(planFile, finalPrompt, { flag: "wx", mode: 0o600 });
 
 	const backendArgs = ["proxy", backendName, "--prompt-file", planFile];
-	if (opts.model) backendArgs.push("--model", opts.model);
-	if (opts.effort) backendArgs.push("--effort", opts.effort);
+	if (model) backendArgs.push("--model", model);
+	if (effort) backendArgs.push("--effort", effort);
 	if (opts.cwd) backendArgs.push("--cwd", opts.cwd);
 	const innerCommand = shellCommand(selfCommand(backendArgs));
 	const launch = shellCommand(selfCommand(["bg", "run", innerCommand]));
