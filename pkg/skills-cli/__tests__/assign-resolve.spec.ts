@@ -231,6 +231,28 @@ describe("dg-skills assign resolve", () => {
 		expect(templates.proxy).not.toMatch(/ask the user via `AskUserQuestion`/);
 	});
 
+	test("names the --cwd working directory in every stage prompt, proxy included", async () => {
+		const { templates } = await resolved([
+			plan("plan-high.md"),
+			"--layer",
+			"1",
+			"--cwd",
+			"/work/tree",
+		]);
+		for (const [key, body] of Object.entries(templates))
+			expect(body, key).toContain("Working directory: /work/tree");
+		expect(templates.proxy).toContain("--cwd /work/tree");
+		expect(templates.proxy).not.toContain("<repo working directory>");
+	});
+
+	test("defaults the working directory to the git top level", async () => {
+		const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"])
+			.stdout.toString()
+			.trim();
+		const { templates } = await resolved([plan("plan-high.md"), "--layer", "0"]);
+		expect(templates.red).toContain(`Working directory: ${top}`);
+	});
+
 	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {
 		const { slices } = await resolved([plan("plan-high.md"), "--layer", "1"]);
 		expect(slices[0]?.proxySkills).toEqual(["polish"]);

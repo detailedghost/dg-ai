@@ -28,7 +28,7 @@ import {
 const PROGRAM = "dg-skills assign";
 const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE =
-	"usage: dg-skills assign resolve <plan.md> --layer N [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>]\n";
+	"usage: dg-skills assign resolve <plan.md> --layer N [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
 const REMINDER =
 	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity goes in deferrals[], [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
 const TEMPLATE_FILES = {
@@ -62,6 +62,7 @@ interface Options {
 	runtime: Runtime;
 	scratch: string;
 	wave: string;
+	cwd: string;
 }
 
 interface Pin {
@@ -70,6 +71,12 @@ interface Pin {
 }
 
 class Refusal extends Error {}
+
+function gitTopLevel(): string {
+	const result = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"]);
+	const top = result.stdout.toString().trim();
+	return result.exitCode === 0 && top !== "" ? top : process.cwd();
+}
 
 function parseOptions(argv: string[]): Options | undefined {
 	const [verb, ...rest] = argv;
@@ -97,6 +104,7 @@ function parseOptions(argv: string[]): Options | undefined {
 		runtime,
 		scratch: values.get("--scratch") ?? "",
 		wave: values.get("--wave") ?? "",
+		cwd: values.get("--cwd") ?? gitTopLevel(),
 	};
 }
 
@@ -157,14 +165,19 @@ function agentsOf(slice: Record<string, unknown>): Record<string, unknown> {
 	return isRecord(slice.agents) ? slice.agents : {};
 }
 
-function templatesFor(proxied: boolean): Record<string, string> {
+function templatesFor(proxied: boolean, cwd: string): Record<string, string> {
+	const directive = `Working directory: ${cwd}. Run every command from it and read and edit files only under it, never in another checkout.`;
 	const out: Record<string, string> = {};
 	for (const [key, file] of Object.entries(TEMPLATE_FILES)) {
 		if (key === "proxy" && !proxied) continue;
 		const path = resolveSkillAsset("sdlc", `references/templates/${file}`);
 		const envelope =
 			key === "proxy" ? "" : `${ENVELOPE_HEAD}${ENVELOPE_TAIL[key] ?? ""}\n\n`;
-		out[key] = `${REMINDER}\n\n${envelope}${readFileSync(path, "utf8")}`;
+		const body = readFileSync(path, "utf8").replaceAll(
+			"<repo working directory>",
+			cwd,
+		);
+		out[key] = `${REMINDER}\n\n${directive}\n\n${envelope}${body}`;
 	}
 	return out;
 }
@@ -252,7 +265,10 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		),
 		specPath: abspath(options.plan),
 		scratchPath: options.scratch,
-		templates: templatesFor(slices.some((slice) => "proxyBackend" in slice)),
+		templates: templatesFor(
+			slices.some((slice) => "proxyBackend" in slice),
+			options.cwd,
+		),
 	}) as Record<string, unknown>;
 }
 
