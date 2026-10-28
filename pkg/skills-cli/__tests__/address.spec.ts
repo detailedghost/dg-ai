@@ -4485,6 +4485,13 @@ esac
 		expect(JSON.parse(stdout)).toEqual([]);
 	});
 
+	test("keeps a negative header that names approval as an unknown finding", async () => {
+		const { stdout } = await runOverview([
+			review("R_9", "2026-02-01T10:00:00Z", overviewBody("### 🔴 Not approved", "Fix the guard.")),
+		]);
+		expect(JSON.parse(stdout)).toMatchObject([{ state: "unknown", summary: "Fix the guard." }]);
+	});
+
 	test("prints an empty array when no Copilot review exists", async () => {
 		const { stdout, exitCode } = await runOverview([
 			{ ...review("R_5", "2026-02-01T10:00:00Z", "human review"), author: { login: "alice" } },

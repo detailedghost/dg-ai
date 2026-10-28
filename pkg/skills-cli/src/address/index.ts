@@ -818,6 +818,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 
 const COPILOT_REVIEWER = "copilot-pull-request-reviewer";
 const OVERVIEW_MARKER = "<!-- ccr-overview-v2 -->";
+const CLEAN_OVERVIEW_HEADER = /^#+\s*(?:🟢|(?:looks good|no issues|approved)\b)/u;
 
 type OverviewState = "needs-closer-look" | "changes-recommended" | "unknown";
 
@@ -837,7 +838,7 @@ function parseOverviewBody(body: string): { state: OverviewState; summary: strin
 		.filter(Boolean);
 	const header = lines.find((l) => l.startsWith("#"));
 	const headerText = (header ?? "").toLowerCase();
-	if (/🟢|looks good|no issues|approve/.test(headerText)) return null;
+	if (CLEAN_OVERVIEW_HEADER.test(headerText)) return null;
 	const state = overviewState(headerText);
 	const afterHeader = header ? lines.slice(lines.indexOf(header) + 1) : lines;
 	const summary = afterHeader.find((l) => !l.startsWith("<") && !l.startsWith("**No open issues")) ?? "";
