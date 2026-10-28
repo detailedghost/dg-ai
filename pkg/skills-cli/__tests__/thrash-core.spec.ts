@@ -40,8 +40,15 @@ import {
 	lastReviewedSha,
 	parseClassMarker,
 	parseUnpostedMarker,
+	parseClearedMarker,
+	clearedThreadIds,
 } from "../src/thrash/core";
-import { THRASH_CLASSES_MARKER_PREFIX, THRASH_REVIEW_MARKER, THRASH_UNPOSTED_MARKER_PREFIX } from "../src/thrash/constants";
+import {
+	THRASH_CLASSES_MARKER_PREFIX,
+	THRASH_CLEARED_MARKER_PREFIX,
+	THRASH_REVIEW_MARKER,
+	THRASH_UNPOSTED_MARKER_PREFIX,
+} from "../src/thrash/constants";
 
 const FIXTURE = `diff --git a/src/a.ts b/src/a.ts
 index 1111111..2222222 100644
@@ -1472,6 +1479,33 @@ describe("incremental review safety", () => {
 			expect(review.body).not.toContain("Cleared");
 		});
 
+		describe("a class found again at a recorded place", () => {
+			const returned: Finding = { ...finding("src/new.ts", 1, "high"), title: "Missing await", class: "Missing await" };
+			const current = thread("src/a.ts", 2, renderInlineBody(grouped));
+
+			test("is not counted or posted again while the primary thread is current", () => {
+				const review = compile(FILES, [returned], { existing: [current], policy: POLICY });
+				expect(review.tally.high).toBe(1);
+				expect(review.comments).toHaveLength(0);
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is not posted again when the primary thread is outdated", () => {
+				const review = compile(FILES, [returned], { existing: [outdated(grouped)], policy: POLICY });
+				expect(review.tally.high).toBe(1);
+				expect(review.comments).toHaveLength(0);
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+			});
+
+			test("does not absorb an ungrouped finding that shares its title in the same file", () => {
+				const ungrouped = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+				const review = compile(FILES, [{ ...awaitFinding, line: 3 }], { existing: [ungrouped], policy: POLICY });
+				expect(review.tally.high).toBe(2);
+				expect(review.comments).toHaveLength(1);
+			});
+		});
+
 		test("clears an ungrouped thread even when its file is not in the delta", () => {
 			const review = compile(FILES.filter((f) => f.path === "src/new.ts"), [], {
 				existing: [outdated(awaitFinding)],
@@ -1479,6 +1513,69 @@ describe("incremental review safety", () => {
 				reReview: SINCE,
 			});
 			expect(review.tally.high).toBe(0);
+		});
+	});
+
+	describe("cleared threads", () => {
+		const gone = outdated(grouped);
+		const UNRELATED = FILES.filter((f) => f.path === "new/name.ts");
+		const unrelated = (extra = {}) =>
+			compile(UNRELATED, [], { existing: [gone], policy: POLICY, reReview: SINCE, ...extra });
+
+		test("writes the id of a cleared thread into a hidden marker", () => {
+			const review = compile(FILES, [], { existing: [gone], policy: POLICY, reReview: SINCE });
+			expect(review.body).toContain(`${THRASH_CLEARED_MARKER_PREFIX}["${gone.threadId}"] -->`);
+		});
+
+		test("leaves the marker out when nothing was ever cleared", () => {
+			expect(compile(FILES, [], { policy: POLICY }).body).not.toContain("dg:thrash-cleared");
+		});
+
+		test("keeps a cleared grouped class cleared on a later delta that omits its files", () => {
+			const review = unrelated({ clearedThreads: [gone.threadId] });
+			expect(review.tally.high).toBe(0);
+			expect(review.verdict).toBe("approve");
+			expect(review.body).not.toContain("Cleared");
+		});
+
+		test("without the marker the same delta reopens the class", () => {
+			expect(unrelated().tally.high).toBe(1);
+		});
+
+		test("carries earlier cleared ids forward and adds the ones cleared this round", () => {
+			const review = compile(FILES, [], { existing: [gone], policy: POLICY, clearedThreads: ["earlier"] });
+			expect(review.body).toContain(`${THRASH_CLEARED_MARKER_PREFIX}["earlier","${gone.threadId}"] -->`);
+		});
+
+		test("keeps carrying an id after its delta cleared nothing new", () => {
+			expect(unrelated({ clearedThreads: [gone.threadId] }).body).toContain(
+				`${THRASH_CLEARED_MARKER_PREFIX}["${gone.threadId}"] -->`,
+			);
+		});
+
+		test("counts and posts the class again when it returns after it was cleared", () => {
+			const returned = { ...grouped, otherPlaces: undefined };
+			const review = compile(FILES, [returned], { existing: [gone], policy: POLICY, clearedThreads: [gone.threadId] });
+			expect(review.tally.high).toBe(1);
+			expect(review.comments).toHaveLength(1);
+		});
+
+		test("parseClearedMarker reads the ids back", () => {
+			expect(parseClearedMarker(`text\n${THRASH_CLEARED_MARKER_PREFIX}["a","b"] -->\n`)).toEqual(["a", "b"]);
+			expect(parseClearedMarker("no marker")).toEqual([]);
+			expect(parseClearedMarker(`${THRASH_CLEARED_MARKER_PREFIX}not json -->`)).toEqual([]);
+		});
+
+		test("clearedThreadIds reads only the latest thrash review", () => {
+			const review = (ids: string[], commitId: string, author = "thrashley[bot]"): ReviewSummary => ({
+				author,
+				body: `${THRASH_CLEARED_MARKER_PREFIX}${JSON.stringify(ids)} -->\n${THRASH_REVIEW_MARKER}`,
+				state: "COMMENTED",
+				commitId,
+			});
+			const reviews = [review(["old"], "aaa1111"), review(["new"], "bbb2222"), review(["other"], "ccc3333", "dev")];
+			expect(clearedThreadIds(reviews, "thrashley[bot]")).toEqual(["new"]);
+			expect(clearedThreadIds([], "thrashley[bot]")).toEqual([]);
 		});
 	});
 
@@ -1541,6 +1638,50 @@ describe("incremental review safety", () => {
 		test("leaves a tier without a limit out of the marker", () => {
 			const medium = finding("src/a.ts", 3, "medium");
 			expect(compile(FILES, [medium], { policy: POLICY, maxComments: 0 }).body).not.toContain("dg:thrash-unposted");
+		});
+
+		describe("a blocker dropped as a duplicate", () => {
+			const lowThread = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier: "low" }));
+			const answered: ReviewThread = {
+				...thread("src/a.ts", 2, renderInlineBody(awaitFinding)),
+				comments: [
+					{ id: "1", author: "bot", body: renderInlineBody(awaitFinding), createdAt: "", diffHunk: "" },
+					{ id: "2", author: "dev", body: "on it", createdAt: "", diffHunk: "" },
+				],
+			};
+
+			test.each([
+				["a lower-tier thread", lowThread],
+				["a pre-existing thread", thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, preExisting: true }))],
+				["an answered thread", answered],
+			])("is listed when %s sits on its line", (_name, existing) => {
+				const review = compile(FILES, [awaitFinding], { existing: [existing], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.tally.high).toBe(1);
+				expect(review.body).toContain('<!-- dg:thrash-unposted ["missing await"] -->');
+			});
+
+			test.each([
+				["an equal tier", "high"],
+				["a higher tier", "critical"],
+			] as const)("is left out when an open thread of %s holds it", (_name, tier) => {
+				const holder = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier }));
+				const review = compile(FILES, [awaitFinding], { existing: [holder], policy: POLICY });
+				expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is left out when its tier has no limit", () => {
+				const medium = { ...awaitFinding, tier: "medium" as Tier };
+				const holder = thread("src/a.ts", 2, renderInlineBody({ ...awaitFinding, tier: "low" }));
+				const review = compile(FILES, [medium], { existing: [holder], policy: POLICY });
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
+
+			test("is left out when it is pre-existing", () => {
+				const review = compile(FILES, [{ ...awaitFinding, preExisting: true }], { existing: [lowThread], policy: POLICY });
+				expect(review.body).not.toContain("dg:thrash-unposted");
+			});
 		});
 
 		test("parseUnpostedMarker reads the keys back", () => {

@@ -105,7 +105,10 @@ the title key otherwise. Each inline comment ends with a hidden
 (one with `otherPlaces`) writes `{"key":"...","places":["a.ts:2","b.ts:9"]}` instead: the
 first copy plus every other place. When the re-review finds the same finding at a new line,
 or anywhere in a file the thread recorded, the old thread stays open and the new finding is
-not counted a second time; the pair counts once at the higher tier.
+not counted or posted a second time; the pair counts once at the higher tier. A grouped
+thread absorbs a returning finding whether or not its own anchor is current. A thread with
+one place absorbs one only after its anchor went outdated, so a second finding with the same
+title in the same file still posts its own thread.
 
 A thread with recorded places clears only when every file in them is in the diff under
 review. After a delta review, a class fixed in some of its files stays open until the
@@ -115,6 +118,14 @@ place clears as described above, whether or not its file is in the delta.
 Clearing runs before the policy phase is chosen. `requiresClear` and the `nits` filter see
 the open earlier findings that remain after clearing, so a fixed blocker no longer holds
 the review in an earlier phase.
+
+A cleared thread stays unresolved on the provider, so the review body names it in a hidden
+`<!-- dg:thrash-cleared ["threadId"] -->`. Each round reads the marker of the latest thrash
+review, leaves those threads out of the open tally, the phase choice and later clearing, and
+writes the ids forward with any it clears itself. A delta that omits a cleared class's files
+therefore does not reopen it. A cleared thread never absorbs a finding: if the class
+returns, it counts and posts as new. `compile` fails when the review lookup fails under
+`--policy` or on a delta review, since a missing marker would reopen cleared findings.
 
 A thread without that marker (posted by an earlier version, or a finding with no title and no
 class) cannot be judged. It is never cleared by a fix and never absorbs a new finding, so it
@@ -141,11 +152,14 @@ review lists unposted blockers.
 
 Unposted blockers are findings that count in the tally but have no inline thread, so a delta
 review would lose them: those over the comment cap, below `--min-tier`, folded by the nit
-ladder, or naming no file in the diff, and only when their tier has a limit in the active
-verdict table (the policy phase or the spice table). `compile` writes their keys, or their
-place when a finding has no key, into `<!-- dg:thrash-unposted ["key"] -->`. Reviews stay on
-the full diff until one lists none. Only the tier limits of the phase the round selected
-count, so an unposted finding in a tier that only a later phase limits is not recorded.
+ladder, naming no file in the diff, or dropped as a duplicate of a thread that does not hold
+them. An open counted thread holds a finding only at the same or a higher tier, so a
+duplicate is recorded when its thread is lower tier, pre-existing, answered, or already
+holds another finding. Only a finding whose tier has a limit in the active verdict table (the
+policy phase or the spice table) is recorded. `compile` writes the keys, or the place when a
+finding has no key, into `<!-- dg:thrash-unposted ["key"] -->`. Reviews stay on the full diff
+until one lists none. Only the tier limits of the phase the round selected count, so an
+unposted finding in a tier that only a later phase limits is not recorded.
 Compiling a delta review fails when the thread lookup fails, since approving without the
 earlier threads could drop an open blocker.
 

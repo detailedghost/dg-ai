@@ -27,6 +27,7 @@ import {
 	type CompiledReview,
 	type Coverage,
 	chunkSummary,
+	clearedThreadIds,
 	compileReview,
 	diffStats,
 	lastReviewedSha,
@@ -304,6 +305,18 @@ async function existingThreads(target: Target, required: boolean): Promise<Revie
 	}
 }
 
+async function readClearedThreads(target: Target, required: boolean, reviewer?: string): Promise<string[]> {
+	if (target.mode === "local") return [];
+	try {
+		const provider = await getProviderForUrl(target.url);
+		return clearedThreadIds(await provider.listReviews(prRef(target)), reviewer);
+	} catch (err) {
+		if (required) throw err;
+		warn("could not read the cleared threads, skipping them", err);
+		return [];
+	}
+}
+
 async function readClassHistory(target: Target, reviewer?: string): Promise<Record<string, number>> {
 	if (target.mode === "local") return {};
 	try {
@@ -373,11 +386,13 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const policyPath = optionalOption(args, "--policy");
 	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
 	const reviewer = optionalOption(args, "--reviewer");
+	const threadsRequired = policyPath !== undefined || plan.reReview !== undefined;
 	const review = compileReview(files, output, {
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
-		existing: await existingThreads(target, policyPath !== undefined || plan.reReview !== undefined),
+		existing: await existingThreads(target, threadsRequired),
+		clearedThreads: await readClearedThreads(target, threadsRequired, reviewer),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
 		heading: optionalOption(args, "--heading"),
 		round,

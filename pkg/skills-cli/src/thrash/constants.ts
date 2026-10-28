@@ -18,3 +18,6 @@ export const CLASS_HINT_MIN_PRS = 3;
 
 /** Hidden tag that opens a JSON array of keys for blocking findings a review did not post inline. */
 export const THRASH_UNPOSTED_MARKER_PREFIX = "<!-- dg:thrash-unposted ";
+
+/** Hidden tag that opens a JSON array of thread ids a review cleared, so later rounds keep them out of the open tally. */
+export const THRASH_CLEARED_MARKER_PREFIX = "<!-- dg:thrash-cleared ";

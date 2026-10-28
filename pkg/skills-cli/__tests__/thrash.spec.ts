@@ -973,6 +973,7 @@ describe("review rounds via the GitHub adapter", () => {
     ;;`),
 		);
 		const threadsDown = join(dir, "threads.down");
+		const reviewsFile = write("reviews.json", JSON.stringify(setup.reviews ?? [[]]));
 		const env: Record<string, string> = {
 			GH_BIN: gh.bin,
 			AI_VCS_PROVIDER: "github",
@@ -981,7 +982,7 @@ describe("review rounds via the GitHub adapter", () => {
 			FAKE_DIFF: write("pr.diff", setup.prDiff ?? GH_DIFF),
 			FAKE_DELTA: write("delta.diff", setup.delta ?? DELTA_DIFF),
 			FAKE_STATUS: setup.status ?? "ahead",
-			FAKE_REVIEWS: write("reviews.json", JSON.stringify(setup.reviews ?? [[]])),
+			FAKE_REVIEWS: reviewsFile,
 			FAKE_PRS: write("prs.json", JSON.stringify(mergedPrs)),
 			FAKE_HISTORY: write("history.json", JSON.stringify(setup.history ?? [[]])),
 			...(setup.historyFails ? { FAKE_HISTORY_FAILS: "1" } : {}),
@@ -1000,11 +1001,12 @@ describe("review rounds via the GitHub adapter", () => {
 			return { review, stderr: result.stderr };
 		};
 		const breakThreads = () => writeFileSync(threadsDown, "");
+		const breakReviews = () => writeFileSync(reviewsFile, "reviews unavailable");
 		const compileRaw = (plan: { diffPath: string; chunks: Array<{ findingsPath: string }> }) => {
 			findingsFile(plan, []);
 			return run(["compile", PR_URL, "--diff", plan.diffPath, "--json"], { cwd, env });
 		};
-		return { diff, compile, compileRaw, breakThreads, gh };
+		return { diff, compile, compileRaw, breakThreads, breakReviews, gh };
 	}
 
 	test("reviews only the diff since the last reviewed commit and names it in the summary", () => {
@@ -1044,6 +1046,24 @@ describe("review rounds via the GitHub adapter", () => {
 		const result = compileRaw(plan);
 		expect(result.exitCode).toBe(EXIT.ERR);
 		expect(result.stderr).toContain("threads unavailable");
+		expect(result.stdout).not.toContain('"verdict"');
+	});
+
+	test("carries the cleared thread ids of the last review into the next review body", () => {
+		const cleared = `<!-- dg:thrash-cleared ["PRRT_old"] -->\n${THRASH_REVIEW_MARKER}`;
+		const { diff, compile } = rounds({ reviews: thrashReview(cleared, LAST_SHA) });
+		const plan = diff();
+		expect(plan.reReview).toBeDefined();
+		expect(compile(plan).review.body).toContain('<!-- dg:thrash-cleared ["PRRT_old"] -->');
+	});
+
+	test("refuses to compile a delta review when the review lookup fails", () => {
+		const { diff, compileRaw, breakReviews } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA) });
+		const plan = diff();
+		expect(plan.reReview).toBeDefined();
+		breakReviews();
+		const result = compileRaw(plan);
+		expect(result.exitCode).toBe(EXIT.ERR);
 		expect(result.stdout).not.toContain('"verdict"');
 	});
 
