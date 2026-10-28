@@ -63,11 +63,9 @@ describe("inbox-cleanup skill distribution", () => {
 		expect(Object.keys(inbox.dependencies ?? {})).not.toContain("playwright");
 	});
 
-	test("both skills workflows watch all compiled inbox runtime sources", () => {
-		for (const name of ["skills-release.yml", "skills-blt.yml"]) {
-			const workflow = readRepoFile(".github/workflows", name);
-			for (const pkg of ["skills-cli", "inbox", "common", "dg-agent"])
-				expect(workflow).toContain(`- pkg/${pkg}/**`);
-		}
+	test("the skills build workflow watches all compiled inbox runtime sources", () => {
+		const workflow = readRepoFile(".github/workflows", "skills-blt.yml");
+		for (const pkg of ["skills-cli", "inbox", "common", "dg-agent"])
+			expect(workflow).toContain(`- pkg/${pkg}/**`);
 	});
 });

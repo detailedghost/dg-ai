@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
+#   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
 #   ... | sh -s -- --agent-only (or DG_AGENT_ONLY=1): install dg-agent too, for a non-Claude
 #       agent that only needs phone; still skips the extension and dg-daemon.
@@ -72,6 +72,17 @@ normalize_version() {
     v*) v=${v#v} ;;
   esac
   printf '%s' "$v"
+}
+
+is_prefixed_version() {
+  awk -v v="$1" 'BEGIN {
+    split(v, a, "."); split("1.21.1", b, ".")
+    for (i = 1; i <= 3; i++) {
+      if (a[i] + 0 < b[i] + 0) exit 0
+      if (a[i] + 0 > b[i] + 0) exit 1
+    }
+    exit 0
+  }'
 }
 
 PINNED_VERSION=""
@@ -190,7 +201,8 @@ tag=""
 resolve_release() {
   [ -n "${tag}" ] && return
   if [ "${SKILLS_ONLY}" = "1" ] && [ -n "${PINNED_VERSION}" ]; then
-    want="skills-v${PINNED_VERSION}"
+    want="v${PINNED_VERSION}"
+    is_prefixed_version "${PINNED_VERSION}" && want="skills-v${PINNED_VERSION}"
     want_pattern=$(printf '%s' "${want}" | sed -e 's/[.[\^$*]/\\&/g')
   fi
   page=1
@@ -204,25 +216,45 @@ resolve_release() {
         tag="${want}"
       fi
     else
-      tag=$(printf '%s' "${batch}" |
-        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
-        head -1 |
-        sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+      found=$(printf '%s' "${batch}" | tr -d '\n' |
+        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"([^{}]*"draft"[[:space:]]*:[[:space:]]*true)?' |
+        grep -v 'true$' |
+        sed -E 's/.*"(v[^"]*)".*/\1/')
+      candidates="${candidates:-}${found}
+"
     fi
     batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     [ "${batch_count}" -lt "${PER_PAGE}" ] && break
     page=$((page + 1))
   done
 
+  if [ -z "${want:-}" ]; then
+    tag=$(printf '%s' "${candidates:-}" | grep -v '^$' |
+      sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+  fi
+
   if [ -z "${tag}" ]; then
     scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     if [ -n "${want:-}" ]; then
       echo "dg-skills: no release named ${want} found in the ${scanned} releases scanned" >&2
     else
-      echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
+      echo "dg-skills: no vX.Y.Z release found in the ${scanned} releases scanned" >&2
     fi
     exit 1
   fi
+}
+
+extract_source_archive() {
+  archive_file=$1
+  extract_dir=$2
+  mkdir -p "$extract_dir"
+  tar -xzf "$archive_file" -C "$extract_dir"
+  set -- "$extract_dir"/*/
+  if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
+    echo "dg-skills: expected one directory in the source archive" >&2
+    exit 1
+  fi
+  printf '%s' "${1%/}"
 }
 
 skills_tree_source() {
@@ -246,8 +278,8 @@ skills_tree_source() {
   resolve_release
   curl -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
-  tar -xzf "$archive" -C "$tmp"
-  SKILLS_SRC="${tmp}/dg-ai-${tag}/plugins/dg/skills"
+  source_root=$(extract_source_archive "$archive" "${tmp}/source")
+  SKILLS_SRC="${source_root}/plugins/dg/skills"
 }
 
 if [ "$SKILLS_ONLY" = "1" ]; then
@@ -383,7 +415,7 @@ if [ "${DELEGATE}" = "0" ]; then
   mv -f "${INSTALLER}" "${DEST}"
   INSTALLER="${DEST}"
   # Stamp the installed version so `dg-skills install` won't re-download the binary.
-  version=${tag#skills-v}
+  version=$(normalize_version "${tag}")
   [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
   echo "dg-skills installed at ${DEST}"
 fi
@@ -423,15 +455,18 @@ fi
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
   CODEX_TAG="${tag}"
-  [ -n "${PINNED_VERSION}" ] && CODEX_TAG="skills-v${PINNED_VERSION}"
+  if [ -n "${PINNED_VERSION}" ]; then
+    CODEX_TAG="v${PINNED_VERSION}"
+    is_prefixed_version "${PINNED_VERSION}" && CODEX_TAG="skills-v${PINNED_VERSION}"
+  fi
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"
   curl -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${CODEX_TAG}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
-  tar -xzf "${archive}" -C "${tmpdir}"
-  for skill in "${tmpdir}/dg-ai-${CODEX_TAG}/plugins/dg/skills"/*/; do
+  source_root=$(extract_source_archive "${archive}" "${tmpdir}/source")
+  for skill in "${source_root}/plugins/dg/skills"/*/; do
     if { [ "${CLI_ONLY}" = "1" ] || [ "${AGENT_ONLY}" = "1" ]; } && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
       continue
     fi

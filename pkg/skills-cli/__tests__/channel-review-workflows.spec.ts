@@ -11,13 +11,10 @@ describe("skills-cli ships channel-review", () => {
 		expect(manifest.dependencies["@dg/channel-review"]).toBe("workspace:*");
 	});
 
-	test.each(["skills-release.yml", "skills-blt.yml"])(
-		"%s watches pkg/channel-review with 6 spaces of indent inside the contiguous paths block",
-		(name) => {
-			const block = /paths:\n((?: {6}- \S+\n)+)/.exec(read(".github", "workflows", name))?.[1] ?? "";
-			expect(block).toContain("      - pkg/channel-review/**\n");
-		},
-	);
+	test("skills-blt.yml watches pkg/channel-review with 6 spaces of indent inside the contiguous paths block", () => {
+		const block = /paths:\n((?: {6}- \S+\n)+)/.exec(read(".github", "workflows", "skills-blt.yml"))?.[1] ?? "";
+		expect(block).toContain("      - pkg/channel-review/**\n");
+	});
 
 	test("skills-blt runs channel-review lint and test after common and before skills-cli", () => {
 		const text = read(".github", "workflows", "skills-blt.yml");

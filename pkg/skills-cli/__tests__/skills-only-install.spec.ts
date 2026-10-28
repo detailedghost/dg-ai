@@ -110,18 +110,18 @@ function sha256(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
-/** A fetch that serves one skills-v release (plus daemon, agent and ext releases) and logs every URL. */
+/** A fetch that serves one vX.Y.Z release holding every part and logs every URL. */
 function writePreload(dir: string, log: string, opts: { sums?: string; offline?: boolean } = {}): string {
 	const asset = skillsAssetName();
 	const base = "https://github.com/detailedghost/dg-ai/releases/download";
 	const releases = [
-		{ tag_name: "skills-v9.9.9", draft: false, assets: [
-			{ name: asset, browser_download_url: `${base}/skills-v9.9.9/${asset}` },
-			{ name: "SHA256SUMS", browser_download_url: `${base}/skills-v9.9.9/SHA256SUMS` },
+		{ tag_name: "v9.9.9", draft: false, assets: [
+			{ name: asset, browser_download_url: `${base}/v9.9.9/${asset}` },
+			{ name: "SHA256SUMS", browser_download_url: `${base}/v9.9.9/SHA256SUMS` },
+			{ name: asset.replace("dg-skills", "dg-daemon"), browser_download_url: `${base}/v9.9.9/dg-daemon` },
+			{ name: asset.replace("dg-skills", "dg-agent"), browser_download_url: `${base}/v9.9.9/dg-agent` },
+			{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/v9.9.9/dg-ai-extension-chrome.zip` },
 		] },
-		{ tag_name: "daemon-v9.9.9", draft: false, assets: [{ name: asset.replace("dg-skills", "dg-daemon"), browser_download_url: `${base}/daemon-v9.9.9/x` }] },
-		{ tag_name: "agent-v9.9.9", draft: false, assets: [{ name: asset.replace("dg-skills", "dg-agent"), browser_download_url: `${base}/agent-v9.9.9/x` }] },
-		{ tag_name: "ext-v9.9.9", draft: false, assets: [{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/ext-v9.9.9/x` }] },
 	];
 	const sums = opts.sums ?? `${sha256(SKILLS_BINARY)}  ${asset}\n`;
 	const path = join(dir, "preload.ts");
@@ -134,8 +134,8 @@ globalThis.fetch = (async (input: unknown) => {
   appendFileSync(${JSON.stringify(log)}, url + "\\n");
   if (${opts.offline ? "true" : "false"}) throw new TypeError("fetch failed: offline");
   if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
-  if (url.endsWith("/skills-v9.9.9/${asset}")) return new Response(${JSON.stringify(SKILLS_BINARY)});
-  if (url.endsWith("/skills-v9.9.9/SHA256SUMS")) return new Response(${JSON.stringify(sums)});
+  if (url.endsWith("/v9.9.9/${asset}")) return new Response(${JSON.stringify(SKILLS_BINARY)});
+  if (url.endsWith("/v9.9.9/SHA256SUMS")) return new Response(${JSON.stringify(sums)});
   throw new Error("skills-only install must not fetch " + url);
 }) as typeof fetch;
 `,
@@ -150,9 +150,9 @@ function fetchedUrls(log: string): string[] {
 function expectOnlySkillsCliFetched(log: string): void {
 	const urls = fetchedUrls(log);
 	expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-	expect(urls.some((url) => url.endsWith(`/skills-v9.9.9/${skillsAssetName()}`))).toBe(true);
-	expect(urls.some((url) => url.endsWith("/skills-v9.9.9/SHA256SUMS"))).toBe(true);
-	expect(urls.filter((url) => /daemon-v|agent-v|ext-v/.test(url))).toEqual([]);
+	expect(urls.some((url) => url.endsWith(`/v9.9.9/${skillsAssetName()}`))).toBe(true);
+	expect(urls.some((url) => url.endsWith("/v9.9.9/SHA256SUMS"))).toBe(true);
+	expect(urls.filter((url) => /dg-daemon|dg-agent|extension/.test(url))).toEqual([]);
 }
 
 function personasPath(skillsDest: string): string {
@@ -225,7 +225,7 @@ function writeProbe(skills: string, sentinelDir: string): string[] {
 }
 
 /**
- * A curl that serves one skills-v release for bootstrap.sh, verifies nothing itself, and logs
+ * A curl that serves one vX.Y.Z release for bootstrap.sh, verifies nothing itself, and logs
  * every call. The source archive fails (exit 99) so a fetch outside a checkout is visible.
  * The served binary writes RAN_MARKER if anything executes it.
  */
@@ -235,9 +235,9 @@ function writeCurlStub(bin: string, log: string): string {
 	const cpu = process.arch === "arm64" ? "arm64" : "x64";
 	const asset = `dg-skills-${os}-${cpu}`;
 	const binary = `#!/bin/sh\ntouch "$RAN_MARKER"\n`;
-	const url = `https://github.com/detailedghost/dg-ai/releases/download/skills-v9.9.9/${asset}`;
+	const url = `https://github.com/detailedghost/dg-ai/releases/download/v9.9.9/${asset}`;
 	const releases = JSON.stringify([
-		{ tag_name: "skills-v9.9.9", draft: false, assets: [
+		{ tag_name: "v9.9.9", draft: false, assets: [
 			{ name: asset, browser_download_url: url },
 			{ name: "SHA256SUMS", browser_download_url: url.replace(asset, "SHA256SUMS") },
 		] },
@@ -261,7 +261,7 @@ store=${JSON.stringify(store)}
 case "$url" in
   *"/releases?"*) cat "$store/releases.json" ;;
   *SHA256SUMS) cat "$store/SHA256SUMS" > "\${out:-/dev/stdout}" ;;
-  *"/skills-v9.9.9/"*) cat "$store/binary" > "\${out:-/dev/stdout}" ;;
+  *"/v9.9.9/"*) cat "$store/binary" > "\${out:-/dev/stdout}" ;;
   *) exit 99 ;;
 esac
 `,
@@ -500,7 +500,7 @@ describe("bootstrap.sh --skills-only", () => {
 			const calls = readFileSync(curlLog, "utf8");
 			expect(calls).toContain("/releases?");
 			expect(calls).toContain("SHA256SUMS");
-			expect(calls).not.toMatch(/daemon|agent|ext-v|archive/);
+			expect(calls).not.toMatch(/daemon|agent|extension|archive/);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -582,7 +582,7 @@ describe("bootstrap.sh --skills-only", () => {
 			);
 			expect(result.code).not.toBe(0);
 			const fetched = readFileSync(curlLog, "utf8");
-			expect(fetched).toContain("archive/refs/tags/skills-v9.9.9.tar.gz");
+			expect(fetched).toContain("archive/refs/tags/v9.9.9.tar.gz");
 			expect(fetched).not.toContain("refs/heads/master");
 			expect(fetched).not.toContain("dg-skills-");
 			expect(fetched.match(/\/releases\?/g)).toHaveLength(1);

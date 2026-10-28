@@ -58,9 +58,11 @@ describe("doctor install and upgrade hints", () => {
 describe("doctor bootstrap command", () => {
 	test("uses the shell script off Windows and the PowerShell script on it", () => {
 		const ctx = context();
-		expect(bootstrapCommand("1.2.3", ctx, "linux")).toContain("bootstrap.sh | sh");
-		expect(bootstrapCommand("1.2.3", ctx, "win32")).toBe(
-			"irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.2.3/pkg/skills-cli/bootstrap.ps1 | iex",
+		expect(bootstrapCommand(ctx, "linux")).toBe(
+			"curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh",
+		);
+		expect(bootstrapCommand(ctx, "win32")).toBe(
+			"irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex",
 		);
 	});
 
@@ -68,8 +70,8 @@ describe("doctor bootstrap command", () => {
 		const ctx = context();
 		mkdirSync(ctx.paths.stateDir, { recursive: true });
 		writeFileSync(join(ctx.paths.stateDir, "cli-only"), "");
-		expect(bootstrapCommand("1.2.3", ctx, "linux")).toEndWith("-s -- --cli-only");
-		expect(bootstrapCommand("1.2.3", ctx, "win32")).toStartWith(
+		expect(bootstrapCommand(ctx, "linux")).toEndWith("-s -- --cli-only");
+		expect(bootstrapCommand(ctx, "win32")).toStartWith(
 			'$env:DG_CLI_ONLY = "1"; irm ',
 		);
 	});

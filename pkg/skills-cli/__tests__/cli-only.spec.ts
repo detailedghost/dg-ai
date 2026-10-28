@@ -178,7 +178,7 @@ if [ -n "$REFUSE_OUT" ] && [ "$out" = "$REFUSE_OUT" ]; then
   exit 23
 fi
 if [ -z "$out" ]; then
-  printf '[{"tag_name":"skills-v9.9.9","assets":[{"browser_download_url":"https://example.test/download/skills-v9.9.9/${asset}"}]}]'
+  printf '[{"tag_name":"v9.9.9","assets":[{"browser_download_url":"https://example.test/download/v9.9.9/${asset}"}]}]'
 else
   printf '#!/bin/sh\\necho "$@" >> "%s/calls"\\n' "${home}" > "$out"
 fi

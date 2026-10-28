@@ -98,11 +98,10 @@ export const isCliOnly = (ctx: DoctorContext): boolean =>
 	existsSync(join(ctx.paths.stateDir, "cli-only"));
 
 export function bootstrapCommand(
-	version: string,
 	ctx: DoctorContext,
 	platform: NodeJS.Platform = process.platform,
 ): string {
-	const base = `https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v${version}/pkg/skills-cli`;
+	const base = "https://github.com/detailedghost/dg-ai/releases/latest/download";
 	const cliOnly = isCliOnly(ctx);
 	if (platform === "win32") {
 		const script = `irm ${base}/bootstrap.ps1 | iex`;

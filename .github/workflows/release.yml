@@ -1,0 +1,629 @@
+---
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump. Auto reads the commits since the last release.
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+        default: auto
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.detect.outputs.mode }}
+      version: ${{ steps.detect.outputs.version }}
+      previous_tag: ${{ steps.detect.outputs.previous_tag }}
+    steps:
+      - name: Refuse to run outside master
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::A release runs from master only."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Work out the next version
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BUMP_INPUT: ${{ inputs.bump }}
+        run: |
+          event=push
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            event=dispatch
+          fi
+          result="$(bun scripts/release-version.ts detect --event "$event" --bump "${BUMP_INPUT:-auto}")"
+          echo "$result" | tee -a "$GITHUB_OUTPUT"
+
+  blt-skills:
+    needs: detect
+    if: needs.detect.outputs.mode != 'skip'
+    uses: ./.github/workflows/skills-blt.yml
+
+  blt-ext:
+    needs: detect
+    if: needs.detect.outputs.mode != 'skip'
+    uses: ./.github/workflows/ext-blt.yml
+
+  blt-daemon:
+    needs: detect
+    if: needs.detect.outputs.mode != 'skip'
+    uses: ./.github/workflows/dg-daemon-blt.yml
+
+  blt-agent:
+    needs: detect
+    if: needs.detect.outputs.mode != 'skip'
+    uses: ./.github/workflows/dg-agent-blt.yml
+
+  build-skills:
+    needs: [detect, blt-skills]
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: dg-skills-linux-x64
+          - target: bun-linux-arm64
+            asset: dg-skills-linux-arm64
+          - target: bun-darwin-x64
+            asset: dg-skills-macos-x64
+          - target: bun-darwin-arm64
+            asset: dg-skills-macos-arm64
+          - target: bun-windows-x64
+            asset: dg-skills-windows-x64.exe
+          - target: bun-windows-arm64
+            asset: dg-skills-windows-arm64.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Stamp the release version
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build ${{ matrix.asset }}
+        working-directory: pkg/skills-cli
+        run: >-
+          bun run build.ts
+          --target=${{ matrix.target }}
+          --outfile dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/skills-cli/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke-skills:
+    needs: build-skills
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: dg-skills-linux-x64
+            os: ubuntu-latest
+          - asset: dg-skills-linux-arm64
+            os: ubuntu-24.04-arm
+          - asset: dg-skills-macos-x64
+            os: macos-15-intel
+          - asset: dg-skills-macos-arm64
+            os: macos-14
+          - asset: dg-skills-windows-x64.exe
+            os: windows-latest
+          - asset: dg-skills-windows-arm64.exe
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.asset }}
+
+      - name: Mask secrets in later log output
+        shell: bash
+        run: |
+          echo "ACTIONS_STEP_DEBUG=false" >> "$GITHUB_ENV"
+          while IFS= read -r name; do
+            case "$name" in
+              *SECRET*|*TOKEN*|*PASSWORD*|*API_KEY*|*COOKIE*|*CREDENTIAL*|*PRIVATE*)
+                value="${!name-}"
+                if [ -n "$value" ]; then
+                  echo "::add-mask::$value"
+                fi
+                ;;
+            esac
+          done < <(env | cut -d= -f1)
+
+      - name: Run ${{ matrix.asset }} --help
+        shell: bash
+        run: |
+          chmod +x "./${{ matrix.asset }}"
+          if ! output="$(./${{ matrix.asset }} --help)"; then
+            echo "::error::${{ matrix.asset }} --help failed to run"
+            exit 1
+          fi
+          if [ -z "$output" ]; then
+            echo "::error::${{ matrix.asset }} --help produced no output"
+            exit 1
+          fi
+          echo "$output"
+
+  build-daemon:
+    needs: [detect, blt-daemon]
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: dg-daemon-linux-x64
+          - target: bun-linux-arm64
+            asset: dg-daemon-linux-arm64
+          - target: bun-darwin-x64
+            asset: dg-daemon-macos-x64
+          - target: bun-darwin-arm64
+            asset: dg-daemon-macos-arm64
+          - target: bun-windows-x64
+            asset: dg-daemon-windows-x64.exe
+          - target: bun-windows-arm64
+            asset: dg-daemon-windows-arm64.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Stamp the release version
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build ${{ matrix.asset }}
+        working-directory: pkg/dg-daemon
+        run: >-
+          bun build src/index.ts --compile
+          --target=${{ matrix.target }}
+          --outfile dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/dg-daemon/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke-daemon:
+    needs: build-daemon
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: dg-daemon-linux-x64
+            os: ubuntu-latest
+          - asset: dg-daemon-linux-arm64
+            os: ubuntu-24.04-arm
+          - asset: dg-daemon-macos-x64
+            os: macos-15-intel
+          - asset: dg-daemon-macos-arm64
+            os: macos-14
+          - asset: dg-daemon-windows-x64.exe
+            os: windows-latest
+          - asset: dg-daemon-windows-arm64.exe
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.asset }}
+
+      - name: Mask secrets in later log output
+        shell: bash
+        run: |
+          echo "ACTIONS_STEP_DEBUG=false" >> "$GITHUB_ENV"
+          while IFS= read -r name; do
+            case "$name" in
+              *SECRET*|*TOKEN*|*PASSWORD*|*API_KEY*|*COOKIE*|*CREDENTIAL*|*PRIVATE*)
+                value="${!name-}"
+                if [ -n "$value" ]; then
+                  echo "::add-mask::$value"
+                fi
+                ;;
+            esac
+          done < <(env | cut -d= -f1)
+
+      - name: Run ${{ matrix.asset }} --help
+        shell: bash
+        run: |
+          chmod +x "./${{ matrix.asset }}"
+          if ! output="$(./${{ matrix.asset }} --help)"; then
+            echo "::error::${{ matrix.asset }} --help failed to run"
+            exit 1
+          fi
+          if [ -z "$output" ]; then
+            echo "::error::${{ matrix.asset }} --help produced no output"
+            exit 1
+          fi
+          echo "$output"
+
+  build-agent:
+    needs: [detect, blt-agent]
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: dg-agent-linux-x64
+          - target: bun-linux-arm64
+            asset: dg-agent-linux-arm64
+          - target: bun-darwin-x64
+            asset: dg-agent-macos-x64
+          - target: bun-darwin-arm64
+            asset: dg-agent-macos-arm64
+          - target: bun-windows-x64
+            asset: dg-agent-windows-x64.exe
+          - target: bun-windows-arm64
+            asset: dg-agent-windows-arm64.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Stamp the release version
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build ${{ matrix.asset }}
+        working-directory: pkg/dg-agent
+        run: >-
+          bun build src/index.ts --compile
+          --target=${{ matrix.target }}
+          --outfile dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: pkg/dg-agent/dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke-agent:
+    needs: build-agent
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: dg-agent-linux-x64
+            os: ubuntu-latest
+          - asset: dg-agent-linux-arm64
+            os: ubuntu-24.04-arm
+          - asset: dg-agent-macos-x64
+            os: macos-15-intel
+          - asset: dg-agent-macos-arm64
+            os: macos-14
+          - asset: dg-agent-windows-x64.exe
+            os: windows-latest
+          - asset: dg-agent-windows-arm64.exe
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.asset }}
+
+      - name: Mask secrets in later log output
+        shell: bash
+        run: |
+          echo "ACTIONS_STEP_DEBUG=false" >> "$GITHUB_ENV"
+          while IFS= read -r name; do
+            case "$name" in
+              *SECRET*|*TOKEN*|*PASSWORD*|*API_KEY*|*COOKIE*|*CREDENTIAL*|*PRIVATE*)
+                value="${!name-}"
+                if [ -n "$value" ]; then
+                  echo "::add-mask::$value"
+                fi
+                ;;
+            esac
+          done < <(env | cut -d= -f1)
+
+      - name: Run ${{ matrix.asset }} --help
+        shell: bash
+        run: |
+          chmod +x "./${{ matrix.asset }}"
+          if ! output="$(./${{ matrix.asset }} --help)"; then
+            echo "::error::${{ matrix.asset }} --help failed to run"
+            exit 1
+          fi
+          if [ -z "$output" ]; then
+            echo "::error::${{ matrix.asset }} --help produced no output"
+            exit 1
+          fi
+          echo "$output"
+
+  build-ext:
+    needs: [detect, blt-ext]
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Stamp the release version
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Install
+        working-directory: pkg/extension
+        run: bun install --frozen-lockfile
+
+      - name: Build and zip for Chrome and Firefox
+        working-directory: pkg/extension
+        run: |
+          bun run zip
+          bun run zip:firefox
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extension
+          path: |
+            pkg/extension/.output/dg-ai-extension-${{ needs.detect.outputs.version }}-chrome.zip
+            pkg/extension/.output/dg-ai-extension-${{ needs.detect.outputs.version }}-firefox.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [detect, build-ext, smoke-skills, smoke-daemon, smoke-agent]
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      MODE: ${{ needs.detect.outputs.mode }}
+      PREVIOUS_TAG: ${{ needs.detect.outputs.previous_tag }}
+      TAG: v${{ needs.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+          fetch-tags: true
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          persist-credentials: true
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Look for an existing tag
+        id: tag
+        run: |
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Refuse to cut a release from a stale commit
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          if [ "$MODE" != release ]; then
+            echo "::error::${TAG} does not exist, so there is nothing to republish."
+            exit 1
+          fi
+          git fetch origin master
+          if [ "$(git rev-parse origin/master)" != "$GITHUB_SHA" ]; then
+            echo "::error::master moved past ${GITHUB_SHA}. No tag was created. Run the release again."
+            exit 1
+          fi
+
+      - name: Check out the tagged release commit
+        if: steps.tag.outputs.exists == 'true'
+        run: |
+          git checkout --detach "refs/tags/${TAG}"
+          subject="$(git log -1 --format=%s)"
+          if [ "$subject" != "chore(release): cut ${VERSION}" ]; then
+            echo "::error::${TAG} does not point at the release commit for ${VERSION}."
+            exit 1
+          fi
+          if [ "$MODE" = release ]; then
+            built_from="$(git rev-parse --verify --quiet HEAD^ || true)"
+          else
+            built_from="$(git rev-parse HEAD)"
+          fi
+          if [ "$built_from" != "$GITHUB_SHA" ]; then
+            echo "::error::${TAG} was cut from a different commit than ${GITHUB_SHA}, so this run's build does not belong to it."
+            exit 1
+          fi
+
+      - name: Stamp the release version
+        if: steps.tag.outputs.exists == 'false'
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Write the changelog entry
+        if: steps.tag.outputs.exists == 'false'
+        run: bun scripts/release-version.ts changelog --version "$VERSION" --from "$PREVIOUS_TAG"
+
+      - name: Commit the release as dg-release
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          git config user.name dg-release
+          git config user.email dante+release@detailedghost.com
+          git add CHANGELOG.md
+          git commit --all --message "chore(release): cut ${VERSION}"
+          git tag "$TAG"
+          git log -1 --format='author %an <%ae>, committer %cn <%ce>'
+
+      - name: Push the release commit and tag together
+        if: steps.tag.outputs.exists == 'false'
+        run: git push --atomic origin HEAD:master "refs/tags/${TAG}"
+
+      - name: Extract the release notes from the changelog
+        run: |
+          awk -v header="## v${VERSION} (" '
+            index($0, header) == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+            END { exit !found }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+
+      - name: Add the bootstrap scripts and checksums
+        run: |
+          cp pkg/skills-cli/bootstrap.sh pkg/skills-cli/bootstrap.ps1 dist/
+          (cd dist && sha256sum -- * > SHA256SUMS)
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          target="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          drafts="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"${TAG}\") | .id")"
+          for id in $drafts; do
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} is already published."
+            exit 0
+          fi
+          gh release create "$TAG" dist/* \
+            --draft \
+            --title "$TAG" \
+            --target "$target" \
+            --notes-file "$RUNNER_TEMP/notes.md"
+          newest="$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          if [ "$newest" = "$TAG" ]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            echo "A newer release exists, so ${TAG} is not marked Latest."
+            gh release edit "$TAG" --draft=false --latest=false
+          fi
+
+      - name: Move the latest tag to the release commit
+        run: |
+          newest="$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          if [ "$newest" != "$TAG" ]; then
+            echo "A newer release exists, so the latest tag stays where it is."
+            exit 0
+          fi
+          sha="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          git push origin "+${sha}:refs/tags/latest"
+
+      - name: Publish the bridge release for CLIs that look for skills-v tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bridge="skills-v${VERSION}"
+          first="$({ git tag --list 'v[0-9]*'; echo v1.21.1; } | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vu | awk 'seen { print; exit } $0 == "v1.21.1" { seen = 1 }')"
+          if [ "$first" != "$TAG" ]; then
+            echo "${TAG} is not the first release of this scheme, so no bridge is needed."
+            exit 0
+          fi
+          drafts="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"${bridge}\") | .id")"
+          for id in $drafts; do
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+          done
+          if gh release view "$bridge" >/dev/null 2>&1; then
+            echo "Release ${bridge} already exists."
+            exit 0
+          fi
+          target="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          mkdir "$RUNNER_TEMP/bridge"
+          cp dist/dg-skills-* "$RUNNER_TEMP/bridge/"
+          (cd "$RUNNER_TEMP/bridge" && sha256sum -- * > SHA256SUMS)
+          gh release create "$bridge" "$RUNNER_TEMP"/bridge/* \
+            --latest=false \
+            --title "Skills CLI ${bridge}" \
+            --target "$target" \
+            --notes "Bridge for dg-skills 1.21.1 and older, which look for skills-v tags. Every release after ${TAG} lives under its vX.Y.Z tag."

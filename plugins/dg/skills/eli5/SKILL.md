@@ -12,7 +12,7 @@ A plain `/dg:eli5 <thing to explain>` needs no CLI at all. Only `-v`/`-p` (stash
 
 ```bash
 ~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor erd stash.
