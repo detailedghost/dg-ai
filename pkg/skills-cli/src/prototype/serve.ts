@@ -38,7 +38,8 @@ export function injectIntoHtml(
 	name: string,
 	tools: unknown,
 ): string {
-	const icons = `<script>\n${sharedIcons()}</script>\n`;
+	const source = sharedIcons();
+	const icons = source ? `<script>\n${source}</script>\n` : "";
 	const script = injectScript(name, tools);
 	const head = raw.includes("<head>")
 		? raw.replace("<head>", `<head>\n${FAVICON_LINK}\n${icons}`)
@@ -51,9 +52,15 @@ export function injectIntoHtml(
 
 let iconsSource: string | undefined;
 
-/** The icon set /dg:proto and /dg:verify share, so both toolbars draw the same glyphs. */
+/** The icon set /dg:proto and /dg:verify share; empty when the skill files are missing, so the bars fall back to text glyphs. */
 function sharedIcons(): string {
-	iconsSource ??= readFileSync(resolveSkillAsset("proto", join("assets", "dg-icons.js")), "utf8");
+	if (iconsSource === undefined) {
+		try {
+			iconsSource = readFileSync(resolveSkillAsset("proto", join("assets", "dg-icons.js")), "utf8");
+		} catch {
+			iconsSource = "";
+		}
+	}
 	return iconsSource;
 }
 
