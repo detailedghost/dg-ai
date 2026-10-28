@@ -163,7 +163,7 @@ $delegate = $env:DG_SKILLS_ONLY -ne "1" -and $script:pinnedVersion
 $installer = if ($delegate) {
 	Join-Path ([System.IO.Path]::GetTempPath()) ("dg-skills-installer-" + [guid]::NewGuid() + ".exe")
 } else {
-	$dest
+	Join-Path $binDir (".dg-skills-installer-" + [guid]::NewGuid() + ".exe")
 }
 $exitCode = 0
 
@@ -198,6 +198,12 @@ try {
 	}
 
 	if (-not $delegate) {
+		if (Test-Path -LiteralPath $dest) {
+			Remove-Item -LiteralPath "$dest.old" -Force -ErrorAction SilentlyContinue
+			Move-Item -LiteralPath $dest -Destination "$dest.old" -Force
+		}
+		Move-Item -LiteralPath $installer -Destination $dest -Force
+		$installer = $dest
 		# Stamp the installed version so `dg-skills install` won't re-download the binary.
 		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 		Write-Host "dg-skills installed at $dest"
@@ -232,7 +238,7 @@ try {
 	$exitCode = $LASTEXITCODE
 	$installOutput | ForEach-Object { Write-Host (Convert-DgInstallLine "$_") }
 } finally {
-	if ($delegate) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
+	if ($installer -ne $dest) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
 }
 if ($exitCode -ne 0) { exit $exitCode }
 

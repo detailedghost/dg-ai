@@ -172,6 +172,10 @@ for arg in "$@"; do
   [ "$prev" = "-o" ] && out="$arg"
   prev="$arg"
 done
+if [ -n "$REFUSE_OUT" ] && [ "$out" = "$REFUSE_OUT" ]; then
+  echo "curl: (23) client returned ERROR on write" >&2
+  exit 23
+fi
 if [ -z "$out" ]; then
   printf '[{"tag_name":"skills-v9.9.9","assets":[{"browser_download_url":"https://example.test/download/skills-v9.9.9/${asset}"}]}]'
 else
@@ -244,6 +248,17 @@ fi
 			exitCode: 0,
 			calls: "install --cli-only --version 9.9.9",
 		});
+	});
+
+	test("replaces a busy binary by rename instead of writing over it", async () => {
+		const dest = join(home, ".dg", "bin", "dg-skills");
+		mkdirSync(join(home, ".dg", "bin"), { recursive: true });
+		writeFileSync(dest, "old");
+		const result = await run([], { DG_HOME: join(home, ".dg"), REFUSE_OUT: dest });
+
+		expect(result).toEqual({ exitCode: 0, calls: "install" });
+		expect(readFileSync(dest, "utf8")).not.toBe("old");
+		expect(readdirSync(join(home, ".dg", "bin")).filter((f) => f.startsWith(".dg-skills-installer"))).toEqual([]);
 	});
 
 	test("delegates through the newest binary even when the pinned version matches no release", async () => {
