@@ -9,7 +9,7 @@ export const meta = {
 /**
  * args (resolved by `dg-skills assign resolve`, which also bakes them in as WAVE_ARGS below the meta literal;
  * an explicit `args` wins when given — see ../engineering.md 4.2):
- *   slices   [{ id, name, primary, qa:[], proxyBackend, brief, testingCriteria }]
+ *   slices   [{ id, name, primary, qa:[], proxyBackend, proxyFlags, brief, testingCriteria }]
  *            — ONE dependency layer; slices MUST touch disjoint files (name → progress label).
  *            primary and each qa entry are resolved { agentType, model, effort } stages.
  *            proxyBackend ← slices[].agents.proxy; set only when this slice's Yellow/Correction stages delegate via /proxy.
@@ -17,7 +17,7 @@ export const meta = {
  *   specPath, scratchPath  paths agents may read/append (passed into prompts)
  *   templates { red, yellow, green, wave, correction, proxy }  inlined template bodies with tokens:
  *            {SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS}
- *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT}
+ *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT} {PROXY_FLAGS}
  *            `proxy` is undefined/omitted when no slice in this layer sets proxyBackend.
  *   maxCorrectionRounds  default 2
  */
@@ -95,7 +95,8 @@ const sub = (tpl, slice, extra = {}) =>
     .replaceAll("{CHANGED_FILES}", (extra.changedFiles || []).join("\n"))
     .replaceAll("{FINDINGS}", extra.findings || "")
     .replaceAll("{PROXY_BACKEND}", slice.proxyBackend || "")
-    .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primary.agentType));
+    .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primary.agentType))
+    .replaceAll("{PROXY_FLAGS}", slice.proxyFlags || "");
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
 const blockingDeferral = (ds) => (ds || []).some((d) => d.type === "SPEC" || d.type === "TEST");

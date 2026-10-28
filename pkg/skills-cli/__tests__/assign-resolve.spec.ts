@@ -56,6 +56,7 @@ interface Args {
 		qa: Stage[];
 		proxyBackend?: string;
 		proxySkills?: string[];
+		proxyFlags?: string;
 		testingCriteria: string;
 		brief: string;
 	}[];
@@ -109,10 +110,12 @@ describe("slice-wave runner correction deferrals", () => {
 	const stage = { agentType: "dg:js", model: "sonnet", effort: "medium" };
 	const body = readFileSync(RUNNER, "utf8").replace(/^export /m, "");
 
-	async function wave(fixResult: unknown) {
+	async function wave(fixResult: unknown, extra: Record<string, unknown> = {}) {
 		const labels: string[] = [];
-		const agent = async (_prompt: string, options: { label: string }) => {
+		const prompts: Record<string, string> = {};
+		const agent = async (prompt: string, options: { label: string }) => {
 			labels.push(options.label);
+			prompts[options.label] = prompt;
 			if (options.label.startsWith("red:") || options.label.startsWith("green:"))
 				return { testFiles: [], deferrals: [] };
 			if (options.label.startsWith("yellow:"))
@@ -135,8 +138,9 @@ describe("slice-wave runner correction deferrals", () => {
 			);
 		const parallel = (jobs: (() => unknown)[]) => Promise.all(jobs.map((job) => job()));
 		const args = {
-			slices: [{ id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" }],
+			slices: [{ id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "", ...extra }],
 			roles: { "qa-writer": stage, wave: stage, security: stage },
+			templates: { proxy: "go {PROXY_FLAGS} end", correction: "fix" },
 		};
 		const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
 		const result = await new AsyncFunction(
@@ -147,7 +151,7 @@ describe("slice-wave runner correction deferrals", () => {
 			"log",
 			body,
 		)(args, pipeline, parallel, agent, () => {});
-		return { result, labels };
+		return { result, labels, prompts };
 	}
 
 	test("surfaces a blocking correction deferral and stops the correction loop", async () => {
@@ -163,6 +167,15 @@ describe("slice-wave runner correction deferrals", () => {
 		expect(labels.filter((label) => label.includes("#1"))).toEqual([
 			"fix:engineering:1#1",
 		]);
+	});
+
+	test("fills {PROXY_FLAGS} in the proxy yellow and correction prompts", async () => {
+		const { prompts } = await wave(
+			{ changedFiles: [], testsPass: true, deferrals: [] },
+			{ proxyBackend: "codex", proxyFlags: "--effort xhigh --tier opus" },
+		);
+		expect(prompts["yellow:1"]).toBe("go --effort xhigh --tier opus end");
+		expect(prompts["fix:engineering:1#1"]).toBe("go --effort xhigh --tier opus end");
 	});
 
 	test("keeps a non-blocking correction deferral on the slice result", async () => {
@@ -377,6 +390,54 @@ describe("dg-skills assign resolve", () => {
 			cwd,
 		]);
 		expect(templates.proxy).toContain(`--cwd '/work/it'\\''s $HOME tree'`);
+	});
+
+	test("hands a proxied slice its effort override and tier pin as proxy flags", async () => {
+		const { slices, templates } = await resolved([plan("plan-proxy-pin.md"), "--layer", "0"]);
+		expect(slices[0]?.proxyFlags).toBe("--effort xhigh");
+		expect(slices[1]?.proxyFlags).toBeUndefined();
+		expect(templates.proxy).toContain("{PROXY_FLAGS}");
+	});
+
+	test("adds the ## Execution tier pin to the proxy flags", async () => {
+		const dir = scratch();
+		const file = join(dir, "plan.md");
+		writeFileSync(
+			file,
+			`${readFileSync(plan("plan-proxy-pin.md"), "utf8")}\n## Execution\nmodel: opus\n`,
+		);
+		const { slices } = await resolved([file, "--layer", "0"]);
+		expect(slices[0]?.proxyFlags).toBe("--effort xhigh --tier opus");
+		expect(slices[1]?.proxyFlags).toBe("--tier opus");
+	});
+
+	test.each([
+		"model: opus-4.5",
+		"effort: xhigh2",
+		"- Model: opus",
+		"- **model:** opus",
+		"- model : opus",
+		"- effort = xhigh",
+	])("exits 1 on the malformed ## Execution line %p", async (line) => {
+		const dir = scratch();
+		const file = join(dir, "plan.md");
+		writeFileSync(
+			file,
+			`${readFileSync(plan("plan-high.md"), "utf8")}\n## Execution\n${line}\n`,
+		);
+		const result = await run(["resolve", file, "--layer", "0"]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain("## Execution");
+	});
+
+	test("accepts the strict ## Execution forms", async () => {
+		const dir = scratch();
+		const file = join(dir, "plan.md");
+		writeFileSync(
+			file,
+			`${readFileSync(plan("plan-high.md"), "utf8")}\n## Execution\n- model: \`opus\`\n* effort: "xhigh"\nprose about the run\n`,
+		);
+		expect((await run(["resolve", file, "--layer", "0"])).status).toBe(0);
 	});
 
 	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {

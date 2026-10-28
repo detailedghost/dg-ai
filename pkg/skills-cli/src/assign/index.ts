@@ -127,17 +127,24 @@ function stageFor(
 	};
 }
 
+const PIN_KEY = /^\s*(?:[-*]\s*)?\**\s*(model|effort)\b\s*\**\s*[:=]/i;
+const PIN_LINE = /^\s*(?:[-*]\s*)?(model|effort):\s*[`"']?([A-Za-z]+)[`"']?\s*$/;
+
 function executionPin(lines: string[]): Pin {
 	const pin: Pin = {};
 	for (const line of sectionLines(lines, "Execution")) {
-		const match = /^\s*(?:[-*]\s*)?(model|effort):\s*[`"']?([A-Za-z]*)/.exec(line);
-		if (match?.[2] === "") throw new Refusal(`## Execution ${match[1]} is empty`);
-		if (match?.[1] === "model") {
+		if (!PIN_KEY.test(line)) continue;
+		const match = PIN_LINE.exec(line);
+		if (!match)
+			throw new Refusal(
+				`## Execution line is malformed, write "model: <tier>" or "effort: <level>": ${line.trim()}`,
+			);
+		if (match[1] === "model") {
 			const tier = match[2] as Tier;
 			if (!Object.hasOwn(loadTiers().tiers, tier))
 				throw new Refusal(`## Execution model "${match[2]}" is not a tier`);
 			pin.tier = tier;
-		} else if (match) pin.effort = match[2];
+		} else pin.effort = match[2];
 	}
 	return pin;
 }
@@ -235,6 +242,10 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			proxied && Array.isArray(agents.proxy_skills)
 				? agents.proxy_skills.map(String)
 				: [];
+		const proxyFlags = [
+			...(effort ? ["--effort", effort] : []),
+			...(pin.tier ? ["--tier", pin.tier] : []),
+		].join(" ");
 		const brief = briefOf(blocks);
 		const qa = Array.isArray(agents.qa) ? agents.qa.map(String) : [];
 		return {
@@ -244,6 +255,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			qa: qa.map((name) => stageFor(name, options.runtime)),
 			...(typeof agents.proxy === "string" ? { proxyBackend: agents.proxy } : {}),
 			...(proxySkills.length > 0 ? { proxySkills } : {}),
+			...(proxied && proxyFlags !== "" ? { proxyFlags } : {}),
 			brief:
 				proxySkills.length > 0
 					? `${brief}\n\n${skillInstructions(proxySkills)}`

@@ -107,6 +107,33 @@ describe("proxy --tier with --resume", () => {
 	});
 });
 
+describe("proxy --effort validation", () => {
+	test.each(["Xhigh", "ultra"])("exits 1 on %s for codex", async (value) => {
+		fixture.fakeBackend("codex");
+		const { stderr, exitCode } = await runCli(["codex", "--prompt", "hi", "--effort", value]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("--effort");
+		expect(fixture.readCalls()).toEqual([]);
+	});
+});
+
+describe("proxy fable guard on untiered backends", () => {
+	test.each(["copilot", "pi", "opencode"])(
+		"--tier fable with --subagent js exits 1 on %s",
+		async (backend) => {
+			fixture.fakeBackend(backend);
+			const { stderr, exitCode } = await runCli([
+				backend, "--prompt", "hi", "--tier", "fable", "--subagent", "js",
+			]);
+
+			expect(exitCode).toBe(1);
+			expect(stderr).toContain('Agent "js" cannot use the fable tier');
+			expect(fixture.readCalls()).toEqual([]);
+		},
+	);
+});
+
 describe("proxy --effort", () => {
 	test("exits 1 on an empty value", async () => {
 		fixture.fakeBackend("codex");

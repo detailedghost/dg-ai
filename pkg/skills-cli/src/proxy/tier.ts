@@ -5,6 +5,8 @@ import { resolveSlicePrimary } from "./spec-persona";
 const TIER_RUNTIMES: Record<string, Runtime> = { codex: "codex", grok: "grok" };
 const TIER_NAMES: readonly string[] = ["haiku", "sonnet", "opus", "fable"];
 
+const PROXY_EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh"];
+
 export interface TierInput {
 	backend: string;
 	tier?: string;
@@ -27,10 +29,16 @@ export function applyTier(input: TierInput): { model?: string; effort?: string }
 	const { model, effort } = input;
 	const tier = parseTier(input.tier);
 	const runtime = TIER_RUNTIMES[input.backend];
-	if (!runtime) return { model, effort };
 	const persona =
 		input.subagent ??
 		(input.spec && input.slice ? resolveSlicePrimary(input.spec, input.slice) : null);
-	const row = resolveAgent(persona ? bareAgent(persona) : "", { runtime, tier });
+	const name = persona ? bareAgent(persona) : "";
+	if (!runtime) {
+		if (tier) resolveAgent(name, { runtime: "claude", tier });
+		return { model, effort };
+	}
+	if (effort !== undefined && !PROXY_EFFORTS.includes(effort))
+		throw new Error(`--effort must be one of ${PROXY_EFFORTS.join(", ")}; got "${effort}"`);
+	const row = resolveAgent(name, { runtime, tier });
 	return { model: model ?? row.model ?? undefined, effort: effort ?? row.effort };
 }
