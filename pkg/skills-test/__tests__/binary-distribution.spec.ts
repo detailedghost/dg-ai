@@ -268,11 +268,15 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 		const swap = ps1.indexOf("Move-Item -LiteralPath $installer -Destination $dest");
 		const cleanup = ps1.indexOf("Get-ChildItem -LiteralPath $binDir -File");
 		expect(cleanup).toBeGreaterThan(swap);
-		const lock = ps1.indexOf("$swapLock.WaitOne(");
-		const release = ps1.indexOf("$swapLock.ReleaseMutex()");
+		const lock = ps1.indexOf("[System.IO.File]::Open($lockPath");
+		const stamp = ps1.indexOf('".dg-skills.version"');
+		const release = ps1.indexOf("$swapLock.Dispose()");
+		expect(ps1).not.toContain("Mutex");
+		expect(ps1).toMatch(/\$lockPath = Join-Path \$binDir "\.dg-skills-swap\.lock"/);
 		expect(lock).toBeGreaterThan(-1);
 		expect(lock).toBeLessThan(swap);
-		expect(release).toBeGreaterThan(cleanup);
+		expect(stamp).toBeGreaterThan(cleanup);
+		expect(release).toBeGreaterThan(stamp);
 	});
 
 	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {

@@ -198,9 +198,16 @@ try {
 	}
 
 	if (-not $delegate) {
-		$swapLock = [System.Threading.Mutex]::new($false, "Local\dg-skills-bootstrap-swap")
-		if (-not $swapLock.WaitOne([TimeSpan]::FromMinutes(2))) {
-			throw "dg-skills: another bootstrap is still replacing $dest"
+		$lockPath = Join-Path $binDir ".dg-skills-swap.lock"
+		$deadline = (Get-Date).AddMinutes(2)
+		$swapLock = $null
+		while (-not $swapLock) {
+			try {
+				$swapLock = [System.IO.File]::Open($lockPath, "OpenOrCreate", "ReadWrite", "None")
+			} catch [System.IO.IOException] {
+				if ((Get-Date) -gt $deadline) { throw "dg-skills: another bootstrap is still replacing $dest" }
+				Start-Sleep -Milliseconds 250
+			}
 		}
 		try {
 			$old = $null
@@ -221,12 +228,11 @@ try {
 			Get-ChildItem -LiteralPath $binDir -File |
 				Where-Object { $_.Name.StartsWith($oldPrefix) } |
 				ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+			# Stamp the installed version so `dg-skills install` won't re-download the binary.
+			Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 		} finally {
-			$swapLock.ReleaseMutex()
 			$swapLock.Dispose()
 		}
-		# Stamp the installed version so `dg-skills install` won't re-download the binary.
-		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 		Write-Host "dg-skills installed at $dest"
 	}
 
