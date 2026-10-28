@@ -74,6 +74,17 @@ normalize_version() {
   printf '%s' "$v"
 }
 
+is_prefixed_version() {
+  awk -v v="$1" 'BEGIN {
+    split(v, a, "."); split("1.21.1", b, ".")
+    for (i = 1; i <= 3; i++) {
+      if (a[i] + 0 < b[i] + 0) exit 0
+      if (a[i] + 0 > b[i] + 0) exit 1
+    }
+    exit 0
+  }'
+}
+
 PINNED_VERSION=""
 if [ -n "${VERSION_ARG}" ]; then
   PINNED_VERSION=$(normalize_version "${VERSION_ARG}")
@@ -190,7 +201,8 @@ tag=""
 resolve_release() {
   [ -n "${tag}" ] && return
   if [ "${SKILLS_ONLY}" = "1" ] && [ -n "${PINNED_VERSION}" ]; then
-    want="skills-v${PINNED_VERSION}"
+    want="v${PINNED_VERSION}"
+    is_prefixed_version "${PINNED_VERSION}" && want="skills-v${PINNED_VERSION}"
     want_pattern=$(printf '%s' "${want}" | sed -e 's/[.[\^$*]/\\&/g')
   fi
   page=1
@@ -204,10 +216,12 @@ resolve_release() {
         tag="${want}"
       fi
     else
-      tag=$(printf '%s' "${batch}" |
-        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"skills-v[^"]*"' |
-        head -1 |
-        sed -E 's/.*"(skills-v[^"]*)".*/\1/')
+      tag=$(printf '%s' "${batch}" | tr -d '\n' |
+        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"([^{}]*"draft"[[:space:]]*:[[:space:]]*true)?' |
+        grep -v 'true$' |
+        sed -E 's/.*"(v[^"]*)".*/\1/' |
+        sort -t. -k1.2,1n -k2,2n -k3,3n |
+        tail -1)
     fi
     batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     [ "${batch_count}" -lt "${PER_PAGE}" ] && break
@@ -219,7 +233,7 @@ resolve_release() {
     if [ -n "${want:-}" ]; then
       echo "dg-skills: no release named ${want} found in the ${scanned} releases scanned" >&2
     else
-      echo "dg-skills: no skills-v* release found in the ${scanned} releases scanned" >&2
+      echo "dg-skills: no vX.Y.Z release found in the ${scanned} releases scanned" >&2
     fi
     exit 1
   fi
@@ -383,7 +397,7 @@ if [ "${DELEGATE}" = "0" ]; then
   mv -f "${INSTALLER}" "${DEST}"
   INSTALLER="${DEST}"
   # Stamp the installed version so `dg-skills install` won't re-download the binary.
-  version=${tag#skills-v}
+  version=$(normalize_version "${tag}")
   [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
   echo "dg-skills installed at ${DEST}"
 fi
@@ -423,7 +437,10 @@ fi
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
   CODEX_TAG="${tag}"
-  [ -n "${PINNED_VERSION}" ] && CODEX_TAG="skills-v${PINNED_VERSION}"
+  if [ -n "${PINNED_VERSION}" ]; then
+    CODEX_TAG="v${PINNED_VERSION}"
+    is_prefixed_version "${PINNED_VERSION}" && CODEX_TAG="skills-v${PINNED_VERSION}"
+  fi
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"

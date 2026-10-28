@@ -164,7 +164,7 @@ async function installBinary(
 			console.warn(
 				reason.kind === "no-platform-asset"
 					? `⚠ ${binaryName}: this platform (${platform}) has no published asset; skipping its refresh.`
-					: `⚠ ${binaryName}: no release with tag prefix "${spec.tagPrefix}" was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
+					: `⚠ ${binaryName}: no vX.Y.Z release was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
 			);
 			return;
 		}
@@ -198,8 +198,8 @@ function resolvePinnedBinaries(specs: BinarySpec[], releases: Release[]): Resolv
 			const platform = `${process.platform}-${process.arch}`;
 			throw new Error(
 				reason.kind === "no-platform-asset"
-					? `${spec.binaryName}: this platform (${platform}) has no published asset for ${spec.tagPrefix}${spec.version}`
-					: `no release named ${spec.tagPrefix}${spec.version} found`,
+					? `${spec.binaryName}: this platform (${platform}) has no published asset for v${spec.version}`
+					: `no release named v${spec.version} found`,
 			);
 		}
 		const vf = cliVersionFile(spec.binaryName);
@@ -250,9 +250,9 @@ export function removeRetiredBinaries(): void {
 }
 
 const BINARIES: BinarySpec[] = [
-	{ binaryName: "dg-skills", tagPrefix: "skills-v" },
-	{ binaryName: "dg-daemon", tagPrefix: "daemon-v" },
-	{ binaryName: "dg-agent", tagPrefix: "agent-v" },
+	{ binaryName: "dg-skills" },
+	{ binaryName: "dg-daemon" },
+	{ binaryName: "dg-agent" },
 ];
 
 function binarySpec(binaryName: string): BinarySpec {
@@ -456,7 +456,7 @@ export function registerInstall(program: Command): void {
 		)
 		.option(
 			"--version <x.y.z>",
-			"pin skills-v/daemon-v/agent-v/ext-v to that release instead of each one's newest; fails before any change if a pinned release does not exist",
+			"pin every part to the vX.Y.Z release instead of the newest; fails before any change if a pinned release does not exist",
 		)
 		.action(
 			async (

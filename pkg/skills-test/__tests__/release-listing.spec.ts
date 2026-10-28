@@ -70,18 +70,18 @@ describe("listReleases pages past the first GitHub response", () => {
 });
 
 describe("describeMissingCliAsset tells apart the two ways a binary can be unavailable", () => {
-	const SPEC = { binaryName: "dg-daemon", tagPrefix: "daemon-v" };
+	const SPEC = { binaryName: "dg-daemon" };
 
 	test("a matching release exists, just not for this platform", () => {
 		const releases: Release[] = [
-			{ tag_name: "daemon-v1.0.0", draft: false, assets: [] },
+			{ tag_name: "v1.0.0", draft: false, assets: [] },
 		];
 		expect(describeMissingCliAsset(SPEC, releases)).toEqual({
 			kind: "no-platform-asset",
 		});
 	});
 
-	test("no release with the tag prefix appears anywhere in the scanned set", () => {
+	test("no vX.Y.Z release appears anywhere in the scanned set", () => {
 		const releases: Release[] = [
 			{ tag_name: "ext-v1.0.0", draft: false, assets: [] },
 			{ tag_name: "skills-v1.0.0", draft: false, assets: [] },
@@ -92,9 +92,20 @@ describe("describeMissingCliAsset tells apart the two ways a binary can be unava
 		});
 	});
 
-	test("a draft release with the right prefix does not count as a match", () => {
+	test("a pin at or below 1.21.1 matches the old daemon-v tag", () => {
+		const releases: Release[] = [{ tag_name: "daemon-v1.21.1", draft: false, assets: [] }];
+		expect(describeMissingCliAsset({ ...SPEC, version: "1.21.1" }, releases)).toEqual({
+			kind: "no-platform-asset",
+		});
+		expect(describeMissingCliAsset({ ...SPEC, version: "1.22.0" }, releases)).toEqual({
+			kind: "no-matching-release",
+			releasesScanned: 1,
+		});
+	});
+
+	test("a draft vX.Y.Z release does not count as a match", () => {
 		const releases: Release[] = [
-			{ tag_name: "daemon-v9.9.9", draft: true, assets: [] },
+			{ tag_name: "v9.9.9", draft: true, assets: [] },
 		];
 		expect(describeMissingCliAsset(SPEC, releases)).toEqual({
 			kind: "no-matching-release",
@@ -102,9 +113,9 @@ describe("describeMissingCliAsset tells apart the two ways a binary can be unava
 		});
 	});
 
-	test("a version pin matches only its exact tag, even with a newer release present", () => {
+	test("a version pin matches only its exact v<version> tag, even with a newer release present", () => {
 		const releases: Release[] = [
-			{ tag_name: "daemon-v2.0.0", draft: false, assets: [] },
+			{ tag_name: "v2.0.0", draft: false, assets: [] },
 		];
 		expect(describeMissingCliAsset({ ...SPEC, version: "1.0.0" }, releases)).toEqual({
 			kind: "no-matching-release",

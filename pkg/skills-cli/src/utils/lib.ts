@@ -129,31 +129,56 @@ export function cliAssetName(
 	return `${binaryName}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
 }
 
+export const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
+const LAST_PREFIXED_VERSION = "1.21.1";
+
 /**
- * Newest ext-v* release's -TARGET.zip, or the exact ext-v<version> release
- * when `version` pins one. /releases is newest-first; we filter to ext-v*
- * because the repo also publishes skills-v* (CLI binaries) — a plain
- * /releases/latest would resolve across all tags and miss the zips.
+ * The exact `v<version>` release when `version` pins one, else the newest `vX.Y.Z` release by semver.
+ * Pins at or below 1.21.1 also match `<legacyPrefix><version>`, the per-part tags used before one-tag releases.
  */
+export function pickRelease(
+	releases: Release[],
+	version?: string,
+	legacyPrefix?: string,
+): Release | undefined {
+	const live = releases.filter((r) => !r.draft);
+	if (!version) {
+		return live
+			.filter((r) => RELEASE_TAG.test(r.tag_name))
+			.sort((a, b) => compareVersions(b.tag_name, a.tag_name))[0];
+	}
+	const exact = live.find((r) => r.tag_name === `v${version}`);
+	if (exact || !legacyPrefix || !versionGte(LAST_PREFIXED_VERSION, version)) return exact;
+	return live.find((r) => r.tag_name === `${legacyPrefix}${version}`);
+}
+
+function releaseVersion(tag: string): string {
+	return tag.replace(/^[a-z]+-v|^v/, "");
+}
+
+/** The legacy tag prefix of a binary: dg-skills -> skills-v. */
+function legacyPrefixOf(partName: string): string {
+	return `${partName.replace(/^dg-/, "")}-v`;
+}
+
+/** Extension zip for `target` from the pinned or newest release. */
 export function pickExtAsset(
 	releases: Release[],
 	target: Target,
 	version?: string,
 ): PickedAsset | undefined {
-	const rel = version
-		? releases.find((r) => r.tag_name === `ext-v${version}` && !r.draft)
-		: releases.find((r) => r.tag_name.startsWith("ext-v") && !r.draft);
+	const rel = pickRelease(releases, version, legacyPrefixOf("ext"));
 	const asset = rel?.assets.find((a) => a.name.endsWith(`-${target}.zip`));
 	if (!rel || !asset) return undefined;
 	return {
 		name: asset.name,
 		url: asset.browser_download_url,
-		version: rel.tag_name.replace(/^ext-v/, ""),
+		version: releaseVersion(rel.tag_name),
 	};
 }
 
-/** `version` pins resolution to `${tagPrefix}${version}` exactly, instead of the newest release with that prefix. */
-export type BinarySpec = { binaryName: string; tagPrefix: string; version?: string };
+/** `version` pins resolution to that release instead of the newest one. */
+export type BinarySpec = { binaryName: string; version?: string };
 
 export function pickCliAsset(
 	releases: Release[],
@@ -163,16 +188,14 @@ export function pickCliAsset(
 ): PickedAsset | undefined {
 	const name = cliAssetName(spec.binaryName, platform, arch);
 	if (!name) return undefined;
-	const rel = spec.version
-		? releases.find((r) => r.tag_name === `${spec.tagPrefix}${spec.version}` && !r.draft)
-		: releases.find((r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft);
+	const rel = pickRelease(releases, spec.version, legacyPrefixOf(spec.binaryName));
 	const asset = rel?.assets.find((a) => a.name === name);
 	if (!rel || !asset) return undefined;
 	const sums = rel.assets.find((a) => a.name === "SHA256SUMS");
 	return {
 		name: asset.name,
 		url: asset.browser_download_url,
-		version: rel.tag_name.slice(spec.tagPrefix.length),
+		version: releaseVersion(rel.tag_name),
 		...(sums ? { sumsUrl: sums.browser_download_url } : {}),
 	};
 }
@@ -226,10 +249,8 @@ export function describeMissingCliAsset(
 	spec: BinarySpec,
 	releases: Release[],
 ): MissingCliAssetReason {
-	const hasRelease = spec.version
-		? releases.some((r) => r.tag_name === `${spec.tagPrefix}${spec.version}` && !r.draft)
-		: releases.some((r) => r.tag_name.startsWith(spec.tagPrefix) && !r.draft);
-	return hasRelease
+	const release = pickRelease(releases, spec.version, legacyPrefixOf(spec.binaryName));
+	return release
 		? { kind: "no-platform-asset" }
 		: { kind: "no-matching-release", releasesScanned: releases.length };
 }
@@ -242,7 +263,7 @@ export async function downloadReleaseAsset(
 	const asset = pickExtAsset(await listReleases(), target, version);
 	if (!asset) {
 		throw new Error(
-			version ? `no release named ext-v${version} found` : `no ext-v* ${target} asset found`,
+			version ? `no ${target} extension asset found for ${version}` : `no ${target} extension asset found in any vX.Y.Z release`,
 		);
 	}
 	const dl = await fetch(asset.url, { headers: UA });

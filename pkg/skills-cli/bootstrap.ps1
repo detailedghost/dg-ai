@@ -81,25 +81,31 @@ if ($rawVersion) {
 	else { $script:pinnedVersion = $rawVersion }
 }
 
+function Test-DgPrefixedVersion([string]$Version) {
+	try { return ([version]$Version) -le ([version]"1.21.1") } catch { return $false }
+}
+
 function Resolve-DgRelease {
 	if ($script:rel) { return $script:rel }
 	$perPage = 100
 	$pageCap = 10
 	$scanned = 0
-	$want = if ($env:DG_SKILLS_ONLY -eq "1" -and $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $null }
+	$want = if ($env:DG_SKILLS_ONLY -eq "1" -and $script:pinnedVersion) {
+		if (Test-DgPrefixedVersion $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { "v$($script:pinnedVersion)" }
+	} else { $null }
 	for ($page = 1; $page -le $pageCap; $page++) {
 		$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
 		$scanned += $batch.Count
 		$script:rel = if ($want) {
 			$batch | Where-Object { $_.tag_name -eq $want -and -not $_.draft } | Select-Object -First 1
 		} else {
-			$batch | Where-Object { $_.tag_name -like "skills-v*" -and -not $_.draft } | Select-Object -First 1
+			$batch | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' -and -not $_.draft } | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending | Select-Object -First 1
 		}
 		if ($script:rel -or $batch.Count -lt $perPage) { break }
 	}
 	if (-not $script:rel) {
 		if ($want) { throw "dg-skills: no release named $want found in the $scanned releases scanned" }
-		throw "dg-skills: no skills-v* release found in the $scanned releases scanned"
+		throw "dg-skills: no vX.Y.Z release found in the $scanned releases scanned"
 	}
 	return $script:rel
 }
@@ -229,7 +235,7 @@ try {
 				Where-Object { $_.Name.StartsWith($oldPrefix) } |
 				ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 			# Stamp the installed version so `dg-skills install` won't re-download the binary.
-			Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
+			Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value ($rel.tag_name -replace '^(skills-)?v', '')
 		} finally {
 			$swapLock.Dispose()
 		}
@@ -273,7 +279,7 @@ if ($exitCode -ne 0) { exit $exitCode }
 # repository's skills into CODEX_HOME (default: $HOME\.codex\skills).
 if ($env:DG_INSTALL_CODEX -eq "1") {
 	$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
-	$codexTag = if ($script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { $rel.tag_name }
+	$codexTag = if (-not $script:pinnedVersion) { $rel.tag_name } elseif (Test-DgPrefixedVersion $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { "v$($script:pinnedVersion)" }
 	$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("dg-ai-" + [guid]::NewGuid())
 	$archive = Join-Path $tmpDir "dg-ai.zip"
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null

@@ -71,9 +71,9 @@ describe("expectedSha256", () => {
 });
 
 describe("pickCliAsset", () => {
-	const spec = { binaryName: "dg-skills", tagPrefix: "skills-v" };
+	const spec = { binaryName: "dg-skills" };
 	const rel = (assets: string[]) => [
-		{ tag_name: "skills-v1.2.3", draft: false, assets: assets.map((name) => ({ name, browser_download_url: `https://x/${name}` })) },
+		{ tag_name: "v1.2.3", draft: false, assets: assets.map((name) => ({ name, browser_download_url: `https://x/${name}` })) },
 	];
 
 	test("carries the SHA256SUMS url from the same release", () => {

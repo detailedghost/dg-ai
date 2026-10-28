@@ -41,7 +41,7 @@ function assetName(binary: string): string {
 	return `${binary}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
 }
 
-/** Serves skills-v, agent-v, daemon-v and ext-v releases and logs every fetched URL. */
+/** Serves one vX.Y.Z release holding every part and logs every fetched URL. */
 function writePreload(dir: string, log: string): string {
 	const base = "https://github.com/detailedghost/dg-ai/releases/download";
 	const skillsAsset = assetName("dg-skills");
@@ -49,24 +49,14 @@ function writePreload(dir: string, log: string): string {
 	const daemonAsset = assetName("dg-daemon");
 	const releases = [
 		{
-			tag_name: "skills-v9.9.9",
+			tag_name: "v9.9.9",
 			draft: false,
-			assets: [{ name: skillsAsset, browser_download_url: `${base}/skills-v9.9.9/${skillsAsset}` }],
-		},
-		{
-			tag_name: "agent-v9.9.9",
-			draft: false,
-			assets: [{ name: agentAsset, browser_download_url: `${base}/agent-v9.9.9/${agentAsset}` }],
-		},
-		{
-			tag_name: "daemon-v9.9.9",
-			draft: false,
-			assets: [{ name: daemonAsset, browser_download_url: `${base}/daemon-v9.9.9/${daemonAsset}` }],
-		},
-		{
-			tag_name: "ext-v9.9.9",
-			draft: false,
-			assets: [{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/ext-v9.9.9/x` }],
+			assets: [
+				{ name: skillsAsset, browser_download_url: `${base}/v9.9.9/${skillsAsset}` },
+				{ name: agentAsset, browser_download_url: `${base}/v9.9.9/${agentAsset}` },
+				{ name: daemonAsset, browser_download_url: `${base}/v9.9.9/${daemonAsset}` },
+				{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/v9.9.9/dg-ai-extension-chrome.zip` },
+			],
 		},
 	];
 	const path = join(dir, "preload.ts");
@@ -78,8 +68,8 @@ globalThis.fetch = (async (input: unknown) => {
   const url = String(input);
   appendFileSync(${JSON.stringify(log)}, url + "\\n");
   if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
-  if (url.endsWith("/skills-v9.9.9/${skillsAsset}")) return new Response("fake dg-skills");
-  if (url.endsWith("/agent-v9.9.9/${agentAsset}")) return new Response(${JSON.stringify("#!/bin/sh\nexit 0\n# fake dg-agent\n")});
+  if (url.endsWith("/v9.9.9/${skillsAsset}")) return new Response("fake dg-skills");
+  if (url.endsWith("/v9.9.9/${agentAsset}")) return new Response(${JSON.stringify("#!/bin/sh\nexit 0\n# fake dg-agent\n")});
   throw new Error("agent-only install must not fetch " + url);
 }) as typeof fetch;
 `,
@@ -112,9 +102,9 @@ describe("dg-skills install --agent-only", () => {
 
 			const urls = fetchedUrls(fetchLog);
 			expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-			expect(urls.some((url) => url.endsWith(`/skills-v9.9.9/${assetName("dg-skills")}`))).toBe(true);
-			expect(urls.some((url) => url.endsWith(`/agent-v9.9.9/${assetName("dg-agent")}`))).toBe(true);
-			expect(urls.filter((url) => /daemon-v|ext-v/.test(url))).toEqual([]);
+			expect(urls.some((url) => url.endsWith(`/v9.9.9/${assetName("dg-skills")}`))).toBe(true);
+			expect(urls.some((url) => url.endsWith(`/v9.9.9/${assetName("dg-agent")}`))).toBe(true);
+			expect(urls.filter((url) => /dg-daemon|extension/.test(url))).toEqual([]);
 
 			const bin = join(home, "bin");
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("fake dg-skills");
