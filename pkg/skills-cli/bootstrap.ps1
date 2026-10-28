@@ -93,15 +93,20 @@ function Resolve-DgRelease {
 	$want = if ($env:DG_SKILLS_ONLY -eq "1" -and $script:pinnedVersion) {
 		if (Test-DgPrefixedVersion $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { "v$($script:pinnedVersion)" }
 	} else { $null }
+	$candidates = @()
 	for ($page = 1; $page -le $pageCap; $page++) {
 		$batch = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repo/releases?per_page=$perPage&page=$page")
 		$scanned += $batch.Count
-		$script:rel = if ($want) {
-			$batch | Where-Object { $_.tag_name -eq $want -and -not $_.draft } | Select-Object -First 1
+		if ($want) {
+			$script:rel = $batch | Where-Object { $_.tag_name -eq $want -and -not $_.draft } | Select-Object -First 1
+			if ($script:rel) { break }
 		} else {
-			$batch | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' -and -not $_.draft } | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending | Select-Object -First 1
+			$candidates += @($batch | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' -and -not $_.draft })
 		}
-		if ($script:rel -or $batch.Count -lt $perPage) { break }
+		if ($batch.Count -lt $perPage) { break }
+	}
+	if (-not $want) {
+		$script:rel = $candidates | Sort-Object { [version]$_.tag_name.Substring(1) } -Descending | Select-Object -First 1
 	}
 	if (-not $script:rel) {
 		if ($want) { throw "dg-skills: no release named $want found in the $scanned releases scanned" }

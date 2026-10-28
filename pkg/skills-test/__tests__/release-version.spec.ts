@@ -275,6 +275,19 @@ describe("detect", () => {
 		});
 	});
 
+	test("a dispatch bump override cuts the next release even when head is the release commit", () => {
+		expect(
+			detect({
+				...base,
+				event: "dispatch",
+				bumpInput: "patch",
+				tags: ["v1.22.0"],
+				base: "1.22.0",
+				headSubject: "chore(release): cut 1.22.0",
+			}).mode,
+		).toBe("release");
+	});
+
 	test("a dispatch bump override cuts a release with no releasable commits", () => {
 		expect(detect({ ...base, event: "dispatch", bumpInput: "patch" })).toEqual({
 			mode: "release",

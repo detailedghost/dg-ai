@@ -100,7 +100,7 @@ export type DetectInput = {
 
 export function detect(input: DetectInput): Detection {
 	const previous = previousTag(input.base, input.tags) ?? "";
-	if (isReleaseCommit(input.headSubject)) {
+	if (input.bumpInput === "auto" && isReleaseCommit(input.headSubject)) {
 		return {
 			mode: input.event === "dispatch" ? "republish" : "skip",
 			version: input.base,

@@ -476,6 +476,20 @@ describe("bootstrap.sh pages past the first release listing", () => {
 		expect(run.versionContent).toBe("1.2.3");
 	});
 
+	test("picks the highest vX.Y.Z across pages, not the first page that has one", async () => {
+		const run = await runBootstrap([
+			[...filler(99), release("v1.2.3", [SKILLS_ASSET])],
+			[release("v1.10.0", [SKILLS_ASSET])],
+		]);
+		expect(run.pageRequests).toBe(2);
+		expect(run.destUrl).toContain("/v1.10.0/");
+	});
+
+	test("bootstrap.ps1 keeps scanning pages until it can pick the highest unpinned version", () => {
+		const ps1 = readFileSync(new URL("../../skills-cli/bootstrap.ps1", import.meta.url), "utf8");
+		expect(ps1).not.toMatch(/if \(\$script:rel -or \$batch\.Count -lt \$perPage\)/);
+	});
+
 	test("stops at the page cap instead of scanning forever when no vX.Y.Z release exists", async () => {
 		const run = await runBootstrap(
 			Array.from({ length: 12 }, () => filler(100)),

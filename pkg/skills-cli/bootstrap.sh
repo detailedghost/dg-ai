@@ -216,17 +216,22 @@ resolve_release() {
         tag="${want}"
       fi
     else
-      tag=$(printf '%s' "${batch}" | tr -d '\n' |
+      found=$(printf '%s' "${batch}" | tr -d '\n' |
         grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"([^{}]*"draft"[[:space:]]*:[[:space:]]*true)?' |
         grep -v 'true$' |
-        sed -E 's/.*"(v[^"]*)".*/\1/' |
-        sort -t. -k1.2,1n -k2,2n -k3,3n |
-        tail -1)
+        sed -E 's/.*"(v[^"]*)".*/\1/')
+      candidates="${candidates:-}${found}
+"
     fi
     batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     [ "${batch_count}" -lt "${PER_PAGE}" ] && break
     page=$((page + 1))
   done
+
+  if [ -z "${want:-}" ]; then
+    tag=$(printf '%s' "${candidates:-}" | grep -v '^$' |
+      sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+  fi
 
   if [ -z "${tag}" ]; then
     scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
