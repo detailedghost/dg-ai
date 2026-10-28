@@ -13,13 +13,14 @@ Codex:      $dg:phone
 
 | Command | What it does |
 | --- | --- |
-| `number [--as <name>] [--rotate] [--relay <url>...]` | Prints `{card, npub, as, relays, expires_at: null, rotated, key_store, listener, safety}`. The card never expires; `--rotate` prints a new one and the old secret stops admitting. |
-| `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. |
+| `number [--as <name>] [--rotate] [--relay <url>...]` | Prints `{card, npub, as, relays, expires_at: null, open_invites, rotated, key_store, listener, safety}`. The number card never expires, so `expires_at` stays null. `open_invites` lists each live one-time card as `{handle, expires_at}`, the same expiry `invite` printed. `--rotate` prints a new number card and the old secret stops admitting. |
+| `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. A running listener reloads that invite; it does not need `close` and `open`. |
 | `accept [card] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok}`. |
-| `inbox [-n <count>] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. |
+| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
+| `watch [--for <seconds>]` | Repeats `voicemail` until `--for` seconds have passed (default 120). The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
@@ -50,21 +51,30 @@ contact with an existing key. Rename a contact afterward with
 
 `open` runs one always-on listener (`phone __run` under the hood) that holds
 a single relay subscription for every key you hold, admits messages from
-known contacts and valid cards, and stores them. `voicemail` and `inbox`
-only read what the listener has already caught; neither one queries the
-relays itself, so a message never shows up if the listener has not run
-since it arrived (within the 7-day window relays and this database both
-keep).
+known contacts and valid cards, and stores them. `voicemail`, `watch`, and
+`inbox` only read what the listener has already caught. None of them query
+the relays, so a message never shows up if the listener has not run since
+it arrived (within the 7-day window relays and this database both keep).
 
-Every few seconds the listener re-reads its keys. When a credential store
-cannot be read, it keeps that key's current subscription and still applies a
-change to a key it can read. A key that was unreadable at startup and later
+Every few seconds the listener re-reads its keys and its admission epoch.
+The epoch changes when `invite` saves a card, `number --rotate` rolls the
+number secret, `contacts remove` drops a contact, or an invite is consumed.
+On that change the listener re-reads invites from the database, catches up
+on rings it has not stored, and resubscribes when the relay set changed. A
+ring that does not match is checked against the database again before it is
+dropped. Each dropped ring is one line on stderr (`listener.log`, or the
+journal on systemd): `phone: dropped <pubkey prefix>: <reason>`. The prefix
+is the first 8 hex characters of the sender pubkey. The line never includes
+a secret, an invite secret, or message text. When a credential store cannot
+be read, the listener keeps that key's current subscription and still applies
+a change to a key it can read. A key that was unreadable at startup and later
 loads is announced as "a key became readable". A real key change resubscribes
 from the cursor it has already reached. `status` sets `listener.stale` for
 that change even while `keys_unreadable` is true. `say`, `accept`,
-`invite`, `number`, and `voicemail` restart a drifted listener. If that
-process will not exit, the command finishes and writes a warning. The
-listener never restarts the service unit it is running under.
+`invite`, `number`, and `voicemail` restart a listener whose binary or keys
+drifted. An invite reload is not that restart. If the drifted process will
+not exit, the command finishes and writes a warning. The listener never
+restarts the service unit it is running under.
 
 With `--on-message <exe> [args...]`, the listener resolves `exe` to an
 absolute path at `open` time — a systemd user unit carries a minimal
@@ -204,9 +214,10 @@ sitting next to the new database.
 
 The `dg-agent phone-friend` alias was removed in 1.23.x; only `phone`
 works. `dial`, `on`, `off`, and `card` are hidden synonyms for `accept`,
-`open`, `close`, and `number`. `answer`, `deliver`, `whoami`, `name`, and
-`--line` are gone outright; each fails with its replacement named and exits
-2.
+`open`, `close`, and `number`. They are not listed by `phone --help`.
+`answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each
+fails with its replacement named and exits 2. `phone watch` is the bounded
+voicemail poll that replaces staying on a long-running answer command.
 
 The safety rules live in one place:
 [plugins/dg/skills/phone/references/safety.md](../plugins/dg/skills/phone/references/safety.md).

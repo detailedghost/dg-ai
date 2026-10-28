@@ -24,6 +24,8 @@ const RELAYS_SETTING = "relays";
 const NUMBER_KEY_SETTING = "number_key";
 const LISTENER_SETTING = "listener";
 const DRIFT_SETTING = "listener_drift";
+/** Bumped when who may ring changes, so a running listener can reload without a restart. */
+const ADMISSION_EPOCH = "admission_epoch";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
 
@@ -40,8 +42,20 @@ export function readNumber(db: PhoneDb): NumberRecord | undefined {
 	return db.get<NumberRecord>(NUMBER_SETTING);
 }
 
+export function readAdmissionEpoch(db: PhoneDb): number {
+	return db.get<number>(ADMISSION_EPOCH) ?? 0;
+}
+
+export function bumpAdmissionEpoch(db: PhoneDb): number {
+	const next = readAdmissionEpoch(db) + 1;
+	db.set(ADMISSION_EPOCH, next);
+	return next;
+}
+
 export function writeNumber(db: PhoneDb, record: NumberRecord): void {
+	const previous = readNumber(db);
 	db.set(NUMBER_SETTING, record);
+	if (previous?.secret !== record.secret) bumpAdmissionEpoch(db);
 }
 
 export function resolvedSelfName(db: PhoneDb): string {
@@ -53,7 +67,9 @@ export function readRelays(db: PhoneDb): string[] {
 }
 
 export function writeRelays(db: PhoneDb, relays: string[]): void {
+	const previous = readRelays(db);
 	db.set(RELAYS_SETTING, relays);
+	if (previous.length !== relays.length || previous.some((relay, index) => relay !== relays[index])) bumpAdmissionEpoch(db);
 }
 
 /** Relays the listener must read: the saved number relays, plus every live invite's own list. */
@@ -161,6 +177,7 @@ export function removeContact(db: PhoneDb, handle: string): ContactRecord {
 	const existing = db.getContactByHandle(handle);
 	if (!existing) throw new DgCliError(`no contact +${handle}`);
 	db.removeContact(existing.npub);
+	bumpAdmissionEpoch(db);
 	return toContactRecord(existing);
 }
 
@@ -200,10 +217,12 @@ export function addInvite(db: PhoneDb, record: Omit<InviteRecord, "relays"> & { 
 		key_id: record.keyId,
 		relays: JSON.stringify(record.relays ?? []),
 	});
+	bumpAdmissionEpoch(db);
 }
 
 export function consumeInvite(db: PhoneDb, secret: string): void {
 	db.consumeInvite(secret);
+	bumpAdmissionEpoch(db);
 }
 
 export function readListener(db: PhoneDb): ListenerConfig | undefined {

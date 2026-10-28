@@ -6,14 +6,19 @@ import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
+	addBounded,
+	type DroppedRing,
 	fetchNew,
+	type Gate,
 	type KeyEntry,
 	type Message,
 	type NewContact,
 	type PhonePool,
 	type Reaccept,
 	type Seen,
+	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
+	type SubscribeHooks,
 	subscribe,
 	UNKNOWN_CALLER_HANDLE,
 } from "./chat";
@@ -29,6 +34,7 @@ import {
 	gateFor,
 	isHandle,
 	nextFreeHandle,
+	readAdmissionEpoch,
 	readCursor,
 	readListener,
 	readRelays,
@@ -351,6 +357,11 @@ function logClaim(message: string): void {
 	process.stderr.write(`phone: ${message}\n`);
 }
 
+/** One stderr line for a wrap the listener did not store. The pubkey is a short prefix, never a secret. */
+export function formatDroppedRing(drop: DroppedRing): string {
+	return `phone: dropped ${drop.pubkeyPrefix ?? "unknown"}: ${drop.reason}\n`;
+}
+
 function sleepClaim(ms: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -642,45 +653,91 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const initialKeys = await loadAllKeys(deps);
 	let keys = initialKeys.keys;
 	let unreadBefore = new Set(initialKeys.unreadable);
-	const contactRelays = readRelays(deps.db);
-	const relays = subscriptionRelays(deps.db);
+	let relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
 	const since = deps.now();
+	let epoch = readAdmissionEpoch(deps.db);
+	let gateCache: Gate = gateFor(deps.db);
+	const loggedDrops = new Set<string>();
 
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
 
+	const logDrop = (drop: DroppedRing) => {
+		if (loggedDrops.has(drop.id)) return;
+		addBounded(loggedDrops, drop.id, STRANGER_ID_LIMIT);
+		process.stderr.write(formatDroppedRing(drop));
+	};
+
+	const rememberAdmission = () => {
+		epoch = readAdmissionEpoch(deps.db);
+		gateCache = gateFor(deps.db);
+	};
+
+	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
+		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
+		const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
+		for (const message of caught.messages) {
+			admitMessage(
+				deps.db,
+				deps.now,
+				readRelays(deps.db),
+				message,
+				message.call ? newContactByNpub.get(message.from) : undefined,
+				reacceptByNpub.get(message.from),
+			);
+		}
+		return caught.seen;
+	};
+
 	const startingSeen: Seen = { cursor: readCursor(deps.db), ids: [] };
-	const caught = await fetchNew(pool, relays, keys, gateFor(deps.db), startingSeen, deps.now);
-	const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
-	const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
-	for (const message of caught.messages) {
-		admitMessage(
-			deps.db,
-			deps.now,
-			contactRelays,
-			message,
-			message.call ? newContactByNpub.get(message.from) : undefined,
-			reacceptByNpub.get(message.from),
-		);
-	}
-	writeCursor(deps.db, caught.seen.cursor);
+	let seen = applyCaught(await fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now));
+	rememberAdmission();
+	writeCursor(deps.db, seen.cursor);
 
 	await hookRunner.notify();
 	await hookRunner.retryStuck();
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
-	let seen = caught.seen;
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
+		admitMessage(deps.db, deps.now, readRelays(deps.db), message, extra.newContact, extra.reaccept);
+		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
 	};
-	let sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
+	const cachedGate = (): Gate => {
+		const next = readAdmissionEpoch(deps.db);
+		if (next !== epoch) rememberAdmission();
+		return gateCache;
+	};
+	const rereadGate = (): Gate => {
+		rememberAdmission();
+		return gateCache;
+	};
+	const hooks: SubscribeHooks = { reread: rereadGate, onDrop: logDrop };
+	const openSub = () => subscribe(pool, relays, keys, cachedGate, seen, onLive, deps.now, hooks);
+	let sub = openSub();
 	let stopped = false;
 	let watching = false;
+	const sameList = (left: string[], right: string[]) => left.length === right.length && left.every((item, index) => item === right[index]);
+	const watchAdmission = async () => {
+		const nextEpoch = readAdmissionEpoch(deps.db);
+		const wanted = subscriptionRelays(deps.db);
+		if (nextEpoch === epoch && sameList(wanted, relays)) return;
+		const caught = await fetchNew(pool, wanted, keys, gateFor(deps.db), seen, deps.now, logDrop);
+		if (stopped) return;
+		seen = applyCaught(caught);
+		rememberAdmission();
+		writeCursor(deps.db, seen.cursor);
+		await hookRunner.notify();
+		relays = wanted;
+		sub.close();
+		if (stopped) return;
+		sub = openSub();
+		writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+	};
 	const watchKeys = () => {
 		if (stopped || watching) return;
 		watching = true;
@@ -690,18 +747,19 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				if (stopped) return;
 				const merged = mergeHeldKeys(loaded, keys);
 				const nextPrint = keyFingerprint(merged);
-				if (nextPrint === keyFingerprint(keys)) {
+				if (nextPrint !== keyFingerprint(keys)) {
+					const notice = subscriptionNotice(keys, merged, unreadBefore);
 					unreadBefore = new Set(loaded.unreadable);
-					return;
+					sub.close();
+					if (stopped) return;
+					keys = merged;
+					sub = openSub();
+					writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+					notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
+				} else {
+					unreadBefore = new Set(loaded.unreadable);
 				}
-				const notice = subscriptionNotice(keys, merged, unreadBefore);
-				unreadBefore = new Set(loaded.unreadable);
-				sub.close();
-				if (stopped) return;
-				keys = merged;
-				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
-				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
-				notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
+				if (!stopped) await watchAdmission();
 			} catch {
 			} finally {
 				watching = false;

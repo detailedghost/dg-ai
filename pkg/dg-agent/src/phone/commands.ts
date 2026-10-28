@@ -239,6 +239,10 @@ export async function phoneNumber(
 		as,
 		relays,
 		expires_at: null,
+		open_invites: liveInvites(deps.db).map((invite) => ({
+			handle: invite.name === undefined ? null : `+${invite.name}`,
+			expires_at: isoOf(invite.expiresAt),
+		})),
 		rotated,
 		key_store: mode,
 		listener: listener ? { pid: listener.pid, since: listener.since } : null,
@@ -404,7 +408,7 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 	}
 }
 
-export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDeps): void {
+export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }, deps: PhoneDeps): void {
 	const limit = opts.n === undefined ? 50 : Number(opts.n);
 	if (!Number.isInteger(limit) || limit <= 0) throw new DgCliError(`-n must be a positive integer, got "${opts.n}"`);
 	if (!existsSync(PhoneDb.path(deps.paths))) {
@@ -424,7 +428,7 @@ export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDep
 				direction: row.direction,
 				handle: row.handle,
 				from: row.from,
-				text: row.text,
+				...(opts.meta ? {} : { text: row.text }),
 				read: row.read,
 				...(row.call ? { call: true } : {}),
 			});
@@ -446,7 +450,7 @@ export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDep
 			direction: row.direction,
 			handle: contact ? `+${contact.handle}` : null,
 			from: row.sender,
-			text: row.text,
+			...(opts.meta ? {} : { text: row.text }),
 			read: row.read_at !== null,
 			...(row.call ? { call: true } : {}),
 			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
@@ -454,9 +458,7 @@ export function phoneInbox(opts: { n?: string; handle?: string }, deps: PhoneDep
 	}
 }
 
-export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
-	migrateIfNeeded(deps.paths);
-	await restartStaleListener(deps, { spawn: true });
+function emitUnread(deps: PhoneDeps): void {
 	for (const row of deps.db.takeUnread()) {
 		const contact = findContactByNpub(deps.db, row.contact);
 		printJson(deps, {
@@ -468,6 +470,40 @@ export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
 			...(row.call ? { call: true } : {}),
 			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
 		});
+	}
+}
+
+export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	await restartStaleListener(deps, { spawn: true });
+	emitUnread(deps);
+}
+
+/** Lower and upper bounds of the gap between `watch` checks. The gap is chosen inside this range, never a fixed interval. */
+export const WATCH_MIN_DELAY_MS = 2_000;
+export const WATCH_MAX_DELAY_MS = 8_000;
+export const WATCH_DEFAULT_FOR_S = 120;
+
+export function watchDelayMs(random: () => number): number {
+	const span = WATCH_MAX_DELAY_MS - WATCH_MIN_DELAY_MS;
+	return WATCH_MIN_DELAY_MS + Math.floor(random() * (span + 1));
+}
+
+/** Prints unread voicemail until `for` seconds have passed, sleeping a jittered gap between checks. */
+export async function phoneWatch(opts: { for?: string }, deps: PhoneDeps, random: () => number = Math.random): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const seconds = opts.for === undefined ? WATCH_DEFAULT_FOR_S : Number(opts.for);
+	if (!Number.isFinite(seconds) || seconds <= 0) {
+		throw new DgCliError(`--for must be a positive number of seconds, got "${opts.for}"`);
+	}
+	await restartStaleListener(deps, { spawn: true });
+	const deadline = deps.now() + seconds;
+	const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+	while (deps.now() < deadline) {
+		emitUnread(deps);
+		const remainingMs = (deadline - deps.now()) * 1000;
+		if (remainingMs <= 0) return;
+		await sleep(Math.min(watchDelayMs(random), remainingMs));
 	}
 }
 
@@ -744,13 +780,22 @@ function attachPhoneVerbs(
 		.command("inbox")
 		.description("print stored messages, oldest first; never marks anything read")
 		.option("-n, --count <count>", "how many messages to print", "50")
+		.option("--meta", "print metadata only, omitting message text")
 		.argument("[handle]", "limit to one contact's messages")
-		.action((handle: string | undefined, opts: { count?: string }) => phoneInbox({ n: opts.count, handle }, getDeps()));
+		.action((handle: string | undefined, opts: { count?: string; meta?: boolean }) =>
+			phoneInbox({ n: opts.count, handle, meta: opts.meta }, getDeps()),
+		);
 
 	group
 		.command("voicemail")
 		.description("print unread messages, oldest first, and mark them read")
 		.action(() => phoneVoicemail(getDeps()));
+
+	group
+		.command("watch")
+		.description("print unread voicemail until --for seconds elapse, waiting a jittered gap between checks")
+		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
+		.action((opts: { for?: string }) => phoneWatch(opts, getDeps()));
 
 	group
 		.command("status")

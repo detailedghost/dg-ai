@@ -23,9 +23,13 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "say", "inbox", "voicemail", "status", "open", "close"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "say", "inbox", "voicemail", "watch", "status", "open", "close"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
+		expect(skill).toContain("--meta");
+		expect(skill).toContain("--for");
+		expect(skill).toContain("open_invites");
+		expect(skill).not.toContain("answer --restart");
 	});
 
 	test("uses none of the removed verb names as if they still worked", () => {

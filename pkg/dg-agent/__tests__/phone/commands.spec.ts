@@ -18,6 +18,7 @@ import {
 	phoneSay,
 	phoneStatus,
 	phoneVoicemail,
+	phoneWatch,
 	type PhoneDeps,
 	registerPhoneCommands,
 } from "../../src/phone/commands";
@@ -167,7 +168,22 @@ describe("number", () => {
 
 		await phoneNumber({}, d);
 
-		expect((lines()[0] as { expires_at: null }).expires_at).toBeNull();
+		expect((lines()[0] as { expires_at: null; open_invites: unknown[] }).expires_at).toBeNull();
+		expect((lines()[0] as { open_invites: unknown[] }).open_invites).toEqual([]);
+	});
+
+	it("shows the expiry invite just printed on a following number, while the number card itself stays open", async () => {
+		const d = deps(freshHome());
+		await phoneInvite({ name: "barron", ttl: "24" }, d);
+		const invited = lines()[0] as { expires_at: string };
+		out = [];
+
+		await phoneNumber({}, d);
+		const printed = lines()[0] as { expires_at: string | null; open_invites: { handle: string; expires_at: string }[] };
+
+		expect(invited.expires_at).not.toBeNull();
+		expect(printed.expires_at).toBeNull();
+		expect(printed.open_invites).toEqual([{ handle: "+barron", expires_at: invited.expires_at }]);
 	});
 
 	it("reports the live listener from the pid file, and null when none is running", async () => {
@@ -750,6 +766,26 @@ describe("inbox", () => {
 		expect(() => phoneInbox({ handle: "+nobody" }, d)).toThrow("no contact +nobody");
 	});
 
+	it("omits message text when meta is set and still prints it otherwise", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		const text = "meta-secret-body";
+		d.db.addMessage({ id: "m-meta", direction: "in", ts: NOW, sender: "npub1meta", contact: "npub1meta", text, call: 0 });
+		out = [];
+
+		phoneInbox({ meta: true }, d);
+		const hidden = lines()[0] as Record<string, unknown>;
+
+		expect(hidden).not.toHaveProperty("text");
+		expect(JSON.stringify(hidden)).not.toContain(text);
+		expect(hidden.id).toBe("m-meta");
+		expect(hidden.from).toBe("npub1meta");
+
+		out = [];
+		phoneInbox({}, d);
+		expect((lines()[0] as { text: string }).text).toBe(text);
+	});
+
 	it("prints handle null for a message whose contact has since been removed", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -779,6 +815,47 @@ describe("voicemail", () => {
 
 		expect(first.map((r) => r.id)).toEqual(["a", "b"]);
 		expect(lines()).toEqual([]);
+	});
+});
+
+describe("watch", () => {
+	it("prints voicemail that arrives between jittered checks and stops at the bound", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		out = [];
+		let now = NOW;
+		const delays: number[] = [];
+		const randoms = [0, 0.999];
+		d.now = () => now;
+		d.sleep = async (ms) => {
+			delays.push(ms);
+			if (delays.length === 1) {
+				d.db.addMessage({
+					id: "between",
+					direction: "in",
+					ts: NOW,
+					sender: "npub1w",
+					contact: "npub1w",
+					text: "between-checks",
+					call: 0,
+				});
+			}
+			now += Math.ceil(ms / 1000);
+		};
+
+		await phoneWatch({ for: "10" }, d, () => randoms.shift() ?? 0);
+
+		expect(delays.length).toBeGreaterThan(1);
+		expect(delays[0]).not.toBe(delays[1]);
+		expect(delays.every((delay) => delay >= 1_000 && delay <= 8_000)).toBe(true);
+		expect((lines() as { text?: string }[]).some((row) => row.text === "between-checks")).toBe(true);
+		expect(now).toBeGreaterThanOrEqual(NOW + 10);
+	});
+
+	it("rejects a non-positive --for", async () => {
+		const d = deps(freshHome());
+
+		await expect(phoneWatch({ for: "0" }, d, () => 0)).rejects.toThrow("--for must be a positive number of seconds");
 	});
 });
 

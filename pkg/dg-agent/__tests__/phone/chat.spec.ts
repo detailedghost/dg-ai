@@ -221,6 +221,97 @@ describe("subscribe", () => {
 		expect(received).toEqual(["real"]);
 	});
 
+	it("tries a fresh gate once when the first look misses, and admits that same ring", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const secret = "ab".repeat(32);
+		const received: string[] = [];
+		const drops: { reason: string; pubkeyPrefix?: string }[] = [];
+		let reads = 0;
+		const sub = subscribe(
+			pool,
+			RELAYS,
+			[bob],
+			() => {
+				reads += 1;
+				return emptyGate();
+			},
+			{ cursor: 0, ids: [] },
+			(message) => {
+				received.push(message.text);
+			},
+			() => 1_000,
+			{
+				reread: () => {
+					reads += 1;
+					return { contacts: new Map(), secrets: { number: "", invites: [{ secret, expiresAt: 5_000, name: "barron" }] } };
+				},
+				onDrop: (drop) => drops.push(drop),
+			},
+		);
+
+		await publish(pool, RELAYS, ring("hello-barron", alice.sk, bob.pub, secret, "x"));
+		sub.close();
+
+		expect(received).toEqual(["hello-barron"]);
+		expect(reads).toBe(2);
+		expect(drops).toEqual([]);
+	});
+
+	it("does not reread a gate that already admits the ring", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		let rereads = 0;
+		const sub = subscribe(
+			pool,
+			RELAYS,
+			[bob],
+			() => gateWithContact(alice.pub),
+			{ cursor: 0, ids: [] },
+			() => {},
+			() => 1_000,
+			{ reread: () => { rereads += 1; return emptyGate(); } },
+		);
+
+		await publish(pool, RELAYS, wrap("already known", alice.sk, bob.pub));
+		sub.close();
+
+		expect(rereads).toBe(0);
+	});
+
+	it("reports an unmatched ring with a pubkey prefix and without the text or the secret", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const secret = "cd".repeat(32);
+		const drops: { reason: string; pubkeyPrefix?: string; id: string }[] = [];
+		const sub = subscribe(
+			pool,
+			RELAYS,
+			[bob],
+			() => emptyGate(),
+			{ cursor: 0, ids: [] },
+			() => {},
+			() => 1_000,
+			{ onDrop: (drop) => drops.push(drop) },
+		);
+		const event = ring("secret-body-text", alice.sk, bob.pub, secret, "x");
+
+		await publish(pool, RELAYS, event);
+		await publish(pool, RELAYS, event);
+		sub.close();
+
+		expect(drops).toHaveLength(1);
+		expect(drops[0]?.reason).toBe("no matching contact or invite");
+		expect(drops[0]?.pubkeyPrefix).toBe(alice.pub.slice(0, 8));
+		expect(drops[0]?.pubkeyPrefix).not.toBe(alice.pub);
+		const encoded = JSON.stringify(drops);
+		expect(encoded).not.toContain("secret-body-text");
+		expect(encoded).not.toContain(secret);
+	});
+
 	it("re-reads the gate for every event, so a contact added mid-subscription is admitted without a restart", async () => {
 		const alice = identity();
 		const bob = identity();
