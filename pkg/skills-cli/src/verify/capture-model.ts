@@ -2,6 +2,7 @@ import type { AxeReport } from "./axe";
 
 export const VIEWPORTS = [
 	{ id: "desktop", width: 1440, height: 900 },
+	{ id: "tablet", width: 768, height: 1024 },
 	{ id: "mobile", width: 390, height: 844 },
 ] as const;
 
@@ -53,6 +54,7 @@ export interface ShotRecord {
 	engine: "http" | "playwright";
 	menuFound: boolean;
 	scrolled: boolean;
+	src: string;
 	axe: AxeReport;
 }
 

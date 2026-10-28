@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bundle Review Board</title>
+<link rel="stylesheet" href="/board/board.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">V</div>
+    <div>
+      <h1>Doctor QA bundle · review</h1>
+      <p id="progress" class="muted" aria-live="polite"></p>
+      <div class="meter" aria-hidden="true"><span id="meter"></span></div>
+    </div>
+  </div>
+  <nav class="pager" aria-label="Section navigation">
+    <span class="kbd" aria-hidden="true">←</span>
+    <button type="button" id="prev" aria-keyshortcuts="ArrowLeft">Prev</button>
+    <button type="button" id="next" aria-keyshortcuts="ArrowRight">Next</button>
+    <span class="kbd" aria-hidden="true">→</span>
+  </nav>
+</header>
+<div class="layout">
+  <aside>
+    <h2>Sections</h2>
+    <ol id="toc"></ol>
+  </aside>
+  <main id="main">
+    <section id="section" class="panel" aria-labelledby="sec-title">
+      <p class="eyebrow" id="sec-branch"></p>
+      <h2 id="sec-title"></h2>
+      <p id="sec-what" class="what"></p>
+      <div class="widths" role="tablist" aria-label="Width">
+        <button type="button" role="tab" data-w="all" aria-selected="true">All</button>
+        <button type="button" role="tab" data-w="mobile" aria-selected="false">Mobile</button>
+        <button type="button" role="tab" data-w="tablet" aria-selected="false">Tablet</button>
+        <button type="button" role="tab" data-w="desktop" aria-selected="false">Desktop</button>
+      </div>
+      <div id="shots"></div>
+      <form id="verdict" class="picker" aria-label="Your verdict for this section">
+        <button type="button" id="mode" class="pk-mode" title="Toggle light or dark">☾ Dark</button>
+        <span class="pk-sep" aria-hidden="true"></span>
+        <label for="note" class="sr">Note for this section</label>
+        <input id="note" autocomplete="off" placeholder="notes (optional)">
+        <button type="submit" value="approved" id="approve" class="pk-approve" title="Approve. With a note it starts a follow-up round.">Approve ✓</button>
+        <button type="submit" value="changes" class="pk-reject" title="Send back for rework. A note is required.">Needs changes ⟳</button>
+        <button type="submit" value="skip" class="pk-skip" title="Leave open and come back later">Skip</button>
+      </form>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </section>
+    <section id="summary" class="panel" hidden aria-labelledby="sum-title">
+      <div id="end" class="end" aria-live="polite"></div>
+      <h2 id="sum-title">Overview</h2>
+      <table><thead><tr><th>Item</th><th>Rounds</th><th>Status</th><th>Latest note</th></tr></thead><tbody id="sum-body"></tbody></table>
+    </section>
+  </main>
+</div>
+<dialog id="zoom"><button type="button" id="zoom-close" aria-label="Close">✕</button><img id="zoom-img" alt=""></dialog>
+<script src="/board/board.js"></script>
+</body>
+</html>

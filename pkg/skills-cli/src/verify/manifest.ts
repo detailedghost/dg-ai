@@ -22,6 +22,7 @@ export interface VerifyTests {
 export interface VerifyItem {
 	id: string;
 	title: string;
+	what?: string;
 	owner: string;
 	beforeUrl: string;
 	afterUrl: string;
@@ -47,6 +48,7 @@ const TOP_KEYS = new Set(["name", "stackUrl", "items", "tests"]);
 const ITEM_KEYS = new Set([
 	"id",
 	"title",
+	"what",
 	"owner",
 	"beforeUrl",
 	"afterUrl",
@@ -164,6 +166,8 @@ function parseItem(value: unknown, index: number): VerifyItem {
 	};
 	const target = optionalText(value.targetUrl, `items[${index}].targetUrl`, 2000);
 	if (target) item.targetUrl = assertLoopbackUrl(target, `${id} targetUrl`);
+	const what = optionalText(value.what, `items[${index}].what`, 600);
+	if (what) item.what = what;
 	const route = optionalText(value.route, `items[${index}].route`, 200);
 	if (route) item.route = route;
 	const beforeRef = optionalText(value.beforeRef, `items[${index}].beforeRef`, 200);

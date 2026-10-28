@@ -1,96 +1,102 @@
-import { readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { selfCommand } from "@dg/common/node";
 import { openInBrowser } from "../prototype/ui";
-import { captureSession } from "./capture";
+import {
+	addSection,
+	chains,
+	clip,
+	dropPending,
+	formatStatus,
+	readBoard,
+	readVerdicts,
+	resolveSessionDir,
+	reworkChains,
+	roundOf,
+	setPending,
+	statusReport,
+	verdictLabel,
+	verifyPaths,
+	writeBoard,
+	type BoardImage,
+	type Section,
+	type VerifyPaths,
+} from "./board";
+import { captureSession, sectionFromCapture, type CaptureTarget } from "./capture";
 import type { Capturer } from "./capture-model";
 import { createHttpCapturer } from "./http-capturer";
 import { parseManifest } from "./manifest";
-import { loadManifest, resetSession, saveManifest } from "./session";
+import { assertVerifyName } from "./names";
 import { startVerifyServer } from "./serve";
-import {
-	claimVerdict,
-	forgetItems,
-	formatStatus,
-	formatVerdict,
-	readDecisions,
-	resolveSessionDir,
-	reworkIds,
-	statusReport,
-	verifyPaths,
-	bumpReload,
-	type VerifyPaths,
-} from "./verdict";
+import { loadManifest, saveManifest } from "./session";
 
-export const USAGE = `Usage: verify <command> [options]
+export const USAGE = `Usage: verify <command> <name> [options]
 
-  start <name> --manifest=<file> [--port=N] [--engine=http|playwright] [--no-open] [--no-capture] [--dir=PATH]
-                                                 Capture, serve the review page, and keep it open
-  capture <name> [--items=a,b] [--engine=http|playwright] [--dir=PATH]
-                                                 Capture every item, or only the named items
-  status <name> [--json] [--dir=PATH]            Print each item and whether all are approved
-  wait <name> [--timeout=SEC] [--json] [--dir=PATH]
-                                                 Block until every item has a pick, then claim it
-  rerun <name> [--engine=http|playwright] [--dir=PATH]
-                                                 Recapture rejected and tweaked items and reload the open tab
+  serve <name> [--port=N] [--no-open]           Start the review board in the background and print its URL
+  status <name> [--json]                        One line per item: rounds, state, latest note
+  add <name> <id> --title=T [--summary=S] [--what=W] [--branch=B] [--follows=ID] [--round=N] [--pending=KEY]
+      (--shots=DIR [--prefix=P] | --img="label|before|after[|reason]" ...)
+                                                Add a round from screenshots you took yourself
+  pending add <name> <key> --title=T [--detail=D] [--follows=ID]
+  pending done <name> <key>                     Show or clear an "agent working" entry
+  watch <name>                                  Print one line per new verdict until stopped
+  wait <name> [--timeout=SEC] [--json]          Block until every round has a verdict, then print status
+  stop <name>                                   Stop the board server
+  capture <name> [--manifest=FILE] [--items=a,b] [--summary=S] [--engine=http|playwright]
+                                                Capture items from the manifest as their next round
+  rerun <name> [--summary=S] [--engine=http|playwright]
+                                                Recapture rounds sent back or approved with a note
+
+  Every command takes --dir=PATH. The default session is .agents/verify/<name>/.
 `;
 
-const DEFAULT_PORT = 4377;
 const DEFAULT_TIMEOUT_SEC = 900;
+const POLL_MS = 500;
+const WATCH_MS = 2000;
+const SERVER_START_MS = 10_000;
+const BOUND_LINE = /^verify-serve: http:\/\/127\.0\.0\.1:(\d+)\//;
 
 interface Flags {
-	manifest?: string;
-	items?: string[];
-	engine: "http" | "playwright";
-	port?: number;
-	timeoutSec: number;
-	json: boolean;
-	noOpen: boolean;
-	noCapture: boolean;
-	dir?: string;
+	values: Map<string, string[]>;
+	bools: Set<string>;
 	rest: string[];
 }
 
-function integer(arg: string, prefix: string, min: number, max: number): number {
-	const value = Number.parseInt(arg.slice(prefix.length), 10);
-	if (!Number.isInteger(value) || value < min || value > max)
-		throw new Error(`invalid value: ${arg}`);
+const BOOLEAN = new Set(["json", "no-open", "foreground"]);
+
+function parseFlags(argv: string[]): Flags {
+	const flags: Flags = { values: new Map(), bools: new Set(), rest: [] };
+	for (let index = 0; index < argv.length; index++) {
+		const arg = argv[index] ?? "";
+		if (!arg.startsWith("--")) {
+			flags.rest.push(arg);
+			continue;
+		}
+		const eq = arg.indexOf("=");
+		const key = arg.slice(2, eq === -1 ? undefined : eq);
+		if (BOOLEAN.has(key) && eq === -1) {
+			flags.bools.add(key);
+			continue;
+		}
+		const value = eq === -1 ? argv[++index] : arg.slice(eq + 1);
+		if (value === undefined) throw new Error(`--${key} needs a value`);
+		flags.values.set(key, [...(flags.values.get(key) ?? []), value]);
+	}
+	return flags;
+}
+
+const one = (flags: Flags, key: string) => flags.values.get(key)?.at(-1);
+
+function integer(flags: Flags, key: string, min: number, max: number): number | undefined {
+	const raw = one(flags, key);
+	if (raw === undefined) return undefined;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < min || value > max) throw new Error(`invalid --${key}: ${raw}`);
 	return value;
 }
 
-function parseFlags(argv: string[]): Flags {
-	const flags: Flags = {
-		engine: "playwright",
-		timeoutSec: DEFAULT_TIMEOUT_SEC,
-		json: false,
-		noOpen: false,
-		noCapture: false,
-		rest: [],
-	};
-	for (let index = 0; index < argv.length; index++) {
-		const arg = argv[index] ?? "";
-		if (arg === "--json") flags.json = true;
-		else if (arg === "--no-open") flags.noOpen = true;
-		else if (arg === "--no-capture") flags.noCapture = true;
-		else if (arg.startsWith("--manifest=")) flags.manifest = arg.slice("--manifest=".length);
-		else if (arg === "--manifest") flags.manifest = argv[++index];
-		else if (arg.startsWith("--items="))
-			flags.items = arg
-				.slice("--items=".length)
-				.split(",")
-				.map((item) => item.trim())
-				.filter((item) => item.length > 0);
-		else if (arg.startsWith("--engine=")) {
-			const engine = arg.slice("--engine=".length);
-			if (engine !== "http" && engine !== "playwright")
-				throw new Error("--engine must be http or playwright");
-			flags.engine = engine;
-		} else if (arg.startsWith("--port=")) flags.port = integer(arg, "--port=", 0, 65535);
-		else if (arg.startsWith("--timeout="))
-			flags.timeoutSec = integer(arg, "--timeout=", 0, 86_400);
-		else if (arg.startsWith("--dir=")) flags.dir = arg.slice("--dir=".length);
-		else if (arg.startsWith("--")) throw new Error(`unknown option: ${arg}`);
-		else flags.rest.push(arg);
-	}
-	return flags;
+function write(text: string): void {
+	process.stdout.write(text);
 }
 
 function fail(message: string): number {
@@ -98,134 +104,306 @@ function fail(message: string): number {
 	return 1;
 }
 
-async function openCapturer(engine: Flags["engine"]): Promise<Capturer> {
+async function openCapturer(flags: Flags): Promise<Capturer> {
+	const engine = one(flags, "engine") ?? "playwright";
 	if (engine === "http") return createHttpCapturer();
+	if (engine !== "playwright") throw new Error("--engine must be http or playwright");
 	const { openPlaywrightCapturer } = await import("./playwright-capturer");
 	return openPlaywrightCapturer();
 }
 
-function session(name: string, flags: Flags): VerifyPaths {
-	return verifyPaths(resolveSessionDir(name, process.cwd(), flags.dir));
-}
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-async function sleep(ms: number): Promise<void> {
-	await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForVerdict(paths: VerifyPaths, timeoutSec: number) {
-	const deadline = Date.now() + timeoutSec * 1000;
-	while (true) {
-		const found = claimVerdict(paths);
-		if (found) return found;
-		if (Date.now() >= deadline) return undefined;
-		await sleep(Math.min(200, Math.max(0, deadline - Date.now())));
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
-async function runStart(name: string, flags: Flags): Promise<number | undefined> {
-	if (!flags.manifest) return fail("start requires --manifest=<file>");
-	const manifest = parseManifest(JSON.parse(readFileSync(flags.manifest, "utf8")), name);
-	const paths = session(name, flags);
-	resetSession(paths);
-	saveManifest(paths, manifest);
-	if (!flags.noCapture) {
-		const capturer = await openCapturer(flags.engine);
+function readServer(paths: VerifyPaths): { pid: number; port: number } | undefined {
+	try {
+		const state = JSON.parse(readFileSync(paths.server, "utf8")) as { pid: number; port: number };
+		return isAlive(state.pid) ? state : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function launch(name: string, paths: VerifyPaths, port: number): Promise<{ pid: number; port: number }> {
+	const proc = Bun.spawn({
+		cmd: selfCommand(["verify", "serve", name, "--foreground", `--port=${port}`, `--dir=${paths.dir}`]),
+		stdout: "pipe",
+		stderr: "ignore",
+		stdin: "ignore",
+	});
+	const reader = proc.stdout.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	let bound: number | undefined;
+	const deadline = Date.now() + SERVER_START_MS;
+	while (bound === undefined && Date.now() < deadline) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		const match = BOUND_LINE.exec(buffer);
+		if (match) bound = Number(match[1]);
+	}
+	reader.releaseLock();
+	if (bound === undefined) {
+		proc.kill();
+		throw new Error("verify serve did not report a bound port within 10s");
+	}
+	proc.unref();
+	return { pid: proc.pid, port: bound };
+}
+
+async function runServe(name: string, paths: VerifyPaths, flags: Flags): Promise<number | undefined> {
+	const port = integer(flags, "port", 0, 65535) ?? 0;
+	if (flags.bools.has("foreground")) {
+		const running = await startVerifyServer({ name, paths, port });
+		write(`verify-serve: http://127.0.0.1:${running.port}/\n`);
+		return undefined;
+	}
+	const state = readServer(paths) ?? (await launch(name, paths, port));
+	mkdirSync(paths.dir, { recursive: true });
+	writeFileSync(paths.server, `${JSON.stringify(state)}\n`);
+	const url = `http://127.0.0.1:${state.port}/`;
+	write(`verify: ${url}\n`);
+	if (!flags.bools.has("no-open") && !(await openInBrowser(url)))
+		process.stderr.write(`verify: no browser opener found; visit: ${url}\n`);
+	return 0;
+}
+
+function runStop(name: string, paths: VerifyPaths): number {
+	const state = readServer(paths);
+	if (state) process.kill(state.pid, "SIGTERM");
+	rmSync(paths.server, { force: true });
+	write(`${state ? "stopped" : "not running"} ${name}\n`);
+	return 0;
+}
+
+function runStatus(name: string, paths: VerifyPaths, flags: Flags): number {
+	write(formatStatus(statusReport(readBoard(paths, name), readVerdicts(paths)), flags.bools.has("json")));
+	return 0;
+}
+
+async function runWait(name: string, paths: VerifyPaths, flags: Flags): Promise<number> {
+	const deadline = Date.now() + (integer(flags, "timeout", 0, 86_400) ?? DEFAULT_TIMEOUT_SEC) * 1000;
+	for (;;) {
+		const report = statusReport(readBoard(paths, name), readVerdicts(paths));
+		if (report.reviewed) {
+			write(formatStatus(report, flags.bools.has("json"), 4000));
+			return 0;
+		}
+		if (Date.now() >= deadline) {
+			write("timeout\n");
+			return 1;
+		}
+		await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())));
+	}
+}
+
+async function runWatch(paths: VerifyPaths): Promise<never> {
+	const seen = new Map(Object.entries(readVerdicts(paths)).map(([id, verdict]) => [id, verdict.at]));
+	for (;;) {
+		await sleep(WATCH_MS);
+		let current;
 		try {
-			const result = await captureSession({
-				manifest,
-				paths,
-				capturer,
-				cwd: process.cwd(),
+			current = readVerdicts(paths);
+		} catch {
+			continue;
+		}
+		for (const [id, verdict] of Object.entries(current)) {
+			if (seen.get(id) === verdict.at) continue;
+			seen.set(id, verdict.at);
+			write(`${id} ${verdictLabel(verdict)}${verdict.note ? ` | ${clip(verdict.note, 400)}` : ""}\n`);
+		}
+	}
+}
+
+const widthOf = (name: string) =>
+	/(^|\D)(390|375|360)(\D|$)/.test(name) ? "mobile" : /(^|\D)(768|820|1024)(\D|$)/.test(name) ? "tablet" : "desktop";
+
+function servedName(file: string): string {
+	return basename(file).toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^[^a-z0-9]+/, "");
+}
+
+function importShot(paths: VerifyPaths, sectionId: string, file: string): string {
+	const source = resolve(file);
+	if (!source.endsWith(".png")) throw new Error(`not a png: ${file}`);
+	if (!existsSync(source)) throw new Error(`no such file: ${file}`);
+	const dir = join(paths.shotsDir, sectionId, "added");
+	mkdirSync(dir, { recursive: true });
+	const name = servedName(source);
+	copyFileSync(source, join(dir, name));
+	return `/shots/${sectionId}/added/${name}`;
+}
+
+function imagesFromDir(paths: VerifyPaths, sectionId: string, dir: string, prefix: string): BoardImage[] {
+	const files = new Set(readdirSync(resolve(dir)));
+	const names = [...files]
+		.filter((file) => file.startsWith(`${prefix}after-`) && file.endsWith(".png"))
+		.map((file) => file.slice(`${prefix}after-`.length, -4))
+		.sort();
+	if (names.length === 0) throw new Error(`no ${prefix}after-*.png in ${dir}`);
+	return names.map((shot) => {
+		const before = `${prefix}before-${shot}.png`;
+		const after = importShot(paths, sectionId, join(dir, `${prefix}after-${shot}.png`));
+		if (!files.has(before)) return { label: `${widthOf(shot)} · ${shot}`, before: "missing", after, reason: "no before captured" };
+		return { label: `${widthOf(shot)} · ${shot}`, before: importShot(paths, sectionId, join(dir, before)), after };
+	});
+}
+
+function runAdd(name: string, paths: VerifyPaths, flags: Flags): number {
+	const id = flags.rest[1];
+	const title = one(flags, "title");
+	if (!id || !title) return fail("add needs <name> <id> --title=T");
+	assertVerifyName(id, "section");
+	const board = readBoard(paths, name);
+	const follows = one(flags, "follows");
+	if (follows && !board.sections.some((section) => section.id === follows)) return fail(`follows ${follows} not found`);
+	const shots = one(flags, "shots");
+	const images = shots
+		? imagesFromDir(paths, id, shots, one(flags, "prefix") ?? "")
+		: (flags.values.get("img") ?? []).map((spec) => {
+				const [label, before, after, reason] = spec.split("|");
+				if (!label || !after) throw new Error(`--img needs "label|before|after": ${spec}`);
+				const image: BoardImage = {
+					label,
+					before: before && before !== "missing" ? importShot(paths, id, before) : "missing",
+					after: importShot(paths, id, after),
+				};
+				if (reason) image.reason = reason;
+				return image;
 			});
-			process.stderr.write(`verify: captured ${result.shots} shots\n`);
+	if (images.length === 0) return fail("no images: pass --shots=DIR or --img");
+	const section: Section = { id, title, images };
+	const optional = { summary: one(flags, "summary"), branch: one(flags, "branch"), what_changed: one(flags, "what"), follows };
+	for (const [key, value] of Object.entries(optional)) if (value) Object.assign(section, { [key]: value });
+	const round = integer(flags, "round", 1, 999);
+	if (round) section.round = round;
+	writeBoard(paths, addSection(board, section, one(flags, "pending")));
+	write(`added ${id}: ${images.length} images (${images.filter((image) => image.before === "missing").length} without before)\n`);
+	return 0;
+}
+
+function runPending(name: string, paths: VerifyPaths, flags: Flags, sub: string): number {
+	const key = flags.rest[1];
+	if (!key) return fail("pending needs <name> <key>");
+	let board = readBoard(paths, name);
+	if (sub === "add") {
+		const title = one(flags, "title");
+		if (!title) return fail("pending add needs --title=T");
+		const detail = one(flags, "detail");
+		const follows = one(flags, "follows");
+		board = setPending(board, { key, title, ...(detail ? { detail } : {}), ...(follows ? { follows } : {}) });
+	} else if (sub === "done") board = dropPending(board, key);
+	else return fail("pending takes add or done");
+	writeBoard(paths, board);
+	write(`pending ${sub} ${key}: ${board.pending.length} open\n`);
+	return 0;
+}
+
+async function captureRounds(
+	name: string,
+	paths: VerifyPaths,
+	flags: Flags,
+	plan: { itemId: string; follows?: string; round: number; summary?: string }[],
+): Promise<void> {
+	const manifest = loadManifest(paths);
+	let board = readBoard(paths, name);
+	const targets: CaptureTarget[] = plan.map((entry) => ({ itemId: entry.itemId, sectionId: `${entry.itemId}-r${entry.round}` }));
+	for (const [index, entry] of plan.entries()) {
+		const item = manifest.items.find((candidate) => candidate.id === entry.itemId);
+		const pending = { key: targets[index]?.sectionId ?? "", title: item?.title ?? entry.itemId, detail: entry.summary ?? "Capturing" };
+		board = setPending(board, entry.follows ? { ...pending, follows: entry.follows } : pending);
+	}
+	writeBoard(paths, board);
+	let captured;
+	try {
+		const capturer = await openCapturer(flags);
+		try {
+			captured = await captureSession({ manifest, paths, capturer, cwd: process.cwd(), targets });
 		} finally {
 			await capturer.close();
 		}
+	} catch (error) {
+		writeBoard(paths, targets.reduce((next, target) => dropPending(next, target.sectionId), readBoard(paths, name)));
+		throw error;
 	}
-	const running = await startVerifyServer({ paths, port: flags.port ?? DEFAULT_PORT });
-	const url = `http://127.0.0.1:${running.port}/`;
-	process.stdout.write(`verify: ${url}\n  name : ${name}\n  stack: ${manifest.stackUrl}\n`);
-	if (!flags.noOpen) {
-		const opened = await openInBrowser(url);
-		if (!opened) process.stderr.write(`verify: no browser opener found; visit: ${url}\n`);
+	board = readBoard(paths, name);
+	for (const [index, result] of captured.entries()) {
+		const entry = plan[index];
+		if (!entry) continue;
+		const section = sectionFromCapture(result, entry);
+		board = addSection(board, section, section.id);
+		write(`added ${section.id}: ${section.images.length} images\n`);
 	}
-	return undefined;
+	writeBoard(paths, board);
 }
 
-async function runCapture(name: string, flags: Flags): Promise<number> {
-	const paths = session(name, flags);
+async function runCapture(name: string, paths: VerifyPaths, flags: Flags): Promise<number> {
+	const file = one(flags, "manifest");
+	if (file) saveManifest(paths, parseManifest(JSON.parse(readFileSync(file, "utf8")), name));
 	const manifest = loadManifest(paths);
-	const capturer = await openCapturer(flags.engine);
-	try {
-		const result = await captureSession({
-			manifest,
-			paths,
-			capturer,
-			cwd: process.cwd(),
-			items: flags.items,
-		});
-		process.stdout.write(`verify: captured ${result.shots} shots\n`);
-		return 0;
-	} finally {
-		await capturer.close();
-	}
-}
-
-function runStatus(name: string, flags: Flags): number {
-	const paths = session(name, flags);
-	const manifest = loadManifest(paths);
-	process.stdout.write(formatStatus(statusReport(paths, manifest), flags.json));
+	const wanted = one(flags, "items")?.split(",").map((id) => id.trim()).filter(Boolean) ?? manifest.items.map((item) => item.id);
+	const board = readBoard(paths, name);
+	const summary = one(flags, "summary");
+	const plan = wanted.map((itemId) => {
+		const chain = chains(board).find((candidate) => candidate.last.item === itemId);
+		if (!chain) return { itemId, round: 1, summary };
+		return { itemId, follows: chain.last.id, round: roundOf(chain, chain.rounds.length - 1) + 1, summary: summary ?? "Recaptured" };
+	});
+	await captureRounds(name, paths, flags, plan);
 	return 0;
 }
 
-async function runWait(name: string, flags: Flags): Promise<number> {
-	const paths = session(name, flags);
-	loadManifest(paths);
-	const verdict = await waitForVerdict(paths, flags.timeoutSec);
-	if (!verdict) {
-		process.stdout.write("timeout\n");
-		return 1;
-	}
-	process.stdout.write(formatVerdict(verdict, flags.json));
-	return 0;
-}
-
-async function runRerun(name: string, flags: Flags): Promise<number> {
-	const paths = session(name, flags);
-	const manifest = loadManifest(paths);
-	const ids = reworkIds(readDecisions(paths));
-	if (ids.length === 0) {
-		process.stdout.write("nothing-to-recapture\n");
+async function runRerun(name: string, paths: VerifyPaths, flags: Flags): Promise<number> {
+	const verdicts = readVerdicts(paths);
+	const rework = reworkChains(readBoard(paths, name), verdicts);
+	for (const chain of rework.filter((candidate) => !candidate.last.item)) write(`skip ${chain.last.id}: no capture item\n`);
+	const summary = one(flags, "summary");
+	const plan = rework
+		.filter((chain) => chain.last.item)
+		.map((chain) => ({
+			itemId: chain.last.item ?? "",
+			follows: chain.last.id,
+			round: roundOf(chain, chain.rounds.length - 1) + 1,
+			summary: summary ?? `Rework: ${clip(verdicts[chain.last.id]?.note ?? "", 40)}`,
+		}));
+	if (plan.length === 0) {
+		write("nothing-to-recapture\n");
 		return 0;
 	}
-	const capturer = await openCapturer(flags.engine);
-	try {
-		await captureSession({ manifest, paths, capturer, cwd: process.cwd(), items: ids });
-	} finally {
-		await capturer.close();
-	}
-	forgetItems(paths, ids);
-	const token = bumpReload(paths);
-	process.stdout.write(`verify: recaptured ${ids.join(",")} reload=${token}\n`);
+	await captureRounds(name, paths, flags, plan);
 	return 0;
 }
 
-/** Entry point for verify start, capture, status, wait, and rerun. */
+/** Entry point for every verify command. */
 export async function main(argv: string[]): Promise<number | undefined> {
-	const [command] = argv;
+	const [command, ...args] = argv;
 	if (!command || command === "--help" || command === "-h") {
-		process.stdout.write(USAGE);
+		write(USAGE);
 		return command ? 0 : 1;
 	}
 	try {
-		const flags = parseFlags(argv.slice(1));
+		const sub = command === "pending" ? args.shift() : undefined;
+		const flags = parseFlags(args);
 		const name = flags.rest[0];
 		if (!name) return fail(`${command} requires a name`);
-		if (command === "start") return await runStart(name, flags);
-		if (command === "capture") return await runCapture(name, flags);
-		if (command === "status") return runStatus(name, flags);
-		if (command === "wait") return await runWait(name, flags);
-		if (command === "rerun") return await runRerun(name, flags);
+		const paths = verifyPaths(resolveSessionDir(name, process.cwd(), one(flags, "dir")));
+		if (command === "serve") return await runServe(name, paths, flags);
+		if (command === "stop") return runStop(name, paths);
+		if (command === "status") return runStatus(name, paths, flags);
+		if (command === "wait") return await runWait(name, paths, flags);
+		if (command === "watch") return await runWatch(paths);
+		if (command === "add") return runAdd(name, paths, flags);
+		if (command === "pending") return runPending(name, paths, flags, sub ?? "");
+		if (command === "capture") return await runCapture(name, paths, flags);
+		if (command === "rerun") return await runRerun(name, paths, flags);
 		process.stderr.write(USAGE);
 		return 1;
 	} catch (error) {

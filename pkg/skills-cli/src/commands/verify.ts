@@ -7,7 +7,7 @@ export function registerVerify(program: Command): void {
 	registerRawCommand(program, {
 		name: "verify",
 		description:
-			"Review finished changes side by side and record Approve, Reject, or Tweak",
+			"Review finished changes round by round on a local before-and-after board",
 		run: main,
 	});
 }

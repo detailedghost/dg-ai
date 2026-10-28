@@ -12,9 +12,10 @@ import { createHttpCapturer } from "../src/verify/http-capturer";
 import { assertArgv, runDeclaredTests } from "../src/verify/tests-run";
 
 describe("capture matrix", () => {
-	test("uses desktop 1440 and mobile 390, both themes, and the scrolled and menu states", () => {
+	test("uses desktop 1440, tablet 768, and mobile 390, both themes, and the scrolled and menu states", () => {
 		expect(VIEWPORTS.map((viewport) => [viewport.id, viewport.width, viewport.height])).toEqual([
 			["desktop", 1440, 900],
+			["tablet", 768, 1024],
 			["mobile", 390, 844],
 		]);
 		expect(THEMES).toEqual(["light", "dark"]);

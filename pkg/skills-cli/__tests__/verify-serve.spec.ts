@@ -1,13 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { VERIFY_JS } from "../src/verify/client";
-import { parseManifest } from "../src/verify/manifest";
-import { escapeHtml, renderReview, type ReviewModel } from "../src/verify/page";
-import { saveManifest } from "../src/verify/session";
+import { readVerdicts, verifyPaths, writeBoard } from "../src/verify/board";
 import { VERIFY_CSP, startVerifyServer, type RunningReview } from "../src/verify/serve";
-import { verifyPaths, writeReload } from "../src/verify/verdict";
 
 let server: RunningReview | undefined;
 let dir = "";
@@ -19,144 +15,85 @@ afterEach(() => {
 	dir = "";
 });
 
-function model(overrides: Partial<ReviewModel> = {}): ReviewModel {
-	return {
+const ASSETS = join(import.meta.dir, "../../../plugins/dg/skills/verify/assets");
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+async function boot(): Promise<string> {
+	dir = mkdtempSync(join(tmpdir(), "dg-verify-serve-"));
+	const paths = verifyPaths(dir);
+	writeBoard(paths, {
 		name: "review",
-		stackUrl: "http://127.0.0.1:3000/",
-		token: "1",
-		status: "pending",
-		allApproved: false,
-		claimed: false,
-		httpEngine: true,
-		items: [
-			{
-				id: "home",
-				title: "Home <script>",
-				owner: "dg:implementer",
-				beforeRef: "master",
-				afterRef: "feat/home",
-				hasTarget: false,
-				shots: [],
-				axe: { tool: "dg-axe-summary", engine: "local-static", violations: [], passes: ["document-title"] },
-				tests: { status: "passed", summary: "4 passed", exitCode: 0 },
-			},
-		],
-		tests: { status: "passed", summary: "4 passed", exitCode: 0 },
-		...overrides,
-	};
+		sections: [{ id: "home-r1", title: "Home", images: [{ label: "desktop · a", before: "missing", after: "/shots/home-r1/a.png" }] }],
+		pending: [{ key: "nav-r1", title: "Nav" }],
+	});
+	mkdirSync(join(paths.shotsDir, "home-r1"), { recursive: true });
+	writeFileSync(join(paths.shotsDir, "home-r1", "a.png"), PNG);
+	writeFileSync(join(dir, "secret.png"), PNG);
+	server = await startVerifyServer({ name: "review", paths, port: 0 });
+	return `http://127.0.0.1:${server.port}`;
 }
 
-describe("review document", () => {
-	test("escapes item text and serves the picker without an inline script", () => {
-		const html = renderReview(model());
-		expect(html).toContain("&lt;script&gt;");
-		expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script src="/verify.js">']);
-		expect(html).toContain('data-side="before"');
-		expect(html).toContain('data-side="after"');
-		expect(html).toContain('data-side="target"');
-		expect(html).toContain("No prototype target for this item.");
-		expect(html).toContain("Approve");
-		expect(html).toContain("Reject");
-		expect(html).toContain("Tweak");
-		expect(html).toContain("Open the local stack");
-		expect(html).toContain("HTTP engine");
-		expect(html).not.toContain("onclick=");
-		expect(html).not.toContain("<style");
-		expect(escapeHtml(`a&b<"'>`)).toBe("a&amp;b&lt;&quot;&#39;&gt;");
+const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
+	fetch(`${url}/api/verdicts`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json", Origin: url, "Sec-Fetch-Site": "same-origin", ...headers },
+		body: JSON.stringify(body),
 	});
-
-	test("the static client reloads the same tab and blocks an empty rework note", () => {
-		expect(VERIFY_JS).toContain("location.reload");
-		expect(VERIFY_JS).toContain("A note is required.");
-		expect(VERIFY_JS).not.toContain("eval(");
-		expect(VERIFY_JS).not.toContain("<script");
-	});
-});
 
 describe("verify server", () => {
-	async function boot(): Promise<string> {
-		dir = mkdtempSync(join(tmpdir(), "dg-verify-serve-"));
-		const paths = verifyPaths(dir);
-		saveManifest(
-			paths,
-			parseManifest({
-				name: "review",
-				stackUrl: "http://127.0.0.1:9/",
-				items: [
-					{
-						id: "home",
-						title: "Home",
-						owner: "dg:implementer",
-						beforeUrl: "http://127.0.0.1:1/",
-						afterUrl: "http://127.0.0.1:2/",
-						roles: [{ id: "admin" }],
-					},
-				],
-			}),
-		);
-		writeReload(paths, 1);
-		server = await startVerifyServer({ paths, port: 0 });
-		return `http://127.0.0.1:${server.port}`;
-	}
-
-	test("sends the strict CSP and the static script", async () => {
+	test("serves the board template with the strict CSP and no inline script or style", async () => {
 		const url = await boot();
 		const page = await fetch(url);
 		expect(page.headers.get("content-security-policy")).toBe(VERIFY_CSP);
-		expect(page.headers.get("content-security-policy")).not.toContain("unsafe-inline");
 		const html = await page.text();
-		expect(html).toContain('src="/verify.js"');
-		expect(html).not.toContain(VERIFY_JS);
-		const script = await fetch(`${url}/verify.js`);
+		expect(html).toBe(readFileSync(join(ASSETS, "index.html"), "utf8"));
+		expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script src="/board/board.js">']);
+		expect(html).not.toContain("<style");
+		expect(html).not.toMatch(/\son[a-z]+=/);
+		const script = await fetch(`${url}/board/board.js`);
 		expect(script.headers.get("content-type")).toContain("javascript");
-		expect(await script.text()).toBe(VERIFY_JS);
-		const style = await fetch(`${url}/verify.css`);
-		expect(style.headers.get("content-type")).toContain("text/css");
+		expect(await script.text()).toBe(readFileSync(join(ASSETS, "board.js"), "utf8"));
+		expect((await fetch(`${url}/board/board.css`)).headers.get("content-type")).toContain("text/css");
+		expect((await fetch(`${url}/board/server.ts`)).status).toBe(404);
 	});
 
-	test("records an approval and rejects a rework that has no note", async () => {
+	test("returns the board manifest and serves a shot inside the session", async () => {
 		const url = await boot();
-		const headers = { "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" };
-		const missing = await fetch(`${url}/decision`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify({ itemId: "home", action: "reject", note: " " }),
-		});
-		expect(missing.status).toBe(400);
-		expect(await missing.text()).toContain("a note is required");
-		const approved = await fetch(`${url}/decision`, {
-			method: "POST",
-			headers,
-			redirect: "manual",
-			body: JSON.stringify({ itemId: "home", action: "approve", note: "" }),
-		});
-		expect(approved.status).toBe(303);
-		const after = await (await fetch(url)).text();
-		expect(after).toContain('data-overall="all-approved"');
-		expect(after).toContain('data-all-approved="true"');
-		expect(after).toContain('data-decision="approve"');
+		const board = (await (await fetch(`${url}/api/manifest?name=review`)).json()) as { sections: unknown[]; pending: unknown[] };
+		expect(board.sections).toHaveLength(1);
+		expect(board.pending).toHaveLength(1);
+		const shot = await fetch(`${url}/shots/home-r1/a.png`);
+		expect(shot.status).toBe(200);
+		expect(shot.headers.get("content-type")).toBe("image/png");
+		expect((await fetch(`${url}/shots/../secret.png`)).status).toBe(404);
+		expect((await fetch(`${url}/shots/home-r1/%2e%2e/%2e%2e/secret.png`)).status).toBe(404);
+		expect((await fetch(`${url}/shots/home-r1/missing.png`)).status).toBe(404);
 	});
 
-	test("rejects a cross-site post, a plain body, and a shot path that escapes", async () => {
+	test("merges a verdict and refuses a rework with no note", async () => {
 		const url = await boot();
-		const cross = await fetch(`${url}/decision`, {
+		expect((await post(url, { "home-r1": { status: "changes", note: " " } })).status).toBe(400);
+		const saved = await post(url, { "home-r1": { status: "approved", note: "tidy", at: "ignored" } });
+		expect(saved.status).toBe(200);
+		expect(await saved.json()).toEqual({ ok: true });
+		const stored = readVerdicts(verifyPaths(dir));
+		expect(stored["home-r1"]).toMatchObject({ status: "approved", note: "tidy" });
+		expect(stored["home-r1"]?.at).not.toBe("ignored");
+		expect(await (await fetch(`${url}/api/verdicts`)).json()).toEqual(JSON.parse(JSON.stringify(stored)));
+	});
+
+	test("refuses a cross-site post, a form body, a foreign host, and other methods", async () => {
+		const url = await boot();
+		expect((await post(url, {}, { Origin: "https://example.com", "Sec-Fetch-Site": "cross-site" })).status).toBe(403);
+		expect((await post(url, {}, { "Sec-Fetch-Site": "same-site" })).status).toBe(403);
+		const form = await fetch(`${url}/api/verdicts`, {
 			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Origin: "https://example.com",
-				"Sec-Fetch-Site": "cross-site",
-			},
-			body: JSON.stringify({ itemId: "home", action: "approve", note: "" }),
+			headers: { "Content-Type": "application/x-www-form-urlencoded", "Sec-Fetch-Site": "same-origin" },
+			body: "home-r1=approved",
 		});
-		expect(cross.status).toBe(403);
-		const plain = await fetch(`${url}/decision`, {
-			method: "POST",
-			headers: { "Content-Type": "text/plain", "Sec-Fetch-Site": "same-origin" },
-			body: "itemId=home",
-		});
-		expect(plain.status).toBe(415);
-		expect((await fetch(`${url}/shots/../../etc/passwd`)).status).toBe(404);
-		expect((await fetch(`${url}/shots/home/before/admin/desktop/light/default.png`)).status).toBe(404);
+		expect(form.status).toBe(415);
+		expect((await fetch(url, { headers: { Host: "evil.test" } })).status).toBe(403);
 		expect((await fetch(url, { method: "PUT" })).status).toBe(405);
+		expect(readVerdicts(verifyPaths(dir))).toEqual({});
 	});
 });

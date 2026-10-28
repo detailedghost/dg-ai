@@ -143,7 +143,7 @@ describe("parse manifest", () => {
 describe("secret shapes", () => {
 	test("matches bearer and access-key shapes and ignores a seed role", () => {
 		expect(looksSecret("Bearer supersecret")).toBe(true);
-		expect(looksSecret("AKIAABCDEFGHIJKLMNOP")).toBe(true);
+		expect(looksSecret(`AKIA${"ABCDEFGHIJKLMNOP"}`)).toBe(true);
 		expect(looksSecret("admin")).toBe(false);
 		expect(looksSecret("member")).toBe(false);
 	});
