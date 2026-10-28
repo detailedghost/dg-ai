@@ -105,6 +105,77 @@ describe("slice-wave runner", () => {
 	});
 });
 
+describe("slice-wave runner correction deferrals", () => {
+	const stage = { agentType: "dg:js", model: "sonnet", effort: "medium" };
+	const body = readFileSync(RUNNER, "utf8").replace(/^export /m, "");
+
+	async function wave(fixResult: unknown) {
+		const labels: string[] = [];
+		const agent = async (_prompt: string, options: { label: string }) => {
+			labels.push(options.label);
+			if (options.label.startsWith("red:") || options.label.startsWith("green:"))
+				return { testFiles: [], deferrals: [] };
+			if (options.label.startsWith("yellow:"))
+				return { changedFiles: ["a.ts"], testsPass: true, deferrals: [] };
+			if (options.label.startsWith("fix:")) return fixResult;
+			return {
+				findings: [{ severity: "MEDIUM", file: "a.ts", issue: "x", owner: "engineering" }],
+			};
+		};
+		const pipeline = async (
+			items: unknown[],
+			...stages: ((value: unknown) => unknown)[]
+		) =>
+			Promise.all(
+				items.map(async (item) => {
+					let value = item;
+					for (const run of stages) value = await run(value);
+					return value;
+				}),
+			);
+		const parallel = (jobs: (() => unknown)[]) => Promise.all(jobs.map((job) => job()));
+		const args = {
+			slices: [{ id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" }],
+			roles: { "qa-writer": stage, wave: stage, security: stage },
+		};
+		const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+		const result = await new AsyncFunction(
+			"args",
+			"pipeline",
+			"parallel",
+			"agent",
+			"log",
+			body,
+		)(args, pipeline, parallel, agent, () => {});
+		return { result, labels };
+	}
+
+	test("surfaces a blocking correction deferral and stops the correction loop", async () => {
+		const { result, labels } = await wave({
+			changedFiles: [],
+			testsPass: true,
+			deferrals: [{ type: "SPEC", text: "which API shape?" }],
+		});
+		expect(result.slices[0].status).toBe("blocked");
+		expect(result.slices[0].deferrals).toEqual([
+			{ type: "SPEC", text: "which API shape?" },
+		]);
+		expect(labels.filter((label) => label.includes("#1"))).toEqual([
+			"fix:engineering:1#1",
+		]);
+	});
+
+	test("keeps a non-blocking correction deferral on the slice result", async () => {
+		const { result } = await wave({
+			changedFiles: [],
+			testsPass: true,
+			deferrals: [{ type: "CRITICAL", text: "note" }],
+		});
+		expect(result.slices[0].status).not.toBe("blocked");
+		expect(result.slices[0].deferrals).toContainEqual({ type: "CRITICAL", text: "note" });
+	});
+});
+
 describe("dg-skills assign resolve", () => {
 	test.each(["claude", "codex", "grok"])(
 		"matches the golden for layer 0 on %s",
@@ -242,7 +313,7 @@ describe("dg-skills assign resolve", () => {
 		]);
 		for (const [key, body] of Object.entries(templates))
 			expect(body, key).toContain("Working directory: /work/tree");
-		expect(templates.proxy).toContain("--cwd /work/tree");
+		expect(templates.proxy).toContain("--cwd '/work/tree'");
 		expect(templates.proxy).not.toContain("<repo working directory>");
 	});
 
@@ -263,6 +334,19 @@ describe("dg-skills assign resolve", () => {
 		expect(alphaTwo?.brief).toContain("Build alpha two");
 	});
 
+	test("does not fold a hyphenated sibling id into a shorter id", async () => {
+		const dir = scratch();
+		const file = join(dir, "plan.md");
+		const text = readFileSync(plan("plan-string-ids.md"), "utf8")
+			.replaceAll("A2", "api-tests")
+			.replaceAll("id: A\n", "id: api\n")
+			.replaceAll("Slice A ", "Slice api ");
+		writeFileSync(file, text);
+		const { slices } = await resolved([file, "--layer", "0"]);
+		expect(slices[0]?.brief).toContain("Build alpha");
+		expect(slices[0]?.brief).not.toContain("Build alpha two");
+	});
+
 	test("lets stage prompts read the spec, scratchpad and referenced assets from outside the working directory", async () => {
 		const { templates } = await resolved([plan("plan-high.md"), "--layer", "0"]);
 		for (const [key, body] of Object.entries(templates)) {
@@ -281,6 +365,18 @@ describe("dg-skills assign resolve", () => {
 		const result = await run(["resolve", file, "--layer", "0"]);
 		expect(result.status).toBe(1);
 		expect(result.err).toContain("Effort");
+	});
+
+	test("shell-quotes a working directory with spaces, an apostrophe and a dollar sign in the proxy command", async () => {
+		const cwd = "/work/it's $HOME tree";
+		const { templates } = await resolved([
+			plan("plan-high.md"),
+			"--layer",
+			"1",
+			"--cwd",
+			cwd,
+		]);
+		expect(templates.proxy).toContain(`--cwd '/work/it'\\''s $HOME tree'`);
 	});
 
 	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { bareAgent, isRecord } from "@dg/common";
+import { shellCommand } from "@dg/common/node";
 import { qualifiedAgent } from "../proxy/packaged-personas";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
 import { sliceLayers } from "../spec/lint-waves";
@@ -176,7 +177,7 @@ function templatesFor(proxied: boolean, cwd: string): Record<string, string> {
 			key === "proxy" ? "" : `${ENVELOPE_HEAD}${ENVELOPE_TAIL[key] ?? ""}\n\n`;
 		const body = readFileSync(path, "utf8").replaceAll(
 			"<repo working directory>",
-			cwd,
+			() => shellCommand([cwd]),
 		);
 		out[key] = `${REMINDER}\n\n${directive}\n\n${envelope}${body}`;
 	}

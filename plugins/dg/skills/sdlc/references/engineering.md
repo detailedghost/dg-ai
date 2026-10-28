@@ -24,7 +24,7 @@ For each layer in order:
 1. Resolve the layer and write its runner in one call. Workflow refuses a `scriptPath` outside the working directory and the directories added to the session, and the installed plugin cache is outside both, so the helper writes into the session scratchpad (`<scratchpad>`):
 
 ```
-~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad>
+~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$cwd"
 ```
 
    The helper layers `slices[]` the way `spec lint-waves` does and picks each slice's stages from `plugins/dg/skills/assign/references/model-tiers.json`: the primary agent (honoring `agents.effort` and the spec's `## Execution` `model:`/`effort:` pin), each `agents.qa[]` reviewer, and the shared `dg:qa-writer`, `dg:wave` and `dg:security` roles. It inlines the five templates (`qa-writer-red.md`, `slice-engineering.md`, `qa-writer-green.md`, `wave.md`, `correction.md`), plus `slice-engineering-proxy.md` when a slice sets `agents.proxy`, each behind the return-contract reminder below. It bakes the result into the runner as `const WAVE_ARGS` and prints the file path. Exit 1 means a slice has no `agents.primary` (run `/dg:assign`), the layer is empty, or the pin asks for `fable` on a primary that is not `dg:arch`, `dg:design` or `dg:foreman`. Add `--runtime codex|grok` to resolve for another runtime. Without `--wave` it prints the `WAVE_ARGS` JSON instead.

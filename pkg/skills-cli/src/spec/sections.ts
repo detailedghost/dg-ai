@@ -39,7 +39,7 @@ export interface SliceBlock {
 /** The `### Slice <id>` lines found under each `##` section, in file order. */
 export function sliceBlocks(lines: string[], number: string): SliceBlock[] {
 	const start = new RegExp(
-		`^### Slice ${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_])`,
+		`^### Slice ${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`,
 	);
 	const blocks: SliceBlock[] = [];
 	let section = "";

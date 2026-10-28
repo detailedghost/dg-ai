@@ -196,6 +196,7 @@ const results = await pipeline(
       .filter((rv, i, all) => all.findIndex((other) => other.agentType === rv.agentType) === i);
     const reviewerNames = reviewers.map((rv) => bareAgent(rv.agentType));
     let residual = [];
+    let correctionDeferrals = [];
     let deadReviewers = [];
     let round = 0;
     while (round <= maxCorrectionRounds) {
@@ -218,7 +219,7 @@ const results = await pipeline(
       round++;
       const byOwner = { engineering: [], "qa-writer": [] };
       for (const f of residual) (byOwner[f.owner === "qa-writer" ? "qa-writer" : "engineering"] ||= []).push(f);
-      await parallel(
+      const fixes = await parallel(
         Object.entries(byOwner)
           .filter(([, fs]) => fs.length)
           .map(([owner, fs]) => () => {
@@ -239,6 +240,18 @@ const results = await pipeline(
             );
           }),
       );
+      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => fix.deferrals || []));
+      if (blockingDeferral(correctionDeferrals))
+        return {
+          sliceId: slice.id,
+          status: "blocked",
+          changedFiles: st.changedFiles,
+          deferrals: [...st.deferrals, ...correctionDeferrals],
+          residualFindings: residual,
+          unverifiedStages: st.unverified,
+          notes: st.notes,
+          summary: "blocked on correction deferral — orchestrator must resolve",
+        };
     }
     const escalate = residual.filter(
       (f) => f.severity === "CRITICAL" || (f.severity === "HIGH" && reviewerNames.includes(bareAgent(roles.security.agentType))),
@@ -251,7 +264,7 @@ const results = await pipeline(
       sliceId: slice.id,
       status,
       changedFiles: st.changedFiles,
-      deferrals: [...st.deferrals, ...escalate.map((f) => ({ type: "CRITICAL", text: `${f.file}: ${f.issue}` }))],
+      deferrals: [...st.deferrals, ...correctionDeferrals, ...escalate.map((f) => ({ type: "CRITICAL", text: `${f.file}: ${f.issue}` }))],
       residualFindings: residual,
       unverifiedStages,
       notes: st.notes,

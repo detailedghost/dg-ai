@@ -85,7 +85,7 @@ the runner with its resolved args baked in. Workflow cannot read the plugin cach
 into the session scratchpad. Then Workflow runs the printed path:
 
 ```sh
-~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad>
+~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$WORKTREE_PATH"
 ```
 
 ```
