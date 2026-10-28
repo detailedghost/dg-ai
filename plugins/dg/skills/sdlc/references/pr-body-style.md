@@ -16,7 +16,15 @@ No marketing adjectives, no passive voice, no filler ("all of", "in order to").
 
 ## Test plan
 <how you verified it — command run, output, or a checklist>
+
+## Risk
+<1-2 sentences: what could break, and who would notice>
+
+## How to revert
+<the one step that undoes it, such as "Revert this PR" or the flag to turn off>
 ```
+
+Keep Risk and How to revert even for a small change. A docs-only PR can say "None" and "Revert this PR".
 
 ## Self-check before you open or edit a PR/MR
 

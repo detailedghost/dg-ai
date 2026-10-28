@@ -38,7 +38,8 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 4. **Reuse an existing PR.** `gh pr view --json url -q .url`. If one comes back, skip to step 6.
    Never open a second PR for the same branch.
 5. **Open the PR.** With `--draft`, pass `--draft` to `gh pr create`. Title: one conventional-commit line covering the change as a whole. Body: two
-   sentences of context, then one tight bullet per logical change.
+   sentences of context, then one tight bullet per logical change, then a `Risk` line (what could break) and a
+   `How to revert` line (the one step that undoes it).
 6. **Open it in the browser.** `~/.dg/bin/dg-skills batch-open --group <name> <url>`, defaulting to group
    `pr`. Bootstrap the binary first when missing. The bootstrap runs `sh` and `curl`, which this skill
    does not pre-approve, so Claude Code asks before each one:
