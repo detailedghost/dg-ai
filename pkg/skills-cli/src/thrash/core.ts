@@ -16,10 +16,18 @@ import {
 	type PostReviewInput,
 	type PullRequest,
 	type ReviewCommentInput,
+	type ReviewSummary,
 	type ReviewThread,
 	type ReviewVerdict,
 } from "../provider/types";
-import { THRASH_CLASSES_MARKER_PREFIX, THRASH_REVIEW_MARKER, TIERS, type Tier } from "./constants";
+import {
+	CLASS_HINT_MIN_PRS,
+	THRASH_CLASSES_MARKER_PREFIX,
+	THRASH_FINDING_MARKER_PREFIX,
+	THRASH_REVIEW_MARKER,
+	TIERS,
+	type Tier,
+} from "./constants";
 import { type ReviewPolicy, selectPhase } from "./policy";
 import { pickSass } from "./sass";
 
@@ -135,6 +143,8 @@ export interface CompileOptions {
 	maxImprovements?: number;
 	reReview?: ReReview;
 	cleared?: Cleared;
+	headSha?: string;
+	classHistory?: Readonly<Record<string, number>>;
 }
 
 export interface ReReview {
@@ -771,10 +781,10 @@ function verdictWithin(
 	for (const tier of TIERS) {
 		const limit = limits[tier];
 		if (limit === undefined || tally[tier] <= limit) continue;
-		const found = `${plural(tally[tier], `${tier} finding`)} found`;
+		const open = `${plural(tally[tier], `${tier} finding`)} ${tally[tier] === 1 ? "is" : "are"} open`;
 		return {
 			verdict: "request_changes",
-			reason: limit === 0 ? found : `${found}, limit is ${limit} ${scope}`,
+			reason: limit === 0 ? open : `${open}, limit is ${limit} ${scope}`,
 		};
 	}
 	return { verdict: "approve", reason: counts };
@@ -810,6 +820,36 @@ export function renderComment(finding: Finding): string {
 		? `\n\nSame class (${finding.class}) at: ${finding.otherPlaces.join(", ")}`
 		: "";
 	return `${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}**${tag}${preExisting} ${finding.body}${note}${sameClass}`;
+}
+
+/** The posted inline body: the comment plus a hidden key a later round reads back to see if the finding returned. */
+export function renderInlineBody(finding: Finding): string {
+	const key = findingKey(finding);
+	return key ? `${renderComment(finding)}\n\n${THRASH_FINDING_MARKER_PREFIX}${JSON.stringify(key)} -->` : renderComment(finding);
+}
+
+/** The class key when a class is set, else the title key; empty when the finding names neither. */
+function findingKey(finding: Finding): string {
+	return classKey(finding.class ?? "") || classKey(finding.title);
+}
+
+function threadKey(thread: ReviewThread): string | undefined {
+	const body = thread.comments[0]?.body ?? "";
+	const start = body.indexOf(THRASH_FINDING_MARKER_PREFIX);
+	if (start === -1) return undefined;
+	const end = body.indexOf(" -->", start);
+	try {
+		const key: unknown = JSON.parse(body.slice(start + THRASH_FINDING_MARKER_PREFIX.length, end));
+		return typeof key === "string" ? key : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Same file, and the same class or title key. A thread with no key cannot be judged, so it never matches. */
+function isSameFinding(thread: ReviewThread, finding: Finding): boolean {
+	const key = threadKey(thread);
+	return key !== undefined && thread.path === finding.path && key === findingKey(finding);
 }
 
 const THRASH_MARKERS = Object.values(TIER_EMOJI);
@@ -968,6 +1008,7 @@ interface BodySlots {
 	reconsider: boolean;
 	reReview?: ReReview;
 	cleared?: Cleared;
+	hints: Array<{ name: string; text: string }>;
 }
 
 function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): string {
@@ -1026,6 +1067,7 @@ function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): str
 	];
 	const bullets = [
 		...(cleared ? [`- **Cleared:** ${cleared}`] : []),
+		...slots.hints.map(({ name, text }) => `- **${name.charAt(0).toUpperCase()}${name.slice(1)}:** ${text}`),
 		...(review.preExisting.length > 0
 			? [
 					`- **Pre-existing:** ${review.preExisting.length}, not counted.`,
@@ -1064,27 +1106,89 @@ function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): str
 	return lines.join("\n");
 }
 
-function policyTally(files: DiffFile[], findings: Finding[], opts: CompileOptions): Record<Tier, number> {
+interface Reconciled {
+	tally: Record<Tier, number>;
+	fixed: number;
+}
+
+function reconcileThreads(files: DiffFile[], findings: Finding[], opts: CompileOptions): Reconciled {
 	const tally = openPriorTally(opts.existing, opts.reviewer);
 	const unmatched = opts.existing.flatMap((thread) => {
 		const tier = threadTier(thread);
 		return tier && !thread.resolved && !isAnswered(thread) && isThrashThread(thread, opts.reviewer)
 			? [{ thread, tier }] : [];
 	}).sort((a, b) => tierRank(a.tier) - tierRank(b.tier));
+	const consume = (index: number, finding: Finding) => {
+		const [{ tier }] = unmatched.splice(index, 1);
+		if (tierRank(finding.tier) < tierRank(tier)) {
+			tally[tier] -= 1;
+			tally[finding.tier] += 1;
+		}
+	};
 	for (const finding of [...findings].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
 		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
 		const index = anchor ? unmatched.findIndex(({ thread }) => threadAtAnchor(thread, anchor)) : -1;
+		const moved = unmatched.findIndex(({ thread }) => isOutdatedThread(thread) && isSameFinding(thread, finding));
 		if (index !== -1) {
-			const [{ tier }] = unmatched.splice(index, 1);
-			if (tierRank(finding.tier) < tierRank(tier)) {
-				tally[tier] -= 1;
-				tally[finding.tier] += 1;
-			}
+			consume(index, finding);
+		} else if (moved !== -1) {
+			consume(moved, finding);
 		} else if (!anchor || priorThreadAt(anchor, opts.existing, opts.reviewer) !== "resolved" || tierRank(finding.tier) <= tierRank("high")) {
 			tally[finding.tier] += 1;
 		}
 	}
-	return tally;
+	let fixed = 0;
+	for (const { thread, tier } of unmatched) {
+		if (!isOutdatedThread(thread) || threadKey(thread) === undefined) continue;
+		tally[tier] -= 1;
+		fixed += 1;
+	}
+	return { tally, fixed };
+}
+
+function answeredThreads(existing: ReviewThread[], reviewer?: string): number {
+	return existing.filter(
+		(thread) => threadTier(thread) && !thread.resolved && isAnswered(thread) && isThrashThread(thread, reviewer),
+	).length;
+}
+
+const classHint = (count: number) =>
+	`This class came up in ${count} recent PRs. Consider a rule in docs/code_review.md or a lint check.`;
+
+function isThrashReview(review: ReviewSummary, reviewer?: string): boolean {
+	return (
+		review.state !== "PENDING" &&
+		review.body.includes(THRASH_REVIEW_MARKER) &&
+		(reviewer === undefined || sameLogin(review.author, reviewer))
+	);
+}
+
+/** Commit of the latest submitted thrash review, so the next round can review only what came after it. */
+export function lastReviewedSha(reviews: ReviewSummary[], reviewer?: string): string | undefined {
+	return reviews.filter((r) => isThrashReview(r, reviewer) && r.commitId).at(-1)?.commitId;
+}
+
+/** Class keys written into a review body by the hidden class marker; empty when absent or unreadable. */
+export function parseClassMarker(body: string): string[] {
+	const start = body.indexOf(THRASH_CLASSES_MARKER_PREFIX);
+	if (start === -1) return [];
+	const end = body.indexOf(" -->", start);
+	try {
+		const names: unknown = JSON.parse(body.slice(start + THRASH_CLASSES_MARKER_PREFIX.length, end));
+		return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
+/** For each class key, how many of the given PRs have a thrash review that names it. */
+export function classPrCounts(reviewsByPr: ReviewSummary[][], reviewer?: string): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const reviews of reviewsByPr) {
+		const keys = new Set(reviews.filter((r) => isThrashReview(r, reviewer)).flatMap((r) => parseClassMarker(r.body)));
+		for (const key of keys) counts[key] = (counts[key] ?? 0) + 1;
+	}
+	return counts;
 }
 
 export function compileReview(files: DiffFile[], output: AgentOutput, opts: CompileOptions): CompiledReview {
@@ -1134,7 +1238,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		if (finding.tier === "nit") nitsKept += 1;
 		posted.push({
 			finding,
-			comment: { ...anchor, tier: finding.tier, title: finding.title, body: renderComment(finding) },
+			comment: { ...anchor, tier: finding.tier, title: finding.title, body: renderInlineBody(finding) },
 		});
 	}
 
@@ -1162,9 +1266,8 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		});
 	}
 	const counted = findings.filter((f) => !f.preExisting);
-	const tally = phase
-		? policyTally(files, counted, opts)
-		: tallyFindings(counted);
+	const reconciled = reconcileThreads(files, counted, opts);
+	const tally = phase ? reconciled.tally : tallyFindings(counted);
 	const decided = phase
 		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")
 		: decideVerdict(tally, opts.spice, opts.commentOnly);
@@ -1190,11 +1293,18 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		phase: phase?.name || undefined,
 		sass: opts.sassSeed === undefined ? undefined : pickSass(verdict, tally, opts.sassSeed),
 	};
+	const answered = answeredThreads(opts.existing, opts.reviewer);
+	const cleared =
+		opts.cleared ?? (reconciled.fixed + answered > 0 ? { fixed: reconciled.fixed, sha: opts.headSha, answered } : undefined);
+	const hints = compiled.classes.flatMap(({ name }) => {
+		const count = opts.classHistory?.[classKey(name)] ?? 0;
+		return count >= CLASS_HINT_MIN_PRS ? [{ name, text: classHint(count) }] : [];
+	});
 	const reconsider =
 		decided.verdict === "request_changes" &&
 		opts.round !== undefined &&
 		opts.round > (opts.policy?.reconsiderAfter ?? DEFAULT_RECONSIDER_AFTER);
-	return { ...compiled, body: renderBody(compiled, { reconsider, reReview: opts.reReview, cleared: opts.cleared }) };
+	return { ...compiled, body: renderBody(compiled, { reconsider, reReview: opts.reReview, cleared, hints }) };
 }
 
 export function toPostReviewInput(review: CompiledReview): PostReviewInput {

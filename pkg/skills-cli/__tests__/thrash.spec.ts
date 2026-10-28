@@ -20,6 +20,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { BACKENDS } from "../src/proxy";
+import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
 import { EXIT } from "../src/utils/legacy-command";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
@@ -510,7 +511,7 @@ describe("remote mode via the GitHub adapter", () => {
 			untracked: [],
 		});
 		expect(diffOut.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
-		expect(cliFixtures.readCalls(gh.log)[0]).toBe(
+		expect(cliFixtures.readCalls(gh.log)).toContain(
 			"pr diff 12 -R acme/widgets --color never",
 		);
 
@@ -569,7 +570,7 @@ describe("remote mode via the GitHub adapter", () => {
 			},
 		]);
 		expect(payload.body).toContain(
-			"**Verdict:** Request changes. 1 critical finding found.",
+			"**Verdict:** Request changes. 1 critical finding is open.",
 		);
 
 		writeFileSync(
@@ -901,6 +902,148 @@ describe("remote mode via the GitHub adapter", () => {
 		const result = run(["post", PR_URL, "--review", review], { cwd });
 		expect(result.exitCode).toBe(EXIT.ERR);
 		expect(result.stderr).toContain("compiled for .");
+	});
+});
+
+describe("review rounds via the GitHub adapter", () => {
+	const DELTA_DIFF = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -3,2 +3,3 @@
+ const c = 4;
++const d = 5;
+ export { a, b };
+`;
+	const LAST_SHA = "aaa1111222";
+	const HEAD_SHA = "bbb2222333";
+	const classMarker = (names: string[]) =>
+		`<!-- dg:thrash-classes ${JSON.stringify(names)} -->\n${THRASH_REVIEW_MARKER}`;
+	const thrashReview = (body: string, commit_id: string) => [
+		[{ user: { login: "thrashley[bot]" }, body, state: "COMMENTED", commit_id }],
+	];
+
+	interface Setup {
+		reviews?: unknown;
+		status?: string;
+		merged?: number;
+		history?: unknown;
+		historyFails?: boolean;
+	}
+
+	function rounds(setup: Setup = {}) {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-rounds-");
+		const write = (name: string, text: string) => {
+			const file = join(dir, name);
+			writeFileSync(file, text);
+			return file;
+		};
+		const mergedPrs = Array.from({ length: setup.merged ?? 0 }, (_, i) =>
+			cliFixtures.restPr(30 + i, `merged-${i}`, { state: "closed", merged_at: "2026-01-01T00:00:00Z" }),
+		);
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"--jq .status"*)
+    if [ "$FAKE_STATUS" = "gone" ]; then echo 'gh: Not Found (HTTP 404)' >&2; exit 1; fi
+    echo "$FAKE_STATUS"
+    ;;
+  *"/compare/"*)
+    cat "$FAKE_DELTA"
+    ;;
+  *"pr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"pr view 12"*)
+    echo '{"headRefOid":"${HEAD_SHA}"}'
+    ;;
+  *"pulls/12/reviews"*)
+    cat "$FAKE_REVIEWS"
+    ;;
+  *"/pulls --method GET"*)
+    if [ -n "$FAKE_HISTORY_FAILS" ]; then echo 'history unavailable' >&2; exit 1; fi
+    cat "$FAKE_PRS"
+    ;;
+  *"/pulls/"*"/reviews"*)
+    cat "$FAKE_HISTORY"
+    ;;
+  *"api graphql"*)
+    echo '${EMPTY_THREADS}'
+    ;;`),
+		);
+		const env: Record<string, string> = {
+			GH_BIN: gh.bin,
+			AI_VCS_PROVIDER: "github",
+			FAKE_CALL_LOG: gh.log,
+			FAKE_DIFF: write("pr.diff", GH_DIFF),
+			FAKE_DELTA: write("delta.diff", DELTA_DIFF),
+			FAKE_STATUS: setup.status ?? "ahead",
+			FAKE_REVIEWS: write("reviews.json", JSON.stringify(setup.reviews ?? [[]])),
+			FAKE_PRS: write("prs.json", JSON.stringify(mergedPrs)),
+			FAKE_HISTORY: write("history.json", JSON.stringify(setup.history ?? [[]])),
+			...(setup.historyFails ? { FAKE_HISTORY_FAILS: "1" } : {}),
+		};
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const diff = () => {
+			const result = run(["diff", PR_URL], { cwd, env });
+			expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+			return JSON.parse(result.stdout);
+		};
+		const compile = (plan: { diffPath: string; chunks: Array<{ findingsPath: string }> }, findings: unknown[] = []) => {
+			findingsFile(plan, findings);
+			const result = run(["compile", PR_URL, "--diff", plan.diffPath, "--json"], { cwd, env });
+			expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+			const { review } = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8"));
+			return { review, stderr: result.stderr };
+		};
+		return { diff, compile, gh };
+	}
+
+	test("reviews only the diff since the last reviewed commit and names it in the summary", () => {
+		const { diff, compile, gh } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA) });
+		const plan = diff();
+		expect(plan.reReview).toEqual({ sha: LAST_SHA, files: 1, lines: 1 });
+		expect(plan.stats).toMatchObject({ files: 1, added: 1, deleted: 0 });
+		expect(cliFixtures.readCalls(gh.log).join("\n")).toContain(`compare/${LAST_SHA}...${HEAD_SHA}`);
+		const { review } = compile(plan);
+		expect(review.body).toContain(`> - Only the diff since \`${LAST_SHA.slice(0, 7)}\`: 1 file, 1 line.`);
+	});
+
+	test.each([
+		["the commit is gone after a force push", "gone"],
+		["the commit is not an ancestor of head", "diverged"],
+	])("falls back to the full diff when %s", (_name, status) => {
+		const { diff, compile } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA), status });
+		const plan = diff();
+		expect(plan.reReview).toBeUndefined();
+		expect(plan.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
+		expect(compile(plan).review.body).not.toContain("Re-review");
+	});
+
+	test("reviews the full diff in round 1", () => {
+		const { diff } = rounds();
+		expect(diff().stats).toMatchObject({ added: 2, deleted: 1 });
+	});
+
+	const classed = [
+		{ path: "src/a.ts", line: 2, tier: "medium", title: "Missing await", class: "Missing await", body: "Not awaited." },
+	];
+	const HINT = "This class came up in 3 recent PRs. Consider a rule in docs/code_review.md or a lint check.";
+
+	test("adds the repeated-class hint when 3 recent merged PRs hit the class", () => {
+		const { diff, compile } = rounds({ merged: 3, history: thrashReview(classMarker(["missing await"]), "x1") });
+		expect(compile(diff(), classed).review.body).toContain(HINT);
+	});
+
+	test("leaves the hint out when only 2 recent merged PRs hit the class", () => {
+		const { diff, compile } = rounds({ merged: 2, history: thrashReview(classMarker(["missing await"]), "x1") });
+		expect(compile(diff(), classed).review.body).not.toContain("recent PRs");
+	});
+
+	test("skips the hint without an error when the history read fails", () => {
+		const { diff, compile } = rounds({ merged: 3, historyFails: true });
+		const { review, stderr } = compile(diff(), classed);
+		expect(review.body).not.toContain("recent PRs");
+		expect(review.verdict).toBeDefined();
+		expect(stderr).toContain("skipping the repeated-class hint");
 	});
 });
 

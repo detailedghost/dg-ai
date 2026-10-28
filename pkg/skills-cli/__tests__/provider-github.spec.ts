@@ -1439,6 +1439,84 @@ describe("fetchDiff", () => {
 	});
 });
 
+describe("listReviews", () => {
+	test("flattens the paginated reviews into author, body, state and commit", async () => {
+		const log = callLogPath();
+		fakeGh(
+			ghScript(`
+  *"pulls/12/reviews"*)
+    echo '[[{"user":{"login":"thrashley[bot]"},"body":"a","state":"COMMENTED","commit_id":"abc1234"}],[{"user":null,"body":null,"state":"APPROVED","commit_id":"def5678"}]]'
+    exit 0
+    ;;`),
+		);
+
+		const reviews = await createGithubProvider().listReviews({ number: 12, repo: { host: "github.com", owner: "acme", repo: "widgets" } });
+
+		expect(reviews).toEqual([
+			{ author: "thrashley[bot]", body: "a", state: "COMMENTED", commitId: "abc1234" },
+			{ author: "", body: "", state: "APPROVED", commitId: "def5678" },
+		]);
+		expect(readCalls(log)).toEqual(["api repos/acme/widgets/pulls/12/reviews --paginate --slurp"]);
+	});
+});
+
+describe("fetchDiffSince", () => {
+	const ref = { number: 12, repo: { host: "github.com", owner: "acme", repo: "widgets" } };
+	const compare = "compare/abc1234...fff9999";
+	const script = (status: string) =>
+		ghScript(`
+  *"pr view 12"*)
+    echo '{"headRefOid":"fff9999"}'
+    exit 0
+    ;;
+  *"--jq .status"*)
+    ${status}
+    ;;
+  *"${compare}"*)
+    printf 'diff --git a/x b/x\\n'
+    exit 0
+    ;;`);
+
+	test("returns the compare diff when the commit is an ancestor of head", async () => {
+		const log = callLogPath();
+		fakeGh(script("echo ahead; exit 0"));
+
+		const diff = await createGithubProvider().fetchDiffSince(ref, "abc1234");
+
+		expect(diff).toStartWith("diff --git a/x b/x");
+		expect(readCalls(log)).toEqual([
+			"pr view 12 -R acme/widgets --json headRefOid",
+			`api repos/acme/widgets/${compare} --jq .status`,
+			`api repos/acme/widgets/${compare} -H Accept: application/vnd.github.diff`,
+		]);
+	});
+
+	test.each(["echo diverged; exit 0", "echo identical; exit 0", "echo behind; exit 0"])(
+		"returns null when the status is not ahead (%s)",
+		async (status) => {
+			fakeGh(script(status));
+			expect(await createGithubProvider().fetchDiffSince(ref, "abc1234")).toBeNull();
+		},
+	);
+
+	test("returns null when GitHub no longer has the commit", async () => {
+		fakeGh(script("echo 'gh: Not Found (HTTP 404)' >&2; exit 1"));
+		expect(await createGithubProvider().fetchDiffSince(ref, "abc1234")).toBeNull();
+	});
+
+	test("returns null for a value that is not a commit sha, without shelling out", async () => {
+		const log = callLogPath();
+		fakeGh(script("echo ahead; exit 0"));
+		expect(await createGithubProvider().fetchDiffSince(ref, "../../x")).toBeNull();
+		expect(readCalls(log)).toEqual([]);
+	});
+
+	test("rethrows other failures", async () => {
+		fakeGh(script("echo 'gh: Bad credentials (HTTP 401)' >&2; exit 1"));
+		await expect(createGithubProvider().fetchDiffSince(ref, "abc1234")).rejects.toThrow();
+	});
+});
+
 describe("postReview", () => {
 	const ref = { number: 12, repo: { host: "github.com", owner: "acme", repo: "widgets" } };
 	const comments = [

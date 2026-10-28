@@ -309,7 +309,7 @@ describe("compileReview with a policy", () => {
 			{ ...BASE, policy: STRICT_RELAXED, round: 1 },
 		);
 		expect(review.verdict).toBe("request_changes");
-		expect(review.reason).toBe("1 medium finding found");
+		expect(review.reason).toBe("1 medium finding is open");
 	});
 });
 
@@ -356,7 +356,7 @@ describe("comment cap", () => {
 describe("capVerdict", () => {
 	const blocked = {
 		verdict: "request_changes" as const,
-		reason: "1 high finding found",
+		reason: "1 high finding is open",
 	};
 	const approved = {
 		verdict: "approve" as const,
@@ -371,7 +371,7 @@ describe("capVerdict", () => {
 		expect(capVerdict(blocked, "approve")).toEqual({
 			verdict: "comment",
 			reason:
-				"1 high finding found; request changes is turned off, so this posts as a comment",
+				"1 high finding is open; request changes is turned off, so this posts as a comment",
 		});
 		expect(capVerdict(approved, "approve")).toEqual(approved);
 	});

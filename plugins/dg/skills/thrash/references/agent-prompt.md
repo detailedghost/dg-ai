@@ -35,7 +35,7 @@ Reply with only: WROTE <path> <count> findings
 
 `IMPROVEMENTS` is `on` only with `--improvements` or a policy that sets `improvements: true`.
 Pass the same value to `compile`. The persona's security checklist runs on every review and
-needs no input; the agent tags those findings `security`.
+needs no input; the agent tags those findings `"tag": "security"`.
 
 Each finding may also carry `class` and `otherPlaces` (one comment for a repeated mistake),
 `preExisting`, `tag`, and `kind: "improvement"`. The persona explains each field. `compile`

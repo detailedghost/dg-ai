@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ReviewThread } from "../src/provider/types";
+import type { ReviewSummary, ReviewThread } from "../src/provider/types";
 import { parsePolicy } from "../src/thrash/policy";
 import {
 	addressFileName,
@@ -34,8 +34,13 @@ import {
 	relativePlanPath,
 	resolvePlanPath,
 	renderComment,
+	renderInlineBody,
 	reviewTrigger,
+	classPrCounts,
+	lastReviewedSha,
+	parseClassMarker,
 } from "../src/thrash/core";
+import { THRASH_CLASSES_MARKER_PREFIX, THRASH_REVIEW_MARKER } from "../src/thrash/constants";
 
 const FIXTURE = `diff --git a/src/a.ts b/src/a.ts
 index 1111111..2222222 100644
@@ -334,7 +339,7 @@ describe("decideVerdict", () => {
 	});
 
 	test("the reason names the tier and the spice limit", () => {
-		expect(decideVerdict(tally(0, 0, 4), 4, false).reason).toBe("4 medium findings found, limit is 2 at spice 4");
+		expect(decideVerdict(tally(0, 0, 4), 4, false).reason).toBe("4 medium findings are open, limit is 2 at spice 4");
 	});
 
 	test("comment-only overrides the rule", () => {
@@ -374,7 +379,7 @@ describe("compileReview", () => {
 			["src/a.ts", 3],
 			["src/new.ts", 1],
 		]);
-		expect(review.comments[0].body).toBe(`${TIER_EMOJI.high} **High** fix it`);
+		expect(review.comments[0].body).toBe(`${TIER_EMOJI.high} **High** fix it\n\n<!-- dg:thrash-finding "high title" -->`);
 		expect(review.verdict).toBe("approve");
 		expect(review.body).toContain('<span title="High">🔥</span> 1 · ');
 		expect(review.body).toContain("**Verdict:** Approve.");
@@ -660,7 +665,7 @@ describe("compileReview", () => {
 			verdict: "approve",
 			body: review.body,
 			comments: [
-				{ path: "src/a.ts", oldPath: undefined, newLine: 4, oldLine: 3, body: `${TIER_EMOJI.low} **Low** low body` },
+				{ path: "src/a.ts", oldPath: undefined, newLine: 4, oldLine: 3, body: renderInlineBody(finding("src/a.ts", 4, "low")) },
 			],
 		});
 	});
@@ -1010,7 +1015,7 @@ describe("thrash review hardening", () => {
 			finding("src/a.ts", 3, "nit", "kept"),
 		];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, spice: 2 });
-		expect(review.comments.map((c) => c.body)).toEqual([`${TIER_EMOJI.nit} **Nit** kept`]);
+		expect(review.comments.map((c) => c.body)).toEqual([renderInlineBody(finding("src/a.ts", 3, "nit", "kept"))]);
 		expect(review.unanchored).toHaveLength(5);
 		expect(review.dropped).toEqual([]);
 	});
@@ -1278,6 +1283,144 @@ describe("review rounds, slice A", () => {
 			expect(only({ fixed: 0, answered: 2 })).toContain("- **Cleared:** 2 answered.");
 			expect(only({ fixed: 1, sha: "abcdef0123", answered: 0 })).toContain("- **Cleared:** 1 fixed in `abcdef0`.");
 			expect(only({ fixed: 0, answered: 0 })).not.toContain("Cleared");
+		});
+	});
+});
+
+describe("clearing and history", () => {
+	const POLICY = parsePolicy("phases:\n  - block: { high: 0 }\n");
+	const awaitFinding: Finding = {
+		...finding("src/a.ts", 2, "high"),
+		title: "Missing await",
+		body: "The call is not awaited.",
+	};
+	const outdated = (body: string, resolved = false): ReviewThread => ({
+		...thread("src/a.ts", 2, body, resolved),
+		line: null,
+		originalLine: 2,
+		outdated: true,
+	});
+	const run = (existing: ReviewThread[], findings: Finding[], extra = {}) =>
+		compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, existing, policy: POLICY, headSha: "abcdef1234567", ...extra });
+
+	test("clears an outdated thread when the re-review finds nothing like it", () => {
+		const review = run([outdated(renderInlineBody(awaitFinding))], []);
+		expect(review.tally.high).toBe(0);
+		expect(review.verdict).toBe("approve");
+		expect(review.body).toContain("- **Cleared:** 1 fixed in `abcdef1`.");
+	});
+
+	test("keeps an outdated thread open when its finding comes back at a new line", () => {
+		const review = run([outdated(renderInlineBody(awaitFinding))], [{ ...awaitFinding, line: 3 }]);
+		expect(review.tally.high).toBe(1);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.reason).toBe("1 high finding is open");
+		expect(review.body).not.toContain("Cleared");
+	});
+
+	test("matches on the class key when the finding has a class", () => {
+		const earlier = { ...awaitFinding, class: "Missing await" };
+		const again = { ...awaitFinding, title: "Other words", class: "missing-await", line: 3 };
+		expect(run([outdated(renderInlineBody(earlier))], [again]).tally.high).toBe(1);
+	});
+
+	test("a different finding in the same file does not hold the thread open", () => {
+		const other = { ...awaitFinding, title: "Unused import", tier: "medium" as Tier, line: 3 };
+		const review = run([outdated(renderInlineBody(awaitFinding))], [other]);
+		expect(review.tally.high).toBe(0);
+		expect(review.tally.medium).toBe(1);
+		expect(review.body).toContain("1 fixed");
+	});
+
+	test("a thread without a marker is never cleared and never absorbs a finding", () => {
+		const legacy = outdated(`${TIER_EMOJI.high} **High** old`);
+		const review = run([legacy], [{ ...awaitFinding, line: 3, tier: "low" }]);
+		expect(review.tally.high).toBe(1);
+		expect(review.tally.low).toBe(1);
+		expect(run([legacy], []).body).not.toContain("Cleared");
+	});
+
+	test("a thread that is still anchored is not cleared", () => {
+		const open = thread("src/a.ts", 2, renderInlineBody(awaitFinding));
+		const review = run([open], []);
+		expect(review.tally.high).toBe(1);
+		expect(review.body).not.toContain("Cleared");
+	});
+
+	test("counts threads cleared by a reply as answered", () => {
+		const answered: ReviewThread = {
+			...thread("src/a.ts", 3, renderInlineBody(awaitFinding)),
+			comments: [
+				{ id: "1", author: "bot", body: renderInlineBody(awaitFinding), createdAt: "", diffHunk: "" },
+				{ id: "2", author: "dev", body: "done", createdAt: "", diffHunk: "" },
+			],
+		};
+		const review = run([answered], []);
+		expect(review.tally.high).toBe(0);
+		expect(review.body).toContain("- **Cleared:** 1 answered.");
+	});
+
+	test("clears without a policy too, and names the fixed count only", () => {
+		const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, existing: [outdated(renderInlineBody(awaitFinding))] });
+		expect(review.body).toContain("- **Cleared:** 1 fixed.");
+	});
+
+	test("counts only open findings in the verdict sentence", () => {
+		const two = [awaitFinding, { ...awaitFinding, title: "Second", line: 3 }];
+		expect(run([], two).reason).toBe("2 high findings are open");
+	});
+
+	const classed: Finding = { ...awaitFinding, class: "Missing await" };
+	const hint = "This class came up in 3 recent PRs. Consider a rule in docs/code_review.md or a lint check.";
+
+	test("adds the repeated-class hint at 3 recent PRs and not at 2", () => {
+		expect(run([], [classed], { classHistory: { "missing await": 3 } }).body).toContain(hint);
+		expect(run([], [classed], { classHistory: { "missing await": 2 } }).body).not.toContain("recent PRs");
+		expect(run([], [awaitFinding], { classHistory: { "missing await": 5 } }).body).not.toContain("recent PRs");
+	});
+
+	test("an inline comment carries a hidden finding key", () => {
+		expect(renderInlineBody(classed)).toContain('<!-- dg:thrash-finding "missing await" -->');
+		expect(renderInlineBody({ ...awaitFinding, title: "" })).not.toContain("dg:thrash-finding");
+	});
+
+	describe("review history", () => {
+		const review = (body: string, commitId: string, author = "thrashley[bot]", state = "COMMENTED"): ReviewSummary => ({
+			author,
+			body: `${body}\n${THRASH_REVIEW_MARKER}`,
+			state,
+			commitId,
+		});
+
+		test("lastReviewedSha takes the latest submitted thrash review", () => {
+			const reviews = [
+				review("one", "aaa1111"),
+				{ author: "dev", body: "lgtm", state: "APPROVED", commitId: "ccc3333" },
+				review("two", "bbb2222"),
+				review("draft", "ddd4444", "thrashley[bot]", "PENDING"),
+			];
+			expect(lastReviewedSha(reviews)).toBe("bbb2222");
+			expect(lastReviewedSha(reviews, "thrashley")).toBe("bbb2222");
+			expect(lastReviewedSha(reviews, "someone-else")).toBeUndefined();
+			expect(lastReviewedSha([])).toBeUndefined();
+		});
+
+		test("parseClassMarker reads the class names back", () => {
+			expect(parseClassMarker(`text\n${THRASH_CLASSES_MARKER_PREFIX}["a b","c"] -->\n`)).toEqual(["a b", "c"]);
+			expect(parseClassMarker("no marker")).toEqual([]);
+			expect(parseClassMarker(`${THRASH_CLASSES_MARKER_PREFIX}not json -->`)).toEqual([]);
+		});
+
+		test("classPrCounts counts each class once per PR", () => {
+			const marker = (names: string[]) => `${THRASH_CLASSES_MARKER_PREFIX}${JSON.stringify(names)} -->`;
+			const counts = classPrCounts(
+				[
+					[review(marker(["x", "y"]), "a"), review(marker(["x"]), "b")],
+					[review(marker(["x"]), "c")],
+					[{ author: "dev", body: marker(["y"]), state: "COMMENTED", commitId: "d" }],
+				],
+			);
+			expect(counts).toEqual({ x: 2, y: 1 });
 		});
 	});
 });

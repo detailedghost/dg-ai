@@ -104,7 +104,7 @@ async function prepare(cfg: Config): Promise<void> {
 		return;
 	}
 	const headSha = await readHeadSha(event);
-	const diff = dgSkills(["thrash", "diff", event.url], scratchEnv());
+	const diff = dgSkills(["thrash", "diff", event.url, "--reviewer", cfg.botLogin], scratchEnv());
 	const [reviews, rules, policy, extraPrompt, agent] = await Promise.all([
 		listReviews(event),
 		readBaseFile(event, cfg.reviewRules),
@@ -277,6 +277,7 @@ async function publish(cfg: Config): Promise<void> {
 				maxComments: cfg.maxComments,
 				verdict: cfg.verdict,
 				reviewer: cfg.botLogin,
+				headSha: state.headSha,
 				sass: cfg.sass,
 				improvements: cfg.improvements,
 			}),

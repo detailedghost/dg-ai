@@ -177,10 +177,12 @@ describe("compileArgs", () => {
 			policyPath: null,
 			verdict: "auto",
 			reviewer: "thrashley[bot]",
+			headSha: "abc1234",
 			sass: false,
 			improvements: false,
 		};
 		const args = compileArgs(base);
+		expect(args.slice(args.indexOf("--head-sha"))).toEqual(["--head-sha", "abc1234"]);
 		expect(args.slice(0, 4)).toEqual(["thrash", "compile", "u", "--json"]);
 		expect(args).toContain("--round");
 		expect(args).not.toContain("--policy");

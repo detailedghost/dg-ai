@@ -1721,6 +1721,19 @@ describe("fetchDiff", () => {
 	});
 });
 
+describe("review rounds", () => {
+	test("has no review objects and no diff since a commit, without shelling out", async () => {
+		const log = callLogPath();
+		fakeGlab(glabScript(""));
+		const provider = createGitlabProvider();
+		const ref = { number: 7, repo: { host: "gitlab.com", owner: "acme", repo: "widgets" } };
+
+		expect(await provider.listReviews(ref)).toEqual([]);
+		expect(await provider.fetchDiffSince(ref, "abc1234")).toBeNull();
+		expect(readCalls(log)).toEqual([]);
+	});
+});
+
 describe("postReview — draft notes, bulk_publish, approve", () => {
 	const ref = { number: 7, repo: { host: "gitlab.com", owner: "acme", repo: "widgets" } };
 	const MR =

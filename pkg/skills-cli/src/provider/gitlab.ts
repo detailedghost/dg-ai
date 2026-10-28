@@ -689,6 +689,8 @@ export function createGitlabProvider(): Provider {
 		replyToThread: (thread, body, ref) => replyToThread(tag, resolveIid, thread, body, ref),
 		listCiFailures: (ref) => listCiFailures(tag, ref),
 		fetchDiff: (ref) => fetchDiff(tag, ref),
+		listReviews: async () => [],
+		fetchDiffSince: async () => null,
 		postReview: (ref, input) => postReview(tag, ref, input),
 		retargetPullRequest: (ref, newBase) => retargetPullRequest(tag, ref, newBase),
 		getPullRequestBody: (ref) => getPullRequestBody(tag, ref),

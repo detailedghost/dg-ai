@@ -68,6 +68,7 @@ export interface CompileInput {
 	maxComments?: number;
 	verdict: string;
 	reviewer: string;
+	headSha: string;
 	sass: boolean;
 	improvements: boolean;
 }
@@ -90,6 +91,8 @@ export function compileArgs(input: CompileInput): string[] {
 		input.verdict,
 		"--reviewer",
 		input.reviewer,
+		"--head-sha",
+		input.headSha,
 	];
 	if (input.policyPath) args.push("--policy", input.policyPath);
 	if (input.maxComments !== undefined)

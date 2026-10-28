@@ -60,13 +60,13 @@ above are unchanged.
 |---|---|
 | `class`, `otherPlaces` | One inline comment on the first copy, ending "Same class (`class`) at: `file:line`, ...". The Warning callout adds "`Class` in N places: ..." (the first copy plus `otherPlaces`). Classes merge by lowercase name. |
 | `preExisting: true` | Inline: tier, a `Pre-existing` marker, then "This PR did not add it, and it does not block." Never in the tally or the verdict, and an earlier thread with the marker is not an open finding. The summary lists it under a "Pre-existing" bullet. |
-| `tag` | Shown as inline code after the tier. The persona's security checklist (secrets, injection, authn and authz, workflow permissions, unsafe deserialization, SSRF) sets `security`. It runs in the same pass; there is no extra agent. |
+| `tag` | Shown as inline code after the tier. The persona's security checklist (secrets, injection, authn and authz, workflow permissions, unsafe deserialization, SSRF) sets `"tag": "security"`. It runs in the same pass; there is no extra agent. |
 | `kind: "improvement"` | See Improvements below. `tier` is optional for these. |
 
 The body hides the bug class names of this review's posted findings in
 `<!-- dg:thrash-classes ["swallowed error"] -->`: a JSON array of lowercase names, written
-only when a finding has a class. A later run reads it back to spot a class that keeps
-coming back. Reading it is not part of this build.
+only when a finding has a class. A later run reads it back for the repeated-class hint
+(see below).
 
 Summary order: a heading, then the tally line (`💀 🔥 ⚠️ 🧹 🔬`, then `💡` when improvements
 are on, `**Round:**`, `**Verdict:**`, comment counts), then the optional sass line. Next come
@@ -75,10 +75,66 @@ Note (**What changed**, then **Re-review** when given), Tip (**Strengths**), War
 (**Opportunities**, then bug classes). Plain bullets follow: **Cleared** when given, and
 **Pre-existing**. Then the trigger line and the notes about dropped findings.
 
-`compileReview` takes the Re-review and Cleared values as options, so a caller only supplies
-data: `reReview: { sha, files, lines }` renders "Only the diff since `sha7`: N files, M lines."
-and `cleared: { fixed, sha, answered }` renders "N fixed in `sha7`, M answered." Each part
-shows only when non-zero, and a missing option leaves its slot out.
+`diff` and `compile` fill the Re-review and Cleared values. `reReview: { sha, files, lines }`
+renders "Only the diff since `sha7`: N files, M lines." and `cleared: { fixed, sha, answered }`
+renders "N fixed in `sha7`, M answered." Each part shows only when non-zero, and a missing
+value leaves its slot out. The verdict reason counts open findings only, for example
+"Request changes. 1 high finding is open."
+
+### Clearing rule
+
+A thrash thread stops counting as open in the verdict tally when either of these holds:
+
+- Someone other than the thread's opener replied in it. These count as "answered".
+- A later commit fixed it: the thread is outdated (GitHub says its anchor line no longer
+  exists in the diff) and the re-review does not find the same finding again. These count as
+  "fixed in `sha7`", where the sha is the head from `compile --head-sha`.
+
+"The same finding" means the same file and the same key. The key is the class key (the
+lowercase class name with punctuation turned into spaces) when the finding has a class, and
+the title key otherwise. Each inline comment ends with a hidden
+`<!-- dg:thrash-finding "key" -->` so a later round reads the key back. When the re-review
+finds the same finding at a new line, the old thread stays open and the new finding is not
+counted a second time; the pair counts once at the higher tier.
+
+A thread without that marker (posted by an earlier version, or a finding with no title and no
+class) cannot be judged. It is never cleared by a fix and never absorbs a new finding, so it
+stays open until someone answers or resolves it.
+
+Clearing changes the verdict tally and the Cleared line only. It never resolves a thread and
+never posts a reply. Without `--policy` the tally holds only the current findings, so there
+the Cleared line is the only effect.
+
+### Re-review diff
+
+From round 2, `diff` reviews only what changed after the bot's last review. It lists the PR's
+reviews, takes the `commit_id` of the latest submitted review whose body holds the
+`<!-- dg:thrash-review -->` tag (and, with `--reviewer <login>`, whose author is that login),
+and asks the provider for the diff from that commit to the head. On GitHub that is the compare
+API: `compare/<sha>...<head>` must report status `ahead`, then the diff is fetched with the
+`application/vnd.github.diff` media type. The review falls back to the full PR diff when the
+commit is gone (force push), is not an ancestor of the head, equals the head, the compare call
+fails with 404 or 422, or the review list cannot be read. GitLab has no review objects here,
+so it always reviews the full diff.
+
+`diff` prints `reReview: { sha, files, lines }` and stores it in the plan file. `compile`
+reads it from there, so the summary says "Only the diff since `sha7`: N files, M lines."
+`lines` counts added plus deleted lines. The context file names the sha, so the agents know
+they see part of the PR. A base branch merged into the PR since the last review shows up in
+that diff too.
+
+`dg-skills thrash action prepare` passes `--reviewer` with the bot login and `publish`
+passes `--head-sha`, so the Action follows the same rules.
+
+### Repeated-class hint
+
+When a finding has a class, `compile` reads the thrash reviews on the last 10 merged PRs of the
+same repo (`CLASS_HISTORY_PRS` in `thrash/constants.ts`). It parses the hidden
+`dg:thrash-classes` marker of each and counts PRs per class key, once per PR. When a class in
+the current review appears in 3 or more PRs (`CLASS_HINT_MIN_PRS`), the summary adds a bullet
+under the class name: "This class came up in K recent PRs. Consider a rule in
+docs/code_review.md or a lint check." A failed history read prints a note on stderr, skips the
+hint, and does not fail the review. GitLab has no history to read, so it never shows the hint.
 
 ### Round note
 
@@ -176,7 +232,8 @@ in the diff is terminal-only in this mode. Nothing posts.
 | `--policy <file>` | YAML verdict rules in place of the spice table (example below). The verdict counts the new findings plus every open earlier thrash finding (not resolved, no reply from someone else), and a re-found open finding counts once. |
 | `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count. Overrides the policy's `maxComments`. |
 | `--max-event <event>` | The highest event the review may submit: `auto` (default), `approve`, `request-changes` or `comment`. A verdict above it posts as a comment, and the reason says so. |
-| `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. |
+| `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. `diff` takes it too, to find the bot's last review. |
+| `--head-sha <sha>` | The head being reviewed. Names the commit in the Cleared line. |
 | `--improvements` | Turns improvements on. A policy `improvements: true` does the same. |
 | `--sass` | Adds one line from the fixed list in `thrash/sass.ts` to the summary, picked from the verdict and the highest tier, seeded by the PR number and round. Never in an inline comment. It changes no verdict or tier. |
 
