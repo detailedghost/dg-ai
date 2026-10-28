@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bundle Review Board</title>
+<title>Verify board</title>
 <link rel="stylesheet" href="/board/board.css">
 </head>
 <body>
@@ -11,17 +11,11 @@
   <div class="brand">
     <div class="logo" aria-hidden="true">V</div>
     <div>
-      <h1>Doctor QA bundle · review</h1>
+      <h1 id="board-title">Verify · review</h1>
       <p id="progress" class="muted" aria-live="polite"></p>
       <div class="meter" aria-hidden="true"><span id="meter"></span></div>
     </div>
   </div>
-  <nav class="pager" aria-label="Section navigation">
-    <span class="kbd" aria-hidden="true">←</span>
-    <button type="button" id="prev" aria-keyshortcuts="ArrowLeft">Prev</button>
-    <button type="button" id="next" aria-keyshortcuts="ArrowRight">Next</button>
-    <span class="kbd" aria-hidden="true">→</span>
-  </nav>
 </header>
 <div class="layout">
   <aside>
@@ -33,21 +27,39 @@
       <p class="eyebrow" id="sec-branch"></p>
       <h2 id="sec-title"></h2>
       <p id="sec-what" class="what"></p>
-      <div class="widths" role="tablist" aria-label="Width">
-        <button type="button" role="tab" data-w="all" aria-selected="true">All</button>
-        <button type="button" role="tab" data-w="mobile" aria-selected="false">Mobile</button>
-        <button type="button" role="tab" data-w="tablet" aria-selected="false">Tablet</button>
-        <button type="button" role="tab" data-w="desktop" aria-selected="false">Desktop</button>
-      </div>
+      <p id="sec-checks" class="eyebrow checks" hidden></p>
       <div id="shots"></div>
       <form id="verdict" class="picker" aria-label="Your verdict for this section">
-        <button type="button" id="mode" class="pk-mode" title="Toggle light or dark">☾ Dark</button>
-        <span class="pk-sep" aria-hidden="true"></span>
-        <label for="note" class="sr">Note for this section</label>
-        <input id="note" autocomplete="off" placeholder="notes (optional)">
-        <button type="submit" value="approved" id="approve" class="pk-approve" title="Approve. With a note it starts a follow-up round.">Approve ✓</button>
-        <button type="submit" value="changes" class="pk-reject" title="Send back for rework. A note is required.">Needs changes ⟳</button>
-        <button type="submit" value="skip" class="pk-skip" title="Leave open and come back later">Skip</button>
+        <figure id="note-pop" class="note-pop" hidden>
+          <figcaption><span id="note-pop-verdict" class="pill"></span><span id="note-pop-at" class="muted"></span></figcaption>
+          <blockquote id="note-pop-text"></blockquote>
+        </figure>
+        <div id="note-row" class="note-row" hidden>
+          <label for="note" class="sr">Note for this section</label>
+          <input id="note" autocomplete="off" placeholder="Note: what to change, or anything you noticed">
+        </div>
+        <div class="pk-bar">
+          <button type="button" id="mode" class="ic" data-icon="moon"></button>
+          <div class="pk-menu-wrap">
+            <button type="button" id="width-btn" class="ic" aria-haspopup="menu" aria-expanded="false" aria-controls="width-menu" data-icon="all"></button>
+            <div id="width-menu" class="pk-menu" role="menu" aria-label="Screen width" hidden>
+              <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+              <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+              <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+              <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+            </div>
+          </div>
+          <span class="pk-sep" aria-hidden="true"></span>
+          <button type="button" id="prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous (←)" aria-label="Previous section"></button>
+          <button type="button" id="next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next (→)" aria-label="Next section"></button>
+          <span class="pk-sep" aria-hidden="true"></span>
+          <button type="button" id="note-btn" class="ic pk-note" data-icon="note" aria-pressed="false" aria-controls="note-row" title="Note" aria-label="Note"></button>
+          <button type="submit" value="approved" id="approve" class="ic pk-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
+          <button type="submit" value="changes" class="ic pk-reject" data-icon="rework" title="Needs changes (note required)" aria-label="Needs changes"></button>
+          <button type="submit" value="skip" class="ic pk-skip" data-icon="skip" title="Skip for now" aria-label="Skip for now"></button>
+          <span id="decided-pill" class="pill decided-pill" hidden></span>
+          <button type="button" id="change" class="ic" data-icon="edit" title="Change this decision" aria-label="Change this decision" hidden></button>
+        </div>
       </form>
       <div id="toast" role="status" aria-live="polite"></div>
     </section>
@@ -59,6 +71,7 @@
   </main>
 </div>
 <dialog id="zoom"><button type="button" id="zoom-close" aria-label="Close">✕</button><img id="zoom-img" alt=""></dialog>
+<script src="/board/icons.js"></script>
 <script src="/board/board.js"></script>
 </body>
 </html>

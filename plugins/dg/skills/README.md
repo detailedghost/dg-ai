@@ -10,7 +10,7 @@ binaries. The skills-root README itself is not installed.
 | `browser/` | Tab batch-open, tour launch, and extension installation |
 | `demo/` | Guided browser demos with optional setup and video recording |
 | `proto/` | Compare app-native UI approaches on a live page |
-| `verify/` | Review a finished change side by side and record Approve, Reject, or Tweak |
+| `verify/` | Review a finished change round by round and record a verdict per round |
 | `chat/` | Live browser chat through dg-agent and dg-daemon |
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |

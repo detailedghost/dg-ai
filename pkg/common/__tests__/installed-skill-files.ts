@@ -99,6 +99,7 @@ export const INSTALLED_SKILL_FILES = [
 	"proto/assets/PrototypeSwitcher.astro",
 	"proto/assets/PrototypeSwitcher.tsx",
 	"proto/assets/README.md",
+	"proto/assets/dg-icons.js",
 	"proto/assets/prototype-decision-bar.html",
 	"proto/assets/prototype-endpoint.astro.ts",
 	"proto/assets/prototype-endpoint.next.ts",

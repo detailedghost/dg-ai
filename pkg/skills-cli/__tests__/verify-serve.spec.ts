@@ -47,13 +47,16 @@ describe("verify server", () => {
 		expect(page.headers.get("content-security-policy")).toBe(VERIFY_CSP);
 		const html = await page.text();
 		expect(html).toBe(readFileSync(join(ASSETS, "index.html"), "utf8"));
-		expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script src="/board/board.js">']);
+		expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script src="/board/icons.js">', '<script src="/board/board.js">']);
 		expect(html).not.toContain("<style");
 		expect(html).not.toMatch(/\son[a-z]+=/);
 		const script = await fetch(`${url}/board/board.js`);
 		expect(script.headers.get("content-type")).toContain("javascript");
 		expect(await script.text()).toBe(readFileSync(join(ASSETS, "board.js"), "utf8"));
 		expect((await fetch(`${url}/board/board.css`)).headers.get("content-type")).toContain("text/css");
+		const icons = await (await fetch(`${url}/board/icons.js`)).text();
+		expect(icons).toBe(readFileSync(join(ASSETS, "../../proto/assets/dg-icons.js"), "utf8"));
+		expect(icons).toContain("globalThis.dgIcons");
 		expect((await fetch(`${url}/board/server.ts`)).status).toBe(404);
 	});
 

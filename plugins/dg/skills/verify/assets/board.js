@@ -11,7 +11,7 @@ let verdicts = {};
 let index = 0;
 let width = "all";
 
-const imgSrc = (path) => (path && path !== "missing" ? `/sections/${path}` : null);
+const imgSrc = (path) => (path && path !== "missing" ? path : null);
 
 function figure(caption, path, reason) {
   const fig = document.createElement("figure");
@@ -162,6 +162,18 @@ function renderSection() {
   $("sec-branch").replaceChildren(step, branch);
   $("sec-title").textContent = s.title;
   $("sec-what").textContent = s.what_changed || "";
+  const checks = [];
+  if (s.checks?.tests) checks.push(["Tests", s.checks.tests.summary, s.checks.tests.status]);
+  if (s.checks?.axe) {
+    const found = s.checks.axe.violations;
+    checks.push(["Accessibility", found.length ? found.join(", ") : `${s.checks.axe.passes} rules pass`, found.length ? "failed" : "passed"]);
+  }
+  $("sec-checks").replaceChildren(...checks.map(([name, text, state]) => {
+    const pill = el("span", "pill", `${name}: ${text}`);
+    pill.dataset.state = state;
+    return pill;
+  }));
+  $("sec-checks").hidden = !checks.length;
   const shots = $("shots");
   shots.replaceChildren();
   for (const im of s.images || []) {
@@ -172,8 +184,9 @@ function renderSection() {
     const h = document.createElement("h3");
     h.textContent = im.label;
     const pair = document.createElement("div");
-    pair.className = `pair w-${w}`;
+    pair.className = `pair w-${w}${im.target ? " has-target" : ""}`;
     pair.append(figure("Before", im.before, im.reason), figure("After", im.after, im.reason));
+    if (im.target) pair.append(figure("Prototype", im.target));
     card.append(h, pair);
     shots.append(card);
   }
@@ -181,8 +194,11 @@ function renderSection() {
   const v = verdicts[s.id] || {};
   $("note").value = v.note || "";
   $("section").dataset.verdict = keyOf(v.status, v.note);
+  $("note").dataset.saved = v.note || "";
+  setLocked(Boolean(v.status), v);
   syncVerdictUi();
   $("prev").disabled = index === 0;
+  history.replaceState(null, "", `${location.search}#${encodeURIComponent(s.id)}`);
   renderToc();
   $("sec-title").focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
@@ -218,10 +234,48 @@ function resolved(s) {
 
 const keyOf = (status, note) => (status === "approved" && note ? "approvedNote" : status || "");
 
+const svg = (name) => globalThis.dgIcons.svg(name);
+function setIcon(node, name) {
+  node.dataset.icon = name;
+  node.innerHTML = svg(name);
+}
+for (const node of document.querySelectorAll("[data-icon]")) node.innerHTML = svg(node.dataset.icon);
+
+const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped" };
+
+function setLocked(locked, v = {}) {
+  const key = keyOf(v.status, v.note);
+  $("note").readOnly = locked;
+  $("note").value = locked ? "" : $("note").dataset.saved || "";
+  for (const b of document.querySelectorAll(".pk-approve,.pk-reject,.pk-skip,.pk-note")) b.hidden = locked;
+  showNote(!locked && Boolean($("note").value));
+  $("decided-pill").hidden = !locked;
+  $("change").hidden = !locked;
+  $("decided-pill").textContent = decidedText[key] || "";
+  $("decided-pill").className = `pill decided-pill ${key}`;
+  const pop = locked && v.note;
+  $("note-pop").hidden = !pop;
+  if (pop) {
+    $("note-pop").className = `note-pop ${key}`;
+    $("note-pop-verdict").textContent = decidedText[key];
+    $("note-pop-verdict").className = `pill ${key}`;
+    $("note-pop-at").textContent = v.at ? new Date(v.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+    $("note-pop-text").textContent = v.note;
+  }
+}
+
+function showNote(open) {
+  $("note-row").hidden = !open;
+  $("note-btn").setAttribute("aria-pressed", String(open));
+}
+
 function syncVerdictUi() {
-  const note = $("note").value.trim();
-  $("approve").textContent = note ? "Approve + note ✓" : "Approve ✓";
-  $("approve").classList.toggle("with-note", Boolean(note));
+  const note = Boolean($("note").value.trim());
+  const label = note ? "Approve with note (starts a follow-up round)" : "Approve";
+  $("approve").title = label;
+  $("approve").setAttribute("aria-label", label);
+  $("approve").classList.toggle("with-note", note);
+  $("note-btn").classList.toggle("has-note", note);
 }
 
 function toast(msg) {
@@ -311,6 +365,7 @@ function chainState(chain) {
 }
 
 function renderSummary() {
+  history.replaceState(null, "", `${location.search}#overview`);
   $("section").hidden = true;
   $("summary").hidden = false;
   const body = $("sum-body");
@@ -361,6 +416,10 @@ function applyManifest(text) {
   const m = JSON.parse(text);
   sections = m.sections || [];
   pending = m.pending || [];
+  if (m.name) {
+    $("board-title").textContent = `${m.name} · review`;
+    document.title = `Verify ${m.name}`;
+  }
 }
 
 async function poll() {
@@ -417,6 +476,16 @@ async function save(status) {
 const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now." };
 
 $("note").addEventListener("input", syncVerdictUi);
+$("change").addEventListener("click", () => {
+  setLocked(false);
+  syncVerdictUi();
+  if (!$("note-row").hidden) $("note").focus();
+});
+$("note-btn").addEventListener("click", () => {
+  const open = $("note-row").hidden;
+  showNote(open);
+  if (open) $("note").focus();
+});
 $("note").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) e.preventDefault();
 });
@@ -426,6 +495,7 @@ $("verdict").addEventListener("submit", async (e) => {
   const note = $("note").value.trim();
   if (status === "changes" && !note) {
     toast("Add a note first. A rework needs direction.");
+    showNote(true);
     return $("note").focus();
   }
   if (!(await save(status))) return;
@@ -437,7 +507,10 @@ $("verdict").addEventListener("submit", async (e) => {
 });
 function applyMode(mode) {
   document.documentElement.dataset.theme = mode;
-  $("mode").textContent = mode === "dark" ? "☀ Light" : "☾ Dark";
+  setIcon($("mode"), mode === "dark" ? "sun" : "moon");
+  const label = mode === "dark" ? "Switch to light" : "Switch to dark";
+  $("mode").title = label;
+  $("mode").setAttribute("aria-label", label);
 }
 $("mode").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -454,15 +527,48 @@ try {
 $("prev").addEventListener("click", () => go(index - 1));
 $("next").addEventListener("click", () => go(index + 1));
 $("zoom-close").addEventListener("click", () => $("zoom").close());
-for (const tab of document.querySelectorAll(".widths [role=tab]")) {
-  tab.addEventListener("click", () => {
-    width = tab.dataset.w;
-    for (const t of document.querySelectorAll(".widths [role=tab]")) t.setAttribute("aria-selected", String(t === tab));
+const widthIcon = { all: "all", mobile: "phone", tablet: "tablet", desktop: "monitor" };
+const widthName = { all: "All widths", mobile: "Mobile", tablet: "Tablet", desktop: "Desktop" };
+function syncWidthBtn() {
+  setIcon($("width-btn"), widthIcon[width]);
+  $("width-btn").title = `Screen width: ${widthName[width]}`;
+  $("width-btn").setAttribute("aria-label", `Screen width: ${widthName[width]}`);
+}
+function openWidthMenu(open) {
+  $("width-menu").hidden = !open;
+  $("width-btn").setAttribute("aria-expanded", String(open));
+  if (open) $("width-menu").querySelector('[aria-checked="true"]').focus();
+}
+$("width-btn").addEventListener("click", () => openWidthMenu($("width-menu").hidden));
+for (const item of document.querySelectorAll("#width-menu [data-w]")) {
+  item.addEventListener("click", () => {
+    width = item.dataset.w;
+    for (const t of document.querySelectorAll("#width-menu [data-w]")) t.setAttribute("aria-checked", String(t === item));
+    syncWidthBtn();
+    openWidthMenu(false);
+    $("width-btn").focus();
     renderSection();
   });
 }
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".pk-menu-wrap")) openWidthMenu(false);
+});
+$("width-menu").addEventListener("keydown", (e) => {
+  const items = [...$("width-menu").querySelectorAll("[data-w]")];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") {
+    openWidthMenu(false);
+    $("width-btn").focus();
+  }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    e.stopPropagation();
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+  }
+});
+syncWidthBtn();
 document.addEventListener("keydown", (e) => {
-  if (e.target.closest("textarea,input")) return;
+  if (e.target.closest("textarea,input,.pk-menu")) return;
   if (e.key === "ArrowRight") go(index + 1);
   if (e.key === "ArrowLeft") go(index - 1);
 });
@@ -472,7 +578,11 @@ $("sec-title").tabIndex = -1;
   const [text, v] = await Promise.all([fetch(`/api/manifest${location.search}`).then((r) => r.text()), fetch("/api/verdicts").then((r) => r.json())]);
   applyManifest(text);
   verdicts = v || {};
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const remembered = sections.findIndex((x) => x.id === hash);
   const next = firstUnreviewed();
-  if (next >= 0) go(next);
+  if (hash === "overview") renderSummary();
+  else if (remembered >= 0) go(remembered);
+  else if (next >= 0) go(next);
   else renderSummary();
 })();

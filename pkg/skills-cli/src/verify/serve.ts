@@ -6,10 +6,11 @@ import { mergeVerdicts, readBoard, readVerdicts, VerifyRequestError, type Verify
 export const VERIFY_CSP =
 	"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
-const ASSETS: Record<string, { file: string; type: string }> = {
-	"/": { file: "index.html", type: "text/html; charset=utf-8" },
-	"/board/board.js": { file: "board.js", type: "text/javascript; charset=utf-8" },
-	"/board/board.css": { file: "board.css", type: "text/css; charset=utf-8" },
+const ASSETS: Record<string, { skill: string; file: string; type: string }> = {
+	"/": { skill: "verify", file: "index.html", type: "text/html; charset=utf-8" },
+	"/board/board.js": { skill: "verify", file: "board.js", type: "text/javascript; charset=utf-8" },
+	"/board/board.css": { skill: "verify", file: "board.css", type: "text/css; charset=utf-8" },
+	"/board/icons.js": { skill: "proto", file: "dg-icons.js", type: "text/javascript; charset=utf-8" },
 };
 
 const SHOT = /^\/shots\/((?:[a-z0-9][a-z0-9._-]{0,127}\/){1,8}[a-z0-9][a-z0-9._-]{0,127}\.png)$/;
@@ -48,7 +49,7 @@ export async function startVerifyServer(options: { name: string; paths: VerifyPa
 	const assets = Object.fromEntries(
 		Object.entries(ASSETS).map(([route, asset]) => [
 			route,
-			{ body: readFileSync(resolveSkillAsset("verify", join("assets", asset.file)), "utf8"), type: asset.type },
+			{ body: readFileSync(resolveSkillAsset(asset.skill, join("assets", asset.file)), "utf8"), type: asset.type },
 		]),
 	);
 	const server = Bun.serve({

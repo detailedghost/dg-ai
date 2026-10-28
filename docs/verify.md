@@ -11,10 +11,11 @@ The agent writes a manifest of finished items.
 Each item has a before URL and an after URL on localhost, the roles to sign in as seed users, and the name of the agent who owns the change.
 When a prototype is already running, its URL is a third column.
 
-`dg-skills verify start <name> --manifest=<file>` captures desktop (1440) and mobile (390), light and dark.
+`dg-skills verify capture <name> --manifest=<file>` captures desktop (1440), tablet (768), and mobile (390), light and dark.
 It includes scrolled pages and open menus.
-It serves one local page.
-Dante picks Approve, Reject with a note, or Tweak with a note for each item.
+`dg-skills verify serve <name>` opens one local board.
+The board steps through one round of one item at a time.
+Dante approves, approves with a note, sends back with a note, or skips.
 
 ```bash
 dg-skills verify status <name>
@@ -22,11 +23,12 @@ dg-skills verify wait <name>
 dg-skills verify rerun <name>
 ```
 
-`status` reads the picks.
-`wait` claims the verdict once every item has one.
-`allApproved` is true only when every item is approved.
-`rerun` recaptures the rejected and tweaked items and reloads the same tab.
+`status` prints one line per item.
+`wait` blocks until every round has a verdict.
+`ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
+`rerun` captures the next round for items that were sent back or approved with a note.
+The open tab finds the new round by itself.
 
-Screenshots stay in `.agents/verify/<name>/` and are not committed. The page loads no CDN. Its script is a static file.
+Screenshots stay in `.agents/verify/<name>/` and are not committed. The board loads no CDN. Its scripts are static files.
 
 See the [verify skill](../plugins/dg/skills/verify/SKILL.md) and [ADR 0023](adr/0023-verify-local-review.md).

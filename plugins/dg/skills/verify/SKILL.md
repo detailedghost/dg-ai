@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Review finished work before it lands. Capture before-and-after screenshots of each change at desktop and mobile, light and dark, per role, including scrolled pages and open menus, then show them side by side with test results and an accessibility summary. Dante approves, rejects, or tweaks each item from a picker. Use when an agent has finished a branch, worktree, or page and a person needs to see it, or when the user says "verify this", "show me before and after", or "let me approve the change".
+description: Review finished work before it lands. Capture before-and-after screenshots of each change at desktop, tablet, and mobile, light and dark, per role, including scrolled pages and open menus, then show them round by round on a local board with test results and an accessibility summary. Dante approves, approves with a note, sends back, or skips each item. Use when an agent has finished a branch, worktree, or page and a person needs to see it, or when the user says "verify this", "show me before and after", or "let me approve the change".
 ---
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -18,27 +18,38 @@ If a step fails, run ~/.dg/bin/dg-skills doctor verify.
 `/dg:verify` reviews a change that is already built.
 Each item has a before and an after. A prototype, when one exists, is a third column.
 
-The review is one local page.
-Dante picks per item: Approve, Reject with a note, or Tweak with a note.
-The agent claims that verdict with `verify status` and `verify wait`.
-Reject and Tweak go back to the owning agent.
-`verify rerun` recaptures only those items and reloads the same tab.
+The review is one local board.
+It steps through one section at a time. Each section is one round of one item.
+Dante picks a verdict per round:
 
-## Flags
+| Verdict | Meaning |
+|---|---|
+| Approve, no note | The item is done. |
+| Approve with a note | Approved. The note starts a follow-up round. |
+| Needs changes | A note is required. The owning agent reworks the item. |
+| Skip | The item stays open. |
 
-**Usage:** `/dg:verify [<name>] [--manifest <file>] [--engine <http|playwright>] [--items <ids>] [--port <n>] [--timeout <sec>] [--no-open] [--no-capture] [--json] [--dir <path>]`
+`verify status` and `verify wait` read the verdicts.
+`verify rerun` captures the next round for each item that was sent back or approved with a note.
+The open tab finds the new round by itself.
 
-| Flag | Short | Effect | Default |
-|---|---|---|---|
-| `--manifest <file>` | none | Path to the review manifest. Required for `verify start`. | none |
-| `--engine <http\|playwright>` | none | `playwright` takes real viewport screenshots. `http` records HTML only and labels every figure as an HTML fetch. | `playwright` |
-| `--items <ids>` | none | Comma-separated item ids for `verify capture`. `verify rerun` chooses the rejected and tweaked items itself. | all items |
-| `--port <n>` | none | Port for the review page. `0` asks the OS for a free port. | `4377` |
-| `--timeout <sec>` | none | How long `verify wait` blocks for a finished verdict. | `900` |
-| `--no-open` | none | Do not launch a browser. Print the local URL. | off (opens the page) |
-| `--no-capture` | none | `verify start` serves the page without capturing. | off (captures) |
-| `--json` | none | Print `status` and `wait` as JSON. | off |
-| `--dir <path>` | none | Session directory. The default is `.agents/verify/<name>/` in the current repo. | that directory |
+## Commands
+
+| Command | Effect |
+|---|---|
+| `serve <name> [--port=N] [--no-open]` | Start the board in the background and print its URL. A second call reuses the running server. |
+| `status <name> [--json]` | One line per item: its rounds, its state, and the latest note. The last line is `ALL APPROVED` or `<n> open`. |
+| `wait <name> [--timeout=SEC] [--json]` | Block until every round has a verdict, then print the same lines as `status`. Exit 1 and print `timeout` when time runs out. The default is 900 seconds. |
+| `watch <name>` | Print one line per new verdict until stopped. |
+| `stop <name>` | Stop the board server. |
+| `capture <name> [--manifest=FILE] [--items=a,b] [--summary=S]` | Capture items from the manifest. An item with no round gets round 1. An item with rounds gets the next round. |
+| `rerun <name> [--summary=S]` | Capture the next round only for items whose latest round was sent back or approved with a note. Prints `nothing-to-recapture` when there are none. |
+| `add <name> <id> --title=T ...` | Add a round from screenshots you took yourself. Use `--shots=DIR --prefix=P` to pair `P*before-<x>.png` with `P*after-<x>.png`, or repeat `--img="label\|before\|after[\|reason]"`. Add `--follows=ID --round=N` for a later round. |
+| `pending add <name> <key> --title=T [--detail=D] [--follows=ID]` | Show an "agent working" entry. `--follows` puts it under that round. |
+| `pending done <name> <key>` | Remove that entry. `add --pending=KEY` also removes it. |
+
+Every command takes `--dir=PATH`. The default session is `.agents/verify/<name>/` in the current repo.
+`capture` and `rerun` take `--engine=http|playwright`. The default is `playwright`. `http` records HTML only and labels every image `html fetch`.
 
 ## Build the manifest
 
@@ -56,6 +67,7 @@ Use seed roles only.
     {
       "id": "settings",
       "title": "Settings",
+      "what": "Moves the settings links into a side menu.",
       "owner": "dg:implementer",
       "beforeRef": "master",
       "afterRef": "feat/settings-nav",
@@ -71,6 +83,7 @@ Use seed roles only.
 }
 ```
 
+`what` is optional. It is one or two sentences on what changed, shown under the title.
 `owner` is the agent who owns the after side. Name them the way the work was assigned. See [references/owners.md](references/owners.md).
 
 `beforeRef` and `afterRef` are labels (a branch or a worktree).
@@ -88,40 +101,45 @@ Capture details, viewports, and the accessibility check: [references/capture.md]
 ## Run the review
 
 ```bash
-~/.dg/bin/dg-skills verify start settings-nav --manifest=review.json --no-open
-~/.dg/bin/dg-skills verify wait settings-nav --json
+~/.dg/bin/dg-skills verify capture settings-nav --manifest=review.json
+~/.dg/bin/dg-skills verify serve settings-nav
+~/.dg/bin/dg-skills verify wait settings-nav
 ```
 
-`start` captures, serves the page, and stays running. Leave that process up. The page polls a reload token, so the tab stays open across reruns.
-
-Dante uses the picker on each item. Reject and Tweak require a note. Approve may include one.
-
-`status` prints `pending`, `all-approved`, or `needs-rework` without consuming the verdict. `allApproved` is true only when every item is Approve.
-
-`wait` blocks until every item has a pick, then claims the verdict. A second `wait` reprints that claim. It blocks again only after `rerun` clears the claim.
+Each item becomes a section with the id `<item>-r<round>`.
+Rounds of one item link through `follows`.
+The left sidebar shows one entry per item and a timeline of its rounds.
+`wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
+`ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
 
 ## Send notes back and rerun
 
-When `wait` reports `needs-rework`, read `notifications` from `verify status --json`.
-Each entry has `itemId`, `owner`, `action`, and `note`.
-Deliver that note to `owner` as their next instruction.
-The file is also under `.agents/verify/<name>/notify/<itemId>.json`.
+For each item that is not done, send the latest note to that item's `owner` as their next instruction.
+See [references/owners.md](references/owners.md).
 This command does not message anyone itself.
+
+While the owner works, show it on the board:
+
+```bash
+~/.dg/bin/dg-skills verify pending add settings-nav settings-r2 --title="Settings" --detail="Fixing the menu" --follows=settings-r1
+```
 
 After the owner updates the after stack:
 
 ```bash
-~/.dg/bin/dg-skills verify rerun settings-nav
+~/.dg/bin/dg-skills verify rerun settings-nav --summary="Menu no longer clips"
 ```
 
-`rerun` recaptures only the rejected and tweaked items, clears those picks, and bumps the reload token.
-The open tab reloads.
-Approved items stay approved and are not captured again.
-When nothing needs rework it prints `nothing-to-recapture`.
+`rerun` captures only those items and adds each one as the next round, with `follows` set to the round before.
+It clears the pending entry for that round.
+Approved items are not captured again, and earlier rounds keep their screenshots and verdicts.
+The open tab checks for new rounds every 5 seconds and opens the next one.
+Use `--summary` to say in a few words what changed. Without it, the summary is the start of Dante's note.
 
 ## Local only
 
-The review page is static files from the CLI: `/verify.js` and `/verify.css`.
+The board is static files that ship with the skill in `assets/`: `index.html`, `board.js`, and `board.css`.
+The icons come from `/dg:proto`'s `assets/dg-icons.js`, so both skills draw the same toolbar.
 The HTML has no inline script and no inline style.
 The server sends a Content-Security-Policy that allows only `'self'` for scripts, styles, images, and connections.
 Nothing is loaded from a CDN.
