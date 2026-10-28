@@ -9,6 +9,9 @@ No marketing adjectives, no passive voice, no filler ("all of", "in order to").
 
 ```markdown
 ## Summary
+
+<one sentence: what changed and why>
+
 - <1-3 bullets: what changed>
 
 ## Why
