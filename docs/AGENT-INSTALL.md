@@ -203,6 +203,21 @@ claude plugin update dg@detailedghost
 - Restart an existing Claude Code session after installing or updating so it
   discovers the refreshed skills.
 
+### Update a marketplace pinned to a release tag
+
+A marketplace pinned to a tag, such as `skills-vX.Y.Z`, does not move when a
+new release ships. `claude plugin update dg@detailedghost` then reports the old
+version as the latest. The pin lives in two files, and they must match:
+
+- `~/.claude/settings.json`: `extraKnownMarketplaces.detailedghost.source.ref`
+- `~/.claude/plugins/known_marketplaces.json`: the `ref` of the `detailedghost`
+  entry
+
+Set both to the new release tag, then run
+`claude plugin update dg@detailedghost`. When only one file changes, Claude
+Code hides the marketplace until both refs match. An unpinned marketplace
+follows `master` and needs no change.
+
 After this, `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin directory and
 the `/dg:*` skills are available.
 
