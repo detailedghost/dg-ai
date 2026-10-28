@@ -97,7 +97,7 @@ Wiz posts as `wiz-<id>[bot]`: a "Wiz Scan Summary" PR comment, optional inline t
 Copilot can name gaps in its review overview that never become inline threads.
 
 1. Run `~/.dg/bin/dg-skills address gather-overview` → `{reviewId, source:"copilot-overview", state, summary, submittedAt}[]`. `[]` means the latest overview is clean, absent, or the provider is GitLab. Skip 1e then.
-2. Tag items `source:"copilot-overview"`. They go through triage (1.5) and fix (2) like comment items.
+2. Normalize each item into the work list as `{commentId: reviewId, threadId: null, source:"copilot-overview", mode:"fix", body: summary, path: null, line: null, state}`. Triage, fix results, and Phase 7 match it by that `commentId`, like a comment item.
    When `verdictsPath` is set, keep only the items whose `reviewId` matches a `source:"copilot-overview"` verdict `commentId`, and attach that verdict. The caller already triaged them.
 3. They have no thread. Phase 6 skips reply and resolve for them.
 
@@ -121,7 +121,7 @@ Skip when `verdictsPath` set. CI and Wiz items bypass (pass through unchanged). 
 
 Input: `source=="comment" && mode=="fix"` + all `source=="local-review"` and `source=="copilot-overview"` items.
 
-1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`. A copilot-overview item uses its `reviewId` as `commentId`, `null` as `threadId`, its `summary` as `body`, and `null` for `path` and `line`.
+1. Normalize: `{commentId, threadId, body, path, line}[]`. A local-review item uses its `localId` as `commentId` and `null` as `threadId`. A copilot-overview item is already in this shape (1e).
 1. Launch `dg:copilot-antagonist`:
    > Evaluate these review findings. Return ONLY the array your persona defines:
    > `[{"commentId":<commentId>,"threadId":<threadId>,"verdict":"accept|reject-illogical|reject-other|strange","reason":"<why>"}]`
@@ -169,7 +169,7 @@ Runs when any item has `verdict="strange"`. Ask through the host's question faci
 
 - **Accept** — keep in workList.
 - **Skip** — drop, leave thread open.
-- **Resolve silently** — `~/.dg/bin/dg-skills address resolve-silent <threadId>` (local-review: drop only, no helper call).
+- **Resolve silently** — `~/.dg/bin/dg-skills address resolve-silent <threadId>` (local-review and copilot-overview have no thread: drop only, no helper call).
 
 GATE: no `strange` items undecided.
 
