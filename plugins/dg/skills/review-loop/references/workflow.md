@@ -264,8 +264,11 @@ GATE: one of trigger / wait / act fired.
 IN: Phase 3 `fetch-copilot-review` JSON.
 OUT: verdict file path `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdicts.json)`.
 
-1. Write the `.comments` array to
+1. Run `~/.dg/bin/dg-skills address gather-overview`. Map each item to
+   `{commentId: reviewId, threadId: null, body: summary, path: null, line: null, source: "copilot-overview"}`.
+   Write the `.comments` array plus these items to
    `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.comments.json)`.
+   An overview-only review has an empty `.comments` array; its overview items still go through this phase.
 
 1. Locate the spec file (best effort):
 
@@ -282,7 +285,8 @@ OUT: verdict file path `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdi
    `{commentId, threadId, verdict, reason}`.
    Every input comment must have exactly one matching entry with
    `verdict` in the allowed set. On failure, print the raw
-   agent output and exit 1.
+   agent output and exit 1. Copy `source:"copilot-overview"` from the
+   input onto each matching verdict.
 
 GATE: parsed verdict array matches the comment set.
 
@@ -297,6 +301,7 @@ For each verdict:
   `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
   (the helper adds the `🤖` prefix automatically; the text matches `/dg:address` Phase 1.6).
 - `reject-other` → `~/.dg/bin/dg-skills address resolve-silent <threadId>`.
+- A `source:"copilot-overview"` reject has no thread: drop it with no reply or resolve.
 - `accept` / `strange` → keep in filtered array.
 
 Write filtered array to
@@ -382,7 +387,9 @@ loop:
   sinceIso = Round Step()        # runs Phases 2–7; exits internally on terminal states
   ~/.dg/bin/dg-skills address await-copilot-review prUrl sinceIso --timeout=waitTimeout
     landed      → continue loop
-    noFindings  → print close-out message (Phase 3z format), exit 0
+    noFindings  → ~/.dg/bin/dg-skills address gather-overview
+                    non-empty → continue loop (Round Step acts on the overview)
+                    []        → print close-out message (Phase 3z format), exit 0
     timeout 124 → print review-timeout message, exit 0
     error 1     → surface trigger-error line, exit 1
 ```

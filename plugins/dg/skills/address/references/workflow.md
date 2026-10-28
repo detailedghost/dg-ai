@@ -76,7 +76,7 @@ De-duplicate: if `reviewDir == $PWD`, glob only once.
 
 ### 1a. Comment items (skip when `localOnly=true`)
 
-- `verdictsPath` set: read `{commentId, threadId, verdict, reason}[]`; fetch context via `gather-unresolved`; merge by `commentId`. Tag `source:"comment"`.
+- `verdictsPath` set: read `{commentId, threadId, verdict, reason, source?}[]`; fetch context via `gather-unresolved`; merge by `commentId`. Tag `source:"comment"`. Entries with `source:"copilot-overview"` are not comments: 1e handles them.
 - Otherwise: `~/.dg/bin/dg-skills address gather-unresolved` → `{threadId, commentId, path, line, body, diffHunk, author, mode}[]`. Same shape on GitHub and GitLab; `diffHunk` is always `""` on GitLab, whose discussions API exposes a note's position but no hunk text. `mode="explain"` if thread contains `#explain`, else `"fix"`. Tag `source:"comment"`. On GitHub, only a thread's first 50 comments are fetched, so an `#ignore`/`#explain` marker or a bot reply landing past comment 50 is not seen.
 
 ### 1b. CI items (skip when `localOnly=true` or `includeCi=false`)
@@ -98,6 +98,7 @@ Copilot can name gaps in its review overview that never become inline threads.
 
 1. Run `~/.dg/bin/dg-skills address gather-overview` → `{reviewId, source:"copilot-overview", state, summary, submittedAt}[]`. `[]` means the latest overview is clean, absent, or the provider is GitLab. Skip 1e then.
 2. Tag items `source:"copilot-overview"`. They go through triage (1.5) and fix (2) like comment items.
+   When `verdictsPath` is set, keep only the items whose `reviewId` matches a `source:"copilot-overview"` verdict `commentId`, and attach that verdict. The caller already triaged them.
 3. They have no thread. Phase 6 skips reply and resolve for them.
 
 ### Merge
@@ -265,7 +266,7 @@ GraphQL `addPullRequestReviewThreadReply` mutation, which can leave replies in p
 
 GATE: invalid JSON → stop. `failed > 0` → stop.
 
-Copilot overview: `source=="copilot-overview"` items have no thread, so skip reply and resolve. After the push, run `~/.dg/bin/dg-skills address request-copilot` once if any copilot-overview item was fixed.
+Copilot overview: `source=="copilot-overview"` items have no thread, so skip reply and resolve. After the push, run `~/.dg/bin/dg-skills address request-copilot` once if any copilot-overview item was fixed. Skip this when `roundNumber` is set: `/dg:review-loop` is the caller, and its Phase 7 owns the re-request, `--no-retrigger`, and the round cap.
 
 Wiz: inline Wiz threads close like any comment item. `source=="wiz"` summary findings get no reply; Wiz re-scans on push. After the push, re-check the Wiz checks and `list_sast_findings` for the changed paths, and report any finding still open.
 
