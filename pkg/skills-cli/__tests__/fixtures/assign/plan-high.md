@@ -27,6 +27,7 @@ slices:
     agents:
       primary: python
       proxy: codex
+      proxy_skills: [polish]
       confidence: high
 ---
 

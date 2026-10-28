@@ -166,8 +166,9 @@ export async function main(argv: string[]): Promise<number | void> {
 		if (!resume) {
 			const persona = await resolvePersona({ subagent, spec, slice });
 			finalPrompt = withPersona(persona, prompt);
-			tiered = applyTier({ backend: backendName, tier, subagent, spec, slice, model, effort });
 		}
+		if (!resume || tier !== undefined)
+			tiered = applyTier({ backend: backendName, tier, subagent, spec, slice, model, effort });
 
 		result = await runBackend(backendName, backend, {
 			prompt: finalPrompt,

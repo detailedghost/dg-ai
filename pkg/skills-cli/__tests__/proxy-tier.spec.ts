@@ -89,6 +89,24 @@ describe("proxy tier from the persona", () => {
 	});
 });
 
+describe("proxy --tier with --resume", () => {
+	test("applies the explicit tier to a resumed run", async () => {
+		const row = loadTiers().tiers.haiku.grok;
+		const args = await argvFor("grok", ["--resume", "sess-1", "--tier", "haiku"]);
+
+		expect(args).toEqual(
+			expect.arrayContaining(["--model", row.model as string, "--effort", row.effort]),
+		);
+	});
+
+	test("leaves a resumed run without --tier untouched", async () => {
+		const args = await argvFor("grok", ["--resume", "sess-1"]);
+
+		expect(args).not.toContain("--model");
+		expect(args).not.toContain("--effort");
+	});
+});
+
 describe("proxy tier leaves other backends alone", () => {
 	test("the copilot argv is unchanged by --tier", async () => {
 		const plain = await argvFor("copilot", []);

@@ -12,5 +12,5 @@
 			"@dg/skills-cli/lib": ["../skills-cli/src/utils/lib.ts"]
 		}
 	},
-	"include": ["__tests__/**/*"]
+	"include": ["__tests__/**/*", "../skills-cli/src/markdown.d.ts"]
 }

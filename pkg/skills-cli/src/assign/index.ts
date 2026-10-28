@@ -30,7 +30,7 @@ const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE =
 	"usage: dg-skills assign resolve <plan.md> --layer N [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>]\n";
 const REMINDER =
-	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity goes in deferrals[], [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion unless this template says so.";
+	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity goes in deferrals[], [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
 const TEMPLATE_FILES = {
 	red: "qa-writer-red.md",
 	yellow: "slice-engineering.md",
@@ -39,6 +39,15 @@ const TEMPLATE_FILES = {
 	correction: "correction.md",
 	proxy: "slice-engineering-proxy.md",
 } as const;
+const ENVELOPE_HEAD =
+	"Slice {SLICE_ID} context\nSpec: {SPEC_PATH}\nScratchpad: {SCRATCH_PATH}\n\nSlice brief:\n{SLICE_BRIEF}\n\nTesting criteria:\n{TESTING_CRITERIA}";
+const ENVELOPE_TAIL: Record<string, string> = {
+	yellow: "\n\nTest files:\n{CHANGED_FILES}",
+	green: "\n\nImplementation files:\n{CHANGED_FILES}",
+	wave: "\n\nFiles to review:\n{CHANGED_FILES}",
+	correction:
+		"\n\nChanged files:\n{CHANGED_FILES}\n\nFindings to address:\n{FINDINGS}",
+};
 const ROLES = ["qa-writer", "wave", "security"] as const;
 
 interface Stage {
@@ -153,9 +162,20 @@ function templatesFor(proxied: boolean): Record<string, string> {
 	for (const [key, file] of Object.entries(TEMPLATE_FILES)) {
 		if (key === "proxy" && !proxied) continue;
 		const path = resolveSkillAsset("sdlc", `references/templates/${file}`);
-		out[key] = `${REMINDER}\n\n${readFileSync(path, "utf8")}`;
+		const envelope =
+			key === "proxy" ? "" : `${ENVELOPE_HEAD}${ENVELOPE_TAIL[key] ?? ""}\n\n`;
+		out[key] = `${REMINDER}\n\n${envelope}${readFileSync(path, "utf8")}`;
 	}
 	return out;
+}
+
+function skillInstructions(names: string[]): string {
+	return names
+		.map((name) => {
+			const text = readFileSync(resolveSkillAsset(name, "SKILL.md"), "utf8");
+			return `## Skill instructions: ${name}\n\n${text.replace(/^---\n[\s\S]*?\n---\n/, "").trim()}`;
+		})
+		.join("\n\n");
 }
 
 function sorted(value: unknown): unknown {
@@ -195,6 +215,12 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			(typeof agents.effort === "string" ? agents.effort : undefined);
 		const number = String(slice.id);
 		const blocks = /^\d+$/.test(number) ? sliceBlocks(lines, number) : [];
+		const proxied = typeof agents.proxy === "string";
+		const proxySkills =
+			proxied && Array.isArray(agents.proxy_skills)
+				? agents.proxy_skills.map(String)
+				: [];
+		const brief = briefOf(blocks);
 		const qa = Array.isArray(agents.qa) ? agents.qa.map(String) : [];
 		return {
 			id: slice.id,
@@ -202,7 +228,11 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			primary: stageFor(primary, options.runtime, { effort, tier: pin.tier }),
 			qa: qa.map((name) => stageFor(name, options.runtime)),
 			...(typeof agents.proxy === "string" ? { proxyBackend: agents.proxy } : {}),
-			brief: briefOf(blocks),
+			...(proxySkills.length > 0 ? { proxySkills } : {}),
+			brief:
+				proxySkills.length > 0
+					? `${brief}\n\n${skillInstructions(proxySkills)}`
+					: brief,
 			testingCriteria: testingCriteria(blocks),
 		};
 	});

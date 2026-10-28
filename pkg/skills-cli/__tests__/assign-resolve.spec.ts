@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ const RUNNER = join(
 	import.meta.dir,
 	"../../../plugins/dg/skills/sdlc/references/templates/slice-wave.workflow.js",
 );
+const SKILLS = join(import.meta.dir, "../../../plugins/dg/skills");
 const plan = (name: string) => join(FIXTURES, name);
 
 interface Run {
@@ -54,6 +55,8 @@ interface Args {
 		primary: Stage;
 		qa: Stage[];
 		proxyBackend?: string;
+		proxySkills?: string[];
+		brief: string;
 	}[];
 	roles: Record<string, Stage>;
 	templates: Record<string, string>;
@@ -66,6 +69,15 @@ async function resolved(argv: string[]): Promise<Args> {
 	expect(result.status).toBe(0);
 	return JSON.parse(result.out) as Args;
 }
+
+const priorSkillsDir = process.env.DG_SKILLS_DIR;
+beforeAll(() => {
+	process.env.DG_SKILLS_DIR = SKILLS;
+});
+afterAll(() => {
+	if (priorSkillsDir === undefined) delete process.env.DG_SKILLS_DIR;
+	else process.env.DG_SKILLS_DIR = priorSkillsDir;
+});
 
 const temps: string[] = [];
 afterEach(() => {
@@ -197,6 +209,37 @@ describe("dg-skills assign resolve", () => {
 		]);
 		for (const body of Object.values(templates))
 			expect(body.startsWith("Workflow return contract:")).toBe(true);
+	});
+
+	test("gives every stage the slice context through runner tokens", async () => {
+		const { templates } = await resolved([plan("plan-high.md"), "--layer", "1"]);
+		for (const key of ["red", "yellow", "green", "wave", "correction"])
+			for (const token of ["{SLICE_ID}", "{SLICE_BRIEF}", "{TESTING_CRITERIA}", "{SPEC_PATH}"])
+				expect(templates[key], `${key} ${token}`).toContain(token);
+		for (const key of ["yellow", "green", "wave", "correction"])
+			expect(templates[key], key).toContain("{CHANGED_FILES}");
+		for (const key of ["correction", "proxy"])
+			expect(templates[key], key).toContain("{FINDINGS}");
+	});
+
+	test("makes the reminder override every template and routes questions to deferrals", async () => {
+		const { templates } = await resolved([plan("plan-high.md"), "--layer", "1"]);
+		for (const body of Object.values(templates)) {
+			expect(body).not.toContain("unless this template says so");
+			expect(body).toContain("deferrals[]");
+		}
+		expect(templates.proxy).not.toMatch(/ask the user via `AskUserQuestion`/);
+	});
+
+	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {
+		const { slices } = await resolved([plan("plan-high.md"), "--layer", "1"]);
+		expect(slices[0]?.proxySkills).toEqual(["polish"]);
+		expect(slices[0]?.brief).toContain("# Skill: polish");
+	});
+
+	test("omits proxySkills from slices that carry none", async () => {
+		const { slices } = await resolved([plan("plan-high.md"), "--layer", "0"]);
+		expect(slices.every((slice) => !("proxySkills" in slice))).toBe(true);
 	});
 
 	test("adds the proxy template only when a slice delegates", async () => {
