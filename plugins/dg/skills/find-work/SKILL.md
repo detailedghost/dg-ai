@@ -13,7 +13,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 ~/.dg/bin/dg-skills vcs-provider --help >/dev/null 2>&1 &&
   ~/.dg/bin/dg-skills worktree --help >/dev/null 2>&1 &&
   ~/.dg/bin/dg-skills chain --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh -s -- --cli-only
 ```
 
 If a step fails, run ~/.dg/bin/dg-skills doctor chain stash vcs-provider worktree.

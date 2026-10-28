@@ -10,7 +10,7 @@ Run:
 
 ```bash
 ~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-skills install
 ```
 
@@ -39,7 +39,7 @@ Run:
 ```powershell
 $dg = Join-Path $env:USERPROFILE ".dg\bin\dg-skills.exe"
 if (-not (Test-Path $dg)) {
- irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.ps1 | iex
+ irm https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.ps1 | iex
 }
 & $dg install
 ```
@@ -59,7 +59,7 @@ Run:
 
 ```bash
 ~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-skills install
 ```
 
@@ -78,7 +78,7 @@ Run:
 
 ```bash
 ~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
-  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.0/pkg/skills-cli/bootstrap.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/detailedghost/dg-ai/skills-v1.21.1/pkg/skills-cli/bootstrap.sh | sh
 ~/.dg/bin/dg-skills install
 ```
 
