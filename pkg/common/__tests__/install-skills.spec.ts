@@ -81,6 +81,26 @@ describe("skillsInstallDest", () => {
 });
 
 describe("installSkillTree", () => {
+	test("removes the retired phone-friend skill and leaves other folders alone", () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-skills-retired-"));
+		const source = join(directory, "src");
+		const dest = join(directory, "dest");
+		try {
+			tree(source);
+			mkdirSync(join(dest, "phone-friend"), { recursive: true });
+			writeFileSync(join(dest, "phone-friend", "SKILL.md"), "old stub\n");
+			mkdirSync(join(dest, "my-own-skill"), { recursive: true });
+			writeFileSync(join(dest, "my-own-skill", "SKILL.md"), "mine\n");
+
+			installSkillTree(source, dest);
+
+			expect(existsSync(join(dest, "phone-friend"))).toBe(false);
+			expect(readFileSync(join(dest, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine\n");
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	test("copies skill files as data, strips the executable bit, and leaves the rest of dest alone", () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-install-"));
 		const source = join(directory, "src");

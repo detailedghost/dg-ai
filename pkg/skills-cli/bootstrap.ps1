@@ -45,6 +45,10 @@ function Copy-DgSkillTree {
 	}
 	if ($links) { throw "dg-skills: refusing to copy a symlink from $Source" }
 	New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+	foreach ($retired in @("phone-friend")) {
+		$retiredPath = Join-Path $Destination $retired
+		if (Test-Path -LiteralPath $retiredPath) { Remove-Item -LiteralPath $retiredPath -Recurse -Force }
+	}
 	$manifest = @()
 	$found = $false
 	foreach ($skill in Get-ChildItem -LiteralPath $Source -Directory) {

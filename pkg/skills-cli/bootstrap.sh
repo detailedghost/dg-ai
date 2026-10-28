@@ -122,6 +122,9 @@ copy_skill_tree() {
   fi
   refuse_persona_links "$src"
   mkdir -p "$dest"
+  for retired in phone-friend; do
+    rm -rf "${dest:?}/${retired}"
+  done
   found=0
   for skill in "$src"/*/; do
     [ -d "$skill" ] || continue
