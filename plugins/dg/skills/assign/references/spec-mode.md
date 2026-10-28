@@ -14,12 +14,18 @@
 
 1. **Pick and validate.** The common steps (SKILL.md § Common — pick the agents), per remaining slice.
 
+1. **Ask about low-confidence slices only.** Give each slice with `confidence: low` exactly one `AskUserQuestion`: the
+   candidate primaries as options, your recommendation first and marked as recommended. Write the answer as `primary` and
+   set that slice's `confidence` to `high`. When every slice is `high`, ask nothing and go straight to the write. Never
+   ask about effort, QA agents or a `high` slice.
+
 1. **Write.** Mutate frontmatter so each slice gets:
 
    ```yaml
    agents:
      primary: <agent-name>
-     effort: <low|medium|xhigh>   # omit key unless overriding the model-tier default
+     confidence: <high|low>
+     effort: <low|medium|xhigh>   # omit key unless overriding the tier default in model-tiers.json
      qa: [<agent>, <agent>]       # omit key if empty
    ```
 
@@ -37,14 +43,16 @@ slices:
   - name: s0-foundation
     agents:
       primary: csharp
+      confidence: high
       qa: [qa-code, reviewer]
   - name: s1-migration
     agents:
       primary: dba
-      effort: xhigh   # only present because this slice overrides dba's model-tier default
+      confidence: high
+      effort: xhigh   # only present because this slice overrides dba's tier default
       qa: [security]
 ```
 
-`primary` is a string (one agent). `effort` is optional — one of `low`/`medium`/`xhigh` (never `high`) — and present
-**only** when it overrides the model-tier default the workflow would otherwise apply; omit it for the common case. `qa`
-is a list (zero or more). No other keys under `agents:` besides `primary`, `effort`, `qa`, `proxy`.
+`primary` is a string (one agent). `confidence` is `high` or `low`; after the question step it is `high` on every written slice unless the user declined to answer. `effort` is optional — one of `low`/`medium`/`xhigh` (never `high`) — and present
+**only** when it overrides the tier default in `model-tiers.json`; omit it for the common case. `qa`
+is a list (zero or more). No other keys under `agents:` besides `primary`, `confidence`, `effort`, `qa`, `proxy`, `proxy_skills`.

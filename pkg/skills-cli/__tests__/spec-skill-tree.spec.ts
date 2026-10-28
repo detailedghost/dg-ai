@@ -157,7 +157,7 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/~\/\.dg\/bin\/dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\s+curl/,
+				/~\/\.dg\/bin\/dg-skills \w[\w-]*(?: \w[\w-]*)? --help >\/dev\/null 2>&1 \|\|\s+curl/,
 			);
 		},
 	);

@@ -30,33 +30,54 @@ export function sectionLines(lines: string[], prefix: string): string[] {
 	return found;
 }
 
+export interface SliceBlock {
+	section: string;
+	start: number;
+	lines: string[];
+}
+
+/** The `### Slice <id>` lines found under each `##` section, in file order. */
+export function sliceBlocks(lines: string[], number: string): SliceBlock[] {
+	const start = new RegExp(
+		`^### Slice ${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`,
+	);
+	const blocks: SliceBlock[] = [];
+	let section = "";
+	let current: SliceBlock | undefined;
+	let inSlice = false;
+	lines.forEach((line, index) => {
+		if (line.startsWith("## ")) {
+			section = line;
+			current = undefined;
+			inSlice = false;
+		} else if (start.test(line)) {
+			if (!current) {
+				current = { section, start: index, lines: [] };
+				blocks.push(current);
+			}
+			inSlice = true;
+			current.lines.push(line);
+		} else if (line.startsWith("### Slice ")) inSlice = false;
+		else if (inSlice) current?.lines.push(line);
+	});
+	return blocks;
+}
+
+export function sliceText(lines: string[], number: string): string {
+	const out: string[] = [];
+	for (const block of sliceBlocks(lines, number)) {
+		if (block.start > 0) out.push("");
+		out.push(block.section, "", ...block.lines);
+	}
+	return joinRecords(out);
+}
+
 export async function sliceCommand(args: string[]): Promise<number> {
 	if (args.length < 2) usageError("slice <spec> <N>");
 	const [spec = "", number = ""] = args;
 	needFile(spec);
 	if (!/^\d+$/.test(number)) die(`slice number must be integer: ${number}`);
-	const start = new RegExp(`^### Slice ${number}([^0-9]|$)`);
-	const out: string[] = [];
-	let section = "";
-	let printed = false;
-	let inSlice = false;
-	records(await readText(spec)).forEach((line, index) => {
-		if (line.startsWith("## ")) {
-			section = line;
-			printed = false;
-			inSlice = false;
-		} else if (start.test(line)) {
-			if (!printed) {
-				if (index > 0) out.push("");
-				out.push(section, "");
-				printed = true;
-			}
-			inSlice = true;
-			out.push(line);
-		} else if (/^### Slice [0-9]+/.test(line)) inSlice = false;
-		else if (inSlice) out.push(line);
-	});
-	say(joinRecords(out));
+	say(sliceText(records(await readText(spec)), number));
 	return 0;
 }
 

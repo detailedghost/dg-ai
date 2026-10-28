@@ -21,6 +21,8 @@ import {
 import { join } from "node:path";
 import { BACKENDS, type BackendName, withPersona } from "../src/proxy/index";
 import { shellCommand } from "@dg/common/node";
+import { carriedFlags } from "../src/bg/jobs";
+import { loadTiers } from "../src/tiers";
 import {
 	compileProxyCli,
 	proxyFixtures,
@@ -558,6 +560,37 @@ describe("compiled proxy background", () => {
 				expect(existsSync(path)).toBe(false);
 		expect(existsSync(join(fixture.root, "forbidden"))).toBe(false);
 	}, 25000);
+
+	test("carries --tier into a background resume", async () => {
+		fixture.fakeBackend("grok");
+		const job: Job = await json([
+			"background",
+			"run",
+			shellCommand([binary, "proxy", "grok", "--prompt", "task", "--tier", "haiku"]),
+			"--cwd",
+			fixture.root,
+		]);
+		await finished(job);
+		await json(["background", "update", job.id, "more"]);
+		const calls = await until(
+			() => fixture.readCalls(),
+			(value) => value.length === 2,
+		);
+		const row = loadTiers().tiers.haiku.grok;
+		expect(calls[1]?.args).toEqual(
+			expect.arrayContaining(["--model", row.model as string, "--effort", row.effort]),
+		);
+	}, 25000);
+
+	test("carries --spec and --slice with --tier and --subagent into a background resume", () => {
+		const command = shellCommand([
+			"dg-skills", "proxy", "grok", "--prompt", "task", "--tier", "fable",
+			"--subagent", "arch", "--spec", "my plan.md", "--slice", "2",
+		]);
+		expect(carriedFlags(command)).toEqual([
+			"--tier", "fable", "--subagent", "arch", "--spec", "my plan.md", "--slice", "2",
+		]);
+	});
 
 	test("preserves a live job during prune, cancels its group, and drops queued context", async () => {
 		fixture.fakeBackend("pi", { gate: join(fixture.root, "never released") });

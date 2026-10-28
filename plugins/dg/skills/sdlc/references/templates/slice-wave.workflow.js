@@ -7,33 +7,24 @@ export const meta = {
 };
 
 /**
- * args (built by the /sdlc orchestrator — see ../engineering.md 4.2; /spec + /pickup delegate here):
- *   slices   [{ id, name, primaryAgent, primaryEffort, proxyBackend, qaAgents:[], brief, testingCriteria }]
+ * args (resolved by `dg-skills assign resolve`, which also bakes them in as WAVE_ARGS below the meta literal;
+ * an explicit `args` wins when given — see ../engineering.md 4.2):
+ *   slices   [{ id, name, primary, qa:[], proxyBackend, proxyFlags, brief, testingCriteria }]
  *            — ONE dependency layer; slices MUST touch disjoint files (name → progress label).
- *            primaryEffort (low|medium|xhigh) ← slices[].agents.effort from /assign; falls back
- *            to primaryAgent's Delegation-table default when unset.
- *            proxyBackend ← slices[].agents.proxy from /assign; absent for the common case — only
- *            set when this slice's Yellow/Correction (engineering side) stages delegate via /proxy.
+ *            primary and each qa entry are resolved { agentType, model, effort } stages.
+ *            proxyBackend ← slices[].agents.proxy; set only when this slice's Yellow/Correction stages delegate via /proxy.
+ *   roles    { "qa-writer", wave, security }  resolved stages shared by every slice in the layer.
  *   specPath, scratchPath  paths agents may read/append (passed into prompts)
  *   templates { red, yellow, green, wave, correction, proxy }  inlined template bodies with tokens:
  *            {SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS}
- *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT}
+ *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT} {PROXY_FLAGS}
  *            `proxy` is undefined/omitted when no slice in this layer sets proxyBackend.
  *   maxCorrectionRounds  default 2
- *   model, effort   optional overrides applied to every stage in this layer (model: haiku|sonnet|opus,
- *            effort: low|medium|xhigh). Source: the spec's `## Execution` pin. Omit for the tier defaults.
  */
 // harness sometimes delivers args as a JSON string instead of a parsed object
-const _args = typeof args === "string" ? (args ? JSON.parse(args) : {}) : args || {};
-const {
-  slices = [],
-  specPath = "",
-  scratchPath = "",
-  templates = {},
-  maxCorrectionRounds = 2,
-  model: modelOverride = "",
-  effort: effortOverride = "",
-} = _args;
+const given = typeof args === "string" ? (args ? JSON.parse(args) : null) : args;
+const _args = given && Object.keys(given).length ? given : typeof WAVE_ARGS === "undefined" ? {} : WAVE_ARGS;
+const { slices = [], roles = {}, specPath = "", scratchPath = "", templates = {}, maxCorrectionRounds = 2 } = _args;
 
 const NOTES = {
   type: "object",
@@ -104,7 +95,8 @@ const sub = (tpl, slice, extra = {}) =>
     .replaceAll("{CHANGED_FILES}", (extra.changedFiles || []).join("\n"))
     .replaceAll("{FINDINGS}", extra.findings || "")
     .replaceAll("{PROXY_BACKEND}", slice.proxyBackend || "")
-    .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primaryAgent || "general-purpose"));
+    .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primary.agentType))
+    .replaceAll("{PROXY_FLAGS}", slice.proxyFlags || "");
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
 const blockingDeferral = (ds) => (ds || []).some((d) => d.type === "SPEC" || d.type === "TEST");
@@ -112,44 +104,12 @@ const blockingDeferral = (ds) => (ds || []).some((d) => d.type === "SPEC" || d.t
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
 const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slice ${slice.id}`);
 
-// Tier the fan-out (unpinned workflow agents else inherit session Opus). Mirrors each named
-// agent's own frontmatter pin (its agent definition file) since opts.model overrides it here.
-const PLUGIN_AGENTS = new Set([
-  "arch",
-  "checkpoint",
-  "copilot-antagonist",
-  "csharp",
-  "dba",
-  "design",
-  "devops",
-  "foreman",
-  "js",
-  "lore",
-  "python",
-  "qa-code",
-  "qa-devops",
-  "qa-perf",
-  "qa-writer",
-  "reviewer",
-  "security",
-  "shell",
-  "thrash",
-  "wave",
-]);
 const bareAgent = (a) => a.replace(/^dg:/, "");
-const typeFor = (a) => (PLUGIN_AGENTS.has(bareAgent(a)) ? `dg:${bareAgent(a)}` : a);
-const FABLE_AGENTS = new Set(["arch", "design", "foreman"]);
-const OPUS_AGENTS = new Set(["dba", "security"]);
-const modelFor = (a) => {
-  const name = bareAgent(a);
-  return (
-    modelOverride ||
-    (name === "wave" ? "haiku" : FABLE_AGENTS.has(name) ? "fable" : OPUS_AGENTS.has(name) ? "opus" : "sonnet")
-  );
-};
-// Delegation-table effort default per model tier; primaryEffort from /assign wins when set.
-const EFFORT_BY_MODEL = { haiku: "low", sonnet: "medium", opus: "xhigh", fable: "medium" };
-const effortFor = (a, override) => override || effortOverride || EFFORT_BY_MODEL[modelFor(a)];
+const stageOpts = (stage) => ({
+  agentType: stage.agentType,
+  effort: stage.effort,
+  ...(stage.model ? { model: stage.model } : {}),
+});
 
 const results = await pipeline(
   slices,
@@ -158,9 +118,7 @@ const results = await pipeline(
     agent(sub(templates.red, slice), {
       label: `red:${slice.id}`,
       phase: phaseFor(slice),
-      model: modelFor("qa-writer"),
-      effort: effortFor("qa-writer"),
-      agentType: typeFor("qa-writer"),
+      ...stageOpts(roles["qa-writer"]),
       schema: RED,
     }).then((r) => ({
       slice,
@@ -183,9 +141,7 @@ const results = await pipeline(
     return agent(sub(yellowTpl, slice, { changedFiles: st.changedFiles }), {
       label: `yellow:${slice.id}`,
       phase: phaseFor(slice),
-      model: modelFor(slice.primaryAgent || "general-purpose"),
-      effort: effortFor(slice.primaryAgent || "general-purpose", slice.primaryEffort),
-      agentType: typeFor(slice.primaryAgent || "general-purpose"),
+      ...stageOpts(slice.primary),
       schema: YELLOW,
     }).then((y) => ({
       ...st,
@@ -210,9 +166,7 @@ const results = await pipeline(
     return agent(sub(templates.green, slice, { changedFiles: st.changedFiles }), {
       label: `green:${slice.id}`,
       phase: phaseFor(slice),
-      model: modelFor("qa-writer"),
-      effort: effortFor("qa-writer"),
-      agentType: typeFor("qa-writer"),
+      ...stageOpts(roles["qa-writer"]),
       schema: GREEN,
     }).then((g) => ({
       ...st,
@@ -238,8 +192,12 @@ const results = await pipeline(
         summary: "blocked on deferral — orchestrator must resolve",
       };
     const slice = st.slice;
-    const reviewers = uniq(["wave", ...(slice.qaAgents || []), st.securitySensitive ? "security" : null].map((a) => a && bareAgent(a)));
+    const reviewers = [roles.wave, ...(slice.qa || []), st.securitySensitive ? roles.security : null]
+      .filter(Boolean)
+      .filter((rv, i, all) => all.findIndex((other) => other.agentType === rv.agentType) === i);
+    const reviewerNames = reviewers.map((rv) => bareAgent(rv.agentType));
     let residual = [];
+    let correctionDeferrals = [];
     let deadReviewers = [];
     let round = 0;
     while (round <= maxCorrectionRounds) {
@@ -247,24 +205,22 @@ const results = await pipeline(
         reviewers.map(
           (rv) => () =>
             agent(sub(templates.wave, slice, { changedFiles: st.changedFiles }), {
-              label: `${rv}:${slice.id}#${round}`,
+              label: `${bareAgent(rv.agentType)}:${slice.id}#${round}`,
               phase: phaseFor(slice),
-              model: modelFor(rv),
-              effort: effortFor(rv),
-              agentType: typeFor(rv),
+              ...stageOpts(rv),
               schema: QA,
             }),
         ),
       );
       // Which reviewers returned nothing at all, before filter(Boolean) makes them indistinguishable
       // from reviewers that returned no findings.
-      deadReviewers = reviewers.filter((_, i) => !reviews[i]);
+      deadReviewers = reviewerNames.filter((_, i) => !reviews[i]);
       residual = reviews.filter(Boolean).flatMap((r) => r.findings || []);
       if (!residual.length || round === maxCorrectionRounds) break;
       round++;
       const byOwner = { engineering: [], "qa-writer": [] };
       for (const f of residual) (byOwner[f.owner === "qa-writer" ? "qa-writer" : "engineering"] ||= []).push(f);
-      await parallel(
+      const fixes = await parallel(
         Object.entries(byOwner)
           .filter(([, fs]) => fs.length)
           .map(([owner, fs]) => () => {
@@ -279,20 +235,27 @@ const results = await pipeline(
               {
                 label: `fix:${owner}:${slice.id}#${round}`,
                 phase: phaseFor(slice),
-                model: modelFor(owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose"),
-                effort: effortFor(
-                  owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose",
-                  owner === "qa-writer" ? undefined : slice.primaryEffort,
-                ),
-                agentType: typeFor(owner === "qa-writer" ? "qa-writer" : slice.primaryAgent || "general-purpose"),
+                ...stageOpts(owner === "qa-writer" ? roles["qa-writer"] : slice.primary),
                 schema: YELLOW,
               },
             );
           }),
       );
+      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => fix.deferrals || []));
+      if (blockingDeferral(correctionDeferrals))
+        return {
+          sliceId: slice.id,
+          status: "blocked",
+          changedFiles: st.changedFiles,
+          deferrals: [...st.deferrals, ...correctionDeferrals],
+          residualFindings: residual,
+          unverifiedStages: st.unverified,
+          notes: st.notes,
+          summary: "blocked on correction deferral — orchestrator must resolve",
+        };
     }
     const escalate = residual.filter(
-      (f) => f.severity === "CRITICAL" || (f.severity === "HIGH" && reviewers.includes("security")),
+      (f) => f.severity === "CRITICAL" || (f.severity === "HIGH" && reviewerNames.includes(bareAgent(roles.security.agentType))),
     );
     // Three-state, and `unverified` outranks the rest: "clean" must mean every stage produced
     // evidence, not merely that no surviving reviewer complained.
@@ -302,7 +265,7 @@ const results = await pipeline(
       sliceId: slice.id,
       status,
       changedFiles: st.changedFiles,
-      deferrals: [...st.deferrals, ...escalate.map((f) => ({ type: "CRITICAL", text: `${f.file}: ${f.issue}` }))],
+      deferrals: [...st.deferrals, ...correctionDeferrals, ...escalate.map((f) => ({ type: "CRITICAL", text: `${f.file}: ${f.issue}` }))],
       residualFindings: residual,
       unverifiedStages,
       notes: st.notes,

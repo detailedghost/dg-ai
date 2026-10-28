@@ -1,0 +1,88 @@
+{
+	"default": "sonnet",
+	"fableAgents": [
+		"arch",
+		"design",
+		"foreman"
+	],
+	"agents": {
+		"arch": "fable",
+		"checkpoint": "haiku",
+		"copilot-antagonist": "sonnet",
+		"csharp": "sonnet",
+		"dba": "opus",
+		"design": "fable",
+		"devops": "sonnet",
+		"foreman": "fable",
+		"js": "sonnet",
+		"lore": "sonnet",
+		"python": "sonnet",
+		"qa-code": "sonnet",
+		"qa-devops": "sonnet",
+		"qa-perf": "sonnet",
+		"qa-writer": "sonnet",
+		"reviewer": "sonnet",
+		"security": "opus",
+		"shell": "sonnet",
+		"thrash": "sonnet",
+		"wave": "haiku"
+	},
+	"tiers": {
+		"haiku": {
+			"claude": {
+				"model": "haiku",
+				"effort": "low"
+			},
+			"codex": {
+				"model": null,
+				"effort": "low"
+			},
+			"grok": {
+				"model": "grok-4.7-build-fast",
+				"effort": "low"
+			}
+		},
+		"sonnet": {
+			"claude": {
+				"model": "sonnet",
+				"effort": "medium"
+			},
+			"codex": {
+				"model": null,
+				"effort": "medium"
+			},
+			"grok": {
+				"model": "grok-4.7",
+				"effort": "medium"
+			}
+		},
+		"opus": {
+			"claude": {
+				"model": "opus",
+				"effort": "xhigh"
+			},
+			"codex": {
+				"model": null,
+				"effort": "xhigh"
+			},
+			"grok": {
+				"model": "grok-4.7",
+				"effort": "high"
+			}
+		},
+		"fable": {
+			"claude": {
+				"model": "fable",
+				"effort": "xhigh"
+			},
+			"codex": {
+				"model": null,
+				"effort": "xhigh"
+			},
+			"grok": {
+				"model": "grok-4.7",
+				"effort": "high"
+			}
+		}
+	}
+}

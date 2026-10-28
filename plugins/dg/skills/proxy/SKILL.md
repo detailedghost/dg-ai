@@ -41,15 +41,16 @@ The packaged background pattern proves a job's identity from its Linux `/proc` s
 
 ## Flags
 
-**Usage:** `/dg:proxy <backend> (--prompt <text> | --prompt-file <path>) [--model <name>] [--effort <level>] [--subagent <name>] [--cwd <dir>] [--resume <session>] [--plan | -p]`
+**Usage:** `/dg:proxy <backend> (--prompt <text> | --prompt-file <path>) [--model <name>] [--effort <level>] [--tier haiku|sonnet|opus|fable] [--subagent <name>] [--cwd <dir>] [--resume <session>] [--plan | -p]`
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--list-backends` | none | List all five registered backend identities without running one. | off |
 | `--prompt <text>` | none | Supply the task directly. Takes precedence over `--prompt-file`. | none |
 | `--prompt-file <path>` | none | Read the task from a file, keeping large prompts out of argv. | none |
-| `--model <name>` | none | Override the backend model. | backend default |
-| `--effort <level>` | none | Override its reasoning or thinking effort. | backend default |
+| `--model <name>` | none | Override the backend model. | tier table (codex, grok) or backend default |
+| `--effort <level>` | none | Override its reasoning or thinking effort. | tier table (codex, grok) or backend default |
+| `--tier <name>` | none | Pick the model and effort from `assign/references/model-tiers.json` on codex and grok. The tier comes from this flag, else the `--subagent` persona's table entry, else the table default. Explicit `--model` and `--effort` win. Codex rows have no model, so only the effort is passed. Copilot, pi and opencode ignore it. `fable` is legal only for the fable agents and exits 1 otherwise. | persona tier, else `sonnet` |
 | `--subagent <name>` | none | Brief the backend with the named configured agent persona. | none |
 | `--spec <path>` and `--slice <id>` | none | Resolve the persona from an explicit plan file's assigned primary agent. | none |
 | `--cwd <dir>` | none | Choose the backend's working directory. | current directory |

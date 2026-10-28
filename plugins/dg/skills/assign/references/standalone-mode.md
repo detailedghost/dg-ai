@@ -16,3 +16,5 @@ qa: security — the script reads credential files
 
 Field meanings and the `effort` rule are identical to spec mode (`references/spec-mode.md`): an `effort:` line appears
 only when it overrides the tier default, and never says `high`. Drop the `qa:` line entirely when nothing warrants one.
+
+Standalone mode asks no questions and writes no `confidence:`; the low-confidence question belongs to spec mode.

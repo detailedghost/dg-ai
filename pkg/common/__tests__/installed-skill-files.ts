@@ -11,6 +11,7 @@ export const INSTALLED_SKILL_FILES = [
 	"agent-seed/references/workflow.md",
 	"assign/SKILL.md",
 	"assign/references/edge-cases.md",
+	"assign/references/model-tiers.json",
 	"assign/references/spec-mode.md",
 	"assign/references/standalone-mode.md",
 	"bg/SKILL.md",

@@ -593,9 +593,9 @@ async function resumeSession(
 	};
 }
 
-function carriedFlags(command: string): string[] {
+export function carriedFlags(command: string): string[] {
 	const words = shellWords(command);
-	return ["--model", "--effort"].flatMap((flag) => {
+	return ["--model", "--effort", "--tier", "--subagent", "--spec", "--slice"].flatMap((flag) => {
 		const index = words.lastIndexOf(flag);
 		const value = words[index + 1];
 		return index !== -1 && value !== undefined ? [flag, value] : [];

@@ -80,13 +80,16 @@ granular answers) — the same command `/dg:prd` documents for pre-granting perm
 ## 5. Drive the slice-wave
 
 Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4.1–4.3** exactly
-as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above. The script lives in the installed
-`sdlc` skill, the sibling of this skill's base directory (`<sdlc-skill-dir>` is the folder holding
-`sdlc/SKILL.md`). Workflow cannot read the plugin cache, so copy the script into the session
-scratchpad first and pass the copy, as engineering.md 4.2 says:
+as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above. For each layer, one call writes
+the runner with its resolved args baked in. Workflow cannot read the plugin cache, so the helper writes
+into the session scratchpad. Then Workflow runs the printed path:
+
+```sh
+~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$WORKTREE_PATH"
+```
 
 ```
-scriptPath: "<scratchpad>/slice-wave.workflow.js",
+Workflow({ scriptPath: "<printed path>" })
 ```
 
 **One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice (or for

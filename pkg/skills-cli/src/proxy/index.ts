@@ -21,5 +21,6 @@ export interface ProxyOptions {
 	slice?: string;
 	model?: string;
 	effort?: string;
+	tier?: string;
 	cwd?: string;
 }
