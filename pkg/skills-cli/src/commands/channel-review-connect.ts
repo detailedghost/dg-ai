@@ -17,6 +17,7 @@ import {
 	ensurePrivateDir,
 	openOAuthBrowser,
 	resolveDgPaths,
+	wslChromiumArgs,
 } from "@dg/common/node";
 import { promptHidden } from "./credentials";
 
@@ -136,6 +137,7 @@ async function launchChrome(): Promise<BrowserSession> {
 	const context = await chromium.launchPersistentContext(profileDir, {
 		channel: "chrome",
 		headless: false,
+		args: wslChromiumArgs(),
 	});
 	const page = context.pages()[0] ?? (await context.newPage());
 	page.setDefaultTimeout(REQUEST_TIMEOUT_MS);

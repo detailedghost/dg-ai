@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wait } from "@dg/common";
+import { wslChromiumArgs } from "@dg/common/node";
 
 export type OverlayState =
 	| { kind: "none" }
@@ -473,6 +474,7 @@ export class DemoVerifyHarness {
 				[
 					bin,
 					...browserArgs(profileDir, extensionDir, sandboxDisabled()),
+					...wslChromiumArgs(),
 					"about:blank",
 				],
 				{ stdout: "ignore", stderr: "pipe" },
