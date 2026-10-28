@@ -269,6 +269,24 @@ describe("proto skill local mode", () => {
 		expect(astro).toMatch(/addEventListener\("focusin",\s*function \(e\) \{ e\.stopPropagation\(\); \}\)/);
 	});
 
+	test("both switchers use the shared icon toolbar with a width menu and no skip", () => {
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
+			const source = skillFile(file);
+			expect(source).toContain("dgIcons");
+			for (const icon of ["sun", "moon", "all", "phone", "tablet", "monitor", "left", "right", "note", "check", "rework"])
+				expect(source).toContain(`${icon}:`);
+			expect(source).toContain('role="menuitemradio"');
+			expect(source).toContain("data-proto-width");
+			expect(source).toContain("Add a note first. A rework needs direction.");
+			expect(source).toContain("Approve + note");
+			expect(source).toContain("prefers-reduced-motion");
+			expect(source).toContain("conic-gradient(from var(--ps-spin)");
+			expect(source).not.toMatch(/skip/i);
+		}
+		expect(skillFile("assets/PrototypeSwitcher.astro")).toContain("navigator.sendBeacon");
+		expect(skillFile("assets/README.md")).toContain('<script src="/dg-icons.js"></script>');
+	});
+
 	test("ships the copyable switcher and endpoint assets", () => {
 		for (const file of [
 			"assets/PrototypeSwitcher.tsx",
