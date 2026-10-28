@@ -379,7 +379,7 @@ run_install() {
   log=$(mktemp)
   track_tmp "${log}"
   set +e
-  "$@" >"${log}" 2>&1
+  "$@" >"${log}" 2>&1 </dev/null
   status=$?
   set -e
   while IFS= read -r line || [ -n "${line}" ]; do

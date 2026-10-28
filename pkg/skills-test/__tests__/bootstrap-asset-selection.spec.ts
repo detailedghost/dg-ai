@@ -127,6 +127,7 @@ async function runBootstrap(
 		env?: Record<string, string>;
 		sourceArchives?: { tag: string; skillName: string; skillBody: string }[];
 		outsideCheckout?: boolean;
+		piped?: boolean;
 	} = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
@@ -159,8 +160,14 @@ async function runBootstrap(
 		writeFileSync(script, readFileSync(BOOTSTRAP));
 	}
 	const proc = Bun.spawn(
-		["sh", script, ...(options.skillsOnly ? ["--skills-only"] : []), ...(options.args ?? [])],
+		[
+			options.piped ? "bash" : "sh",
+			...(options.piped ? ["-s", "--"] : [script]),
+			...(options.skillsOnly ? ["--skills-only"] : []),
+			...(options.args ?? []),
+		],
 		{
+			stdin: options.piped ? "pipe" : undefined,
 			cwd: options.outsideCheckout ? dir : undefined,
 			env: {
 				...process.env,
@@ -178,6 +185,10 @@ async function runBootstrap(
 			stderr: "pipe",
 		},
 	);
+	if (options.piped && proc.stdin) {
+		proc.stdin.write(readFileSync(script));
+		proc.stdin.end();
+	}
 	const stdout = await new Response(proc.stdout).text();
 	const stderr = await new Response(proc.stderr).text();
 	const code = await proc.exited;
@@ -547,6 +558,22 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 		expect(run.stdout).toContain("dg-skills verified (v1.12.0).");
 		expect(run.stdout).toContain("dg-daemon already current (v1.12.0).");
 		expect(run.stdout).not.toContain("dg-skills already current");
+	});
+
+	test("gives the installer no stdin when the script is piped into bash", async () => {
+		const run = await runBootstrap([[release("v1.12.0", [SKILLS_ASSET])]], {
+			piped: true,
+			args: ["--cli-only"],
+			installBody: [
+				"#!/bin/sh",
+				`[ "$(head -c 1 | wc -c)" -eq 0 ] || { echo 'installer read stdin' >&2; exit 9; }`,
+				"printf '%s\\n' 'dg-skills already current (v1.12.0).'",
+				"exit 0",
+			].join("\n"),
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(run.stderr).not.toContain("installer read stdin");
+		expect(run.stdout).toContain("dg-skills verified (v1.12.0).");
 	});
 
 	test("the release workflow publishes SHA256SUMS and both bootstraps honor it", () => {
