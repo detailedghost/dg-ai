@@ -272,7 +272,7 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 		const stamp = ps1.indexOf('".dg-skills.version"');
 		const release = ps1.indexOf("$swapLock.Dispose()");
 		expect(ps1).not.toContain("Mutex");
-		expect(ps1).toMatch(/\$lockPath = Join-Path \$binDir "\.dg-skills-swap\.lock"/);
+		expect(ps1).toMatch(/\$lockPath = Join-Path \(Resolve-Path -LiteralPath \$binDir\)\.ProviderPath "\.dg-skills-swap\.lock"/);
 		expect(lock).toBeGreaterThan(-1);
 		expect(lock).toBeLessThan(swap);
 		expect(stamp).toBeGreaterThan(cleanup);

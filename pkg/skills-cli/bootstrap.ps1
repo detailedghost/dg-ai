@@ -198,7 +198,7 @@ try {
 	}
 
 	if (-not $delegate) {
-		$lockPath = Join-Path $binDir ".dg-skills-swap.lock"
+		$lockPath = Join-Path (Resolve-Path -LiteralPath $binDir).ProviderPath ".dg-skills-swap.lock"
 		$deadline = (Get-Date).AddMinutes(2)
 		$swapLock = $null
 		while (-not $swapLock) {
