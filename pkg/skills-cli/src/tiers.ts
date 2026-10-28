@@ -38,7 +38,7 @@ export function resolveAgent(
 	name: string,
 	options: ResolveOptions,
 ): ResolvedAgent {
-	if (options.effort && !OVERRIDE_EFFORTS.includes(options.effort))
+	if (options.effort !== undefined && !OVERRIDE_EFFORTS.includes(options.effort))
 		throw new Error(
 			`Effort "${options.effort}" is not allowed; use low, medium or xhigh.`,
 		);

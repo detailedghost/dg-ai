@@ -56,6 +56,7 @@ interface Args {
 		qa: Stage[];
 		proxyBackend?: string;
 		proxySkills?: string[];
+		testingCriteria: string;
 		brief: string;
 	}[];
 	roles: Record<string, Stage>;
@@ -251,6 +252,35 @@ describe("dg-skills assign resolve", () => {
 			.trim();
 		const { templates } = await resolved([plan("plan-high.md"), "--layer", "0"]);
 		expect(templates.red).toContain(`Working directory: ${top}`);
+	});
+
+	test("briefs slices whose id is a string, without bleeding into a longer id", async () => {
+		const { slices } = await resolved([plan("plan-string-ids.md"), "--layer", "0"]);
+		const [alpha, alphaTwo] = slices;
+		expect(alpha?.brief).toContain("Build alpha");
+		expect(alpha?.brief).not.toContain("Build alpha two");
+		expect(alpha?.testingCriteria).toContain("Test alpha");
+		expect(alphaTwo?.brief).toContain("Build alpha two");
+	});
+
+	test("lets stage prompts read the spec, scratchpad and referenced assets from outside the working directory", async () => {
+		const { templates } = await resolved([plan("plan-high.md"), "--layer", "0"]);
+		for (const [key, body] of Object.entries(templates)) {
+			expect(body, key).toContain("You may read the spec, the scratchpad and referenced assets");
+			expect(body, key).not.toContain("read and edit files only under it");
+		}
+	});
+
+	test("exits 1 when a slice effort override is empty", async () => {
+		const dir = scratch();
+		const file = join(dir, "plan.md");
+		writeFileSync(
+			file,
+			readFileSync(plan("plan-high.md"), "utf8").replace("effort: xhigh", 'effort: ""'),
+		);
+		const result = await run(["resolve", file, "--layer", "0"]);
+		expect(result.status).toBe(1);
+		expect(result.err).toContain("Effort");
 	});
 
 	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {

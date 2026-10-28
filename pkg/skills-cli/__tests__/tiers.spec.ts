@@ -99,3 +99,11 @@ describe("resolveAgent", () => {
 		},
 	);
 });
+
+describe("resolveAgent effort override", () => {
+	test("rejects an empty effort", () => {
+		expect(() => resolveAgent("js", { runtime: "claude", effort: "" })).toThrow(
+			"Effort",
+		);
+	});
+});

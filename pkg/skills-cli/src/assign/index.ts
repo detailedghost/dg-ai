@@ -129,7 +129,8 @@ function stageFor(
 function executionPin(lines: string[]): Pin {
 	const pin: Pin = {};
 	for (const line of sectionLines(lines, "Execution")) {
-		const match = /^\s*(?:[-*]\s*)?(model|effort):\s*[`"']?([A-Za-z]+)/.exec(line);
+		const match = /^\s*(?:[-*]\s*)?(model|effort):\s*[`"']?([A-Za-z]*)/.exec(line);
+		if (match?.[2] === "") throw new Refusal(`## Execution ${match[1]} is empty`);
 		if (match?.[1] === "model") {
 			const tier = match[2] as Tier;
 			if (!Object.hasOwn(loadTiers().tiers, tier))
@@ -166,7 +167,7 @@ function agentsOf(slice: Record<string, unknown>): Record<string, unknown> {
 }
 
 function templatesFor(proxied: boolean, cwd: string): Record<string, string> {
-	const directive = `Working directory: ${cwd}. Run every command from it and read and edit files only under it, never in another checkout.`;
+	const directive = `Working directory: ${cwd}. Run every command from it and edit files only under it, never in another checkout. You may read the spec, the scratchpad and referenced assets wherever they live.`;
 	const out: Record<string, string> = {};
 	for (const [key, file] of Object.entries(TEMPLATE_FILES)) {
 		if (key === "proxy" && !proxied) continue;
@@ -223,11 +224,11 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			throw new Refusal(
 				`slice ${String(slice.id)} has no agents.primary; run /dg:assign`,
 			);
-		const effort =
-			pin.effort ??
-			(typeof agents.effort === "string" ? agents.effort : undefined);
+		if ("effort" in agents && typeof agents.effort !== "string")
+			throw new Refusal(`slice ${String(slice.id)} has an empty agents.effort`);
+		const effort = pin.effort ?? (agents.effort as string | undefined);
 		const number = String(slice.id);
-		const blocks = /^\d+$/.test(number) ? sliceBlocks(lines, number) : [];
+		const blocks = sliceBlocks(lines, number);
 		const proxied = typeof agents.proxy === "string";
 		const proxySkills =
 			proxied && Array.isArray(agents.proxy_skills)

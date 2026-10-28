@@ -36,9 +36,11 @@ export interface SliceBlock {
 	lines: string[];
 }
 
-/** The `### Slice <number>` lines found under each `##` section, in file order. */
+/** The `### Slice <id>` lines found under each `##` section, in file order. */
 export function sliceBlocks(lines: string[], number: string): SliceBlock[] {
-	const start = new RegExp(`^### Slice ${number}([^0-9]|$)`);
+	const start = new RegExp(
+		`^### Slice ${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_])`,
+	);
 	const blocks: SliceBlock[] = [];
 	let section = "";
 	let current: SliceBlock | undefined;
@@ -55,7 +57,7 @@ export function sliceBlocks(lines: string[], number: string): SliceBlock[] {
 			}
 			inSlice = true;
 			current.lines.push(line);
-		} else if (/^### Slice [0-9]+/.test(line)) inSlice = false;
+		} else if (line.startsWith("### Slice ")) inSlice = false;
 		else if (inSlice) current?.lines.push(line);
 	});
 	return blocks;

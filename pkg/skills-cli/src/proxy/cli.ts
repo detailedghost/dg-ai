@@ -125,6 +125,11 @@ export async function main(argv: string[]): Promise<number | void> {
 		process.exit(1);
 	}
 
+	if (effort === "") {
+		console.error("--effort requires a non-empty value");
+		process.exit(1);
+	}
+
 	const backend = findBackend(backendName);
 	if (!backend) {
 		console.error(

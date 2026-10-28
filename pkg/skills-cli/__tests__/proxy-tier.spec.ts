@@ -107,6 +107,17 @@ describe("proxy --tier with --resume", () => {
 	});
 });
 
+describe("proxy --effort", () => {
+	test("exits 1 on an empty value", async () => {
+		fixture.fakeBackend("codex");
+		const { stderr, exitCode } = await runCli(["codex", "--prompt", "hi", "--effort", ""]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("--effort");
+		expect(fixture.readCalls()).toEqual([]);
+	});
+});
+
 describe("proxy tier leaves other backends alone", () => {
 	test("the copilot argv is unchanged by --tier", async () => {
 		const plain = await argvFor("copilot", []);
