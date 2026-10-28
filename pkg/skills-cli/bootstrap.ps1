@@ -198,24 +198,33 @@ try {
 	}
 
 	if (-not $delegate) {
-		$old = $null
-		if (Test-Path -LiteralPath $dest) {
-			$old = "$dest.old-" + [guid]::NewGuid()
-			Move-Item -LiteralPath $dest -Destination $old
+		$swapLock = [System.Threading.Mutex]::new($false, "Local\dg-skills-bootstrap-swap")
+		if (-not $swapLock.WaitOne([TimeSpan]::FromMinutes(2))) {
+			throw "dg-skills: another bootstrap is still replacing $dest"
 		}
 		try {
-			Move-Item -LiteralPath $installer -Destination $dest
-		} catch {
-			if ($old -and -not (Test-Path -LiteralPath $dest)) {
-				Move-Item -LiteralPath $old -Destination $dest
+			$old = $null
+			if (Test-Path -LiteralPath $dest) {
+				$old = "$dest.old-" + [guid]::NewGuid()
+				Move-Item -LiteralPath $dest -Destination $old
 			}
-			throw
+			try {
+				Move-Item -LiteralPath $installer -Destination $dest
+			} catch {
+				if ($old -and -not (Test-Path -LiteralPath $dest)) {
+					Move-Item -LiteralPath $old -Destination $dest
+				}
+				throw
+			}
+			$installer = $dest
+			$oldPrefix = (Split-Path -Leaf $dest) + ".old-"
+			Get-ChildItem -LiteralPath $binDir -File |
+				Where-Object { $_.Name.StartsWith($oldPrefix) } |
+				ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+		} finally {
+			$swapLock.ReleaseMutex()
+			$swapLock.Dispose()
 		}
-		$installer = $dest
-		$oldPrefix = (Split-Path -Leaf $dest) + ".old-"
-		Get-ChildItem -LiteralPath $binDir -File |
-			Where-Object { $_.Name.StartsWith($oldPrefix) } |
-			ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 		# Stamp the installed version so `dg-skills install` won't re-download the binary.
 		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 		Write-Host "dg-skills installed at $dest"
