@@ -28,6 +28,7 @@ import { registerMonolith } from "./commands/monolith";
 import { registerOverwatchSnapshot } from "./commands/overwatch-snapshot";
 import { registerProto } from "./commands/proto";
 import { registerPrototype } from "./commands/prototype";
+import { registerVerify } from "./commands/verify";
 import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
 import { registerSniff } from "./commands/sniff";
@@ -47,7 +48,7 @@ const program = new Command();
 program
 	.name("dg-skills")
 	.description(
-		"Review inboxes, run channel reviews, group marked tabs, play guided tours, and compare live-page prototypes.",
+		"Review inboxes, run channel reviews, group marked tabs, play guided tours, compare live-page prototypes, and review finished changes.",
 	)
 	.showHelpAfterError()
 	.version(process.env.DG_SKILLS_BUILD_SHA ?? "dev");
@@ -76,7 +77,8 @@ registerMeaningful(program);
 registerVcsProvider(program);
 registerClipboardImage(program);
 registerProto(program);
-registerPrototype(program);
+	registerPrototype(program);
+	registerVerify(program);
 registerProxy(program);
 registerOverwatchSnapshot(program);
 registerWorktree(program);

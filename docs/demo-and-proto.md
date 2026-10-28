@@ -53,3 +53,7 @@ mode, so add `--ext` to keep the extension workflow. The CLI form follows:
 See the [demo skill](../plugins/dg/skills/demo/SKILL.md),
 [TourScript authoring guide](../plugins/dg/skills/demo/references/authoring.md),
 and [prototype skill](../plugins/dg/skills/proto/SKILL.md).
+
+Finished work, which has no variants to pick from, uses
+[/dg:verify](verify.md). That page shows before, after, and a prototype target
+when one is already running.
